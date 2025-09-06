@@ -1,8 +1,9 @@
-[package]
-name = "borrowser"
-version = "0.1.0"
-edition = "2024"
+[workspace]
+members = ["crates/browser"]
+resolver = "2"
 
-[dependencies]
+[workspace.package]
+edition = "2021"
+
+[workspace.dependencies]
 winit = "0.30"
-
