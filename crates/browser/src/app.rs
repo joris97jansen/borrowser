@@ -76,6 +76,9 @@ impl ApplicationHandler for App{
                                 self.toggle_fullscreen();
                             }
                           }
+                          Key::Character(ch) if (ch == "q" || ch == "Q") && self.modifiers.super_key() => {
+                             event_loop.exit();
+                          }
                           _ => { /* Unhandled key */}
                       }
                }
