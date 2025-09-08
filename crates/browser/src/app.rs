@@ -54,7 +54,11 @@ impl ApplicationHandler for App{
            WindowEvent::KeyboardInput{ event, .. } => {
              if event.state == ElementState::Pressed {
                 match &event.logical_key {
-                          Key::Named(NamedKey::Escape) => event_loop.exit(),
+                          Key::Named(NamedKey::Escape) => {
+                              if (self.is_fullscreen) {
+                                self.toggle_fullscreen();
+                              }
+                          },
                           Key::Named(NamedKey::Space) => {
                              self.animate = !self.animate;
                              if let Some(window) = &self.window.as_ref() {
