@@ -1,3 +1,4 @@
+use std::time::{Duration, Instant};
 use winit::{
     application::ApplicationHandler,
     event::WindowEvent,
@@ -8,11 +9,22 @@ use winit::{
 struct App {
     window: Option<Window>,
     frame: u64,
+    fps_counter: u32,
+    last_fps_instant: Instant,
+    last_redraw_instant: Instant,
+    target_frame_time: Duration,
 }
 
 impl Default for App {
     fn default() -> Self {
-        Self { window: None, frame: 0 }
+        Self {
+            window: None,
+            frame: 0,
+            fps_counter: 0,
+            last_fps_instant: Instant::now(),
+            last_redraw_instant: Instant::now(),
+            target_frame_time: Duration::from_millis(16),
+        }
     }
 }
 
@@ -34,7 +46,10 @@ impl ApplicationHandler for App{
        // request_redraw method on the window
        // Check if self.window is Some and if so, borrow the inner value as window
        if let Some(window) = &self.window {
-           window.request_redraw();
+           if self.last_redraw_instant.elapsed() >= self.target_frame_time {
+               window.request_redraw();
+               self.last_redraw_instant = Instant::now();
+           }
        }
    }
 
@@ -44,9 +59,22 @@ impl ApplicationHandler for App{
     fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: WindowId, event: WindowEvent) {
       match event {
            WindowEvent::CloseRequested => event_loop.exit(),
+           WindowEvent::Resized(size) => {
+               println!("resize {}x{}", size.width, size.height);
+           }
            WindowEvent::RedrawRequested => {
                self.frame += 1;
-               println!("redraw #{}", self.frame);
+               println!("Redraw #{}", self.frame);
+               self.fps_counter += 1;
+
+               if self.last_fps_instant.elapsed() >= Duration::from_secs(1) {
+                   if let Some(window) = &self.window {
+                       let fps = self.fps_counter;
+                       window.set_title(&format!("Borrowser - {} fps", fps));
+                   }
+                   self.fps_counter = 0;
+                   self.last_fps_instant = Instant::now();
+               }
            }
            _ => {}
        }
