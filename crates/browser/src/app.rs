@@ -51,6 +51,11 @@ impl ApplicationHandler for App{
            WindowEvent::ModifiersChanged(m) => {
                 self.modifiers = m.state();
            }
+           WindowEvent::RedrawRequested => {
+               if let Some(renderer) = self.renderer.as_mut() {
+                   renderer.render();
+               }
+           }
            WindowEvent::KeyboardInput{ event, .. } => {
              if event.state == ElementState::Pressed {
                 match &event.logical_key {
@@ -86,6 +91,11 @@ impl ApplicationHandler for App{
            WindowEvent::Resized(size) => {
                if let Some(renderer) = self.renderer.as_mut() {
                    renderer.resize(size.width, size.height);
+               }
+               if let Some(window) = self.window.as_mut() {
+                   window.set_title(&format!(
+                       "Borrowser - size: {}x{}", size.width, size.height
+                   ))
                }
            }
            _ => {}

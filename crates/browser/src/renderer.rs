@@ -16,7 +16,7 @@ impl Renderer {
 
    pub fn resize(&mut self, width: u32, height: u32) {
        self.size = (width.max(1), height.max(1));
-       eprintln!("Renderer resizedf to {}x{}", width, height);
+       eprintln!("Renderer resized to {}x{}", width, height);
    }
 
    pub fn render(&mut self) {
