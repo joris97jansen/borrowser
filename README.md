@@ -1,4 +1,28 @@
-# The core architecture (first principles) according to ChatGPT, let's stick it in the README for later reference.
+# The core architecture (first principles).
+
+## The bite size Roadmap
+
+A roadmap (bite-sized)
+
+✅ Window + redraw heartbeat
+
+✅ Input (Esc/F11/⌘CtrlF) + resize
+
+✅ wgpu init + clear to color
+
+▶ Animate clear color (compute sin(t) RGB in App, pass to Renderer)
+
+▶ Draw one triangle (create pipeline + shaders; no textures yet)
+
+▶ Uniforms (pass time or color to shader)
+
+▶ Vertex/index buffers (textured quad)
+
+▶ Textures + sampler (load an image and draw it)
+
+▶ Text (pick a simple library, or postpone)
+
+▶ Basic UI loop (mouse/keyboard affects uniforms/state)
 
 **1) Process & concurrency model**
 

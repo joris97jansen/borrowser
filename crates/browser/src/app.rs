@@ -1,3 +1,4 @@
+use std::sync::Arc;
 use crate::renderer::Renderer;
 use winit::{
     application::ApplicationHandler,
@@ -8,7 +9,7 @@ use winit::{
 };
 
 pub struct App {
-    window: Option<Window>,
+    window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
     modifiers: ModifiersState,
     animate: bool,
@@ -30,8 +31,9 @@ impl Default for App {
 
 impl ApplicationHandler for App{
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
-        let window = event_loop.create_window(Window::default_attributes().with_title("Borrowser"))
+        let raw_window = event_loop.create_window(Window::default_attributes().with_title("Borrowser"))
             .expect("Failed to create window");
+        let window = Arc::new(raw_window);
         let renderer = Renderer::new(&window);
         self.window = Some(window);
         self.renderer = Some(renderer);
@@ -60,7 +62,7 @@ impl ApplicationHandler for App{
              if event.state == ElementState::Pressed {
                 match &event.logical_key {
                           Key::Named(NamedKey::Escape) => {
-                              if (self.is_fullscreen) {
+                              if self.is_fullscreen {
                                 self.toggle_fullscreen();
                               }
                           },
@@ -75,14 +77,14 @@ impl ApplicationHandler for App{
                           Key::Named(NamedKey::F11) => {
                               self.toggle_fullscreen();
                           }
+                          Key::Character(ch) if (ch == "q" || ch == "Q") && self.modifiers.super_key() => {
+                             event_loop.exit();
+                          }
                           Key::Character(ch) => {
                             println!("Key pressed: {} with modifiers {:?}", ch, self.modifiers);
                             if (ch == "f" || ch == "F") && self.modifiers.super_key() && self.modifiers.control_key() {
                                 self.toggle_fullscreen();
                             }
-                          }
-                          Key::Character(ch) if (ch == "q" || ch == "Q") && self.modifiers.super_key() => {
-                             event_loop.exit();
                           }
                           _ => { /* Unhandled key */}
                       }

@@ -7,3 +7,5 @@ edition = "2021"
 
 [workspace.dependencies]
 winit = "0.30"
+pollster = "0.4.0"
+wgpu = "26.0.1"
