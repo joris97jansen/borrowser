@@ -1,11 +1,15 @@
+use std::borrow::Cow;
 use std::sync::Arc;
 use wgpu::{
     Device, Queue, Surface, SurfaceConfiguration, InstanceDescriptor, Instance,
     TextureUsages, DeviceDescriptor, Features, Limits, MemoryHints, Trace, SurfaceError,
     TextureViewDescriptor, CommandEncoderDescriptor, RenderPassDescriptor, RenderPassColorAttachment, Operations, LoadOp, Color, StoreOp,
+    ShaderSource, PipelineLayoutDescriptor, RenderPipeline, RenderPipelineDescriptor, PipelineCompilationOptions, VertexState, FragmentState,
 };
 use winit::window::Window;
 use pollster::block_on;
+
+const TRIANGLE_WGSL: &str = include_str!("shaders/triangle.wgsl");
 
 pub struct Renderer {
     surface: Surface<'static>,
@@ -13,6 +17,8 @@ pub struct Renderer {
     queue: Queue,
     config: SurfaceConfiguration,
     size: (u32, u32),
+    clear_color: Color,
+    render_pipeline: RenderPipeline,
 }
 
 impl Renderer {
@@ -66,12 +72,57 @@ impl Renderer {
 
       surface.configure(&device, &config);
 
+      let shader = device.create_shader_module(wgpu::ShaderModuleDescriptor{
+            label: Some("triangle shader"),
+            source: ShaderSource::Wgsl(Cow::Borrowed(TRIANGLE_WGSL)),
+        });
+
+      let pipeline_layout = device.create_pipeline_layout(&PipelineLayoutDescriptor{
+          label: Some("triangle layout"),
+          bind_group_layouts: &[],
+          push_constant_ranges: &[],
+        });
+
+      let render_pipeline = device.create_render_pipeline(&RenderPipelineDescriptor {
+        label: Some("triangle pipeline"),
+        cache: None,
+        vertex: VertexState {
+          compilation_options: PipelineCompilationOptions::default(),
+          module: &shader,
+          entry_point: Some("vs_main"),
+          buffers: &[],
+        },
+        fragment: Some(wgpu::FragmentState {
+          compilation_options: PipelineCompilationOptions::default(),
+          module: &shader,
+          entry_point: Some("fs_main"),
+          targets: &[Some(wgpu::ColorTargetState {
+            format: config.format,
+            blend: Some(wgpu::BlendState::REPLACE),
+            write_mask: wgpu::ColorWrites::ALL,
+          })],
+        }),
+        primitive: wgpu::PrimitiveState::default(),
+        depth_stencil: None,
+        multisample: wgpu::MultisampleState::default(),
+        multiview: None,
+        layout: Some(&pipeline_layout),
+      });
+
+      // targets: &[Some(wgpu::ColorTargetState {
+      //       format: config.format,
+      //       blend: Some(wgpu::BlendState::REPLACE),
+      //       write_mask: wgpu::ColorWrites::ALL,
+      //   })]
+
       return Self {
           surface,
           device,
           queue,
           config,
           size: (w, h),
+          clear_color: Color::default(),
+          render_pipeline: render_pipeline,
       }
    }
 
@@ -98,13 +149,13 @@ impl Renderer {
                 }
             );
             {
-                let _pass = encoder.begin_render_pass(&RenderPassDescriptor {
+                let mut pass = encoder.begin_render_pass(&RenderPassDescriptor {
                     label: Some("clean pass"),
                     color_attachments: &[Some(RenderPassColorAttachment {
                         view: &view,
                         resolve_target: None,
                         ops: Operations {
-                            load: LoadOp::Clear(Color { r: 0.12, g: 0.14, b: 0.22, a: 1.0 }),
+                            load: LoadOp::Clear(self.clear_color),
                             store: StoreOp::Store,
                         },
                         depth_slice: None,
@@ -113,6 +164,9 @@ impl Renderer {
                     occlusion_query_set: None,
                     timestamp_writes: None,
                 });
+
+                pass.set_pipeline(&self.render_pipeline);
+                pass.draw(0..3, 0..1);
             }
             self.queue.submit([encoder.finish()]);
             frame.present();
@@ -132,5 +186,9 @@ impl Renderer {
             return;
         }
     }
+   }
+
+   pub fn set_clear_color(&mut self, r: f64, g: f64, b: f64, a: f64) {
+     self.clear_color = Color { r, g, b, a }
    }
 }
