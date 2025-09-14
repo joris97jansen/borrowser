@@ -1,3 +1,7 @@
+use std::sync::mpsc::{
+    Sender, Receiver, channel
+};
+use std::thread;
 use std::time::Instant;
 use std::f32::consts::TAU;
 use std::sync::Arc;
@@ -16,6 +20,11 @@ const OMEGA_MAX: f32 = 20.0;
 const OMEGA_SCALE: f32 = 1.2;     // ×1.2 speed up, ÷1.2 slow down
 const OMEGA_EASE: f32 = 8.0;
 
+enum PageMessage {
+    Loaded { url: String, body: String },
+    Failed { url: String, reason: String },
+}
+
 pub struct App {
     window: Option<Arc<Window>>,
     renderer: Option<Renderer>,
@@ -27,11 +36,16 @@ pub struct App {
     color_running: bool,
     phase: f32,
     last_tick: Instant,
+    fetch_tx: Sender<PageMessage>,
+    fetch_rx: Receiver<PageMessage>,
+
 }
 
 // zero-arg constructor
 impl Default for App {
     fn default() -> Self {
+        let (fetch_tx, fetch_rx) = channel();
+
         Self {
             window: None,
             renderer: None,
@@ -43,6 +57,8 @@ impl Default for App {
             color_running: true,
             phase: 0.0,
             last_tick: Instant::now(),
+            fetch_tx: fetch_tx,
+            fetch_rx: fetch_rx,
         }
     }
 }
@@ -58,6 +74,24 @@ impl ApplicationHandler for App{
     }
 
    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
+       let mut got_msg = false;
+       for msg in self.fetch_rx.try_iter() {
+           got_msg = true;
+           match msg {
+              PageMessage::Loaded { url, body } => {
+                  let title = extract_title(&body).unwrap_or("(no title)".to_string());
+                  if let Some(window) = self.window.as_ref() {
+                      let kb = body.len() / 1024;
+                      window.set_title(&format!("Borrowser - {} ({} KB)", title, kb));
+                  }
+              }
+              PageMessage::Failed { url, reason } => {
+                  if let Some(window) = self.window.as_ref() {
+                      window.set_title(&format!("Borrowser - failed to load {}: {}", url, reason));
+                  }
+              }
+           }
+       }
        if let Some(window) = &self.window.as_ref() {
            if self.animate {
                window.request_redraw();
@@ -120,6 +154,21 @@ impl ApplicationHandler for App{
                           Key::Named(NamedKey::F11) => {
                               self.toggle_fullscreen();
                           }
+                          Key::Named(NamedKey::Enter) => {
+                              let fetch_tx = self.fetch_tx.clone();
+                              let url = "https://example.org".to_string();
+
+                              thread::spawn(move || {
+                                  match net::fetch_text(&url) {
+                                      Ok(body) => { let _ = fetch_tx.send(PageMessage::Loaded { url, body }); }
+                                      Err(e) => { let _ = fetch_tx.send(PageMessage::Failed { url, reason: e.to_string() });}
+                                  }
+                              });
+                              if let Some(window) = self.window.as_ref() {
+                                  window.set_title("Borrowser - loading...");
+                                  window.request_redraw();
+                              }
+                          }
                           Key::Character(ch) if (ch == "q" || ch == "Q") && self.modifiers.super_key() => {
                              event_loop.exit();
                           }
@@ -168,4 +217,21 @@ impl App {
             ))
         }
     }
+
+}
+
+fn extract_title(html: &str) -> Option<String> {
+    let lower = html.to_lowercase();
+    let start_tag = lower.find("<title")?;
+    let after_start = &html[start_tag..];
+
+    let start_gt = after_start.find('>')?;
+    let after_gt = &html[start_tag + start_gt + 1..];
+
+    let lower_after = after_gt.to_lowercase();
+    let end_tag = lower_after.find("</title>")?;
+
+    let raw_title = &after_gt[..end_tag];
+    let title = raw_title.split_whitespace().collect::<Vec<_>>().join(" ");
+    Some(title)
 }

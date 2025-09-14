@@ -109,12 +109,6 @@ impl Renderer {
         layout: Some(&pipeline_layout),
       });
 
-      // targets: &[Some(wgpu::ColorTargetState {
-      //       format: config.format,
-      //       blend: Some(wgpu::BlendState::REPLACE),
-      //       write_mask: wgpu::ColorWrites::ALL,
-      //   })]
-
       return Self {
           surface,
           device,

@@ -4,6 +4,7 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+net = { path = "../net" }
 winit = { workspace = true }
 wgpu = { workspace = true }
 pollster = { workspace = true }
