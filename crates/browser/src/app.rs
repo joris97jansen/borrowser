@@ -9,7 +9,7 @@ use crate::renderer::Renderer;
 use winit::{
     application::ApplicationHandler,
     event::{WindowEvent, ElementState},
-    event_loop::ActiveEventLoop,
+    event_loop::{ActiveEventLoop, EventLoopProxy},
     window::{Window, WindowId, Fullscreen},
     keyboard::{Key, NamedKey, ModifiersState},
 };
@@ -17,12 +17,16 @@ use winit::{
 const OMEGA: f32 = 2.0;
 const OMEGA_MIN: f32 = 0.05;
 const OMEGA_MAX: f32 = 20.0;
-const OMEGA_SCALE: f32 = 1.2;     // ×1.2 speed up, ÷1.2 slow down
+const OMEGA_SCALE: f32 = 1.2;
 const OMEGA_EASE: f32 = 8.0;
 
 enum PageMessage {
     Loaded { url: String, body: String },
     Failed { url: String, reason: String },
+}
+
+pub enum Wake {
+    NetReady,
 }
 
 pub struct App {
@@ -36,34 +40,13 @@ pub struct App {
     color_running: bool,
     phase: f32,
     last_tick: Instant,
+    proxy: EventLoopProxy<Wake>,
     fetch_tx: Sender<PageMessage>,
     fetch_rx: Receiver<PageMessage>,
 
 }
 
-// zero-arg constructor
-impl Default for App {
-    fn default() -> Self {
-        let (fetch_tx, fetch_rx) = channel();
-
-        Self {
-            window: None,
-            renderer: None,
-            modifiers: ModifiersState::default(),
-            animate: true,
-            is_fullscreen: false,
-            omega: OMEGA,
-            target_omega: OMEGA,
-            color_running: true,
-            phase: 0.0,
-            last_tick: Instant::now(),
-            fetch_tx: fetch_tx,
-            fetch_rx: fetch_rx,
-        }
-    }
-}
-
-impl ApplicationHandler for App{
+impl ApplicationHandler<Wake> for App{
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         let raw_window = event_loop.create_window(Window::default_attributes().with_title("Borrowser"))
             .expect("Failed to create window");
@@ -74,25 +57,7 @@ impl ApplicationHandler for App{
     }
 
    fn about_to_wait(&mut self, _event_loop: &ActiveEventLoop) {
-       let mut got_msg = false;
-       for msg in self.fetch_rx.try_iter() {
-           got_msg = true;
-           match msg {
-              PageMessage::Loaded { url, body } => {
-                  let title = extract_title(&body).unwrap_or("(no title)".to_string());
-                  if let Some(window) = self.window.as_ref() {
-                      let kb = body.len() / 1024;
-                      window.set_title(&format!("Borrowser - {} ({} KB)", title, kb));
-                  }
-              }
-              PageMessage::Failed { url, reason } => {
-                  if let Some(window) = self.window.as_ref() {
-                      window.set_title(&format!("Borrowser - failed to load {}: {}", url, reason));
-                  }
-              }
-           }
-       }
-       if let Some(window) = &self.window.as_ref() {
+       if let Some(window) = self.window.as_ref() {
            if self.animate {
                window.request_redraw();
            }
@@ -156,13 +121,16 @@ impl ApplicationHandler for App{
                           }
                           Key::Named(NamedKey::Enter) => {
                               let fetch_tx = self.fetch_tx.clone();
+                              let proxy = self.proxy.clone();
                               let url = "https://example.org".to_string();
 
                               thread::spawn(move || {
-                                  match net::fetch_text(&url) {
-                                      Ok(body) => { let _ = fetch_tx.send(PageMessage::Loaded { url, body }); }
-                                      Err(e) => { let _ = fetch_tx.send(PageMessage::Failed { url, reason: e.to_string() });}
-                                  }
+                                  let message = match net::fetch_text(&url) {
+                                      Ok(body) => PageMessage::Loaded { url, body },
+                                      Err(err) => PageMessage::Failed { url, reason: err.to_string()},
+                                  };
+                                  let _ = fetch_tx.send(message);
+                                  let _ = proxy.send_event(Wake::NetReady);
                               });
                               if let Some(window) = self.window.as_ref() {
                                   window.set_title("Borrowser - loading...");
@@ -201,11 +169,56 @@ impl ApplicationHandler for App{
            _ => {}
        }
     }
+
+    fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: Wake) {
+        match event {
+            Wake::NetReady => {
+                for message in self.fetch_rx.try_iter() {
+                    match message {
+                        PageMessage::Loaded{ url: _, body} => {
+                            let title = extract_title(&body).unwrap_or_else(|| "(no title)".to_string());
+                            if let Some(window) = self.window.as_ref() {
+                                let kb = body.len() as f64 / 1024.0;
+                                window.set_title(&format!("Borrowser - {} ({} kb)", title, kb));
+                                window.request_redraw();
+                            }
+                        }
+                        PageMessage::Failed { url: _, reason } => {
+                            if let Some(window) = self.window.as_ref() {
+                                window.set_title(&format!("Borrowser - load failed: {}", reason));
+                                window.request_redraw();
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    }
 }
 
 impl App {
+    pub fn new(proxy: EventLoopProxy<Wake>) -> Self{
+        let (fetch_tx, fetch_rx) = channel();
+
+        Self {
+            window: None,
+            renderer: None,
+            modifiers: ModifiersState::default(),
+            animate: true,
+            is_fullscreen: false,
+            omega: OMEGA,
+            target_omega: OMEGA,
+            color_running: true,
+            phase: 0.0,
+            last_tick: Instant::now(),
+            proxy: proxy,
+            fetch_tx: fetch_tx,
+            fetch_rx: fetch_rx,
+        }
+    }
+
     fn toggle_fullscreen(&mut self) {
-        if let Some(window) = &self.window.as_ref() {
+        if let Some(window) = self.window.as_ref() {
             self.is_fullscreen = !self.is_fullscreen;
             if self.is_fullscreen {
                 window.set_fullscreen(Some(Fullscreen::Borderless(None)));
