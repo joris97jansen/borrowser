@@ -1,6 +1,17 @@
+[package]
+name = "borrowser"
+version = "0.1.0"
+edition = "2021"
+
+[dependencies]
+platform = { path = "crates/platform" }
+
 [workspace]
-members = ["crates/browser", "crates/net"]
-resolver = "2"
+members = [
+    "crates/platform",
+    "crates/browser",
+    "crates/net"
+]
 
 [workspace.package]
 edition = "2021"
