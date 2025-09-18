@@ -13,9 +13,9 @@ const TRIANGLE_WGSL: &str = include_str!("shaders/triangle.wgsl");
 
 pub struct Renderer {
     surface: Surface<'static>,
-    device: Device,
+    pub device: Device,
     queue: Queue,
-    config: SurfaceConfiguration,
+    pub config: SurfaceConfiguration,
     size: (u32, u32),
     clear_color: Color,
     render_pipeline: RenderPipeline,
@@ -130,6 +130,9 @@ impl Renderer {
     }
 
    pub fn render(&mut self) {
+    let (Some(eg), Some(w), Some(r)) = (self.egui.as_mut(), self.window.as_ref(), self.renderer.as_mut()) else { return; };
+    eg.begin(w);
+
     if self.config.width == 0 || self.config.height == 0 {
         return;
     }
@@ -152,7 +155,7 @@ impl Renderer {
                             load: LoadOp::Clear(self.clear_color),
                             store: StoreOp::Store,
                         },
-                        depth_slice: None,
+                        // depth_slice: None,
                     })],
                     depth_stencil_attachment: None,
                     occlusion_query_set: None,

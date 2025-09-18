@@ -1,5 +1,6 @@
 mod app;
 mod renderer;
+mod egui_host;
 
 use app::{App, Wake};
 use winit::{

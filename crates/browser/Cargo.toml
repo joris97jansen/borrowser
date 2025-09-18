@@ -8,3 +8,7 @@ net = { path = "../net" }
 winit = { workspace = true }
 wgpu = { workspace = true }
 pollster = { workspace = true }
+egui = { workspace = true }
+egui-winit = { workspace = true }
+egui-wgpu = { workspace = true }
+

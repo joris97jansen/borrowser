@@ -6,6 +6,7 @@ use std::time::Instant;
 use std::f32::consts::TAU;
 use std::sync::Arc;
 use crate::renderer::Renderer;
+use crate::egui_host::EguiHost;
 use winit::{
     application::ApplicationHandler,
     event::{WindowEvent, ElementState},
@@ -13,6 +14,13 @@ use winit::{
     window::{Window, WindowId, Fullscreen},
     keyboard::{Key, NamedKey, ModifiersState},
 };
+
+use wgpu::{
+    Device, Queue, Surface, SurfaceConfiguration,
+    Color, Instance, InstanceDescriptor, PowerPreference, RequestAdapterOptions,
+    DeviceDescriptor, Features, Limits, MemoryHints, Trace, PresentMode, TextureUsages,
+};
+// use egui::egui_host::EguiHost;
 
 const OMEGA: f32 = 2.0;
 const OMEGA_MIN: f32 = 0.05;
@@ -25,8 +33,95 @@ enum PageMessage {
     Failed { url: String, reason: String },
 }
 
+pub enum UiAction {
+    Load(String),
+}
+
 pub enum Wake {
     NetReady,
+}
+
+pub struct AppState {
+    pub device: Device,
+    pub queue: Queue,
+    pub surface: Surface<'static>,
+    pub config: SurfaceConfiguration,
+    pub clear_color: Color,
+    pub egui: EguiHost,
+}
+
+impl AppState {
+    pub fn new(window: &Arc<Window>) -> Self {
+        let instance = Instance::new(&InstanceDescriptor::default());
+        let surface = unsafe { instance.create_surface(window.clone()) }.expect("surface");
+
+        let adapter = pollster::block_on(instance.request_adapter(
+                &RequestAdapterOptions {
+                    compatible_surface: Some(&surface),
+                    power_preference: PowerPreference::HighPerformance,
+                    force_fallback_adapter: false,
+                }
+        )).expect("adapter");
+
+        let (device, queue) = pollster::block_on(adapter.request_device(
+                &DeviceDescriptor {
+                    label: Some("Device"),
+                    required_features: Features::empty(),
+                    // TODO: ChatGPT suggests Limits::downlevel_webgl2_default()....., ask it why
+                    required_limits: Limits::default(),
+                    memory_hints: MemoryHints::default(),
+                    trace: Trace::default(),
+                }
+        )).expect("device");
+
+        let caps = surface.get_capabilities(&adapter);
+        let format = caps.formats
+            .iter()
+            .copied()
+            .find(|f| f.is_srgb())
+            .unwrap_or(caps.formats[0]);
+
+        let present_mode = caps.present_modes
+            .iter()
+            .copied()
+            .find(|m| matches!(m, PresentMode::AutoVsync | PresentMode::Fifo))
+            .unwrap_or(caps.present_modes[0]);
+
+
+        let size = window.inner_size();
+        let (width, height) = (size.width.max(1), size.height.max(1));
+        let config = SurfaceConfiguration {
+            usage: TextureUsages::RENDER_ATTACHMENT,
+            format,
+            width: width,
+            height: height,
+            present_mode,
+            alpha_mode: caps.alpha_modes[0],
+            view_formats: vec![],
+            desired_maximum_frame_latency: 2,
+        };
+        surface.configure(&device, &config);
+
+        let egui = EguiHost::new(&device, config.format, window);
+
+        Self {
+            device,
+            queue,
+            surface,
+            config,
+            clear_color: Color::default(),
+            egui,
+        }
+    }
+
+    pub fn resize(&mut self, width: u32, height: u32) {
+        if width == 0 || height == 0 {
+            return;
+        }
+        self.config.width = width.max(1);
+        self.config.height = height.max(1);
+        self.surface.configure(&self.device, &self.config);
+    }
 }
 
 pub struct App {
@@ -43,7 +138,9 @@ pub struct App {
     proxy: EventLoopProxy<Wake>,
     fetch_tx: Sender<PageMessage>,
     fetch_rx: Receiver<PageMessage>,
-
+    url_input: String,
+    current_url: String,
+    egui: Option<EguiHost>,
 }
 
 impl ApplicationHandler<Wake> for App{
@@ -51,7 +148,15 @@ impl ApplicationHandler<Wake> for App{
         let raw_window = event_loop.create_window(Window::default_attributes().with_title("Borrowser"))
             .expect("Failed to create window");
         let window = Arc::new(raw_window);
+
         let renderer = Renderer::new(&window);
+
+        let egui_host = EguiHost::new(
+            &renderer.device,
+            renderer.config.format,
+            &window,
+        );
+        self.egui = Some(egui_host);
         self.window = Some(window);
         self.renderer = Some(renderer);
     }
@@ -65,6 +170,10 @@ impl ApplicationHandler<Wake> for App{
    }
 
     fn window_event(&mut self, event_loop: &ActiveEventLoop, window_id: WindowId, event: WindowEvent) {
+      if let (Some(egui_host), Some(window)) = (self.egui.as_mut(), self.window.as_ref()) {
+          egui_host.handle_input(window, &event);
+      }
+
       match event {
            WindowEvent::CloseRequested => event_loop.exit(),
            WindowEvent::ModifiersChanged(m) => {
@@ -214,6 +323,8 @@ impl App {
             proxy: proxy,
             fetch_tx: fetch_tx,
             fetch_rx: fetch_rx,
+            url_input: String::new(),
+            current_url: String::new(),
         }
     }
 
