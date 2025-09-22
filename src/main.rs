@@ -1,3 +1,3 @@
 fn main() {
-    platform::run()
+    browser::run();
 }

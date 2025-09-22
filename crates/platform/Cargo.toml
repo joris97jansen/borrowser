@@ -1,6 +1,11 @@
 [package]
 name = "platform"
 version = "0.1.0"
+edition = "2024"
 
 [dependencies]
 winit = { workspace = true }
+egui = { workspace = true }
+egui-winit = { workspace = true }
+egui-wgpu = { workspace = true }
+pollster = { workspace = true }

@@ -4,22 +4,25 @@ version = "0.1.0"
 edition = "2021"
 
 [dependencies]
-platform = { path = "crates/platform" }
+browser = { path = "crates/browser" }
 
 [workspace]
 members = [
-    "crates/platform",
-    "crates/browser",
-    "crates/net"
+  "crates/browser",
+  "crates/net",
+  "crates/html",
+  "crates/css",
+  "crates/layout",
+  "crates/gfx",
+  "crates/js",
+  "crates/platform",
+  "crates/tools",
 ]
-
-[workspace.package]
-edition = "2021"
+resolver = "2"
 
 [workspace.dependencies]
 winit = "0.30"
-pollster = "0.4.0"
-wgpu = "25"
-egui = "0.32.3"
-egui-winit = "0.32.3"
-egui-wgpu = "0.32.3"
+egui = "0.32"
+egui-winit = "0.32"
+egui-wgpu = "0.32"
+pollster = "0.4"
