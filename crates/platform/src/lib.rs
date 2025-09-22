@@ -26,20 +26,8 @@ pub fn run() {
     let event_loop = EventLoop::<UserEvent>::with_user_event().build().expect("failed to create event loop");
 
     let proxy = event_loop.create_proxy();
+    let mut app = PlatformApp::new();
 
-    let mut app = PlatformApp {
-        window: None,
-        proxy: Some(proxy),
-        ticker_started: false,
-        egui_ctx: None,
-        egui_state: None,
-        instance: None,
-        surface: None,
-        device: None,
-        queue: None,
-        surface_config: None,
-        egui_renderer: None,
-    };
     event_loop.run_app(&mut app).expect("Event loop crashed");
 }
 
@@ -57,8 +45,24 @@ struct PlatformApp {
     egui_renderer: Option<EguiWgpuRenderer>,
 }
 
-impl ApplicationHandler<UserEvent> for PlatformApp {
-    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+impl PlatformApp {
+    pub fn new() -> Self {
+        Self {
+            window: None,
+            proxy: None,
+            ticker_started: false,
+            egui_ctx: None,
+            egui_state: None,
+            instance: None,
+            surface: None,
+            device: None,
+            queue: None,
+            surface_config: None,
+            egui_renderer: None,
+        }
+    }
+
+    fn init_window(&mut self, event_loop: &ActiveEventLoop) {
         if self.window.is_none() {
             let raw_window = event_loop.create_window(
                 Window::default_attributes().with_title("Borrowser")
@@ -66,6 +70,19 @@ impl ApplicationHandler<UserEvent> for PlatformApp {
             let window = Arc::new(raw_window);
             self.window = Some(window);
         }
+    }
+}
+
+impl ApplicationHandler<UserEvent> for PlatformApp {
+    fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        self.init_window(event_loop);
+        // if self.window.is_none() {
+        //     let raw_window = event_loop.create_window(
+        //         Window::default_attributes().with_title("Borrowser")
+        //     ).expect("create window");
+        //     let window = Arc::new(raw_window);
+        //     self.window = Some(window);
+        // }
 
         if !self.ticker_started {
             self.ticker_started = true;
