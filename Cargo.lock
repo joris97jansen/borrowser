@@ -694,6 +694,13 @@ dependencies = [
 [[package]]
 name = "gfx"
 version = "0.1.0"
+dependencies = [
+ "egui",
+ "egui-wgpu",
+ "egui-winit",
+ "pollster",
+ "winit",
+]
 
 [[package]]
 name = "gl_generator"
@@ -1648,6 +1655,7 @@ dependencies = [
  "egui",
  "egui-wgpu",
  "egui-winit",
+ "gfx",
  "pollster",
  "winit",
 ]
