@@ -5,9 +5,11 @@ edition = "2021"
 
 [dependencies]
 browser = { path = "crates/browser" }
+platform = { path = "crates/platform" } 
 
 [workspace]
 members = [
+  "crates/app_api",
   "crates/browser",
   "crates/net",
   "crates/html",

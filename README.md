@@ -34,6 +34,7 @@ A roadmap (bite-sized)
 
 * `borrowser/` (Cargo workspace)
 
+  * `app_api/` - tiny trait so platform ↔ browser don’t depend on each other
   * `browser/` – application shell (UI, tabs, navigation, profile, settings)
   * `net/` – loader: URL, fetch, cache, cookies, compression, TLS
   * `html/` – HTML tokenizer + tree builder (DOM)

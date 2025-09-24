@@ -1,3 +1,4 @@
 fn main() {
-    browser::run();
+    let app = browser::BrowserApp::new();
+    platform::run_with(app);
 }

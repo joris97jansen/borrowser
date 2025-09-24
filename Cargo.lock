@@ -74,6 +74,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "app_api"
+version = "0.1.0"
+dependencies = [
+ "egui",
+]
+
+[[package]]
 name = "arboard"
 version = "3.6.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -182,13 +189,15 @@ name = "borrowser"
 version = "0.1.0"
 dependencies = [
  "browser",
+ "platform",
 ]
 
 [[package]]
 name = "browser"
 version = "0.1.0"
 dependencies = [
- "platform",
+ "app_api",
+ "egui",
 ]
 
 [[package]]
@@ -1652,6 +1661,7 @@ checksum = "7edddbd0b52d732b21ad9a5fab5c704c14cd949e5e9a1ec5929a24fded1b904c"
 name = "platform"
 version = "0.1.0"
 dependencies = [
+ "app_api",
  "egui",
  "egui-wgpu",
  "egui-winit",

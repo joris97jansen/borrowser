@@ -7,29 +7,30 @@ use winit::{
     event::{WindowEvent},
     dpi::PhysicalSize,
 };
-use egui::{
-    TopBottomPanel,
-    Window as EguiWindow,
-};
+use gfx::Renderer;
+use app_api::UiApp;
 
 enum UserEvent {
     Tick,
 }
 
-pub fn run() {
-    let event_loop = EventLoop::<UserEvent>::with_user_event().build().expect("failed to create event loop");
 
+pub fn run_with<A: UiApp + 'static>(app: A) {
+    let event_loop = EventLoop::<UserEvent>::with_user_event().build().expect("event loop");
     let proxy = event_loop.create_proxy();
-    let mut app = PlatformApp::new(proxy);
 
-    event_loop.run_app(&mut app).expect("Event loop crashed");
+    let mut platform = PlatformApp::new(proxy);
+    platform.app = Some(Box::new(app));           // <- inject the app
+
+    event_loop.run_app(&mut platform).expect("crashed");
 }
 
 struct PlatformApp {
     window: Option<Arc<Window>>,
     proxy: EventLoopProxy<UserEvent>,
     ticker_started: bool,
-    renderer: Option<gfx::Renderer>,
+    renderer: Option<Renderer>,
+    app: Option<Box<dyn UiApp>>,
 }
 
 impl PlatformApp {
@@ -39,6 +40,7 @@ impl PlatformApp {
             proxy: proxy,
             ticker_started: false,
             renderer: None,
+            app: None,
         }
     }
 
@@ -76,7 +78,7 @@ impl PlatformApp {
             return;
         }
         let window = self.window.as_ref().unwrap();
-        let renderer = gfx::Renderer::new(window);
+        let renderer = Renderer::new(window.as_ref());
         self.renderer = Some(renderer);
     }
 
@@ -87,20 +89,11 @@ impl PlatformApp {
     }
 
     fn draw_frame(&mut self) {
-        let window = self.window.as_ref().unwrap();
+        let window   = self.window.as_ref().unwrap();
         let renderer = self.renderer.as_mut().unwrap();
+        let app      = self.app.as_mut().expect("UiApp not injected");
 
-        renderer.render(window, |context| {
-            TopBottomPanel::top("top").show(context, |ui| {
-                ui.label("Borrowser - gfc::Renderer");
-            });
-            EguiWindow::new("Demo").show(context, |ui| {
-                ui.label("Rendering moved to gfx crate");
-                if ui.button("Click me").clicked() {
-                    println!("Button clicked!");
-                }
-            });
-        })
+        renderer.render(window.as_ref(), |ctx| app.ui(ctx));
     }
 }
 
@@ -128,7 +121,7 @@ impl ApplicationHandler<UserEvent> for PlatformApp {
         event: WindowEvent,
     ) {
         if let (Some(window), Some(renderer)) = (self.window.as_ref(), self.renderer.as_mut()) {
-            renderer.on_window_event(&window, &event);
+            renderer.on_window_event(window.as_ref(), &event);
         }
         match event {
             WindowEvent::CloseRequested => {

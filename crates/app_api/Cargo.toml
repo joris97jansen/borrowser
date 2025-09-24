@@ -1,9 +1,7 @@
 [package]
-name = "browser"
+name = "app_api"
 version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-app_api = { path = "../app_api" }
-
 egui = { workspace = true }
