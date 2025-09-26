@@ -1,12 +1,14 @@
-Here’s a clean starting point for your repo’s **README.md** that explains what you have now, why, and how things connect. It’s written for someone new to the codebase but curious about the architecture.
-
----
-
-```markdown
 # Borrowser 🦀🌐
 
 A learning project: building a desktop **web browser in Rust**, from scratch, with a focus on 
 understanding every piece of the stack — windowing, rendering, event loops, UI, and networking.
+
+---
+
+## 🙋 Why "Borrowser"?
+
+Because this is not a production browser — it’s a **Rust learning experiment**.
+Think “Borrow checker” + “Browser” = Borrowser. 🦀
 
 ---
 
@@ -37,7 +39,10 @@ crates/
 ├── gfx         # Rendering layer (egui + wgpu glue)
 ├── net         # Networking crate (fetch_text + FetchResult)
 └── platform    # Platform integration: window, event loop, proxy
-
+Coming Soon:
+├── css
+├── html
+└── js
 ````
 
 ### Core flow
@@ -79,12 +84,67 @@ gfx::Renderer draws updated UI
 
 ---
 
+## 🧭 Proxy & Event Architecture (at a glance)
+
+```
+
++-------------------+                 +--------------------------+
+|   Browser App     |                 |        net crate         |
+|  (UiApp impl)     |                 |  (threaded HTTP fetch)   |
+|-------------------|                 |--------------------------|
+| - url             |   fetch_text()  | reqwest::blocking::get() |
+| - loading         | ───────────────▶|  build FetchResult       |
+| - last_status     |                 |  cb(FetchResult)         |
+| - last_preview    |◀─────────────── |                          |
+| - net_cb: Option  |    (callback)   +--------------------------+
++---------┬---------+
+│ set_net_callback(NetCallback)
+│ (installed by platform at startup)
+│
+│                     EventLoopProxy<UserEvent>
+│                  (single proxy, cloned as needed)
+│
++---------▼---------+   send_event(UserEvent::NetResult)    +-------------------+
+|     Platform      |◀──────────────────────────────────────|   net callback    |
+|  (winit + gfx)    |                                       | (closure created  |
+|-------------------|         request_redraw()              |  in platform)     |
+| - EventLoop       |──────────────────────────────────────▶+-------------------+
+| - EventLoopProxy  |
+| - UserEvent enum  |
+|   • Tick          |      +------------------------------+
+|   • NetResult     |      |   UserEvent handling         |
+|-------------------|      |------------------------------|
+| on user_event:    |      | NetResult(result) =>         |
+|   app.on_net_result(result)  (on main thread)            |
+| on Redraw:        |      | Tick => window.request_redraw |
+|   gfx::Renderer.render()    (approx. 60Hz)               |
++-------------------+      +------------------------------+
+
+```
+
+**Legend**
+- **Single proxy:** One `EventLoopProxy<UserEvent>` created once in `run_with`, then `clone()`d wherever needed.
+- **Callback:** The net callback is a closure that captures the proxy and does `proxy.send_event(UserEvent::NetResult(result))`.
+- **Threading:** HTTP runs on a background thread in `net`; UI & event dispatch run on the main thread.
+
+**Key contracts**
+- `UiApp::set_net_callback(NetCallback)`: platform installs the proxy-backed callback into the app.
+- `UiApp::on_net_result(FetchResult)`: platform delivers results to the app on the main thread.
+- `net::fetch_text(url, cb)`: background fetch; calls `cb(FetchResult)` when done.
+- `UserEvent`: enum carrying cross-thread messages (`Tick`, `NetResult`).
+
+**Why this shape?**
+- Keeps **networking** off the UI thread.
+- Centralizes cross-thread delivery through **one proxy** → simpler lifecycle, predictable ordering.
+- Keeps the **app** ignorant of windowing details and the **platform** ignorant of HTTP details.
+
+---
+
 ## 🚀 Running
 
 Requirements:
 
 * Rust (latest stable)
-* System libraries for wgpu (Vulkan/Metal/DirectX backend available)
 
 ```bash
 cargo run
@@ -96,6 +156,7 @@ This will:
 * Show the URL bar,
 * Fetch `https://example.com` (default),
 * Display the status and snippet.
+* You can adjust the URL for any other URL.
 
 ---
 
@@ -108,17 +169,3 @@ This will:
 * [ ] Explore history, tabs, etc.
 
 ---
-
-## 🙋 Why "Borrowser"?
-
-Because this is not a production browser — it’s a **Rust learning experiment**.
-Think “Borrow checker” + “Browser” = Borrowser. 🦀
-
----
-
-```
-
----
-
-Would you like me to also include a **short architecture diagram** (ASCII style with boxes/arrows) in the README to make the proxy/event flow even clearer?
-```
