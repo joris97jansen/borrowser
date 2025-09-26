@@ -9,7 +9,7 @@ understanding every piece of the stack: windowing, rendering, event loops, UI, a
 
 It’s a **Rust learning experiment**, think “Borrow checker” + “Browser” = Borrowser. 🦀
 
-P.S. nothing borrowed from Chormiun *wink*.
+P.S. nothing borrowed from Chormium *wink*.
 
 ---
 
