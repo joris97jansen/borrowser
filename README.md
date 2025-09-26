@@ -1,13 +1,13 @@
 # Borrowser 🦀🌐
 
 A learning project: building a desktop **web browser in Rust**, from scratch, with a focus on 
-understanding every piece of the stack — windowing, rendering, event loops, UI, and networking.
+understanding every piece of the stack: windowing, rendering, event loops, UI, and networking.
 
 ---
 
 ## 🙋 Why "Borrowser"?
 
-Because this is not a production browser — it’s a **Rust learning experiment**.
+Because this is not a production browser, it’s a **Rust learning experiment**.
 Think “Borrow checker” + “Browser” = Borrowser. 🦀
 
 ---
@@ -22,7 +22,7 @@ Right now the browser can:
 - Fetch a web page on demand (via [reqwest](https://docs.rs/reqwest)).
 - Display status + the first 500 characters of the page as a preview.
 
-It’s very early — the goal is to learn the fundamentals step by step.
+It’s very early, and the goal is to learn the fundamentals step by step.
 
 ---
 
