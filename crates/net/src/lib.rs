@@ -9,7 +9,7 @@ pub struct FetchResult {
 }
 
 pub fn fetch_text(url: String, cb: Arc<dyn Fn(FetchResult) + Send + Sync>) {
-    std::thread::spawn(move || {
+    thread::spawn(move || {
         let out = match reqwest::blocking::get(&url) {
             Ok(resp) => {
                 let status = resp.status().as_u16();
