@@ -1,14 +1,44 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+use std::thread;
+use std::sync::Arc;
+pub struct FetchResult {
+    pub url: String,
+    pub status: Option<u16>,
+    pub bytes: usize,
+    pub snippet: String,
+    pub error: Option<String>,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
-    }
+pub fn fetch_text(url: String, cb: Arc<dyn Fn(FetchResult) + Send + Sync>) {
+    std::thread::spawn(move || {
+        let out = match reqwest::blocking::get(&url) {
+            Ok(resp) => {
+                let status = resp.status().as_u16();
+                match resp.text() {
+                    Ok(body) => FetchResult {
+                        url,
+                        status: Some(status),
+                        bytes: body.len(),
+                        snippet: body.chars().take(500).collect(),
+                        error: None,
+                    },
+                    Err(e) => FetchResult {
+                        url,
+                        status: Some(status),
+                        bytes: 0,
+                        snippet: String::new(),
+                        error: Some(format!("Failed to read body: {e}")),
+                    },
+                }
+            }
+            Err(e) => FetchResult {
+                url,
+                status: None,
+                bytes: 0,
+                snippet: String::new(),
+                error: Some(format!("Request failed: {e}")),
+            },
+        };
+        cb(out);
+    });
 }
+

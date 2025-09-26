@@ -6,6 +6,7 @@ edition = "2024"
 [dependencies]
 gfx = { path = "../gfx" }
 app_api = { path = "../app_api" }
+net = { path = "../net" }
 
 winit = { workspace = true }
 egui = { workspace = true }

@@ -9,15 +9,25 @@ use winit::{
 };
 use gfx::Renderer;
 use app_api::UiApp;
+use net::FetchResult;
 
 enum UserEvent {
     Tick,
+    NetResult(FetchResult),
 }
 
 
-pub fn run_with<A: UiApp + 'static>(app: A) {
+pub fn run_with<A: UiApp + 'static>(mut app: A) {
     let event_loop = EventLoop::<UserEvent>::with_user_event().build().expect("event loop");
     let proxy = event_loop.create_proxy();
+
+    let net_callback = Arc::new({
+        let proxy = proxy.clone();
+        move |result: FetchResult| {
+            let _ = proxy.send_event(UserEvent::NetResult(result));
+        }
+    });
+    app.set_net_callback(net_callback);
 
     let mut platform = PlatformApp::new(proxy);
     platform.app = Some(Box::new(app));           // <- inject the app
@@ -109,6 +119,12 @@ impl ApplicationHandler<UserEvent> for PlatformApp {
             UserEvent::Tick => {
                 if let Some(window) = self.window.as_ref() {
                     window.request_redraw();
+                }
+            }
+            UserEvent::NetResult(result) => {
+                println!("PlatformApp: received network result");
+                if let Some(app) = self.app.as_mut() {
+                    app.on_net_result(result);
                 }
             }
         }
