@@ -122,7 +122,6 @@ impl ApplicationHandler<UserEvent> for PlatformApp {
                 }
             }
             UserEvent::NetResult(result) => {
-                println!("PlatformApp: received network result");
                 if let Some(app) = self.app.as_mut() {
                     app.on_net_result(result);
                 }

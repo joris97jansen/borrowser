@@ -37,7 +37,6 @@ impl UiApp for BrowserApp {
                 ui.label("URL:");
                 let response = ui.text_edit_singleline(&mut self.url);
                 if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) || ui.button("Go").clicked() {
-                    eprintln!("Loading URL: {}", self.url);
                     self.loading = true;
                     self.last_status = Some(format!("Fetching {}…", self.url));
                     self.last_preview.clear();
@@ -63,7 +62,6 @@ impl UiApp for BrowserApp {
     }
 
     fn set_net_callback(&mut self, callback: NetCallback) {
-        println!("BrowserApp: setting network callback");
         self.net_callback = Some(callback);
     }
 
