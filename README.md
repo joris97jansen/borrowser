@@ -1,14 +1,15 @@
 # Borrowser 🦀🌐
 
-A learning project: building a desktop **web browser in Rust**, from scratch, with a focus on 
+A learning project: building a **web browser in Rust**, from scratch, with a focus on 
 understanding every piece of the stack: windowing, rendering, event loops, UI, and networking.
 
 ---
 
 ## 🙋 Why "Borrowser"?
 
-Because this is not a production browser, it’s a **Rust learning experiment**.
-Think “Borrow checker” + “Browser” = Borrowser. 🦀
+It’s a **Rust learning experiment**, think “Borrow checker” + “Browser” = Borrowser. 🦀
+
+P.S. nothing borrowed from Chormiun *wink*.
 
 ---
 
