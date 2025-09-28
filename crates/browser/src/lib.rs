@@ -28,6 +28,18 @@ impl BrowserApp {
             net_callback: None,
         }
     }
+
+    fn normalize_url(&mut self, url: &String) -> String {
+        let trimmed = url.trim();
+        if trimmed.is_empty() {
+            // TODO: return error?
+            return "http://example.com".into();
+        }
+        if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
+            return format!("https://{trimmed}");
+        }
+        trimmed.into()
+    }
 }
 
 impl UiApp for BrowserApp {
@@ -41,8 +53,11 @@ impl UiApp for BrowserApp {
                     self.last_status = Some(format!("Fetching {}…", self.url));
                     self.last_preview.clear();
 
-                    if let Some(cb) = &self.net_callback {
-                        fetch_text(self.url.clone(), cb.clone());
+                    if let Some(cb) = self.net_callback.as_ref().cloned() {
+                        let url_str = self.url.clone();
+                        let url = self.normalize_url(&url_str);
+                        self.url = url.clone();
+                        fetch_text(self.url.clone(), cb);
                     } else {
                         self.loading = false;
                         self.last_status = Some("No network callback set".into());
