@@ -1,5 +1,6 @@
 use std::thread;
 use std::sync::Arc;
+
 pub struct FetchResult {
     pub url: String,          // final URL after redirects
     pub requested_url: String,// what we asked for
@@ -67,7 +68,7 @@ pub fn fetch_text(url: String, cb: Arc<dyn Fn(FetchResult) + Send + Sync>) {
                 error: None,
             })
         })();
-        
+
         match result {
             Ok(ok) => cb(ok),
             Err(err) => cb(FetchResult {
