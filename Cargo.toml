@@ -1,11 +1,11 @@
 [package]
 name = "borrowser"
 version = "0.1.0"
-edition = "2021"
+edition = "2024"
 
 [dependencies]
 browser = { path = "crates/browser" }
-platform = { path = "crates/platform" } 
+platform = { path = "crates/platform" }
 
 [workspace]
 members = [
