@@ -77,17 +77,27 @@ impl UiApp for BrowserApp {
     }
 
     fn set_net_callback(&mut self, callback: NetCallback) {
-        self.net_callback = Some(callback);
-    }
+        self.net_callback = Some(callback);    }
 
     fn on_net_result(&mut self, result: net::FetchResult) {
         self.loading = false;
-        self.last_status = Some(match (result.status, &result.error) {
-            (Some(code), None) => format!("OK {code} — {} bytes", result.bytes),
-            (Some(code), Some(err)) => format!("HTTP {code} — error: {err}"),
-            (None, Some(err)) => format!("Network error: {err}"),
+        let content_type = result.content_type.clone().unwrap_or_else(|| "unknown".into());
+        let meta = match(result.status, &result.error) {
+            (Some(code), None) => format!(
+                "OK {code} — {} bytes - {content_type} - {} ms - {}",
+                result.bytes, result.duration_ms, result.url
+            ),
+            (Some(code), Some(err)) => format!(
+                "OK {code} — {} bytes - {content_type} - {} ms - {}",
+                result.bytes, result.duration_ms, result.url
+                ),
+            (None, Some(error)) => format!(
+                "Network error: {} ms - {error}", result.duration_ms
+            ),
             _ => "Unknown".to_string(),
-        });
+        };
+
+        self.last_status = Some(meta);
         self.last_preview = result.snippet;
     }
 }
