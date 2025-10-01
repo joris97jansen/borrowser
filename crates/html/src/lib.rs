@@ -21,6 +21,15 @@ pub fn is_html(ct: &Option<String>) -> bool {
         .unwrap_or(false)
 }
 
+fn is_void_element(name: &str) -> bool {
+    matches!(
+        name,
+        "area" | "base" | "br" | "col" | "embed" | "hr" | "img"
+            | "input" | "link" | "meta" | "param" | "source"
+            | "track" | "wbr"
+    )
+}
+
 pub fn tokenize(input: &str) -> Vec<Token> {
     let mut out = Vec::new();
     let mut i = 0;
@@ -169,6 +178,9 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     value = None;
                 }
                 attributes.push((attribute_name, value));
+            }
+            if is_void_element(&name) {
+                self_closing = true;
             }
             out.push(Token::StartTag {
                 name,
