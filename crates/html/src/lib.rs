@@ -1,7 +1,11 @@
 #[derive(Debug)]
 pub enum Token {
     Doctype(String),
-    StartTag { name: String, self_closing: bool},
+    StartTag {
+        name: String,
+        attributes: Vec<(String, Option<String>)>,
+        self_closing: bool,
+    },
     EndTag(String),
     Comment(String),
     Text(String),
@@ -12,9 +16,9 @@ const HTML_COMMENT_END: &str = "-->";
 
 pub fn is_html(ct: &Option<String>) -> bool {
     ct.as_deref()
-      .map(|s| s.to_ascii_lowercase())
-      .map(|s| s.contains("text/html") || s.contains("application/xhtml"))
-      .unwrap_or(false)
+        .map(|s| s.to_ascii_lowercase())
+        .map(|s| s.contains("text/html") || s.contains("application/xhtml"))
+        .unwrap_or(false)
 }
 
 pub fn tokenize(input: &str) -> Vec<Token> {
@@ -25,7 +29,9 @@ pub fn tokenize(input: &str) -> Vec<Token> {
         if bytes[i] != b'<' {
             // collect text until next '<'
             let start = i;
-            while i < bytes.len() && bytes[i] != b'<' { i += 1; }
+            while i < bytes.len() && bytes[i] != b'<' {
+                i += 1;
+            }
             let text = &input[start..i];
             let trimmed = text.trim();
             if !trimmed.is_empty() {
@@ -36,19 +42,22 @@ pub fn tokenize(input: &str) -> Vec<Token> {
         // now b[i] == b'<'
         if input[i..].starts_with(HTML_COMMENT_START) {
             // comment
-            if let Some(end) = input[i+HTML_COMMENT_START.len()..].find(HTML_COMMENT_END) {
-                let comment = &input[i+HTML_COMMENT_START.len()..i+HTML_COMMENT_START.len()+end];
+            if let Some(end) = input[i + HTML_COMMENT_START.len()..].find(HTML_COMMENT_END) {
+                let comment =
+                    &input[i + HTML_COMMENT_START.len()..i + HTML_COMMENT_START.len() + end];
                 out.push(Token::Comment(comment.to_string()));
                 i += HTML_COMMENT_START.len() + end + HTML_COMMENT_END.len();
                 continue;
             } else {
-                out.push(Token::Comment(input[i+HTML_COMMENT_START.len()..].to_string()));
+                out.push(Token::Comment(
+                    input[i + HTML_COMMENT_START.len()..].to_string(),
+                ));
                 break;
             }
         }
         if input[i..].to_ascii_lowercase().starts_with("<!doctype") {
             // doctype
-            let rest = &input[i+2..];
+            let rest = &input[i + 2..];
             if let Some(end) = rest.find('>') {
                 let doctype = rest[..end].trim().to_string();
                 out.push(Token::Doctype(doctype));
@@ -59,7 +68,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             }
         }
         // end tag?
-        if i + 2 <= bytes.len() && bytes[i+1] == b'/' {
+        if i + 2 <= bytes.len() && bytes[i + 1] == b'/' {
             let start = i + 2;
             let mut j = start;
             while j < bytes.len() && bytes[j].is_ascii_alphanumeric() {
@@ -86,17 +95,86 @@ pub fn tokenize(input: &str) -> Vec<Token> {
         if j <= bytes.len() {
             let name = input[start..j].to_ascii_lowercase();
             let mut k = j;
+            let mut attributes: Vec<(String, Option<String>)> = Vec::new();
+            let bytes = input.as_bytes();
+            let len = bytes.len();
             let mut self_closing = false;
-            while k < bytes.len() && bytes[k] != b'>' {
-                if bytes[k] == b'/' && k + 1 < bytes.len() && bytes[k + 1] == b'>' {
-                    self_closing = true;
+
+            let mut skip_whitespace = |k: &mut usize| {
+                while *k < len && bytes[*k].is_ascii_whitespace() {
+                    *k += 1;
                 }
-                k += 1;
+            };
+            let is_name_char =
+                |c: u8| c.is_ascii_alphanumeric() || c == b'-' || c == b'_' || c == b':';
+
+            loop {
+                skip_whitespace(&mut k);
+                if k >= len {
+                    break;
+                }
+                if bytes[k] == b'>' {
+                    k += 1;
+                    break;
+                }
+                if bytes[k] == b'/' {
+                    if k + 1 < len && bytes[k + 1] == b'>' {
+                        self_closing = true;
+                        k += 2;
+                        break;
+                    }
+                    k += 1;
+                    continue;
+                }
+                let name_start = k;
+                while k < len && is_name_char(bytes[k]) {
+                    k += 1;
+                }
+                if name_start == k {
+                    k += 1;
+                    continue;
+                }
+                let attribute_name = input[name_start..k].to_ascii_lowercase();
+
+                skip_whitespace(&mut k);
+                let mut value: Option<String> = None;
+
+                if k < len && bytes[k] == b'=' {
+                    k += 1;
+                    skip_whitespace(&mut k);
+                    if k < len && (bytes[k] == b'"' || bytes[k] == b'\'') {
+                        let quote = bytes[k];
+                        k += 1;
+                        let vstart = k;
+                        while k < len && bytes[k] != quote {
+                            k += 1;
+                        }
+                        let raw = &input[vstart..k];
+                        value = Some(raw.to_string());
+                    } else {
+                        let vstart = k;
+                        while k < len && !bytes[k].is_ascii_whitespace() && bytes[k] != b'>' {
+                            if bytes[k] == b'/' && k + 1 < len && bytes[k + 1] == b'>' {
+                                break;
+                            }
+                            k += 1;
+                        }
+                        if k > vstart {
+                            value = Some(input[vstart..k].to_string());
+                        } else {
+                            value = Some(String::new());
+                        }
+                    }
+                } else {
+                    value = None;
+                }
+                attributes.push((attribute_name, value));
             }
-            if k < bytes.len() {
-                k += 1;
-            }
-            out.push(Token::StartTag{ name, self_closing });
+            out.push(Token::StartTag {
+                name,
+                attributes,
+                self_closing,
+            });
             i = k;
             continue;
         }
@@ -104,4 +182,3 @@ pub fn tokenize(input: &str) -> Vec<Token> {
     }
     out
 }
-
