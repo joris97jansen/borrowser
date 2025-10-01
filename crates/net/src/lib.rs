@@ -2,11 +2,12 @@ use std::thread;
 use std::sync::Arc;
 
 pub struct FetchResult {
-    pub url: String,          // final URL after redirects
-    pub requested_url: String,// what we asked for
+    pub url: String,
+    pub requested_url: String,
     pub status: Option<u16>,
     pub bytes: usize,
     pub snippet: String,
+    pub body: String,
     pub content_type: Option<String>,
     pub duration_ms: u128,
     pub error: Option<String>,
@@ -32,6 +33,7 @@ pub fn fetch_text(url: String, cb: Arc<dyn Fn(FetchResult) + Send + Sync>) {
                     status: None,
                     bytes: 0,
                     snippet: String::new(),
+                    body: String::new(),
                     content_type: None,
                     duration_ms: 0,
                     error: Some(format!("client build error: {e}")),
@@ -63,6 +65,7 @@ pub fn fetch_text(url: String, cb: Arc<dyn Fn(FetchResult) + Send + Sync>) {
                 status: Some(status),
                 bytes: buf.len(),
                 snippet: preview.chars().take(500).collect(),
+                body: preview,
                 content_type,
                 duration_ms: start.elapsed().as_millis(),
                 error: None,
@@ -77,6 +80,7 @@ pub fn fetch_text(url: String, cb: Arc<dyn Fn(FetchResult) + Send + Sync>) {
                 status: None,
                 bytes: 0,
                 snippet: String::new(),
+                body: String::new(),
                 content_type: None,
                 duration_ms: start.elapsed().as_millis(),
                 error: Some(err),

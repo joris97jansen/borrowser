@@ -3,12 +3,20 @@ use egui::{
     TopBottomPanel,
     Key,
     CentralPanel,
+    ScrollArea,
 };
 use app_api::{
     UiApp,
     NetCallback,
 };
-use net::fetch_text;
+use net::{
+    fetch_text,
+};
+use html::{
+    Token,
+    tokenize,
+    is_html,
+};
 
 pub struct BrowserApp {
     url: String,
@@ -16,6 +24,7 @@ pub struct BrowserApp {
     last_status: Option<String>,
     last_preview: String,
     net_callback: Option<NetCallback>,
+    tokens_preview: Vec<Token>,
 }
 
 impl BrowserApp {
@@ -26,6 +35,7 @@ impl BrowserApp {
             last_status: None,
             last_preview: String::new(),
             net_callback: None,
+            tokens_preview: Vec::new(),
         }
     }
 
@@ -66,6 +76,15 @@ impl UiApp for BrowserApp {
             });
         });
         CentralPanel::default().show(context, |ui| {
+            if !self.tokens_preview.is_empty() {
+                ui.separator();
+                ui.heading("HTML tokens (first 40:)");
+                ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
+                    for (i, t) in self.tokens_preview.iter().enumerate() {
+                        ui.monospace(format!("{i:02}: {:?}", t));
+                    }
+                });
+            }
             if self.loading { ui.label("⏳ Loading…"); }
             if let Some(s) = &self.last_status { ui.label(s); }
             if !self.last_preview.is_empty() {
@@ -81,6 +100,11 @@ impl UiApp for BrowserApp {
 
     fn on_net_result(&mut self, result: net::FetchResult) {
         self.loading = false;
+        self.tokens_preview.clear();
+        if is_html(&result.content_type) && !result.body.is_empty() {
+            let tokens = tokenize(&result.body);
+            self.tokens_preview = tokens.into_iter().take(40).collect();
+        }
         let content_type = result.content_type.clone().unwrap_or_else(|| "unknown".into());
         let meta = match(result.status, &result.error) {
             (Some(code), None) => format!(

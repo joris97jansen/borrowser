@@ -1,6 +1,7 @@
+#[derive(Debug)]
 pub enum Token {
     Doctype(String),
-    StartTag { name: String, self_closing: bool}
+    StartTag { name: String, self_closing: bool},
     EndTag(String),
     Comment(String),
     Text(String),
@@ -9,15 +10,22 @@ pub enum Token {
 const HTML_COMMENT_START: &str = "<!--";
 const HTML_COMMENT_END: &str = "-->";
 
+pub fn is_html(ct: &Option<String>) -> bool {
+    ct.as_deref()
+      .map(|s| s.to_ascii_lowercase())
+      .map(|s| s.contains("text/html") || s.contains("application/xhtml"))
+      .unwrap_or(false)
+}
+
 pub fn tokenize(input: &str) -> Vec<Token> {
     let mut out = Vec::new();
     let mut i = 0;
     let bytes = input.as_bytes();
     while i < bytes.len() {
-        if bytes[i] == b'<' {
+        if bytes[i] != b'<' {
             // collect text until next '<'
             let start = i;
-            while i < bytes.ken() && bytes[i] != b'<' { i += 1; }
+            while i < bytes.len() && bytes[i] != b'<' { i += 1; }
             let text = &input[start..i];
             let trimmed = text.trim();
             if !trimmed.is_empty() {
@@ -41,7 +49,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
         if input[i..].to_ascii_lowercase().starts_with("<!doctype") {
             // doctype
             let rest = &input[i+2..];
-            if let Some(end) = rest.find('>") {
+            if let Some(end) = rest.find('>') {
                 let doctype = rest[..end].trim().to_string();
                 out.push(Token::Doctype(doctype));
                 i += 2 + end + 1;
