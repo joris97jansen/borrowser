@@ -81,7 +81,27 @@ impl UiApp for BrowserApp {
                 ui.heading("HTML tokens (first 40:)");
                 ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
                     for (i, t) in self.tokens_preview.iter().enumerate() {
-                        ui.monospace(format!("{i:02}: {:?}", t));
+                        match t {
+                            Token::StartTag { name, attributes, self_closing } => {
+                                let mut parts = vec![name.clone()];
+                                if !attributes.is_empty() {
+                                    let attributes_str = attributes.iter()
+                                        .map(|(k, v)| match v {
+                                            Some(v) => format!(r#"{k}="{v}""#),
+                                            None => k.clone(),
+                                        })
+                                        .collect::<Vec<_>>()
+                                        .join(" ");
+                                    parts.push(attributes_str);
+                                }
+                                let slash = if *self_closing { " /" } else { "" };
+                                ui.monospace(format!("{i:02}: <{}{}>", parts.join(" "), slash))
+                            }
+                            Token::EndTag(name) => ui.monospace(format!("{i:02}: </{}>", name)),
+                            Token::Doctype(doctype) => ui.monospace(format!("{i:02}: <!DOCTYPE {}>", doctype)),
+                            Token::Comment(comment) => ui.monospace(format!("{i:02}: <!-- {} -->", comment)),
+                            Token::Text(text) => ui.monospace(format!("{i:02}: \"{}\"", text)),
+                        };
                     }
                 });
             }
