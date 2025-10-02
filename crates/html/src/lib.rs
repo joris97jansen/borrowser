@@ -30,6 +30,79 @@ fn is_void_element(name: &str) -> bool {
     )
 }
 
+fn decode_entities(s: &str) -> String {
+    // Minimal, fast path for common entities
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    let bytes = s.as_bytes();
+    while i < bytes.len() {
+        if bytes[i] != b'&' {
+            out.push(bytes[i] as char);
+            i += 1;
+            continue;
+        }
+        if s[i..].starts_with("&amp;") {
+            out.push('&');
+            i += 5;
+            continue;
+        }
+        if s[i..].starts_with("&lt;") {
+            out.push('<');
+            i += 4;
+            continue;
+        }
+        if s[i..].starts_with("&gt;") {
+            out.push('>');
+            i += 4;
+            continue;
+        }
+        if s[i..].starts_with("&quot;") {
+            out.push('"');
+            i += 6;
+            continue;
+        }
+        if s[i..].starts_with("&apos;") {
+            out.push('\'');
+            i += 6;
+            continue;
+        }
+        if s[i..].starts_with("&nbsp;") {
+            out.push('\u{00A0}');
+            i += 6;
+            continue;
+        }
+
+        // numeric entities: &#123; or &#x1F4A9;
+        if s[i..].starts_with("&#x") || s[i..].starts_with("&#X") {
+            if let Some(end) = s[i+3..].find(';') {
+                let hex = &s[i+3..i+3+end];
+                if let Ok(cp) = u32::from_str_radix(hex, 16) {
+                    if let Some(ch) = char::from_u32(cp) {
+                        out.push(ch);
+                        i += 3 + end + 1;
+                        continue;
+                    }
+                }
+            }
+        } else if s[i..].starts_with("&#") {
+            if let Some(end) = s[i+2..].find(';') {
+                let dec = &s[i+2..i+2+end];
+                if let Ok(cp) = dec.parse::<u32>() {
+                    if let Some(ch) = char::from_u32(cp) {
+                        out.push(ch);
+                        i += 2 + end + 1;
+                        continue;
+                    }
+                }
+            }
+        }
+        // fallback to keep '&' as-is
+        out.push('&');
+        i += 1;
+    }
+    out
+}
+
 pub fn tokenize(input: &str) -> Vec<Token> {
     let mut out = Vec::new();
     let mut i = 0;
@@ -43,8 +116,9 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             }
             let text = &input[start..i];
             let trimmed = text.trim();
-            if !trimmed.is_empty() {
-                out.push(Token::Text(trimmed.to_string()));
+            let decoded = decode_entities(trimmed);
+            if !decoded.is_empty() {
+                out.push(Token::Text(decoded));
             }
             continue;
         }
@@ -181,7 +255,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                             k += 1;
                         }
                         let raw = &input[vstart..k];
-                        value = Some(raw.to_string());
+                        value = Some(decode_entities(raw));
                     } else {
                         let vstart = k;
                         while k < len && !bytes[k].is_ascii_whitespace() && bytes[k] != b'>' {
