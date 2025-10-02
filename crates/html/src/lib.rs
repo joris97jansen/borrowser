@@ -183,27 +183,6 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             let len = bytes.len();
             let mut self_closing = false;
 
-            if (name == "script" || name == "style") && !self_closing {
-                // Find the matching closing tag
-                let close_tag = format!("</{name}>");
-                let j = k;
-                let lower = input[j..].to_ascii_lowercase();
-                if let Some(rel) = lower.find(&close_tag) {
-                    let raw = &input[j..j + rel];
-                    if !raw.is_empty() {
-                        out.push(Token::Text(raw.to_string()));
-                    }
-                    i = j + rel + close_tag.len();
-                    continue;
-                } else {
-                    let raw = &input[j..];
-                    if !raw.is_empty() {
-                        out.push(Token::Text(raw.to_string()));
-                    }
-                    i = input.len();
-                    break;
-                }
-            }
 
             let skip_whitespace = |k: &mut usize| {
                 while *k < len && bytes[*k].is_ascii_whitespace() {
@@ -255,6 +234,9 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                             k += 1;
                         }
                         let raw = &input[vstart..k];
+                        if k < len {
+                            k += 1;
+                        }
                         value = Some(decode_entities(raw));
                     } else {
                         let vstart = k;
@@ -278,12 +260,41 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             if is_void_element(&name) {
                 self_closing = true;
             }
+
+            if k < len && bytes[k] == b'>' {
+                k += 1;
+            }
+            let content_start = k;
+
             out.push(Token::StartTag {
-                name,
+                name: name.clone(),
                 attributes,
                 self_closing,
             });
-            i = k;
+
+            if (name == "script" || name == "style") && !self_closing {
+                // Find the matching closing tag
+                let close_tag = format!("</{name}>");
+                let j = k;
+                let lower = input[j..].to_ascii_lowercase();
+                if let Some(rel) = lower.find(&close_tag) {
+                    let raw = &input[j..j + rel];
+                    if !raw.is_empty() {
+                        out.push(Token::Text(raw.to_string()));
+                    }
+                    i = j + rel + close_tag.len();
+                    continue;
+                } else {
+                    let raw = &input[j..];
+                    if !raw.is_empty() {
+                        out.push(Token::Text(raw.to_string()));
+                    }
+                    i = input.len();
+                    break;
+                }
+            }
+
+            i = content_start;
             continue;
         }
         i += 1;
