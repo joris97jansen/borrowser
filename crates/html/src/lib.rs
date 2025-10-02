@@ -109,7 +109,29 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             let len = bytes.len();
             let mut self_closing = false;
 
-            let mut skip_whitespace = |k: &mut usize| {
+            if (name == "script" || name == "style") && !self_closing {
+                // Find the matching closing tag
+                let close_tag = format!("</{name}>");
+                let j = k;
+                let lower = input[j..].to_ascii_lowercase();
+                if let Some(rel) = lower.find(&close_tag) {
+                    let raw = &input[j..j + rel];
+                    if !raw.is_empty() {
+                        out.push(Token::Text(raw.to_string()));
+                    }
+                    i = j + rel + close_tag.len();
+                    continue;
+                } else {
+                    let raw = &input[j..];
+                    if !raw.is_empty() {
+                        out.push(Token::Text(raw.to_string()));
+                    }
+                    i = input.len();
+                    break;
+                }
+            }
+
+            let skip_whitespace = |k: &mut usize| {
                 while *k < len && bytes[*k].is_ascii_whitespace() {
                     *k += 1;
                 }
