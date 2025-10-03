@@ -1,3 +1,6 @@
+const HTML_COMMENT_START: &str = "<!--";
+const HTML_COMMENT_END: &str = "-->";
+
 #[derive(Debug)]
 pub enum Token {
     Doctype(String),
@@ -11,8 +14,6 @@ pub enum Token {
     Text(String),
 }
 
-const HTML_COMMENT_START: &str = "<!--";
-const HTML_COMMENT_END: &str = "-->";
 
 pub fn is_html(ct: &Option<String>) -> bool {
     ct.as_deref()
@@ -300,4 +301,95 @@ pub fn tokenize(input: &str) -> Vec<Token> {
         i += 1;
     }
     out
+}
+
+
+pub enum Node {
+    Document { children: Vec<Node>, doctype: Option<String> },
+    Element { name: String, attributes: Vec<(String, Option<String>)>, children: Vec<Node> },
+    Text { text: String },
+    Comment { text: String },
+}
+
+impl Node {
+    pub fn children_mut(&mut self) -> Option<&mut Vec<Node>> {
+        match self {
+            Node::Document { children, .. } => Some(children),
+            Node::Element { children, .. } => Some(children),
+            _ => None,
+        }
+    }
+}
+
+pub fn build_dom(tokens: &[Token]) -> Node {
+    use Token::*;
+
+    let mut root = Node::Document { children: Vec::new(), doctype: None };
+    let mut stack: Vec<*mut Node> = vec![&mut root as *mut Node];
+
+    let mut push_child = |parent: *mut Node, child: Node| {
+        let parent = unsafe { &mut *parent };
+        if let Some(children) = parent.children_mut() {
+            children.push(child);
+            let last = children.last_mut().unwrap() as *mut Node;
+            Some(last)
+        } else {
+            None
+        }
+    };
+
+    for token in tokens {
+        match token {
+            Doctype(s) => {
+                let doc_ptr = stack[0];
+                if let Node::Document { doctype, .. } = unsafe { &mut *doc_ptr } {
+                    *doctype = Some(s.clone());
+                }
+            }
+            Comment(c) => {
+                let parent = *stack.last().unwrap();
+                push_child(parent, Node::Comment { text: c.clone() });
+            }
+            Text(txt) => {
+                if !txt.is_empty() {
+                    let parent = *stack.last().unwrap();
+                    push_child(parent, Node::Text { text: txt.clone() });
+                }
+            }
+            StartTag { name, attributes, self_closing } => {
+                let parent = *stack.last().unwrap();
+                let mut_node = push_child(
+                    parent,
+                    Node::Element {
+                        name: name.clone(),
+                        attributes: attributes.clone(),
+                        children: Vec::new(),
+                    },
+                );
+
+                if !*self_closing {
+                    if let Some(child_ptr) = mut_node {
+                        stack.push(child_ptr);
+                    }
+                }
+            }
+            EndTag(name) => {
+                let target = name.to_ascii_lowercase();
+                while stack.len() > 1 {
+                    let top_ptr: *mut Node = *stack.last().unwrap();
+                    let top = unsafe { &*top_ptr };
+                    match top {
+                        Node::Element { name, .. } if name.eq_ignore_ascii_case(&target) => {
+                            stack.pop();
+                            break;
+                        }
+                        _ => {
+                            stack.pop();
+                        }
+                    }
+                }
+            }
+        }
+    }
+    root
 }
