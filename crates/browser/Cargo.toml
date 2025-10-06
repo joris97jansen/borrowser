@@ -10,3 +10,4 @@ html = { path = "../html" }
 css = { path = "../css" }
 
 egui = { workspace = true }
+url = { workspace = true }

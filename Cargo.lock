@@ -232,6 +232,7 @@ dependencies = [
  "egui",
  "html",
  "net",
+ "url",
 ]
 
 [[package]]
@@ -443,6 +444,7 @@ name = "css"
 version = "0.1.0"
 dependencies = [
  "html",
+ "url",
 ]
 
 [[package]]
