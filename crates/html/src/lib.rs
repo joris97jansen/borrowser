@@ -8,6 +8,7 @@ pub enum Token {
         name: String,
         attributes: Vec<(String, Option<String>)>,
         self_closing: bool,
+        style: Vec<(String, String)>,
     },
     EndTag(String),
     Comment(String),
@@ -271,6 +272,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 name: name.clone(),
                 attributes,
                 self_closing,
+                style: Vec::new(),
             });
 
             if (name == "script" || name == "style") && !self_closing {
@@ -306,7 +308,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
 
 pub enum Node {
     Document { children: Vec<Node>, doctype: Option<String> },
-    Element { name: String, attributes: Vec<(String, Option<String>)>, children: Vec<Node> },
+    Element { name: String, attributes: Vec<(String, Option<String>)>, children: Vec<Node>, style: Vec<(String, String)> },
     Text { text: String },
     Comment { text: String },
 }
@@ -356,7 +358,7 @@ pub fn build_dom(tokens: &[Token]) -> Node {
                     push_child(parent, Node::Text { text: txt.clone() });
                 }
             }
-            StartTag { name, attributes, self_closing } => {
+            StartTag { name, attributes, self_closing, style } => {
                 let parent = *stack.last().unwrap();
                 let mut_node = push_child(
                     parent,
@@ -364,6 +366,7 @@ pub fn build_dom(tokens: &[Token]) -> Node {
                         name: name.clone(),
                         attributes: attributes.clone(),
                         children: Vec::new(),
+                        style: Vec::new(),
                     },
                 );
 

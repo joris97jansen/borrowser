@@ -1,14 +1,160 @@
-pub fn add(left: u64, right: u64) -> u64 {
-    left + right
+use html::{
+    Node,
+};
+
+// A single CSS property: "color: red"
+pub struct Declaration {
+    pub name: String,
+    pub value: String,
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
+pub enum Selector {
+    Universal,
+    Type(String), // element/tag selector
+    Id(String), // #id selector
+    Class(String), // .class selector
+}
 
-    #[test]
-    fn it_works() {
-        let result = add(2, 2);
-        assert_eq!(result, 4);
+// Set of selectors and declarations
+pub struct Rule {
+    pub selectors: Vec<Selector>,
+    pub declarations: Vec<Declaration>,
+}
+
+// A full stylesheet: multiple rules
+pub struct Stylesheet {
+    pub rules: Vec<Rule>,
+}
+
+// input: "color: red; font-size: 12px;"
+// output: vec![Declaration { name: "color", value: "red" }, Declaration { name: "font-size", value: "12px" }]
+pub fn parse_declarations(input: &str) -> Vec<Declaration> {
+    input.split(';')
+        .filter_map(|pair| {
+            let (n, v) = pair.split_once(':')?;
+            let name = n.trim().to_ascii_lowercase();
+            if name.is_empty() {
+                return None;
+            }
+            let value = v.trim().to_string();
+            Some(Declaration { name, value })
+        }).collect()
+}
+
+// input: "#id", ".class", "div", "*"
+// output: Some(Selector::Id("id)), ...
+fn parse_selector_one(s: &str) -> Option<Selector> {
+    let s = s.trim();
+    if s.is_empty() {
+        return None;
     }
+    if s == "*" {
+        return Some(Selector::Universal);
+    }
+    if let Some(id) = s.strip_prefix('#') {
+        return Some(Selector::Id(id.trim().to_string()));
+    }
+    if let Some(class) = s.strip_prefix('.') {
+        return Some(Selector::Class(class.trim().to_string()));
+    }
+    if s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+        return Some(Selector::Type(s.to_ascii_lowercase()));
+    }
+    None
+}
+
+
+// input: "div, #id { color: red; } .class { font-size: 12px; }"
+// output: Stylesheet { rules: vec![Rule{ selectors: ..., declarations: ...}, ...] }
+pub fn parse_stylesheet(input: &str) -> Stylesheet {
+    let mut rules = Vec::new();
+    for block in input.split('}') {
+        if let Some((selector_str, declaration_str)) = block.split_once('{') {
+            let selectors = selector_str.split(',')
+                .filter_map(parse_selector_one)
+                .collect::<Vec<_>>();
+            if selectors.is_empty() {
+                continue;
+            }
+            let declarations = parse_declarations(declaration_str);
+            if declarations.is_empty() {
+                continue;
+            }
+            rules.push(Rule { selectors, declarations });
+        }
+    }
+    Stylesheet { rules }
+}
+
+// Given an element name and its attributes, and a stylesheet, return the merged styles
+fn get_attributes<'a>(attributes: &'a [(String, Option<String>)], key: &str) -> Option<&'a str> {
+    attributes.iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case(key))
+        .and_then(|(_, v)| v.as_deref())
+}
+
+// Check if an element matches a selector
+fn matches_selector(name: &str, attributes: &[(String, Option<String>)], selector: &Selector) -> bool {
+    match selector {
+        Selector::Universal => true,
+        Selector::Type(t) => name.eq_ignore_ascii_case(t),
+        Selector::Id(want) => get_attributes(attributes, "id").map(|v| v == want).unwrap_or(false),
+        Selector::Class(want) => {
+            if let Some(classlist) = get_attributes(attributes, "class") {
+                classlist.split_whitespace().any(|c| c == want)
+            } else {
+                false
+            }
+        }
+    }
+}
+
+// append/update styles in target with declarations
+// e.g. target = [("color", "red")], declarations = [("font-size", "12px"), ("color", "blue")]
+fn merge_styles(target: &mut Vec<(String, String)>, declarations: &[Declaration]) {
+    for declaration in declarations {
+        if let Some(slot) = target.iter_mut().find(|(n, _)| n == &declaration.name) {
+            slot.1 = declaration.value.clone();
+        } else {
+            target.push((declaration.name.clone(), declaration.value.clone()));
+        }
+    }
+}
+
+// If the element has an inline style attribute, return its value
+pub fn get_inline_style<'a>(attributes: &'a [(String, Option<String>)]) -> Option<&'a str> {
+    attributes.iter()
+        .find(|(k, _)| k.eq_ignore_ascii_case("style"))
+        .and_then(|(_, v)| v.as_deref())
+}
+
+// Walk the DOM tree, and for each element, apply styles from the stylesheet and inline styles
+pub fn attach_styles(dom: &mut Node, sheet: &Stylesheet) {
+    use Node;
+
+    fn walk(node: &mut Node, sheet: &Stylesheet) {
+        match node {
+            Node::Element { name, attributes, children, style } => {
+                if let Some(inline) = get_inline_style(attributes) {
+                    let declarations = parse_declarations(inline);
+                    merge_styles(style, &declarations);
+                }
+                for rule in &sheet.rules {
+                    if rule.selectors.iter().any(|s| matches_selector(name, attributes, s)) {
+                        merge_styles(style, &rule.declarations);
+                    }
+                }
+                for c in children {
+                    walk(c, sheet);
+                }
+            }
+            Node::Document { children, .. } => {
+                for c in children {
+                    walk(c, sheet);
+                }
+            }
+            _ => {}
+        }
+    }
+    walk(dom, sheet);
 }

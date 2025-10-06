@@ -19,6 +19,10 @@ use html::{
     is_html,
     build_dom,
 };
+use css::{
+    parse_stylesheet,
+    attach_styles,
+};
 
 pub struct BrowserApp {
     url: String,
@@ -86,7 +90,7 @@ impl UiApp for BrowserApp {
                 ScrollArea::vertical().max_height(200.0).id_salt("second").show(ui, |ui| {
                     for (i, t) in self.tokens_preview.iter().enumerate() {
                         match t {
-                            Token::StartTag { name, attributes, self_closing } => {
+                            Token::StartTag { name, attributes, self_closing, style } => {
                                 let mut parts = vec![name.clone()];
                                 if !attributes.is_empty() {
                                     let attributes_str = attributes.iter()
@@ -129,14 +133,51 @@ impl UiApp for BrowserApp {
     }
 
     fn set_net_callback(&mut self, callback: NetCallback) {
-        self.net_callback = Some(callback);    }
+        self.net_callback = Some(callback);
+    }
 
     fn on_net_result(&mut self, result: net::FetchResult) {
         self.loading = false;
         self.tokens_preview.clear();
         if is_html(&result.content_type) && !result.body.is_empty() {
             let tokens = tokenize(&result.body);
-            let dom = build_dom(&tokens);
+            let mut dom = build_dom(&tokens);
+
+            fn collect_style_texts(node: &Node, out: &mut String) {
+                match node {
+                    Node::Element { name, children, .. } if name.eq_ignore_ascii_case("style") => {
+                        for c in children {
+                            if let Node::Text { text } = c {
+                                out.push_str(text);
+                                out.push('\n');
+                            }
+                        }
+                    }
+                    Node::Element { children, .. } | Node::Document { children, .. } => {
+                        for c in children {
+                            collect_style_texts(c, out);
+                        }
+                    }
+                    _ => {}
+                }
+            }
+
+            let mut css_text = String::new();
+            collect_style_texts(&dom, &mut css_text);
+
+            let sheet = parse_stylesheet(&css_text);
+            attach_styles(&mut dom, &sheet);
+
+            self.dom_outline.clear();
+            let mut limit = 200usize;
+
+            fn first_styles(style: &[(String, String)]) -> String {
+                style.iter()
+                    .take(3)
+                    .map(|(k, v)| format!(r#"{k}: {v};"#))
+                    .collect::<Vec<_>>()
+                    .join(" ")
+            }
 
             self.tokens_preview = tokens.into_iter().take(40).collect();
 
@@ -159,17 +200,23 @@ impl UiApp for BrowserApp {
                             walk(c, depth + 1, out, limit);
                         }
                     }
-                    Node::Element { name, attributes, children } => {
-                        let attributes_str = if attributes.is_empty() {
-                            String::new()
-                        } else {
-                            let a = attributes.iter().map(|(k, v)| match v {
-                                Some(v) => format!(r#"{k}="{v}""#),
-                                None => k.clone(),
-                            }).collect::<Vec<_>>().join(" ");
-                            format!(" {}", a)
-                        };
-                        out.push(format!("{indent}<{}{}>", name, attributes_str));
+                    Node::Element { name, attributes, children, style } => {
+                        let id = attributes.iter().find(|(k, _)| k =="id").and_then(|(_, v)| v.as_deref()).unwrap_or("");
+                        let class = attributes.iter().find(|(k, _)| k =="class").and_then(|(_, v)| v.as_deref()).unwrap_or("");
+                        let style = first_styles(style);
+
+                        let mut line = format!("{indent}<{}", name);
+                        if !id.is_empty() {
+                            line.push_str(&format!(r#" id="{id}""#));
+                        }
+                        if !class.is_empty() {
+                            line.push_str(&format!(r#" class="{class}""#));
+                        }
+                        line.push('>');
+                        if !style.is_empty() {
+                            line.push_str(&format!("  /* {} */", style));
+                        }
+                        out.push(line);
                         for c in children { walk(c, depth + 1, out, limit); }
                     }
                     Node::Text{ text } => {
