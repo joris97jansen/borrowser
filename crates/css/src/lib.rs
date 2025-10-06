@@ -1,3 +1,6 @@
+use std::cmp::Ordering::{
+    Equal,
+};
 use html::{
     Node,
 };
@@ -24,6 +27,25 @@ pub struct Rule {
 // A full stylesheet: multiple rules
 pub struct Stylesheet {
     pub rules: Vec<Rule>,
+}
+
+#[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
+struct Specificity(u16, u16, u16); // (id, class, type)
+
+struct Candidate {
+    property: String,
+    value: String,
+    specificity: Specificity,
+    order: u32,
+}
+
+fn specificity_of(selector: &Selector) -> Specificity {
+    match selector {
+        Selector::Universal => Specificity(0, 0, 0),
+        Selector::Type(_) => Specificity(0, 0, 1),
+        Selector::Class(_) => Specificity(0, 1, 0),
+        Selector::Id(_) => Specificity(1, 0, 0),
+    }
 }
 
 // input: "color: red; font-size: 12px;"
@@ -109,18 +131,6 @@ fn matches_selector(name: &str, attributes: &[(String, Option<String>)], selecto
     }
 }
 
-// append/update styles in target with declarations
-// e.g. target = [("color", "red")], declarations = [("font-size", "12px"), ("color", "blue")]
-fn merge_styles(target: &mut Vec<(String, String)>, declarations: &[Declaration]) {
-    for declaration in declarations {
-        if let Some(slot) = target.iter_mut().find(|(n, _)| n == &declaration.name) {
-            slot.1 = declaration.value.clone();
-        } else {
-            target.push((declaration.name.clone(), declaration.value.clone()));
-        }
-    }
-}
-
 // If the element has an inline style attribute, return its value
 pub fn get_inline_style<'a>(attributes: &'a [(String, Option<String>)]) -> Option<&'a str> {
     attributes.iter()
@@ -130,19 +140,65 @@ pub fn get_inline_style<'a>(attributes: &'a [(String, Option<String>)]) -> Optio
 
 // Walk the DOM tree, and for each element, apply styles from the stylesheet and inline styles
 pub fn attach_styles(dom: &mut Node, sheet: &Stylesheet) {
-    use Node;
-
     fn walk(node: &mut Node, sheet: &Stylesheet) {
         match node {
             Node::Element { name, attributes, children, style } => {
+                // collect candidates (inline + matched rules)
+                let mut candidates: Vec<Candidate> = Vec::new();
+
                 if let Some(inline) = get_inline_style(attributes) {
                     let declarations = parse_declarations(inline);
-                    merge_styles(style, &declarations);
+                    let inline_spec = Specificity(2, 0, 0);
+                    let inline_order = u32::MAX;
+                    candidates.extend(declarations.into_iter().map(|d| Candidate {
+                        property: d.name,
+                        value: d.value,
+                        specificity: inline_spec,
+                        order: inline_order,
+                    }));
                 }
-                for rule in &sheet.rules {
-                    if rule.selectors.iter().any(|s| matches_selector(name, attributes, s)) {
-                        merge_styles(style, &rule.declarations);
+
+                for (order, rule) in sheet.rules.iter().enumerate() {
+                    let order = order as u32;
+                    let mut matched_specificity: Option<Specificity> = None;
+                    for selector in &rule.selectors {
+                        if matches_selector(name, attributes, selector) {
+                            let specificity = specificity_of(selector);
+                            matched_specificity = Some(matched_specificity.map_or(specificity, |cur| cur.max(specificity)));
+                        }
                     }
+                    if let Some(specificity) = matched_specificity {
+                        candidates.extend(rule.declarations.iter().map(|decleration| Candidate {
+                            property: decleration.name.clone(),
+                            value: decleration.value.clone(),
+                            specificity,
+                            order,
+                        }));
+                    }
+                }
+
+                // resolve winners per property
+                candidates.sort_by(|a, b | match a.property.cmp(&b.property) {
+                    Equal => match a.specificity.cmp(&b.specificity) {
+                        Equal => a.order.cmp(&b.order),
+                        other => other,
+                    },
+                    other => other,
+                });
+
+                style.clear();
+                let mut i = 0;
+                while i < candidates.len() {
+                    let candidate_property = &candidates[i].property;
+                    let mut j = i;
+                    while j + 1 < candidates.len() && candidates[j + 1].property == *candidate_property {
+                        j += 1;
+                    }
+                    let winner = &candidates[j];
+                    style.push(
+                        (winner.property.clone(), winner.value.clone())
+                    );
+                    i = j + 1;
                 }
                 for c in children {
                     walk(c, sheet);
