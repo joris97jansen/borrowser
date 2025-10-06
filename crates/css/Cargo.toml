@@ -5,3 +5,5 @@ edition = "2024"
 
 [dependencies]
 html = { path = "../html" }
+
+url = { workspace = true }
