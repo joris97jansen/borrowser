@@ -5,6 +5,8 @@ use egui::{
     CentralPanel,
     ScrollArea,
 };
+use std::collections::HashSet;
+use url::Url;
 use app_api::{
     UiApp,
     NetCallback,
@@ -22,6 +24,7 @@ use html::{
 use css::{
     parse_stylesheet,
     attach_styles,
+    is_css,
 };
 
 pub struct BrowserApp {
@@ -32,6 +35,10 @@ pub struct BrowserApp {
     net_callback: Option<NetCallback>,
     tokens_preview: Vec<Token>,
     dom_outline: Vec<String>,
+    base_url: Option<String>,
+    css_pending: HashSet<String>,
+    css_bundle: String,
+    dom: Option<Node>,
 }
 
 impl BrowserApp {
@@ -44,6 +51,10 @@ impl BrowserApp {
             net_callback: None,
             tokens_preview: Vec::new(),
             dom_outline: Vec::new(),
+            base_url: None,
+            css_pending: HashSet::new(),
+            css_bundle: String::new(),
+            dom: None,
         }
     }
 
@@ -58,6 +69,111 @@ impl BrowserApp {
         }
         trimmed.into()
     }
+
+    fn collect_style_texts(node: &Node, out: &mut String) {
+        match node {
+            Node::Element { name, children, .. } if name.eq_ignore_ascii_case("style") => {
+                for c in children {
+                    if let Node::Text { text } = c {
+                        out.push_str(text);
+                        out.push('\n');
+                    }
+                }
+            }
+            Node::Element { children, .. } | Node::Document { children, .. } => {
+                for c in children {
+                    Self::collect_style_texts(c, out);
+                }
+            }
+            _ => {}
+        }
+    }
+
+    fn collect_stylesheet_hrefs(node: &Node, out: &mut Vec<String>) {
+        if let Node::Element { name, attributes, .. } = node {
+            if name.eq_ignore_ascii_case("link") {
+                let mut is_stylesheet = false;
+                let mut href: Option<&str> = None;
+                for (k, v) in attributes {
+                    let key = k.as_str();
+                    if key.eq_ignore_ascii_case("rel") {
+                        if let Some(val) = v.as_deref() {
+                            if val.split_whitespace().any(|t| t.eq_ignore_ascii_case("stylesheet")) {
+                                is_stylesheet = true;
+                            }
+                        }
+                    } else if key.eq_ignore_ascii_case("href") {
+                        href = v.as_deref();
+                    }
+                }
+                if is_stylesheet {
+                    if let Some(h) = href {
+                        out.push(h.to_string());
+                    }
+                }
+            }
+            if let Node::Element { children, .. } | Node::Document { children, .. } = node {
+                for c in children {
+                    Self::collect_stylesheet_hrefs(c, out);
+                }
+            }
+        }
+    }
+
+    fn first_styles(style: &[(String, String)]) -> String {
+        style.iter()
+            .take(3)
+            .map(|(k, v)| format!(r#"{k}: {v};"#))
+            .collect::<Vec<_>>()
+            .join(" ")
+    }
+
+    fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
+        fn walk(node: &Node, depth: usize, out: &mut Vec<String>, left: &mut usize) {
+            if *left == 0 { return; }
+            *left -= 1;
+            let indent = "  ".repeat(depth);
+            match node {
+                Node::Document { doctype, children } => {
+                    if let Some(dt) = doctype {
+                        out.push(format!("{indent}<!DOCTYPE {dt}>"));
+                    } else {
+                        out.push(format!("{indent}#document"));
+                    }
+                    for c in children { walk(c, depth+1, out, left); }
+                }
+                Node::Element { name, attributes, children, style } => {
+                    let id = attributes.iter().find(|(k,_)| k=="id").and_then(|(_,v)| v.as_deref()).unwrap_or("");
+                    let class = attributes.iter().find(|(k,_)| k=="class").and_then(|(_,v)| v.as_deref()).unwrap_or("");
+                    // NOTE: call through the type, not `Self` (fixes E0401):
+                    let styl = BrowserApp::first_styles(style);
+                    let mut line = format!("{indent}<{name}");
+                    if !id.is_empty()   { line.push_str(&format!(r#" id="{id}""#)); }
+                    if !class.is_empty(){ line.push_str(&format!(r#" class="{class}""#)); }
+                    line.push('>');
+                    if !styl.is_empty() { line.push_str(&format!("  /* {styl} */")); }
+                    out.push(line);
+                    for c in children { walk(c, depth+1, out, left); }
+                }
+                Node::Text { text } => {
+                    let t = text.replace('\n', " ").trim().to_string();
+                    if !t.is_empty() {
+                        let show = if t.len() > 40 { format!("{}…",&t[..40]) } else { t };
+                        out.push(format!("{indent}\"{show}\""));
+                    }
+                }
+                Node::Comment { text } => {
+                    let t = text.replace('\n', " ");
+                    let show = if t.len() > 40 { format!("{}…",&t[..40]) } else { t };
+                    out.push(format!("{indent}<!-- {show} -->"));
+                }
+            }
+        }
+        let mut out = Vec::new();
+        let mut left = cap;
+        walk(root, 0, &mut out, &mut left);
+        out
+    }
 }
 
 impl UiApp for BrowserApp {
@@ -70,6 +186,11 @@ impl UiApp for BrowserApp {
                     self.loading = true;
                     self.last_status = Some(format!("Fetching {}…", self.url));
                     self.last_preview.clear();
+                    self.css_pending.clear();
+                    self.css_bundle.clear();
+                    self.dom = None;
+                    self.dom_outline.clear();
+                    self.tokens_preview.clear();
 
                     if let Some(cb) = self.net_callback.as_ref().cloned() {
                         let url_str = self.url.clone();
@@ -139,104 +260,102 @@ impl UiApp for BrowserApp {
     fn on_net_result(&mut self, result: net::FetchResult) {
         self.loading = false;
         self.tokens_preview.clear();
+
         if is_html(&result.content_type) && !result.body.is_empty() {
+            self.base_url = Some(result.url.clone());
+            self.css_pending.clear();
+            self.css_bundle.clear();
+
             let tokens = tokenize(&result.body);
             let mut dom = build_dom(&tokens);
+            self.dom = Some(dom);
 
-            fn collect_style_texts(node: &Node, out: &mut String) {
-                match node {
-                    Node::Element { name, children, .. } if name.eq_ignore_ascii_case("style") => {
-                        for c in children {
-                            if let Node::Text { text } = c {
-                                out.push_str(text);
-                                out.push('\n');
+            let mut css_text = String::new();
+            if let Some(dom_ref) = self.dom.as_ref() {
+                Self::collect_style_texts(dom_ref, &mut css_text);
+            }
+
+            if let Some(dom_mut) = self.dom.as_mut() {
+                let sheet = parse_stylesheet(&css_text);
+                attach_styles(dom_mut, &sheet);
+            }
+
+            let mut hrefs = Vec::new();
+            Self::collect_stylesheet_hrefs(
+                self.dom.as_ref().unwrap(),
+                &mut hrefs
+            );
+
+            if let Some(base) = &self.base_url {
+                if let Ok(base_url) = Url::parse(base) {
+                    for href in hrefs {
+                        if let Ok(abs) = base_url.join(&href) {
+                            let abs = abs.to_string();
+                            if self.css_pending.insert(abs.clone()) {
+                                if let Some(callback) = self.net_callback.as_ref().cloned() {
+                                    fetch_text(abs, callback);
+                                }
                             }
                         }
                     }
-                    Node::Element { children, .. } | Node::Document { children, .. } => {
-                        for c in children {
-                            collect_style_texts(c, out);
-                        }
-                    }
-                    _ => {}
                 }
             }
 
-            let mut css_text = String::new();
-            collect_style_texts(&dom, &mut css_text);
-
-            let sheet = parse_stylesheet(&css_text);
-            attach_styles(&mut dom, &sheet);
-
-            self.dom_outline.clear();
-            let mut limit = 200usize;
-
-            fn first_styles(style: &[(String, String)]) -> String {
-                style.iter()
-                    .take(3)
-                    .map(|(k, v)| format!(r#"{k}: {v};"#))
-                    .collect::<Vec<_>>()
-                    .join(" ")
+            if let Some(dom_ref) = self.dom.as_ref() {
+                self.dom_outline.clear();
+                let mut lines: Vec<String> = Vec::new();
+                let mut limit = 200usize;
+                self.dom_outline = BrowserApp::outline_from_dom(dom_ref, 200);
             }
 
             self.tokens_preview = tokens.into_iter().take(40).collect();
 
-            let mut lines = Vec::new();
-            fn walk(node: &Node, depth: usize, out: &mut Vec<String>, limit: &mut usize) {
-                if *limit == 0 {
-                    return;
-                }
-                *limit -= 1;
+            if let Some(dom_ref) = self.dom.as_ref() {
+                self.dom_outline.clear();
+                let mut lines: Vec<String> = Vec::new();
+                let mut limit = 200usize;
+                self.dom_outline = BrowserApp::outline_from_dom(dom_ref, 200);
+            }
 
-                let indent = "  ".repeat(depth);
-                match node {
-                    Node::Document { doctype, children } => {
-                        if let Some(dt) = doctype {
-                            out.push(format!("{indent}<!DOCTYPE {dt}>"));
-                        } else {
-                            out.push(format!("{indent}#document"));
-                        }
-                        for c in children {
-                            walk(c, depth + 1, out, limit);
-                        }
-                    }
-                    Node::Element { name, attributes, children, style } => {
-                        let id = attributes.iter().find(|(k, _)| k =="id").and_then(|(_, v)| v.as_deref()).unwrap_or("");
-                        let class = attributes.iter().find(|(k, _)| k =="class").and_then(|(_, v)| v.as_deref()).unwrap_or("");
-                        let style = first_styles(style);
+            if let Some(dom_ref) = self.dom.as_ref() {
+                self.dom_outline = Self::outline_from_dom(dom_ref, 200);
+            }
+        }
 
-                        let mut line = format!("{indent}<{}", name);
-                        if !id.is_empty() {
-                            line.push_str(&format!(r#" id="{id}""#));
-                        }
-                        if !class.is_empty() {
-                            line.push_str(&format!(r#" class="{class}""#));
-                        }
-                        line.push('>');
-                        if !style.is_empty() {
-                            line.push_str(&format!("  /* {} */", style));
-                        }
-                        out.push(line);
-                        for c in children { walk(c, depth + 1, out, limit); }
-                    }
-                    Node::Text{ text } => {
-                        let t = text.replace('\n', " ").trim().to_string();
-                        if !t.is_empty() {
-                            let show = if t.len() > 40 { &t[..40] } else { &t };
-                            out.push(format!("{indent}\"{show}"));
-                        }
-                    }
-                    Node::Comment{ text } => {
-                        let t = text.replace('\n', " ");
-                        let show = if t.len() > 40 { &t[..40] } else { &t };
-                        out.push(format!("{indent}<!-- {show} -->"));
-                    }
+        if is_css(&result.content_type) || self.css_pending.contains(&result.requested_url) {
+            self.css_pending.remove(&result.requested_url);
+
+            if !result.body.is_empty() {
+                self.css_bundle.push_str(&result.body);
+                self.css_bundle.push('\n');
+            }
+
+            if let Some(dom) = self.dom.as_mut() {
+                let mut inline = String::new();
+                Self::collect_style_texts(dom, &mut inline);
+                let sheet_inline = parse_stylesheet(&inline);
+                let sheet_ext    = parse_stylesheet(&self.css_bundle);
+
+                attach_styles(dom, &sheet_inline);
+                attach_styles(dom, &sheet_ext);
+
+                if let Some(dom_ref) = self.dom.as_ref() {
+                    self.dom_outline.clear();
+                    let mut lines: Vec<String> = Vec::new();
+                    let mut limit = 200usize;
+                    self.dom_outline = BrowserApp::outline_from_dom(dom_ref, 200);
                 }
             }
-            let mut limit = 200; // cap out to keep UI snappy
-            walk(&dom, 0, &mut lines, &mut limit);
-            self.dom_outline = lines;
+
+            if let Some(dom_ref) = self.dom.as_ref() {
+                self.dom_outline = Self::outline_from_dom(dom_ref, 200);
+            }
+
+            let remaining = self.css_pending.len();
+            self.last_status = Some(format!("Loaded stylesheet: {} ({} remaining)", result.url, remaining));
+            return;
         }
+
         let content_type = result.content_type.clone().unwrap_or_else(|| "unknown".into());
         let meta = match(result.status, &result.error) {
             (Some(code), None) => format!(

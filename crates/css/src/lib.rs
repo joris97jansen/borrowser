@@ -48,6 +48,12 @@ fn specificity_of(selector: &Selector) -> Specificity {
     }
 }
 
+pub fn is_css(ct: &Option<String>) -> bool {
+    ct.as_deref()
+      .map(|s| s.to_ascii_lowercase().starts_with("text/css"))
+      .unwrap_or(false)
+}
+
 // input: "color: red; font-size: 12px;"
 // output: vec![Declaration { name: "color", value: "red" }, Declaration { name: "font-size", value: "12px" }]
 pub fn parse_declarations(input: &str) -> Vec<Declaration> {
