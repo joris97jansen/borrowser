@@ -4,6 +4,10 @@ use egui::{
     Key,
     CentralPanel,
     ScrollArea,
+    Color32,
+    Stroke,
+    Rounding,
+    Frame,
 };
 use std::collections::HashSet;
 use url::Url;
@@ -25,6 +29,7 @@ use css::{
     parse_stylesheet,
     attach_styles,
     is_css,
+    parse_color,
 };
 
 pub struct BrowserApp {
@@ -174,6 +179,85 @@ impl BrowserApp {
         walk(root, 0, &mut out, &mut left);
         out
     }
+
+    fn style_get<'a>(attributes: &[(String, Option<String>)], style: &'a [(String, String)], name: &str) -> Option<&'a str> {
+        // (inline already merged into style earlier via attach_styles)
+        style.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v.as_str())
+    }
+
+    fn inherited_color(node: &Node, ancestors: &[Node]) -> (u8, u8, u8, u8) {
+        fn find_on(node: &Node) -> Option<(u8, u8, u8, u8)> {
+            if let Node::Element { attributes: _, style, .. } = node {
+                if let Some(v) = style.iter().find(|(k, _)| k.eq_ignore_ascii_case("color")).map(|(_, v)| v) {
+                    return parse_color(v);
+                }
+            }
+            None
+        }
+        if let Some(c) = find_on(node) {
+            return c;
+        }
+        for a in ancestors {
+            if let Some(c) = find_on(a) {
+                return c;
+            }
+        }
+        (0, 0, 0, 255) // default black
+    }
+
+    fn page_background(dom: &Node) -> Option<(u8, u8, u8, u8)> {
+        fn from_element(node: &Node, want: &str) -> Option<(u8, u8, u8, u8)> {
+            if let Node::Element { name, style, .. } = node {
+                if name.eq_ignore_ascii_case(want) {
+                    if let Some(v) = style.iter().find(|(k, _)| k.eq_ignore_ascii_case("background-color")).map(|(_, v)| v) {
+                        return parse_color(v);
+                    }
+                }
+            }
+            None
+        }
+        if let Node::Document { children, .. } = dom {
+            for c in children {
+                if let Some(c1) = from_element(c, "html") {
+                    return Some(c1);
+                }
+                if let Node::Element { children: html_kids, .. } = c {
+                    for k in html_kids {
+                        if let Some(c2) = from_element(k, "body") {
+                            return Some(c2);
+                        }
+                    }
+                }
+            }
+        }
+        None
+    }
+
+    fn collect_visible_text<'a>(node: &'a Node, ancestors: &mut Vec<&'a Node>, out: &mut String) {
+        match node {
+            Node::Text { text } => {
+                if !text.trim().is_empty() {
+                    if !out.is_empty() {
+                        out.push(' ');
+                    }
+                    out.push_str(text.trim());
+                }
+            }
+            Node::Element{ children, .. } | Node::Document { children, .. } => {
+                if let Node::Element { name, .. } = node {
+                    if name.eq_ignore_ascii_case("style") || name.eq_ignore_ascii_case("script") {
+                        return; //skip
+                    }
+                }
+                ancestors.push(node);
+                for c in children {
+                    Self::collect_visible_text(c, ancestors, out);
+                }
+                ancestors.pop();
+            }
+            _ => {}
+        }
+    }
 }
 
 impl UiApp for BrowserApp {
@@ -242,6 +326,33 @@ impl UiApp for BrowserApp {
                         ui.monospace(line);
                     }
                 });
+            }
+            if let Some(dom_ref) = self.dom.as_ref() {
+                ui.separator();
+                ui.heading("Page preview (early):");
+
+                let bg = Self::page_background(dom_ref).unwrap_or((255, 255, 255, 255));
+                let bg_ui = Color32::from_rgba_unmultiplied(bg.0, bg.1, bg.2, bg.3);
+
+                let mut text = String::new();
+                let mut ancestors = Vec::new();
+                Self::collect_visible_text(dom_ref, &mut ancestors, &mut text);
+
+                let color = Self::inherited_color(dom_ref, &[]);
+                let fg_egui = Color32::from_rgba_unmultiplied(color.0, color.1, color.2, color.3);
+
+                Frame::none()
+                    .fill(bg_ui)
+                    .stroke(Stroke::NONE)
+                    .rounding(Rounding::same(4))
+                    .show(ui, |ui| {
+                        ui.set_min_height(200.0);
+                        ui.add_space(6.0);
+                        ui.style_mut().visuals.override_text_color = Some(fg_egui);
+                        ui.label(text);
+                        ui.style_mut().visuals.override_text_color = None;
+                        ui.add_space(6.0);
+                    });
             }
             if self.loading { ui.label("⏳ Loading…"); }
             if let Some(s) = &self.last_status { ui.label(s); }
