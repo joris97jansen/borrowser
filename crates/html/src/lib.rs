@@ -1,3 +1,5 @@
+pub mod dom_utils;
+
 const HTML_COMMENT_START: &str = "<!--";
 const HTML_COMMENT_END: &str = "-->";
 
@@ -396,3 +398,4 @@ pub fn build_dom(tokens: &[Token]) -> Node {
     }
     root
 }
+
