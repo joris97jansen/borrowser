@@ -24,7 +24,6 @@ use html::{
     is_html,
 };
 use css::{
-    is_css,
     parse_color,
 };
 
@@ -177,7 +176,7 @@ impl UiApp for BrowserApp {
                 ScrollArea::vertical().max_height(200.0).id_salt("second").show(ui, |ui| {
                     for (i, t) in self.tokens_preview.iter().enumerate() {
                         match t {
-                            Token::StartTag { name, attributes, self_closing, style } => {
+                            Token::StartTag { name, attributes, self_closing, .. } => {
                                 let mut parts = vec![name.clone()];
                                 if !attributes.is_empty() {
                                     let attributes_str = attributes.iter()
@@ -223,7 +222,7 @@ impl UiApp for BrowserApp {
                 let color = Self::inherited_color(dom_ref, &[]);
                 let fg_egui = Color32::from_rgba_unmultiplied(color.0, color.1, color.2, color.3);
 
-                Frame::none()
+                Frame::new()
                     .fill(bg_ui)
                     .stroke(Stroke::NONE)
                     .corner_radius(CornerRadius::same(4))
@@ -291,7 +290,7 @@ impl UiApp for BrowserApp {
                 result.bytes, result.duration_ms, result.url
             ),
             (Some(code), Some(err)) => format!(
-                "OK {code} — {} bytes - {content_type} - {} ms - {}",
+                "OK {code} — {} bytes - {content_type} - {} ms - {} - Network error: {err}",
                 result.bytes, result.duration_ms, result.url
                 ),
             (None, Some(error)) => format!(

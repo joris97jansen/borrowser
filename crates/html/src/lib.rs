@@ -294,7 +294,6 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     if !raw.is_empty() {
                         out.push(Token::Text(raw.to_string()));
                     }
-                    i = input.len();
                     break;
                 }
             }
@@ -331,7 +330,7 @@ pub fn build_dom(tokens: &[Token]) -> Node {
     let mut root = Node::Document { children: Vec::new(), doctype: None };
     let mut stack: Vec<*mut Node> = vec![&mut root as *mut Node];
 
-    let mut push_child = |parent: *mut Node, child: Node| {
+    let push_child = |parent: *mut Node, child: Node| {
         let parent = unsafe { &mut *parent };
         if let Some(children) = parent.children_mut() {
             children.push(child);
@@ -360,7 +359,7 @@ pub fn build_dom(tokens: &[Token]) -> Node {
                     push_child(parent, Node::Text { text: txt.clone() });
                 }
             }
-            StartTag { name, attributes, self_closing, style } => {
+            StartTag { name, attributes, self_closing, .. } => {
                 let parent = *stack.last().unwrap();
                 let mut_node = push_child(
                     parent,

@@ -43,7 +43,7 @@ pub fn fetch_text(url: String, cb: Arc<dyn Fn(FetchResult) + Send + Sync>) {
         };
 
         let result = (|| -> Result<FetchResult, String> {
-            let mut resp = client.get(&requested_url).send().map_err(|e| e.to_string())?;
+            let resp = client.get(&requested_url).send().map_err(|e| e.to_string())?;
             let status = resp.status().as_u16();
             let final_url = resp.url().to_string();
             let content_type = resp
