@@ -30,13 +30,13 @@ impl PageState {
         }
     }
 
-    // pub fn reset_for(&mut self, url: &str) {
-    //     self.base_url = None;
-    //     self.dom = None;
-    //     self.css_pending.clear();
-    //     self.css_bundle.clear();
-    //     self.base_url = Some(url.to_string());
-    // }
+    pub fn reset_for(&mut self, url: &str) {
+        self.base_url = None;
+        self.dom = None;
+        self.css_pending.clear();
+        self.css_bundle.clear();
+        self.base_url = Some(url.to_string());
+    }
 
     pub fn ingest_html(&mut self, final_url: &str, body: &str, net_callback: impl Fn(String) + 'static + Clone) {
         self.base_url = Some(final_url.to_string());

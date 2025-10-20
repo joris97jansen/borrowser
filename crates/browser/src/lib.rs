@@ -1,15 +1,9 @@
 mod page;
+mod view;
+
 use page::PageState;
 use egui::{
     Context,
-    TopBottomPanel,
-    Key,
-    CentralPanel,
-    ScrollArea,
-    Color32,
-    Stroke,
-    CornerRadius,
-    Frame,
 };
 use app_api::{
     UiApp,
@@ -35,7 +29,8 @@ pub struct BrowserApp {
     net_callback: Option<NetCallback>,
     tokens_preview: Vec<Token>,
     dom_outline: Vec<String>,
-    page: PageState
+    page: PageState,
+    show_debug: bool,
 }
 
 impl BrowserApp {
@@ -49,6 +44,7 @@ impl BrowserApp {
             tokens_preview: Vec::new(),
             dom_outline: Vec::new(),
             page: PageState::new(),
+            show_debug: false,
         }
     }
 
@@ -82,6 +78,11 @@ impl BrowserApp {
             }
         }
         (0, 0, 0, 255) // default black
+    }
+
+    fn style_get<'a>(attributes: &[(String, Option<String>)], style: &'a [(String, String)], name: &str) -> Option<&'a str> {
+        // inline already merged into style earlier via attach_styles
+        style.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v.as_str())
     }
 
     fn page_background(dom: &Node) -> Option<(u8, u8, u8, u8)> {
@@ -140,104 +141,38 @@ impl BrowserApp {
 }
 
 impl UiApp for BrowserApp {
-    fn ui(&mut self, context: &Context) {
-        TopBottomPanel::top("topbar").show(context, |ui| {
-            ui.horizontal(|ui| {
-                ui.label("URL:");
-                let response = ui.text_edit_singleline(&mut self.url);
-                if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) || ui.button("Go").clicked() {
-                    self.loading = true;
-                    self.last_status = Some(format!("Fetching {}…", self.url));
-                    self.last_preview.clear();
-                    self.dom_outline.clear();
-                    self.tokens_preview.clear();
+    fn ui(&mut self, ctx: &Context) {
+        let go = view::top_bar(ctx, &mut self.url);
+        if go {
+            self.loading = true;
+            self.last_status = Some("Fetching...".into());
+            self.last_preview.clear();
+            self.dom_outline.clear();
+            self.tokens_preview.clear();
 
-                    if let Some(cb) = self.net_callback.as_ref().cloned() {
-                        let url_str = self.url.clone();
-                        let url = self.normalize_url(&url_str);
-                        self.url = url.clone();
-                        fetch_text(self.url.clone(), cb);
-                    } else {
-                        self.loading = false;
-                        self.last_status = Some("No network callback set".into());
-                    }
-                }
-            });
+            if let Some(callback) = self.net_callback.as_ref().cloned() {
+                let normalized_url = self.normalize_url(&self.url.clone());
+                self.url = normalized_url.clone();
+                fetch_text(self.url.clone(), callback);
+            } else {
+                self.loading = false;
+                self.last_status = Some("No network callback set".into());
+            }
+        }
+
+        egui::TopBottomPanel::bottom("debugbar").show(ctx, |ui| {
+            ui.checkbox(&mut self.show_debug, "Show debug panels");
         });
-        CentralPanel::default().show(context, |ui| {
-            if !self.tokens_preview.is_empty() {
-                ui.separator();
-                ui.heading("HTML tokens (first 40:)");
-                ScrollArea::vertical().max_height(200.0).id_salt("second").show(ui, |ui| {
-                    for (i, t) in self.tokens_preview.iter().enumerate() {
-                        match t {
-                            Token::StartTag { name, attributes, self_closing, .. } => {
-                                let mut parts = vec![name.clone()];
-                                if !attributes.is_empty() {
-                                    let attributes_str = attributes.iter()
-                                        .map(|(k, v)| match v {
-                                            Some(v) => format!(r#"{k}="{v}""#),
-                                            None => k.clone(),
-                                        })
-                                        .collect::<Vec<_>>()
-                                        .join(" ");
-                                    parts.push(attributes_str);
-                                }
-                                let slash = if *self_closing { " /" } else { "" };
-                                ui.monospace(format!("{i:02}: <{}{}>", parts.join(" "), slash))
-                            }
-                            Token::EndTag(name) => ui.monospace(format!("{i:02}: </{}>", name)),
-                            Token::Doctype(doctype) => ui.monospace(format!("{i:02}: <!DOCTYPE {}>", doctype)),
-                            Token::Comment(comment) => ui.monospace(format!("{i:02}: <!-- {} -->", comment)),
-                            Token::Text(text) => ui.monospace(format!("{i:02}: \"{}\"", text)),
-                        };
-                    }
-                });
-            }
-            if !self.dom_outline.is_empty() {
-                ui.separator();
-                ui.heading("DOM Outline (first 200 lines):");
-                ScrollArea::vertical().max_height(400.0).show(ui, |ui| {
-                    for line in &self.dom_outline {
-                        ui.monospace(line);
-                    }
-                });
-            }
-            if let Some(dom_ref) = self.page.dom.as_ref() {
-                ui.separator();
-                ui.heading("Page preview (early):");
 
-                let bg = Self::page_background(dom_ref).unwrap_or((255, 255, 255, 255));
-                let bg_ui = Color32::from_rgba_unmultiplied(bg.0, bg.1, bg.2, bg.3);
-
-                let mut text = String::new();
-                let mut ancestors = Vec::new();
-                Self::collect_visible_text(dom_ref, &mut ancestors, &mut text);
-
-                let color = Self::inherited_color(dom_ref, &[]);
-                let fg_egui = Color32::from_rgba_unmultiplied(color.0, color.1, color.2, color.3);
-
-                Frame::new()
-                    .fill(bg_ui)
-                    .stroke(Stroke::NONE)
-                    .corner_radius(CornerRadius::same(4))
-                    .show(ui, |ui| {
-                        ui.set_min_height(200.0);
-                        ui.add_space(6.0);
-                        ui.style_mut().visuals.override_text_color = Some(fg_egui);
-                        ui.label(text);
-                        ui.style_mut().visuals.override_text_color = None;
-                        ui.add_space(6.0);
-                    });
-            }
-            if self.loading { ui.label("⏳ Loading…"); }
-            if let Some(s) = &self.last_status { ui.label(s); }
-            if !self.last_preview.is_empty() {
-                ui.separator();
-                ui.label("Preview (first 500 chars):");
-                ui.code(self.last_preview.clone());
-            }
-        });
+        view::content(
+            ctx,
+            &self.page,
+            &self.tokens_preview,
+            &self.dom_outline,
+            self.last_status.as_ref(),
+            self.loading,
+            view::Panels { show_debug: self.show_debug },
+        )
     }
 
     fn set_net_callback(&mut self, callback: NetCallback) {
