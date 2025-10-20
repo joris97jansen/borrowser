@@ -64,11 +64,6 @@ impl BrowserApp {
         trimmed.into()
     }
 
-    fn style_get<'a>(attributes: &[(String, Option<String>)], style: &'a [(String, String)], name: &str) -> Option<&'a str> {
-        // (inline already merged into style earlier via attach_styles)
-        style.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v.as_str())
-    }
-
     fn inherited_color(node: &Node, ancestors: &[Node]) -> (u8, u8, u8, u8) {
         fn find_on(node: &Node) -> Option<(u8, u8, u8, u8)> {
             if let Node::Element { attributes: _, style, .. } = node {

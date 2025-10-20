@@ -28,7 +28,6 @@ pub struct Renderer {
     egui_context: EguiContext,
     egui_state: EguiWinitState,
     egui_renderer: EguiWgpuRenderer,
-    // instance: Instance,
     surface: Surface<'static>,
     device: Device,
     queue: Queue,
@@ -49,8 +48,8 @@ impl Renderer {
         );
 
         let instance = Instance::new(&InstanceDescriptor::default());
+
         let surface = instance.create_surface(window).expect("surface");
-        // let surface = unsafe { instance.create_surface(window) }.expect("surface");
         let surface = unsafe { mem::transmute(surface) };
 
 
@@ -96,7 +95,6 @@ impl Renderer {
             egui_context: egui_context,
             egui_state: egui_state,
             egui_renderer: egui_renderer,
-            // instance: instance,
             surface: surface,
             device: device,
             queue: queue,

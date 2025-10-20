@@ -225,7 +225,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 let attribute_name = input[name_start..k].to_ascii_lowercase();
 
                 skip_whitespace(&mut k);
-                let mut value: Option<String> = None;
+                let value: Option<String>;
 
                 if k < len && bytes[k] == b'=' {
                     k += 1;
