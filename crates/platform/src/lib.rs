@@ -1,5 +1,6 @@
 use std::{thread, time::Duration};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
 use winit::{
     application::{ApplicationHandler},
     event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy},
@@ -8,12 +9,16 @@ use winit::{
     dpi::PhysicalSize,
 };
 use gfx::Renderer;
-use app_api::UiApp;
+use app_api::{
+    UiApp,
+    Repaint,
+    RepaintHandle,
+};
 use net::FetchResult;
 
 enum UserEvent {
-    Tick,
     NetResult(FetchResult),
+    Repaint,
 }
 
 
@@ -40,6 +45,7 @@ struct PlatformApp {
     proxy: EventLoopProxy<UserEvent>,
     ticker_started: bool,
     renderer: Option<Renderer>,
+    repaint: Option<Arc<PlatformRepaint>>,
     app: Option<Box<dyn UiApp>>,
 }
 
@@ -50,6 +56,7 @@ impl PlatformApp {
             proxy: proxy,
             ticker_started: false,
             renderer: None,
+            repaint: None,
             app: None,
         }
     }
@@ -63,24 +70,6 @@ impl PlatformApp {
         ).expect("create window");
         let window = Arc::new(raw_window);
         self.window = Some(window);
-    }
-
-    fn init_ticker(&mut self) {
-        if self.ticker_started {
-            return;
-        }
-        self.ticker_started = true;
-
-        let proxy = self.proxy.clone();
-        thread::spawn(move || {
-            let frame = Duration::from_millis(16); // ~60Hz
-            loop {
-                if proxy.send_event(UserEvent::Tick).is_err() {
-                    break;
-                }
-                thread::sleep(frame);
-            }
-        });
     }
 
     fn init_renderer(&mut self) {
@@ -110,20 +99,33 @@ impl PlatformApp {
 impl ApplicationHandler<UserEvent> for PlatformApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
         self.init_window(event_loop);
-        self.init_ticker();
         self.init_renderer();
+
+        let repaint = Arc::new(PlatformRepaint::new(self.proxy.clone()));
+        if let Some(app) = self.app.as_mut() {
+            let handle: RepaintHandle = repaint.clone();
+            app.set_repaint_handle(handle);
+        }
+        self.repaint = Some(repaint);
+
+        if let Some(window) = self.window.as_ref() {
+            window.request_redraw();
+        }
     }
 
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: UserEvent) {
         match event {
-            UserEvent::Tick => {
-                if let Some(window) = self.window.as_ref() {
-                    window.request_redraw();
-                }
-            }
             UserEvent::NetResult(result) => {
                 if let Some(app) = self.app.as_mut() {
                     app.on_net_result(result);
+                }
+            }
+            UserEvent::Repaint => {
+                if let Some(repaint) = self.repaint.as_ref() {
+                    repaint.clear_pending();
+                }
+                if let Some(window) = self.window.as_ref() {
+                    window.request_redraw();
                 }
             }
         }
@@ -141,14 +143,65 @@ impl ApplicationHandler<UserEvent> for PlatformApp {
         match event {
             WindowEvent::CloseRequested => {
                 event_loop.exit();
+
             }
             WindowEvent::Resized(new_size) => {
                 self.on_resize(new_size);
+                if let Some(window) = self.window.as_ref() {
+                    window.request_redraw();
+                }
+            }
+            WindowEvent::KeyboardInput { .. }
+            | WindowEvent::CursorMoved { .. }
+            | WindowEvent::MouseInput { .. }
+            | WindowEvent::MouseWheel { .. }
+            | WindowEvent::ModifiersChanged(_)
+            | WindowEvent::Touch { .. } => {
+                if let Some(window) = self.window.as_ref() {
+                    window.request_redraw();
+                }
             }
             WindowEvent::RedrawRequested => {
                 self.draw_frame();
             }
                       _ => {}
         }
+    }
+}
+
+pub struct PlatformRepaint {
+    pending: Arc<AtomicBool>,
+    proxy: EventLoopProxy<UserEvent>,
+}
+
+impl PlatformRepaint {
+    pub fn new(proxy: EventLoopProxy<UserEvent>) -> Self {
+        Self {
+            pending: Arc::new(AtomicBool::new(false)),
+            proxy,
+        }
+    }
+
+    pub fn clear_pending(&self) {
+        self.pending.store(false, Ordering::Release);
+    }
+}
+
+impl Repaint for PlatformRepaint {
+    fn request_now(&self) {
+        if !self.pending.swap(true, Ordering::AcqRel) {
+            let _ = self.proxy.send_event(UserEvent::Repaint);
+        }
+    }
+
+    fn request_after(&self, duration: Duration) {
+        let pending = self.pending.clone();
+        let proxy = self.proxy.clone();
+        thread::spawn(move || {
+            thread::sleep(duration);
+            if !pending.swap(true, Ordering::AcqRel) {
+                let _ = proxy.send_event(UserEvent::Repaint);
+            }
+        });
     }
 }

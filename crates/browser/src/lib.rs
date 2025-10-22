@@ -9,6 +9,7 @@ use egui::{
 use app_api::{
     UiApp,
     NetCallback,
+    RepaintHandle,
 };
 use net::{
     fetch_text,
@@ -34,6 +35,7 @@ pub struct BrowserApp {
     dom_outline: Vec<String>,
     page: PageState,
     show_debug: bool,
+    repaint: Option<RepaintHandle>,
 }
 
 impl BrowserApp {
@@ -50,6 +52,13 @@ impl BrowserApp {
             dom_outline: Vec::new(),
             page: PageState::new(),
             show_debug: false,
+            repaint: None,
+        }
+    }
+
+    fn poke_redraw(&self) {
+        if let Some(repaint) = &self.repaint {
+            repaint.request_now();
         }
     }
 
@@ -89,6 +98,8 @@ impl BrowserApp {
         self.last_preview.clear();
         self.dom_outline.clear();
         self.tokens_preview.clear();
+
+        self.poke_redraw();
 
         if let Some(callback) = self.net_callback.as_ref().cloned() {
             fetch_text(url, callback);
@@ -238,26 +249,32 @@ impl UiApp for BrowserApp {
             });
 
             let queued = self.page.pending_count();
+
+            self.dom_outline = self.page.outline(200);
+            self.loading = queued > 0; // keep spinner if CSS pending
             self.last_status = Some(if queued > 0 {
                 format!("Loaded HTML • fetching {queued} stylesheet(s)…")
             } else {
                 "Loaded HTML".to_string()
             });
 
-            self.dom_outline = self.page.outline(200);
-            self.loading = queued > 0; // keep spinner if CSS pending
+            self.poke_redraw();
+
             return;
         }
 
         if self.page.try_ingest_css(&result.requested_url, &result.content_type, &result.body) {
             self.dom_outline = self.page.outline(200);
             let remaining = self.page.pending_count();
+            self.loading = remaining > 0;
             self.last_status = Some(if remaining > 0 {
                 format!("Loaded stylesheet: {} ({} remaining)", result.url, remaining)
             } else {
                 "All stylesheets loaded".to_string()
             });
-            self.loading = remaining > 0;
+
+            self.poke_redraw();
+
             return;
         }
 
@@ -279,5 +296,9 @@ impl UiApp for BrowserApp {
 
         self.last_status = Some(meta);
         self.last_preview = result.snippet;
+    }
+
+    fn set_repaint_handle(&mut self, repaint: RepaintHandle) {
+        self.repaint = Some(repaint);
     }
 }
