@@ -1,7 +1,10 @@
 use crate::page::PageState;
+use crate::BrowserApp;
 
 use html::Token;
 use egui::{
+    Align,
+    Button,
     Context,
     TopBottomPanel,
     Key,
@@ -11,24 +14,70 @@ use egui::{
     Stroke,
     CornerRadius,
     Frame,
+    TextEdit,
+    Margin,
 };
+
+pub enum NavigationAction {
+    None,
+    Back,
+    Forward,
+    Refresh,
+    Navigate(String),
+}
 
 pub struct Panels {
     pub show_debug: bool,
 }
 
-pub fn top_bar(ctx: &Context, url: &mut String) -> bool {
-    let mut go = false;
+
+pub fn top_bar(ctx: &Context, app: &mut BrowserApp) -> NavigationAction {
+    let mut action = NavigationAction::None;
+
+    const BAR_HEIGHT: f32 = 36.0;
+    const BUTTON_WIDTH: f32 = 36.0;
+
     TopBottomPanel::top("topbar").show(ctx, |ui| {
         ui.horizontal(|ui| {
-            ui.label("URL:");
-            let response = ui.text_edit_singleline(url);
-            if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) || ui.button("Go").clicked() {
-                go = true;
+            let can_go_back = app.history_index > 0;
+            let can_go_forward = app.history_index + 1 < app.history.len();
+
+            let spacing = ui.spacing().item_spacing.x;
+            let available_width = ui.available_width();
+            let url_width = available_width - (BUTTON_WIDTH * 3.0 + spacing + 3.0);
+
+            if ui.add_enabled(can_go_back, Button::new("⬅").min_size([BUTTON_WIDTH, BAR_HEIGHT].into())).clicked() {
+                action = NavigationAction::Back;
+            }
+            if ui.add_enabled(can_go_forward, Button::new("➡").min_size([BUTTON_WIDTH, BAR_HEIGHT].into())).clicked() {
+                action = NavigationAction::Forward;
+            }
+            if ui.add_sized([BUTTON_WIDTH, BAR_HEIGHT], Button::new("🔄")).clicked()
+            {
+                action = NavigationAction::Refresh;
+            }
+
+            let response = Frame::none()
+                .fill(ui.visuals().extreme_bg_color) // subtle background
+                .stroke(egui::Stroke::new(1.0, ui.visuals().widgets.inactive.bg_stroke.color))
+                .rounding(6.0)
+                .inner_margin(Margin::symmetric(4, 4))
+                .show(ui, |ui| {
+                    ui.add_sized(
+                        [ui.available_width(), BAR_HEIGHT - 8.0],
+                        egui::TextEdit::singleline(&mut app.url)
+                            .hint_text("Enter URL")
+                            .vertical_align(Align::Center),
+                    )
+                })
+                .inner;
+
+            if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+                action = NavigationAction::Navigate(app.url.clone());
             }
         });
     });
-    go
+    action
 }
 
 pub fn content(
@@ -87,7 +136,7 @@ pub fn content(
                 });
             }
         }
-        
+
         ui.separator();
         if loading { ui.label("⏳ Loading…"); }
         if let Some(s) = status { ui.label(s); }

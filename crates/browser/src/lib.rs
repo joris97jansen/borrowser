@@ -2,6 +2,7 @@ mod page;
 mod view;
 
 use page::PageState;
+use view::NavigationAction;
 use egui::{
     Context,
 };
@@ -23,6 +24,8 @@ use css::{
 
 pub struct BrowserApp {
     url: String,
+    history: Vec<String>,
+    history_index: usize,
     loading: bool,
     last_status: Option<String>,
     last_preview: String,
@@ -36,7 +39,9 @@ pub struct BrowserApp {
 impl BrowserApp {
     pub fn new() -> Self {
         Self{
-            url: "https://example.com".into(),
+            url: String::new(),
+            history: Vec::new(),
+            history_index: 0,
             loading: false,
             last_status: None,
             last_preview: String::new(),
@@ -58,6 +63,61 @@ impl BrowserApp {
             return format!("https://{trimmed}");
         }
         trimmed.into()
+    }
+
+    fn navigate_to_new(&mut self, url: String) {
+        let url = self.normalize_url(&url);
+        self.url = url.clone();
+
+        // record to history (truncate forward branch)
+        self.history.truncate(self.history_index + 1);
+        self.history.push(url.clone());
+        self.history_index = self.history.len() - 1;
+
+        self.start_fetch(url);
+    }
+
+    fn load_current(&mut self, url: String) {
+        // do NOT touch history; just fetch the given URL
+        self.url = url.clone();
+        self.start_fetch(url);
+    }
+
+    fn start_fetch(&mut self, url: String) {
+        self.loading = true;
+        self.last_status = Some(format!("Fetching {} …", url));
+        self.last_preview.clear();
+        self.dom_outline.clear();
+        self.tokens_preview.clear();
+
+        if let Some(callback) = self.net_callback.as_ref().cloned() {
+            fetch_text(url, callback);
+        } else {
+            self.loading = false;
+            self.last_status = Some("No network callback set".into());
+        }
+    }
+
+    fn go_back(&mut self) {
+        if self.history_index > 0 {
+            self.history_index -= 1;
+            let url = self.history[self.history_index].clone();
+            self.load_current(url);
+        }
+    }
+
+    fn go_forward(&mut self) {
+        if self.history_index + 1 < self.history.len() {
+            self.history_index += 1;
+            let url = self.history[self.history_index].clone();
+            self.load_current(url);
+        }
+    }
+
+    fn refresh(&mut self) {
+        if let Some(url) = self.history.get(self.history_index).cloned() {
+            self.load_current(url);
+        }
     }
 
     fn inherited_color(node: &Node, ancestors: &[Node]) -> (u8, u8, u8, u8) {
@@ -142,27 +202,15 @@ impl BrowserApp {
 
 impl UiApp for BrowserApp {
     fn ui(&mut self, ctx: &Context) {
-        let go = view::top_bar(ctx, &mut self.url);
-        if go {
-            self.loading = true;
-            self.last_status = Some("Fetching...".into());
-            self.last_preview.clear();
-            self.dom_outline.clear();
-            self.tokens_preview.clear();
+        let nav_action = view::top_bar(ctx, self);
 
-            if let Some(callback) = self.net_callback.as_ref().cloned() {
-                let normalized_url = self.normalize_url(&self.url.clone());
-                self.url = normalized_url.clone();
-                fetch_text(self.url.clone(), callback);
-            } else {
-                self.loading = false;
-                self.last_status = Some("No network callback set".into());
-            }
+        match nav_action {
+            NavigationAction::Navigate(url) => self.navigate_to_new(url),
+            NavigationAction::Back => self.go_back(),
+            NavigationAction::Forward => self.go_forward(),
+            NavigationAction::Refresh => self.refresh(),
+            NavigationAction::None => {}
         }
-
-        egui::TopBottomPanel::bottom("debugbar").show(ctx, |ui| {
-            ui.checkbox(&mut self.show_debug, "Show debug panels");
-        });
 
         view::content(
             ctx,
