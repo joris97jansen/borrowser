@@ -1,7 +1,10 @@
 use crate::page::PageState;
 use crate::BrowserApp;
 
-use html::Token;
+use html::{
+    Node,
+    Token,
+};
 use egui::{
     Align,
     Button,
@@ -16,6 +19,8 @@ use egui::{
     Frame,
     TextEdit,
     Margin,
+    Ui,
+    RichText,
 };
 
 pub enum NavigationAction {
@@ -57,7 +62,7 @@ pub fn top_bar(ctx: &Context, app: &mut BrowserApp) -> NavigationAction {
                 action = NavigationAction::Refresh;
             }
 
-            let response = Frame::none()
+            let response = Frame::new()
                 .fill(ui.visuals().extreme_bg_color) // subtle background
                 .stroke(egui::Stroke::new(1.0, ui.visuals().widgets.inactive.bg_stroke.color))
                 .rounding(6.0)
@@ -83,62 +88,56 @@ pub fn top_bar(ctx: &Context, app: &mut BrowserApp) -> NavigationAction {
 pub fn content(
     ctx: &Context,
     page: &PageState,
-    tokens_preview: &[Token],
     dom_outline: &[String],
     status: Option<&String>,
     loading: bool,
     panels: Panels,
 ) {
-    CentralPanel::default().show(ctx, |ui| {
+    CentralPanel::default()
+        .frame(Frame::default())
+        .show(ctx, |ui| {
         if let Some(dom) = page.dom.as_ref() {
-            ui.heading("Page review (early)");
-            let bg = super::BrowserApp::page_background(dom).unwrap_or((255, 255, 255, 255));
-            let bg_ui = Color32::from_rgba_unmultiplied(bg.0, bg.1, bg.2, bg.3);
-
-            let mut text = String::new();
-            let mut ancestors = Vec::new();
-            super::BrowserApp::collect_visible_text(dom, &mut ancestors, &mut text);
-
-            let fg = super::BrowserApp::inherited_color(dom, &[]);
-            let fg_egui = Color32::from_rgba_unmultiplied(fg.0, fg.1, fg.2, fg.3);
-
-            Frame::new()
-                .fill(bg_ui)
-                .stroke(Stroke::NONE)
-                .corner_radius(CornerRadius::same(4))
-                .show(ui, |ui| {
-                    ui.set_min_height(200.0);
-                    ui.add_space(6.0);
-                    ui.style_mut().visuals.override_text_color = Some(fg_egui);
-                    ui.label(text);
-                    ui.style_mut().visuals.override_text_color = None;
-                    // ui.add_space(6.0);
-                });
+            page_viewport(ui, dom);
         }
 
-        if panels.show_debug {
-            if !tokens_preview.is_empty() {
-                ui.separator();
-                ui.heading("Token preview");
-                ScrollArea::vertical().max_height(200.0).show(ui, |ui| {
-                    for (i, t) in tokens_preview.iter().enumerate() {
-                        ui.monospace(format!("{i:02}: {:?}", t));
-                    }
-                });
-            }
-            if !dom_outline.is_empty() {
-                ui.separator();
-                ui.heading("DOM outline");
-                ScrollArea::vertical().max_height(400.0).show(ui, |ui| {
-                    for line in dom_outline {
-                        ui.monospace(line);
-                    }
-                });
-            }
-        }
-
-        ui.separator();
         if loading { ui.label("⏳ Loading…"); }
         if let Some(s) = status { ui.label(s); }
     });
+}
+
+pub fn page_viewport(ui: &mut Ui, dom: &Node) {
+    // 1) background color
+    let background = BrowserApp::page_background(dom).unwrap_or((255, 255, 255, 255));
+    let background_ui = Color32::from_rgba_unmultiplied(background.0, background.1, background.2, background.3);
+
+    // 2) collect visible text
+    let mut text = String::new();
+    let mut ancestors = Vec::new();
+    BrowserApp::collect_visible_text(dom, &mut ancestors, &mut text);
+
+    // 3) inherited text color
+    let fg = BrowserApp::inherited_color(dom, &[]);
+    let fg_ui = Color32::from_rgba_unmultiplied(fg.0, fg.1, fg.2, fg.3);
+
+    // 4) page surface + scroll
+    ScrollArea::vertical()
+        .id_source("page_viewport_scroll_area")
+        .auto_shrink([false, false])
+        .show(ui, |ui| {
+            let min_height = ui.available_height();
+
+            Frame::new()
+                .fill(background_ui)
+                .show(ui, |ui| {
+                    ui.style_mut().visuals.override_text_color = Some(fg_ui);
+                    ui.set_width(ui.available_width());
+                    ui.set_min_height(min_height);
+                    ui.label(
+                        // Placeholder; CSS driven later
+                        RichText::new(text).size(16.0)
+                    );
+
+                    ui.style_mut().visuals.override_text_color = None;
+                });
+        });
 }
