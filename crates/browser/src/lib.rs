@@ -31,7 +31,6 @@ pub struct BrowserApp {
     last_status: Option<String>,
     last_preview: String,
     net_callback: Option<NetCallback>,
-    tokens_preview: Vec<Token>,
     dom_outline: Vec<String>,
     page: PageState,
     show_debug: bool,
@@ -48,7 +47,6 @@ impl BrowserApp {
             last_status: None,
             last_preview: String::new(),
             net_callback: None,
-            tokens_preview: Vec::new(),
             dom_outline: Vec::new(),
             page: PageState::new(),
             show_debug: false,
@@ -97,7 +95,6 @@ impl BrowserApp {
         self.last_status = Some(format!("Fetching {} …", url));
         self.last_preview.clear();
         self.dom_outline.clear();
-        self.tokens_preview.clear();
 
         self.poke_redraw();
 
@@ -226,7 +223,6 @@ impl UiApp for BrowserApp {
         view::content(
             ctx,
             &self.page,
-            &self.tokens_preview,
             &self.dom_outline,
             self.last_status.as_ref(),
             self.loading,
@@ -240,7 +236,6 @@ impl UiApp for BrowserApp {
 
     fn on_net_result(&mut self, result: net::FetchResult) {
         self.loading = false;
-        self.tokens_preview.clear();
 
         if is_html(&result.content_type) && !result.body.is_empty() {
             let callback = self.net_callback.as_ref().cloned().expect("net cb");
