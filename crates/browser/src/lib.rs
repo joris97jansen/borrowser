@@ -218,7 +218,6 @@ impl UiApp for BrowserApp {
         view::content(
             ctx,
             &self.page,
-            &self.dom_outline,
             self.last_status.as_ref(),
             self.loading,
         )
