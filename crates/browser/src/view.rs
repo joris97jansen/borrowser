@@ -3,7 +3,6 @@ use crate::BrowserApp;
 
 use html::{
     Node,
-    Token,
 };
 use egui::{
     Align,
@@ -14,10 +13,7 @@ use egui::{
     CentralPanel,
     ScrollArea,
     Color32,
-    Stroke,
-    CornerRadius,
     Frame,
-    TextEdit,
     Margin,
     Ui,
     RichText,
@@ -29,10 +25,6 @@ pub enum NavigationAction {
     Forward,
     Refresh,
     Navigate(String),
-}
-
-pub struct Panels {
-    pub show_debug: bool,
 }
 
 
@@ -91,7 +83,7 @@ pub fn content(
     dom_outline: &[String],
     status: Option<&String>,
     loading: bool,
-    panels: Panels,
+    // panels: Panels,
 ) {
     CentralPanel::default()
         .frame(Frame::default())

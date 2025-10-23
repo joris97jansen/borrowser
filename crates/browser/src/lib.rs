@@ -32,7 +32,6 @@ pub struct BrowserApp {
     net_callback: Option<NetCallback>,
     dom_outline: Vec<String>,
     page: PageState,
-    show_debug: bool,
     repaint: Option<RepaintHandle>,
 }
 
@@ -47,7 +46,6 @@ impl BrowserApp {
             net_callback: None,
             dom_outline: Vec::new(),
             page: PageState::new(),
-            show_debug: false,
             repaint: None,
         }
     }
@@ -223,7 +221,6 @@ impl UiApp for BrowserApp {
             &self.dom_outline,
             self.last_status.as_ref(),
             self.loading,
-            view::Panels { show_debug: self.show_debug },
         )
     }
 
