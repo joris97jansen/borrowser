@@ -39,10 +39,6 @@ pub fn top_bar(ctx: &Context, app: &mut BrowserApp) -> NavigationAction {
             let can_go_back = app.history_index > 0;
             let can_go_forward = app.history_index + 1 < app.history.len();
 
-            let spacing = ui.spacing().item_spacing.x;
-            let available_width = ui.available_width();
-            let url_width = available_width - (BUTTON_WIDTH * 3.0 + spacing + 3.0);
-
             if ui.add_enabled(can_go_back, Button::new("⬅").min_size([BUTTON_WIDTH, BAR_HEIGHT].into())).clicked() {
                 action = NavigationAction::Back;
             }
@@ -57,7 +53,7 @@ pub fn top_bar(ctx: &Context, app: &mut BrowserApp) -> NavigationAction {
             let response = Frame::new()
                 .fill(ui.visuals().extreme_bg_color) // subtle background
                 .stroke(egui::Stroke::new(1.0, ui.visuals().widgets.inactive.bg_stroke.color))
-                .rounding(6.0)
+                .corner_radius(6.0)
                 .inner_margin(Margin::symmetric(4, 4))
                 .show(ui, |ui| {
                     ui.add_sized(
@@ -80,10 +76,8 @@ pub fn top_bar(ctx: &Context, app: &mut BrowserApp) -> NavigationAction {
 pub fn content(
     ctx: &Context,
     page: &PageState,
-    dom_outline: &[String],
     status: Option<&String>,
     loading: bool,
-    // panels: Panels,
 ) {
     CentralPanel::default()
         .frame(Frame::default())
@@ -113,7 +107,7 @@ pub fn page_viewport(ui: &mut Ui, dom: &Node) {
 
     // 4) page surface + scroll
     ScrollArea::vertical()
-        .id_source("page_viewport_scroll_area")
+        .id_salt("page_viewport_scroll_area")
         .auto_shrink([false, false])
         .show(ui, |ui| {
             let min_height = ui.available_height();
