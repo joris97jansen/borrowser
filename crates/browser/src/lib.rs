@@ -29,7 +29,6 @@ pub struct BrowserApp {
     history_index: usize,
     loading: bool,
     last_status: Option<String>,
-    last_preview: String,
     net_callback: Option<NetCallback>,
     dom_outline: Vec<String>,
     page: PageState,
@@ -45,7 +44,6 @@ impl BrowserApp {
             history_index: 0,
             loading: false,
             last_status: None,
-            last_preview: String::new(),
             net_callback: None,
             dom_outline: Vec::new(),
             page: PageState::new(),
@@ -93,7 +91,6 @@ impl BrowserApp {
     fn start_fetch(&mut self, url: String) {
         self.loading = true;
         self.last_status = Some(format!("Fetching {} …", url));
-        self.last_preview.clear();
         self.dom_outline.clear();
 
         self.poke_redraw();
@@ -290,7 +287,6 @@ impl UiApp for BrowserApp {
         };
 
         self.last_status = Some(meta);
-        self.last_preview = result.snippet;
     }
 
     fn set_repaint_handle(&mut self, repaint: RepaintHandle) {
