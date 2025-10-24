@@ -17,6 +17,8 @@ use css::{
     attach_styles,
 };
 
+const MAX_HTML_BUFFER_SIZE: usize = 10 * 1024 * 1024; // 10 MB
+
 pub struct PageState {
     pub base_url: Option<String>,
     pub dom: Option<Node>,
@@ -53,7 +55,15 @@ impl PageState {
     }
 
     pub fn ingest_html_chunk(&mut self, chunk: &[u8]) {
+        if self.html_buffer.len() >= MAX_HTML_BUFFER_SIZE {
+            return;
+        }
+
         self.html_buffer.push_str(&String::from_utf8_lossy(chunk));
+
+        if self.html_buffer.len() > MAX_HTML_BUFFER_SIZE {
+            self.html_buffer.truncate(MAX_HTML_BUFFER_SIZE);
+        }
     }
 
     pub fn should_parse_now(&mut self) -> bool {
