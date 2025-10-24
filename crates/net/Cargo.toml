@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 reqwest = { workspace = true }
+ureq = { workspace = true }

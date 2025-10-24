@@ -10,9 +10,12 @@ use app_api::{
     UiApp,
     NetCallback,
     RepaintHandle,
+    NetStreamCallback,
 };
 use net::{
+    NetEvent,
     fetch_text,
+    fetch_text_stream,
 };
 use html::{
     Token,
@@ -30,6 +33,7 @@ pub struct BrowserApp {
     loading: bool,
     last_status: Option<String>,
     net_callback: Option<NetCallback>,
+    net_stream_callback: Option<NetStreamCallback>,
     dom_outline: Vec<String>,
     page: PageState,
     repaint: Option<RepaintHandle>,
@@ -44,6 +48,7 @@ impl BrowserApp {
             loading: false,
             last_status: None,
             net_callback: None,
+            net_stream_callback: None,
             dom_outline: Vec::new(),
             page: PageState::new(),
             repaint: None,
@@ -93,8 +98,9 @@ impl BrowserApp {
 
         self.poke_redraw();
 
-        if let Some(callback) = self.net_callback.as_ref().cloned() {
-            fetch_text(url, callback);
+        if let Some(callback) = self.net_stream_callback.as_ref().cloned() {
+            println!("Starting streaming fetch for {}", url);
+            fetch_text_stream(url, callback);
         } else {
             self.loading = false;
             self.last_status = Some("No network callback set".into());
@@ -148,7 +154,7 @@ impl BrowserApp {
         style.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v.as_str())
     }
 
-    fn page_background(dom: &Node) -> Option<(u8, u8, u8, u8)> {
+    pub fn page_background(dom: &Node) -> Option<(u8, u8, u8, u8)> {
         fn from_element(node: &Node, want: &str) -> Option<(u8, u8, u8, u8)> {
             if let Node::Element { name, style, .. } = node {
                 if name.eq_ignore_ascii_case(want) {
@@ -176,27 +182,39 @@ impl BrowserApp {
         None
     }
 
-    fn collect_visible_text<'a>(node: &'a Node, ancestors: &mut Vec<&'a Node>, out: &mut String) {
+    pub fn collect_visible_text<'a>(node: &'a Node, ancestors: &mut Vec<&'a Node>, out: &mut String) {
         match node {
             Node::Text { text } => {
-                if !text.trim().is_empty() {
+                let t = text.trim();
+                if !t.is_empty() {
                     if !out.is_empty() {
                         out.push(' ');
                     }
-                    out.push_str(text.trim());
+                    out.push_str(t);
                 }
             }
-            Node::Element{ children, .. } | Node::Document { children, .. } => {
-                if let Node::Element { name, .. } = node {
-                    if name.eq_ignore_ascii_case("style") || name.eq_ignore_ascii_case("script") {
-                        return; //skip
-                    }
+            Node::Element{ name, children, .. } => {
+                if name.eq_ignore_ascii_case("script") || name.eq_ignore_ascii_case("style") {
+                    return; // skip
                 }
                 ancestors.push(node);
                 for c in children {
                     Self::collect_visible_text(c, ancestors, out);
                 }
                 ancestors.pop();
+
+                match &name.to_ascii_lowercase()[..] {
+                    "p" | "div" | "section" | "article" | "header" | "footer"
+                    | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "li" => {
+                        out.push_str("\n\n");
+                    }
+                    _ => {}
+                }
+            }
+            Node::Document { children, .. } => {
+                for c in children {
+                    Self::collect_visible_text(c, ancestors, out);
+                }
             }
             _ => {}
         }
@@ -225,6 +243,10 @@ impl UiApp for BrowserApp {
 
     fn set_net_callback(&mut self, callback: NetCallback) {
         self.net_callback = Some(callback);
+    }
+
+    fn set_net_stream_callback(&mut self, callback: NetStreamCallback) {
+        self.net_stream_callback = Some(callback);
     }
 
     fn on_net_result(&mut self, result: net::FetchResult) {
@@ -283,6 +305,40 @@ impl UiApp for BrowserApp {
         };
 
         self.last_status = Some(meta);
+    }
+
+    fn on_net_stream(&mut self, event: NetEvent) {
+        print!("Received network stream event");
+        match event {
+            NetEvent::HtmlStart { url, content_type: _ } => {
+                self.page.ingest_html_start(&url);
+                self.last_status = Some(format!("Started HTML stream: {}", url));
+                self.poke_redraw();
+            }
+            NetEvent::HtmlChunk { url: _, chunk } => {
+                eprintln!("chunk: {} bytes", chunk.len());
+                self.page.ingest_html_chunk(&chunk);
+                if self.page.should_parse_now() {
+                    self.page.parse_now_and_attach();
+                    self.dom_outline = self.page.outline(200);
+                    self.last_status = Some("Parsing HTML stream…".into());
+                    self.poke_redraw();
+                }
+            }
+            NetEvent::HtmlDone { url } => {
+                eprintln!("html_buffer bytes: {}", self.page.html_buffer.as_bytes().len());
+                self.page.ingest_html_done();
+                self.dom_outline = self.page.outline(200);
+                self.loading = false;
+                self.last_status = Some(format!("Loaded HTML: {}", url));
+                self.poke_redraw();
+            }
+            NetEvent::HtmlError { url, error } => {
+                self.loading = false;
+                self.last_status = Some(format!("Network error on {}: {}", url, error));
+                self.poke_redraw();
+            }
+        }
     }
 
     fn set_repaint_handle(&mut self, repaint: RepaintHandle) {

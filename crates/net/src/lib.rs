@@ -1,5 +1,13 @@
+use std::io::Read;
 use std::thread;
 use std::sync::Arc;
+
+pub enum NetEvent {
+    HtmlStart { url: String, content_type: Option<String> },
+    HtmlChunk { url: String, chunk: Vec<u8> },
+    HtmlDone { url: String },
+    HtmlError { url: String, error: String },
+}
 
 pub struct FetchResult {
     pub url: String,
@@ -82,5 +90,56 @@ pub fn fetch_text(url: String, cb: Arc<dyn Fn(FetchResult) + Send + Sync>) {
                 error: Some(err),
         }),
         }
+    });
+}
+
+pub fn fetch_text_stream(url: String, callback_stream: Arc<dyn Fn(NetEvent) + Send + Sync>) {
+    thread::spawn(move || {
+        // 1) Do request
+        let response = match ureq::get(&url).call() {
+            Ok(resp) => resp,
+            Err(e) => {
+                callback_stream(NetEvent::HtmlError {
+                    url: url.clone(),
+                    error: e.to_string(),
+                });
+                return;
+            }
+        };
+
+        let content_type = response
+            .header("Content-Type")
+            .map(|s| s.to_string());
+
+        let mut reader = response.into_reader();
+
+        // 2) Emit HtmlStart
+        callback_stream(NetEvent::HtmlStart {
+            url: url.clone(),
+            content_type: content_type,
+        });
+
+        // 3) Read in Chunks bytes
+        let mut buffer = [0u8; 32 * 1024];
+        loop {
+            match reader.read(&mut buffer) {
+                Ok(0) => break, // EOF
+                Ok(n) => {
+                    callback_stream(NetEvent::HtmlChunk {
+                        url: url.clone(),
+                        chunk: buffer[..n].to_vec(),
+                    });
+                }
+                Err(e) => {
+                    callback_stream(NetEvent::HtmlError {
+                        url: url.clone(),
+                        error: format!("read error: {}", e),
+                    });
+                    return;
+                }
+            }
+        }
+
+        callback_stream(NetEvent::HtmlDone{ url });
     });
 }

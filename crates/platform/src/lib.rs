@@ -13,11 +13,16 @@ use app_api::{
     UiApp,
     Repaint,
     RepaintHandle,
+    NetStreamCallback,
 };
-use net::FetchResult;
+use net::{
+    FetchResult,
+    NetEvent,
+};
 
 enum UserEvent {
     NetResult(FetchResult),
+    NetStream(NetEvent),
     Repaint,
 }
 
@@ -40,10 +45,16 @@ pub fn run_with<A: UiApp + 'static>(mut app: A) {
     event_loop.run_app(&mut platform).expect("crashed");
 }
 
+fn make_stream_callback(proxy: EventLoopProxy<UserEvent>) -> NetStreamCallback {
+    Arc::new(move |net_event: NetEvent| {
+        let _ = proxy.send_event(UserEvent::NetStream(net_event));
+    })
+}
+
 struct PlatformApp {
     window: Option<Arc<Window>>,
     proxy: EventLoopProxy<UserEvent>,
-    ticker_started: bool,
+    // ticker_started: bool,
     renderer: Option<Renderer>,
     repaint: Option<Arc<PlatformRepaint>>,
     app: Option<Box<dyn UiApp>>,
@@ -54,11 +65,20 @@ impl PlatformApp {
         Self {
             window: None,
             proxy: proxy,
-            ticker_started: false,
+            // ticker_started: false,
             renderer: None,
             repaint: None,
             app: None,
         }
+    }
+
+    fn some_start_nav(&mut self, url: String) {
+        // Build a stream callback:
+        let proxy = self.proxy.clone();
+        let callback_stream = Arc::new(move |e: NetEvent| {
+            let _ = proxy.send_event(UserEvent::NetStream(e));
+        });
+        // call net::fetch_text_stream(url, callback_stream)
     }
 
     fn init_window(&mut self, event_loop: &ActiveEventLoop) {
@@ -105,6 +125,9 @@ impl ApplicationHandler<UserEvent> for PlatformApp {
         if let Some(app) = self.app.as_mut() {
             let handle: RepaintHandle = repaint.clone();
             app.set_repaint_handle(handle);
+            app.set_net_stream_callback(
+                make_stream_callback(self.proxy.clone())
+            );
         }
         self.repaint = Some(repaint);
 
@@ -118,6 +141,11 @@ impl ApplicationHandler<UserEvent> for PlatformApp {
             UserEvent::NetResult(result) => {
                 if let Some(app) = self.app.as_mut() {
                     app.on_net_result(result);
+                }
+            }
+            UserEvent::NetStream(event) => {
+                if let Some(app) = self.app.as_mut() {
+                    app.on_net_stream(event);
                 }
             }
             UserEvent::Repaint => {
@@ -152,7 +180,6 @@ impl ApplicationHandler<UserEvent> for PlatformApp {
                 }
             }
             WindowEvent::KeyboardInput { .. }
-            | WindowEvent::CursorMoved { .. }
             | WindowEvent::MouseInput { .. }
             | WindowEvent::MouseWheel { .. }
             | WindowEvent::ModifiersChanged(_)

@@ -17,6 +17,7 @@ use egui::{
     Margin,
     Ui,
     RichText,
+    Label,
 };
 
 pub enum NavigationAction {
@@ -84,6 +85,13 @@ pub fn content(
         .show(ctx, |ui| {
         if let Some(dom) = page.dom.as_ref() {
             page_viewport(ui, dom);
+
+            // ui.separator();
+            // egui::CollapsingHeader::new("DOM outline (debug)").default_open(true).show(ui, |ui| {
+            //     for line in page.outline(5000) { // large cap so we see everything
+            //         ui.monospace(line);
+            //     }
+            // });
         }
 
         if loading { ui.label("⏳ Loading…"); }
@@ -105,6 +113,8 @@ pub fn page_viewport(ui: &mut Ui, dom: &Node) {
     let fg = BrowserApp::inherited_color(dom, &[]);
     let fg_ui = Color32::from_rgba_unmultiplied(fg.0, fg.1, fg.2, fg.3);
 
+    eprintln!("visible text chars: {}", text.chars().count());
+
     // 4) page surface + scroll
     ScrollArea::vertical()
         .id_salt("page_viewport_scroll_area")
@@ -118,9 +128,10 @@ pub fn page_viewport(ui: &mut Ui, dom: &Node) {
                     ui.style_mut().visuals.override_text_color = Some(fg_ui);
                     ui.set_width(ui.available_width());
                     ui.set_min_height(min_height);
-                    ui.label(
-                        // Placeholder; CSS driven later
-                        RichText::new(text).size(16.0)
+                    ui.add(
+                        Label::new(
+                            RichText::new(text).size(16.0)
+                        ).wrap()
                     );
 
                     ui.style_mut().visuals.override_text_color = None;

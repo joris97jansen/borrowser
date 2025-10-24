@@ -287,6 +287,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     if !raw.is_empty() {
                         out.push(Token::Text(raw.to_string()));
                     }
+                    out.push(Token::EndTag(name.clone()));
                     i = j + rel + close_tag.len();
                     continue;
                 } else {
@@ -294,6 +295,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     if !raw.is_empty() {
                         out.push(Token::Text(raw.to_string()));
                     }
+                    out.push(Token::EndTag(name.clone()));
                     break;
                 }
             }

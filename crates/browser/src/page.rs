@@ -1,4 +1,8 @@
 use std::collections::HashSet;
+use std::time::{
+    Instant,
+    Duration,
+};
 use url::Url;
 use html::{
     Node,
@@ -16,8 +20,10 @@ use css::{
 pub struct PageState {
     pub base_url: Option<String>,
     pub dom: Option<Node>,
-    css_pending: HashSet<String>,
-    css_bundle: String,
+    // css_pending: HashSet<String>,
+    // css_bundle: String,
+    pub html_buffer: String,
+    last_parse: Option<Instant>,
 }
 
 impl PageState {
@@ -25,9 +31,60 @@ impl PageState {
         Self {
             base_url: None,
             dom: None,
-            css_pending: HashSet::new(),
-            css_bundle: String::new(),
+            // css_pending: HashSet::new(),
+            // css_bundle: String::new(),
+            html_buffer: String::new(),
+            last_parse: None,
         }
+    }
+
+    pub fn reset_for(&mut self, url: &str) {
+        self.base_url = Some(url.to_string());
+        self.dom = None;
+        self.html_buffer.clear();
+        self.last_parse = None;
+    }
+
+    pub fn ingest_html_start(&mut self, final_url: &str) {
+        self.base_url = Some(final_url.to_string());
+        self.html_buffer.clear();
+        self.dom = None;
+        self.last_parse = None;
+    }
+
+    pub fn ingest_html_chunk(&mut self, chunk: &[u8]) {
+        self.html_buffer.push_str(&String::from_utf8_lossy(chunk));
+    }
+
+    pub fn should_parse_now(&mut self) -> bool {
+        const MIN_INTERVAL: Duration = Duration::from_millis(180);
+        let now = Instant::now();
+        match self.last_parse {
+            None => {
+                self.last_parse = Some(now);
+                true
+            }
+            Some(t) if now.duration_since(t) >= MIN_INTERVAL => {
+                self.last_parse = Some(now);
+                true
+            }
+            _ => false,
+        }
+    }
+
+    pub fn parse_now_and_attach(&mut self) {
+        let tokens = tokenize(&self.html_buffer);
+        let mut dom = build_dom(&tokens);
+
+        let mut inline_css = String::new();
+        collect_style_texts(&dom, &mut inline_css);
+        attach_styles(&mut dom, &parse_stylesheet(&inline_css));
+
+        self.dom = Some(dom);
+    }
+
+    pub fn ingest_html_done(&mut self) {
+        self.parse_now_and_attach();
     }
 
     pub fn ingest_html(&mut self, final_url: &str, body: &str, net_callback: impl Fn(String) + 'static + Clone) {
@@ -51,9 +108,9 @@ impl PageState {
                 for h in hrefs {
                     if let Ok(abs) = base_url.join(&h) {
                         let href = abs.to_string();
-                        if self.css_pending.insert(href.clone()) {
-                            net_callback(href);
-                        }
+                        // if self.css_pending.insert(href.clone()) {
+                        //     net_callback(href);
+                        // }
                     }
                 }
             }
@@ -71,33 +128,35 @@ impl PageState {
             .map(|s| s.to_ascii_lowercase().contains("text/css"))
             .unwrap_or(false);
 
-        if self.css_pending.contains(requested_url) || ct_is_css {
-            self.ingest_css(requested_url, body);
-            true
-        } else {
-            false
-        }
+        // if self.css_pending.contains(requested_url) || ct_is_css {
+        //     self.ingest_css(requested_url, body);
+        //     true
+        // } else {
+        //     false
+        // }
+        false
     }
 
     fn ingest_css(&mut self, requested_url: &str, body: &str) {
-        self.css_pending.remove(requested_url);
-        if !body.is_empty() {
-            self.css_bundle.push_str(body);
-            self.css_bundle.push('\n');
-        }
+        // self.css_pending.remove(requested_url);
+        // if !body.is_empty() {
+        //     self.css_bundle.push_str(body);
+        //     self.css_bundle.push('\n');
+        // }
 
-        if let Some(dom_mut) = self.dom.as_mut() {
-            let mut inline_css = String::new();
-            collect_style_texts(dom_mut, &mut inline_css);
-            let sheet_inline = parse_stylesheet(&inline_css);
-            let sheet_ext    = parse_stylesheet(&self.css_bundle);
-            attach_styles(dom_mut, &sheet_inline);
-            attach_styles(dom_mut, &sheet_ext);
-        }
+        // if let Some(dom_mut) = self.dom.as_mut() {
+        //     let mut inline_css = String::new();
+        //     collect_style_texts(dom_mut, &mut inline_css);
+        //     let sheet_inline = parse_stylesheet(&inline_css);
+        //     let sheet_ext    = parse_stylesheet(&self.css_bundle);
+        //     attach_styles(dom_mut, &sheet_inline);
+        //     attach_styles(dom_mut, &sheet_ext);
+        // }
     }
 
     pub fn pending_count(&self) -> usize {
-        self.css_pending.len()
+        // self.css_pending.len()
+        0
     }
 
     pub fn outline(&self, cap: usize) -> Vec<String> {
