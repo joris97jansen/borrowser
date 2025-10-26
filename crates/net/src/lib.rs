@@ -1,3 +1,7 @@
+use tools::common::{
+    MAX_HTML_BYTES,
+};
+
 use std::io::Read;
 use std::thread;
 use std::sync::Arc;
@@ -121,14 +125,27 @@ pub fn fetch_text_stream(url: String, callback_stream: Arc<dyn Fn(NetEvent) + Se
 
         // 3) Read in Chunks bytes
         let mut buffer = [0u8; 32 * 1024];
+        let mut total: usize = 0;
+
         loop {
             match reader.read(&mut buffer) {
                 Ok(0) => break, // EOF
                 Ok(n) => {
-                    callback_stream(NetEvent::HtmlChunk {
-                        url: url.clone(),
-                        chunk: buffer[..n].to_vec(),
-                    });
+                    let remaining = MAX_HTML_BYTES.saturating_sub(total);
+                    if remaining == 0 {
+                        break;
+                    }
+                    let take = n.min(remaining);
+                    if take > 0 {
+                        total += take;
+                        callback_stream(NetEvent::HtmlChunk {
+                            url: url.clone(),
+                            chunk: buffer[..take].to_vec(),
+                        });
+                    }
+                    if n > take || total >= MAX_HTML_BYTES {
+                        break;
+                    }
                 }
                 Err(e) => {
                     callback_stream(NetEvent::HtmlError {

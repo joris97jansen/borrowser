@@ -1,0 +1,1 @@
+pub const MAX_HTML_BYTES: usize = 10 * 1024 * 1024;

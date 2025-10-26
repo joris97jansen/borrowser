@@ -232,6 +232,7 @@ dependencies = [
  "egui",
  "html",
  "net",
+ "tools",
  "url",
 ]
 
@@ -1600,6 +1601,7 @@ name = "net"
 version = "0.1.0"
 dependencies = [
  "reqwest",
+ "tools",
  "ureq",
 ]
 
