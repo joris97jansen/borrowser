@@ -8,19 +8,20 @@ use egui::{
 };
 use app_api::{
     UiApp,
-    NetCallback,
     RepaintHandle,
     NetStreamCallback,
 };
+use url::Url;
 use net::{
     NetEvent,
-    fetch_text,
-    fetch_text_stream,
+    ResourceKind,
+    fetch_stream,
 };
 use html::{
-    Token,
     Node,
-    is_html,
+};
+use html::dom_utils::{
+    collect_stylesheet_hrefs,
 };
 use css::{
     parse_color,
@@ -32,7 +33,6 @@ pub struct BrowserApp {
     history_index: usize,
     loading: bool,
     last_status: Option<String>,
-    net_callback: Option<NetCallback>,
     net_stream_callback: Option<NetStreamCallback>,
     dom_outline: Vec<String>,
     page: PageState,
@@ -47,7 +47,6 @@ impl BrowserApp {
             history_index: 0,
             loading: false,
             last_status: None,
-            net_callback: None,
             net_stream_callback: None,
             dom_outline: Vec::new(),
             page: PageState::new(),
@@ -92,6 +91,8 @@ impl BrowserApp {
     }
 
     fn start_fetch(&mut self, url: String) {
+        self.page.reset_for(&url);
+
         self.loading = true;
         self.last_status = Some(format!("Fetching {} …", url));
         self.dom_outline.clear();
@@ -100,7 +101,7 @@ impl BrowserApp {
 
         if let Some(callback) = self.net_stream_callback.as_ref().cloned() {
             println!("Starting streaming fetch for {}", url);
-            fetch_text_stream(url, callback);
+            fetch_stream(url, ResourceKind::Html, callback);
         } else {
             self.loading = false;
             self.last_status = Some("No network callback set".into());
@@ -147,11 +148,6 @@ impl BrowserApp {
             }
         }
         (0, 0, 0, 255) // default black
-    }
-
-    fn style_get<'a>(attributes: &[(String, Option<String>)], style: &'a [(String, String)], name: &str) -> Option<&'a str> {
-        // inline already merged into style earlier via attach_styles
-        style.iter().find(|(k, _)| k.eq_ignore_ascii_case(name)).map(|(_, v)| v.as_str())
     }
 
     pub fn page_background(dom: &Node) -> Option<(u8, u8, u8, u8)> {
@@ -241,82 +237,20 @@ impl UiApp for BrowserApp {
         )
     }
 
-    fn set_net_callback(&mut self, callback: NetCallback) {
-        self.net_callback = Some(callback);
-    }
-
     fn set_net_stream_callback(&mut self, callback: NetStreamCallback) {
         self.net_stream_callback = Some(callback);
-    }
-
-    fn on_net_result(&mut self, result: net::FetchResult) {
-        self.loading = false;
-
-        if is_html(&result.content_type) && !result.body.is_empty() {
-            let callback = self.net_callback.as_ref().cloned().expect("net cb");
-            self.page.ingest_html(&result.url, &result.body, move |href| {
-                fetch_text(href, callback.clone());
-            });
-
-            let queued = self.page.pending_count();
-
-            self.dom_outline = self.page.outline(200);
-            self.loading = queued > 0; // keep spinner if CSS pending
-            self.last_status = Some(if queued > 0 {
-                format!("Loaded HTML • fetching {queued} stylesheet(s)…")
-            } else {
-                "Loaded HTML".to_string()
-            });
-
-            self.poke_redraw();
-
-            return;
-        }
-
-        if self.page.try_ingest_css(&result.requested_url, &result.content_type, &result.body) {
-            self.dom_outline = self.page.outline(200);
-            let remaining = self.page.pending_count();
-            self.loading = remaining > 0;
-            self.last_status = Some(if remaining > 0 {
-                format!("Loaded stylesheet: {} ({} remaining)", result.url, remaining)
-            } else {
-                "All stylesheets loaded".to_string()
-            });
-
-            self.poke_redraw();
-
-            return;
-        }
-
-        let content_type = result.content_type.clone().unwrap_or_else(|| "unknown".into());
-        let meta = match(result.status, &result.error) {
-            (Some(code), None) => format!(
-                "OK {code} — {} bytes - {content_type} - {} ms - {}",
-                result.bytes, result.duration_ms, result.url
-            ),
-            (Some(code), Some(err)) => format!(
-                "OK {code} — {} bytes - {content_type} - {} ms - {} - Network error: {err}",
-                result.bytes, result.duration_ms, result.url
-                ),
-            (None, Some(error)) => format!(
-                "Network error: {} ms - {error}", result.duration_ms
-            ),
-            _ => "Unknown".to_string(),
-        };
-
-        self.last_status = Some(meta);
     }
 
     fn on_net_stream(&mut self, event: NetEvent) {
         print!("Received network stream event");
         match event {
-            NetEvent::HtmlStart { url, content_type: _ } => {
+            NetEvent::Start { kind: ResourceKind::Html, url, .. } => {
                 self.page.ingest_html_start(&url);
+                self.loading = true;
                 self.last_status = Some(format!("Started HTML stream: {}", url));
                 self.poke_redraw();
             }
-            NetEvent::HtmlChunk { url: _, chunk } => {
-                eprintln!("chunk: {} bytes", chunk.len());
+            NetEvent::Chunk { kind: ResourceKind::Html, url: _, chunk } => {
                 self.page.ingest_html_chunk(&chunk);
                 if self.page.should_parse_now() {
                     self.page.parse_now_and_attach();
@@ -325,17 +259,67 @@ impl UiApp for BrowserApp {
                     self.poke_redraw();
                 }
             }
-            NetEvent::HtmlDone { url } => {
-                eprintln!("html_buffer bytes: {}", self.page.html_buffer.as_bytes().len());
+            NetEvent::Done { kind: ResourceKind::Html, url } => {
+                // finalize HTML
                 self.page.ingest_html_done();
                 self.dom_outline = self.page.outline(200);
-                self.loading = false;
                 self.last_status = Some(format!("Loaded HTML: {}", url));
+
+                if let (Some(dom_ref), Some(base)) = (self.page.dom.as_ref(), self.page.base_url.as_ref()) {
+                    let mut hrefs = Vec::new();
+                    collect_stylesheet_hrefs(dom_ref, &mut hrefs);
+                    if let Ok(base_url) = Url::parse(base) {
+                        if let Some(callback) = self.net_stream_callback.as_ref().clone() {
+                            for h in hrefs {
+                                if let Ok(abs) = base_url.join(&h) {
+                                    let href = abs.to_string();
+                                    if self.page.register_css(&href) {
+                                        fetch_stream(href, ResourceKind::Css, callback.clone());
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                let pending = self.page.pending_count();
+                self.loading = pending > 0;
+                if pending > 0 {
+                    self.last_status = Some(format!("Loaded HTML, fetching {pending} stylesheet(s)..."));
+                }
                 self.poke_redraw();
             }
-            NetEvent::HtmlError { url, error } => {
+            NetEvent::Error { kind: ResourceKind::Html, url, error } => {
                 self.loading = false;
                 self.last_status = Some(format!("Network error on {}: {}", url, error));
+                self.poke_redraw();
+            }
+            NetEvent::Start { kind: ResourceKind::Css, url, .. } => {
+                // already registered; status only
+                self.last_status = Some(format!("Fetching stylesheets: {url}"));
+                self.poke_redraw();
+           }
+            NetEvent::Chunk { kind: ResourceKind::Css, url, chunk } => {
+                self.page.ingest_css_chunk(&url, &chunk);
+                // phase 2: incremental parse
+            }
+            NetEvent::Done { kind: ResourceKind::Css, url } => {
+                self.page.ingest_css_done(&url);
+                self.dom_outline = self.page.outline(200);
+
+                let remaining = self.page.pending_count();
+                self.loading = remaining > 0;
+                self.last_status = Some(if remaining > 0 {
+                    format!("Loaded stylesheet {}, {} remaining...", url, remaining)
+                } else {
+                    format!("All stylesheets loaded")
+                });
+                self.poke_redraw();
+            }
+            NetEvent::Error { kind: ResourceKind::Css, url, error } => {
+                self.page.ingest_css_done(&url);
+                let remaining = self.page.pending_count();
+                self.loading = remaining > 0;
+                self.last_status = Some(format!("Stylesheet error on {}: {} ({} remaining)", url, error, remaining));
                 self.poke_redraw();
             }
         }

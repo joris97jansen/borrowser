@@ -1,19 +1,21 @@
 use tools::common::{
     MAX_HTML_BYTES,
 };
-use std::collections::HashSet;
+use std::collections::{
+    HashSet,
+    HashMap,
+};
 use std::time::{
     Instant,
     Duration,
 };
-use url::Url;
 use html::{
     Node,
     tokenize,
     build_dom,
 };
 use html::dom_utils::{
-    collect_style_texts, collect_stylesheet_hrefs
+    collect_style_texts
 };
 use css::{
     parse_stylesheet,
@@ -23,10 +25,10 @@ use css::{
 pub struct PageState {
     pub base_url: Option<String>,
     pub dom: Option<Node>,
-    // css_pending: HashSet<String>,
-    // css_bundle: String,
     pub html_buffer: String,
     last_parse: Option<Instant>,
+    css_pending: HashSet<String>,
+    css_buffers: HashMap<String, String>,
 }
 
 impl PageState {
@@ -34,20 +36,24 @@ impl PageState {
         Self {
             base_url: None,
             dom: None,
-            // css_pending: HashSet::new(),
-            // css_bundle: String::new(),
             html_buffer: String::new(),
             last_parse: None,
+            css_pending: HashSet::new(),
+            css_buffers: HashMap::new(),
         }
     }
 
+    // Clear all state for new navigation
     pub fn reset_for(&mut self, url: &str) {
         self.base_url = Some(url.to_string());
         self.dom = None;
         self.html_buffer.clear();
         self.last_parse = None;
+        self.css_pending.clear();
+        self.css_buffers.clear();
     }
 
+    // --- HTML ---
     pub fn ingest_html_start(&mut self, final_url: &str) {
         self.base_url = Some(final_url.to_string());
         self.html_buffer.clear();
@@ -65,6 +71,10 @@ impl PageState {
         if self.html_buffer.len() > MAX_HTML_BYTES {
             self.html_buffer.truncate(MAX_HTML_BYTES);
         }
+    }
+
+    pub fn ingest_html_done(&mut self) {
+        self.parse_now_and_attach();
     }
 
     pub fn should_parse_now(&mut self) -> bool {
@@ -94,80 +104,51 @@ impl PageState {
         self.dom = Some(dom);
     }
 
-    pub fn ingest_html_done(&mut self) {
-        self.parse_now_and_attach();
+    // --- CSS ---
+    pub fn register_css(&mut self, absolute_url: &str) -> bool {
+        if self.css_pending.insert(absolute_url.to_string()) {
+            self.css_buffers.entry(absolute_url.to_string()).or_insert_with(String::new);
+            true
+        } else {
+            false
+        }
     }
 
-    pub fn ingest_html(&mut self, final_url: &str, body: &str, net_callback: impl Fn(String) + 'static + Clone) {
-        self.base_url = Some(final_url.to_string());
-
-        let tokens = tokenize(body);
-        self.dom = Some(build_dom(&tokens));
-
-        let mut inline_css = String::new();
-        if let Some(dom_ref) = self.dom.as_ref() {
-            collect_style_texts(dom_ref, &mut inline_css);
-        }
-        if let Some(dom_mut) = self.dom.as_mut() {
-            attach_styles(dom_mut, &parse_stylesheet(&inline_css));
-        }
-
-        if let (Some(dom_ref), Some(base)) = (self.dom.as_ref(), self.base_url.as_ref()) {
-            let mut hrefs = Vec::new();
-            collect_stylesheet_hrefs(dom_ref, &mut hrefs);
-            if let Ok(base_url) = Url::parse(base) {
-                for h in hrefs {
-                    if let Ok(abs) = base_url.join(&h) {
-                        let href = abs.to_string();
-                        // if self.css_pending.insert(href.clone()) {
-                        //     net_callback(href);
-                        // }
-                    }
+    pub fn ingest_css_chunk(&mut self, url: &str, chunk: &[u8]) {
+        if let Some(buffer) = self.css_buffers.get_mut(url) {
+            if buffer.len() < MAX_HTML_BYTES {
+                buffer.push_str(&String::from_utf8_lossy(chunk));
+                if buffer.len() > MAX_HTML_BYTES {
+                    buffer.truncate(MAX_HTML_BYTES);
                 }
             }
         }
     }
 
-    pub fn try_ingest_css(
-        &mut self,
-        requested_url: &str,
-        content_type: &Option<String>,
-        body: &str,
-    ) -> bool {
-        let ct_is_css = content_type
-            .as_deref()
-            .map(|s| s.to_ascii_lowercase().contains("text/css"))
-            .unwrap_or(false);
+    pub fn ingest_css_done(&mut self, url: &str) {
+        self.css_pending.remove(url);
+        if let Some(dom_mut) = self.dom.as_mut() {
+            let mut inline_css = String::new();
+            collect_style_texts(dom_mut, &mut inline_css);
+            let sheet_inline = parse_stylesheet(&inline_css);
 
-        // if self.css_pending.contains(requested_url) || ct_is_css {
-        //     self.ingest_css(requested_url, body);
-        //     true
-        // } else {
-        //     false
-        // }
-        false
-    }
+            let mut ext = String::new();
+            for (u, css) in &self.css_buffers {
+                if self.css_pending.contains(u) {
+                    continue;
+                }
+                ext.push_str(css);
+                ext.push('\n');
+            }
+            let sheet_ext = parse_stylesheet(&ext);
 
-    fn ingest_css(&mut self, requested_url: &str, body: &str) {
-        // self.css_pending.remove(requested_url);
-        // if !body.is_empty() {
-        //     self.css_bundle.push_str(body);
-        //     self.css_bundle.push('\n');
-        // }
-
-        // if let Some(dom_mut) = self.dom.as_mut() {
-        //     let mut inline_css = String::new();
-        //     collect_style_texts(dom_mut, &mut inline_css);
-        //     let sheet_inline = parse_stylesheet(&inline_css);
-        //     let sheet_ext    = parse_stylesheet(&self.css_bundle);
-        //     attach_styles(dom_mut, &sheet_inline);
-        //     attach_styles(dom_mut, &sheet_ext);
-        // }
+            attach_styles(dom_mut, &sheet_inline);
+            attach_styles(dom_mut, &sheet_ext);
+        }
     }
 
     pub fn pending_count(&self) -> usize {
-        // self.css_pending.len()
-        0
+        self.css_pending.len()
     }
 
     pub fn outline(&self, cap: usize) -> Vec<String> {

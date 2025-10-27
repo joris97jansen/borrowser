@@ -16,28 +16,18 @@ use app_api::{
     NetStreamCallback,
 };
 use net::{
-    FetchResult,
     NetEvent,
 };
 
-enum UserEvent {
-    NetResult(FetchResult),
+pub enum UserEvent {
     NetStream(NetEvent),
     Repaint,
 }
 
 
-pub fn run_with<A: UiApp + 'static>(mut app: A) {
+pub fn run_with<A: UiApp + 'static>(app: A) {
     let event_loop = EventLoop::<UserEvent>::with_user_event().build().expect("event loop");
     let proxy = event_loop.create_proxy();
-
-    let net_callback = Arc::new({
-        let proxy = proxy.clone();
-        move |result: FetchResult| {
-            let _ = proxy.send_event(UserEvent::NetResult(result));
-        }
-    });
-    app.set_net_callback(net_callback);
 
     let mut platform = PlatformApp::new(proxy);
     platform.app = Some(Box::new(app));           // <- inject the app
@@ -70,15 +60,6 @@ impl PlatformApp {
             repaint: None,
             app: None,
         }
-    }
-
-    fn some_start_nav(&mut self, url: String) {
-        // Build a stream callback:
-        let proxy = self.proxy.clone();
-        let callback_stream = Arc::new(move |e: NetEvent| {
-            let _ = proxy.send_event(UserEvent::NetStream(e));
-        });
-        // call net::fetch_text_stream(url, callback_stream)
     }
 
     fn init_window(&mut self, event_loop: &ActiveEventLoop) {
@@ -138,11 +119,6 @@ impl ApplicationHandler<UserEvent> for PlatformApp {
 
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: UserEvent) {
         match event {
-            UserEvent::NetResult(result) => {
-                if let Some(app) = self.app.as_mut() {
-                    app.on_net_result(result);
-                }
-            }
             UserEvent::NetStream(event) => {
                 if let Some(app) = self.app.as_mut() {
                     app.on_net_stream(event);
