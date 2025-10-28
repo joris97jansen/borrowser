@@ -13,19 +13,25 @@ pub enum ResourceKind{
 }
 
 pub enum NetEvent {
-    Start { kind: ResourceKind, url: String, content_type: Option<String> },
-    Chunk { kind: ResourceKind, url: String, chunk: Vec<u8> },
-    Done { kind: ResourceKind, url: String },
-    Error { kind: ResourceKind, url: String, error: String },
+    Start { request_id: u64, kind: ResourceKind, url: String, content_type: Option<String> },
+    Chunk { request_id: u64, kind: ResourceKind, url: String, chunk: Vec<u8> },
+    Done { request_id: u64, kind: ResourceKind, url: String },
+    Error { request_id: u64, kind: ResourceKind, url: String, error: String },
 }
 
-pub fn fetch_stream(url: String, kind: ResourceKind, callback: Arc<dyn Fn(NetEvent) + Send + Sync>) {
+pub fn fetch_stream(
+    request_id: u64,
+    url: String,
+    kind: ResourceKind,
+    callback: Arc<dyn Fn(NetEvent) + Send + Sync>
+) {
     thread::spawn(move || {
         // 1) Do request
         let response = match ureq::get(&url).call() {
             Ok(resp) => resp,
             Err(e) => {
                 callback(NetEvent::Error {
+                    request_id,
                     kind,
                     url: url.clone(),
                     error: e.to_string(),
@@ -42,6 +48,7 @@ pub fn fetch_stream(url: String, kind: ResourceKind, callback: Arc<dyn Fn(NetEve
 
         // 2) Emit Start
         callback(NetEvent::Start {
+            request_id,
             kind,
             url: url.clone(),
             content_type: content_type,
@@ -63,6 +70,7 @@ pub fn fetch_stream(url: String, kind: ResourceKind, callback: Arc<dyn Fn(NetEve
                     if take > 0 {
                         total += take;
                         callback(NetEvent::Chunk {
+                            request_id,
                             kind,
                             url: url.clone(),
                             chunk: buffer[..take].to_vec(),
@@ -74,6 +82,7 @@ pub fn fetch_stream(url: String, kind: ResourceKind, callback: Arc<dyn Fn(NetEve
                 }
                 Err(e) => {
                     callback(NetEvent::Error {
+                        request_id,
                         kind,
                         url: url.clone(),
                         error: format!("read error: {}", e),
@@ -84,6 +93,7 @@ pub fn fetch_stream(url: String, kind: ResourceKind, callback: Arc<dyn Fn(NetEve
         }
 
         callback(NetEvent::Done{
+            request_id,
             kind,
             url
         });

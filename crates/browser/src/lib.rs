@@ -37,6 +37,7 @@ pub struct BrowserApp {
     dom_outline: Vec<String>,
     page: PageState,
     repaint: Option<RepaintHandle>,
+    navigation_generation: u64,
 }
 
 impl BrowserApp {
@@ -51,6 +52,7 @@ impl BrowserApp {
             dom_outline: Vec::new(),
             page: PageState::new(),
             repaint: None,
+            navigation_generation: 0,
         }
     }
 
@@ -91,6 +93,10 @@ impl BrowserApp {
     }
 
     fn start_fetch(&mut self, url: String) {
+        // bump generation and reset state
+        self.navigation_generation = self.navigation_generation.wrapping_add(1);
+        let request_id = self.navigation_generation;
+
         self.page.reset_for(&url);
 
         self.loading = true;
@@ -101,7 +107,7 @@ impl BrowserApp {
 
         if let Some(callback) = self.net_stream_callback.as_ref().cloned() {
             println!("Starting streaming fetch for {}", url);
-            fetch_stream(url, ResourceKind::Html, callback);
+            fetch_stream(request_id, url, ResourceKind::Html, callback);
         } else {
             self.loading = false;
             self.last_status = Some("No network callback set".into());
@@ -242,7 +248,19 @@ impl UiApp for BrowserApp {
     }
 
     fn on_net_stream(&mut self, event: NetEvent) {
-        print!("Received network stream event");
+        let current_generation = self.navigation_generation;
+        let request_id = match &event {
+            NetEvent::Start { request_id, .. } => *request_id,
+            NetEvent::Chunk { request_id, .. } => *request_id,
+            NetEvent::Done { request_id, .. } => *request_id,
+            NetEvent::Error { request_id, .. } => *request_id,
+        };
+
+        if request_id != current_generation {
+            // stale event; ignore
+            return;
+        }
+
         match event {
             NetEvent::Start { kind: ResourceKind::Html, url, .. } => {
                 self.page.ingest_html_start(&url);
@@ -250,7 +268,7 @@ impl UiApp for BrowserApp {
                 self.last_status = Some(format!("Started HTML stream: {}", url));
                 self.poke_redraw();
             }
-            NetEvent::Chunk { kind: ResourceKind::Html, url: _, chunk } => {
+            NetEvent::Chunk { kind: ResourceKind::Html, url: _, chunk, .. } => {
                 self.page.ingest_html_chunk(&chunk);
                 if self.page.should_parse_now() {
                     self.page.parse_now_and_attach();
@@ -259,7 +277,7 @@ impl UiApp for BrowserApp {
                     self.poke_redraw();
                 }
             }
-            NetEvent::Done { kind: ResourceKind::Html, url } => {
+            NetEvent::Done { kind: ResourceKind::Html, url, .. } => {
                 // finalize HTML
                 self.page.ingest_html_done();
                 self.dom_outline = self.page.outline(200);
@@ -274,7 +292,7 @@ impl UiApp for BrowserApp {
                                 if let Ok(abs) = base_url.join(&h) {
                                     let href = abs.to_string();
                                     if self.page.register_css(&href) {
-                                        fetch_stream(href, ResourceKind::Css, callback.clone());
+                                        fetch_stream(request_id, href, ResourceKind::Css, callback.clone());
                                     }
                                 }
                             }
@@ -288,7 +306,7 @@ impl UiApp for BrowserApp {
                 }
                 self.poke_redraw();
             }
-            NetEvent::Error { kind: ResourceKind::Html, url, error } => {
+            NetEvent::Error { kind: ResourceKind::Html, url, error, .. } => {
                 self.loading = false;
                 self.last_status = Some(format!("Network error on {}: {}", url, error));
                 self.poke_redraw();
@@ -298,11 +316,11 @@ impl UiApp for BrowserApp {
                 self.last_status = Some(format!("Fetching stylesheets: {url}"));
                 self.poke_redraw();
            }
-            NetEvent::Chunk { kind: ResourceKind::Css, url, chunk } => {
+            NetEvent::Chunk { kind: ResourceKind::Css, url, chunk, .. } => {
                 self.page.ingest_css_chunk(&url, &chunk);
                 // phase 2: incremental parse
             }
-            NetEvent::Done { kind: ResourceKind::Css, url } => {
+            NetEvent::Done { kind: ResourceKind::Css, url, .. } => {
                 self.page.ingest_css_done(&url);
                 self.dom_outline = self.page.outline(200);
 
@@ -315,7 +333,7 @@ impl UiApp for BrowserApp {
                 });
                 self.poke_redraw();
             }
-            NetEvent::Error { kind: ResourceKind::Css, url, error } => {
+            NetEvent::Error { kind: ResourceKind::Css, url, error, .. } => {
                 self.page.ingest_css_done(&url);
                 let remaining = self.page.pending_count();
                 self.loading = remaining > 0;
