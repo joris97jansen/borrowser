@@ -26,6 +26,11 @@ use html::dom_utils::{
 use css::{
     parse_color,
 };
+use std::sync::Arc;
+use std::sync::atomic::{
+    AtomicBool,
+    Ordering,
+};
 
 pub struct BrowserApp {
     url: String,
@@ -38,6 +43,7 @@ pub struct BrowserApp {
     page: PageState,
     repaint: Option<RepaintHandle>,
     navigation_generation: u64,
+    navigation_cancel: Arc<AtomicBool>,
 }
 
 impl BrowserApp {
@@ -53,6 +59,7 @@ impl BrowserApp {
             page: PageState::new(),
             repaint: None,
             navigation_generation: 0,
+            navigation_cancel: Arc::new(AtomicBool::new(false)),
         }
     }
 
@@ -93,9 +100,14 @@ impl BrowserApp {
     }
 
     fn start_fetch(&mut self, url: String) {
+        self.navigation_cancel.store(true, Ordering::Release);
+
         // bump generation and reset state
         self.navigation_generation = self.navigation_generation.wrapping_add(1);
         let request_id = self.navigation_generation;
+
+        self.navigation_cancel = Arc::new(AtomicBool::new(false));
+        let cancel = self.navigation_cancel.clone();
 
         self.page.reset_for(&url);
 
@@ -107,7 +119,7 @@ impl BrowserApp {
 
         if let Some(callback) = self.net_stream_callback.as_ref().cloned() {
             println!("Starting streaming fetch for {}", url);
-            fetch_stream(request_id, url, ResourceKind::Html, callback);
+            fetch_stream(request_id, url, ResourceKind::Html, cancel, callback);
         } else {
             self.loading = false;
             self.last_status = Some("No network callback set".into());
@@ -283,6 +295,8 @@ impl UiApp for BrowserApp {
                 self.dom_outline = self.page.outline(200);
                 self.last_status = Some(format!("Loaded HTML: {}", url));
 
+                let cancel = self.navigation_cancel.clone();
+
                 if let (Some(dom_ref), Some(base)) = (self.page.dom.as_ref(), self.page.base_url.as_ref()) {
                     let mut hrefs = Vec::new();
                     collect_stylesheet_hrefs(dom_ref, &mut hrefs);
@@ -292,7 +306,7 @@ impl UiApp for BrowserApp {
                                 if let Ok(abs) = base_url.join(&h) {
                                     let href = abs.to_string();
                                     if self.page.register_css(&href) {
-                                        fetch_stream(request_id, href, ResourceKind::Css, callback.clone());
+                                        fetch_stream(request_id, href, ResourceKind::Css, cancel.clone(), callback.clone());
                                     }
                                 }
                             }
