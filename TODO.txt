@@ -1,3 +1,0 @@
-1) Add streaming for CSS
-
-2) add cooperative network aborts later

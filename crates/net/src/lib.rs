@@ -10,23 +10,16 @@ use std::sync::atomic::{
     Ordering,
 };
 
-#[derive(Clone, Copy, Debug)]
-pub enum ResourceKind{
-    Html,
-    Css,
-}
-
 pub enum NetEvent {
-    Start { request_id: u64, kind: ResourceKind, url: String, content_type: Option<String> },
-    Chunk { request_id: u64, kind: ResourceKind, url: String, chunk: Vec<u8> },
-    Done { request_id: u64, kind: ResourceKind, url: String },
-    Error { request_id: u64, kind: ResourceKind, url: String, error: String },
+    Start { request_id: u64, url: String, content_type: Option<String> },
+    Chunk { request_id: u64, url: String, chunk: Vec<u8> },
+    Done { request_id: u64, url: String },
+    Error { request_id: u64, url: String, error: String },
 }
 
 pub fn fetch_stream(
     request_id: u64,
     url: String,
-    kind: ResourceKind,
     cancel_token: Arc<AtomicBool>,
     callback: Arc<dyn Fn(NetEvent) + Send + Sync>
 ) {
@@ -35,7 +28,6 @@ pub fn fetch_stream(
         if cancel_token.load(Ordering::Relaxed) {
             callback(NetEvent::Error {
                 request_id,
-                kind,
                 url: url.clone(),
                 error: "cancelled".into(),
             });
@@ -48,7 +40,6 @@ pub fn fetch_stream(
             Err(e) => {
                 callback(NetEvent::Error {
                     request_id,
-                    kind,
                     url: url.clone(),
                     error: e.to_string(),
                 });
@@ -65,7 +56,6 @@ pub fn fetch_stream(
         // 2) Emit Start
         callback(NetEvent::Start {
             request_id,
-            kind,
             url: url.clone(),
             content_type: content_type,
         });
@@ -79,7 +69,6 @@ pub fn fetch_stream(
             if cancel_token.load(Ordering::Relaxed) {
                 callback(NetEvent::Error {
                     request_id,
-                    kind,
                     url: url.clone(),
                     error: "cancelled".into(),
                 });
@@ -98,7 +87,6 @@ pub fn fetch_stream(
                         total += take;
                         callback(NetEvent::Chunk {
                             request_id,
-                            kind,
                             url: url.clone(),
                             chunk: buffer[..take].to_vec(),
                         });
@@ -110,7 +98,6 @@ pub fn fetch_stream(
                 Err(e) => {
                     callback(NetEvent::Error {
                         request_id,
-                        kind,
                         url: url.clone(),
                         error: format!("read error: {}", e),
                     });
@@ -121,7 +108,6 @@ pub fn fetch_stream(
 
         callback(NetEvent::Done{
             request_id,
-            kind,
             url
         });
     });

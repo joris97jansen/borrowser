@@ -1,9 +1,14 @@
 use std::sync::Arc;
 use std::time::Duration;
+use std::sync::mpsc;
 
 use egui::Context;
 use net::{
     NetEvent,
+};
+use bus::{
+    CoreEvent,
+    CoreCommand,
 };
 
 pub type NetStreamCallback = Arc<dyn Fn(NetEvent) + Send + Sync>;
@@ -13,9 +18,9 @@ pub trait UiApp {
     // ui
     fn ui(&mut self, ctx: &Context);
 
-    // network
-    fn on_net_stream(&mut self, _event: NetEvent) {}
-    fn set_net_stream_callback(&mut self, _callback: NetStreamCallback) {}
+    // bus events from runtimes
+    fn set_bus_sender(&mut self, _tx: mpsc::Sender<CoreCommand>) {}
+    fn on_core_event(&mut self, _event: CoreEvent) {} 
 
     // repaint
     fn set_repaint_handle(&mut self, _h: RepaintHandle) {}

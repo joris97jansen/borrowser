@@ -1,0 +1,8 @@
+[package]
+name = "runtime_parse"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+bus = { path = "../bus" }
+html = { path = "../html" }

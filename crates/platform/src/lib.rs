@@ -8,19 +8,23 @@ use winit::{
     event::{WindowEvent},
     dpi::PhysicalSize,
 };
+use std::sync::mpsc;
 use gfx::Renderer;
 use app_api::{
     UiApp,
     Repaint,
-    RepaintHandle,
-    NetStreamCallback,
+    RepaintHandle
 };
-use net::{
-    NetEvent,
+use bus::{
+    CoreEvent,
+    CoreCommand,
 };
+use runtime_net::start_net_runtime;
+use runtime_parse::start_parse_runtime;
+use runtime_css::start_css_runtime;
 
 pub enum UserEvent {
-    NetStream(NetEvent),
+    Core(CoreEvent),
     Repaint,
 }
 
@@ -35,10 +39,42 @@ pub fn run_with<A: UiApp + 'static>(app: A) {
     event_loop.run_app(&mut platform).expect("crashed");
 }
 
-fn make_stream_callback(proxy: EventLoopProxy<UserEvent>) -> NetStreamCallback {
-    Arc::new(move |net_event: NetEvent| {
-        let _ = proxy.send_event(UserEvent::NetStream(net_event));
-    })
+fn start_bus_bridge(proxy: EventLoopProxy<UserEvent>, evt_rx: std::sync::mpsc::Receiver<bus::CoreEvent>) {
+    thread::spawn(move || {
+        while let Ok(evt) = evt_rx.recv() {
+            let _ = proxy.send_event(UserEvent::Core(evt));
+        }
+    });
+}
+
+fn router_thread(cmd_rx_main: mpsc::Receiver<CoreCommand>,
+                 net_tx: mpsc::Sender<CoreCommand>,
+                 parse_tx: mpsc::Sender<CoreCommand>,
+                 css_tx: mpsc::Sender<CoreCommand>) {
+    thread::spawn(move || {
+        while let Ok(cmd) = cmd_rx_main.recv() {
+            match cmd {
+                // Networking goes to net runtime
+                CoreCommand::FetchStream { .. } |
+                CoreCommand::CancelRequest { .. } => {
+                    let _ = net_tx.send(cmd);
+                }
+
+                // HTML parsing commands go to parse runtime
+                CoreCommand::ParseHtmlStart { .. } |
+                CoreCommand::ParseHtmlChunk { .. } |
+                CoreCommand::ParseHtmlDone  { .. } => {
+                    let _ = parse_tx.send(cmd);
+                }
+
+                // CSS streaming→parsing goes to css runtime
+                CoreCommand::CssChunk { .. } |
+                CoreCommand::CssDone  { .. } => {
+                    let _ = css_tx.send(cmd);
+                }
+            }
+        }
+    });
 }
 
 struct PlatformApp {
@@ -99,19 +135,42 @@ impl PlatformApp {
 
 impl ApplicationHandler<UserEvent> for PlatformApp {
     fn resumed(&mut self, event_loop: &ActiveEventLoop) {
+        // --- window & renderer boot ---
         self.init_window(event_loop);
         self.init_renderer();
 
-        let repaint = Arc::new(PlatformRepaint::new(self.proxy.clone()));
-        if let Some(app) = self.app.as_mut() {
-            let handle: RepaintHandle = repaint.clone();
-            app.set_repaint_handle(handle);
-            app.set_net_stream_callback(
-                make_stream_callback(self.proxy.clone())
-            );
-        }
-        self.repaint = Some(repaint);
+        // --- create Bus channels (one cmd in, one evt out) ---
+        let (cmd_tx_main, cmd_rx_main) = mpsc::channel::<CoreCommand>();
+        let (evt_tx_main, evt_rx_main) = mpsc::channel::<CoreEvent>();
 
+        // --- per-runtime command channels ---
+        let (net_cmd_tx,  net_cmd_rx)  = mpsc::channel::<CoreCommand>();
+        let (par_cmd_tx,  par_cmd_rx)  = mpsc::channel::<CoreCommand>();
+        let (css_cmd_tx,  css_cmd_rx)  = mpsc::channel::<CoreCommand>();
+
+        // --- start runtimes (each gets its cmd_rx + shared evt_tx) ---
+        start_net_runtime(net_cmd_rx, evt_tx_main.clone());
+        start_parse_runtime(par_cmd_rx, evt_tx_main.clone());
+        start_css_runtime(css_cmd_rx, evt_tx_main.clone());
+
+        // --- route CoreCommand → proper runtime ---
+        router_thread(cmd_rx_main, net_cmd_tx.clone(), par_cmd_tx.clone(), css_cmd_tx.clone());
+
+        // --- bridge CoreEvent → winit user events ---
+        start_bus_bridge(self.proxy.clone(), evt_rx_main);
+
+        // --- install repaint handle (unchanged) ---
+        let repaint = Arc::new(PlatformRepaint::new(self.proxy.clone()));
+        self.repaint = Some(repaint.clone());
+        if let Some(app) = self.app.as_mut() {
+            let handle: RepaintHandle = repaint;
+            app.set_repaint_handle(handle);
+
+            // give the BrowserApp the CoreCommand sender so it can drive the system
+            app.set_bus_sender(cmd_tx_main.clone());
+        }
+
+        // --- first frame ---
         if let Some(window) = self.window.as_ref() {
             window.request_redraw();
         }
@@ -119,9 +178,13 @@ impl ApplicationHandler<UserEvent> for PlatformApp {
 
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: UserEvent) {
         match event {
-            UserEvent::NetStream(event) => {
+           UserEvent::Core(core_evt) => {
                 if let Some(app) = self.app.as_mut() {
-                    app.on_net_stream(event);
+                    // new single entry-point:
+                    app.on_core_event(core_evt);
+                }
+                if let Some(window) = self.window.as_ref() {
+                    window.request_redraw();
                 }
             }
             UserEvent::Repaint => {

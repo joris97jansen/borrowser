@@ -1,34 +1,24 @@
-use tools::common::{
-    MAX_HTML_BYTES,
-};
 use std::collections::{
     HashSet,
-    HashMap,
-};
-use std::time::{
-    Instant,
-    Duration,
 };
 use html::{
     Node,
-    tokenize,
-    build_dom,
-};
-use html::dom_utils::{
-    collect_style_texts
 };
 use css::{
     parse_stylesheet,
     attach_styles,
+    Stylesheet,
 };
 
 pub struct PageState {
     pub base_url: Option<String>,
     pub dom: Option<Node>,
-    pub html_buffer: String,
-    last_parse: Option<Instant>,
+
+
+    pub visible_text_cache: String,
+
     css_pending: HashSet<String>,
-    css_buffers: HashMap<String, String>,
+    css_sheet: Stylesheet,
 }
 
 impl PageState {
@@ -36,115 +26,37 @@ impl PageState {
         Self {
             base_url: None,
             dom: None,
-            html_buffer: String::new(),
-            last_parse: None,
+            visible_text_cache: String::new(),
             css_pending: HashSet::new(),
-            css_buffers: HashMap::new(),
+            css_sheet: Stylesheet { rules: Vec::new() },
         }
     }
 
     // Clear all state for new navigation
-    pub fn reset_for(&mut self, url: &str) {
-        self.base_url = Some(url.to_string());
-        self.dom = None;
-        self.html_buffer.clear();
-        self.last_parse = None;
-        self.css_pending.clear();
-        self.css_buffers.clear();
-    }
-
-    // --- HTML ---
-    pub fn ingest_html_start(&mut self, final_url: &str) {
+    pub fn start_nav(&mut self, final_url: &str) {
         self.base_url = Some(final_url.to_string());
-        self.html_buffer.clear();
         self.dom = None;
-        self.last_parse = None;
+        self.visible_text_cache.clear();
+        self.css_pending.clear();
+        self.css_sheet.rules.clear();
     }
 
-    pub fn ingest_html_chunk(&mut self, chunk: &[u8]) {
-        if self.html_buffer.len() >= MAX_HTML_BYTES {
-            return;
-        }
-
-        self.html_buffer.push_str(&String::from_utf8_lossy(chunk));
-
-        if self.html_buffer.len() > MAX_HTML_BYTES {
-            self.html_buffer.truncate(MAX_HTML_BYTES);
-        }
-    }
-
-    pub fn ingest_html_done(&mut self) {
-        self.parse_now_and_attach();
-    }
-
-    pub fn should_parse_now(&mut self) -> bool {
-        const MIN_INTERVAL: Duration = Duration::from_millis(180);
-        let now = Instant::now();
-        match self.last_parse {
-            None => {
-                self.last_parse = Some(now);
-                true
-            }
-            Some(t) if now.duration_since(t) >= MIN_INTERVAL => {
-                self.last_parse = Some(now);
-                true
-            }
-            _ => false,
-        }
-    }
-
-    pub fn parse_now_and_attach(&mut self) {
-        let tokens = tokenize(&self.html_buffer);
-        let mut dom = build_dom(&tokens);
-
-        let mut inline_css = String::new();
-        collect_style_texts(&dom, &mut inline_css);
-        attach_styles(&mut dom, &parse_stylesheet(&inline_css));
-
-        self.dom = Some(dom);
-    }
 
     // --- CSS ---
     pub fn register_css(&mut self, absolute_url: &str) -> bool {
-        if self.css_pending.insert(absolute_url.to_string()) {
-            self.css_buffers.entry(absolute_url.to_string()).or_insert_with(String::new);
-            true
-        } else {
-            false
-        }
+        self.css_pending.insert(absolute_url.to_string())
     }
 
-    pub fn ingest_css_chunk(&mut self, url: &str, chunk: &[u8]) {
-        if let Some(buffer) = self.css_buffers.get_mut(url) {
-            if buffer.len() < MAX_HTML_BYTES {
-                buffer.push_str(&String::from_utf8_lossy(chunk));
-                if buffer.len() > MAX_HTML_BYTES {
-                    buffer.truncate(MAX_HTML_BYTES);
-                }
-            }
-        }
-    }
-
-    pub fn ingest_css_done(&mut self, url: &str) {
-        self.css_pending.remove(url);
+    pub fn apply_css_block(&mut self, block: &str) {
+        let parsed = parse_stylesheet(block);
+        self.css_sheet.rules.extend(parsed.rules.into_iter());
         if let Some(dom_mut) = self.dom.as_mut() {
-            let mut inline_css = String::new();
-            collect_style_texts(dom_mut, &mut inline_css);
-            let sheet_inline = parse_stylesheet(&inline_css);
-
-            let mut ext = String::new();
-            for (u, css) in &self.css_buffers {
-                if self.css_pending.contains(u) {
-                    continue;
-                }
-                ext.push_str(css);
-                ext.push('\n');
-            }
-            let sheet_ext = parse_stylesheet(&ext);
-
-            attach_styles(dom_mut, &sheet_inline);
-            attach_styles(dom_mut, &sheet_ext);
+            attach_styles(dom_mut, &self.css_sheet);
         }
+    }
+
+    pub fn mark_css_done(&mut self, url: &str) {
+        self.css_pending.remove(url);
     }
 
     pub fn pending_count(&self) -> usize {
@@ -156,6 +68,41 @@ impl PageState {
             outline_from_dom(dom_ref, cap)
         } else {
             Vec::new()
+        }
+    }
+
+    pub fn update_visible_text_cache(&mut self) {
+        self.visible_text_cache.clear();
+        if let Some(dom) = self.dom.as_ref() {
+            fn collect(node: &Node, out: &mut String) {
+                match node {
+                    Node::Text { text } => {
+                        let t = text.trim();
+                        if !t.is_empty() {
+                            if !out.is_empty() { out.push(' '); }
+                            out.push_str(t);
+                        }
+                    }
+                    Node::Element { name, children, .. } => {
+                        if name.eq_ignore_ascii_case("script") || name.eq_ignore_ascii_case("style") {
+                            return;
+                        }
+                        for c in children { collect(c, out); }
+                        match &name.to_ascii_lowercase()[..] {
+                            "p" | "div" | "section" | "article" | "header" | "footer"
+                            | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "li" => {
+                                out.push_str("\n\n");
+                            }
+                            _ => {}
+                        }
+                    }
+                    Node::Document { children, .. } => {
+                        for c in children { collect(c, out); }
+                    }
+                    _ => {}
+                }
+            }
+            collect(dom, &mut self.visible_text_cache);
         }
     }
 }

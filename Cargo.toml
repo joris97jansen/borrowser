@@ -18,7 +18,11 @@ members = [
   "crates/gfx",
   "crates/js",
   "crates/platform",
-  "crates/tools",
+  "crates/tools", 
+  "crates/runtime_net", 
+  "crates/runtime_parse", 
+  "crates/runtime_css", 
+  "crates/core_types", "crates/bus",
 ]
 resolver = "2"
 

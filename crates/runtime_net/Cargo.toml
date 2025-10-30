@@ -1,5 +1,5 @@
 [package]
-name = "browser"
+name = "runtime_net"
 version = "0.1.0"
 edition = "2024"
 
@@ -8,9 +8,4 @@ app_api = { path = "../app_api" }
 bus = { path = "../bus" }
 net = { path = "../net" }
 html = { path = "../html" }
-css = { path = "../css" }
 core_types = { path = "../core_types" }
-tools = { path = "../tools" }
-
-egui = { workspace = true }
-url = { workspace = true }

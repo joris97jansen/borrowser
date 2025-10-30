@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 tools = { path = "../tools" }
+core_types = { path = "../core_types" }
 
 reqwest = { workspace = true }
 ureq = { workspace = true }

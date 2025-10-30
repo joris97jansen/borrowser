@@ -1,7 +1,10 @@
 mod page;
 mod view;
 
+use url::Url;
 use page::PageState;
+use bus::CoreCommand;
+use std::sync::mpsc;
 use view::NavigationAction;
 use egui::{
     Context,
@@ -9,57 +12,65 @@ use egui::{
 use app_api::{
     UiApp,
     RepaintHandle,
-    NetStreamCallback,
 };
-use url::Url;
-use net::{
-    NetEvent,
-    ResourceKind,
-    fetch_stream,
-};
+
 use html::{
     Node,
+    dom_utils::collect_stylesheet_hrefs,
 };
-use html::dom_utils::{
-    collect_stylesheet_hrefs,
-};
+
 use css::{
     parse_color,
 };
-use std::sync::Arc;
-use std::sync::atomic::{
-    AtomicBool,
-    Ordering,
-};
+use bus::CoreEvent;
+use core_types::ResourceKind;
+
 
 pub struct BrowserApp {
     url: String,
     history: Vec<String>,
     history_index: usize,
+
     loading: bool,
     last_status: Option<String>,
-    net_stream_callback: Option<NetStreamCallback>,
+
     dom_outline: Vec<String>,
     page: PageState,
+
     repaint: Option<RepaintHandle>,
-    navigation_generation: u64,
-    navigation_cancel: Arc<AtomicBool>,
+
+    cmd_tx: Option<mpsc::Sender<CoreCommand>>,
+
+    nav_gen: u64,
 }
 
 impl BrowserApp {
     pub fn new() -> Self {
-        Self{
+        Self {
             url: String::new(),
             history: Vec::new(),
             history_index: 0,
+
             loading: false,
             last_status: None,
-            net_stream_callback: None,
+
             dom_outline: Vec::new(),
             page: PageState::new(),
+
             repaint: None,
-            navigation_generation: 0,
-            navigation_cancel: Arc::new(AtomicBool::new(false)),
+
+            cmd_tx: None,
+            nav_gen: 0,
+        }
+    }
+
+    pub fn set_bus_sender(&mut self, tx: mpsc::Sender<CoreCommand>) {
+        self.cmd_tx = Some(tx);
+    }
+
+    fn send_cmd(&self, cmd: CoreCommand) {
+        if let Some(tx) = &self.cmd_tx {
+            let _ = tx.send(cmd);
         }
     }
 
@@ -100,30 +111,26 @@ impl BrowserApp {
     }
 
     fn start_fetch(&mut self, url: String) {
-        self.navigation_cancel.store(true, Ordering::Release);
+        // Cancel previous nav (if any)
+        if self.nav_gen > 0 {
+            self.send_cmd(CoreCommand::CancelRequest { request_id: self.nav_gen });
+        }
 
-        // bump generation and reset state
-        self.navigation_generation = self.navigation_generation.wrapping_add(1);
-        let request_id = self.navigation_generation;
-
-        self.navigation_cancel = Arc::new(AtomicBool::new(false));
-        let cancel = self.navigation_cancel.clone();
-
-        self.page.reset_for(&url);
+        // Bump generation and kick HTML stream
+        self.nav_gen = self.nav_gen.wrapping_add(1);
+        let request_id = self.nav_gen;
 
         self.loading = true;
-        self.last_status = Some(format!("Fetching {} …", url));
+        self.last_status = Some(format!("Fetching {url} …"));
         self.dom_outline.clear();
 
-        self.poke_redraw();
+        self.send_cmd(CoreCommand::FetchStream {
+            request_id,
+            url,
+            kind: ResourceKind::Html,
+        });
 
-        if let Some(callback) = self.net_stream_callback.as_ref().cloned() {
-            println!("Starting streaming fetch for {}", url);
-            fetch_stream(request_id, url, ResourceKind::Html, cancel, callback);
-        } else {
-            self.loading = false;
-            self.last_status = Some("No network callback set".into());
-        }
+        if let Some(repaint) = &self.repaint { repaint.request_now(); }
     }
 
     fn go_back(&mut self) {
@@ -255,109 +262,108 @@ impl UiApp for BrowserApp {
         )
     }
 
-    fn set_net_stream_callback(&mut self, callback: NetStreamCallback) {
-        self.net_stream_callback = Some(callback);
-    }
+        fn on_core_event(&mut self, evt: CoreEvent) {
+        let current = self.nav_gen;
 
-    fn on_net_stream(&mut self, event: NetEvent) {
-        let current_generation = self.navigation_generation;
-        let request_id = match &event {
-            NetEvent::Start { request_id, .. } => *request_id,
-            NetEvent::Chunk { request_id, .. } => *request_id,
-            NetEvent::Done { request_id, .. } => *request_id,
-            NetEvent::Error { request_id, .. } => *request_id,
-        };
-
-        if request_id != current_generation {
-            // stale event; ignore
-            return;
-        }
-
-        match event {
-            NetEvent::Start { kind: ResourceKind::Html, url, .. } => {
-                self.page.ingest_html_start(&url);
+        match evt {
+            // Networking (HTML): drive parser runtime
+            CoreEvent::NetworkStart { request_id, kind: ResourceKind::Html, url, .. } if request_id == current => {
+                self.page.start_nav(&url);
                 self.loading = true;
                 self.last_status = Some(format!("Started HTML stream: {}", url));
+                self.send_cmd(CoreCommand::ParseHtmlStart { request_id });
                 self.poke_redraw();
             }
-            NetEvent::Chunk { kind: ResourceKind::Html, url: _, chunk, .. } => {
-                self.page.ingest_html_chunk(&chunk);
-                if self.page.should_parse_now() {
-                    self.page.parse_now_and_attach();
-                    self.dom_outline = self.page.outline(200);
-                    self.last_status = Some("Parsing HTML stream…".into());
-                    self.poke_redraw();
-                }
+            CoreEvent::NetworkChunk { request_id, kind: ResourceKind::Html, bytes, .. } if request_id == current => {
+                self.send_cmd(CoreCommand::ParseHtmlChunk { request_id, bytes });
             }
-            NetEvent::Done { kind: ResourceKind::Html, url, .. } => {
-                // finalize HTML
-                self.page.ingest_html_done();
-                self.dom_outline = self.page.outline(200);
+            CoreEvent::NetworkDone { request_id, kind: ResourceKind::Html, url } if request_id == current => {
+                self.send_cmd(CoreCommand::ParseHtmlDone { request_id });
                 self.last_status = Some(format!("Loaded HTML: {}", url));
+                self.poke_redraw();
+            }
+            CoreEvent::NetworkError { request_id, kind: ResourceKind::Html, url, error } if request_id == current => {
+                self.loading = false;
+                self.last_status = Some(format!("Network error on {url}: {error}"));
+                self.poke_redraw();
+            }
 
-                let cancel = self.navigation_cancel.clone();
+            // Parser → apply DOM snapshot; then kick CSS fetches
+            CoreEvent::DomUpdate { request_id, dom } if request_id == current => {
+                self.page.dom = Some(dom);
+                self.page.update_visible_text_cache();
 
+                // discover and fetch stylesheets (once per nav)
                 if let (Some(dom_ref), Some(base)) = (self.page.dom.as_ref(), self.page.base_url.as_ref()) {
                     let mut hrefs = Vec::new();
                     collect_stylesheet_hrefs(dom_ref, &mut hrefs);
                     if let Ok(base_url) = Url::parse(base) {
-                        if let Some(callback) = self.net_stream_callback.as_ref().clone() {
-                            for h in hrefs {
-                                if let Ok(abs) = base_url.join(&h) {
-                                    let href = abs.to_string();
-                                    if self.page.register_css(&href) {
-                                        fetch_stream(request_id, href, ResourceKind::Css, cancel.clone(), callback.clone());
-                                    }
+                        for h in hrefs {
+                            if let Ok(abs) = base_url.join(&h) {
+                                let href = abs.to_string();
+                                if self.page.register_css(&href) {
+                                    self.send_cmd(CoreCommand::FetchStream {
+                                        request_id: current,
+                                        url: href,
+                                        kind: ResourceKind::Css,
+                                    });
                                 }
                             }
                         }
                     }
                 }
+
                 let pending = self.page.pending_count();
                 self.loading = pending > 0;
                 if pending > 0 {
-                    self.last_status = Some(format!("Loaded HTML, fetching {pending} stylesheet(s)..."));
+                    self.last_status = Some(format!("Loaded HTML • fetching {pending} stylesheet(s)…"));
                 }
                 self.poke_redraw();
             }
-            NetEvent::Error { kind: ResourceKind::Html, url, error, .. } => {
-                self.loading = false;
-                self.last_status = Some(format!("Network error on {}: {}", url, error));
-                self.poke_redraw();
-            }
-            NetEvent::Start { kind: ResourceKind::Css, url, .. } => {
-                // already registered; status only
-                self.last_status = Some(format!("Fetching stylesheets: {url}"));
-                self.poke_redraw();
-           }
-            NetEvent::Chunk { kind: ResourceKind::Css, url, chunk, .. } => {
-                self.page.ingest_css_chunk(&url, &chunk);
-                // phase 2: incremental parse
-            }
-            NetEvent::Done { kind: ResourceKind::Css, url, .. } => {
-                self.page.ingest_css_done(&url);
-                self.dom_outline = self.page.outline(200);
 
+            // Networking (CSS) → forward bytes to CSS runtime
+            CoreEvent::NetworkChunk { request_id, kind: ResourceKind::Css, url, bytes } if request_id == current => {
+                self.send_cmd(CoreCommand::CssChunk { request_id, url, bytes });
+            }
+            CoreEvent::NetworkDone { request_id, kind: ResourceKind::Css, url } if request_id == current => {
+                self.send_cmd(CoreCommand::CssDone { request_id, url });
+            }
+            CoreEvent::NetworkError { request_id, kind: ResourceKind::Css, url, error } if request_id == current => {
+                // treat as done to unblock
+                self.send_cmd(CoreCommand::CssDone { request_id, url: url.clone() });
+                let remaining = self.page.pending_count();
+                self.loading = remaining > 0;
+                self.last_status = Some(format!("Stylesheet error on {url}: {error} ({} remaining)", remaining));
+                self.poke_redraw();
+            }
+
+            // CSS runtime → apply incremental blocks
+            CoreEvent::CssParsedBlock { request_id, url: _, css_block } if request_id == current => {
+                self.page.apply_css_block(&css_block);
+                self.dom_outline = self.page.outline(200); // optional / debug
+                self.poke_redraw();
+            }
+            CoreEvent::CssSheetDone { request_id, url } if request_id == current => {
+                self.page.mark_css_done(&url);
                 let remaining = self.page.pending_count();
                 self.loading = remaining > 0;
                 self.last_status = Some(if remaining > 0 {
-                    format!("Loaded stylesheet {}, {} remaining...", url, remaining)
+                    format!("Stylesheet loaded ({} remaining)", remaining)
                 } else {
-                    format!("All stylesheets loaded")
+                    "All stylesheets loaded".to_string()
                 });
                 self.poke_redraw();
             }
-            NetEvent::Error { kind: ResourceKind::Css, url, error, .. } => {
-                self.page.ingest_css_done(&url);
-                let remaining = self.page.pending_count();
-                self.loading = remaining > 0;
-                self.last_status = Some(format!("Stylesheet error on {}: {} ({} remaining)", url, error, remaining));
-                self.poke_redraw();
-            }
+
+            _ => {} // stale or irrelevant
         }
     }
 
     fn set_repaint_handle(&mut self, repaint: RepaintHandle) {
         self.repaint = Some(repaint);
+    }
+
+    fn set_bus_sender(&mut self, tx: mpsc::Sender<CoreCommand>) {
+        self.cmd_tx = Some(tx);
     }
 }

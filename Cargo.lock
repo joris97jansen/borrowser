@@ -86,6 +86,8 @@ dependencies = [
 name = "app_api"
 version = "0.1.0"
 dependencies = [
+ "bus",
+ "core_types",
  "egui",
  "net",
 ]
@@ -228,6 +230,8 @@ name = "browser"
 version = "0.1.0"
 dependencies = [
  "app_api",
+ "bus",
+ "core_types",
  "css",
  "egui",
  "html",
@@ -241,6 +245,14 @@ name = "bumpalo"
 version = "3.19.0"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "46c5e41b57b8bba42a04676d81cb89e9ee8e859a1a66f80a5a72e1cb76b34d43"
+
+[[package]]
+name = "bus"
+version = "0.1.0"
+dependencies = [
+ "core_types",
+ "html",
+]
 
 [[package]]
 name = "bytemuck"
@@ -418,6 +430,10 @@ dependencies = [
  "core-foundation 0.9.4",
  "libc",
 ]
+
+[[package]]
+name = "core_types"
+version = "0.1.0"
 
 [[package]]
 name = "crc32fast"
@@ -1600,6 +1616,7 @@ dependencies = [
 name = "net"
 version = "0.1.0"
 dependencies = [
+ "core_types",
  "reqwest",
  "tools",
  "ureq",
@@ -2086,12 +2103,18 @@ name = "platform"
 version = "0.1.0"
 dependencies = [
  "app_api",
+ "bus",
+ "core_types",
  "egui",
  "egui-wgpu",
  "egui-winit",
  "gfx",
+ "html",
  "net",
  "pollster",
+ "runtime_css",
+ "runtime_net",
+ "runtime_parse",
  "winit",
 ]
 
@@ -2399,6 +2422,32 @@ dependencies = [
  "libc",
  "untrusted",
  "windows-sys 0.52.0",
+]
+
+[[package]]
+name = "runtime_css"
+version = "0.1.0"
+dependencies = [
+ "bus",
+]
+
+[[package]]
+name = "runtime_net"
+version = "0.1.0"
+dependencies = [
+ "app_api",
+ "bus",
+ "core_types",
+ "html",
+ "net",
+]
+
+[[package]]
+name = "runtime_parse"
+version = "0.1.0"
+dependencies = [
+ "bus",
+ "html",
 ]
 
 [[package]]

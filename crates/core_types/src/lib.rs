@@ -1,0 +1,7 @@
+pub type RequestId = u64;
+
+#[derive(Clone, Copy, Debug)]
+pub enum ResourceKind {
+    Html,
+    Css,
+}
