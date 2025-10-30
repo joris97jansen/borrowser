@@ -1,19 +1,21 @@
-// crates/css_runtime/src/lib.rs
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use bus::{CoreCommand, CoreEvent};
+use core_types::{SessionId, RequestId};
+
+type Key = (SessionId, RequestId, String);
 
 struct CssState { buf: String }
 
 pub fn start_css_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent>) {
     thread::spawn(move || {
-        let mut map: HashMap<(u64, String), CssState> = HashMap::new();
+        let mut map: HashMap<Key, CssState> = HashMap::new();
 
         while let Ok(cmd) = cmd_rx.recv() {
             match cmd {
-                CoreCommand::CssChunk { request_id, url, bytes } => {
-                    let key = (request_id, url.clone());
+                CoreCommand::CssChunk { session_id, request_id, url, bytes } => {
+                    let key = (session_id, request_id, url.clone());
                     let st = map.entry(key).or_insert(CssState { buf: String::new() });
                     st.buf.push_str(&String::from_utf8_lossy(&bytes));
 
@@ -42,12 +44,12 @@ pub fn start_css_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent
                         }
                     }
                     for block in out {
-                        let _ = evt_tx.send(CoreEvent::CssParsedBlock { request_id, url: url.clone(), css_block: block });
+                        let _ = evt_tx.send(CoreEvent::CssParsedBlock { session_id, request_id, url: url.clone(), css_block: block });
                     }
                 }
-                CoreCommand::CssDone { request_id, url } => {
-                    let _ = evt_tx.send(CoreEvent::CssSheetDone { request_id, url: url.clone() });
-                    map.remove(&(request_id, url));
+                CoreCommand::CssDone { session_id, request_id, url } => {
+                    let _ = evt_tx.send(CoreEvent::CssSheetDone { session_id, request_id, url: url.clone() });
+                    map.remove(&(session_id, request_id, url));
                 }
                 _ => {}
             }

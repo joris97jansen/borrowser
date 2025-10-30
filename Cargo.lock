@@ -2449,6 +2449,7 @@ name = "runtime_css"
 version = "0.1.0"
 dependencies = [
  "bus",
+ "core_types",
 ]
 
 [[package]]
@@ -2467,6 +2468,7 @@ name = "runtime_parse"
 version = "0.1.0"
 dependencies = [
  "bus",
+ "core_types",
  "html",
 ]
 

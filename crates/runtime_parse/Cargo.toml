@@ -6,3 +6,4 @@ edition = "2024"
 [dependencies]
 bus = { path = "../bus" }
 html = { path = "../html" }
+core_types = { path = "../core_types" }

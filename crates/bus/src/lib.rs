@@ -1,35 +1,38 @@
 use std::sync::mpsc::{Sender, Receiver};
-use core_types::ResourceKind;
+use core_types::{
+    ResourceKind,
+    SessionId,
+};
 use html::{
     Node,
 };
 
 pub enum CoreCommand {
     // Network requests
-    FetchStream { request_id: u64, url: String, kind: ResourceKind },
-    CancelRequest { request_id: u64 },
+    FetchStream { session_id: SessionId, request_id: u64, url: String, kind: ResourceKind },
+    CancelRequest { session_id: SessionId, request_id: u64 },
     // HTML Parser
-    ParseHtmlStart { request_id: u64 },
-    ParseHtmlChunk { request_id: u64, bytes: Vec<u8> },
-    ParseHtmlDone { request_id: u64 },
+    ParseHtmlStart {session_id: SessionId, request_id: u64 },
+    ParseHtmlChunk { session_id: SessionId, request_id: u64, bytes: Vec<u8> },
+    ParseHtmlDone { session_id: SessionId, request_id: u64 },
     // CSS Parser
-    CssChunk { request_id: u64, url: String, bytes: Vec<u8> },
-    CssDone { request_id: u64, url: String }
+    CssChunk { session_id: SessionId, request_id: u64, url: String, bytes: Vec<u8> },
+    CssDone { session_id: SessionId, request_id: u64, url: String }
 }
 
 pub enum CoreEvent {
     // Network -> UI
-    NetworkStart { request_id: u64, kind: ResourceKind, url: String, content_type: Option<String> },
-    NetworkChunk { request_id: u64, kind: ResourceKind, url: String, bytes: Vec<u8> },
-    NetworkDone { request_id: u64, kind: ResourceKind, url: String },
-    NetworkError { request_id: u64, kind: ResourceKind, url: String, error: String },
+    NetworkStart { session_id: SessionId, request_id: u64, kind: ResourceKind, url: String, content_type: Option<String> },
+    NetworkChunk { session_id: SessionId, request_id: u64, kind: ResourceKind, url: String, bytes: Vec<u8> },
+    NetworkDone { session_id: SessionId, request_id: u64, kind: ResourceKind, url: String },
+    NetworkError { session_id: SessionId, request_id: u64, kind: ResourceKind, url: String, error: String },
 
     // HTML Parser -> UI
-    DomUpdate { request_id: u64, dom: Node },
+    DomUpdate { session_id: SessionId, request_id: u64, dom: Node },
 
     // CSS Parser -> UI
-    CssParsedBlock { request_id: u64, url: String, css_block: String },
-    CssSheetDone { request_id: u64, url: String },
+    CssParsedBlock { session_id: SessionId, request_id: u64, url: String, css_block: String },
+    CssSheetDone { session_id: SessionId, request_id: u64, url: String },
 }
 
 pub struct Bus {

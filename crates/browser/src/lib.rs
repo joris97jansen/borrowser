@@ -1,6 +1,10 @@
 mod page;
 mod view;
 
+use std::sync::atomic::{
+    AtomicU64, 
+    Ordering
+};
 use url::Url;
 use page::PageState;
 use bus::CoreCommand;
@@ -23,10 +27,15 @@ use css::{
     parse_color,
 };
 use bus::CoreEvent;
-use core_types::ResourceKind;
+use core_types::{
+    ResourceKind,
+    SessionId,
+};
 
 
 pub struct BrowserApp {
+    session_id: SessionId,
+
     url: String,
     history: Vec<String>,
     history_index: usize,
@@ -46,7 +55,11 @@ pub struct BrowserApp {
 
 impl BrowserApp {
     pub fn new() -> Self {
+        static NEXT: AtomicU64 = AtomicU64::new(1);
+        let sid = NEXT.fetch_add(1, Ordering::Relaxed);
+
         Self {
+            session_id: sid,
             url: String::new(),
             history: Vec::new(),
             history_index: 0,
@@ -113,7 +126,7 @@ impl BrowserApp {
     fn start_fetch(&mut self, url: String) {
         // Cancel previous nav (if any)
         if self.nav_gen > 0 {
-            self.send_cmd(CoreCommand::CancelRequest { request_id: self.nav_gen });
+            self.send_cmd(CoreCommand::CancelRequest { session_id: self.session_id, request_id: self.nav_gen });
         }
 
         // Bump generation and kick HTML stream
@@ -125,6 +138,7 @@ impl BrowserApp {
         self.dom_outline.clear();
 
         self.send_cmd(CoreCommand::FetchStream {
+            session_id: self.session_id,
             request_id,
             url,
             kind: ResourceKind::Html,
@@ -262,34 +276,35 @@ impl UiApp for BrowserApp {
         )
     }
 
-        fn on_core_event(&mut self, evt: CoreEvent) {
+    fn on_core_event(&mut self, evt: CoreEvent) {
+        let sid = self.session_id;
         let current = self.nav_gen;
 
         match evt {
             // Networking (HTML): drive parser runtime
-            CoreEvent::NetworkStart { request_id, kind: ResourceKind::Html, url, .. } if request_id == current => {
+            CoreEvent::NetworkStart { session_id, request_id, kind: ResourceKind::Html, url, .. } if session_id == sid &&request_id == current => {
                 self.page.start_nav(&url);
                 self.loading = true;
                 self.last_status = Some(format!("Started HTML stream: {}", url));
-                self.send_cmd(CoreCommand::ParseHtmlStart { request_id });
+                self.send_cmd(CoreCommand::ParseHtmlStart { session_id: sid, request_id });
                 self.poke_redraw();
             }
-            CoreEvent::NetworkChunk { request_id, kind: ResourceKind::Html, bytes, .. } if request_id == current => {
-                self.send_cmd(CoreCommand::ParseHtmlChunk { request_id, bytes });
+            CoreEvent::NetworkChunk { session_id, request_id, kind: ResourceKind::Html, bytes, .. } if session_id == sid && request_id == current => {
+                self.send_cmd(CoreCommand::ParseHtmlChunk { session_id: sid, request_id, bytes });
             }
-            CoreEvent::NetworkDone { request_id, kind: ResourceKind::Html, url } if request_id == current => {
-                self.send_cmd(CoreCommand::ParseHtmlDone { request_id });
+            CoreEvent::NetworkDone { session_id, request_id, kind: ResourceKind::Html, url } if session_id == sid && request_id == current => {
+                self.send_cmd(CoreCommand::ParseHtmlDone { session_id, request_id });
                 self.last_status = Some(format!("Loaded HTML: {}", url));
                 self.poke_redraw();
             }
-            CoreEvent::NetworkError { request_id, kind: ResourceKind::Html, url, error } if request_id == current => {
+            CoreEvent::NetworkError { session_id, request_id, kind: ResourceKind::Html, url, error } if session_id == sid && request_id == current => {
                 self.loading = false;
                 self.last_status = Some(format!("Network error on {url}: {error}"));
                 self.poke_redraw();
             }
 
             // Parser → apply DOM snapshot; then kick CSS fetches
-            CoreEvent::DomUpdate { request_id, dom } if request_id == current => {
+            CoreEvent::DomUpdate { session_id, request_id, dom } if session_id == sid && request_id == current => {
                 self.page.dom = Some(dom);
                 self.page.update_visible_text_cache();
 
@@ -303,6 +318,7 @@ impl UiApp for BrowserApp {
                                 let href = abs.to_string();
                                 if self.page.register_css(&href) {
                                     self.send_cmd(CoreCommand::FetchStream {
+                                        session_id: sid,
                                         request_id: current,
                                         url: href,
                                         kind: ResourceKind::Css,
@@ -322,15 +338,15 @@ impl UiApp for BrowserApp {
             }
 
             // Networking (CSS) → forward bytes to CSS runtime
-            CoreEvent::NetworkChunk { request_id, kind: ResourceKind::Css, url, bytes } if request_id == current => {
-                self.send_cmd(CoreCommand::CssChunk { request_id, url, bytes });
+            CoreEvent::NetworkChunk { session_id, request_id, kind: ResourceKind::Css, url, bytes } if session_id == sid && request_id == current => {
+                self.send_cmd(CoreCommand::CssChunk { session_id: sid, request_id, url, bytes });
             }
-            CoreEvent::NetworkDone { request_id, kind: ResourceKind::Css, url } if request_id == current => {
-                self.send_cmd(CoreCommand::CssDone { request_id, url });
+            CoreEvent::NetworkDone {session_id, request_id, kind: ResourceKind::Css, url } if session_id == sid && request_id == current => {
+                self.send_cmd(CoreCommand::CssDone { session_id: sid, request_id, url });
             }
-            CoreEvent::NetworkError { request_id, kind: ResourceKind::Css, url, error } if request_id == current => {
+            CoreEvent::NetworkError { session_id, request_id, kind: ResourceKind::Css, url, error } if session_id == sid && request_id == current => {
                 // treat as done to unblock
-                self.send_cmd(CoreCommand::CssDone { request_id, url: url.clone() });
+                self.send_cmd(CoreCommand::CssDone { session_id: sid, request_id, url: url.clone() });
                 let remaining = self.page.pending_count();
                 self.loading = remaining > 0;
                 self.last_status = Some(format!("Stylesheet error on {url}: {error} ({} remaining)", remaining));
@@ -338,12 +354,12 @@ impl UiApp for BrowserApp {
             }
 
             // CSS runtime → apply incremental blocks
-            CoreEvent::CssParsedBlock { request_id, url: _, css_block } if request_id == current => {
+            CoreEvent::CssParsedBlock { session_id, request_id, url: _, css_block } if session_id == sid &&request_id == current => {
                 self.page.apply_css_block(&css_block);
                 self.dom_outline = self.page.outline(200); // optional / debug
                 self.poke_redraw();
             }
-            CoreEvent::CssSheetDone { request_id, url } if request_id == current => {
+            CoreEvent::CssSheetDone { session_id, request_id, url } if session_id == sid && request_id == current => {
                 self.page.mark_css_done(&url);
                 let remaining = self.page.pending_count();
                 self.loading = remaining > 0;
