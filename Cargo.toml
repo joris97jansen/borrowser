@@ -5,7 +5,18 @@ edition = "2024"
 
 [dependencies]
 browser = { path = "crates/browser" }
+mimalloc = "0.1.48"
 platform = { path = "crates/platform" }
+
+[profile.release]
+opt-level = 3
+codegen-units = 1
+lto = "fat"
+strip = "symbols"
+panic = "abort"
+
+[profile.dev]
+opt-level = 1
 
 [workspace]
 members = [
