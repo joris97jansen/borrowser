@@ -1,14 +1,13 @@
 # The Borrowser 🦀🌐
 
 A learning project: building a **web browser in Rust**, from scratch, with a focus on
-understanding every piece of the stack: windowing, rendering, event loops, UI, and networking.
+understanding every piece of the stack: windowing, rendering, event loops, UI, networking, and background runtimes.
 
 ---
 
 ## 🙋 Why "Borrowser"?
 
 Think “Borrow checker” + “Browser” = Borrowser. 🦀
-
 P.S. nothing borrowed from Chromium *wink*.
 
 ---
@@ -17,163 +16,177 @@ P.S. nothing borrowed from Chromium *wink*.
 
 Right now the browser can:
 
-* Open a desktop window (via [winit](https://github.com/rust-windowing/winit))
-* Render a GUI (via [egui](https://github.com/emilk/egui), [egui-wgpu](https://github.com/emilk/egui/tree/master/crates/egui-wgpu))
+* Open a native desktop window (via [winit](https://github.com/rust-windowing/winit))
+* Render its UI (via [egui](https://github.com/emilk/egui) + [egui-wgpu](https://github.com/emilk/egui/tree/master/crates/egui-wgpu))
 * Show a **URL bar** with back, forward, and refresh buttons
-* Fetch and **stream HTML** (via [ureq](https://github.com/algesten/ureq))
-* Parse HTML into a DOM tree, incrementally as chunks arrive
-* Detect and fetch **external stylesheets** concurrently
-* Parse and apply inline and external CSS
-* Display visible text and page background color
 * Keep a simple **navigation history** and loading indicator
+* Fetch and **stream HTML** incrementally
+* Parse HTML into a DOM tree on a background thread
+* Detect and stream **external stylesheets** in parallel
+* Parse and apply both inline and external CSS
+* Display visible text and page background color
+* Communicate between components through a **message bus**
 
-It’s early, but the foundations are solid and realistic for building a real browser.
+It’s already structured like a small real browser, with clear boundaries between UI, networking, and parsing.
 
 ---
 
-## 🏗️ Architecture
+## 🏗️ Architecture Overview
 
-Borrowser is split into modular crates:
+Borrowser is split into modular crates, each with a focused responsibility:
 
 ```
 src/main.rs
 crates/
-├── app_api     # Shared traits and types between platform and apps
-├── browser     # The BrowserApp implementation (UI, state, DOM, CSS)
-├── css         # CSS parsing and style attachment
-├── gfx         # Rendering layer (egui + wgpu glue)
-├── html        # HTML tokenizer and DOM builder
-├── net         # Streaming HTTP fetcher (ureq-based)
-└── platform    # Platform integration: window, event loop, repaint proxy
+├── app_api       # Shared traits, types, and the CoreCommand/CoreEvent bus definitions
+├── browser       # The BrowserApp (UI logic, navigation, DOM + CSS state)
+├── css           # CSS parsing and style attachment logic
+├── gfx           # Rendering layer (egui + wgpu integration)
+├── html          # HTML tokenizer and DOM builder
+├── net           # Low-level HTTP streaming
+├── runtime-net   # Networking runtime (handles FetchStream commands)
+├── runtime-parse # HTML parsing runtime
+├── runtime-css   # CSS parsing runtime
+├── bus           # Message bus (CoreCommand / CoreEvent routing)
+└── platform      # Platform integration: window, event loop, repaint proxy
 ```
-
-### Core flow
-
-1. **`platform`** creates the window and event loop (via `winit`)
-2. **`app_api`** defines the `UiApp` trait:
-
-   * `ui(&mut self, &egui::Context)` draws the UI
-   * `set_net_stream_callback(NetStreamCallback)` installs a network event handler
-   * `on_net_stream(NetEvent)` handles streaming updates
-3. **`browser`** implements `UiApp` with `BrowserApp`:
-
-   * Handles navigation, history, and rendering
-   * Streams HTML and CSS through the `net` crate
-   * Updates the DOM incrementally and attaches styles
-4. **`net`** streams data over HTTP in background threads
-
-   * Emits `NetEvent::{Start, Chunk, Done, Error}` events
-   * Each event is sent back to the main thread via a proxy
-5. **`platform`** forwards `NetEvent` messages to the app and triggers repaints
-6. **`gfx`** renders everything using `egui` on top of `wgpu`
 
 ---
 
-## 🔄 Streaming Flow Example
+## 🧩 How It Works
+
+### 1. The Platform
+
+Creates the window, sets up the **event loop**, and launches the background runtimes.
+It owns an `EventLoopProxy<UserEvent>` that safely lets background threads send messages to the UI.
+
+### 2. The Message Bus
+
+Connects everything using two channels:
+
+* **Commands (CoreCommand)** — from the BrowserApp to the runtimes
+* **Events (CoreEvent)** — from the runtimes back to the BrowserApp
+
+This means the UI never talks to threads directly; it only sends commands through the bus.
+
+### 3. The Runtimes
+
+Each runtime has its own thread and purpose:
+
+* **runtime-net** — downloads HTML or CSS streams over HTTP
+* **runtime-parse** — builds DOM trees and emits `DomUpdate` snapshots
+* **runtime-css** — parses CSS blocks and emits parsed rules
+
+They all share the same event bus, so they can work concurrently and independently.
+
+### 4. The BrowserApp (UI)
+
+Implements the `UiApp` trait. It:
+
+* Sends `CoreCommand::FetchStream` when the user navigates
+* Receives `CoreEvent::{DomUpdate, CssParsedBlock, CssSheetDone}`
+* Updates its in-memory DOM and style sheet state
+* Requests repaints through a lightweight `RepaintHandle`
+
+### 5. Rendering
+
+The `gfx` crate renders each frame with egui.
+Only the main thread draws; all heavy work happens elsewhere.
+
+---
+
+## 🔄 Data Flow Example
 
 ```text
 [User enters URL and presses Enter]
    ↓
-BrowserApp → net::fetch_text_stream(url, callback)
-   ↓ (background thread)
-net crate reads HTTP response in chunks
+BrowserApp sends CoreCommand::FetchStream(url)
    ↓
-cb(NetEvent::Start)
-cb(NetEvent::Chunk)
-cb(NetEvent::Chunk)
-cb(NetEvent::Done)
+Bus routes it to runtime-net
    ↓
-platform::UserEvent::NetStream(NetEvent)
+runtime-net streams bytes and emits CoreEvent::NetChunk
    ↓
-PlatformApp forwards to BrowserApp.on_net_stream(event)
+Bus routes CoreEvent to runtime-parse
    ↓
-BrowserApp updates DOM and repaints incrementally
+runtime-parse builds DOM incrementally and emits CoreEvent::DomUpdate
    ↓
-gfx::Renderer draws updated frame
+Bus routes it to the platform (main thread)
+   ↓
+Platform posts UserEvent::Core(event) via winit proxy
+   ↓
+BrowserApp.on_core_event(event) updates state + requests redraw
+   ↓
+gfx::Renderer draws new frame
 ```
 
-The same pattern applies to **CSS streams**: each stylesheet URL is registered, streamed, and applied as soon as it completes.
+Meanwhile, detected stylesheets trigger extra `FetchStream` commands handled by the same flow.
 
 ---
 
-## 🧭 Event & Repaint Architecture
+## 🧭 Event & Repaint System
 
 ```
-+--------------------+                 +--------------------------+
-|   BrowserApp       |                 |        net crate         |
-|  (UiApp impl)      |                 |  (background streaming)  |
-|--------------------|                 |--------------------------|
-| - url              |  fetch_stream() |  ureq::get().into_reader |
-| - dom              | ───────────────▶|  emit NetEvent::*        |
-| - loading          |                 |  cb(NetEvent)            |
-| - css_pending      |◀─────────────── |                          |
-| - repaint_handle   |                 +--------------------------+
-+---------┬----------+
-│ set_net_stream_callback(cb)
-│ (installed by platform)
-│
-│                    EventLoopProxy<UserEvent>
-│                 (used by all background threads)
-│
-+---------▼----------+   send_event(NetStream)   +-------------------+
-|     Platform       |◀──────────────────────────|   network thread  |
-|  (winit + gfx)     |                          | (closure proxy)   |
-|--------------------|                          +-------------------+
-| on NetStream:      |
-|   app.on_net_stream(event)                    |
-| on Repaint:        |                          |
-|   window.request_redraw()                     |
-+--------------------+
++-------------------+         +--------------------+        +-------------------+
+|    BrowserApp     |         |   Message Bus      |        |    Runtimes       |
+|  (UI + state)     |◀──────▶| CoreCommand/CoreEvent |◀──▶ | net / parse / css |
++-------------------+         +--------------------+        +-------------------+
+        │                              │                             │
+        │        EventLoopProxy<UserEvent>                            │
+        │─────────────────────────────────────────────────────────────▶
+        │
+        ▼
++---------------------------+
+|       Platform            |
+|  (winit + egui + gfx)     |
+|---------------------------|
+| Receives UserEvent::Core  |
+| Calls app.on_core_event() |
+| Requests window redraw    |
++---------------------------+
 ```
 
-### Key contracts
+**Why this design?**
 
-* `UiApp::set_net_stream_callback(cb)` — installs the callback
-* `UiApp::on_net_stream(event)` — receives streamed HTML/CSS events
-* `net::fetch_stream(url, kind, cb)` — starts a streaming fetch
-* `UserEvent::NetStream(NetEvent)` — message type for cross-thread delivery
-* `RepaintHandle` — lightweight handle to request redraws safely
-
-### Why this design?
-
-* Keeps networking fully off the main thread
-* Uses a **single proxy** to post events thread-safely
-* Decouples UI from networking, windowing, and rendering
-* Enables smooth incremental updates (streamed HTML and CSS)
+* Each runtime works independently (like Chrome’s process model)
+* The main thread only handles UI and rendering
+* Message passing keeps things simple and thread-safe
+* Scales naturally to multi-tab or multi-runtime setups later
 
 ---
 
-## 🚀 Running
+## 🚀 Running the Project
 
 Requirements:
 
 * Rust (latest stable)
 
+Run in release mode for full speed:
+
 ```bash
-cargo run
+cargo run --release
 ```
 
 Borrowser will:
 
 * Open a desktop window titled **Borrowser**
-* Display a URL bar with back, forward, and refresh
-* Fetch `https://example.com` by default
-* Stream and render its HTML and CSS
-* Display visible text and background color
-* Show loading state in the status bar
+* Show a URL bar and simple navigation buttons
+* Fetch and stream a web page
+* Incrementally parse and display its text
+* Apply inline and external CSS
+* Update the UI smoothly as data arrives
 
 ---
 
 ## 📚 Next Steps
 
-* [ ] Incremental CSS parsing while streaming
-* [ ] Add request IDs for safe navigation cancellation
-* [ ] Implement a DOM inspector view (for learning/debugging)
-* [ ] Support basic layout and box model
-* [ ] Add JavaScript execution sandbox
-* [ ] Introduce caching, cookies, and persistent sessions
-* [ ] Optimize redraw frequency and GPU usage
+* [ ] Parallelize DOM parsing across subtrees
+* [ ] Implement an “Inspect” panel for DOM + CSS
+* [ ] Add caching and connection reuse
+* [ ] Render inline images
+* [ ] Basic layout engine (block & inline flow)
+* [ ] Add simple JavaScript execution (sandboxed)
+* [ ] Multi-tab support via multiple runtime groups
 
 ---
 
-**Borrowser** is first and foremost a learning project, every line is meant to teach something about how browsers actually work under the hood.
+**Borrowser** is first and foremost a learning project, every line is meant to teach something about how browsers really work under the hood, one crate at a time.
