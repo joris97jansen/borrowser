@@ -65,8 +65,8 @@ It owns an `EventLoopProxy<UserEvent>` that safely lets background threads send 
 
 Connects everything using two channels:
 
-* **Commands (CoreCommand)** — from the ShellApp/Tabs to the runtimes
-* **Events (CoreEvent)** — from the runtimes back to the ShellApp/Tabs
+* **Commands (CoreCommand)**: from the ShellApp/Tabs to the runtimes
+* **Events (CoreEvent)**: from the runtimes back to the ShellApp/Tabs
 
 Each command and event includes a `session_id` (or `tab_id`), keeping communication fully isolated per tab.
 
@@ -74,9 +74,9 @@ Each command and event includes a `session_id` (or `tab_id`), keeping communicat
 
 Each runtime has its own thread and purpose:
 
-* **runtime-net** — downloads HTML or CSS streams over HTTP
-* **runtime-parse** — builds DOM trees and emits `DomUpdate` snapshots
-* **runtime-css** — parses CSS blocks and emits parsed rules
+* **runtime-net**: downloads HTML or CSS streams over HTTP
+* **runtime-parse**: builds DOM trees and emits `DomUpdate` snapshots
+* **runtime-css**: parses CSS blocks and emits parsed rules
 
 All share the same event bus, operating concurrently and independently.
 
@@ -178,13 +178,9 @@ Borrowser will:
 
 ## 📚 Next Steps
 
-* [ ] Implement a DevTools/Inspect panel for DOM + CSS per tab
-* [ ] Add caching and connection reuse
-* [ ] Render inline images
 * [ ] Basic layout engine (block & inline flow)
+* [ ] Render inline images
 * [ ] Add simple JavaScript execution (sandboxed)
 * [ ] Expand to multi-runtime-per-tab isolation
-
----
-
-**Borrowser** is a learning project at its core — every crate and component is designed to make you understand how real browsers work, one layer at a time.
+* [ ] Add caching and connection reuse
+* [ ] Implement a DevTools/Inspect panel for DOM + CSS per tab
