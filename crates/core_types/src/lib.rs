@@ -1,4 +1,4 @@
-pub type SessionId = u64;
+pub type TabId = u64;
 pub type RequestId = u64;
 
 #[derive(Clone, Copy, Debug)]

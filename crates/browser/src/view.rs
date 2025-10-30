@@ -1,5 +1,5 @@
 use crate::page::PageState;
-use crate::BrowserApp;
+use crate::tab::Tab;
 
 use html::{
     Node,
@@ -29,7 +29,7 @@ pub enum NavigationAction {
 }
 
 
-pub fn top_bar(ctx: &Context, app: &mut BrowserApp) -> NavigationAction {
+pub fn top_bar(ctx: &Context, tab: &mut Tab) -> NavigationAction {
     let mut action = NavigationAction::None;
 
     const BAR_HEIGHT: f32 = 36.0;
@@ -37,8 +37,8 @@ pub fn top_bar(ctx: &Context, app: &mut BrowserApp) -> NavigationAction {
 
     TopBottomPanel::top("topbar").show(ctx, |ui| {
         ui.horizontal(|ui| {
-            let can_go_back = app.history_index > 0;
-            let can_go_forward = app.history_index + 1 < app.history.len();
+            let can_go_back = tab.history_index > 0;
+            let can_go_forward = tab.history_index + 1 < tab.history.len();
 
             if ui.add_enabled(can_go_back, Button::new("⬅").min_size([BUTTON_WIDTH, BAR_HEIGHT].into())).clicked() {
                 action = NavigationAction::Back;
@@ -59,7 +59,7 @@ pub fn top_bar(ctx: &Context, app: &mut BrowserApp) -> NavigationAction {
                 .show(ui, |ui| {
                     ui.add_sized(
                         [ui.available_width(), BAR_HEIGHT - 8.0],
-                        egui::TextEdit::singleline(&mut app.url)
+                        egui::TextEdit::singleline(&mut tab.url)
                             .hint_text("Enter URL")
                             .vertical_align(Align::Center),
                     )
@@ -67,7 +67,7 @@ pub fn top_bar(ctx: &Context, app: &mut BrowserApp) -> NavigationAction {
                 .inner;
 
             if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-                action = NavigationAction::Navigate(app.url.clone());
+                action = NavigationAction::Navigate(tab.url.clone());
             }
         });
     });
@@ -101,16 +101,16 @@ pub fn content(
 
 pub fn page_viewport(ui: &mut Ui, dom: &Node) {
     // 1) background color
-    let background = BrowserApp::page_background(dom).unwrap_or((255, 255, 255, 255));
+    let background = Tab::page_background(dom).unwrap_or((255, 255, 255, 255));
     let background_ui = Color32::from_rgba_unmultiplied(background.0, background.1, background.2, background.3);
 
     // 2) collect visible text
     let mut text = String::new();
     let mut ancestors = Vec::new();
-    BrowserApp::collect_visible_text(dom, &mut ancestors, &mut text);
+    Tab::collect_visible_text(dom, &mut ancestors, &mut text);
 
     // 3) inherited text color
-    let fg = BrowserApp::inherited_color(dom, &[]);
+    let fg = Tab::inherited_color(dom, &[]);
     let fg_ui = Color32::from_rgba_unmultiplied(fg.0, fg.1, fg.2, fg.3);
 
     eprintln!("visible text chars: {}", text.chars().count());

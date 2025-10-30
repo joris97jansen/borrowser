@@ -5,7 +5,7 @@ use std::sync::{
     mpsc::{Receiver, Sender},
     atomic::{AtomicBool, Ordering},
 };
-use core_types::{SessionId, RequestId};
+use core_types::{TabId, RequestId};
 
 use bus::{CoreCommand, CoreEvent};
 use net::{NetEvent, fetch_stream};
@@ -13,15 +13,15 @@ use net::{NetEvent, fetch_stream};
 pub fn start_net_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent>) {
     thread::spawn(move || {
         // one cancel flag per navigation request_id
-        let mut cancels: HashMap<(SessionId, RequestId), Arc<AtomicBool>> = HashMap::new();
+        let mut cancels: HashMap<(TabId, RequestId), Arc<AtomicBool>> = HashMap::new();
 
         while let Ok(cmd) = cmd_rx.recv() {
         match cmd {
-            CoreCommand::FetchStream { session_id, request_id, url, kind } => {
+            CoreCommand::FetchStream { tab_id, request_id, url, kind } => {
                 // Get or create the cancel flag in a short scope so the mutable borrow ends here:
                 let cancel = {
                     cancels
-                        .entry((session_id, request_id))
+                        .entry((tab_id, request_id))
                         .or_insert_with(|| Arc::new(AtomicBool::new(false)))
                         .clone()
                 };
@@ -36,22 +36,22 @@ pub fn start_net_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent
                         match e {
                             NetEvent::Start { request_id, url, content_type } => {
                                 let _ = evt_tx.send(CoreEvent::NetworkStart {
-                                    session_id, request_id, kind, url, content_type
+                                    tab_id, request_id, kind, url, content_type
                                 });
                             }
                             NetEvent::Chunk { request_id, url, chunk } => {
                                 let _ = evt_tx.send(CoreEvent::NetworkChunk {
-                                    session_id, request_id, kind, url, bytes: chunk
+                                    tab_id, request_id, kind, url, bytes: chunk
                                 });
                             }
                             NetEvent::Done { request_id, url } => {
                                 let _ = evt_tx.send(CoreEvent::NetworkDone {
-                                    session_id, request_id, kind, url
+                                    tab_id, request_id, kind, url
                                 });
                             }
                             NetEvent::Error { request_id, url, error } => {
                                 let _ = evt_tx.send(CoreEvent::NetworkError {
-                                    session_id, request_id, kind, url, error
+                                    tab_id, request_id, kind, url, error
                                 });
                             }
                         }
@@ -59,8 +59,8 @@ pub fn start_net_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent
                 );
             }
 
-            CoreCommand::CancelRequest { session_id, request_id } => {
-                if let Some(flag) = cancels.get(&(session_id, request_id)) {
+            CoreCommand::CancelRequest { tab_id, request_id } => {
+                if let Some(flag) = cancels.get(&(tab_id, request_id)) {
                     flag.store(true, Ordering::Release);
                 }
             }
