@@ -1,30 +1,12 @@
-use std::sync::mpsc;
 use egui::{
-    Context,
-    TopBottomPanel,
-    Button,
-    Align,
-    Key,
-    Frame,
-    Margin,
-    CornerRadius,
-    Color32,
-    Stroke,
-    TextEdit,
-    vec2,
-    pos2,
-    Rect,
-    Align2,
-    FontId,
-    Sense,
-    Ui,
+    Align, Align2, Button, Color32, Context, CornerRadius, FontId, Frame, Key, Margin, Rect,
+    ScrollArea, Sense, Stroke, TextEdit, TopBottomPanel, Ui, pos2,
+    scroll_area::ScrollBarVisibility, vec2,
 };
+use std::sync::mpsc;
 
-use app_api::{UiApp, RepaintHandle};
-use bus::{
-    CoreCommand,
-    CoreEvent
-};
+use app_api::{RepaintHandle, UiApp};
+use bus::{CoreCommand, CoreEvent};
 use core_types::TabId;
 
 use crate::tab::Tab;
@@ -62,15 +44,15 @@ impl ShellApp {
         let id = self.alloc_tab_id();
         let mut t = Tab::new(id);
 
-        if let Some(tx) = &self.cmd_tx { 
-            t.set_bus_sender(tx.clone()); 
+        if let Some(tx) = &self.cmd_tx {
+            t.set_bus_sender(tx.clone());
         }
-        if let Some(rp) = &self.repaint { 
-            t.set_repaint_handle(rp.clone()); 
+        if let Some(rp) = &self.repaint {
+            t.set_repaint_handle(rp.clone());
         }
         self.tabs.push(t);
         self.active = self.tabs.len() - 1;
-        self.request_repaint(); 
+        self.request_repaint();
     }
 
     fn close_at(&mut self, idx: usize) {
@@ -79,7 +61,8 @@ impl ShellApp {
             if tab.nav_gen > 0 {
                 if let Some(tx) = &self.cmd_tx {
                     let _ = tx.send(CoreCommand::CancelRequest {
-                        tab_id: tab.tab_id, request_id: tab.nav_gen
+                        tab_id: tab.tab_id,
+                        request_id: tab.nav_gen,
                     });
                 }
             }
@@ -105,13 +88,18 @@ impl ShellApp {
     }
 
     pub fn close_active(&mut self) {
-        if self.tabs.is_empty() { return; }
+        if self.tabs.is_empty() {
+            return;
+        }
         let idx = self.active;
 
         if let Some(tab) = self.tabs.get(idx) {
             if tab.nav_gen > 0 {
                 if let Some(tx) = &self.cmd_tx {
-                    let _ = tx.send(CoreCommand::CancelRequest { tab_id: tab.tab_id, request_id: tab.nav_gen });
+                    let _ = tx.send(CoreCommand::CancelRequest {
+                        tab_id: tab.tab_id,
+                        request_id: tab.nav_gen,
+                    });
                 }
             }
         }
@@ -122,21 +110,21 @@ impl ShellApp {
         } else {
             self.active = self.active.saturating_sub(1);
         }
-        self.request_repaint(); 
+        self.request_repaint();
     }
 
-    fn active_tab_mut(&mut self) -> &mut Tab { 
-        &mut self.tabs[self.active] 
+    fn active_tab_mut(&mut self) -> &mut Tab {
+        &mut self.tabs[self.active]
     }
 
-    fn active_tab(&self) -> &Tab { 
-        &self.tabs[self.active] 
+    fn active_tab(&self) -> &Tab {
+        &self.tabs[self.active]
     }
 
     // --- UI helpers ---
     fn request_repaint(&self) {
         if let Some(r) = &self.repaint {
-             r.request_now(); 
+            r.request_now();
         }
     }
 
@@ -148,103 +136,121 @@ impl ShellApp {
         // Defer the actual close until after the loop to avoid borrow/index issues
         let mut close_idx: Option<usize> = None;
 
-        ui.horizontal(|ui| {
-            ui.spacing_mut().item_spacing.x = 8.0;
+        ScrollArea::horizontal()
+            .scroll_bar_visibility(ScrollBarVisibility::AlwaysHidden)
+            .show(ui, |ui| {
+                ui.horizontal(|ui| {
+                    ui.spacing_mut().item_spacing.x = 8.0;
 
-            for (i, t) in self.tabs.iter().enumerate() {
-                let title = if t.url.is_empty() { "New Tab" } else { &t.url };
+                    for (i, t) in self.tabs.iter().enumerate() {
+                        let title = if t.url.is_empty() { "New Tab" } else { &t.url };
 
-                // Reserve the full tab rect
-                let (tab_rect, tab_resp) = ui.allocate_exact_size(
-                    vec2(tab_w, h),
-                    Sense::click(),
-                );
+                        // Reserve the full tab rect
+                        let (tab_rect, tab_resp) =
+                            ui.allocate_exact_size(vec2(tab_w, h), Sense::click());
 
-                // Define custom colors for tab backgrounds
-                let inactive_fill = Color32::from_rgb(70, 70, 70); // Lighter grey for inactive tabs
-                let active_fill = Color32::from_rgb(120, 120, 120); // Different (even lighter) for active
-                let hovered_fill = Color32::from_rgb(90, 90, 90); // Medium for hovered
+                        // Define custom colors for tab backgrounds
+                        let inactive_fill = Color32::from_rgb(70, 70, 70); // Lighter grey for inactive tabs
+                        let active_fill = Color32::from_rgb(120, 120, 120); // Different (even lighter) for active
+                        let hovered_fill = Color32::from_rgb(90, 90, 90); // Medium for hovered
 
-                // Active / hover / inactive fill
-                let vis = ui.visuals();
-                let rounding = CornerRadius::same(8);
-                let fill = if i == self.active {
-                    active_fill
-                } else if tab_resp.hovered() {
-                    hovered_fill
-                } else {
-                    inactive_fill
-                };
-                ui.painter().rect_filled(tab_rect, rounding, fill);
+                        // Active / hover / inactive fill
+                        let vis = ui.visuals();
+                        let rounding = CornerRadius::same(8);
+                        let fill = if i == self.active {
+                            active_fill
+                        } else if tab_resp.hovered() {
+                            hovered_fill
+                        } else {
+                            inactive_fill
+                        };
+                        ui.painter().rect_filled(tab_rect, rounding, fill);
 
-                // Title (left padded, ellipsized visually by width)
-                let text_pos = pos2(tab_rect.left() + 12.0, tab_rect.center().y);
-                ui.painter().text(
-                    text_pos,
-                    Align2::LEFT_CENTER,
-                    title,
-                    FontId::proportional(13.0),
-                    vis.widgets.inactive.fg_stroke.color,
-                );
+                        // Title (left padded, ellipsized visually by width)
+                        let text_pos = pos2(tab_rect.left() + 12.0, tab_rect.center().y);
+                        ui.painter().text(
+                            text_pos,
+                            Align2::LEFT_CENTER,
+                            title,
+                            FontId::proportional(13.0),
+                            vis.widgets.inactive.fg_stroke.color,
+                        );
 
-                // Close area rect on the right
-                let close_rect = Rect::from_min_max(
-                    pos2(tab_rect.right() - close_w - 6.0, tab_rect.top() + 4.0),
-                    pos2(tab_rect.right() - 6.0, tab_rect.bottom() - 4.0),
-                );
+                        // Close area rect on the right
+                        let close_rect = Rect::from_min_max(
+                            pos2(tab_rect.right() - close_w - 6.0, tab_rect.top() + 4.0),
+                            pos2(tab_rect.right() - 6.0, tab_rect.bottom() - 4.0),
+                        );
 
-                // Interact on that rects
-                let close_id = ui.make_persistent_id(("tab_close", i));
-                let close_resp = ui.interact(close_rect, close_id, Sense::click());
+                        // Interact on that rects
+                        let close_id = ui.make_persistent_id(("tab_close", i));
+                        let close_resp = ui.interact(close_rect, close_id, Sense::click());
 
-                // Hover/active backdrop for the close glyph
-                if close_resp.hovered() {
-                    ui.painter().rect_filled(close_rect, CornerRadius::same(6), vis.widgets.hovered.bg_fill);
-                }
-                if close_resp.is_pointer_button_down_on() {
-                    ui.painter().rect_filled(close_rect, CornerRadius::same(6), vis.widgets.active.bg_fill);
-                }
+                        // Hover/active backdrop for the close glyph
+                        if close_resp.hovered() {
+                            ui.painter().rect_filled(
+                                close_rect,
+                                CornerRadius::same(6),
+                                vis.widgets.hovered.bg_fill,
+                            );
+                        }
+                        if close_resp.is_pointer_button_down_on() {
+                            ui.painter().rect_filled(
+                                close_rect,
+                                CornerRadius::same(6),
+                                vis.widgets.active.bg_fill,
+                            );
+                        }
 
-                // Center the ✖ glyph
-                ui.painter().text(
-                    close_rect.center(),
-                    Align2::CENTER_CENTER,
-                    "✖",
-                    FontId::proportional(12.5),
-                    vis.widgets.inactive.fg_stroke.color,
-                );
+                        // Center the ✖ glyph
+                        ui.painter().text(
+                            close_rect.center(),
+                            Align2::CENTER_CENTER,
+                            "✖",
+                            FontId::proportional(12.5),
+                            vis.widgets.inactive.fg_stroke.color,
+                        );
 
-                if close_resp.clicked() {
-                    close_idx = Some(i);
-                }
+                        if close_resp.clicked() {
+                            close_idx = Some(i);
+                        }
 
-                // Click anywhere else on the tab to activate
-                if tab_resp.clicked() {
-                    self.active = i;
-                    self.request_repaint();
-                }
-            }
+                        // Click anywhere else on the tab to activate
+                        if tab_resp.clicked() {
+                            self.active = i;
+                            self.request_repaint();
+                        }
+                    }
 
-            let plus_size = vec2(28.0, h);
-            let (plus_rect, plus_resp) = ui.allocate_exact_size(plus_size, Sense::click());
-            let vis = ui.visuals();
-            if plus_resp.hovered() {
-                ui.painter().rect_filled(plus_rect, CornerRadius::same(6), vis.widgets.hovered.bg_fill);
-            }
-            if plus_resp.is_pointer_button_down_on() {
-                ui.painter().rect_filled(plus_rect, CornerRadius::same(6), vis.widgets.active.bg_fill);
-            }
-            ui.painter().text(
-                plus_rect.center(),
-                Align2::CENTER_CENTER,
-                "+",
-                FontId::proportional(14.0),
-                vis.widgets.inactive.fg_stroke.color,
-            );
-            if plus_resp.clicked() {
-                self.add_tab();
-            }
-        });
+                    let plus_size = vec2(28.0, h);
+                    let (plus_rect, plus_resp) = ui.allocate_exact_size(plus_size, Sense::click());
+                    let vis = ui.visuals();
+                    if plus_resp.hovered() {
+                        ui.painter().rect_filled(
+                            plus_rect,
+                            CornerRadius::same(6),
+                            vis.widgets.hovered.bg_fill,
+                        );
+                    }
+                    if plus_resp.is_pointer_button_down_on() {
+                        ui.painter().rect_filled(
+                            plus_rect,
+                            CornerRadius::same(6),
+                            vis.widgets.active.bg_fill,
+                        );
+                    }
+                    ui.painter().text(
+                        plus_rect.center(),
+                        Align2::CENTER_CENTER,
+                        "+",
+                        FontId::proportional(14.0),
+                        vis.widgets.inactive.fg_stroke.color,
+                    );
+                    if plus_resp.clicked() {
+                        self.add_tab();
+                    }
+                });
+            });
 
         if let Some(i) = close_idx {
             self.close_at(i);
@@ -260,10 +266,16 @@ impl ShellApp {
         let can_forward = t.history_index + 1 < t.history.len();
 
         // Square buttons matching URL bar height
-        if ui.add_enabled(can_back, Button::new("⬅").min_size([h, h].into())).clicked() {
+        if ui
+            .add_enabled(can_back, Button::new("⬅").min_size([h, h].into()))
+            .clicked()
+        {
             t.go_back();
         }
-        if ui.add_enabled(can_forward, Button::new("➡").min_size([h, h].into())).clicked() {
+        if ui
+            .add_enabled(can_forward, Button::new("➡").min_size([h, h].into()))
+            .clicked()
+        {
             t.go_forward();
         }
         if ui.add(Button::new("🔄").min_size([h, h].into())).clicked() {
@@ -274,7 +286,10 @@ impl ShellApp {
 
         // ---- URL input frame ----
         let resp = Frame::new()
-            .stroke(Stroke::new(1.0, ui.visuals().widgets.inactive.bg_stroke.color))
+            .stroke(Stroke::new(
+                1.0,
+                ui.visuals().widgets.inactive.bg_stroke.color,
+            ))
             .corner_radius(CornerRadius::same(6))
             .inner_margin(Margin::symmetric(6, 4))
             .show(ui, |ui| {
@@ -299,10 +314,7 @@ impl ShellApp {
 impl UiApp for ShellApp {
     fn ui(&mut self, ctx: &Context) {
         TopBottomPanel::top("Browser Shell")
-            .frame(
-                Frame::new()
-                    .inner_margin(Margin::symmetric(0, 0))
-            )
+            .frame(Frame::new().inner_margin(Margin::symmetric(0, 0)))
             .show(ctx, |ui| {
                 // Consistent vertical spacing
                 ui.spacing_mut().item_spacing.y = 0.0;
@@ -313,10 +325,7 @@ impl UiApp for ShellApp {
                     .inner_margin(Margin::symmetric(6, 6))
                     .show(ui, |ui| {
                         ui.set_min_width(ui.available_width());
-                        ui.horizontal(|ui| {
-                            ui.spacing_mut().item_spacing.x = 8.0;
-                            self.ui_tabstrip(ui);
-                        });
+                        self.ui_tabstrip(ui);
                     });
 
                 // ---- URL bar ----
@@ -345,18 +354,20 @@ impl UiApp for ShellApp {
 
     fn on_core_event(&mut self, evt: CoreEvent) {
         let sid = match &evt {
-            CoreEvent::NetworkStart{tab_id, ..}
-            | CoreEvent::NetworkChunk{tab_id, ..}
-            | CoreEvent::NetworkDone{tab_id, ..}
-            | CoreEvent::NetworkError{tab_id, ..}
-            | CoreEvent::DomUpdate{tab_id, ..}
-            | CoreEvent::CssParsedBlock{tab_id, ..}
-            | CoreEvent::CssSheetDone{tab_id, ..} => *tab_id,
+            CoreEvent::NetworkStart { tab_id, .. }
+            | CoreEvent::NetworkChunk { tab_id, .. }
+            | CoreEvent::NetworkDone { tab_id, .. }
+            | CoreEvent::NetworkError { tab_id, .. }
+            | CoreEvent::DomUpdate { tab_id, .. }
+            | CoreEvent::CssParsedBlock { tab_id, .. }
+            | CoreEvent::CssSheetDone { tab_id, .. } => *tab_id,
         };
         if let Some(tab) = self.tabs.iter_mut().find(|t| t.tab_id == sid) {
             tab.on_core_event(evt);
         }
     }
 
-    fn set_repaint_handle(&mut self, h: RepaintHandle) { self.repaint = Some(h); }
+    fn set_repaint_handle(&mut self, h: RepaintHandle) {
+        self.repaint = Some(h);
+    }
 }
