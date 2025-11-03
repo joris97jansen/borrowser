@@ -160,15 +160,20 @@ impl ShellApp {
                     Sense::click(),
                 );
 
-                // Active / hover fill
+                // Define custom colors for tab backgrounds
+                let inactive_fill = Color32::from_rgb(70, 70, 70); // Lighter grey for inactive tabs
+                let active_fill = Color32::from_rgb(120, 120, 120); // Different (even lighter) for active
+                let hovered_fill = Color32::from_rgb(90, 90, 90); // Medium for hovered
+
+                // Active / hover / inactive fill
                 let vis = ui.visuals();
                 let rounding = CornerRadius::same(8);
                 let fill = if i == self.active {
-                    vis.widgets.active.bg_fill
+                    active_fill
                 } else if tab_resp.hovered() {
-                    vis.widgets.hovered.bg_fill
+                    hovered_fill
                 } else {
-                    Color32::TRANSPARENT
+                    inactive_fill
                 };
                 ui.painter().rect_filled(tab_rect, rounding, fill);
 
@@ -247,7 +252,7 @@ impl ShellApp {
     }
 
     fn ui_urlbar(&mut self, ui: &mut Ui) {
-        let h = 32.0; // unified height
+        let h = 40.0; // unified height
 
         // Back / Forward / Refresh
         let t = self.active_tab_mut();
@@ -268,16 +273,14 @@ impl ShellApp {
         ui.add_space(6.0);
 
         // ---- URL input frame ----
-        let frame_color = Color32::from_rgb(55, 55, 55); // slightly lighter grey
         let resp = Frame::new()
-            .fill(frame_color)
             .stroke(Stroke::new(1.0, ui.visuals().widgets.inactive.bg_stroke.color))
             .corner_radius(CornerRadius::same(6))
             .inner_margin(Margin::symmetric(6, 4))
             .show(ui, |ui| {
                 let t = self.active_tab_mut();
                 ui.add_sized(
-                    [ui.available_width(), h - 8.0], // height matches button row
+                    [ui.available_width(), h - 8.0],
                     TextEdit::singleline(&mut t.url)
                         .hint_text("Enter URL")
                         .vertical_align(Align::Center),
@@ -306,9 +309,10 @@ impl UiApp for ShellApp {
 
                 // ---- Tabstrip ----
                 Frame::new()
-                    .fill(Color32::from_rgb(40, 40, 40)) // dark grey background
+                    .fill(Color32::from_rgb(30, 30, 30)) // Darker grey for the whole tab bar
                     .inner_margin(Margin::symmetric(6, 6))
                     .show(ui, |ui| {
+                        ui.set_min_width(ui.available_width());
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 8.0;
                             self.ui_tabstrip(ui);
@@ -317,9 +321,10 @@ impl UiApp for ShellApp {
 
                 // ---- URL bar ----
                 Frame::new()
-                    .fill(Color32::from_rgb(40, 40, 40)) // same color as tabs bar
+                    .fill(Color32::from_rgb(40, 40, 40)) // slightly lighter grey
                     .inner_margin(Margin::symmetric(6, 6))
                     .show(ui, |ui| {
+                        ui.set_min_width(ui.available_width());
                         ui.horizontal(|ui| {
                             ui.spacing_mut().item_spacing.x = 6.0;
                             self.ui_urlbar(ui);
