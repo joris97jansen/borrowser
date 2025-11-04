@@ -17,7 +17,7 @@ P.S. nothing borrowed from Chromium *wink*.
 Right now the browser can:
 
 * Open a native desktop window (via [winit](https://github.com/rust-windowing/winit))
-* Render its UI (via [egui](https://github.com/emilk/egui) + [egui-wgpu](https://github.com/emilk/egui/tree/master/crates/egui-wgpu))
+* Render its UI and content (via [egui](https://github.com/emilk/egui) + [egui-wgpu](https://github.com/emilk/egui/tree/master/crates/egui-wgpu))
 * Show a **tab strip** and **URL bar** with back, forward, refresh, and new/close tab buttons
 * Keep a **separate navigation history per tab**
 * Handle multiple **independent tabs**, each with isolated runtime sessions
