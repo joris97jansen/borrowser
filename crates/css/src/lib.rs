@@ -266,7 +266,7 @@ pub fn parse_color(value: &str) -> Option<(u8, u8, u8, u8)> {
     Some(named)
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Copy)]
 pub struct ComputedStyle {
     /// Inherited by default. Initial: black.
     pub color: (u8, u8, u8, u8),
@@ -341,6 +341,78 @@ pub fn compute_style(
     }
 
     result
+}
+
+/// A node in the style tree: pairs a DOM node with its computed style
+/// and the styled children.
+///
+/// This forms a parallel tree to the DOM:
+/// - Same shape (for elements we care about)
+/// - Holds computed, inherited CSS values
+pub struct StyledNode<'a> {
+    pub node: &'a html::Node,
+    pub style: ComputedStyle,
+    pub children: Vec<StyledNode<'a>>,
+}
+
+/// Build a style tree from a DOM root.
+/// - `root` is the DOM node (usually the document root)
+/// - `parent_style` is the inherited style, if any
+///
+/// We:
+/// - Create a `StyledNode` for Document + Element nodes
+/// - Skip Text/Comment nodes for now (can be added later for inline layout)
+pub fn build_style_tree<'a>(
+    root: &'a html::Node,
+    parent_style: Option<&ComputedStyle>,
+) -> StyledNode<'a> {
+    use html::Node;
+
+    match root {
+        Node::Document { children, .. } => {
+            // Document gets initial style unless a parent is provided
+            let base = parent_style.copied().unwrap_or_else(ComputedStyle::initial);
+
+            let mut styled_children = Vec::new();
+            for child in children {
+                styled_children.push(build_style_tree(child, Some(&base)));
+            }
+
+            StyledNode {
+                node: root,
+                style: base,
+                children: styled_children,
+            }
+        }
+
+        Node::Element { style, children, .. } => {
+            let computed = compute_style(style, parent_style);
+
+            let mut styled_children = Vec::new();
+            for child in children {
+                styled_children.push(build_style_tree(child, Some(&computed)));
+            }
+
+            StyledNode {
+                node: root,
+                style: computed,
+                children: styled_children,
+            }
+        }
+
+        Node::Text { .. } | Node::Comment { .. } => {
+            // For now, we don't create StyledNode entries for text/comments.
+            // We still propagate the parent style down to children if ever needed
+            // (e.g., if in the future we represent inline boxes here).
+            let inherited = parent_style.copied().unwrap_or_else(ComputedStyle::initial);
+
+            StyledNode {
+                node: root,
+                style: inherited,
+                children: Vec::new(),
+            }
+        }
+    }
 }
 
 /// Parse a `font-size` value into a Length.
