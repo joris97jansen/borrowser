@@ -29,6 +29,36 @@ pub struct Stylesheet {
     pub rules: Vec<Rule>,
 }
 
+/// CSS Length value, currently only supports `px`,
+/// but keep this extensible for `em`, `%`, etc.
+#[derive(Clone, Copy, Debug)]
+pub enum Length {
+    Px(f32),
+}
+
+#[derive(Clone, Debug)]
+pub struct ComputedStyle {
+    /// Inherited by default. Initial: black.
+    pub color: (u8, u8, u8, u8),
+
+    /// Not inherited. Initial: transparent.
+    pub background_color: (u8, u8, u8, u8),
+
+    /// Inherited. We'll treat this as `px` only for now.
+    /// Initial: 16px.
+    pub font_size: Length,
+}
+
+impl ComputedStyle {
+    pub fn initial() -> Self {
+        ComputedStyle {
+            color: (0, 0, 0, 255),              // black
+            background_color: (0, 0, 0, 0),     // transparent
+            font_size: Length::Px(16.0),        // "16px" default
+        }
+    }
+}
+
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
 struct Specificity(u16, u16, u16); // (id, class, type)
 
@@ -257,4 +287,72 @@ pub fn parse_color(value: &str) -> Option<(u8, u8, u8, u8)> {
         _ => return None,
     };
     Some(named)
+}
+
+/// Compute the final, inherited style for an element, given:
+/// - its specified declarations (Node.style)
+/// - an optional parent computed style.
+///
+/// Assumptions:
+/// - `specified` already reflects cascade (author + inline etc.)
+/// - property names are already lowercase (from `parse_declarations`).
+pub fn compute_style(
+    specified: &[(String, String)],
+    parent: Option<&ComputedStyle>,
+) -> ComputedStyle {
+    // Start from parent (inherit) or from initial values if there is no parent.
+    let mut result = parent.cloned().unwrap_or_else(ComputedStyle::initial);
+
+    for (name, value) in specified {
+        let name = name.as_str();
+        let value = value.as_str();
+
+        match name {
+            // color: inherited, initial black.
+            "color" => {
+                if let Some((r, g, b, a)) = parse_color(value) {
+                    result.color = (r, g, b, a);
+                }
+            }
+
+            // background-color: not inherited, initial transparent.
+            // But the parent value was already in `result`, so we may want to
+            // "reset" it to initial if `background-color: transparent` or similar
+            // later; for now we just overwrite with parsed value if supported.
+            "background-color" => {
+                if let Some((r, g, b, a)) = parse_color(value) {
+                    result.background_color = (r, g, b, a);
+                }
+            }
+
+            // font-size: inherited, initial 16px.
+            // We'll accept only `NNpx` right now.
+            "font-size" => {
+                if let Some(len) = parse_length(value) {
+                    result.font_size = len;
+                }
+            }
+
+            // Ignore all other properties for now.
+            _ => {}
+        }
+    }
+
+    result
+}
+
+/// Parse a `font-size` value into a Length.
+/// For now we only support `NNpx` (e.g., "16px", "12.5px").
+fn parse_length(value: &str) -> Option<Length> {
+    let v = value.trim();
+
+    // Only support `<number>px` for now.
+    if let Some(px_str) = v.strip_suffix("px") {
+        let num = px_str.trim().parse::<f32>().ok()?;
+        if num.is_finite() && num > 0.0 {
+            return Some(Length::Px(num));
+        }
+    }
+    // Future: em/rem/%/pt/etc
+    None
 }
