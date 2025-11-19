@@ -175,12 +175,3 @@ Borrowser will:
 * Keep the UI smooth and responsive throughout
 
 ---
-
-## 📚 Next Steps
-
-* [ ] Basic layout engine (block & inline flow)
-* [ ] Render inline images
-* [ ] Add simple JavaScript execution (sandboxed)
-* [ ] Expand to multi-runtime-per-tab isolation
-* [ ] Add caching and connection reuse
-* [ ] Implement a DevTools/Inspect panel for DOM + CSS per tab
