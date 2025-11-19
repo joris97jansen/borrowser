@@ -370,12 +370,13 @@ pub fn build_style_tree<'a>(
 
     match root {
         Node::Document { children, .. } => {
-            // Document gets initial style unless a parent is provided
             let base = parent_style.copied().unwrap_or_else(ComputedStyle::initial);
 
             let mut styled_children = Vec::new();
             for child in children {
-                styled_children.push(build_style_tree(child, Some(&base)));
+                if matches!(child, Node::Document { .. } | Node::Element { .. }) {
+                    styled_children.push(build_style_tree(child, Some(&base)));
+                }
             }
 
             StyledNode {
@@ -390,7 +391,9 @@ pub fn build_style_tree<'a>(
 
             let mut styled_children = Vec::new();
             for child in children {
-                styled_children.push(build_style_tree(child, Some(&computed)));
+                if matches!(child, Node::Document { .. } | Node::Element { .. }) {
+                    styled_children.push(build_style_tree(child, Some(&computed)));
+                }
             }
 
             StyledNode {
@@ -401,9 +404,9 @@ pub fn build_style_tree<'a>(
         }
 
         Node::Text { .. } | Node::Comment { .. } => {
-            // For now, we don't create StyledNode entries for text/comments.
-            // We still propagate the parent style down to children if ever needed
-            // (e.g., if in the future we represent inline boxes here).
+            // This should normally not be called as a root,
+            // but if it is, we just give it inherited (or initial) style
+            // and no children.
             let inherited = parent_style.copied().unwrap_or_else(ComputedStyle::initial);
 
             StyledNode {
@@ -414,6 +417,7 @@ pub fn build_style_tree<'a>(
         }
     }
 }
+
 
 /// Parse a `font-size` value into a Length.
 /// For now we only support `NNpx` (e.g., "16px", "12.5px").
