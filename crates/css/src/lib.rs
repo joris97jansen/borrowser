@@ -36,29 +36,6 @@ pub enum Length {
     Px(f32),
 }
 
-#[derive(Clone, Debug)]
-pub struct ComputedStyle {
-    /// Inherited by default. Initial: black.
-    pub color: (u8, u8, u8, u8),
-
-    /// Not inherited. Initial: transparent.
-    pub background_color: (u8, u8, u8, u8),
-
-    /// Inherited. We'll treat this as `px` only for now.
-    /// Initial: 16px.
-    pub font_size: Length,
-}
-
-impl ComputedStyle {
-    pub fn initial() -> Self {
-        ComputedStyle {
-            color: (0, 0, 0, 255),              // black
-            background_color: (0, 0, 0, 0),     // transparent
-            font_size: Length::Px(16.0),        // "16px" default
-        }
-    }
-}
-
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
 struct Specificity(u16, u16, u16); // (id, class, type)
 
@@ -289,6 +266,29 @@ pub fn parse_color(value: &str) -> Option<(u8, u8, u8, u8)> {
     Some(named)
 }
 
+#[derive(Clone, Debug)]
+pub struct ComputedStyle {
+    /// Inherited by default. Initial: black.
+    pub color: (u8, u8, u8, u8),
+
+    /// Not inherited. Initial: transparent.
+    pub background_color: (u8, u8, u8, u8),
+
+    /// Inherited. We'll treat this as `px` only for now.
+    /// Initial: 16px.
+    pub font_size: Length,
+}
+
+impl ComputedStyle {
+    pub fn initial() -> Self {
+        ComputedStyle {
+            color: (0, 0, 0, 255),              // black
+            background_color: (0, 0, 0, 0),     // transparent
+            font_size: Length::Px(16.0),        // "16px" default
+        }
+    }
+}
+
 /// Compute the final, inherited style for an element, given:
 /// - its specified declarations (Node.style)
 /// - an optional parent computed style.
@@ -300,41 +300,43 @@ pub fn compute_style(
     specified: &[(String, String)],
     parent: Option<&ComputedStyle>,
 ) -> ComputedStyle {
-    // Start from parent (inherit) or from initial values if there is no parent.
-    let mut result = parent.cloned().unwrap_or_else(ComputedStyle::initial);
+    // 1. Start from initial values
+    let mut result = ComputedStyle::initial();
 
+    // 2. Apply inheritance (per property)
+    if let Some(p) = parent {
+        // inherited:
+        result.color = p.color;
+        result.font_size = p.font_size;
+
+        // NOT inherited:
+        // result.background_color stays as initial (transparent)
+    }
+
+    // 3. Apply specified declarations (override inherited/initial)
     for (name, value) in specified {
         let name = name.as_str();
         let value = value.as_str();
 
         match name {
-            // color: inherited, initial black.
             "color" => {
-                if let Some((r, g, b, a)) = parse_color(value) {
-                    result.color = (r, g, b, a);
+                if let Some(rgba) = parse_color(value) {
+                    result.color = rgba;
                 }
             }
-
-            // background-color: not inherited, initial transparent.
-            // But the parent value was already in `result`, so we may want to
-            // "reset" it to initial if `background-color: transparent` or similar
-            // later; for now we just overwrite with parsed value if supported.
             "background-color" => {
-                if let Some((r, g, b, a)) = parse_color(value) {
-                    result.background_color = (r, g, b, a);
+                if let Some(rgba) = parse_color(value) {
+                    result.background_color = rgba;
                 }
             }
-
-            // font-size: inherited, initial 16px.
-            // We'll accept only `NNpx` right now.
             "font-size" => {
                 if let Some(len) = parse_length(value) {
                     result.font_size = len;
                 }
             }
-
-            // Ignore all other properties for now.
-            _ => {}
+            _ => {
+                // unsupported property → ignored (CSS spec: unknown declarations are ignored)
+            }
         }
     }
 
