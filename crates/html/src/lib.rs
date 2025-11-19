@@ -10,7 +10,6 @@ pub enum Token {
         name: String,
         attributes: Vec<(String, Option<String>)>,
         self_closing: bool,
-        style: Vec<(String, String)>,
     },
     EndTag(String),
     Comment(String),
@@ -274,7 +273,6 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 name: name.clone(),
                 attributes,
                 self_closing,
-                style: Vec::new(),
             });
 
             if (name == "script" || name == "style") && !self_closing {

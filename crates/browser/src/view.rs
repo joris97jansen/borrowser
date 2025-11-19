@@ -3,6 +3,7 @@ use crate::tab::Tab;
 
 use html::{
     Node,
+    dom_utils::collect_visible_text,
 };
 use egui::{
     Align,
@@ -107,7 +108,7 @@ pub fn page_viewport(ui: &mut Ui, dom: &Node) {
     // 2) collect visible text
     let mut text = String::new();
     let mut ancestors = Vec::new();
-    Tab::collect_visible_text(dom, &mut ancestors, &mut text);
+    collect_visible_text(dom, &mut ancestors, &mut text);
 
     // 3) inherited text color
     let fg = Tab::inherited_color(dom, &[]);

@@ -3,6 +3,7 @@ use std::collections::{
 };
 use html::{
     Node,
+    dom_utils::outline_from_dom,
 };
 use css::{
     parse_stylesheet,
@@ -74,89 +75,8 @@ impl PageState {
     pub fn update_visible_text_cache(&mut self) {
         self.visible_text_cache.clear();
         if let Some(dom) = self.dom.as_ref() {
-            fn collect(node: &Node, out: &mut String) {
-                match node {
-                    Node::Text { text } => {
-                        let t = text.trim();
-                        if !t.is_empty() {
-                            if !out.is_empty() { out.push(' '); }
-                            out.push_str(t);
-                        }
-                    }
-                    Node::Element { name, children, .. } => {
-                        if name.eq_ignore_ascii_case("script") || name.eq_ignore_ascii_case("style") {
-                            return;
-                        }
-                        for c in children { collect(c, out); }
-                        match &name.to_ascii_lowercase()[..] {
-                            "p" | "div" | "section" | "article" | "header" | "footer"
-                            | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "li" => {
-                                out.push_str("\n\n");
-                            }
-                            _ => {}
-                        }
-                    }
-                    Node::Document { children, .. } => {
-                        for c in children { collect(c, out); }
-                    }
-                    _ => {}
-                }
-            }
-            collect(dom, &mut self.visible_text_cache);
+            let mut ancestors = Vec::new();
+            html::dom_utils::collect_visible_text(dom, &mut ancestors, &mut self.visible_text_cache);
         }
     }
-}
-
-fn first_styles(style: &[(String, String)]) -> String {
-    style.iter()
-        .take(3)
-        .map(|(k, v)| format!(r#"{k}: {v};"#))
-        .collect::<Vec<_>>()
-        .join(" ")
-}
-
-fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
-    fn walk(node: &Node, depth: usize, out: &mut Vec<String>, left: &mut usize) {
-        if *left == 0 { return; }
-        *left -= 1;
-        let indent = "  ".repeat(depth);
-        match node {
-            Node::Document { doctype, children } => {
-                if let Some(dt) = doctype {
-                    out.push(format!("{indent}<!DOCTYPE {dt}>"));
-                } else {
-                    out.push(format!("{indent}#document"));
-                }
-                for c in children { walk(c, depth+1, out, left); }
-            }
-            Node::Element { name, attributes, children, style } => {
-                let id = attributes.iter().find(|(k,_)| k=="id").and_then(|(_,v)| v.as_deref()).unwrap_or("");
-                let class = attributes.iter().find(|(k,_)| k=="class").and_then(|(_,v)| v.as_deref()).unwrap_or("");
-                let styl = first_styles(style);
-                let mut line = format!("{indent}<{name}");
-                if !id.is_empty()   { line.push_str(&format!(r#" id="{id}""#)); }
-                if !class.is_empty(){ line.push_str(&format!(r#" class="{class}""#)); }
-                line.push('>');
-                if !styl.is_empty() { line.push_str(&format!("  /* {styl} */")); }
-                out.push(line);
-                for c in children { walk(c, depth+1, out, left); }
-            }
-            Node::Text { text } => {
-                let t = text.replace('\n', " ").trim().to_string();
-                if !t.is_empty() {
-                    let show = if t.len() > 40 { format!("{}…",&t[..40]) } else { t };
-                    out.push(format!("{indent}\"{show}\""));
-                }
-            }
-            Node::Comment { text } => {
-                let t = text.replace('\n', " ");
-                let show = if t.len() > 40 { format!("{}…",&t[..40]) } else { t };
-                out.push(format!("{indent}<!-- {show} -->"));
-            }
-        }
-    }
-    let mut out = Vec::new();
-    let mut left = cap;
-    walk(root, 0, &mut out, &mut left);
-    out
 }

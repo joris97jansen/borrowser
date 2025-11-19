@@ -327,42 +327,4 @@ impl Tab {
         }
         None
     }
-
-    pub fn collect_visible_text<'a>(node: &'a Node, ancestors: &mut Vec<&'a Node>, out: &mut String) {
-        match node {
-            Node::Text { text } => {
-                let t = text.trim();
-                if !t.is_empty() {
-                    if !out.is_empty() {
-                        out.push(' ');
-                    }
-                    out.push_str(t);
-                }
-            }
-            Node::Element{ name, children, .. } => {
-                if name.eq_ignore_ascii_case("script") || name.eq_ignore_ascii_case("style") {
-                    return; // skip
-                }
-                ancestors.push(node);
-                for c in children {
-                    Self::collect_visible_text(c, ancestors, out);
-                }
-                ancestors.pop();
-
-                match &name.to_ascii_lowercase()[..] {
-                    "p" | "div" | "section" | "article" | "header" | "footer"
-                    | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "li" => {
-                        out.push_str("\n\n");
-                    }
-                    _ => {}
-                }
-            }
-            Node::Document { children, .. } => {
-                for c in children {
-                    Self::collect_visible_text(c, ancestors, out);
-                }
-            }
-            _ => {}
-        }
-    }
 }
