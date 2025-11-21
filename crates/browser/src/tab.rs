@@ -117,6 +117,7 @@ impl Tab {
                 if tab_id == self.tab_id && request_id == current =>
             {
                 self.page.dom = Some(dom);
+                self.page.apply_inline_style_blocks();
                 self.page.update_visible_text_cache();
 
                 // stylesheets detecteren en fetchen
@@ -196,7 +197,15 @@ impl Tab {
 
     // -- Navigation Methods ---
     pub fn navigate_to_new(&mut self, url: String) {
-        let url = self.normalize_url(&url);
+        let url = match self.normalize_url(&url) {
+            Ok(url) => url,
+            Err(err) => {
+                self.loading = false;
+                self.last_status = Some(err.to_string());
+                self.poke_redraw();
+                return;
+            }
+        };
         self.url = url.clone();
 
         // record to history (truncate forward branch)
@@ -256,16 +265,22 @@ impl Tab {
         self.start_fetch(url);
     }
 
-    fn normalize_url(&mut self, url: &String) -> String {
+    fn normalize_url(&mut self, url: &String) -> Result<String, &'static str> {
         let trimmed = url.trim();
         if trimmed.is_empty() {
-            // TODO: return error?
-            return "http://example.com".into();
+            return Err("Cannot navigate to an empty URL");
         }
-        if !trimmed.starts_with("http://") && !trimmed.starts_with("https://") {
-            return format!("https://{trimmed}");
+
+        // Already a full URL with scheme we support
+        if trimmed.starts_with("http://")
+            || trimmed.starts_with("https://")
+            || trimmed.starts_with("file://")
+        {
+            return Ok(trimmed.into());
         }
-        trimmed.into()
+
+        // For everything else, keep your old "guess https" behavior
+        Ok(format!("https://{trimmed}"))
     }
 
     fn send_cmd(&self, cmd: CoreCommand) {

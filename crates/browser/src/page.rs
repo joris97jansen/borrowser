@@ -3,7 +3,10 @@ use std::collections::{
 };
 use html::{
     Node,
-    dom_utils::outline_from_dom,
+    dom_utils::{
+        outline_from_dom,
+        collect_style_texts,
+    },
 };
 use css::{
     parse_stylesheet,
@@ -77,6 +80,23 @@ impl PageState {
         if let Some(dom) = self.dom.as_ref() {
             let mut ancestors = Vec::new();
             html::dom_utils::collect_visible_text(dom, &mut ancestors, &mut self.visible_text_cache);
+        }
+    }
+
+    pub fn apply_inline_style_blocks(&mut self) {
+        if let Some(dom_mut) = self.dom.as_mut() {
+            let mut css_text = String::new();
+            collect_style_texts(dom_mut, &mut css_text);
+
+            if !css_text.trim().is_empty() {
+                let parsed = parse_stylesheet(&css_text);
+                self.css_sheet
+                    .rules
+                    .extend(parsed.rules.into_iter());
+            }
+
+            // Apply all known stylesheets + inline style="" attrs
+            attach_styles(dom_mut, &self.css_sheet);
         }
     }
 }

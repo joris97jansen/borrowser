@@ -18,38 +18,25 @@ pub fn start_css_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent
                     let key = (tab_id, request_id, url.clone());
                     let st = map.entry(key).or_insert(CssState { buf: String::new() });
                     st.buf.push_str(&String::from_utf8_lossy(&bytes));
-
-                    // extract complete blocks
-                    let mut out = Vec::new();
-                    let mut depth = 0usize;
-                    let mut start = None;
-                    for (i, ch) in st.buf.char_indices() {
-                        match ch {
-                            '{' => { if depth == 0 { start = Some(i); } depth += 1; }
-                            '}' => {
-                                if depth > 0 { depth -= 1; }
-                                if depth == 0 {
-                                    if let Some(s) = start.take() {
-                                        out.push(st.buf[s..=i].to_string());
-                                    }
-                                }
-                            }
-                            _ => {}
-                        }
-                    }
-                    // keep only the tail after the last complete block
-                    if let Some(last) = out.last() {
-                        if let Some(idx) = st.buf.rfind(last) {
-                            st.buf = st.buf[idx + last.len() ..].to_string();
-                        }
-                    }
-                    for block in out {
-                        let _ = evt_tx.send(CoreEvent::CssParsedBlock { tab_id, request_id, url: url.clone(), css_block: block });
-                    }
                 }
+
                 CoreCommand::CssDone { tab_id, request_id, url } => {
-                    let _ = evt_tx.send(CoreEvent::CssSheetDone { tab_id, request_id, url: url.clone() });
-                    map.remove(&(tab_id, request_id, url));
+                    let key = (tab_id, request_id, url.clone());
+                    if let Some(st) = map.remove(&key) {
+                        // Send the full stylesheet as a single block
+                        let _ = evt_tx.send(CoreEvent::CssParsedBlock {
+                            tab_id,
+                            request_id,
+                            url: url.clone(),
+                            css_block: st.buf,
+                        });
+                    }
+
+                    let _ = evt_tx.send(CoreEvent::CssSheetDone {
+                        tab_id,
+                        request_id,
+                        url: url.clone(),
+                    });
                 }
                 _ => {}
             }

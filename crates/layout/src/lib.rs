@@ -34,19 +34,18 @@ pub struct LayoutBox<'a> {
 
 /// Compute block layout for a style tree.
 /// - `root` is the style-tree root (usually the document node)
-/// - `viewport_width` is the available content width in px
+/// - `page_width` is the available content width in px
 pub fn layout_block_tree<'a>(
     root: &'a StyledNode<'a>,
-    viewport_width: f32,
+    page_width: f32,
 ) -> LayoutBox<'a> {
-    // We treat the root as a block box at (0,0).
-    // Children will be stacked vertically inside it.
-    layout_block_subtree(root, 0.0, 0.0, viewport_width).0
+    let (root_box, _next_y) = layout_block_subtree(root, 0.0, 0.0, page_width);
+    root_box
 }
 
 /// Internal recursive function:
 /// - `x`, `y` = top-left of this box
-/// - `width` = available width
+/// - `width`  = available width
 /// Returns: (this LayoutBox, next_y_cursor)
 fn layout_block_subtree<'a>(
     styled: &'a StyledNode<'a>,
@@ -56,33 +55,57 @@ fn layout_block_subtree<'a>(
 ) -> (LayoutBox<'a>, f32) {
     let style = &styled.style;
     let mut children_boxes = Vec::new();
-    let mut cursor_y = y;
 
-    // Only Document + Element can have element children in style tree.
-    match styled.node {
-        Node::Document { .. } | Node::Element { .. } => {
-            // Children are all StyledNode<'a> already filtered to elements/doc.
-            for child in &styled.children {
-                // Each child gets its own block subtree stacked vertically.
-                let (child_box, new_cursor) =
-                    layout_block_subtree(child, x, cursor_y, width);
-                cursor_y = new_cursor;
-                children_boxes.push(child_box);
-            }
+    // Where children start and how tall *we* are by default.
+    let (content_start_y, mut cursor_y, base_height) = match styled.node {
+        // Document: no own “row”, just a container for children.
+        Node::Document { .. } => {
+            let content_y = y;
+            (content_y, content_y, 0.0)
         }
+
+        // Special-case <html>: also no base row; it’s just the top container.
+        Node::Element { name, .. } if name.eq_ignore_ascii_case("html") => {
+            let content_y = y;
+            (content_y, content_y, 0.0)
+        }
+
+        // Normal elements: get a base “row” of DEFAULT_BLOCK_HEIGHT.
+        Node::Element { .. } => {
+            let base = DEFAULT_BLOCK_HEIGHT;
+            let content_y = y + base;
+            (content_y, content_y, base)
+        }
+
+        // Text / Comment: treat as leaf with a base height.
         _ => {
-            // Shouldn't happen normally because style tree filters this,
-            // but we don't panic—just treat as leaf.
+            let base = DEFAULT_BLOCK_HEIGHT;
+            let content_y = y + base;
+            (content_y, content_y, base)
+        }
+    };
+
+    // Lay out children vertically inside our content area
+    if matches!(styled.node, Node::Document { .. } | Node::Element { .. }) {
+        for child in &styled.children {
+            let (child_box, new_cursor) = layout_block_subtree(child, x, cursor_y, width);
+            cursor_y = new_cursor;
+            children_boxes.push(child_box);
         }
     }
 
-    let height = if children_boxes.is_empty() {
-        // Leaf block: until we can measure text, give it a fixed height.
-        DEFAULT_BLOCK_HEIGHT
+    // Height contributed by children
+    let children_height = if children_boxes.is_empty() {
+        0.0
     } else {
-        // Height is from our top `y` to the cursor after last child.
-        cursor_y - y
+        cursor_y - content_start_y
     };
+
+    // Our total height = "own row" + children.
+    let mut height = base_height + children_height;
+    if height <= 0.0 {
+        height = DEFAULT_BLOCK_HEIGHT;
+    }
 
     let rect = Rect { x, y, width, height };
 
@@ -94,7 +117,7 @@ fn layout_block_subtree<'a>(
         children: children_boxes,
     };
 
-    // The next sibling should start below this box.
+    // Next sibling starts below us.
     let next_y = y + height;
 
     (layout_box, next_y)

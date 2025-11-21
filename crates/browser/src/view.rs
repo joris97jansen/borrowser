@@ -3,8 +3,9 @@ use crate::tab::Tab;
 
 use html::{
     Node,
-    dom_utils::collect_visible_text,
 };
+use css::build_style_tree;
+use layout::layout_block_tree;
 use egui::{
     Align,
     Button,
@@ -17,8 +18,9 @@ use egui::{
     Frame,
     Margin,
     Ui,
-    RichText,
-    Label,
+    Pos2,
+    Rect,
+    Vec2,
 };
 
 pub enum NavigationAction {
@@ -81,18 +83,24 @@ pub fn content(
     status: Option<&String>,
     loading: bool,
 ) {
+    let has_page = page.dom.is_some();
+
+    // 1) Ask egui what the current theme visuals are
+    let visuals = ctx.style().visuals.clone();
+
+    // 2) Decide the base fill color:
+    //    - no page yet → follow OS/theme (panel fill)
+    //    - page loaded → default white (like real browsers)
+    let base_fill = if has_page {
+        Color32::WHITE
+    } else {
+        visuals.panel_fill
+    };
     CentralPanel::default()
-        .frame(Frame::default())
+        .frame(Frame::default().fill(base_fill))
         .show(ctx, |ui| {
         if let Some(dom) = page.dom.as_ref() {
             page_viewport(ui, dom);
-
-            // ui.separator();
-            // egui::CollapsingHeader::new("DOM outline (debug)").default_open(true).show(ui, |ui| {
-            //     for line in page.outline(5000) { // large cap so we see everything
-            //         ui.monospace(line);
-            //     }
-            // });
         }
 
         if loading { ui.label("⏳ Loading…"); }
@@ -101,41 +109,65 @@ pub fn content(
 }
 
 pub fn page_viewport(ui: &mut Ui, dom: &Node) {
-    // 1) background color
-    let background = Tab::page_background(dom).unwrap_or((255, 255, 255, 255));
-    let background_ui = Color32::from_rgba_unmultiplied(background.0, background.1, background.2, background.3);
-
-    // 2) collect visible text
-    let mut text = String::new();
-    let mut ancestors = Vec::new();
-    collect_visible_text(dom, &mut ancestors, &mut text);
-
-    // 3) inherited text color
-    let fg = Tab::inherited_color(dom, &[]);
-    let fg_ui = Color32::from_rgba_unmultiplied(fg.0, fg.1, fg.2, fg.3);
-
-    eprintln!("visible text chars: {}", text.chars().count());
-
-    // 4) page surface + scroll
     ScrollArea::vertical()
         .id_salt("page_viewport_scroll_area")
         .auto_shrink([false, false])
         .show(ui, |ui| {
-            let min_height = ui.available_height();
+            // 1) Figure out how wide our "page" is
+            let available_width = ui.available_width();
+            let min_height = ui.available_height().max(200.0);
 
-            Frame::new()
-                .fill(background_ui)
-                .show(ui, |ui| {
-                    ui.style_mut().visuals.override_text_color = Some(fg_ui);
-                    ui.set_width(ui.available_width());
-                    ui.set_min_height(min_height);
-                    ui.add(
-                        Label::new(
-                            RichText::new(text).size(16.0)
-                        ).wrap()
-                    );
+            // 2) Build style tree from DOM.
+            //    DOM should already have Node::Element.style filled by attach_styles().
+            let style_root = build_style_tree(dom, None);
 
-                    ui.style_mut().visuals.override_text_color = None;
-                });
+            // 3) Run simple block layout for this style tree
+            let layout_root = layout_block_tree(&style_root, available_width);
+
+            // Total content height (layout_root.rect.height) might be very small
+            // for now (we're using a constant height per leaf), so ensure a
+            // minimum height to avoid weird visuals.
+            let content_height = layout_root.rect.height.max(min_height);
+
+            // 4) Allocate a paint area inside the ScrollArea
+            let (content_rect, _resp) = ui.allocate_exact_size(
+                Vec2::new(available_width, content_height),
+                egui::Sense::hover(),
+            );
+            let painter = ui.painter_at(content_rect);
+            let origin = content_rect.min; // top-left corner of our page area
+
+            // 5) Paint layout tree (background colors only for now)
+            paint_layout_box(&layout_root, &painter, origin);
         });
+}
+
+fn paint_layout_box<'a>(
+    layout: &layout::LayoutBox<'a>,
+    painter: &egui::Painter,
+    origin: Pos2,
+) {
+    let rect = Rect::from_min_size(
+        Pos2 {
+            x: origin.x + layout.rect.x,
+            y: origin.y + layout.rect.y,
+        },
+        Vec2 {
+            x: layout.rect.width,
+            y: layout.rect.height,
+        },
+    );
+
+    let (r, g, b, a) = layout.style.background_color;
+    if a > 0 {
+        painter.rect_filled(
+            rect,
+            0.0,
+            Color32::from_rgba_unmultiplied(r, g, b, a),
+        );
+    }
+
+    for child in &layout.children {
+        paint_layout_box(child, painter, origin);
+    }
 }

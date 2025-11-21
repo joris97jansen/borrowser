@@ -4,10 +4,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use winit::{
     application::{ApplicationHandler},
     event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy},
-    window::{Window, WindowId},
+    window::{Window, WindowId, Theme},
     event::{WindowEvent},
     dpi::PhysicalSize,
 };
+use egui::Visuals;
 use std::sync::mpsc;
 use gfx::Renderer;
 use app_api::{
@@ -80,7 +81,6 @@ fn router_thread(cmd_rx_main: mpsc::Receiver<CoreCommand>,
 struct PlatformApp {
     window: Option<Arc<Window>>,
     proxy: EventLoopProxy<UserEvent>,
-    // ticker_started: bool,
     renderer: Option<Renderer>,
     repaint: Option<Arc<PlatformRepaint>>,
     app: Option<Box<dyn UiApp>>,
@@ -91,7 +91,6 @@ impl PlatformApp {
         Self {
             window: None,
             proxy: proxy,
-            // ticker_started: false,
             renderer: None,
             repaint: None,
             app: None,
@@ -129,6 +128,24 @@ impl PlatformApp {
         let renderer = self.renderer.as_mut().unwrap();
         let app      = self.app.as_mut().expect("UiApp not injected");
 
+        // ---- 1) Sync egui visuals with OS theme ----
+        if let Some(theme) = window.theme() {
+            let ctx = renderer.context();
+            let visuals = ctx.style().visuals.clone();
+
+            let want_dark = matches!(theme, Theme::Dark);
+            let is_current_dark = visuals.dark_mode;
+
+            if want_dark != is_current_dark {
+                if want_dark {
+                    ctx.set_visuals(Visuals::dark());
+                } else {
+                    ctx.set_visuals(Visuals::light());
+                }
+            }
+        }
+
+        // ---- 2) Normal rendering ----
         renderer.render(window.as_ref(), |ctx| app.ui(ctx));
     }
 }
@@ -208,6 +225,12 @@ impl ApplicationHandler<UserEvent> for PlatformApp {
             renderer.on_window_event(window.as_ref(), &event);
         }
         match event {
+            WindowEvent::ThemeChanged(_theme) => {
+                // Don’t set visuals here anymore, just redraw.
+                if let Some(window) = self.window.as_ref() {
+                    window.request_redraw();
+                }
+            }
             WindowEvent::CloseRequested => {
                 event_loop.exit();
 
