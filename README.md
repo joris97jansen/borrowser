@@ -46,7 +46,6 @@ It’s now structured like a real browser shell, with clear separation between t
 Borrowser is split into modular crates, each with a focused responsibility:
 
 ```
-
 src/main.rs
 crates/
 ├── app_api       # Shared traits, types, and CoreCommand/CoreEvent interfaces
@@ -60,7 +59,6 @@ crates/
 ├── runtime-css   # CSS parsing runtime
 ├── bus           # Message bus (CoreCommand / CoreEvent routing)
 └── platform      # Platform integration: window, event loop, repaint proxy
-
 ```
 
 ---
@@ -68,16 +66,34 @@ crates/
 ## 🧩 How It Works
 
 ### 1. The Platform
-(... unchanged ...)
+
+Creates the window, sets up the **event loop**, and launches the background runtimes.
+It owns an `EventLoopProxy<UserEvent>` that safely lets background threads send messages to the UI.
 
 ### 2. The Message Bus
-(... unchanged ...)
+
+Connects everything using two channels:
+
+* **Commands (CoreCommand)**: from the ShellApp/Tabs to the runtimes
+* **Events (CoreEvent)**: from the runtimes back to the ShellApp/Tabs
+
+Each command and event includes a `session_id` (or `tab_id`), keeping communication fully isolated per tab.
 
 ### 3. The Runtimes
-(... unchanged ...)
+
+Each runtime has its own thread and purpose:
+
+* **runtime-net**: downloads HTML or CSS streams over HTTP
+* **runtime-parse**: builds DOM trees and emits `DomUpdate` snapshots
+* **runtime-css**: parses CSS blocks and emits parsed rules
+
+All share the same event bus, operating concurrently and independently.
 
 ### 4. The ShellApp and Tabs
-(... unchanged ...)
+
+* **ShellApp** implements the `UiApp` trait and manages the overall browser Browser Shell (tab strip, URL bar, navigation buttons).
+* Each **Tab** owns its own `tab_id`, history, DOM, and CSS state, and communicates via the message bus.
+* Tabs send `CoreCommand` messages when navigating and receive `CoreEvent` updates from runtimes.
 
 ### 5. Rendering
 
@@ -97,8 +113,7 @@ The rendering pipeline now includes:
 
 ## 🔄 Data Flow Example
 
-```
-
+```text
 [User presses Enter in URL bar]
 ↓
 ShellApp forwards URL to active Tab
@@ -120,39 +135,63 @@ ShellApp routes event to correct Tab by tab_id
 Tab updates its DOM + CSS state and requests redraw
 ↓
 gfx::Renderer builds style tree, layout tree, and paints content
-
 ```
+
+Each tab runs through this flow independently.
 
 ---
 
 ## 🧭 Event & Repaint System
-(... unchanged ...)
+
+```
++-------------------+         +--------------------+        +-------------------+
+|     ShellApp      |         |   Message Bus      |        |    Runtimes       |
+| (Browser Shell + tabs)   |◀──────▶| CoreCommand/CoreEvent |◀──▶ | net / parse / css |
++-------------------+         +--------------------+        +-------------------+
+        │                              │                             │
+        │        EventLoopProxy<UserEvent>                            │
+        │─────────────────────────────────────────────────────────────▶
+        │
+        ▼
++---------------------------+
+|       Platform            |
+|  (winit + egui + gfx)     |
+|---------------------------|
+| Receives UserEvent::Core  |
+| Routes to ShellApp/Tab    |
+| Requests window redraw    |
++---------------------------+
+```
+
+**Why this design?**
+
+* Each tab is fully isolated via its `session_id`
+* Each runtime works independently
+* The main thread only handles UI and rendering
+* Message passing keeps everything thread-safe and modular
+* Scales naturally to multi-tab and multi-runtime setups
 
 ---
 
 ## 🚀 Running the Project
-(... unchanged ...)
+
+Requirements:
+
+* Rust (latest stable)
+
+Run in release mode for full speed:
+
+```bash
+cargo run --release
 ```
 
----
+Borrowser will:
 
-# ✔️ Summary of What Was Added
-
-Only these factual additions were made:
-
-### 🆕 Features added to README
-
-* Computed style tree
-* Block layout tree
-* Background painting per layout box
-* Text rendering using CSS color & font-size
-* Basic word-wrapping
-* Mention of cascade, specificity, computed styles
-* runtime-css is now explicitly part of the flow
-* Rendering pipeline steps updated
-
-Everything else stayed exactly as written.
+* Open a desktop window titled **Borrowser**
+* Show a tab strip, URL bar, and navigation buttons
+* Support multiple independent tabs
+* Fetch and stream web pages incrementally
+* Parse and render DOM + CSS progressively
+* Keep the UI smooth and responsive throughout
 
 ---
-
-If you'd like, I can also update the README with a tiny visual diagram of the **dom → style → layout → paint** pipeline, but only if you want it.
