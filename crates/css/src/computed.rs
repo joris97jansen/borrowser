@@ -108,9 +108,8 @@ pub fn build_style_tree<'a>(
 
             let mut styled_children = Vec::new();
             for child in children {
-                if matches!(child, Node::Document { .. } | Node::Element { .. }) {
-                    styled_children.push(build_style_tree(child, Some(&base)));
-                }
+                // Include *all* node types so we see Text nodes here too
+                styled_children.push(build_style_tree(child, Some(&base)));
             }
 
             StyledNode {
@@ -125,9 +124,7 @@ pub fn build_style_tree<'a>(
 
             let mut styled_children = Vec::new();
             for child in children {
-                if matches!(child, Node::Document { .. } | Node::Element { .. }) {
-                    styled_children.push(build_style_tree(child, Some(&computed)));
-                }
+                styled_children.push(build_style_tree(child, Some(&computed)));
             }
 
             StyledNode {
@@ -138,9 +135,7 @@ pub fn build_style_tree<'a>(
         }
 
         Node::Text { .. } | Node::Comment { .. } => {
-            // This should normally not be called as a root,
-            // but if it is, we just give it inherited (or initial) style
-            // and no children.
+            // Inherit everything from parent
             let inherited = parent_style.copied().unwrap_or_else(ComputedStyle::initial);
 
             StyledNode {

@@ -1,9 +1,6 @@
 use crate::page::PageState;
 use crate::tab::Tab;
 
-use html::{
-    Node,
-};
 use css::build_style_tree;
 use layout::layout_block_tree;
 use egui::{
@@ -21,6 +18,8 @@ use egui::{
     Pos2,
     Rect,
     Vec2,
+    Align2,
+    FontId,
 };
 
 pub enum NavigationAction {
@@ -85,59 +84,59 @@ pub fn content(
 ) {
     let has_page = page.dom.is_some();
 
-    // 1) Ask egui what the current theme visuals are
     let visuals = ctx.style().visuals.clone();
 
-    // 2) Decide the base fill color:
-    //    - no page yet → follow OS/theme (panel fill)
-    //    - page loaded → default white (like real browsers)
+    // No page yet -> follow OS theme; with page -> default white background, like real browsers
     let base_fill = if has_page {
         Color32::WHITE
     } else {
         visuals.panel_fill
     };
+
     CentralPanel::default()
         .frame(Frame::default().fill(base_fill))
         .show(ctx, |ui| {
-        if let Some(dom) = page.dom.as_ref() {
-            page_viewport(ui, dom);
-        }
+            // Render page (layout + text)
+            page_viewport(ui, page);
 
-        if loading { ui.label("⏳ Loading…"); }
-        if let Some(s) = status { ui.label(s); }
-    });
+            if loading { ui.label("⏳ Loading…"); }
+            if let Some(s) = status {
+                ui.label(s);
+            }
+        });
 }
 
-pub fn page_viewport(ui: &mut Ui, dom: &Node) {
+pub fn page_viewport(ui: &mut Ui, page: &PageState) {
+    let dom = match page.dom.as_ref() {
+        Some(dom) => dom,
+        None => return, // nothing to render yet
+    };
+
     ScrollArea::vertical()
         .id_salt("page_viewport_scroll_area")
         .auto_shrink([false, false])
         .show(ui, |ui| {
-            // 1) Figure out how wide our "page" is
+            // 1) Page geometry
             let available_width = ui.available_width();
             let min_height = ui.available_height().max(200.0);
 
-            // 2) Build style tree from DOM.
-            //    DOM should already have Node::Element.style filled by attach_styles().
+            // 2) Build style tree from DOM
             let style_root = build_style_tree(dom, None);
 
-            // 3) Run simple block layout for this style tree
+            // 3) Block layout
             let layout_root = layout_block_tree(&style_root, available_width);
 
-            // Total content height (layout_root.rect.height) might be very small
-            // for now (we're using a constant height per leaf), so ensure a
-            // minimum height to avoid weird visuals.
             let content_height = layout_root.rect.height.max(min_height);
 
-            // 4) Allocate a paint area inside the ScrollArea
+            // 4) Reserve paint area
             let (content_rect, _resp) = ui.allocate_exact_size(
                 Vec2::new(available_width, content_height),
                 egui::Sense::hover(),
             );
-            let painter = ui.painter_at(content_rect);
-            let origin = content_rect.min; // top-left corner of our page area
 
-            // 5) Paint layout tree (background colors only for now)
+            // 5) Paint layout tree (backgrounds + text)
+            let painter = ui.painter_at(content_rect);
+            let origin = content_rect.min;
             paint_layout_box(&layout_root, &painter, origin);
         });
 }
@@ -147,6 +146,8 @@ fn paint_layout_box<'a>(
     painter: &egui::Painter,
     origin: Pos2,
 ) {
+    use html::Node as HtmlNode;
+
     let rect = Rect::from_min_size(
         Pos2 {
             x: origin.x + layout.rect.x,
@@ -158,15 +159,62 @@ fn paint_layout_box<'a>(
         },
     );
 
-    let (r, g, b, a) = layout.style.background_color;
-    if a > 0 {
+    // 1) Background
+    let (br, bg, bb, ba) = layout.style.background_color;
+    if ba > 0 {
         painter.rect_filled(
             rect,
             0.0,
-            Color32::from_rgba_unmultiplied(r, g, b, a),
+            Color32::from_rgba_unmultiplied(br, bg, bb, ba),
         );
     }
 
+    // 2) Collect direct text children for this box
+    let mut text_buf = String::new();
+    for child in &layout.node.children {
+        if let HtmlNode::Text { text } = child.node {
+            if !text.is_empty() {
+                if !text_buf.is_empty() {
+                    text_buf.push(' ');
+                }
+                text_buf.push_str(text);
+            }
+        }
+    }
+
+    if !text_buf.trim().is_empty() {
+        // CSS color
+        let (cr, cg, cb, ca) = layout.style.color;
+        let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
+
+        // CSS font-size (px only for now)
+        let mut font_px = match layout.style.font_size {
+            css::Length::Px(px) => px,
+        };
+
+        // Basic safety: don't let the font be taller than the box itself
+        let padding = 4.0;
+        let max_font = (rect.height() - 2.0 * padding).max(8.0);
+        if font_px > max_font {
+            font_px = max_font;
+        }
+
+        // Position as top-left with a bit of padding
+        let pos = Pos2 {
+            x: rect.min.x + padding,
+            y: rect.min.y + padding,
+        };
+
+        painter.text(
+            pos,
+            Align2::LEFT_TOP,
+            text_buf,
+            FontId::proportional(font_px),
+            text_color,
+        );
+    }
+
+    // 3) Children
     for child in &layout.children {
         paint_layout_box(child, painter, origin);
     }
