@@ -18,8 +18,6 @@ use egui::{
     Pos2,
     Rect,
     Vec2,
-    Align2,
-    FontId,
 };
 
 pub enum NavigationAction {
@@ -169,7 +167,7 @@ fn paint_layout_box<'a>(
         );
     }
 
-    // 2) Collect direct text children for this box
+    // 2) Collect direct text children
     let mut text_buf = String::new();
     for child in &layout.node.children {
         if let HtmlNode::Text { text } = child.node {
@@ -183,39 +181,95 @@ fn paint_layout_box<'a>(
     }
 
     if !text_buf.trim().is_empty() {
-        // CSS color
-        let (cr, cg, cb, ca) = layout.style.color;
-        let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
-
-        // CSS font-size (px only for now)
-        let mut font_px = match layout.style.font_size {
-            css::Length::Px(px) => px,
-        };
-
-        // Basic safety: don't let the font be taller than the box itself
-        let padding = 4.0;
-        let max_font = (rect.height() - 2.0 * padding).max(8.0);
-        if font_px > max_font {
-            font_px = max_font;
-        }
-
-        // Position as top-left with a bit of padding
-        let pos = Pos2 {
-            x: rect.min.x + padding,
-            y: rect.min.y + padding,
-        };
-
-        painter.text(
-            pos,
-            Align2::LEFT_TOP,
-            text_buf,
-            FontId::proportional(font_px),
-            text_color,
+        paint_block_text_in_rect(
+            painter,
+            &text_buf,
+            rect,
+            layout.style,
         );
     }
 
     // 3) Children
     for child in &layout.children {
         paint_layout_box(child, painter, origin);
+    }
+}
+
+fn paint_block_text_in_rect(
+    painter: &egui::Painter,
+    text: &str,
+    rect: Rect,
+    style: &css::ComputedStyle,
+) {
+    use egui::{Align2, FontId};
+
+    let (cr, cg, cb, ca) = style.color;
+    let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
+
+    let mut font_px = match style.font_size {
+        css::Length::Px(px) => px,
+    };
+
+    let padding = 4.0;
+    let available_height = rect.height() - 2.0 * padding;
+    let line_height = font_px * 1.2;
+
+    // Clamp font size if it would obviously overflow
+    if line_height > available_height && available_height > 0.0 {
+        font_px = (available_height / 1.2).max(8.0);
+    }
+
+    let font_id = FontId::proportional(font_px);
+    let max_width = rect.width() - 2.0 * padding;
+
+    // --- Very naive word-wrap: split on spaces, accumulate into lines ---
+    let words = text.split_whitespace();
+    let mut current_line = String::new();
+    let mut lines = Vec::new();
+
+    for w in words {
+        let candidate = if current_line.is_empty() {
+            w.to_string()
+        } else {
+            format!("{} {}", current_line, w)
+        };
+
+        let galley = painter.ctx().fonts(|f| f.layout_no_wrap(candidate.clone(), font_id.clone(), text_color));
+        let width = galley.rect.width();
+
+        if width <= max_width || current_line.is_empty() {
+            // keep adding to this line
+            current_line = candidate;
+        } else {
+            // push current line, start new
+            lines.push(current_line);
+            current_line = w.to_string();
+        }
+    }
+    if !current_line.is_empty() {
+        lines.push(current_line);
+    }
+
+    // --- Paint lines, top-down ---
+    let mut y = rect.min.y + padding;
+    for line in lines {
+        if y + line_height > rect.max.y - padding {
+            break; // no more vertical space
+        }
+
+        let pos = Pos2 {
+            x: rect.min.x + padding,
+            y,
+        };
+
+        painter.text(
+            pos,
+            Align2::LEFT_TOP,
+            line,
+            font_id.clone(),
+            text_color,
+        );
+
+        y += line_height;
     }
 }
