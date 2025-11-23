@@ -34,6 +34,7 @@ pub struct Tab {
     pub tab_id: TabId,
 
     pub url: String,
+    pub page_title: Option<String>, 
     pub history: Vec<String>,
     pub history_index: usize,
     pub nav_gen: RequestId,
@@ -52,6 +53,7 @@ impl Tab {
             tab_id,
             url: String::new(),
             history: Vec::new(),
+            page_title: None,
             history_index: 0,
             nav_gen: 0,
             loading: false,
@@ -283,6 +285,42 @@ impl Tab {
         Ok(format!("https://{trimmed}"))
     }
 
+    pub fn display_title(&self) -> String {
+        // Prefer HTML <title>
+        if let Some(title) = &self.page_title {
+            return elide_end(title, 30);
+        }
+
+        if self.url.is_empty() {
+            return "New Tab".to_string();
+        }
+
+        if let Ok(url) = url::Url::parse(&self.url) {
+            let host = url.host_str().unwrap_or("");
+            let mut label = String::new();
+
+            if !host.is_empty() {
+                label.push_str(host);
+            }
+
+            if let Some(last_seg) = url
+                .path_segments()
+                .and_then(|segs| segs.filter(|s| !s.is_empty()).last())
+            {
+                if !label.is_empty() {
+                    label.push_str(" — ");
+                }
+                label.push_str(last_seg);
+            }
+
+            if !label.is_empty() {
+                return elide_end(&label, 30);
+            }
+        }
+
+        elide_end(&self.url, 30)
+    }
+
     fn send_cmd(&self, cmd: CoreCommand) {
         if let Some(tx) = &self.cmd_tx {
             let _ = tx.send(cmd);
@@ -342,4 +380,16 @@ impl Tab {
         }
         None
     }
+}
+
+fn elide_end(text: &str, max_chars: usize) -> String {
+    let chars: Vec<char> = text.chars().collect();
+    if chars.len() <= max_chars {
+        return text.to_owned();
+    }
+
+    let keep = max_chars.saturating_sub(1);
+    let mut s: String = chars[..keep].iter().collect();
+    s.push('…');
+    s
 }

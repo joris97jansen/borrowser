@@ -143,18 +143,15 @@ impl ShellApp {
                     ui.spacing_mut().item_spacing.x = 8.0;
 
                     for (i, t) in self.tabs.iter().enumerate() {
-                        let title = if t.url.is_empty() { "New Tab" } else { &t.url };
-
                         // Reserve the full tab rect
                         let (tab_rect, tab_resp) =
                             ui.allocate_exact_size(vec2(tab_w, h), Sense::click());
 
-                        // Define custom colors for tab backgrounds
-                        let inactive_fill = Color32::from_rgb(70, 70, 70); // Lighter grey for inactive tabs
-                        let active_fill = Color32::from_rgb(120, 120, 120); // Different (even lighter) for active
-                        let hovered_fill = Color32::from_rgb(90, 90, 90); // Medium for hovered
+                        // Colors
+                        let inactive_fill = Color32::from_rgb(70, 70, 70);
+                        let active_fill   = Color32::from_rgb(120, 120, 120);
+                        let hovered_fill  = Color32::from_rgb(90, 90, 90);
 
-                        // Active / hover / inactive fill
                         let vis = ui.visuals();
                         let rounding = CornerRadius::same(8);
                         let fill = if i == self.active {
@@ -164,29 +161,20 @@ impl ShellApp {
                         } else {
                             inactive_fill
                         };
+
+                        // ---- 1) Background FIRST ----
                         ui.painter().rect_filled(tab_rect, rounding, fill);
 
-                        // Title (left padded, ellipsized visually by width)
-                        let text_pos = pos2(tab_rect.left() + 12.0, tab_rect.center().y);
-                        ui.painter().text(
-                            text_pos,
-                            Align2::LEFT_CENTER,
-                            title,
-                            FontId::proportional(13.0),
-                            vis.widgets.inactive.fg_stroke.color,
-                        );
-
-                        // Close area rect on the right
+                        // ---- 2) Close button rect ----
                         let close_rect = Rect::from_min_max(
                             pos2(tab_rect.right() - close_w - 6.0, tab_rect.top() + 4.0),
-                            pos2(tab_rect.right() - 6.0, tab_rect.bottom() - 4.0),
+                            pos2(tab_rect.right() - 6.0,           tab_rect.bottom() - 4.0),
                         );
 
-                        // Interact on that rects
                         let close_id = ui.make_persistent_id(("tab_close", i));
                         let close_resp = ui.interact(close_rect, close_id, Sense::click());
 
-                        // Hover/active backdrop for the close glyph
+                        // Hover/active backdrop
                         if close_resp.hovered() {
                             ui.painter().rect_filled(
                                 close_rect,
@@ -202,7 +190,7 @@ impl ShellApp {
                             );
                         }
 
-                        // Center the ✖ glyph
+                        // ✖ glyph on top of background
                         ui.painter().text(
                             close_rect.center(),
                             Align2::CENTER_CENTER,
@@ -215,7 +203,29 @@ impl ShellApp {
                             close_idx = Some(i);
                         }
 
-                        // Click anywhere else on the tab to activate
+                        // ---- 3) Text, clipped to "tab minus close" ----
+                        let title = t.display_title();
+
+                        // Area reserved for text only
+                        let text_rect = Rect::from_min_max(
+                            pos2(tab_rect.left() + 12.0, tab_rect.top()),
+                            pos2(close_rect.left() - 4.0, tab_rect.bottom()),
+                        );
+
+                        if text_rect.width() > 0.0 {
+                            let tab_painter = ui.painter_at(text_rect);
+                            let text_pos = pos2(text_rect.left(), text_rect.center().y);
+
+                            tab_painter.text(
+                                text_pos,
+                                Align2::LEFT_CENTER,
+                                title,
+                                FontId::proportional(13.0),
+                                vis.widgets.inactive.fg_stroke.color,
+                            );
+                        }
+
+                        // ---- 4) Tab activation click ----
                         if tab_resp.clicked() {
                             self.active = i;
                             self.request_repaint();
