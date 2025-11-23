@@ -233,7 +233,6 @@ impl ApplicationHandler<UserEvent> for PlatformApp {
             }
             WindowEvent::CloseRequested => {
                 event_loop.exit();
-
             }
             WindowEvent::Resized(new_size) => {
                 self.on_resize(new_size);
@@ -242,6 +241,7 @@ impl ApplicationHandler<UserEvent> for PlatformApp {
                 }
             }
             WindowEvent::KeyboardInput { .. }
+            | WindowEvent::CursorMoved { .. }
             | WindowEvent::MouseInput { .. }
             | WindowEvent::MouseWheel { .. }
             | WindowEvent::ModifiersChanged(_)
@@ -253,7 +253,7 @@ impl ApplicationHandler<UserEvent> for PlatformApp {
             WindowEvent::RedrawRequested => {
                 self.draw_frame();
             }
-                      _ => {}
+            _ => {}
         }
     }
 }
