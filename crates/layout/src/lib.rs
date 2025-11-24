@@ -1,5 +1,6 @@
 use css::{ComputedStyle, StyledNode};
 use html::Node;
+use html::dom_utils::is_non_rendering_element;
 
 const DEFAULT_BLOCK_HEIGHT: f32 = 24.0; // temporary until we have text metrics
 
@@ -54,6 +55,21 @@ fn layout_block_subtree<'a>(
     width: f32,
 ) -> (LayoutBox<'a>, f32) {
     let style = &styled.style;
+
+    // participate in layout at all: height = 0, next_y unchanged, no children.
+    if is_non_rendering_element(styled.node) {
+        let rect = Rect { x, y, width, height: 0.0 };
+        let layout_box = LayoutBox {
+            kind: BoxKind::Block,
+            style,
+            node: styled,
+            rect,
+            children: Vec::new(),
+        };
+        // returning `y` keeps siblings in the same vertical position
+        return (layout_box, y);
+    }
+
     let mut children_boxes = Vec::new();
 
     // Where children start and how tall *we* are by default.

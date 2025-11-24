@@ -1,6 +1,8 @@
 use crate::page::PageState;
 use crate::tab::Tab;
 
+use html::Node;
+use html::dom_utils::is_non_rendering_element;
 use css::build_style_tree;
 use layout::layout_block_tree;
 use egui::{
@@ -144,7 +146,11 @@ fn paint_layout_box<'a>(
     painter: &egui::Painter,
     origin: Pos2,
 ) {
-    use html::Node as HtmlNode;
+    // 0) Skip non-rendering elements
+    if is_non_rendering_element(layout.node.node) {
+        // Don't paint background or children; nothing here is visually rendered.
+        return;
+    }
 
     let rect = Rect::from_min_size(
         Pos2 {
@@ -170,7 +176,7 @@ fn paint_layout_box<'a>(
     // 2) Collect direct text children
     let mut text_buf = String::new();
     for child in &layout.node.children {
-        if let HtmlNode::Text { text } = child.node {
+        if let Node::Text { text } = child.node {
             if !text.is_empty() {
                 if !text_buf.is_empty() {
                     text_buf.push(' ');

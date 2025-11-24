@@ -143,3 +143,17 @@ pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
     walk(root, 0, &mut out, &mut left);
     out
 }
+
+pub fn is_non_rendering_element(node: &Node) -> bool {
+    if let Node::Element { name, .. } = node {
+        let n = name.as_str();
+        n.eq_ignore_ascii_case("style")
+            || n.eq_ignore_ascii_case("script")
+            || n.eq_ignore_ascii_case("head")
+            || n.eq_ignore_ascii_case("title")
+            || n.eq_ignore_ascii_case("meta")
+            || n.eq_ignore_ascii_case("link")
+    } else {
+        false
+    }
+}
