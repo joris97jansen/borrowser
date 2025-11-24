@@ -3,6 +3,10 @@ use std::collections::{
 };
 use html::{
     Node,
+    head::{
+        HeadMetadata,
+        extract_head_metadata
+    },
     dom_utils::{
         outline_from_dom,
         collect_style_texts,
@@ -17,7 +21,7 @@ use css::{
 pub struct PageState {
     pub base_url: Option<String>,
     pub dom: Option<Node>,
-
+    pub head: HeadMetadata,
 
     pub visible_text_cache: String,
 
@@ -30,6 +34,7 @@ impl PageState {
         Self {
             base_url: None,
             dom: None,
+            head: HeadMetadata::default(),
             visible_text_cache: String::new(),
             css_pending: HashSet::new(),
             css_sheet: Stylesheet { rules: Vec::new() },
@@ -40,11 +45,19 @@ impl PageState {
     pub fn start_nav(&mut self, final_url: &str) {
         self.base_url = Some(final_url.to_string());
         self.dom = None;
+        self.head = HeadMetadata::default();
         self.visible_text_cache.clear();
         self.css_pending.clear();
         self.css_sheet.rules.clear();
     }
 
+    pub fn update_head_metadata(&mut self) {
+        if let Some(dom) = self.dom.as_ref() {
+            self.head = extract_head_metadata(dom);
+        } else {
+            self.head = HeadMetadata::default();
+        }
+    }
 
     // --- CSS ---
     pub fn register_css(&mut self, absolute_url: &str) -> bool {

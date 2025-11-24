@@ -1,3 +1,4 @@
+pub mod head;
 pub mod dom_utils;
 
 const HTML_COMMENT_START: &str = "<!--";

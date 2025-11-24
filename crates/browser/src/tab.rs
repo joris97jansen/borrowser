@@ -34,7 +34,6 @@ pub struct Tab {
     pub tab_id: TabId,
 
     pub url: String,
-    pub page_title: Option<String>, 
     pub history: Vec<String>,
     pub history_index: usize,
     pub nav_gen: RequestId,
@@ -53,7 +52,6 @@ impl Tab {
             tab_id,
             url: String::new(),
             history: Vec::new(),
-            page_title: None,
             history_index: 0,
             nav_gen: 0,
             loading: false,
@@ -119,6 +117,7 @@ impl Tab {
                 if tab_id == self.tab_id && request_id == current =>
             {
                 self.page.dom = Some(dom);
+                self.page.update_head_metadata();
                 self.page.apply_inline_style_blocks();
                 self.page.update_visible_text_cache();
 
@@ -285,21 +284,29 @@ impl Tab {
         Ok(format!("https://{trimmed}"))
     }
 
-    pub fn display_title(&self) -> String {
-        // Prefer HTML <title>
-        if let Some(title) = &self.page_title {
-            return elide_end(title, 30);
-        }
-
+    /// Derive a human-friendly label from the URL:
+    /// - for http/https: "host — last/path/segment"
+    /// - for file://: just the file name
+    /// - otherwise: empty string if parse fails
+    fn url_label(&self) -> String {
         if self.url.is_empty() {
-            return "New Tab".to_string();
+            return String::new();
         }
 
         if let Ok(url) = url::Url::parse(&self.url) {
-            let host = url.host_str().unwrap_or("");
+            // file:// → show file name only
+            if url.scheme() == "file" {
+                if let Ok(path) = url.to_file_path() {
+                    if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
+                        return name.to_string();
+                    }
+                }
+            }
+
+            // http/https → "host — last-segment"
             let mut label = String::new();
 
-            if !host.is_empty() {
+            if let Some(host) = url.host_str() {
                 label.push_str(host);
             }
 
@@ -313,12 +320,45 @@ impl Tab {
                 label.push_str(last_seg);
             }
 
-            if !label.is_empty() {
-                return elide_end(&label, 30);
+            return label;
+        }
+
+        // Fallback: nothing nice we can format
+        String::new()
+    }
+
+    pub fn display_title(&self) -> String {
+        // 1) Prefer <title> from head
+        if let Some(title) = self.page.head.title.as_ref() {
+            let trimmed = title.trim();
+            if !trimmed.is_empty() {
+                return elide_end(trimmed, 30);
             }
         }
 
-        elide_end(&self.url, 30)
+        // 2) If still loading and we have a URL, show a loading label
+        if self.loading && !self.url.is_empty() {
+            let core = self.url_label();
+            if core.is_empty() {
+                return "Loading…".to_string();
+            } else {
+                // keep total length modest
+                return format!("Loading… — {}", elide_end(&core, 24));
+            }
+        }
+
+        // 3) No title, not loading → fall back to URL-based label
+        let url_label = self.url_label();
+        if !url_label.is_empty() {
+            return elide_end(&url_label, 30);
+        }
+
+        // 4) Absolute last fallback:
+        if !self.url.is_empty() {
+            return elide_end(&self.url, 30);
+        }
+
+        "New Tab".to_string()
     }
 
     fn send_cmd(&self, cmd: CoreCommand) {
