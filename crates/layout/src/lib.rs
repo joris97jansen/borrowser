@@ -1,5 +1,4 @@
 use css::{ComputedStyle, StyledNode};
-use html::Node;
 use html::dom_utils::is_non_rendering_element;
 
 const DEFAULT_BLOCK_HEIGHT: f32 = 24.0; // temporary until we have text metrics
@@ -54,22 +53,42 @@ fn layout_block_subtree<'a>(
     y: f32,
     width: f32,
 ) -> (LayoutBox<'a>, f32) {
-    let style = &styled.style;
+    use html::Node;
 
-    // participate in layout at all: height = 0, next_y unchanged, no children.
+    // 0) Non-rendering elements: act like transparent containers.
+    // They do NOT get their own "row"; only their children do.
     if is_non_rendering_element(styled.node) {
-        let rect = Rect { x, y, width, height: 0.0 };
+        let mut children_boxes = Vec::new();
+        let mut cursor_y = y;
+
+        for child in &styled.children {
+            let (child_box, new_y) = layout_block_subtree(child, x, cursor_y, width);
+            cursor_y = new_y;
+            children_boxes.push(child_box);
+        }
+
+        let height = if children_boxes.is_empty() {
+            0.0
+        } else {
+            cursor_y - y
+        };
+
+        let rect = Rect { x, y, width, height };
+
         let layout_box = LayoutBox {
             kind: BoxKind::Block,
-            style,
+            style: &styled.style,
             node: styled,
             rect,
-            children: Vec::new(),
+            children: children_boxes,
         };
-        // returning `y` keeps siblings in the same vertical position
-        return (layout_box, y);
+
+        let next_y = y + height;
+        return (layout_box, next_y);
     }
 
+    // 1) Normal block layout logic
+    let style = &styled.style;
     let mut children_boxes = Vec::new();
 
     // Where children start and how tall *we* are by default.
@@ -101,7 +120,7 @@ fn layout_block_subtree<'a>(
         }
     };
 
-    // Lay out children vertically inside our content area
+    // Lay out children vertically
     if matches!(styled.node, Node::Document { .. } | Node::Element { .. }) {
         for child in &styled.children {
             let (child_box, new_cursor) = layout_block_subtree(child, x, cursor_y, width);
@@ -110,14 +129,12 @@ fn layout_block_subtree<'a>(
         }
     }
 
-    // Height contributed by children
     let children_height = if children_boxes.is_empty() {
         0.0
     } else {
         cursor_y - content_start_y
     };
 
-    // Our total height = "own row" + children.
     let mut height = base_height + children_height;
     if height <= 0.0 {
         height = DEFAULT_BLOCK_HEIGHT;
@@ -133,8 +150,6 @@ fn layout_block_subtree<'a>(
         children: children_boxes,
     };
 
-    // Next sibling starts below us.
     let next_y = y + height;
-
     (layout_box, next_y)
 }

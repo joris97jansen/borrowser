@@ -1,9 +1,14 @@
 use crate::page::PageState;
 use crate::tab::Tab;
 
-use html::Node;
-use html::dom_utils::is_non_rendering_element;
-use css::build_style_tree;
+use html::{
+    Node,
+    dom_utils::direct_text_of_element,
+};
+use css::{
+    build_style_tree,
+    StyledNode,
+};
 use layout::layout_block_tree;
 use egui::{
     Align,
@@ -82,36 +87,47 @@ pub fn content(
     status: Option<&String>,
     loading: bool,
 ) {
-    let has_page = page.dom.is_some();
-
-    let visuals = ctx.style().visuals.clone();
-
-    // No page yet -> follow OS theme; with page -> default white background, like real browsers
-    let base_fill = if has_page {
-        Color32::WHITE
-    } else {
-        visuals.panel_fill
+    // If there is no DOM yet → follow OS theme
+    let dom = match page.dom.as_ref() {
+        Some(dom) => dom,
+        None => {
+            let visuals = ctx.style().visuals.clone();
+            CentralPanel::default()
+                .frame(Frame::default().fill(visuals.panel_fill))
+                .show(ctx, |ui| {
+                    if loading { ui.label("⏳ Loading…"); }
+                    if let Some(s) = status { ui.label(s); }
+                });
+            return;
+        }
     };
 
+    // 1) Build style tree
+    let style_root = build_style_tree(dom, None);
+
+    // 2) Determine page background via computed styles
+    let page_bg = find_page_background_color(&style_root);
+
+    let base_fill = if let Some((r, g, b, a)) = page_bg {
+        Color32::from_rgba_unmultiplied(r, g, b, a)
+    } else {
+        // No page background → real browsers default to white
+        Color32::WHITE
+    };
+
+    // 3) Render the page over the base background
     CentralPanel::default()
         .frame(Frame::default().fill(base_fill))
         .show(ctx, |ui| {
-            // Render page (layout + text)
-            page_viewport(ui, page);
+            page_viewport(ui, &style_root);
 
             if loading { ui.label("⏳ Loading…"); }
-            if let Some(s) = status {
-                ui.label(s);
-            }
+            if let Some(s) = status { ui.label(s); }
         });
 }
 
-pub fn page_viewport(ui: &mut Ui, page: &PageState) {
-    let dom = match page.dom.as_ref() {
-        Some(dom) => dom,
-        None => return, // nothing to render yet
-    };
 
+pub fn page_viewport(ui: &mut Ui, style_root: &StyledNode<'_>) {
     ScrollArea::vertical()
         .id_salt("page_viewport_scroll_area")
         .auto_shrink([false, false])
@@ -120,21 +136,18 @@ pub fn page_viewport(ui: &mut Ui, page: &PageState) {
             let available_width = ui.available_width();
             let min_height = ui.available_height().max(200.0);
 
-            // 2) Build style tree from DOM
-            let style_root = build_style_tree(dom, None);
-
-            // 3) Block layout
-            let layout_root = layout_block_tree(&style_root, available_width);
+            // 2) Block layout
+            let layout_root = layout_block_tree(style_root, available_width);
 
             let content_height = layout_root.rect.height.max(min_height);
 
-            // 4) Reserve paint area
+            // 3) Reserve paint area
             let (content_rect, _resp) = ui.allocate_exact_size(
                 Vec2::new(available_width, content_height),
                 egui::Sense::hover(),
             );
 
-            // 5) Paint layout tree (backgrounds + text)
+            // 4) Paint layout tree (backgrounds + text)
             let painter = ui.painter_at(content_rect);
             let origin = content_rect.min;
             paint_layout_box(&layout_root, &painter, origin);
@@ -146,12 +159,6 @@ fn paint_layout_box<'a>(
     painter: &egui::Painter,
     origin: Pos2,
 ) {
-    // 0) Skip non-rendering elements
-    if is_non_rendering_element(layout.node.node) {
-        // Don't paint background or children; nothing here is visually rendered.
-        return;
-    }
-
     let rect = Rect::from_min_size(
         Pos2 {
             x: origin.x + layout.rect.x,
@@ -163,39 +170,22 @@ fn paint_layout_box<'a>(
         },
     );
 
-    // 1) Background
-    let (br, bg, bb, ba) = layout.style.background_color;
-    if ba > 0 {
+    // background
+    let (r, g, b, a) = layout.style.background_color;
+    if a > 0 {
         painter.rect_filled(
             rect,
             0.0,
-            Color32::from_rgba_unmultiplied(br, bg, bb, ba),
+            Color32::from_rgba_unmultiplied(r, g, b, a),
         );
     }
 
-    // 2) Collect direct text children
-    let mut text_buf = String::new();
-    for child in &layout.node.children {
-        if let Node::Text { text } = child.node {
-            if !text.is_empty() {
-                if !text_buf.is_empty() {
-                    text_buf.push(' ');
-                }
-                text_buf.push_str(text);
-            }
-        }
+    // text for direct text children
+    if let Some(text) = direct_text_of_element(layout.node.node) {
+        paint_block_text_in_rect(painter, &text, rect, &layout.style);
     }
 
-    if !text_buf.trim().is_empty() {
-        paint_block_text_in_rect(
-            painter,
-            &text_buf,
-            rect,
-            layout.style,
-        );
-    }
-
-    // 3) Children
+    // children
     for child in &layout.children {
         paint_layout_box(child, painter, origin);
     }
@@ -278,4 +268,47 @@ fn paint_block_text_in_rect(
 
         y += line_height;
     }
+}
+
+fn find_page_background_color(root: &StyledNode<'_>) -> Option<(u8, u8, u8, u8)> {
+    // We prefer <body> background if present and non-transparent.
+    // If not, we fall back to <html>. Otherwise: None.
+    fn is_non_transparent_rgba(rgba: (u8, u8, u8, u8)) -> bool {
+        let (_r, _g, _b, a) = rgba;
+        a > 0
+    }
+
+    fn from_elem(node: &StyledNode<'_>, want: &str) -> Option<(u8, u8, u8, u8)> {
+        match node.node {
+            Node::Element { name, .. } if name.eq_ignore_ascii_case(want) => {
+                let rgba = node.style.background_color;
+                if is_non_transparent_rgba(rgba) {
+                    Some(rgba)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    // root.node is the Document. We look for <html> first-level children,
+    // then <body> beneath those. This matches the usual structure.
+    // Prefer <body>, fallback to <html>.
+    let mut html_bg = None;
+    let mut body_bg = None;
+
+    for child in &root.children {
+        if html_bg.is_none() {
+            html_bg = from_elem(child, "html");
+        }
+
+        for gc in &child.children {
+            if body_bg.is_none() {
+                body_bg = from_elem(gc, "body");
+            }
+        }
+    }
+
+    body_bg.or(html_bg)
 }
