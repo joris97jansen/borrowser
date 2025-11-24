@@ -12,6 +12,17 @@ P.S. nothing borrowed from Chromium *wink*.
 
 ---
 
+## 💖 Support the Project
+
+Borrowser is a browser engine built from scratch; from HTML parsing to CSS, layout, rendering, and beyond.  
+If you enjoy following the development, learn from the code, or simply want to support the time and effort that goes into building it, you can sponsor the project here:
+
+👉 **[Sponsor on GitHub](https://github.com/sponsors/joris97jansen)**
+
+Your support helps me spend more time improving Borrowser, adding new features, writing better documentation, and sharing everything I learn along the way. 🙌
+
+---
+
 ## ✨ Current State
 
 Right now the browser can:
