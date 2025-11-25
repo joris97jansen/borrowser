@@ -9,7 +9,9 @@ use css::{
     build_style_tree,
     StyledNode,
 };
-use layout::layout_block_tree;
+use layout::{
+    layout_block_tree,
+};
 use egui::{
     Align,
     Button,
@@ -25,6 +27,8 @@ use egui::{
     Pos2,
     Rect,
     Vec2,
+    Align2,
+    FontId
 };
 
 pub enum NavigationAction {
@@ -87,7 +91,7 @@ pub fn content(
     status: Option<&String>,
     loading: bool,
 ) {
-    // If there is no DOM yet → follow OS theme
+    // If there is no DOM yet, keep the old behavior: follow OS theme.
     let dom = match page.dom.as_ref() {
         Some(dom) => dom,
         None => {
@@ -102,20 +106,21 @@ pub fn content(
         }
     };
 
-    // 1) Build style tree
+    // 1) Build style tree ONCE for this frame
     let style_root = build_style_tree(dom, None);
 
-    // 2) Determine page background via computed styles
+    // 2) Decide the "page background" from computed styles
     let page_bg = find_page_background_color(&style_root);
 
     let base_fill = if let Some((r, g, b, a)) = page_bg {
         Color32::from_rgba_unmultiplied(r, g, b, a)
     } else {
-        // No page background → real browsers default to white
+        // No explicit page background → default to white like real browsers
         Color32::WHITE
     };
 
-    // 3) Render the page over the base background
+    // 3) Paint CentralPanel with the page background,
+    //    then render the scrollable layout on top.
     CentralPanel::default()
         .frame(Frame::default().fill(base_fill))
         .show(ctx, |ui| {
@@ -125,7 +130,6 @@ pub fn content(
             if let Some(s) = status { ui.label(s); }
         });
 }
-
 
 pub fn page_viewport(ui: &mut Ui, style_root: &StyledNode<'_>) {
     ScrollArea::vertical()
@@ -197,8 +201,6 @@ fn paint_block_text_in_rect(
     rect: Rect,
     style: &css::ComputedStyle,
 ) {
-    use egui::{Align2, FontId};
-
     let (cr, cg, cb, ca) = style.color;
     let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
 
