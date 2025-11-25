@@ -3,7 +3,9 @@ use crate::tab::Tab;
 
 use html::{
     Node,
-    dom_utils::direct_text_of_element,
+    dom_utils::{
+        is_non_rendering_element,
+    },
 };
 use css::{
     build_style_tree,
@@ -39,6 +41,24 @@ pub enum NavigationAction {
     Navigate(String),
 }
 
+// One fragment of text within a line (later this can be per <span>, <a>, etc.)
+struct LineFragment<'a> {
+    text: String,
+    style: &'a css::ComputedStyle,
+    rect: Rect,
+}
+
+// One line box: a horizontal slice of inline content.
+struct LineBox<'a> {
+    fragments: Vec<LineFragment<'a>>,
+    rect: Rect,
+}
+
+// A logical piece of inline content with a single style
+struct InlineRun<'a> {
+    text: String,
+    style: &'a css::ComputedStyle,
+}
 
 pub fn top_bar(ctx: &Context, tab: &mut Tab) -> NavigationAction {
     let mut action = NavigationAction::None;
@@ -158,11 +178,182 @@ pub fn page_viewport(ui: &mut Ui, style_root: &StyledNode<'_>) {
         });
 }
 
+fn layout_inline_runs<'a>(
+    painter: &egui::Painter,
+    rect: Rect,
+    block_style: &'a css::ComputedStyle,
+    runs: &[InlineRun<'a>],
+) -> Vec<LineBox<'a>> {
+    let padding = 4.0;
+    let available_height = rect.height() - 2.0 * padding;
+
+    // Use the block's font-size to derive a base line height.
+    let mut block_font_px = match block_style.font_size {
+        css::Length::Px(px) => px,
+    };
+    let mut line_height = block_font_px * 1.2;
+
+    if line_height > available_height && available_height > 0.0 {
+        block_font_px = (available_height / 1.2).max(8.0);
+        line_height = block_font_px * 1.2;
+    }
+
+    let mut lines: Vec<LineBox<'a>> = Vec::new();
+    let mut line_fragments: Vec<LineFragment<'a>> = Vec::new();
+
+    let line_start_x = rect.min.x + padding;
+    let mut cursor_x = line_start_x;
+    let mut cursor_y = rect.min.y + padding;
+
+    let max_x = rect.max.x - padding;
+    let bottom_limit = rect.min.y + padding + available_height;
+
+    let mut is_first_in_line = true;
+
+    for run in runs {
+        let (cr, cg, cb, ca) = run.style.color;
+        let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
+        let font_px = match run.style.font_size {
+            css::Length::Px(px) => px,
+        };
+        let font_id = FontId::proportional(font_px);
+
+        for word in run.text.split_whitespace() {
+            let text_piece = if is_first_in_line {
+                word.to_string()
+            } else {
+                format!(" {}", word)
+            };
+
+            let word_width = painter.ctx().fonts(|f| {
+                f.layout_no_wrap(
+                    text_piece.clone(),
+                    font_id.clone(),
+                    text_color,
+                )
+                .rect
+                .width()
+            });
+
+            let fits = cursor_x + word_width <= max_x;
+
+            if !fits && !is_first_in_line {
+                // Close current line
+                if !line_fragments.is_empty() {
+                    let line_width = cursor_x - line_start_x;
+                    let line_rect = Rect::from_min_size(
+                        Pos2::new(line_start_x, cursor_y),
+                        Vec2::new(line_width, line_height),
+                    );
+
+                    lines.push(LineBox {
+                        rect: line_rect,
+                        fragments: std::mem::take(&mut line_fragments),
+                    });
+                }
+
+                cursor_y += line_height;
+                if cursor_y + line_height > bottom_limit {
+                    // No more vertical space in this block
+                    return lines;
+                }
+
+                cursor_x = line_start_x;
+                is_first_in_line = true;
+
+                // Re-measure the same word without leading space at line start
+                let text_piece = word.to_string();
+                let word_width = painter.ctx().fonts(|f| {
+                    f.layout_no_wrap(
+                        text_piece.clone(),
+                        font_id.clone(),
+                        text_color,
+                    )
+                    .rect
+                    .width()
+                });
+
+                let frag_rect = Rect::from_min_size(
+                    Pos2::new(cursor_x, cursor_y),
+                    Vec2::new(word_width, line_height),
+                );
+
+                line_fragments.push(LineFragment {
+                    text: text_piece,
+                    style: run.style,
+                    rect: frag_rect,
+                });
+
+                cursor_x += word_width;
+                is_first_in_line = false;
+            } else {
+                // Fits (or first token in line, even if too long)
+                let frag_rect = Rect::from_min_size(
+                    Pos2::new(cursor_x, cursor_y),
+                    Vec2::new(word_width, line_height),
+                );
+
+                line_fragments.push(LineFragment {
+                    text: text_piece,
+                    style: run.style,
+                    rect: frag_rect,
+                });
+
+                cursor_x += word_width;
+                is_first_in_line = false;
+            }
+        }
+    }
+
+    // Flush the last line
+    if !line_fragments.is_empty() && cursor_y + line_height <= bottom_limit {
+        let line_width = cursor_x - line_start_x;
+        let line_rect = Rect::from_min_size(
+            Pos2::new(line_start_x, cursor_y),
+            Vec2::new(line_width, line_height),
+        );
+
+        lines.push(LineBox {
+            rect: line_rect,
+            fragments: line_fragments,
+        });
+    }
+
+    lines
+}
+
+fn paint_line_boxes<'a>(painter: &egui::Painter, lines: &[LineBox<'a>]) {
+    for line in lines {
+        for frag in &line.fragments {
+            let (cr, cg, cb, ca) = frag.style.color;
+            let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
+
+            let font_px = match frag.style.font_size {
+                css::Length::Px(px) => px,
+            };
+            let font_id = FontId::proportional(font_px);
+
+            painter.text(
+                frag.rect.min,
+                Align2::LEFT_TOP,
+                &frag.text,
+                font_id,
+                text_color,
+            );
+        }
+    }
+}
+
 fn paint_layout_box<'a>(
     layout: &layout::LayoutBox<'a>,
     painter: &egui::Painter,
     origin: Pos2,
 ) {
+    // 0) Do not paint non-rendering elements (head, style, script, etc.)
+    if is_non_rendering_element(layout.node.node) {
+        return;
+    }
+
     let rect = Rect::from_min_size(
         Pos2 {
             x: origin.x + layout.rect.x,
@@ -184,91 +375,70 @@ fn paint_layout_box<'a>(
         );
     }
 
-    // text for direct text children
-    if let Some(text) = direct_text_of_element(layout.node.node) {
-        paint_block_text_in_rect(painter, &text, rect, &layout.style);
+    // 1) Inline text: only for block-like elements.
+    if let Node::Element { name, .. } = layout.node.node {
+        if !is_inline_element_name(name) {
+            let runs = collect_inline_runs_for_block(layout.node);
+            if !runs.is_empty() {
+                let lines = layout_inline_runs(painter, rect, &layout.style, &runs);
+                paint_line_boxes(painter, &lines);
+            }
+        }
     }
 
-    // children
+    // 2) Recurse into children
     for child in &layout.children {
         paint_layout_box(child, painter, origin);
     }
 }
 
-fn paint_block_text_in_rect(
-    painter: &egui::Painter,
-    text: &str,
-    rect: Rect,
-    style: &css::ComputedStyle,
-) {
-    let (cr, cg, cb, ca) = style.color;
-    let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
+fn collect_inline_runs_for_block<'a>(block: &'a StyledNode<'a>) -> Vec<InlineRun<'a>> {
+    let mut runs = Vec::new();
 
-    let mut font_px = match style.font_size {
-        css::Length::Px(px) => px,
-    };
-
-    let padding = 4.0;
-    let available_height = rect.height() - 2.0 * padding;
-    let line_height = font_px * 1.2;
-
-    // Clamp font size if it would obviously overflow
-    if line_height > available_height && available_height > 0.0 {
-        font_px = (available_height / 1.2).max(8.0);
-    }
-
-    let font_id = FontId::proportional(font_px);
-    let max_width = rect.width() - 2.0 * padding;
-
-    // --- Very naive word-wrap: split on spaces, accumulate into lines ---
-    let words = text.split_whitespace();
-    let mut current_line = String::new();
-    let mut lines = Vec::new();
-
-    for w in words {
-        let candidate = if current_line.is_empty() {
-            w.to_string()
-        } else {
-            format!("{} {}", current_line, w)
-        };
-
-        let galley = painter.ctx().fonts(|f| f.layout_no_wrap(candidate.clone(), font_id.clone(), text_color));
-        let width = galley.rect.width();
-
-        if width <= max_width || current_line.is_empty() {
-            // keep adding to this line
-            current_line = candidate;
-        } else {
-            // push current line, start new
-            lines.push(current_line);
-            current_line = w.to_string();
+    match block.node {
+        Node::Element { .. } | Node::Document { .. } => {
+            for child in &block.children {
+                collect_inline_runs_desc(child, &mut runs);
+            }
+        }
+        _ => {
+            // For text/comment root we do nothing; blocks are Elements/Document.
         }
     }
-    if !current_line.is_empty() {
-        lines.push(current_line);
-    }
 
-    // --- Paint lines, top-down ---
-    let mut y = rect.min.y + padding;
-    for line in lines {
-        if y + line_height > rect.max.y - padding {
-            break; // no more vertical space
+    runs
+}
+
+fn collect_inline_runs_desc<'a>(styled: &'a StyledNode<'a>, out: &mut Vec<InlineRun<'a>>) {
+    match styled.node {
+        Node::Text { text } => {
+            let trimmed = text.trim();
+            if !trimmed.is_empty() {
+                out.push(InlineRun {
+                    // Keep original contents; we’ll handle spaces in layout
+                    text: text.clone(),
+                    style: &styled.style,
+                });
+            }
         }
 
-        let pos = Pos2 {
-            x: rect.min.x + padding,
-            y,
-        };
+        Node::Element { name, .. } => {
+            if is_inline_element_name(name) {
+                // Inline element → dive into children; they inherit/override style.
+                for child in &styled.children {
+                    collect_inline_runs_desc(child, out);
+                }
+            } else {
+                // Block element → DO NOT descend.
+                // This subtree will be handled by its own LayoutBox in a separate paint pass.
+            }
+        }
 
-        painter.text(
-            pos,
-            Align2::LEFT_TOP,
-            line,
-            font_id.clone(),
-            text_color,
-        );
-
-        y += line_height;
+        Node::Document { .. } | Node::Comment { .. } => {
+            for child in &styled.children {
+                collect_inline_runs_desc(child, out);
+            }
+        }
     }
 }
 
@@ -313,4 +483,18 @@ fn find_page_background_color(root: &StyledNode<'_>) -> Option<(u8, u8, u8, u8)>
     }
 
     body_bg.or(html_bg)
+}
+
+fn is_inline_element_name(name: &str) -> bool {
+    // This is a *starting* set; we can expand as needed.
+    name.eq_ignore_ascii_case("span")
+        || name.eq_ignore_ascii_case("a")
+        || name.eq_ignore_ascii_case("em")
+        || name.eq_ignore_ascii_case("strong")
+        || name.eq_ignore_ascii_case("b")
+        || name.eq_ignore_ascii_case("i")
+        || name.eq_ignore_ascii_case("u")
+        || name.eq_ignore_ascii_case("small")
+        || name.eq_ignore_ascii_case("big")
+        || name.eq_ignore_ascii_case("code")
 }

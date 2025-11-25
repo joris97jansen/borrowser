@@ -144,34 +144,6 @@ pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
     out
 }
 
-/// Return the concatenated text of direct text children of an element.
-///
-/// - Only direct children (not nested grandchildren)
-/// - Ignores pure-whitespace text nodes
-pub fn direct_text_of_element(node: &Node) -> Option<String> {
-    match node {
-        Node::Element { children, .. } => {
-            let mut out = String::new();
-            for child in children {
-                if let Node::Text { text } = child {
-                    let trimmed = text.trim();
-                    if !trimmed.is_empty() {
-                        if !out.is_empty() {
-                            out.push(' ');
-                        }
-                        out.push_str(trimmed);
-                    }
-                }
-            }
-            if out.is_empty() {
-                None
-            } else {
-                Some(out)
-            }
-        }
-        _ => None,
-    }
-}
 
 pub fn is_non_rendering_element(node: &Node) -> bool {
     match node {
