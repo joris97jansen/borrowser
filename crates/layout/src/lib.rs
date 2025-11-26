@@ -105,17 +105,17 @@ fn layout_block_subtree<'a>(
             (content_y, content_y, 0.0)
         }
 
-        // Normal elements: get a base “row” of DEFAULT_BLOCK_HEIGHT.
+        // Normal elements: base height = CSS line-height derived from font-size.
         Node::Element { .. } => {
-            let base = DEFAULT_BLOCK_HEIGHT;
+            let base = line_height_from(style);
             let content_y = y + base;
             (content_y, content_y, base)
         }
 
-        // Text / Comment: treat as leaf with a base height.
+        // Text / Comment: inline content → no own block height.
         _ => {
-            let base = DEFAULT_BLOCK_HEIGHT;
-            let content_y = y + base;
+            let base = 0.0;
+            let content_y = y;
             (content_y, content_y, base)
         }
     };
@@ -136,8 +136,15 @@ fn layout_block_subtree<'a>(
     };
 
     let mut height = base_height + children_height;
+
+    // If this is an Element and everything somehow ended up as 0,
+    // fall back to its line-height-based base (defensive).
     if height <= 0.0 {
-        height = DEFAULT_BLOCK_HEIGHT;
+        if matches!(styled.node, Node::Element { .. }) {
+            height = line_height_from(style);
+        } else {
+            height = 0.0;
+        }
     }
 
     let rect = Rect { x, y, width, height };
@@ -152,4 +159,11 @@ fn layout_block_subtree<'a>(
 
     let next_y = y + height;
     (layout_box, next_y)
+}
+
+
+fn line_height_from(style: &ComputedStyle) -> f32 {
+    match style.font_size {
+        css::Length::Px(px) => px * 1.2, // same factor as inline layout
+    }
 }
