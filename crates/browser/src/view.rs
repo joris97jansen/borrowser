@@ -10,9 +10,12 @@ use html::{
 use css::{
     build_style_tree,
     StyledNode,
+    ComputedStyle,
+    Length,
 };
 use layout::{
     layout_block_tree,
+    LayoutBox
 };
 use egui::{
     Align,
@@ -30,8 +33,14 @@ use egui::{
     Rect,
     Vec2,
     Align2,
-    FontId
+    FontId,
+    Painter,
+    Stroke,
+    TextEdit,
+    Sense,
 };
+
+const INLINE_PADDING: f32 = 4.0;
 
 pub enum NavigationAction {
     None,
@@ -84,13 +93,13 @@ pub fn top_bar(ctx: &Context, tab: &mut Tab) -> NavigationAction {
 
             let response = Frame::new()
                 .fill(ui.visuals().extreme_bg_color) // subtle background
-                .stroke(egui::Stroke::new(1.0, ui.visuals().widgets.inactive.bg_stroke.color))
+                .stroke(Stroke::new(1.0, ui.visuals().widgets.inactive.bg_stroke.color))
                 .corner_radius(6.0)
                 .inner_margin(Margin::symmetric(4, 4))
                 .show(ui, |ui| {
                     ui.add_sized(
                         [ui.available_width(), BAR_HEIGHT - 8.0],
-                        egui::TextEdit::singleline(&mut tab.url)
+                        TextEdit::singleline(&mut tab.url)
                             .hint_text("Enter URL")
                             .vertical_align(Align::Center),
                     )
@@ -161,14 +170,17 @@ pub fn page_viewport(ui: &mut Ui, style_root: &StyledNode<'_>) {
             let min_height = ui.available_height().max(200.0);
 
             // 2) Block layout
-            let layout_root = layout_block_tree(style_root, available_width);
+            let mut layout_root = layout_block_tree(style_root, available_width);
+
+            // 2b) Refine block heights using inline layout
+            refine_layout_with_inline(ui.ctx(), &mut layout_root);
 
             let content_height = layout_root.rect.height.max(min_height);
 
             // 3) Reserve paint area
             let (content_rect, _resp) = ui.allocate_exact_size(
                 Vec2::new(available_width, content_height),
-                egui::Sense::hover(),
+                Sense::hover(),
             );
 
             // 4) Paint layout tree (backgrounds + text)
@@ -179,17 +191,17 @@ pub fn page_viewport(ui: &mut Ui, style_root: &StyledNode<'_>) {
 }
 
 fn layout_inline_runs<'a>(
-    painter: &egui::Painter,
+    ctx: &Context,
     rect: Rect,
-    block_style: &'a css::ComputedStyle,
+    block_style: &'a ComputedStyle,
     runs: &[InlineRun<'a>],
 ) -> Vec<LineBox<'a>> {
-    let padding = 4.0;
+    let padding = INLINE_PADDING;
     let available_height = rect.height() - 2.0 * padding;
 
     // Use the block's font-size to derive a base line height.
     let mut block_font_px = match block_style.font_size {
-        css::Length::Px(px) => px,
+        Length::Px(px) => px,
     };
     let mut line_height = block_font_px * 1.2;
 
@@ -214,7 +226,7 @@ fn layout_inline_runs<'a>(
         let (cr, cg, cb, ca) = run.style.color;
         let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
         let font_px = match run.style.font_size {
-            css::Length::Px(px) => px,
+            Length::Px(px) => px,
         };
         let font_id = FontId::proportional(font_px);
 
@@ -225,7 +237,7 @@ fn layout_inline_runs<'a>(
                 format!(" {}", word)
             };
 
-            let word_width = painter.ctx().fonts(|f| {
+            let word_width = ctx.fonts(|f| {
                 f.layout_no_wrap(
                     text_piece.clone(),
                     font_id.clone(),
@@ -263,7 +275,7 @@ fn layout_inline_runs<'a>(
 
                 // Re-measure the same word without leading space at line start
                 let text_piece = word.to_string();
-                let word_width = painter.ctx().fonts(|f| {
+                let word_width = ctx.fonts(|f| {
                     f.layout_no_wrap(
                         text_piece.clone(),
                         font_id.clone(),
@@ -322,14 +334,14 @@ fn layout_inline_runs<'a>(
     lines
 }
 
-fn paint_line_boxes<'a>(painter: &egui::Painter, lines: &[LineBox<'a>]) {
+fn paint_line_boxes<'a>(painter: &Painter, lines: &[LineBox<'a>]) {
     for line in lines {
         for frag in &line.fragments {
             let (cr, cg, cb, ca) = frag.style.color;
             let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
 
             let font_px = match frag.style.font_size {
-                css::Length::Px(px) => px,
+                Length::Px(px) => px,
             };
             let font_id = FontId::proportional(font_px);
 
@@ -345,8 +357,8 @@ fn paint_line_boxes<'a>(painter: &egui::Painter, lines: &[LineBox<'a>]) {
 }
 
 fn paint_layout_box<'a>(
-    layout: &layout::LayoutBox<'a>,
-    painter: &egui::Painter,
+    layout: &LayoutBox<'a>,
+    painter: &Painter,
     origin: Pos2,
 ) {
     // 0) Do not paint non-rendering elements (head, style, script, etc.)
@@ -380,7 +392,7 @@ fn paint_layout_box<'a>(
         if !is_inline_element_name(name) {
             let runs = collect_inline_runs_for_block(layout.node);
             if !runs.is_empty() {
-                let lines = layout_inline_runs(painter, rect, &layout.style, &runs);
+                let lines = layout_inline_runs(painter.ctx(), rect, &layout.style, &runs);
                 paint_line_boxes(painter, &lines);
             }
         }
@@ -441,6 +453,131 @@ fn collect_inline_runs_desc<'a>(styled: &'a StyledNode<'a>, out: &mut Vec<Inline
         }
     }
 }
+
+fn refine_layout_with_inline<'a>(
+    ctx: &Context,
+    layout_root: &mut LayoutBox<'a>,
+) {
+    let x = layout_root.rect.x;
+    let y = layout_root.rect.y;
+    let width = layout_root.rect.width;
+
+    let new_height = recompute_block_heights(ctx, layout_root, x, y, width);
+    layout_root.rect.height = new_height;
+}
+
+fn recompute_block_heights<'a>(
+    ctx: &Context,
+    node: &mut LayoutBox<'a>,
+    x: f32,
+    y: f32,
+    width: f32,
+) -> f32 {
+    // Position & width are authoritative here
+    node.rect.x = x;
+    node.rect.y = y;
+    node.rect.width = width;
+
+    // Non-rendering elements: pure containers
+    if is_non_rendering_element(node.node.node) {
+        let mut cursor_y = y;
+        for child in &mut node.children {
+            let h = recompute_block_heights(ctx, child, x, cursor_y, width);
+            cursor_y += h;
+        }
+        let height = cursor_y - y;
+        node.rect.height = height;
+        return height;
+    }
+
+    match node.node.node {
+        Node::Document { .. } => {
+            let mut cursor_y = y;
+            for child in &mut node.children {
+                let h = recompute_block_heights(ctx, child, x, cursor_y, width);
+                cursor_y += h;
+            }
+            let height = cursor_y - y;
+            node.rect.height = height;
+            height
+        }
+
+        Node::Element { name, .. } => {
+            // <html> acts as pure container (no own row)
+            if name.eq_ignore_ascii_case("html") {
+                let mut cursor_y = y;
+                for child in &mut node.children {
+                    let h = recompute_block_heights(ctx, child, x, cursor_y, width);
+                    cursor_y += h;
+                }
+                let height = cursor_y - y;
+                node.rect.height = height;
+                return height;
+            }
+
+            // Inline elements do not generate a separate block height here.
+            // Their text is handled by the nearest block ancestor via inline layout.
+            if is_inline_element_name(name) {
+                node.rect.height = 0.0;
+                return 0.0;
+            }
+
+            // --- Block-level element: inline content + block children ---
+
+            // 1) Compute inline height using line boxes for this block
+            let mut inline_height = 0.0;
+            let runs = collect_inline_runs_for_block(node.node);
+
+            if !runs.is_empty() {
+                // Use a "tall" rect so inline layout is not artificially clipped
+                let huge_height = 1_000_000.0;
+                let block_rect = Rect::from_min_size(
+                    Pos2::new(x, y),
+                    Vec2::new(width, huge_height),
+                );
+
+                let lines = layout_inline_runs(ctx, block_rect, node.style, &runs);
+                if let Some(first) = lines.first() {
+                    if let Some(last) = lines.last() {
+                        let first_top = first.rect.min.y;
+                        let last_bottom = last.rect.min.y + last.rect.height();
+                        // Total from block top to last line bottom plus bottom padding
+                        inline_height = (last_bottom - y) + INLINE_PADDING;
+                    }
+                }
+            }
+
+            // Fallback: at least one line-height even if no text
+            if inline_height <= 0.0 {
+                let font_px = match node.style.font_size {
+                    Length::Px(px) => px,
+                };
+                inline_height = font_px * 1.2;
+            }
+
+            // 2) Block children start below the inline content
+            let mut cursor_y = y + inline_height;
+            for child in &mut node.children {
+                let h = recompute_block_heights(ctx, child, x, cursor_y, width);
+                cursor_y += h;
+            }
+
+            let children_height = cursor_y - (y + inline_height);
+            let total_height = inline_height + children_height;
+
+            node.rect.height = total_height;
+            total_height
+        }
+
+        // Text / Comment nodes: no own block height
+        Node::Text { .. } | Node::Comment { .. } => {
+            node.rect.height = 0.0;
+            0.0
+        }
+    }
+}
+
+
 
 fn find_page_background_color(root: &StyledNode<'_>) -> Option<(u8, u8, u8, u8)> {
     // We prefer <body> background if present and non-transparent.
