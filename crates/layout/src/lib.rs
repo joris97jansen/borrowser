@@ -1,8 +1,6 @@
 use css::{ComputedStyle, StyledNode};
 use html::dom_utils::is_non_rendering_element;
 
-const DEFAULT_BLOCK_HEIGHT: f32 = 24.0; // temporary until we have text metrics
-
 
 /// A rectangle in CSS px units (we'll treat everything as px for now).
 #[derive(Clone, Copy, Debug)]

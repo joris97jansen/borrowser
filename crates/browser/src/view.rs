@@ -220,8 +220,6 @@ fn layout_inline_runs<'a>(
     let max_x = rect.max.x - padding;
     let bottom_limit = rect.min.y + padding + available_height;
 
-    let mut is_first_in_line = true;
-
     for run in runs {
         let (cr, cg, cb, ca) = run.style.color;
         let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
@@ -231,7 +229,10 @@ fn layout_inline_runs<'a>(
         let font_id = FontId::proportional(font_px);
 
         for word in run.text.split_whitespace() {
-            let text_piece = if is_first_in_line {
+            // Are we at the start of the current line?
+            let line_empty = line_fragments.is_empty();
+
+            let text_piece = if line_empty {
                 word.to_string()
             } else {
                 format!(" {}", word)
@@ -249,8 +250,9 @@ fn layout_inline_runs<'a>(
 
             let fits = cursor_x + word_width <= max_x;
 
-            if !fits && !is_first_in_line {
-                // Close current line
+            if !fits && !line_empty {
+                // --- Wrap: close current line, move to next ---
+
                 if !line_fragments.is_empty() {
                     let line_width = cursor_x - line_start_x;
                     let line_rect = Rect::from_min_size(
@@ -271,9 +273,8 @@ fn layout_inline_runs<'a>(
                 }
 
                 cursor_x = line_start_x;
-                is_first_in_line = true;
 
-                // Re-measure the same word without leading space at line start
+                // Place the same word at the start of the new line (no leading space)
                 let text_piece = word.to_string();
                 let word_width = ctx.fonts(|f| {
                     f.layout_no_wrap(
@@ -297,9 +298,9 @@ fn layout_inline_runs<'a>(
                 });
 
                 cursor_x += word_width;
-                is_first_in_line = false;
             } else {
-                // Fits (or first token in line, even if too long)
+                // --- Fits (or it's the very first word on an empty line) ---
+
                 let frag_rect = Rect::from_min_size(
                     Pos2::new(cursor_x, cursor_y),
                     Vec2::new(word_width, line_height),
@@ -312,7 +313,6 @@ fn layout_inline_runs<'a>(
                 });
 
                 cursor_x += word_width;
-                is_first_in_line = false;
             }
         }
     }
@@ -537,9 +537,8 @@ fn recompute_block_heights<'a>(
                 );
 
                 let lines = layout_inline_runs(ctx, block_rect, node.style, &runs);
-                if let Some(first) = lines.first() {
+                if let Some(_first) = lines.first() {
                     if let Some(last) = lines.last() {
-                        let first_top = first.rect.min.y;
                         let last_bottom = last.rect.min.y + last.rect.height();
                         // Total from block top to last line bottom plus bottom padding
                         inline_height = (last_bottom - y) + INLINE_PADDING;
@@ -576,8 +575,6 @@ fn recompute_block_heights<'a>(
         }
     }
 }
-
-
 
 fn find_page_background_color(root: &StyledNode<'_>) -> Option<(u8, u8, u8, u8)> {
     // We prefer <body> background if present and non-transparent.
