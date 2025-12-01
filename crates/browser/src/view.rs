@@ -190,6 +190,94 @@ pub fn page_viewport(ui: &mut Ui, style_root: &StyledNode<'_>) {
         });
 }
 
+fn measure_inline_height<'a>(
+    ctx: &Context,
+    width: f32,
+    block_style: &'a ComputedStyle,
+    runs: &[InlineRun<'a>],
+) -> f32 {
+    let padding = INLINE_PADDING;
+
+    // Base line-height from the block's font-size (same as in layout_inline_runs)
+    let font_px = match block_style.font_size {
+        Length::Px(px) => px,
+    };
+    let line_height = font_px * 1.2;
+
+    let line_start_x = padding;
+    let max_x = width - padding;
+
+    let mut cursor_x = line_start_x;
+    let mut lines = 0usize;
+    let mut line_empty = true;
+
+    for run in runs {
+        let (cr, cg, cb, ca) = run.style.color;
+        let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
+        let run_font_px = match run.style.font_size {
+            Length::Px(px) => px,
+        };
+        let font_id = FontId::proportional(run_font_px);
+
+        for word in run.text.split_whitespace() {
+            // Use the same "leading space except at line start" behavior
+            let text_piece = if line_empty {
+                word.to_string()
+            } else {
+                format!(" {}", word)
+            };
+
+            let word_width = ctx.fonts(|f| {
+                f.layout_no_wrap(
+                    text_piece.clone(),
+                    font_id.clone(),
+                    text_color,
+                )
+                .rect
+                .width()
+            });
+
+            let fits = cursor_x + word_width <= max_x;
+
+            if !fits && !line_empty {
+                // start new line
+                lines += 1;
+                cursor_x = line_start_x;
+
+                // place the word at the start (no leading space)
+                let text_piece = word.to_string();
+                let word_width = ctx.fonts(|f| {
+                    f.layout_no_wrap(
+                        text_piece.clone(),
+                        font_id.clone(),
+                        text_color,
+                    )
+                    .rect
+                    .width()
+                });
+
+                cursor_x += word_width;
+                line_empty = false;
+            } else {
+                // fits on current line
+                cursor_x += word_width;
+                line_empty = false;
+            }
+        }
+    }
+
+    // If we saw any text at all, we have at least one line
+    if !line_empty {
+        lines += 1;
+    }
+
+    if lines == 0 {
+        0.0
+    } else {
+        lines as f32 * line_height + 2.0 * padding
+    }
+}
+
 fn layout_inline_runs<'a>(
     ctx: &Context,
     rect: Rect,
@@ -363,6 +451,9 @@ fn paint_layout_box<'a>(
 ) {
     // 0) Do not paint non-rendering elements (head, style, script, etc.)
     if is_non_rendering_element(layout.node.node) {
+        for child in &layout.children {
+            paint_layout_box(child, painter, origin);
+        }
         return;
     }
 
@@ -524,26 +615,12 @@ fn recompute_block_heights<'a>(
 
             // --- Block-level element: inline content + block children ---
 
-            // 1) Compute inline height using line boxes for this block
-            let mut inline_height = 0.0;
+            // 1) Compute inline height using a measurement pass for this block
             let runs = collect_inline_runs_for_block(node.node);
+            let mut inline_height = 0.0;
 
             if !runs.is_empty() {
-                // Use a "tall" rect so inline layout is not artificially clipped
-                let huge_height = 1_000_000.0;
-                let block_rect = Rect::from_min_size(
-                    Pos2::new(x, y),
-                    Vec2::new(width, huge_height),
-                );
-
-                let lines = layout_inline_runs(ctx, block_rect, node.style, &runs);
-                if let Some(_first) = lines.first() {
-                    if let Some(last) = lines.last() {
-                        let last_bottom = last.rect.min.y + last.rect.height();
-                        // Total from block top to last line bottom plus bottom padding
-                        inline_height = (last_bottom - y) + INLINE_PADDING;
-                    }
-                }
+                inline_height = measure_inline_height(ctx, width, node.style, &runs);
             }
 
             // Fallback: at least one line-height even if no text
