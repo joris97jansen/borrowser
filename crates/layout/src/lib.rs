@@ -1,3 +1,6 @@
+mod text;
+pub use text::TextMeasurer;
+
 use css::{ComputedStyle, StyledNode};
 use html::dom_utils::is_non_rendering_element;
 

@@ -15,7 +15,8 @@ use css::{
 };
 use layout::{
     layout_block_tree,
-    LayoutBox
+    LayoutBox,
+    TextMeasurer,
 };
 use egui::{
     Align,
@@ -67,6 +68,42 @@ struct LineBox<'a> {
 struct InlineRun<'a> {
     text: String,
     style: &'a css::ComputedStyle,
+}
+
+struct EguiTextMeasurer<'a> {
+    ctx: &'a egui::Context,
+}
+
+impl<'a> EguiTextMeasurer<'a> {
+    fn new(ctx: &'a egui::Context) -> Self {
+        Self { ctx }
+    }
+}
+
+impl<'a> TextMeasurer for EguiTextMeasurer<'a> {
+    fn measure(&self, text: &str, style: &ComputedStyle) -> f32 {
+        // We don't really care about color here, but egui wants one for layout.
+        let (r, g, b, a) = style.color;
+        let color = Color32::from_rgba_unmultiplied(r, g, b, a);
+
+        let font_px = match style.font_size {
+            Length::Px(px) => px,
+        };
+        let font_id = FontId::proportional(font_px);
+
+        self.ctx.fonts(|f| {
+            f.layout_no_wrap(text.to_owned(), font_id, color)
+                .rect
+                .width()
+        })
+    }
+
+    fn line_height(&self, style: &css::ComputedStyle) -> f32 {
+        // Same factor you already used elsewhere; now it's centralized.
+        match style.font_size {
+            Length::Px(px) => px * 1.2,
+        }
+    }
 }
 
 pub fn top_bar(ctx: &Context, tab: &mut Tab) -> NavigationAction {
@@ -191,7 +228,7 @@ pub fn page_viewport(ui: &mut Ui, style_root: &StyledNode<'_>) {
 }
 
 fn measure_inline_height<'a>(
-    ctx: &Context,
+    measurer: &dyn TextMeasurer,
     width: f32,
     block_style: &'a ComputedStyle,
     runs: &[InlineRun<'a>],
@@ -212,13 +249,6 @@ fn measure_inline_height<'a>(
     let mut line_empty = true;
 
     for run in runs {
-        let (cr, cg, cb, ca) = run.style.color;
-        let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
-        let run_font_px = match run.style.font_size {
-            Length::Px(px) => px,
-        };
-        let font_id = FontId::proportional(run_font_px);
-
         for word in run.text.split_whitespace() {
             // Use the same "leading space except at line start" behavior
             let text_piece = if line_empty {
@@ -227,15 +257,7 @@ fn measure_inline_height<'a>(
                 format!(" {}", word)
             };
 
-            let word_width = ctx.fonts(|f| {
-                f.layout_no_wrap(
-                    text_piece.clone(),
-                    font_id.clone(),
-                    text_color,
-                )
-                .rect
-                .width()
-            });
+            let word_width = measurer.measure(&text_piece, run.style);
 
             let fits = cursor_x + word_width <= max_x;
 
@@ -246,15 +268,7 @@ fn measure_inline_height<'a>(
 
                 // place the word at the start (no leading space)
                 let text_piece = word.to_string();
-                let word_width = ctx.fonts(|f| {
-                    f.layout_no_wrap(
-                        text_piece.clone(),
-                        font_id.clone(),
-                        text_color,
-                    )
-                    .rect
-                    .width()
-                });
+                let word_width = measurer.measure(&text_piece, run.style);
 
                 cursor_x += word_width;
                 line_empty = false;
@@ -279,23 +293,26 @@ fn measure_inline_height<'a>(
 }
 
 fn layout_inline_runs<'a>(
-    ctx: &Context,
+    measurer: &dyn TextMeasurer,
     rect: Rect,
-    block_style: &'a ComputedStyle,
+    block_style: &'a css::ComputedStyle,
     runs: &[InlineRun<'a>],
 ) -> Vec<LineBox<'a>> {
     let padding = INLINE_PADDING;
     let available_height = rect.height() - 2.0 * padding;
 
-    // Use the block's font-size to derive a base line height.
-    let mut block_font_px = match block_style.font_size {
-        Length::Px(px) => px,
-    };
-    let mut line_height = block_font_px * 1.2;
+    let mut line_height = measurer.line_height(block_style);
 
     if line_height > available_height && available_height > 0.0 {
-        block_font_px = (available_height / 1.2).max(8.0);
-        line_height = block_font_px * 1.2;
+        // Simple clamp: keep at least 8px, but don’t overflow insanely.
+        let font_px = (available_height / 1.2).max(8.0);
+        // Recompute line height from the adjusted font size
+        // (reuse the same rule the measurer uses)
+        let fake_style = css::ComputedStyle {
+            font_size: css::Length::Px(font_px),
+            ..*block_style
+        };
+        line_height = measurer.line_height(&fake_style);
     }
 
     let mut lines: Vec<LineBox<'a>> = Vec::new();
@@ -309,13 +326,6 @@ fn layout_inline_runs<'a>(
     let bottom_limit = rect.min.y + padding + available_height;
 
     for run in runs {
-        let (cr, cg, cb, ca) = run.style.color;
-        let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
-        let font_px = match run.style.font_size {
-            Length::Px(px) => px,
-        };
-        let font_id = FontId::proportional(font_px);
-
         for word in run.text.split_whitespace() {
             // Are we at the start of the current line?
             let line_empty = line_fragments.is_empty();
@@ -326,15 +336,7 @@ fn layout_inline_runs<'a>(
                 format!(" {}", word)
             };
 
-            let word_width = ctx.fonts(|f| {
-                f.layout_no_wrap(
-                    text_piece.clone(),
-                    font_id.clone(),
-                    text_color,
-                )
-                .rect
-                .width()
-            });
+            let word_width = measurer.measure(&text_piece, run.style);
 
             let fits = cursor_x + word_width <= max_x;
 
@@ -364,15 +366,7 @@ fn layout_inline_runs<'a>(
 
                 // Place the same word at the start of the new line (no leading space)
                 let text_piece = word.to_string();
-                let word_width = ctx.fonts(|f| {
-                    f.layout_no_wrap(
-                        text_piece.clone(),
-                        font_id.clone(),
-                        text_color,
-                    )
-                    .rect
-                    .width()
-                });
+                let word_width = measurer.measure(&text_piece, run.style);
 
                 let frag_rect = Rect::from_min_size(
                     Pos2::new(cursor_x, cursor_y),
@@ -483,7 +477,8 @@ fn paint_layout_box<'a>(
         if !is_inline_element_name(name) {
             let runs = collect_inline_runs_for_block(layout.node);
             if !runs.is_empty() {
-                let lines = layout_inline_runs(painter.ctx(), rect, &layout.style, &runs);
+                let measurer = EguiTextMeasurer::new(painter.ctx());
+                let lines = layout_inline_runs(&measurer, rect, &layout.style, &runs);
                 paint_line_boxes(painter, &lines);
             }
         }
@@ -546,20 +541,21 @@ fn collect_inline_runs_desc<'a>(styled: &'a StyledNode<'a>, out: &mut Vec<Inline
 }
 
 fn refine_layout_with_inline<'a>(
-    ctx: &Context,
-    layout_root: &mut LayoutBox<'a>,
+    ctx: &egui::Context,
+    layout_root: &mut layout::LayoutBox<'a>,
 ) {
+    let measurer = EguiTextMeasurer::new(ctx);
     let x = layout_root.rect.x;
     let y = layout_root.rect.y;
     let width = layout_root.rect.width;
 
-    let new_height = recompute_block_heights(ctx, layout_root, x, y, width);
+    let new_height = recompute_block_heights(&measurer, layout_root, x, y, width);
     layout_root.rect.height = new_height;
 }
 
 fn recompute_block_heights<'a>(
-    ctx: &Context,
-    node: &mut LayoutBox<'a>,
+    measurer: &dyn TextMeasurer,
+    node: &mut layout::LayoutBox<'a>,
     x: f32,
     y: f32,
     width: f32,
@@ -573,7 +569,7 @@ fn recompute_block_heights<'a>(
     if is_non_rendering_element(node.node.node) {
         let mut cursor_y = y;
         for child in &mut node.children {
-            let h = recompute_block_heights(ctx, child, x, cursor_y, width);
+            let h = recompute_block_heights(measurer, child, x, cursor_y, width);
             cursor_y += h;
         }
         let height = cursor_y - y;
@@ -585,7 +581,7 @@ fn recompute_block_heights<'a>(
         Node::Document { .. } => {
             let mut cursor_y = y;
             for child in &mut node.children {
-                let h = recompute_block_heights(ctx, child, x, cursor_y, width);
+                let h = recompute_block_heights(measurer, child, x, cursor_y, width);
                 cursor_y += h;
             }
             let height = cursor_y - y;
@@ -598,7 +594,7 @@ fn recompute_block_heights<'a>(
             if name.eq_ignore_ascii_case("html") {
                 let mut cursor_y = y;
                 for child in &mut node.children {
-                    let h = recompute_block_heights(ctx, child, x, cursor_y, width);
+                    let h = recompute_block_heights(measurer, child, x, cursor_y, width);
                     cursor_y += h;
                 }
                 let height = cursor_y - y;
@@ -620,7 +616,7 @@ fn recompute_block_heights<'a>(
             let mut inline_height = 0.0;
 
             if !runs.is_empty() {
-                inline_height = measure_inline_height(ctx, width, node.style, &runs);
+                inline_height = measure_inline_height(measurer, width, node.style, &runs);
             }
 
             // Fallback: at least one line-height even if no text
@@ -634,7 +630,7 @@ fn recompute_block_heights<'a>(
             // 2) Block children start below the inline content
             let mut cursor_y = y + inline_height;
             for child in &mut node.children {
-                let h = recompute_block_heights(ctx, child, x, cursor_y, width);
+                let h = recompute_block_heights(measurer, child, x, cursor_y, width);
                 cursor_y += h;
             }
 
