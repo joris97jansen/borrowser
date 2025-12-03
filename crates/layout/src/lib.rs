@@ -1,6 +1,15 @@
 mod text;
 pub use text::TextMeasurer;
 
+pub mod inline;
+pub use inline::{
+        LineBox,
+        is_inline_element_name,
+        collect_inline_runs_for_block,
+        layout_inline_runs,
+        refine_layout_with_inline,
+};
+
 use css::{ComputedStyle, StyledNode};
 use html::dom_utils::is_non_rendering_element;
 
