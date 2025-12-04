@@ -114,6 +114,59 @@ pub fn compute_style(
                     result.font_size = len;
                 }
             }
+
+            // --- Margins (non-inherited, px only) ---
+            "margin-top" => {
+                if let Some(len) = parse_length(value) {
+                    let Length::Px(px) = len;
+                    result.box_metrics.margin_top = px;
+                }
+            }
+            "margin-right" => {
+                if let Some(len) = parse_length(value) {
+                    let Length::Px(px) = len;
+                    result.box_metrics.margin_right = px;
+                }
+            }
+            "margin-bottom" => {
+                if let Some(len) = parse_length(value) {
+                    let Length::Px(px) = len;
+                    result.box_metrics.margin_bottom = px;
+                }
+            }
+            "margin-left" => {
+                if let Some(len) = parse_length(value) {
+                    let Length::Px(px) = len;
+                    result.box_metrics.margin_left = px;
+                }
+            }
+
+            // --- Padding (non-inherited, px only) ---
+            "padding-top" => {
+                if let Some(len) = parse_length(value) {
+                    let Length::Px(px) = len;
+                    result.box_metrics.padding_top = px;
+                }
+            }
+            "padding-right" => {
+                if let Some(len) = parse_length(value) {
+                    let Length::Px(px) = len;
+                    result.box_metrics.padding_right = px;
+                }
+            }
+            "padding-bottom" => {
+                if let Some(len) = parse_length(value) {
+                    let Length::Px(px) = len;
+                    result.box_metrics.padding_bottom = px;
+                }
+            }
+            "padding-left" => {
+                if let Some(len) = parse_length(value) {
+                    let Length::Px(px) = len;
+                    result.box_metrics.padding_left = px;
+                }
+            }
+            
             _ => {
                 // unsupported property → ignored (CSS spec: unknown declarations are ignored)
             }
