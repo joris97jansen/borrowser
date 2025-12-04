@@ -1,5 +1,7 @@
 use css::{
     StyledNode,
+    ComputedStyle,
+    Length,
 };
 use html::Node;
 use html::dom_utils::is_non_rendering_element;
@@ -30,20 +32,27 @@ pub fn is_inline_element_name(name: &str) -> bool {
 // One fragment of text within a line (later this can be per <span>, <a>, etc.)
 pub struct LineFragment<'a> {
     pub text: String,
-    pub style: &'a css::ComputedStyle,
+    pub style: &'a ComputedStyle,
     pub rect: Rect,
 }
 
 // A logical piece of inline content with a single style
 pub struct InlineRun<'a> {
     pub text: String,
-    style: &'a css::ComputedStyle,
+    style: &'a ComputedStyle,
 }
 
 // One line box: a horizontal slice of inline content.
 pub struct LineBox<'a> {
     pub fragments: Vec<LineFragment<'a>>,
     pub rect: Rect,
+}
+
+// Internal token representation after whitespace processing.
+// Not exported yet; only used inside this module.
+enum InlineToken<'a> {
+    Word { text: String, style: &'a ComputedStyle },
+    Space { style: &'a ComputedStyle }, // a single collapsible space
 }
 
 pub fn collect_inline_runs_for_block<'a>(block: &'a StyledNode<'a>) -> Vec<InlineRun<'a>> {
@@ -62,6 +71,59 @@ pub fn collect_inline_runs_for_block<'a>(block: &'a StyledNode<'a>) -> Vec<Inlin
 
     runs
 }
+
+fn tokenize_runs<'a>(runs: &[InlineRun<'a>]) -> Vec<InlineToken<'a>> {
+    let mut tokens: Vec<InlineToken<'a>> = Vec::new();
+
+    // This flag tracks "we saw one or more whitespace chars since the last token".
+    // We *only* turn it into a real Space token when we see the next Word.
+    let mut pending_space = false;
+
+    for run in runs {
+        let style = run.style;
+        let mut current_word = String::new();
+
+        for ch in run.text.chars() {
+            if ch.is_whitespace() {
+                // End any current word.
+                if !current_word.is_empty() {
+                    tokens.push(InlineToken::Word {
+                        text: current_word.clone(),
+                        style,
+                    });
+                    current_word.clear();
+                }
+                // Remember that we've seen whitespace; may become a Space later.
+                pending_space = true;
+            } else {
+                // We’re about to start/continue a word.
+                // If there was whitespace *and* we already have some tokens,
+                // emit a single Space before this new word.
+                if pending_space && !tokens.is_empty() {
+                    tokens.push(InlineToken::Space { style });
+                }
+                pending_space = false;
+
+                current_word.push(ch);
+            }
+        }
+
+        // Flush last word in this run
+        if !current_word.is_empty() {
+            tokens.push(InlineToken::Word {
+                text: current_word,
+                style,
+            });
+            // note: pending_space remains as-is (if trailing spaces followed,
+            // they would have set it inside the loop)
+        }
+    }
+
+    // At the end we deliberately ignore pending_space:
+    // trailing whitespace collapses away completely.
+    tokens
+}
+
 
 fn collect_inline_runs_desc<'a>(styled: &'a StyledNode<'a>, out: &mut Vec<InlineRun<'a>>) {
     match styled.node {
@@ -99,7 +161,7 @@ fn collect_inline_runs_desc<'a>(styled: &'a StyledNode<'a>, out: &mut Vec<Inline
 pub fn layout_inline_runs<'a>(
     measurer: &dyn TextMeasurer,
     rect: Rect,
-    block_style: &'a css::ComputedStyle,
+    block_style: &'a ComputedStyle,
     runs: &[InlineRun<'a>],
 ) -> Vec<LineBox<'a>> {
     let padding = INLINE_PADDING;
@@ -112,12 +174,14 @@ pub fn layout_inline_runs<'a>(
         let font_px = (available_height / 1.2).max(8.0);
         // Recompute line height from the adjusted font size
         // (reuse the same rule the measurer uses)
-        let fake_style = css::ComputedStyle {
-            font_size: css::Length::Px(font_px),
+        let fake_style = ComputedStyle {
+            font_size: Length::Px(font_px),
             ..*block_style
         };
         line_height = measurer.line_height(&fake_style);
     }
+
+    let tokens = tokenize_runs(runs);
 
     let mut lines: Vec<LineBox<'a>> = Vec::new();
     let mut line_fragments: Vec<LineFragment<'a>> = Vec::new();
@@ -129,51 +193,95 @@ pub fn layout_inline_runs<'a>(
     let max_x = rect.x + rect.width - padding;
     let bottom_limit = rect.y + padding + available_height;
 
-    for run in runs {
-        for word in run.text.split_whitespace() {
-            // Are we at the start of the current line?
-            let line_empty = line_fragments.is_empty();
+    let mut is_first_in_line = true;
 
-            let text_piece = if line_empty {
-                word.to_string()
-            } else {
-                format!(" {}", word)
-            };
-
-            let word_width = measurer.measure(&text_piece, run.style);
-
-            let fits = cursor_x + word_width <= max_x;
-
-            if !fits && !line_empty {
-                // --- Wrap: close current line, move to next ---
-
-                if !line_fragments.is_empty() {
-                    let line_width = cursor_x - line_start_x;
-                    let line_rect = Rect {
-                        x: line_start_x,
-                        y: cursor_y,
-                        width: line_width,
-                        height: line_height,
-                    };
-
-                    lines.push(LineBox {
-                        rect: line_rect,
-                        fragments: std::mem::take(&mut line_fragments),
-                    });
+    for token in tokens {
+        match token {
+            InlineToken::Space { style } => {
+                // Never show a space at the beginning of a line.
+                if is_first_in_line {
+                    continue;
                 }
 
-                cursor_y += line_height;
-                if cursor_y + line_height > bottom_limit {
-                    // No more vertical space in this block
-                    return lines;
+                let space_text = " ";
+                let space_width = measurer.measure(space_text, style);
+
+                // If the space itself doesn't fit, we break the line
+                // and *drop* the space (no leading spaces).
+                if cursor_x + space_width > max_x {
+                    if !line_fragments.is_empty() {
+                        let line_width = cursor_x - line_start_x;
+                        let line_rect = Rect {
+                            x: line_start_x,
+                            y: cursor_y,
+                            width: line_width,
+                            height: line_height,
+                        };
+
+                        lines.push(LineBox {
+                            rect: line_rect,
+                            fragments: std::mem::take(&mut line_fragments),
+                        });
+                    }
+
+                    cursor_y += line_height;
+                    if cursor_y + line_height > bottom_limit {
+                        return lines;
+                    }
+
+                    cursor_x = line_start_x;
+                    is_first_in_line = true;
+                    continue;
                 }
 
-                cursor_x = line_start_x;
+                // Space fits on this line → add it as its own fragment
+                let frag_rect = Rect {
+                    x: cursor_x,
+                    y: cursor_y,
+                    width: space_width,
+                    height: line_height,
+                };
 
-                // Place the same word at the start of the new line (no leading space)
-                let text_piece = word.to_string();
-                let word_width = measurer.measure(&text_piece, run.style);
+                line_fragments.push(LineFragment {
+                    text: space_text.to_string(),
+                    style,
+                    rect: frag_rect,
+                });
 
+                cursor_x += space_width;
+            }
+
+            InlineToken::Word { text, style } => {
+                let word_width = measurer.measure(&text, style);
+
+                let fits = cursor_x + word_width <= max_x;
+
+                if !fits && !is_first_in_line {
+                    // Close current line and move word to next line
+                    if !line_fragments.is_empty() {
+                        let line_width = cursor_x - line_start_x;
+                        let line_rect = Rect {
+                            x: line_start_x,
+                            y: cursor_y,
+                            width: line_width,
+                            height: line_height,
+                        };
+
+                        lines.push(LineBox {
+                            rect: line_rect,
+                            fragments: std::mem::take(&mut line_fragments),
+                        });
+                    }
+
+                    cursor_y += line_height;
+                    if cursor_y + line_height > bottom_limit {
+                        return lines;
+                    }
+
+                    cursor_x = line_start_x;
+                }
+
+                // Place the word (even if it is longer than the full line; we just let it overflow).
                 let frag_rect = Rect {
                     x: cursor_x,
                     y: cursor_y,
@@ -182,33 +290,17 @@ pub fn layout_inline_runs<'a>(
                 };
 
                 line_fragments.push(LineFragment {
-                    text: text_piece,
-                    style: run.style,
+                    text,
+                    style,
                     rect: frag_rect,
                 });
 
                 cursor_x += word_width;
-            } else {
-                // --- Fits (or it's the very first word on an empty line) ---
-
-                let frag_rect = Rect {
-                    x: cursor_x,
-                    y: cursor_y,
-                    width: word_width,
-                    height: line_height,
-                };
-
-                line_fragments.push(LineFragment {
-                    text: text_piece,
-                    style: run.style,
-                    rect: frag_rect,
-                });
-
-                cursor_x += word_width;
+                is_first_in_line = false;
             }
         }
     }
-
+    
     // Flush the last line
     if !line_fragments.is_empty() && cursor_y + line_height <= bottom_limit {
         let line_width = cursor_x - line_start_x;
