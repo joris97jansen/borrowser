@@ -285,8 +285,19 @@ fn paint_layout_box<'a>(
         if !is_inline_element_name(name) {
             let runs = collect_inline_runs_for_block(layout.node);
             if !runs.is_empty() {
+                let bm = layout.style.box_metrics;
+
+                // Inline content box inside padding.
+                let inline_rect = layout::Rect {
+                    x: layout.rect.x + bm.padding_left,
+                    y: layout.rect.y + bm.padding_top,
+                    width: (layout.rect.width - (bm.padding_left + bm.padding_right)).max(0.0),
+                    height: (layout.rect.height - (bm.padding_top + bm.padding_bottom)).max(0.0),
+                };
+
                 let measurer = EguiTextMeasurer::new(painter.ctx());
-                let lines = layout_inline_runs(&measurer, layout.rect, &layout.style, &runs);
+                let lines = layout_inline_runs(&measurer, inline_rect, &layout.style, &runs);
+
                 paint_line_boxes(painter, origin, &lines);
             }
         }

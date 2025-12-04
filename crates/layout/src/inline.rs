@@ -344,13 +344,22 @@ fn recompute_block_heights<'a>(
     node.rect.y = y;
     node.rect.width = width;
 
-    // Non-rendering elements: pure containers
+    // Non-rendering elements: pure containers (but children still have margins)
     if is_non_rendering_element(node.node.node) {
         let mut cursor_y = y;
+
         for child in &mut node.children {
+            let bm = child.style.box_metrics;
+
+            // Space before child
+            cursor_y += bm.margin_top;
+
             let h = recompute_block_heights(measurer, child, x, cursor_y, width);
-            cursor_y += h;
+
+            // Move cursor past the child box
+            cursor_y += h + bm.margin_bottom;
         }
+
         let height = cursor_y - y;
         node.rect.height = height;
         return height;
@@ -359,10 +368,15 @@ fn recompute_block_heights<'a>(
     match node.node.node {
         Node::Document { .. } => {
             let mut cursor_y = y;
+
             for child in &mut node.children {
+                let bm = child.style.box_metrics;
+
+                cursor_y += bm.margin_top;
                 let h = recompute_block_heights(measurer, child, x, cursor_y, width);
-                cursor_y += h;
+                cursor_y += h + bm.margin_bottom;
             }
+
             let height = cursor_y - y;
             node.rect.height = height;
             height
@@ -372,41 +386,55 @@ fn recompute_block_heights<'a>(
             // <html> acts as pure container (no own row)
             if name.eq_ignore_ascii_case("html") {
                 let mut cursor_y = y;
+
                 for child in &mut node.children {
+                    let bm = child.style.box_metrics;
+
+                    cursor_y += bm.margin_top;
                     let h = recompute_block_heights(measurer, child, x, cursor_y, width);
-                    cursor_y += h;
+                    cursor_y += h + bm.margin_bottom;
                 }
+
                 let height = cursor_y - y;
                 node.rect.height = height;
                 return height;
             }
 
-            // Inline elements do not generate a separate block height here.
-            // Their text is handled by the nearest block ancestor via inline layout.
+            // Inline elements: height is 0 at block level.
             if is_inline_element_name(name) {
                 node.rect.height = 0.0;
                 return 0.0;
             }
 
-            // --- Block-level element: inline content + block children ---
+            // --- Block-level element: inline content + block children + padding ---
+            //
+            // We treat:
+            //   border box: node.rect (x, y, width, height)
+            //   content box: inside padding_*
+            //   margins: handled by the parent when placing this node.
 
-            // 1) Compute inline height using a measurement pass for this block
-            let runs = collect_inline_runs_for_block(node.node);
+            let bm = node.style.box_metrics;
+
+            // 1) Inline height from line boxes (inside the padding-top area)
             let mut inline_height = 0.0;
+            let runs = collect_inline_runs_for_block(node.node);
 
             if !runs.is_empty() {
                 let huge_height = 1_000_000.0;
+
+                // Inline content lives inside padding-top (and later, padding-left/right).
                 let block_rect = Rect {
-                    x,
-                    y,
+                    x,                            // horizontal paddings are not applied yet
+                    y: y + bm.padding_top,
                     width,
                     height: huge_height,
                 };
 
                 let lines = layout_inline_runs(measurer, block_rect, node.style, &runs);
-                if let Some(last) = lines.last() {
+                if let Some(last) =  lines.last() {
                     let last_bottom = last.rect.y + last.rect.height;
-                    inline_height = (last_bottom - y) + INLINE_PADDING;
+                    // height of all lines, measured from the top of our padding area
+                    inline_height = (last_bottom - (y + bm.padding_top)) + INLINE_PADDING;
                 }
             }
 
@@ -415,15 +443,26 @@ fn recompute_block_heights<'a>(
                 inline_height = measurer.line_height(node.style);
             }
 
-            // 2) Block children start below the inline content
-            let mut cursor_y = y + inline_height;
+            // 2) Block children start below padding-top + inline content
+            let content_start_y = y + bm.padding_top + inline_height;
+            let mut cursor_y = content_start_y;
+
             for child in &mut node.children {
+                let cbm = child.style.box_metrics;
+
+                // Child's margin-top
+                cursor_y += cbm.margin_top;
+
                 let h = recompute_block_heights(measurer, child, x, cursor_y, width);
-                cursor_y += h;
+
+                // Move down by child's height + margin-bottom
+                cursor_y += h + cbm.margin_bottom;
             }
 
-            let children_height = cursor_y - (y + inline_height);
-            let total_height = inline_height + children_height;
+            let children_height = cursor_y - content_start_y;
+
+            // 3) Total height = padding-top + inline + children + padding-bottom
+            let total_height = bm.padding_top + inline_height + children_height + bm.padding_bottom;
 
             node.rect.height = total_height;
             total_height
