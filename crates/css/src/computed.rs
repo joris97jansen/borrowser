@@ -1,5 +1,36 @@
 use crate::values::{Length, parse_color, parse_length};
 
+#[derive(Clone, Copy, Debug)]
+pub struct BoxMetrics {
+    // Margins in CSS px
+    pub margin_top: f32,
+    pub margin_right: f32,
+    pub margin_bottom: f32,
+    pub margin_left: f32,
+
+    // Padding in CSS px
+    pub padding_top: f32,
+    pub padding_right: f32,
+    pub padding_bottom: f32,
+    pub padding_left: f32,
+}
+
+
+impl BoxMetrics {
+    pub fn zero() -> Self {
+        BoxMetrics {
+            margin_top: 0.0,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Copy)]
 pub struct ComputedStyle {
     /// Inherited by default. Initial: black.
@@ -11,6 +42,8 @@ pub struct ComputedStyle {
     /// Inherited. We'll treat this as `px` only for now.
     /// Initial: 16px.
     pub font_size: Length,
+
+    pub box_metrics: BoxMetrics,
 }
 
 impl ComputedStyle {
@@ -19,6 +52,7 @@ impl ComputedStyle {
             color: (0, 0, 0, 255),              // black
             background_color: (0, 0, 0, 0),     // transparent
             font_size: Length::Px(16.0),        // "16px" default
+            box_metrics: BoxMetrics::zero(),    // zero margins/padding
         }
     }
 }
