@@ -415,6 +415,10 @@ fn recompute_block_heights<'a>(
 
             let bm = node.style.box_metrics;
 
+            // Content area horizontally: inside padding-left/right
+            let content_x = x + bm.padding_left;
+            let content_width = (width - bm.padding_left - bm.padding_right).max(0.0);
+
             // 1) Inline height from line boxes (inside the padding-top area)
             let mut inline_height = 0.0;
             let runs = collect_inline_runs_for_block(node.node);
@@ -424,9 +428,9 @@ fn recompute_block_heights<'a>(
 
                 // Inline content lives inside padding-top (and later, padding-left/right).
                 let block_rect = Rect {
-                    x,                            // horizontal paddings are not applied yet
+                    x: content_x,                            // horizontal paddings are not applied yet
                     y: y + bm.padding_top,
-                    width,
+                    width: content_width,
                     height: huge_height,
                 };
 
@@ -453,7 +457,7 @@ fn recompute_block_heights<'a>(
                 // Child's margin-top
                 cursor_y += cbm.margin_top;
 
-                let h = recompute_block_heights(measurer, child, x, cursor_y, width);
+                let h = recompute_block_heights(measurer, child, content_x, cursor_y, content_width);
 
                 // Move down by child's height + margin-bottom
                 cursor_y += h + cbm.margin_bottom;
