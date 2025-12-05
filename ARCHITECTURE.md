@@ -149,7 +149,7 @@ Computed styles are inherited appropriately (e.g., color, font-size).
 
 ---
 
-# 🌈 Style Tree
+# 🖌️ Style Tree
 
 From the DOM, we build a parallel **style tree**, where each node is a pair:
 
