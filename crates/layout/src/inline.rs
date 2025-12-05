@@ -348,13 +348,19 @@ fn recompute_block_heights<'a>(
     if is_non_rendering_element(node.node.node) {
         let mut cursor_y = y;
 
+        let parent_x = x;
+        let parent_width = width;
+
         for child in &mut node.children {
             let bm = child.style.box_metrics;
 
             // Space before child
             cursor_y += bm.margin_top;
 
-            let h = recompute_block_heights(measurer, child, x, cursor_y, width);
+            let child_x = parent_x + bm.margin_left;
+            let child_width = (parent_width - bm.margin_left - bm.margin_right).max(0.0);
+
+            let h = recompute_block_heights(measurer, child, child_x, cursor_y, child_width);
 
             // Move cursor past the child box
             cursor_y += h + bm.margin_bottom;
@@ -369,11 +375,18 @@ fn recompute_block_heights<'a>(
         Node::Document { .. } => {
             let mut cursor_y = y;
 
+            let parent_x = x;
+            let parent_width = width;
+
             for child in &mut node.children {
                 let bm = child.style.box_metrics;
 
                 cursor_y += bm.margin_top;
-                let h = recompute_block_heights(measurer, child, x, cursor_y, width);
+
+                let child_x = parent_x + bm.margin_left;
+                let child_width = (parent_width - bm.margin_left - bm.margin_right).max(0.0);
+
+                let h = recompute_block_heights(measurer, child, child_x, cursor_y, child_width);
                 cursor_y += h + bm.margin_bottom;
             }
 
@@ -387,11 +400,18 @@ fn recompute_block_heights<'a>(
             if name.eq_ignore_ascii_case("html") {
                 let mut cursor_y = y;
 
+                let parent_x = x;
+                let parent_width = width;
+
                 for child in &mut node.children {
                     let bm = child.style.box_metrics;
 
                     cursor_y += bm.margin_top;
-                    let h = recompute_block_heights(measurer, child, x, cursor_y, width);
+
+                    let child_x = parent_x + bm.margin_left;
+                    let child_width = (parent_width - bm.margin_left - bm.margin_right).max(0.0);
+
+                    let h = recompute_block_heights(measurer, child, child_x, cursor_y, child_width);
                     cursor_y += h + bm.margin_bottom;
                 }
 
@@ -457,7 +477,10 @@ fn recompute_block_heights<'a>(
                 // Child's margin-top
                 cursor_y += cbm.margin_top;
 
-                let h = recompute_block_heights(measurer, child, content_x, cursor_y, content_width);
+                let child_x = content_x + cbm.margin_left;
+                let child_width = (content_width - cbm.margin_left - cbm.margin_right).max(0.0);
+
+                let h = recompute_block_heights(measurer, child, child_x, cursor_y, child_width);
 
                 // Move down by child's height + margin-bottom
                 cursor_y += h + cbm.margin_bottom;
