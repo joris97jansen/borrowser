@@ -1,4 +1,10 @@
-use crate::values::{Length, parse_color, parse_length};
+use crate::values::{
+    Length,
+    Display,
+    parse_color,
+    parse_length,
+    parse_display,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub struct BoxMetrics {
@@ -44,6 +50,11 @@ pub struct ComputedStyle {
     pub font_size: Length,
 
     pub box_metrics: BoxMetrics,
+
+    /// CSS `display` value.
+    /// Not inherited in CSS. For now we default to Block; later we’ll
+    /// override this with per-element defaults.
+    pub display: Display,
 }
 
 impl ComputedStyle {
@@ -53,6 +64,7 @@ impl ComputedStyle {
             background_color: (0, 0, 0, 0),     // transparent
             font_size: Length::Px(16.0),        // "16px" default
             box_metrics: BoxMetrics::zero(),    // zero margins/padding
+            display: Display::Block,            // default to Block for now
         }
     }
 }
@@ -165,6 +177,13 @@ pub fn compute_style(
                     let Length::Px(px) = len;
                     result.box_metrics.padding_left = px;
                 }
+            }
+
+            "display" => {
+                if let Some(d) = parse_display(value) {
+                    result.display = d;
+                }
+                // unknown values: parse_display returns None → silently ignored
             }
             
             _ => {
