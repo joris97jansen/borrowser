@@ -6,6 +6,8 @@ use crate::values::{
     parse_display,
 };
 
+use html::Node;
+
 #[derive(Clone, Copy, Debug)]
 pub struct BoxMetrics {
     // Margins in CSS px
@@ -195,6 +197,33 @@ pub fn compute_style(
     result
 }
 
+fn default_display_for(tag: &str) -> Display {
+    // Very small subset for now. We can extend over time.
+    // Roughly follows HTML default display types.
+    if tag.eq_ignore_ascii_case("span")
+        || tag.eq_ignore_ascii_case("a")
+        || tag.eq_ignore_ascii_case("em")
+        || tag.eq_ignore_ascii_case("strong")
+        || tag.eq_ignore_ascii_case("b")
+        || tag.eq_ignore_ascii_case("i")
+        || tag.eq_ignore_ascii_case("u")
+        || tag.eq_ignore_ascii_case("small")
+        || tag.eq_ignore_ascii_case("big")
+        || tag.eq_ignore_ascii_case("code")
+    {
+        return Display::Inline;
+    }
+
+    // List items are special: they default to list-item
+    if tag.eq_ignore_ascii_case("li") {
+        return Display::ListItem;
+    }
+
+    // Everything else we treat as block for now
+    Display::Block
+}
+
+
 /// Build a style tree from a DOM root.
 /// - `root` is the DOM node (usually the document root)
 /// - `parent_style` is the inherited style, if any
@@ -206,8 +235,6 @@ pub fn build_style_tree<'a>(
     root: &'a html::Node,
     parent_style: Option<&ComputedStyle>,
 ) -> StyledNode<'a> {
-    use html::Node;
-
     match root {
         Node::Document { children, .. } => {
             let base = parent_style.copied().unwrap_or_else(ComputedStyle::initial);
@@ -225,9 +252,21 @@ pub fn build_style_tree<'a>(
             }
         }
 
-        Node::Element { style, children, .. } => {
-            let computed = compute_style(style, parent_style);
+        Node::Element { name, style, children, .. } => {
+            // 1) Check if there is an explicit `display:` declaration
+            let has_display_decl = style
+                .iter()
+                .any(|(prop, _)| prop.eq_ignore_ascii_case("display"));
 
+            // 2) Compute the base style (inherits, applies declarations, etc.)
+            let mut computed = compute_style(style, parent_style);
+
+            // 3) If no explicit `display:` was specified, apply a per-element default
+            if !has_display_decl {
+                computed.display = default_display_for(name);
+            }
+
+            // 4) Recurse into children with this as the parent computed style
             let mut styled_children = Vec::new();
             for child in children {
                 styled_children.push(build_style_tree(child, Some(&computed)));
