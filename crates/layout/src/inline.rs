@@ -2,6 +2,7 @@ use css::{
     StyledNode,
     ComputedStyle,
     Length,
+    Display,
 };
 use html::Node;
 use html::dom_utils::is_non_rendering_element;
@@ -13,21 +14,6 @@ use crate::{
 };
 
 const INLINE_PADDING: f32 = 4.0;
-
-
-pub fn is_inline_element_name(name: &str) -> bool {
-    // This is a *starting* set; we can expand as needed.
-    name.eq_ignore_ascii_case("span")
-        || name.eq_ignore_ascii_case("a")
-        || name.eq_ignore_ascii_case("em")
-        || name.eq_ignore_ascii_case("strong")
-        || name.eq_ignore_ascii_case("b")
-        || name.eq_ignore_ascii_case("i")
-        || name.eq_ignore_ascii_case("u")
-        || name.eq_ignore_ascii_case("small")
-        || name.eq_ignore_ascii_case("big")
-        || name.eq_ignore_ascii_case("code")
-}
 
 // One fragment of text within a line (later this can be per <span>, <a>, etc.)
 pub struct LineFragment<'a> {
@@ -138,15 +124,21 @@ fn collect_inline_runs_desc<'a>(styled: &'a StyledNode<'a>, out: &mut Vec<Inline
             }
         }
 
-        Node::Element { name, .. } => {
-            if is_inline_element_name(name) {
-                // Inline element → dive into children; they inherit/override style.
-                for child in &styled.children {
-                    collect_inline_runs_desc(child, out);
+        Node::Element { .. } => {
+            match styled.style.display {
+                Display::Inline => {
+                    // Inline element: participate in this inline formatting context.
+                    // We recurse into children because text/other inline descendants
+                    // will be turned into InlineRuns here.
+                    for child in &styled.children {
+                        collect_inline_runs_desc(child, out);
+                    }
                 }
-            } else {
-                // Block element → DO NOT descend.
-                // This subtree will be handled by its own LayoutBox in a separate paint pass.
+                _ => {
+                    // Non-inline elements (block, list-item, inline-block, etc.)
+                    // terminate this inline formatting context.
+                    // Their content will be handled by their own LayoutBox.
+                }
             }
         }
 
@@ -421,7 +413,7 @@ fn recompute_block_heights<'a>(
             }
 
             // Inline elements: height is 0 at block level.
-            if is_inline_element_name(name) {
+            if matches!(node.style.display, Display::Inline) {
                 node.rect.height = 0.0;
                 return 0.0;
             }

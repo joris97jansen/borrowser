@@ -13,9 +13,9 @@ Completed features are marked, ongoing tasks use `[ ]`, and future structural im
 ### A1. Display Property Support
 Introduce `display` as a first-class computed property.
 
-- [ ] Add `Display` enum to `ComputedStyle` (`Block`, `Inline`, `InlineBlock`, `ListItem`, …)
-- [ ] Assign default display per element (span=inline, div=block, etc.)
-- [ ] Replace `is_inline_element_name` with computed `display`
+- [✅] Add `Display` enum to `ComputedStyle` (`Block`, `Inline`, `InlineBlock`, `ListItem`, …)
+- [ ✅] Assign default display per element (span=inline, div=block, etc.)
+- [✅] Replace `is_inline_element_name` with computed `display`
 - [ ] Add support for:
   - [ ] `display: inline-block`
   - [ ] `display: list-item` (including marker)

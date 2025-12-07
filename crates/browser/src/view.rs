@@ -12,6 +12,7 @@ use css::{
     StyledNode,
     ComputedStyle,
     Length,
+    Display
 };
 use layout::{
     layout_block_tree,
@@ -19,7 +20,6 @@ use layout::{
     TextMeasurer,
     inline::{
         LineBox,
-        is_inline_element_name,
         collect_inline_runs_for_block,
         layout_inline_runs,
         refine_layout_with_inline,
@@ -281,8 +281,11 @@ fn paint_layout_box<'a>(
     }
 
     // 1) Inline text: only for block-like elements.
-    if let Node::Element { name, .. } = layout.node.node {
-        if !is_inline_element_name(name) {
+    if let Node::Element { .. } = layout.node.node {
+        // If this element itself is inline, it doesn't establish its own
+        // block-level inline formatting context. Its text will be handled
+        // by the nearest block ancestor.
+        if !matches!(layout.style.display, Display::Inline) {
             let runs = collect_inline_runs_for_block(layout.node);
             if !runs.is_empty() {
                 let bm = layout.style.box_metrics;
