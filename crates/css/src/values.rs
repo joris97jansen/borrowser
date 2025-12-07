@@ -5,6 +5,16 @@ pub enum Length {
     Px(f32),
 }
 
+/// CSS `display` value. This will be expanded over time.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Display {
+    Block,
+    Inline,
+    InlineBlock,
+    ListItem,
+    None,
+}
+
 pub fn parse_color(value: &str) -> Option<(u8, u8, u8, u8)> {
     let s = value.trim().to_ascii_lowercase();
     // HEX
@@ -58,4 +68,19 @@ pub fn parse_length(value: &str) -> Option<Length> {
     }
     // Future: em/rem/%/pt/etc
     None
+}
+
+/// Parse a `display` value into a Display enum.
+/// We keep this strict and only support a small subset for now.
+pub fn parse_display(value: &str) -> Option<Display> {
+    let v = value.trim().to_ascii_lowercase();
+
+    match v.as_str() {
+        "block"        => Some(Display::Block),
+        "inline"       => Some(Display::Inline),
+        "inline-block" => Some(Display::InlineBlock),
+        "list-item"    => Some(Display::ListItem),
+        "none"         => Some(Display::None),
+        _ => None, // unknown / unsupported → ignored
+    }
 }
