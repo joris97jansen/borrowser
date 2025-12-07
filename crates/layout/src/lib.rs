@@ -9,7 +9,11 @@ pub use inline::{
         refine_layout_with_inline,
 };
 
-use css::{ComputedStyle, StyledNode};
+use css::{
+    ComputedStyle,
+    StyledNode,
+    Display,
+};
 use html::dom_utils::is_non_rendering_element;
 
 
@@ -26,7 +30,8 @@ pub struct Rect {
 #[derive(Clone, Copy, Debug)]
 pub enum BoxKind {
     Block,
-    // Future: Inline, AnonymousBlock, InlineBlock, etc.
+    Inline
+    // Future: AnonymousBlock, InlineBlock, etc.
 }
 
 /// A node in the layout tree:
@@ -158,8 +163,27 @@ fn layout_block_subtree<'a>(
 
     let rect = Rect { x, y, width, height };
 
+    // Decide box kind based on computed display.
+    // For now, we only distinguish Block vs Inline.
+    let kind = match styled.node {
+        // Document and <html> act as block-level containers.
+        html::Node::Document { .. } => BoxKind::Block,
+        html::Node::Element { name, .. } if name.eq_ignore_ascii_case("html") => BoxKind::Block,
+
+        // Text / Comment nodes already get 0 height; keep them as Block for now.
+        html::Node::Text { .. } | html::Node::Comment { .. } => BoxKind::Block,
+
+        // All other elements: look at display.
+        _ => {
+            match style.display {
+                Display::Inline => BoxKind::Inline,
+                _ => BoxKind::Block,
+            }
+        }
+    };
+
     let layout_box = LayoutBox {
-        kind: BoxKind::Block,
+        kind,
         style,
         node: styled,
         rect,
@@ -169,7 +193,6 @@ fn layout_block_subtree<'a>(
     let next_y = y + height;
     (layout_box, next_y)
 }
-
 
 fn line_height_from(style: &ComputedStyle) -> f32 {
     match style.font_size {
