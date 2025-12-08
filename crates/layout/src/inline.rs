@@ -54,6 +54,9 @@ pub struct LineBox<'a> {
 enum InlineToken<'a> {
     Word { text: String, style: &'a ComputedStyle },
     Space { style: &'a ComputedStyle }, // a single collapsible space
+    /// A "box token" representing an inline-level box (e.g. inline-block, image).
+    /// Not produced from DOM yet, but the algorithm knows how to lay it out.
+    Box { layout: &'a LayoutBox<'a> },
 }
 
 pub fn collect_inline_runs_for_block<'a>(block: &'a StyledNode<'a>) -> Vec<InlineRun<'a>> {
@@ -165,30 +168,27 @@ fn collect_inline_runs_desc<'a>(styled: &'a StyledNode<'a>, out: &mut Vec<Inline
     }
 }
 
-pub fn layout_inline_runs<'a>(
+fn layout_tokens<'a>(
     measurer: &dyn TextMeasurer,
     rect: Rect,
     block_style: &'a ComputedStyle,
-    runs: &[InlineRun<'a>],
+    tokens: Vec<InlineToken<'a>>,
 ) -> Vec<LineBox<'a>> {
     let padding = INLINE_PADDING;
     let available_height = rect.height - 2.0 * padding;
 
-    let mut line_height = measurer.line_height(block_style);
+    // Base line height derived from the block's style.
+    let mut base_line_height = measurer.line_height(block_style);
 
-    if line_height > available_height && available_height > 0.0 {
-        // Simple clamp: keep at least 8px, but don’t overflow insanely.
+    // Simple clamp for extreme cases (same as before).
+    if base_line_height > available_height && available_height > 0.0 {
         let font_px = (available_height / 1.2).max(8.0);
-        // Recompute line height from the adjusted font size
-        // (reuse the same rule the measurer uses)
         let fake_style = ComputedStyle {
             font_size: Length::Px(font_px),
             ..*block_style
         };
-        line_height = measurer.line_height(&fake_style);
+        base_line_height = measurer.line_height(&fake_style);
     }
-
-    let tokens = tokenize_runs(runs);
 
     let mut lines: Vec<LineBox<'a>> = Vec::new();
     let mut line_fragments: Vec<LineFragment<'a>> = Vec::new();
@@ -199,6 +199,9 @@ pub fn layout_inline_runs<'a>(
 
     let max_x = rect.x + rect.width - padding;
     let bottom_limit = rect.y + padding + available_height;
+
+    // Current line height; can grow if we see tall box fragments.
+    let mut line_height = base_line_height;
 
     let mut is_first_in_line = true;
 
@@ -232,16 +235,16 @@ pub fn layout_inline_runs<'a>(
                     }
 
                     cursor_y += line_height;
-                    if cursor_y + line_height > bottom_limit {
+                    if cursor_y + base_line_height > bottom_limit {
                         return lines;
                     }
 
                     cursor_x = line_start_x;
+                    line_height = base_line_height;
                     is_first_in_line = true;
                     continue;
                 }
 
-                // Space fits on this line → add it as its own fragment
                 let frag_rect = Rect {
                     x: cursor_x,
                     y: cursor_y,
@@ -256,6 +259,7 @@ pub fn layout_inline_runs<'a>(
                     },
                     rect: frag_rect,
                 });
+
                 cursor_x += space_width;
             }
 
@@ -265,7 +269,53 @@ pub fn layout_inline_runs<'a>(
                 let fits = cursor_x + word_width <= max_x;
 
                 if !fits && !is_first_in_line {
-                    // Close current line and move word to next line
+                    if !line_fragments.is_empty() {
+                        let line_width = cursor_x - line_start_x;
+                        let line_rect = Rect {
+                            x: line_start_x,
+                            y: cursor_y,
+                            width: line_width,
+                            height: line_height,
+                        };
+
+                            lines.push(LineBox {
+                            rect: line_rect,
+                            fragments: std::mem::take(&mut line_fragments),
+                        });
+                    }
+
+                    cursor_y += line_height;
+                    if cursor_y + base_line_height > bottom_limit {
+                        return lines;
+                    }
+
+                    cursor_x = line_start_x;
+                    line_height = base_line_height;
+                }
+
+                let frag_rect = Rect {
+                    x: cursor_x,
+                    y: cursor_y,
+                    width: word_width,
+                    height: line_height,
+                };
+
+                line_fragments.push(LineFragment {
+                    kind: InlineFragment::Text { text, style },
+                    rect: frag_rect,
+                });
+
+                cursor_x += word_width;
+                is_first_in_line = false;
+            }
+
+            InlineToken::Box { layout } => {
+                let box_width = layout.rect.width;
+                let box_height = layout.rect.height;
+
+                let fits = cursor_x + box_width <= max_x;
+
+                if !fits && !is_first_in_line {
                     if !line_fragments.is_empty() {
                         let line_width = cursor_x - line_start_x;
                         let line_rect = Rect {
@@ -282,35 +332,41 @@ pub fn layout_inline_runs<'a>(
                     }
 
                     cursor_y += line_height;
-                    if cursor_y + line_height > bottom_limit {
+                    if cursor_y + base_line_height > bottom_limit {
                         return lines;
                     }
 
                     cursor_x = line_start_x;
+                    line_height = base_line_height;
                 }
 
-                // Place the word (even if it is longer than the full line; we just let it overflow).
+                // A box behaves like a big glyph: it occupies its own width,
+                // and it can grow the line's height if it is taller.
+                if box_height > line_height {
+                    line_height = box_height;
+                }
+
                 let frag_rect = Rect {
                     x: cursor_x,
                     y: cursor_y,
-                    width: word_width,
-                    height: line_height,
+                    width: box_width,
+                    height: box_height,
                 };
 
                 line_fragments.push(LineFragment {
-                    kind: InlineFragment::Text {
-                        text,
-                        style,
+                    kind: InlineFragment::Box {
+                        style: layout.style,
+                        layout,
                     },
                     rect: frag_rect,
                 });
 
-                cursor_x += word_width;
+                cursor_x += box_width;
                 is_first_in_line = false;
             }
         }
     }
-    
+
     // Flush the last line
     if !line_fragments.is_empty() && cursor_y + line_height <= bottom_limit {
         let line_width = cursor_x - line_start_x;
@@ -328,6 +384,20 @@ pub fn layout_inline_runs<'a>(
     }
 
     lines
+}
+
+pub fn layout_inline_runs<'a>(
+    measurer: &dyn TextMeasurer,
+    rect: Rect,
+    block_style: &'a ComputedStyle,
+    runs: &[InlineRun<'a>],
+) -> Vec<LineBox<'a>> {
+    // 1) Turn text runs into tokens (Word/Space) with whitespace collapsing.
+    let tokens = tokenize_runs(runs);
+
+    // 2) Delegate to the generic token layout engine,
+    // which *can* handle Box tokens but currently only sees text tokens here.
+    layout_tokens(measurer, rect, block_style, tokens)
 }
 
 pub fn refine_layout_with_inline<'a>(
