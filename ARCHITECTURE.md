@@ -190,7 +190,7 @@ struct LayoutBox<'a> {
     kind: BoxKind,
     style: &'a ComputedStyle,
     node: &'a StyledNode<'a>,
-    rect: Rect,
+    rect: Rectangle,
     children: Vec<LayoutBox<'a>>,
 }
 ```
