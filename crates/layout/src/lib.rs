@@ -30,8 +30,9 @@ pub struct Rect {
 #[derive(Clone, Copy, Debug)]
 pub enum BoxKind {
     Block,
-    Inline
-    // Future: AnonymousBlock, InlineBlock, etc.
+    Inline,
+    InlineBlock,
+    // Future: AnonymousBlock, ListItem, etc.
 }
 
 /// A node in the layout tree:
@@ -177,6 +178,7 @@ fn layout_block_subtree<'a>(
         _ => {
             match style.display {
                 Display::Inline => BoxKind::Inline,
+                Display::InlineBlock => BoxKind::InlineBlock,
                 _ => BoxKind::Block,
             }
         }
