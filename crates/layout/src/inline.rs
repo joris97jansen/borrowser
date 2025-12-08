@@ -11,6 +11,7 @@ use crate::{
     Rect,
     TextMeasurer,
     LayoutBox,
+    BoxKind,
 };
 
 const INLINE_PADDING: f32 = 4.0;
@@ -431,7 +432,7 @@ fn recompute_block_heights<'a>(
             let content_x = x + bm.padding_left;
             let content_width = (width - bm.padding_left - bm.padding_right).max(0.0);
 
-            // 1) Inline height from line boxes (inside the padding-top area)
+            // 1a) Inline TEXT height from line boxes
             let mut inline_height = 0.0;
             let runs = collect_inline_runs_for_block(node.node);
 
@@ -454,6 +455,37 @@ fn recompute_block_heights<'a>(
                 }
             }
 
+            // 1b) Inline-BLOCK children: contribute to inline height, not block flow
+            let mut inline_block_height = 0.0;
+
+            for child in &mut node.children {
+                if !matches!(child.kind, BoxKind::InlineBlock) {
+                    continue;
+                }
+
+                let cbm = child.style.box_metrics;
+
+                // Horizontal placement for now: same content_x, shrunk by margins.
+                let child_x = content_x + cbm.margin_left;
+                let child_width =
+                    (content_width - cbm.margin_left - cbm.margin_right).max(0.0);
+
+                // Vertically, inline-block lives in the inline area starting at padding-top.
+                // Exact baseline alignment will come later; for now we just measure height.
+                let child_y = y + bm.padding_top + cbm.margin_top;
+
+                let h = recompute_block_heights(measurer, child, child_x, child_y, child_width);
+
+                // Total vertical footprint of this inline-block including its margins.
+                let total_h = cbm.margin_top + h + cbm.margin_bottom;
+                if total_h > inline_block_height {
+                    inline_block_height = total_h;
+                }
+            }
+
+            // 1c) Final inline height = text OR inline-blocks, whichever is taller
+            inline_height = inline_height.max(inline_block_height);
+
             // Fallback: at least one line-height even if no text
             if inline_height <= 0.0 {
                 inline_height = measurer.line_height(node.style);
@@ -464,13 +496,19 @@ fn recompute_block_heights<'a>(
             let mut cursor_y = content_start_y;
 
             for child in &mut node.children {
+                // Skip inline & inline-block children here; we already accounted for them
+                if matches!(child.kind, BoxKind::Inline | BoxKind::InlineBlock) {
+                    continue;
+                }
+
                 let cbm = child.style.box_metrics;
 
                 // Child's margin-top
                 cursor_y += cbm.margin_top;
 
                 let child_x = content_x + cbm.margin_left;
-                let child_width = (content_width - cbm.margin_left - cbm.margin_right).max(0.0);
+                let child_width =
+                    (content_width - cbm.margin_left - cbm.margin_right).max(0.0);
 
                 let h = recompute_block_heights(measurer, child, child_x, cursor_y, child_width);
 
