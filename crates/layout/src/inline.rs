@@ -16,10 +16,24 @@ use crate::{
 
 const INLINE_PADDING: f32 = 4.0;
 
+/// The logical content carried by a line fragment.
+/// For now we only produce `Text`; `Box` will be used for inline-blocks, images, etc.
+pub enum InlineFragment<'a> {
+    Text {
+        text: String,
+        style: &'a ComputedStyle,
+    },
+    Box {
+        style: &'a ComputedStyle,
+        /// The box we’re treating as a single inline unit (e.g., inline-block).
+        /// We won’t construct this variant yet; it’s here for future work.
+        layout: &'a LayoutBox<'a>,
+    },
+}
+
 // One fragment of text within a line (later this can be per <span>, <a>, etc.)
 pub struct LineFragment<'a> {
-    pub text: String,
-    pub style: &'a ComputedStyle,
+    pub kind: InlineFragment<'a>,
     pub rect: Rect,
 }
 
@@ -236,11 +250,12 @@ pub fn layout_inline_runs<'a>(
                 };
 
                 line_fragments.push(LineFragment {
-                    text: space_text.to_string(),
-                    style,
+                    kind: InlineFragment::Text {
+                        text: space_text.to_string(),
+                        style,
+                    },
                     rect: frag_rect,
                 });
-
                 cursor_x += space_width;
             }
 
@@ -283,8 +298,10 @@ pub fn layout_inline_runs<'a>(
                 };
 
                 line_fragments.push(LineFragment {
-                    text,
-                    style,
+                    kind: InlineFragment::Text {
+                        text,
+                        style,
+                    },
                     rect: frag_rect,
                 });
 
