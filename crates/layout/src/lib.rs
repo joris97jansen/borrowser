@@ -19,7 +19,7 @@ use html::dom_utils::is_non_rendering_element;
 
 /// A rectangle in CSS px units (we'll treat everything as px for now).
 #[derive(Clone, Copy, Debug)]
-pub struct Rect {
+pub struct Rectangle {
     pub x: f32,
     pub y: f32,
     pub width: f32,
@@ -43,7 +43,7 @@ pub struct LayoutBox<'a> {
     pub kind: BoxKind,
     pub style: &'a ComputedStyle,
     pub node: &'a StyledNode<'a>,
-    pub rect: Rect,
+    pub rect: Rectangle,
     pub children: Vec<LayoutBox<'a>>,
 }
 
@@ -88,7 +88,7 @@ fn layout_block_subtree<'a>(
             cursor_y - y
         };
 
-        let rect = Rect { x, y, width, height };
+        let rect = Rectangle { x, y, width, height };
 
         let layout_box = LayoutBox {
             kind: BoxKind::Block,
@@ -162,7 +162,7 @@ fn layout_block_subtree<'a>(
         }
     }
 
-    let rect = Rect { x, y, width, height };
+    let rect = Rectangle { x, y, width, height };
 
     // Decide box kind based on computed display.
     // For now, we only distinguish Block vs Inline.

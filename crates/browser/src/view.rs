@@ -12,12 +12,13 @@ use css::{
     StyledNode,
     ComputedStyle,
     Length,
-    Display
+    Display,
 };
 use layout::{
     layout_block_tree,
     LayoutBox,
     TextMeasurer,
+    Rectangle,
     inline::{
         LineBox,
         InlineFragment,
@@ -57,17 +58,17 @@ pub enum NavigationAction {
     Navigate(String),
 }
 
-struct EguiTextMeasurer<'a> {
-    ctx: &'a egui::Context,
+struct EguiTextMeasurer {
+    ctx: Context,
 }
 
-impl<'a> EguiTextMeasurer<'a> {
-    fn new(ctx: &'a egui::Context) -> Self {
-        Self { ctx }
+impl EguiTextMeasurer {
+    fn new(ctx: &Context) -> Self {
+        Self { ctx: ctx.clone() }
     }
 }
 
-impl<'a> TextMeasurer for EguiTextMeasurer<'a> {
+impl TextMeasurer for EguiTextMeasurer {
     fn measure(&self, text: &str, style: &ComputedStyle) -> f32 {
         // We don't really care about color here, but egui wants one for layout.
         let (r, g, b, a) = style.color;
@@ -85,7 +86,7 @@ impl<'a> TextMeasurer for EguiTextMeasurer<'a> {
         })
     }
 
-    fn line_height(&self, style: &css::ComputedStyle) -> f32 {
+    fn line_height(&self, style: &ComputedStyle) -> f32 {
         // Same factor you already used elsewhere; now it's centralized.
         match style.font_size {
             Length::Px(px) => px * 1.2,
@@ -211,12 +212,12 @@ pub fn page_viewport(ui: &mut Ui, style_root: &StyledNode<'_>) {
             // 4) Paint layout tree (backgrounds + text)
             let painter = ui.painter_at(content_rect);
             let origin = content_rect.min;
-            paint_layout_box(&layout_root, &painter, origin);
+            paint_layout_box(&layout_root, &painter, origin, &measurer);
         });
 }
 
 fn paint_line_boxes<'a>(
-    painter: &egui::Painter,
+    painter: &Painter,
     origin: Pos2,
     lines: &[LineBox<'a>],
 ) {
@@ -228,7 +229,7 @@ fn paint_line_boxes<'a>(
                     let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
 
                     let font_px = match style.font_size {
-                        css::Length::Px(px) => px,
+                        Length::Px(px) => px,
                     };
                     let font_id = FontId::proportional(font_px);
 
@@ -246,25 +247,40 @@ fn paint_line_boxes<'a>(
                     );
                 }
 
-                InlineFragment::Box { .. } => {
-                    // Not painted here yet — later we'll use this
-                    // to draw inline-block boxes/images as part of the line.
+                InlineFragment::Box { layout: child_box, .. } => {
+                    // For now: draw a simple placeholder rectangle.
+                    let (r, g, b, a) = child_box.style.background_color;
+                    let color = if a > 0 {
+                        Color32::from_rgba_unmultiplied(r, g, b, a)
+                    } else {
+                        Color32::from_rgba_unmultiplied(180, 180, 180, 255)
+                    };
+
+                    let rect = Rect::from_min_size(
+                        Pos2 {
+                            x: origin.x + frag.rect.x,
+                            y: origin.y + frag.rect.y,
+                        },
+                        Vec2::new(frag.rect.width, frag.rect.height),
+                    );
+
+                    painter.rect_filled(rect, 0.0, color);
                 }
             }
         }
     }
 }
 
-
 fn paint_layout_box<'a>(
     layout: &LayoutBox<'a>,
     painter: &Painter,
     origin: Pos2,
+    measurer: &dyn TextMeasurer,
 ) {
     // 0) Do not paint non-rendering elements (head, style, script, etc.)
     if is_non_rendering_element(layout.node.node) {
         for child in &layout.children {
-            paint_layout_box(child, painter, origin);
+            paint_layout_box(child, painter, origin, measurer);
         }
         return;
     }
@@ -290,36 +306,64 @@ fn paint_layout_box<'a>(
         );
     }
 
-    // 1) Inline text: only for block-like elements.
-    if let Node::Element { .. } = layout.node.node {
-        // If this element itself is inline, it doesn't establish its own
-        // block-level inline formatting context. Its text will be handled
-        // by the nearest block ancestor.
-        if !matches!(layout.style.display, Display::Inline) {
-            let runs = collect_inline_runs_for_block(layout.node);
-            if !runs.is_empty() {
-                let bm = layout.style.box_metrics;
-
-                // Inline content box inside padding.
-                let inline_rect = layout::Rect {
-                    x: layout.rect.x + bm.padding_left,
-                    y: layout.rect.y + bm.padding_top,
-                    width: (layout.rect.width - (bm.padding_left + bm.padding_right)).max(0.0),
-                    height: (layout.rect.height - (bm.padding_top + bm.padding_bottom)).max(0.0),
-                };
-
-                let measurer = EguiTextMeasurer::new(painter.ctx());
-                let lines = layout_inline_runs(&measurer, inline_rect, &layout.style, &runs);
-
-                paint_line_boxes(painter, origin, &lines);
-            }
-        }
-    }
+    // 1) Inline content
+    paint_inline_content(layout, painter, origin, measurer);
 
     // 2) Recurse into children
     for child in &layout.children {
-        paint_layout_box(child, painter, origin);
+        paint_layout_box(child, painter, origin, measurer);
     }
+}
+
+fn paint_inline_content<'a>(
+    layout: &LayoutBox<'a>,
+    painter: &Painter,
+    origin: Pos2,
+    measurer: &dyn TextMeasurer,
+) {
+    // Only block-like elements host their own inline formatting context.
+    match layout.node.node {
+        Node::Element { .. } => {
+            // Inline elements do NOT establish their own block-level
+            // inline formatting context; their text is handled by the
+            // nearest block ancestor.
+            if matches!(layout.style.display, Display::Inline) {
+                return;
+            }
+        }
+        // The Document node itself also does not host inline content;
+        // its block children (html/body/etc.) will do that.
+        Node::Document { .. } => return,
+        _ => return,
+    }
+
+    // Collect inline runs for this block.
+    let runs = collect_inline_runs_for_block(layout.node);
+    if runs.is_empty() {
+        return;
+    }
+
+    // Reconstruct the same "content rect" we conceptually used for inline layout.
+    let bm = layout.style.box_metrics;
+
+    let content_x = layout.rect.x + bm.padding_left;
+    let content_y = layout.rect.y + bm.padding_top;
+    let content_width =
+        (layout.rect.width - bm.padding_left - bm.padding_right).max(0.0);
+    let content_height =
+        (layout.rect.height - bm.padding_top - bm.padding_bottom).max(0.0);
+
+    let block_rect = Rectangle {
+        x: content_x,
+        y: content_y,
+        width: content_width,
+        height: content_height,
+    };
+
+    // Run the inline layout engine to get line boxes + fragments.
+    let lines = layout_inline_runs(measurer, block_rect, layout.style, &runs);
+
+    paint_line_boxes(painter, origin, &lines);
 }
 
 fn find_page_background_color(root: &StyledNode<'_>) -> Option<(u8, u8, u8, u8)> {

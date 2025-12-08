@@ -8,7 +8,7 @@ use html::Node;
 use html::dom_utils::is_non_rendering_element;
 
 use crate::{
-    Rect,
+    Rectangle,
     TextMeasurer,
     LayoutBox,
     BoxKind,
@@ -34,7 +34,7 @@ pub enum InlineFragment<'a> {
 // One fragment of text within a line (later this can be per <span>, <a>, etc.)
 pub struct LineFragment<'a> {
     pub kind: InlineFragment<'a>,
-    pub rect: Rect,
+    pub rect: Rectangle,
 }
 
 // A logical piece of inline content with a single style
@@ -46,7 +46,7 @@ pub struct InlineRun<'a> {
 // One line box: a horizontal slice of inline content.
 pub struct LineBox<'a> {
     pub fragments: Vec<LineFragment<'a>>,
-    pub rect: Rect,
+    pub rect: Rectangle,
 }
 
 // Internal token representation after whitespace processing.
@@ -170,7 +170,7 @@ fn collect_inline_runs_desc<'a>(styled: &'a StyledNode<'a>, out: &mut Vec<Inline
 
 fn layout_tokens<'a>(
     measurer: &dyn TextMeasurer,
-    rect: Rect,
+    rect: Rectangle,
     block_style: &'a ComputedStyle,
     tokens: Vec<InlineToken<'a>>,
 ) -> Vec<LineBox<'a>> {
@@ -221,7 +221,7 @@ fn layout_tokens<'a>(
                 if cursor_x + space_width > max_x {
                     if !line_fragments.is_empty() {
                         let line_width = cursor_x - line_start_x;
-                        let line_rect = Rect {
+                        let line_rect = Rectangle {
                             x: line_start_x,
                             y: cursor_y,
                             width: line_width,
@@ -245,7 +245,7 @@ fn layout_tokens<'a>(
                     continue;
                 }
 
-                let frag_rect = Rect {
+                let frag_rect = Rectangle {
                     x: cursor_x,
                     y: cursor_y,
                     width: space_width,
@@ -271,7 +271,7 @@ fn layout_tokens<'a>(
                 if !fits && !is_first_in_line {
                     if !line_fragments.is_empty() {
                         let line_width = cursor_x - line_start_x;
-                        let line_rect = Rect {
+                        let line_rect = Rectangle {
                             x: line_start_x,
                             y: cursor_y,
                             width: line_width,
@@ -293,7 +293,7 @@ fn layout_tokens<'a>(
                     line_height = base_line_height;
                 }
 
-                let frag_rect = Rect {
+                let frag_rect = Rectangle {
                     x: cursor_x,
                     y: cursor_y,
                     width: word_width,
@@ -318,7 +318,7 @@ fn layout_tokens<'a>(
                 if !fits && !is_first_in_line {
                     if !line_fragments.is_empty() {
                         let line_width = cursor_x - line_start_x;
-                        let line_rect = Rect {
+                        let line_rect = Rectangle {
                             x: line_start_x,
                             y: cursor_y,
                             width: line_width,
@@ -346,7 +346,7 @@ fn layout_tokens<'a>(
                     line_height = box_height;
                 }
 
-                let frag_rect = Rect {
+                let frag_rect = Rectangle {
                     x: cursor_x,
                     y: cursor_y,
                     width: box_width,
@@ -370,7 +370,7 @@ fn layout_tokens<'a>(
     // Flush the last line
     if !line_fragments.is_empty() && cursor_y + line_height <= bottom_limit {
         let line_width = cursor_x - line_start_x;
-        let line_rect = Rect {
+        let line_rect = Rectangle {
             x: line_start_x,
             y: cursor_y,
             width: line_width,
@@ -388,7 +388,7 @@ fn layout_tokens<'a>(
 
 pub fn layout_inline_runs<'a>(
     measurer: &dyn TextMeasurer,
-    rect: Rect,
+    rect: Rectangle,
     block_style: &'a ComputedStyle,
     runs: &[InlineRun<'a>],
 ) -> Vec<LineBox<'a>> {
@@ -527,7 +527,7 @@ fn recompute_block_heights<'a>(
                 let huge_height = 1_000_000.0;
 
                 // Inline content lives inside padding-top (and later, padding-left/right).
-                let block_rect = Rect {
+                let block_rect = Rectangle {
                     x: content_x,                            // horizontal paddings are not applied yet
                     y: y + bm.padding_top,
                     width: content_width,
