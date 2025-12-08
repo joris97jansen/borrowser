@@ -20,6 +20,7 @@ use layout::{
     TextMeasurer,
     inline::{
         LineBox,
+        InlineFragment,
         collect_inline_runs_for_block,
         layout_inline_runs,
         refine_layout_with_inline,
@@ -221,26 +222,35 @@ fn paint_line_boxes<'a>(
 ) {
     for line in lines {
         for frag in &line.fragments {
-            let (cr, cg, cb, ca) = frag.style.color;
-            let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
+            match &frag.kind {
+                InlineFragment::Text { text, style } => {
+                    let (cr, cg, cb, ca) = style.color;
+                    let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
 
-            let font_px = match frag.style.font_size {
-                css::Length::Px(px) => px,
-            };
-            let font_id = FontId::proportional(font_px);
+                    let font_px = match style.font_size {
+                        css::Length::Px(px) => px,
+                    };
+                    let font_id = FontId::proportional(font_px);
 
-            let pos = Pos2 {
-                x: origin.x + frag.rect.x,
-                y: origin.y + frag.rect.y,
-            };
+                    let pos = Pos2 {
+                        x: origin.x + frag.rect.x,
+                        y: origin.y + frag.rect.y,
+                    };
 
-            painter.text(
-                pos,
-                Align2::LEFT_TOP,
-                &frag.text,
-                font_id,
-                text_color,
-            );
+                    painter.text(
+                        pos,
+                        Align2::LEFT_TOP,
+                        text,
+                        font_id,
+                        text_color,
+                    );
+                }
+
+                InlineFragment::Box { .. } => {
+                    // Not painted here yet — later we'll use this
+                    // to draw inline-block boxes/images as part of the line.
+                }
+            }
         }
     }
 }
