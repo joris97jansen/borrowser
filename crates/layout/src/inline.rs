@@ -17,18 +17,23 @@ use crate::{
 const INLINE_PADDING: f32 = 4.0;
 
 /// The logical content carried by a line fragment.
-/// For now we produce `Text` for inline text and `Box` for inline-level
-/// replaced/box content (e.g., inline-block).
+/// - `Text` is inline text
+/// - `Box` is inline-level replaced/box content (e.g., inline-block)
 pub enum InlineFragment<'a> {
     Text {
         text: String,
         style: &'a ComputedStyle,
     },
     Box {
-        /// Style of the inline box (for color, font, etc. as needed).
+        /// Style of the inline box (for color, etc.).
         style: &'a ComputedStyle,
+        /// Layout box for this inline-level box, if we have one.
+        /// - `Some(..)` in the painting path
+        /// - `None` in the height computation path
+        layout: Option<&'a LayoutBox<'a>>,
     },
 }
+
 
 // One fragment of text within a line (later this can be per <span>, <a>, etc.)
 pub struct LineFragment<'a> {
@@ -54,11 +59,13 @@ enum InlineToken<'a> {
     Word { text: String, style: &'a ComputedStyle },
     Space { style: &'a ComputedStyle }, // a single collapsible space
     /// A "box token" representing an inline-level box (e.g. inline-block, image).
-    /// Width/height are the *border box* (or equivalent) size in px.
+    /// Width/height are the box size in px.
     Box {
         width: f32,
         height: f32,
         style: &'a ComputedStyle,
+        /// Layout box, if we want to paint its subtree later.
+        layout: Option<&'a LayoutBox<'a>>,
     },
 }
 
@@ -188,6 +195,7 @@ fn collect_inline_block_tokens_from_children<'layout>(
                     width,
                     height,
                     style,
+                    layout: None,
                 });
             }
 
@@ -202,6 +210,61 @@ fn collect_inline_block_tokens_from_children<'layout>(
     }
 }
 
+fn collect_inline_block_tokens_from_children_for_paint<'layout>(
+    children: &'layout [LayoutBox<'layout>],
+    out: &mut Vec<InlineToken<'layout>>,
+) {
+    for child in children {
+        match child.kind {
+            BoxKind::InlineBlock => {
+                let style = child.style;
+                let cbm = child.style.box_metrics;
+
+                let width = child.rect.width;
+                let height = child.rect.height + cbm.margin_top + cbm.margin_bottom;
+
+                out.push(InlineToken::Box {
+                    width,
+                    height,
+                    style,
+                    layout: Some(child), // <--- painting path keeps a reference
+                });
+            }
+
+            BoxKind::Inline => {
+                collect_inline_block_tokens_from_children_for_paint(&child.children, out);
+            }
+
+            BoxKind::Block => {
+                // outside this block's inline formatting context
+            }
+        }
+    }
+}
+
+pub fn layout_inline_for_paint<'a>(
+    measurer: &dyn TextMeasurer,
+    rect: Rectangle,
+    block: &'a LayoutBox<'a>,
+) -> Vec<LineBox<'a>> {
+    // 1) Text runs from the style tree (same as before)
+    let runs = collect_inline_runs_for_block(block.node);
+    let mut tokens: Vec<InlineToken<'a>> = Vec::new();
+
+    if !runs.is_empty() {
+        tokens.extend(tokenize_runs(&runs));
+    }
+
+    // 2) Inline-block children from the layout tree, with layout: Some(child)
+    collect_inline_block_tokens_from_children_for_paint(&block.children, &mut tokens);
+
+    if tokens.is_empty() {
+        return Vec::new();
+    }
+
+    // 3) Lay them out with the generic token engine.
+    layout_tokens(measurer, rect, block.style, tokens)
+}
 
 fn layout_tokens<'a>(
     measurer: &dyn TextMeasurer,
@@ -344,7 +407,7 @@ fn layout_tokens<'a>(
                 is_first_in_line = false;
             }
 
-            InlineToken::Box { width: box_width, height: box_height, style } => {
+            InlineToken::Box { width: box_width, height: box_height, style, layout } => {
                 let fits = cursor_x + box_width <= max_x;
 
                 if !fits && !is_first_in_line {
@@ -372,8 +435,7 @@ fn layout_tokens<'a>(
                     line_height = base_line_height;
                 }
 
-                // A box behaves like a big glyph: it occupies its own width,
-                // and it can grow the line's height if it is taller.
+                // Box behaves like a big glyph: it can grow the line height.
                 if box_height > line_height {
                     line_height = box_height;
                 }
@@ -386,7 +448,7 @@ fn layout_tokens<'a>(
                 };
 
                 line_fragments.push(LineFragment {
-                    kind: InlineFragment::Box { style },
+                    kind: InlineFragment::Box { style, layout },
                     rect: frag_rect,
                 });
 
