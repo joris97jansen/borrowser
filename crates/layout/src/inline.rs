@@ -528,14 +528,14 @@ fn recompute_block_heights<'a>(
 
                 // Inline content lives inside padding-top (and later, padding-left/right).
                 let block_rect = Rectangle {
-                    x: content_x,                            // horizontal paddings are not applied yet
+                    x: content_x,
                     y: y + bm.padding_top,
                     width: content_width,
                     height: huge_height,
                 };
 
                 let lines = layout_inline_runs(measurer, block_rect, node.style, &runs);
-                if let Some(last) =  lines.last() {
+                if let Some(last) = lines.last() {
                     let last_bottom = last.rect.y + last.rect.height;
                     // height of all lines, measured from the top of our padding area
                     inline_height = (last_bottom - (y + bm.padding_top)) + INLINE_PADDING;
