@@ -7,6 +7,7 @@ pub use inline::{
         collect_inline_runs_for_block,
         layout_inline_runs,
         refine_layout_with_inline,
+        layout_inline_for_paint,
 };
 
 use css::{

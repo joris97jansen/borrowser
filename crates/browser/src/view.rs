@@ -19,12 +19,12 @@ use layout::{
     LayoutBox,
     TextMeasurer,
     Rectangle,
+    BoxKind,
     inline::{
         LineBox,
         InlineFragment,
-        collect_inline_runs_for_block,
-        layout_inline_runs,
         refine_layout_with_inline,
+        layout_inline_for_paint,
     }
 };
 use egui::{
@@ -212,7 +212,8 @@ pub fn page_viewport(ui: &mut Ui, style_root: &StyledNode<'_>) {
             // 4) Paint layout tree (backgrounds + text)
             let painter = ui.painter_at(content_rect);
             let origin = content_rect.min;
-            paint_layout_box(&layout_root, &painter, origin, &measurer);
+            paint_layout_box(&layout_root, &painter, origin, &measurer, true);
+
         });
 }
 
@@ -220,6 +221,7 @@ fn paint_line_boxes<'a>(
     painter: &Painter,
     origin: Pos2,
     lines: &[LineBox<'a>],
+    measurer: &dyn TextMeasurer,
 ) {
     for line in lines {
         for frag in &line.fragments {
@@ -247,15 +249,7 @@ fn paint_line_boxes<'a>(
                     );
                 }
 
-                InlineFragment::Box { style } => {
-                    // For now: draw a simple placeholder rectangle using the box style.
-                    let (r, g, b, a) = style.background_color;
-                    let color = if a > 0 {
-                        Color32::from_rgba_unmultiplied(r, g, b, a)
-                    } else {
-                        Color32::from_rgba_unmultiplied(180, 180, 180, 255)
-                    };
-
+                InlineFragment::Box { style, layout } => {
                     let rect = Rect::from_min_size(
                         Pos2 {
                             x: origin.x + frag.rect.x,
@@ -264,7 +258,34 @@ fn paint_line_boxes<'a>(
                         Vec2::new(frag.rect.width, frag.rect.height),
                     );
 
-                    painter.rect_filled(rect, 0.0, color);
+                    if let Some(child_box) = layout {
+                        // Paint the inline-block's full content at this inline position.
+                        // Compute an origin such that child's rect's top-left lands at `rect.min`.
+                        let translated_origin = Pos2 {
+                            x: rect.min.x - child_box.rect.x,
+                            y: rect.min.y - child_box.rect.y,
+                        };
+
+                        // Paint the entire subtree of this inline-block here,
+                        // including its background/border and its children.
+                        paint_layout_box(
+                            child_box,
+                            painter,
+                            translated_origin,
+                            measurer,
+                            false, // do NOT skip inline-block children inside this subtree
+                        );
+                    } else {
+                        // Fallback: simple placeholder rectangle using the box style.
+                        let (r, g, b, a) = style.background_color;
+                        let color = if a > 0 {
+                            Color32::from_rgba_unmultiplied(r, g, b, a)
+                        } else {
+                            Color32::from_rgba_unmultiplied(180, 180, 180, 255)
+                        };
+
+                        painter.rect_filled(rect, 0.0, color);
+                    }
                 }
             }
         }
@@ -276,11 +297,13 @@ fn paint_layout_box<'a>(
     painter: &Painter,
     origin: Pos2,
     measurer: &dyn TextMeasurer,
+    skip_inline_block_children: bool,
 ) {
+
     // 0) Do not paint non-rendering elements (head, style, script, etc.)
     if is_non_rendering_element(layout.node.node) {
         for child in &layout.children {
-            paint_layout_box(child, painter, origin, measurer);
+            paint_layout_box(child, painter, origin, measurer, skip_inline_block_children);
         }
         return;
     }
@@ -311,8 +334,14 @@ fn paint_layout_box<'a>(
 
     // 2) Recurse into children
     for child in &layout.children {
-        paint_layout_box(child, painter, origin, measurer);
+        if skip_inline_block_children && matches!(child.kind, BoxKind::InlineBlock) {
+            // This inline-block will be painted via the inline formatting context.
+            continue;
+        }
+
+        paint_layout_box(child, painter, origin, measurer, skip_inline_block_children);
     }
+
 }
 
 fn paint_inline_content<'a>(
@@ -337,13 +366,6 @@ fn paint_inline_content<'a>(
         _ => return,
     }
 
-    // Collect inline runs for this block.
-    let runs = collect_inline_runs_for_block(layout.node);
-    if runs.is_empty() {
-        return;
-    }
-
-    // Reconstruct the same "content rect" we conceptually used for inline layout.
     let bm = layout.style.box_metrics;
 
     let content_x = layout.rect.x + bm.padding_left;
@@ -360,10 +382,13 @@ fn paint_inline_content<'a>(
         height: content_height,
     };
 
-    // Run the inline layout engine to get line boxes + fragments.
-    let lines = layout_inline_runs(measurer, block_rect, layout.style, &runs);
+    // Use the painting-aware inline layout: text + inline-block boxes.
+    let lines = layout_inline_for_paint(measurer, block_rect, layout);
+    if lines.is_empty() {
+        return;
+    }
 
-    paint_line_boxes(painter, origin, &lines);
+    paint_line_boxes(painter, origin, &lines, measurer);
 }
 
 fn find_page_background_color(root: &StyledNode<'_>) -> Option<(u8, u8, u8, u8)> {
