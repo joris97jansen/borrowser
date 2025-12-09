@@ -17,17 +17,16 @@ use crate::{
 const INLINE_PADDING: f32 = 4.0;
 
 /// The logical content carried by a line fragment.
-/// For now we only produce `Text`; `Box` will be used for inline-blocks, images, etc.
+/// For now we produce `Text` for inline text and `Box` for inline-level
+/// replaced/box content (e.g., inline-block).
 pub enum InlineFragment<'a> {
     Text {
         text: String,
         style: &'a ComputedStyle,
     },
     Box {
+        /// Style of the inline box (for color, font, etc. as needed).
         style: &'a ComputedStyle,
-        /// The box we’re treating as a single inline unit (e.g., inline-block).
-        /// We won’t construct this variant yet; it’s here for future work.
-        layout: &'a LayoutBox<'a>,
     },
 }
 
@@ -55,8 +54,12 @@ enum InlineToken<'a> {
     Word { text: String, style: &'a ComputedStyle },
     Space { style: &'a ComputedStyle }, // a single collapsible space
     /// A "box token" representing an inline-level box (e.g. inline-block, image).
-    /// Not produced from DOM yet, but the algorithm knows how to lay it out.
-    Box { layout: &'a LayoutBox<'a> },
+    /// Width/height are the *border box* (or equivalent) size in px.
+    Box {
+        width: f32,
+        height: f32,
+        style: &'a ComputedStyle,
+    },
 }
 
 pub fn collect_inline_runs_for_block<'a>(block: &'a StyledNode<'a>) -> Vec<InlineRun<'a>> {
@@ -167,6 +170,38 @@ fn collect_inline_runs_desc<'a>(styled: &'a StyledNode<'a>, out: &mut Vec<Inline
         }
     }
 }
+
+fn collect_inline_block_tokens_from_children<'layout>(
+    children: &[LayoutBox<'layout>],
+    out: &mut Vec<InlineToken<'layout>>,
+) {
+    for child in children {
+        match child.kind {
+            BoxKind::InlineBlock => {
+                let style = child.style;
+                let cbm = child.style.box_metrics;
+
+                let width = child.rect.width;
+                let height = child.rect.height + cbm.margin_top + cbm.margin_bottom;
+
+                out.push(InlineToken::Box {
+                    width,
+                    height,
+                    style,
+                });
+            }
+
+            BoxKind::Inline => {
+                collect_inline_block_tokens_from_children(&child.children, out);
+            }
+
+            BoxKind::Block => {
+                // Block descendants are outside this block's inline formatting context.
+            }
+        }
+    }
+}
+
 
 fn layout_tokens<'a>(
     measurer: &dyn TextMeasurer,
@@ -309,10 +344,7 @@ fn layout_tokens<'a>(
                 is_first_in_line = false;
             }
 
-            InlineToken::Box { layout } => {
-                let box_width = layout.rect.width;
-                let box_height = layout.rect.height;
-
+            InlineToken::Box { width: box_width, height: box_height, style } => {
                 let fits = cursor_x + box_width <= max_x;
 
                 if !fits && !is_first_in_line {
@@ -354,10 +386,7 @@ fn layout_tokens<'a>(
                 };
 
                 line_fragments.push(LineFragment {
-                    kind: InlineFragment::Box {
-                        style: layout.style,
-                        layout,
-                    },
+                    kind: InlineFragment::Box { style },
                     rect: frag_rect,
                 });
 
@@ -489,7 +518,8 @@ fn recompute_block_heights<'a>(
                     cursor_y += bm.margin_top;
 
                     let child_x = parent_x + bm.margin_left;
-                    let child_width = (parent_width - bm.margin_left - bm.margin_right).max(0.0);
+                    let child_width =
+                        (parent_width - bm.margin_left - bm.margin_right).max(0.0);
 
                     let h = recompute_block_heights(measurer, child, child_x, cursor_y, child_width);
                     cursor_y += h + bm.margin_bottom;
@@ -507,11 +537,6 @@ fn recompute_block_heights<'a>(
             }
 
             // --- Block-level element: inline content + block children + padding ---
-            //
-            // We treat:
-            //   border box: node.rect (x, y, width, height)
-            //   content box: inside padding_*
-            //   margins: handled by the parent when placing this node.
 
             let bm = node.style.box_metrics;
 
@@ -519,71 +544,88 @@ fn recompute_block_heights<'a>(
             let content_x = x + bm.padding_left;
             let content_width = (width - bm.padding_left - bm.padding_right).max(0.0);
 
-            // 1a) Inline TEXT height from line boxes
+            // 1) Layout inline-block children so we know their sizes.
+            //
+            //    They do NOT participate in block flow here, but they still need
+            //    their own internal layout computed, so their rect.width/height
+            //    are meaningful when we build box tokens.
+            {
+                for child in &mut node.children {
+                    if matches!(child.kind, BoxKind::InlineBlock) {
+                        let cbm = child.style.box_metrics;
+
+                        // Horizontal position as if it lived in the content box.
+                        let child_x = content_x + cbm.margin_left;
+                        let child_width =
+                            (content_width - cbm.margin_left - cbm.margin_right).max(0.0);
+
+                        // Vertically, for now we place them starting at padding-top;
+                        // the inline engine will decide their final visual y position.
+                        let child_y = y + bm.padding_top + cbm.margin_top;
+
+                        let _ = recompute_block_heights(
+                            measurer,
+                            child,
+                            child_x,
+                            child_y,
+                            child_width,
+                        );
+                    }
+                }
+            }
+
+            // 2) Inline content (text + inline-block boxes) via the inline engine
+
             let mut inline_height = 0.0;
-            let runs = collect_inline_runs_for_block(node.node);
 
-            if !runs.is_empty() {
-                let huge_height = 1_000_000.0;
+            {
+                // 2a) Start with text runs from the style tree.
+                let runs = collect_inline_runs_for_block(node.node);
+                let mut tokens: Vec<InlineToken<'a>> = Vec::new();
 
-                // Inline content lives inside padding-top (and later, padding-left/right).
-                let block_rect = Rectangle {
-                    x: content_x,
-                    y: y + bm.padding_top,
-                    width: content_width,
-                    height: huge_height,
-                };
+                if !runs.is_empty() {
+                    tokens.extend(tokenize_runs(&runs));
+                }
 
-                let lines = layout_inline_runs(measurer, block_rect, node.style, &runs);
-                if let Some(last) = lines.last() {
-                    let last_bottom = last.rect.y + last.rect.height;
-                    // height of all lines, measured from the top of our padding area
-                    inline_height = (last_bottom - (y + bm.padding_top)) + INLINE_PADDING;
+                // 2b) Add Box tokens for inline-block children from the layout tree.
+                collect_inline_block_tokens_from_children(&node.children, &mut tokens);
+
+                if !tokens.is_empty() {
+                    // Give the inline layout a "tall enough" rectangle; it will
+                    // early-out if we run out of vertical space.
+                    let huge_height = 1_000_000.0;
+
+                    // Inline content lives inside padding-top.
+                    let block_rect = Rectangle {
+                        x: content_x,
+                        y: y + bm.padding_top,
+                        width: content_width,
+                        height: huge_height,
+                    };
+
+                    // We now have a general token stream (words, spaces, boxes).
+                    let lines = layout_tokens(measurer, block_rect, node.style, tokens);
+
+                    if let Some(last) = lines.last() {
+                        let last_bottom = last.rect.y + last.rect.height;
+                        // height of all lines, measured from the top of our padding area
+                        inline_height = (last_bottom - (y + bm.padding_top)) + INLINE_PADDING;
+                    }
                 }
             }
 
-            // 1b) Inline-BLOCK children: contribute to inline height, not block flow
-            let mut inline_block_height = 0.0;
-
-            for child in &mut node.children {
-                if !matches!(child.kind, BoxKind::InlineBlock) {
-                    continue;
-                }
-
-                let cbm = child.style.box_metrics;
-
-                // Horizontal placement for now: same content_x, shrunk by margins.
-                let child_x = content_x + cbm.margin_left;
-                let child_width =
-                    (content_width - cbm.margin_left - cbm.margin_right).max(0.0);
-
-                // Vertically, inline-block lives in the inline area starting at padding-top.
-                // Exact baseline alignment will come later; for now we just measure height.
-                let child_y = y + bm.padding_top + cbm.margin_top;
-
-                let h = recompute_block_heights(measurer, child, child_x, child_y, child_width);
-
-                // Total vertical footprint of this inline-block including its margins.
-                let total_h = cbm.margin_top + h + cbm.margin_bottom;
-                if total_h > inline_block_height {
-                    inline_block_height = total_h;
-                }
-            }
-
-            // 1c) Final inline height = text OR inline-blocks, whichever is taller
-            inline_height = inline_height.max(inline_block_height);
-
-            // Fallback: at least one line-height even if no text
+            // Fallback: at least one line-height even if no inline content at all
             if inline_height <= 0.0 {
                 inline_height = measurer.line_height(node.style);
             }
 
-            // 2) Block children start below padding-top + inline content
+            // 3) Block children start below padding-top + inline content
             let content_start_y = y + bm.padding_top + inline_height;
             let mut cursor_y = content_start_y;
 
             for child in &mut node.children {
-                // Skip inline & inline-block children here; we already accounted for them
+                // Skip inline & inline-block children here; we already
+                // accounted for them in the inline formatting context.
                 if matches!(child.kind, BoxKind::Inline | BoxKind::InlineBlock) {
                     continue;
                 }
@@ -605,8 +647,9 @@ fn recompute_block_heights<'a>(
 
             let children_height = cursor_y - content_start_y;
 
-            // 3) Total height = padding-top + inline + children + padding-bottom
-            let total_height = bm.padding_top + inline_height + children_height + bm.padding_bottom;
+            // 4) Total height = padding-top + inline + children + padding-bottom
+            let total_height =
+                bm.padding_top + inline_height + children_height + bm.padding_bottom;
 
             node.rect.height = total_height;
             total_height
