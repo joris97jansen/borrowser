@@ -247,9 +247,9 @@ fn paint_line_boxes<'a>(
                     );
                 }
 
-                InlineFragment::Box { layout: child_box, .. } => {
-                    // For now: draw a simple placeholder rectangle.
-                    let (r, g, b, a) = child_box.style.background_color;
+                InlineFragment::Box { style } => {
+                    // For now: draw a simple placeholder rectangle using the box style.
+                    let (r, g, b, a) = style.background_color;
                     let color = if a > 0 {
                         Color32::from_rgba_unmultiplied(r, g, b, a)
                     } else {
