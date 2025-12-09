@@ -34,7 +34,6 @@ pub enum InlineFragment<'a> {
     },
 }
 
-
 // One fragment of text within a line (later this can be per <span>, <a>, etc.)
 pub struct LineFragment<'a> {
     pub kind: InlineFragment<'a>,
@@ -88,56 +87,59 @@ pub fn collect_inline_runs_for_block<'a>(block: &'a StyledNode<'a>) -> Vec<Inlin
 
 fn tokenize_runs<'a>(runs: &[InlineRun<'a>]) -> Vec<InlineToken<'a>> {
     let mut tokens: Vec<InlineToken<'a>> = Vec::new();
-
-    // This flag tracks "we saw one or more whitespace chars since the last token".
-    // We *only* turn it into a real Space token when we see the next Word.
     let mut pending_space = false;
 
     for run in runs {
-        let style = run.style;
-        let mut current_word = String::new();
+        push_text_as_tokens(&run.text, run.style, &mut tokens, &mut pending_space);
+    }
 
-        for ch in run.text.chars() {
-            if ch.is_whitespace() {
-                // End any current word.
-                if !current_word.is_empty() {
-                    tokens.push(InlineToken::Word {
-                        text: current_word.clone(),
-                        style,
-                    });
-                    current_word.clear();
-                }
-                // Remember that we've seen whitespace; may become a Space later.
-                pending_space = true;
-            } else {
-                // We’re about to start/continue a word.
-                // If there was whitespace *and* we already have some tokens,
-                // emit a single Space before this new word.
-                if pending_space && !tokens.is_empty() {
-                    tokens.push(InlineToken::Space { style });
-                }
-                pending_space = false;
+    tokens
+}
 
-                current_word.push(ch);
+fn push_text_as_tokens<'a>(
+    text: &str,
+    style: &'a ComputedStyle,
+    tokens: &mut Vec<InlineToken<'a>>,
+    pending_space: &mut bool,
+) {
+    let mut current_word = String::new();
+
+    for ch in text.chars() {
+        if ch.is_whitespace() {
+            // End any current word.
+            if !current_word.is_empty() {
+                tokens.push(InlineToken::Word {
+                    text: current_word.clone(),
+                    style,
+                });
+                current_word.clear();
             }
-        }
+            // Remember that we've seen whitespace; may become a Space later.
+            *pending_space = true;
+        } else {
+            // We’re about to start/continue a word.
+            // If there was whitespace *and* we already have some tokens,
+            // emit a single Space before this new word.
+            if *pending_space && !tokens.is_empty() {
+                tokens.push(InlineToken::Space { style });
+            }
+            *pending_space = false;
 
-        // Flush last word in this run
-        if !current_word.is_empty() {
-            tokens.push(InlineToken::Word {
-                text: current_word,
-                style,
-            });
-            // note: pending_space remains as-is (if trailing spaces followed,
-            // they would have set it inside the loop)
+            current_word.push(ch);
         }
+    }
+
+    // Flush last word in this text fragment.
+    if !current_word.is_empty() {
+        tokens.push(InlineToken::Word {
+            text: current_word,
+            style,
+        });
     }
 
     // At the end we deliberately ignore pending_space:
     // trailing whitespace collapses away completely.
-    tokens
 }
-
 
 fn collect_inline_runs_desc<'a>(styled: &'a StyledNode<'a>, out: &mut Vec<InlineRun<'a>>) {
     match styled.node {
@@ -178,33 +180,79 @@ fn collect_inline_runs_desc<'a>(styled: &'a StyledNode<'a>, out: &mut Vec<Inline
     }
 }
 
-fn collect_inline_block_tokens_from_children<'layout>(
-    children: &[LayoutBox<'layout>],
-    out: &mut Vec<InlineToken<'layout>>,
+fn collect_inline_tokens_for_block_layout<'a>(
+    block: &'a LayoutBox<'a>,
+) -> Vec<InlineToken<'a>> {
+    let mut tokens: Vec<InlineToken<'a>> = Vec::new();
+    let mut pending_space = false;
+
+    for child in &block.children {
+        collect_inline_tokens_from_layout_box(child, &mut tokens, &mut pending_space);
+    }
+
+    tokens
+}
+
+fn collect_inline_tokens_from_layout_box<'a>(
+    layout: &'a LayoutBox<'a>,
+    tokens: &mut Vec<InlineToken<'a>>,
+    pending_space: &mut bool,
 ) {
-    for child in children {
-        match child.kind {
-            BoxKind::InlineBlock => {
-                let style = child.style;
-                let cbm = child.style.box_metrics;
-
-                let width = child.rect.width;
-                let height = child.rect.height + cbm.margin_top + cbm.margin_bottom;
-
-                out.push(InlineToken::Box {
-                    width,
-                    height,
-                    style,
-                    layout: None,
-                });
+    match layout.node.node {
+        Node::Text { text } => {
+            if text.is_empty() {
+                return;
             }
+            // Treat the text content as part of the current inline
+            // formatting context using the same whitespace behavior
+            // as tokenize_runs.
+            push_text_as_tokens(text, layout.style, tokens, pending_space);
+        }
 
-            BoxKind::Inline => {
-                collect_inline_block_tokens_from_children(&child.children, out);
-            }
+        Node::Element { .. } | Node::Document { .. } | Node::Comment { .. } => {
+            match layout.kind {
+                BoxKind::Inline => {
+                    // Inline container: recurse into children, they
+                    // participate in the same inline formatting context.
+                    for child in &layout.children {
+                        collect_inline_tokens_from_layout_box(child, tokens, pending_space);
+                    }
+                }
 
-            BoxKind::Block => {
-                // Block descendants are outside this block's inline formatting context.
+                BoxKind::InlineBlock => {
+                    // Inline-block: a single inline box. We do not
+                    // descend into its children here.
+                    //
+                    // If there was pending whitespace, flush it as a
+                    // single Space token before the box (like a word).
+                    if *pending_space && !tokens.is_empty() {
+                        let style = layout.style;
+                        tokens.push(InlineToken::Space { style });
+                        *pending_space = false;
+                    }
+
+                    let style = layout.style;
+                    let cbm = layout.style.box_metrics;
+
+                    let width = layout.rect.width;
+                    let height = layout.rect.height + cbm.margin_top + cbm.margin_bottom;
+
+                    tokens.push(InlineToken::Box {
+                        width,
+                        height,
+                        style,
+                        layout: None, // height computation path: no layout ref
+                    });
+                }
+
+                BoxKind::Block => {
+                    // Block descendants are separate block formatting
+                    // contexts. They do not contribute to this block's
+                    // inline content. We *do* treat any text nodes as
+                    // inline content (handled above by Node::Text),
+                    // but for Element/Document/Comment with Block kind
+                    // we stop here.
+                }
             }
         }
     }
@@ -641,16 +689,8 @@ fn recompute_block_heights<'a>(
             let mut inline_height = 0.0;
 
             {
-                // 2a) Start with text runs from the style tree.
-                let runs = collect_inline_runs_for_block(node.node);
-                let mut tokens: Vec<InlineToken<'a>> = Vec::new();
-
-                if !runs.is_empty() {
-                    tokens.extend(tokenize_runs(&runs));
-                }
-
-                // 2b) Add Box tokens for inline-block children from the layout tree.
-                collect_inline_block_tokens_from_children(&node.children, &mut tokens);
+                // Collect inline tokens directly from the layout tree, in DOM order.
+                let tokens = collect_inline_tokens_for_block_layout(node);
 
                 if !tokens.is_empty() {
                     // Give the inline layout a "tall enough" rectangle; it will
@@ -665,12 +705,11 @@ fn recompute_block_heights<'a>(
                         height: huge_height,
                     };
 
-                    // We now have a general token stream (words, spaces, boxes).
                     let lines = layout_tokens(measurer, block_rect, node.style, tokens);
 
                     if let Some(last) = lines.last() {
                         let last_bottom = last.rect.y + last.rect.height;
-                        // height of all lines, measured from the top of our padding area
+                        // height of all lines, measured from the top of our padding area.
                         inline_height = (last_bottom - (y + bm.padding_top)) + INLINE_PADDING;
                     }
                 }
