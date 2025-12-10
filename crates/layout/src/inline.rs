@@ -1,5 +1,4 @@
 use css::{
-    StyledNode,
     ComputedStyle,
     Length,
     Display,
@@ -15,6 +14,18 @@ use crate::{
 };
 
 const INLINE_PADDING: f32 = 4.0;
+
+// Inline layout pipeline
+//
+// DOM → StyledNode → LayoutBox
+//       ↓ (for inline blocks)
+//   collect_inline_tokens_for_block_layout[ _for_paint ]
+//       ↓
+//   layout_tokens → Vec<LineBox<'a>> (with InlineFragment::Text / Box)
+//
+// Height uses:    collect_inline_tokens_for_block_layout
+// Painting uses:  collect_inline_tokens_for_block_layout_for_paint
+
 
 /// The logical content carried by a line fragment.
 /// - `Text` is inline text
@@ -40,12 +51,6 @@ pub struct LineFragment<'a> {
     pub rect: Rectangle,
 }
 
-// A logical piece of inline content with a single style
-pub struct InlineRun<'a> {
-    pub text: String,
-    style: &'a ComputedStyle,
-}
-
 // One line box: a horizontal slice of inline content.
 pub struct LineBox<'a> {
     pub fragments: Vec<LineFragment<'a>>,
@@ -66,34 +71,6 @@ enum InlineToken<'a> {
         /// Layout box, if we want to paint its subtree later.
         layout: Option<&'a LayoutBox<'a>>,
     },
-}
-
-pub fn collect_inline_runs_for_block<'a>(block: &'a StyledNode<'a>) -> Vec<InlineRun<'a>> {
-    let mut runs = Vec::new();
-
-    match block.node {
-        Node::Element { .. } | Node::Document { .. } => {
-            for child in &block.children {
-                collect_inline_runs_desc(child, &mut runs);
-            }
-        }
-        _ => {
-            // For text/comment root we do nothing; blocks are Elements/Document.
-        }
-    }
-
-    runs
-}
-
-fn tokenize_runs<'a>(runs: &[InlineRun<'a>]) -> Vec<InlineToken<'a>> {
-    let mut tokens: Vec<InlineToken<'a>> = Vec::new();
-    let mut pending_space = false;
-
-    for run in runs {
-        push_text_as_tokens(&run.text, run.style, &mut tokens, &mut pending_space);
-    }
-
-    tokens
 }
 
 fn push_text_as_tokens<'a>(
@@ -139,45 +116,6 @@ fn push_text_as_tokens<'a>(
 
     // At the end we deliberately ignore pending_space:
     // trailing whitespace collapses away completely.
-}
-
-fn collect_inline_runs_desc<'a>(styled: &'a StyledNode<'a>, out: &mut Vec<InlineRun<'a>>) {
-    match styled.node {
-        Node::Text { text } => {
-            let trimmed = text.trim();
-            if !trimmed.is_empty() {
-                out.push(InlineRun {
-                    // Keep original contents; we’ll handle spaces in layout
-                    text: text.clone(),
-                    style: &styled.style,
-                });
-            }
-        }
-
-        Node::Element { .. } => {
-            match styled.style.display {
-                Display::Inline => {
-                    // Inline element: participate in this inline formatting context.
-                    // We recurse into children because text/other inline descendants
-                    // will be turned into InlineRuns here.
-                    for child in &styled.children {
-                        collect_inline_runs_desc(child, out);
-                    }
-                }
-                _ => {
-                    // Non-inline elements (block, list-item, inline-block, etc.)
-                    // terminate this inline formatting context.
-                    // Their content will be handled by their own LayoutBox.
-                }
-            }
-        }
-
-        Node::Document { .. } | Node::Comment { .. } => {
-            for child in &styled.children {
-                collect_inline_runs_desc(child, out);
-            }
-        }
-    }
 }
 
 fn collect_inline_tokens_for_block_layout<'a>(
@@ -561,20 +499,6 @@ fn layout_tokens<'a>(
     lines
 }
 
-pub fn layout_inline_runs<'a>(
-    measurer: &dyn TextMeasurer,
-    rect: Rectangle,
-    block_style: &'a ComputedStyle,
-    runs: &[InlineRun<'a>],
-) -> Vec<LineBox<'a>> {
-    // 1) Turn text runs into tokens (Word/Space) with whitespace collapsing.
-    let tokens = tokenize_runs(runs);
-
-    // 2) Delegate to the generic token layout engine,
-    // which *can* handle Box tokens but currently only sees text tokens here.
-    layout_tokens(measurer, rect, block_style, tokens)
-}
-
 pub fn refine_layout_with_inline<'a>(
     measurer: &dyn TextMeasurer,
     layout_root: &mut LayoutBox<'a>,
@@ -720,8 +644,8 @@ fn recompute_block_heights<'a>(
                 }
             }
 
-            // 2) Inline content (text + inline-block boxes) via the inline engine
-
+            // 2) Inline content (text + inline-block boxes) via the inline engine,
+            //    using layout-based inline token enumeration in DOM order.
             let mut inline_height = 0.0;
 
             {

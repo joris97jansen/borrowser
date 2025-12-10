@@ -344,6 +344,10 @@ fn paint_layout_box<'a>(
 
 }
 
+// Paint a sequence of LineBox/LineFragment produced by the inline engine.
+// Text fragments are painted directly; Box fragments (inline-blocks) are
+// painted by translating the associated LayoutBox subtree into the fragment
+// rect position.
 fn paint_inline_content<'a>(
     layout: &LayoutBox<'a>,
     painter: &Painter,
@@ -382,7 +386,9 @@ fn paint_inline_content<'a>(
         height: content_height,
     };
 
-    // Use the painting-aware inline layout: text + inline-block boxes.
+    // Use the painting-aware inline layout: text + inline-block boxes,
+    // enumerated from the layout tree in DOM order. LineBox/LineFragment are
+    // the source of truth for inline geometry here.
     let lines = layout_inline_for_paint(measurer, block_rect, layout);
     if lines.is_empty() {
         return;
