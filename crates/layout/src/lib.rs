@@ -34,6 +34,15 @@ pub enum BoxKind {
     // Future: AnonymousBlock, ListItem, etc.
 }
 
+/// What kind of list marker this block has, if any.
+#[derive(Clone, Copy, Debug)]
+pub enum ListMarker {
+    /// Bullet for unordered lists (<ul><li>).
+    Unordered,
+    /// Numbered marker for ordered lists (<ol><li>), 1-based.
+    Ordered(u32),
+}
+
 /// A node in the layout tree:
 /// - points to a styled node
 /// - has a geometry rect
@@ -44,6 +53,7 @@ pub struct LayoutBox<'a> {
     pub node: &'a StyledNode<'a>,
     pub rect: Rectangle,
     pub children: Vec<LayoutBox<'a>>,
+    pub list_marker: Option<ListMarker>,
 }
 
 /// Compute block layout for a style tree.
@@ -95,6 +105,7 @@ fn layout_block_subtree<'a>(
             node: styled,
             rect,
             children: children_boxes,
+            list_marker: None,
         };
 
         let next_y = y + height;
@@ -136,8 +147,37 @@ fn layout_block_subtree<'a>(
 
     // Lay out children vertically
     if matches!(styled.node, Node::Document { .. } | Node::Element { .. }) {
+        // Detect whether this element is a <ul> or <ol>.
+        let (is_ul, is_ol) = match styled.node {
+            html::Node::Element { name, .. } => {
+                let is_ul = name.eq_ignore_ascii_case("ul");
+                let is_ol = name.eq_ignore_ascii_case("ol");
+                (is_ul, is_ol)
+            }
+            _ => (false, false),
+        };
+
+        // For <ol>, we number <li> children starting at 1.
+        let mut next_ol_index: u32 = 1;
+
         for child in &styled.children {
-            let (child_box, new_cursor) = layout_block_subtree(child, x, cursor_y, width);
+            let (mut child_box, new_cursor) = layout_block_subtree(child, x, cursor_y, width);
+
+            // If this is a list container (<ul> / <ol>) and the child is a list-item,
+            // assign a marker.
+            if let html::Node::Element { .. } = child.node {
+                if child_box.style.display == Display::ListItem {
+                    if is_ul {
+                        // <ul><li> → bullet
+                        child_box.list_marker = Some(ListMarker::Unordered);
+                    } else if is_ol {
+                        // <ol><li> → numbered, 1-based
+                        child_box.list_marker = Some(ListMarker::Ordered(next_ol_index));
+                        next_ol_index += 1;
+                    }
+                }
+            }
+
             cursor_y = new_cursor;
             children_boxes.push(child_box);
         }
@@ -189,6 +229,7 @@ fn layout_block_subtree<'a>(
         node: styled,
         rect,
         children: children_boxes,
+        list_marker: None,
     };
 
     let next_y = y + height;

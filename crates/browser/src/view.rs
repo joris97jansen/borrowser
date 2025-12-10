@@ -20,6 +20,7 @@ use layout::{
     TextMeasurer,
     Rectangle,
     BoxKind,
+    ListMarker,
     inline::{
         LineBox,
         InlineFragment,
@@ -329,10 +330,16 @@ fn paint_layout_box<'a>(
         );
     }
 
-    // 1) Inline content
+    // 1) List marker (for display:list-item), if any.
+    //    This does not affect layout; it's purely visual.
+    if matches!(layout.style.display, Display::ListItem) {
+        paint_list_marker(layout, painter, origin, measurer);
+    }
+
+    // 2) Inline content
     paint_inline_content(layout, painter, origin, measurer);
 
-    // 2) Recurse into children
+    // 3) Recurse into children
     for child in &layout.children {
         if skip_inline_block_children && matches!(child.kind, BoxKind::InlineBlock) {
             // This inline-block will be painted via the inline formatting context.
@@ -341,7 +348,61 @@ fn paint_layout_box<'a>(
 
         paint_layout_box(child, painter, origin, measurer, skip_inline_block_children);
     }
+}
 
+fn paint_list_marker<'a>(
+    layout: &LayoutBox<'a>,
+    painter: &Painter,
+    origin: Pos2,
+    measurer: &dyn TextMeasurer,
+) {
+    let marker = match layout.list_marker {
+        Some(m) => m,
+        None => return, // nothing to paint
+    };
+
+    // Choose marker text: bullet or number.
+    let marker_text = match marker {
+        ListMarker::Unordered => "•".to_string(),
+        ListMarker::Ordered(index) => format!("{index}."),
+    };
+
+    // Use the list item's text style for the marker.
+    let style = layout.style;
+    let (cr, cg, cb, ca) = style.color;
+    let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
+
+    let font_px = match style.font_size {
+        Length::Px(px) => px,
+    };
+    let font_id = FontId::proportional(font_px);
+
+    // Position: slightly to the left of the content box (padding-left),
+    // aligned with the top of the content. This doesn't change layout height.
+    let bm = layout.style.box_metrics;
+
+    // Content box x/y in layout coordinates (same as inline content start).
+    let content_x = layout.rect.x + bm.padding_left;
+    let content_y = layout.rect.y + bm.padding_top;
+
+    // Measure marker width so we can place it just to the left of the content.
+    let marker_width = measurer.measure(&marker_text, style);
+
+    // How much gap between marker and content.
+    let gap = 4.0;
+
+    let marker_pos = Pos2 {
+        x: origin.x + content_x - marker_width - gap,
+        y: origin.y + content_y,
+    };
+
+    painter.text(
+        marker_pos,
+        Align2::LEFT_TOP,
+        marker_text,
+        font_id,
+        text_color,
+    );
 }
 
 // Paint a sequence of LineBox/LineFragment produced by the inline engine.
