@@ -4,8 +4,6 @@ pub use text::TextMeasurer;
 pub mod inline;
 pub use inline::{
         LineBox,
-        collect_inline_runs_for_block,
-        layout_inline_runs,
         refine_layout_with_inline,
         layout_inline_for_paint,
 };
