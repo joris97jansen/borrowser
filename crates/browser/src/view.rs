@@ -21,6 +21,9 @@ use layout::{
     Rectangle,
     BoxKind,
     ListMarker,
+    content_x_and_width,
+    content_y,
+    content_height,
     inline::{
         LineBox,
         InlineFragment,
@@ -431,14 +434,11 @@ fn paint_inline_content<'a>(
         _ => return,
     }
 
-    let bm = layout.style.box_metrics;
-
-    let content_x = layout.rect.x + bm.padding_left;
-    let content_y = layout.rect.y + bm.padding_top;
-    let content_width =
-        (layout.rect.width - bm.padding_left - bm.padding_right).max(0.0);
-    let content_height =
-        (layout.rect.height - bm.padding_top - bm.padding_bottom).max(0.0);
+    // Compute the content box consistently with the layout engine.
+    let (content_x, content_width) =
+        content_x_and_width(layout.style, layout.rect.x, layout.rect.width);
+    let content_y = content_y(layout.style, layout.rect.y);
+    let content_height = content_height(layout.style, layout.rect.height);
 
     let block_rect = Rectangle {
         x: content_x,
@@ -451,6 +451,7 @@ fn paint_inline_content<'a>(
     // enumerated from the layout tree in DOM order. LineBox/LineFragment are
     // the source of truth for inline geometry here.
     let lines = layout_inline_for_paint(measurer, block_rect, layout);
+
     if lines.is_empty() {
         return;
     }

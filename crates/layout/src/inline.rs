@@ -11,6 +11,8 @@ use crate::{
     TextMeasurer,
     LayoutBox,
     BoxKind,
+    content_x_and_width,
+    content_y,
 };
 
 const INLINE_PADDING: f32 = 4.0;
@@ -610,15 +612,14 @@ fn recompute_block_heights<'a>(
 
             let bm = node.style.box_metrics;
 
-            // Content area horizontally: inside padding-left/right
-            let content_x = x + bm.padding_left;
-            let content_width = (width - bm.padding_left - bm.padding_right).max(0.0);
+            // Content box horizontally: inside padding-left/right
+            let (content_x, content_width) = content_x_and_width(node.style, x, width);
+
+            // Content box top (used as the baseline for inline layout)
+            let content_top = content_y(node.style, y);
 
             // 1) Layout inline-block children so we know their sizes.
             //
-            //    They do NOT participate in block flow here, but they still need
-            //    their own internal layout computed, so their rect.width/height
-            //    are meaningful when we build box tokens.
             {
                 for child in &mut node.children {
                     if matches!(child.kind, BoxKind::InlineBlock) {
@@ -629,9 +630,9 @@ fn recompute_block_heights<'a>(
                         let child_width =
                             (content_width - cbm.margin_left - cbm.margin_right).max(0.0);
 
-                        // Vertically, for now we place them starting at padding-top;
+                        // Vertically, for now we place them starting at content_top;
                         // the inline engine will decide their final visual y position.
-                        let child_y = y + bm.padding_top + cbm.margin_top;
+                        let child_y = content_top + cbm.margin_top;
 
                         let _ = recompute_block_heights(
                             measurer,
@@ -657,10 +658,10 @@ fn recompute_block_heights<'a>(
                     // early-out if we run out of vertical space.
                     let huge_height = 1_000_000.0;
 
-                    // Inline content lives inside padding-top.
+                    // Inline content lives entirely inside the content box.
                     let block_rect = Rectangle {
                         x: content_x,
-                        y: y + bm.padding_top,
+                        y: content_top,
                         width: content_width,
                         height: huge_height,
                     };
@@ -669,8 +670,8 @@ fn recompute_block_heights<'a>(
 
                     if let Some(last) = lines.last() {
                         let last_bottom = last.rect.y + last.rect.height;
-                        // height of all lines, measured from the top of our padding area.
-                        inline_height = (last_bottom - (y + bm.padding_top)) + INLINE_PADDING;
+                        // height of all lines, measured from the top of our content box.
+                        inline_height = (last_bottom - content_top) + INLINE_PADDING;
                     }
                 }
             }
@@ -680,8 +681,8 @@ fn recompute_block_heights<'a>(
                 inline_height = measurer.line_height(node.style);
             }
 
-            // 3) Block children start below padding-top + inline content
-            let content_start_y = y + bm.padding_top + inline_height;
+            // 3) Block children start below content_top + inline content
+            let content_start_y = content_top + inline_height;
             let mut cursor_y = content_start_y;
 
             for child in &mut node.children {
