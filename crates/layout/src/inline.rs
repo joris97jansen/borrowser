@@ -258,33 +258,76 @@ fn collect_inline_tokens_from_layout_box<'a>(
     }
 }
 
-fn collect_inline_block_tokens_from_children_for_paint<'layout>(
-    children: &'layout [LayoutBox<'layout>],
-    out: &mut Vec<InlineToken<'layout>>,
+fn collect_inline_tokens_for_block_layout_for_paint<'a>(
+    block: &'a LayoutBox<'a>,
+) -> Vec<InlineToken<'a>> {
+    let mut tokens: Vec<InlineToken<'a>> = Vec::new();
+    let mut pending_space = false;
+
+    for child in &block.children {
+        collect_inline_tokens_from_layout_box_for_paint(child, &mut tokens, &mut pending_space);
+    }
+
+    tokens
+}
+
+fn collect_inline_tokens_from_layout_box_for_paint<'a>(
+    layout: &'a LayoutBox<'a>,
+    tokens: &mut Vec<InlineToken<'a>>,
+    pending_space: &mut bool,
 ) {
-    for child in children {
-        match child.kind {
-            BoxKind::InlineBlock => {
-                let style = child.style;
-                let cbm = child.style.box_metrics;
-
-                let width = child.rect.width;
-                let height = child.rect.height + cbm.margin_top + cbm.margin_bottom;
-
-                out.push(InlineToken::Box {
-                    width,
-                    height,
-                    style,
-                    layout: Some(child), // <--- painting path keeps a reference
-                });
+    match layout.node.node {
+        Node::Text { text } => {
+            if text.is_empty() {
+                return;
             }
+            // Same whitespace behavior as tokenize_runs / height path.
+            push_text_as_tokens(text, layout.style, tokens, pending_space);
+        }
 
-            BoxKind::Inline => {
-                collect_inline_block_tokens_from_children_for_paint(&child.children, out);
-            }
+        Node::Element { .. } | Node::Document { .. } | Node::Comment { .. } => {
+            match layout.kind {
+                BoxKind::Inline => {
+                    // Inline container: recurse into children, they
+                    // participate in the same inline formatting context.
+                    for child in &layout.children {
+                        collect_inline_tokens_from_layout_box_for_paint(
+                            child,
+                            tokens,
+                            pending_space,
+                        );
+                    }
+                }
 
-            BoxKind::Block => {
-                // outside this block's inline formatting context
+                BoxKind::InlineBlock => {
+                    // Inline-block: single inline box; do not descend.
+                    //
+                    // If there was pending whitespace, flush it as a Space
+                    // token before the box (like a word).
+                    if *pending_space && !tokens.is_empty() {
+                        let style = layout.style;
+                        tokens.push(InlineToken::Space { style });
+                        *pending_space = false;
+                    }
+
+                    let style = layout.style;
+                    let cbm = layout.style.box_metrics;
+
+                    let width = layout.rect.width;
+                    let height = layout.rect.height + cbm.margin_top + cbm.margin_bottom;
+
+                    tokens.push(InlineToken::Box {
+                        width,
+                        height,
+                        style,
+                        layout: Some(layout), // painting path: keep a layout ref
+                    });
+                }
+
+                BoxKind::Block => {
+                    // Block descendants are separate block formatting contexts.
+                    // They do not contribute to this block's inline content.
+                }
             }
         }
     }
@@ -295,22 +338,15 @@ pub fn layout_inline_for_paint<'a>(
     rect: Rectangle,
     block: &'a LayoutBox<'a>,
 ) -> Vec<LineBox<'a>> {
-    // 1) Text runs from the style tree (same as before)
-    let runs = collect_inline_runs_for_block(block.node);
-    let mut tokens: Vec<InlineToken<'a>> = Vec::new();
-
-    if !runs.is_empty() {
-        tokens.extend(tokenize_runs(&runs));
-    }
-
-    // 2) Inline-block children from the layout tree, with layout: Some(child)
-    collect_inline_block_tokens_from_children_for_paint(&block.children, &mut tokens);
+    // Unified layout-based token enumeration (DOM order):
+    // text + inline-block boxes from the layout tree.
+    let tokens = collect_inline_tokens_for_block_layout_for_paint(block);
 
     if tokens.is_empty() {
         return Vec::new();
     }
 
-    // 3) Lay them out with the generic token engine.
+    // Lay them out with the same generic token engine as the height path.
     layout_tokens(measurer, rect, block.style, tokens)
 }
 
