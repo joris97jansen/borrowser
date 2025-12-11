@@ -4,7 +4,6 @@ pub use text::TextMeasurer;
 pub mod inline;
 pub use inline::{
         LineBox,
-        refine_layout_with_inline,
         layout_inline_for_paint,
 };
 
@@ -125,7 +124,8 @@ pub fn layout_block_tree<'a>(
 /// Internal recursive function:
 /// - `x`, `y` = top-left of this box
 /// - `width`  = available width
-/// Returns (layout box, next y position after this box).
+/// Builds a LayoutBox subtree with correct x/y/width, but height = 0.0.
+/// The unified inline-aware pass will compute final heights.
 fn layout_block_subtree<'a>(
     styled: &'a StyledNode<'a>,
     x: f32,
