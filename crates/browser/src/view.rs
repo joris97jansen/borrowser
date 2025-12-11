@@ -27,10 +27,10 @@ use layout::{
     inline::{
         LineBox,
         InlineFragment,
-        refine_layout_with_inline,
         layout_inline_for_paint,
     }
 };
+
 use egui::{
     Align,
     Button,
@@ -198,12 +198,9 @@ pub fn page_viewport(ui: &mut Ui, style_root: &StyledNode<'_>) {
             let available_width = ui.available_width();
             let min_height = ui.available_height().max(200.0);
 
-            // 2) Block layout
-            let mut layout_root = layout_block_tree(style_root, available_width);
-
-            // 2b) Refine block heights using inline layout
+            // 2) Block layout (inline-aware, single authoritative pass)
             let measurer = EguiTextMeasurer::new(ui.ctx());
-            refine_layout_with_inline(&measurer, &mut layout_root);
+            let layout_root = layout_block_tree(style_root, available_width, &measurer);
 
             let content_height = layout_root.rect.height.max(min_height);
 
