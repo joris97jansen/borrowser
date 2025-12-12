@@ -518,19 +518,21 @@ fn recompute_block_heights<'a>(
     node: &mut LayoutBox<'a>,
     x: f32,
     y: f32,
-    width: f32,
+    available_width: f32,
 ) -> f32 {
     // Position & width are authoritative here
     node.rect.x = x;
     node.rect.y = y;
-    node.rect.width = width;
+
+    let used_width = resolve_used_width_for_block(node.style, &node.node.node, available_width);
+    node.rect.width = used_width;
 
     // Non-rendering elements: pure containers (but children still have margins)
     if is_non_rendering_element(node.node.node) {
         let mut cursor_y = y;
 
         let parent_x = x;
-        let parent_width = width;
+        let parent_width = used_width;
 
         for child in &mut node.children {
             let bm = child.style.box_metrics;
@@ -557,7 +559,7 @@ fn recompute_block_heights<'a>(
             let mut cursor_y = y;
 
             let parent_x = x;
-            let parent_width = width;
+            let parent_width = used_width;
 
             for child in &mut node.children {
                 let bm = child.style.box_metrics;
@@ -582,7 +584,7 @@ fn recompute_block_heights<'a>(
                 let mut cursor_y = y;
 
                 let parent_x = x;
-                let parent_width = width;
+                let parent_width = used_width;
 
                 for child in &mut node.children {
                     let bm = child.style.box_metrics;
@@ -613,7 +615,7 @@ fn recompute_block_heights<'a>(
             let bm = node.style.box_metrics;
 
             // Content box horizontally: inside padding-left/right
-            let (content_x, content_width) = content_x_and_width(node.style, x, width);
+            let (content_x, content_width) = content_x_and_width(node.style, x, used_width);
 
             // Content box top (used as the baseline for inline layout)
             let content_top = content_y(node.style, y);
@@ -723,4 +725,25 @@ fn recompute_block_heights<'a>(
             0.0
         }
     }
+}
+
+fn resolve_used_width_for_block(
+    style: &ComputedStyle,
+    node: &html::Node,
+    available_width: f32,
+) -> f32 {
+    // Default: fill the available width.
+    let mut w = available_width.max(0.0);
+
+    // Only apply width to elements (not Document/Text/Comment),
+    // and only if they are not display:inline.
+    if let html::Node::Element { .. } = node {
+        if !matches!(style.display, Display::Inline) {
+            if let Some(Length::Px(px)) = style.width {
+                w = px.max(0.0);
+            }
+        }
+    }
+
+    w
 }

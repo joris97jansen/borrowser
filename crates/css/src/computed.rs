@@ -57,6 +57,10 @@ pub struct ComputedStyle {
     /// Not inherited in CSS. For now we default to Block; later we’ll
     /// override this with per-element defaults.
     pub display: Display,
+
+    /// Optional width property. Not inherited. For now we treat this
+    /// as `px` only when specified.
+    pub width: Option<Length>,
 }
 
 impl ComputedStyle {
@@ -67,6 +71,7 @@ impl ComputedStyle {
             font_size: Length::Px(16.0),        // "16px" default
             box_metrics: BoxMetrics::zero(),    // zero margins/padding
             display: Display::Block,            // default to Block for now
+            width: None,                        // auto
         }
     }
 }
@@ -187,7 +192,14 @@ pub fn compute_style(
                 }
                 // unknown values: parse_display returns None → silently ignored
             }
-            
+            "width" => {
+                let v = value.trim().to_ascii_lowercase();
+                if v == "auto" {
+                    result.width = None;
+                } else if let Some(px) = parse_px(&v) {
+                    result.width = Some(Length::Px(px));
+                }
+            }
             _ => {
                 // unsupported property → ignored (CSS spec: unknown declarations are ignored)
             }
@@ -223,6 +235,14 @@ fn default_display_for(tag: &str) -> Display {
     Display::Block
 }
 
+fn parse_px(value: &str) -> Option<f32> {
+    let v = value.trim();
+    if let Some(stripped) = v.strip_suffix("px") {
+        stripped.trim().parse::<f32>().ok()
+    } else {
+        None
+    }
+}
 
 /// Build a style tree from a DOM root.
 /// - `root` is the DOM node (usually the document root)
