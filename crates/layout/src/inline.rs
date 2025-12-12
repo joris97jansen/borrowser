@@ -732,18 +732,33 @@ fn resolve_used_width_for_block(
     node: &html::Node,
     available_width: f32,
 ) -> f32 {
-    // Default: fill the available width.
+    // 1) Start from available width.
     let mut w = available_width.max(0.0);
 
-    // Only apply width to elements (not Document/Text/Comment),
-    // and only if they are not display:inline.
+    // 2) Apply explicit width for non-inline elements.
     if let html::Node::Element { .. } = node {
         if !matches!(style.display, Display::Inline) {
             if let Some(Length::Px(px)) = style.width {
-                w = px.max(0.0);
+                if px >= 0.0 {
+                    w = px;
+                }
             }
         }
     }
 
-    w
+    // 3) Apply min-width / max-width (px-only).
+    if let Some(Length::Px(min_px)) = style.min_width {
+        if min_px >= 0.0 {
+            w = w.max(min_px);
+        }
+    }
+
+    if let Some(Length::Px(max_px)) = style.max_width {
+        if max_px >= 0.0 {
+            w = w.min(max_px);
+        }
+    }
+
+    // Final safety: never negative.
+    w.max(0.0)
 }

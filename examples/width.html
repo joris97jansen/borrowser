@@ -1,0 +1,47 @@
+<!doctype html>
+<html>
+<head>
+  <style>
+    body { background-color: white; }
+
+    .row { margin-bottom: 10px; }
+
+    .box {
+      background-color: red;
+      padding: 10px;
+      margin: 10px;
+    }
+
+    .green { background-color: green; }
+    .blue  { background-color: blue; }
+  </style>
+</head>
+
+<body>
+
+<div class="row box">
+  default (auto width)
+</div>
+
+<div class="row box green" style="width: 200px;">
+  width: 200px (fixed)
+</div>
+
+<div class="row box blue" style="min-width: 400px;">
+  min-width: 400px (should never get smaller than 400px)
+</div>
+
+<div class="row box" style="max-width: 300px;">
+  max-width: 300px (should never get wider than 300px)
+</div>
+
+<div class="row box green" style="width: 500px; max-width: 300px;">
+  width: 500px + max-width: 300px (should clamp to 300px)
+</div>
+
+<div class="row box blue" style="width: 200px; min-width: 400px;">
+  width: 200px + min-width: 400px (should clamp to 400px)
+</div>
+
+</body>
+</html>
