@@ -524,7 +524,7 @@ fn recompute_block_heights<'a>(
     node.rect.x = x;
     node.rect.y = y;
 
-    let used_width = resolve_used_width_for_block(node.style, &node.node.node, available_width);
+    let used_width = resolve_used_width_for_block(node.style, &node.node.node, node.kind, available_width);
     node.rect.width = used_width;
 
     // Non-rendering elements: pure containers (but children still have margins)
@@ -730,6 +730,7 @@ fn recompute_block_heights<'a>(
 fn resolve_used_width_for_block(
     style: &ComputedStyle,
     node: &html::Node,
+    kind: BoxKind,
     available_width: f32,
 ) -> f32 {
     // 1) Start from available width.
@@ -744,6 +745,15 @@ fn resolve_used_width_for_block(
                 }
             }
         }
+
+        // Naïve shrink-to-fit **only** for inline-block:
+        //
+        // - If width was specified, we keep it but clamp to available_width.
+        // - If width was not specified, we just keep the "fill available" default.
+        // - In both cases we cap at available_width to avoid horizontal overflow.
+        if matches!(kind, BoxKind::InlineBlock) {
+            w = w.min(available_width.max(0.0));
+        }
     }
 
     // 3) Apply min-width / max-width (px-only).
@@ -757,6 +767,11 @@ fn resolve_used_width_for_block(
         if max_px >= 0.0 {
             w = w.min(max_px);
         }
+    }
+
+    // 4) FINAL clamp for inline-block (naïve shrink-to-fit)
+    if matches!(kind, BoxKind::InlineBlock) {
+        w = w.min(available_width.max(0.0));
     }
 
     // Final safety: never negative.
