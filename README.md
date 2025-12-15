@@ -12,6 +12,20 @@ Think **Borrow Checker** + **Browser** → **Borrowser**.
 A full browser engine built with Rust’s safety and clarity, nothing borrowed from Chromium 😉.
 
 ---
+## Next steps
+
+1.  **HTML Replaced Elements & Form Controls** (Phase 1: `<img>`, `<a>`, `<input type=text>`)
+    
+2.  **Border Support** (borders + border-radius basics)
+    
+    -   inputs/buttons look awful without borders; also helps with debugging layout boxes.
+        
+3.  **CSS Color Support** (to reduce “everything looks wrong” quickly)
+    
+4.  **CSS Unit Support** (em/rem/% etc.)
+    
+5.  **Inline Formatting Polishing** (baseline/vertical-align, better line-height behavior, etc.)
+---
 
 ## ✨ Current Capabilities
 
