@@ -12,8 +12,10 @@ use css::{
     StyledNode,
     Display,
 };
-use html::dom_utils::is_non_rendering_element;
-
+use html::{
+    Node,
+    dom_utils::is_non_rendering_element
+};
 
 /// A rectangle in CSS px units (we'll treat everything as px for now).
 #[derive(Clone, Copy, Debug)]
@@ -22,6 +24,79 @@ pub struct Rectangle {
     pub y: f32,
     pub width: f32,
     pub height: f32,
+}
+
+/// What kind of layout box this is. For now: only block.
+#[derive(Clone, Copy, Debug)]
+pub enum BoxKind {
+    Block,
+    Inline,
+    InlineBlock,
+    ReplacedInline,
+    // Future: AnonymousBlock, ListItem, etc.
+}
+
+/// What kind of list marker this block has, if any.
+#[derive(Clone, Copy, Debug)]
+pub enum ListMarker {
+    /// Bullet for unordered lists (<ul><li>).
+    Unordered,
+    /// Numbered marker for ordered lists (<ol><li>), 1-based.
+    Ordered(u32),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ReplacedKind {
+    Img,
+    InputText,
+    Button,
+}
+
+/// Classify replaced elements for layout purposes.
+fn classify_replaced_kind(node: &Node) -> Option<ReplacedKind> {
+    match node {
+        Node::Element { name, attributes, .. } => {
+            if name.eq_ignore_ascii_case("img") {
+                return Some(ReplacedKind::Img);
+            }
+
+            if name.eq_ignore_ascii_case("input") {
+                // Phase 1: only <input type="text"> (or missing type)
+                let mut ty: Option<&str> = None;
+                for (k, v) in attributes {
+                    if k.eq_ignore_ascii_case("type") {
+                        ty = v.as_deref();
+                        break;
+                    }
+                }
+                let is_text = ty.map(|t| t.eq_ignore_ascii_case("text")).unwrap_or(true);
+                if is_text {
+                    return Some(ReplacedKind::InputText);
+                }
+            }
+
+            if name.eq_ignore_ascii_case("button") {
+                return Some(ReplacedKind::Button);
+            }
+
+            None
+        }
+        _ => None,
+    }
+}
+
+/// A node in the layout tree:
+/// - points to a styled node
+/// - has a geometry rect
+/// - has child layout boxes
+pub struct LayoutBox<'a> {
+    pub kind: BoxKind,
+    pub style: &'a ComputedStyle,
+    pub node: &'a StyledNode<'a>,
+    pub rect: Rectangle,
+    pub children: Vec<LayoutBox<'a>>,
+    pub list_marker: Option<ListMarker>,
+    pub replaced: Option<ReplacedKind>,
 }
 
 /// The inner "content box" of a layout box: border box minus padding.
@@ -68,37 +143,6 @@ pub fn content_height(style: &ComputedStyle, border_height: f32) -> f32 {
     content_height
 }
 
-/// What kind of layout box this is. For now: only block.
-#[derive(Clone, Copy, Debug)]
-pub enum BoxKind {
-    Block,
-    Inline,
-    InlineBlock,
-    // Future: AnonymousBlock, ListItem, etc.
-}
-
-/// What kind of list marker this block has, if any.
-#[derive(Clone, Copy, Debug)]
-pub enum ListMarker {
-    /// Bullet for unordered lists (<ul><li>).
-    Unordered,
-    /// Numbered marker for ordered lists (<ol><li>), 1-based.
-    Ordered(u32),
-}
-
-/// A node in the layout tree:
-/// - points to a styled node
-/// - has a geometry rect
-/// - has child layout boxes
-pub struct LayoutBox<'a> {
-    pub kind: BoxKind,
-    pub style: &'a ComputedStyle,
-    pub node: &'a StyledNode<'a>,
-    pub rect: Rectangle,
-    pub children: Vec<LayoutBox<'a>>,
-    pub list_marker: Option<ListMarker>,
-}
-
 /// Compute block layout for a style tree.
 /// - `root` is the style-tree root (usually the document node)
 /// - `page_width` is the available content width in px
@@ -132,8 +176,6 @@ fn layout_block_subtree<'a>(
     y: f32,
     width: f32,
 ) -> LayoutBox<'a> {
-    use html::Node;
-
     // 0) Non-rendering elements: transparent containers.
     //    They still get a LayoutBox so the tree shape matches the DOM,
     //    but we don't attempt to compute geometry here.
@@ -159,6 +201,7 @@ fn layout_block_subtree<'a>(
             rect,
             children: children_boxes,
             list_marker: None,
+            replaced: None,
         };
     }
 
@@ -202,24 +245,29 @@ fn layout_block_subtree<'a>(
 
     // 2) Decide box kind based on node type + computed display.
     let style = &styled.style;
+    let replaced_kind = classify_replaced_kind(styled.node);
 
     let kind = match styled.node {
-        // Document and <html> act as block-level containers.
         Node::Document { .. } => BoxKind::Block,
         Node::Element { name, .. } if name.eq_ignore_ascii_case("html") => BoxKind::Block,
 
-        // Text / Comment nodes are inline content but we
-        // represent them as Block here; the inline engine
-        // will interpret them correctly via BoxKind and display.
         Node::Text { .. } | Node::Comment { .. } => BoxKind::Block,
 
-        // All other elements: look at display.
-        _ => match style.display {
-            Display::Inline => BoxKind::Inline,
-            Display::InlineBlock => BoxKind::InlineBlock,
-            _ => BoxKind::Block,
-        },
+        _ => {
+            // If it's a replaced element and it's inline-ish, treat it as a replaced inline atom.
+            if replaced_kind.is_some() && matches!(style.display, Display::Inline | Display::InlineBlock)
+            {
+                BoxKind::ReplacedInline
+            } else {
+                match style.display {
+                    Display::Inline => BoxKind::Inline,
+                    Display::InlineBlock => BoxKind::InlineBlock,
+                    _ => BoxKind::Block,
+                }
+            }
+        }
     };
+
 
     // 3) Border-box rect: x/y/width are authoritative here.
     //    Height is always 0.0 in this phase; it will be computed by
@@ -231,6 +279,13 @@ fn layout_block_subtree<'a>(
         height: 0.0,
     };
 
+    let replaced = if matches!(kind, BoxKind::ReplacedInline) {
+            debug_assert!(replaced_kind.is_some());
+            replaced_kind
+        } else {
+            None
+        };
+
     LayoutBox {
         kind,
         style,
@@ -238,5 +293,6 @@ fn layout_block_subtree<'a>(
         rect,
         children: children_boxes,
         list_marker: None,
+        replaced: replaced,
     }
 }

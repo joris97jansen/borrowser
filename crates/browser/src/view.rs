@@ -50,6 +50,7 @@ use egui::{
     FontId,
     Painter,
     Stroke,
+    StrokeKind,
     TextEdit,
     Sense,
 };
@@ -287,6 +288,38 @@ fn paint_line_boxes<'a>(
 
                         painter.rect_filled(rect, 0.0, color);
                     }
+                }
+
+                InlineFragment::Replaced { style, kind, .. } => {
+                    let rect = Rect::from_min_size(
+                        Pos2 { x: origin.x + frag.rect.x, y: origin.y + frag.rect.y },
+                        Vec2::new(frag.rect.width, frag.rect.height),
+                    );
+
+                    // simple visible placeholder: filled background + outline
+                    let (r, g, b, a) = style.background_color;
+                    let fill = if a > 0 {
+                        Color32::from_rgba_unmultiplied(r, g, b, a)
+                    } else {
+                        Color32::from_rgba_unmultiplied(220, 220, 220, 255)
+                    };
+
+                    painter.rect_filled(rect, 2.0, fill);
+                    painter.rect_stroke(rect, 2.0, Stroke::new(1.0, Color32::from_rgb(120, 120, 120)), StrokeKind::Outside);
+
+                    let label = match kind {
+                        layout::ReplacedKind::Img => "IMG",
+                        layout::ReplacedKind::InputText => "INPUT",
+                        layout::ReplacedKind::Button => "BUTTON",
+                    };
+
+                    painter.text(
+                        rect.center(),
+                        Align2::CENTER_CENTER,
+                        label,
+                        FontId::proportional(12.0),
+                        Color32::from_rgb(60, 60, 60),
+                    );
                 }
             }
         }

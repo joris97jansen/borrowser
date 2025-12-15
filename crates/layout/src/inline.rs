@@ -11,6 +11,7 @@ use crate::{
     TextMeasurer,
     LayoutBox,
     BoxKind,
+    ReplacedKind,
     content_x_and_width,
     content_y,
 };
@@ -45,6 +46,11 @@ pub enum InlineFragment<'a> {
         /// - `None` in the height computation path
         layout: Option<&'a LayoutBox<'a>>,
     },
+    Replaced {
+        style: &'a ComputedStyle,
+        kind: ReplacedKind,
+        layout: Option<&'a LayoutBox<'a>>, // usually None; future-proof (e.g. <button>)
+    },
 }
 
 // One fragment of text within a line (later this can be per <span>, <a>, etc.)
@@ -71,6 +77,13 @@ enum InlineToken<'a> {
         height: f32,
         style: &'a ComputedStyle,
         /// Layout box, if we want to paint its subtree later.
+        layout: Option<&'a LayoutBox<'a>>,
+    },
+    Replaced {
+        width: f32,
+        height: f32,
+        style: &'a ComputedStyle,
+        kind: ReplacedKind,
         layout: Option<&'a LayoutBox<'a>>,
     },
 }
@@ -193,6 +206,30 @@ fn collect_inline_tokens_from_layout_box<'a>(
                     // but for Element/Document/Comment with Block kind
                     // we stop here.
                 }
+
+                BoxKind::ReplacedInline => {
+                    if *pending_space && !tokens.is_empty() {
+                        let style = layout.style;
+                        tokens.push(InlineToken::Space { style });
+                        *pending_space = false;
+                    }
+
+                    let style = layout.style;
+                    let cbm = style.box_metrics;
+
+                    let width  = layout.rect.width;
+                    let height = layout.rect.height + cbm.margin_top + cbm.margin_bottom;
+
+                    let kind = layout.replaced.expect("ReplacedInline must have replaced kind");
+
+                    tokens.push(InlineToken::Replaced {
+                        width,
+                        height,
+                        style,
+                        kind,
+                        layout: None, // height path
+                    });
+                }
             }
         }
     }
@@ -267,6 +304,30 @@ fn collect_inline_tokens_from_layout_box_for_paint<'a>(
                 BoxKind::Block => {
                     // Block descendants are separate block formatting contexts.
                     // They do not contribute to this block's inline content.
+                }
+
+                BoxKind::ReplacedInline => {
+                    if *pending_space && !tokens.is_empty() {
+                        let style = layout.style;
+                        tokens.push(InlineToken::Space { style });
+                        *pending_space = false;
+                    }
+
+                    let style = layout.style;
+                    let cbm = style.box_metrics;
+
+                    let width  = layout.rect.width;
+                    let height = layout.rect.height + cbm.margin_top + cbm.margin_bottom;
+
+                    let kind = layout.replaced.expect("ReplacedInline must have replaced kind");
+
+                    tokens.push(InlineToken::Replaced {
+                        width,
+                        height,
+                        style,
+                        kind,
+                        layout: None, // height path
+                    });
                 }
             }
         }
@@ -479,6 +540,23 @@ fn layout_tokens<'a>(
                 cursor_x += box_width;
                 is_first_in_line = false;
             }
+
+            InlineToken::Replaced { width, height, style, kind, layout } => {
+                let fits = cursor_x + width <= max_x;
+                if !fits && !is_first_in_line { /* same line break logic as Box */ }
+
+                if height > line_height { line_height = height; }
+
+                let frag_rect = Rectangle { x: cursor_x, y: cursor_y, width, height };
+
+                line_fragments.push(LineFragment {
+                    kind: InlineFragment::Replaced { style, kind, layout },
+                    rect: frag_rect,
+                });
+
+                cursor_x += width;
+                is_first_in_line = false;
+            }
         }
     }
 
@@ -644,6 +722,29 @@ fn recompute_block_heights<'a>(
                             child_width,
                         );
                     }
+
+                    if matches!(child.kind, BoxKind::ReplacedInline) {
+                        let cbm = child.style.box_metrics;
+                        let child_x = content_x + cbm.margin_left;
+                        let child_y = content_top + cbm.margin_top;
+
+                        child.rect.x = child_x;
+                        child.rect.y = child_y;
+
+                        let kind = child.replaced.expect("ReplacedInline must have kind");
+                        let (mut w, h) = default_intrinsic_size(kind);
+
+                        // Respect explicit CSS width if present (px only for now)
+                        if let Some(Length::Px(px)) = child.style.width {
+                            if px >= 0.0 { w = px; }
+                        }
+
+                        // Clamp to available content width (avoid overflow in Phase 1)
+                        w = w.min(content_width.max(0.0));
+
+                        child.rect.width = w;
+                        child.rect.height = h;
+                    }
                 }
             }
 
@@ -776,4 +877,12 @@ fn resolve_used_width_for_block(
 
     // Final safety: never negative.
     w.max(0.0)
+}
+
+fn default_intrinsic_size(kind: ReplacedKind) -> (f32, f32) {
+    match kind {
+        ReplacedKind::Img => (300.0, 150.0),       // classic HTML fallback
+        ReplacedKind::InputText => (160.0, 24.0),  // reasonable default
+        ReplacedKind::Button => (80.0, 28.0),
+    }
 }
