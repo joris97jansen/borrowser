@@ -691,6 +691,17 @@ fn recompute_block_heights<'a>(
                 let parent_x = x;
                 let parent_width = used_width;
 
+                // Inline elements: height is 0 at block level.
+                if matches!(node.style.display, Display::Inline) {
+                    let (content_x, content_width) = content_x_and_width(node.style, x, used_width);
+                    let content_top = content_y(node.style, y);
+
+                    size_replaced_inline_children(measurer, node, content_x, content_top, content_width);
+
+                    node.rect.height = 0.0;
+                    return 0.0;
+                }
+
                 for child in &mut node.children {
                     let bm = child.style.box_metrics;
 
@@ -709,12 +720,6 @@ fn recompute_block_heights<'a>(
                 return height;
             }
 
-            // Inline elements: height is 0 at block level.
-            if matches!(node.style.display, Display::Inline) {
-                node.rect.height = 0.0;
-                return 0.0;
-            }
-
             // --- Block-level element: inline content + block children + padding ---
 
             let bm = node.style.box_metrics;
@@ -726,7 +731,8 @@ fn recompute_block_heights<'a>(
             let content_top = content_y(node.style, y);
 
             // 1) Layout inline-block children so we know their sizes.
-            //
+            size_replaced_inline_children(measurer, node, content_x, content_top, content_width);
+
             {
                 for child in &mut node.children {
                     if matches!(child.kind, BoxKind::InlineBlock) {
@@ -748,40 +754,6 @@ fn recompute_block_heights<'a>(
                             child_y,
                             child_width,
                         );
-                    }
-
-                    if matches!(child.kind, BoxKind::ReplacedInline) {
-                        let cbm = child.style.box_metrics;
-                        let child_x = content_x + cbm.margin_left;
-                        let child_y = content_top + cbm.margin_top;
-
-                        child.rect.x = child_x;
-                        child.rect.y = child_y;
-
-                        let kind = child.replaced.expect("ReplacedInline must have kind");
-
-                        match kind {
-                            ReplacedKind::Img => {
-                                let (intr_w, intr_h) = default_intrinsic_img_size();
-
-                                let w = resolve_replaced_width_px(child.style, content_width, intr_w);
-                                let h = resolve_replaced_height_px(child.style, intr_h);
-
-                                child.rect.width = w;
-                                child.rect.height = h;
-                            }
-
-                            _ => {
-                                // Phase 1: ignore other replaced kinds here
-                                // (they'll get their own sizing rules in their issues)
-                                let (intr_w, intr_h) = default_intrinsic_size(kind);
-                                let w = resolve_replaced_width_px(child.style, content_width, intr_w);
-                                let h = resolve_replaced_height_px(child.style, intr_h);
-
-                                child.rect.width = w;
-                                child.rect.height = h;
-                            }
-                        }
                     }
                 }
             }
@@ -974,4 +946,101 @@ fn resolve_replaced_height_px(
     }
 
     h.max(0.0)
+}
+
+fn get_attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
+    match node {
+        html::Node::Element { attributes, .. } => {
+            for (k, v) in attributes {
+                if k.eq_ignore_ascii_case(name) {
+                    return v.as_deref();
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+fn size_replaced_inline_children<'a>(
+    measurer: &dyn TextMeasurer,
+    parent: &mut LayoutBox<'a>,
+    content_x: f32,
+    content_top: f32,
+    content_width: f32,
+) {
+    for child in &mut parent.children {
+        if !matches!(child.kind, BoxKind::ReplacedInline) {
+            continue;
+        }
+
+        let cbm = child.style.box_metrics;
+        let child_x = content_x + cbm.margin_left;
+        let child_y = content_top + cbm.margin_top;
+
+        child.rect.x = child_x;
+        child.rect.y = child_y;
+
+        let kind = child.replaced.expect("ReplacedInline must have kind");
+
+        match kind {
+            ReplacedKind::Img => {
+                let (intr_w, intr_h) = default_intrinsic_img_size();
+
+                let w = resolve_replaced_width_px(child.style, content_width, intr_w);
+                let h = resolve_replaced_height_px(child.style, intr_h);
+
+                child.rect.width = w;
+                child.rect.height = h;
+            }
+            ReplacedKind::InputText => {
+                // 1) Determine intrinsic base width from `size` attribute.
+                //    HTML default size is commonly 20 for text inputs.
+                let size_chars: u32 = get_attr(child.node.node, "size")
+                    .and_then(|s| s.trim().parse::<u32>().ok())
+                    .filter(|n| *n > 0)
+                    .unwrap_or(20);
+
+                // Average char width: measure "0" or "M" in current font.
+                // "0" tends to be stable across fonts; "M" often overestimates.
+                let avg_char_w = measurer.measure("0", child.style).max(4.0);
+
+                // Add a little extra so text isn't flush even if padding is 0.
+                let fudge = 8.0;
+
+                let intrinsic_w = (size_chars as f32) * avg_char_w + fudge;
+
+                // 2) Resolve width:
+                //    CSS width wins; else intrinsic; then min/max; clamp to available.
+                let w = resolve_replaced_width_px(child.style, content_width, intrinsic_w);
+
+                // 3) Resolve height:
+                //    derive from line height + vertical padding, with a sane minimum.
+                let bm = child.style.box_metrics;
+                let line_h = measurer.line_height(child.style);
+                let pad_y = (bm.padding_top + bm.padding_bottom).max(4.0);
+
+                let mut h = (line_h + pad_y).max(18.0);
+
+                if let Some(Length::Px(px)) = child.style.height {
+                    if px >= 0.0 {
+                        h = px;
+                    }
+                }
+
+                child.rect.width = w;
+                child.rect.height = h;
+            }
+            _ => {
+                // Phase 1: ignore other replaced kinds here
+                // (they'll get their own sizing rules in their issues)
+                let (intr_w, intr_h) = default_intrinsic_size(kind);
+                let w = resolve_replaced_width_px(child.style, content_width, intr_w);
+                let h = resolve_replaced_height_px(child.style, intr_h);
+
+                child.rect.width = w;
+                child.rect.height = h;
+            }
+        }
+    }
 }

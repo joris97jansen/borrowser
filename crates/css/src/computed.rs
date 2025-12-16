@@ -264,6 +264,8 @@ fn default_display_for(tag: &str) -> Display {
         || tag.eq_ignore_ascii_case("small")
         || tag.eq_ignore_ascii_case("big")
         || tag.eq_ignore_ascii_case("code")
+        || tag.eq_ignore_ascii_case("img")
+        || tag.eq_ignore_ascii_case("input")
     {
         return Display::Inline;
     }
@@ -272,11 +274,7 @@ fn default_display_for(tag: &str) -> Display {
     if tag.eq_ignore_ascii_case("li") {
         return Display::ListItem;
     }
-
-    if tag.eq_ignore_ascii_case("img") {
-        return Display::Inline;
-    }
-
+    
     // Everything else we treat as block for now
     Display::Block
 }

@@ -21,6 +21,7 @@ use layout::{
     Rectangle,
     BoxKind,
     ListMarker,
+    ReplacedKind,
     content_x_and_width,
     content_y,
     content_height,
@@ -75,7 +76,12 @@ impl EguiTextMeasurer {
 
 impl TextMeasurer for EguiTextMeasurer {
     fn measure(&self, text: &str, style: &ComputedStyle) -> f32 {
-        // We don't really care about color here, but egui wants one for layout.
+        if text == " " {
+            let w_with = self.measure("0 0", style);
+            let w_without = self.measure("00", style);
+            return (w_with - w_without).max(0.0);
+        }
+
         let (r, g, b, a) = style.color;
         let color = Color32::from_rgba_unmultiplied(r, g, b, a);
 
@@ -90,6 +96,7 @@ impl TextMeasurer for EguiTextMeasurer {
                 .width()
         })
     }
+
 
     fn line_height(&self, style: &ComputedStyle) -> f32 {
         // Same factor you already used elsewhere; now it's centralized.
@@ -296,6 +303,7 @@ fn paint_line_boxes<'a>(
                         Vec2::new(frag.rect.width, frag.rect.height),
                     );
 
+                    // Fill + stroke (placeholder look)
                     let (r, g, b, a) = style.background_color;
                     let fill = if a > 0 {
                         Color32::from_rgba_unmultiplied(r, g, b, a)
@@ -311,15 +319,64 @@ fn paint_line_boxes<'a>(
                         StrokeKind::Outside,
                     );
 
-                    // Default label
+                    // Special case: <input type="text"> draws its value/placeholder inside the box
+                    if matches!(kind, ReplacedKind::InputText) {
+                        // Determine shown text: value first, else placeholder
+                        let mut shown = String::new();
+
+                        if let Some(lb) = layout {
+                            if let Some(v) = get_attr(lb.node.node, "value") {
+                                if !v.trim().is_empty() {
+                                    shown = v.to_string();
+                                }
+                            }
+                            if shown.is_empty() {
+                                if let Some(ph) = get_attr(lb.node.node, "placeholder") {
+                                    if !ph.trim().is_empty() {
+                                        shown = ph.to_string();
+                                    }
+                                }
+                            }
+                        }
+
+                        // Inner text area from padding (with sane minimums)
+                        let bm = style.box_metrics;
+                        let pad_l = bm.padding_left.max(4.0);
+                        let pad_r = bm.padding_right.max(4.0);
+                        let pad_t = bm.padding_top.max(2.0);
+
+                        let text_x = rect.min.x + pad_l;
+                        let text_y = rect.min.y + pad_t;
+                        let available_text_w = (rect.width() - pad_l - pad_r).max(0.0);
+
+                        let shown = truncate_to_fit(measurer, style, &shown, available_text_w);
+
+                        // Paint in style color
+                        let (cr, cg, cb, ca) = style.color;
+                        let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
+                        let font_px = match style.font_size { Length::Px(px) => px };
+                        let font_id = FontId::proportional(font_px);
+
+                        painter.text(
+                            Pos2 { x: text_x, y: text_y },
+                            Align2::LEFT_TOP,
+                            shown,
+                            font_id,
+                            text_color,
+                        );
+
+                        continue; // skip default label painting below
+                    }
+
+                    // Default centered label for other replaced elements
                     let mut label = match kind {
-                        layout::ReplacedKind::Img => "IMG".to_string(),
-                        layout::ReplacedKind::InputText => "INPUT".to_string(),
-                        layout::ReplacedKind::Button => "BUTTON".to_string(),
+                        ReplacedKind::Img => "IMG".to_string(),
+                        ReplacedKind::Button => "BUTTON".to_string(),
+                        ReplacedKind::InputText => unreachable!("handled above"),
                     };
 
-                    // If this is an <img> and it has alt text, show that instead (Phase 1 nice-to-have)
-                    if matches!(kind, layout::ReplacedKind::Img) {
+                    // If <img alt="...">, show alt text instead
+                    if matches!(kind, ReplacedKind::Img) {
                         if let Some(lb) = layout {
                             if let Some(alt) = get_attr(lb.node.node, "alt") {
                                 let alt = alt.trim();
@@ -547,6 +604,48 @@ fn find_page_background_color(root: &StyledNode<'_>) -> Option<(u8, u8, u8, u8)>
     }
 
     body_bg.or(html_bg)
+}
+
+fn truncate_to_fit(
+    measurer: &dyn TextMeasurer,
+    style: &ComputedStyle,
+    text: &str,
+    max_w: f32,
+) -> String {
+    if text.is_empty() || max_w <= 0.0 {
+        return String::new();
+    }
+    if measurer.measure(text, style) <= max_w {
+        return text.to_string();
+    }
+
+    // Simple ellipsis truncation.
+    let ell = "…";
+    let ell_w = measurer.measure(ell, style);
+    if ell_w > max_w {
+        return String::new();
+    }
+
+    // Binary search cut point.
+    let chars: Vec<char> = text.chars().collect();
+    let mut lo = 0usize;
+    let mut hi = chars.len();
+
+    while lo < hi {
+        let mid = (lo + hi) / 2;
+        let candidate: String = chars[..mid].iter().collect();
+        let w = measurer.measure(&(candidate.clone() + ell), style);
+        if w <= max_w {
+            lo = mid + 1;
+        } else {
+            hi = mid;
+        }
+    }
+
+    let cut = lo.saturating_sub(1);
+    let mut s: String = chars[..cut].iter().collect();
+    s.push_str(ell);
+    s
 }
 
 fn get_attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
