@@ -61,6 +61,7 @@ pub struct ComputedStyle {
     /// Optional width property. Not inherited. For now we treat this
     /// as `px` only when specified.
     pub width: Option<Length>,
+    pub height: Option<Length>,   
 
     pub min_width: Option<Length>,
     pub max_width: Option<Length>,
@@ -75,6 +76,7 @@ impl ComputedStyle {
             box_metrics: BoxMetrics::zero(),    // zero margins/padding
             display: Display::Block,            // default to Block for now
             width: None,                        // auto
+            height: None,                       // auto
             min_width: None,                    // none    
             max_width: None,                    // none
         }
@@ -207,6 +209,16 @@ pub fn compute_style(
                     }
                 }
             }
+            "height" => {
+                let v = value.trim().to_ascii_lowercase();
+                if v == "auto" {
+                    result.height = None;
+                } else if let Some(px) = parse_px(&v) {
+                    if px >= 0.0 {
+                        result.height = Some(Length::Px(px));
+                    }
+                }
+            }
             "min-width" => {
                 let v = value.trim().to_ascii_lowercase();
                 if v == "auto" {
@@ -259,6 +271,10 @@ fn default_display_for(tag: &str) -> Display {
     // List items are special: they default to list-item
     if tag.eq_ignore_ascii_case("li") {
         return Display::ListItem;
+    }
+
+    if tag.eq_ignore_ascii_case("img") {
+        return Display::Inline;
     }
 
     // Everything else we treat as block for now
