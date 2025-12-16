@@ -1,0 +1,79 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <style>
+      body {
+        font-size: 16px;
+        color: black;
+        background-color: white;
+        margin: 0px;
+        padding: 16px;
+      }
+
+      .box {
+        background-color: #f5f5f5;
+        padding: 12px;
+        margin-bottom: 16px;
+      }
+
+      /* Give the container a constrained width so we can see wrapping */
+      .narrow {
+        width: 320px;
+        background-color: #eef7ff;
+        padding: 12px;
+      }
+
+      /* Explicit sized image (px only in Phase 1) */
+      .img-fixed {
+        width: 120px;
+        height: 40px;
+        background-color: #dff0d8;
+      }
+
+      /* No explicit width/height => should fall back to intrinsic (300×150),
+         but clamp to max-width. */
+      .img-intrinsic-clamped {
+        max-width: 140px;
+        background-color: #ffe8cc;
+      }
+
+      /* Force min-width to demonstrate clamping up */
+      .img-minwidth {
+        width: 60px;
+        min-width: 180px;
+        background-color: #fce4ec;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="box">
+      Inline IMG between words:
+      before
+      <img alt="ALT: fixed 120×40" class="img-fixed">
+      after.
+    </div>
+
+    <div class="box narrow">
+      Wrapping test (narrow container). The text should wrap and the IMG should behave
+      like a single big glyph:
+
+      Lorem ipsum dolor sit amet
+      <img alt="ALT: intrinsic 300×150, clamped to max-width 140" class="img-intrinsic-clamped">
+      consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
+    </div>
+
+    <div class="box narrow">
+      Min-width clamp test. Even though width is 60px, min-width should force it to 180px:
+
+      Start
+      <img alt="ALT: width 60 but min-width 180" class="img-minwidth">
+      End
+    </div>
+
+    <div class="box">
+      Missing src is fine in Phase 1 (placeholder only):
+      <img alt="ALT: no src" style="width: 90px; height: 30px;">
+    </div>
+  </body>
+</html>
