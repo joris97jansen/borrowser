@@ -227,7 +227,7 @@ fn collect_inline_tokens_from_layout_box<'a>(
                         height,
                         style,
                         kind,
-                        layout: None, // height path
+                        layout: None, // height computation path: no layout ref
                     });
                 }
             }
@@ -326,7 +326,7 @@ fn collect_inline_tokens_from_layout_box_for_paint<'a>(
                         height,
                         style,
                         kind,
-                        layout: None, // height path
+                        layout: Some(layout),
                     });
                 }
             }
@@ -474,6 +474,7 @@ fn layout_tokens<'a>(
 
                     cursor_x = line_start_x;
                     line_height = base_line_height;
+                    is_first_in_line = true;
                 }
 
                 let frag_rect = Rectangle {
@@ -543,9 +544,35 @@ fn layout_tokens<'a>(
 
             InlineToken::Replaced { width, height, style, kind, layout } => {
                 let fits = cursor_x + width <= max_x;
-                if !fits && !is_first_in_line { /* same line break logic as Box */ }
 
-                if height > line_height { line_height = height; }
+                if !fits && !is_first_in_line {
+                    if !line_fragments.is_empty() {
+                        let line_width = cursor_x - line_start_x;
+                        let line_rect = Rectangle {
+                            x: line_start_x,
+                            y: cursor_y,
+                            width: line_width,
+                            height: line_height,
+                        };
+
+                        lines.push(LineBox {
+                            rect: line_rect,
+                            fragments: std::mem::take(&mut line_fragments),
+                        });
+                    }
+
+                    cursor_y += line_height;
+                    if cursor_y + base_line_height > bottom_limit {
+                        return lines;
+                    }
+
+                    cursor_x = line_start_x;
+                    line_height = base_line_height;
+                }
+
+                if height > line_height {
+                    line_height = height;
+                }
 
                 let frag_rect = Rectangle { x: cursor_x, y: cursor_y, width, height };
 
@@ -732,18 +759,29 @@ fn recompute_block_heights<'a>(
                         child.rect.y = child_y;
 
                         let kind = child.replaced.expect("ReplacedInline must have kind");
-                        let (mut w, h) = default_intrinsic_size(kind);
 
-                        // Respect explicit CSS width if present (px only for now)
-                        if let Some(Length::Px(px)) = child.style.width {
-                            if px >= 0.0 { w = px; }
+                        match kind {
+                            ReplacedKind::Img => {
+                                let (intr_w, intr_h) = default_intrinsic_img_size();
+
+                                let w = resolve_replaced_width_px(child.style, content_width, intr_w);
+                                let h = resolve_replaced_height_px(child.style, intr_h);
+
+                                child.rect.width = w;
+                                child.rect.height = h;
+                            }
+
+                            _ => {
+                                // Phase 1: ignore other replaced kinds here
+                                // (they'll get their own sizing rules in their issues)
+                                let (intr_w, intr_h) = default_intrinsic_size(kind);
+                                let w = resolve_replaced_width_px(child.style, content_width, intr_w);
+                                let h = resolve_replaced_height_px(child.style, intr_h);
+
+                                child.rect.width = w;
+                                child.rect.height = h;
+                            }
                         }
-
-                        // Clamp to available content width (avoid overflow in Phase 1)
-                        w = w.min(content_width.max(0.0));
-
-                        child.rect.width = w;
-                        child.rect.height = h;
                     }
                 }
             }
@@ -789,9 +827,9 @@ fn recompute_block_heights<'a>(
             let mut cursor_y = content_start_y;
 
             for child in &mut node.children {
-                // Skip inline & inline-block children here; we already
+                // Skip inline, inline-block & replaced-inline children here; we already
                 // accounted for them in the inline formatting context.
-                if matches!(child.kind, BoxKind::Inline | BoxKind::InlineBlock) {
+                if matches!(child.kind, BoxKind::Inline | BoxKind::InlineBlock | BoxKind::ReplacedInline) {
                     continue;
                 }
 
@@ -885,4 +923,55 @@ fn default_intrinsic_size(kind: ReplacedKind) -> (f32, f32) {
         ReplacedKind::InputText => (160.0, 24.0),  // reasonable default
         ReplacedKind::Button => (80.0, 28.0),
     }
+}
+
+fn default_intrinsic_img_size() -> (f32, f32) {
+    (300.0, 150.0)
+}
+
+fn resolve_replaced_width_px(
+    style: &ComputedStyle,
+    available_width: f32,
+    intrinsic_width: f32,
+) -> f32 {
+    let mut w = intrinsic_width.max(0.0);
+
+    // CSS width wins (px-only in Phase 1)
+    if let Some(Length::Px(px)) = style.width {
+        if px >= 0.0 {
+            w = px;
+        }
+    }
+
+    // Clamp with min/max-width (px-only)
+    if let Some(Length::Px(min_px)) = style.min_width {
+        if min_px >= 0.0 {
+            w = w.max(min_px);
+        }
+    }
+    if let Some(Length::Px(max_px)) = style.max_width {
+        if max_px >= 0.0 {
+            w = w.min(max_px);
+        }
+    }
+
+    // Final clamp to available inline space
+    w = w.min(available_width.max(0.0));
+
+    w.max(0.0)
+}
+
+fn resolve_replaced_height_px(
+    style: &ComputedStyle,
+    intrinsic_height: f32,
+) -> f32 {
+    let mut h = intrinsic_height.max(0.0);
+
+    if let Some(Length::Px(px)) = style.height {
+        if px >= 0.0 {
+            h = px;
+        }
+    }
+
+    h.max(0.0)
 }

@@ -290,13 +290,12 @@ fn paint_line_boxes<'a>(
                     }
                 }
 
-                InlineFragment::Replaced { style, kind, .. } => {
+                InlineFragment::Replaced { style, kind, layout } => {
                     let rect = Rect::from_min_size(
                         Pos2 { x: origin.x + frag.rect.x, y: origin.y + frag.rect.y },
                         Vec2::new(frag.rect.width, frag.rect.height),
                     );
 
-                    // simple visible placeholder: filled background + outline
                     let (r, g, b, a) = style.background_color;
                     let fill = if a > 0 {
                         Color32::from_rgba_unmultiplied(r, g, b, a)
@@ -305,13 +304,31 @@ fn paint_line_boxes<'a>(
                     };
 
                     painter.rect_filled(rect, 2.0, fill);
-                    painter.rect_stroke(rect, 2.0, Stroke::new(1.0, Color32::from_rgb(120, 120, 120)), StrokeKind::Outside);
+                    painter.rect_stroke(
+                        rect,
+                        2.0,
+                        Stroke::new(1.0, Color32::from_rgb(120, 120, 120)),
+                        StrokeKind::Outside,
+                    );
 
-                    let label = match kind {
-                        layout::ReplacedKind::Img => "IMG",
-                        layout::ReplacedKind::InputText => "INPUT",
-                        layout::ReplacedKind::Button => "BUTTON",
+                    // Default label
+                    let mut label = match kind {
+                        layout::ReplacedKind::Img => "IMG".to_string(),
+                        layout::ReplacedKind::InputText => "INPUT".to_string(),
+                        layout::ReplacedKind::Button => "BUTTON".to_string(),
                     };
+
+                    // If this is an <img> and it has alt text, show that instead (Phase 1 nice-to-have)
+                    if matches!(kind, layout::ReplacedKind::Img) {
+                        if let Some(lb) = layout {
+                            if let Some(alt) = get_attr(lb.node.node, "alt") {
+                                let alt = alt.trim();
+                                if !alt.is_empty() {
+                                    label = alt.to_string();
+                                }
+                            }
+                        }
+                    }
 
                     painter.text(
                         rect.center(),
@@ -530,4 +547,18 @@ fn find_page_background_color(root: &StyledNode<'_>) -> Option<(u8, u8, u8, u8)>
     }
 
     body_bg.or(html_bg)
+}
+
+fn get_attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
+    match node {
+        Node::Element { attributes, .. } => {
+            for (k, v) in attributes {
+                if k.eq_ignore_ascii_case(name) {
+                    return v.as_deref();
+                }
+            }
+            None
+        }
+        _ => None,
+    }
 }

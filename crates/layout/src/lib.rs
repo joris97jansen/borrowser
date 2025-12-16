@@ -254,7 +254,7 @@ fn layout_block_subtree<'a>(
         Node::Text { .. } | Node::Comment { .. } => BoxKind::Block,
 
         _ => {
-            // If it's a replaced element and it's inline-ish, treat it as a replaced inline atom.
+            // If it's a replaced element and it's inline-level, treat it as a replaced inline atom.
             if replaced_kind.is_some() && matches!(style.display, Display::Inline | Display::InlineBlock)
             {
                 BoxKind::ReplacedInline
