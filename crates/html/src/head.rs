@@ -118,7 +118,7 @@ fn get_attr<'a>(attrs: &'a [(String, Option<String>)], key: &str) -> Option<&'a 
 
 fn first_text_child(children: &[Node]) -> Option<String> {
     for c in children {
-        if let Node::Text { text } = c {
+        if let Node::Text { text, .. } = c {
             let trimmed = text.trim();
             if !trimmed.is_empty() {
                 return Some(trimmed.to_string());

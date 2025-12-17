@@ -5,7 +5,6 @@ use html::{
     Node,
     dom_utils::{
         is_non_rendering_element,
-        element_path_key,
     },
 };
 use css::{
@@ -326,15 +325,12 @@ fn paint_line_boxes<'a>(
                         // Determine shown text: value first, else placeholder
                         let mut shown = String::new();
 
-                        if let (Some(lb), Some(dom_root)) = (layout, page.dom.as_ref()) {
-                            if let Some(key) = input_key_for_layout(dom_root, lb) {
-                                if let Some(v) = page.input_values.get(&key) {
-                                    if !v.trim().is_empty() {
-                                        shown = v.to_string();
-                                    }
-                                }
+                        if let Some(lb) = layout {
+                            let id = lb.node_id();
+                            if let Some(v) = page.input_values.get(id) {
+                                shown = v.to_string();
                             }
-
+                            
                             if shown.is_empty() {
                                 if let Some(ph) = get_attr(lb.node.node, "placeholder") {
                                     if !ph.trim().is_empty() {
@@ -667,18 +663,4 @@ fn get_attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
         }
         _ => None,
     }
-}
-
-fn input_key_for_layout<'a>(page_dom: &'a Node, lb: &'a LayoutBox<'a>) -> Option<String> {
-    // Prefer id-based key
-    if let Some(id) = get_attr(lb.node.node, "id") {
-        let id = id.trim();
-        if !id.is_empty() {
-            return Some(format!("id:{id}"));
-        }
-    }
-
-    // Fallback to path-based key
-    element_path_key(page_dom, lb.node.node as *const Node)
-        .map(|p| format!("path:{p}"))
 }

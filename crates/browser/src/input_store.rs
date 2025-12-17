@@ -1,8 +1,9 @@
 use std::collections::HashMap;
+use html::Id;
 
 #[derive(Clone, Debug, Default)]
 pub struct InputValueStore {
-    values: HashMap<String, String>,
+    values: HashMap<Id, String>,
 }
 
 impl InputValueStore {
@@ -11,18 +12,18 @@ impl InputValueStore {
     }
 
     /// Returns the stored value for this key, if any.
-    pub fn get(&self, key: &str) -> Option<&str> {
-        self.values.get(key).map(|s| s.as_str())
+    pub fn get(&self, id: Id) -> Option<&str> {
+        self.values.get(&id).map(|s| s.as_str())
     }
 
     /// Set/overwrite the value for this input key.
-    pub fn set(&mut self, key: String, value: String) {
-        self.values.insert(key, value);
+    pub fn set(&mut self, id: Id, value: String) {
+        self.values.insert(id, value);
     }
 
     /// Ensure a key exists; if missing, inserts the provided initial value.
-    pub fn ensure_initial(&mut self, key: String, initial: String) {
-        self.values.entry(key).or_insert(initial);
+    pub fn ensure_initial(&mut self, id: Id, initial: String) {
+        self.values.entry(id).or_insert(initial);
     }
 
     pub fn clear(&mut self) {

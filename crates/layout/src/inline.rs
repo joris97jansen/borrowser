@@ -152,7 +152,7 @@ fn collect_inline_tokens_from_layout_box<'a>(
     pending_space: &mut bool,
 ) {
     match layout.node.node {
-        Node::Text { text } => {
+        Node::Text { text, .. } => {
             if text.is_empty() {
                 return;
             }
@@ -254,7 +254,7 @@ fn collect_inline_tokens_from_layout_box_for_paint<'a>(
     pending_space: &mut bool,
 ) {
     match layout.node.node {
-        Node::Text { text } => {
+        Node::Text { text, .. } => {
             if text.is_empty() {
                 return;
             }

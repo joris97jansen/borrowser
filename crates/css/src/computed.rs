@@ -6,7 +6,10 @@ use crate::values::{
     parse_display,
 };
 
-use html::Node;
+use html::{
+    Node,
+    Id,
+};
 
 #[derive(Clone, Copy, Debug)]
 pub struct BoxMetrics {
@@ -90,7 +93,8 @@ impl ComputedStyle {
 /// - Same shape (for elements we care about)
 /// - Holds computed, inherited CSS values
 pub struct StyledNode<'a> {
-    pub node: &'a html::Node,
+    pub node: &'a Node,
+    pub node_id: Id,
     pub style: ComputedStyle,
     pub children: Vec<StyledNode<'a>>,
 }
@@ -311,6 +315,7 @@ pub fn build_style_tree<'a>(
 
             StyledNode {
                 node: root,
+                node_id: root.id(),
                 style: base,
                 children: styled_children,
             }
@@ -338,6 +343,7 @@ pub fn build_style_tree<'a>(
 
             StyledNode {
                 node: root,
+                node_id: root.id(),
                 style: computed,
                 children: styled_children,
             }
@@ -349,6 +355,7 @@ pub fn build_style_tree<'a>(
 
             StyledNode {
                 node: root,
+                node_id: root.id(),
                 style: inherited,
                 children: Vec::new(),
             }

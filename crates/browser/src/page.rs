@@ -2,7 +2,7 @@ use crate::input_store::InputValueStore;
 use css::{Stylesheet, attach_styles, parse_stylesheet};
 use html::{
     Node,
-    dom_utils::{collect_style_texts, element_path_key, outline_from_dom},
+    dom_utils::{collect_style_texts, outline_from_dom},
     head::{HeadMetadata, extract_head_metadata},
 };
 use std::collections::HashSet;
@@ -115,70 +115,38 @@ impl PageState {
             None => return,
         };
 
-        fn get_attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
+        fn walk(store: &mut InputValueStore, node: &Node) {
             match node {
-                Node::Element { attributes, .. } => {
-                    for (k, v) in attributes {
-                        if k.eq_ignore_ascii_case(name) {
-                            return v.as_deref();
-                        }
-                    }
-                    None
-                }
-                _ => None,
-            }
-        }
-
-        fn is_text_input(node: &Node) -> bool {
-            match node {
-                Node::Element {
-                    name, attributes, ..
-                } if name.eq_ignore_ascii_case("input") => {
+                Node::Element { name, attributes, .. } if name.eq_ignore_ascii_case("input") => {
+                    // Phase 1: only seed type=text (or missing type)
                     let mut ty: Option<&str> = None;
+                    let mut value: Option<&str> = None;
+
                     for (k, v) in attributes {
                         if k.eq_ignore_ascii_case("type") {
                             ty = v.as_deref();
+                        } else if k.eq_ignore_ascii_case("value") {
+                            value = v.as_deref();
                         }
                     }
-                    ty.map(|t| t.eq_ignore_ascii_case("text")).unwrap_or(true)
+
+                    let is_text = ty.map(|t| t.eq_ignore_ascii_case("text")).unwrap_or(true);
+                    if is_text {
+                        let id = node.id();
+                        let initial = value.unwrap_or("").to_string();
+                        store.ensure_initial(id, initial);
+                    }
                 }
-                _ => false,
-            }
-        }
 
-        fn input_key(root: &Node, node: &Node) -> Option<String> {
-            // Prefer id-based key
-            if let Some(id) = get_attr(node, "id") {
-                let id = id.trim();
-                if !id.is_empty() {
-                    return Some(format!("id:{id}"));
-                }
-            }
-
-            // Fallback: path-based key
-            html::dom_utils::element_path_key(root, node as *const Node)
-                .map(|p| format!("path:{p}"))
-        }
-
-        fn walk(store: &mut InputValueStore, root: &Node, node: &Node) {
-            if is_text_input(node) {
-                if let Some(key) = input_key(root, node) {
-                    let initial = get_attr(node, "value").unwrap_or("").to_string();
-                    store.ensure_initial(key, initial);
-                }
-            }
-
-            match node {
                 Node::Document { children, .. } | Node::Element { children, .. } => {
                     for c in children {
-                        walk(store, root, c);
+                        walk(store, c);
                     }
                 }
                 _ => {}
             }
         }
 
-        // Only mutably borrow the store, not all of self
-        walk(&mut self.input_values, dom, dom);
+        walk(&mut self.input_values, dom);
     }
 }
