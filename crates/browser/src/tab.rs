@@ -119,6 +119,7 @@ impl Tab {
                 self.page.dom = Some(dom);
                 self.page.update_head_metadata();
                 self.page.apply_inline_style_blocks();
+                self.page.seed_input_values_from_dom();
                 self.page.update_visible_text_cache();
 
                 // stylesheets detecteren en fetchen
