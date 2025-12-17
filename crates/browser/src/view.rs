@@ -5,6 +5,7 @@ use html::{
     Node,
     dom_utils::{
         is_non_rendering_element,
+        element_path_key,
     },
 };
 use css::{
@@ -190,14 +191,14 @@ pub fn content(
     CentralPanel::default()
         .frame(Frame::default().fill(base_fill))
         .show(ctx, |ui| {
-            page_viewport(ui, &style_root);
+            page_viewport(ui, &style_root, page);
 
             if loading { ui.label("⏳ Loading…"); }
             if let Some(s) = status { ui.label(s); }
         });
 }
 
-pub fn page_viewport(ui: &mut Ui, style_root: &StyledNode<'_>) {
+pub fn page_viewport(ui: &mut Ui, style_root: &StyledNode<'_>, page: &PageState) {
     ScrollArea::vertical()
         .id_salt("page_viewport_scroll_area")
         .auto_shrink([false, false])
@@ -221,8 +222,7 @@ pub fn page_viewport(ui: &mut Ui, style_root: &StyledNode<'_>) {
             // 4) Paint layout tree (backgrounds + text)
             let painter = ui.painter_at(content_rect);
             let origin = content_rect.min;
-            paint_layout_box(&layout_root, &painter, origin, &measurer, true);
-
+            paint_layout_box(&layout_root, &painter, origin, &measurer, true, page);
         });
 }
 
@@ -231,6 +231,7 @@ fn paint_line_boxes<'a>(
     origin: Pos2,
     lines: &[LineBox<'a>],
     measurer: &dyn TextMeasurer,
+    page: &PageState,
 ) {
     for line in lines {
         for frag in &line.fragments {
@@ -283,6 +284,7 @@ fn paint_line_boxes<'a>(
                             translated_origin,
                             measurer,
                             false, // do NOT skip inline-block children inside this subtree
+                            page,
                         );
                     } else {
                         // Fallback: simple placeholder rectangle using the box style.
@@ -324,12 +326,15 @@ fn paint_line_boxes<'a>(
                         // Determine shown text: value first, else placeholder
                         let mut shown = String::new();
 
-                        if let Some(lb) = layout {
-                            if let Some(v) = get_attr(lb.node.node, "value") {
-                                if !v.trim().is_empty() {
-                                    shown = v.to_string();
+                        if let (Some(lb), Some(dom_root)) = (layout, page.dom.as_ref()) {
+                            if let Some(key) = input_key_for_layout(dom_root, lb) {
+                                if let Some(v) = page.input_values.get(&key) {
+                                    if !v.trim().is_empty() {
+                                        shown = v.to_string();
+                                    }
                                 }
                             }
+
                             if shown.is_empty() {
                                 if let Some(ph) = get_attr(lb.node.node, "placeholder") {
                                     if !ph.trim().is_empty() {
@@ -406,12 +411,13 @@ fn paint_layout_box<'a>(
     origin: Pos2,
     measurer: &dyn TextMeasurer,
     skip_inline_block_children: bool,
+    page: &PageState,
 ) {
 
     // 0) Do not paint non-rendering elements (head, style, script, etc.)
     if is_non_rendering_element(layout.node.node) {
         for child in &layout.children {
-            paint_layout_box(child, painter, origin, measurer, skip_inline_block_children);
+            paint_layout_box(child, painter, origin, measurer, skip_inline_block_children, page);
         }
         return;
     }
@@ -444,7 +450,7 @@ fn paint_layout_box<'a>(
     }
 
     // 2) Inline content
-    paint_inline_content(layout, painter, origin, measurer);
+    paint_inline_content(layout, painter, origin, measurer, page);
 
     // 3) Recurse into children
     for child in &layout.children {
@@ -453,7 +459,7 @@ fn paint_layout_box<'a>(
             continue;
         }
 
-        paint_layout_box(child, painter, origin, measurer, skip_inline_block_children);
+        paint_layout_box(child, painter, origin, measurer, skip_inline_block_children, page);
     }
 }
 
@@ -521,6 +527,7 @@ fn paint_inline_content<'a>(
     painter: &Painter,
     origin: Pos2,
     measurer: &dyn TextMeasurer,
+    page: &PageState,
 ) {
     // Only block-like elements host their own inline formatting context.
     match layout.node.node {
@@ -560,7 +567,7 @@ fn paint_inline_content<'a>(
         return;
     }
 
-    paint_line_boxes(painter, origin, &lines, measurer);
+    paint_line_boxes(painter, origin, &lines, measurer, page);
 }
 
 fn find_page_background_color(root: &StyledNode<'_>) -> Option<(u8, u8, u8, u8)> {
@@ -660,4 +667,18 @@ fn get_attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
         }
         _ => None,
     }
+}
+
+fn input_key_for_layout<'a>(page_dom: &'a Node, lb: &'a LayoutBox<'a>) -> Option<String> {
+    // Prefer id-based key
+    if let Some(id) = get_attr(lb.node.node, "id") {
+        let id = id.trim();
+        if !id.is_empty() {
+            return Some(format!("id:{id}"));
+        }
+    }
+
+    // Fallback to path-based key
+    element_path_key(page_dom, lb.node.node as *const Node)
+        .map(|p| format!("path:{p}"))
 }

@@ -157,3 +157,30 @@ pub fn is_non_rendering_element(node: &Node) -> bool {
         _ => false,
     }
 }
+
+pub fn element_path_key(root: &Node, target: *const Node) -> Option<String> {
+    fn walk(node: &Node, target: *const Node, path: &mut Vec<usize>) -> Option<String> {
+        let ptr = node as *const Node;
+        if ptr == target {
+            // "0/2/1" style
+            return Some(path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join("/"));
+        }
+
+        match node {
+            Node::Document { children, .. } | Node::Element { children, .. } => {
+                for (i, c) in children.iter().enumerate() {
+                    path.push(i);
+                    if let Some(k) = walk(c, target, path) {
+                        return Some(k);
+                    }
+                    path.pop();
+                }
+            }
+            _ => {}
+        }
+        None
+    }
+
+    let mut path = Vec::new();
+    walk(root, target, &mut path)
+}
