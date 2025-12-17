@@ -6,6 +6,8 @@ pub use inline::{
         LineBox,
         layout_inline_for_paint,
 };
+pub mod hit_test;
+pub use hit_test::{hit_test, HitKind, HitTestResult};
 
 use css::{
     ComputedStyle,
@@ -14,6 +16,7 @@ use css::{
 };
 use html::{
     Node,
+    Id,
     dom_utils::is_non_rendering_element
 };
 
@@ -100,7 +103,7 @@ pub struct LayoutBox<'a> {
 }
 
 impl<'a> LayoutBox<'a> {
-    pub fn node_id(&self) -> html::Id {
+    pub fn node_id(&self) -> Id {
         self.node.node_id
     }
 }

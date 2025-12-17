@@ -222,6 +222,28 @@ pub fn page_viewport(ui: &mut Ui, style_root: &StyledNode<'_>, page: &PageState)
             let painter = ui.painter_at(content_rect);
             let origin = content_rect.min;
             paint_layout_box(&layout_root, &painter, origin, &measurer, true, page);
+
+            // 5) Hover hit-test (Phase 1)
+            if let Some(hover_pos) = ui.ctx().input(|i| i.pointer.hover_pos()) {
+                // Convert screen -> layout coordinates
+                let lx = hover_pos.x - origin.x;
+                let ly = hover_pos.y - origin.y;
+
+                if let Some(hit) = layout::hit_test::hit_test(&layout_root, (lx, ly), &measurer) {
+                    // Debug overlay text (easy, visible)
+                    let msg = format!("hover: {:?} on {:?}", hit.kind, hit.node_id);
+                    painter.text(
+                        origin + Vec2::new(8.0, 8.0),
+                        Align2::LEFT_TOP,
+                        msg,
+                        FontId::proportional(12.0),
+                        Color32::from_rgb(80, 80, 80),
+                    );
+
+                    // Optional: also print for logs
+                    // eprintln!("HIT {:?}", hit);
+                }
+            }
         });
 }
 
