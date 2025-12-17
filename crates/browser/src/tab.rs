@@ -17,7 +17,10 @@ use app_api::{
 
 use html::{
     Node,
-    dom_utils::collect_stylesheet_hrefs,
+    dom_utils::{
+        collect_stylesheet_hrefs,
+        assign_node_ids,
+    },
 };
 
 use css::{
@@ -116,6 +119,8 @@ impl Tab {
             CoreEvent::DomUpdate { tab_id, request_id, dom }
                 if tab_id == self.tab_id && request_id == current =>
             {
+                let mut dom = dom;
+                assign_node_ids(&mut dom);
                 self.page.dom = Some(dom);
                 self.page.update_head_metadata();
                 self.page.apply_inline_style_blocks();

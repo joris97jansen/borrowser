@@ -4,6 +4,13 @@ pub mod dom_utils;
 const HTML_COMMENT_START: &str = "<!--";
 const HTML_COMMENT_END: &str = "-->";
 
+pub type NodeId = u32;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct Id(
+    pub NodeId
+);
+
 #[derive(Debug)]
 pub enum Token {
     Doctype(String),
@@ -16,7 +23,6 @@ pub enum Token {
     Comment(String),
     Text(String),
 }
-
 
 pub fn is_html(ct: &Option<String>) -> bool {
     ct.as_deref()
@@ -307,15 +313,39 @@ pub fn tokenize(input: &str) -> Vec<Token> {
     out
 }
 
-
 pub enum Node {
-    Document { children: Vec<Node>, doctype: Option<String> },
-    Element { name: String, attributes: Vec<(String, Option<String>)>, children: Vec<Node>, style: Vec<(String, String)> },
-    Text { text: String },
-    Comment { text: String },
+    Document {
+        id: Id,
+        doctype: Option<String>,
+        children: Vec<Node>,
+    },
+    Element {
+        id: Id,
+        name: String,
+        attributes: Vec<(String, Option<String>)>,
+        style: Vec<(String, String)>,
+        children: Vec<Node>,
+    },
+    Text {
+        id: Id,
+        text: String,
+    },
+    Comment {
+        id: Id,
+        text: String,
+    },
 }
 
 impl Node {
+    pub fn id(&self) -> Id {
+        match self {
+            Node::Document { id, .. } => *id,
+            Node::Element { id, .. } => *id,
+            Node::Text { id, .. } => *id,
+            Node::Comment { id, .. } => *id,
+        }
+    }
+
     pub fn children_mut(&mut self) -> Option<&mut Vec<Node>> {
         match self {
             Node::Document { children, .. } => Some(children),
@@ -326,9 +356,7 @@ impl Node {
 }
 
 pub fn build_dom(tokens: &[Token]) -> Node {
-    use Token::*;
-
-    let mut root = Node::Document { children: Vec::new(), doctype: None };
+    let mut root = Node::Document { id: Id(0), children: Vec::new(), doctype: None };
     let mut stack: Vec<*mut Node> = vec![&mut root as *mut Node];
 
     let push_child = |parent: *mut Node, child: Node| {
@@ -344,27 +372,28 @@ pub fn build_dom(tokens: &[Token]) -> Node {
 
     for token in tokens {
         match token {
-            Doctype(s) => {
+            Token::Doctype(s) => {
                 let doc_ptr = stack[0];
                 if let Node::Document { doctype, .. } = unsafe { &mut *doc_ptr } {
                     *doctype = Some(s.clone());
                 }
             }
-            Comment(c) => {
+            Token::Comment(c) => {
                 let parent = *stack.last().unwrap();
-                push_child(parent, Node::Comment { text: c.clone() });
+                push_child(parent, Node::Comment { id: Id(0), text: c.clone() });
             }
-            Text(txt) => {
+            Token::Text(txt) => {
                 if !txt.is_empty() {
                     let parent = *stack.last().unwrap();
-                    push_child(parent, Node::Text { text: txt.clone() });
+                    push_child(parent, Node::Text { id: Id(0), text: txt.clone() });
                 }
             }
-            StartTag { name, attributes, self_closing, .. } => {
+            Token::StartTag { name, attributes, self_closing, .. } => {
                 let parent = *stack.last().unwrap();
                 let mut_node = push_child(
                     parent,
                     Node::Element {
+                        id: Id(0),
                         name: name.clone(),
                         attributes: attributes.clone(),
                         children: Vec::new(),
@@ -378,7 +407,7 @@ pub fn build_dom(tokens: &[Token]) -> Node {
                     }
                 }
             }
-            EndTag(name) => {
+            Token::EndTag(name) => {
                 let target = name.to_ascii_lowercase();
                 while stack.len() > 1 {
                     let top_ptr: *mut Node = *stack.last().unwrap();

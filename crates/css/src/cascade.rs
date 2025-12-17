@@ -61,7 +61,7 @@ pub fn get_inline_style<'a>(attributes: &'a [(String, Option<String>)]) -> Optio
 pub fn attach_styles(dom: &mut Node, sheet: &Stylesheet) {
     fn walk(node: &mut Node, sheet: &Stylesheet) {
         match node {
-            Node::Element { name, attributes, children, style } => {
+            Node::Element { id: _, name, attributes, children, style} => {
                 // collect candidates (inline + matched rules)
                 let mut candidates: Vec<Candidate> = Vec::new();
 

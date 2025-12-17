@@ -99,6 +99,12 @@ pub struct LayoutBox<'a> {
     pub replaced: Option<ReplacedKind>,
 }
 
+impl<'a> LayoutBox<'a> {
+    pub fn node_id(&self) -> html::Id {
+        self.node.node_id
+    }
+}
+
 /// The inner "content box" of a layout box: border box minus padding.
 /// We expose it via small helpers so that all code computes content
 /// geometry in a single, consistent way.

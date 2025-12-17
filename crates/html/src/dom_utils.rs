@@ -1,11 +1,11 @@
-use crate::Node;
+use crate::{Node, Id};
 
 /// Collect concatenated text from <style> elements.
 pub fn collect_style_texts(node: &Node, out: &mut String) {
     match node {
         Node::Element { name, children, .. } if name.eq_ignore_ascii_case("style") => {
             for c in children {
-                if let Node::Text { text } = c {
+                if let Node::Text { text, .. } = c {
                     out.push_str(text);
                     out.push('\n');
                 }
@@ -54,7 +54,7 @@ pub fn collect_stylesheet_hrefs(node: &Node, out: &mut Vec<String>) {
 
 pub fn collect_visible_text<'a>(node: &'a Node, ancestors: &mut Vec<&'a Node>, out: &mut String) {
     match node {
-        Node::Text { text } => {
+        Node::Text { text, .. } => {
             let t = text.trim();
             if !t.is_empty() {
                 if !out.is_empty() {
@@ -104,7 +104,7 @@ pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
         *left -= 1;
         let indent = "  ".repeat(depth);
         match node {
-            Node::Document { doctype, children } => {
+            Node::Document { doctype, children, .. } => {
                 if let Some(dt) = doctype {
                     out.push(format!("{indent}<!DOCTYPE {dt}>"));
                 } else {
@@ -112,7 +112,7 @@ pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
                 }
                 for c in children { walk(c, depth+1, out, left); }
             }
-            Node::Element { name, attributes, children, style } => {
+            Node::Element { name, attributes, children, style, .. } => {
                 let id = attributes.iter().find(|(k,_)| k=="id").and_then(|(_,v)| v.as_deref()).unwrap_or("");
                 let class = attributes.iter().find(|(k,_)| k=="class").and_then(|(_,v)| v.as_deref()).unwrap_or("");
                 let styl = first_styles(style);
@@ -124,14 +124,14 @@ pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
                 out.push(line);
                 for c in children { walk(c, depth+1, out, left); }
             }
-            Node::Text { text } => {
+            Node::Text { text, .. } => {
                 let t = text.replace('\n', " ").trim().to_string();
                 if !t.is_empty() {
                     let show = if t.len() > 40 { format!("{}…",&t[..40]) } else { t };
                     out.push(format!("{indent}\"{show}\""));
                 }
             }
-            Node::Comment { text } => {
+            Node::Comment { text, .. } => {
                 let t = text.replace('\n', " ");
                 let show = if t.len() > 40 { format!("{}…",&t[..40]) } else { t };
                 out.push(format!("{indent}<!-- {show} -->"));
@@ -158,29 +158,33 @@ pub fn is_non_rendering_element(node: &Node) -> bool {
     }
 }
 
-pub fn element_path_key(root: &Node, target: *const Node) -> Option<String> {
-    fn walk(node: &Node, target: *const Node, path: &mut Vec<usize>) -> Option<String> {
-        let ptr = node as *const Node;
-        if ptr == target {
-            // "0/2/1" style
-            return Some(path.iter().map(|i| i.to_string()).collect::<Vec<_>>().join("/"));
-        }
+pub fn assign_node_ids(root: &mut Node) {
+    fn walk(node: &mut Node, next: &mut u32) {
+        let id = Id(*next);
+        *next = next.wrapping_add(1);
 
         match node {
-            Node::Document { children, .. } | Node::Element { children, .. } => {
-                for (i, c) in children.iter().enumerate() {
-                    path.push(i);
-                    if let Some(k) = walk(c, target, path) {
-                        return Some(k);
-                    }
-                    path.pop();
+            Node::Document { id: node_id, children, .. } => {
+                *node_id = id;
+                for c in children {
+                    walk(c, next);
                 }
             }
-            _ => {}
+            Node::Element { id: node_id, children, .. } => {
+                *node_id = id;
+                for c in children {
+                    walk(c, next);
+                }
+            }
+            Node::Text { id: node_id, .. } => {
+                *node_id = id;
+            }
+            Node::Comment { id: node_id, .. } => {
+                *node_id = id;
+            }
         }
-        None
     }
 
-    let mut path = Vec::new();
-    walk(root, target, &mut path)
+    let mut next: u32 = 1;
+    walk(root, &mut next);
 }
