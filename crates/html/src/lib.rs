@@ -125,8 +125,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 i += 1;
             }
             let text = &input[start..i];
-            let trimmed = text.trim();
-            let decoded = decode_entities(trimmed);
+            let decoded = decode_entities(text);
             if !decoded.is_empty() {
                 out.push(Token::Text(decoded));
             }
@@ -343,6 +342,15 @@ impl Node {
             Node::Element { id, .. } => *id,
             Node::Text { id, .. } => *id,
             Node::Comment { id, .. } => *id,
+        }
+    }
+
+    pub fn set_id(&mut self, new_id: Id) {
+        match self {
+            Node::Document { id, .. } => *id = new_id,
+            Node::Element { id, .. } => *id = new_id,
+            Node::Text { id, .. } => *id = new_id,
+            Node::Comment { id, .. } => *id = new_id,
         }
     }
 

@@ -391,28 +391,24 @@ fn layout_tokens<'a>(
     for token in tokens {
         match token {
             InlineToken::Space { style } => {
-                // Never show a space at the beginning of a line.
                 if is_first_in_line {
                     continue;
                 }
 
-                let space_text = " ";
-                let space_width = measurer.measure(space_text, style);
+                let space_text = "\u{00A0}";
+                let mut space_width = measurer.measure(" ", style);
 
-                // If the space itself doesn't fit, we break the line
-                // and *drop* the space (no leading spaces).
+                if space_width <= 0.0 {
+                    // ultra defensive fallback
+                    space_width = 1.0;
+                }
+
                 if cursor_x + space_width > max_x {
+                    // flush current line, drop leading space on next line
                     if !line_fragments.is_empty() {
                         let line_width = cursor_x - line_start_x;
-                        let line_rect = Rectangle {
-                            x: line_start_x,
-                            y: cursor_y,
-                            width: line_width,
-                            height: line_height,
-                        };
-
                         lines.push(LineBox {
-                            rect: line_rect,
+                            rect: Rectangle { x: line_start_x, y: cursor_y, width: line_width, height: line_height },
                             fragments: std::mem::take(&mut line_fragments),
                         });
                     }
@@ -428,22 +424,13 @@ fn layout_tokens<'a>(
                     continue;
                 }
 
-                let frag_rect = Rectangle {
-                    x: cursor_x,
-                    y: cursor_y,
-                    width: space_width,
-                    height: line_height,
-                };
-
                 line_fragments.push(LineFragment {
-                    kind: InlineFragment::Text {
-                        text: space_text.to_string(),
-                        style,
-                    },
-                    rect: frag_rect,
+                    kind: InlineFragment::Text { text: space_text.to_string(), style },
+                    rect: Rectangle { x: cursor_x, y: cursor_y, width: space_width, height: line_height },
                 });
 
                 cursor_x += space_width;
+                is_first_in_line = false; // 👈 add this
             }
 
             InlineToken::Word { text, style } => {

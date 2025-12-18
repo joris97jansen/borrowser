@@ -107,6 +107,7 @@ pub struct StyledNode<'a> {
 /// - `specified` already reflects cascade (author + inline etc.)
 /// - property names are already lowercase (from `parse_declarations`).
 pub fn compute_style(
+    tag_name: Option<&str>,
     specified: &[(String, String)],
     parent: Option<&ComputedStyle>,
 ) -> ComputedStyle {
@@ -123,6 +124,8 @@ pub fn compute_style(
         // result.background_color stays as initial (transparent)
     }
 
+    let mut has_color_decl = false;
+
     // 3. Apply specified declarations (override inherited/initial)
     for (name, value) in specified {
         let name = name.as_str();
@@ -130,6 +133,7 @@ pub fn compute_style(
 
         match name {
             "color" => {
+                has_color_decl = true;
                 if let Some(rgba) = parse_color(value) {
                     result.color = rgba;
                 }
@@ -252,6 +256,13 @@ pub fn compute_style(
         }
     }
 
+    if let Some(tag) = tag_name {
+        if tag.eq_ignore_ascii_case("a") && !has_color_decl {
+            // UA-ish default link blue
+            result.color = (0, 0, 238, 255);
+        }
+    }
+    
     result
 }
 
@@ -328,7 +339,7 @@ pub fn build_style_tree<'a>(
                 .any(|(prop, _)| prop.eq_ignore_ascii_case("display"));
 
             // 2) Compute the base style (inherits, applies declarations, etc.)
-            let mut computed = compute_style(style, parent_style);
+            let mut computed = compute_style(Some(name), style, parent_style);
 
             // 3) If no explicit `display:` was specified, apply a per-element default
             if !has_display_decl {
