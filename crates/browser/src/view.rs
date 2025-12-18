@@ -76,27 +76,42 @@ impl EguiTextMeasurer {
 
 impl TextMeasurer for EguiTextMeasurer {
     fn measure(&self, text: &str, style: &ComputedStyle) -> f32 {
-        if text == " " {
-            let w_with = self.measure("0 0", style);
-            let w_without = self.measure("00", style);
-            return (w_with - w_without).max(0.0);
-        }
-
         let (r, g, b, a) = style.color;
         let color = Color32::from_rgba_unmultiplied(r, g, b, a);
 
-        let font_px = match style.font_size {
-            Length::Px(px) => px,
-        };
+        let font_px = match style.font_size { Length::Px(px) => px };
         let font_id = FontId::proportional(font_px);
 
+        if text == " " {
+            // 1) NBSP is the most stable in egui
+            let nbsp = "\u{00A0}";
+            let w_nbsp = self.ctx.fonts(|f| {
+                f.layout_no_wrap(nbsp.to_owned(), font_id.clone(), color).rect.width()
+            });
+            if w_nbsp > 0.0 {
+                return w_nbsp;
+            }
+
+            // 2) Difference method as fallback (use chars with low kerning risk)
+            let w_with = self.ctx.fonts(|f| {
+                f.layout_no_wrap(format!("x{nbsp}x"), font_id.clone(), color).rect.width()
+            });
+            let w_without = self.ctx.fonts(|f| {
+                f.layout_no_wrap("xx".to_owned(), font_id.clone(), color).rect.width()
+            });
+            let w = (w_with - w_without).max(0.0);
+            if w > 0.0 {
+                return w;
+            }
+
+            // 3) Absolute fallback
+            return (font_px * 0.33).max(1.0);
+        }
+
         self.ctx.fonts(|f| {
-            f.layout_no_wrap(text.to_owned(), font_id, color)
-                .rect
-                .width()
+            f.layout_no_wrap(text.to_owned(), font_id, color).rect.width()
         })
     }
-
 
     fn line_height(&self, style: &ComputedStyle) -> f32 {
         // Same factor you already used elsewhere; now it's centralized.

@@ -9,7 +9,10 @@ use crate::{
     content_height,
 };
 use css::Display;
-use html::Node;
+use html::{
+    Node,
+    Id,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HitKind {
@@ -21,7 +24,7 @@ pub enum HitKind {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HitTestResult {
-    pub node_id: html::Id,
+    pub node_id: Id,
     pub kind: HitKind,
 }
 
