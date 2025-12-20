@@ -261,7 +261,7 @@ pub fn page_viewport(
 
             // If we have a focused input, register an invisible interactable at its real rect.
             // This is REQUIRED so egui has a widget to attach keyboard focus to.
-            if let Some(focus_id) = interaction.focus {
+            if let Some(focus_id) = interaction.focused_node_id {
                 if let Some(lb) = find_layout_box_by_id(&layout_root, focus_id) {
                     // Only for input replaced inline (defensive)
                     if matches!(lb.replaced, Some(ReplacedKind::InputText)) {
@@ -278,13 +278,14 @@ pub fn page_viewport(
                             },
                         );
 
-                        ui.interact(r, egui_focus_id, egui::Sense::focusable_noninteractive());
+                        ui.interact(r, egui_focus_id, Sense::focusable_noninteractive());
                     }
                 }
             }
 
             // Paint first
-            paint_layout_box(&layout_root, &painter, origin, &measurer, true, input_values);
+            let focused = interaction.focused_node_id;
+            paint_layout_box(&layout_root, &painter, origin, &measurer, true, input_values, focused);
 
             // ------- unified router output -------
             let mut action: Option<PageAction> = None;
@@ -333,38 +334,63 @@ pub fn page_viewport(
             if ui.input(|i| i.pointer.primary_released()) {
                 let release_hit = hit_at_pointer(ui);
 
-                if let Some(h) = release_hit {
-                    if interaction.active == Some(h.node_id) {
+                // Default behavior: any pointer release clears active.
+                let was_active = interaction.active;
+                interaction.active = None;
+
+                match release_hit {
+                    None => {
+                        // Released outside => blur
+                        interaction.focused_node_id = None;
+                    }
+                    Some(h) => {
+                        // If this wasn't a "click" (down/up same target), still treat it as blur unless it's an input
+                        if was_active != Some(h.node_id) {
+                            if h.kind != HitKind::Input {
+                                interaction.focused_node_id = None;
+                            }
+                            // If it *is* an input, you might decide to focus on mouse-up anyway.
+                            // Browsers effectively focus on click, but this is a good UX choice:
+                            if h.kind == HitKind::Input {
+                                interaction.focused_node_id = Some(h.node_id);
+                                let egui_focus_id = ui.make_persistent_id(("dom-input", h.node_id));
+                                ui.memory_mut(|mem| mem.request_focus(egui_focus_id));
+                                ui.ctx().request_repaint();
+                            }
+                        }
+
+                        // True click case (down/up match)
                         match h.kind {
                             HitKind::Link => {
                                 if let Some(href) = h.href.as_deref() {
                                     if let Some(url) = resolve_relative_url(base_url, href) {
                                         action = Some(PageAction::Navigate(url));
                                     }
+                                } else {
+                                    // debug: link hit but no href
+                                    #[cfg(debug_assertions)]
+                                    eprintln!("Link hit {:?} but no href in HitResult", h.node_id);
+
                                 }
+                                // Clicking a link should clear input focus (browser-like)
+                                interaction.focused_node_id = None;
                             }
 
                             HitKind::Input => {
-                                interaction.focus = Some(h.node_id);
+                                interaction.focused_node_id = Some(h.node_id);
 
                                 let egui_focus_id = ui.make_persistent_id(("dom-input", h.node_id));
                                 ui.memory_mut(|mem| mem.request_focus(egui_focus_id));
                                 ui.ctx().request_repaint();
                             }
-
-                            _ => {}
+                            _ => interaction.focused_node_id = None,
                         }
                     }
-                } else {
-                    // Released outside -> blur
-                    interaction.focus = None;
                 }
-
-                interaction.active = None;
             }
 
             // Key input -> focused input
-            if let Some(focus_id) = interaction.focus {
+            if let Some(focus_id) = interaction.focused_node_id {
                 let egui_focus_id = ui.make_persistent_id(("dom-input", focus_id));
 
                 if ui.memory(|mem| mem.has_focus(egui_focus_id)) {
@@ -419,6 +445,7 @@ fn paint_line_boxes<'a>(
     lines: &[LineBox<'a>],
     measurer: &dyn TextMeasurer,
     input_values: &InputValueStore,
+    focused: Option<Id>,
 ) {
     for line in lines {
         for frag in &line.fragments {
@@ -472,6 +499,7 @@ fn paint_line_boxes<'a>(
                             measurer,
                             false, // do NOT skip inline-block children inside this subtree
                             input_values,
+                            focused,
                         );
                     } else {
                         // Fallback: simple placeholder rectangle using the box style.
@@ -492,6 +520,11 @@ fn paint_line_boxes<'a>(
                         Vec2::new(frag.rect.width, frag.rect.height),
                     );
 
+                    let is_focused_input =
+                        matches!(kind, ReplacedKind::InputText) &&
+                        layout.is_some_and(|lb| focused == Some(lb.node_id()));
+
+
                     // Fill + stroke (placeholder look)
                     let (r, g, b, a) = style.background_color;
                     let fill = if a > 0 {
@@ -501,12 +534,14 @@ fn paint_line_boxes<'a>(
                     };
 
                     painter.rect_filled(rect, 2.0, fill);
-                    painter.rect_stroke(
-                        rect,
-                        2.0,
-                        Stroke::new(1.0, Color32::from_rgb(120, 120, 120)),
-                        StrokeKind::Outside,
-                    );
+                    let stroke = if is_focused_input {
+                        // Use egui’s selection stroke so it matches the theme
+                        Stroke::new(2.0, Color32::from_rgb(80, 140, 255))
+                    } else {
+                        Stroke::new(1.0, Color32::from_rgb(120, 120, 120))
+                    };
+
+                    painter.rect_stroke(rect, 2.0, stroke, StrokeKind::Outside);
 
                     // Special case: <input type="text"> draws its value/placeholder inside the box
                     if matches!(kind, ReplacedKind::InputText) {
@@ -596,12 +631,13 @@ fn paint_layout_box<'a>(
     measurer: &dyn TextMeasurer,
     skip_inline_block_children: bool,
     input_values: &InputValueStore,
+    focused: Option<Id>,
 ) {
 
     // 0) Do not paint non-rendering elements (head, style, script, etc.)
     if is_non_rendering_element(layout.node.node) {
         for child in &layout.children {
-            paint_layout_box(child, painter, origin, measurer, skip_inline_block_children, input_values);
+            paint_layout_box(child, painter, origin, measurer, skip_inline_block_children, input_values, focused);
         }
         return;
     }
@@ -634,7 +670,7 @@ fn paint_layout_box<'a>(
     }
 
     // 2) Inline content
-    paint_inline_content(layout, painter, origin, measurer, input_values);
+    paint_inline_content(layout, painter, origin, measurer, input_values, focused);
 
     // 3) Recurse into children
     for child in &layout.children {
@@ -643,7 +679,7 @@ fn paint_layout_box<'a>(
             continue;
         }
 
-        paint_layout_box(child, painter, origin, measurer, skip_inline_block_children, input_values);
+        paint_layout_box(child, painter, origin, measurer, skip_inline_block_children, input_values, focused);
     }
 }
 
@@ -712,6 +748,7 @@ fn paint_inline_content<'a>(
     origin: Pos2,
     measurer: &dyn TextMeasurer,
     input_values: &InputValueStore,
+    focused: Option<Id>,
 ) {
     // Only block-like elements host their own inline formatting context.
     match layout.node.node {
@@ -751,7 +788,7 @@ fn paint_inline_content<'a>(
         return;
     }
 
-    paint_line_boxes(painter, origin, &lines, measurer, input_values);
+    paint_line_boxes(painter, origin, &lines, measurer, input_values, focused);
 }
 
 fn find_page_background_color(root: &StyledNode<'_>) -> Option<(u8, u8, u8, u8)> {
