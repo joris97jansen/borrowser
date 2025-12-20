@@ -223,7 +223,7 @@ pub fn content(
             let base_url = page.base_url.as_deref();
             let input_values = &mut page.input_values;
 
-            let action = page_viewport(ui, &style_root, dom, base_url, input_values, interaction);
+            let action = page_viewport(ui, &style_root, base_url, input_values, interaction);
 
             if loading { ui.label("⏳ Loading…"); }
             if let Some(s) = status { ui.label(s); }
@@ -236,7 +236,6 @@ pub fn content(
 pub fn page_viewport(
     ui: &mut Ui,
     style_root: &StyledNode<'_>,
-    dom: &Node,
     base_url: Option<&str>,
     input_values: &mut InputValueStore,
     interaction: &mut InteractionState,
@@ -287,13 +286,6 @@ pub fn page_viewport(
             // Paint first
             paint_layout_box(&layout_root, &painter, origin, &measurer, true, input_values);
 
-            if let Some(focus_id) = interaction.focus {
-                let egui_focus_id = ui.make_persistent_id(("dom-input", focus_id));
-                // Create a tiny invisible interactable so egui has something to focus.
-                let focus_rect = Rect::from_min_size(content_rect.min, Vec2::new(1.0, 1.0));
-                ui.interact(focus_rect, egui_focus_id, Sense::focusable_noninteractive());
-            }
-
             // ------- unified router output -------
             let mut action: Option<PageAction> = None;
 
@@ -317,10 +309,10 @@ pub fn page_viewport(
             });
 
             // Track hover id
-            interaction.hover = hover_hit.map(|h| h.node_id);
+            interaction.hover = hover_hit.as_ref().map(|h| h.node_id);
 
             // Cursor icon hint
-            if let Some(h) = hover_hit {
+            if let Some(h) = &hover_hit {
                 match h.kind {
                     HitKind::Link => {
                         ui.output_mut(|o| o.cursor_icon = CursorIcon::PointingHand);
@@ -345,8 +337,10 @@ pub fn page_viewport(
                     if interaction.active == Some(h.node_id) {
                         match h.kind {
                             HitKind::Link => {
-                                if let Some(url) = resolve_link_url(dom, base_url, h.node_id) {
-                                    action = Some(PageAction::Navigate(url));
+                                if let Some(href) = h.href.as_deref() {
+                                    if let Some(url) = resolve_relative_url(base_url, href) {
+                                        action = Some(PageAction::Navigate(url));
+                                    }
                                 }
                             }
 
@@ -859,58 +853,6 @@ fn get_attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
     }
 }
 
-fn resolve_link_url(dom: &Node, base_url: Option<&str>, link_id: html::Id) -> Option<String> {
-    let href = find_attr_by_id(dom, link_id, "href")?;
-
-    // If we have no base_url, just return the raw href
-    let Some(base) = base_url else {
-        return Some(href.to_string());
-    };
-
-    let base_url = url::Url::parse(base).ok()?;
-    base_url.join(href).ok().map(|u| u.to_string())
-}
-
-
-fn find_attr_by_id<'a>(node: &'a Node, want_id: Id, attr: &str) -> Option<&'a str> {
-    // You likely store node ids in Node::Element; adjust if your structure differs.
-    match node {
-        Node::Element { attributes, children, .. } => {
-            // if this element has the id
-            // If you store ids elsewhere, replace this check with your actual id accessor.
-            if node_id_of(node) == Some(want_id) {
-                for (k, v) in attributes {
-                    if k.eq_ignore_ascii_case(attr) {
-                        return v.as_deref();
-                    }
-                }
-            }
-            for c in children {
-                if let Some(v) = find_attr_by_id(c, want_id, attr) {
-                    return Some(v);
-                }
-            }
-            None
-        }
-        Node::Document { children, .. } => {
-            for c in children {
-                if let Some(v) = find_attr_by_id(c, want_id, attr) {
-                    return Some(v);
-                }
-            }
-            None
-        }
-        _ => None,
-    }
-}
-
-fn node_id_of(node: &Node) -> Option<Id> {
-    match node {
-        Node::Element { id, .. } => Some(*id),
-        _ => None,
-    }
-}
-
 fn find_layout_box_by_id<'a>(root: &'a LayoutBox<'a>, id: Id) -> Option<&'a LayoutBox<'a>> {
     if root.node_id() == id {
         return Some(root);
@@ -921,4 +863,14 @@ fn find_layout_box_by_id<'a>(root: &'a LayoutBox<'a>, id: Id) -> Option<&'a Layo
         }
     }
     None
+}
+
+fn resolve_relative_url(base_url: Option<&str>, href: &str) -> Option<String> {
+    // If no base_url (e.g. initial about:blank), just pass through.
+    let Some(base) = base_url else {
+        return Some(href.to_string());
+    };
+
+    let base = url::Url::parse(base).ok()?;
+    base.join(href).ok().map(|u| u.to_string())
 }

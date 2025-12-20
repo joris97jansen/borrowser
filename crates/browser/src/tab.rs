@@ -281,7 +281,7 @@ impl Tab {
         self.start_fetch(url);
     }
 
-    fn normalize_url(&mut self, url: &String) -> Result<String, &'static str> {
+    fn normalize_url(&mut self, url: &str) -> Result<String, &'static str> {
         let trimmed = url.trim();
         if trimmed.is_empty() {
             return Err("Cannot navigate to an empty URL");
