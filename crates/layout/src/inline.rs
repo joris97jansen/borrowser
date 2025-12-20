@@ -3,7 +3,10 @@ use css::{
     Length,
     Display,
 };
-use html::Node;
+use html::{
+    Node,
+    Id,
+};
 use html::dom_utils::is_non_rendering_element;
 
 use crate::{
@@ -29,6 +32,10 @@ const INLINE_PADDING: f32 = 4.0;
 // Height uses:    collect_inline_tokens_for_block_layout
 // Painting uses:  collect_inline_tokens_for_block_layout_for_paint
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum InlineActionKind {
+    Link,
+}
 
 /// The logical content carried by a line fragment.
 /// - `Text` is inline text
@@ -37,10 +44,12 @@ pub enum InlineFragment<'a> {
     Text {
         text: String,
         style: &'a ComputedStyle,
+        action: Option<(Id, InlineActionKind, Option<String>)>,
     },
     Box {
         /// Style of the inline box (for color, etc.).
         style: &'a ComputedStyle,
+        action: Option<(Id, InlineActionKind, Option<String>)>,
         /// Layout box for this inline-level box, if we have one.
         /// - `Some(..)` in the painting path
         /// - `None` in the height computation path
@@ -49,6 +58,7 @@ pub enum InlineFragment<'a> {
     Replaced {
         style: &'a ComputedStyle,
         kind: ReplacedKind,
+        action: Option<(Id, InlineActionKind, Option<String>)>,
         layout: Option<&'a LayoutBox<'a>>, // usually None; future-proof (e.g. <button>)
     },
 }
@@ -65,24 +75,38 @@ pub struct LineBox<'a> {
     pub rect: Rectangle,
 }
 
+#[derive(Clone, Debug, Default)]
+struct InlineContext {
+    link_target: Option<html::Id>,
+    link_href: Option<String>,
+}
+
 // Internal token representation after whitespace processing.
 // Not exported yet; only used inside this module.
 enum InlineToken<'a> {
-    Word { text: String, style: &'a ComputedStyle },
-    Space { style: &'a ComputedStyle }, // a single collapsible space
+    Word {
+        text: String,
+        style: &'a ComputedStyle,
+        ctx: InlineContext,
+    },
+    Space {
+        style: &'a ComputedStyle,
+        ctx: InlineContext,
+    }, // a single collapsible space
     /// A "box token" representing an inline-level box (e.g. inline-block, image).
     /// Width/height are the box size in px.
     Box {
         width: f32,
         height: f32,
         style: &'a ComputedStyle,
-        /// Layout box, if we want to paint its subtree later.
+        ctx: InlineContext,
         layout: Option<&'a LayoutBox<'a>>,
     },
     Replaced {
         width: f32,
         height: f32,
         style: &'a ComputedStyle,
+        ctx: InlineContext,
         kind: ReplacedKind,
         layout: Option<&'a LayoutBox<'a>>,
     },
@@ -93,6 +117,7 @@ fn push_text_as_tokens<'a>(
     style: &'a ComputedStyle,
     tokens: &mut Vec<InlineToken<'a>>,
     pending_space: &mut bool,
+    ctx: &InlineContext,
 ) {
     let mut current_word = String::new();
 
@@ -101,19 +126,20 @@ fn push_text_as_tokens<'a>(
             // End any current word.
             if !current_word.is_empty() {
                 tokens.push(InlineToken::Word {
-                    text: current_word.clone(),
+                    text: std::mem::take(&mut current_word),
                     style,
+                    ctx: ctx.clone(),
                 });
-                current_word.clear();
             }
             // Remember that we've seen whitespace; may become a Space later.
             *pending_space = true;
         } else {
-            // We’re about to start/continue a word.
-            // If there was whitespace *and* we already have some tokens,
-            // emit a single Space before this new word.
+            // Emit a single Space before this new word if needed.
             if *pending_space && !tokens.is_empty() {
-                tokens.push(InlineToken::Space { style });
+                tokens.push(InlineToken::Space {
+                    style,
+                    ctx: ctx.clone(),
+                });
             }
             *pending_space = false;
 
@@ -124,14 +150,13 @@ fn push_text_as_tokens<'a>(
     // Flush last word in this text fragment.
     if !current_word.is_empty() {
         tokens.push(InlineToken::Word {
-            text: current_word,
+            text: std::mem::take(&mut current_word),
             style,
+            ctx: ctx.clone(),
         });
     }
-
-    // At the end we deliberately ignore pending_space:
-    // trailing whitespace collapses away completely.
 }
+
 
 fn collect_inline_tokens_for_block_layout<'a>(
     block: &'a LayoutBox<'a>,
@@ -139,17 +164,20 @@ fn collect_inline_tokens_for_block_layout<'a>(
     let mut tokens: Vec<InlineToken<'a>> = Vec::new();
     let mut pending_space = false;
 
-    for child in &block.children {
-        collect_inline_tokens_from_layout_box(child, &mut tokens, &mut pending_space);
-    }
+    let ctx = InlineContext::default();
 
+    for child in &block.children {
+        collect_inline_tokens_from_layout_box(child, &mut tokens, &mut pending_space, ctx.clone());
+    }
     tokens
 }
+
 
 fn collect_inline_tokens_from_layout_box<'a>(
     layout: &'a LayoutBox<'a>,
     tokens: &mut Vec<InlineToken<'a>>,
     pending_space: &mut bool,
+    ctx: InlineContext
 ) {
     match layout.node.node {
         Node::Text { text, .. } => {
@@ -159,16 +187,24 @@ fn collect_inline_tokens_from_layout_box<'a>(
             // Treat the text content as part of the current inline
             // formatting context using the same whitespace behavior
             // as tokenize_runs.
-            push_text_as_tokens(text, layout.style, tokens, pending_space);
+            push_text_as_tokens(text, layout.style, tokens, pending_space, &ctx);
         }
 
         Node::Element { .. } | Node::Document { .. } | Node::Comment { .. } => {
+            let mut next_ctx = ctx.clone();
+            if let Node::Element { name, .. } = layout.node.node {
+                if name.eq_ignore_ascii_case("a") {
+                    next_ctx.link_target = Some(layout.node_id());
+                    next_ctx.link_href = get_attr(layout.node.node, "href").map(|s| s.to_string());
+                }
+            }
+
             match layout.kind {
                 BoxKind::Inline => {
                     // Inline container: recurse into children, they
                     // participate in the same inline formatting context.
                     for child in &layout.children {
-                        collect_inline_tokens_from_layout_box(child, tokens, pending_space);
+                        collect_inline_tokens_from_layout_box(child, tokens, pending_space, next_ctx.clone());
                     }
                 }
 
@@ -180,7 +216,10 @@ fn collect_inline_tokens_from_layout_box<'a>(
                     // single Space token before the box (like a word).
                     if *pending_space && !tokens.is_empty() {
                         let style = layout.style;
-                        tokens.push(InlineToken::Space { style });
+                        tokens.push(InlineToken::Space {
+                            style,
+                            ctx: next_ctx.clone(),
+                        });
                         *pending_space = false;
                     }
 
@@ -194,6 +233,7 @@ fn collect_inline_tokens_from_layout_box<'a>(
                         width,
                         height,
                         style,
+                        ctx: next_ctx.clone(),
                         layout: None, // height computation path: no layout ref
                     });
                 }
@@ -210,7 +250,10 @@ fn collect_inline_tokens_from_layout_box<'a>(
                 BoxKind::ReplacedInline => {
                     if *pending_space && !tokens.is_empty() {
                         let style = layout.style;
-                        tokens.push(InlineToken::Space { style });
+                        tokens.push(InlineToken::Space {
+                            style,
+                            ctx: next_ctx.clone(),
+                        });
                         *pending_space = false;
                     }
 
@@ -226,6 +269,7 @@ fn collect_inline_tokens_from_layout_box<'a>(
                         width,
                         height,
                         style,
+                        ctx: next_ctx.clone(),
                         kind,
                         layout: None, // height computation path: no layout ref
                     });
@@ -240,9 +284,10 @@ fn collect_inline_tokens_for_block_layout_for_paint<'a>(
 ) -> Vec<InlineToken<'a>> {
     let mut tokens: Vec<InlineToken<'a>> = Vec::new();
     let mut pending_space = false;
+    let ctx = InlineContext::default();
 
     for child in &block.children {
-        collect_inline_tokens_from_layout_box_for_paint(child, &mut tokens, &mut pending_space);
+        collect_inline_tokens_from_layout_box_for_paint(child, &mut tokens, &mut pending_space, ctx.clone());
     }
 
     tokens
@@ -252,6 +297,7 @@ fn collect_inline_tokens_from_layout_box_for_paint<'a>(
     layout: &'a LayoutBox<'a>,
     tokens: &mut Vec<InlineToken<'a>>,
     pending_space: &mut bool,
+    ctx: InlineContext
 ) {
     match layout.node.node {
         Node::Text { text, .. } => {
@@ -259,10 +305,18 @@ fn collect_inline_tokens_from_layout_box_for_paint<'a>(
                 return;
             }
             // Same whitespace behavior as tokenize_runs / height path.
-            push_text_as_tokens(text, layout.style, tokens, pending_space);
+            push_text_as_tokens(text, layout.style, tokens, pending_space, &ctx);
         }
 
         Node::Element { .. } | Node::Document { .. } | Node::Comment { .. } => {
+            let mut next_ctx = ctx.clone();
+
+            if let Node::Element { name, .. } = layout.node.node {
+                if name.eq_ignore_ascii_case("a") {
+                    next_ctx.link_target = Some(layout.node_id());
+                    next_ctx.link_href = get_attr(layout.node.node, "href").map(|s| s.to_string());
+                }
+            }
             match layout.kind {
                 BoxKind::Inline => {
                     // Inline container: recurse into children, they
@@ -272,6 +326,7 @@ fn collect_inline_tokens_from_layout_box_for_paint<'a>(
                             child,
                             tokens,
                             pending_space,
+                            next_ctx.clone()
                         );
                     }
                 }
@@ -283,7 +338,10 @@ fn collect_inline_tokens_from_layout_box_for_paint<'a>(
                     // token before the box (like a word).
                     if *pending_space && !tokens.is_empty() {
                         let style = layout.style;
-                        tokens.push(InlineToken::Space { style });
+                        tokens.push(InlineToken::Space {
+                            style,
+                            ctx: next_ctx.clone(),
+                        });
                         *pending_space = false;
                     }
 
@@ -297,6 +355,7 @@ fn collect_inline_tokens_from_layout_box_for_paint<'a>(
                         width,
                         height,
                         style,
+                        ctx: next_ctx.clone(),
                         layout: Some(layout), // painting path: keep a layout ref
                     });
                 }
@@ -309,7 +368,10 @@ fn collect_inline_tokens_from_layout_box_for_paint<'a>(
                 BoxKind::ReplacedInline => {
                     if *pending_space && !tokens.is_empty() {
                         let style = layout.style;
-                        tokens.push(InlineToken::Space { style });
+                        tokens.push(InlineToken::Space {
+                            style,
+                            ctx: next_ctx.clone(),
+                        });
                         *pending_space = false;
                     }
 
@@ -325,6 +387,7 @@ fn collect_inline_tokens_from_layout_box_for_paint<'a>(
                         width,
                         height,
                         style,
+                        ctx: next_ctx.clone(),
                         kind,
                         layout: Some(layout),
                     });
@@ -390,25 +453,28 @@ fn layout_tokens<'a>(
 
     for token in tokens {
         match token {
-            InlineToken::Space { style } => {
+            InlineToken::Space { style, ctx } => {
+                // Never show a space at the beginning of a line.
                 if is_first_in_line {
                     continue;
                 }
 
-                let space_text = "\u{00A0}";
                 let mut space_width = measurer.measure(" ", style);
-
                 if space_width <= 0.0 {
-                    // ultra defensive fallback
                     space_width = 1.0;
                 }
 
+                // If the space doesn't fit, break line and drop the space
                 if cursor_x + space_width > max_x {
-                    // flush current line, drop leading space on next line
                     if !line_fragments.is_empty() {
                         let line_width = cursor_x - line_start_x;
                         lines.push(LineBox {
-                            rect: Rectangle { x: line_start_x, y: cursor_y, width: line_width, height: line_height },
+                            rect: Rectangle {
+                                x: line_start_x,
+                                y: cursor_y,
+                                width: line_width,
+                                height: line_height,
+                            },
                             fragments: std::mem::take(&mut line_fragments),
                         });
                     }
@@ -424,16 +490,29 @@ fn layout_tokens<'a>(
                     continue;
                 }
 
+                let action = ctx.link_target.map(|id| {
+                    (id, InlineActionKind::Link, ctx.link_href.clone())
+                });
+
                 line_fragments.push(LineFragment {
-                    kind: InlineFragment::Text { text: space_text.to_string(), style },
-                    rect: Rectangle { x: cursor_x, y: cursor_y, width: space_width, height: line_height },
+                    kind: InlineFragment::Text {
+                        text: "\u{00A0}".to_string(),
+                        style,
+                        action,
+                    },
+                    rect: Rectangle {
+                        x: cursor_x,
+                        y: cursor_y,
+                        width: space_width,
+                        height: line_height,
+                    },
                 });
 
                 cursor_x += space_width;
-                is_first_in_line = false; // 👈 add this
+                is_first_in_line = false;
             }
 
-            InlineToken::Word { text, style } => {
+            InlineToken::Word { text, style, ctx } => {
                 let word_width = measurer.measure(&text, style);
 
                 let fits = cursor_x + word_width <= max_x;
@@ -461,7 +540,6 @@ fn layout_tokens<'a>(
 
                     cursor_x = line_start_x;
                     line_height = base_line_height;
-                    is_first_in_line = true;
                 }
 
                 let frag_rect = Rectangle {
@@ -471,8 +549,12 @@ fn layout_tokens<'a>(
                     height: line_height,
                 };
 
+                let action = ctx.link_target.map(|id| {
+                    (id, InlineActionKind::Link, ctx.link_href.clone())
+                });
+
                 line_fragments.push(LineFragment {
-                    kind: InlineFragment::Text { text, style },
+                    kind: InlineFragment::Text { text, style, action },
                     rect: frag_rect,
                 });
 
@@ -480,7 +562,7 @@ fn layout_tokens<'a>(
                 is_first_in_line = false;
             }
 
-            InlineToken::Box { width: box_width, height: box_height, style, layout } => {
+            InlineToken::Box { width: box_width, height: box_height, style, ctx, layout } => {
                 let fits = cursor_x + box_width <= max_x;
 
                 if !fits && !is_first_in_line {
@@ -520,16 +602,19 @@ fn layout_tokens<'a>(
                     height: box_height,
                 };
 
-                line_fragments.push(LineFragment {
-                    kind: InlineFragment::Box { style, layout },
-                    rect: frag_rect,
+                let action = ctx.link_target.map(|id| {
+                    (id, InlineActionKind::Link, ctx.link_href.clone())
                 });
 
+                line_fragments.push(LineFragment {
+                    kind: InlineFragment::Box { style, action, layout },
+                    rect: frag_rect,
+                });
                 cursor_x += box_width;
                 is_first_in_line = false;
             }
 
-            InlineToken::Replaced { width, height, style, kind, layout } => {
+            InlineToken::Replaced { width, height, style, ctx, kind, layout } => {
                 let fits = cursor_x + width <= max_x;
 
                 if !fits && !is_first_in_line {
@@ -563,11 +648,14 @@ fn layout_tokens<'a>(
 
                 let frag_rect = Rectangle { x: cursor_x, y: cursor_y, width, height };
 
-                line_fragments.push(LineFragment {
-                    kind: InlineFragment::Replaced { style, kind, layout },
-                    rect: frag_rect,
+                let action = ctx.link_target.map(|id| {
+                    (id, InlineActionKind::Link, ctx.link_href.clone())
                 });
 
+                line_fragments.push(LineFragment {
+                    kind: InlineFragment::Replaced { style, kind, action, layout },
+                    rect: frag_rect,
+                });
                 cursor_x += width;
                 is_first_in_line = false;
             }
@@ -937,7 +1025,7 @@ fn resolve_replaced_height_px(
 
 fn get_attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
     match node {
-        html::Node::Element { attributes, .. } => {
+        Node::Element { attributes, .. } => {
             for (k, v) in attributes {
                 if k.eq_ignore_ascii_case(name) {
                     return v.as_deref();
@@ -957,77 +1045,83 @@ fn size_replaced_inline_children<'a>(
     content_width: f32,
 ) {
     for child in &mut parent.children {
-        if !matches!(child.kind, BoxKind::ReplacedInline) {
-            continue;
-        }
+        match child.kind {
+            BoxKind::ReplacedInline => {
+                // Position relative to THIS block’s content box.
+                let cbm = child.style.box_metrics;
+                let child_x = content_x + cbm.margin_left;
+                let child_y = content_top + cbm.margin_top;
 
-        let cbm = child.style.box_metrics;
-        let child_x = content_x + cbm.margin_left;
-        let child_y = content_top + cbm.margin_top;
+                child.rect.x = child_x;
+                child.rect.y = child_y;
 
-        child.rect.x = child_x;
-        child.rect.y = child_y;
+                let kind = child.replaced.expect("ReplacedInline must have kind");
 
-        let kind = child.replaced.expect("ReplacedInline must have kind");
+                match kind {
+                    ReplacedKind::Img => {
+                        let (intr_w, intr_h) = default_intrinsic_img_size();
+                        let w = resolve_replaced_width_px(child.style, content_width, intr_w);
+                        let h = resolve_replaced_height_px(child.style, intr_h);
+                        child.rect.width = w;
+                        child.rect.height = h;
+                    }
 
-        match kind {
-            ReplacedKind::Img => {
-                let (intr_w, intr_h) = default_intrinsic_img_size();
+                    ReplacedKind::InputText => {
+                        // Intrinsic width from size= attribute (default ~20)
+                        let size_chars: u32 = get_attr(child.node.node, "size")
+                            .and_then(|s| s.trim().parse::<u32>().ok())
+                            .filter(|n| *n > 0)
+                            .unwrap_or(20);
 
-                let w = resolve_replaced_width_px(child.style, content_width, intr_w);
-                let h = resolve_replaced_height_px(child.style, intr_h);
+                        let avg_char_w = measurer.measure("0", child.style).max(4.0);
+                        let fudge = 8.0;
+                        let intrinsic_w = (size_chars as f32) * avg_char_w + fudge;
 
-                child.rect.width = w;
-                child.rect.height = h;
-            }
-            ReplacedKind::InputText => {
-                // 1) Determine intrinsic base width from `size` attribute.
-                //    HTML default size is commonly 20 for text inputs.
-                let size_chars: u32 = get_attr(child.node.node, "size")
-                    .and_then(|s| s.trim().parse::<u32>().ok())
-                    .filter(|n| *n > 0)
-                    .unwrap_or(20);
+                        let w = resolve_replaced_width_px(child.style, content_width, intrinsic_w);
 
-                // Average char width: measure "0" or "M" in current font.
-                // "0" tends to be stable across fonts; "M" often overestimates.
-                let avg_char_w = measurer.measure("0", child.style).max(4.0);
+                        // Height from line-height + padding (sane minimum)
+                        let bm = child.style.box_metrics;
+                        let line_h = measurer.line_height(child.style);
+                        let pad_y = (bm.padding_top + bm.padding_bottom).max(4.0);
 
-                // Add a little extra so text isn't flush even if padding is 0.
-                let fudge = 8.0;
+                        let mut h = (line_h + pad_y).max(18.0);
 
-                let intrinsic_w = (size_chars as f32) * avg_char_w + fudge;
+                        if let Some(Length::Px(px)) = child.style.height {
+                            if px >= 0.0 {
+                                h = px;
+                            }
+                        }
 
-                // 2) Resolve width:
-                //    CSS width wins; else intrinsic; then min/max; clamp to available.
-                let w = resolve_replaced_width_px(child.style, content_width, intrinsic_w);
+                        child.rect.width = w;
+                        child.rect.height = h;
+                    }
 
-                // 3) Resolve height:
-                //    derive from line height + vertical padding, with a sane minimum.
-                let bm = child.style.box_metrics;
-                let line_h = measurer.line_height(child.style);
-                let pad_y = (bm.padding_top + bm.padding_bottom).max(4.0);
-
-                let mut h = (line_h + pad_y).max(18.0);
-
-                if let Some(Length::Px(px)) = child.style.height {
-                    if px >= 0.0 {
-                        h = px;
+                    other => {
+                        let (intr_w, intr_h) = default_intrinsic_size(other);
+                        let w = resolve_replaced_width_px(child.style, content_width, intr_w);
+                        let h = resolve_replaced_height_px(child.style, intr_h);
+                        child.rect.width = w;
+                        child.rect.height = h;
                     }
                 }
-
-                child.rect.width = w;
-                child.rect.height = h;
             }
-            _ => {
-                // Phase 1: ignore other replaced kinds here
-                // (they'll get their own sizing rules in their issues)
-                let (intr_w, intr_h) = default_intrinsic_size(kind);
-                let w = resolve_replaced_width_px(child.style, content_width, intr_w);
-                let h = resolve_replaced_height_px(child.style, intr_h);
 
-                child.rect.width = w;
-                child.rect.height = h;
+            BoxKind::Inline => {
+                // KEY FIX:
+                // Replaced inline elements can be nested inside inline containers (<span> etc).
+                // They still size relative to the containing block’s content box.
+                size_replaced_inline_children(measurer, child, content_x, content_top, content_width);
+            }
+
+            BoxKind::InlineBlock => {
+                // Leave this alone: inline-block establishes its own formatting context
+                // and will get its own recompute pass elsewhere.
+            }
+
+            BoxKind::Block => {
+                // Block children don’t participate in this block’s inline formatting.
             }
         }
     }
 }
+

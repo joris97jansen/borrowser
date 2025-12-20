@@ -29,4 +29,15 @@ impl InputValueStore {
     pub fn clear(&mut self) {
         self.values.clear();
     }
+
+    pub fn append(&mut self, id: Id, s: &str) {
+        let entry = self.values.entry(id).or_default();
+        entry.push_str(s);
+    }
+
+    pub fn backspace(&mut self, id: Id) {
+        if let Some(v) = self.values.get_mut(&id) {
+            v.pop();
+        }
+    }
 }

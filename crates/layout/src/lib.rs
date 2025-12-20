@@ -7,7 +7,7 @@ pub use inline::{
         layout_inline_for_paint,
 };
 pub mod hit_test;
-pub use hit_test::{hit_test, HitKind, HitTestResult};
+pub use hit_test::{hit_test, HitKind};
 
 use css::{
     ComputedStyle,

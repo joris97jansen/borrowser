@@ -1,5 +1,6 @@
 use url::Url;
 use crate::page::PageState;
+use crate::interactions::InteractionState;
 use bus::{
     CoreCommand,
     CoreEvent,
@@ -47,6 +48,7 @@ pub struct Tab {
     page: PageState,
     repaint: Option<RepaintHandle>,
     cmd_tx: Option<mpsc::Sender<CoreCommand>>,
+    interaction: InteractionState,
 }
 
 impl Tab {
@@ -62,6 +64,7 @@ impl Tab {
             page: PageState::new(),
             repaint: None,
             cmd_tx: None,
+            interaction: InteractionState::default(),
         }
     }
 
@@ -75,7 +78,11 @@ impl Tab {
     }
 
     pub fn ui_content(&mut self, ctx: &Context) {
-        content(ctx, &self.page, self.last_status.as_ref(), self.loading);
+        if let Some(action) = content(ctx, &mut self.page, &mut self.interaction, self.last_status.as_ref(), self.loading) {
+            match action {
+                crate::view::PageAction::Navigate(url) => self.navigate_to_new(url),
+            }
+        }
     }
 
     // -- Event Handling ---
@@ -250,6 +257,7 @@ impl Tab {
         if self.nav_gen > 0 {
             self.send_cmd(CoreCommand::CancelRequest { tab_id: self.tab_id, request_id: self.nav_gen });
         }
+        self.interaction.clear_for_navigation();
         self.nav_gen = self.nav_gen.wrapping_add(1);
         let request_id = self.nav_gen;
 
@@ -268,6 +276,7 @@ impl Tab {
 
     fn load_current(&mut self, url: String) {
         // do NOT touch history; just fetch the given URL
+        self.interaction.clear_for_navigation();
         self.url = url.clone();
         self.start_fetch(url);
     }

@@ -1,12 +1,16 @@
 use crate::page::PageState;
 use crate::tab::Tab;
+use crate::interactions::InteractionState;
+use crate::input_store::InputValueStore;
 
 use html::{
     Node,
+    Id,
     dom_utils::{
         is_non_rendering_element,
     },
 };
+
 use css::{
     build_style_tree,
     StyledNode,
@@ -29,7 +33,12 @@ use layout::{
         LineBox,
         InlineFragment,
         layout_inline_for_paint,
-    }
+    },
+    hit_test::{
+        HitResult,
+        HitKind,
+        hit_test,
+    },
 };
 
 use egui::{
@@ -54,6 +63,8 @@ use egui::{
     StrokeKind,
     TextEdit,
     Sense,
+    Event,
+    CursorIcon,
 };
 
 pub enum NavigationAction {
@@ -61,6 +72,10 @@ pub enum NavigationAction {
     Back,
     Forward,
     Refresh,
+    Navigate(String),
+}
+
+pub enum PageAction {
     Navigate(String),
 }
 
@@ -168,98 +183,240 @@ pub fn top_bar(ctx: &Context, tab: &mut Tab) -> NavigationAction {
 
 pub fn content(
     ctx: &Context,
-    page: &PageState,
+    page: &mut PageState,
+    interaction: &mut InteractionState,
     status: Option<&String>,
     loading: bool,
-) {
-    // If there is no DOM yet, keep the old behavior: follow OS theme.
-    let dom = match page.dom.as_ref() {
-        Some(dom) => dom,
-        None => {
-            let visuals = ctx.style().visuals.clone();
-            CentralPanel::default()
-                .frame(Frame::default().fill(visuals.panel_fill))
-                .show(ctx, |ui| {
-                    if loading { ui.label("⏳ Loading…"); }
-                    if let Some(s) = status { ui.label(s); }
-                });
-            return;
+) -> Option<PageAction> {
+    if page.dom.is_none() {
+        let visuals = ctx.style().visuals.clone();
+        CentralPanel::default()
+            .frame(Frame::default().fill(visuals.panel_fill))
+            .show(ctx, |ui| {
+                if loading { ui.label("⏳ Loading…"); }
+                if let Some(s) = status { ui.label(s); }
+            });
+        return None;
+    }
+
+    // IMPORTANT: borrow of page.dom is contained in this block and ends here.
+    let base_fill = {
+        let dom = page.dom.as_ref().unwrap();
+        let style_root = build_style_tree(dom, None);
+        let page_bg = find_page_background_color(&style_root);
+
+        if let Some((r, g, b, a)) = page_bg {
+            Color32::from_rgba_unmultiplied(r, g, b, a)
+        } else {
+            Color32::WHITE
         }
     };
 
-    // 1) Build style tree ONCE for this frame
-    let style_root = build_style_tree(dom, None);
-
-    // 2) Decide the "page background" from computed styles
-    let page_bg = find_page_background_color(&style_root);
-
-    let base_fill = if let Some((r, g, b, a)) = page_bg {
-        Color32::from_rgba_unmultiplied(r, g, b, a)
-    } else {
-        // No explicit page background → default to white like real browsers
-        Color32::WHITE
-    };
-
-    // 3) Paint CentralPanel with the page background,
-    //    then render the scrollable layout on top.
     CentralPanel::default()
         .frame(Frame::default().fill(base_fill))
         .show(ctx, |ui| {
-            page_viewport(ui, &style_root, page);
+            // Rebuild style_root inside closure (needed anyway for layout/paint).
+            let dom = page.dom.as_ref().unwrap();
+            let style_root = build_style_tree(dom, None);
+
+            // disjoint borrow: OK (dom is immutably borrowed, input_values mutably borrowed)
+            let base_url = page.base_url.as_deref();
+            let input_values = &mut page.input_values;
+
+            let action = page_viewport(ui, &style_root, dom, base_url, input_values, interaction);
 
             if loading { ui.label("⏳ Loading…"); }
             if let Some(s) = status { ui.label(s); }
-        });
+
+            action
+        })
+        .inner
 }
 
-pub fn page_viewport(ui: &mut Ui, style_root: &StyledNode<'_>, page: &PageState) {
+pub fn page_viewport(
+    ui: &mut Ui,
+    style_root: &StyledNode<'_>,
+    dom: &Node,
+    base_url: Option<&str>,
+    input_values: &mut InputValueStore,
+    interaction: &mut InteractionState,
+) -> Option<PageAction> {
     ScrollArea::vertical()
         .id_salt("page_viewport_scroll_area")
         .auto_shrink([false, false])
         .show(ui, |ui| {
-            // 1) Page geometry
             let available_width = ui.available_width();
             let min_height = ui.available_height().max(200.0);
 
-            // 2) Block layout (inline-aware, single authoritative pass)
             let measurer = EguiTextMeasurer::new(ui.ctx());
             let layout_root = layout_block_tree(style_root, available_width, &measurer);
-
             let content_height = layout_root.rect.height.max(min_height);
 
-            // 3) Reserve paint area
-            let (content_rect, _resp) = ui.allocate_exact_size(
+            let (content_rect, resp) = ui.allocate_exact_size(
                 Vec2::new(available_width, content_height),
-                Sense::hover(),
+                Sense::click(),
             );
 
-            // 4) Paint layout tree (backgrounds + text)
             let painter = ui.painter_at(content_rect);
             let origin = content_rect.min;
-            paint_layout_box(&layout_root, &painter, origin, &measurer, true, page);
 
-            // 5) Hover hit-test (Phase 1)
-            if let Some(hover_pos) = ui.ctx().input(|i| i.pointer.hover_pos()) {
-                // Convert screen -> layout coordinates
-                let lx = hover_pos.x - origin.x;
-                let ly = hover_pos.y - origin.y;
+            // If we have a focused input, register an invisible interactable at its real rect.
+            // This is REQUIRED so egui has a widget to attach keyboard focus to.
+            if let Some(focus_id) = interaction.focus {
+                if let Some(lb) = find_layout_box_by_id(&layout_root, focus_id) {
+                    // Only for input replaced inline (defensive)
+                    if matches!(lb.replaced, Some(ReplacedKind::InputText)) {
+                        let egui_focus_id = ui.make_persistent_id(("dom-input", focus_id));
 
-                if let Some(hit) = layout::hit_test::hit_test(&layout_root, (lx, ly), &measurer) {
-                    // Debug overlay text (easy, visible)
-                    let msg = format!("hover: {:?} on {:?}", hit.kind, hit.node_id);
-                    painter.text(
-                        origin + Vec2::new(8.0, 8.0),
-                        Align2::LEFT_TOP,
-                        msg,
-                        FontId::proportional(12.0),
-                        Color32::from_rgb(80, 80, 80),
-                    );
+                        let r = Rect::from_min_size(
+                            Pos2 {
+                                x: origin.x + lb.rect.x,
+                                y: origin.y + lb.rect.y,
+                            },
+                            Vec2 {
+                                x: lb.rect.width.max(1.0),
+                                y: lb.rect.height.max(1.0),
+                            },
+                        );
 
-                    // Optional: also print for logs
-                    // eprintln!("HIT {:?}", hit);
+                        ui.interact(r, egui_focus_id, egui::Sense::focusable_noninteractive());
+                    }
                 }
             }
-        });
+
+            // Paint first
+            paint_layout_box(&layout_root, &painter, origin, &measurer, true, input_values);
+
+            if let Some(focus_id) = interaction.focus {
+                let egui_focus_id = ui.make_persistent_id(("dom-input", focus_id));
+                // Create a tiny invisible interactable so egui has something to focus.
+                let focus_rect = Rect::from_min_size(content_rect.min, Vec2::new(1.0, 1.0));
+                ui.interact(focus_rect, egui_focus_id, Sense::focusable_noninteractive());
+            }
+
+            // ------- unified router output -------
+            let mut action: Option<PageAction> = None;
+
+            // Helper: hit-test at current pointer position (layout coords)
+            let hit_at_pointer = |ui: &Ui| -> Option<HitResult> {
+                ui.input(|i| i.pointer.interact_pos()).and_then(|pos| {
+                    if !content_rect.contains(pos) {
+                        return None;
+                    }
+                    let lx = pos.x - origin.x;
+                    let ly = pos.y - origin.y;
+                    hit_test(&layout_root, (lx, ly), &measurer)
+                })
+            };
+
+            // Hover hit (prefer response hover_pos)
+            let hover_hit = resp.hover_pos().and_then(|pos| {
+                let lx = pos.x - origin.x;
+                let ly = pos.y - origin.y;
+                hit_test(&layout_root, (lx, ly), &measurer)
+            });
+
+            // Track hover id
+            interaction.hover = hover_hit.map(|h| h.node_id);
+
+            // Cursor icon hint
+            if let Some(h) = hover_hit {
+                match h.kind {
+                    HitKind::Link => {
+                        ui.output_mut(|o| o.cursor_icon = CursorIcon::PointingHand);
+                    }
+                    HitKind::Input => {
+                        ui.output_mut(|o| o.cursor_icon = CursorIcon::Text);
+                    }
+                    _ => {}
+                }
+            }
+
+            // Pointer down -> active
+            if ui.input(|i| i.pointer.primary_pressed()) {
+                interaction.active = hit_at_pointer(ui).map(|h| h.node_id);
+            }
+
+            // Pointer up -> action/focus (if released on same target)
+            if ui.input(|i| i.pointer.primary_released()) {
+                let release_hit = hit_at_pointer(ui);
+
+                if let Some(h) = release_hit {
+                    if interaction.active == Some(h.node_id) {
+                        match h.kind {
+                            HitKind::Link => {
+                                if let Some(url) = resolve_link_url(dom, base_url, h.node_id) {
+                                    action = Some(PageAction::Navigate(url));
+                                }
+                            }
+
+                            HitKind::Input => {
+                                interaction.focus = Some(h.node_id);
+
+                                let egui_focus_id = ui.make_persistent_id(("dom-input", h.node_id));
+                                ui.memory_mut(|mem| mem.request_focus(egui_focus_id));
+                                ui.ctx().request_repaint();
+                            }
+
+                            _ => {}
+                        }
+                    }
+                } else {
+                    // Released outside -> blur
+                    interaction.focus = None;
+                }
+
+                interaction.active = None;
+            }
+
+            // Key input -> focused input
+            if let Some(focus_id) = interaction.focus {
+                let egui_focus_id = ui.make_persistent_id(("dom-input", focus_id));
+
+                if ui.memory(|mem| mem.has_focus(egui_focus_id)) {
+                    let mut changed = false;
+
+                    ui.input(|i| {
+                        for evt in &i.events {
+                            match evt {
+                                Event::Text(t) => {
+                                    input_values.append(focus_id, t);
+                                    changed = true;
+                                }
+                                Event::Key {
+                                    key: Key::Backspace,
+                                    pressed: true,
+                                    ..
+                                } => {
+                                    input_values.backspace(focus_id);
+                                    changed = true;
+                                }
+                                _ => {}
+                            }
+                        }
+                    });
+
+                    if changed {
+                        ui.ctx().request_repaint();
+                    }
+                }
+            }
+
+            // Optional debug overlay
+            if let Some(h) = hover_hit {
+                let msg = format!("hover: {:?} on {:?}", h.kind, h.node_id);
+                painter.text(
+                    origin + Vec2::new(8.0, 8.0),
+                    Align2::LEFT_TOP,
+                    msg,
+                    FontId::proportional(12.0),
+                    Color32::from_rgb(80, 80, 80),
+                );
+            }
+
+            action
+        })
+        .inner
 }
 
 fn paint_line_boxes<'a>(
@@ -267,12 +424,12 @@ fn paint_line_boxes<'a>(
     origin: Pos2,
     lines: &[LineBox<'a>],
     measurer: &dyn TextMeasurer,
-    page: &PageState,
+    input_values: &InputValueStore,
 ) {
     for line in lines {
         for frag in &line.fragments {
             match &frag.kind {
-                InlineFragment::Text { text, style } => {
+                InlineFragment::Text { text, style, .. } => {
                     let (cr, cg, cb, ca) = style.color;
                     let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
 
@@ -295,7 +452,7 @@ fn paint_line_boxes<'a>(
                     );
                 }
 
-                InlineFragment::Box { style, layout } => {
+                InlineFragment::Box { style, layout, .. } => {
                     let rect = Rect::from_min_size(
                         Pos2 {
                             x: origin.x + frag.rect.x,
@@ -320,7 +477,7 @@ fn paint_line_boxes<'a>(
                             translated_origin,
                             measurer,
                             false, // do NOT skip inline-block children inside this subtree
-                            page,
+                            input_values,
                         );
                     } else {
                         // Fallback: simple placeholder rectangle using the box style.
@@ -335,7 +492,7 @@ fn paint_line_boxes<'a>(
                     }
                 }
 
-                InlineFragment::Replaced { style, kind, layout } => {
+                InlineFragment::Replaced { style, kind, layout, .. } => {
                     let rect = Rect::from_min_size(
                         Pos2 { x: origin.x + frag.rect.x, y: origin.y + frag.rect.y },
                         Vec2::new(frag.rect.width, frag.rect.height),
@@ -364,7 +521,7 @@ fn paint_line_boxes<'a>(
 
                         if let Some(lb) = layout {
                             let id = lb.node_id();
-                            if let Some(v) = page.input_values.get(id) {
+                            if let Some(v) = input_values.get(id) {
                                 shown = v.to_string();
                             }
                             
@@ -444,13 +601,13 @@ fn paint_layout_box<'a>(
     origin: Pos2,
     measurer: &dyn TextMeasurer,
     skip_inline_block_children: bool,
-    page: &PageState,
+    input_values: &InputValueStore,
 ) {
 
     // 0) Do not paint non-rendering elements (head, style, script, etc.)
     if is_non_rendering_element(layout.node.node) {
         for child in &layout.children {
-            paint_layout_box(child, painter, origin, measurer, skip_inline_block_children, page);
+            paint_layout_box(child, painter, origin, measurer, skip_inline_block_children, input_values);
         }
         return;
     }
@@ -483,7 +640,7 @@ fn paint_layout_box<'a>(
     }
 
     // 2) Inline content
-    paint_inline_content(layout, painter, origin, measurer, page);
+    paint_inline_content(layout, painter, origin, measurer, input_values);
 
     // 3) Recurse into children
     for child in &layout.children {
@@ -492,7 +649,7 @@ fn paint_layout_box<'a>(
             continue;
         }
 
-        paint_layout_box(child, painter, origin, measurer, skip_inline_block_children, page);
+        paint_layout_box(child, painter, origin, measurer, skip_inline_block_children, input_values);
     }
 }
 
@@ -560,7 +717,7 @@ fn paint_inline_content<'a>(
     painter: &Painter,
     origin: Pos2,
     measurer: &dyn TextMeasurer,
-    page: &PageState,
+    input_values: &InputValueStore,
 ) {
     // Only block-like elements host their own inline formatting context.
     match layout.node.node {
@@ -600,7 +757,7 @@ fn paint_inline_content<'a>(
         return;
     }
 
-    paint_line_boxes(painter, origin, &lines, measurer, page);
+    paint_line_boxes(painter, origin, &lines, measurer, input_values);
 }
 
 fn find_page_background_color(root: &StyledNode<'_>) -> Option<(u8, u8, u8, u8)> {
@@ -700,4 +857,68 @@ fn get_attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
         }
         _ => None,
     }
+}
+
+fn resolve_link_url(dom: &Node, base_url: Option<&str>, link_id: html::Id) -> Option<String> {
+    let href = find_attr_by_id(dom, link_id, "href")?;
+
+    // If we have no base_url, just return the raw href
+    let Some(base) = base_url else {
+        return Some(href.to_string());
+    };
+
+    let base_url = url::Url::parse(base).ok()?;
+    base_url.join(href).ok().map(|u| u.to_string())
+}
+
+
+fn find_attr_by_id<'a>(node: &'a Node, want_id: Id, attr: &str) -> Option<&'a str> {
+    // You likely store node ids in Node::Element; adjust if your structure differs.
+    match node {
+        Node::Element { attributes, children, .. } => {
+            // if this element has the id
+            // If you store ids elsewhere, replace this check with your actual id accessor.
+            if node_id_of(node) == Some(want_id) {
+                for (k, v) in attributes {
+                    if k.eq_ignore_ascii_case(attr) {
+                        return v.as_deref();
+                    }
+                }
+            }
+            for c in children {
+                if let Some(v) = find_attr_by_id(c, want_id, attr) {
+                    return Some(v);
+                }
+            }
+            None
+        }
+        Node::Document { children, .. } => {
+            for c in children {
+                if let Some(v) = find_attr_by_id(c, want_id, attr) {
+                    return Some(v);
+                }
+            }
+            None
+        }
+        _ => None,
+    }
+}
+
+fn node_id_of(node: &Node) -> Option<Id> {
+    match node {
+        Node::Element { id, .. } => Some(*id),
+        _ => None,
+    }
+}
+
+fn find_layout_box_by_id<'a>(root: &'a LayoutBox<'a>, id: Id) -> Option<&'a LayoutBox<'a>> {
+    if root.node_id() == id {
+        return Some(root);
+    }
+    for c in &root.children {
+        if let Some(found) = find_layout_box_by_id(c, id) {
+            return Some(found);
+        }
+    }
+    None
 }
