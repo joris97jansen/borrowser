@@ -117,10 +117,6 @@ impl ShellApp {
         &mut self.tabs[self.active]
     }
 
-    fn active_tab(&self) -> &Tab {
-        &self.tabs[self.active]
-    }
-
     // --- UI helpers ---
     fn request_repaint(&self) {
         if let Some(r) = &self.repaint {
@@ -314,8 +310,9 @@ impl ShellApp {
             .inner;
 
         if resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-            let url = self.active_tab().url.clone();
-            self.active_tab_mut().navigate_to_new(url);
+            let tab = self.active_tab_mut();
+            let url = tab.url.clone();
+            tab.navigate_to_new(url);
             self.request_repaint();
         }
     }
