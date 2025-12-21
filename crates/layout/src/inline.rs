@@ -1,3 +1,5 @@
+use crate::replaced::intrinsic::IntrinsicSize;
+use crate::replaced::size::compute_replaced_size;
 use css::{
     ComputedStyle,
     Length,
@@ -972,10 +974,6 @@ fn default_intrinsic_size(kind: ReplacedKind) -> (f32, f32) {
     }
 }
 
-fn default_intrinsic_img_size() -> (f32, f32) {
-    (300.0, 150.0)
-}
-
 fn resolve_replaced_width_px(
     style: &ComputedStyle,
     available_width: f32,
@@ -1037,6 +1035,19 @@ fn get_attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
     }
 }
 
+fn attr_px(node: &Node, name: &str) -> Option<f32> {
+    get_attr(node, name)
+        .and_then(|s| s.trim().parse::<f32>().ok())
+        .filter(|v| *v > 0.0)
+}
+
+fn img_intrinsic_from_dom(node: &Node) -> IntrinsicSize {
+    let w = attr_px(node, "width");
+    let h = attr_px(node, "height");
+    IntrinsicSize::from_w_h(w, h)
+}
+
+
 fn size_replaced_inline_children<'a>(
     measurer: &dyn TextMeasurer,
     parent: &mut LayoutBox<'a>,
@@ -1059,9 +1070,13 @@ fn size_replaced_inline_children<'a>(
 
                 match kind {
                     ReplacedKind::Img => {
-                        let (intr_w, intr_h) = default_intrinsic_img_size();
-                        let w = resolve_replaced_width_px(child.style, content_width, intr_w);
-                        let h = resolve_replaced_height_px(child.style, intr_h);
+                        // Intrinsic from HTML attributes for now (later: decoded image cache)
+                        let intrinsic = img_intrinsic_from_dom(child.node.node);
+
+                        // IMPORTANT: available inline space for this replaced box is the containing block’s content width.
+                        // We’re sizing the box itself here; the inline formatter will still position/wrap it.
+                        let (w, h) = compute_replaced_size(child.style, intrinsic, Some(content_width));
+
                         child.rect.width = w;
                         child.rect.height = h;
                     }

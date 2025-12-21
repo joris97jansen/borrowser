@@ -16,22 +16,32 @@
         margin-bottom: 16px;
       }
 
-      /* Give the container a constrained width so we can see wrapping */
+      /* Constrained width so we can see wrapping + inline clamping */
       .narrow {
         width: 320px;
         background-color: #eef7ff;
         padding: 12px;
       }
 
-      /* Explicit sized image (px only in Phase 1) */
+      .tiny {
+        width: 160px;
+        background-color: #e9f7ef;
+        padding: 12px;
+      }
+
+      /* A visual background helps spot the replaced box */
+      img {
+        background-color: rgba(255, 200, 200, 0.25);
+      }
+
+      /* Both specified: MUST use them exactly */
       .img-fixed {
         width: 120px;
         height: 40px;
         background-color: #dff0d8;
       }
 
-      /* No explicit width/height => should fall back to intrinsic (300×150),
-         but clamp to max-width. */
+      /* No width/height => intrinsic fallback (300×150) with ratio 2:1, then clamp */
       .img-intrinsic-clamped {
         max-width: 140px;
         background-color: #ffe8cc;
@@ -43,37 +53,111 @@
         min-width: 180px;
         background-color: #fce4ec;
       }
+
+      /* NEW: Only width specified => height should be derived from ratio (2:1 => h = w/2) */
+      .img-only-width {
+        width: 100px; /* expect stable height ~50px */
+        background-color: #fff3bf;
+      }
+
+      /* NEW: Only height specified => width should be derived from ratio (2:1 => w = h*2) */
+      .img-only-height {
+        height: 60px; /* expect stable width ~120px */
+        background-color: #dbe4ff;
+      }
+
+      /* NEW: Only width but also max-width clamp => height should update with ratio if auto-derived */
+      .img-width-maxclamp {
+        width: 500px;       /* would overflow */
+        max-width: 120px;   /* should clamp to 120 and height should become ~60 */
+        background-color: #ffd6a5;
+      }
+
+      /* NEW: Only height but also max-width clamp in a tiny container (forces inline clamp too) */
+      .img-height-huge {
+        height: 100px; /* would imply width ~200px with 2:1 */
+        background-color: #caffbf;
+      }
+
+      /* NEW: absurd width in narrow container => MUST clamp to available inline space */
+      .img-absurd-width {
+        width: 9999px; /* should clamp to container inline space */
+        background-color: #bdb2ff;
+      }
     </style>
   </head>
 
   <body>
     <div class="box">
+      <b>Both width+height specified (exact)</b><br>
       Inline IMG between words:
       before
-      <img alt="ALT: fixed 120×40" class="img-fixed">
+      <img alt="ALT: fixed 120×40 (both specified)" class="img-fixed">
+      after.
+    </div>
+
+    <div class="box">
+      <b>Only width specified (derive height from ratio 2:1)</b><br>
+      before
+      <img alt="ALT: width 100 only => expect height ~50 (ratio 2:1)" class="img-only-width">
+      after.
+    </div>
+
+    <div class="box">
+      <b>Only height specified (derive width from ratio 2:1)</b><br>
+      before
+      <img alt="ALT: height 60 only => expect width ~120 (ratio 2:1)" class="img-only-height">
       after.
     </div>
 
     <div class="box narrow">
-      Wrapping test (narrow container). The text should wrap and the IMG should behave
-      like a single big glyph:
+      <b>No explicit size => intrinsic fallback (300×150) + max-width clamp</b><br>
+      Wrapping test (narrow container). Text should wrap and IMG should behave like a big glyph:<br><br>
 
       Lorem ipsum dolor sit amet
-      <img alt="ALT: intrinsic 300×150, clamped to max-width 140" class="img-intrinsic-clamped">
+      <img alt="ALT: intrinsic fallback 300×150, clamped to max-width 140" class="img-intrinsic-clamped">
       consectetur adipiscing elit, sed do eiusmod tempor incididunt ut labore et dolore magna aliqua.
     </div>
 
     <div class="box narrow">
-      Min-width clamp test. Even though width is 60px, min-width should force it to 180px:
+      <b>Min-width clamp</b><br>
+      Even though width is 60px, min-width should force it to 180px:<br><br>
 
       Start
       <img alt="ALT: width 60 but min-width 180" class="img-minwidth">
       End
     </div>
 
+    <div class="box narrow">
+      <b>Width specified but max-width clamps it (ratio must update height)</b><br>
+      width=500px but max-width=120px => expect final size ~120×60 (ratio 2:1):<br><br>
+
+      A
+      <img alt="ALT: width 500, max-width 120 => expect 120×60" class="img-width-maxclamp">
+      B
+    </div>
+
+    <div class="box tiny">
+      <b>Inline clamp to available space (absurd width)</b><br>
+      width=9999px should clamp to available inline space in this tiny container:<br><br>
+
+      X
+      <img alt="ALT: width 9999px => clamp to available inline space" class="img-absurd-width">
+      Y
+    </div>
+
+    <div class="box tiny">
+      <b>Height-only in a tiny container (implied width might overflow)</b><br>
+      height=100px implies width~200px; should clamp to available inline width (and if your impl preserves ratio, height should follow):<br><br>
+
+      X
+      <img alt="ALT: height 100 => implied width 200, clamp in tiny container" class="img-height-huge">
+      Y
+    </div>
+
     <div class="box">
-      Missing src is fine in Phase 1 (placeholder only):
-      <img alt="ALT: no src" style="width: 90px; height: 30px;">
+      <b>Missing src still fine (placeholder only)</b><br>
+      <img alt="ALT: no src, width+height inline" style="width: 90px; height: 30px;">
     </div>
   </body>
 </html>

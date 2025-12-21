@@ -8,6 +8,7 @@ pub use inline::{
 };
 pub mod hit_test;
 pub use hit_test::{hit_test, HitKind};
+pub mod replaced;
 
 use css::{
     ComputedStyle,
