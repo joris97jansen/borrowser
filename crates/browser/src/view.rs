@@ -259,30 +259,6 @@ pub fn page_viewport(
             let painter = ui.painter_at(content_rect);
             let origin = content_rect.min;
 
-            // If we have a focused input, register an invisible interactable at its real rect.
-            // This is REQUIRED so egui has a widget to attach keyboard focus to.
-            if let Some(focus_id) = interaction.focused_node_id {
-                if let Some(lb) = find_layout_box_by_id(&layout_root, focus_id) {
-                    // Only for input replaced inline (defensive)
-                    if matches!(lb.replaced, Some(ReplacedKind::InputText)) {
-                        let egui_focus_id = ui.make_persistent_id(("dom-input", focus_id));
-
-                        let r = Rect::from_min_size(
-                            Pos2 {
-                                x: origin.x + lb.rect.x,
-                                y: origin.y + lb.rect.y,
-                            },
-                            Vec2 {
-                                x: lb.rect.width.max(1.0),
-                                y: lb.rect.height.max(1.0),
-                            },
-                        );
-
-                        ui.interact(r, egui_focus_id, Sense::focusable_noninteractive());
-                    }
-                }
-            }
-
             // Paint first
             let focused = interaction.focused_node_id;
             paint_layout_box(&layout_root, &painter, origin, &measurer, true, input_values, focused);
@@ -344,55 +320,66 @@ pub fn page_viewport(
                         interaction.focused_node_id = None;
                     }
                     Some(h) => {
-                        // If this wasn't a "click" (down/up same target), still treat it as blur unless it's an input
+                        let mut skip_click_logic = false;
+
                         if was_active != Some(h.node_id) {
-                            if h.kind != HitKind::Input {
-                                interaction.focused_node_id = None;
-                            }
-                            // If it *is* an input, you might decide to focus on mouse-up anyway.
-                            // Browsers effectively focus on click, but this is a good UX choice:
-                            if h.kind == HitKind::Input {
-                                interaction.focused_node_id = Some(h.node_id);
-                                let egui_focus_id = ui.make_persistent_id(("dom-input", h.node_id));
-                                ui.memory_mut(|mem| mem.request_focus(egui_focus_id));
-                                ui.ctx().request_repaint();
-                            }
+                            // mismatch => keep existing focused_node_id as-is
+                            skip_click_logic = true;
                         }
 
                         // True click case (down/up match)
-                        match h.kind {
-                            HitKind::Link => {
-                                if let Some(href) = h.href.as_deref() {
-                                    if let Some(url) = resolve_relative_url(base_url, href) {
-                                        action = Some(PageAction::Navigate(url));
+                        if !skip_click_logic {
+                            match h.kind {
+                                HitKind::Link => {
+                                    if let Some(href) = h.href.as_deref() {
+                                        if let Some(url) = resolve_relative_url(base_url, href) {
+                                            action = Some(PageAction::Navigate(url));
+                                        }
+                                    } else {
+                                        // debug: link hit but no href
+                                        #[cfg(debug_assertions)]
+                                        eprintln!("Link hit {:?} but no href in HitResult", h.node_id);
+
                                     }
-                                } else {
-                                    // debug: link hit but no href
-                                    #[cfg(debug_assertions)]
-                                    eprintln!("Link hit {:?} but no href in HitResult", h.node_id);
-
+                                    // Clicking a link should clear input focus (browser-like)
+                                    interaction.focused_node_id = None;
                                 }
-                                // Clicking a link should clear input focus (browser-like)
-                                interaction.focused_node_id = None;
-                            }
 
-                            HitKind::Input => {
-                                interaction.focused_node_id = Some(h.node_id);
+                                HitKind::Input => {
+                                    input_values.ensure_initial(h.node_id, String::new());
+                                    interaction.focused_node_id = Some(h.node_id);
 
-                                let egui_focus_id = ui.make_persistent_id(("dom-input", h.node_id));
-                                ui.memory_mut(|mem| mem.request_focus(egui_focus_id));
-                                ui.ctx().request_repaint();
+                                    let egui_focus_id = ui.make_persistent_id(("dom-input", h.node_id));
+                                    ui.memory_mut(|mem| mem.request_focus(egui_focus_id));
+                                    ui.ctx().request_repaint();
+                                }
+                                _ => interaction.focused_node_id = None,
                             }
-                            _ => interaction.focused_node_id = None,
                         }
                     }
                 }
             }
 
-            // Key input -> focused input
+            // --- keep an egui focus target alive for the focused DOM input (MUST be before key handling)
             if let Some(focus_id) = interaction.focused_node_id {
                 let egui_focus_id = ui.make_persistent_id(("dom-input", focus_id));
 
+                // Default fallback: keep focusable alive on the whole content rect
+                let mut r = content_rect;
+
+                // If we can find the real input rect, use it
+                if let Some(lb) = find_layout_box_by_id(&layout_root, focus_id) {
+                    if matches!(lb.replaced, Some(ReplacedKind::InputText)) {
+                        r = Rect::from_min_size(
+                            Pos2 { x: origin.x + lb.rect.x, y: origin.y + lb.rect.y },
+                            Vec2 { x: lb.rect.width.max(1.0), y: lb.rect.height.max(1.0) },
+                        );
+                    }
+                }
+
+                ui.interact(r, egui_focus_id, Sense::focusable_noninteractive());
+
+                // --- Key input -> focused input (AFTER interact exists)
                 if ui.memory(|mem| mem.has_focus(egui_focus_id)) {
                     let mut changed = false;
 
@@ -400,7 +387,7 @@ pub fn page_viewport(
                         for evt in &i.events {
                             match evt {
                                 Event::Text(t) => {
-                                    input_values.append(focus_id, t);
+                                    input_values.append(focus_id, t.as_str());
                                     changed = true;
                                 }
                                 Event::Key {
