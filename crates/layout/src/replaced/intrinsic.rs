@@ -1,7 +1,7 @@
 #[derive(Clone, Copy, Debug, Default)]
 pub struct IntrinsicSize {
-    pub width: Option<f32>,   // px
-    pub height: Option<f32>,  // px
+    pub width: Option<f32>,  // px
+    pub height: Option<f32>, // px
     /// width / height
     pub ratio: Option<f32>,
 }
@@ -12,6 +12,10 @@ impl IntrinsicSize {
             (Some(w), Some(h)) if h > 0.0 => Some(w / h),
             _ => None,
         };
-        Self { width, height, ratio }
+        Self {
+            width,
+            height,
+            ratio,
+        }
     }
 }

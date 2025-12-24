@@ -1,11 +1,15 @@
-use css::ComputedStyle;
 use super::intrinsic::IntrinsicSize;
 use super::length::px_opt;
+use css::ComputedStyle;
 
 fn clamp(v: f32, min: Option<f32>, max: Option<f32>) -> f32 {
     let mut out = v;
-    if let Some(mn) = min { out = out.max(mn); }
-    if let Some(mx) = max { out = out.min(mx); }
+    if let Some(mn) = min {
+        out = out.max(mn);
+    }
+    if let Some(mx) = max {
+        out = out.min(mx);
+    }
     out
 }
 
@@ -26,11 +30,12 @@ pub fn compute_replaced_size(
     intrinsic: IntrinsicSize,
     available_inline_w: Option<f32>, // Some for inline; None if not applicable
 ) -> (f32, f32) {
-    let intrinsic = if intrinsic.width.is_some() || intrinsic.height.is_some() || intrinsic.ratio.is_some() {
-        intrinsic
-    } else {
-        default_fallback_intrinsic()
-    };
+    let intrinsic =
+        if intrinsic.width.is_some() || intrinsic.height.is_some() || intrinsic.ratio.is_some() {
+            intrinsic
+        } else {
+            default_fallback_intrinsic()
+        };
 
     // CSS specified sizes (px-only)
     let w_spec = px_opt(style.width);

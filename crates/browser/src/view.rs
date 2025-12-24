@@ -1,71 +1,24 @@
-use crate::page::PageState;
-use crate::tab::Tab;
-use crate::interactions::InteractionState;
 use crate::input_store::InputValueStore;
+use crate::interactions::InteractionState;
+use crate::page::PageState;
+use crate::resources::{ImageState, ResourceManager};
+use crate::tab::Tab;
 
-use html::{
-    Node,
-    Id,
-    dom_utils::{
-        is_non_rendering_element,
-    },
-};
+use html::{Id, Node, dom_utils::is_non_rendering_element};
 
-use css::{
-    build_style_tree,
-    StyledNode,
-    ComputedStyle,
-    Length,
-    Display,
-};
+use css::{ComputedStyle, Display, Length, StyledNode, build_style_tree};
 use layout::{
+    BoxKind, LayoutBox, ListMarker, Rectangle, ReplacedElementInfoProvider, ReplacedKind,
+    TextMeasurer, content_height, content_x_and_width, content_y,
+    hit_test::{HitKind, HitResult, hit_test},
+    inline::{InlineFragment, LineBox, button_label_from_layout, layout_inline_for_paint},
     layout_block_tree,
-    LayoutBox,
-    TextMeasurer,
-    Rectangle,
-    BoxKind,
-    ListMarker,
-    ReplacedKind,
-    content_x_and_width,
-    content_y,
-    content_height,
-    inline::{
-        LineBox,
-        InlineFragment,
-        layout_inline_for_paint,
-        button_label_from_layout,
-    },
-    hit_test::{
-        HitResult,
-        HitKind,
-        hit_test,
-    },
 };
 
 use egui::{
-    Align,
-    Button,
-    Context,
-    TopBottomPanel,
-    Key,
-    CentralPanel,
-    ScrollArea,
-    Color32,
-    Frame,
-    Margin,
-    Ui,
-    Pos2,
-    Rect,
-    Vec2,
-    Align2,
-    FontId,
-    Painter,
-    Stroke,
-    StrokeKind,
-    TextEdit,
-    Sense,
-    Event,
-    CursorIcon,
+    Align, Align2, Button, CentralPanel, Color32, Context, CursorIcon, Event, FontId, Frame, Key,
+    Margin, Painter, Pos2, Rect, ScrollArea, Sense, Stroke, StrokeKind, TextEdit, TopBottomPanel,
+    Ui, Vec2,
 };
 
 pub enum NavigationAction {
@@ -95,14 +48,18 @@ impl TextMeasurer for EguiTextMeasurer {
         let (r, g, b, a) = style.color;
         let color = Color32::from_rgba_unmultiplied(r, g, b, a);
 
-        let font_px = match style.font_size { Length::Px(px) => px };
+        let font_px = match style.font_size {
+            Length::Px(px) => px,
+        };
         let font_id = FontId::proportional(font_px);
 
         if text == " " {
             // 1) NBSP is the most stable in egui
             let nbsp = "\u{00A0}";
             let w_nbsp = self.ctx.fonts(|f| {
-                f.layout_no_wrap(nbsp.to_owned(), font_id.clone(), color).rect.width()
+                f.layout_no_wrap(nbsp.to_owned(), font_id.clone(), color)
+                    .rect
+                    .width()
             });
             if w_nbsp > 0.0 {
                 return w_nbsp;
@@ -110,10 +67,14 @@ impl TextMeasurer for EguiTextMeasurer {
 
             // 2) Difference method as fallback (use chars with low kerning risk)
             let w_with = self.ctx.fonts(|f| {
-                f.layout_no_wrap(format!("x{nbsp}x"), font_id.clone(), color).rect.width()
+                f.layout_no_wrap(format!("x{nbsp}x"), font_id.clone(), color)
+                    .rect
+                    .width()
             });
             let w_without = self.ctx.fonts(|f| {
-                f.layout_no_wrap("xx".to_owned(), font_id.clone(), color).rect.width()
+                f.layout_no_wrap("xx".to_owned(), font_id.clone(), color)
+                    .rect
+                    .width()
             });
             let w = (w_with - w_without).max(0.0);
             if w > 0.0 {
@@ -125,7 +86,9 @@ impl TextMeasurer for EguiTextMeasurer {
         }
 
         self.ctx.fonts(|f| {
-            f.layout_no_wrap(text.to_owned(), font_id, color).rect.width()
+            f.layout_no_wrap(text.to_owned(), font_id, color)
+                .rect
+                .width()
         })
     }
 
@@ -148,20 +111,37 @@ pub fn top_bar(ctx: &Context, tab: &mut Tab) -> NavigationAction {
             let can_go_back = tab.history_index > 0;
             let can_go_forward = tab.history_index + 1 < tab.history.len();
 
-            if ui.add_enabled(can_go_back, Button::new("⬅").min_size([BUTTON_WIDTH, BAR_HEIGHT].into())).clicked() {
+            if ui
+                .add_enabled(
+                    can_go_back,
+                    Button::new("⬅").min_size([BUTTON_WIDTH, BAR_HEIGHT].into()),
+                )
+                .clicked()
+            {
                 action = NavigationAction::Back;
             }
-            if ui.add_enabled(can_go_forward, Button::new("➡").min_size([BUTTON_WIDTH, BAR_HEIGHT].into())).clicked() {
+            if ui
+                .add_enabled(
+                    can_go_forward,
+                    Button::new("➡").min_size([BUTTON_WIDTH, BAR_HEIGHT].into()),
+                )
+                .clicked()
+            {
                 action = NavigationAction::Forward;
             }
-            if ui.add_sized([BUTTON_WIDTH, BAR_HEIGHT], Button::new("🔄")).clicked()
+            if ui
+                .add_sized([BUTTON_WIDTH, BAR_HEIGHT], Button::new("🔄"))
+                .clicked()
             {
                 action = NavigationAction::Refresh;
             }
 
             let response = Frame::new()
                 .fill(ui.visuals().extreme_bg_color) // subtle background
-                .stroke(Stroke::new(1.0, ui.visuals().widgets.inactive.bg_stroke.color))
+                .stroke(Stroke::new(
+                    1.0,
+                    ui.visuals().widgets.inactive.bg_stroke.color,
+                ))
                 .corner_radius(6.0)
                 .inner_margin(Margin::symmetric(4, 4))
                 .show(ui, |ui| {
@@ -186,6 +166,7 @@ pub fn content(
     ctx: &Context,
     page: &mut PageState,
     interaction: &mut InteractionState,
+    resources: &ResourceManager,
     status: Option<&String>,
     loading: bool,
 ) -> Option<PageAction> {
@@ -194,8 +175,12 @@ pub fn content(
         CentralPanel::default()
             .frame(Frame::default().fill(visuals.panel_fill))
             .show(ctx, |ui| {
-                if loading { ui.label("⏳ Loading…"); }
-                if let Some(s) = status { ui.label(s); }
+                if loading {
+                    ui.label("⏳ Loading…");
+                }
+                if let Some(s) = status {
+                    ui.label(s);
+                }
             });
         return None;
     }
@@ -224,10 +209,21 @@ pub fn content(
             let base_url = page.base_url.as_deref();
             let input_values = &mut page.input_values;
 
-            let action = page_viewport(ui, &style_root, base_url, input_values, interaction);
+            let action = page_viewport(
+                ui,
+                &style_root,
+                base_url,
+                resources,
+                input_values,
+                interaction,
+            );
 
-            if loading { ui.label("⏳ Loading…"); }
-            if let Some(s) = status { ui.label(s); }
+            if loading {
+                ui.label("⏳ Loading…");
+            }
+            if let Some(s) = status {
+                ui.label(s);
+            }
 
             action
         })
@@ -238,6 +234,7 @@ pub fn page_viewport(
     ui: &mut Ui,
     style_root: &StyledNode<'_>,
     base_url: Option<&str>,
+    resources: &ResourceManager,
     input_values: &mut InputValueStore,
     interaction: &mut InteractionState,
 ) -> Option<PageAction> {
@@ -249,13 +246,16 @@ pub fn page_viewport(
             let min_height = ui.available_height().max(200.0);
 
             let measurer = EguiTextMeasurer::new(ui.ctx());
-            let layout_root = layout_block_tree(style_root, available_width, &measurer);
+            let replaced_info = BrowserReplacedInfo {
+                base_url,
+                resources,
+            };
+            let layout_root =
+                layout_block_tree(style_root, available_width, &measurer, Some(&replaced_info));
             let content_height = layout_root.rect.height.max(min_height);
 
-            let (content_rect, resp) = ui.allocate_exact_size(
-                Vec2::new(available_width, content_height),
-                Sense::click(),
-            );
+            let (content_rect, resp) =
+                ui.allocate_exact_size(Vec2::new(available_width, content_height), Sense::click());
 
             let painter = ui.painter_at(content_rect);
             let origin = content_rect.min;
@@ -263,7 +263,18 @@ pub fn page_viewport(
             // Paint first
             let focused = interaction.focused_node_id;
             let active = interaction.active;
-            paint_layout_box(&layout_root, &painter, origin, &measurer, true, input_values, focused, active);
+            paint_layout_box(
+                &layout_root,
+                &painter,
+                origin,
+                &measurer,
+                true,
+                base_url,
+                resources,
+                input_values,
+                focused,
+                active,
+            );
 
             // ------- unified router output -------
             let mut action: Option<PageAction> = None;
@@ -343,8 +354,10 @@ pub fn page_viewport(
                                     } else {
                                         // debug: link hit but no href
                                         #[cfg(debug_assertions)]
-                                        eprintln!("Link hit {:?} but no href in HitResult", h.node_id);
-
+                                        eprintln!(
+                                            "Link hit {:?} but no href in HitResult",
+                                            h.node_id
+                                        );
                                     }
                                     // Clicking a link should clear input focus (browser-like)
                                     interaction.focused_node_id = None;
@@ -354,7 +367,8 @@ pub fn page_viewport(
                                     input_values.ensure_initial(h.node_id, String::new());
                                     interaction.focused_node_id = Some(h.node_id);
 
-                                    let egui_focus_id = ui.make_persistent_id(("dom-input", h.node_id));
+                                    let egui_focus_id =
+                                        ui.make_persistent_id(("dom-input", h.node_id));
                                     ui.memory_mut(|mem| mem.request_focus(egui_focus_id));
                                     ui.ctx().request_repaint();
                                 }
@@ -386,8 +400,14 @@ pub fn page_viewport(
                 if let Some(lb) = find_layout_box_by_id(&layout_root, focus_id) {
                     if matches!(lb.replaced, Some(ReplacedKind::InputText)) {
                         r = Rect::from_min_size(
-                            Pos2 { x: origin.x + lb.rect.x, y: origin.y + lb.rect.y },
-                            Vec2 { x: lb.rect.width.max(1.0), y: lb.rect.height.max(1.0) },
+                            Pos2 {
+                                x: origin.x + lb.rect.x,
+                                y: origin.y + lb.rect.y,
+                            },
+                            Vec2 {
+                                x: lb.rect.width.max(1.0),
+                                y: lb.rect.height.max(1.0),
+                            },
                         );
                     }
                 }
@@ -446,6 +466,8 @@ fn paint_line_boxes<'a>(
     origin: Pos2,
     lines: &[LineBox<'a>],
     measurer: &dyn TextMeasurer,
+    base_url: Option<&str>,
+    resources: &ResourceManager,
     input_values: &InputValueStore,
     focused: Option<Id>,
     active: Option<Id>,
@@ -467,13 +489,7 @@ fn paint_line_boxes<'a>(
                         y: origin.y + frag.rect.y,
                     };
 
-                    painter.text(
-                        pos,
-                        Align2::LEFT_TOP,
-                        text,
-                        font_id,
-                        text_color,
-                    );
+                    painter.text(pos, Align2::LEFT_TOP, text, font_id, text_color);
                 }
 
                 InlineFragment::Box { style, layout, .. } => {
@@ -501,6 +517,8 @@ fn paint_line_boxes<'a>(
                             translated_origin,
                             measurer,
                             false, // do NOT skip inline-block children inside this subtree
+                            base_url,
+                            resources,
                             input_values,
                             focused,
                             active,
@@ -518,9 +536,17 @@ fn paint_line_boxes<'a>(
                     }
                 }
 
-                InlineFragment::Replaced { style, kind, layout, .. } => {
+                InlineFragment::Replaced {
+                    style,
+                    kind,
+                    layout,
+                    ..
+                } => {
                     let rect = Rect::from_min_size(
-                        Pos2 { x: origin.x + frag.rect.x, y: origin.y + frag.rect.y },
+                        Pos2 {
+                            x: origin.x + frag.rect.x,
+                            y: origin.y + frag.rect.y,
+                        },
                         Vec2::new(frag.rect.width, frag.rect.height),
                     );
 
@@ -549,7 +575,11 @@ fn paint_line_boxes<'a>(
                             label = button_label_from_layout(lb);
                         }
 
-                        let offset = if is_pressed { Vec2::new(1.0, 1.0) } else { Vec2::ZERO };
+                        let offset = if is_pressed {
+                            Vec2::new(1.0, 1.0)
+                        } else {
+                            Vec2::ZERO
+                        };
 
                         painter.text(
                             rect.center() + offset,
@@ -562,10 +592,28 @@ fn paint_line_boxes<'a>(
                         continue; // IMPORTANT: don't fall through to generic replaced painting
                     }
 
-                    let is_focused_input =
-                        matches!(kind, ReplacedKind::InputText) &&
-                        layout.is_some_and(|lb| focused == Some(lb.node_id()));
+                    // --- IMG: decoded texture (if ready) ---
+                    if matches!(kind, ReplacedKind::Img) {
+                        if let Some(lb) = layout {
+                            if let Some(src) = get_attr(lb.node.node, "src") {
+                                if let Some(url) = resolve_relative_url(base_url, src) {
+                                    if let ImageState::Ready(ready) =
+                                        resources.image_state_by_url(&url)
+                                    {
+                                        let uv = Rect::from_min_max(
+                                            Pos2 { x: 0.0, y: 0.0 },
+                                            Pos2 { x: 1.0, y: 1.0 },
+                                        );
+                                        painter.image(ready.texture_id, rect, uv, Color32::WHITE);
+                                        continue;
+                                    }
+                                }
+                            }
+                        }
+                    }
 
+                    let is_focused_input = matches!(kind, ReplacedKind::InputText)
+                        && layout.is_some_and(|lb| focused == Some(lb.node_id()));
 
                     // Fill + stroke (placeholder look)
                     let (r, g, b, a) = style.background_color;
@@ -595,7 +643,7 @@ fn paint_line_boxes<'a>(
                             if let Some(v) = input_values.get(id) {
                                 shown = v.to_string();
                             }
-                            
+
                             if shown.is_empty() {
                                 if let Some(ph) = get_attr(lb.node.node, "placeholder") {
                                     if !ph.trim().is_empty() {
@@ -620,11 +668,16 @@ fn paint_line_boxes<'a>(
                         // Paint in style color
                         let (cr, cg, cb, ca) = style.color;
                         let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
-                        let font_px = match style.font_size { Length::Px(px) => px };
+                        let font_px = match style.font_size {
+                            Length::Px(px) => px,
+                        };
                         let font_id = FontId::proportional(font_px);
 
                         painter.text(
-                            Pos2 { x: text_x, y: text_y },
+                            Pos2 {
+                                x: text_x,
+                                y: text_y,
+                            },
                             Align2::LEFT_TOP,
                             shown,
                             font_id,
@@ -672,15 +725,27 @@ fn paint_layout_box<'a>(
     origin: Pos2,
     measurer: &dyn TextMeasurer,
     skip_inline_block_children: bool,
+    base_url: Option<&str>,
+    resources: &ResourceManager,
     input_values: &InputValueStore,
     focused: Option<Id>,
     active: Option<Id>,
 ) {
-
     // 0) Do not paint non-rendering elements (head, style, script, etc.)
     if is_non_rendering_element(layout.node.node) {
         for child in &layout.children {
-            paint_layout_box(child, painter, origin, measurer, skip_inline_block_children, input_values, focused, active);
+            paint_layout_box(
+                child,
+                painter,
+                origin,
+                measurer,
+                skip_inline_block_children,
+                base_url,
+                resources,
+                input_values,
+                focused,
+                active,
+            );
         }
         return;
     }
@@ -699,11 +764,7 @@ fn paint_layout_box<'a>(
     // background
     let (r, g, b, a) = layout.style.background_color;
     if a > 0 {
-        painter.rect_filled(
-            rect,
-            0.0,
-            Color32::from_rgba_unmultiplied(r, g, b, a),
-        );
+        painter.rect_filled(rect, 0.0, Color32::from_rgba_unmultiplied(r, g, b, a));
     }
 
     // 1) List marker (for display:list-item), if any.
@@ -713,7 +774,17 @@ fn paint_layout_box<'a>(
     }
 
     // 2) Inline content
-    paint_inline_content(layout, painter, origin, measurer, input_values, focused, active);
+    paint_inline_content(
+        layout,
+        painter,
+        origin,
+        measurer,
+        base_url,
+        resources,
+        input_values,
+        focused,
+        active,
+    );
 
     // 3) Recurse into children
     for child in &layout.children {
@@ -722,7 +793,18 @@ fn paint_layout_box<'a>(
             continue;
         }
 
-        paint_layout_box(child, painter, origin, measurer, skip_inline_block_children, input_values, focused, active);
+        paint_layout_box(
+            child,
+            painter,
+            origin,
+            measurer,
+            skip_inline_block_children,
+            base_url,
+            resources,
+            input_values,
+            focused,
+            active,
+        );
     }
 }
 
@@ -790,6 +872,8 @@ fn paint_inline_content<'a>(
     painter: &Painter,
     origin: Pos2,
     measurer: &dyn TextMeasurer,
+    base_url: Option<&str>,
+    resources: &ResourceManager,
     input_values: &InputValueStore,
     focused: Option<Id>,
     active: Option<Id>,
@@ -832,7 +916,17 @@ fn paint_inline_content<'a>(
         return;
     }
 
-    paint_line_boxes(painter, origin, &lines, measurer, input_values, focused, active);
+    paint_line_boxes(
+        painter,
+        origin,
+        &lines,
+        measurer,
+        base_url,
+        resources,
+        input_values,
+        focused,
+        active,
+    );
 }
 
 fn find_page_background_color(root: &StyledNode<'_>) -> Option<(u8, u8, u8, u8)> {
@@ -954,4 +1048,21 @@ fn resolve_relative_url(base_url: Option<&str>, href: &str) -> Option<String> {
 
     let base = url::Url::parse(base).ok()?;
     base.join(href).ok().map(|u| u.to_string())
+}
+
+struct BrowserReplacedInfo<'a> {
+    base_url: Option<&'a str>,
+    resources: &'a ResourceManager,
+}
+
+impl ReplacedElementInfoProvider for BrowserReplacedInfo<'_> {
+    fn intrinsic_for_img(&self, node: &Node) -> Option<layout::replaced::intrinsic::IntrinsicSize> {
+        let src = get_attr(node, "src")?;
+        let url = resolve_relative_url(self.base_url, src)?;
+        let (w, h) = self.resources.image_intrinsic_size_px(&url)?;
+        Some(layout::replaced::intrinsic::IntrinsicSize::from_w_h(
+            Some(w as f32),
+            Some(h as f32),
+        ))
+    }
 }

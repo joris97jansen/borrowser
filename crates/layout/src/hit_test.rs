@@ -1,23 +1,10 @@
 use crate::{
-    LayoutBox,
-    Rectangle,
-    TextMeasurer,
-    BoxKind,
-    ReplacedKind,
-    content_x_and_width,
+    BoxKind, LayoutBox, Rectangle, ReplacedKind, TextMeasurer, content_height, content_x_and_width,
     content_y,
-    content_height,
-    inline::{
-        InlineFragment,
-        InlineActionKind,
-        layout_inline_for_paint,
-    }
+    inline::{InlineActionKind, InlineFragment, layout_inline_for_paint},
 };
 use css::Display;
-use html::{
-    Node,
-    Id,
-};
+use html::{Id, Node};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HitKind {
@@ -32,7 +19,7 @@ pub enum HitKind {
 
 #[derive(Clone, Debug)]
 pub struct HitResult {
-    pub node_id: Id,              // action target id (link/input/img/etc.)
+    pub node_id: Id, // action target id (link/input/img/etc.)
     pub kind: HitKind,
     pub fragment_rect: Rectangle, // in layout coords
     pub local_pos: (f32, f32),    // point - fragment_rect.min
@@ -69,7 +56,10 @@ fn hit_test_box<'a>(
 
     // 2) then recurse into children (reverse order = later painted on top)
     for child in node.children.iter().rev() {
-        if matches!(child.kind, BoxKind::Inline | BoxKind::InlineBlock | BoxKind::ReplacedInline) {
+        if matches!(
+            child.kind,
+            BoxKind::Inline | BoxKind::InlineBlock | BoxKind::ReplacedInline
+        ) {
             continue; // these are handled by inline fragments
         }
         if let Some(hit) = hit_test_box(child, point, measurer) {
@@ -149,7 +139,11 @@ fn hit_test_inline_fragments<'a>(
                     });
                 }
 
-                InlineFragment::Box { layout: frag_layout, action, .. } => {
+                InlineFragment::Box {
+                    layout: frag_layout,
+                    action,
+                    ..
+                } => {
                     // If box is inside <a>, clicking it should be a link click.
                     if let Some((link_id, href)) = link_from_action(action) {
                         return Some(HitResult {
@@ -161,7 +155,9 @@ fn hit_test_inline_fragments<'a>(
                         });
                     }
 
-                    let id = frag_layout.map(|lb| lb.node_id()).unwrap_or(layout.node_id());
+                    let id = frag_layout
+                        .map(|lb| lb.node_id())
+                        .unwrap_or(layout.node_id());
                     return Some(HitResult {
                         node_id: id,
                         kind: HitKind::InlineBlockBox,
@@ -171,7 +167,12 @@ fn hit_test_inline_fragments<'a>(
                     });
                 }
 
-                InlineFragment::Replaced { kind, layout: frag_layout, action, .. } => {
+                InlineFragment::Replaced {
+                    kind,
+                    layout: frag_layout,
+                    action,
+                    ..
+                } => {
                     // If replaced is inside <a>, it’s a link click
                     if let Some((link_id, href)) = link_from_action(action) {
                         return Some(HitResult {
@@ -183,7 +184,9 @@ fn hit_test_inline_fragments<'a>(
                         });
                     }
 
-                    let id = frag_layout.map(|lb| lb.node_id()).unwrap_or(layout.node_id());
+                    let id = frag_layout
+                        .map(|lb| lb.node_id())
+                        .unwrap_or(layout.node_id());
                     let hit_kind = match kind {
                         ReplacedKind::Img => HitKind::Image,
                         ReplacedKind::InputText => HitKind::Input,
@@ -205,7 +208,9 @@ fn hit_test_inline_fragments<'a>(
     None
 }
 
-fn link_from_action(action: &Option<(Id, InlineActionKind, Option<String>)>) -> Option<(Id, Option<String>)> {
+fn link_from_action(
+    action: &Option<(Id, InlineActionKind, Option<String>)>,
+) -> Option<(Id, Option<String>)> {
     match action {
         Some((id, InlineActionKind::Link, href)) => Some((*id, href.clone())),
         _ => None,

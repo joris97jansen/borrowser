@@ -1,24 +1,11 @@
 use crate::replaced::intrinsic::IntrinsicSize;
 use crate::replaced::size::compute_replaced_size;
-use css::{
-    ComputedStyle,
-    Length,
-    Display,
-};
-use html::{
-    Node,
-    Id,
-};
+use css::{ComputedStyle, Display, Length};
 use html::dom_utils::is_non_rendering_element;
+use html::{Id, Node};
 
 use crate::{
-    Rectangle,
-    TextMeasurer,
-    LayoutBox,
-    BoxKind,
-    ReplacedKind,
-    content_x_and_width,
-    content_y,
+    BoxKind, LayoutBox, Rectangle, ReplacedKind, TextMeasurer, content_x_and_width, content_y,
 };
 
 const INLINE_PADDING: f32 = 4.0;
@@ -159,10 +146,7 @@ fn push_text_as_tokens<'a>(
     }
 }
 
-
-fn collect_inline_tokens_for_block_layout<'a>(
-    block: &'a LayoutBox<'a>,
-) -> Vec<InlineToken<'a>> {
+fn collect_inline_tokens_for_block_layout<'a>(block: &'a LayoutBox<'a>) -> Vec<InlineToken<'a>> {
     let mut tokens: Vec<InlineToken<'a>> = Vec::new();
     let mut pending_space = false;
 
@@ -174,12 +158,11 @@ fn collect_inline_tokens_for_block_layout<'a>(
     tokens
 }
 
-
 fn collect_inline_tokens_from_layout_box<'a>(
     layout: &'a LayoutBox<'a>,
     tokens: &mut Vec<InlineToken<'a>>,
     pending_space: &mut bool,
-    ctx: InlineContext
+    ctx: InlineContext,
 ) {
     match layout.node.node {
         Node::Text { text, .. } => {
@@ -206,7 +189,12 @@ fn collect_inline_tokens_from_layout_box<'a>(
                     // Inline container: recurse into children, they
                     // participate in the same inline formatting context.
                     for child in &layout.children {
-                        collect_inline_tokens_from_layout_box(child, tokens, pending_space, next_ctx.clone());
+                        collect_inline_tokens_from_layout_box(
+                            child,
+                            tokens,
+                            pending_space,
+                            next_ctx.clone(),
+                        );
                     }
                 }
 
@@ -262,10 +250,12 @@ fn collect_inline_tokens_from_layout_box<'a>(
                     let style = layout.style;
                     let cbm = style.box_metrics;
 
-                    let width  = layout.rect.width;
+                    let width = layout.rect.width;
                     let height = layout.rect.height + cbm.margin_top + cbm.margin_bottom;
 
-                    let kind = layout.replaced.expect("ReplacedInline must have replaced kind");
+                    let kind = layout
+                        .replaced
+                        .expect("ReplacedInline must have replaced kind");
 
                     tokens.push(InlineToken::Replaced {
                         width,
@@ -289,7 +279,12 @@ fn collect_inline_tokens_for_block_layout_for_paint<'a>(
     let ctx = InlineContext::default();
 
     for child in &block.children {
-        collect_inline_tokens_from_layout_box_for_paint(child, &mut tokens, &mut pending_space, ctx.clone());
+        collect_inline_tokens_from_layout_box_for_paint(
+            child,
+            &mut tokens,
+            &mut pending_space,
+            ctx.clone(),
+        );
     }
 
     tokens
@@ -299,7 +294,7 @@ fn collect_inline_tokens_from_layout_box_for_paint<'a>(
     layout: &'a LayoutBox<'a>,
     tokens: &mut Vec<InlineToken<'a>>,
     pending_space: &mut bool,
-    ctx: InlineContext
+    ctx: InlineContext,
 ) {
     match layout.node.node {
         Node::Text { text, .. } => {
@@ -328,7 +323,7 @@ fn collect_inline_tokens_from_layout_box_for_paint<'a>(
                             child,
                             tokens,
                             pending_space,
-                            next_ctx.clone()
+                            next_ctx.clone(),
                         );
                     }
                 }
@@ -380,10 +375,12 @@ fn collect_inline_tokens_from_layout_box_for_paint<'a>(
                     let style = layout.style;
                     let cbm = style.box_metrics;
 
-                    let width  = layout.rect.width;
+                    let width = layout.rect.width;
                     let height = layout.rect.height + cbm.margin_top + cbm.margin_bottom;
 
-                    let kind = layout.replaced.expect("ReplacedInline must have replaced kind");
+                    let kind = layout
+                        .replaced
+                        .expect("ReplacedInline must have replaced kind");
 
                     tokens.push(InlineToken::Replaced {
                         width,
@@ -492,9 +489,9 @@ fn layout_tokens<'a>(
                     continue;
                 }
 
-                let action = ctx.link_target.map(|id| {
-                    (id, InlineActionKind::Link, ctx.link_href.clone())
-                });
+                let action = ctx
+                    .link_target
+                    .map(|id| (id, InlineActionKind::Link, ctx.link_href.clone()));
 
                 line_fragments.push(LineFragment {
                     kind: InlineFragment::Text {
@@ -529,7 +526,7 @@ fn layout_tokens<'a>(
                             height: line_height,
                         };
 
-                            lines.push(LineBox {
+                        lines.push(LineBox {
                             rect: line_rect,
                             fragments: std::mem::take(&mut line_fragments),
                         });
@@ -551,12 +548,16 @@ fn layout_tokens<'a>(
                     height: line_height,
                 };
 
-                let action = ctx.link_target.map(|id| {
-                    (id, InlineActionKind::Link, ctx.link_href.clone())
-                });
+                let action = ctx
+                    .link_target
+                    .map(|id| (id, InlineActionKind::Link, ctx.link_href.clone()));
 
                 line_fragments.push(LineFragment {
-                    kind: InlineFragment::Text { text, style, action },
+                    kind: InlineFragment::Text {
+                        text,
+                        style,
+                        action,
+                    },
                     rect: frag_rect,
                 });
 
@@ -564,7 +565,13 @@ fn layout_tokens<'a>(
                 is_first_in_line = false;
             }
 
-            InlineToken::Box { width: box_width, height: box_height, style, ctx, layout } => {
+            InlineToken::Box {
+                width: box_width,
+                height: box_height,
+                style,
+                ctx,
+                layout,
+            } => {
                 let fits = cursor_x + box_width <= max_x;
 
                 if !fits && !is_first_in_line {
@@ -605,19 +612,30 @@ fn layout_tokens<'a>(
                     height: box_height,
                 };
 
-                let action = ctx.link_target.map(|id| {
-                    (id, InlineActionKind::Link, ctx.link_href.clone())
-                });
+                let action = ctx
+                    .link_target
+                    .map(|id| (id, InlineActionKind::Link, ctx.link_href.clone()));
 
                 line_fragments.push(LineFragment {
-                    kind: InlineFragment::Box { style, action, layout },
+                    kind: InlineFragment::Box {
+                        style,
+                        action,
+                        layout,
+                    },
                     rect: frag_rect,
                 });
                 cursor_x += box_width;
                 is_first_in_line = false;
             }
 
-            InlineToken::Replaced { width, height, style, ctx, kind, layout } => {
+            InlineToken::Replaced {
+                width,
+                height,
+                style,
+                ctx,
+                kind,
+                layout,
+            } => {
                 let fits = cursor_x + width <= max_x;
 
                 if !fits && !is_first_in_line {
@@ -650,14 +668,24 @@ fn layout_tokens<'a>(
                     bump_line_height(&mut line_fragments, line_height);
                 }
 
-                let frag_rect = Rectangle { x: cursor_x, y: cursor_y, width, height };
+                let frag_rect = Rectangle {
+                    x: cursor_x,
+                    y: cursor_y,
+                    width,
+                    height,
+                };
 
-                let action = ctx.link_target.map(|id| {
-                    (id, InlineActionKind::Link, ctx.link_href.clone())
-                });
+                let action = ctx
+                    .link_target
+                    .map(|id| (id, InlineActionKind::Link, ctx.link_href.clone()));
 
                 line_fragments.push(LineFragment {
-                    kind: InlineFragment::Replaced { style, kind, action, layout },
+                    kind: InlineFragment::Replaced {
+                        style,
+                        kind,
+                        action,
+                        layout,
+                    },
                     rect: frag_rect,
                 });
                 cursor_x += width;
@@ -685,10 +713,7 @@ fn layout_tokens<'a>(
     lines
 }
 
-pub fn refine_layout_with_inline<'a>(
-    measurer: &dyn TextMeasurer,
-    layout_root: &mut LayoutBox<'a>,
-) {
+pub fn refine_layout_with_inline<'a>(measurer: &dyn TextMeasurer, layout_root: &mut LayoutBox<'a>) {
     let x = layout_root.rect.x;
     let y = layout_root.rect.y;
     let width = layout_root.rect.width;
@@ -708,7 +733,8 @@ fn recompute_block_heights<'a>(
     node.rect.x = x;
     node.rect.y = y;
 
-    let used_width = resolve_used_width_for_block(node.style, &node.node.node, node.kind, available_width);
+    let used_width =
+        resolve_used_width_for_block(node.style, &node.node.node, node.kind, available_width);
     node.rect.width = used_width;
 
     // Non-rendering elements: pure containers (but children still have margins)
@@ -775,7 +801,13 @@ fn recompute_block_heights<'a>(
                     let (content_x, content_width) = content_x_and_width(node.style, x, used_width);
                     let content_top = content_y(node.style, y);
 
-                    size_replaced_inline_children(measurer, node, content_x, content_top, content_width);
+                    size_replaced_inline_children(
+                        measurer,
+                        node,
+                        content_x,
+                        content_top,
+                        content_width,
+                    );
 
                     node.rect.height = 0.0;
                     return 0.0;
@@ -787,10 +819,10 @@ fn recompute_block_heights<'a>(
                     cursor_y += bm.margin_top;
 
                     let child_x = parent_x + bm.margin_left;
-                    let child_width =
-                        (parent_width - bm.margin_left - bm.margin_right).max(0.0);
+                    let child_width = (parent_width - bm.margin_left - bm.margin_right).max(0.0);
 
-                    let h = recompute_block_heights(measurer, child, child_x, cursor_y, child_width);
+                    let h =
+                        recompute_block_heights(measurer, child, child_x, cursor_y, child_width);
                     cursor_y += h + bm.margin_bottom;
                 }
 
@@ -826,13 +858,8 @@ fn recompute_block_heights<'a>(
                         // the inline engine will decide their final visual y position.
                         let child_y = content_top + cbm.margin_top;
 
-                        let _ = recompute_block_heights(
-                            measurer,
-                            child,
-                            child_x,
-                            child_y,
-                            child_width,
-                        );
+                        let _ =
+                            recompute_block_heights(measurer, child, child_x, child_y, child_width);
                     }
                 }
             }
@@ -880,7 +907,10 @@ fn recompute_block_heights<'a>(
             for child in &mut node.children {
                 // Skip inline, inline-block & replaced-inline children here; we already
                 // accounted for them in the inline formatting context.
-                if matches!(child.kind, BoxKind::Inline | BoxKind::InlineBlock | BoxKind::ReplacedInline) {
+                if matches!(
+                    child.kind,
+                    BoxKind::Inline | BoxKind::InlineBlock | BoxKind::ReplacedInline
+                ) {
                     continue;
                 }
 
@@ -890,8 +920,7 @@ fn recompute_block_heights<'a>(
                 cursor_y += cbm.margin_top;
 
                 let child_x = content_x + cbm.margin_left;
-                let child_width =
-                    (content_width - cbm.margin_left - cbm.margin_right).max(0.0);
+                let child_width = (content_width - cbm.margin_left - cbm.margin_right).max(0.0);
 
                 let h = recompute_block_heights(measurer, child, child_x, cursor_y, child_width);
 
@@ -902,8 +931,7 @@ fn recompute_block_heights<'a>(
             let children_height = cursor_y - content_start_y;
 
             // 4) Total height = padding-top + inline + children + padding-bottom
-            let total_height =
-                bm.padding_top + inline_height + children_height + bm.padding_bottom;
+            let total_height = bm.padding_top + inline_height + children_height + bm.padding_bottom;
 
             node.rect.height = total_height;
             total_height
@@ -1026,7 +1054,6 @@ fn img_intrinsic_from_dom(node: &Node) -> IntrinsicSize {
     IntrinsicSize::from_w_h(w, h)
 }
 
-
 fn size_replaced_inline_children<'a>(
     measurer: &dyn TextMeasurer,
     parent: &mut LayoutBox<'a>,
@@ -1049,12 +1076,15 @@ fn size_replaced_inline_children<'a>(
 
                 match kind {
                     ReplacedKind::Img => {
-                        // Intrinsic from HTML attributes for now (later: decoded image cache)
-                        let intrinsic = img_intrinsic_from_dom(child.node.node);
+                        // Intrinsic from decoded cache (if available), else HTML attributes.
+                        let intrinsic = child
+                            .replaced_intrinsic
+                            .unwrap_or_else(|| img_intrinsic_from_dom(child.node.node));
 
                         // IMPORTANT: available inline space for this replaced box is the containing block’s content width.
                         // We’re sizing the box itself here; the inline formatter will still position/wrap it.
-                        let (w, h) = compute_replaced_size(child.style, intrinsic, Some(content_width));
+                        let (w, h) =
+                            compute_replaced_size(child.style, intrinsic, Some(content_width));
 
                         child.rect.width = w;
                         child.rect.height = h;
@@ -1109,10 +1139,12 @@ fn size_replaced_inline_children<'a>(
                         let intrinsic_w = (text_w + pad_l + pad_r + 2.0).max(24.0);
                         let intrinsic_h = (line_h + pad_t + pad_b + 2.0).max(18.0);
 
-                        let intrinsic = IntrinsicSize::from_w_h(Some(intrinsic_w), Some(intrinsic_h));
+                        let intrinsic =
+                            IntrinsicSize::from_w_h(Some(intrinsic_w), Some(intrinsic_h));
 
                         // Respect css width/height/min/max + clamp to inline available width.
-                        let (w, h) = compute_replaced_size(child.style, intrinsic, Some(content_width));
+                        let (w, h) =
+                            compute_replaced_size(child.style, intrinsic, Some(content_width));
 
                         child.rect.width = w;
                         child.rect.height = h;
@@ -1124,7 +1156,13 @@ fn size_replaced_inline_children<'a>(
                 // KEY FIX:
                 // Replaced inline elements can be nested inside inline containers (<span> etc).
                 // They still size relative to the containing block’s content box.
-                size_replaced_inline_children(measurer, child, content_x, content_top, content_width);
+                size_replaced_inline_children(
+                    measurer,
+                    child,
+                    content_x,
+                    content_top,
+                    content_width,
+                );
             }
 
             BoxKind::InlineBlock => {
@@ -1156,7 +1194,11 @@ pub fn button_label_from_layout(lb: &LayoutBox<'_>) -> String {
 
     // Collapse whitespace a bit so sizing is stable.
     let collapsed = s.split_whitespace().collect::<Vec<_>>().join(" ");
-    if collapsed.is_empty() { "Button".to_string() } else { collapsed }
+    if collapsed.is_empty() {
+        "Button".to_string()
+    } else {
+        collapsed
+    }
 }
 
 // whenever the line height increases, normalize already-emitted fragments

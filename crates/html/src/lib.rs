@@ -1,5 +1,5 @@
-pub mod head;
 pub mod dom_utils;
+pub mod head;
 
 const HTML_COMMENT_START: &str = "<!--";
 const HTML_COMMENT_END: &str = "-->";
@@ -7,9 +7,7 @@ const HTML_COMMENT_END: &str = "-->";
 pub type NodeId = u32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct Id(
-    pub NodeId
-);
+pub struct Id(pub NodeId);
 
 #[derive(Debug)]
 pub enum Token {
@@ -34,9 +32,20 @@ pub fn is_html(ct: &Option<String>) -> bool {
 fn is_void_element(name: &str) -> bool {
     matches!(
         name,
-        "area" | "base" | "br" | "col" | "embed" | "hr" | "img"
-            | "input" | "link" | "meta" | "param" | "source"
-            | "track" | "wbr"
+        "area"
+            | "base"
+            | "br"
+            | "col"
+            | "embed"
+            | "hr"
+            | "img"
+            | "input"
+            | "link"
+            | "meta"
+            | "param"
+            | "source"
+            | "track"
+            | "wbr"
     )
 }
 
@@ -163,7 +172,9 @@ mod tests {
     fn tokenize_preserves_utf8_text_nodes() {
         let tokens = tokenize("<p>120×32</p>");
         assert!(
-            tokens.iter().any(|t| matches!(t, Token::Text(s) if s == "120×32")),
+            tokens
+                .iter()
+                .any(|t| matches!(t, Token::Text(s) if s == "120×32")),
             "expected UTF-8 text token, got: {tokens:?}"
         );
     }
@@ -247,7 +258,6 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             let bytes = input.as_bytes();
             let len = bytes.len();
             let mut self_closing = false;
-
 
             let skip_whitespace = |k: &mut usize| {
                 while *k < len && bytes[*k].is_ascii_whitespace() {
@@ -420,7 +430,11 @@ impl Node {
 }
 
 pub fn build_dom(tokens: &[Token]) -> Node {
-    let mut root = Node::Document { id: Id(0), children: Vec::new(), doctype: None };
+    let mut root = Node::Document {
+        id: Id(0),
+        children: Vec::new(),
+        doctype: None,
+    };
     let mut stack: Vec<*mut Node> = vec![&mut root as *mut Node];
 
     let push_child = |parent: *mut Node, child: Node| {
@@ -444,15 +458,32 @@ pub fn build_dom(tokens: &[Token]) -> Node {
             }
             Token::Comment(c) => {
                 let parent = *stack.last().unwrap();
-                push_child(parent, Node::Comment { id: Id(0), text: c.clone() });
+                push_child(
+                    parent,
+                    Node::Comment {
+                        id: Id(0),
+                        text: c.clone(),
+                    },
+                );
             }
             Token::Text(txt) => {
                 if !txt.is_empty() {
                     let parent = *stack.last().unwrap();
-                    push_child(parent, Node::Text { id: Id(0), text: txt.clone() });
+                    push_child(
+                        parent,
+                        Node::Text {
+                            id: Id(0),
+                            text: txt.clone(),
+                        },
+                    );
                 }
             }
-            Token::StartTag { name, attributes, self_closing, .. } => {
+            Token::StartTag {
+                name,
+                attributes,
+                self_closing,
+                ..
+            } => {
                 let parent = *stack.last().unwrap();
                 let mut_node = push_child(
                     parent,

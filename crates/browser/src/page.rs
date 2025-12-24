@@ -117,7 +117,9 @@ impl PageState {
 
         fn walk(store: &mut InputValueStore, node: &Node) {
             match node {
-                Node::Element { name, attributes, .. } if name.eq_ignore_ascii_case("input") => {
+                Node::Element {
+                    name, attributes, ..
+                } if name.eq_ignore_ascii_case("input") => {
                     // Phase 1: only seed type=text (or missing type)
                     let mut ty: Option<&str> = None;
                     let mut value: Option<&str> = None;

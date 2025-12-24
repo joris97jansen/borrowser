@@ -1,8 +1,8 @@
+use bus::{CoreCommand, CoreEvent};
+use core_types::{RequestId, TabId};
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
-use bus::{CoreCommand, CoreEvent};
-use core_types::{TabId, RequestId};
 use tools::utf8::{finish_utf8, push_utf8_chunk};
 
 type Key = (TabId, RequestId, String);
@@ -19,7 +19,12 @@ pub fn start_css_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent
 
         while let Ok(cmd) = cmd_rx.recv() {
             match cmd {
-                CoreCommand::CssChunk { tab_id, request_id, url, bytes } => {
+                CoreCommand::CssChunk {
+                    tab_id,
+                    request_id,
+                    url,
+                    bytes,
+                } => {
                     let key = (tab_id, request_id, url.clone());
                     let st = map.entry(key).or_insert(CssState {
                         raw: Vec::new(),
@@ -30,7 +35,11 @@ pub fn start_css_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent
                     push_utf8_chunk(&mut st.text, &mut st.carry, &bytes);
                 }
 
-                CoreCommand::CssDone { tab_id, request_id, url } => {
+                CoreCommand::CssDone {
+                    tab_id,
+                    request_id,
+                    url,
+                } => {
                     let key = (tab_id, request_id, url.clone());
                     if let Some(mut st) = map.remove(&key) {
                         finish_utf8(&mut st.text, &mut st.carry);

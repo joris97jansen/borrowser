@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use html::Id;
+use std::collections::HashMap;
 
 #[derive(Clone, Debug, Default)]
 pub struct InputValueStore {
@@ -8,7 +8,9 @@ pub struct InputValueStore {
 
 impl InputValueStore {
     pub fn new() -> Self {
-        Self { values: HashMap::new() }
+        Self {
+            values: HashMap::new(),
+        }
     }
 
     /// Returns the stored value for this key, if any.

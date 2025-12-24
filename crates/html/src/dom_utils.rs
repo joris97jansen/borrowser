@@ -1,4 +1,4 @@
-use crate::{Node, Id};
+use crate::{Id, Node};
 
 /// Collect concatenated text from <style> elements.
 pub fn collect_style_texts(node: &Node, out: &mut String) {
@@ -22,33 +22,86 @@ pub fn collect_style_texts(node: &Node, out: &mut String) {
 
 /// Collect <link rel="stylesheet" href="…"> href values.
 pub fn collect_stylesheet_hrefs(node: &Node, out: &mut Vec<String>) {
-    if let Node::Element { name, attributes, .. } = node {
-        if name.eq_ignore_ascii_case("link") {
-            let mut is_stylesheet = false;
-            let mut href: Option<&str> = None;
-            for (k, v) in attributes {
-                let key = k.as_str();
-                if key.eq_ignore_ascii_case("rel") {
-                    if let Some(val) = v.as_deref() {
-                        if val.split_whitespace().any(|t| t.eq_ignore_ascii_case("stylesheet")) {
-                            is_stylesheet = true;
+    match node {
+        Node::Element {
+            name,
+            attributes,
+            children,
+            ..
+        } => {
+            if name.eq_ignore_ascii_case("link") {
+                let mut is_stylesheet = false;
+                let mut href: Option<&str> = None;
+
+                for (k, v) in attributes {
+                    let key = k.as_str();
+                    if key.eq_ignore_ascii_case("rel") {
+                        if let Some(val) = v.as_deref() {
+                            if val
+                                .split_whitespace()
+                                .any(|t| t.eq_ignore_ascii_case("stylesheet"))
+                            {
+                                is_stylesheet = true;
+                            }
                         }
+                    } else if key.eq_ignore_ascii_case("href") {
+                        href = v.as_deref();
                     }
-                } else if key.eq_ignore_ascii_case("href") {
-                    href = v.as_deref();
+                }
+
+                if is_stylesheet {
+                    if let Some(h) = href {
+                        out.push(h.to_string());
+                    }
                 }
             }
-            if is_stylesheet {
-                if let Some(h) = href {
-                    out.push(h.to_string());
-                }
-            }
-        }
-        if let Node::Element { children, .. } | Node::Document { children, .. } = node {
+
             for c in children {
                 collect_stylesheet_hrefs(c, out);
             }
         }
+        Node::Document { children, .. } => {
+            for c in children {
+                collect_stylesheet_hrefs(c, out);
+            }
+        }
+        _ => {}
+    }
+}
+
+/// Collect <img src="…"> src values.
+pub fn collect_img_srcs(node: &Node, out: &mut Vec<String>) {
+    match node {
+        Node::Element {
+            name,
+            attributes,
+            children,
+            ..
+        } => {
+            if name.eq_ignore_ascii_case("img") {
+                for (k, v) in attributes {
+                    if k.eq_ignore_ascii_case("src") {
+                        if let Some(src) = v.as_deref() {
+                            let src = src.trim();
+                            if !src.is_empty() {
+                                out.push(src.to_string());
+                            }
+                        }
+                        break;
+                    }
+                }
+            }
+
+            for c in children {
+                collect_img_srcs(c, out);
+            }
+        }
+        Node::Document { children, .. } => {
+            for c in children {
+                collect_img_srcs(c, out);
+            }
+        }
+        _ => {}
     }
 }
 
@@ -63,7 +116,7 @@ pub fn collect_visible_text<'a>(node: &'a Node, ancestors: &mut Vec<&'a Node>, o
                 out.push_str(t);
             }
         }
-        Node::Element{ name, children, .. } => {
+        Node::Element { name, children, .. } => {
             if name.eq_ignore_ascii_case("script") || name.eq_ignore_ascii_case("style") {
                 return; // skip
             }
@@ -74,8 +127,8 @@ pub fn collect_visible_text<'a>(node: &'a Node, ancestors: &mut Vec<&'a Node>, o
             ancestors.pop();
 
             match &name.to_ascii_lowercase()[..] {
-                "p" | "div" | "section" | "article" | "header" | "footer"
-                | "h1" | "h2" | "h3" | "h4" | "h5" | "h6" | "li" => {
+                "p" | "div" | "section" | "article" | "header" | "footer" | "h1" | "h2" | "h3"
+                | "h4" | "h5" | "h6" | "li" => {
                     out.push_str("\n\n");
                 }
                 _ => {}
@@ -91,7 +144,8 @@ pub fn collect_visible_text<'a>(node: &'a Node, ancestors: &mut Vec<&'a Node>, o
 }
 
 pub fn first_styles(style: &[(String, String)]) -> String {
-    style.iter()
+    style
+        .iter()
         .take(3)
         .map(|(k, v)| format!(r#"{k}: {v};"#))
         .collect::<Vec<_>>()
@@ -100,40 +154,76 @@ pub fn first_styles(style: &[(String, String)]) -> String {
 
 pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
     fn walk(node: &Node, depth: usize, out: &mut Vec<String>, left: &mut usize) {
-        if *left == 0 { return; }
+        if *left == 0 {
+            return;
+        }
         *left -= 1;
         let indent = "  ".repeat(depth);
         match node {
-            Node::Document { doctype, children, .. } => {
+            Node::Document {
+                doctype, children, ..
+            } => {
                 if let Some(dt) = doctype {
                     out.push(format!("{indent}<!DOCTYPE {dt}>"));
                 } else {
                     out.push(format!("{indent}#document"));
                 }
-                for c in children { walk(c, depth+1, out, left); }
+                for c in children {
+                    walk(c, depth + 1, out, left);
+                }
             }
-            Node::Element { name, attributes, children, style, .. } => {
-                let id = attributes.iter().find(|(k,_)| k=="id").and_then(|(_,v)| v.as_deref()).unwrap_or("");
-                let class = attributes.iter().find(|(k,_)| k=="class").and_then(|(_,v)| v.as_deref()).unwrap_or("");
+            Node::Element {
+                name,
+                attributes,
+                children,
+                style,
+                ..
+            } => {
+                let id = attributes
+                    .iter()
+                    .find(|(k, _)| k == "id")
+                    .and_then(|(_, v)| v.as_deref())
+                    .unwrap_or("");
+                let class = attributes
+                    .iter()
+                    .find(|(k, _)| k == "class")
+                    .and_then(|(_, v)| v.as_deref())
+                    .unwrap_or("");
                 let styl = first_styles(style);
                 let mut line = format!("{indent}<{name}");
-                if !id.is_empty()   { line.push_str(&format!(r#" id="{id}""#)); }
-                if !class.is_empty(){ line.push_str(&format!(r#" class="{class}""#)); }
+                if !id.is_empty() {
+                    line.push_str(&format!(r#" id="{id}""#));
+                }
+                if !class.is_empty() {
+                    line.push_str(&format!(r#" class="{class}""#));
+                }
                 line.push('>');
-                if !styl.is_empty() { line.push_str(&format!("  /* {styl} */")); }
+                if !styl.is_empty() {
+                    line.push_str(&format!("  /* {styl} */"));
+                }
                 out.push(line);
-                for c in children { walk(c, depth+1, out, left); }
+                for c in children {
+                    walk(c, depth + 1, out, left);
+                }
             }
             Node::Text { text, .. } => {
                 let t = text.replace('\n', " ").trim().to_string();
                 if !t.is_empty() {
-                    let show = if t.len() > 40 { format!("{}…",&t[..40]) } else { t };
+                    let show = if t.len() > 40 {
+                        format!("{}…", &t[..40])
+                    } else {
+                        t
+                    };
                     out.push(format!("{indent}\"{show}\""));
                 }
             }
             Node::Comment { text, .. } => {
                 let t = text.replace('\n', " ");
-                let show = if t.len() > 40 { format!("{}…",&t[..40]) } else { t };
+                let show = if t.len() > 40 {
+                    format!("{}…", &t[..40])
+                } else {
+                    t
+                };
                 out.push(format!("{indent}<!-- {show} -->"));
             }
         }
@@ -143,7 +233,6 @@ pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
     walk(root, 0, &mut out, &mut left);
     out
 }
-
 
 pub fn is_non_rendering_element(node: &Node) -> bool {
     match node {
@@ -171,7 +260,9 @@ pub fn assign_node_ids(root: &mut Node) {
 
         match node {
             Node::Document { children, .. } | Node::Element { children, .. } => {
-                for c in children { walk(c, next); }
+                for c in children {
+                    walk(c, next);
+                }
             }
             _ => {}
         }
