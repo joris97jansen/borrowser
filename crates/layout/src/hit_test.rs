@@ -25,6 +25,7 @@ pub enum HitKind {
     Link,
     Input,
     Image,
+    Button,
     InlineBlockBox,
     BlockBox,
 }
@@ -186,7 +187,7 @@ fn hit_test_inline_fragments<'a>(
                     let hit_kind = match kind {
                         ReplacedKind::Img => HitKind::Image,
                         ReplacedKind::InputText => HitKind::Input,
-                        ReplacedKind::Button => HitKind::BlockBox, // temporary
+                        ReplacedKind::Button => HitKind::Button,
                     };
 
                     return Some(HitResult {

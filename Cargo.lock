@@ -2455,6 +2455,7 @@ version = "0.1.0"
 dependencies = [
  "bus",
  "core_types",
+ "tools",
 ]
 
 [[package]]
@@ -2475,6 +2476,7 @@ dependencies = [
  "bus",
  "core_types",
  "html",
+ "tools",
 ]
 
 [[package]]

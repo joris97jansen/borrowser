@@ -261,7 +261,19 @@ pub fn compute_style(
             // UA-ish default link blue
             result.color = (0, 0, 238, 255);
         }
-    }
+        if tag.eq_ignore_ascii_case("button") {
+            // UA-ish paint defaults (safe even if author doesn't style it)
+            if result.background_color.3 == 0 {
+                result.background_color = (233, 233, 233, 255);
+            }
+
+            // UA-ish padding floors (author padding still wins because we only raise minimums)
+            result.box_metrics.padding_left   = result.box_metrics.padding_left.max(8.0);
+            result.box_metrics.padding_right  = result.box_metrics.padding_right.max(8.0);
+            result.box_metrics.padding_top    = result.box_metrics.padding_top.max(4.0);
+            result.box_metrics.padding_bottom = result.box_metrics.padding_bottom.max(4.0);
+        }
+    };
     
     result
 }
@@ -290,6 +302,9 @@ fn default_display_for(tag: &str) -> Display {
         return Display::ListItem;
     }
     
+    if tag.eq_ignore_ascii_case("button") {
+        return Display::InlineBlock;
+    }
     // Everything else we treat as block for now
     Display::Block
 }

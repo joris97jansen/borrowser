@@ -7,3 +7,4 @@ edition = "2024"
 bus = { path = "../bus" }
 html = { path = "../html" }
 core_types = { path = "../core_types" }
+tools = { path = "../tools" }

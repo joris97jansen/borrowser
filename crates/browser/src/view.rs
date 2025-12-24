@@ -33,6 +33,7 @@ use layout::{
         LineBox,
         InlineFragment,
         layout_inline_for_paint,
+        button_label_from_layout,
     },
     hit_test::{
         HitResult,
@@ -261,7 +262,8 @@ pub fn page_viewport(
 
             // Paint first
             let focused = interaction.focused_node_id;
-            paint_layout_box(&layout_root, &painter, origin, &measurer, true, input_values, focused);
+            let active = interaction.active;
+            paint_layout_box(&layout_root, &painter, origin, &measurer, true, input_values, focused, active);
 
             // ------- unified router output -------
             let mut action: Option<PageAction> = None;
@@ -296,6 +298,9 @@ pub fn page_viewport(
                     }
                     HitKind::Input => {
                         ui.output_mut(|o| o.cursor_icon = CursorIcon::Text);
+                    }
+                    HitKind::Button => {
+                        ui.output_mut(|o| o.cursor_icon = CursorIcon::PointingHand);
                     }
                     _ => {}
                 }
@@ -351,6 +356,16 @@ pub fn page_viewport(
 
                                     let egui_focus_id = ui.make_persistent_id(("dom-input", h.node_id));
                                     ui.memory_mut(|mem| mem.request_focus(egui_focus_id));
+                                    ui.ctx().request_repaint();
+                                }
+
+                                HitKind::Button => {
+                                    #[cfg(debug_assertions)]
+                                    eprintln!("button click: {:?}", h.node_id);
+
+                                    // Clicking a button should blur input focus (browser-like)
+                                    interaction.focused_node_id = None;
+
                                     ui.ctx().request_repaint();
                                 }
                                 _ => interaction.focused_node_id = None,
@@ -433,6 +448,7 @@ fn paint_line_boxes<'a>(
     measurer: &dyn TextMeasurer,
     input_values: &InputValueStore,
     focused: Option<Id>,
+    active: Option<Id>,
 ) {
     for line in lines {
         for frag in &line.fragments {
@@ -487,6 +503,7 @@ fn paint_line_boxes<'a>(
                             false, // do NOT skip inline-block children inside this subtree
                             input_values,
                             focused,
+                            active,
                         );
                     } else {
                         // Fallback: simple placeholder rectangle using the box style.
@@ -506,6 +523,44 @@ fn paint_line_boxes<'a>(
                         Pos2 { x: origin.x + frag.rect.x, y: origin.y + frag.rect.y },
                         Vec2::new(frag.rect.width, frag.rect.height),
                     );
+
+                    // --- BUTTON: pressed visual state (uses `active`) ---
+                    if matches!(kind, ReplacedKind::Button) {
+                        let id = layout.map(|lb| lb.node_id());
+                        let is_pressed = id.is_some_and(|id| active == Some(id));
+
+                        let fill = if is_pressed {
+                            Color32::from_rgb(200, 200, 200)
+                        } else {
+                            Color32::from_rgb(230, 230, 230)
+                        };
+
+                        painter.rect_filled(rect, 6.0, fill);
+
+                        let stroke = if is_pressed {
+                            Stroke::new(2.0, Color32::from_rgb(110, 110, 110))
+                        } else {
+                            Stroke::new(1.0, Color32::from_rgb(140, 140, 140))
+                        };
+                        painter.rect_stroke(rect, 6.0, stroke, StrokeKind::Outside);
+
+                        let mut label = "Button".to_string();
+                        if let Some(lb) = layout {
+                            label = button_label_from_layout(lb);
+                        }
+
+                        let offset = if is_pressed { Vec2::new(1.0, 1.0) } else { Vec2::ZERO };
+
+                        painter.text(
+                            rect.center() + offset,
+                            Align2::CENTER_CENTER,
+                            label,
+                            FontId::proportional(12.0),
+                            Color32::from_rgb(60, 60, 60),
+                        );
+
+                        continue; // IMPORTANT: don't fall through to generic replaced painting
+                    }
 
                     let is_focused_input =
                         matches!(kind, ReplacedKind::InputText) &&
@@ -619,12 +674,13 @@ fn paint_layout_box<'a>(
     skip_inline_block_children: bool,
     input_values: &InputValueStore,
     focused: Option<Id>,
+    active: Option<Id>,
 ) {
 
     // 0) Do not paint non-rendering elements (head, style, script, etc.)
     if is_non_rendering_element(layout.node.node) {
         for child in &layout.children {
-            paint_layout_box(child, painter, origin, measurer, skip_inline_block_children, input_values, focused);
+            paint_layout_box(child, painter, origin, measurer, skip_inline_block_children, input_values, focused, active);
         }
         return;
     }
@@ -657,7 +713,7 @@ fn paint_layout_box<'a>(
     }
 
     // 2) Inline content
-    paint_inline_content(layout, painter, origin, measurer, input_values, focused);
+    paint_inline_content(layout, painter, origin, measurer, input_values, focused, active);
 
     // 3) Recurse into children
     for child in &layout.children {
@@ -666,7 +722,7 @@ fn paint_layout_box<'a>(
             continue;
         }
 
-        paint_layout_box(child, painter, origin, measurer, skip_inline_block_children, input_values, focused);
+        paint_layout_box(child, painter, origin, measurer, skip_inline_block_children, input_values, focused, active);
     }
 }
 
@@ -736,6 +792,7 @@ fn paint_inline_content<'a>(
     measurer: &dyn TextMeasurer,
     input_values: &InputValueStore,
     focused: Option<Id>,
+    active: Option<Id>,
 ) {
     // Only block-like elements host their own inline formatting context.
     match layout.node.node {
@@ -775,7 +832,7 @@ fn paint_inline_content<'a>(
         return;
     }
 
-    paint_line_boxes(painter, origin, &lines, measurer, input_values, focused);
+    paint_line_boxes(painter, origin, &lines, measurer, input_values, focused, active);
 }
 
 fn find_page_background_color(root: &StyledNode<'_>) -> Option<(u8, u8, u8, u8)> {
