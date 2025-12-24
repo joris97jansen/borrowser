@@ -595,6 +595,7 @@ fn layout_tokens<'a>(
                 // Box behaves like a big glyph: it can grow the line height.
                 if box_height > line_height {
                     line_height = box_height;
+                    bump_line_height(&mut line_fragments, line_height);
                 }
 
                 let frag_rect = Rectangle {
@@ -646,6 +647,7 @@ fn layout_tokens<'a>(
 
                 if height > line_height {
                     line_height = height;
+                    bump_line_height(&mut line_fragments, line_height);
                 }
 
                 let frag_rect = Rectangle { x: cursor_x, y: cursor_y, width, height };
@@ -966,14 +968,6 @@ fn resolve_used_width_for_block(
     w.max(0.0)
 }
 
-fn default_intrinsic_size(kind: ReplacedKind) -> (f32, f32) {
-    match kind {
-        ReplacedKind::Img => (300.0, 150.0),       // classic HTML fallback
-        ReplacedKind::InputText => (160.0, 24.0),  // reasonable default
-        ReplacedKind::Button => (80.0, 28.0),
-    }
-}
-
 fn resolve_replaced_width_px(
     style: &ComputedStyle,
     available_width: f32,
@@ -1004,21 +998,6 @@ fn resolve_replaced_width_px(
     w = w.min(available_width.max(0.0));
 
     w.max(0.0)
-}
-
-fn resolve_replaced_height_px(
-    style: &ComputedStyle,
-    intrinsic_height: f32,
-) -> f32 {
-    let mut h = intrinsic_height.max(0.0);
-
-    if let Some(Length::Px(px)) = style.height {
-        if px >= 0.0 {
-            h = px;
-        }
-    }
-
-    h.max(0.0)
 }
 
 fn get_attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
@@ -1111,10 +1090,30 @@ fn size_replaced_inline_children<'a>(
                         child.rect.height = h;
                     }
 
-                    other => {
-                        let (intr_w, intr_h) = default_intrinsic_size(other);
-                        let w = resolve_replaced_width_px(child.style, content_width, intr_w);
-                        let h = resolve_replaced_height_px(child.style, intr_h);
+                    ReplacedKind::Button => {
+                        // Measure label text from subtree.
+                        let label = button_label_from_layout(child);
+                        let text_w = measurer.measure(&label, child.style);
+
+                        let bm = child.style.box_metrics;
+
+                        // UA-ish defaults. (Your CSS padding still applies; these are just floors.)
+                        let pad_l = bm.padding_left.max(8.0);
+                        let pad_r = bm.padding_right.max(8.0);
+                        let pad_t = bm.padding_top.max(4.0);
+                        let pad_b = bm.padding_bottom.max(4.0);
+
+                        let line_h = measurer.line_height(child.style);
+
+                        // Intrinsic is text + padding (+ a tiny border fudge).
+                        let intrinsic_w = (text_w + pad_l + pad_r + 2.0).max(24.0);
+                        let intrinsic_h = (line_h + pad_t + pad_b + 2.0).max(18.0);
+
+                        let intrinsic = IntrinsicSize::from_w_h(Some(intrinsic_w), Some(intrinsic_h));
+
+                        // Respect css width/height/min/max + clamp to inline available width.
+                        let (w, h) = compute_replaced_size(child.style, intrinsic, Some(content_width));
+
                         child.rect.width = w;
                         child.rect.height = h;
                     }
@@ -1140,3 +1139,29 @@ fn size_replaced_inline_children<'a>(
     }
 }
 
+fn collect_text_content(node: &LayoutBox<'_>, out: &mut String) {
+    match node.node.node {
+        Node::Text { text, .. } => out.push_str(text),
+        Node::Element { .. } | Node::Document { .. } | Node::Comment { .. } => {
+            for c in &node.children {
+                collect_text_content(c, out);
+            }
+        }
+    }
+}
+
+pub fn button_label_from_layout(lb: &LayoutBox<'_>) -> String {
+    let mut s = String::new();
+    collect_text_content(lb, &mut s);
+
+    // Collapse whitespace a bit so sizing is stable.
+    let collapsed = s.split_whitespace().collect::<Vec<_>>().join(" ");
+    if collapsed.is_empty() { "Button".to_string() } else { collapsed }
+}
+
+// whenever the line height increases, normalize already-emitted fragments
+fn bump_line_height(line_fragments: &mut [LineFragment<'_>], new_h: f32) {
+    for f in line_fragments {
+        f.rect.height = new_h;
+    }
+}

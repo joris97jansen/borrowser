@@ -1,22 +1,141 @@
 <!DOCTYPE html>
 <html>
-  <body style="font-size: 16px; line-height: 1.2;">
-    <p>
-      This is a paragraph with an inline
-      <button>Click me</button>
-      button that should appear in the same line as text.
-    </p>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        font-size: 16px;
+        color: black;
+        background: white;
+        margin: 0;
+        padding: 16px;
+      }
 
-    <p>
-      Long text before the button to force wrapping and show that the
-      <button style="width: 140px;">Wide button</button>
-      behaves like a single inline glyph and moves to the next line if needed.
-    </p>
+      .box {
+        background: #f5f5f5;
+        padding: 12px;
+        margin-bottom: 16px;
+      }
 
-    <p>
-      Buttons can appear
-      <button>between</button>
-      words without breaking layout.
-    </p>
+      /* Constrain width to force wrapping + inline clamp behavior */
+      .narrow {
+        width: 320px;
+        background: #eef7ff;
+        padding: 12px;
+      }
+
+      /* Just to visually separate groups */
+      .row {
+        margin-top: 10px;
+      }
+
+      /* Some explicit padding so your sizing logic has something to work with */
+      button {
+        padding-top: 6px;
+        padding-right: 10px;
+        padding-bottom: 6px;
+        padding-left: 10px;
+      }
+
+      /* Fixed size: width + height both specified */
+      .btn-fixed {
+        width: 120px;
+        height: 32px;
+      }
+
+      /* Only width specified (height should be stable from label + padding) */
+      .btn-only-width {
+        width: 140px;
+      }
+
+      /* Only height specified (width should be stable from label + padding) */
+      .btn-only-height {
+        height: 36px;
+      }
+
+      /* Min/max width clamping tests */
+      .btn-min {
+        width: 60px;
+        min-width: 160px;
+      }
+
+      .btn-max {
+        width: 260px;
+        max-width: 140px;
+      }
+
+      /* Ridiculous width to test clamp-to-available inline space */
+      .btn-overflow {
+        width: 999px;
+      }
+    </style>
+  </head>
+
+  <body>
+    <div class="box">
+      <strong>Inline flow (no wrap)</strong><br/>
+      Text before <button>Click me</button> text after.
+    </div>
+
+    <div class="box narrow">
+      <strong>Wrapping + glyph behavior</strong><br/>
+      Long text before the button to force wrapping:
+      <button>Short</button>
+      then more text after it so the line continues.
+      <div class="row">
+        Even longer label:
+        <button>Very very very long button label</button>
+        should wrap as a single unit.
+      </div>
+    </div>
+
+    <div class="box">
+      <strong>Sizing rules</strong>
+      <div class="row">
+        Both width+height:
+        <button class="btn-fixed">120×32</button>
+        after.
+      </div>
+
+      <div class="row">
+        Only width:
+        <button class="btn-only-width">Width 140</button>
+        (height should be stable).
+      </div>
+
+      <div class="row">
+        Only height:
+        <button class="btn-only-height">Height 36</button>
+        (width from label + padding).
+      </div>
+    </div>
+
+    <div class="box narrow">
+      <strong>Min/max + clamp to inline space</strong>
+      <div class="row">
+        min-width clamp (width 60 but min 160):
+        <button class="btn-min">Min</button>
+        end.
+      </div>
+
+      <div class="row">
+        max-width clamp (width 260 but max 140):
+        <button class="btn-max">Max width clamps</button>
+        end.
+      </div>
+
+      <div class="row">
+        absurd width (999px) should clamp to this narrow container:
+        <button class="btn-overflow">Clamped to available inline space</button>
+      </div>
+    </div>
+
+    <div class="box">
+      <strong>Pressed-state test (click + hold)</strong><br/>
+      Click and *hold* on these; you should see the pressed style until release:
+      <button>One</button>
+      <button>Two</button>
+      <button>Three</button>
+    </div>
   </body>
 </html>
