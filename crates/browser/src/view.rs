@@ -365,6 +365,7 @@ pub fn page_viewport(
 
                                 HitKind::Input => {
                                     input_values.ensure_initial(h.node_id, String::new());
+                                    input_values.focus(h.node_id);
                                     interaction.focused_node_id = Some(h.node_id);
 
                                     let egui_focus_id =
@@ -422,7 +423,7 @@ pub fn page_viewport(
                         for evt in &i.events {
                             match evt {
                                 Event::Text(t) => {
-                                    input_values.append(focus_id, t.as_str());
+                                    input_values.insert_text(focus_id, t.as_str());
                                     changed = true;
                                 }
                                 Event::Key {
@@ -597,15 +598,25 @@ fn paint_line_boxes<'a>(
                         if let Some(lb) = layout {
                             if let Some(src) = get_attr(lb.node.node, "src") {
                                 if let Some(url) = resolve_relative_url(base_url, src) {
-                                    if let ImageState::Ready(ready) =
-                                        resources.image_state_by_url(&url)
-                                    {
-                                        let uv = Rect::from_min_max(
-                                            Pos2 { x: 0.0, y: 0.0 },
-                                            Pos2 { x: 1.0, y: 1.0 },
-                                        );
-                                        painter.image(ready.texture_id, rect, uv, Color32::WHITE);
-                                        continue;
+                                    match resources.image_state_by_url(&url) {
+                                        ImageState::Ready(ready) => {
+                                            let uv = Rect::from_min_max(
+                                                Pos2 { x: 0.0, y: 0.0 },
+                                                Pos2 { x: 1.0, y: 1.0 },
+                                            );
+                                            painter.image(
+                                                ready.texture_id,
+                                                rect,
+                                                uv,
+                                                Color32::WHITE,
+                                            );
+                                            continue;
+                                        }
+                                        ImageState::Error { .. } => {
+                                            paint_broken_image_placeholder(painter, rect);
+                                            continue;
+                                        }
+                                        _ => {}
                                     }
                                 }
                             }
@@ -636,18 +647,19 @@ fn paint_line_boxes<'a>(
                     // Special case: <input type="text"> draws its value/placeholder inside the box
                     if matches!(kind, ReplacedKind::InputText) {
                         // Determine shown text: value first, else placeholder
-                        let mut shown = String::new();
+                        let mut value = String::new();
+                        let mut placeholder: Option<String> = None;
 
                         if let Some(lb) = layout {
                             let id = lb.node_id();
                             if let Some(v) = input_values.get(id) {
-                                shown = v.to_string();
+                                value = v.to_string();
                             }
 
-                            if shown.is_empty() {
+                            if value.is_empty() {
                                 if let Some(ph) = get_attr(lb.node.node, "placeholder") {
                                     if !ph.trim().is_empty() {
-                                        shown = ph.to_string();
+                                        placeholder = Some(ph.to_string());
                                     }
                                 }
                             }
@@ -658,20 +670,35 @@ fn paint_line_boxes<'a>(
                         let pad_l = bm.padding_left.max(4.0);
                         let pad_r = bm.padding_right.max(4.0);
                         let pad_t = bm.padding_top.max(2.0);
+                        let pad_b = bm.padding_bottom.max(2.0);
 
                         let text_x = rect.min.x + pad_l;
-                        let text_y = rect.min.y + pad_t;
                         let available_text_w = (rect.width() - pad_l - pad_r).max(0.0);
 
-                        let shown = truncate_to_fit(measurer, style, &shown, available_text_w);
+                        let line_h = measurer.line_height(style);
+                        let inner_h = (rect.height() - pad_t - pad_b).max(0.0);
+                        let caret_h = line_h.min(inner_h).max(1.0);
+                        let extra_y = (inner_h - caret_h).max(0.0) * 0.5;
+                        let text_y = rect.min.y + pad_t + extra_y;
 
-                        // Paint in style color
+                        // Paint in style color (placeholder uses a lighter tint).
                         let (cr, cg, cb, ca) = style.color;
                         let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
+                        let value_color = text_color;
+                        let placeholder_color = text_color.gamma_multiply(0.6);
                         let font_px = match style.font_size {
                             Length::Px(px) => px,
                         };
                         let font_id = FontId::proportional(font_px);
+
+                        let is_placeholder = value.is_empty();
+                        let painted = if !is_placeholder {
+                            truncate_to_fit(measurer, style, &value, available_text_w)
+                        } else {
+                            let ph = placeholder.as_deref().unwrap_or_default();
+                            truncate_to_fit(measurer, style, ph, available_text_w)
+                        };
+                        let paint_color = if is_placeholder { placeholder_color } else { value_color };
 
                         painter.text(
                             Pos2 {
@@ -679,10 +706,32 @@ fn paint_line_boxes<'a>(
                                 y: text_y,
                             },
                             Align2::LEFT_TOP,
-                            shown,
+                            &painted,
                             font_id,
-                            text_color,
+                            paint_color,
                         );
+
+                        // Caret (Phase 2): simple 1px vertical line.
+                        if is_focused_input {
+                            // If value is truncated, place caret at the end of the *painted* content,
+                            // but before the ellipsis.
+                            let caret_text = painted.strip_suffix('…').unwrap_or(painted.as_str());
+                            let caret_x = if is_placeholder {
+                                text_x
+                            } else {
+                                text_x + measurer.measure(caret_text, style)
+                            };
+                            let caret_max_x = (text_x + available_text_w - 1.0).max(text_x);
+                            let mut caret_x = caret_x.min(caret_max_x).round();
+                            caret_x = caret_x.min(caret_max_x);
+
+                            let caret_rect = Rect::from_min_size(
+                                Pos2 { x: caret_x, y: text_y },
+                                Vec2 { x: 1.0, y: caret_h },
+                            );
+                            // Caret uses the actual text color, not placeholder styling.
+                            painter.rect_filled(caret_rect, 0.0, value_color);
+                        }
 
                         continue; // skip default label painting below
                     }
@@ -1048,6 +1097,30 @@ fn resolve_relative_url(base_url: Option<&str>, href: &str) -> Option<String> {
 
     let base = url::Url::parse(base).ok()?;
     base.join(href).ok().map(|u| u.to_string())
+}
+
+fn paint_broken_image_placeholder(painter: &Painter, rect: Rect) {
+    painter.rect_filled(rect, 2.0, Color32::from_rgb(245, 245, 245));
+    painter.rect_stroke(
+        rect,
+        2.0,
+        Stroke::new(1.0, Color32::from_rgb(160, 160, 160)),
+        StrokeKind::Inside,
+    );
+
+    let inset = 5.0;
+    if rect.width() <= inset * 2.0 || rect.height() <= inset * 2.0 {
+        return;
+    }
+
+    let a = rect.min + Vec2::new(inset, inset);
+    let b = rect.max - Vec2::new(inset, inset);
+    let c = Pos2 { x: a.x, y: b.y };
+    let d = Pos2 { x: b.x, y: a.y };
+
+    let stroke = Stroke::new(2.0, Color32::from_rgb(220, 80, 80));
+    painter.line_segment([a, b], stroke);
+    painter.line_segment([c, d], stroke);
 }
 
 struct BrowserReplacedInfo<'a> {
