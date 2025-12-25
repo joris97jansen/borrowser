@@ -1139,15 +1139,38 @@ fn size_replaced_inline_children<'a>(
                         let intrinsic_w = (text_w + pad_l + pad_r + 2.0).max(24.0);
                         let intrinsic_h = (line_h + pad_t + pad_b + 2.0).max(18.0);
 
-                        let intrinsic =
-                            IntrinsicSize::from_w_h(Some(intrinsic_w), Some(intrinsic_h));
+                        // Buttons do not have an intrinsic aspect ratio like images do.
+                        // Keep their height stable even when width is clamped.
+                        let mut w = intrinsic_w;
+                        if let Some(Length::Px(px)) = child.style.width {
+                            if px >= 0.0 {
+                                w = px;
+                            }
+                        }
 
-                        // Respect css width/height/min/max + clamp to inline available width.
-                        let (w, h) =
-                            compute_replaced_size(child.style, intrinsic, Some(content_width));
+                        if let Some(Length::Px(min_px)) = child.style.min_width {
+                            if min_px >= 0.0 {
+                                w = w.max(min_px);
+                            }
+                        }
+                        if let Some(Length::Px(max_px)) = child.style.max_width {
+                            if max_px >= 0.0 {
+                                w = w.min(max_px);
+                            }
+                        }
 
-                        child.rect.width = w;
-                        child.rect.height = h;
+                        // Final clamp to available inline space.
+                        w = w.min(content_width.max(0.0));
+
+                        let mut h = intrinsic_h;
+                        if let Some(Length::Px(px)) = child.style.height {
+                            if px >= 0.0 {
+                                h = px;
+                            }
+                        }
+
+                        child.rect.width = w.max(1.0);
+                        child.rect.height = h.max(1.0);
                     }
                 }
             }
