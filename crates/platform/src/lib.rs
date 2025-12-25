@@ -1,46 +1,43 @@
-use std::{thread, time::Duration};
-use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, Ordering};
-use winit::{
-    application::{ApplicationHandler},
-    event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy},
-    window::{Window, WindowId, Theme},
-    event::{WindowEvent},
-    dpi::PhysicalSize,
-};
+use app_api::{Repaint, RepaintHandle, UiApp};
+use bus::{CoreCommand, CoreEvent};
 use egui::Visuals;
-use std::sync::mpsc;
 use gfx::Renderer;
-use app_api::{
-    UiApp,
-    Repaint,
-    RepaintHandle
-};
-use bus::{
-    CoreEvent,
-    CoreCommand,
-};
+use runtime_css::start_css_runtime;
 use runtime_net::start_net_runtime;
 use runtime_parse::start_parse_runtime;
-use runtime_css::start_css_runtime;
+use std::sync::Arc;
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::mpsc;
+use std::{thread, time::Duration};
+use winit::{
+    application::ApplicationHandler,
+    dpi::PhysicalSize,
+    event::WindowEvent,
+    event_loop::{ActiveEventLoop, EventLoop, EventLoopProxy},
+    window::{Theme, Window, WindowId},
+};
 
 pub enum UserEvent {
     Core(CoreEvent),
     Repaint,
 }
 
-
 pub fn run_with<A: UiApp + 'static>(app: A) {
-    let event_loop = EventLoop::<UserEvent>::with_user_event().build().expect("event loop");
+    let event_loop = EventLoop::<UserEvent>::with_user_event()
+        .build()
+        .expect("event loop");
     let proxy = event_loop.create_proxy();
 
     let mut platform = PlatformApp::new(proxy);
-    platform.app = Some(Box::new(app));           // <- inject the app
+    platform.app = Some(Box::new(app)); // <- inject the app
 
     event_loop.run_app(&mut platform).expect("crashed");
 }
 
-fn start_bus_bridge(proxy: EventLoopProxy<UserEvent>, evt_rx: std::sync::mpsc::Receiver<bus::CoreEvent>) {
+fn start_bus_bridge(
+    proxy: EventLoopProxy<UserEvent>,
+    evt_rx: std::sync::mpsc::Receiver<bus::CoreEvent>,
+) {
     thread::spawn(move || {
         while let Ok(evt) = evt_rx.recv() {
             let _ = proxy.send_event(UserEvent::Core(evt));
@@ -48,29 +45,29 @@ fn start_bus_bridge(proxy: EventLoopProxy<UserEvent>, evt_rx: std::sync::mpsc::R
     });
 }
 
-fn router_thread(cmd_rx_main: mpsc::Receiver<CoreCommand>,
-                 net_tx: mpsc::Sender<CoreCommand>,
-                 parse_tx: mpsc::Sender<CoreCommand>,
-                 css_tx: mpsc::Sender<CoreCommand>) {
+fn router_thread(
+    cmd_rx_main: mpsc::Receiver<CoreCommand>,
+    net_tx: mpsc::Sender<CoreCommand>,
+    parse_tx: mpsc::Sender<CoreCommand>,
+    css_tx: mpsc::Sender<CoreCommand>,
+) {
     thread::spawn(move || {
         while let Ok(cmd) = cmd_rx_main.recv() {
             match cmd {
                 // Networking goes to net runtime
-                CoreCommand::FetchStream { .. } |
-                CoreCommand::CancelRequest { .. } => {
+                CoreCommand::FetchStream { .. } | CoreCommand::CancelRequest { .. } => {
                     let _ = net_tx.send(cmd);
                 }
 
                 // HTML parsing commands go to parse runtime
-                CoreCommand::ParseHtmlStart { .. } |
-                CoreCommand::ParseHtmlChunk { .. } |
-                CoreCommand::ParseHtmlDone  { .. } => {
+                CoreCommand::ParseHtmlStart { .. }
+                | CoreCommand::ParseHtmlChunk { .. }
+                | CoreCommand::ParseHtmlDone { .. } => {
                     let _ = parse_tx.send(cmd);
                 }
 
                 // CSS streaming→parsing goes to css runtime
-                CoreCommand::CssChunk { .. } |
-                CoreCommand::CssDone  { .. } => {
+                CoreCommand::CssChunk { .. } | CoreCommand::CssDone { .. } => {
                     let _ = css_tx.send(cmd);
                 }
             }
@@ -101,9 +98,9 @@ impl PlatformApp {
         if self.window.is_some() {
             return;
         }
-        let raw_window = event_loop.create_window(
-            Window::default_attributes().with_title("Borrowser")
-        ).expect("create window");
+        let raw_window = event_loop
+            .create_window(Window::default_attributes().with_title("Borrowser"))
+            .expect("create window");
         let window = Arc::new(raw_window);
         self.window = Some(window);
     }
@@ -124,9 +121,9 @@ impl PlatformApp {
     }
 
     fn draw_frame(&mut self) {
-        let window   = self.window.as_ref().unwrap();
+        let window = self.window.as_ref().unwrap();
         let renderer = self.renderer.as_mut().unwrap();
-        let app      = self.app.as_mut().expect("UiApp not injected");
+        let app = self.app.as_mut().expect("UiApp not injected");
 
         // ---- 1) Sync egui visuals with OS theme ----
         if let Some(theme) = window.theme() {
@@ -161,9 +158,9 @@ impl ApplicationHandler<UserEvent> for PlatformApp {
         let (evt_tx_main, evt_rx_main) = mpsc::channel::<CoreEvent>();
 
         // --- per-runtime command channels ---
-        let (net_cmd_tx,  net_cmd_rx)  = mpsc::channel::<CoreCommand>();
-        let (par_cmd_tx,  par_cmd_rx)  = mpsc::channel::<CoreCommand>();
-        let (css_cmd_tx,  css_cmd_rx)  = mpsc::channel::<CoreCommand>();
+        let (net_cmd_tx, net_cmd_rx) = mpsc::channel::<CoreCommand>();
+        let (par_cmd_tx, par_cmd_rx) = mpsc::channel::<CoreCommand>();
+        let (css_cmd_tx, css_cmd_rx) = mpsc::channel::<CoreCommand>();
 
         // --- start runtimes (each gets its cmd_rx + shared evt_tx) ---
         start_net_runtime(net_cmd_rx, evt_tx_main.clone());
@@ -171,7 +168,12 @@ impl ApplicationHandler<UserEvent> for PlatformApp {
         start_css_runtime(css_cmd_rx, evt_tx_main.clone());
 
         // --- route CoreCommand → proper runtime ---
-        router_thread(cmd_rx_main, net_cmd_tx.clone(), par_cmd_tx.clone(), css_cmd_tx.clone());
+        router_thread(
+            cmd_rx_main,
+            net_cmd_tx.clone(),
+            par_cmd_tx.clone(),
+            css_cmd_tx.clone(),
+        );
 
         // --- bridge CoreEvent → winit user events ---
         start_bus_bridge(self.proxy.clone(), evt_rx_main);
@@ -195,7 +197,7 @@ impl ApplicationHandler<UserEvent> for PlatformApp {
 
     fn user_event(&mut self, _event_loop: &ActiveEventLoop, event: UserEvent) {
         match event {
-           UserEvent::Core(core_evt) => {
+            UserEvent::Core(core_evt) => {
                 if let Some(app) = self.app.as_mut() {
                     // new single entry-point:
                     app.on_core_event(core_evt);
@@ -215,12 +217,7 @@ impl ApplicationHandler<UserEvent> for PlatformApp {
         }
     }
 
-    fn window_event(
-        &mut self,
-        event_loop: &ActiveEventLoop,
-        _id: WindowId,
-        event: WindowEvent,
-    ) {
+    fn window_event(&mut self, event_loop: &ActiveEventLoop, _id: WindowId, event: WindowEvent) {
         if let (Some(window), Some(renderer)) = (self.window.as_ref(), self.renderer.as_mut()) {
             renderer.on_window_event(window.as_ref(), &event);
         }

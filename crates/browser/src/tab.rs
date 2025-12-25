@@ -1,38 +1,20 @@
-use url::Url;
-use crate::page::PageState;
 use crate::interactions::InteractionState;
-use bus::{
-    CoreCommand,
-    CoreEvent,
-};
+use crate::page::PageState;
+use crate::resources::ResourceManager;
+use crate::view::content;
+use app_api::RepaintHandle;
+use bus::{CoreCommand, CoreEvent};
+use egui::Context;
 use std::sync::mpsc;
-use crate::view::{
-    content,
-};
-use egui::{
-    Context,
-};
-use app_api::{
-    RepaintHandle,
-};
+use url::Url;
 
 use html::{
     Node,
-    dom_utils::{
-        collect_stylesheet_hrefs,
-        assign_node_ids,
-    },
+    dom_utils::{assign_node_ids, collect_img_srcs, collect_stylesheet_hrefs},
 };
 
-use css::{
-    parse_color,
-};
-use core_types::{
-    ResourceKind,
-    TabId,
-    RequestId,
-};
-
+use core_types::{RequestId, ResourceKind, TabId};
+use css::parse_color;
 
 pub struct Tab {
     pub tab_id: TabId,
@@ -46,6 +28,7 @@ pub struct Tab {
     last_status: Option<String>,
 
     page: PageState,
+    resources: ResourceManager,
     repaint: Option<RepaintHandle>,
     cmd_tx: Option<mpsc::Sender<CoreCommand>>,
     interaction: InteractionState,
@@ -62,6 +45,7 @@ impl Tab {
             loading: false,
             last_status: None,
             page: PageState::new(),
+            resources: ResourceManager::new(),
             repaint: None,
             cmd_tx: None,
             interaction: InteractionState::default(),
@@ -74,11 +58,23 @@ impl Tab {
     }
 
     pub fn set_repaint_handle(&mut self, h: RepaintHandle) {
-        self.repaint = Some(h); 
+        self.repaint = Some(h);
     }
 
     pub fn ui_content(&mut self, ctx: &Context) {
-        if let Some(action) = content(ctx, &mut self.page, &mut self.interaction, self.last_status.as_ref(), self.loading) {
+        // Drain completed decode jobs and upload textures before painting.
+        if self.resources.pump(ctx) {
+            self.poke_redraw();
+        }
+
+        if let Some(action) = content(
+            ctx,
+            &mut self.page,
+            &mut self.interaction,
+            &self.resources,
+            self.last_status.as_ref(),
+            self.loading,
+        ) {
             match action {
                 crate::view::PageAction::Navigate(url) => self.navigate_to_new(url),
             }
@@ -90,42 +86,69 @@ impl Tab {
         let current = self.nav_gen;
         match evt {
             // HTML networking → parser aansturen
-            CoreEvent::NetworkStart { tab_id, request_id, kind: ResourceKind::Html, url, .. }
-                if tab_id == self.tab_id && request_id == current =>
-            {
+            CoreEvent::NetworkStart {
+                tab_id,
+                request_id,
+                kind: ResourceKind::Html,
+                url,
+                ..
+            } if tab_id == self.tab_id && request_id == current => {
                 self.page.start_nav(&url);
                 self.loading = true;
                 self.last_status = Some(format!("Started HTML stream: {url}"));
-                self.send_cmd(CoreCommand::ParseHtmlStart { tab_id: self.tab_id, request_id });
+                self.send_cmd(CoreCommand::ParseHtmlStart {
+                    tab_id: self.tab_id,
+                    request_id,
+                });
                 self.poke_redraw();
             }
 
-            CoreEvent::NetworkChunk { tab_id, request_id, kind: ResourceKind::Html, bytes, .. }
-                if tab_id == self.tab_id && request_id == current =>
-            {
-                self.send_cmd(CoreCommand::ParseHtmlChunk { tab_id: self.tab_id, request_id, bytes });
+            CoreEvent::NetworkChunk {
+                tab_id,
+                request_id,
+                kind: ResourceKind::Html,
+                bytes,
+                ..
+            } if tab_id == self.tab_id && request_id == current => {
+                self.send_cmd(CoreCommand::ParseHtmlChunk {
+                    tab_id: self.tab_id,
+                    request_id,
+                    bytes,
+                });
             }
 
-            CoreEvent::NetworkDone { tab_id, request_id, kind: ResourceKind::Html, url }
-                if tab_id == self.tab_id && request_id == current =>
-            {
-                self.send_cmd(CoreCommand::ParseHtmlDone { tab_id: self.tab_id, request_id });
+            CoreEvent::NetworkDone {
+                tab_id,
+                request_id,
+                kind: ResourceKind::Html,
+                url,
+            } if tab_id == self.tab_id && request_id == current => {
+                self.send_cmd(CoreCommand::ParseHtmlDone {
+                    tab_id: self.tab_id,
+                    request_id,
+                });
                 self.last_status = Some(format!("Loaded HTML: {url}"));
                 self.poke_redraw();
             }
 
-            CoreEvent::NetworkError { tab_id, request_id, kind: ResourceKind::Html, url, error }
-                if tab_id == self.tab_id && request_id == current =>
-            {
+            CoreEvent::NetworkError {
+                tab_id,
+                request_id,
+                kind: ResourceKind::Html,
+                url,
+                error,
+            } if tab_id == self.tab_id && request_id == current => {
                 self.loading = false;
                 self.last_status = Some(format!("Network error on {url}: {error}"));
                 self.poke_redraw();
             }
 
             // Parser → DOM snapshot + CSS discovery
-            CoreEvent::DomUpdate { tab_id, request_id, dom }
-                if tab_id == self.tab_id && request_id == current =>
-            {
+            CoreEvent::DomUpdate {
+                tab_id,
+                request_id,
+                dom,
+            } if tab_id == self.tab_id && request_id == current => {
                 let mut dom = dom;
                 assign_node_ids(&mut dom);
                 self.page.dom = Some(dom);
@@ -135,7 +158,9 @@ impl Tab {
                 self.page.update_visible_text_cache();
 
                 // stylesheets detecteren en fetchen
-                if let (Some(dom_ref), Some(base)) = (self.page.dom.as_ref(), self.page.base_url.as_ref()) {
+                if let (Some(dom_ref), Some(base)) =
+                    (self.page.dom.as_ref(), self.page.base_url.as_ref())
+                {
                     let mut hrefs = Vec::new();
                     collect_stylesheet_hrefs(dom_ref, &mut hrefs);
                     if let Ok(base_url) = Url::parse(base) {
@@ -155,45 +180,134 @@ impl Tab {
                     }
                 }
 
+                // images detecteren en fetchen (media pipeline)
+                if let (Some(dom_ref), Some(base)) =
+                    (self.page.dom.as_ref(), self.page.base_url.as_ref())
+                {
+                    let mut srcs = Vec::new();
+                    collect_img_srcs(dom_ref, &mut srcs);
+
+                    let cmd_tx = self.cmd_tx.clone();
+                    let tab_id = self.tab_id;
+                    let request_id = current;
+
+                    if let Ok(base_url) = Url::parse(base) {
+                        for src in srcs {
+                            if let Ok(abs) = base_url.join(&src) {
+                                let url = abs.to_string();
+                                self.resources.request_image(url, |url| {
+                                    if let Some(tx) = &cmd_tx {
+                                        let _ = tx.send(CoreCommand::FetchStream {
+                                            tab_id,
+                                            request_id,
+                                            url,
+                                            kind: ResourceKind::Image,
+                                        });
+                                    }
+                                });
+                            }
+                        }
+                    }
+                }
+
                 let pending = self.page.pending_count();
                 self.loading = pending > 0;
                 if pending > 0 {
-                    self.last_status = Some(format!("Loaded HTML • fetching {pending} stylesheet(s)…"));
+                    self.last_status =
+                        Some(format!("Loaded HTML • fetching {pending} stylesheet(s)…"));
                 }
                 self.poke_redraw();
             }
 
             // CSS streaming → CSS runtime
-            CoreEvent::NetworkChunk { tab_id, request_id, kind: ResourceKind::Css, url, bytes }
-                if tab_id == self.tab_id && request_id == current =>
-            {
-                self.send_cmd(CoreCommand::CssChunk { tab_id: self.tab_id, request_id, url, bytes });
+            CoreEvent::NetworkChunk {
+                tab_id,
+                request_id,
+                kind: ResourceKind::Css,
+                url,
+                bytes,
+            } if tab_id == self.tab_id && request_id == current => {
+                self.send_cmd(CoreCommand::CssChunk {
+                    tab_id: self.tab_id,
+                    request_id,
+                    url,
+                    bytes,
+                });
             }
-            CoreEvent::NetworkDone { tab_id, request_id, kind: ResourceKind::Css, url }
-                if tab_id == self.tab_id && request_id == current =>
-            {
-                self.send_cmd(CoreCommand::CssDone { tab_id: self.tab_id, request_id, url });
+            CoreEvent::NetworkChunk {
+                tab_id,
+                request_id,
+                kind: ResourceKind::Image,
+                url,
+                bytes,
+            } if tab_id == self.tab_id && request_id == current => {
+                self.resources.on_network_chunk(&url, &bytes);
             }
-            CoreEvent::NetworkError { tab_id, request_id, kind: ResourceKind::Css, url, error }
-                if tab_id == self.tab_id && request_id == current =>
-            {
-                self.send_cmd(CoreCommand::CssDone { tab_id: self.tab_id, request_id, url: url.clone() });
+            CoreEvent::NetworkDone {
+                tab_id,
+                request_id,
+                kind: ResourceKind::Css,
+                url,
+            } if tab_id == self.tab_id && request_id == current => {
+                self.send_cmd(CoreCommand::CssDone {
+                    tab_id: self.tab_id,
+                    request_id,
+                    url,
+                });
+            }
+            CoreEvent::NetworkDone {
+                tab_id,
+                request_id,
+                kind: ResourceKind::Image,
+                url,
+            } if tab_id == self.tab_id && request_id == current => {
+                self.resources.on_network_done(&url, self.repaint.clone());
+            }
+            CoreEvent::NetworkError {
+                tab_id,
+                request_id,
+                kind: ResourceKind::Css,
+                url,
+                error,
+            } if tab_id == self.tab_id && request_id == current => {
+                self.send_cmd(CoreCommand::CssDone {
+                    tab_id: self.tab_id,
+                    request_id,
+                    url: url.clone(),
+                });
                 let remaining = self.page.pending_count();
                 self.loading = remaining > 0;
-                self.last_status = Some(format!("Stylesheet error on {url}: {error} ({} remaining)", remaining));
+                self.last_status = Some(format!(
+                    "Stylesheet error on {url}: {error} ({} remaining)",
+                    remaining
+                ));
                 self.poke_redraw();
+            }
+            CoreEvent::NetworkError {
+                tab_id,
+                request_id,
+                kind: ResourceKind::Image,
+                url,
+                error,
+            } if tab_id == self.tab_id && request_id == current => {
+                self.resources.on_network_error(&url, error);
             }
 
             // CSS runtime → apply styles
-            CoreEvent::CssParsedBlock { tab_id, request_id, css_block, .. }
-                if tab_id == self.tab_id && request_id == current =>
-            {
+            CoreEvent::CssParsedBlock {
+                tab_id,
+                request_id,
+                css_block,
+                ..
+            } if tab_id == self.tab_id && request_id == current => {
                 self.page.apply_css_block(&css_block);
                 self.poke_redraw();
             }
-            CoreEvent::CssSheetDone { tab_id, request_id, url }
-                if tab_id == self.tab_id && request_id == current =>
-            {
+            CoreEvent::CssSheetDone {
+                tab_id,
+                request_id,
+                url,
+            } if tab_id == self.tab_id && request_id == current => {
                 self.page.mark_css_done(&url);
                 let remaining = self.page.pending_count();
                 self.loading = remaining > 0;
@@ -255,7 +369,10 @@ impl Tab {
     // -- Internal Helpers ---
     fn start_fetch(&mut self, url: String) {
         if self.nav_gen > 0 {
-            self.send_cmd(CoreCommand::CancelRequest { tab_id: self.tab_id, request_id: self.nav_gen });
+            self.send_cmd(CoreCommand::CancelRequest {
+                tab_id: self.tab_id,
+                request_id: self.nav_gen,
+            });
         }
         self.interaction.clear_for_navigation();
         self.nav_gen = self.nav_gen.wrapping_add(1);
@@ -390,8 +507,17 @@ impl Tab {
 
     pub fn inherited_color(node: &Node, ancestors: &[Node]) -> (u8, u8, u8, u8) {
         fn find_on(node: &Node) -> Option<(u8, u8, u8, u8)> {
-            if let Node::Element { attributes: _, style, .. } = node {
-                if let Some(v) = style.iter().find(|(k, _)| k.eq_ignore_ascii_case("color")).map(|(_, v)| v) {
+            if let Node::Element {
+                attributes: _,
+                style,
+                ..
+            } = node
+            {
+                if let Some(v) = style
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case("color"))
+                    .map(|(_, v)| v)
+                {
                     return parse_color(v);
                 }
             }
@@ -412,7 +538,11 @@ impl Tab {
         fn from_element(node: &Node, want: &str) -> Option<(u8, u8, u8, u8)> {
             if let Node::Element { name, style, .. } = node {
                 if name.eq_ignore_ascii_case(want) {
-                    if let Some(v) = style.iter().find(|(k, _)| k.eq_ignore_ascii_case("background-color")).map(|(_, v)| v) {
+                    if let Some(v) = style
+                        .iter()
+                        .find(|(k, _)| k.eq_ignore_ascii_case("background-color"))
+                        .map(|(_, v)| v)
+                    {
                         return parse_color(v);
                     }
                 }
@@ -424,7 +554,11 @@ impl Tab {
                 if let Some(c1) = from_element(c, "html") {
                     return Some(c1);
                 }
-                if let Node::Element { children: html_kids, .. } = c {
+                if let Node::Element {
+                    children: html_kids,
+                    ..
+                } = c
+                {
                     for k in html_kids {
                         if let Some(c2) = from_element(k, "body") {
                             return Some(c2);

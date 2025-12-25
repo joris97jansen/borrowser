@@ -1,5 +1,5 @@
-use std::collections::HashMap;
 use html::Id;
+use std::collections::HashMap;
 
 fn clamp_to_char_boundary(s: &str, i: usize) -> usize {
     let mut i = i.min(s.len());
@@ -23,7 +23,9 @@ pub struct InputValueStore {
 
 impl InputValueStore {
     pub fn new() -> Self {
-        Self { values: HashMap::new() }
+        Self {
+            values: HashMap::new(),
+        }
     }
 
     pub fn get_state(&self, id: Id) -> Option<(&str, usize)> {

@@ -17,7 +17,7 @@ pub struct MetaTag {
 
 #[derive(Debug, Clone)]
 pub struct LinkTag {
-    pub rel: Vec<String>,         // e.g. ["icon"], ["stylesheet"]
+    pub rel: Vec<String>, // e.g. ["icon"], ["stylesheet"]
     pub href: Option<String>,
 }
 
@@ -37,7 +37,12 @@ fn find_head(dom: &Node) -> Option<&Node> {
     match dom {
         Node::Document { children, .. } => {
             for child in children {
-                if let Node::Element { name, children: html_children, .. } = child {
+                if let Node::Element {
+                    name,
+                    children: html_children,
+                    ..
+                } = child
+                {
                     if name.eq_ignore_ascii_case("html") {
                         // search inside <html> for <head>
                         for hc in html_children {
@@ -59,7 +64,13 @@ fn find_head(dom: &Node) -> Option<&Node> {
 fn fill_head_metadata_from(head: &Node, out: &mut HeadMetadata) {
     if let Node::Element { children, .. } = head {
         for child in children {
-            if let Node::Element { name, attributes, children, .. } = child {
+            if let Node::Element {
+                name,
+                attributes,
+                children,
+                ..
+            } = child
+            {
                 // <title>
                 if name.eq_ignore_ascii_case("title") {
                     if out.title.is_none() {

@@ -1,15 +1,6 @@
-use crate::values::{
-    Length,
-    Display,
-    parse_color,
-    parse_length,
-    parse_display,
-};
+use crate::values::{Display, Length, parse_color, parse_display, parse_length};
 
-use html::{
-    Node,
-    Id,
-};
+use html::{Id, Node};
 
 #[derive(Clone, Copy, Debug)]
 pub struct BoxMetrics {
@@ -25,7 +16,6 @@ pub struct BoxMetrics {
     pub padding_bottom: f32,
     pub padding_left: f32,
 }
-
 
 impl BoxMetrics {
     pub fn zero() -> Self {
@@ -64,7 +54,7 @@ pub struct ComputedStyle {
     /// Optional width property. Not inherited. For now we treat this
     /// as `px` only when specified.
     pub width: Option<Length>,
-    pub height: Option<Length>,   
+    pub height: Option<Length>,
 
     pub min_width: Option<Length>,
     pub max_width: Option<Length>,
@@ -73,15 +63,15 @@ pub struct ComputedStyle {
 impl ComputedStyle {
     pub fn initial() -> Self {
         ComputedStyle {
-            color: (0, 0, 0, 255),              // black
-            background_color: (0, 0, 0, 0),     // transparent
-            font_size: Length::Px(16.0),        // "16px" default
-            box_metrics: BoxMetrics::zero(),    // zero margins/padding
-            display: Display::Block,            // default to Block for now
-            width: None,                        // auto
-            height: None,                       // auto
-            min_width: None,                    // none    
-            max_width: None,                    // none
+            color: (0, 0, 0, 255),           // black
+            background_color: (0, 0, 0, 0),  // transparent
+            font_size: Length::Px(16.0),     // "16px" default
+            box_metrics: BoxMetrics::zero(), // zero margins/padding
+            display: Display::Block,         // default to Block for now
+            width: None,                     // auto
+            height: None,                    // auto
+            min_width: None,                 // none
+            max_width: None,                 // none
         }
     }
 }
@@ -268,13 +258,13 @@ pub fn compute_style(
             }
 
             // UA-ish padding floors (author padding still wins because we only raise minimums)
-            result.box_metrics.padding_left   = result.box_metrics.padding_left.max(8.0);
-            result.box_metrics.padding_right  = result.box_metrics.padding_right.max(8.0);
-            result.box_metrics.padding_top    = result.box_metrics.padding_top.max(4.0);
+            result.box_metrics.padding_left = result.box_metrics.padding_left.max(8.0);
+            result.box_metrics.padding_right = result.box_metrics.padding_right.max(8.0);
+            result.box_metrics.padding_top = result.box_metrics.padding_top.max(4.0);
             result.box_metrics.padding_bottom = result.box_metrics.padding_bottom.max(4.0);
         }
     };
-    
+
     result
 }
 
@@ -301,7 +291,7 @@ fn default_display_for(tag: &str) -> Display {
     if tag.eq_ignore_ascii_case("li") {
         return Display::ListItem;
     }
-    
+
     if tag.eq_ignore_ascii_case("button") {
         return Display::InlineBlock;
     }
@@ -347,7 +337,12 @@ pub fn build_style_tree<'a>(
             }
         }
 
-        Node::Element { name, style, children, .. } => {
+        Node::Element {
+            name,
+            style,
+            children,
+            ..
+        } => {
             // 1) Check if there is an explicit `display:` declaration
             let has_display_decl = style
                 .iter()

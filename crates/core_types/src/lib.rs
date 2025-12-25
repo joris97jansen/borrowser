@@ -5,4 +5,5 @@ pub type RequestId = u64;
 pub enum ResourceKind {
     Html,
     Css,
+    Image,
 }

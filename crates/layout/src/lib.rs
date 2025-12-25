@@ -2,24 +2,14 @@ mod text;
 pub use text::TextMeasurer;
 
 pub mod inline;
-pub use inline::{
-        LineBox,
-        layout_inline_for_paint,
-};
+pub use inline::{LineBox, layout_inline_for_paint};
 pub mod hit_test;
-pub use hit_test::{hit_test, HitKind};
+pub use hit_test::{HitKind, hit_test};
 pub mod replaced;
 
-use css::{
-    ComputedStyle,
-    StyledNode,
-    Display,
-};
-use html::{
-    Node,
-    Id,
-    dom_utils::is_non_rendering_element
-};
+use css::{ComputedStyle, Display, StyledNode};
+use html::{Id, Node, dom_utils::is_non_rendering_element};
+use replaced::intrinsic::IntrinsicSize;
 
 /// A rectangle in CSS px units (we'll treat everything as px for now).
 #[derive(Clone, Copy, Debug)]
@@ -56,10 +46,17 @@ pub enum ReplacedKind {
     Button,
 }
 
+/// Optional, host-provided info for replaced elements (e.g. decoded image sizes).
+pub trait ReplacedElementInfoProvider {
+    fn intrinsic_for_img(&self, node: &html::Node) -> Option<IntrinsicSize>;
+}
+
 /// Classify replaced elements for layout purposes.
 fn classify_replaced_kind(node: &Node) -> Option<ReplacedKind> {
     match node {
-        Node::Element { name, attributes, .. } => {
+        Node::Element {
+            name, attributes, ..
+        } => {
             if name.eq_ignore_ascii_case("img") {
                 return Some(ReplacedKind::Img);
             }
@@ -101,6 +98,7 @@ pub struct LayoutBox<'a> {
     pub children: Vec<LayoutBox<'a>>,
     pub list_marker: Option<ListMarker>,
     pub replaced: Option<ReplacedKind>,
+    pub replaced_intrinsic: Option<IntrinsicSize>,
 }
 
 impl<'a> LayoutBox<'a> {
@@ -112,11 +110,7 @@ impl<'a> LayoutBox<'a> {
 /// The inner "content box" of a layout box: border box minus padding.
 /// We expose it via small helpers so that all code computes content
 /// geometry in a single, consistent way.
-pub fn content_x_and_width(
-    style: &ComputedStyle,
-    border_x: f32,
-    border_width: f32,
-) -> (f32, f32) {
+pub fn content_x_and_width(style: &ComputedStyle, border_x: f32, border_width: f32) -> (f32, f32) {
     let bm = style.box_metrics;
 
     let content_x = border_x + bm.padding_left;
@@ -161,9 +155,10 @@ pub fn layout_block_tree<'a>(
     root: &'a StyledNode<'a>,
     page_width: f32,
     measurer: &dyn TextMeasurer,
+    replaced_info: Option<&dyn ReplacedElementInfoProvider>,
 ) -> LayoutBox<'a> {
     // 1) Build the layout tree structure (no real geometry yet).
-    let mut root_box = layout_block_subtree(root, 0.0, 0.0, page_width);
+    let mut root_box = layout_block_subtree(root, 0.0, 0.0, page_width, replaced_info);
 
     // 2) Single authoritative geometry pass: inline + block layout.
     //
@@ -173,7 +168,6 @@ pub fn layout_block_tree<'a>(
 
     root_box
 }
-
 
 /// Internal recursive function:
 /// - `x`, `y` = top-left of this box
@@ -185,6 +179,7 @@ fn layout_block_subtree<'a>(
     x: f32,
     y: f32,
     width: f32,
+    replaced_info: Option<&dyn ReplacedElementInfoProvider>,
 ) -> LayoutBox<'a> {
     // 0) Non-rendering elements: transparent containers.
     //    They still get a LayoutBox so the tree shape matches the DOM,
@@ -193,7 +188,7 @@ fn layout_block_subtree<'a>(
         let mut children_boxes = Vec::new();
 
         for child in &styled.children {
-            let child_box = layout_block_subtree(child, x, y, width);
+            let child_box = layout_block_subtree(child, x, y, width, replaced_info);
             children_boxes.push(child_box);
         }
 
@@ -212,6 +207,7 @@ fn layout_block_subtree<'a>(
             children: children_boxes,
             list_marker: None,
             replaced: None,
+            replaced_intrinsic: None,
         };
     }
 
@@ -234,7 +230,7 @@ fn layout_block_subtree<'a>(
         let mut next_ol_index: u32 = 1;
 
         for child in &styled.children {
-            let mut child_box = layout_block_subtree(child, x, y, width);
+            let mut child_box = layout_block_subtree(child, x, y, width, replaced_info);
 
             // If this is a list container (<ul>/<ol>) and the child is a list-item,
             // assign a marker.
@@ -265,7 +261,8 @@ fn layout_block_subtree<'a>(
 
         _ => {
             // If it's a replaced element and it's inline-level, treat it as a replaced inline atom.
-            if replaced_kind.is_some() && matches!(style.display, Display::Inline | Display::InlineBlock)
+            if replaced_kind.is_some()
+                && matches!(style.display, Display::Inline | Display::InlineBlock)
             {
                 BoxKind::ReplacedInline
             } else {
@@ -278,7 +275,6 @@ fn layout_block_subtree<'a>(
         }
     };
 
-
     // 3) Border-box rect: x/y/width are authoritative here.
     //    Height is always 0.0 in this phase; it will be computed by
     //    the inline-aware layout pass (recompute_block_heights).
@@ -290,11 +286,16 @@ fn layout_block_subtree<'a>(
     };
 
     let replaced = if matches!(kind, BoxKind::ReplacedInline) {
-            debug_assert!(replaced_kind.is_some());
-            replaced_kind
-        } else {
-            None
-        };
+        debug_assert!(replaced_kind.is_some());
+        replaced_kind
+    } else {
+        None
+    };
+
+    let replaced_intrinsic = match replaced_kind {
+        Some(ReplacedKind::Img) => replaced_info.and_then(|p| p.intrinsic_for_img(styled.node)),
+        _ => None,
+    };
 
     LayoutBox {
         kind,
@@ -304,5 +305,6 @@ fn layout_block_subtree<'a>(
         children: children_boxes,
         list_marker: None,
         replaced: replaced,
+        replaced_intrinsic,
     }
 }

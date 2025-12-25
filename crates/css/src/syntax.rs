@@ -12,8 +12,8 @@ pub struct Rule {
 
 pub enum Selector {
     Universal,
-    Type(String), // element/tag selector
-    Id(String), // #id selector
+    Type(String),  // element/tag selector
+    Id(String),    // #id selector
     Class(String), // .class selector
 }
 
@@ -28,7 +28,8 @@ pub fn parse_stylesheet(input: &str) -> Stylesheet {
     let mut rules = Vec::new();
     for block in input.split('}') {
         if let Some((selector_str, declaration_str)) = block.split_once('{') {
-            let selectors = selector_str.split(',')
+            let selectors = selector_str
+                .split(',')
                 .filter_map(parse_selector_one)
                 .collect::<Vec<_>>();
             if selectors.is_empty() {
@@ -38,7 +39,10 @@ pub fn parse_stylesheet(input: &str) -> Stylesheet {
             if declarations.is_empty() {
                 continue;
             }
-            rules.push(Rule { selectors, declarations });
+            rules.push(Rule {
+                selectors,
+                declarations,
+            });
         }
     }
     Stylesheet { rules }
@@ -47,7 +51,8 @@ pub fn parse_stylesheet(input: &str) -> Stylesheet {
 // input: "color: red; font-size: 12px;"
 // output: vec![Declaration { name: "color", value: "red" }, Declaration { name: "font-size", value: "12px" }]
 pub fn parse_declarations(input: &str) -> Vec<Declaration> {
-    input.split(';')
+    input
+        .split(';')
         .filter_map(|pair| {
             let (n, v) = pair.split_once(':')?;
             let name = n.trim().to_ascii_lowercase();
@@ -56,7 +61,8 @@ pub fn parse_declarations(input: &str) -> Vec<Declaration> {
             }
             let value = v.trim().to_string();
             Some(Declaration { name, value })
-        }).collect()
+        })
+        .collect()
 }
 
 // input: "#id", ".class", "div", "*"
@@ -75,7 +81,9 @@ fn parse_selector_one(s: &str) -> Option<Selector> {
     if let Some(class) = s.strip_prefix('.') {
         return Some(Selector::Class(class.trim().to_string()));
     }
-    if s.chars().all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_') {
+    if s.chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
         return Some(Selector::Type(s.to_ascii_lowercase()));
     }
     None

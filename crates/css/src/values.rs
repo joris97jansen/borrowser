@@ -32,7 +32,7 @@ pub fn parse_color(value: &str) -> Option<(u8, u8, u8, u8)> {
         }
     }
 
-    let named = match s. as_str() {
+    let named = match s.as_str() {
         "black" => (0, 0, 0, 255),
         "blue" => (0, 0, 255, 255),
         "cyan" => (0, 255, 255, 255),
@@ -52,7 +52,6 @@ pub fn parse_color(value: &str) -> Option<(u8, u8, u8, u8)> {
     };
     Some(named)
 }
-
 
 /// Parse a `font-size` value into a Length.
 /// For now we only support `NNpx` (e.g., "16px", "12.5px").
@@ -76,11 +75,11 @@ pub fn parse_display(value: &str) -> Option<Display> {
     let v = value.trim().to_ascii_lowercase();
 
     match v.as_str() {
-        "block"        => Some(Display::Block),
-        "inline"       => Some(Display::Inline),
+        "block" => Some(Display::Block),
+        "inline" => Some(Display::Inline),
         "inline-block" => Some(Display::InlineBlock),
-        "list-item"    => Some(Display::ListItem),
-        "none"         => Some(Display::None),
+        "list-item" => Some(Display::ListItem),
+        "none" => Some(Display::None),
         _ => None, // unknown / unsupported → ignored
     }
 }

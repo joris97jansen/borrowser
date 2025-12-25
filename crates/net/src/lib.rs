@@ -1,28 +1,38 @@
-use tools::common::{
-    MAX_HTML_BYTES,
-};
 use std::fs::File;
-use std::path::Path;
 use std::io::Read;
-use std::thread;
+use std::path::Path;
 use std::sync::Arc;
-use std::sync::atomic::{
-    AtomicBool,
-    Ordering,
-};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread;
+use tools::common::MAX_HTML_BYTES;
 
 pub enum NetEvent {
-    Start { request_id: u64, url: String, content_type: Option<String> },
-    Chunk { request_id: u64, url: String, chunk: Vec<u8> },
-    Done { request_id: u64, url: String },
-    Error { request_id: u64, url: String, error: String },
+    Start {
+        request_id: u64,
+        url: String,
+        content_type: Option<String>,
+    },
+    Chunk {
+        request_id: u64,
+        url: String,
+        chunk: Vec<u8>,
+    },
+    Done {
+        request_id: u64,
+        url: String,
+    },
+    Error {
+        request_id: u64,
+        url: String,
+        error: String,
+    },
 }
 
 pub fn fetch_stream(
     request_id: u64,
     url: String,
     cancel_token: Arc<AtomicBool>,
-    callback: Arc<dyn Fn(NetEvent) + Send + Sync>
+    callback: Arc<dyn Fn(NetEvent) + Send + Sync>,
 ) {
     thread::spawn(move || {
         // Check cancel before starting
@@ -115,10 +125,7 @@ pub fn fetch_stream(
                 }
             }
 
-            callback(NetEvent::Done {
-                request_id,
-                url,
-            });
+            callback(NetEvent::Done { request_id, url });
 
             return;
         }
@@ -137,9 +144,7 @@ pub fn fetch_stream(
             }
         };
 
-        let content_type = response
-            .header("Content-Type")
-            .map(|s| s.to_string());
+        let content_type = response.header("Content-Type").map(|s| s.to_string());
 
         let mut reader = response.into_reader();
 
@@ -196,23 +201,20 @@ pub fn fetch_stream(
             }
         }
 
-        callback(NetEvent::Done{
-            request_id,
-            url
-        });
+        callback(NetEvent::Done { request_id, url });
     });
 }
 
-
 fn guess_content_type_from_path(path: &Path) -> Option<String> {
-    match path.extension()
+    match path
+        .extension()
         .and_then(|s| s.to_str())
         .map(|s| s.to_ascii_lowercase())
         .as_deref()
     {
         Some("html") | Some("htm") => Some("text/html".to_string()),
-        Some("css")                => Some("text/css".to_string()),
-        Some("js")                 => Some("application/javascript".to_string()),
-        _                          => None,
+        Some("css") => Some("text/css".to_string()),
+        Some("js") => Some("application/javascript".to_string()),
+        _ => None,
     }
 }

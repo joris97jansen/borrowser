@@ -15,3 +15,4 @@ layout = { path = "../layout" }
 
 egui = { workspace = true }
 url = { workspace = true }
+image = { workspace = true }

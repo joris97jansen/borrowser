@@ -145,8 +145,8 @@ impl ShellApp {
 
                         // Colors
                         let inactive_fill = Color32::from_rgb(70, 70, 70);
-                        let active_fill   = Color32::from_rgb(120, 120, 120);
-                        let hovered_fill  = Color32::from_rgb(90, 90, 90);
+                        let active_fill = Color32::from_rgb(120, 120, 120);
+                        let hovered_fill = Color32::from_rgb(90, 90, 90);
 
                         let vis = ui.visuals();
                         let rounding = CornerRadius::same(8);
@@ -164,7 +164,7 @@ impl ShellApp {
                         // ---- 2) Close button rect ----
                         let close_rect = Rect::from_min_max(
                             pos2(tab_rect.right() - close_w - 6.0, tab_rect.top() + 4.0),
-                            pos2(tab_rect.right() - 6.0,           tab_rect.bottom() - 4.0),
+                            pos2(tab_rect.right() - 6.0, tab_rect.bottom() - 4.0),
                         );
 
                         let close_id = ui.make_persistent_id(("tab_close", i));

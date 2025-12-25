@@ -236,6 +236,7 @@ dependencies = [
  "css",
  "egui",
  "html",
+ "image",
  "layout",
  "net",
  "tools",
@@ -1266,6 +1267,8 @@ dependencies = [
  "num-traits",
  "png",
  "tiff",
+ "zune-core",
+ "zune-jpeg",
 ]
 
 [[package]]

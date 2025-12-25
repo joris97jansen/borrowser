@@ -1,29 +1,16 @@
-use std::mem;
-use egui::{
-    Context as EguiContext,
-    viewport::ViewportId,
-};
+use egui::{Context as EguiContext, viewport::ViewportId};
 use egui_wgpu::{
-    Renderer as EguiWgpuRenderer,
-    ScreenDescriptor,
+    Renderer as EguiWgpuRenderer, ScreenDescriptor,
     wgpu::{
-        Device, Queue, Surface, SurfaceConfiguration,
-        Instance, InstanceDescriptor, RequestAdapterOptions,
-        PowerPreference, DeviceDescriptor, Features, Limits,
-        TextureUsages, PresentMode, MemoryHints, Trace,
-        CommandEncoderDescriptor, RenderPassDescriptor,
-        RenderPassColorAttachment, Operations, LoadOp, StoreOp,
-        TextureViewDescriptor, Color, SurfaceError,
-    }
+        Color, CommandEncoderDescriptor, Device, DeviceDescriptor, Features, Instance,
+        InstanceDescriptor, Limits, LoadOp, MemoryHints, Operations, PowerPreference, PresentMode,
+        Queue, RenderPassColorAttachment, RenderPassDescriptor, RequestAdapterOptions, StoreOp,
+        Surface, SurfaceConfiguration, SurfaceError, TextureUsages, TextureViewDescriptor, Trace,
+    },
 };
-use egui_winit::{
-    State as EguiWinitState,
-};
-use winit::{
-    window::{Window},
-    event::{WindowEvent},
-    dpi::PhysicalSize,
-};
+use egui_winit::State as EguiWinitState;
+use std::mem;
+use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 pub struct Renderer {
     egui_context: EguiContext,
     egui_state: EguiWinitState,
@@ -52,25 +39,25 @@ impl Renderer {
         let surface = instance.create_surface(window).expect("surface");
         let surface = unsafe { mem::transmute(surface) };
 
-
         let adapter = pollster::block_on(instance.request_adapter(&RequestAdapterOptions {
             power_preference: PowerPreference::HighPerformance,
             force_fallback_adapter: false,
             compatible_surface: Some(&surface),
-        })).expect("no suitable adapter");
+        }))
+        .expect("no suitable adapter");
 
-        let (device, queue) = pollster::block_on(adapter.request_device(
-                &DeviceDescriptor {
-                    label: Some("device"),
-                    required_features: Features::empty(),
-                    required_limits: Limits::default(),
-                    memory_hints: MemoryHints::Performance,
-                    trace: Trace::default(),
-            },
-        )).expect("device");
+        let (device, queue) = pollster::block_on(adapter.request_device(&DeviceDescriptor {
+            label: Some("device"),
+            required_features: Features::empty(),
+            required_limits: Limits::default(),
+            memory_hints: MemoryHints::Performance,
+            trace: Trace::default(),
+        }))
+        .expect("device");
 
         let caps = surface.get_capabilities(&adapter);
-        let format = caps.formats
+        let format = caps
+            .formats
             .iter()
             .copied()
             .find(|f| f.is_srgb())
@@ -130,7 +117,9 @@ impl Renderer {
                 return;
             }
         };
-        let surface_view = surface_texture.texture.create_view(&TextureViewDescriptor::default());
+        let surface_view = surface_texture
+            .texture
+            .create_view(&TextureViewDescriptor::default());
 
         let raw_input = self.egui_state.take_egui_input(window);
         self.egui_context.begin_pass(raw_input);
@@ -138,23 +127,26 @@ impl Renderer {
         build_ui(&self.egui_context);
 
         let full_output = self.egui_context.end_pass();
-        self.egui_state.handle_platform_output(window, full_output.platform_output);
+        self.egui_state
+            .handle_platform_output(window, full_output.platform_output);
 
         // Tessellate
-        let clipped = self.egui_context.tessellate(
-            full_output.shapes,
-            self.egui_context.pixels_per_point(),
-        );
+        let clipped = self
+            .egui_context
+            .tessellate(full_output.shapes, self.egui_context.pixels_per_point());
 
         // Upload textures
         for (id, delta) in &full_output.textures_delta.set {
-            self.egui_renderer.update_texture(&self.device, &self.queue, *id, delta);
+            self.egui_renderer
+                .update_texture(&self.device, &self.queue, *id, delta);
         }
 
         // 4) Encode draw
-        let mut encoder = self.device.create_command_encoder(&CommandEncoderDescriptor {
-            label: Some("gfx encoder"),
-        });
+        let mut encoder = self
+            .device
+            .create_command_encoder(&CommandEncoderDescriptor {
+                label: Some("gfx encoder"),
+            });
 
         // Screen descriptor (pixels + scale)
         let screen = ScreenDescriptor {
@@ -162,7 +154,13 @@ impl Renderer {
             pixels_per_point: self.egui_context.pixels_per_point(),
         };
 
-        self.egui_renderer.update_buffers(&self.device, &self.queue, &mut encoder, &clipped, &screen);
+        self.egui_renderer.update_buffers(
+            &self.device,
+            &self.queue,
+            &mut encoder,
+            &clipped,
+            &screen,
+        );
 
         {
             let render_pass = encoder.begin_render_pass(&RenderPassDescriptor {
@@ -180,7 +178,8 @@ impl Renderer {
                 occlusion_query_set: None,
             });
 
-            self.egui_renderer.render(&mut render_pass.forget_lifetime(), &clipped, &screen);
+            self.egui_renderer
+                .render(&mut render_pass.forget_lifetime(), &clipped, &screen);
         }
 
         // Free textures requested by egui

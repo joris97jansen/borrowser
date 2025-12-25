@@ -44,5 +44,6 @@ egui-winit = "0.32"
 egui-wgpu = "0.32"
 pollster = "0.4"
 url = "2"
+image = { version = "0.25", default-features = false, features = ["png", "jpeg"] }
 reqwest = { version = "0.12", features = ["blocking", "rustls-tls-native-roots"] }
 ureq = { version = "2", features = ["json", "charset", "gzip"] }
