@@ -51,7 +51,10 @@ impl InputValueStore {
     /// Ensure a key exists; if missing, inserts the provided initial value.
     pub fn ensure_initial(&mut self, id: Id, initial: String) {
         let caret = clamp_to_char_boundary(&initial, initial.len());
-        self.values.entry(id).or_insert(InputState { value: initial, caret });
+        self.values.entry(id).or_insert(InputState {
+            value: initial,
+            caret,
+        });
     }
 
     /// Phase 2 behavior: when an input is focused, keep caret at end.

@@ -698,7 +698,11 @@ fn paint_line_boxes<'a>(
                             let ph = placeholder.as_deref().unwrap_or_default();
                             truncate_to_fit(measurer, style, ph, available_text_w)
                         };
-                        let paint_color = if is_placeholder { placeholder_color } else { value_color };
+                        let paint_color = if is_placeholder {
+                            placeholder_color
+                        } else {
+                            value_color
+                        };
 
                         painter.text(
                             Pos2 {
@@ -726,7 +730,10 @@ fn paint_line_boxes<'a>(
                             caret_x = caret_x.min(caret_max_x);
 
                             let caret_rect = Rect::from_min_size(
-                                Pos2 { x: caret_x, y: text_y },
+                                Pos2 {
+                                    x: caret_x,
+                                    y: text_y,
+                                },
                                 Vec2 { x: 1.0, y: caret_h },
                             );
                             // Caret uses the actual text color, not placeholder styling.
