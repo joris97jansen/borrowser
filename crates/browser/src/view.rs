@@ -478,10 +478,7 @@ impl<'a> PaintCtx<'a> {
     }
 }
 
-fn paint_line_boxes<'a>(
-    lines: &[LineBox<'a>],
-    ctx: PaintCtx<'_>,
-) {
+fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
     let painter = ctx.painter;
     let origin = ctx.origin;
     let measurer = ctx.measurer;
@@ -893,10 +890,7 @@ fn paint_list_marker<'a>(
 // Text fragments are painted directly; Box fragments (inline-blocks) are
 // painted by translating the associated LayoutBox subtree into the fragment
 // rect position.
-fn paint_inline_content<'a>(
-    layout: &LayoutBox<'a>,
-    ctx: PaintCtx<'_>,
-) {
+fn paint_inline_content<'a>(layout: &LayoutBox<'a>, ctx: PaintCtx<'_>) {
     let measurer = ctx.measurer;
 
     // Only block-like elements host their own inline formatting context.

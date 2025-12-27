@@ -75,45 +75,45 @@ fn fill_head_metadata_from(head: &Node, out: &mut HeadMetadata) {
                 if name.eq_ignore_ascii_case("title") && out.title.is_none() {
                     if let Some(text) = first_text_child(children) {
                         out.title = Some(text);
-                }
-
-                // <meta>
-                if name.eq_ignore_ascii_case("meta") {
-                    let tag = MetaTag {
-                        name: get_attr(attributes, "name").map(|s| s.to_string()),
-                        property: get_attr(attributes, "property").map(|s| s.to_string()),
-                        content: get_attr(attributes, "content").map(|s| s.to_string()),
-                    };
-                    if tag.name.is_some() || tag.property.is_some() || tag.content.is_some() {
-                        out.meta.push(tag);
                     }
-                }
 
-                // <link>
-                if name.eq_ignore_ascii_case("link") {
-                    let rel_raw = get_attr(attributes, "rel").unwrap_or("");
-                    let rels = rel_raw
-                        .split_whitespace()
-                        .map(|s| s.to_ascii_lowercase())
-                        .collect::<Vec<_>>();
-
-                    let href = get_attr(attributes, "href").map(|s| s.to_string());
-
-                    if !rels.is_empty() || href.is_some() {
-                        out.links.push(LinkTag { rel: rels, href });
+                    // <meta>
+                    if name.eq_ignore_ascii_case("meta") {
+                        let tag = MetaTag {
+                            name: get_attr(attributes, "name").map(|s| s.to_string()),
+                            property: get_attr(attributes, "property").map(|s| s.to_string()),
+                            content: get_attr(attributes, "content").map(|s| s.to_string()),
+                        };
+                        if tag.name.is_some() || tag.property.is_some() || tag.content.is_some() {
+                            out.meta.push(tag);
+                        }
                     }
-                }
 
-                // <base>
-                if name.eq_ignore_ascii_case("base") && out.base_href.is_none() {
-                    if let Some(h) = get_attr(attributes, "href") {
-                        out.base_href = Some(h.to_string());
+                    // <link>
+                    if name.eq_ignore_ascii_case("link") {
+                        let rel_raw = get_attr(attributes, "rel").unwrap_or("");
+                        let rels = rel_raw
+                            .split_whitespace()
+                            .map(|s| s.to_ascii_lowercase())
+                            .collect::<Vec<_>>();
+
+                        let href = get_attr(attributes, "href").map(|s| s.to_string());
+
+                        if !rels.is_empty() || href.is_some() {
+                            out.links.push(LinkTag { rel: rels, href });
+                        }
+                    }
+
+                    // <base>
+                    if name.eq_ignore_ascii_case("base") && out.base_href.is_none() {
+                        if let Some(h) = get_attr(attributes, "href") {
+                            out.base_href = Some(h.to_string());
+                        }
                     }
                 }
             }
         }
     }
-}
 }
 
 fn get_attr<'a>(attrs: &'a [(String, Option<String>)], key: &str) -> Option<&'a str> {

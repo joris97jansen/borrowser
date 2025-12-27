@@ -2,7 +2,7 @@
 
 # Format all crates
 fmt:
-	cargo fmt --all
+	cargo fmt --all -- --check
 
 # Lint only (alias for clippy, matches CI)
 lint:
