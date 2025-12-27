@@ -444,7 +444,7 @@ impl Tab {
 
             if let Some(last_seg) = url
                 .path_segments()
-                .and_then(|segs| segs.filter(|s| !s.is_empty()).last())
+                .and_then(|segs| segs.filter(|s| !s.is_empty()).next_back())
             {
                 if !label.is_empty() {
                     label.push_str(" — ");

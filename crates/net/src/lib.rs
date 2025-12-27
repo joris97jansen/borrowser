@@ -46,15 +46,13 @@ pub fn fetch_stream(
         }
 
         // --- file:// Path ---
-        if url.starts_with("file://") {
-            // Strip the scheme
-            let mut path_str = &url["file://".len()..];
-
+        // --- file:// Path ---
+        if let Some(mut path_str) = url.strip_prefix("file://") {
             // On Windows, file://C:/path or file:///C:/path might show up;
             // for now we handle the common file:///... by stripping a
             // leading '/'. You can refine this later if needed.
-            if cfg!(windows) && path_str.starts_with('/') {
-                path_str = &path_str[1..];
+            if cfg!(windows) {
+                path_str = path_str.strip_prefix('/').unwrap_or(path_str);
             }
 
             let path = Path::new(path_str);
@@ -126,7 +124,6 @@ pub fn fetch_stream(
             }
 
             callback(NetEvent::Done { request_id, url });
-
             return;
         }
 
@@ -152,7 +149,7 @@ pub fn fetch_stream(
         callback(NetEvent::Start {
             request_id,
             url: url.clone(),
-            content_type: content_type,
+            content_type,
         });
 
         // 3) Read in Chunks bytes

@@ -37,7 +37,8 @@ impl Renderer {
         let instance = Instance::new(&InstanceDescriptor::default());
 
         let surface = instance.create_surface(window).expect("surface");
-        let surface = unsafe { mem::transmute(surface) };
+        let surface: Surface<'static> =
+            unsafe { mem::transmute::<Surface<'_>, Surface<'static>>(surface) };
 
         let adapter = pollster::block_on(instance.request_adapter(&RequestAdapterOptions {
             power_preference: PowerPreference::HighPerformance,
@@ -79,12 +80,12 @@ impl Renderer {
         let egui_renderer = EguiWgpuRenderer::new(&device, format, None, 1, true);
 
         Self {
-            egui_context: egui_context,
-            egui_state: egui_state,
-            egui_renderer: egui_renderer,
-            surface: surface,
-            device: device,
-            queue: queue,
+            egui_context,
+            egui_state,
+            egui_renderer,
+            surface,
+            device,
+            queue,
             surface_config: config,
         }
     }

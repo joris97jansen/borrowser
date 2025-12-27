@@ -59,7 +59,7 @@ impl PageState {
 
     pub fn apply_css_block(&mut self, block: &str) {
         let parsed = parse_stylesheet(block);
-        self.css_sheet.rules.extend(parsed.rules.into_iter());
+        self.css_sheet.rules.extend(parsed.rules);
         if let Some(dom_mut) = self.dom.as_mut() {
             attach_styles(dom_mut, &self.css_sheet);
         }
@@ -100,7 +100,7 @@ impl PageState {
 
             if !css_text.trim().is_empty() {
                 let parsed = parse_stylesheet(&css_text);
-                self.css_sheet.rules.extend(parsed.rules.into_iter());
+                self.css_sheet.rules.extend(parsed.rules);
             }
 
             // Apply all known stylesheets + inline style="" attrs
@@ -150,5 +150,11 @@ impl PageState {
         }
 
         walk(&mut self.input_values, dom);
+    }
+}
+
+impl Default for PageState {
+    fn default() -> Self {
+        Self::new()
     }
 }

@@ -72,12 +72,9 @@ fn fill_head_metadata_from(head: &Node, out: &mut HeadMetadata) {
             } = child
             {
                 // <title>
-                if name.eq_ignore_ascii_case("title") {
-                    if out.title.is_none() {
-                        if let Some(text) = first_text_child(children) {
-                            out.title = Some(text);
-                        }
-                    }
+                if name.eq_ignore_ascii_case("title") && out.title.is_none() {
+                    if let Some(text) = first_text_child(children) {
+                        out.title = Some(text);
                 }
 
                 // <meta>
@@ -108,16 +105,15 @@ fn fill_head_metadata_from(head: &Node, out: &mut HeadMetadata) {
                 }
 
                 // <base>
-                if name.eq_ignore_ascii_case("base") {
-                    if out.base_href.is_none() {
-                        if let Some(h) = get_attr(attributes, "href") {
-                            out.base_href = Some(h.to_string());
-                        }
+                if name.eq_ignore_ascii_case("base") && out.base_href.is_none() {
+                    if let Some(h) = get_attr(attributes, "href") {
+                        out.base_href = Some(h.to_string());
                     }
                 }
             }
         }
     }
+}
 }
 
 fn get_attr<'a>(attrs: &'a [(String, Option<String>)], key: &str) -> Option<&'a str> {

@@ -272,7 +272,7 @@ pub fn assign_node_ids(root: &mut Node) {
     walk(root, &mut next);
 }
 
-pub fn find_node_by_id<'a>(node: &'a Node, id: Id) -> Option<&'a Node> {
+pub fn find_node_by_id(node: &Node, id: Id) -> Option<&Node> {
     if node.id() == id {
         return Some(node);
     }

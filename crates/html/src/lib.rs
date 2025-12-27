@@ -144,42 +144,6 @@ fn decode_entities(s: &str) -> String {
     out
 }
 
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn decode_entities_preserves_utf8() {
-        assert_eq!(decode_entities("120×32"), "120×32");
-    }
-
-    #[test]
-    fn decode_entities_decodes_common_entities() {
-        assert_eq!(decode_entities("a &amp; b"), "a & b");
-        assert_eq!(decode_entities("&lt;tag&gt;"), "<tag>");
-        assert_eq!(decode_entities("&quot;hi&quot;"), "\"hi\"");
-        assert_eq!(decode_entities("&apos;x&apos;"), "'x'");
-        assert_eq!(decode_entities("a&nbsp;b"), "a\u{00A0}b");
-    }
-
-    #[test]
-    fn decode_entities_decodes_numeric_entities() {
-        assert_eq!(decode_entities("&#215;"), "×");
-        assert_eq!(decode_entities("&#xD7;"), "×");
-    }
-
-    #[test]
-    fn tokenize_preserves_utf8_text_nodes() {
-        let tokens = tokenize("<p>120×32</p>");
-        assert!(
-            tokens
-                .iter()
-                .any(|t| matches!(t, Token::Text(s) if s == "120×32")),
-            "expected UTF-8 text token, got: {tokens:?}"
-        );
-    }
-}
-
 pub fn tokenize(input: &str) -> Vec<Token> {
     let mut out = Vec::new();
     let mut i = 0;
@@ -521,4 +485,40 @@ pub fn build_dom(tokens: &[Token]) -> Node {
         }
     }
     root
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decode_entities_preserves_utf8() {
+        assert_eq!(decode_entities("120×32"), "120×32");
+    }
+
+    #[test]
+    fn decode_entities_decodes_common_entities() {
+        assert_eq!(decode_entities("a &amp; b"), "a & b");
+        assert_eq!(decode_entities("&lt;tag&gt;"), "<tag>");
+        assert_eq!(decode_entities("&quot;hi&quot;"), "\"hi\"");
+        assert_eq!(decode_entities("&apos;x&apos;"), "'x'");
+        assert_eq!(decode_entities("a&nbsp;b"), "a\u{00A0}b");
+    }
+
+    #[test]
+    fn decode_entities_decodes_numeric_entities() {
+        assert_eq!(decode_entities("&#215;"), "×");
+        assert_eq!(decode_entities("&#xD7;"), "×");
+    }
+
+    #[test]
+    fn tokenize_preserves_utf8_text_nodes() {
+        let tokens = tokenize("<p>120×32</p>");
+        assert!(
+            tokens
+                .iter()
+                .any(|t| matches!(t, Token::Text(s) if s == "120×32")),
+            "expected UTF-8 text token, got: {tokens:?}"
+        );
+    }
 }

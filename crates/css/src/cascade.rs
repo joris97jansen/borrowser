@@ -58,7 +58,7 @@ pub fn is_css(ct: &Option<String>) -> bool {
 }
 
 // If the element has an inline style attribute, return its value
-pub fn get_inline_style<'a>(attributes: &'a [(String, Option<String>)]) -> Option<&'a str> {
+pub fn get_inline_style(attributes: &[(String, Option<String>)]) -> Option<&str> {
     attributes
         .iter()
         .find(|(k, _)| k.eq_ignore_ascii_case("style"))

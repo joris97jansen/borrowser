@@ -172,6 +172,7 @@ pub fn layout_block_tree<'a>(
 /// Internal recursive function:
 /// - `x`, `y` = top-left of this box
 /// - `width`  = available width
+///
 /// Builds a LayoutBox subtree with correct x/y/width, but height = 0.0.
 /// The unified inline-aware pass will compute final heights.
 fn layout_block_subtree<'a>(
@@ -304,7 +305,7 @@ fn layout_block_subtree<'a>(
         rect,
         children: children_boxes,
         list_marker: None,
-        replaced: replaced,
+        replaced,
         replaced_intrinsic,
     }
 }

@@ -734,7 +734,7 @@ fn recompute_block_heights<'a>(
     node.rect.y = y;
 
     let used_width =
-        resolve_used_width_for_block(node.style, &node.node.node, node.kind, available_width);
+        resolve_used_width_for_block(node.style, node.node.node, node.kind, available_width);
     node.rect.width = used_width;
 
     // Non-rendering elements: pure containers (but children still have margins)

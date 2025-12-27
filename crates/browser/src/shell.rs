@@ -378,3 +378,9 @@ impl UiApp for ShellApp {
         self.repaint = Some(h);
     }
 }
+
+impl Default for ShellApp {
+    fn default() -> Self {
+        Self::new()
+    }
+}

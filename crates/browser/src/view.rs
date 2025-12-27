@@ -48,9 +48,7 @@ impl TextMeasurer for EguiTextMeasurer {
         let (r, g, b, a) = style.color;
         let color = Color32::from_rgba_unmultiplied(r, g, b, a);
 
-        let font_px = match style.font_size {
-            Length::Px(px) => px,
-        };
+        let Length::Px(font_px) = style.font_size;
         let font_id = FontId::proportional(font_px);
 
         if text == " " {
@@ -94,9 +92,8 @@ impl TextMeasurer for EguiTextMeasurer {
 
     fn line_height(&self, style: &ComputedStyle) -> f32 {
         // Same factor you already used elsewhere; now it's centralized.
-        match style.font_size {
-            Length::Px(px) => px * 1.2,
-        }
+        let Length::Px(px) = style.font_size;
+        px * 1.2
     }
 }
 
@@ -263,18 +260,19 @@ pub fn page_viewport(
             // Paint first
             let focused = interaction.focused_node_id;
             let active = interaction.active;
-            paint_layout_box(
-                &layout_root,
-                &painter,
-                origin,
-                &measurer,
-                true,
-                base_url,
-                resources,
-                input_values,
-                focused,
-                active,
-            );
+            {
+                let paint_ctx = PaintCtx {
+                    painter: &painter,
+                    origin,
+                    measurer: &measurer,
+                    base_url,
+                    resources,
+                    input_values: &*input_values,
+                    focused,
+                    active,
+                };
+                paint_layout_box(&layout_root, paint_ctx, true);
+            }
 
             // ------- unified router output -------
             let mut action: Option<PageAction> = None;
@@ -462,17 +460,37 @@ pub fn page_viewport(
         .inner
 }
 
-fn paint_line_boxes<'a>(
-    painter: &Painter,
+#[derive(Clone, Copy)]
+struct PaintCtx<'a> {
+    painter: &'a Painter,
     origin: Pos2,
-    lines: &[LineBox<'a>],
-    measurer: &dyn TextMeasurer,
-    base_url: Option<&str>,
-    resources: &ResourceManager,
-    input_values: &InputValueStore,
+    measurer: &'a dyn TextMeasurer,
+    base_url: Option<&'a str>,
+    resources: &'a ResourceManager,
+    input_values: &'a InputValueStore,
     focused: Option<Id>,
     active: Option<Id>,
+}
+
+impl<'a> PaintCtx<'a> {
+    fn with_origin(self, origin: Pos2) -> Self {
+        Self { origin, ..self }
+    }
+}
+
+fn paint_line_boxes<'a>(
+    lines: &[LineBox<'a>],
+    ctx: PaintCtx<'_>,
 ) {
+    let painter = ctx.painter;
+    let origin = ctx.origin;
+    let measurer = ctx.measurer;
+    let base_url = ctx.base_url;
+    let resources = ctx.resources;
+    let input_values = ctx.input_values;
+    let focused = ctx.focused;
+    let active = ctx.active;
+
     for line in lines {
         for frag in &line.fragments {
             match &frag.kind {
@@ -480,9 +498,7 @@ fn paint_line_boxes<'a>(
                     let (cr, cg, cb, ca) = style.color;
                     let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
 
-                    let font_px = match style.font_size {
-                        Length::Px(px) => px,
-                    };
+                    let Length::Px(font_px) = style.font_size;
                     let font_id = FontId::proportional(font_px);
 
                     let pos = Pos2 {
@@ -514,15 +530,8 @@ fn paint_line_boxes<'a>(
                         // including its background/border and its children.
                         paint_layout_box(
                             child_box,
-                            painter,
-                            translated_origin,
-                            measurer,
+                            ctx.with_origin(translated_origin),
                             false, // do NOT skip inline-block children inside this subtree
-                            base_url,
-                            resources,
-                            input_values,
-                            focused,
-                            active,
                         );
                     } else {
                         // Fallback: simple placeholder rectangle using the box style.
@@ -686,9 +695,7 @@ fn paint_line_boxes<'a>(
                         let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
                         let value_color = text_color;
                         let placeholder_color = text_color.gamma_multiply(0.6);
-                        let font_px = match style.font_size {
-                            Length::Px(px) => px,
-                        };
+                        let Length::Px(font_px) = style.font_size;
                         let font_id = FontId::proportional(font_px);
 
                         let is_placeholder = value.is_empty();
@@ -777,31 +784,17 @@ fn paint_line_boxes<'a>(
 
 fn paint_layout_box<'a>(
     layout: &LayoutBox<'a>,
-    painter: &Painter,
-    origin: Pos2,
-    measurer: &dyn TextMeasurer,
+    ctx: PaintCtx<'_>,
     skip_inline_block_children: bool,
-    base_url: Option<&str>,
-    resources: &ResourceManager,
-    input_values: &InputValueStore,
-    focused: Option<Id>,
-    active: Option<Id>,
 ) {
+    let painter = ctx.painter;
+    let origin = ctx.origin;
+    let measurer = ctx.measurer;
+
     // 0) Do not paint non-rendering elements (head, style, script, etc.)
     if is_non_rendering_element(layout.node.node) {
         for child in &layout.children {
-            paint_layout_box(
-                child,
-                painter,
-                origin,
-                measurer,
-                skip_inline_block_children,
-                base_url,
-                resources,
-                input_values,
-                focused,
-                active,
-            );
+            paint_layout_box(child, ctx, skip_inline_block_children);
         }
         return;
     }
@@ -830,17 +823,7 @@ fn paint_layout_box<'a>(
     }
 
     // 2) Inline content
-    paint_inline_content(
-        layout,
-        painter,
-        origin,
-        measurer,
-        base_url,
-        resources,
-        input_values,
-        focused,
-        active,
-    );
+    paint_inline_content(layout, ctx);
 
     // 3) Recurse into children
     for child in &layout.children {
@@ -849,18 +832,7 @@ fn paint_layout_box<'a>(
             continue;
         }
 
-        paint_layout_box(
-            child,
-            painter,
-            origin,
-            measurer,
-            skip_inline_block_children,
-            base_url,
-            resources,
-            input_values,
-            focused,
-            active,
-        );
+        paint_layout_box(child, ctx, skip_inline_block_children);
     }
 }
 
@@ -886,9 +858,7 @@ fn paint_list_marker<'a>(
     let (cr, cg, cb, ca) = style.color;
     let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
 
-    let font_px = match style.font_size {
-        Length::Px(px) => px,
-    };
+    let Length::Px(font_px) = style.font_size;
     let font_id = FontId::proportional(font_px);
 
     // Position: slightly to the left of the content box (padding-left),
@@ -925,15 +895,10 @@ fn paint_list_marker<'a>(
 // rect position.
 fn paint_inline_content<'a>(
     layout: &LayoutBox<'a>,
-    painter: &Painter,
-    origin: Pos2,
-    measurer: &dyn TextMeasurer,
-    base_url: Option<&str>,
-    resources: &ResourceManager,
-    input_values: &InputValueStore,
-    focused: Option<Id>,
-    active: Option<Id>,
+    ctx: PaintCtx<'_>,
 ) {
+    let measurer = ctx.measurer;
+
     // Only block-like elements host their own inline formatting context.
     match layout.node.node {
         Node::Element { .. } => {
@@ -972,17 +937,7 @@ fn paint_inline_content<'a>(
         return;
     }
 
-    paint_line_boxes(
-        painter,
-        origin,
-        &lines,
-        measurer,
-        base_url,
-        resources,
-        input_values,
-        focused,
-        active,
-    );
+    paint_line_boxes(&lines, ctx);
 }
 
 fn find_page_background_color(root: &StyledNode<'_>) -> Option<(u8, u8, u8, u8)> {
