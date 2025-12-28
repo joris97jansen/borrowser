@@ -48,15 +48,19 @@ pub fn compute_replaced_size(
     // Ratio: intrinsic ratio if present else fallback 2:1
     let ratio = intrinsic.ratio.unwrap_or(2.0).max(0.0001);
 
-    // Base size + whether height/width were auto-derived
-    let (mut w, mut h, h_auto) = match (w_spec, h_spec) {
-        (Some(w), Some(h)) => (w, h, false),
-        (Some(w), None) => (w, w / ratio, true),
-        (None, Some(h)) => (h * ratio, h, false),
+    // Height is "auto" when CSS height is not specified.
+    // For images, this means height should track width changes to preserve aspect ratio.
+    let height_is_auto = h_spec.is_none();
+
+    // Base size
+    let (mut w, mut h) = match (w_spec, h_spec) {
+        (Some(w), Some(h)) => (w, h),
+        (Some(w), None) => (w, w / ratio),
+        (None, Some(h)) => (h * ratio, h),
         (None, None) => {
             let w0 = intrinsic.width.unwrap_or(300.0);
             let h0 = intrinsic.height.unwrap_or_else(|| w0 / ratio);
-            (w0, h0, intrinsic.height.is_none())
+            (w0, h0)
         }
     };
 
@@ -64,8 +68,8 @@ pub fn compute_replaced_size(
     let w_before = w;
     w = clamp(w, min_w, max_w);
 
-    // If width changed and height was auto, preserve ratio
-    if (w - w_before).abs() > f32::EPSILON && h_auto {
+    // If width changed and height is auto, preserve ratio.
+    if (w - w_before).abs() > f32::EPSILON && height_is_auto {
         h = w / ratio;
     }
 
@@ -80,4 +84,61 @@ pub fn compute_replaced_size(
     }
 
     (w.max(1.0), h.max(1.0))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use css::Length;
+
+    fn assert_close(a: f32, b: f32) {
+        let eps = 0.001;
+        assert!((a - b).abs() <= eps, "expected {a} ≈ {b}");
+    }
+
+    #[test]
+    fn intrinsic_size_clamps_preserving_ratio() {
+        let style = ComputedStyle::initial();
+        let intrinsic = IntrinsicSize::from_w_h(Some(200.0), Some(100.0)); // 2:1
+
+        let (w, h) = compute_replaced_size(&style, intrinsic, Some(100.0));
+        assert_close(w, 100.0);
+        assert_close(h, 50.0);
+    }
+
+    #[test]
+    fn width_only_computes_height_from_ratio() {
+        let mut style = ComputedStyle::initial();
+        style.width = Some(Length::Px(120.0));
+
+        let intrinsic = IntrinsicSize::from_w_h(Some(200.0), Some(100.0)); // 2:1
+        let (w, h) = compute_replaced_size(&style, intrinsic, None);
+
+        assert_close(w, 120.0);
+        assert_close(h, 60.0);
+    }
+
+    #[test]
+    fn height_only_computes_width_from_ratio() {
+        let mut style = ComputedStyle::initial();
+        style.height = Some(Length::Px(25.0));
+
+        let intrinsic = IntrinsicSize::from_w_h(Some(200.0), Some(100.0)); // 2:1
+        let (w, h) = compute_replaced_size(&style, intrinsic, None);
+
+        assert_close(w, 50.0);
+        assert_close(h, 25.0);
+    }
+
+    #[test]
+    fn max_width_clamps_and_scales_auto_height() {
+        let mut style = ComputedStyle::initial();
+        style.max_width = Some(Length::Px(80.0));
+
+        let intrinsic = IntrinsicSize::from_w_h(Some(200.0), Some(100.0)); // 2:1
+        let (w, h) = compute_replaced_size(&style, intrinsic, None);
+
+        assert_close(w, 80.0);
+        assert_close(h, 40.0);
+    }
 }
