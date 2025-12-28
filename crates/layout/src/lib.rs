@@ -235,14 +235,14 @@ fn layout_block_subtree<'a>(
 
             // If this is a list container (<ul>/<ol>) and the child is a list-item,
             // assign a marker.
-            if let Node::Element { .. } = child.node {
-                if child_box.style.display == Display::ListItem {
-                    if is_ul {
-                        child_box.list_marker = Some(ListMarker::Unordered);
-                    } else if is_ol {
-                        child_box.list_marker = Some(ListMarker::Ordered(next_ol_index));
-                        next_ol_index += 1;
-                    }
+            if matches!(child.node, Node::Element { .. })
+                && child_box.style.display == Display::ListItem
+            {
+                if is_ul {
+                    child_box.list_marker = Some(ListMarker::Unordered);
+                } else if is_ol {
+                    child_box.list_marker = Some(ListMarker::Ordered(next_ol_index));
+                    next_ol_index += 1;
                 }
             }
 

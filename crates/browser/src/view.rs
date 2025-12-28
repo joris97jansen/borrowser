@@ -396,19 +396,19 @@ pub fn page_viewport(
                 let mut r = content_rect;
 
                 // If we can find the real input rect, use it
-                if let Some(lb) = find_layout_box_by_id(&layout_root, focus_id) {
-                    if matches!(lb.replaced, Some(ReplacedKind::InputText)) {
-                        r = Rect::from_min_size(
-                            Pos2 {
-                                x: origin.x + lb.rect.x,
-                                y: origin.y + lb.rect.y,
-                            },
-                            Vec2 {
-                                x: lb.rect.width.max(1.0),
-                                y: lb.rect.height.max(1.0),
-                            },
-                        );
-                    }
+                if let Some(lb) = find_layout_box_by_id(&layout_root, focus_id)
+                    .filter(|lb| matches!(lb.replaced, Some(ReplacedKind::InputText)))
+                {
+                    r = Rect::from_min_size(
+                        Pos2 {
+                            x: origin.x + lb.rect.x,
+                            y: origin.y + lb.rect.y,
+                        },
+                        Vec2 {
+                            x: lb.rect.width.max(1.0),
+                            y: lb.rect.height.max(1.0),
+                        },
+                    );
                 }
 
                 ui.interact(r, egui_focus_id, Sense::focusable_noninteractive());
@@ -600,32 +600,25 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
                     }
 
                     // --- IMG: decoded texture (if ready) ---
-                    if matches!(kind, ReplacedKind::Img) {
-                        if let Some(lb) = layout {
-                            if let Some(src) = get_attr(lb.node.node, "src") {
-                                if let Some(url) = resolve_relative_url(base_url, src) {
-                                    match resources.image_state_by_url(&url) {
-                                        ImageState::Ready(ready) => {
-                                            let uv = Rect::from_min_max(
-                                                Pos2 { x: 0.0, y: 0.0 },
-                                                Pos2 { x: 1.0, y: 1.0 },
-                                            );
-                                            painter.image(
-                                                ready.texture_id,
-                                                rect,
-                                                uv,
-                                                Color32::WHITE,
-                                            );
-                                            continue;
-                                        }
-                                        ImageState::Error { .. } => {
-                                            paint_broken_image_placeholder(painter, rect);
-                                            continue;
-                                        }
-                                        _ => {}
-                                    }
-                                }
+                    let img_url = layout
+                        .and_then(|lb| get_attr(lb.node.node, "src"))
+                        .and_then(|src| resolve_relative_url(base_url, src));
+
+                    if let (ReplacedKind::Img, Some(url)) = (kind, img_url) {
+                        match resources.image_state_by_url(&url) {
+                            ImageState::Ready(ready) => {
+                                let uv = Rect::from_min_max(
+                                    Pos2 { x: 0.0, y: 0.0 },
+                                    Pos2 { x: 1.0, y: 1.0 },
+                                );
+                                painter.image(ready.texture_id, rect, uv, Color32::WHITE);
+                                continue;
                             }
+                            ImageState::Error { .. } => {
+                                paint_broken_image_placeholder(painter, rect);
+                                continue;
+                            }
+                            _ => {}
                         }
                     }
 
@@ -662,13 +655,14 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
                                 value = v.to_string();
                             }
 
-                            if value.is_empty() {
-                                if let Some(ph) = get_attr(lb.node.node, "placeholder") {
-                                    if !ph.trim().is_empty() {
-                                        placeholder = Some(ph.to_string());
-                                    }
-                                }
-                            }
+                            placeholder = if value.is_empty() {
+                                get_attr(lb.node.node, "placeholder")
+                                    .map(str::trim)
+                                    .filter(|ph| !ph.is_empty())
+                                    .map(|ph| ph.to_string())
+                            } else {
+                                None
+                            };
                         }
 
                         // Inner text area from padding (with sane minimums)
@@ -755,14 +749,12 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
                     };
 
                     // If <img alt="...">, show alt text instead
-                    if matches!(kind, ReplacedKind::Img) {
-                        if let Some(lb) = layout {
-                            if let Some(alt) = get_attr(lb.node.node, "alt") {
-                                let alt = alt.trim();
-                                if !alt.is_empty() {
-                                    label = alt.to_string();
-                                }
-                            }
+                    if let (ReplacedKind::Img, Some(alt)) =
+                        (kind, layout.and_then(|lb| get_attr(lb.node.node, "alt")))
+                    {
+                        let alt = alt.trim();
+                        if !alt.is_empty() {
+                            label = alt.to_string();
                         }
                     }
 
