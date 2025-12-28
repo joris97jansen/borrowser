@@ -78,7 +78,7 @@ pub fn compute_replaced_size(
         available_inline_w.filter(|avail| avail.is_finite() && *avail > 0.0 && w > *avail)
     {
         w = avail;
-        if h_auto {
+        if height_is_auto {
             h = w / ratio;
         }
     }

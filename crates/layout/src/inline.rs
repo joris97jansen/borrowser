@@ -1152,31 +1152,39 @@ fn size_replaced_inline_children<'a>(
                         // Buttons do not have an intrinsic aspect ratio like images do.
                         // Keep their height stable even when width is clamped.
                         let mut w = intrinsic_w;
-                        if let Some(Length::Px(px)) = child.style.width {
-                            if px >= 0.0 {
-                                w = px;
-                            }
+                        if let Some(Length::Px(px)) = child
+                            .style
+                            .width
+                            .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
+                        {
+                            w = px;
                         }
 
-                        if let Some(Length::Px(min_px)) = child.style.min_width {
-                            if min_px >= 0.0 {
-                                w = w.max(min_px);
-                            }
+                        if let Some(Length::Px(min_px)) = child
+                            .style
+                            .min_width
+                            .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
+                        {
+                            w = w.max(min_px);
                         }
-                        if let Some(Length::Px(max_px)) = child.style.max_width {
-                            if max_px >= 0.0 {
-                                w = w.min(max_px);
-                            }
+                        if let Some(Length::Px(max_px)) = child
+                            .style
+                            .max_width
+                            .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
+                        {
+                            w = w.min(max_px);
                         }
 
                         // Final clamp to available inline space.
                         w = w.min(content_width.max(0.0));
 
                         let mut h = intrinsic_h;
-                        if let Some(Length::Px(px)) = child.style.height {
-                            if px >= 0.0 {
-                                h = px;
-                            }
+                        if let Some(Length::Px(px)) = child
+                            .style
+                            .height
+                            .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
+                        {
+                            h = px;
                         }
 
                         child.rect.width = w.max(1.0);
