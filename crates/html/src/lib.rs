@@ -106,28 +106,36 @@ fn decode_entities(s: &str) -> String {
 
         // numeric entities: &#123; or &#x1F4A9;
         if s[i..].starts_with("&#x") || s[i..].starts_with("&#X") {
-            if let Some(end) = s[i + 3..].find(';') {
-                let hex = &s[i + 3..i + 3 + end];
-                if let Ok(cp) = u32::from_str_radix(hex, 16) {
-                    if let Some(ch) = char::from_u32(cp) {
-                        out.push(ch);
-                        i += 3 + end + 1;
-                        copy_start = i;
-                        continue;
-                    }
-                }
+            let Some(end) = s[i + 3..].find(';') else {
+                // fallback to keep '&' as-is
+                out.push('&');
+                i += 1;
+                copy_start = i;
+                continue;
+            };
+
+            let hex = &s[i + 3..i + 3 + end];
+            if let Some(ch) = u32::from_str_radix(hex, 16).ok().and_then(char::from_u32) {
+                out.push(ch);
+                i += 3 + end + 1;
+                copy_start = i;
+                continue;
             }
         } else if s[i..].starts_with("&#") {
-            if let Some(end) = s[i + 2..].find(';') {
-                let dec = &s[i + 2..i + 2 + end];
-                if let Ok(cp) = dec.parse::<u32>() {
-                    if let Some(ch) = char::from_u32(cp) {
-                        out.push(ch);
-                        i += 2 + end + 1;
-                        copy_start = i;
-                        continue;
-                    }
-                }
+            let Some(end) = s[i + 2..].find(';') else {
+                // fallback to keep '&' as-is
+                out.push('&');
+                i += 1;
+                copy_start = i;
+                continue;
+            };
+
+            let dec = &s[i + 2..i + 2 + end];
+            if let Some(ch) = dec.parse::<u32>().ok().and_then(char::from_u32) {
+                out.push(ch);
+                i += 2 + end + 1;
+                copy_start = i;
+                continue;
             }
         }
 
@@ -460,10 +468,8 @@ pub fn build_dom(tokens: &[Token]) -> Node {
                     },
                 );
 
-                if !*self_closing {
-                    if let Some(child_ptr) = mut_node {
-                        stack.push(child_ptr);
-                    }
+                if let (false, Some(child_ptr)) = (*self_closing, mut_node) {
+                    stack.push(child_ptr);
                 }
             }
             Token::EndTag(name) => {

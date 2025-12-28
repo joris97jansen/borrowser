@@ -1,15 +1,11 @@
 .PHONY: fmt lint clippy test build run run-workspace run-example ci
 
 # Format all crates
-fmt:
+format:
 	cargo fmt --all -- --check
 
 # Lint only (alias for clippy, matches CI)
 lint:
-	cargo clippy --workspace --all-targets --locked -- -D warnings
-
-# Explicit clippy target (same as lint, for clarity)
-clippy:
 	cargo clippy --workspace --all-targets --locked -- -D warnings
 
 # Run all tests
@@ -33,7 +29,7 @@ run-example:
 
 # Full CI-equivalent pipeline
 ci:
-	cargo fmt --all -- --check
-	cargo clippy --workspace --all-targets --locked -- -D warnings
-	cargo test --workspace --all-targets --locked
-	cargo build --workspace --all-targets --locked
+	@$(MAKE) format
+	@$(MAKE) lint
+	@$(MAKE) test
+	@$(MAKE) build

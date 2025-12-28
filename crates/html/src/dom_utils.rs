@@ -36,23 +36,19 @@ pub fn collect_stylesheet_hrefs(node: &Node, out: &mut Vec<String>) {
                 for (k, v) in attributes {
                     let key = k.as_str();
                     if key.eq_ignore_ascii_case("rel") {
-                        if let Some(val) = v.as_deref() {
-                            if val
-                                .split_whitespace()
+                        if v.as_deref().is_some_and(|val| {
+                            val.split_whitespace()
                                 .any(|t| t.eq_ignore_ascii_case("stylesheet"))
-                            {
-                                is_stylesheet = true;
-                            }
+                        }) {
+                            is_stylesheet = true;
                         }
                     } else if key.eq_ignore_ascii_case("href") {
                         href = v.as_deref();
                     }
                 }
 
-                if is_stylesheet {
-                    if let Some(h) = href {
-                        out.push(h.to_string());
-                    }
+                if let (true, Some(h)) = (is_stylesheet, href) {
+                    out.push(h.to_string());
                 }
             }
 
