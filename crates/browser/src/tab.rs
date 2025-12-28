@@ -427,12 +427,18 @@ impl Tab {
 
         if let Ok(url) = url::Url::parse(&self.url) {
             // file:// → show file name only
-            if url.scheme() == "file" {
-                if let Ok(path) = url.to_file_path() {
-                    if let Some(name) = path.file_name().and_then(|s| s.to_str()) {
-                        return name.to_string();
-                    }
-                }
+            let file_name = if url.scheme() == "file" {
+                url.to_file_path().ok().and_then(|path| {
+                    path.file_name()
+                        .and_then(|s| s.to_str())
+                        .map(|s| s.to_string())
+                })
+            } else {
+                None
+            };
+
+            if let Some(name) = file_name {
+                return name;
             }
 
             // http/https → "host — last-segment"
@@ -444,7 +450,7 @@ impl Tab {
 
             if let Some(last_seg) = url
                 .path_segments()
-                .and_then(|segs| segs.filter(|s| !s.is_empty()).last())
+                .and_then(|mut segs| segs.rfind(|s| !s.is_empty()))
             {
                 if !label.is_empty() {
                     label.push_str(" — ");
@@ -507,21 +513,13 @@ impl Tab {
 
     pub fn inherited_color(node: &Node, ancestors: &[Node]) -> (u8, u8, u8, u8) {
         fn find_on(node: &Node) -> Option<(u8, u8, u8, u8)> {
-            if let Node::Element {
-                attributes: _,
-                style,
-                ..
-            } = node
-            {
-                if let Some(v) = style
+            match node {
+                Node::Element { style, .. } => style
                     .iter()
                     .find(|(k, _)| k.eq_ignore_ascii_case("color"))
-                    .map(|(_, v)| v)
-                {
-                    return parse_color(v);
-                }
+                    .and_then(|(_, v)| parse_color(v)),
+                _ => None,
             }
-            None
         }
         if let Some(c) = find_on(node) {
             return c;
@@ -536,18 +534,13 @@ impl Tab {
 
     pub fn page_background(dom: &Node) -> Option<(u8, u8, u8, u8)> {
         fn from_element(node: &Node, want: &str) -> Option<(u8, u8, u8, u8)> {
-            if let Node::Element { name, style, .. } = node {
-                if name.eq_ignore_ascii_case(want) {
-                    if let Some(v) = style
-                        .iter()
-                        .find(|(k, _)| k.eq_ignore_ascii_case("background-color"))
-                        .map(|(_, v)| v)
-                    {
-                        return parse_color(v);
-                    }
-                }
+            match node {
+                Node::Element { name, style, .. } if name.eq_ignore_ascii_case(want) => style
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case("background-color"))
+                    .and_then(|(_, v)| parse_color(v)),
+                _ => None,
             }
-            None
         }
         if let Node::Document { children, .. } = dom {
             for c in children {

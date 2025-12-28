@@ -1,7 +1,7 @@
-/// Incremental UTF-8 decoding helpers for streaming byte sources.
-///
-/// This preserves multi-byte character boundaries across chunks and makes
-/// forward progress on invalid byte sequences by emitting U+FFFD.
+//! Incremental UTF-8 decoding helpers for streaming byte sources.
+//!
+//! This preserves multi-byte character boundaries across chunks and makes
+//! forward progress on invalid byte sequences by emitting U+FFFD.
 
 /// Append a byte chunk to `text`, using `carry` to handle UTF-8 sequences split
 /// across chunk boundaries.

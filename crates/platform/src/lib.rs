@@ -87,7 +87,7 @@ impl PlatformApp {
     pub fn new(proxy: EventLoopProxy<UserEvent>) -> Self {
         Self {
             window: None,
-            proxy: proxy,
+            proxy,
             renderer: None,
             repaint: None,
             app: None,

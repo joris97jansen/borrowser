@@ -57,15 +57,14 @@ impl ShellApp {
 
     fn close_at(&mut self, idx: usize) {
         // Cancel any in-flight request for that tab
-        if let Some(tab) = self.tabs.get(idx) {
-            if tab.nav_gen > 0 {
-                if let Some(tx) = &self.cmd_tx {
-                    let _ = tx.send(CoreCommand::CancelRequest {
-                        tab_id: tab.tab_id,
-                        request_id: tab.nav_gen,
-                    });
-                }
-            }
+        if let (Some(tab), Some(tx)) = (
+            self.tabs.get(idx).filter(|tab| tab.nav_gen > 0),
+            self.cmd_tx.as_ref(),
+        ) {
+            let _ = tx.send(CoreCommand::CancelRequest {
+                tab_id: tab.tab_id,
+                request_id: tab.nav_gen,
+            });
         }
 
         // Remove the tab
@@ -93,15 +92,14 @@ impl ShellApp {
         }
         let idx = self.active;
 
-        if let Some(tab) = self.tabs.get(idx) {
-            if tab.nav_gen > 0 {
-                if let Some(tx) = &self.cmd_tx {
-                    let _ = tx.send(CoreCommand::CancelRequest {
-                        tab_id: tab.tab_id,
-                        request_id: tab.nav_gen,
-                    });
-                }
-            }
+        if let (Some(tab), Some(tx)) = (
+            self.tabs.get(idx).filter(|tab| tab.nav_gen > 0),
+            self.cmd_tx.as_ref(),
+        ) {
+            let _ = tx.send(CoreCommand::CancelRequest {
+                tab_id: tab.tab_id,
+                request_id: tab.nav_gen,
+            });
         }
 
         self.tabs.remove(idx);
@@ -376,5 +374,11 @@ impl UiApp for ShellApp {
 
     fn set_repaint_handle(&mut self, h: RepaintHandle) {
         self.repaint = Some(h);
+    }
+}
+
+impl Default for ShellApp {
+    fn default() -> Self {
+        Self::new()
     }
 }

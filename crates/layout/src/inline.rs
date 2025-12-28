@@ -177,11 +177,12 @@ fn collect_inline_tokens_from_layout_box<'a>(
 
         Node::Element { .. } | Node::Document { .. } | Node::Comment { .. } => {
             let mut next_ctx = ctx.clone();
-            if let Node::Element { name, .. } = layout.node.node {
-                if name.eq_ignore_ascii_case("a") {
-                    next_ctx.link_target = Some(layout.node_id());
-                    next_ctx.link_href = get_attr(layout.node.node, "href").map(|s| s.to_string());
-                }
+            if matches!(
+                layout.node.node,
+                Node::Element { name, .. } if name.eq_ignore_ascii_case("a")
+            ) {
+                next_ctx.link_target = Some(layout.node_id());
+                next_ctx.link_href = get_attr(layout.node.node, "href").map(|s| s.to_string());
             }
 
             match layout.kind {
@@ -308,11 +309,12 @@ fn collect_inline_tokens_from_layout_box_for_paint<'a>(
         Node::Element { .. } | Node::Document { .. } | Node::Comment { .. } => {
             let mut next_ctx = ctx.clone();
 
-            if let Node::Element { name, .. } = layout.node.node {
-                if name.eq_ignore_ascii_case("a") {
-                    next_ctx.link_target = Some(layout.node_id());
-                    next_ctx.link_href = get_attr(layout.node.node, "href").map(|s| s.to_string());
-                }
+            if matches!(
+                layout.node.node,
+                Node::Element { name, .. } if name.eq_ignore_ascii_case("a")
+            ) {
+                next_ctx.link_target = Some(layout.node_id());
+                next_ctx.link_href = get_attr(layout.node.node, "href").map(|s| s.to_string());
             }
             match layout.kind {
                 BoxKind::Inline => {
@@ -734,7 +736,7 @@ fn recompute_block_heights<'a>(
     node.rect.y = y;
 
     let used_width =
-        resolve_used_width_for_block(node.style, &node.node.node, node.kind, available_width);
+        resolve_used_width_for_block(node.style, node.node.node, node.kind, available_width);
     node.rect.width = used_width;
 
     // Non-rendering elements: pure containers (but children still have margins)
@@ -956,12 +958,13 @@ fn resolve_used_width_for_block(
 
     // 2) Apply explicit width for non-inline elements.
     if let html::Node::Element { .. } = node {
-        if !matches!(style.display, Display::Inline) {
-            if let Some(Length::Px(px)) = style.width {
-                if px >= 0.0 {
-                    w = px;
-                }
-            }
+        if let (false, Some(Length::Px(px))) = (
+            matches!(style.display, Display::Inline),
+            style
+                .width
+                .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0)),
+        ) {
+            w = px;
         }
 
         // Naïve shrink-to-fit **only** for inline-block:
@@ -975,16 +978,18 @@ fn resolve_used_width_for_block(
     }
 
     // 3) Apply min-width / max-width (px-only).
-    if let Some(Length::Px(min_px)) = style.min_width {
-        if min_px >= 0.0 {
-            w = w.max(min_px);
-        }
+    if let Some(Length::Px(min_px)) = style
+        .min_width
+        .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
+    {
+        w = w.max(min_px);
     }
 
-    if let Some(Length::Px(max_px)) = style.max_width {
-        if max_px >= 0.0 {
-            w = w.min(max_px);
-        }
+    if let Some(Length::Px(max_px)) = style
+        .max_width
+        .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
+    {
+        w = w.min(max_px);
     }
 
     // 4) FINAL clamp for inline-block (naïve shrink-to-fit)
@@ -1004,22 +1009,25 @@ fn resolve_replaced_width_px(
     let mut w = intrinsic_width.max(0.0);
 
     // CSS width wins (px-only in Phase 1)
-    if let Some(Length::Px(px)) = style.width {
-        if px >= 0.0 {
-            w = px;
-        }
+    if let Some(Length::Px(px)) = style
+        .width
+        .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
+    {
+        w = px;
     }
 
     // Clamp with min/max-width (px-only)
-    if let Some(Length::Px(min_px)) = style.min_width {
-        if min_px >= 0.0 {
-            w = w.max(min_px);
-        }
+    if let Some(Length::Px(min_px)) = style
+        .min_width
+        .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
+    {
+        w = w.max(min_px);
     }
-    if let Some(Length::Px(max_px)) = style.max_width {
-        if max_px >= 0.0 {
-            w = w.min(max_px);
-        }
+    if let Some(Length::Px(max_px)) = style
+        .max_width
+        .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
+    {
+        w = w.min(max_px);
     }
 
     // Final clamp to available inline space
@@ -1110,10 +1118,12 @@ fn size_replaced_inline_children<'a>(
 
                         let mut h = (line_h + pad_y).max(18.0);
 
-                        if let Some(Length::Px(px)) = child.style.height {
-                            if px >= 0.0 {
-                                h = px;
-                            }
+                        if let Some(Length::Px(px)) = child
+                            .style
+                            .height
+                            .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
+                        {
+                            h = px;
                         }
 
                         child.rect.width = w;
@@ -1142,31 +1152,39 @@ fn size_replaced_inline_children<'a>(
                         // Buttons do not have an intrinsic aspect ratio like images do.
                         // Keep their height stable even when width is clamped.
                         let mut w = intrinsic_w;
-                        if let Some(Length::Px(px)) = child.style.width {
-                            if px >= 0.0 {
-                                w = px;
-                            }
+                        if let Some(Length::Px(px)) = child
+                            .style
+                            .width
+                            .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
+                        {
+                            w = px;
                         }
 
-                        if let Some(Length::Px(min_px)) = child.style.min_width {
-                            if min_px >= 0.0 {
-                                w = w.max(min_px);
-                            }
+                        if let Some(Length::Px(min_px)) = child
+                            .style
+                            .min_width
+                            .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
+                        {
+                            w = w.max(min_px);
                         }
-                        if let Some(Length::Px(max_px)) = child.style.max_width {
-                            if max_px >= 0.0 {
-                                w = w.min(max_px);
-                            }
+                        if let Some(Length::Px(max_px)) = child
+                            .style
+                            .max_width
+                            .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
+                        {
+                            w = w.min(max_px);
                         }
 
                         // Final clamp to available inline space.
                         w = w.min(content_width.max(0.0));
 
                         let mut h = intrinsic_h;
-                        if let Some(Length::Px(px)) = child.style.height {
-                            if px >= 0.0 {
-                                h = px;
-                            }
+                        if let Some(Length::Px(px)) = child
+                            .style
+                            .height
+                            .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
+                        {
+                            h = px;
                         }
 
                         child.rect.width = w.max(1.0);

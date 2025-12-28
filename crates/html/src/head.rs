@@ -34,31 +34,37 @@ pub fn extract_head_metadata(dom: &Node) -> HeadMetadata {
 }
 
 fn find_head(dom: &Node) -> Option<&Node> {
-    match dom {
-        Node::Document { children, .. } => {
-            for child in children {
-                if let Node::Element {
-                    name,
-                    children: html_children,
-                    ..
-                } = child
-                {
-                    if name.eq_ignore_ascii_case("html") {
-                        // search inside <html> for <head>
-                        for hc in html_children {
-                            if let Node::Element { name, .. } = hc {
-                                if name.eq_ignore_ascii_case("head") {
-                                    return Some(hc);
-                                }
-                            }
-                        }
-                    }
-                }
-            }
-            None
+    let Node::Document { children, .. } = dom else {
+        return None;
+    };
+
+    for child in children {
+        let Node::Element {
+            name,
+            children: html_children,
+            ..
+        } = child
+        else {
+            continue;
+        };
+
+        if !name.eq_ignore_ascii_case("html") {
+            continue;
         }
-        _ => None,
+
+        // search inside <html> for <head>
+        for hc in html_children {
+            let Node::Element { name, .. } = hc else {
+                continue;
+            };
+
+            if name.eq_ignore_ascii_case("head") {
+                return Some(hc);
+            }
+        }
     }
+
+    None
 }
 
 fn fill_head_metadata_from(head: &Node, out: &mut HeadMetadata) {
@@ -72,12 +78,8 @@ fn fill_head_metadata_from(head: &Node, out: &mut HeadMetadata) {
             } = child
             {
                 // <title>
-                if name.eq_ignore_ascii_case("title") {
-                    if out.title.is_none() {
-                        if let Some(text) = first_text_child(children) {
-                            out.title = Some(text);
-                        }
-                    }
+                if name.eq_ignore_ascii_case("title") && out.title.is_none() {
+                    out.title = first_text_child(children);
                 }
 
                 // <meta>
@@ -108,12 +110,8 @@ fn fill_head_metadata_from(head: &Node, out: &mut HeadMetadata) {
                 }
 
                 // <base>
-                if name.eq_ignore_ascii_case("base") {
-                    if out.base_href.is_none() {
-                        if let Some(h) = get_attr(attributes, "href") {
-                            out.base_href = Some(h.to_string());
-                        }
-                    }
+                if name.eq_ignore_ascii_case("base") && out.base_href.is_none() {
+                    out.base_href = get_attr(attributes, "href").map(|h| h.to_string());
                 }
             }
         }

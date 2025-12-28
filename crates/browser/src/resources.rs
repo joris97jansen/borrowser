@@ -151,9 +151,7 @@ impl ResourceManager {
     }
 
     pub fn image_intrinsic_size_px(&self, url: &str) -> Option<(u32, u32)> {
-        let Some(id) = self.image_id_by_url.get(url).copied() else {
-            return None;
-        };
+        let id = self.image_id_by_url.get(url).copied()?;
         let entry = self.images.get(&id)?;
         match &entry.state {
             EntryState::Ready { size_px, .. } => Some((size_px[0] as u32, size_px[1] as u32)),
@@ -280,6 +278,12 @@ impl ResourceManager {
             return;
         };
         self.images.remove(&id);
+    }
+}
+
+impl Default for ResourceManager {
+    fn default() -> Self {
+        Self::new()
     }
 }
 

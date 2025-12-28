@@ -48,9 +48,7 @@ impl TextMeasurer for EguiTextMeasurer {
         let (r, g, b, a) = style.color;
         let color = Color32::from_rgba_unmultiplied(r, g, b, a);
 
-        let font_px = match style.font_size {
-            Length::Px(px) => px,
-        };
+        let Length::Px(font_px) = style.font_size;
         let font_id = FontId::proportional(font_px);
 
         if text == " " {
@@ -94,9 +92,8 @@ impl TextMeasurer for EguiTextMeasurer {
 
     fn line_height(&self, style: &ComputedStyle) -> f32 {
         // Same factor you already used elsewhere; now it's centralized.
-        match style.font_size {
-            Length::Px(px) => px * 1.2,
-        }
+        let Length::Px(px) = style.font_size;
+        px * 1.2
     }
 }
 
@@ -263,18 +260,19 @@ pub fn page_viewport(
             // Paint first
             let focused = interaction.focused_node_id;
             let active = interaction.active;
-            paint_layout_box(
-                &layout_root,
-                &painter,
-                origin,
-                &measurer,
-                true,
-                base_url,
-                resources,
-                input_values,
-                focused,
-                active,
-            );
+            {
+                let paint_ctx = PaintCtx {
+                    painter: &painter,
+                    origin,
+                    measurer: &measurer,
+                    base_url,
+                    resources,
+                    input_values: &*input_values,
+                    focused,
+                    active,
+                };
+                paint_layout_box(&layout_root, paint_ctx, true);
+            }
 
             // ------- unified router output -------
             let mut action: Option<PageAction> = None;
@@ -398,19 +396,19 @@ pub fn page_viewport(
                 let mut r = content_rect;
 
                 // If we can find the real input rect, use it
-                if let Some(lb) = find_layout_box_by_id(&layout_root, focus_id) {
-                    if matches!(lb.replaced, Some(ReplacedKind::InputText)) {
-                        r = Rect::from_min_size(
-                            Pos2 {
-                                x: origin.x + lb.rect.x,
-                                y: origin.y + lb.rect.y,
-                            },
-                            Vec2 {
-                                x: lb.rect.width.max(1.0),
-                                y: lb.rect.height.max(1.0),
-                            },
-                        );
-                    }
+                if let Some(lb) = find_layout_box_by_id(&layout_root, focus_id)
+                    .filter(|lb| matches!(lb.replaced, Some(ReplacedKind::InputText)))
+                {
+                    r = Rect::from_min_size(
+                        Pos2 {
+                            x: origin.x + lb.rect.x,
+                            y: origin.y + lb.rect.y,
+                        },
+                        Vec2 {
+                            x: lb.rect.width.max(1.0),
+                            y: lb.rect.height.max(1.0),
+                        },
+                    );
                 }
 
                 ui.interact(r, egui_focus_id, Sense::focusable_noninteractive());
@@ -462,17 +460,34 @@ pub fn page_viewport(
         .inner
 }
 
-fn paint_line_boxes<'a>(
-    painter: &Painter,
+#[derive(Clone, Copy)]
+struct PaintCtx<'a> {
+    painter: &'a Painter,
     origin: Pos2,
-    lines: &[LineBox<'a>],
-    measurer: &dyn TextMeasurer,
-    base_url: Option<&str>,
-    resources: &ResourceManager,
-    input_values: &InputValueStore,
+    measurer: &'a dyn TextMeasurer,
+    base_url: Option<&'a str>,
+    resources: &'a ResourceManager,
+    input_values: &'a InputValueStore,
     focused: Option<Id>,
     active: Option<Id>,
-) {
+}
+
+impl<'a> PaintCtx<'a> {
+    fn with_origin(self, origin: Pos2) -> Self {
+        Self { origin, ..self }
+    }
+}
+
+fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
+    let painter = ctx.painter;
+    let origin = ctx.origin;
+    let measurer = ctx.measurer;
+    let base_url = ctx.base_url;
+    let resources = ctx.resources;
+    let input_values = ctx.input_values;
+    let focused = ctx.focused;
+    let active = ctx.active;
+
     for line in lines {
         for frag in &line.fragments {
             match &frag.kind {
@@ -480,9 +495,7 @@ fn paint_line_boxes<'a>(
                     let (cr, cg, cb, ca) = style.color;
                     let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
 
-                    let font_px = match style.font_size {
-                        Length::Px(px) => px,
-                    };
+                    let Length::Px(font_px) = style.font_size;
                     let font_id = FontId::proportional(font_px);
 
                     let pos = Pos2 {
@@ -514,15 +527,8 @@ fn paint_line_boxes<'a>(
                         // including its background/border and its children.
                         paint_layout_box(
                             child_box,
-                            painter,
-                            translated_origin,
-                            measurer,
+                            ctx.with_origin(translated_origin),
                             false, // do NOT skip inline-block children inside this subtree
-                            base_url,
-                            resources,
-                            input_values,
-                            focused,
-                            active,
                         );
                     } else {
                         // Fallback: simple placeholder rectangle using the box style.
@@ -594,32 +600,25 @@ fn paint_line_boxes<'a>(
                     }
 
                     // --- IMG: decoded texture (if ready) ---
-                    if matches!(kind, ReplacedKind::Img) {
-                        if let Some(lb) = layout {
-                            if let Some(src) = get_attr(lb.node.node, "src") {
-                                if let Some(url) = resolve_relative_url(base_url, src) {
-                                    match resources.image_state_by_url(&url) {
-                                        ImageState::Ready(ready) => {
-                                            let uv = Rect::from_min_max(
-                                                Pos2 { x: 0.0, y: 0.0 },
-                                                Pos2 { x: 1.0, y: 1.0 },
-                                            );
-                                            painter.image(
-                                                ready.texture_id,
-                                                rect,
-                                                uv,
-                                                Color32::WHITE,
-                                            );
-                                            continue;
-                                        }
-                                        ImageState::Error { .. } => {
-                                            paint_broken_image_placeholder(painter, rect);
-                                            continue;
-                                        }
-                                        _ => {}
-                                    }
-                                }
+                    let img_url = layout
+                        .and_then(|lb| get_attr(lb.node.node, "src"))
+                        .and_then(|src| resolve_relative_url(base_url, src));
+
+                    if let (ReplacedKind::Img, Some(url)) = (kind, img_url) {
+                        match resources.image_state_by_url(&url) {
+                            ImageState::Ready(ready) => {
+                                let uv = Rect::from_min_max(
+                                    Pos2 { x: 0.0, y: 0.0 },
+                                    Pos2 { x: 1.0, y: 1.0 },
+                                );
+                                painter.image(ready.texture_id, rect, uv, Color32::WHITE);
+                                continue;
                             }
+                            ImageState::Error { .. } => {
+                                paint_broken_image_placeholder(painter, rect);
+                                continue;
+                            }
+                            _ => {}
                         }
                     }
 
@@ -656,13 +655,14 @@ fn paint_line_boxes<'a>(
                                 value = v.to_string();
                             }
 
-                            if value.is_empty() {
-                                if let Some(ph) = get_attr(lb.node.node, "placeholder") {
-                                    if !ph.trim().is_empty() {
-                                        placeholder = Some(ph.to_string());
-                                    }
-                                }
-                            }
+                            placeholder = if value.is_empty() {
+                                get_attr(lb.node.node, "placeholder")
+                                    .map(str::trim)
+                                    .filter(|ph| !ph.is_empty())
+                                    .map(|ph| ph.to_string())
+                            } else {
+                                None
+                            };
                         }
 
                         // Inner text area from padding (with sane minimums)
@@ -686,9 +686,7 @@ fn paint_line_boxes<'a>(
                         let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
                         let value_color = text_color;
                         let placeholder_color = text_color.gamma_multiply(0.6);
-                        let font_px = match style.font_size {
-                            Length::Px(px) => px,
-                        };
+                        let Length::Px(font_px) = style.font_size;
                         let font_id = FontId::proportional(font_px);
 
                         let is_placeholder = value.is_empty();
@@ -698,7 +696,11 @@ fn paint_line_boxes<'a>(
                             let ph = placeholder.as_deref().unwrap_or_default();
                             truncate_to_fit(measurer, style, ph, available_text_w)
                         };
-                        let paint_color = if is_placeholder { placeholder_color } else { value_color };
+                        let paint_color = if is_placeholder {
+                            placeholder_color
+                        } else {
+                            value_color
+                        };
 
                         painter.text(
                             Pos2 {
@@ -726,7 +728,10 @@ fn paint_line_boxes<'a>(
                             caret_x = caret_x.min(caret_max_x);
 
                             let caret_rect = Rect::from_min_size(
-                                Pos2 { x: caret_x, y: text_y },
+                                Pos2 {
+                                    x: caret_x,
+                                    y: text_y,
+                                },
                                 Vec2 { x: 1.0, y: caret_h },
                             );
                             // Caret uses the actual text color, not placeholder styling.
@@ -744,14 +749,12 @@ fn paint_line_boxes<'a>(
                     };
 
                     // If <img alt="...">, show alt text instead
-                    if matches!(kind, ReplacedKind::Img) {
-                        if let Some(lb) = layout {
-                            if let Some(alt) = get_attr(lb.node.node, "alt") {
-                                let alt = alt.trim();
-                                if !alt.is_empty() {
-                                    label = alt.to_string();
-                                }
-                            }
+                    if let (ReplacedKind::Img, Some(alt)) =
+                        (kind, layout.and_then(|lb| get_attr(lb.node.node, "alt")))
+                    {
+                        let alt = alt.trim();
+                        if !alt.is_empty() {
+                            label = alt.to_string();
                         }
                     }
 
@@ -770,31 +773,17 @@ fn paint_line_boxes<'a>(
 
 fn paint_layout_box<'a>(
     layout: &LayoutBox<'a>,
-    painter: &Painter,
-    origin: Pos2,
-    measurer: &dyn TextMeasurer,
+    ctx: PaintCtx<'_>,
     skip_inline_block_children: bool,
-    base_url: Option<&str>,
-    resources: &ResourceManager,
-    input_values: &InputValueStore,
-    focused: Option<Id>,
-    active: Option<Id>,
 ) {
+    let painter = ctx.painter;
+    let origin = ctx.origin;
+    let measurer = ctx.measurer;
+
     // 0) Do not paint non-rendering elements (head, style, script, etc.)
     if is_non_rendering_element(layout.node.node) {
         for child in &layout.children {
-            paint_layout_box(
-                child,
-                painter,
-                origin,
-                measurer,
-                skip_inline_block_children,
-                base_url,
-                resources,
-                input_values,
-                focused,
-                active,
-            );
+            paint_layout_box(child, ctx, skip_inline_block_children);
         }
         return;
     }
@@ -823,17 +812,7 @@ fn paint_layout_box<'a>(
     }
 
     // 2) Inline content
-    paint_inline_content(
-        layout,
-        painter,
-        origin,
-        measurer,
-        base_url,
-        resources,
-        input_values,
-        focused,
-        active,
-    );
+    paint_inline_content(layout, ctx);
 
     // 3) Recurse into children
     for child in &layout.children {
@@ -842,18 +821,7 @@ fn paint_layout_box<'a>(
             continue;
         }
 
-        paint_layout_box(
-            child,
-            painter,
-            origin,
-            measurer,
-            skip_inline_block_children,
-            base_url,
-            resources,
-            input_values,
-            focused,
-            active,
-        );
+        paint_layout_box(child, ctx, skip_inline_block_children);
     }
 }
 
@@ -879,9 +847,7 @@ fn paint_list_marker<'a>(
     let (cr, cg, cb, ca) = style.color;
     let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
 
-    let font_px = match style.font_size {
-        Length::Px(px) => px,
-    };
+    let Length::Px(font_px) = style.font_size;
     let font_id = FontId::proportional(font_px);
 
     // Position: slightly to the left of the content box (padding-left),
@@ -916,17 +882,9 @@ fn paint_list_marker<'a>(
 // Text fragments are painted directly; Box fragments (inline-blocks) are
 // painted by translating the associated LayoutBox subtree into the fragment
 // rect position.
-fn paint_inline_content<'a>(
-    layout: &LayoutBox<'a>,
-    painter: &Painter,
-    origin: Pos2,
-    measurer: &dyn TextMeasurer,
-    base_url: Option<&str>,
-    resources: &ResourceManager,
-    input_values: &InputValueStore,
-    focused: Option<Id>,
-    active: Option<Id>,
-) {
+fn paint_inline_content<'a>(layout: &LayoutBox<'a>, ctx: PaintCtx<'_>) {
+    let measurer = ctx.measurer;
+
     // Only block-like elements host their own inline formatting context.
     match layout.node.node {
         Node::Element { .. } => {
@@ -965,17 +923,7 @@ fn paint_inline_content<'a>(
         return;
     }
 
-    paint_line_boxes(
-        painter,
-        origin,
-        &lines,
-        measurer,
-        base_url,
-        resources,
-        input_values,
-        focused,
-        active,
-    );
+    paint_line_boxes(&lines, ctx);
 }
 
 fn find_page_background_color(root: &StyledNode<'_>) -> Option<(u8, u8, u8, u8)> {

@@ -201,31 +201,24 @@ pub fn compute_style(
                 let v = value.trim().to_ascii_lowercase();
                 if v == "auto" {
                     result.width = None;
-                } else if let Some(px) = parse_px(&v) {
-                    if px >= 0.0 {
-                        result.width = Some(Length::Px(px));
-                    }
+                } else if let Some(px) = parse_px(&v).filter(|px| *px >= 0.0) {
+                    result.width = Some(Length::Px(px));
                 }
             }
             "height" => {
                 let v = value.trim().to_ascii_lowercase();
                 if v == "auto" {
                     result.height = None;
-                } else if let Some(px) = parse_px(&v) {
-                    if px >= 0.0 {
-                        result.height = Some(Length::Px(px));
-                    }
+                } else if let Some(px) = parse_px(&v).filter(|px| *px >= 0.0) {
+                    result.height = Some(Length::Px(px));
                 }
             }
             "min-width" => {
                 let v = value.trim().to_ascii_lowercase();
                 if v == "auto" {
                     result.min_width = None;
-                } else if let Some(px) = parse_px(&v) {
-                    if px >= 0.0 {
-                        result.min_width = Some(Length::Px(px));
-                    }
-                    // else: negative -> ignore gracefully (leave as-is)
+                } else if let Some(px) = parse_px(&v).filter(|px| *px >= 0.0) {
+                    result.min_width = Some(Length::Px(px));
                 }
             }
 
@@ -233,11 +226,8 @@ pub fn compute_style(
                 let v = value.trim().to_ascii_lowercase();
                 if v == "auto" {
                     result.max_width = None;
-                } else if let Some(px) = parse_px(&v) {
-                    if px >= 0.0 {
-                        result.max_width = Some(Length::Px(px));
-                    }
-                    // else: negative -> ignore gracefully
+                } else if let Some(px) = parse_px(&v).filter(|px| *px >= 0.0) {
+                    result.max_width = Some(Length::Px(px));
                 }
             }
             _ => {

@@ -106,28 +106,36 @@ fn decode_entities(s: &str) -> String {
 
         // numeric entities: &#123; or &#x1F4A9;
         if s[i..].starts_with("&#x") || s[i..].starts_with("&#X") {
-            if let Some(end) = s[i + 3..].find(';') {
-                let hex = &s[i + 3..i + 3 + end];
-                if let Ok(cp) = u32::from_str_radix(hex, 16) {
-                    if let Some(ch) = char::from_u32(cp) {
-                        out.push(ch);
-                        i += 3 + end + 1;
-                        copy_start = i;
-                        continue;
-                    }
-                }
+            let Some(end) = s[i + 3..].find(';') else {
+                // fallback to keep '&' as-is
+                out.push('&');
+                i += 1;
+                copy_start = i;
+                continue;
+            };
+
+            let hex = &s[i + 3..i + 3 + end];
+            if let Some(ch) = u32::from_str_radix(hex, 16).ok().and_then(char::from_u32) {
+                out.push(ch);
+                i += 3 + end + 1;
+                copy_start = i;
+                continue;
             }
         } else if s[i..].starts_with("&#") {
-            if let Some(end) = s[i + 2..].find(';') {
-                let dec = &s[i + 2..i + 2 + end];
-                if let Ok(cp) = dec.parse::<u32>() {
-                    if let Some(ch) = char::from_u32(cp) {
-                        out.push(ch);
-                        i += 2 + end + 1;
-                        copy_start = i;
-                        continue;
-                    }
-                }
+            let Some(end) = s[i + 2..].find(';') else {
+                // fallback to keep '&' as-is
+                out.push('&');
+                i += 1;
+                copy_start = i;
+                continue;
+            };
+
+            let dec = &s[i + 2..i + 2 + end];
+            if let Some(ch) = dec.parse::<u32>().ok().and_then(char::from_u32) {
+                out.push(ch);
+                i += 2 + end + 1;
+                copy_start = i;
+                continue;
             }
         }
 
@@ -142,42 +150,6 @@ fn decode_entities(s: &str) -> String {
     }
 
     out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn decode_entities_preserves_utf8() {
-        assert_eq!(decode_entities("120×32"), "120×32");
-    }
-
-    #[test]
-    fn decode_entities_decodes_common_entities() {
-        assert_eq!(decode_entities("a &amp; b"), "a & b");
-        assert_eq!(decode_entities("&lt;tag&gt;"), "<tag>");
-        assert_eq!(decode_entities("&quot;hi&quot;"), "\"hi\"");
-        assert_eq!(decode_entities("&apos;x&apos;"), "'x'");
-        assert_eq!(decode_entities("a&nbsp;b"), "a\u{00A0}b");
-    }
-
-    #[test]
-    fn decode_entities_decodes_numeric_entities() {
-        assert_eq!(decode_entities("&#215;"), "×");
-        assert_eq!(decode_entities("&#xD7;"), "×");
-    }
-
-    #[test]
-    fn tokenize_preserves_utf8_text_nodes() {
-        let tokens = tokenize("<p>120×32</p>");
-        assert!(
-            tokens
-                .iter()
-                .any(|t| matches!(t, Token::Text(s) if s == "120×32")),
-            "expected UTF-8 text token, got: {tokens:?}"
-        );
-    }
 }
 
 pub fn tokenize(input: &str) -> Vec<Token> {
@@ -496,10 +468,8 @@ pub fn build_dom(tokens: &[Token]) -> Node {
                     },
                 );
 
-                if !*self_closing {
-                    if let Some(child_ptr) = mut_node {
-                        stack.push(child_ptr);
-                    }
+                if let (false, Some(child_ptr)) = (*self_closing, mut_node) {
+                    stack.push(child_ptr);
                 }
             }
             Token::EndTag(name) => {
@@ -521,4 +491,40 @@ pub fn build_dom(tokens: &[Token]) -> Node {
         }
     }
     root
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decode_entities_preserves_utf8() {
+        assert_eq!(decode_entities("120×32"), "120×32");
+    }
+
+    #[test]
+    fn decode_entities_decodes_common_entities() {
+        assert_eq!(decode_entities("a &amp; b"), "a & b");
+        assert_eq!(decode_entities("&lt;tag&gt;"), "<tag>");
+        assert_eq!(decode_entities("&quot;hi&quot;"), "\"hi\"");
+        assert_eq!(decode_entities("&apos;x&apos;"), "'x'");
+        assert_eq!(decode_entities("a&nbsp;b"), "a\u{00A0}b");
+    }
+
+    #[test]
+    fn decode_entities_decodes_numeric_entities() {
+        assert_eq!(decode_entities("&#215;"), "×");
+        assert_eq!(decode_entities("&#xD7;"), "×");
+    }
+
+    #[test]
+    fn tokenize_preserves_utf8_text_nodes() {
+        let tokens = tokenize("<p>120×32</p>");
+        assert!(
+            tokens
+                .iter()
+                .any(|t| matches!(t, Token::Text(s) if s == "120×32")),
+            "expected UTF-8 text token, got: {tokens:?}"
+        );
+    }
 }

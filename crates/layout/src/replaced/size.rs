@@ -74,12 +74,12 @@ pub fn compute_replaced_size(
     }
 
     // Inline clamp (shrink-to-fit-ish)
-    if let Some(avail) = available_inline_w {
-        if avail.is_finite() && avail > 0.0 && w > avail {
-            w = avail;
-            if height_is_auto {
-                h = w / ratio;
-            }
+    if let Some(avail) =
+        available_inline_w.filter(|avail| avail.is_finite() && *avail > 0.0 && w > *avail)
+    {
+        w = avail;
+        if height_is_auto {
+            h = w / ratio;
         }
     }
 

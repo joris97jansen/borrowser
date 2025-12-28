@@ -1,0 +1,81 @@
+name: CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - master
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  rust:
+    name: Rust (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 30
+
+    env:
+      RUST_BACKTRACE: 1
+
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-latest
+            full_deps: true
+            run_lints: true
+          # Future expansion:
+          # - os: windows-latest
+          #   full_deps: false
+          #   run_lints: false
+          # - os: macos-latest
+          #   full_deps: false
+          #   run_lints: false
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Linux system dependencies
+        if: matrix.full_deps
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            pkg-config \
+            libegl1-mesa-dev \
+            libgl1-mesa-dev \
+            libssl-dev \
+            libx11-dev \
+            libxrandr-dev \
+            libxi-dev \
+            libxcursor-dev \
+            libwayland-dev \
+            libxkbcommon-dev
+
+      # Uses rust-toolchain.toml automatically
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Rustfmt (check)
+        if: matrix.run_lints
+        run: cargo fmt --all -- --check
+
+      - name: Clippy (deny warnings)
+        if: matrix.run_lints
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+
+      - name: Build (debug, all targets)
+        run: cargo build --workspace --all-targets --locked
+
+      - name: Run tests
+        run: cargo test --workspace --all-targets --locked
+
+      - name: Build (release)
+        run: cargo build --workspace --release --locked

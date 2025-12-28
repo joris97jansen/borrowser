@@ -172,6 +172,7 @@ pub fn layout_block_tree<'a>(
 /// Internal recursive function:
 /// - `x`, `y` = top-left of this box
 /// - `width`  = available width
+///
 /// Builds a LayoutBox subtree with correct x/y/width, but height = 0.0.
 /// The unified inline-aware pass will compute final heights.
 fn layout_block_subtree<'a>(
@@ -234,14 +235,14 @@ fn layout_block_subtree<'a>(
 
             // If this is a list container (<ul>/<ol>) and the child is a list-item,
             // assign a marker.
-            if let Node::Element { .. } = child.node {
-                if child_box.style.display == Display::ListItem {
-                    if is_ul {
-                        child_box.list_marker = Some(ListMarker::Unordered);
-                    } else if is_ol {
-                        child_box.list_marker = Some(ListMarker::Ordered(next_ol_index));
-                        next_ol_index += 1;
-                    }
+            if matches!(child.node, Node::Element { .. })
+                && child_box.style.display == Display::ListItem
+            {
+                if is_ul {
+                    child_box.list_marker = Some(ListMarker::Unordered);
+                } else if is_ol {
+                    child_box.list_marker = Some(ListMarker::Ordered(next_ol_index));
+                    next_ol_index += 1;
                 }
             }
 
@@ -304,7 +305,7 @@ fn layout_block_subtree<'a>(
         rect,
         children: children_boxes,
         list_marker: None,
-        replaced: replaced,
+        replaced,
         replaced_intrinsic,
     }
 }
