@@ -1,5 +1,5 @@
-use crate::input_store::InputValueStore;
-use crate::interactions::InteractionState;
+use crate::input_store::{InputValueStore, SelectionRange};
+use crate::interactions::{ActiveTarget, InputDragState, InteractionState};
 use crate::page::PageState;
 use crate::resources::{ImageState, ResourceManager};
 use crate::tab::Tab;
@@ -252,15 +252,69 @@ pub fn page_viewport(
             let content_height = layout_root.rect.height.max(min_height);
 
             let (content_rect, resp) =
-                ui.allocate_exact_size(Vec2::new(available_width, content_height), Sense::click());
+                ui.allocate_exact_size(Vec2::new(available_width, content_height), Sense::hover());
 
             let painter = ui.painter_at(content_rect);
             let origin = content_rect.min;
+
+            let viewport_width_changed = interaction
+                .last_viewport_width
+                .map(|w| (w - available_width).abs() > 0.5)
+                .unwrap_or(true);
+            interaction.last_viewport_width = Some(available_width);
+
+            let layout_root_size_changed = interaction
+                .last_layout_root_size
+                .map(|(w, h)| {
+                    (w - layout_root.rect.width).abs() > 0.5
+                        || (h - layout_root.rect.height).abs() > 0.5
+                })
+                .unwrap_or(true);
+            interaction.last_layout_root_size =
+                Some((layout_root.rect.width, layout_root.rect.height));
+
+            let layout_changed = viewport_width_changed || layout_root_size_changed;
+
+            // Refresh the focused input fragment rect by ID so we don't rely on stale coordinates
+            // after reflow/resize.
+            if let Some(focus_id) = interaction.focused_node_id
+                && (interaction.focused_input_rect.is_none() || layout_changed)
+                && let Some(r) = find_input_fragment_rect_by_id(&layout_root, &measurer, focus_id)
+            {
+                interaction.focused_input_rect = Some(r);
+            }
+
+            // Keep the focused input's horizontal scroll stable across frames (e.g. resize)
+            // and ensure the caret remains visible within the input viewport.
+            if let Some(focus_id) = interaction.focused_node_id
+                && let Some(lb) = find_layout_box_by_id(&layout_root, focus_id)
+                    .filter(|lb| matches!(lb.replaced, Some(ReplacedKind::InputText)))
+            {
+                let viewport_w = interaction
+                    .focused_input_rect
+                    .map(|r| r.width)
+                    .unwrap_or(lb.rect.width);
+                sync_input_scroll_for_caret(
+                    input_values,
+                    focus_id,
+                    viewport_w.max(1.0),
+                    &measurer,
+                    lb.style,
+                );
+            }
 
             // Paint first
             let focused = interaction.focused_node_id;
             let active = interaction.active;
             {
+                let selection = ui.visuals().selection;
+                let bg = selection.bg_fill;
+                // Keep selection translucent so text stays readable without inverting text color (yet).
+                let selection_bg_fill =
+                    Color32::from_rgba_unmultiplied(bg.r(), bg.g(), bg.b(), bg.a().min(96));
+                let selection_stroke =
+                    Stroke::new(selection.stroke.width.max(2.0), selection.stroke.color);
+
                 let paint_ctx = PaintCtx {
                     painter: &painter,
                     origin,
@@ -270,6 +324,8 @@ pub fn page_viewport(
                     input_values: &*input_values,
                     focused,
                     active,
+                    selection_bg_fill,
+                    selection_stroke,
                 };
                 paint_layout_box(&layout_root, paint_ctx, true);
             }
@@ -277,31 +333,70 @@ pub fn page_viewport(
             // ------- unified router output -------
             let mut action: Option<PageAction> = None;
 
-            // Helper: hit-test at current pointer position (layout coords)
-            let hit_at_pointer = |ui: &Ui| -> Option<HitResult> {
-                ui.input(|i| i.pointer.interact_pos()).and_then(|pos| {
-                    if !content_rect.contains(pos) {
-                        return None;
-                    }
+            let pointer_pos = |ui: &Ui, allow_latest_pos: bool| -> Option<Pos2> {
+                // Prefer response-scoped positions when available, fall back to the global pointer.
+                resp.interact_pointer_pos()
+                    .or_else(|| resp.hover_pos())
+                    .or_else(|| {
+                        ui.input(|i| {
+                            if allow_latest_pos {
+                                i.pointer.interact_pos().or(i.pointer.latest_pos())
+                            } else {
+                                i.pointer.interact_pos()
+                            }
+                        })
+                    })
+            };
+
+            // Helper: hit-test at current pointer position (layout coords).
+            // On release we avoid `latest_pos()` to prevent stale-position clicks.
+            let hit_at_pointer = |ui: &Ui, allow_latest_pos: bool| -> Option<HitResult> {
+                let pos = pointer_pos(ui, allow_latest_pos)?;
+
+                if !content_rect.contains(pos) {
+                    return None;
+                }
+
+                let lx = pos.x - origin.x;
+                let ly = pos.y - origin.y;
+                hit_test(&layout_root, (lx, ly), &measurer)
+            };
+
+            // Hover hit-testing can be expensive (inline layout), so only recompute when needed.
+            let hover_pos = resp.hover_pos().filter(|pos| content_rect.contains(*pos));
+            let hover_needs_update = layout_changed
+                || ui.input(|i| {
+                    i.pointer.delta() != Vec2::ZERO
+                        || i.pointer.motion().is_some_and(|m| m != Vec2::ZERO)
+                        || i.raw_scroll_delta != Vec2::ZERO
+                        || i.smooth_scroll_delta != Vec2::ZERO
+                });
+
+            let hover_hit = if hover_needs_update {
+                hover_pos.and_then(|pos| {
                     let lx = pos.x - origin.x;
                     let ly = pos.y - origin.y;
                     hit_test(&layout_root, (lx, ly), &measurer)
                 })
+            } else {
+                None
             };
 
-            // Hover hit (prefer response hover_pos)
-            let hover_hit = resp.hover_pos().and_then(|pos| {
-                let lx = pos.x - origin.x;
-                let ly = pos.y - origin.y;
-                hit_test(&layout_root, (lx, ly), &measurer)
-            });
-
-            // Track hover id
-            interaction.hover = hover_hit.as_ref().map(|h| h.node_id);
+            if hover_needs_update {
+                interaction.hover = hover_hit.as_ref().map(|h| h.node_id);
+                interaction.hover_kind = hover_hit.as_ref().map(|h| h.kind);
+            } else if hover_pos.is_none() {
+                interaction.hover = None;
+                interaction.hover_kind = None;
+            }
 
             // Cursor icon hint
-            if let Some(h) = &hover_hit {
-                match h.kind {
+            if let Some(kind) = hover_hit
+                .as_ref()
+                .map(|h| h.kind)
+                .or(interaction.hover_kind)
+            {
+                match kind {
                     HitKind::Link => {
                         ui.output_mut(|o| o.cursor_icon = CursorIcon::PointingHand);
                     }
@@ -317,73 +412,191 @@ pub fn page_viewport(
 
             // Pointer down -> active
             if ui.input(|i| i.pointer.primary_pressed()) {
-                interaction.active = hit_at_pointer(ui).map(|h| h.node_id);
+                let pressed_hit = hit_at_pointer(ui, true);
+                interaction.active = pressed_hit.as_ref().map(|h| ActiveTarget {
+                    id: h.node_id,
+                    kind: h.kind,
+                });
+                interaction.input_drag = None;
+
+                if let Some(h) = pressed_hit
+                    && matches!(h.kind, HitKind::Input)
+                {
+                    let focus_changed = interaction.focused_node_id != Some(h.node_id);
+                    if focus_changed && let Some(prev_focus) = interaction.focused_node_id {
+                        input_values.blur(prev_focus);
+                    }
+
+                    input_values.ensure_initial(h.node_id, String::new());
+                    interaction.focused_node_id = Some(h.node_id);
+                    interaction.focused_input_rect = Some(h.fragment_rect);
+
+                    if focus_changed {
+                        input_values.focus(h.node_id);
+                    }
+
+                    let egui_focus_id = ui.make_persistent_id(("dom-input", h.node_id));
+                    ui.memory_mut(|mem| mem.request_focus(egui_focus_id));
+
+                    if let Some(lb) = find_layout_box_by_id(&layout_root, h.node_id)
+                        .filter(|lb| matches!(lb.replaced, Some(ReplacedKind::InputText)))
+                    {
+                        let style = lb.style;
+                        let (pad_l, _pad_r, _pad_t, _pad_b) = input_text_padding(style);
+
+                        let selecting = ui.input(|i| i.modifiers.shift);
+
+                        let x_in_viewport = (h.local_pos.0 - pad_l).max(0.0);
+                        input_values.set_caret_from_viewport_x(
+                            h.node_id,
+                            x_in_viewport,
+                            selecting,
+                            |s| measurer.measure(s, style),
+                        );
+                        sync_input_scroll_for_caret(
+                            input_values,
+                            h.node_id,
+                            h.fragment_rect.width.max(1.0),
+                            &measurer,
+                            style,
+                        );
+                    }
+
+                    interaction.input_drag = Some(InputDragState {
+                        input_id: h.node_id,
+                        rect: h.fragment_rect,
+                    });
+
+                    ui.ctx().request_repaint();
+                }
+            }
+
+            // Pointer drag -> selection update for focused input
+            if ui.input(|i| i.pointer.primary_down()) {
+                let focused_id = interaction.focused_node_id;
+                let focused_rect = interaction.focused_input_rect;
+
+                if let Some(drag) = interaction.input_drag.as_mut()
+                    && let Some(pos) = pointer_pos(ui, true)
+                {
+                    let rect = if layout_changed {
+                        find_input_fragment_rect_by_id(&layout_root, &measurer, drag.input_id)
+                            .or(focused_rect.filter(|_| focused_id == Some(drag.input_id)))
+                            .unwrap_or(drag.rect)
+                    } else {
+                        drag.rect
+                    };
+                    drag.rect = rect;
+
+                    let lx = pos.x - origin.x;
+                    let local_x = (lx - rect.x).clamp(0.0, rect.width);
+
+                    if let Some(lb) = find_layout_box_by_id(&layout_root, drag.input_id)
+                        .filter(|lb| matches!(lb.replaced, Some(ReplacedKind::InputText)))
+                    {
+                        let style = lb.style;
+                        let (pad_l, _pad_r, _pad_t, _pad_b) = input_text_padding(style);
+
+                        input_values.set_caret_from_viewport_x(
+                            drag.input_id,
+                            (local_x - pad_l).max(0.0),
+                            true,
+                            |s| measurer.measure(s, style),
+                        );
+                        sync_input_scroll_for_caret(
+                            input_values,
+                            drag.input_id,
+                            rect.width.max(1.0),
+                            &measurer,
+                            style,
+                        );
+
+                        ui.ctx().request_repaint();
+                    }
+                }
             }
 
             // Pointer up -> action/focus (if released on same target)
             if ui.input(|i| i.pointer.primary_released()) {
-                let release_hit = hit_at_pointer(ui);
+                let prev_focus = interaction.focused_node_id;
+
+                let drag_input_id = interaction.input_drag.as_ref().map(|d| d.input_id);
+                interaction.input_drag = None;
+
+                let release_hit = hit_at_pointer(ui, false);
 
                 // Default behavior: any pointer release clears active.
                 let was_active = interaction.active;
                 interaction.active = None;
 
-                match release_hit {
-                    None => {
-                        // Released outside => blur
-                        interaction.focused_node_id = None;
-                    }
-                    Some(h) => {
-                        let mut skip_click_logic = false;
+                let gesture_started_in_input = matches!(
+                    was_active,
+                    Some(ActiveTarget {
+                        kind: HitKind::Input,
+                        ..
+                    })
+                ) || drag_input_id.is_some();
 
-                        if was_active != Some(h.node_id) {
-                            // mismatch => keep existing focused_node_id as-is
-                            skip_click_logic = true;
+                if !gesture_started_in_input {
+                    match release_hit {
+                        None => {
+                            // Released outside => blur
+                            interaction.focused_node_id = None;
                         }
+                        Some(h) => {
+                            let down_matches_up =
+                                was_active.is_some_and(|a| a.id == h.node_id && a.kind == h.kind);
 
-                        // True click case (down/up match)
-                        if !skip_click_logic {
-                            match h.kind {
-                                HitKind::Link => {
-                                    if let Some(href) = h.href.as_deref() {
-                                        if let Some(url) = resolve_relative_url(base_url, href) {
-                                            action = Some(PageAction::Navigate(url));
+                            if down_matches_up {
+                                match h.kind {
+                                    HitKind::Link => {
+                                        if let Some(href) = h.href.as_deref() {
+                                            if let Some(url) = resolve_relative_url(base_url, href)
+                                            {
+                                                action = Some(PageAction::Navigate(url));
+                                            }
+                                        } else {
+                                            // debug: link hit but no href
+                                            #[cfg(debug_assertions)]
+                                            eprintln!(
+                                                "Link hit {:?} but no href in HitResult",
+                                                h.node_id
+                                            );
                                         }
-                                    } else {
-                                        // debug: link hit but no href
-                                        #[cfg(debug_assertions)]
-                                        eprintln!(
-                                            "Link hit {:?} but no href in HitResult",
-                                            h.node_id
-                                        );
+                                        // Clicking a link should clear input focus (browser-like)
+                                        interaction.focused_node_id = None;
                                     }
-                                    // Clicking a link should clear input focus (browser-like)
+
+                                    HitKind::Button => {
+                                        #[cfg(debug_assertions)]
+                                        eprintln!("button click: {:?}", h.node_id);
+
+                                        // Clicking a button should blur input focus (browser-like)
+                                        interaction.focused_node_id = None;
+
+                                        ui.ctx().request_repaint();
+                                    }
+
+                                    _ => interaction.focused_node_id = None,
+                                }
+                            } else {
+                                // If the pointer gesture did *not* begin on the current release target,
+                                // we still blur when releasing on non-input content, but never blur just
+                                // because the mouse-up happened to land inside an input.
+                                if !matches!(h.kind, HitKind::Input) {
                                     interaction.focused_node_id = None;
                                 }
-
-                                HitKind::Input => {
-                                    input_values.ensure_initial(h.node_id, String::new());
-                                    input_values.focus(h.node_id);
-                                    interaction.focused_node_id = Some(h.node_id);
-
-                                    let egui_focus_id =
-                                        ui.make_persistent_id(("dom-input", h.node_id));
-                                    ui.memory_mut(|mem| mem.request_focus(egui_focus_id));
-                                    ui.ctx().request_repaint();
-                                }
-
-                                HitKind::Button => {
-                                    #[cfg(debug_assertions)]
-                                    eprintln!("button click: {:?}", h.node_id);
-
-                                    // Clicking a button should blur input focus (browser-like)
-                                    interaction.focused_node_id = None;
-
-                                    ui.ctx().request_repaint();
-                                }
-                                _ => interaction.focused_node_id = None,
                             }
                         }
+                    }
+                }
+
+                if prev_focus != interaction.focused_node_id {
+                    interaction.focused_input_rect = None;
+
+                    // If focus changed due to this pointer release, clear selection on the old input.
+                    if let Some(old) = prev_focus {
+                        input_values.blur(old);
                     }
                 }
             }
@@ -395,8 +608,19 @@ pub fn page_viewport(
                 // Default fallback: keep focusable alive on the whole content rect
                 let mut r = content_rect;
 
-                // If we can find the real input rect, use it
-                if let Some(lb) = find_layout_box_by_id(&layout_root, focus_id)
+                // Prefer the painted inline fragment rect, fall back to the layout box rect.
+                if let Some(fr) = interaction.focused_input_rect {
+                    r = Rect::from_min_size(
+                        Pos2 {
+                            x: origin.x + fr.x,
+                            y: origin.y + fr.y,
+                        },
+                        Vec2 {
+                            x: fr.width.max(1.0),
+                            y: fr.height.max(1.0),
+                        },
+                    );
+                } else if let Some(lb) = find_layout_box_by_id(&layout_root, focus_id)
                     .filter(|lb| matches!(lb.replaced, Some(ReplacedKind::InputText)))
                 {
                     r = Rect::from_min_size(
@@ -411,7 +635,22 @@ pub fn page_viewport(
                     );
                 }
 
-                ui.interact(r, egui_focus_id, Sense::focusable_noninteractive());
+                ui.interact(r, egui_focus_id, Sense::click());
+
+                // Keep egui focus "sticky" while a DOM input is focused, and lock focus
+                // navigation keys (arrows/tab/escape) so egui doesn't move focus to e.g. the URL bar.
+                ui.memory_mut(|mem| {
+                    mem.request_focus(egui_focus_id);
+                    mem.set_focus_lock_filter(
+                        egui_focus_id,
+                        egui::EventFilter {
+                            tab: true,
+                            horizontal_arrows: true,
+                            vertical_arrows: true,
+                            escape: true,
+                        },
+                    );
+                });
 
                 // --- Key input -> focused input (AFTER interact exists)
                 if ui.memory(|mem| mem.has_focus(egui_focus_id)) {
@@ -425,19 +664,76 @@ pub fn page_viewport(
                                     changed = true;
                                 }
                                 Event::Key {
-                                    key: Key::Backspace,
+                                    key,
                                     pressed: true,
+                                    modifiers,
                                     ..
-                                } => {
-                                    input_values.backspace(focus_id);
-                                    changed = true;
-                                }
+                                } => match key {
+                                    Key::Backspace => {
+                                        input_values.backspace(focus_id);
+                                        changed = true;
+                                    }
+                                    Key::Delete => {
+                                        input_values.delete(focus_id);
+                                        changed = true;
+                                    }
+                                    Key::ArrowLeft => {
+                                        input_values.move_caret_left(focus_id, modifiers.shift);
+                                        changed = true;
+                                    }
+                                    Key::ArrowRight => {
+                                        input_values.move_caret_right(focus_id, modifiers.shift);
+                                        changed = true;
+                                    }
+                                    Key::Home => {
+                                        input_values.move_caret_to_start(focus_id, modifiers.shift);
+                                        changed = true;
+                                    }
+                                    Key::End => {
+                                        input_values.move_caret_to_end(focus_id, modifiers.shift);
+                                        changed = true;
+                                    }
+                                    Key::A if modifiers.command || modifiers.ctrl => {
+                                        input_values.select_all(focus_id);
+                                        changed = true;
+                                    }
+                                    _ => {}
+                                },
                                 _ => {}
                             }
                         }
                     });
 
+                    // Prevent egui keyboard navigation from stealing focus (e.g. ArrowRight moving
+                    // focus to the URL bar) while a DOM input is focused. `consume_key` also removes
+                    // the key events from the input stream, so we do this *after* we have handled
+                    // the events above.
+                    ui.input_mut(|i| {
+                        let m = egui::Modifiers::NONE;
+                        i.consume_key(m, Key::ArrowLeft);
+                        i.consume_key(m, Key::ArrowRight);
+                        i.consume_key(m, Key::ArrowUp);
+                        i.consume_key(m, Key::ArrowDown);
+                        i.consume_key(m, Key::Home);
+                        i.consume_key(m, Key::End);
+                    });
+
                     if changed {
+                        if let Some(lb) = find_layout_box_by_id(&layout_root, focus_id)
+                            .filter(|lb| matches!(lb.replaced, Some(ReplacedKind::InputText)))
+                        {
+                            let viewport_w = interaction
+                                .focused_input_rect
+                                .map(|r| r.width)
+                                .unwrap_or(lb.rect.width);
+                            sync_input_scroll_for_caret(
+                                input_values,
+                                focus_id,
+                                viewport_w.max(1.0),
+                                &measurer,
+                                lb.style,
+                            );
+                        }
                         ui.ctx().request_repaint();
                     }
                 }
@@ -469,7 +765,9 @@ struct PaintCtx<'a> {
     resources: &'a ResourceManager,
     input_values: &'a InputValueStore,
     focused: Option<Id>,
-    active: Option<Id>,
+    active: Option<ActiveTarget>,
+    selection_bg_fill: Color32,
+    selection_stroke: Stroke,
 }
 
 impl<'a> PaintCtx<'a> {
@@ -487,6 +785,8 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
     let input_values = ctx.input_values;
     let focused = ctx.focused;
     let active = ctx.active;
+    let selection_bg_fill = ctx.selection_bg_fill;
+    let selection_stroke = ctx.selection_stroke;
 
     for line in lines {
         for frag in &line.fragments {
@@ -560,7 +860,9 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
                     // --- BUTTON: pressed visual state (uses `active`) ---
                     if matches!(kind, ReplacedKind::Button) {
                         let id = layout.map(|lb| lb.node_id());
-                        let is_pressed = id.is_some_and(|id| active == Some(id));
+                        let is_pressed = id.is_some_and(|id| {
+                            active.is_some_and(|a| a.id == id && matches!(a.kind, HitKind::Button))
+                        });
 
                         let fill = if is_pressed {
                             Color32::from_rgb(200, 200, 200)
@@ -635,8 +937,7 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
 
                     painter.rect_filled(rect, 2.0, fill);
                     let stroke = if is_focused_input {
-                        // Use egui’s selection stroke so it matches the theme
-                        Stroke::new(2.0, Color32::from_rgb(80, 140, 255))
+                        selection_stroke
                     } else {
                         Stroke::new(1.0, Color32::from_rgb(120, 120, 120))
                     };
@@ -648,11 +949,17 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
                         // Determine shown text: value first, else placeholder
                         let mut value = String::new();
                         let mut placeholder: Option<String> = None;
+                        let mut caret: usize = 0;
+                        let mut selection: Option<SelectionRange> = None;
+                        let mut scroll_x: f32 = 0.0;
 
                         if let Some(lb) = layout {
                             let id = lb.node_id();
-                            if let Some(v) = input_values.get(id) {
+                            if let Some((v, c, sel, sx)) = input_values.get_state(id) {
                                 value = v.to_string();
+                                caret = c;
+                                selection = sel;
+                                scroll_x = sx;
                             }
 
                             placeholder = if value.is_empty() {
@@ -666,13 +973,8 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
                         }
 
                         // Inner text area from padding (with sane minimums)
-                        let bm = style.box_metrics;
-                        let pad_l = bm.padding_left.max(4.0);
-                        let pad_r = bm.padding_right.max(4.0);
-                        let pad_t = bm.padding_top.max(2.0);
-                        let pad_b = bm.padding_bottom.max(2.0);
+                        let (pad_l, pad_r, pad_t, pad_b) = input_text_padding(style);
 
-                        let text_x = rect.min.x + pad_l;
                         let available_text_w = (rect.width() - pad_l - pad_r).max(0.0);
 
                         let line_h = measurer.line_height(style);
@@ -690,43 +992,109 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
                         let font_id = FontId::proportional(font_px);
 
                         let is_placeholder = value.is_empty();
-                        let painted = if !is_placeholder {
-                            truncate_to_fit(measurer, style, &value, available_text_w)
-                        } else {
-                            let ph = placeholder.as_deref().unwrap_or_default();
-                            truncate_to_fit(measurer, style, ph, available_text_w)
-                        };
                         let paint_color = if is_placeholder {
                             placeholder_color
                         } else {
                             value_color
                         };
 
-                        painter.text(
+                        let inner_min_x = rect.min.x + pad_l;
+                        let inner_max_x = (rect.max.x - pad_r).max(inner_min_x);
+                        let inner_min_y = rect.min.y + pad_t;
+                        let inner_max_y = (rect.max.y - pad_b).max(inner_min_y);
+                        let inner_rect = Rect::from_min_max(
                             Pos2 {
-                                x: text_x,
-                                y: text_y,
+                                x: inner_min_x,
+                                y: inner_min_y,
                             },
-                            Align2::LEFT_TOP,
-                            &painted,
-                            font_id,
-                            paint_color,
+                            Pos2 {
+                                x: inner_max_x,
+                                y: inner_max_y,
+                            },
                         );
 
-                        // Caret (Phase 2): simple 1px vertical line.
                         if is_focused_input {
-                            // If value is truncated, place caret at the end of the *painted* content,
-                            // but before the ellipsis.
-                            let caret_text = painted.strip_suffix('…').unwrap_or(painted.as_str());
-                            let caret_x = if is_placeholder {
-                                text_x
-                            } else {
-                                text_x + measurer.measure(caret_text, style)
-                            };
-                            let caret_max_x = (text_x + available_text_w - 1.0).max(text_x);
-                            let mut caret_x = caret_x.min(caret_max_x).round();
-                            caret_x = caret_x.min(caret_max_x);
+                            // Focused input: render the full value, clipped to the inner rect,
+                            // with a caret and optional selection highlight.
+                            let clip_painter = painter.with_clip_rect(inner_rect);
 
+                            let caret = clamp_caret_to_boundary(&value, caret);
+
+                            // Scroll horizontally to keep the caret visible.
+                            let text_w = if is_placeholder {
+                                0.0
+                            } else {
+                                measurer.measure(&value, style)
+                            };
+                            let caret_w = if is_placeholder {
+                                0.0
+                            } else {
+                                measurer.measure(&value[..caret], style)
+                            };
+
+                            // `scroll_x` is persistent state in the store; clamp it to current bounds.
+                            let scroll_max = if !is_placeholder && available_text_w > 0.0 {
+                                (text_w - available_text_w).max(0.0)
+                            } else {
+                                0.0
+                            };
+                            scroll_x = scroll_x.clamp(0.0, scroll_max);
+
+                            let text_x = inner_rect.min.x - scroll_x;
+
+                            // Selection highlight (single-line).
+                            if let (false, Some(sel)) =
+                                (is_placeholder, selection.filter(|s| s.start < s.end))
+                            {
+                                let sel_start = sel.start.min(value.len());
+                                let sel_end = sel.end.min(value.len());
+
+                                if value.is_char_boundary(sel_start)
+                                    && value.is_char_boundary(sel_end)
+                                {
+                                    let x0 = measurer.measure(&value[..sel_start], style);
+                                    let x1 = measurer.measure(&value[..sel_end], style);
+                                    let sel_rect = Rect::from_min_max(
+                                        Pos2 {
+                                            x: text_x + x0,
+                                            y: text_y,
+                                        },
+                                        Pos2 {
+                                            x: text_x + x1,
+                                            y: text_y + caret_h,
+                                        },
+                                    );
+
+                                    clip_painter.rect_filled(sel_rect, 0.0, selection_bg_fill);
+                                }
+                            }
+
+                            // Text
+                            let paint_text = if is_placeholder {
+                                placeholder.as_deref().unwrap_or_default()
+                            } else {
+                                value.as_str()
+                            };
+                            clip_painter.text(
+                                Pos2 {
+                                    x: text_x,
+                                    y: text_y,
+                                },
+                                Align2::LEFT_TOP,
+                                paint_text,
+                                font_id,
+                                paint_color,
+                            );
+
+                            // Caret: 1px vertical line.
+                            let caret_x = if is_placeholder {
+                                inner_rect.min.x
+                            } else {
+                                inner_rect.min.x + caret_w - scroll_x
+                            };
+                            let caret_max_x =
+                                (inner_rect.min.x + available_text_w - 1.0).max(inner_rect.min.x);
+                            let caret_x = caret_x.clamp(inner_rect.min.x, caret_max_x).round();
                             let caret_rect = Rect::from_min_size(
                                 Pos2 {
                                     x: caret_x,
@@ -735,7 +1103,26 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
                                 Vec2 { x: 1.0, y: caret_h },
                             );
                             // Caret uses the actual text color, not placeholder styling.
-                            painter.rect_filled(caret_rect, 0.0, value_color);
+                            clip_painter.rect_filled(caret_rect, 0.0, value_color);
+                        } else {
+                            // Unfocused input: show a simple truncated preview (no caret/selection).
+                            let painted = if !is_placeholder {
+                                truncate_to_fit(measurer, style, &value, available_text_w)
+                            } else {
+                                let ph = placeholder.as_deref().unwrap_or_default();
+                                truncate_to_fit(measurer, style, ph, available_text_w)
+                            };
+
+                            painter.text(
+                                Pos2 {
+                                    x: inner_rect.min.x,
+                                    y: text_y,
+                                },
+                                Align2::LEFT_TOP,
+                                &painted,
+                                font_id,
+                                paint_color,
+                            );
                         }
 
                         continue; // skip default label painting below
@@ -1011,6 +1398,47 @@ fn truncate_to_fit(
     s
 }
 
+fn clamp_caret_to_boundary(value: &str, caret: usize) -> usize {
+    let mut caret = caret.min(value.len());
+    while caret > 0 && !value.is_char_boundary(caret) {
+        caret -= 1;
+    }
+    caret
+}
+
+fn input_text_padding(style: &ComputedStyle) -> (f32, f32, f32, f32) {
+    let bm = style.box_metrics;
+    let pad_l = bm.padding_left.max(4.0);
+    let pad_r = bm.padding_right.max(4.0);
+    let pad_t = bm.padding_top.max(2.0);
+    let pad_b = bm.padding_bottom.max(2.0);
+    (pad_l, pad_r, pad_t, pad_b)
+}
+
+fn sync_input_scroll_for_caret(
+    input_values: &mut InputValueStore,
+    input_id: Id,
+    input_rect_w: f32,
+    measurer: &dyn TextMeasurer,
+    style: &ComputedStyle,
+) {
+    let (pad_l, pad_r, _pad_t, _pad_b) = input_text_padding(style);
+    let available_text_w = (input_rect_w - pad_l - pad_r).max(0.0);
+
+    let (caret_px, text_w) = match input_values.get_state(input_id) {
+        Some((value, caret, _sel, _scroll_x)) => {
+            let caret = clamp_caret_to_boundary(value, caret);
+            (
+                measurer.measure(&value[..caret], style),
+                measurer.measure(value, style),
+            )
+        }
+        None => (0.0, 0.0),
+    };
+
+    input_values.update_scroll_for_caret(input_id, caret_px, text_w, available_text_w);
+}
+
 fn get_attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
     match node {
         Node::Element { attributes, .. } => {
@@ -1035,6 +1463,65 @@ fn find_layout_box_by_id<'a>(root: &'a LayoutBox<'a>, id: Id) -> Option<&'a Layo
         }
     }
     None
+}
+
+fn find_input_fragment_rect_by_id<'a>(
+    root: &'a LayoutBox<'a>,
+    measurer: &dyn TextMeasurer,
+    input_id: Id,
+) -> Option<Rectangle> {
+    fn walk<'a>(
+        node: &'a LayoutBox<'a>,
+        measurer: &dyn TextMeasurer,
+        input_id: Id,
+    ) -> Option<Rectangle> {
+        // Inline fragments are only laid out for block-level elements.
+        if matches!(node.node.node, Node::Element { .. })
+            && !matches!(node.style.display, Display::Inline)
+        {
+            let (content_x, content_width) =
+                content_x_and_width(node.style, node.rect.x, node.rect.width);
+            let content_top = content_y(node.style, node.rect.y);
+            let content_h = content_height(node.style, node.rect.height);
+
+            let block_rect = Rectangle {
+                x: content_x,
+                y: content_top,
+                width: content_width,
+                height: content_h,
+            };
+
+            let lines = layout_inline_for_paint(measurer, block_rect, node);
+            for line in &lines {
+                for frag in &line.fragments {
+                    match &frag.kind {
+                        InlineFragment::Replaced {
+                            layout: Some(lb), ..
+                        }
+                        | InlineFragment::Box {
+                            layout: Some(lb), ..
+                        } => {
+                            if lb.node_id() == input_id
+                                && matches!(lb.replaced, Some(ReplacedKind::InputText))
+                            {
+                                return Some(frag.rect);
+                            }
+                        }
+                        _ => {}
+                    }
+                }
+            }
+        }
+
+        for child in &node.children {
+            if let Some(r) = walk(child, measurer, input_id) {
+                return Some(r);
+            }
+        }
+        None
+    }
+
+    walk(root, measurer, input_id)
 }
 
 fn resolve_relative_url(base_url: Option<&str>, href: &str) -> Option<String> {
