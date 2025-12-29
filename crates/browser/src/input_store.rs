@@ -490,7 +490,7 @@ fn caret_from_x_with_boundaries(
     let mut hi = boundaries.len() - 1;
 
     while lo < hi {
-        let mid = (lo + hi + 1) / 2;
+        let mid = lo + (hi - lo).div_ceil(2);
         let idx = boundaries[mid];
         let w = measure_prefix(&value[..idx]).max(0.0);
         if w <= x {

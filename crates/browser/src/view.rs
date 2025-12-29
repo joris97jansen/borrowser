@@ -277,34 +277,30 @@ pub fn page_viewport(
 
             // Refresh the focused input fragment rect by ID so we don't rely on stale coordinates
             // after reflow/resize.
-            if let Some(focus_id) = interaction.focused_node_id {
-                if interaction.focused_input_rect.is_none() || layout_changed {
-                    if let Some(r) =
-                        find_input_fragment_rect_by_id(&layout_root, &measurer, focus_id)
-                    {
-                        interaction.focused_input_rect = Some(r);
-                    }
-                }
+            if let Some(focus_id) = interaction.focused_node_id
+                && (interaction.focused_input_rect.is_none() || layout_changed)
+                && let Some(r) = find_input_fragment_rect_by_id(&layout_root, &measurer, focus_id)
+            {
+                interaction.focused_input_rect = Some(r);
             }
 
             // Keep the focused input's horizontal scroll stable across frames (e.g. resize)
             // and ensure the caret remains visible within the input viewport.
-            if let Some(focus_id) = interaction.focused_node_id {
-                if let Some(lb) = find_layout_box_by_id(&layout_root, focus_id)
+            if let Some(focus_id) = interaction.focused_node_id
+                && let Some(lb) = find_layout_box_by_id(&layout_root, focus_id)
                     .filter(|lb| matches!(lb.replaced, Some(ReplacedKind::InputText)))
-                {
-                    let viewport_w = interaction
-                        .focused_input_rect
-                        .map(|r| r.width)
-                        .unwrap_or(lb.rect.width);
-                    sync_input_scroll_for_caret(
-                        input_values,
-                        focus_id,
-                        viewport_w.max(1.0),
-                        &measurer,
-                        lb.style,
-                    );
-                }
+            {
+                let viewport_w = interaction
+                    .focused_input_rect
+                    .map(|r| r.width)
+                    .unwrap_or(lb.rect.width);
+                sync_input_scroll_for_caret(
+                    input_values,
+                    focus_id,
+                    viewport_w.max(1.0),
+                    &measurer,
+                    lb.style,
+                );
             }
 
             // Paint first
@@ -423,57 +419,55 @@ pub fn page_viewport(
                 });
                 interaction.input_drag = None;
 
-                if let Some(h) = pressed_hit {
-                    if matches!(h.kind, HitKind::Input) {
-                        let focus_changed = interaction.focused_node_id != Some(h.node_id);
-                        if focus_changed {
-                            if let Some(prev_focus) = interaction.focused_node_id {
-                                input_values.blur(prev_focus);
-                            }
-                        }
-
-                        input_values.ensure_initial(h.node_id, String::new());
-                        interaction.focused_node_id = Some(h.node_id);
-                        interaction.focused_input_rect = Some(h.fragment_rect);
-
-                        if focus_changed {
-                            input_values.focus(h.node_id);
-                        }
-
-                        let egui_focus_id = ui.make_persistent_id(("dom-input", h.node_id));
-                        ui.memory_mut(|mem| mem.request_focus(egui_focus_id));
-
-                        if let Some(lb) = find_layout_box_by_id(&layout_root, h.node_id)
-                            .filter(|lb| matches!(lb.replaced, Some(ReplacedKind::InputText)))
-                        {
-                            let style = lb.style;
-                            let (pad_l, _pad_r, _pad_t, _pad_b) = input_text_padding(style);
-
-                            let selecting = ui.input(|i| i.modifiers.shift);
-
-                            let x_in_viewport = (h.local_pos.0 - pad_l).max(0.0);
-                            input_values.set_caret_from_viewport_x(
-                                h.node_id,
-                                x_in_viewport,
-                                selecting,
-                                |s| measurer.measure(s, style),
-                            );
-                            sync_input_scroll_for_caret(
-                                input_values,
-                                h.node_id,
-                                h.fragment_rect.width.max(1.0),
-                                &measurer,
-                                style,
-                            );
-                        }
-
-                        interaction.input_drag = Some(InputDragState {
-                            input_id: h.node_id,
-                            rect: h.fragment_rect,
-                        });
-
-                        ui.ctx().request_repaint();
+                if let Some(h) = pressed_hit
+                    && matches!(h.kind, HitKind::Input)
+                {
+                    let focus_changed = interaction.focused_node_id != Some(h.node_id);
+                    if focus_changed && let Some(prev_focus) = interaction.focused_node_id {
+                        input_values.blur(prev_focus);
                     }
+
+                    input_values.ensure_initial(h.node_id, String::new());
+                    interaction.focused_node_id = Some(h.node_id);
+                    interaction.focused_input_rect = Some(h.fragment_rect);
+
+                    if focus_changed {
+                        input_values.focus(h.node_id);
+                    }
+
+                    let egui_focus_id = ui.make_persistent_id(("dom-input", h.node_id));
+                    ui.memory_mut(|mem| mem.request_focus(egui_focus_id));
+
+                    if let Some(lb) = find_layout_box_by_id(&layout_root, h.node_id)
+                        .filter(|lb| matches!(lb.replaced, Some(ReplacedKind::InputText)))
+                    {
+                        let style = lb.style;
+                        let (pad_l, _pad_r, _pad_t, _pad_b) = input_text_padding(style);
+
+                        let selecting = ui.input(|i| i.modifiers.shift);
+
+                        let x_in_viewport = (h.local_pos.0 - pad_l).max(0.0);
+                        input_values.set_caret_from_viewport_x(
+                            h.node_id,
+                            x_in_viewport,
+                            selecting,
+                            |s| measurer.measure(s, style),
+                        );
+                        sync_input_scroll_for_caret(
+                            input_values,
+                            h.node_id,
+                            h.fragment_rect.width.max(1.0),
+                            &measurer,
+                            style,
+                        );
+                    }
+
+                    interaction.input_drag = Some(InputDragState {
+                        input_id: h.node_id,
+                        rect: h.fragment_rect,
+                    });
+
+                    ui.ctx().request_repaint();
                 }
             }
 
@@ -482,42 +476,42 @@ pub fn page_viewport(
                 let focused_id = interaction.focused_node_id;
                 let focused_rect = interaction.focused_input_rect;
 
-                if let Some(drag) = interaction.input_drag.as_mut() {
-                    if let Some(pos) = pointer_pos(ui, true) {
-                        let rect = if layout_changed {
-                            find_input_fragment_rect_by_id(&layout_root, &measurer, drag.input_id)
-                                .or(focused_rect.filter(|_| focused_id == Some(drag.input_id)))
-                                .unwrap_or(drag.rect)
-                        } else {
-                            drag.rect
-                        };
-                        drag.rect = rect;
+                if let Some(drag) = interaction.input_drag.as_mut()
+                    && let Some(pos) = pointer_pos(ui, true)
+                {
+                    let rect = if layout_changed {
+                        find_input_fragment_rect_by_id(&layout_root, &measurer, drag.input_id)
+                            .or(focused_rect.filter(|_| focused_id == Some(drag.input_id)))
+                            .unwrap_or(drag.rect)
+                    } else {
+                        drag.rect
+                    };
+                    drag.rect = rect;
 
-                        let lx = pos.x - origin.x;
-                        let local_x = (lx - rect.x).clamp(0.0, rect.width);
+                    let lx = pos.x - origin.x;
+                    let local_x = (lx - rect.x).clamp(0.0, rect.width);
 
-                        if let Some(lb) = find_layout_box_by_id(&layout_root, drag.input_id)
-                            .filter(|lb| matches!(lb.replaced, Some(ReplacedKind::InputText)))
-                        {
-                            let style = lb.style;
-                            let (pad_l, _pad_r, _pad_t, _pad_b) = input_text_padding(style);
+                    if let Some(lb) = find_layout_box_by_id(&layout_root, drag.input_id)
+                        .filter(|lb| matches!(lb.replaced, Some(ReplacedKind::InputText)))
+                    {
+                        let style = lb.style;
+                        let (pad_l, _pad_r, _pad_t, _pad_b) = input_text_padding(style);
 
-                            input_values.set_caret_from_viewport_x(
-                                drag.input_id,
-                                (local_x - pad_l).max(0.0),
-                                true,
-                                |s| measurer.measure(s, style),
-                            );
-                            sync_input_scroll_for_caret(
-                                input_values,
-                                drag.input_id,
-                                rect.width.max(1.0),
-                                &measurer,
-                                style,
-                            );
+                        input_values.set_caret_from_viewport_x(
+                            drag.input_id,
+                            (local_x - pad_l).max(0.0),
+                            true,
+                            |s| measurer.measure(s, style),
+                        );
+                        sync_input_scroll_for_caret(
+                            input_values,
+                            drag.input_id,
+                            rect.width.max(1.0),
+                            &measurer,
+                            style,
+                        );
 
-                            ui.ctx().request_repaint();
-                        }
+                        ui.ctx().request_repaint();
                     }
                 }
             }
@@ -599,14 +593,10 @@ pub fn page_viewport(
 
                 if prev_focus != interaction.focused_node_id {
                     interaction.focused_input_rect = None;
-                }
 
-                // If focus changed due to this pointer release, clear selection on the old input.
-                if prev_focus != interaction.focused_node_id {
+                    // If focus changed due to this pointer release, clear selection on the old input.
                     if let Some(old) = prev_focus {
-                        if interaction.focused_node_id != Some(old) {
-                            input_values.blur(old);
-                        }
+                        input_values.blur(old);
                     }
                 }
             }
