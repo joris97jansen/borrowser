@@ -56,12 +56,25 @@ pub enum InlineFragment<'a> {
 pub struct LineFragment<'a> {
     pub kind: InlineFragment<'a>,
     pub rect: Rectangle,
+    /// Distance from the fragment top edge to its baseline (CSS px).
+    pub ascent: f32,
+    /// Distance from the baseline to the fragment bottom edge (CSS px).
+    pub descent: f32,
+    /// Additional baseline shift applied during final positioning (CSS px).
+    ///
+    /// This is a forward-compatible hook for CSS `vertical-align` (e.g. `super`,
+    /// `sub`, `middle`, `top`, explicit lengths, etc).
+    ///
+    /// The fragment baseline in layout coordinates is `rect.y + ascent + baseline_shift`.
+    pub baseline_shift: f32,
 }
 
 // One line box: a horizontal slice of inline content.
 pub struct LineBox<'a> {
     pub fragments: Vec<LineFragment<'a>>,
     pub rect: Rectangle,
+    /// Line baseline in layout coordinates (CSS px).
+    pub baseline: f32,
 }
 
 #[derive(Clone, Debug, Default)]
@@ -415,6 +428,141 @@ pub fn layout_inline_for_paint<'a>(
     layout_tokens(measurer, rect, block.style, tokens)
 }
 
+#[derive(Clone, Copy, Debug)]
+struct FragmentMetrics {
+    /// Distance from the fragment top edge to the baseline.
+    ascent: f32,
+    /// Distance from the baseline to the fragment bottom edge.
+    descent: f32,
+}
+
+impl FragmentMetrics {
+    fn height(self) -> f32 {
+        self.ascent + self.descent
+    }
+}
+
+fn resolve_font_size_px(font_size: Length) -> f32 {
+    // Today we only have `px`, but keep the unit conversion decision centralized.
+    // When `Length` grows new variants, we can choose whether to resolve here or
+    // earlier in style computation.
+    match font_size {
+        Length::Px(px) => px,
+    }
+}
+
+fn compute_font_metrics_from(font_px: f32, line_height: f32) -> FragmentMetrics {
+    // We don't have real font metrics yet. Approximate a typical ascent/descent split and
+    // distribute line-height "leading" equally above and below the em box (like browsers do).
+    //
+    // This is used both for per-fragment text metrics and for the line "strut" metrics.
+    let font_px = font_px.max(0.0);
+    let line_height = line_height.max(0.0);
+
+    let font_ascent = font_px * 0.8;
+    let font_descent = font_px - font_ascent;
+
+    let em_height = font_ascent + font_descent;
+    let leading = (line_height - em_height).max(0.0);
+    let half_leading = leading * 0.5;
+
+    let mut ascent = half_leading + font_ascent;
+    if ascent > line_height {
+        ascent = line_height;
+    }
+
+    let descent = (line_height - ascent).max(0.0);
+    FragmentMetrics { ascent, descent }
+}
+
+fn compute_text_metrics(measurer: &dyn TextMeasurer, style: &ComputedStyle) -> FragmentMetrics {
+    let line_height = measurer.line_height(style);
+    let font_px = resolve_font_size_px(style.font_size);
+    compute_font_metrics_from(font_px, line_height)
+}
+
+fn compute_strut_metrics(
+    measurer: &dyn TextMeasurer,
+    block_style: &ComputedStyle,
+    available_height: f32,
+) -> (f32, FragmentMetrics) {
+    // Each line box has a minimum height derived from the block's font metrics,
+    // even if the line contains only replaced content. This matches how browser
+    // engines use a "strut" for line box construction.
+    let mut strut_font_px = resolve_font_size_px(block_style.font_size);
+    let mut base_line_height = measurer.line_height(block_style);
+
+    // Clamp for extreme cases: keep at least one line visible.
+    if base_line_height > available_height && available_height > 0.0 {
+        strut_font_px = (available_height / 1.2).max(8.0);
+        let fake_style = ComputedStyle {
+            font_size: Length::Px(strut_font_px),
+            ..*block_style
+        };
+        base_line_height = measurer.line_height(&fake_style);
+    }
+
+    let metrics = compute_font_metrics_from(strut_font_px, base_line_height);
+    (base_line_height, metrics)
+}
+
+fn replaced_baseline_metrics_bottom_edge(height: f32) -> FragmentMetrics {
+    // For replaced elements, CSS defines the baseline as the bottom margin edge.
+    // With only box sizes available today, we treat that as the bottom edge.
+    let height = height.max(0.0);
+    FragmentMetrics {
+        ascent: height,
+        descent: 0.0,
+    }
+}
+
+fn inline_block_baseline_metrics_placeholder_bottom_edge(height: f32) -> FragmentMetrics {
+    // CSS2.1: inline-block baseline is the baseline of its last in-flow line box;
+    // if it has no in-flow line boxes, it's the bottom margin edge.
+    //
+    // TODO: Once inline-blocks build line boxes for their contents, compute the
+    // actual last-line baseline here (instead of using the bottom edge).
+    let height = height.max(0.0);
+    FragmentMetrics {
+        ascent: height,
+        descent: 0.0,
+    }
+}
+
+fn flush_line<'a>(
+    lines: &mut Vec<LineBox<'a>>,
+    line_fragments: &mut Vec<LineFragment<'a>>,
+    line_start_x: f32,
+    cursor_x: f32,
+    cursor_y: f32,
+    line_ascent: f32,
+    line_descent: f32,
+) {
+    if line_fragments.is_empty() {
+        return;
+    }
+
+    let baseline = cursor_y + line_ascent;
+
+    for frag in line_fragments.iter_mut() {
+        frag.rect.y = baseline - (frag.ascent + frag.baseline_shift);
+    }
+
+    let line_width = (cursor_x - line_start_x).max(0.0);
+    let line_height = (line_ascent + line_descent).max(0.0);
+
+    lines.push(LineBox {
+        rect: Rectangle {
+            x: line_start_x,
+            y: cursor_y,
+            width: line_width,
+            height: line_height,
+        },
+        fragments: std::mem::take(line_fragments),
+        baseline,
+    });
+}
+
 fn layout_tokens<'a>(
     measurer: &dyn TextMeasurer,
     rect: Rectangle,
@@ -424,18 +572,10 @@ fn layout_tokens<'a>(
     let padding = INLINE_PADDING;
     let available_height = rect.height - 2.0 * padding;
 
-    // Base line height derived from the block's style.
-    let mut base_line_height = measurer.line_height(block_style);
-
-    // Simple clamp for extreme cases (same as before).
-    if base_line_height > available_height && available_height > 0.0 {
-        let font_px = (available_height / 1.2).max(8.0);
-        let fake_style = ComputedStyle {
-            font_size: Length::Px(font_px),
-            ..*block_style
-        };
-        base_line_height = measurer.line_height(&fake_style);
-    }
+    let (base_line_height, base_strut) =
+        compute_strut_metrics(measurer, block_style, available_height);
+    let base_ascent = base_strut.ascent;
+    let base_descent = base_strut.descent;
 
     let mut lines: Vec<LineBox<'a>> = Vec::new();
     let mut line_fragments: Vec<LineFragment<'a>> = Vec::new();
@@ -447,8 +587,9 @@ fn layout_tokens<'a>(
     let max_x = rect.x + rect.width - padding;
     let bottom_limit = rect.y + padding + available_height;
 
-    // Current line height; can grow if we see tall box fragments.
-    let mut line_height = base_line_height;
+    // Current line metrics. The line baseline is `cursor_y + line_ascent`.
+    let mut line_ascent = base_ascent;
+    let mut line_descent = base_descent;
 
     let mut is_first_in_line = true;
 
@@ -467,18 +608,16 @@ fn layout_tokens<'a>(
 
                 // If the space doesn't fit, break line and drop the space
                 if cursor_x + space_width > max_x {
-                    if !line_fragments.is_empty() {
-                        let line_width = cursor_x - line_start_x;
-                        lines.push(LineBox {
-                            rect: Rectangle {
-                                x: line_start_x,
-                                y: cursor_y,
-                                width: line_width,
-                                height: line_height,
-                            },
-                            fragments: std::mem::take(&mut line_fragments),
-                        });
-                    }
+                    let line_height = line_ascent + line_descent;
+                    flush_line(
+                        &mut lines,
+                        &mut line_fragments,
+                        line_start_x,
+                        cursor_x,
+                        cursor_y,
+                        line_ascent,
+                        line_descent,
+                    );
 
                     cursor_y += line_height;
                     if cursor_y + base_line_height > bottom_limit {
@@ -486,10 +625,15 @@ fn layout_tokens<'a>(
                     }
 
                     cursor_x = line_start_x;
-                    line_height = base_line_height;
+                    line_ascent = base_ascent;
+                    line_descent = base_descent;
                     is_first_in_line = true;
                     continue;
                 }
+
+                let metrics = compute_text_metrics(measurer, style);
+                let ascent = metrics.ascent;
+                let descent = metrics.descent;
 
                 let action = ctx
                     .link_target
@@ -503,13 +647,18 @@ fn layout_tokens<'a>(
                     },
                     rect: Rectangle {
                         x: cursor_x,
-                        y: cursor_y,
+                        y: cursor_y, // finalized on flush
                         width: space_width,
-                        height: line_height,
+                        height: metrics.height(),
                     },
+                    ascent,
+                    descent,
+                    baseline_shift: 0.0,
                 });
 
                 cursor_x += space_width;
+                line_ascent = line_ascent.max(ascent);
+                line_descent = line_descent.max(descent);
                 is_first_in_line = false;
             }
 
@@ -519,20 +668,16 @@ fn layout_tokens<'a>(
                 let fits = cursor_x + word_width <= max_x;
 
                 if !fits && !is_first_in_line {
-                    if !line_fragments.is_empty() {
-                        let line_width = cursor_x - line_start_x;
-                        let line_rect = Rectangle {
-                            x: line_start_x,
-                            y: cursor_y,
-                            width: line_width,
-                            height: line_height,
-                        };
-
-                        lines.push(LineBox {
-                            rect: line_rect,
-                            fragments: std::mem::take(&mut line_fragments),
-                        });
-                    }
+                    let line_height = line_ascent + line_descent;
+                    flush_line(
+                        &mut lines,
+                        &mut line_fragments,
+                        line_start_x,
+                        cursor_x,
+                        cursor_y,
+                        line_ascent,
+                        line_descent,
+                    );
 
                     cursor_y += line_height;
                     if cursor_y + base_line_height > bottom_limit {
@@ -540,14 +685,19 @@ fn layout_tokens<'a>(
                     }
 
                     cursor_x = line_start_x;
-                    line_height = base_line_height;
+                    line_ascent = base_ascent;
+                    line_descent = base_descent;
                 }
+
+                let metrics = compute_text_metrics(measurer, style);
+                let ascent = metrics.ascent;
+                let descent = metrics.descent;
 
                 let frag_rect = Rectangle {
                     x: cursor_x,
-                    y: cursor_y,
+                    y: cursor_y, // finalized on flush
                     width: word_width,
-                    height: line_height,
+                    height: metrics.height(),
                 };
 
                 let action = ctx
@@ -561,9 +711,14 @@ fn layout_tokens<'a>(
                         action,
                     },
                     rect: frag_rect,
+                    ascent,
+                    descent,
+                    baseline_shift: 0.0,
                 });
 
                 cursor_x += word_width;
+                line_ascent = line_ascent.max(ascent);
+                line_descent = line_descent.max(descent);
                 is_first_in_line = false;
             }
 
@@ -577,20 +732,16 @@ fn layout_tokens<'a>(
                 let fits = cursor_x + box_width <= max_x;
 
                 if !fits && !is_first_in_line {
-                    if !line_fragments.is_empty() {
-                        let line_width = cursor_x - line_start_x;
-                        let line_rect = Rectangle {
-                            x: line_start_x,
-                            y: cursor_y,
-                            width: line_width,
-                            height: line_height,
-                        };
-
-                        lines.push(LineBox {
-                            rect: line_rect,
-                            fragments: std::mem::take(&mut line_fragments),
-                        });
-                    }
+                    let line_height = line_ascent + line_descent;
+                    flush_line(
+                        &mut lines,
+                        &mut line_fragments,
+                        line_start_x,
+                        cursor_x,
+                        cursor_y,
+                        line_ascent,
+                        line_descent,
+                    );
 
                     cursor_y += line_height;
                     if cursor_y + base_line_height > bottom_limit {
@@ -598,20 +749,19 @@ fn layout_tokens<'a>(
                     }
 
                     cursor_x = line_start_x;
-                    line_height = base_line_height;
+                    line_ascent = base_ascent;
+                    line_descent = base_descent;
                 }
 
-                // Box behaves like a big glyph: it can grow the line height.
-                if box_height > line_height {
-                    line_height = box_height;
-                    bump_line_height(&mut line_fragments, line_height);
-                }
+                let metrics = inline_block_baseline_metrics_placeholder_bottom_edge(box_height);
+                let ascent = metrics.ascent;
+                let descent = metrics.descent;
 
                 let frag_rect = Rectangle {
                     x: cursor_x,
-                    y: cursor_y,
+                    y: cursor_y, // finalized on flush
                     width: box_width,
-                    height: box_height,
+                    height: metrics.height(),
                 };
 
                 let action = ctx
@@ -625,8 +775,13 @@ fn layout_tokens<'a>(
                         layout,
                     },
                     rect: frag_rect,
+                    ascent,
+                    descent,
+                    baseline_shift: 0.0,
                 });
                 cursor_x += box_width;
+                line_ascent = line_ascent.max(ascent);
+                line_descent = line_descent.max(descent);
                 is_first_in_line = false;
             }
 
@@ -641,20 +796,16 @@ fn layout_tokens<'a>(
                 let fits = cursor_x + width <= max_x;
 
                 if !fits && !is_first_in_line {
-                    if !line_fragments.is_empty() {
-                        let line_width = cursor_x - line_start_x;
-                        let line_rect = Rectangle {
-                            x: line_start_x,
-                            y: cursor_y,
-                            width: line_width,
-                            height: line_height,
-                        };
-
-                        lines.push(LineBox {
-                            rect: line_rect,
-                            fragments: std::mem::take(&mut line_fragments),
-                        });
-                    }
+                    let line_height = line_ascent + line_descent;
+                    flush_line(
+                        &mut lines,
+                        &mut line_fragments,
+                        line_start_x,
+                        cursor_x,
+                        cursor_y,
+                        line_ascent,
+                        line_descent,
+                    );
 
                     cursor_y += line_height;
                     if cursor_y + base_line_height > bottom_limit {
@@ -662,19 +813,19 @@ fn layout_tokens<'a>(
                     }
 
                     cursor_x = line_start_x;
-                    line_height = base_line_height;
+                    line_ascent = base_ascent;
+                    line_descent = base_descent;
                 }
 
-                if height > line_height {
-                    line_height = height;
-                    bump_line_height(&mut line_fragments, line_height);
-                }
+                let metrics = replaced_baseline_metrics_bottom_edge(height);
+                let ascent = metrics.ascent;
+                let descent = metrics.descent;
 
                 let frag_rect = Rectangle {
                     x: cursor_x,
-                    y: cursor_y,
+                    y: cursor_y, // finalized on flush
                     width,
-                    height,
+                    height: metrics.height(),
                 };
 
                 let action = ctx
@@ -689,27 +840,32 @@ fn layout_tokens<'a>(
                         layout,
                     },
                     rect: frag_rect,
+                    ascent,
+                    descent,
+                    baseline_shift: 0.0,
                 });
                 cursor_x += width;
+                line_ascent = line_ascent.max(ascent);
+                line_descent = line_descent.max(descent);
                 is_first_in_line = false;
             }
         }
     }
 
     // Flush the last line
-    if !line_fragments.is_empty() && cursor_y + line_height <= bottom_limit {
-        let line_width = cursor_x - line_start_x;
-        let line_rect = Rectangle {
-            x: line_start_x,
-            y: cursor_y,
-            width: line_width,
-            height: line_height,
-        };
-
-        lines.push(LineBox {
-            rect: line_rect,
-            fragments: line_fragments,
-        });
+    if !line_fragments.is_empty() {
+        let line_height = line_ascent + line_descent;
+        if cursor_y + line_height <= bottom_limit {
+            flush_line(
+                &mut lines,
+                &mut line_fragments,
+                line_start_x,
+                cursor_x,
+                cursor_y,
+                line_ascent,
+                line_descent,
+            );
+        }
     }
 
     lines
@@ -1242,9 +1398,196 @@ pub fn button_label_from_layout(lb: &LayoutBox<'_>) -> String {
     }
 }
 
-// whenever the line height increases, normalize already-emitted fragments
-fn bump_line_height(line_fragments: &mut [LineFragment<'_>], new_h: f32) {
-    for f in line_fragments {
-        f.rect.height = new_h;
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    struct TestMeasurer;
+
+    impl TextMeasurer for TestMeasurer {
+        fn measure(&self, text: &str, _style: &ComputedStyle) -> f32 {
+            text.chars().count() as f32 * 10.0
+        }
+
+        fn line_height(&self, style: &ComputedStyle) -> f32 {
+            let Length::Px(px) = style.font_size;
+            px * 1.2
+        }
+    }
+
+    fn assert_approx_eq(got: f32, want: f32) {
+        let eps = 0.01;
+        assert!(
+            (got - want).abs() <= eps,
+            "expected {want:.4}, got {got:.4}"
+        );
+    }
+
+    #[test]
+    fn baseline_aligns_replaced_bottom_to_line_baseline() {
+        let measurer = TestMeasurer;
+        let style = ComputedStyle {
+            font_size: Length::Px(10.0),
+            ..ComputedStyle::initial()
+        };
+
+        let rect = Rectangle {
+            x: 0.0,
+            y: 0.0,
+            width: 500.0,
+            height: 200.0,
+        };
+
+        let ctx = InlineContext::default();
+        let tokens = vec![
+            InlineToken::Word {
+                text: "hi".to_string(),
+                style: &style,
+                ctx: ctx.clone(),
+            },
+            InlineToken::Replaced {
+                width: 20.0,
+                height: 20.0,
+                style: &style,
+                ctx: ctx.clone(),
+                kind: ReplacedKind::Img,
+                layout: None,
+            },
+        ];
+
+        let lines = layout_tokens(&measurer, rect, &style, tokens);
+        assert_eq!(lines.len(), 1);
+
+        let line = &lines[0];
+        let line_top = rect.y + INLINE_PADDING;
+
+        // font_px=10, line_height=12 -> ascent=9, descent=3
+        let expected_text_ascent = 9.0;
+
+        // The image's baseline is its bottom edge; since it is the tallest ascent (20px),
+        // it determines the line's baseline.
+        let expected_baseline = line_top + 20.0;
+        assert_approx_eq(line.baseline, expected_baseline);
+
+        // Line height must expand for the tall replaced element.
+        assert!(line.rect.height > measurer.line_height(&style));
+
+        let mut saw_text = false;
+        let mut saw_img = false;
+
+        for frag in &line.fragments {
+            // All fragment baselines must match the line baseline.
+            assert_approx_eq(
+                frag.rect.y + frag.ascent + frag.baseline_shift,
+                line.baseline,
+            );
+
+            match &frag.kind {
+                InlineFragment::Text { .. } => {
+                    saw_text = true;
+                    assert_approx_eq(frag.rect.y, expected_baseline - expected_text_ascent);
+                }
+                InlineFragment::Replaced {
+                    kind: ReplacedKind::Img,
+                    ..
+                } => {
+                    saw_img = true;
+                    // Bottom aligned to baseline.
+                    assert_approx_eq(frag.rect.y + frag.rect.height, line.baseline);
+                    // The tallest replaced element sits on the top of the line box.
+                    assert_approx_eq(frag.rect.y, line_top);
+                }
+                _ => {}
+            }
+        }
+
+        assert!(saw_text);
+        assert!(saw_img);
+    }
+
+    #[test]
+    fn line_descent_includes_text_descent_with_tall_replaced() {
+        let measurer = TestMeasurer;
+        let style = ComputedStyle {
+            font_size: Length::Px(10.0),
+            ..ComputedStyle::initial()
+        };
+
+        let rect = Rectangle {
+            x: 0.0,
+            y: 0.0,
+            width: 500.0,
+            height: 200.0,
+        };
+
+        let ctx = InlineContext::default();
+        let tokens = vec![
+            InlineToken::Word {
+                text: "hi".to_string(),
+                style: &style,
+                ctx: ctx.clone(),
+            },
+            InlineToken::Replaced {
+                width: 20.0,
+                height: 20.0,
+                style: &style,
+                ctx: ctx.clone(),
+                kind: ReplacedKind::Img,
+                layout: None,
+            },
+        ];
+
+        let lines = layout_tokens(&measurer, rect, &style, tokens);
+        assert_eq!(lines.len(), 1);
+        let line = &lines[0];
+
+        // font_px=10, line_height=12 -> ascent=9, descent=3
+        assert_approx_eq(line.baseline - line.rect.y, 20.0);
+        assert_approx_eq(line.rect.y + line.rect.height - line.baseline, 3.0);
+        assert_approx_eq(line.rect.height, 20.0 + 3.0);
+    }
+
+    #[test]
+    fn baseline_for_text_only_line_matches_strut() {
+        let measurer = TestMeasurer;
+        let style = ComputedStyle {
+            font_size: Length::Px(10.0),
+            ..ComputedStyle::initial()
+        };
+
+        let rect = Rectangle {
+            x: 0.0,
+            y: 0.0,
+            width: 500.0,
+            height: 200.0,
+        };
+
+        let ctx = InlineContext::default();
+        let tokens = vec![InlineToken::Word {
+            text: "hello".to_string(),
+            style: &style,
+            ctx,
+        }];
+
+        let lines = layout_tokens(&measurer, rect, &style, tokens);
+        assert_eq!(lines.len(), 1);
+
+        let line = &lines[0];
+        let line_top = rect.y + INLINE_PADDING;
+
+        // font_px=10, line_height=12 -> ascent=9, descent=3
+        assert_approx_eq(line.baseline, line_top + 9.0);
+        assert_approx_eq(line.rect.height, 12.0);
+
+        let frag = &line.fragments[0];
+        assert_approx_eq(frag.rect.y, line_top);
+        assert_approx_eq(frag.ascent, 9.0);
+        assert_approx_eq(frag.descent, 3.0);
+        assert_approx_eq(frag.baseline_shift, 0.0);
+        assert_approx_eq(
+            frag.rect.y + frag.ascent + frag.baseline_shift,
+            line.baseline,
+        );
+        assert_approx_eq(frag.rect.height, 12.0);
     }
 }
