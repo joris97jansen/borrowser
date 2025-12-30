@@ -1,3 +1,4 @@
+use crate::form_controls::FormControlIndex;
 use crate::input_store::{InputValueStore, SelectionRange};
 use crate::interactions::{ActiveTarget, InputDragState, InteractionState};
 use crate::page::PageState;
@@ -205,6 +206,7 @@ pub fn content(
             // disjoint borrow: OK (dom is immutably borrowed, input_values mutably borrowed)
             let base_url = page.base_url.as_deref();
             let input_values = &mut page.input_values;
+            let form_controls = &page.form_controls;
 
             let action = page_viewport(
                 ui,
@@ -212,6 +214,7 @@ pub fn content(
                 base_url,
                 resources,
                 input_values,
+                form_controls,
                 interaction,
             );
 
@@ -233,6 +236,7 @@ pub fn page_viewport(
     base_url: Option<&str>,
     resources: &ResourceManager,
     input_values: &mut InputValueStore,
+    form_controls: &FormControlIndex,
     interaction: &mut InteractionState,
 ) -> Option<PageAction> {
     ScrollArea::vertical()
@@ -275,8 +279,8 @@ pub fn page_viewport(
 
             let layout_changed = viewport_width_changed || layout_root_size_changed;
 
-            // Refresh the focused input fragment rect by ID so we don't rely on stale coordinates
-            // after reflow/resize.
+            // Refresh the focused form control fragment rect by ID so we don't rely on stale
+            // coordinates after reflow/resize.
             if let Some(focus_id) = interaction.focused_node_id
                 && (interaction.focused_input_rect.is_none() || layout_changed)
                 && let Some(r) = find_input_fragment_rect_by_id(&layout_root, &measurer, focus_id)
@@ -403,6 +407,9 @@ pub fn page_viewport(
                     HitKind::Input => {
                         ui.output_mut(|o| o.cursor_icon = CursorIcon::Text);
                     }
+                    HitKind::Checkbox | HitKind::Radio => {
+                        ui.output_mut(|o| o.cursor_icon = CursorIcon::PointingHand);
+                    }
                     HitKind::Button => {
                         ui.output_mut(|o| o.cursor_icon = CursorIcon::PointingHand);
                     }
@@ -410,7 +417,7 @@ pub fn page_viewport(
                 }
             }
 
-            // Pointer down -> active
+            // Pointer down -> active (+ focus)
             if ui.input(|i| i.pointer.primary_pressed()) {
                 let pressed_hit = hit_at_pointer(ui, true);
                 interaction.active = pressed_hit.as_ref().map(|h| ActiveTarget {
@@ -420,52 +427,65 @@ pub fn page_viewport(
                 interaction.input_drag = None;
 
                 if let Some(h) = pressed_hit
-                    && matches!(h.kind, HitKind::Input)
+                    && matches!(h.kind, HitKind::Input | HitKind::Checkbox | HitKind::Radio)
                 {
+                    let prev_focus_kind = interaction.focused_kind;
                     let focus_changed = interaction.focused_node_id != Some(h.node_id);
-                    if focus_changed && let Some(prev_focus) = interaction.focused_node_id {
+                    if focus_changed
+                        && let Some(prev_focus) = interaction.focused_node_id
+                        && matches!(prev_focus_kind, Some(HitKind::Input))
+                    {
                         input_values.blur(prev_focus);
                     }
 
-                    input_values.ensure_initial(h.node_id, String::new());
-                    interaction.focused_node_id = Some(h.node_id);
-                    interaction.focused_input_rect = Some(h.fragment_rect);
+                    match h.kind {
+                        HitKind::Input => {
+                            input_values.ensure_initial(h.node_id, String::new());
+                        }
+                        HitKind::Checkbox | HitKind::Radio => {
+                            input_values.ensure_initial_checked(h.node_id, false);
+                        }
+                        _ => {}
+                    }
+                    interaction.set_focus(h.node_id, h.kind, h.fragment_rect);
 
-                    if focus_changed {
+                    if focus_changed && matches!(h.kind, HitKind::Input) {
                         input_values.focus(h.node_id);
                     }
 
                     let egui_focus_id = ui.make_persistent_id(("dom-input", h.node_id));
                     ui.memory_mut(|mem| mem.request_focus(egui_focus_id));
 
-                    if let Some(lb) = find_layout_box_by_id(&layout_root, h.node_id)
-                        .filter(|lb| matches!(lb.replaced, Some(ReplacedKind::InputText)))
-                    {
-                        let style = lb.style;
-                        let (pad_l, _pad_r, _pad_t, _pad_b) = input_text_padding(style);
+                    if matches!(h.kind, HitKind::Input) {
+                        if let Some(lb) = find_layout_box_by_id(&layout_root, h.node_id)
+                            .filter(|lb| matches!(lb.replaced, Some(ReplacedKind::InputText)))
+                        {
+                            let style = lb.style;
+                            let (pad_l, _pad_r, _pad_t, _pad_b) = input_text_padding(style);
 
-                        let selecting = ui.input(|i| i.modifiers.shift);
+                            let selecting = ui.input(|i| i.modifiers.shift);
 
-                        let x_in_viewport = (h.local_pos.0 - pad_l).max(0.0);
-                        input_values.set_caret_from_viewport_x(
-                            h.node_id,
-                            x_in_viewport,
-                            selecting,
-                            |s| measurer.measure(s, style),
-                        );
-                        sync_input_scroll_for_caret(
-                            input_values,
-                            h.node_id,
-                            h.fragment_rect.width.max(1.0),
-                            &measurer,
-                            style,
-                        );
+                            let x_in_viewport = (h.local_pos.0 - pad_l).max(0.0);
+                            input_values.set_caret_from_viewport_x(
+                                h.node_id,
+                                x_in_viewport,
+                                selecting,
+                                |s| measurer.measure(s, style),
+                            );
+                            sync_input_scroll_for_caret(
+                                input_values,
+                                h.node_id,
+                                h.fragment_rect.width.max(1.0),
+                                &measurer,
+                                style,
+                            );
+                        }
+
+                        interaction.input_drag = Some(InputDragState {
+                            input_id: h.node_id,
+                            rect: h.fragment_rect,
+                        });
                     }
-
-                    interaction.input_drag = Some(InputDragState {
-                        input_id: h.node_id,
-                        rect: h.fragment_rect,
-                    });
 
                     ui.ctx().request_repaint();
                 }
@@ -519,17 +539,16 @@ pub fn page_viewport(
             // Pointer up -> action/focus (if released on same target)
             if ui.input(|i| i.pointer.primary_released()) {
                 let prev_focus = interaction.focused_node_id;
+                let prev_focus_kind = interaction.focused_kind;
 
                 let drag_input_id = interaction.input_drag.as_ref().map(|d| d.input_id);
                 interaction.input_drag = None;
 
                 let release_hit = hit_at_pointer(ui, false);
 
-                // Default behavior: any pointer release clears active.
                 let was_active = interaction.active;
-                interaction.active = None;
 
-                let gesture_started_in_input = matches!(
+                let gesture_started_in_text_input = matches!(
                     was_active,
                     Some(ActiveTarget {
                         kind: HitKind::Input,
@@ -537,11 +556,21 @@ pub fn page_viewport(
                     })
                 ) || drag_input_id.is_some();
 
-                if !gesture_started_in_input {
+                let gesture_started_in_toggle_control = matches!(
+                    was_active,
+                    Some(ActiveTarget {
+                        kind: HitKind::Checkbox | HitKind::Radio,
+                        ..
+                    })
+                );
+
+                if !gesture_started_in_text_input {
                     match release_hit {
                         None => {
-                            // Released outside => blur
-                            interaction.focused_node_id = None;
+                            // Released outside: keep focus if we started on a focusable control.
+                            if !gesture_started_in_toggle_control {
+                                interaction.clear_focus();
+                            }
                         }
                         Some(h) => {
                             let down_matches_up =
@@ -564,7 +593,28 @@ pub fn page_viewport(
                                             );
                                         }
                                         // Clicking a link should clear input focus (browser-like)
-                                        interaction.focused_node_id = None;
+                                        interaction.clear_focus();
+                                    }
+
+                                    HitKind::Checkbox => {
+                                        let changed = input_values.toggle_checked(h.node_id);
+
+                                        // Checkbox remains focused after activation (browser-like)
+                                        interaction.set_focus(h.node_id, h.kind, h.fragment_rect);
+                                        if changed {
+                                            ui.ctx().request_repaint();
+                                        }
+                                    }
+
+                                    HitKind::Radio => {
+                                        let changed =
+                                            form_controls.click_radio(input_values, h.node_id);
+
+                                        // Radio remains focused after activation (browser-like)
+                                        interaction.set_focus(h.node_id, h.kind, h.fragment_rect);
+                                        if changed {
+                                            ui.ctx().request_repaint();
+                                        }
                                     }
 
                                     HitKind::Button => {
@@ -572,19 +622,26 @@ pub fn page_viewport(
                                         eprintln!("button click: {:?}", h.node_id);
 
                                         // Clicking a button should blur input focus (browser-like)
-                                        interaction.focused_node_id = None;
+                                        interaction.clear_focus();
 
                                         ui.ctx().request_repaint();
                                     }
 
-                                    _ => interaction.focused_node_id = None,
+                                    _ => {
+                                        interaction.clear_focus();
+                                    }
                                 }
                             } else {
                                 // If the pointer gesture did *not* begin on the current release target,
                                 // we still blur when releasing on non-input content, but never blur just
                                 // because the mouse-up happened to land inside an input.
-                                if !matches!(h.kind, HitKind::Input) {
-                                    interaction.focused_node_id = None;
+                                if !gesture_started_in_toggle_control
+                                    && !matches!(
+                                        h.kind,
+                                        HitKind::Input | HitKind::Checkbox | HitKind::Radio
+                                    )
+                                {
+                                    interaction.clear_focus();
                                 }
                             }
                         }
@@ -592,16 +649,24 @@ pub fn page_viewport(
                 }
 
                 if prev_focus != interaction.focused_node_id {
-                    interaction.focused_input_rect = None;
-
                     // If focus changed due to this pointer release, clear selection on the old input.
-                    if let Some(old) = prev_focus {
+                    if let Some(old) = prev_focus
+                        && matches!(prev_focus_kind, Some(HitKind::Input))
+                    {
                         input_values.blur(old);
                     }
+
+                    if let Some(old) = prev_focus {
+                        let old_egui_id = ui.make_persistent_id(("dom-input", old));
+                        ui.memory_mut(|mem| mem.surrender_focus(old_egui_id));
+                    }
                 }
+
+                // Default behavior: any pointer release clears active.
+                interaction.active = None;
             }
 
-            // --- keep an egui focus target alive for the focused DOM input (MUST be before key handling)
+            // --- keep an egui focus target alive for the focused DOM control (MUST be before key handling)
             if let Some(focus_id) = interaction.focused_node_id {
                 let egui_focus_id = ui.make_persistent_id(("dom-input", focus_id));
 
@@ -620,8 +685,17 @@ pub fn page_viewport(
                             y: fr.height.max(1.0),
                         },
                     );
-                } else if let Some(lb) = find_layout_box_by_id(&layout_root, focus_id)
-                    .filter(|lb| matches!(lb.replaced, Some(ReplacedKind::InputText)))
+                } else if let Some(lb) =
+                    find_layout_box_by_id(&layout_root, focus_id).filter(|lb| {
+                        matches!(
+                            lb.replaced,
+                            Some(
+                                ReplacedKind::InputText
+                                    | ReplacedKind::InputCheckbox
+                                    | ReplacedKind::InputRadio
+                            )
+                        )
+                    })
                 {
                     r = Rect::from_min_size(
                         Pos2 {
@@ -655,50 +729,104 @@ pub fn page_viewport(
                 // --- Key input -> focused input (AFTER interact exists)
                 if ui.memory(|mem| mem.has_focus(egui_focus_id)) {
                     let mut changed = false;
+                    let mut handled_activation = false;
+
+                    let focused_kind = interaction.focused_kind;
 
                     ui.input(|i| {
                         for evt in &i.events {
-                            match evt {
-                                Event::Text(t) => {
-                                    input_values.insert_text(focus_id, t.as_str());
-                                    changed = true;
-                                }
-                                Event::Key {
-                                    key,
-                                    pressed: true,
-                                    modifiers,
-                                    ..
-                                } => match key {
-                                    Key::Backspace => {
-                                        input_values.backspace(focus_id);
+                            match focused_kind {
+                                Some(HitKind::Input) => match evt {
+                                    Event::Text(t) => {
+                                        input_values.insert_text(focus_id, t.as_str());
                                         changed = true;
                                     }
-                                    Key::Delete => {
-                                        input_values.delete(focus_id);
-                                        changed = true;
-                                    }
-                                    Key::ArrowLeft => {
-                                        input_values.move_caret_left(focus_id, modifiers.shift);
-                                        changed = true;
-                                    }
-                                    Key::ArrowRight => {
-                                        input_values.move_caret_right(focus_id, modifiers.shift);
-                                        changed = true;
-                                    }
-                                    Key::Home => {
-                                        input_values.move_caret_to_start(focus_id, modifiers.shift);
-                                        changed = true;
-                                    }
-                                    Key::End => {
-                                        input_values.move_caret_to_end(focus_id, modifiers.shift);
-                                        changed = true;
-                                    }
-                                    Key::A if modifiers.command || modifiers.ctrl => {
-                                        input_values.select_all(focus_id);
-                                        changed = true;
-                                    }
+                                    Event::Key {
+                                        key,
+                                        pressed: true,
+                                        modifiers,
+                                        ..
+                                    } => match key {
+                                        Key::Backspace => {
+                                            input_values.backspace(focus_id);
+                                            changed = true;
+                                        }
+                                        Key::Delete => {
+                                            input_values.delete(focus_id);
+                                            changed = true;
+                                        }
+                                        Key::ArrowLeft => {
+                                            input_values.move_caret_left(focus_id, modifiers.shift);
+                                            changed = true;
+                                        }
+                                        Key::ArrowRight => {
+                                            input_values
+                                                .move_caret_right(focus_id, modifiers.shift);
+                                            changed = true;
+                                        }
+                                        Key::Home => {
+                                            input_values
+                                                .move_caret_to_start(focus_id, modifiers.shift);
+                                            changed = true;
+                                        }
+                                        Key::End => {
+                                            input_values
+                                                .move_caret_to_end(focus_id, modifiers.shift);
+                                            changed = true;
+                                        }
+                                        Key::A if modifiers.command || modifiers.ctrl => {
+                                            input_values.select_all(focus_id);
+                                            changed = true;
+                                        }
+                                        _ => {}
+                                    },
                                     _ => {}
                                 },
+
+                                Some(HitKind::Checkbox) => {
+                                    if handled_activation {
+                                        continue;
+                                    }
+                                    match evt {
+                                        Event::Text(t) if t == " " => {
+                                            handled_activation = true;
+                                            changed |= input_values.toggle_checked(focus_id);
+                                        }
+                                        Event::Key {
+                                            key: Key::Space,
+                                            pressed: true,
+                                            ..
+                                        } => {
+                                            handled_activation = true;
+                                            changed |= input_values.toggle_checked(focus_id);
+                                        }
+                                        _ => {}
+                                    }
+                                }
+
+                                Some(HitKind::Radio) => {
+                                    if handled_activation {
+                                        continue;
+                                    }
+                                    match evt {
+                                        Event::Text(t) if t == " " => {
+                                            handled_activation = true;
+                                            changed |=
+                                                form_controls.click_radio(input_values, focus_id);
+                                        }
+                                        Event::Key {
+                                            key: Key::Space,
+                                            pressed: true,
+                                            ..
+                                        } => {
+                                            handled_activation = true;
+                                            changed |=
+                                                form_controls.click_radio(input_values, focus_id);
+                                        }
+                                        _ => {}
+                                    }
+                                }
+
                                 _ => {}
                             }
                         }
@@ -716,11 +844,16 @@ pub fn page_viewport(
                         i.consume_key(m, Key::ArrowDown);
                         i.consume_key(m, Key::Home);
                         i.consume_key(m, Key::End);
+
+                        if matches!(focused_kind, Some(HitKind::Checkbox | HitKind::Radio)) {
+                            i.consume_key(m, Key::Space);
+                        }
                     });
 
                     if changed {
-                        if let Some(lb) = find_layout_box_by_id(&layout_root, focus_id)
-                            .filter(|lb| matches!(lb.replaced, Some(ReplacedKind::InputText)))
+                        if matches!(focused_kind, Some(HitKind::Input))
+                            && let Some(lb) = find_layout_box_by_id(&layout_root, focus_id)
+                                .filter(|lb| matches!(lb.replaced, Some(ReplacedKind::InputText)))
                         {
                             let viewport_w = interaction
                                 .focused_input_rect
@@ -899,6 +1032,97 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
                         );
 
                         continue; // IMPORTANT: don't fall through to generic replaced painting
+                    }
+
+                    // --- INPUT CHECKBOX / RADIO ---
+                    if matches!(kind, ReplacedKind::InputCheckbox | ReplacedKind::InputRadio) {
+                        let id = layout.map(|lb| lb.node_id());
+                        let is_checked = id.is_some_and(|id| input_values.is_checked(id));
+                        let is_focused = id.is_some_and(|id| focused == Some(id));
+
+                        let is_pressed = id.is_some_and(|id| {
+                            active.is_some_and(|a| {
+                                a.id == id && matches!(a.kind, HitKind::Checkbox | HitKind::Radio)
+                            })
+                        });
+
+                        let side = rect.width().min(rect.height()).max(0.0);
+                        if side > 0.0 {
+                            let control_rect =
+                                Rect::from_center_size(rect.center(), Vec2::splat(side));
+
+                            let (br, bg, bb, ba) = style.background_color;
+                            let base_fill = if ba > 0 {
+                                Color32::from_rgba_unmultiplied(br, bg, bb, ba)
+                            } else {
+                                Color32::WHITE
+                            };
+                            let fill = if is_pressed {
+                                base_fill.gamma_multiply(0.9)
+                            } else {
+                                base_fill
+                            };
+
+                            let border = if is_focused {
+                                selection_stroke
+                            } else {
+                                Stroke::new(1.0, Color32::from_rgb(120, 120, 120))
+                            };
+                            let corner = (side * 0.2).min(4.0);
+
+                            match kind {
+                                ReplacedKind::InputCheckbox => {
+                                    painter.rect_filled(control_rect, corner, fill);
+                                    painter.rect_stroke(
+                                        control_rect,
+                                        corner,
+                                        border,
+                                        StrokeKind::Outside,
+                                    );
+
+                                    if is_checked {
+                                        let (cr, cg, cb, ca) = style.color;
+                                        let check_color =
+                                            Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
+                                        let thickness = (side * 0.12).max(1.5);
+
+                                        let a = Pos2 {
+                                            x: control_rect.min.x + side * 0.25,
+                                            y: control_rect.min.y + side * 0.55,
+                                        };
+                                        let b = Pos2 {
+                                            x: control_rect.min.x + side * 0.45,
+                                            y: control_rect.min.y + side * 0.75,
+                                        };
+                                        let c = Pos2 {
+                                            x: control_rect.min.x + side * 0.80,
+                                            y: control_rect.min.y + side * 0.30,
+                                        };
+
+                                        let stroke = Stroke::new(thickness, check_color);
+                                        painter.line_segment([a, b], stroke);
+                                        painter.line_segment([b, c], stroke);
+                                    }
+                                }
+
+                                ReplacedKind::InputRadio => {
+                                    let center = control_rect.center();
+                                    let r = side * 0.5;
+                                    painter.circle_filled(center, r, fill);
+                                    painter.circle_stroke(center, r, border);
+
+                                    if is_checked {
+                                        let (cr, cg, cb, ca) = style.color;
+                                        let dot = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
+                                        painter.circle_filled(center, r * 0.45, dot);
+                                    }
+                                }
+
+                                _ => unreachable!("handled by match guard"),
+                            }
+                        }
+
+                        continue; // don't fall through to generic replaced painting
                     }
 
                     // --- IMG: decoded texture (if ready) ---
@@ -1133,6 +1357,8 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
                         ReplacedKind::Img => "IMG".to_string(),
                         ReplacedKind::Button => "BUTTON".to_string(),
                         ReplacedKind::InputText => unreachable!("handled above"),
+                        ReplacedKind::InputCheckbox => "CHECKBOX".to_string(),
+                        ReplacedKind::InputRadio => "RADIO".to_string(),
                     };
 
                     // If <img alt="...">, show alt text instead
@@ -1502,7 +1728,14 @@ fn find_input_fragment_rect_by_id<'a>(
                             layout: Some(lb), ..
                         } => {
                             if lb.node_id() == input_id
-                                && matches!(lb.replaced, Some(ReplacedKind::InputText))
+                                && matches!(
+                                    lb.replaced,
+                                    Some(
+                                        ReplacedKind::InputText
+                                            | ReplacedKind::InputCheckbox
+                                            | ReplacedKind::InputRadio
+                                    )
+                                )
                             {
                                 return Some(frag.rect);
                             }

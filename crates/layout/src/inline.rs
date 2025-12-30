@@ -1286,6 +1286,30 @@ fn size_replaced_inline_children<'a>(
                         child.rect.height = h;
                     }
 
+                    ReplacedKind::InputCheckbox | ReplacedKind::InputRadio => {
+                        // UA-ish intrinsic size that tracks the current font size.
+                        let Length::Px(font_px) = child.style.font_size;
+                        let intrinsic = font_px.max(12.0);
+
+                        let width_px = child.style.width.and_then(|len| match len {
+                            Length::Px(px) if px >= 0.0 => Some(px),
+                            _ => None,
+                        });
+                        let height_px = child.style.height.and_then(|len| match len {
+                            Length::Px(px) if px >= 0.0 => Some(px),
+                            _ => None,
+                        });
+
+                        let desired_w = width_px.or(height_px).unwrap_or(intrinsic);
+                        let w = resolve_replaced_width_px(child.style, content_width, desired_w);
+
+                        // Keep the control square unless a height is explicitly specified.
+                        let h = height_px.unwrap_or(w);
+
+                        child.rect.width = w.max(1.0);
+                        child.rect.height = h.max(1.0);
+                    }
+
                     ReplacedKind::Button => {
                         // Measure label text from subtree.
                         let label = button_label_from_layout(child);
