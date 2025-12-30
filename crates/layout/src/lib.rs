@@ -43,6 +43,8 @@ pub enum ListMarker {
 pub enum ReplacedKind {
     Img,
     InputText,
+    InputCheckbox,
+    InputRadio,
     Button,
 }
 
@@ -62,17 +64,27 @@ fn classify_replaced_kind(node: &Node) -> Option<ReplacedKind> {
             }
 
             if name.eq_ignore_ascii_case("input") {
-                // Phase 1: only <input type="text"> (or missing type)
+                // Phase 1: basic <input> replaced controls.
                 let mut ty: Option<&str> = None;
                 for (k, v) in attributes {
                     if k.eq_ignore_ascii_case("type") {
-                        ty = v.as_deref();
+                        ty = v.as_deref().map(str::trim).filter(|s| !s.is_empty());
                         break;
                     }
                 }
-                let is_text = ty.map(|t| t.eq_ignore_ascii_case("text")).unwrap_or(true);
-                if is_text {
-                    return Some(ReplacedKind::InputText);
+
+                match ty {
+                    None => return Some(ReplacedKind::InputText),
+                    Some(t) if t.eq_ignore_ascii_case("text") => {
+                        return Some(ReplacedKind::InputText);
+                    }
+                    Some(t) if t.eq_ignore_ascii_case("checkbox") => {
+                        return Some(ReplacedKind::InputCheckbox);
+                    }
+                    Some(t) if t.eq_ignore_ascii_case("radio") => {
+                        return Some(ReplacedKind::InputRadio);
+                    }
+                    _ => {}
                 }
             }
 

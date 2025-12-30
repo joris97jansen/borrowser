@@ -1,3 +1,4 @@
+use crate::form_controls::{FormControlIndex, seed_input_state_from_dom};
 use crate::input_store::InputValueStore;
 use css::{Stylesheet, attach_styles, parse_stylesheet};
 use html::{
@@ -15,6 +16,7 @@ pub struct PageState {
     pub visible_text_cache: String,
 
     pub input_values: InputValueStore,
+    pub form_controls: FormControlIndex,
 
     css_pending: HashSet<String>,
     css_sheet: Stylesheet,
@@ -28,6 +30,7 @@ impl PageState {
             head: HeadMetadata::default(),
             visible_text_cache: String::new(),
             input_values: InputValueStore::new(),
+            form_controls: FormControlIndex::default(),
             css_pending: HashSet::new(),
             css_sheet: Stylesheet { rules: Vec::new() },
         }
@@ -40,6 +43,7 @@ impl PageState {
         self.head = HeadMetadata::default();
         self.visible_text_cache.clear();
         self.input_values.clear();
+        self.form_controls = FormControlIndex::default();
         self.css_pending.clear();
         self.css_sheet.rules.clear();
     }
@@ -109,47 +113,10 @@ impl PageState {
     }
 
     pub fn seed_input_values_from_dom(&mut self) {
-        // Take an immutable reference to the DOM first
-        let dom = match self.dom.as_ref() {
-            Some(d) => d,
-            None => return,
+        let Some(dom) = self.dom.as_ref() else {
+            return;
         };
-
-        fn walk(store: &mut InputValueStore, node: &Node) {
-            match node {
-                Node::Element {
-                    name, attributes, ..
-                } if name.eq_ignore_ascii_case("input") => {
-                    // Phase 1: only seed type=text (or missing type)
-                    let mut ty: Option<&str> = None;
-                    let mut value: Option<&str> = None;
-
-                    for (k, v) in attributes {
-                        if k.eq_ignore_ascii_case("type") {
-                            ty = v.as_deref();
-                        } else if k.eq_ignore_ascii_case("value") {
-                            value = v.as_deref();
-                        }
-                    }
-
-                    let is_text = ty.map(|t| t.eq_ignore_ascii_case("text")).unwrap_or(true);
-                    if is_text {
-                        let id = node.id();
-                        let initial = value.unwrap_or("").to_string();
-                        store.ensure_initial(id, initial);
-                    }
-                }
-
-                Node::Document { children, .. } | Node::Element { children, .. } => {
-                    for c in children {
-                        walk(store, c);
-                    }
-                }
-                _ => {}
-            }
-        }
-
-        walk(&mut self.input_values, dom);
+        self.form_controls = seed_input_state_from_dom(&mut self.input_values, dom);
     }
 }
 

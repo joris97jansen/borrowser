@@ -1,3 +1,4 @@
+pub mod form_controls;
 pub mod input_store;
 pub mod interactions;
 pub mod page;

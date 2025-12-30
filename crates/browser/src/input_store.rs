@@ -36,6 +36,7 @@ fn next_cursor_boundary(s: &str, i: usize) -> usize {
 #[derive(Clone, Debug)]
 struct InputState {
     value: String,
+    checked: bool,
     /// Caret position as a byte index into `value` (always on a UTF-8 char boundary).
     caret: usize,
     /// Selection anchor as a byte index into `value` (UTF-8 char boundary).
@@ -52,6 +53,7 @@ impl Default for InputState {
     fn default() -> Self {
         Self {
             value: String::new(),
+            checked: false,
             caret: 0,
             selection_anchor: None,
             scroll_x: 0.0,
@@ -79,6 +81,10 @@ impl InputValueStore {
         }
     }
 
+    pub fn has(&self, id: Id) -> bool {
+        self.values.contains_key(&id)
+    }
+
     pub fn get_state(&self, id: Id) -> Option<(&str, usize, Option<SelectionRange>, f32)> {
         self.values.get(&id).map(|s| {
             let sel = selection_range(&s.value, s.selection_anchor, s.caret);
@@ -96,13 +102,41 @@ impl InputValueStore {
         self.values.get(&id).map(|s| s.caret)
     }
 
+    pub fn is_checked(&self, id: Id) -> bool {
+        self.values.get(&id).is_some_and(|s| s.checked)
+    }
+
+    pub fn set_checked(&mut self, id: Id, checked: bool) -> bool {
+        let st = self.values.entry(id).or_default();
+        let changed = st.checked != checked;
+        st.checked = checked;
+        changed
+    }
+
+    pub fn toggle_checked(&mut self, id: Id) -> bool {
+        let st = self.values.entry(id).or_default();
+        let new_val = !st.checked;
+        let changed = st.checked != new_val;
+        st.checked = new_val;
+        changed
+    }
+
+    pub fn ensure_initial_checked(&mut self, id: Id, initial_checked: bool) {
+        self.values.entry(id).or_insert(InputState {
+            checked: initial_checked,
+            ..InputState::default()
+        });
+    }
+
     /// Set/overwrite the value for this input key.
     pub fn set(&mut self, id: Id, value: String) {
         let caret = clamp_to_char_boundary(&value, value.len());
+        let checked = self.values.get(&id).is_some_and(|s| s.checked);
         self.values.insert(
             id,
             InputState {
                 value,
+                checked,
                 caret,
                 selection_anchor: None,
                 scroll_x: 0.0,
@@ -117,6 +151,7 @@ impl InputValueStore {
         let caret = clamp_to_char_boundary(&initial, initial.len());
         self.values.entry(id).or_insert(InputState {
             value: initial,
+            checked: false,
             caret,
             selection_anchor: None,
             scroll_x: 0.0,
@@ -718,5 +753,26 @@ mod tests {
         store.update_scroll_for_caret(id, 990.0, text_w, available_w);
         let (_v, _caret, _sel, scroll) = store.get_state(id).unwrap();
         assert_eq!(scroll, 950.0);
+    }
+
+    #[test]
+    fn checked_mutators_return_changed() {
+        let mut store = InputValueStore::new();
+        let id = Id(1);
+
+        // Starts unchecked by default; setting to false is not a change.
+        assert!(!store.set_checked(id, false));
+        assert!(!store.is_checked(id));
+
+        assert!(store.set_checked(id, true));
+        assert!(store.is_checked(id));
+
+        // Setting the same value is not a change.
+        assert!(!store.set_checked(id, true));
+        assert!(store.is_checked(id));
+
+        // Toggling always changes current state.
+        assert!(store.toggle_checked(id));
+        assert!(!store.is_checked(id));
     }
 }
