@@ -46,10 +46,10 @@ impl RadioGroupIndex {
         let prev = self.group_by_radio.insert(radio_id, group_id);
 
         // Only push into members list the first time we see this radio.
-        if prev.is_none() {
-            if let Some(members) = self.groups.get_mut(group_id) {
-                members.push(radio_id);
-            }
+        if prev.is_none()
+            && let Some(members) = self.groups.get_mut(group_id)
+        {
+            members.push(radio_id);
         }
     }
 

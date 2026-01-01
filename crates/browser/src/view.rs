@@ -928,8 +928,8 @@ pub fn page_viewport(
                                             caret_or_selection_changed = true;
                                         }
                                         Key::ArrowUp => {
-                                            if is_textarea {
-                                                if let Some(lb) =
+                                            if is_textarea
+                                                && let Some(lb) =
                                                     find_layout_box_by_id(&layout_root, focus_id)
                                                         .filter(|lb| {
                                                             matches!(
@@ -937,26 +937,25 @@ pub fn page_viewport(
                                                                 Some(ReplacedKind::TextArea)
                                                             )
                                                         })
-                                                {
-                                                    let viewport = interaction
-                                                        .focused_input_rect
-                                                        .unwrap_or(lb.rect);
-                                                    textarea_move_caret_vertically(
-                                                        input_values,
-                                                        focus_id,
-                                                        -1,
-                                                        viewport.width.max(1.0),
-                                                        &measurer,
-                                                        lb.style,
-                                                        modifiers.shift,
-                                                    );
-                                                    caret_or_selection_changed = true;
-                                                }
+                                            {
+                                                let viewport = interaction
+                                                    .focused_input_rect
+                                                    .unwrap_or(lb.rect);
+                                                textarea_move_caret_vertically(
+                                                    input_values,
+                                                    focus_id,
+                                                    -1,
+                                                    viewport.width.max(1.0),
+                                                    &measurer,
+                                                    lb.style,
+                                                    modifiers.shift,
+                                                );
+                                                caret_or_selection_changed = true;
                                             }
                                         }
                                         Key::ArrowDown => {
-                                            if is_textarea {
-                                                if let Some(lb) =
+                                            if is_textarea
+                                                && let Some(lb) =
                                                     find_layout_box_by_id(&layout_root, focus_id)
                                                         .filter(|lb| {
                                                             matches!(
@@ -964,21 +963,20 @@ pub fn page_viewport(
                                                                 Some(ReplacedKind::TextArea)
                                                             )
                                                         })
-                                                {
-                                                    let viewport = interaction
-                                                        .focused_input_rect
-                                                        .unwrap_or(lb.rect);
-                                                    textarea_move_caret_vertically(
-                                                        input_values,
-                                                        focus_id,
-                                                        1,
-                                                        viewport.width.max(1.0),
-                                                        &measurer,
-                                                        lb.style,
-                                                        modifiers.shift,
-                                                    );
-                                                    caret_or_selection_changed = true;
-                                                }
+                                            {
+                                                let viewport = interaction
+                                                    .focused_input_rect
+                                                    .unwrap_or(lb.rect);
+                                                textarea_move_caret_vertically(
+                                                    input_values,
+                                                    focus_id,
+                                                    1,
+                                                    viewport.width.max(1.0),
+                                                    &measurer,
+                                                    lb.style,
+                                                    modifiers.shift,
+                                                );
+                                                caret_or_selection_changed = true;
                                             }
                                         }
                                         Key::Home => {
@@ -1697,22 +1695,23 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
                         let clip_painter = painter.with_clip_rect(inner_rect);
 
                         // Multi-line selection highlight.
-                        if is_focused_text_control {
-                            if let (false, Some(sel)) =
+                        if is_focused_text_control
+                            && let (false, Some(sel)) =
                                 (is_placeholder, selection.filter(|s| s.start < s.end))
-                            {
-                                paint_textarea_selection(
-                                    &clip_painter,
-                                    &lines,
-                                    &value,
-                                    sel,
-                                    inner_rect.min,
+                        {
+                            paint_textarea_selection(
+                                &clip_painter,
+                                &lines,
+                                &value,
+                                sel,
+                                TextAreaSelectionPaintParams {
+                                    inner_origin: inner_rect.min,
                                     scroll_y,
                                     measurer,
                                     style,
                                     selection_bg_fill,
-                                );
-                            }
+                                },
+                            );
                         }
 
                         // Text fragments
@@ -2163,7 +2162,9 @@ fn textarea_line_byte_range(lines: &[LineBox<'_>], value: &str, line_idx: usize)
     }
 
     let i = line_idx.min(lines.len() - 1);
-    let start = textarea_line_source_range(&lines[i]).map(|(s, _)| s).unwrap_or(0);
+    let start = textarea_line_source_range(&lines[i])
+        .map(|(s, _)| s)
+        .unwrap_or(0);
 
     // Prefer the current line's explicit end when available (e.g. excludes the '\n' for hard breaks).
     let end = textarea_line_source_range(&lines[i])
@@ -2241,17 +2242,30 @@ fn textarea_caret_geometry(
     (x, y.max(first.rect.y), h)
 }
 
+#[derive(Clone, Copy)]
+struct TextAreaSelectionPaintParams<'a> {
+    inner_origin: Pos2,
+    scroll_y: f32,
+    measurer: &'a dyn TextMeasurer,
+    style: &'a ComputedStyle,
+    selection_bg_fill: Color32,
+}
+
 fn paint_textarea_selection(
     painter: &Painter,
     lines: &[LineBox<'_>],
     value: &str,
     sel: SelectionRange,
-    inner_origin: Pos2,
-    scroll_y: f32,
-    measurer: &dyn TextMeasurer,
-    style: &ComputedStyle,
-    selection_bg_fill: Color32,
+    params: TextAreaSelectionPaintParams<'_>,
 ) {
+    let TextAreaSelectionPaintParams {
+        inner_origin,
+        scroll_y,
+        measurer,
+        style,
+        selection_bg_fill,
+    } = params;
+
     if lines.is_empty() || value.is_empty() || sel.start >= sel.end {
         return;
     }
@@ -2264,7 +2278,9 @@ fn paint_textarea_selection(
     }
 
     for line in lines {
-        let Some((line_start, line_end_display)) = textarea_line_source_range(line) else { continue; };
+        let Some((line_start, line_end_display)) = textarea_line_source_range(line) else {
+            continue;
+        };
 
         let a = sel_start.clamp(line_start, line_end_display);
         let b = sel_end.clamp(line_start, line_end_display);
@@ -2275,8 +2291,14 @@ fn paint_textarea_selection(
         let x0 = textarea_x_for_index_in_line(line, value, a, measurer, style);
         let x1 = textarea_x_for_index_in_line(line, value, b, measurer, style);
 
-        let y = inner_origin.y + line.rect.y - scroll_y;
-        let h = line.rect.height.max(1.0);
+        let line_y = line
+            .fragments
+            .first()
+            .map(|f| f.rect.y)
+            .unwrap_or(line.rect.y);
+
+        let y = inner_origin.y + line_y - scroll_y;
+        let h = measurer.line_height(style).max(1.0);
 
         let rect = Rect::from_min_max(
             Pos2 {
@@ -2374,7 +2396,6 @@ fn textarea_line_source_range(line: &LineBox<'_>) -> Option<(usize, usize)> {
     }
 }
 
-
 fn get_attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
     match node {
         Node::Element { attributes, .. } => {
@@ -2386,44 +2407,6 @@ fn get_attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
             None
         }
         _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn textarea_line_byte_range_prefers_line_end_over_next_start() {
-        let value = "a\nb";
-
-        let lines: Vec<LineBox<'static>> = vec![
-            LineBox {
-                fragments: Vec::new(),
-                rect: Rectangle {
-                    x: 0.0,
-                    y: 0.0,
-                    width: 0.0,
-                    height: 0.0,
-                },
-                baseline: 0.0,
-                source_range: Some((0, 1)), // excludes '\n'
-            },
-            LineBox {
-                fragments: Vec::new(),
-                rect: Rectangle {
-                    x: 0.0,
-                    y: 0.0,
-                    width: 0.0,
-                    height: 0.0,
-                },
-                baseline: 0.0,
-                source_range: Some((2, 3)),
-            },
-        ];
-
-        assert_eq!(textarea_line_byte_range(&lines, value, 0), (0, 1));
-        assert_eq!(textarea_line_byte_range(&lines, value, 1), (2, 3));
     }
 }
 
@@ -2554,5 +2537,43 @@ impl ReplacedElementInfoProvider for BrowserReplacedInfo<'_> {
             Some(w as f32),
             Some(h as f32),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn textarea_line_byte_range_prefers_line_end_over_next_start() {
+        let value = "a\nb";
+
+        let lines: Vec<LineBox<'static>> = vec![
+            LineBox {
+                fragments: Vec::new(),
+                rect: Rectangle {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 0.0,
+                    height: 0.0,
+                },
+                baseline: 0.0,
+                source_range: Some((0, 1)), // excludes '\n'
+            },
+            LineBox {
+                fragments: Vec::new(),
+                rect: Rectangle {
+                    x: 0.0,
+                    y: 0.0,
+                    width: 0.0,
+                    height: 0.0,
+                },
+                baseline: 0.0,
+                source_range: Some((2, 3)),
+            },
+        ];
+
+        assert_eq!(textarea_line_byte_range(&lines, value, 0), (0, 1));
+        assert_eq!(textarea_line_byte_range(&lines, value, 1), (2, 3));
     }
 }

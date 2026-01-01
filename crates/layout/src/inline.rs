@@ -655,14 +655,19 @@ fn inline_block_baseline_metrics_placeholder_bottom_edge(height: f32) -> Fragmen
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+struct LineGeometry {
+    start_x: f32,
+    end_x: f32,
+    y: f32,
+    ascent: f32,
+    descent: f32,
+}
+
 fn flush_line<'a>(
     lines: &mut Vec<LineBox<'a>>,
     line_fragments: &mut Vec<LineFragment<'a>>,
-    line_start_x: f32,
-    cursor_x: f32,
-    cursor_y: f32,
-    line_ascent: f32,
-    line_descent: f32,
+    geom: LineGeometry,
     allow_empty_line: bool,
     source_range: Option<(usize, usize)>,
 ) {
@@ -670,19 +675,19 @@ fn flush_line<'a>(
         return;
     }
 
-    let baseline = cursor_y + line_ascent;
+    let baseline = geom.y + geom.ascent;
 
     for frag in line_fragments.iter_mut() {
         frag.rect.y = baseline - (frag.ascent + frag.baseline_shift);
     }
 
-    let line_width = (cursor_x - line_start_x).max(0.0);
-    let line_height = (line_ascent + line_descent).max(0.0);
+    let line_width = (geom.end_x - geom.start_x).max(0.0);
+    let line_height = (geom.ascent + geom.descent).max(0.0);
 
     lines.push(LineBox {
         rect: Rectangle {
-            x: line_start_x,
-            y: cursor_y,
+            x: geom.start_x,
+            y: geom.y,
             width: line_width,
             height: line_height,
         },
@@ -821,11 +826,13 @@ fn layout_tokens_with_options<'a>(
         flush_line(
             lines,
             line_fragments,
-            line_start_x,
-            cursor_x,
-            cursor_y,
-            line_ascent,
-            line_descent,
+            LineGeometry {
+                start_x: line_start_x,
+                end_x: cursor_x,
+                y: cursor_y,
+                ascent: line_ascent,
+                descent: line_descent,
+            },
             allow_empty_line,
             source_range,
         );
