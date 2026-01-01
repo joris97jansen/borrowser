@@ -285,6 +285,9 @@ fn default_display_for(tag: &str) -> Display {
     if tag.eq_ignore_ascii_case("button") {
         return Display::InlineBlock;
     }
+    if tag.eq_ignore_ascii_case("textarea") {
+        return Display::InlineBlock;
+    }
     // Everything else we treat as block for now
     Display::Block
 }

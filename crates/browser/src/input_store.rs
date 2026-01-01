@@ -45,6 +45,8 @@ struct InputState {
     selection_anchor: Option<usize>,
     /// Horizontal scroll offset in px for single-line inputs.
     scroll_x: f32,
+    /// Vertical scroll offset in px for multi-line text controls (e.g. `<textarea>`).
+    scroll_y: f32,
     cursor_boundaries: Vec<usize>,
     cursor_boundaries_dirty: bool,
 }
@@ -57,6 +59,7 @@ impl Default for InputState {
             caret: 0,
             selection_anchor: None,
             scroll_x: 0.0,
+            scroll_y: 0.0,
             cursor_boundaries: Vec::new(),
             cursor_boundaries_dirty: true,
         }
@@ -85,10 +88,10 @@ impl InputValueStore {
         self.values.contains_key(&id)
     }
 
-    pub fn get_state(&self, id: Id) -> Option<(&str, usize, Option<SelectionRange>, f32)> {
+    pub fn get_state(&self, id: Id) -> Option<(&str, usize, Option<SelectionRange>, f32, f32)> {
         self.values.get(&id).map(|s| {
             let sel = selection_range(&s.value, s.selection_anchor, s.caret);
-            (s.value.as_str(), s.caret, sel, s.scroll_x)
+            (s.value.as_str(), s.caret, sel, s.scroll_x, s.scroll_y)
         })
     }
 
@@ -140,6 +143,7 @@ impl InputValueStore {
                 caret,
                 selection_anchor: None,
                 scroll_x: 0.0,
+                scroll_y: 0.0,
                 cursor_boundaries: Vec::new(),
                 cursor_boundaries_dirty: true,
             },
@@ -155,6 +159,7 @@ impl InputValueStore {
             caret,
             selection_anchor: None,
             scroll_x: 0.0,
+            scroll_y: 0.0,
             cursor_boundaries: Vec::new(),
             cursor_boundaries_dirty: true,
         });
@@ -183,6 +188,24 @@ impl InputValueStore {
         let st = self.values.entry(id).or_default();
         clamp_state(st);
         let s = filter_single_line(s);
+        if s.is_empty() {
+            return;
+        }
+
+        delete_selection_if_any(st);
+
+        let caret = clamp_to_char_boundary(&st.value, st.caret);
+        st.value.insert_str(caret, &s);
+        st.caret = caret + s.len();
+        st.caret = clamp_to_char_boundary(&st.value, st.caret);
+        mark_text_dirty(st);
+    }
+
+    pub fn insert_text_multiline(&mut self, id: Id, s: &str) {
+        let st = self.values.entry(id).or_default();
+        clamp_state(st);
+
+        let s = normalize_newlines(s);
         if s.is_empty() {
             return;
         }
@@ -387,6 +410,82 @@ impl InputValueStore {
 
         st.scroll_x = scroll_x;
     }
+
+    pub fn update_scroll_for_caret_y(
+        &mut self,
+        id: Id,
+        caret_y: f32,
+        caret_h: f32,
+        text_h: f32,
+        available_h: f32,
+    ) {
+        let st = self.values.entry(id).or_default();
+
+        let available_h = available_h.max(0.0);
+        let text_h = text_h.max(0.0);
+        let caret_h = caret_h.max(0.0);
+        let caret_y = caret_y.clamp(0.0, text_h);
+
+        if available_h <= 0.0 || text_h <= available_h {
+            st.scroll_y = 0.0;
+            return;
+        }
+
+        let max_scroll = (text_h - available_h).max(0.0);
+        let mut scroll_y = st.scroll_y.clamp(0.0, max_scroll);
+
+        // Keep the caret visible with a small margin, but don't re-center unless needed.
+        let margin: f32 = 4.0;
+        let top_limit = margin.min(available_h);
+        let bottom_limit = (available_h - margin).max(top_limit);
+
+        let caret_top_in_view = caret_y - scroll_y;
+        let caret_bottom_in_view = caret_top_in_view + caret_h;
+
+        if caret_top_in_view < top_limit {
+            scroll_y = (caret_y - top_limit).max(0.0);
+        } else if caret_bottom_in_view > bottom_limit {
+            scroll_y = (caret_y + caret_h - bottom_limit).min(max_scroll);
+        }
+
+        st.scroll_y = scroll_y;
+    }
+
+    pub fn set_caret_from_viewport_x_in_range(
+        &mut self,
+        id: Id,
+        x_in_viewport: f32,
+        selecting: bool,
+        range_start: usize,
+        range_end: usize,
+        mut measure_range_prefix: impl FnMut(&str) -> f32,
+    ) -> usize {
+        let st = self.values.entry(id).or_default();
+        clamp_state(st);
+
+        let range_start = clamp_to_char_boundary(&st.value, range_start);
+        let range_end = clamp_to_char_boundary(&st.value, range_end).max(range_start);
+        let x_in_viewport = x_in_viewport.max(0.0);
+
+        let caret = {
+            ensure_cursor_boundaries(st);
+
+            let start_idx = st.cursor_boundaries.partition_point(|&b| b < range_start);
+            let end_idx = st.cursor_boundaries.partition_point(|&b| b <= range_end);
+            let boundaries = &st.cursor_boundaries[start_idx..end_idx];
+
+            caret_from_x_with_boundaries_in_range(
+                &st.value,
+                boundaries,
+                range_start,
+                x_in_viewport,
+                &mut measure_range_prefix,
+            )
+        };
+
+        set_caret_in_state(st, caret, selecting);
+        caret
+    }
 }
 
 fn selection_range(value: &str, anchor: Option<usize>, caret: usize) -> Option<SelectionRange> {
@@ -452,6 +551,7 @@ fn clamp_state(st: &mut InputState) {
         st.selection_anchor = Some(clamp_to_char_boundary(&st.value, a));
     }
     st.scroll_x = st.scroll_x.max(0.0);
+    st.scroll_y = st.scroll_y.max(0.0);
 }
 
 fn clear_selection(st: &mut InputState) {
@@ -495,6 +595,28 @@ fn filter_single_line(s: &str) -> Cow<'_, str> {
         return Cow::Borrowed(s);
     }
     Cow::Owned(s.chars().filter(|c| *c != '\n' && *c != '\r').collect())
+}
+
+fn normalize_newlines(s: &str) -> Cow<'_, str> {
+    // Normalize CRLF/CR to LF.
+    if !s.contains('\r') {
+        return Cow::Borrowed(s);
+    }
+
+    let mut out = String::with_capacity(s.len());
+    let mut it = s.chars().peekable();
+    while let Some(ch) = it.next() {
+        match ch {
+            '\r' => {
+                if it.peek() == Some(&'\n') {
+                    let _ = it.next();
+                }
+                out.push('\n');
+            }
+            _ => out.push(ch),
+        }
+    }
+    Cow::Owned(out)
 }
 
 #[cfg(test)]
@@ -542,6 +664,49 @@ fn caret_from_x_with_boundaries(
     if lo + 1 < boundaries.len() {
         let right_idx = boundaries[lo + 1];
         let right_w = measure_prefix(&value[..right_idx]).max(0.0);
+        if x - left_w > right_w - x {
+            return right_idx;
+        }
+    }
+
+    left_idx
+}
+
+fn caret_from_x_with_boundaries_in_range(
+    value: &str,
+    boundaries: &[usize],
+    range_start: usize,
+    x: f32,
+    mut measure_range_prefix: impl FnMut(&str) -> f32,
+) -> usize {
+    if value.is_empty() || boundaries.is_empty() {
+        return range_start;
+    }
+
+    let x = x.max(0.0);
+
+    // Binary search for the largest boundary whose prefix width <= x.
+    let mut lo = 0usize;
+    let mut hi = boundaries.len() - 1;
+
+    while lo < hi {
+        let mid = lo + (hi - lo).div_ceil(2);
+        let idx = boundaries[mid];
+        let w = measure_range_prefix(&value[range_start..idx]).max(0.0);
+        if w <= x {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+
+    let left_idx = boundaries[lo];
+    let left_w = measure_range_prefix(&value[range_start..left_idx]).max(0.0);
+
+    // Snap to nearest boundary (not always floor), so clicks feel natural.
+    if lo + 1 < boundaries.len() {
+        let right_idx = boundaries[lo + 1];
+        let right_w = measure_range_prefix(&value[range_start..right_idx]).max(0.0);
         if x - left_w > right_w - x {
             return right_idx;
         }
@@ -631,14 +796,14 @@ mod tests {
         store.focus(id);
 
         store.move_caret_left(id, true); // select last char
-        let (_v, _caret, sel, _scroll) = store.get_state(id).unwrap();
+        let (_v, _caret, sel, _scroll_x, _scroll_y) = store.get_state(id).unwrap();
         assert_eq!(sel, Some(SelectionRange { start: 4, end: 5 }));
 
         store.backspace(id);
         assert_eq!(store.get(id), Some("hell"));
         assert_eq!(store.caret(id), Some(4));
 
-        let (_v, _caret, sel, _scroll) = store.get_state(id).unwrap();
+        let (_v, _caret, sel, _scroll_x, _scroll_y) = store.get_state(id).unwrap();
         assert_eq!(sel, None);
     }
 
@@ -696,17 +861,17 @@ mod tests {
         store.focus(id);
 
         store.set_caret(id, 2, false);
-        let (_v, caret, sel, _scroll) = store.get_state(id).unwrap();
+        let (_v, caret, sel, _scroll_x, _scroll_y) = store.get_state(id).unwrap();
         assert_eq!(caret, 2);
         assert_eq!(sel, None);
 
         store.set_caret(id, 4, true);
-        let (_v, caret, sel, _scroll) = store.get_state(id).unwrap();
+        let (_v, caret, sel, _scroll_x, _scroll_y) = store.get_state(id).unwrap();
         assert_eq!(caret, 4);
         assert_eq!(sel, Some(SelectionRange { start: 2, end: 4 }));
 
         store.set_caret(id, 1, false);
-        let (_v, caret, sel, _scroll) = store.get_state(id).unwrap();
+        let (_v, caret, sel, _scroll_x, _scroll_y) = store.get_state(id).unwrap();
         assert_eq!(caret, 1);
         assert_eq!(sel, None);
     }
@@ -739,19 +904,19 @@ mod tests {
         // Caret at start: no scroll.
         store.set_caret(id, 0, false);
         store.update_scroll_for_caret(id, 0.0, text_w, available_w);
-        let (_v, _caret, _sel, scroll) = store.get_state(id).unwrap();
+        let (_v, _caret, _sel, scroll, _scroll_y) = store.get_state(id).unwrap();
         assert_eq!(scroll, 0.0);
 
         // Jump caret to end: scroll to max.
         store.set_caret(id, 100, false);
         store.update_scroll_for_caret(id, 1000.0, text_w, available_w);
-        let (_v, _caret, _sel, scroll) = store.get_state(id).unwrap();
+        let (_v, _caret, _sel, scroll, _scroll_y) = store.get_state(id).unwrap();
         assert_eq!(scroll, 950.0);
 
         // Move caret slightly left but still within viewport: no scroll change.
         store.set_caret(id, 99, false);
         store.update_scroll_for_caret(id, 990.0, text_w, available_w);
-        let (_v, _caret, _sel, scroll) = store.get_state(id).unwrap();
+        let (_v, _caret, _sel, scroll, _scroll_y) = store.get_state(id).unwrap();
         assert_eq!(scroll, 950.0);
     }
 

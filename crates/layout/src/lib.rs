@@ -43,6 +43,7 @@ pub enum ListMarker {
 pub enum ReplacedKind {
     Img,
     InputText,
+    TextArea,
     InputCheckbox,
     InputRadio,
     Button,
@@ -86,6 +87,10 @@ fn classify_replaced_kind(node: &Node) -> Option<ReplacedKind> {
                     }
                     _ => {}
                 }
+            }
+
+            if name.eq_ignore_ascii_case("textarea") {
+                return Some(ReplacedKind::TextArea);
             }
 
             if name.eq_ignore_ascii_case("button") {
