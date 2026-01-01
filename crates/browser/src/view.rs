@@ -534,7 +534,10 @@ pub fn page_viewport(
                                     let y_in_viewport = (h.local_pos.1 - pad_t).max(0.0);
                                     let y_in_text = y_in_viewport + scroll_y;
 
-                                    let line_idx = textarea_line_index_from_y(&lines, y_in_text);
+                                    let line_h = measurer.line_height(style);
+                                    let line_idx =
+                                        textarea_line_index_from_y(&lines, y_in_text, line_h);
+
                                     let (line_start, line_end) =
                                         textarea_line_byte_range(&lines, &value, line_idx);
 
@@ -648,7 +651,10 @@ pub fn page_viewport(
                                 let y_in_viewport = (local_y - pad_t).max(0.0);
                                 let y_in_text = y_in_viewport + scroll_y;
 
-                                let line_idx = textarea_line_index_from_y(&lines, y_in_text);
+                                let line_h = measurer.line_height(style);
+                                let line_idx =
+                                    textarea_line_index_from_y(&lines, y_in_text, line_h);
+
                                 let (line_start, line_end) =
                                     textarea_line_byte_range(&lines, &value, line_idx);
 
@@ -884,6 +890,16 @@ pub fn page_viewport(
                     let mut enter_pressed = false;
                     let mut saw_text_newline = false;
 
+                    // 1) consume nav keys first
+                    ui.input_mut(|i| {
+                        consume_focus_nav_keys(i);
+
+                        if matches!(focused_kind, Some(HitKind::Checkbox | HitKind::Radio)) {
+                            i.consume_key(egui::Modifiers::NONE, Key::Space);
+                            i.consume_key(egui::Modifiers::SHIFT, Key::Space);
+                        }
+                    });
+
                     ui.input(|i| {
                         for evt in &i.events {
                             match focused_kind {
@@ -1055,25 +1071,6 @@ pub fn page_viewport(
                         input_values.insert_text_multiline(focus_id, "\n");
                         value_changed = true;
                     }
-
-                    // Prevent egui keyboard navigation from stealing focus (e.g. ArrowRight moving
-                    // focus to the URL bar) while a DOM input is focused. `consume_key` also removes
-                    // the key events from the input stream, so we do this *after* we have handled
-                    // the events above.
-                    ui.input_mut(|i| {
-                        let m = egui::Modifiers::NONE;
-                        i.consume_key(m, Key::ArrowLeft);
-                        i.consume_key(m, Key::ArrowRight);
-                        i.consume_key(m, Key::ArrowUp);
-                        i.consume_key(m, Key::ArrowDown);
-                        i.consume_key(m, Key::Home);
-                        i.consume_key(m, Key::End);
-                        i.consume_key(m, Key::Enter);
-
-                        if matches!(focused_kind, Some(HitKind::Checkbox | HitKind::Radio)) {
-                            i.consume_key(m, Key::Space);
-                        }
-                    });
 
                     let changed =
                         value_changed || caret_or_selection_changed || non_text_state_changed;
@@ -2131,18 +2128,29 @@ fn textarea_text_height(lines: &[LineBox<'_>], fallback_line_h: f32) -> f32 {
         .unwrap_or_else(|| fallback_line_h.max(0.0))
 }
 
-fn textarea_line_index_from_y(lines: &[LineBox<'_>], y_in_text: f32) -> usize {
+fn textarea_line_index_from_y(lines: &[LineBox<'_>], y_in_text: f32, line_h: f32) -> usize {
     if lines.is_empty() {
         return 0;
     }
 
     let y = y_in_text.max(0.0);
+
     for (i, line) in lines.iter().enumerate() {
-        if y < line.rect.y + line.rect.height {
+        let top = textarea_visual_line_top(line);
+        let h = line_h.max(1.0);
+        if y < top + h {
             return i;
         }
     }
+
     lines.len() - 1
+}
+
+fn textarea_visual_line_top(line: &LineBox<'_>) -> f32 {
+    line.fragments
+        .first()
+        .map(|f| f.rect.y)
+        .unwrap_or(line.rect.y)
 }
 
 fn textarea_line_index_for_caret(lines: &[LineBox<'_>], caret: usize) -> usize {
@@ -2394,6 +2402,13 @@ fn textarea_line_source_range(line: &LineBox<'_>) -> Option<(usize, usize)> {
         (Some(s), Some(e)) if e >= s => Some((s, e)),
         _ => None,
     }
+}
+
+fn consume_focus_nav_keys(i: &mut egui::InputState) {
+    // Prevent egui / other widgets from hijacking these while a DOM input is focused:
+    i.consume_key(egui::Modifiers::NONE, egui::Key::Tab);
+    i.consume_key(egui::Modifiers::SHIFT, egui::Key::Tab);
+    i.consume_key(egui::Modifiers::NONE, egui::Key::Escape);
 }
 
 fn get_attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
