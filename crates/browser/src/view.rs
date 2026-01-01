@@ -1722,8 +1722,8 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
                                     clip_painter.text(
                                         Pos2 {
                                             x: inner_rect.min.x + tfrag.rect.x,
-                                            // y: inner_rect.min.y + line.rect.y - scroll_y,
-                                            y: inner_rect.min.y + line.rect.y + tfrag.rect.y - scroll_y,
+                                            y: inner_rect.min.y + line.rect.y - scroll_y,
+                                            // y: inner_rect.min.y + line.rect.y + tfrag.rect.y - scroll_y,
                                         },
                                         Align2::LEFT_TOP,
                                         text,
@@ -2151,7 +2151,9 @@ fn textarea_line_index_for_caret(lines: &[LineBox<'_>], caret: usize) -> usize {
         return 0;
     }
 
-    let i = lines.partition_point(|l| l.source_range.is_some_and(|(start, _end)| start <= caret));
+    let i = lines.partition_point(|l| {
+        textarea_line_source_range(l).is_some_and(|(start, _end)| start <= caret)
+    });
     i.saturating_sub(1).min(lines.len() - 1)
 }
 
@@ -2161,15 +2163,14 @@ fn textarea_line_byte_range(lines: &[LineBox<'_>], value: &str, line_idx: usize)
     }
 
     let i = line_idx.min(lines.len() - 1);
-    let start = lines[i].source_range.map(|(s, _e)| s).unwrap_or(0);
+    let start = textarea_line_source_range(&lines[i]).map(|(s, _)| s).unwrap_or(0);
 
     // Prefer the current line's explicit end when available (e.g. excludes the '\n' for hard breaks).
-    let end = lines[i]
-        .source_range
+    let end = textarea_line_source_range(&lines[i])
         .map(|(_s, e)| e)
         .or_else(|| {
             if i + 1 < lines.len() {
-                lines[i + 1].source_range.map(|(s, _e)| s)
+                textarea_line_source_range(&lines[i + 1]).map(|(s, _e)| s)
             } else {
                 None
             }
@@ -2263,9 +2264,7 @@ fn paint_textarea_selection(
     }
 
     for line in lines {
-        let Some((line_start, line_end_display)) = line.source_range else {
-            continue;
-        };
+        let Some((line_start, line_end_display)) = textarea_line_source_range(line) else { continue; };
 
         let a = sel_start.clamp(line_start, line_end_display);
         let b = sel_end.clamp(line_start, line_end_display);
@@ -2351,6 +2350,30 @@ fn textarea_move_caret_vertically(
         |s| measurer.measure(s, style),
     );
 }
+
+fn textarea_line_source_range(line: &LineBox<'_>) -> Option<(usize, usize)> {
+    if let Some(r) = line.source_range {
+        return Some(r);
+    }
+
+    // Soft-wrapped lines may not have line.source_range set.
+    // Derive it from fragment source ranges.
+    let mut start: Option<usize> = None;
+    let mut end: Option<usize> = None;
+
+    for frag in &line.fragments {
+        if let Some((s, e)) = frag.source_range {
+            start = Some(start.map(|x| x.min(s)).unwrap_or(s));
+            end = Some(end.map(|x| x.max(e)).unwrap_or(e));
+        }
+    }
+
+    match (start, end) {
+        (Some(s), Some(e)) if e >= s => Some((s, e)),
+        _ => None,
+    }
+}
+
 
 fn get_attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
     match node {
