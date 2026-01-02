@@ -1,11 +1,17 @@
 use crate::form_controls::FormControlIndex;
 use crate::input_store::{InputValueStore, SelectionRange};
-use crate::interactions::{ActiveTarget, InputDragState, InteractionState};
+use crate::interactions::{
+    ActiveTarget, InputDragState, InteractionState, TextareaCachedLine, TextareaCachedTextFragment,
+    TextareaLayoutCache,
+};
 use crate::page::PageState;
 use crate::resources::{ImageState, ResourceManager};
 use crate::tab::Tab;
 
 use html::{Id, Node, dom_utils::is_non_rendering_element};
+
+use std::cell::RefCell;
+use std::collections::HashMap;
 
 use css::{ComputedStyle, Display, Length, StyledNode, build_style_tree};
 use layout::{
@@ -39,23 +45,33 @@ pub enum PageAction {
 
 struct EguiTextMeasurer {
     ctx: Context,
+    space_width_cache: RefCell<HashMap<u32, f32>>,
 }
 
 impl EguiTextMeasurer {
     fn new(ctx: &Context) -> Self {
-        Self { ctx: ctx.clone() }
+        Self {
+            ctx: ctx.clone(),
+            space_width_cache: RefCell::new(HashMap::new()),
+        }
     }
 }
 
 impl TextMeasurer for EguiTextMeasurer {
     fn measure(&self, text: &str, style: &ComputedStyle) -> f32 {
-        let (r, g, b, a) = style.color;
-        let color = Color32::from_rgba_unmultiplied(r, g, b, a);
-
         let Length::Px(font_px) = style.font_size;
         let font_id = FontId::proportional(font_px);
 
         if text == " " {
+            // `Color32` does not affect text metrics; cache width per font size.
+            let key = font_px.round().max(0.0) as u32;
+            if let Some(w) = self.space_width_cache.borrow().get(&key).copied() {
+                return w;
+            }
+
+            let (r, g, b, a) = style.color;
+            let color = Color32::from_rgba_unmultiplied(r, g, b, a);
+
             // 1) NBSP is the most stable in egui
             let nbsp = "\u{00A0}";
             let w_nbsp = self.ctx.fonts(|f| {
@@ -63,29 +79,37 @@ impl TextMeasurer for EguiTextMeasurer {
                     .rect
                     .width()
             });
-            if w_nbsp > 0.0 {
-                return w_nbsp;
-            }
 
-            // 2) Difference method as fallback (use chars with low kerning risk)
-            let w_with = self.ctx.fonts(|f| {
-                f.layout_no_wrap(format!("x{nbsp}x"), font_id.clone(), color)
-                    .rect
-                    .width()
-            });
-            let w_without = self.ctx.fonts(|f| {
-                f.layout_no_wrap("xx".to_owned(), font_id.clone(), color)
-                    .rect
-                    .width()
-            });
-            let w = (w_with - w_without).max(0.0);
-            if w > 0.0 {
-                return w;
-            }
+            let w = if w_nbsp.is_finite() && w_nbsp > 0.0 {
+                w_nbsp
+            } else {
+                // 2) Difference method as fallback (use chars with low kerning risk)
+                let w_with = self.ctx.fonts(|f| {
+                    f.layout_no_wrap(format!("x{nbsp}x"), font_id.clone(), color)
+                        .rect
+                        .width()
+                });
+                let w_without = self.ctx.fonts(|f| {
+                    f.layout_no_wrap("xx".to_owned(), font_id.clone(), color)
+                        .rect
+                        .width()
+                });
+                let w = (w_with - w_without).max(0.0);
 
-            // 3) Absolute fallback
-            return (font_px * 0.33).max(1.0);
+                if w.is_finite() && w > 0.0 {
+                    w
+                } else {
+                    // 3) Absolute fallback
+                    (font_px * 0.33).max(1.0)
+                }
+            };
+
+            self.space_width_cache.borrow_mut().insert(key, w);
+            return w;
         }
+
+        let (r, g, b, a) = style.color;
+        let color = Color32::from_rgba_unmultiplied(r, g, b, a);
 
         self.ctx.fonts(|f| {
             f.layout_no_wrap(text.to_owned(), font_id, color)
@@ -282,13 +306,8 @@ pub fn page_viewport(
 
             let layout_changed = viewport_width_changed || layout_root_size_changed;
 
-            // Refresh the focused form control fragment rect by ID so we don't rely on stale
-            // coordinates after reflow/resize.
-            if let Some(focus_id) = interaction.focused_node_id
-                && (interaction.focused_input_rect.is_none() || layout_changed)
-                && let Some(r) = find_input_fragment_rect_by_id(&layout_root, &measurer, focus_id)
-            {
-                interaction.focused_input_rect = Some(r);
+            if layout_changed {
+                interaction.focused_input_rect = None;
             }
 
             // Keep the focused text control's scroll stable across frames (e.g. resize)
@@ -314,11 +333,22 @@ pub fn page_viewport(
                         );
                     }
                     Some(ReplacedKind::TextArea) => {
+                        let (pad_l, pad_r, _pad_t, _pad_b) = input_text_padding(lb.style);
+                        let available_text_w = (viewport.width - pad_l - pad_r).max(0.0);
+                        let lines = ensure_textarea_layout_cache(
+                            interaction,
+                            &*input_values,
+                            focus_id,
+                            available_text_w,
+                            &measurer,
+                            lb.style,
+                        );
+
                         sync_textarea_scroll_for_caret(
                             input_values,
                             focus_id,
-                            viewport.width.max(1.0),
                             viewport.height.max(1.0),
+                            lines,
                             &measurer,
                             lb.style,
                         );
@@ -326,6 +356,8 @@ pub fn page_viewport(
                     _ => {}
                 }
             }
+
+            let fragment_rects: RefCell<HashMap<Id, Rectangle>> = RefCell::new(HashMap::new());
 
             // Paint first
             let focused = interaction.focused_node_id;
@@ -339,6 +371,14 @@ pub fn page_viewport(
                 let selection_stroke =
                     Stroke::new(selection.stroke.width.max(2.0), selection.stroke.color);
 
+                let focused_textarea_lines = focused.and_then(|id| {
+                    interaction
+                        .textarea_layout_cache
+                        .as_ref()
+                        .filter(|c| c.input_id == id)
+                        .map(|c| c.lines.as_slice())
+                });
+
                 let paint_ctx = PaintCtx {
                     painter: &painter,
                     origin,
@@ -347,11 +387,19 @@ pub fn page_viewport(
                     resources,
                     input_values: &*input_values,
                     focused,
+                    focused_textarea_lines,
                     active,
                     selection_bg_fill,
                     selection_stroke,
+                    fragment_rects: Some(&fragment_rects),
                 };
                 paint_layout_box(&layout_root, paint_ctx, true);
+            }
+
+            if let Some(focus_id) = interaction.focused_node_id
+                && let Some(r) = fragment_rects.borrow().get(&focus_id).copied()
+            {
+                interaction.focused_input_rect = Some(r);
             }
 
             // ------- unified router output -------
@@ -512,53 +560,50 @@ pub fn page_viewport(
 
                                     let available_text_w =
                                         (h.fragment_rect.width - pad_l - pad_r).max(0.0);
+                                    {
+                                        let lines = ensure_textarea_layout_cache(
+                                            interaction,
+                                            &*input_values,
+                                            h.node_id,
+                                            available_text_w,
+                                            &measurer,
+                                            style,
+                                        );
 
-                                    let (value, scroll_y) = input_values
-                                        .get_state(h.node_id)
-                                        .map(|(v, _c, _sel, _sx, sy)| (v.to_string(), sy))
-                                        .unwrap_or((String::new(), 0.0));
+                                        let caret = {
+                                            let (value, scroll_y) = input_values
+                                                .get_state(h.node_id)
+                                                .map(|(v, _c, _sel, _sx, sy)| (v, sy))
+                                                .unwrap_or(("", 0.0));
 
-                                    // Full text layout in local textarea coords.
-                                    let lines = layout_textarea_value_for_paint(
-                                        &measurer,
-                                        Rectangle {
-                                            x: 0.0,
-                                            y: 0.0,
-                                            width: available_text_w,
-                                            height: 1_000_000.0,
-                                        },
-                                        style,
-                                        &value,
-                                    );
+                                            let y_in_viewport = (h.local_pos.1 - pad_t).max(0.0);
+                                            let y_in_text = y_in_viewport + scroll_y;
 
-                                    let y_in_viewport = (h.local_pos.1 - pad_t).max(0.0);
-                                    let y_in_text = y_in_viewport + scroll_y;
+                                            let line_h = measurer.line_height(style);
+                                            let line_idx = textarea_line_index_from_y(
+                                                lines, y_in_text, line_h,
+                                            );
 
-                                    let line_h = measurer.line_height(style);
-                                    let line_idx =
-                                        textarea_line_index_from_y(&lines, y_in_text, line_h);
+                                            let x_in_viewport = (h.local_pos.0 - pad_l).max(0.0);
+                                            textarea_caret_for_x_in_lines(
+                                                lines,
+                                                value,
+                                                line_idx,
+                                                x_in_viewport,
+                                            )
+                                        };
 
-                                    let (line_start, line_end) =
-                                        textarea_line_byte_range(&lines, &value, line_idx);
+                                        input_values.set_caret(h.node_id, caret, selecting);
 
-                                    let x_in_viewport = (h.local_pos.0 - pad_l).max(0.0);
-                                    input_values.set_caret_from_viewport_x_in_range(
-                                        h.node_id,
-                                        x_in_viewport,
-                                        selecting,
-                                        line_start,
-                                        line_end,
-                                        |s| measurer.measure(s, style),
-                                    );
-
-                                    sync_textarea_scroll_for_caret(
-                                        input_values,
-                                        h.node_id,
-                                        h.fragment_rect.width.max(1.0),
-                                        h.fragment_rect.height.max(1.0),
-                                        &measurer,
-                                        style,
-                                    );
+                                        sync_textarea_scroll_for_caret(
+                                            input_values,
+                                            h.node_id,
+                                            h.fragment_rect.height.max(1.0),
+                                            lines,
+                                            &measurer,
+                                            style,
+                                        );
+                                    }
                                 }
                                 _ => {}
                             }
@@ -579,17 +624,25 @@ pub fn page_viewport(
                 let focused_id = interaction.focused_node_id;
                 let focused_rect = interaction.focused_input_rect;
 
-                if let Some(drag) = interaction.input_drag.as_mut()
-                    && let Some(pos) = pointer_pos(ui, true)
+                if let Some(pos) = pointer_pos(ui, true)
+                    && let Some((drag_input_id, prev_rect)) = interaction
+                        .input_drag
+                        .as_ref()
+                        .map(|d| (d.input_id, d.rect))
                 {
                     let rect = if layout_changed {
-                        find_input_fragment_rect_by_id(&layout_root, &measurer, drag.input_id)
-                            .or(focused_rect.filter(|_| focused_id == Some(drag.input_id)))
-                            .unwrap_or(drag.rect)
+                        fragment_rects
+                            .borrow()
+                            .get(&drag_input_id)
+                            .copied()
+                            .or(focused_rect.filter(|_| focused_id == Some(drag_input_id)))
+                            .unwrap_or(prev_rect)
                     } else {
-                        drag.rect
+                        prev_rect
                     };
-                    drag.rect = rect;
+                    if let Some(drag) = interaction.input_drag.as_mut() {
+                        drag.rect = rect;
+                    }
 
                     let lx = pos.x - origin.x;
                     let local_x = (lx - rect.x).clamp(0.0, rect.width);
@@ -597,7 +650,7 @@ pub fn page_viewport(
                     let local_y = (ly - rect.y).clamp(0.0, rect.height);
 
                     if let Some(lb) =
-                        find_layout_box_by_id(&layout_root, drag.input_id).filter(|lb| {
+                        find_layout_box_by_id(&layout_root, drag_input_id).filter(|lb| {
                             matches!(
                                 lb.replaced,
                                 Some(ReplacedKind::InputText | ReplacedKind::TextArea)
@@ -611,14 +664,14 @@ pub fn page_viewport(
                                 let (pad_l, _pad_r, _pad_t, _pad_b) = input_text_padding(style);
 
                                 input_values.set_caret_from_viewport_x(
-                                    drag.input_id,
+                                    drag_input_id,
                                     (local_x - pad_l).max(0.0),
                                     true,
                                     |s| measurer.measure(s, style),
                                 );
                                 sync_input_scroll_for_caret(
                                     input_values,
-                                    drag.input_id,
+                                    drag_input_id,
                                     rect.width.max(1.0),
                                     &measurer,
                                     style,
@@ -627,54 +680,53 @@ pub fn page_viewport(
                                 ui.ctx().request_repaint();
                             }
                             Some(ReplacedKind::TextArea) => {
+                                interaction.textarea_preferred_x = None;
                                 let (pad_l, pad_r, pad_t, _pad_b) = input_text_padding(style);
 
                                 let available_text_w = (rect.width - pad_l - pad_r).max(0.0);
+                                {
+                                    let lines = ensure_textarea_layout_cache(
+                                        interaction,
+                                        &*input_values,
+                                        drag_input_id,
+                                        available_text_w,
+                                        &measurer,
+                                        style,
+                                    );
 
-                                let (value, scroll_y) = input_values
-                                    .get_state(drag.input_id)
-                                    .map(|(v, _c, _sel, _sx, sy)| (v.to_string(), sy))
-                                    .unwrap_or((String::new(), 0.0));
+                                    let caret = {
+                                        let (value, scroll_y) = input_values
+                                            .get_state(drag_input_id)
+                                            .map(|(v, _c, _sel, _sx, sy)| (v, sy))
+                                            .unwrap_or(("", 0.0));
 
-                                let lines = layout_textarea_value_for_paint(
-                                    &measurer,
-                                    Rectangle {
-                                        x: 0.0,
-                                        y: 0.0,
-                                        width: available_text_w,
-                                        height: 1_000_000.0,
-                                    },
-                                    style,
-                                    &value,
-                                );
+                                        let y_in_viewport = (local_y - pad_t).max(0.0);
+                                        let y_in_text = y_in_viewport + scroll_y;
 
-                                let y_in_viewport = (local_y - pad_t).max(0.0);
-                                let y_in_text = y_in_viewport + scroll_y;
+                                        let line_h = measurer.line_height(style);
+                                        let line_idx =
+                                            textarea_line_index_from_y(lines, y_in_text, line_h);
 
-                                let line_h = measurer.line_height(style);
-                                let line_idx =
-                                    textarea_line_index_from_y(&lines, y_in_text, line_h);
+                                        let x_in_viewport = (local_x - pad_l).max(0.0);
+                                        textarea_caret_for_x_in_lines(
+                                            lines,
+                                            value,
+                                            line_idx,
+                                            x_in_viewport,
+                                        )
+                                    };
 
-                                let (line_start, line_end) =
-                                    textarea_line_byte_range(&lines, &value, line_idx);
+                                    input_values.set_caret(drag_input_id, caret, true);
 
-                                input_values.set_caret_from_viewport_x_in_range(
-                                    drag.input_id,
-                                    (local_x - pad_l).max(0.0),
-                                    true,
-                                    line_start,
-                                    line_end,
-                                    |s| measurer.measure(s, style),
-                                );
-
-                                sync_textarea_scroll_for_caret(
-                                    input_values,
-                                    drag.input_id,
-                                    rect.width.max(1.0),
-                                    rect.height.max(1.0),
-                                    &measurer,
-                                    style,
-                                );
+                                    sync_textarea_scroll_for_caret(
+                                        input_values,
+                                        drag_input_id,
+                                        rect.height.max(1.0),
+                                        lines,
+                                        &measurer,
+                                        style,
+                                    );
+                                }
 
                                 ui.ctx().request_repaint();
                             }
@@ -906,6 +958,7 @@ pub fn page_viewport(
                                 Some(HitKind::Input) => match evt {
                                     Event::Text(t) => {
                                         if is_textarea {
+                                            interaction.textarea_preferred_x = None;
                                             saw_text_newline |=
                                                 t.contains('\n') || t.contains('\r');
                                             input_values
@@ -927,18 +980,30 @@ pub fn page_viewport(
                                             }
                                         }
                                         Key::Backspace => {
+                                            if is_textarea {
+                                                interaction.textarea_preferred_x = None;
+                                            }
                                             input_values.backspace(focus_id);
                                             value_changed = true;
                                         }
                                         Key::Delete => {
+                                            if is_textarea {
+                                                interaction.textarea_preferred_x = None;
+                                            }
                                             input_values.delete(focus_id);
                                             value_changed = true;
                                         }
                                         Key::ArrowLeft => {
+                                            if is_textarea {
+                                                interaction.textarea_preferred_x = None;
+                                            }
                                             input_values.move_caret_left(focus_id, modifiers.shift);
                                             caret_or_selection_changed = true;
                                         }
                                         Key::ArrowRight => {
+                                            if is_textarea {
+                                                interaction.textarea_preferred_x = None;
+                                            }
                                             input_values
                                                 .move_caret_right(focus_id, modifiers.shift);
                                             caret_or_selection_changed = true;
@@ -957,15 +1022,35 @@ pub fn page_viewport(
                                                 let viewport = interaction
                                                     .focused_input_rect
                                                     .unwrap_or(lb.rect);
-                                                textarea_move_caret_vertically(
-                                                    input_values,
-                                                    focus_id,
-                                                    -1,
-                                                    viewport.width.max(1.0),
-                                                    &measurer,
-                                                    lb.style,
-                                                    modifiers.shift,
-                                                );
+                                                let (pad_l, pad_r, _pad_t, _pad_b) =
+                                                    input_text_padding(lb.style);
+                                                let available_text_w =
+                                                    (viewport.width - pad_l - pad_r).max(0.0);
+                                                let preferred_x = interaction.textarea_preferred_x;
+                                                let new_preferred_x = {
+                                                    let lines = ensure_textarea_layout_cache(
+                                                        interaction,
+                                                        &*input_values,
+                                                        focus_id,
+                                                        available_text_w,
+                                                        &measurer,
+                                                        lb.style,
+                                                    );
+                                                    let ctx = TextareaVerticalMoveCtx {
+                                                        lines,
+                                                        measurer: &measurer,
+                                                        style: lb.style,
+                                                    };
+                                                    textarea_move_caret_vertically(
+                                                        input_values,
+                                                        focus_id,
+                                                        -1,
+                                                        preferred_x,
+                                                        ctx,
+                                                        modifiers.shift,
+                                                    )
+                                                };
+                                                interaction.textarea_preferred_x = new_preferred_x;
                                                 caret_or_selection_changed = true;
                                             }
                                         }
@@ -983,29 +1068,58 @@ pub fn page_viewport(
                                                 let viewport = interaction
                                                     .focused_input_rect
                                                     .unwrap_or(lb.rect);
-                                                textarea_move_caret_vertically(
-                                                    input_values,
-                                                    focus_id,
-                                                    1,
-                                                    viewport.width.max(1.0),
-                                                    &measurer,
-                                                    lb.style,
-                                                    modifiers.shift,
-                                                );
+                                                let (pad_l, pad_r, _pad_t, _pad_b) =
+                                                    input_text_padding(lb.style);
+                                                let available_text_w =
+                                                    (viewport.width - pad_l - pad_r).max(0.0);
+                                                let preferred_x = interaction.textarea_preferred_x;
+                                                let new_preferred_x = {
+                                                    let lines = ensure_textarea_layout_cache(
+                                                        interaction,
+                                                        &*input_values,
+                                                        focus_id,
+                                                        available_text_w,
+                                                        &measurer,
+                                                        lb.style,
+                                                    );
+                                                    let ctx = TextareaVerticalMoveCtx {
+                                                        lines,
+                                                        measurer: &measurer,
+                                                        style: lb.style,
+                                                    };
+                                                    textarea_move_caret_vertically(
+                                                        input_values,
+                                                        focus_id,
+                                                        1,
+                                                        preferred_x,
+                                                        ctx,
+                                                        modifiers.shift,
+                                                    )
+                                                };
+                                                interaction.textarea_preferred_x = new_preferred_x;
                                                 caret_or_selection_changed = true;
                                             }
                                         }
                                         Key::Home => {
+                                            if is_textarea {
+                                                interaction.textarea_preferred_x = None;
+                                            }
                                             input_values
                                                 .move_caret_to_start(focus_id, modifiers.shift);
                                             caret_or_selection_changed = true;
                                         }
                                         Key::End => {
+                                            if is_textarea {
+                                                interaction.textarea_preferred_x = None;
+                                            }
                                             input_values
                                                 .move_caret_to_end(focus_id, modifiers.shift);
                                             caret_or_selection_changed = true;
                                         }
                                         Key::A if modifiers.command || modifiers.ctrl => {
+                                            if is_textarea {
+                                                interaction.textarea_preferred_x = None;
+                                            }
                                             input_values.select_all(focus_id);
                                             caret_or_selection_changed = true;
                                         }
@@ -1068,6 +1182,7 @@ pub fn page_viewport(
                     // If egui reported an Enter keypress without a corresponding `Event::Text("\n")`,
                     // treat it as a newline insertion for `<textarea>`.
                     if is_textarea && enter_pressed && !saw_text_newline {
+                        interaction.textarea_preferred_x = None;
                         input_values.insert_text_multiline(focus_id, "\n");
                         value_changed = true;
                     }
@@ -1100,11 +1215,24 @@ pub fn page_viewport(
                                     );
                                 }
                                 Some(ReplacedKind::TextArea) => {
+                                    let (pad_l, pad_r, _pad_t, _pad_b) =
+                                        input_text_padding(lb.style);
+                                    let available_text_w =
+                                        (viewport.width - pad_l - pad_r).max(0.0);
+                                    let lines = ensure_textarea_layout_cache(
+                                        interaction,
+                                        &*input_values,
+                                        focus_id,
+                                        available_text_w,
+                                        &measurer,
+                                        lb.style,
+                                    );
+
                                     sync_textarea_scroll_for_caret(
                                         input_values,
                                         focus_id,
-                                        viewport.width.max(1.0),
                                         viewport.height.max(1.0),
+                                        lines,
                                         &measurer,
                                         lb.style,
                                     );
@@ -1138,14 +1266,16 @@ pub fn page_viewport(
 struct PaintCtx<'a> {
     painter: &'a Painter,
     origin: Pos2,
-    measurer: &'a dyn TextMeasurer,
+    measurer: &'a EguiTextMeasurer,
     base_url: Option<&'a str>,
     resources: &'a ResourceManager,
     input_values: &'a InputValueStore,
     focused: Option<Id>,
+    focused_textarea_lines: Option<&'a [TextareaCachedLine]>,
     active: Option<ActiveTarget>,
     selection_bg_fill: Color32,
     selection_stroke: Stroke,
+    fragment_rects: Option<&'a RefCell<HashMap<Id, Rectangle>>>,
 }
 
 impl<'a> PaintCtx<'a> {
@@ -1162,9 +1292,11 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
     let resources = ctx.resources;
     let input_values = ctx.input_values;
     let focused = ctx.focused;
+    let focused_textarea_lines = ctx.focused_textarea_lines;
     let active = ctx.active;
     let selection_bg_fill = ctx.selection_bg_fill;
     let selection_stroke = ctx.selection_stroke;
+    let fragment_rects = ctx.fragment_rects;
 
     for line in lines {
         for frag in &line.fragments {
@@ -1185,6 +1317,13 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
                 }
 
                 InlineFragment::Box { style, layout, .. } => {
+                    if let Some(cache) = fragment_rects
+                        && let Some(lb) = layout
+                        && lb.replaced.is_some()
+                    {
+                        cache.borrow_mut().insert(lb.node_id(), frag.rect);
+                    }
+
                     let rect = Rect::from_min_size(
                         Pos2 {
                             x: origin.x + frag.rect.x,
@@ -1234,6 +1373,12 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
                         },
                         Vec2::new(frag.rect.width, frag.rect.height),
                     );
+
+                    if let Some(cache) = fragment_rects
+                        && let Some(lb) = layout
+                    {
+                        cache.borrow_mut().insert(lb.node_id(), frag.rect);
+                    }
 
                     // --- BUTTON: pressed visual state (uses `active`) ---
                     if matches!(kind, ReplacedKind::Button) {
@@ -1600,8 +1745,8 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
 
                     // Special case: <textarea> draws its multi-line value with wrapping.
                     if matches!(kind, ReplacedKind::TextArea) {
-                        let mut value = String::new();
-                        let mut placeholder: Option<String> = None;
+                        let mut value: &str = "";
+                        let mut placeholder: Option<&str> = None;
                         let mut caret: usize = 0;
                         let mut selection: Option<SelectionRange> = None;
                         let mut scroll_y: f32 = 0.0;
@@ -1609,7 +1754,7 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
                         if let Some(lb) = layout {
                             let id = lb.node_id();
                             if let Some((v, c, sel, _sx, sy)) = input_values.get_state(id) {
-                                value = v.to_string();
+                                value = v;
                                 caret = c;
                                 selection = sel;
                                 scroll_y = sy;
@@ -1619,7 +1764,6 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
                                 get_attr(lb.node.node, "placeholder")
                                     .map(str::trim)
                                     .filter(|ph| !ph.is_empty())
-                                    .map(|ph| ph.to_string())
                             } else {
                                 None
                             };
@@ -1662,26 +1806,56 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
                         };
 
                         let paint_text = if is_placeholder {
-                            placeholder.as_deref().unwrap_or_default()
+                            placeholder.unwrap_or_default()
                         } else {
-                            value.as_str()
+                            value
                         };
 
-                        // Full text layout in local textarea coords (0,0 origin).
-                        let lines = layout_textarea_value_for_paint(
-                            measurer,
-                            Rectangle {
-                                x: 0.0,
-                                y: 0.0,
-                                width: available_text_w,
-                                height: 1_000_000.0,
-                            },
-                            style,
-                            paint_text,
-                        );
+                        let mut owned_lines: Option<Vec<TextareaCachedLine>> = None;
+                        let lines: &[TextareaCachedLine] = if is_placeholder {
+                            owned_lines
+                                .get_or_insert_with(|| {
+                                    layout_textarea_cached_lines(
+                                        measurer,
+                                        style,
+                                        available_text_w,
+                                        paint_text,
+                                        false,
+                                    )
+                                })
+                                .as_slice()
+                        } else if is_focused_text_control {
+                            if let Some(cached) = focused_textarea_lines {
+                                cached
+                            } else {
+                                owned_lines
+                                    .get_or_insert_with(|| {
+                                        layout_textarea_cached_lines(
+                                            measurer,
+                                            style,
+                                            available_text_w,
+                                            paint_text,
+                                            false,
+                                        )
+                                    })
+                                    .as_slice()
+                            }
+                        } else {
+                            owned_lines
+                                .get_or_insert_with(|| {
+                                    layout_textarea_cached_lines(
+                                        measurer,
+                                        style,
+                                        available_text_w,
+                                        paint_text,
+                                        false,
+                                    )
+                                })
+                                .as_slice()
+                        };
 
                         // Clamp scroll to the current text bounds.
-                        let text_h = textarea_text_height(&lines, measurer.line_height(style));
+                        let text_h = textarea_text_height(lines, measurer.line_height(style));
                         let scroll_max = if available_text_h > 0.0 {
                             (text_h - available_text_h).max(0.0)
                         } else {
@@ -1698,8 +1872,8 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
                         {
                             paint_textarea_selection(
                                 &clip_painter,
-                                &lines,
-                                &value,
+                                lines,
+                                value,
                                 sel,
                                 TextAreaSelectionPaintParams {
                                     inner_origin: inner_rect.min,
@@ -1712,21 +1886,35 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
                         }
 
                         // Text fragments
-                        for line in &lines {
+                        for line in lines {
                             for tfrag in &line.fragments {
-                                if let InlineFragment::Text { text, .. } = &tfrag.kind {
-                                    clip_painter.text(
-                                        Pos2 {
-                                            x: inner_rect.min.x + tfrag.rect.x,
-                                            y: inner_rect.min.y + line.rect.y - scroll_y,
-                                            // y: inner_rect.min.y + line.rect.y + tfrag.rect.y - scroll_y,
-                                        },
-                                        Align2::LEFT_TOP,
-                                        text,
-                                        font_id.clone(),
-                                        paint_color,
-                                    );
+                                let Some((start, end)) = tfrag.source_range else {
+                                    continue;
+                                };
+                                if start > end || end > paint_text.len() {
+                                    continue;
                                 }
+                                if !(paint_text.is_char_boundary(start)
+                                    && paint_text.is_char_boundary(end))
+                                {
+                                    continue;
+                                }
+
+                                let mut s = &paint_text[start..end];
+                                if s == " " || s == "\t" {
+                                    s = "\u{00A0}";
+                                }
+
+                                clip_painter.text(
+                                    Pos2 {
+                                        x: inner_rect.min.x + tfrag.rect.x,
+                                        y: inner_rect.min.y + tfrag.rect.y - scroll_y,
+                                    },
+                                    Align2::LEFT_TOP,
+                                    s,
+                                    font_id.clone(),
+                                    paint_color,
+                                );
                             }
                         }
 
@@ -1744,9 +1932,9 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
                                 );
                                 clip_painter.rect_filled(caret_rect, 0.0, value_color);
                             } else {
-                                let caret = clamp_caret_to_boundary(&value, caret);
+                                let caret = clamp_caret_to_boundary(value, caret);
                                 let (cx, cy, ch) =
-                                    textarea_caret_geometry(&lines, &value, caret, measurer, style);
+                                    textarea_caret_geometry(lines, value, caret, measurer, style);
                                 let caret_h = ch.min(available_text_h).max(1.0);
                                 let caret_rect = Rect::from_min_size(
                                     Pos2 {
@@ -2060,6 +2248,185 @@ fn input_text_padding(style: &ComputedStyle) -> (f32, f32, f32, f32) {
     (pad_l, pad_r, pad_t, pad_b)
 }
 
+fn build_textarea_fragment_hit_map(
+    measurer: &EguiTextMeasurer,
+    style: &ComputedStyle,
+    value: &str,
+    source_range: Option<(usize, usize)>,
+    frag_width: f32,
+) -> (Vec<usize>, Vec<f32>) {
+    let Some((start, end)) = source_range else {
+        return (Vec::new(), Vec::new());
+    };
+    if start > end || end > value.len() {
+        return (Vec::new(), Vec::new());
+    }
+    if !(value.is_char_boundary(start) && value.is_char_boundary(end)) {
+        return (Vec::new(), Vec::new());
+    }
+
+    let slice = &value[start..end];
+    if slice.is_empty() {
+        return (vec![start], vec![0.0]);
+    }
+
+    // Very common for textarea text to include whitespace fragments. These don't benefit from
+    // per-char hit maps, and egui can be picky about measuring them; treat them as a single box.
+    if slice == " " || slice == "\t" {
+        let w = frag_width.max(0.0);
+        return (vec![start, end], vec![0.0, w]);
+    }
+
+    let text_for_layout = slice.to_owned();
+
+    let (r, g, b, a) = style.color;
+    let color = Color32::from_rgba_unmultiplied(r, g, b, a);
+    let Length::Px(font_px) = style.font_size;
+    let font_id = FontId::proportional(font_px);
+
+    let galley = measurer
+        .ctx
+        .fonts(|f| f.layout_no_wrap(text_for_layout, font_id, color));
+
+    if galley.rows.len() != 1 {
+        return (Vec::new(), Vec::new());
+    }
+
+    let row = &galley.rows[0];
+    let char_count = row.char_count_excluding_newline();
+
+    let mut byte_positions = Vec::with_capacity(char_count + 1);
+    byte_positions.push(start);
+    for (byte_off, ch) in slice.char_indices() {
+        byte_positions.push(start + byte_off + ch.len_utf8());
+    }
+
+    let mut x_advances = Vec::with_capacity(char_count + 1);
+    for i in 0..=char_count {
+        x_advances.push(row.x_offset(i).max(0.0));
+    }
+
+    if byte_positions.len() != x_advances.len() {
+        return (Vec::new(), Vec::new());
+    }
+
+    (byte_positions, x_advances)
+}
+
+fn layout_textarea_cached_lines(
+    measurer: &EguiTextMeasurer,
+    style: &ComputedStyle,
+    available_text_w: f32,
+    text: &str,
+    build_hit_maps: bool,
+) -> Vec<TextareaCachedLine> {
+    let available_text_w = available_text_w.max(0.0);
+
+    let raw_lines = layout_textarea_value_for_paint(
+        measurer,
+        Rectangle {
+            x: 0.0,
+            y: 0.0,
+            width: available_text_w,
+            height: 1_000_000.0,
+        },
+        style,
+        text,
+    );
+
+    raw_lines
+        .into_iter()
+        .map(|line| {
+            let fragments: Vec<TextareaCachedTextFragment> = line
+                .fragments
+                .into_iter()
+                .filter(|f| matches!(f.kind, InlineFragment::Text { .. }))
+                .map(|f| {
+                    let (byte_positions, x_advances) = if build_hit_maps {
+                        build_textarea_fragment_hit_map(
+                            measurer,
+                            style,
+                            text,
+                            f.source_range,
+                            f.rect.width,
+                        )
+                    } else {
+                        (Vec::new(), Vec::new())
+                    };
+
+                    TextareaCachedTextFragment {
+                        rect: f.rect,
+                        source_range: f.source_range,
+                        byte_positions,
+                        x_advances,
+                    }
+                })
+                .collect();
+
+            let source_range = line.source_range.or_else(|| {
+                let mut start: Option<usize> = None;
+                let mut end: Option<usize> = None;
+                for frag in &fragments {
+                    if let Some((s, e)) = frag.source_range {
+                        start = Some(start.map(|x| x.min(s)).unwrap_or(s));
+                        end = Some(end.map(|x| x.max(e)).unwrap_or(e));
+                    }
+                }
+                match (start, end) {
+                    (Some(s), Some(e)) if e >= s => Some((s, e)),
+                    _ => None,
+                }
+            });
+
+            TextareaCachedLine {
+                rect: line.rect,
+                source_range,
+                fragments,
+            }
+        })
+        .collect()
+}
+
+fn ensure_textarea_layout_cache<'a>(
+    interaction: &'a mut InteractionState,
+    input_values: &InputValueStore,
+    input_id: Id,
+    available_text_w: f32,
+    measurer: &EguiTextMeasurer,
+    style: &ComputedStyle,
+) -> &'a [TextareaCachedLine] {
+    let available_text_w = available_text_w.max(0.0);
+    let value_rev = input_values.value_revision(input_id);
+    let Length::Px(font_px) = style.font_size;
+
+    let cache_valid = interaction.textarea_layout_cache.as_ref().is_some_and(|c| {
+        c.input_id == input_id
+            && (c.available_text_w - available_text_w).abs() <= 0.5
+            && (c.font_px - font_px).abs() <= 0.01
+            && c.value_rev == value_rev
+    });
+
+    if !cache_valid {
+        let value = input_values.get(input_id).unwrap_or("");
+        let lines = layout_textarea_cached_lines(measurer, style, available_text_w, value, true);
+
+        interaction.textarea_layout_cache = Some(TextareaLayoutCache {
+            input_id,
+            available_text_w,
+            font_px,
+            value_rev,
+            lines,
+        });
+    }
+
+    interaction
+        .textarea_layout_cache
+        .as_ref()
+        .filter(|c| c.input_id == input_id)
+        .map(|c| c.lines.as_slice())
+        .unwrap_or(&[])
+}
+
 fn sync_input_scroll_for_caret(
     input_values: &mut InputValueStore,
     input_id: Id,
@@ -2087,48 +2454,38 @@ fn sync_input_scroll_for_caret(
 fn sync_textarea_scroll_for_caret(
     input_values: &mut InputValueStore,
     input_id: Id,
-    control_rect_w: f32,
     control_rect_h: f32,
+    lines: &[TextareaCachedLine],
     measurer: &dyn TextMeasurer,
     style: &ComputedStyle,
 ) {
-    let (pad_l, pad_r, pad_t, pad_b) = input_text_padding(style);
-    let available_text_w = (control_rect_w - pad_l - pad_r).max(0.0);
+    let (_pad_l, _pad_r, pad_t, pad_b) = input_text_padding(style);
     let available_text_h = (control_rect_h - pad_t - pad_b).max(0.0);
 
-    let (value, caret) = match input_values.get_state(input_id) {
-        Some((value, caret, _sel, _scroll_x, _scroll_y)) => (value.to_string(), caret),
-        None => (String::new(), 0),
+    let (caret_y, caret_h, text_h) = {
+        let Some((value, caret, _sel, _scroll_x, _scroll_y)) = input_values.get_state(input_id)
+        else {
+            return;
+        };
+
+        let caret = clamp_caret_to_boundary(value, caret);
+        let (_cx, caret_y, caret_h) = textarea_caret_geometry(lines, value, caret, measurer, style);
+        let text_h = textarea_text_height(lines, measurer.line_height(style));
+
+        (caret_y, caret_h, text_h)
     };
-
-    let caret = clamp_caret_to_boundary(&value, caret);
-
-    let lines = layout_textarea_value_for_paint(
-        measurer,
-        Rectangle {
-            x: 0.0,
-            y: 0.0,
-            width: available_text_w,
-            height: 1_000_000.0,
-        },
-        style,
-        &value,
-    );
-
-    let (_cx, caret_y, caret_h) = textarea_caret_geometry(&lines, &value, caret, measurer, style);
-    let text_h = textarea_text_height(&lines, measurer.line_height(style));
 
     input_values.update_scroll_for_caret_y(input_id, caret_y, caret_h, text_h, available_text_h);
 }
 
-fn textarea_text_height(lines: &[LineBox<'_>], fallback_line_h: f32) -> f32 {
+fn textarea_text_height(lines: &[TextareaCachedLine], fallback_line_h: f32) -> f32 {
     lines
         .last()
         .map(|l| (l.rect.y + l.rect.height).max(0.0))
         .unwrap_or_else(|| fallback_line_h.max(0.0))
 }
 
-fn textarea_line_index_from_y(lines: &[LineBox<'_>], y_in_text: f32, line_h: f32) -> usize {
+fn textarea_line_index_from_y(lines: &[TextareaCachedLine], y_in_text: f32, line_h: f32) -> usize {
     if lines.is_empty() {
         return 0;
     }
@@ -2137,7 +2494,7 @@ fn textarea_line_index_from_y(lines: &[LineBox<'_>], y_in_text: f32, line_h: f32
 
     for (i, line) in lines.iter().enumerate() {
         let top = textarea_visual_line_top(line);
-        let h = line_h.max(1.0);
+        let h = line.rect.height.max(line_h).max(1.0);
         if y < top + h {
             return i;
         }
@@ -2146,14 +2503,11 @@ fn textarea_line_index_from_y(lines: &[LineBox<'_>], y_in_text: f32, line_h: f32
     lines.len() - 1
 }
 
-fn textarea_visual_line_top(line: &LineBox<'_>) -> f32 {
-    line.fragments
-        .first()
-        .map(|f| f.rect.y)
-        .unwrap_or(line.rect.y)
+fn textarea_visual_line_top(line: &TextareaCachedLine) -> f32 {
+    line.rect.y
 }
 
-fn textarea_line_index_for_caret(lines: &[LineBox<'_>], caret: usize) -> usize {
+fn textarea_line_index_for_caret(lines: &[TextareaCachedLine], caret: usize) -> usize {
     if lines.is_empty() {
         return 0;
     }
@@ -2164,7 +2518,11 @@ fn textarea_line_index_for_caret(lines: &[LineBox<'_>], caret: usize) -> usize {
     i.saturating_sub(1).min(lines.len() - 1)
 }
 
-fn textarea_line_byte_range(lines: &[LineBox<'_>], value: &str, line_idx: usize) -> (usize, usize) {
+fn textarea_line_byte_range(
+    lines: &[TextareaCachedLine],
+    value: &str,
+    line_idx: usize,
+) -> (usize, usize) {
     if lines.is_empty() {
         return (0, value.len());
     }
@@ -2193,7 +2551,7 @@ fn textarea_line_byte_range(lines: &[LineBox<'_>], value: &str, line_idx: usize)
 }
 
 fn textarea_x_for_index_in_line(
-    line: &LineBox<'_>,
+    line: &TextareaCachedLine,
     value: &str,
     index: usize,
     measurer: &dyn TextMeasurer,
@@ -2215,7 +2573,16 @@ fn textarea_x_for_index_in_line(
             continue;
         }
 
-        if value.is_char_boundary(start) && value.is_char_boundary(index) {
+        if !frag.byte_positions.is_empty()
+            && frag.byte_positions.len() == frag.x_advances.len()
+            && frag.byte_positions.first().copied() == Some(start)
+            && frag.byte_positions.last().copied() == Some(end)
+        {
+            let i = frag.byte_positions.partition_point(|&b| b <= index);
+            let i = i.saturating_sub(1).min(frag.x_advances.len() - 1);
+            let rel_x = frag.x_advances[i].clamp(0.0, frag.rect.width.max(0.0));
+            x = frag.rect.x + rel_x;
+        } else if value.is_char_boundary(start) && value.is_char_boundary(index) {
             x = frag.rect.x + measurer.measure(&value[start..index], style);
         } else {
             x = frag.rect.x;
@@ -2226,17 +2593,167 @@ fn textarea_x_for_index_in_line(
     x
 }
 
+fn textarea_caret_for_x_in_fragment(
+    value: &str,
+    frag: &TextareaCachedTextFragment,
+    x: f32,
+    line_start: usize,
+    line_end: usize,
+) -> usize {
+    let line_end = line_end.min(value.len());
+    let line_start = line_start.min(line_end);
+
+    let Some((frag_start, frag_end)) = frag.source_range else {
+        return line_start;
+    };
+
+    let mut start = frag_start.clamp(line_start, line_end);
+    let mut end = frag_end.clamp(start, line_end);
+
+    start = clamp_caret_to_boundary(value, start).min(line_end);
+    end = clamp_caret_to_boundary(value, end).max(start).min(line_end);
+
+    if start >= end {
+        return start;
+    }
+
+    let frag_w = frag.rect.width.max(0.0);
+    let local_x = (x - frag.rect.x).clamp(0.0, frag_w);
+    if local_x <= 0.0 {
+        return start;
+    }
+    if local_x >= frag_w {
+        return end;
+    }
+
+    if !frag.byte_positions.is_empty()
+        && frag.byte_positions.len() == frag.x_advances.len()
+        && frag.byte_positions.first().copied() == Some(frag_start)
+        && frag.byte_positions.last().copied() == Some(frag_end)
+    {
+        let start_i = frag.byte_positions.partition_point(|&b| b < start);
+        let end_i = frag.byte_positions.partition_point(|&b| b <= end);
+        if start_i < end_i {
+            let bytes = &frag.byte_positions[start_i..end_i];
+            let xs = &frag.x_advances[start_i..end_i];
+            if bytes.len() != xs.len() || xs.is_empty() {
+                return start;
+            }
+
+            let i = xs.partition_point(|&ax| ax <= local_x);
+            let left = i.saturating_sub(1).min(xs.len() - 1);
+            let left_x = xs[left];
+            let left_byte = bytes[left];
+
+            if i < xs.len() {
+                let right_x = xs[i];
+                let right_byte = bytes[i];
+                if local_x - left_x > right_x - local_x {
+                    return right_byte;
+                }
+            }
+
+            return left_byte;
+        }
+    }
+
+    // Fallback: approximate by character index without shaping.
+    let slice = &value[start..end];
+    let char_count = slice.chars().count();
+    if char_count == 0 {
+        return start;
+    }
+
+    let t = (local_x / frag_w).clamp(0.0, 1.0);
+    let target = (t * char_count as f32).round() as usize;
+    if target == 0 {
+        return start;
+    }
+    if target >= char_count {
+        return end;
+    }
+
+    for (i, (byte_off, _ch)) in slice.char_indices().enumerate() {
+        if i == target {
+            return start + byte_off;
+        }
+    }
+
+    end
+}
+
+fn textarea_caret_for_x_in_line(
+    line: &TextareaCachedLine,
+    value: &str,
+    x: f32,
+    line_start: usize,
+    line_end: usize,
+) -> usize {
+    let x = x.max(0.0);
+    let Some(first) = line.fragments.first() else {
+        return line_start;
+    };
+
+    let mut prev: Option<&TextareaCachedTextFragment> = None;
+    for frag in &line.fragments {
+        let left = frag.rect.x;
+        let right = frag.rect.x + frag.rect.width.max(0.0);
+
+        if x < left {
+            return match prev {
+                None => textarea_caret_for_x_in_fragment(value, first, left, line_start, line_end),
+                Some(prev) => {
+                    let prev_right = prev.rect.x + prev.rect.width.max(0.0);
+                    if left - x < x - prev_right {
+                        textarea_caret_for_x_in_fragment(value, frag, left, line_start, line_end)
+                    } else {
+                        textarea_caret_for_x_in_fragment(
+                            value, prev, prev_right, line_start, line_end,
+                        )
+                    }
+                }
+            };
+        }
+
+        if x <= right {
+            return textarea_caret_for_x_in_fragment(value, frag, x, line_start, line_end);
+        }
+
+        prev = Some(frag);
+    }
+
+    // After the last fragment: snap to the end of it.
+    let last = prev.unwrap_or(first);
+    let last_right = last.rect.x + last.rect.width.max(0.0);
+    textarea_caret_for_x_in_fragment(value, last, last_right, line_start, line_end)
+}
+
+fn textarea_caret_for_x_in_lines(
+    lines: &[TextareaCachedLine],
+    value: &str,
+    line_idx: usize,
+    x: f32,
+) -> usize {
+    if lines.is_empty() {
+        return 0;
+    }
+
+    let i = line_idx.min(lines.len() - 1);
+    let (line_start, line_end) = textarea_line_byte_range(lines, value, i);
+    textarea_caret_for_x_in_line(&lines[i], value, x, line_start, line_end)
+}
+
 fn textarea_caret_geometry(
-    lines: &[LineBox<'_>],
+    lines: &[TextareaCachedLine],
     value: &str,
     caret: usize,
     measurer: &dyn TextMeasurer,
     style: &ComputedStyle,
 ) -> (f32, f32, f32) {
     let line_h = measurer.line_height(style);
-    let Some(first) = lines.first() else {
+    if lines.is_empty() {
         return (0.0, 0.0, line_h);
-    };
+    }
 
     let caret = clamp_caret_to_boundary(value, caret);
     let line_idx = textarea_line_index_for_caret(lines, caret);
@@ -2246,8 +2763,7 @@ fn textarea_caret_geometry(
     let y = line.rect.y;
     let h = line.rect.height.max(line_h);
 
-    // Ensure we never report a caret above the first line origin.
-    (x, y.max(first.rect.y), h)
+    (x, y, h)
 }
 
 #[derive(Clone, Copy)]
@@ -2261,7 +2777,7 @@ struct TextAreaSelectionPaintParams<'a> {
 
 fn paint_textarea_selection(
     painter: &Painter,
-    lines: &[LineBox<'_>],
+    lines: &[TextareaCachedLine],
     value: &str,
     sel: SelectionRange,
     params: TextAreaSelectionPaintParams<'_>,
@@ -2299,14 +2815,8 @@ fn paint_textarea_selection(
         let x0 = textarea_x_for_index_in_line(line, value, a, measurer, style);
         let x1 = textarea_x_for_index_in_line(line, value, b, measurer, style);
 
-        let line_y = line
-            .fragments
-            .first()
-            .map(|f| f.rect.y)
-            .unwrap_or(line.rect.y);
-
-        let y = inner_origin.y + line_y - scroll_y;
-        let h = measurer.line_height(style).max(1.0);
+        let y = inner_origin.y + line.rect.y - scroll_y;
+        let h = line.rect.height.max(measurer.line_height(style)).max(1.0);
 
         let rect = Rect::from_min_max(
             Pos2 {
@@ -2323,65 +2833,84 @@ fn paint_textarea_selection(
     }
 }
 
+struct TextareaVerticalMoveCtx<'a> {
+    lines: &'a [TextareaCachedLine],
+    measurer: &'a dyn TextMeasurer,
+    style: &'a ComputedStyle,
+}
+
 fn textarea_move_caret_vertically(
     input_values: &mut InputValueStore,
     input_id: Id,
     delta_lines: i32,
-    control_rect_w: f32,
-    measurer: &dyn TextMeasurer,
-    style: &ComputedStyle,
+    preferred_x: Option<f32>,
+    ctx: TextareaVerticalMoveCtx<'_>,
     selecting: bool,
-) {
+) -> Option<f32> {
+    let TextareaVerticalMoveCtx {
+        lines,
+        measurer,
+        style,
+    } = ctx;
+
     if delta_lines == 0 {
-        return;
+        return preferred_x;
     }
 
-    let (pad_l, pad_r, _pad_t, _pad_b) = input_text_padding(style);
-    let available_text_w = (control_rect_w - pad_l - pad_r).max(0.0);
-
-    let Some((value, caret, _sel, _scroll_x, _scroll_y)) = input_values.get_state(input_id) else {
-        return;
+    let Some((value, caret)) = input_values
+        .get_state(input_id)
+        .map(|(value, caret, _sel, _sx, _sy)| (value, caret))
+    else {
+        return preferred_x;
     };
-    let value = value.to_string();
-    let caret = clamp_caret_to_boundary(&value, caret);
-
-    let lines = layout_textarea_value_for_paint(
-        measurer,
-        Rectangle {
-            x: 0.0,
-            y: 0.0,
-            width: available_text_w,
-            height: 1_000_000.0,
-        },
-        style,
-        &value,
-    );
 
     if lines.is_empty() {
-        return;
+        return preferred_x;
     }
 
-    let cur_line = textarea_line_index_for_caret(&lines, caret);
+    let caret = clamp_caret_to_boundary(value, caret);
+
+    // Keep the "column" stable across vertical moves.
+    let x = preferred_x.unwrap_or_else(|| {
+        let (x, _y, _h) = textarea_caret_geometry(lines, value, caret, measurer, style);
+        x
+    });
+
+    let cur_line = textarea_line_index_for_caret(lines, caret);
+    let last_line = lines.len() - 1;
+
+    // --- NEW: boundary behavior like browsers ---
+    if selecting {
+        if delta_lines < 0 && cur_line == 0 {
+            // Shift+Up at first line => go to start of first line
+            let (line_start, _line_end) = textarea_line_byte_range(lines, value, cur_line);
+            input_values.set_caret(input_id, line_start, true);
+            return Some(x.max(0.0));
+        }
+        if delta_lines > 0 && cur_line == last_line {
+            // Shift+Down at last line => go to end of last line
+            let (_line_start, line_end) = textarea_line_byte_range(lines, value, cur_line);
+            input_values.set_caret(input_id, line_end, true);
+            return Some(x.max(0.0));
+        }
+    }
+
+    // Normal vertical move (within bounds)
     let target_line = if delta_lines < 0 {
         cur_line.saturating_sub((-delta_lines) as usize)
     } else {
-        (cur_line + (delta_lines as usize)).min(lines.len() - 1)
+        (cur_line + (delta_lines as usize)).min(last_line)
     };
 
-    let (x, _y, _h) = textarea_caret_geometry(&lines, &value, caret, measurer, style);
-    let (line_start, line_end) = textarea_line_byte_range(&lines, &value, target_line);
+    let (line_start, line_end) = textarea_line_byte_range(lines, value, target_line);
+    let line = &lines[target_line];
+    let new_caret = textarea_caret_for_x_in_line(line, value, x, line_start, line_end);
 
-    input_values.set_caret_from_viewport_x_in_range(
-        input_id,
-        x,
-        selecting,
-        line_start,
-        line_end,
-        |s| measurer.measure(s, style),
-    );
+    input_values.set_caret(input_id, new_caret, selecting);
+    Some(x.max(0.0))
 }
 
-fn textarea_line_source_range(line: &LineBox<'_>) -> Option<(usize, usize)> {
+fn textarea_line_source_range(line: &TextareaCachedLine) -> Option<(usize, usize)> {
     if let Some(r) = line.source_range {
         return Some(r);
     }
@@ -2435,73 +2964,6 @@ fn find_layout_box_by_id<'a>(root: &'a LayoutBox<'a>, id: Id) -> Option<&'a Layo
         }
     }
     None
-}
-
-fn find_input_fragment_rect_by_id<'a>(
-    root: &'a LayoutBox<'a>,
-    measurer: &dyn TextMeasurer,
-    input_id: Id,
-) -> Option<Rectangle> {
-    fn walk<'a>(
-        node: &'a LayoutBox<'a>,
-        measurer: &dyn TextMeasurer,
-        input_id: Id,
-    ) -> Option<Rectangle> {
-        // Inline fragments are only laid out for block-level elements.
-        if matches!(node.node.node, Node::Element { .. })
-            && !matches!(node.style.display, Display::Inline)
-        {
-            let (content_x, content_width) =
-                content_x_and_width(node.style, node.rect.x, node.rect.width);
-            let content_top = content_y(node.style, node.rect.y);
-            let content_h = content_height(node.style, node.rect.height);
-
-            let block_rect = Rectangle {
-                x: content_x,
-                y: content_top,
-                width: content_width,
-                height: content_h,
-            };
-
-            let lines = layout_inline_for_paint(measurer, block_rect, node);
-            for line in &lines {
-                for frag in &line.fragments {
-                    match &frag.kind {
-                        InlineFragment::Replaced {
-                            layout: Some(lb), ..
-                        }
-                        | InlineFragment::Box {
-                            layout: Some(lb), ..
-                        } => {
-                            if lb.node_id() == input_id
-                                && matches!(
-                                    lb.replaced,
-                                    Some(
-                                        ReplacedKind::InputText
-                                            | ReplacedKind::TextArea
-                                            | ReplacedKind::InputCheckbox
-                                            | ReplacedKind::InputRadio
-                                    )
-                                )
-                            {
-                                return Some(frag.rect);
-                            }
-                        }
-                        _ => {}
-                    }
-                }
-            }
-        }
-
-        for child in &node.children {
-            if let Some(r) = walk(child, measurer, input_id) {
-                return Some(r);
-            }
-        }
-        None
-    }
-
-    walk(root, measurer, input_id)
 }
 
 fn resolve_relative_url(base_url: Option<&str>, href: &str) -> Option<String> {
@@ -2563,8 +3025,8 @@ mod tests {
     fn textarea_line_byte_range_prefers_line_end_over_next_start() {
         let value = "a\nb";
 
-        let lines: Vec<LineBox<'static>> = vec![
-            LineBox {
+        let lines: Vec<TextareaCachedLine> = vec![
+            TextareaCachedLine {
                 fragments: Vec::new(),
                 rect: Rectangle {
                     x: 0.0,
@@ -2572,10 +3034,9 @@ mod tests {
                     width: 0.0,
                     height: 0.0,
                 },
-                baseline: 0.0,
                 source_range: Some((0, 1)), // excludes '\n'
             },
-            LineBox {
+            TextareaCachedLine {
                 fragments: Vec::new(),
                 rect: Rectangle {
                     x: 0.0,
@@ -2583,7 +3044,6 @@ mod tests {
                     width: 0.0,
                     height: 0.0,
                 },
-                baseline: 0.0,
                 source_range: Some((2, 3)),
             },
         ];

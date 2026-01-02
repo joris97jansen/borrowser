@@ -36,6 +36,7 @@ fn next_cursor_boundary(s: &str, i: usize) -> usize {
 #[derive(Clone, Debug)]
 struct InputState {
     value: String,
+    value_rev: u64,
     checked: bool,
     /// Caret position as a byte index into `value` (always on a UTF-8 char boundary).
     caret: usize,
@@ -55,6 +56,7 @@ impl Default for InputState {
     fn default() -> Self {
         Self {
             value: String::new(),
+            value_rev: 0,
             checked: false,
             caret: 0,
             selection_anchor: None,
@@ -93,6 +95,11 @@ impl InputValueStore {
             let sel = selection_range(&s.value, s.selection_anchor, s.caret);
             (s.value.as_str(), s.caret, sel, s.scroll_x, s.scroll_y)
         })
+    }
+
+    /// Monotonic revision counter for the input's value. Increments on any text change.
+    pub fn value_revision(&self, id: Id) -> u64 {
+        self.values.get(&id).map(|s| s.value_rev).unwrap_or(0)
     }
 
     /// Returns the stored value for this key, if any.
@@ -135,10 +142,16 @@ impl InputValueStore {
     pub fn set(&mut self, id: Id, value: String) {
         let caret = clamp_to_char_boundary(&value, value.len());
         let checked = self.values.get(&id).is_some_and(|s| s.checked);
+        let value_rev = self
+            .values
+            .get(&id)
+            .map(|s| s.value_rev.wrapping_add(1))
+            .unwrap_or(0);
         self.values.insert(
             id,
             InputState {
                 value,
+                value_rev,
                 checked,
                 caret,
                 selection_anchor: None,
@@ -155,6 +168,7 @@ impl InputValueStore {
         let caret = clamp_to_char_boundary(&initial, initial.len());
         self.values.entry(id).or_insert(InputState {
             value: initial,
+            value_rev: 0,
             checked: false,
             caret,
             selection_anchor: None,
@@ -560,6 +574,7 @@ fn clear_selection(st: &mut InputState) {
 
 fn mark_text_dirty(st: &mut InputState) {
     st.cursor_boundaries_dirty = true;
+    st.value_rev = st.value_rev.wrapping_add(1);
 }
 
 fn ensure_cursor_boundaries(st: &mut InputState) {
