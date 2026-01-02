@@ -42,10 +42,12 @@ impl RadioGroupIndex {
     }
 
     fn add_radio_to_group(&mut self, group_id: usize, radio_id: Id) {
-        self.group_by_radio.insert(radio_id, group_id);
-        if let Some(members) = self.groups.get_mut(group_id)
-            && members.last().copied() != Some(radio_id)
-            && !members.contains(&radio_id)
+        // Map the radio -> group (last write wins; safe even if re-seen).
+        let prev = self.group_by_radio.insert(radio_id, group_id);
+
+        // Only push into members list the first time we see this radio.
+        if prev.is_none()
+            && let Some(members) = self.groups.get_mut(group_id)
         {
             members.push(radio_id);
         }
@@ -106,6 +108,8 @@ pub fn input_control_type(node: &Node) -> InputControlType {
 }
 
 pub fn seed_input_state_from_dom(store: &mut InputValueStore, dom: &Node) -> FormControlIndex {
+    const DOCUMENT_SCOPE_ID: Id = Id(0);
+
     #[derive(Clone, Copy, Debug, PartialEq, Eq)]
     enum RadioGroupSelection {
         Locked(Id),
@@ -126,7 +130,7 @@ pub fn seed_input_state_from_dom(store: &mut InputValueStore, dom: &Node) -> For
             return None;
         }
         Some(RadioGroupKey {
-            scope_id: scope_id.unwrap_or(Id(0)),
+            scope_id: scope_id.unwrap_or(DOCUMENT_SCOPE_ID),
             name: name.to_string(),
         })
     }
@@ -226,8 +230,40 @@ pub fn seed_input_state_from_dom(store: &mut InputValueStore, dom: &Node) -> For
                 }
             }
 
-            Node::Document { children, .. } | Node::Element { children, .. } => {
-                let next_scope_id = Some(node.id());
+            Node::Element { name, children, .. } if name.eq_ignore_ascii_case("textarea") => {
+                let id = node.id();
+                if store.has(id) {
+                    return;
+                }
+
+                let mut initial = String::new();
+                collect_text(children, &mut initial);
+                let mut initial = normalize_textarea_newlines(&initial);
+
+                // HTML textarea parsing: if the first character is a newline, strip it.
+                if initial.starts_with('\n') {
+                    initial.remove(0);
+                }
+
+                store.ensure_initial(id, initial);
+            }
+
+            Node::Document { children, .. } => {
+                // Document is a scoping boundary for radio groups.
+                let next_scope_id = Some(DOCUMENT_SCOPE_ID);
+                for c in children {
+                    walk(store, c, next_scope_id, group_by_key, index, radio_groups);
+                }
+            }
+
+            Node::Element { name, children, .. } => {
+                // Radio groups are scoped to their "form owner" (roughly: the nearest `<form>`).
+                // If there is no form ancestor, group by the document scope.
+                let next_scope_id = if name.eq_ignore_ascii_case("form") {
+                    Some(node.id())
+                } else {
+                    scope_id
+                };
                 for c in children {
                     walk(store, c, next_scope_id, group_by_key, index, radio_groups);
                 }
@@ -272,6 +308,40 @@ fn has_attr(node: &Node, name: &str) -> bool {
     }
 }
 
+fn collect_text(nodes: &[Node], out: &mut String) {
+    for n in nodes {
+        match n {
+            Node::Text { text, .. } => out.push_str(text),
+            Node::Element { children, .. } | Node::Document { children, .. } => {
+                collect_text(children, out);
+            }
+            Node::Comment { .. } => {}
+        }
+    }
+}
+
+fn normalize_textarea_newlines(s: &str) -> String {
+    // Normalize CRLF/CR to LF. (Browsers store textarea values with LF newlines.)
+    if !s.contains('\r') {
+        return s.to_string();
+    }
+
+    let mut out = String::with_capacity(s.len());
+    let mut it = s.chars().peekable();
+    while let Some(ch) = it.next() {
+        match ch {
+            '\r' => {
+                if it.peek() == Some(&'\n') {
+                    let _ = it.next();
+                }
+                out.push('\n');
+            }
+            _ => out.push(ch),
+        }
+    }
+    out
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -302,6 +372,13 @@ mod tests {
             id: Id(0),
             doctype: None,
             children,
+        }
+    }
+
+    fn text(id: u32, text: &str) -> Node {
+        Node::Text {
+            id: Id(id),
+            text: text.to_string(),
         }
     }
 
@@ -355,6 +432,206 @@ mod tests {
 
         assert!(!store.is_checked(Id(2)));
         assert!(store.is_checked(Id(3)));
+    }
+
+    #[test]
+    fn seeds_radio_groups_exclusive_across_sibling_containers() {
+        let dom = doc(vec![
+            elem(
+                1,
+                "div",
+                Vec::new(),
+                vec![input(
+                    2,
+                    "radio",
+                    vec![
+                        ("name".to_string(), Some("g".to_string())),
+                        ("checked".to_string(), None),
+                    ],
+                )],
+            ),
+            elem(
+                3,
+                "div",
+                Vec::new(),
+                vec![input(
+                    4,
+                    "radio",
+                    vec![
+                        ("name".to_string(), Some("g".to_string())),
+                        ("checked".to_string(), None),
+                    ],
+                )],
+            ),
+        ]);
+
+        let mut store = InputValueStore::new();
+        let index = seed_input_state_from_dom(&mut store, &dom);
+
+        // Same name, same document scope: last checked wins.
+        assert!(!store.is_checked(Id(2)));
+        assert!(store.is_checked(Id(4)));
+
+        // Clicking one must uncheck the other, even across sibling containers.
+        assert!(index.click_radio(&mut store, Id(2)));
+        assert!(store.is_checked(Id(2)));
+        assert!(!store.is_checked(Id(4)));
+    }
+
+    #[test]
+    fn seeds_radio_groups_are_scoped_per_form() {
+        let dom = doc(vec![
+            elem(
+                1,
+                "form",
+                Vec::new(),
+                vec![input(
+                    2,
+                    "radio",
+                    vec![
+                        ("name".to_string(), Some("g".to_string())),
+                        ("checked".to_string(), None),
+                    ],
+                )],
+            ),
+            elem(
+                3,
+                "form",
+                Vec::new(),
+                vec![input(
+                    4,
+                    "radio",
+                    vec![
+                        ("name".to_string(), Some("g".to_string())),
+                        ("checked".to_string(), None),
+                    ],
+                )],
+            ),
+        ]);
+
+        let mut store = InputValueStore::new();
+        let index = seed_input_state_from_dom(&mut store, &dom);
+
+        // Same name but different forms: both can be checked.
+        assert!(store.is_checked(Id(2)));
+        assert!(store.is_checked(Id(4)));
+
+        // Clicking one form's radio must not affect the other form.
+        assert!(!index.click_radio(&mut store, Id(2))); // already checked
+        assert!(store.is_checked(Id(2)));
+        assert!(store.is_checked(Id(4)));
+    }
+
+    #[test]
+    fn radios_outside_form_do_not_conflict_with_radios_inside_form() {
+        let dom = doc(vec![
+            // outside form
+            input(
+                1,
+                "radio",
+                vec![
+                    ("name".to_string(), Some("g".to_string())),
+                    ("checked".to_string(), None),
+                ],
+            ),
+            // inside form
+            elem(
+                2,
+                "form",
+                Vec::new(),
+                vec![
+                    input(
+                        3,
+                        "radio",
+                        vec![("name".to_string(), Some("g".to_string()))],
+                    ),
+                    input(
+                        4,
+                        "radio",
+                        vec![
+                            ("name".to_string(), Some("g".to_string())),
+                            ("checked".to_string(), None),
+                        ],
+                    ),
+                ],
+            ),
+        ]);
+
+        let mut store = InputValueStore::new();
+        let index = seed_input_state_from_dom(&mut store, &dom);
+
+        // Outside-form checked stays checked; inside-form checked stays checked.
+        assert!(store.is_checked(Id(1)));
+        assert!(store.is_checked(Id(4)));
+        assert!(!store.is_checked(Id(3)));
+
+        // Clicking inside form shouldn't affect outside.
+        assert!(index.click_radio(&mut store, Id(3)));
+        assert!(store.is_checked(Id(1)));
+        assert!(store.is_checked(Id(3)));
+        assert!(!store.is_checked(Id(4)));
+    }
+
+    #[test]
+    fn stored_radio_selection_overrides_html_defaults() {
+        let dom = doc(vec![elem(
+            1,
+            "div",
+            Vec::new(),
+            vec![
+                input(
+                    2,
+                    "radio",
+                    vec![
+                        ("name".to_string(), Some("g".to_string())),
+                        ("checked".to_string(), None),
+                    ],
+                ),
+                input(
+                    3,
+                    "radio",
+                    vec![("name".to_string(), Some("g".to_string()))],
+                ),
+            ],
+        )]);
+
+        let mut store = InputValueStore::new();
+        store.ensure_initial_checked(Id(3), true);
+
+        let _ = seed_input_state_from_dom(&mut store, &dom);
+
+        assert!(!store.is_checked(Id(2)));
+        assert!(store.is_checked(Id(3)));
+    }
+
+    #[test]
+    fn stored_duplicate_checked_radios_keep_first_in_dom_order() {
+        let dom = doc(vec![elem(
+            1,
+            "div",
+            Vec::new(),
+            vec![
+                input(
+                    2,
+                    "radio",
+                    vec![("name".to_string(), Some("g".to_string()))],
+                ),
+                input(
+                    3,
+                    "radio",
+                    vec![("name".to_string(), Some("g".to_string()))],
+                ),
+            ],
+        )]);
+
+        let mut store = InputValueStore::new();
+        store.ensure_initial_checked(Id(2), true);
+        store.ensure_initial_checked(Id(3), true);
+
+        let _ = seed_input_state_from_dom(&mut store, &dom);
+
+        assert!(store.is_checked(Id(2)));
+        assert!(!store.is_checked(Id(3)));
     }
 
     #[test]
@@ -447,5 +724,35 @@ mod tests {
         assert!(index.click_radio(&mut store, Id(3)));
         assert!(store.is_checked(Id(2)));
         assert!(store.is_checked(Id(3)));
+    }
+
+    #[test]
+    fn seeds_textarea_initial_value_strips_one_leading_newline() {
+        let dom = doc(vec![elem(
+            1,
+            "textarea",
+            Vec::new(),
+            vec![text(2, "\nabc")],
+        )]);
+
+        let mut store = InputValueStore::new();
+        let _ = seed_input_state_from_dom(&mut store, &dom);
+
+        assert_eq!(store.get(Id(1)), Some("abc"));
+    }
+
+    #[test]
+    fn seeds_textarea_initial_value_normalizes_crlf_and_cr_to_lf() {
+        let dom = doc(vec![elem(
+            1,
+            "textarea",
+            Vec::new(),
+            vec![text(2, "a\r\nb\rc")],
+        )]);
+
+        let mut store = InputValueStore::new();
+        let _ = seed_input_state_from_dom(&mut store, &dom);
+
+        assert_eq!(store.get(Id(1)), Some("a\nb\nc"));
     }
 }

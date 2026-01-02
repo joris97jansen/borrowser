@@ -192,6 +192,7 @@ fn hit_test_inline_fragments<'a>(
                     let hit_kind = match kind {
                         ReplacedKind::Img => HitKind::Image,
                         ReplacedKind::InputText => HitKind::Input,
+                        ReplacedKind::TextArea => HitKind::Input,
                         ReplacedKind::InputCheckbox => HitKind::Checkbox,
                         ReplacedKind::InputRadio => HitKind::Radio,
                         ReplacedKind::Button => HitKind::Button,
