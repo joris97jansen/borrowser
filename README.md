@@ -14,16 +14,18 @@ A full browser engine built with Rust’s safety and clarity, nothing borrowed f
 ---
 ## Next steps
 
-1.  **HTML Replaced Elements & Form Controls** (Phase 1: `<img>`, `<a>`, `<input type=text>`)
-    
-2.  **Border Support** (borders + border-radius basics)
+See [ROADMAP.md](ROADMAP.md) for the full plan. Current focus areas:
+
+1.  **Border Support** (borders + border-radius basics)
     
     -   inputs/buttons look awful without borders; also helps with debugging layout boxes.
         
-3.  **CSS Color Support** (to reduce “everything looks wrong” quickly)
+2.  **CSS Unit Support** (em/rem/% etc.)
     
-4.  **CSS Unit Support** (em/rem/% etc.)
-    
+3.  **Layout Caching & Dirty Flags** (avoid rebuilding style/layout every frame)
+
+4.  **Debug Overlays** (box outlines, line boxes, etc.)
+
 5.  **Inline Formatting Polishing** (baseline/vertical-align, better line-height behavior, etc.)
 ---
 
@@ -40,6 +42,8 @@ Borrowser currently supports:
 ### **Networking**
 - Streaming HTML over HTTP
 - Parallel streaming of external CSS files
+- Supports `file://` URLs for local pages and examples
+- Streaming images (PNG/JPEG) with async decode + egui textures
 
 ### **HTML & CSS**
 - HTML tokenizer + DOM tree builder
@@ -55,6 +59,7 @@ Borrowser currently supports:
   - word-wrapping  
   - line boxes + fragments  
 - Painting backgrounds + text via `egui` + `wgpu`
+- Replaced elements: `<img>`, `<input type="text|checkbox|radio">`, `<textarea>`, `<button>` (basic behavior)
 - Scrollable viewport with proper page background selection
 
 ### **Architecture**
@@ -82,10 +87,16 @@ Borrowser is built to be understood, not black magic.
 ## 🚀 Running Borrowser
 
 Requirements:
-- Latest stable Rust
+- Rust toolchain pinned in `rust-toolchain.toml` (currently `1.92.0`)
 - A GPU that supports `wgpu` (almost all modern machines)
 
 Run in release mode for a smooth experience:
 
 ```bash
 cargo run --release
+```
+
+Then try a local example in the URL bar:
+
+- `file://examples/href.html`
+- `file://examples/image.html`
