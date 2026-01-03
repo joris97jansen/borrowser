@@ -235,6 +235,7 @@ dependencies = [
  "core_types",
  "css",
  "egui",
+ "gfx",
  "html",
  "image",
  "layout",
@@ -864,9 +865,11 @@ dependencies = [
 name = "gfx"
 version = "0.1.0"
 dependencies = [
+ "css",
  "egui",
  "egui-wgpu",
  "egui-winit",
+ "layout",
  "pollster",
  "winit",
 ]

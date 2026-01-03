@@ -12,6 +12,7 @@ css = { path = "../css" }
 core_types = { path = "../core_types" }
 tools = { path = "../tools" }
 layout = { path = "../layout" }
+gfx = { path = "../gfx" }
 
 egui = { workspace = true }
 url = { workspace = true }
