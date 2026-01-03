@@ -11,6 +11,9 @@ use egui_wgpu::{
 use egui_winit::State as EguiWinitState;
 use std::mem;
 use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
+
+pub mod text_measurer;
+pub use text_measurer::EguiTextMeasurer;
 pub struct Renderer {
     egui_context: EguiContext,
     egui_state: EguiWinitState,
