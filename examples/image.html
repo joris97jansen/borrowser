@@ -159,5 +159,11 @@
       <b>Missing src still fine (placeholder only)</b><br>
       <img alt="ALT: no src, width+height inline" style="width: 90px; height: 30px;">
     </div>
+
+    <div class="box">
+      <b>Broken src (error fallback)</b><br>
+      When the image fails to load, the placeholder should stay sized and show the alt text:<br><br>
+      <img src="does-not-exist.png" alt="ALT: broken image (should be painted inside the box)" style="width: 240px; height: 80px;">
+    </div>
   </body>
 </html>
