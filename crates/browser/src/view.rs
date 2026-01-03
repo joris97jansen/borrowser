@@ -3117,7 +3117,10 @@ fn paint_img_fallback_placeholder(
     {
         paint_wrapped_text(
             &clip_painter,
-            Rect::from_min_size(Pos2 { x: inner.min.x, y }, Vec2::new(inner.width(), remaining_h)),
+            Rect::from_min_size(
+                Pos2 { x: inner.min.x, y },
+                Vec2::new(inner.width(), remaining_h),
+            ),
             style,
             measurer,
             text,
@@ -3256,7 +3259,7 @@ fn ellipsize_to_width(
     let mut hi: usize = chars.len();
 
     while lo < hi {
-        let mid = (lo + hi + 1) / 2;
+        let mid = lo + (hi - lo).div_ceil(2);
         let mut candidate: String = chars[..mid].iter().collect();
         candidate.push_str(ellipsis);
 
