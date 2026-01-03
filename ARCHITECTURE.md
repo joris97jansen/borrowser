@@ -37,19 +37,24 @@ Borrowser is organized into modular crates, each with a focused role:
 ```
 
 crates/
+├── core_types      # Shared IDs/types (TabId, ResourceKind, …)
+├── tools           # Small shared helpers/constants
+├── app_api         # UI-facing traits + runtime/bus glue
+│
 ├── html            # Tokenizer + DOM tree builder
 ├── css             # CSS parser, cascade, computed styles
 ├── layout          # Block + inline layout engine and box model
 ├── gfx             # Painting + GPU rendering via egui + wgpu
 │
 ├── net             # HTTP streaming client
-├── runtime-net     # Network runtime thread
-├── runtime-parse   # HTML parsing runtime thread
-├── runtime-css     # CSS parsing runtime thread
+├── runtime_net     # Network runtime thread
+├── runtime_parse   # HTML parsing runtime thread
+├── runtime_css     # CSS parsing runtime thread
 │
 ├── bus             # Message bus for CoreCommand/CoreEvent
 ├── browser         # Tabs, navigation, page state
-└── platform        # Window, event loop, system integration
+├── platform        # Window, event loop, system integration
+└── js              # JavaScript runtime (WIP)
 
 ```
 
@@ -65,7 +70,7 @@ Every tab has a unique `tab_id`, and commands/events must carry it:
 
 ```
 
-Tab → (CoreCommand) → runtime-net / runtime-parse / runtime-css
+Tab → (CoreCommand) → runtime_net / runtime_parse / runtime_css
 runtime → (CoreEvent) → Tab
 
 ````
@@ -117,7 +122,7 @@ CSS is processed in three phases:
 
 ### 1. **Parse Stylesheets**
 
-`runtime-css` parses CSS blocks into:
+`runtime_css` parses CSS blocks into:
 
 * selectors (`div`, `#id`, `.class`)
 * declarations (`color: red;`)
@@ -299,9 +304,9 @@ Borrowser strictly isolates responsibilities:
 | Thread           | Responsibility                |
 | ---------------- | ----------------------------- |
 | **Main thread**  | UI, layout, rendering         |
-| `runtime-net`    | HTTP streaming                |
-| `runtime-parse`  | DOM building                  |
-| `runtime-css`    | CSS parsing                   |
+| `runtime_net`    | HTTP streaming                |
+| `runtime_parse`  | DOM building                  |
+| `runtime_css`    | CSS parsing                   |
 | winit event loop | Dispatches CoreEvents to tabs |
 
 All communication is message-driven, no shared state.
@@ -342,7 +347,7 @@ See the full [ROADMAP.md](ROADMAP.md) for upcoming work:
 * Page-level caching: no rebuild on every frame
 * Debug overlay (paint lines, box outlines)
 * More CSS properties (width, height, overflow, font, etc.)
-* JavaScript runtime (far future)
+* JavaScript runtime integration
 
 ---
 
