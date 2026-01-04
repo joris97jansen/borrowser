@@ -41,11 +41,9 @@ fn paint_layout_box<'a>(
     let origin = ctx.origin;
     let measurer = ctx.measurer;
 
-    // 0) Do not paint non-rendering elements (head, style, script, etc.)
+    // Non-rendering elements (e.g. <head>, <style>, <script>) suppress painting for the entire subtree.
+    // Layout/style should prevent paintable boxes from existing here.
     if is_non_rendering_element(layout.node.node) {
-        for child in &layout.children {
-            paint_layout_box(child, ctx, skip_inline_block_children);
-        }
         return;
     }
 
