@@ -3,6 +3,7 @@ use std::sync::mpsc;
 
 use app_api::RepaintHandle;
 use egui::{ColorImage, TextureHandle, TextureId, TextureOptions};
+use gfx::paint::ImageProvider;
 
 const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
 const MAX_IMAGE_PIXELS: usize = 16_777_216; // 4096 * 4096
@@ -300,4 +301,23 @@ fn decode_image(bytes: Vec<u8>) -> Result<DecodedImage, String> {
         size_px: [w as usize, h as usize],
         rgba: rgba.into_raw(),
     })
+}
+
+impl ImageProvider for ResourceManager {
+    fn image_state_by_url(&self, url: &str) -> gfx::paint::ImageState {
+        match ResourceManager::image_state_by_url(self, url) {
+            ImageState::Missing => gfx::paint::ImageState::Missing,
+            ImageState::Loading { .. } => gfx::paint::ImageState::Loading,
+            ImageState::Decoding { .. } => gfx::paint::ImageState::Decoding,
+            ImageState::Ready(img) => gfx::paint::ImageState::Ready {
+                texture_id: img.texture_id,
+                size_px: img.size_px,
+            },
+            ImageState::Error { error, .. } => gfx::paint::ImageState::Error { error },
+        }
+    }
+
+    fn image_intrinsic_size_px(&self, url: &str) -> Option<(u32, u32)> {
+        ResourceManager::image_intrinsic_size_px(self, url)
+    }
 }

@@ -1,4 +1,4 @@
-use crate::input_store::InputValueStore;
+use gfx::input::{FormControlHandler, InputValueStore};
 use html::{Id, Node};
 use std::collections::HashMap;
 
@@ -287,6 +287,12 @@ pub fn seed_input_state_from_dom(store: &mut InputValueStore, dom: &Node) -> For
     );
 
     index
+}
+
+impl FormControlHandler for FormControlIndex {
+    fn on_radio_clicked(&self, store: &mut InputValueStore, radio_id: Id) -> bool {
+        FormControlIndex::click_radio(self, store, radio_id)
+    }
 }
 
 fn attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
