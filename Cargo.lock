@@ -865,6 +865,7 @@ dependencies = [
 name = "gfx"
 version = "0.1.0"
 dependencies = [
+ "core_types",
  "css",
  "egui",
  "egui-wgpu",

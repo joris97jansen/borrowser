@@ -14,6 +14,7 @@ use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
 pub mod text_measurer;
 pub use text_measurer::EguiTextMeasurer;
+pub mod ui;
 pub struct Renderer {
     egui_context: EguiContext,
     egui_state: EguiWinitState,

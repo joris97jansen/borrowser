@@ -37,14 +37,14 @@ Borrowser is organized into modular crates, each with a focused role:
 ```
 
 crates/
-├── core_types      # Shared IDs/types (TabId, ResourceKind, …)
+├── core_types      # Shared IDs/types (TabId, ResourceKind, BrowserInput, …)
 ├── tools           # Small shared helpers/constants
 ├── app_api         # UI-facing traits + runtime/bus glue
 │
 ├── html            # Tokenizer + DOM tree builder
 ├── css             # CSS parser, cascade, computed styles
 ├── layout          # Block + inline layout engine and box model
-├── gfx             # Painting + GPU rendering via egui + wgpu
+├── gfx             # egui + wgpu renderer + UI adapters (text measurer, toolbar widgets)
 │
 ├── net             # HTTP streaming client
 ├── runtime_net     # Network runtime thread
@@ -276,7 +276,8 @@ Rendering is done via `egui` + `wgpu`, but **painting logic is custom**:
 
 Painting uses only the geometry computed during layout.
 
-Egui is used purely as a drawing API, not as a layout engine.
+`egui` is used for the **UI shell** (tab strip, URL bar, etc.) and as a **drawing API** for page painting.
+It is not used as the page layout engine — layout comes from the `layout` crate.
 
 ---
 
