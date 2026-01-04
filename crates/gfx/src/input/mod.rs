@@ -1,7 +1,9 @@
+mod action;
 mod interaction;
 mod route;
 mod store;
 
+pub use action::PageAction;
 pub use interaction::{
     ActiveTarget, InputDragState, InteractionState, TextareaCachedLine, TextareaCachedTextFragment,
     TextareaLayoutCache,

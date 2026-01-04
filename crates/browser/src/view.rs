@@ -4,12 +4,9 @@ use crate::resources::ResourceManager;
 use css::{StyledNode, build_style_tree};
 use egui::{CentralPanel, Color32, Context, Frame};
 use gfx::input::InteractionState;
-use gfx::viewport::{ViewportAction, ViewportCtx, page_viewport};
+pub use gfx::input::PageAction;
+use gfx::viewport::{ViewportCtx, page_viewport};
 use html::Node;
-
-pub enum PageAction {
-    Navigate(String),
-}
 
 pub fn content(
     ctx: &Context,
@@ -76,7 +73,7 @@ pub fn content(
                 ui.label(s);
             }
 
-            action.map(|ViewportAction::Navigate(url)| PageAction::Navigate(url))
+            action
         })
         .inner
 }
