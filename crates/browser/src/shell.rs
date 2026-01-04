@@ -1,13 +1,13 @@
 use egui::{
-    Align, Align2, Button, Color32, Context, CornerRadius, FontId, Frame, Key, Margin, Rect,
-    ScrollArea, Sense, Stroke, TextEdit, TopBottomPanel, Ui, pos2,
-    scroll_area::ScrollBarVisibility, vec2,
+    Align2, Color32, Context, CornerRadius, FontId, Frame, Margin, Rect, ScrollArea, Sense,
+    TopBottomPanel, Ui, pos2, scroll_area::ScrollBarVisibility, vec2,
 };
 use std::sync::mpsc;
 
 use app_api::{RepaintHandle, UiApp};
 use bus::{CoreCommand, CoreEvent};
-use core_types::TabId;
+use core_types::{BrowserInput, TabId};
+use gfx::ui::toolbar::navigation_widgets;
 
 use crate::tab::Tab;
 
@@ -262,55 +262,37 @@ impl ShellApp {
     }
 
     fn ui_urlbar(&mut self, ui: &mut Ui) {
-        let h = 40.0; // unified height
+        let input = BrowserInput {
+            enter_pressed: ui.input(|i| i.key_pressed(egui::Key::Enter)),
+        };
 
-        // Back / Forward / Refresh
-        let t = self.active_tab_mut();
-        let can_back = t.history_index > 0;
-        let can_forward = t.history_index + 1 < t.history.len();
-
-        // Square buttons matching URL bar height
-        if ui
-            .add_enabled(can_back, Button::new("⬅").min_size([h, h].into()))
-            .clicked()
-        {
-            t.go_back();
-        }
-        if ui
-            .add_enabled(can_forward, Button::new("➡").min_size([h, h].into()))
-            .clicked()
-        {
-            t.go_forward();
-        }
-        if ui.add(Button::new("🔄").min_size([h, h].into())).clicked() {
-            t.refresh();
-        }
-
-        ui.add_space(6.0);
-
-        // ---- URL input frame ----
-        let resp = Frame::new()
-            .stroke(Stroke::new(
-                1.0,
-                ui.visuals().widgets.inactive.bg_stroke.color,
-            ))
-            .corner_radius(CornerRadius::same(6))
-            .inner_margin(Margin::symmetric(6, 4))
-            .show(ui, |ui| {
-                let t = self.active_tab_mut();
-                ui.add_sized(
-                    [ui.available_width(), h - 8.0],
-                    TextEdit::singleline(&mut t.url)
-                        .hint_text("Enter URL")
-                        .vertical_align(Align::Center),
-                )
-            })
-            .inner;
-
-        if resp.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
+        let needs_repaint = {
             let tab = self.active_tab_mut();
-            let url = tab.url.clone();
-            tab.navigate_to_new(url);
+
+            let can_back = tab.history_index > 0;
+            let can_forward = tab.history_index + 1 < tab.history.len();
+
+            let intent = navigation_widgets(ui, &mut tab.url, can_back, can_forward, input);
+
+            if intent.go_back {
+                tab.go_back();
+            }
+            if intent.go_forward {
+                tab.go_forward();
+            }
+            if intent.refresh {
+                tab.refresh();
+            }
+
+            if let Some(url) = intent.navigate_to {
+                tab.navigate_to_new(url);
+                true
+            } else {
+                false
+            }
+        };
+
+        if needs_repaint {
             self.request_repaint();
         }
     }

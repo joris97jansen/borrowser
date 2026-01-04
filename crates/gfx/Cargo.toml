@@ -11,3 +11,4 @@ egui-wgpu = { workspace = true }
 pollster = { workspace = true }
 css = { path = "../css" }
 layout = { path = "../layout" }
+core_types = { path = "../core_types" }

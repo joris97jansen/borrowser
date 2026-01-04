@@ -68,6 +68,7 @@ Borrowser currently supports:
   - Networking  
   - HTML parsing  
   - CSS parsing  
+- Navigation toolbar widgets live in `gfx::ui::toolbar` (input: `core_types::BrowserInput`, output: intent)
 - Thread-safe, highly modular design
 
 ---

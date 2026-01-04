@@ -325,11 +325,13 @@ impl Tab {
 
     // -- Navigation Methods ---
     pub fn navigate_to_new(&mut self, url: String) {
-        let url = match self.normalize_url(&url) {
+        let input_url = url;
+        let url = match self.normalize_url(&input_url) {
             Ok(url) => url,
             Err(err) => {
                 self.loading = false;
                 self.last_status = Some(err.to_string());
+                self.url = input_url;
                 self.poke_redraw();
                 return;
             }

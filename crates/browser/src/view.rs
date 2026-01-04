@@ -6,7 +6,6 @@ use crate::interactions::{
 };
 use crate::page::PageState;
 use crate::resources::{ImageState, ResourceManager};
-use crate::tab::Tab;
 
 use html::{Id, Node, dom_utils::is_non_rendering_element};
 
@@ -27,83 +26,12 @@ use layout::{
 };
 
 use egui::{
-    Align, Align2, Button, CentralPanel, Color32, Context, CursorIcon, Event, FontId, Frame, Key,
-    Margin, Painter, Pos2, Rect, ScrollArea, Sense, Stroke, StrokeKind, TextEdit, TopBottomPanel,
-    Ui, Vec2,
+    Align2, CentralPanel, Color32, Context, CursorIcon, Event, FontId, Frame, Key, Painter, Pos2,
+    Rect, ScrollArea, Sense, Stroke, StrokeKind, Ui, Vec2,
 };
-
-pub enum NavigationAction {
-    None,
-    Back,
-    Forward,
-    Refresh,
-    Navigate(String),
-}
 
 pub enum PageAction {
     Navigate(String),
-}
-
-pub fn top_bar(ctx: &Context, tab: &mut Tab) -> NavigationAction {
-    let mut action = NavigationAction::None;
-
-    const BAR_HEIGHT: f32 = 36.0;
-    const BUTTON_WIDTH: f32 = 36.0;
-
-    TopBottomPanel::top("topbar").show(ctx, |ui| {
-        ui.horizontal(|ui| {
-            let can_go_back = tab.history_index > 0;
-            let can_go_forward = tab.history_index + 1 < tab.history.len();
-
-            if ui
-                .add_enabled(
-                    can_go_back,
-                    Button::new("⬅").min_size([BUTTON_WIDTH, BAR_HEIGHT].into()),
-                )
-                .clicked()
-            {
-                action = NavigationAction::Back;
-            }
-            if ui
-                .add_enabled(
-                    can_go_forward,
-                    Button::new("➡").min_size([BUTTON_WIDTH, BAR_HEIGHT].into()),
-                )
-                .clicked()
-            {
-                action = NavigationAction::Forward;
-            }
-            if ui
-                .add_sized([BUTTON_WIDTH, BAR_HEIGHT], Button::new("🔄"))
-                .clicked()
-            {
-                action = NavigationAction::Refresh;
-            }
-
-            let response = Frame::new()
-                .fill(ui.visuals().extreme_bg_color) // subtle background
-                .stroke(Stroke::new(
-                    1.0,
-                    ui.visuals().widgets.inactive.bg_stroke.color,
-                ))
-                .corner_radius(6.0)
-                .inner_margin(Margin::symmetric(4, 4))
-                .show(ui, |ui| {
-                    ui.add_sized(
-                        [ui.available_width(), BAR_HEIGHT - 8.0],
-                        TextEdit::singleline(&mut tab.url)
-                            .hint_text("Enter URL")
-                            .vertical_align(Align::Center),
-                    )
-                })
-                .inner;
-
-            if response.lost_focus() && ui.input(|i| i.key_pressed(Key::Enter)) {
-                action = NavigationAction::Navigate(tab.url.clone());
-            }
-        });
-    });
-    action
 }
 
 pub fn content(
