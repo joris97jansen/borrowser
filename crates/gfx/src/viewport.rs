@@ -3,7 +3,7 @@ use crate::dom::{get_attr, resolve_relative_url};
 use crate::input::{
     FormControlHandler, FrameInputCtx, InputValueStore, InteractionState, route_frame_input,
 };
-use crate::paint::{ImageProvider, PaintCtx, paint_page};
+use crate::paint::{ImageProvider, PaintArgs, paint_page};
 use crate::text_control::{
     ensure_textarea_layout_cache, find_layout_box_by_id, input_text_padding,
     sync_input_scroll_for_caret, sync_textarea_scroll_for_caret,
@@ -199,7 +199,7 @@ pub fn page_viewport<R: ImageProvider, F: FormControlHandler>(
                         .map(|c| c.lines.as_slice())
                 });
 
-                let paint_ctx = PaintCtx {
+                let paint_args = PaintArgs {
                     painter: &painter,
                     origin,
                     measurer: &measurer,
@@ -213,7 +213,7 @@ pub fn page_viewport<R: ImageProvider, F: FormControlHandler>(
                     selection_stroke,
                     fragment_rects: Some(&fragment_rects),
                 };
-                paint_page(&layout_root, paint_ctx, true);
+                paint_page(&layout_root, paint_args);
             }
 
             if let Some(focus_id) = interaction.focused_node_id
