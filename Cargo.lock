@@ -870,8 +870,10 @@ dependencies = [
  "egui",
  "egui-wgpu",
  "egui-winit",
+ "html",
  "layout",
  "pollster",
+ "url",
  "winit",
 ]
 

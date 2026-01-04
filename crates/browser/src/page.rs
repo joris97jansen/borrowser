@@ -1,6 +1,6 @@
 use crate::form_controls::{FormControlIndex, seed_input_state_from_dom};
-use crate::input_store::InputValueStore;
 use css::{Stylesheet, attach_styles, parse_stylesheet};
+use gfx::input::InputValueStore;
 use html::{
     Node,
     dom_utils::{collect_style_texts, outline_from_dom},

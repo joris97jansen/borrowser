@@ -1,10 +1,10 @@
-use crate::interactions::InteractionState;
 use crate::page::PageState;
 use crate::resources::ResourceManager;
 use crate::view::content;
 use app_api::RepaintHandle;
 use bus::{CoreCommand, CoreEvent};
 use egui::Context;
+use gfx::input::InteractionState;
 use std::sync::mpsc;
 use url::Url;
 
