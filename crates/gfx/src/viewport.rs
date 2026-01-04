@@ -1,7 +1,8 @@
 use crate::EguiTextMeasurer;
 use crate::dom::{get_attr, resolve_relative_url};
 use crate::input::{
-    FormControlHandler, FrameInputCtx, InputValueStore, InteractionState, route_frame_input,
+    FormControlHandler, FrameInputCtx, InputValueStore, InteractionState, PageAction,
+    route_frame_input,
 };
 use crate::paint::{ImageProvider, PaintArgs, paint_page};
 use crate::text_control::{
@@ -15,10 +16,7 @@ use layout::{Rectangle, ReplacedElementInfoProvider, ReplacedKind, layout_block_
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-#[derive(Clone, Debug)]
-pub enum ViewportAction {
-    Navigate(String),
-}
+pub use crate::input::PageAction as ViewportAction;
 
 #[derive(Clone, Copy, Debug)]
 pub struct ViewportConfig {
@@ -73,7 +71,7 @@ impl<'a, R, F> ViewportCtx<'a, R, F> {
 
 pub fn page_viewport<R: ImageProvider, F: FormControlHandler>(
     ctx: ViewportCtx<'_, R, F>,
-) -> Option<ViewportAction> {
+) -> Option<PageAction> {
     let ViewportCtx {
         ui,
         style_root,
@@ -216,13 +214,7 @@ pub fn page_viewport<R: ImageProvider, F: FormControlHandler>(
                 paint_page(&layout_root, paint_args);
             }
 
-            if let Some(focus_id) = interaction.focused_node_id
-                && let Some(r) = fragment_rects.borrow().get(&focus_id).copied()
-            {
-                interaction.focused_input_rect = Some(r);
-            }
-
-            let input_out = route_frame_input(FrameInputCtx {
+            route_frame_input(FrameInputCtx {
                 ui,
                 resp,
                 content_rect,
@@ -235,13 +227,7 @@ pub fn page_viewport<R: ImageProvider, F: FormControlHandler>(
                 input_values,
                 form_controls,
                 interaction,
-            });
-
-            if input_out.request_repaint {
-                ui.ctx().request_repaint();
-            }
-
-            input_out.action
+            })
         })
         .inner
 }

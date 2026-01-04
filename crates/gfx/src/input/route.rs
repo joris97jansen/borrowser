@@ -1,8 +1,7 @@
+use super::{ActiveTarget, InputDragState, InputValueStore, InteractionState, PageAction};
 use crate::EguiTextMeasurer;
 use crate::dom::resolve_relative_url;
-use crate::input::{ActiveTarget, InputDragState, InputValueStore, InteractionState};
 use crate::text_control::*;
-use crate::viewport::ViewportAction;
 use egui::{CursorIcon, Event, Key, Pos2, Rect, Sense, Ui, Vec2};
 use html::Id;
 use layout::{
@@ -31,15 +30,9 @@ pub(crate) struct FrameInputCtx<'a, 'layout, F> {
     pub interaction: &'a mut InteractionState,
 }
 
-#[derive(Default)]
-pub(crate) struct FrameInputOutcome {
-    pub action: Option<ViewportAction>,
-    pub request_repaint: bool,
-}
-
 pub(crate) fn route_frame_input<F: FormControlHandler>(
     ctx: FrameInputCtx<'_, '_, F>,
-) -> FrameInputOutcome {
+) -> Option<PageAction> {
     let FrameInputCtx {
         ui,
         resp,
@@ -55,9 +48,15 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
         interaction,
     } = ctx;
 
-    let mut outcome = FrameInputOutcome::default();
-    // ------- unified router output -------
-    let mut action: Option<ViewportAction> = None;
+    let mut request_repaint = false;
+    let mut action: Option<PageAction> = None;
+
+    // Prefer the painted fragment rect for the focused control when available.
+    if let Some(focus_id) = interaction.focused_node_id
+        && let Some(r) = fragment_rects.borrow().get(&focus_id).copied()
+    {
+        interaction.focused_input_rect = Some(r);
+    }
 
     let pointer_pos = |ui: &Ui, allow_latest_pos: bool| -> Option<Pos2> {
         // Prefer response-scoped positions when available, fall back to the global pointer.
@@ -265,7 +264,7 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                 });
             }
 
-            outcome.request_repaint = true;
+            request_repaint = true;
         }
     }
 
@@ -325,7 +324,7 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                             style,
                         );
 
-                        outcome.request_repaint = true;
+                        request_repaint = true;
                     }
                     Some(ReplacedKind::TextArea) => {
                         interaction.textarea_preferred_x = None;
@@ -370,7 +369,7 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                             );
                         }
 
-                        outcome.request_repaint = true;
+                        request_repaint = true;
                     }
                     _ => {}
                 }
@@ -423,7 +422,7 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                             HitKind::Link => {
                                 if let Some(href) = h.href.as_deref() {
                                     if let Some(url) = resolve_relative_url(base_url, href) {
-                                        action = Some(ViewportAction::Navigate(url));
+                                        action = Some(PageAction::Navigate(url));
                                     }
                                 } else {
                                     // debug: link hit but no href
@@ -440,7 +439,7 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                                 // Checkbox remains focused after activation (browser-like)
                                 interaction.set_focus(h.node_id, h.kind, h.fragment_rect);
                                 if changed {
-                                    outcome.request_repaint = true;
+                                    request_repaint = true;
                                 }
                             }
 
@@ -451,7 +450,7 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                                 // Radio remains focused after activation (browser-like)
                                 interaction.set_focus(h.node_id, h.kind, h.fragment_rect);
                                 if changed {
-                                    outcome.request_repaint = true;
+                                    request_repaint = true;
                                 }
                             }
 
@@ -462,7 +461,7 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                                 // Clicking a button should blur input focus (browser-like)
                                 interaction.clear_focus();
 
-                                outcome.request_repaint = true;
+                                request_repaint = true;
                             }
 
                             _ => {
@@ -861,11 +860,13 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                         _ => {}
                     }
                 }
-                outcome.request_repaint = true;
+                request_repaint = true;
             }
         }
     }
 
-    outcome.action = action;
-    outcome
+    if request_repaint {
+        ui.ctx().request_repaint();
+    }
+    action
 }
