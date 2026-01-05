@@ -5,8 +5,8 @@ use crate::input::{
     route_frame_input,
 };
 use crate::paint::{ImageProvider, PaintArgs, paint_page};
-use crate::textarea::sync_textarea_scroll_for_caret;
 use crate::text_control::{find_layout_box_by_id, input_text_padding, sync_input_scroll_for_caret};
+use crate::textarea::sync_textarea_scroll_for_caret;
 use css::StyledNode;
 use egui::{Color32, ScrollArea, Sense, Stroke, Ui, Vec2};
 use html::{Id, Node};
@@ -186,9 +186,8 @@ pub fn page_viewport<R: ImageProvider, F: FormControlHandler>(
                 let selection_stroke =
                     Stroke::new(selection.stroke.width.max(2.0), selection.stroke.color);
 
-                let focused_textarea_lines = focused.and_then(|id| {
-                    interaction.textarea.focused_lines(id)
-                });
+                let focused_textarea_lines =
+                    focused.and_then(|id| interaction.textarea.focused_lines(id));
 
                 let paint_args = PaintArgs {
                     painter: &painter,

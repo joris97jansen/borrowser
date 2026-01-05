@@ -1,6 +1,6 @@
+use crate::textarea::TextareaState;
 use html::Id;
 use layout::{HitKind, Rectangle};
-use crate::textarea::TextareaState;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ActiveTarget {

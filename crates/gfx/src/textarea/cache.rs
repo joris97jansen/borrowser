@@ -174,4 +174,3 @@ pub(crate) fn textarea_text_height(lines: &[TextareaCachedLine], fallback_line_h
         .map(|l| (l.rect.y + l.rect.height).max(0.0))
         .unwrap_or_else(|| fallback_line_h.max(0.0))
 }
-

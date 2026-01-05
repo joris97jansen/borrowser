@@ -17,8 +17,8 @@ pub use text_measurer::EguiTextMeasurer;
 pub mod dom;
 pub mod input;
 pub mod paint;
-pub mod textarea;
 pub(crate) mod text_control;
+pub mod textarea;
 pub mod ui;
 pub mod viewport;
 pub struct Renderer {

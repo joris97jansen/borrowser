@@ -1,10 +1,10 @@
 use crate::dom::get_attr;
 use crate::input::SelectionRange;
+use crate::text_control::{clamp_caret_to_boundary, input_text_padding};
 use crate::textarea::{
     TextareaCachedLine, TextareaSelectionPaintParams, layout_textarea_cached_lines,
     paint_textarea_selection, textarea_caret_geometry, textarea_text_height,
 };
-use crate::text_control::{clamp_caret_to_boundary, input_text_padding};
 use css::{ComputedStyle, Length};
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, StrokeKind, Vec2};
 use layout::{LayoutBox, TextMeasurer};

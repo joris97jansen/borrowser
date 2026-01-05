@@ -417,4 +417,3 @@ mod tests {
         assert_eq!(textarea_line_byte_range(&lines, value, 1), (2, 3));
     }
 }
-

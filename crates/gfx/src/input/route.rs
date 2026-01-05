@@ -1,11 +1,13 @@
 use super::{ActiveTarget, InputDragState, InputValueStore, InteractionState, PageAction};
 use crate::EguiTextMeasurer;
 use crate::dom::resolve_relative_url;
+use crate::text_control::{
+    consume_focus_nav_keys, find_layout_box_by_id, input_text_padding, sync_input_scroll_for_caret,
+};
 use crate::textarea::{
     TextareaVerticalMoveCtx, sync_textarea_scroll_for_caret, textarea_caret_for_x_in_lines,
     textarea_line_index_from_y, textarea_move_caret_vertically,
 };
-use crate::text_control::{consume_focus_nav_keys, find_layout_box_by_id, input_text_padding, sync_input_scroll_for_caret};
 use egui::{CursorIcon, Event, Key, Pos2, Rect, Sense, Ui, Vec2};
 use html::Id;
 use layout::{

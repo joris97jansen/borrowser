@@ -72,7 +72,8 @@ impl TextareaState {
 
         if !cache_valid {
             let value = input_values.get(input_id).unwrap_or("");
-            let lines = layout_textarea_cached_lines(measurer, style, available_text_w, value, true);
+            let lines =
+                layout_textarea_cached_lines(measurer, style, available_text_w, value, true);
             self.layout_cache = Some(TextareaLayoutCache {
                 input_id,
                 available_text_w,
