@@ -1,5 +1,6 @@
 use super::{TextareaCachedLine, TextareaCachedTextFragment};
 use crate::input::InputValueStore;
+use crate::util::clamp_to_char_boundary;
 use css::ComputedStyle;
 use html::Id;
 use layout::TextMeasurer;
@@ -79,7 +80,7 @@ pub(crate) fn textarea_x_for_index_in_line(
     measurer: &dyn TextMeasurer,
     style: &ComputedStyle,
 ) -> f32 {
-    let index = crate::text_control::clamp_caret_to_boundary(value, index);
+    let index = clamp_to_char_boundary(value, index);
 
     let mut x = 0.0;
     for frag in &line.fragments {
@@ -132,8 +133,8 @@ pub(crate) fn textarea_caret_for_x_in_fragment(
     let mut start = frag_start.clamp(line_start, line_end);
     let mut end = frag_end.clamp(start, line_end);
 
-    start = crate::text_control::clamp_caret_to_boundary(value, start).min(line_end);
-    end = crate::text_control::clamp_caret_to_boundary(value, end)
+    start = clamp_to_char_boundary(value, start).min(line_end);
+    end = clamp_to_char_boundary(value, end)
         .max(start)
         .min(line_end);
 
@@ -277,7 +278,7 @@ pub(crate) fn textarea_caret_geometry(
         return (0.0, 0.0, line_h);
     }
 
-    let caret = crate::text_control::clamp_caret_to_boundary(value, caret);
+    let caret = clamp_to_char_boundary(value, caret);
     let line_idx = textarea_line_index_for_caret(lines, caret);
     let line = &lines[line_idx];
 
@@ -323,7 +324,7 @@ pub(crate) fn textarea_move_caret_vertically(
         return preferred_x;
     }
 
-    let caret = crate::text_control::clamp_caret_to_boundary(value, caret);
+    let caret = clamp_to_char_boundary(value, caret);
 
     let x = preferred_x.unwrap_or_else(|| {
         let (x, _y, _h) = textarea_caret_geometry(lines, value, caret, measurer, style);

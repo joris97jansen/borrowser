@@ -1,4 +1,4 @@
-use crate::dom::{get_attr, resolve_relative_url};
+use crate::util::{ellipsize_to_width, get_attr, resolve_relative_url, wrap_text_to_width};
 use css::{ComputedStyle, Length};
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, StrokeKind, Vec2};
 use layout::{LayoutBox, TextMeasurer};
@@ -87,48 +87,6 @@ pub(super) fn paint_img_fragment<'a>(
             );
         }
     }
-}
-
-pub(super) fn truncate_to_fit(
-    measurer: &dyn TextMeasurer,
-    style: &ComputedStyle,
-    text: &str,
-    max_w: f32,
-) -> String {
-    if text.is_empty() || max_w <= 0.0 {
-        return String::new();
-    }
-    if measurer.measure(text, style) <= max_w {
-        return text.to_string();
-    }
-
-    // Simple ellipsis truncation.
-    let ell = "…";
-    let ell_w = measurer.measure(ell, style);
-    if ell_w > max_w {
-        return String::new();
-    }
-
-    // Binary search cut point.
-    let chars: Vec<char> = text.chars().collect();
-    let mut lo = 0usize;
-    let mut hi = chars.len();
-
-    while lo < hi {
-        let mid = (lo + hi) / 2;
-        let candidate: String = chars[..mid].iter().collect();
-        let w = measurer.measure(&(candidate.clone() + ell), style);
-        if w <= max_w {
-            lo = mid + 1;
-        } else {
-            hi = mid;
-        }
-    }
-
-    let cut = lo.saturating_sub(1);
-    let mut s: String = chars[..cut].iter().collect();
-    s.push_str(ell);
-    s
 }
 
 enum ImgFallbackState {
@@ -265,7 +223,7 @@ fn paint_wrapped_text(
         return;
     }
 
-    let mut lines = wrap_text_to_width(text, max_w, measurer, style);
+    let mut lines = wrap_text_to_width(measurer, style, text, max_w);
     if lines.is_empty() {
         return;
     }
@@ -276,7 +234,7 @@ fn paint_wrapped_text(
             if !last.ends_with('…') {
                 last.push('…');
             }
-            *last = ellipsize_to_width(last, max_w, measurer, style);
+            *last = ellipsize_to_width(measurer, style, last.as_str(), max_w);
         }
     }
 
@@ -296,137 +254,5 @@ fn paint_wrapped_text(
             font_id.clone(),
             color,
         );
-    }
-}
-
-fn wrap_text_to_width(
-    text: &str,
-    max_width: f32,
-    measurer: &dyn TextMeasurer,
-    style: &ComputedStyle,
-) -> Vec<String> {
-    let text = text.trim();
-    if text.is_empty() {
-        return Vec::new();
-    }
-
-    let mut lines: Vec<String> = Vec::new();
-    let mut current = String::new();
-
-    for word in text.split_whitespace() {
-        if current.is_empty() {
-            let w = measurer.measure(word, style);
-            if w <= max_width {
-                current.push_str(word);
-            } else {
-                lines.push(ellipsize_to_width(word, max_width, measurer, style));
-            }
-            continue;
-        }
-
-        let candidate = format!("{current} {word}");
-        if measurer.measure(&candidate, style) <= max_width {
-            current.push(' ');
-            current.push_str(word);
-        } else {
-            lines.push(std::mem::take(&mut current));
-
-            let w = measurer.measure(word, style);
-            if w <= max_width {
-                current.push_str(word);
-            } else {
-                lines.push(ellipsize_to_width(word, max_width, measurer, style));
-            }
-        }
-    }
-
-    if !current.is_empty() {
-        lines.push(current);
-    }
-
-    lines
-}
-
-fn ellipsize_to_width(
-    text: &str,
-    max_width: f32,
-    measurer: &dyn TextMeasurer,
-    style: &ComputedStyle,
-) -> String {
-    let text = text.trim();
-    if text.is_empty() {
-        return String::new();
-    }
-    if !(max_width.is_finite() && max_width > 0.0) {
-        return String::new();
-    }
-
-    if measurer.measure(text, style) <= max_width {
-        return text.to_string();
-    }
-
-    let ellipsis = "…";
-    if measurer.measure(ellipsis, style) > max_width {
-        return String::new();
-    }
-
-    let chars: Vec<char> = text.chars().collect();
-    let mut lo: usize = 0;
-    let mut hi: usize = chars.len();
-
-    while lo < hi {
-        let mid = lo + (hi - lo).div_ceil(2);
-        let mut candidate: String = chars[..mid].iter().collect();
-        candidate.push_str(ellipsis);
-
-        if measurer.measure(&candidate, style) <= max_width {
-            lo = mid;
-        } else {
-            hi = mid - 1;
-        }
-    }
-
-    let mut out: String = chars[..lo].iter().collect();
-    out.push_str(ellipsis);
-    out
-}
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[derive(Clone, Copy)]
-    struct FixedMeasurer;
-
-    impl TextMeasurer for FixedMeasurer {
-        fn measure(&self, text: &str, _style: &ComputedStyle) -> f32 {
-            text.chars().count() as f32
-        }
-
-        fn line_height(&self, _style: &ComputedStyle) -> f32 {
-            10.0
-        }
-    }
-
-    #[test]
-    fn ellipsize_to_width_never_exceeds_limit() {
-        let measurer = FixedMeasurer;
-        let style = ComputedStyle::initial();
-
-        let s = ellipsize_to_width("hello world", 5.0, &measurer, &style);
-        assert!(measurer.measure(&s, &style) <= 5.0);
-        assert!(s.ends_with('…') || s.is_empty());
-    }
-
-    #[test]
-    fn wrap_text_to_width_respects_width_per_line() {
-        let measurer = FixedMeasurer;
-        let style = ComputedStyle::initial();
-
-        let lines = wrap_text_to_width("a bb ccc dddd", 3.0, &measurer, &style);
-        assert!(!lines.is_empty());
-        for line in &lines {
-            assert!(measurer.measure(line, &style) <= 3.0);
-        }
     }
 }

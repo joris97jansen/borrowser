@@ -1,10 +1,9 @@
-use crate::dom::get_attr;
 use crate::input::SelectionRange;
-use crate::text_control::{clamp_caret_to_boundary, input_text_padding};
 use crate::textarea::{
     TextareaCachedLine, TextareaSelectionPaintParams, layout_textarea_cached_lines,
     paint_textarea_selection, textarea_caret_geometry, textarea_text_height,
 };
+use crate::util::{clamp_to_char_boundary, get_attr, input_text_padding, truncate_to_fit};
 use css::{ComputedStyle, Length};
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, StrokeKind, Vec2};
 use layout::{LayoutBox, TextMeasurer};
@@ -89,7 +88,7 @@ pub(super) fn paint_input_text<'a>(
     if is_focused {
         let clip_painter = painter.with_clip_rect(inner_rect);
 
-        let caret = clamp_caret_to_boundary(value, caret);
+        let caret = clamp_to_char_boundary(value, caret);
 
         let text_w = if is_placeholder {
             0.0
@@ -168,10 +167,10 @@ pub(super) fn paint_input_text<'a>(
         clip_painter.rect_filled(caret_rect, 0.0, value_color);
     } else {
         let painted = if !is_placeholder {
-            super::images::truncate_to_fit(measurer, style, value, available_text_w)
+            truncate_to_fit(measurer, style, value, available_text_w)
         } else {
             let ph = placeholder.unwrap_or_default();
-            super::images::truncate_to_fit(measurer, style, ph, available_text_w)
+            truncate_to_fit(measurer, style, ph, available_text_w)
         };
 
         painter.text(
@@ -365,7 +364,7 @@ pub(super) fn paint_textarea<'a>(
             );
             clip_painter.rect_filled(caret_rect, 0.0, value_color);
         } else {
-            let caret = clamp_caret_to_boundary(value, caret);
+            let caret = clamp_to_char_boundary(value, caret);
             let (cx, cy, ch) = textarea_caret_geometry(lines, value, caret, measurer, style);
             let caret_h = ch.min(available_text_h).max(1.0);
             let caret_rect = Rect::from_min_size(
