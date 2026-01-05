@@ -1,7 +1,13 @@
 use super::{ActiveTarget, InputDragState, InputValueStore, InteractionState, PageAction};
 use crate::EguiTextMeasurer;
 use crate::dom::resolve_relative_url;
-use crate::text_control::*;
+use crate::text_control::{
+    consume_focus_nav_keys, find_layout_box_by_id, input_text_padding, sync_input_scroll_for_caret,
+};
+use crate::textarea::{
+    TextareaVerticalMoveCtx, sync_textarea_scroll_for_caret, textarea_caret_for_x_in_lines,
+    textarea_line_index_from_y, textarea_move_caret_vertically,
+};
 use egui::{CursorIcon, Event, Key, Pos2, Rect, Sense, Ui, Vec2};
 use html::Id;
 use layout::{
@@ -211,8 +217,7 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
 
                             let available_text_w = (h.fragment_rect.width - pad_l - pad_r).max(0.0);
                             {
-                                let lines = ensure_textarea_layout_cache(
-                                    interaction,
+                                let lines = interaction.textarea.ensure_layout_cache(
                                     &*input_values,
                                     h.node_id,
                                     available_text_w,
@@ -327,13 +332,12 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                         request_repaint = true;
                     }
                     Some(ReplacedKind::TextArea) => {
-                        interaction.textarea_preferred_x = None;
+                        interaction.textarea.clear_preferred_x();
                         let (pad_l, pad_r, pad_t, _pad_b) = input_text_padding(style);
 
                         let available_text_w = (rect.width - pad_l - pad_r).max(0.0);
                         {
-                            let lines = ensure_textarea_layout_cache(
-                                interaction,
+                            let lines = interaction.textarea.ensure_layout_cache(
                                 &*input_values,
                                 drag_input_id,
                                 available_text_w,
@@ -593,7 +597,7 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                         Some(HitKind::Input) => match evt {
                             Event::Text(t) => {
                                 if is_textarea {
-                                    interaction.textarea_preferred_x = None;
+                                    interaction.textarea.clear_preferred_x();
                                     saw_text_newline |= t.contains('\n') || t.contains('\r');
                                     input_values.insert_text_multiline(focus_id, t.as_str());
                                 } else {
@@ -614,28 +618,28 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                                 }
                                 Key::Backspace => {
                                     if is_textarea {
-                                        interaction.textarea_preferred_x = None;
+                                        interaction.textarea.clear_preferred_x();
                                     }
                                     input_values.backspace(focus_id);
                                     value_changed = true;
                                 }
                                 Key::Delete => {
                                     if is_textarea {
-                                        interaction.textarea_preferred_x = None;
+                                        interaction.textarea.clear_preferred_x();
                                     }
                                     input_values.delete(focus_id);
                                     value_changed = true;
                                 }
                                 Key::ArrowLeft => {
                                     if is_textarea {
-                                        interaction.textarea_preferred_x = None;
+                                        interaction.textarea.clear_preferred_x();
                                     }
                                     input_values.move_caret_left(focus_id, modifiers.shift);
                                     caret_or_selection_changed = true;
                                 }
                                 Key::ArrowRight => {
                                     if is_textarea {
-                                        interaction.textarea_preferred_x = None;
+                                        interaction.textarea.clear_preferred_x();
                                     }
                                     input_values.move_caret_right(focus_id, modifiers.shift);
                                     caret_or_selection_changed = true;
@@ -656,10 +660,9 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                                             input_text_padding(lb.style);
                                         let available_text_w =
                                             (viewport.width - pad_l - pad_r).max(0.0);
-                                        let preferred_x = interaction.textarea_preferred_x;
+                                        let preferred_x = interaction.textarea.preferred_x();
                                         let new_preferred_x = {
-                                            let lines = ensure_textarea_layout_cache(
-                                                interaction,
+                                            let lines = interaction.textarea.ensure_layout_cache(
                                                 &*input_values,
                                                 focus_id,
                                                 available_text_w,
@@ -680,7 +683,7 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                                                 modifiers.shift,
                                             )
                                         };
-                                        interaction.textarea_preferred_x = new_preferred_x;
+                                        interaction.textarea.set_preferred_x(new_preferred_x);
                                         caret_or_selection_changed = true;
                                     }
                                 }
@@ -700,10 +703,9 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                                             input_text_padding(lb.style);
                                         let available_text_w =
                                             (viewport.width - pad_l - pad_r).max(0.0);
-                                        let preferred_x = interaction.textarea_preferred_x;
+                                        let preferred_x = interaction.textarea.preferred_x();
                                         let new_preferred_x = {
-                                            let lines = ensure_textarea_layout_cache(
-                                                interaction,
+                                            let lines = interaction.textarea.ensure_layout_cache(
                                                 &*input_values,
                                                 focus_id,
                                                 available_text_w,
@@ -724,27 +726,27 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                                                 modifiers.shift,
                                             )
                                         };
-                                        interaction.textarea_preferred_x = new_preferred_x;
+                                        interaction.textarea.set_preferred_x(new_preferred_x);
                                         caret_or_selection_changed = true;
                                     }
                                 }
                                 Key::Home => {
                                     if is_textarea {
-                                        interaction.textarea_preferred_x = None;
+                                        interaction.textarea.clear_preferred_x();
                                     }
                                     input_values.move_caret_to_start(focus_id, modifiers.shift);
                                     caret_or_selection_changed = true;
                                 }
                                 Key::End => {
                                     if is_textarea {
-                                        interaction.textarea_preferred_x = None;
+                                        interaction.textarea.clear_preferred_x();
                                     }
                                     input_values.move_caret_to_end(focus_id, modifiers.shift);
                                     caret_or_selection_changed = true;
                                 }
                                 Key::A if modifiers.command || modifiers.ctrl => {
                                     if is_textarea {
-                                        interaction.textarea_preferred_x = None;
+                                        interaction.textarea.clear_preferred_x();
                                     }
                                     input_values.select_all(focus_id);
                                     caret_or_selection_changed = true;
@@ -806,7 +808,7 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
             // If egui reported an Enter keypress without a corresponding `Event::Text("\n")`,
             // treat it as a newline insertion for `<textarea>`.
             if is_textarea && enter_pressed && !saw_text_newline {
-                interaction.textarea_preferred_x = None;
+                interaction.textarea.clear_preferred_x();
                 input_values.insert_text_multiline(focus_id, "\n");
                 value_changed = true;
             }
@@ -839,8 +841,7 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                         Some(ReplacedKind::TextArea) => {
                             let (pad_l, pad_r, _pad_t, _pad_b) = input_text_padding(lb.style);
                             let available_text_w = (viewport.width - pad_l - pad_r).max(0.0);
-                            let lines = ensure_textarea_layout_cache(
-                                interaction,
+                            let lines = interaction.textarea.ensure_layout_cache(
                                 &*input_values,
                                 focus_id,
                                 available_text_w,

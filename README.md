@@ -69,6 +69,7 @@ Borrowser currently supports:
   - HTML parsing  
   - CSS parsing  
 - Navigation toolbar widgets live in `gfx::ui::toolbar` (input: `core_types::BrowserInput`, output: intent)
+- Text controls (caret/selection/scroll for `<input>`/`<textarea>`) live in `gfx` (`gfx::input`, `gfx::textarea`)
 - Thread-safe, highly modular design
 
 ---

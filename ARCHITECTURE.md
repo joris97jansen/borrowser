@@ -44,7 +44,7 @@ crates/
 ├── html            # Tokenizer + DOM tree builder
 ├── css             # CSS parser, cascade, computed styles
 ├── layout          # Block + inline layout engine and box model
-├── gfx             # egui + wgpu renderer + UI adapters (text measurer, toolbar widgets)
+├── gfx             # egui + wgpu renderer + input/paint layer (text measurer, toolbar widgets, text controls)
 │
 ├── net             # HTTP streaming client
 ├── runtime_net     # Network runtime thread
@@ -59,6 +59,8 @@ crates/
 ```
 
 Each crate is intentionally small, isolated, and testable.
+
+As a rule of thumb: `layout` stays UI/input-agnostic, while interactive behaviors (rendering + input routing for things like text controls) live in `gfx` (e.g. `<textarea>` caret/selection helpers in `gfx::textarea`).
 
 ---
 
