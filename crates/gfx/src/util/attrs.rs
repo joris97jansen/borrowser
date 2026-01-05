@@ -13,4 +13,3 @@ pub(crate) fn get_attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
         _ => None,
     }
 }
-

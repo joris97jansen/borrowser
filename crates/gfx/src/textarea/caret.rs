@@ -134,9 +134,7 @@ pub(crate) fn textarea_caret_for_x_in_fragment(
     let mut end = frag_end.clamp(start, line_end);
 
     start = clamp_to_char_boundary(value, start).min(line_end);
-    end = clamp_to_char_boundary(value, end)
-        .max(start)
-        .min(line_end);
+    end = clamp_to_char_boundary(value, end).max(start).min(line_end);
 
     if start >= end {
         return start;
