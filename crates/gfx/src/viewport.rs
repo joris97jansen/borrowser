@@ -1,12 +1,12 @@
 use crate::EguiTextMeasurer;
-use crate::dom::{get_attr, resolve_relative_url};
 use crate::input::{
     FormControlHandler, FrameInputCtx, InputValueStore, InteractionState, PageAction,
     route_frame_input,
 };
 use crate::paint::{ImageProvider, PaintArgs, paint_page};
-use crate::text_control::{find_layout_box_by_id, input_text_padding, sync_input_scroll_for_caret};
+use crate::text_control::{find_layout_box_by_id, sync_input_scroll_for_caret};
 use crate::textarea::sync_textarea_scroll_for_caret;
+use crate::util::{get_attr, input_text_padding, resolve_relative_url};
 use css::StyledNode;
 use egui::{Color32, ScrollArea, Sense, Stroke, Ui, Vec2};
 use html::{Id, Node};

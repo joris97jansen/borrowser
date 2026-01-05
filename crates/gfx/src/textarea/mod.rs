@@ -4,6 +4,7 @@ mod selection;
 
 use crate::EguiTextMeasurer;
 use crate::input::InputValueStore;
+use crate::util::{clamp_to_char_boundary, input_text_padding};
 use css::{ComputedStyle, Length};
 use html::Id;
 
@@ -95,7 +96,7 @@ pub(crate) fn sync_textarea_scroll_for_caret(
     measurer: &dyn layout::TextMeasurer,
     style: &ComputedStyle,
 ) {
-    let (_pad_l, _pad_r, pad_t, pad_b) = crate::text_control::input_text_padding(style);
+    let (_pad_l, _pad_r, pad_t, pad_b) = input_text_padding(style);
     let available_text_h = (control_rect_h - pad_t - pad_b).max(0.0);
 
     let (caret_y, caret_h, text_h) = {
@@ -104,7 +105,7 @@ pub(crate) fn sync_textarea_scroll_for_caret(
             return;
         };
 
-        let caret = crate::text_control::clamp_caret_to_boundary(value, caret);
+        let caret = clamp_to_char_boundary(value, caret);
         let (_cx, caret_y, caret_h) = textarea_caret_geometry(lines, value, caret, measurer, style);
         let text_h = cache::textarea_text_height(lines, measurer.line_height(style));
 

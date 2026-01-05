@@ -1,14 +1,7 @@
+use crate::util::clamp_to_char_boundary;
 use html::Id;
 use std::borrow::Cow;
 use std::collections::HashMap;
-
-fn clamp_to_char_boundary(s: &str, i: usize) -> usize {
-    let mut i = i.min(s.len());
-    while i > 0 && !s.is_char_boundary(i) {
-        i -= 1;
-    }
-    i
-}
 
 fn prev_cursor_boundary(s: &str, i: usize) -> usize {
     let i = clamp_to_char_boundary(s, i);

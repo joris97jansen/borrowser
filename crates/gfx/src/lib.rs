@@ -14,12 +14,12 @@ use winit::{dpi::PhysicalSize, event::WindowEvent, window::Window};
 
 pub mod text_measurer;
 pub use text_measurer::EguiTextMeasurer;
-pub mod dom;
 pub mod input;
 pub mod paint;
 pub(crate) mod text_control;
 pub mod textarea;
 pub mod ui;
+pub(crate) mod util;
 pub mod viewport;
 pub struct Renderer {
     egui_context: EguiContext,

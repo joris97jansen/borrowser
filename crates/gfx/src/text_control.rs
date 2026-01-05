@@ -1,24 +1,8 @@
 use crate::input::InputValueStore;
+use crate::util::{clamp_to_char_boundary, input_text_padding};
 use css::ComputedStyle;
 use html::Id;
 use layout::{LayoutBox, TextMeasurer};
-
-pub(crate) fn clamp_caret_to_boundary(value: &str, caret: usize) -> usize {
-    let mut caret = caret.min(value.len());
-    while caret > 0 && !value.is_char_boundary(caret) {
-        caret -= 1;
-    }
-    caret
-}
-
-pub(crate) fn input_text_padding(style: &ComputedStyle) -> (f32, f32, f32, f32) {
-    let bm = style.box_metrics;
-    let pad_l = bm.padding_left.max(4.0);
-    let pad_r = bm.padding_right.max(4.0);
-    let pad_t = bm.padding_top.max(2.0);
-    let pad_b = bm.padding_bottom.max(2.0);
-    (pad_l, pad_r, pad_t, pad_b)
-}
 
 pub(crate) fn sync_input_scroll_for_caret(
     input_values: &mut InputValueStore,
@@ -32,7 +16,7 @@ pub(crate) fn sync_input_scroll_for_caret(
 
     let (caret_px, text_w) = match input_values.get_state(input_id) {
         Some((value, caret, _sel, _scroll_x, _scroll_y)) => {
-            let caret = clamp_caret_to_boundary(value, caret);
+            let caret = clamp_to_char_boundary(value, caret);
             (
                 measurer.measure(&value[..caret], style),
                 measurer.measure(value, style),
