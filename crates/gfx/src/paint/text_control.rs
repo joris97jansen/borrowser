@@ -1,10 +1,10 @@
 use crate::dom::get_attr;
-use crate::input::{SelectionRange, TextareaCachedLine};
-use crate::text_control::{
-    clamp_caret_to_boundary, input_text_padding, layout_textarea_cached_lines,
-    textarea_caret_geometry, textarea_line_source_range, textarea_text_height,
-    textarea_x_for_index_in_line,
+use crate::input::SelectionRange;
+use crate::textarea::{
+    TextareaCachedLine, TextareaSelectionPaintParams, layout_textarea_cached_lines,
+    paint_textarea_selection, textarea_caret_geometry, textarea_text_height,
 };
+use crate::text_control::{clamp_caret_to_boundary, input_text_padding};
 use css::{ComputedStyle, Length};
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, StrokeKind, Vec2};
 use layout::{LayoutBox, TextMeasurer};
@@ -313,7 +313,7 @@ pub(super) fn paint_textarea<'a>(
             lines,
             value,
             sel,
-            TextAreaSelectionPaintParams {
+            TextareaSelectionPaintParams {
                 inner_origin: inner_rect.min,
                 scroll_y,
                 measurer,
@@ -402,71 +402,4 @@ fn paint_text_control_container(
         Stroke::new(1.0, Color32::from_rgb(120, 120, 120))
     };
     painter.rect_stroke(rect, 2.0, stroke, StrokeKind::Outside);
-}
-
-#[derive(Clone, Copy)]
-struct TextAreaSelectionPaintParams<'a> {
-    inner_origin: Pos2,
-    scroll_y: f32,
-    measurer: &'a dyn TextMeasurer,
-    style: &'a ComputedStyle,
-    selection_bg_fill: Color32,
-}
-
-fn paint_textarea_selection(
-    painter: &Painter,
-    lines: &[TextareaCachedLine],
-    value: &str,
-    sel: SelectionRange,
-    params: TextAreaSelectionPaintParams<'_>,
-) {
-    let TextAreaSelectionPaintParams {
-        inner_origin,
-        scroll_y,
-        measurer,
-        style,
-        selection_bg_fill,
-    } = params;
-
-    if lines.is_empty() || value.is_empty() || sel.start >= sel.end {
-        return;
-    }
-
-    let sel_start = sel.start.min(value.len());
-    let sel_end = sel.end.min(value.len());
-
-    if !(value.is_char_boundary(sel_start) && value.is_char_boundary(sel_end)) {
-        return;
-    }
-
-    for line in lines {
-        let Some((line_start, line_end_display)) = textarea_line_source_range(line) else {
-            continue;
-        };
-
-        let a = sel_start.clamp(line_start, line_end_display);
-        let b = sel_end.clamp(line_start, line_end_display);
-        if a >= b {
-            continue;
-        }
-
-        let x0 = textarea_x_for_index_in_line(line, value, a, measurer, style);
-        let x1 = textarea_x_for_index_in_line(line, value, b, measurer, style);
-
-        let y = inner_origin.y + line.rect.y - scroll_y;
-        let h = line.rect.height.max(measurer.line_height(style)).max(1.0);
-
-        let rect = Rect::from_min_max(
-            Pos2 {
-                x: inner_origin.x + x0,
-                y,
-            },
-            Pos2 {
-                x: inner_origin.x + x1,
-                y: y + h,
-            },
-        );
-
-        painter.rect_filled(rect, 0.0, selection_bg_fill);
-    }
 }

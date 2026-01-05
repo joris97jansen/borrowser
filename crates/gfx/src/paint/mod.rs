@@ -8,7 +8,8 @@ pub(crate) use context::PaintCtx;
 pub use images::{ImageProvider, ImageState};
 
 use crate::EguiTextMeasurer;
-use crate::input::{ActiveTarget, InputValueStore, TextareaCachedLine};
+use crate::input::{ActiveTarget, InputValueStore};
+use crate::textarea::TextareaCachedLine;
 use css::{Display, Length};
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, Vec2};
 use html::{Id, dom_utils::is_non_rendering_element};

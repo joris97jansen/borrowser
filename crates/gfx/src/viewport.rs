@@ -5,10 +5,8 @@ use crate::input::{
     route_frame_input,
 };
 use crate::paint::{ImageProvider, PaintArgs, paint_page};
-use crate::text_control::{
-    ensure_textarea_layout_cache, find_layout_box_by_id, input_text_padding,
-    sync_input_scroll_for_caret, sync_textarea_scroll_for_caret,
-};
+use crate::textarea::sync_textarea_scroll_for_caret;
+use crate::text_control::{find_layout_box_by_id, input_text_padding, sync_input_scroll_for_caret};
 use css::StyledNode;
 use egui::{Color32, ScrollArea, Sense, Stroke, Ui, Vec2};
 use html::{Id, Node};
@@ -154,8 +152,7 @@ pub fn page_viewport<R: ImageProvider, F: FormControlHandler>(
                     Some(ReplacedKind::TextArea) => {
                         let (pad_l, pad_r, _pad_t, _pad_b) = input_text_padding(lb.style);
                         let available_text_w = (viewport.width - pad_l - pad_r).max(0.0);
-                        let lines = ensure_textarea_layout_cache(
-                            interaction,
+                        let lines = interaction.textarea.ensure_layout_cache(
                             &*input_values,
                             focus_id,
                             available_text_w,
@@ -190,11 +187,7 @@ pub fn page_viewport<R: ImageProvider, F: FormControlHandler>(
                     Stroke::new(selection.stroke.width.max(2.0), selection.stroke.color);
 
                 let focused_textarea_lines = focused.and_then(|id| {
-                    interaction
-                        .textarea_layout_cache
-                        .as_ref()
-                        .filter(|c| c.input_id == id)
-                        .map(|c| c.lines.as_slice())
+                    interaction.textarea.focused_lines(id)
                 });
 
                 let paint_args = PaintArgs {

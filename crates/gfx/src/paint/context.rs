@@ -1,5 +1,6 @@
 use crate::EguiTextMeasurer;
-use crate::input::{ActiveTarget, InputValueStore, TextareaCachedLine};
+use crate::input::{ActiveTarget, InputValueStore};
+use crate::textarea::TextareaCachedLine;
 use egui::{Color32, Painter, Pos2, Stroke};
 use html::Id;
 use layout::Rectangle;
