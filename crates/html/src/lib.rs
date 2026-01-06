@@ -1,5 +1,8 @@
+pub mod collect;
+pub mod debug;
 pub mod dom_utils;
 pub mod head;
+pub mod traverse;
 
 mod dom_builder;
 mod entities;
