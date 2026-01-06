@@ -70,13 +70,7 @@ fn find_head(dom: &Node) -> Option<&Node> {
 fn fill_head_metadata_from(head: &Node, out: &mut HeadMetadata) {
     if let Node::Element { children, .. } = head {
         for child in children {
-            if let Node::Element {
-                name,
-                attributes,
-                children,
-                ..
-            } = child
-            {
+            if let Node::Element { name, children, .. } = child {
                 // <title>
                 if name.eq_ignore_ascii_case("title") && out.title.is_none() {
                     out.title = first_text_child(children);
@@ -85,9 +79,9 @@ fn fill_head_metadata_from(head: &Node, out: &mut HeadMetadata) {
                 // <meta>
                 if name.eq_ignore_ascii_case("meta") {
                     let tag = MetaTag {
-                        name: get_attr(attributes, "name").map(|s| s.to_string()),
-                        property: get_attr(attributes, "property").map(|s| s.to_string()),
-                        content: get_attr(attributes, "content").map(|s| s.to_string()),
+                        name: child.attr("name").map(|s| s.to_string()),
+                        property: child.attr("property").map(|s| s.to_string()),
+                        content: child.attr("content").map(|s| s.to_string()),
                     };
                     if tag.name.is_some() || tag.property.is_some() || tag.content.is_some() {
                         out.meta.push(tag);
@@ -96,13 +90,13 @@ fn fill_head_metadata_from(head: &Node, out: &mut HeadMetadata) {
 
                 // <link>
                 if name.eq_ignore_ascii_case("link") {
-                    let rel_raw = get_attr(attributes, "rel").unwrap_or("");
+                    let rel_raw = child.attr("rel").unwrap_or("");
                     let rels = rel_raw
                         .split_whitespace()
                         .map(|s| s.to_ascii_lowercase())
                         .collect::<Vec<_>>();
 
-                    let href = get_attr(attributes, "href").map(|s| s.to_string());
+                    let href = child.attr("href").map(|s| s.to_string());
 
                     if !rels.is_empty() || href.is_some() {
                         out.links.push(LinkTag { rel: rels, href });
@@ -111,18 +105,11 @@ fn fill_head_metadata_from(head: &Node, out: &mut HeadMetadata) {
 
                 // <base>
                 if name.eq_ignore_ascii_case("base") && out.base_href.is_none() {
-                    out.base_href = get_attr(attributes, "href").map(|h| h.to_string());
+                    out.base_href = child.attr("href").map(|h| h.to_string());
                 }
             }
         }
     }
-}
-
-fn get_attr<'a>(attrs: &'a [(String, Option<String>)], key: &str) -> Option<&'a str> {
-    attrs
-        .iter()
-        .find(|(k, _)| k.eq_ignore_ascii_case(key))
-        .and_then(|(_, v)| v.as_deref())
 }
 
 fn first_text_child(children: &[Node]) -> Option<String> {

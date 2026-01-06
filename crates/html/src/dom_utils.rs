@@ -1,5 +1,21 @@
 use crate::{Id, Node};
 
+fn is_heading(name: &str) -> bool {
+    let b = name.as_bytes();
+    b.len() == 2 && (b[0] | 0x20) == b'h' && (b'1'..=b'6').contains(&b[1])
+}
+
+fn is_blockish_break(name: &str) -> bool {
+    name.eq_ignore_ascii_case("p")
+        || name.eq_ignore_ascii_case("div")
+        || name.eq_ignore_ascii_case("section")
+        || name.eq_ignore_ascii_case("article")
+        || name.eq_ignore_ascii_case("header")
+        || name.eq_ignore_ascii_case("footer")
+        || name.eq_ignore_ascii_case("li")
+        || is_heading(name)
+}
+
 /// Collect concatenated text from <style> elements.
 pub fn collect_style_texts(node: &Node, out: &mut String) {
     match node {
@@ -23,33 +39,12 @@ pub fn collect_style_texts(node: &Node, out: &mut String) {
 /// Collect <link rel="stylesheet" href="…"> href values.
 pub fn collect_stylesheet_hrefs(node: &Node, out: &mut Vec<String>) {
     match node {
-        Node::Element {
-            name,
-            attributes,
-            children,
-            ..
-        } => {
-            if name.eq_ignore_ascii_case("link") {
-                let mut is_stylesheet = false;
-                let mut href: Option<&str> = None;
-
-                for (k, v) in attributes {
-                    let key = k.as_str();
-                    if key.eq_ignore_ascii_case("rel") {
-                        if v.as_deref().is_some_and(|val| {
-                            val.split_whitespace()
-                                .any(|t| t.eq_ignore_ascii_case("stylesheet"))
-                        }) {
-                            is_stylesheet = true;
-                        }
-                    } else if key.eq_ignore_ascii_case("href") {
-                        href = v.as_deref();
-                    }
-                }
-
-                if let (true, Some(h)) = (is_stylesheet, href) {
-                    out.push(h.to_string());
-                }
+        Node::Element { name, children, .. } => {
+            if name.eq_ignore_ascii_case("link")
+                && node.attr_has_token("rel", "stylesheet")
+                && let Some(href) = node.attr("href")
+            {
+                out.push(href.to_string());
             }
 
             for c in children {
@@ -68,23 +63,13 @@ pub fn collect_stylesheet_hrefs(node: &Node, out: &mut Vec<String>) {
 /// Collect <img src="…"> src values.
 pub fn collect_img_srcs(node: &Node, out: &mut Vec<String>) {
     match node {
-        Node::Element {
-            name,
-            attributes,
-            children,
-            ..
-        } => {
-            if name.eq_ignore_ascii_case("img") {
-                for (k, v) in attributes {
-                    if k.eq_ignore_ascii_case("src") {
-                        if let Some(src) = v.as_deref() {
-                            let src = src.trim();
-                            if !src.is_empty() {
-                                out.push(src.to_string());
-                            }
-                        }
-                        break;
-                    }
+        Node::Element { name, children, .. } => {
+            if name.eq_ignore_ascii_case("img")
+                && let Some(src) = node.attr("src")
+            {
+                let src = src.trim();
+                if !src.is_empty() {
+                    out.push(src.to_string());
                 }
             }
 
@@ -122,12 +107,8 @@ pub fn collect_visible_text<'a>(node: &'a Node, ancestors: &mut Vec<&'a Node>, o
             }
             ancestors.pop();
 
-            match &name.to_ascii_lowercase()[..] {
-                "p" | "div" | "section" | "article" | "header" | "footer" | "h1" | "h2" | "h3"
-                | "h4" | "h5" | "h6" | "li" => {
-                    out.push_str("\n\n");
-                }
-                _ => {}
+            if is_blockish_break(name) && !out.ends_with("\n\n") {
+                out.push_str("\n\n");
             }
         }
         Node::Document { children, .. } => {
@@ -139,13 +120,36 @@ pub fn collect_visible_text<'a>(node: &'a Node, ancestors: &mut Vec<&'a Node>, o
     }
 }
 
+pub fn collect_visible_text_string(root: &Node) -> String {
+    let mut out = String::new();
+    let mut ancestors = Vec::new();
+    collect_visible_text(root, &mut ancestors, &mut out);
+
+    // Trim trailing whitespace without allocating a new String.
+    while out.ends_with(|c: char| c.is_whitespace()) {
+        out.pop();
+    }
+
+    // Trim leading whitespace in place.
+    let trimmed = out.trim_start_matches(|c: char| c.is_whitespace());
+    let prefix_len = out.len().saturating_sub(trimmed.len());
+    if prefix_len > 0 {
+        out.drain(..prefix_len);
+    }
+
+    out
+}
+
 pub fn first_styles(style: &[(String, String)]) -> String {
-    style
-        .iter()
-        .take(3)
-        .map(|(k, v)| format!(r#"{k}: {v};"#))
-        .collect::<Vec<_>>()
-        .join(" ")
+    let mut out = String::new();
+    for (i, (k, v)) in style.iter().take(3).enumerate() {
+        if i != 0 {
+            out.push(' ');
+        }
+        use std::fmt::Write;
+        let _ = write!(&mut out, r#"{k}: {v};"#);
+    }
+    out
 }
 
 pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
@@ -170,21 +174,12 @@ pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
             }
             Node::Element {
                 name,
-                attributes,
                 children,
                 style,
                 ..
             } => {
-                let id = attributes
-                    .iter()
-                    .find(|(k, _)| k == "id")
-                    .and_then(|(_, v)| v.as_deref())
-                    .unwrap_or("");
-                let class = attributes
-                    .iter()
-                    .find(|(k, _)| k == "class")
-                    .and_then(|(_, v)| v.as_deref())
-                    .unwrap_or("");
+                let id = node.attr("id").unwrap_or("");
+                let class = node.attr("class").unwrap_or("");
                 let styl = first_styles(style);
                 let mut line = format!("{indent}<{name}");
                 if !id.is_empty() {
@@ -233,11 +228,12 @@ pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
 pub fn is_non_rendering_element(node: &Node) -> bool {
     match node {
         Node::Element { name, .. } => {
-            let n = name.to_ascii_lowercase();
-            matches!(
-                n.as_str(),
-                "head" | "style" | "script" | "title" | "meta" | "link"
-            )
+            name.eq_ignore_ascii_case("head")
+                || name.eq_ignore_ascii_case("style")
+                || name.eq_ignore_ascii_case("script")
+                || name.eq_ignore_ascii_case("title")
+                || name.eq_ignore_ascii_case("meta")
+                || name.eq_ignore_ascii_case("link")
         }
         _ => false,
     }
