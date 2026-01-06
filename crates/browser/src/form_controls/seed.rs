@@ -1,5 +1,7 @@
+use super::dom::{
+    InputControlType, attr, collect_text, has_attr, input_control_type, normalize_textarea_newlines,
+};
 use super::index::{FormControlIndex, RadioGroupKey};
-use super::input_type::{InputControlType, input_control_type};
 use gfx::input::InputValueStore;
 use html::{Id, Node};
 use std::collections::HashMap;
@@ -171,57 +173,4 @@ pub fn seed_input_state_from_dom(store: &mut InputValueStore, dom: &Node) -> For
     walk(store, dom, None, &mut index, &mut radio_groups);
 
     index
-}
-
-fn attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
-    match node {
-        Node::Element { attributes, .. } => attributes
-            .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case(name))
-            .and_then(|(_, v)| v.as_deref()),
-        _ => None,
-    }
-}
-
-fn has_attr(node: &Node, name: &str) -> bool {
-    match node {
-        Node::Element { attributes, .. } => {
-            attributes.iter().any(|(k, _)| k.eq_ignore_ascii_case(name))
-        }
-        _ => false,
-    }
-}
-
-fn collect_text(nodes: &[Node], out: &mut String) {
-    for n in nodes {
-        match n {
-            Node::Text { text, .. } => out.push_str(text),
-            Node::Element { children, .. } | Node::Document { children, .. } => {
-                collect_text(children, out);
-            }
-            Node::Comment { .. } => {}
-        }
-    }
-}
-
-fn normalize_textarea_newlines(s: &str) -> String {
-    // Normalize CRLF/CR to LF. (Browsers store textarea values with LF newlines.)
-    if !s.contains('\r') {
-        return s.to_string();
-    }
-
-    let mut out = String::with_capacity(s.len());
-    let mut it = s.chars().peekable();
-    while let Some(ch) = it.next() {
-        match ch {
-            '\r' => {
-                if it.peek() == Some(&'\n') {
-                    let _ = it.next();
-                }
-                out.push('\n');
-            }
-            _ => out.push(ch),
-        }
-    }
-    out
 }
