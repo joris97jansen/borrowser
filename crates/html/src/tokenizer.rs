@@ -4,6 +4,24 @@ use crate::types::Token;
 const HTML_COMMENT_START: &str = "<!--";
 const HTML_COMMENT_END: &str = "-->";
 
+fn starts_with_ignore_ascii_case(haystack: &[u8], needle: &[u8]) -> bool {
+    haystack.len() >= needle.len() && haystack[..needle.len()].eq_ignore_ascii_case(needle)
+}
+
+fn find_ignore_ascii_case(haystack: &str, needle: &str) -> Option<usize> {
+    let hay_bytes = haystack.as_bytes();
+    let needle_bytes = needle.as_bytes();
+    if needle_bytes.is_empty() {
+        return Some(0);
+    }
+    if needle_bytes.len() > hay_bytes.len() {
+        return None;
+    }
+    (0..=hay_bytes.len() - needle_bytes.len()).find(|&offset| {
+        hay_bytes[offset..offset + needle_bytes.len()].eq_ignore_ascii_case(needle_bytes)
+    })
+}
+
 fn is_void_element(name: &str) -> bool {
     matches!(
         name,
@@ -58,7 +76,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 break;
             }
         }
-        if input[i..].to_ascii_lowercase().starts_with("<!doctype") {
+        if starts_with_ignore_ascii_case(&bytes[i..], b"<!doctype") {
             // doctype
             let rest = &input[i + 2..];
             if let Some(end) = rest.find('>') {
@@ -192,17 +210,21 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             });
 
             if (name == "script" || name == "style") && !self_closing {
-                // Find the matching closing tag
-                let close_tag = format!("</{name}>");
+                // Find the matching closing tag without allocating
+                let close_tag = if name == "script" {
+                    "</script>"
+                } else {
+                    "</style>"
+                };
+                let close_tag_len = close_tag.len();
                 let j = k;
-                let lower = input[j..].to_ascii_lowercase();
-                if let Some(rel) = lower.find(&close_tag) {
+                if let Some(rel) = find_ignore_ascii_case(&input[j..], close_tag) {
                     let raw = &input[j..j + rel];
                     if !raw.is_empty() {
                         out.push(Token::Text(raw.to_string()));
                     }
                     out.push(Token::EndTag(name.clone()));
-                    i = j + rel + close_tag.len();
+                    i = j + rel + close_tag_len;
                     continue;
                 } else {
                     let raw = &input[j..];
@@ -234,6 +256,33 @@ mod tests {
                 .iter()
                 .any(|t| matches!(t, Token::Text(s) if s == "120×32")),
             "expected UTF-8 text token, got: {tokens:?}"
+        );
+    }
+
+    #[test]
+    fn tokenize_handles_uppercase_doctype() {
+        let tokens = tokenize("<!DOCTYPE html>");
+        assert!(
+            tokens
+                .iter()
+                .any(|t| matches!(t, Token::Doctype(s) if s == "DOCTYPE html")),
+            "expected case-insensitive doctype, got: {tokens:?}"
+        );
+    }
+
+    #[test]
+    fn tokenize_finds_script_end_tag_case_insensitive() {
+        let tokens = tokenize("<script>let x = 1;</ScRiPt>");
+        assert!(
+            matches!(
+                tokens.as_slice(),
+                [
+                    Token::StartTag { name, .. },
+                    Token::Text(body),
+                    Token::EndTag(end)
+                ] if name == "script" && body == "let x = 1;" && end == "script"
+            ),
+            "expected raw script text and matching end tag, got: {tokens:?}"
         );
     }
 }
