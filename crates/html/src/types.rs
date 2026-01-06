@@ -26,6 +26,7 @@ pub enum Node {
     Element {
         id: Id,
         name: String,
+        // Keep as Vec to preserve source order and allow duplicates; use helpers for lookups.
         attributes: Vec<(String, Option<String>)>,
         style: Vec<(String, String)>,
         children: Vec<Node>,
@@ -63,6 +64,29 @@ impl Node {
         match self {
             Node::Document { children, .. } => Some(children),
             Node::Element { children, .. } => Some(children),
+            _ => None,
+        }
+    }
+
+    pub fn has_attr(&self, name: &str) -> bool {
+        matches!(self, Node::Element { attributes, .. }
+            if attributes.iter().any(|(k, _)| k.eq_ignore_ascii_case(name)))
+    }
+
+    pub fn attr_has_token(&self, attr: &str, token: &str) -> bool {
+        if token.is_empty() {
+            return false;
+        }
+        self.attr(attr)
+            .is_some_and(|v| v.split_whitespace().any(|t| t.eq_ignore_ascii_case(token)))
+    }
+
+    pub fn attr(&self, name: &str) -> Option<&str> {
+        match self {
+            Node::Element { attributes, .. } => attributes
+                .iter()
+                .find(|(k, _)| k.eq_ignore_ascii_case(name))
+                .and_then(|(_, v)| v.as_deref()),
             _ => None,
         }
     }
