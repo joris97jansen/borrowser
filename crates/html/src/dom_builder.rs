@@ -153,14 +153,14 @@ impl NodeArena {
         let mut nodes = self.nodes;
         let mut built_nodes: Vec<Node> = Vec::with_capacity(nodes.len());
 
-        let take_children = |n: usize, built: &mut Vec<Node>| {
+        fn take_children(n: usize, built: &mut Vec<Node>) -> Vec<Node> {
             let mut children = Vec::with_capacity(n);
             for _ in 0..n {
                 children.push(built.pop().expect("dom builder child built"));
             }
             children.reverse();
             children
-        };
+        }
 
         // Iterative postorder traversal over the arena:
         // - First time we see a node, we schedule it for construction (visited=true) and then
@@ -236,9 +236,7 @@ impl NodeArena {
             1,
             "dom builder should build exactly one root node"
         );
-        built_nodes
-            .pop()
-            .unwrap()
+        built_nodes.pop().unwrap()
     }
 }
 
