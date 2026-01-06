@@ -39,17 +39,12 @@ pub fn collect_style_texts(node: &Node, out: &mut String) {
 /// Collect <link rel="stylesheet" href="…"> href values.
 pub fn collect_stylesheet_hrefs(node: &Node, out: &mut Vec<String>) {
     match node {
-        Node::Element {
-            name,
-            children,
-            ..
-        } => {
+        Node::Element { name, children, .. } => {
             if name.eq_ignore_ascii_case("link")
                 && node.attr_has_token("rel", "stylesheet")
+                && let Some(href) = node.attr("href")
             {
-                if let Some(href) = node.attr("href") {
-                    out.push(href.to_string());
-                }
+                out.push(href.to_string());
             }
 
             for c in children {
@@ -68,17 +63,13 @@ pub fn collect_stylesheet_hrefs(node: &Node, out: &mut Vec<String>) {
 /// Collect <img src="…"> src values.
 pub fn collect_img_srcs(node: &Node, out: &mut Vec<String>) {
     match node {
-        Node::Element {
-            name,
-            children,
-            ..
-        } => {
-            if name.eq_ignore_ascii_case("img") {
-                if let Some(src) = node.attr("src") {
-                    let src = src.trim();
-                    if !src.is_empty() {
-                        out.push(src.to_string());
-                    }
+        Node::Element { name, children, .. } => {
+            if name.eq_ignore_ascii_case("img")
+                && let Some(src) = node.attr("src")
+            {
+                let src = src.trim();
+                if !src.is_empty() {
+                    out.push(src.to_string());
                 }
             }
 

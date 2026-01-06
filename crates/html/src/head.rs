@@ -70,12 +70,7 @@ fn find_head(dom: &Node) -> Option<&Node> {
 fn fill_head_metadata_from(head: &Node, out: &mut HeadMetadata) {
     if let Node::Element { children, .. } = head {
         for child in children {
-            if let Node::Element {
-                name,
-                children,
-                ..
-            } = child
-            {
+            if let Node::Element { name, children, .. } = child {
                 // <title>
                 if name.eq_ignore_ascii_case("title") && out.title.is_none() {
                     out.title = first_text_child(children);
