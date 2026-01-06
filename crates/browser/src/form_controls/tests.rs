@@ -1,3 +1,5 @@
+use crate::form_controls::index::RadioGroupKey;
+
 use super::*;
 use gfx::input::InputValueStore;
 use html::{Id, Node};
@@ -380,6 +382,35 @@ fn click_radio_without_name_does_not_uncheck_others() {
     assert!(index.click_radio(&mut store, Id(3)));
     assert!(store.is_checked(Id(2)));
     assert!(store.is_checked(Id(3)));
+}
+
+#[test]
+fn moving_radio_between_groups_removes_stale_membership() {
+    let mut store = InputValueStore::new();
+    let mut index = FormControlIndex::default();
+
+    let g1 = RadioGroupKey {
+        scope_id: Id(0),
+        name: "g1".to_string(),
+    };
+    let g2 = RadioGroupKey {
+        scope_id: Id(0),
+        name: "g2".to_string(),
+    };
+
+    index.register_radio(Some(g1.clone()), Id(1));
+    index.register_radio(Some(g1), Id(2));
+
+    store.ensure_initial_checked(Id(1), true);
+    store.ensure_initial_checked(Id(2), false);
+
+    // Move radio 1 to a different group; stale membership must be cleaned up.
+    index.register_radio(Some(g2), Id(1));
+
+    // Clicking radio 2 in the original group must not uncheck radio 1 that moved.
+    assert!(index.click_radio(&mut store, Id(2)));
+    assert!(store.is_checked(Id(2)));
+    assert!(store.is_checked(Id(1)));
 }
 
 #[test]

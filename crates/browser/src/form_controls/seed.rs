@@ -36,7 +36,6 @@ pub fn seed_input_state_from_dom(store: &mut InputValueStore, dom: &Node) -> For
         store: &mut InputValueStore,
         node: &Node,
         scope_id: Option<Id>,
-        group_by_key: &mut HashMap<RadioGroupKey, usize>,
         index: &mut FormControlIndex,
         radio_groups: &mut HashMap<usize, RadioGroupSelection>,
     ) {
@@ -62,11 +61,7 @@ pub fn seed_input_state_from_dom(store: &mut InputValueStore, dom: &Node) -> For
                     }
 
                     InputControlType::Radio => {
-                        let group_id = radio_group_key(node, scope_id).map(|key| {
-                            let group_id = index.radio.ensure_group_id(group_by_key, key);
-                            index.radio.add_radio_to_group(group_id, id);
-                            group_id
-                        });
+                        let group_id = index.register_radio(radio_group_key(node, scope_id), id);
 
                         if already_present {
                             let Some(group_id) = group_id else {
@@ -149,7 +144,7 @@ pub fn seed_input_state_from_dom(store: &mut InputValueStore, dom: &Node) -> For
                 // Document is a scoping boundary for radio groups.
                 let next_scope_id = Some(DOCUMENT_SCOPE_ID);
                 for c in children {
-                    walk(store, c, next_scope_id, group_by_key, index, radio_groups);
+                    walk(store, c, next_scope_id, index, radio_groups);
                 }
             }
 
@@ -162,7 +157,7 @@ pub fn seed_input_state_from_dom(store: &mut InputValueStore, dom: &Node) -> For
                     scope_id
                 };
                 for c in children {
-                    walk(store, c, next_scope_id, group_by_key, index, radio_groups);
+                    walk(store, c, next_scope_id, index, radio_groups);
                 }
             }
 
@@ -172,16 +167,8 @@ pub fn seed_input_state_from_dom(store: &mut InputValueStore, dom: &Node) -> For
 
     let mut index = FormControlIndex::default();
 
-    let mut group_by_key: HashMap<RadioGroupKey, usize> = HashMap::new();
     let mut radio_groups: HashMap<usize, RadioGroupSelection> = HashMap::new();
-    walk(
-        store,
-        dom,
-        None,
-        &mut group_by_key,
-        &mut index,
-        &mut radio_groups,
-    );
+    walk(store, dom, None, &mut index, &mut radio_groups);
 
     index
 }

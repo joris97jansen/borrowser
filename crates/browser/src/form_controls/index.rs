@@ -11,6 +11,14 @@ impl FormControlIndex {
     pub fn click_radio(&self, store: &mut InputValueStore, radio_id: Id) -> bool {
         self.radio.click(store, radio_id)
     }
+
+    pub(super) fn register_radio(
+        &mut self,
+        key: Option<RadioGroupKey>,
+        radio_id: Id,
+    ) -> Option<usize> {
+        key.map(|key| self.radio.register(key, radio_id))
+    }
 }
 
 impl FormControlHandler for FormControlIndex {
@@ -27,32 +35,42 @@ pub(super) struct RadioGroupKey {
 
 #[derive(Clone, Debug, Default)]
 pub(super) struct RadioGroupIndex {
+    group_by_key: HashMap<RadioGroupKey, usize>,
     group_by_radio: HashMap<Id, usize>,
     groups: Vec<Vec<Id>>,
 }
 
 impl RadioGroupIndex {
-    pub(super) fn ensure_group_id(
-        &mut self,
-        group_by_key: &mut HashMap<RadioGroupKey, usize>,
-        key: RadioGroupKey,
-    ) -> usize {
-        if let Some(id) = group_by_key.get(&key) {
+    fn ensure_group_id(&mut self, key: RadioGroupKey) -> usize {
+        if let Some(id) = self.group_by_key.get(&key) {
             return *id;
         }
 
         let id = self.groups.len();
         self.groups.push(Vec::new());
-        group_by_key.insert(key, id);
+        self.group_by_key.insert(key, id);
         id
     }
 
-    pub(super) fn add_radio_to_group(&mut self, group_id: usize, radio_id: Id) {
-        // Map the radio -> group (last write wins; safe even if re-seen).
+    pub(super) fn register(&mut self, key: RadioGroupKey, radio_id: Id) -> usize {
+        let group_id = self.ensure_group_id(key);
+        self.add_radio_to_group(group_id, radio_id);
+        group_id
+    }
+
+    fn add_radio_to_group(&mut self, group_id: usize, radio_id: Id) {
+        // Map the radio -> group (last write wins). If the radio was previously in a different
+        // group, remove it there so stale membership vectors cannot desync toggling behavior.
         let prev = self.group_by_radio.insert(radio_id, group_id);
 
-        // Only push into members list the first time we see this radio.
-        if prev.is_none()
+        if let Some(old_group) = prev.filter(|old| *old != group_id)
+            && let Some(old_members) = self.groups.get_mut(old_group)
+        {
+            old_members.retain(|&id| id != radio_id);
+        }
+
+        // Only push into members list the first time we see this radio in this group.
+        if prev != Some(group_id)
             && let Some(members) = self.groups.get_mut(group_id)
         {
             members.push(radio_id);
