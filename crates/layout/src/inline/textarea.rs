@@ -2,7 +2,7 @@ use css::ComputedStyle;
 
 use crate::{Rectangle, TextMeasurer};
 
-use super::layout_tokens_with_options;
+use super::engine::layout_tokens_with_options;
 use super::options::InlineLayoutOptions;
 use super::tokens::{InlineContext, InlineToken};
 use super::types::LineBox;

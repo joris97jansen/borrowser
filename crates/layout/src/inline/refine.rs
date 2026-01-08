@@ -4,7 +4,7 @@ use html::dom_utils::is_non_rendering_element;
 
 use crate::{BoxKind, LayoutBox, Rectangle, TextMeasurer, content_x_and_width, content_y};
 
-use super::layout_tokens;
+use super::engine::layout_tokens;
 use super::options::INLINE_PADDING;
 use super::replaced::size_replaced_inline_children;
 use super::tokens::collect_inline_tokens_for_block_layout;
