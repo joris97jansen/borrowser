@@ -33,3 +33,6 @@ ci:
 	@$(MAKE) lint
 	@$(MAKE) test
 	@$(MAKE) build
+
+loc:
+	git ls-files | xargs wc -l
