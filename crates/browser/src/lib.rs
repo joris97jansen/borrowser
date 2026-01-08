@@ -6,3 +6,4 @@ pub mod tab;
 pub mod view;
 
 pub use shell::ShellApp;
+pub use tab::Tab;
