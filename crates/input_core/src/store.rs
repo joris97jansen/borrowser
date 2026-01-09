@@ -1,12 +1,15 @@
 //! Central store for input values, caret positions, and selections.
+//!
+//! This store is UI-agnostic: it does not perform layout or text measurement.
+//! Integration layers are responsible for translating pointer positions into
+//! byte indices and then updating caret/selection in this store.
 
 use crate::id::InputId;
 use crate::selection::SelectionRange;
 use crate::state::InputState;
 use crate::text::{
-    caret_from_x_with_boundaries, caret_from_x_with_boundaries_in_range, clamp_to_char_boundary,
-    filter_single_line, next_cursor_boundary, normalize_newlines, prev_cursor_boundary,
-    rebuild_cursor_boundaries,
+    clamp_to_char_boundary, filter_single_line, next_cursor_boundary, normalize_newlines,
+    prev_cursor_boundary,
 };
 use std::collections::HashMap;
 
@@ -144,8 +147,6 @@ impl InputValueStore {
                 selection_anchor: None,
                 scroll_x: 0.0,
                 scroll_y: 0.0,
-                cursor_boundaries: Vec::new(),
-                cursor_boundaries_dirty: true,
             },
         );
     }
@@ -161,8 +162,6 @@ impl InputValueStore {
             selection_anchor: None,
             scroll_x: 0.0,
             scroll_y: 0.0,
-            cursor_boundaries: Vec::new(),
-            cursor_boundaries_dirty: true,
         });
     }
 
@@ -385,48 +384,6 @@ impl InputValueStore {
         set_caret_in_state(st, caret, selecting);
     }
 
-    /// Set the caret based on a viewport x-coordinate.
-    ///
-    /// Uses the provided measurement function to determine which character
-    /// boundary is closest to the given x position.
-    ///
-    /// # Arguments
-    ///
-    /// * `id` - The input ID
-    /// * `x_in_viewport` - X position relative to the visible viewport
-    /// * `selecting` - Whether to extend the selection
-    /// * `measure_prefix` - Function that measures the width of a text prefix
-    ///
-    /// # Returns
-    ///
-    /// The byte index of the new caret position.
-    pub fn set_caret_from_viewport_x(
-        &mut self,
-        id: InputId,
-        x_in_viewport: f32,
-        selecting: bool,
-        mut measure_prefix: impl FnMut(&str) -> f32,
-    ) -> usize {
-        let st = self.values.entry(id).or_default();
-        clamp_state(st);
-
-        let x_in_viewport = x_in_viewport.max(0.0);
-        let x_in_text = x_in_viewport + st.scroll_x;
-
-        let caret = {
-            ensure_cursor_boundaries(st);
-            caret_from_x_with_boundaries(
-                &st.value,
-                &st.cursor_boundaries,
-                x_in_text,
-                &mut measure_prefix,
-            )
-        };
-
-        set_caret_in_state(st, caret, selecting);
-        caret
-    }
-
     /// Update horizontal scroll to keep the caret visible.
     ///
     /// # Arguments
@@ -519,58 +476,6 @@ impl InputValueStore {
 
         st.scroll_y = scroll_y;
     }
-
-    /// Set the caret based on a viewport x-coordinate within a specific line range.
-    ///
-    /// Used for multi-line text where each line needs independent measurement.
-    ///
-    /// # Arguments
-    ///
-    /// * `id` - The input ID
-    /// * `x_in_viewport` - X position relative to the line's start
-    /// * `selecting` - Whether to extend the selection
-    /// * `range_start` - Start byte index of the line
-    /// * `range_end` - End byte index of the line
-    /// * `measure_range_prefix` - Function that measures the width of a line prefix
-    ///
-    /// # Returns
-    ///
-    /// The byte index of the new caret position.
-    pub fn set_caret_from_viewport_x_in_range(
-        &mut self,
-        id: InputId,
-        x_in_viewport: f32,
-        selecting: bool,
-        range_start: usize,
-        range_end: usize,
-        mut measure_range_prefix: impl FnMut(&str) -> f32,
-    ) -> usize {
-        let st = self.values.entry(id).or_default();
-        clamp_state(st);
-
-        let range_start = clamp_to_char_boundary(&st.value, range_start);
-        let range_end = clamp_to_char_boundary(&st.value, range_end).max(range_start);
-        let x_in_viewport = x_in_viewport.max(0.0);
-
-        let caret = {
-            ensure_cursor_boundaries(st);
-
-            let start_idx = st.cursor_boundaries.partition_point(|&b| b < range_start);
-            let end_idx = st.cursor_boundaries.partition_point(|&b| b <= range_end);
-            let boundaries = &st.cursor_boundaries[start_idx..end_idx];
-
-            caret_from_x_with_boundaries_in_range(
-                &st.value,
-                boundaries,
-                range_start,
-                x_in_viewport,
-                &mut measure_range_prefix,
-            )
-        };
-
-        set_caret_in_state(st, caret, selecting);
-        caret
-    }
 }
 
 // --- Internal helper functions ---
@@ -646,23 +551,7 @@ fn clear_selection(st: &mut InputState) {
 }
 
 fn mark_text_dirty(st: &mut InputState) {
-    st.cursor_boundaries_dirty = true;
     st.value_rev = st.value_rev.wrapping_add(1);
-}
-
-fn ensure_cursor_boundaries(st: &mut InputState) {
-    if st.value.is_empty() {
-        st.cursor_boundaries.clear();
-        st.cursor_boundaries_dirty = false;
-        return;
-    }
-
-    if !st.cursor_boundaries_dirty && !st.cursor_boundaries.is_empty() {
-        return;
-    }
-
-    rebuild_cursor_boundaries(&st.value, &mut st.cursor_boundaries);
-    st.cursor_boundaries_dirty = false;
 }
 
 #[cfg(test)]

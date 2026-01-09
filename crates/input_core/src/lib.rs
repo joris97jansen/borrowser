@@ -11,12 +11,16 @@
 //! ## Design Principles
 //!
 //! This crate is intentionally UI-agnostic and does not depend on:
-//! - Any graphics framework (egui, wgpu, etc.)
+//! - Any graphics framework or renderer
 //! - Layout or hit-testing systems
 //! - Platform-specific APIs
 //!
 //! It depends only on `std` and provides pure editing semantics that can be
 //! tested independently and reused across different UI implementations.
+//!
+//! Layout- or measurement-dependent behaviors (caret hit-testing, text shaping,
+//! line wrapping) should live in integration layers such as `gfx`, which can
+//! feed byte indices and scroll offsets back into this store.
 //!
 //! ## Integration
 //!

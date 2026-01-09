@@ -216,37 +216,6 @@ impl InputValueStore {
         self.inner.set_caret(to_input_id(id), caret, selecting)
     }
 
-    /// Set the caret based on a viewport x-coordinate.
-    ///
-    /// Uses the provided measurement function to determine which character
-    /// boundary is closest to the given x position.
-    ///
-    /// # Arguments
-    ///
-    /// * `id` - The input ID
-    /// * `x_in_viewport` - X position relative to the visible viewport
-    /// * `selecting` - Whether to extend the selection
-    /// * `measure_prefix` - Function that measures the width of a text prefix
-    ///
-    /// # Returns
-    ///
-    /// The byte index of the new caret position.
-    #[inline]
-    pub fn set_caret_from_viewport_x(
-        &mut self,
-        id: Id,
-        x_in_viewport: f32,
-        selecting: bool,
-        measure_prefix: impl FnMut(&str) -> f32,
-    ) -> usize {
-        self.inner.set_caret_from_viewport_x(
-            to_input_id(id),
-            x_in_viewport,
-            selecting,
-            measure_prefix,
-        )
-    }
-
     /// Update horizontal scroll to keep the caret visible.
     ///
     /// # Arguments
@@ -287,42 +256,6 @@ impl InputValueStore {
     ) {
         self.inner
             .update_scroll_for_caret_y(to_input_id(id), caret_y, caret_h, text_h, available_h)
-    }
-
-    /// Set the caret based on a viewport x-coordinate within a specific line range.
-    ///
-    /// Used for multi-line text where each line needs independent measurement.
-    ///
-    /// # Arguments
-    ///
-    /// * `id` - The input ID
-    /// * `x_in_viewport` - X position relative to the line's start
-    /// * `selecting` - Whether to extend the selection
-    /// * `range_start` - Start byte index of the line
-    /// * `range_end` - End byte index of the line
-    /// * `measure_range_prefix` - Function that measures the width of a line prefix
-    ///
-    /// # Returns
-    ///
-    /// The byte index of the new caret position.
-    #[inline]
-    pub fn set_caret_from_viewport_x_in_range(
-        &mut self,
-        id: Id,
-        x_in_viewport: f32,
-        selecting: bool,
-        range_start: usize,
-        range_end: usize,
-        measure_range_prefix: impl FnMut(&str) -> f32,
-    ) -> usize {
-        self.inner.set_caret_from_viewport_x_in_range(
-            to_input_id(id),
-            x_in_viewport,
-            selecting,
-            range_start,
-            range_end,
-            measure_range_prefix,
-        )
     }
 
     /// Returns a reference to the inner core store.
