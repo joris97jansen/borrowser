@@ -1,9 +1,8 @@
+use crate::input_state::DocumentInputState;
 use crate::page::PageState;
 use crate::resources::ResourceManager;
-
 use css::{StyledNode, build_style_tree};
 use egui::{CentralPanel, Color32, Context, Frame};
-use crate::input_state::DocumentInputState;
 pub use gfx::input::PageAction;
 use gfx::viewport::{ViewportCtx, page_viewport};
 use html::Node;
