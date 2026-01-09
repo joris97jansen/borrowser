@@ -2,6 +2,14 @@
 //!
 //! This module provides a thin wrapper around `input_core::InputValueStore` that
 //! accepts `html::Id` and automatically converts it to the UI-agnostic `InputId`.
+//!
+//! # Architecture Note
+//!
+//! The `InputStore` trait lives in `input_core` and uses `InputId`. This wrapper
+//! provides convenience methods using `html::Id` for common DOM operations.
+//! For code that needs to work with the `InputStore` trait directly, use
+//! `inner()` or `inner_mut()` to access the core store, and convert IDs using
+//! the exported `to_input_id()` function.
 
 use html::Id;
 use input_core::{InputId, InputValueStore as CoreInputValueStore};
@@ -316,10 +324,35 @@ impl InputValueStore {
             measure_range_prefix,
         )
     }
+
+    /// Returns a reference to the inner core store.
+    ///
+    /// This allows direct access when using the `InputStore` trait with `InputId`.
+    #[inline]
+    pub fn inner(&self) -> &CoreInputValueStore {
+        &self.inner
+    }
+
+    /// Returns a mutable reference to the inner core store.
+    ///
+    /// This allows direct access when using the `InputStore` trait with `InputId`.
+    #[inline]
+    pub fn inner_mut(&mut self) -> &mut CoreInputValueStore {
+        &mut self.inner
+    }
 }
 
 /// Convert `html::Id` to `input_core::InputId`.
 #[inline]
-fn to_input_id(id: Id) -> InputId {
+pub fn to_input_id(id: Id) -> InputId {
     InputId::from_raw(id.0 as u64)
+}
+
+/// Convert `input_core::InputId` to `html::Id`.
+///
+/// This is the reverse of `to_input_id`. Useful for boundary conversions
+/// where the DOM layer needs to look up by `html::Id`.
+#[inline]
+pub fn from_input_id(id: InputId) -> Id {
+    Id(id.as_raw() as u32)
 }

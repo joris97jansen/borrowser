@@ -10,6 +10,7 @@ use crate::util::{get_attr, input_text_padding, resolve_relative_url};
 use css::StyledNode;
 use egui::{Color32, ScrollArea, Sense, Stroke, Ui, Vec2};
 use html::{Id, Node};
+use input_core::InputValueStore as CoreInputValueStore;
 use layout::{Rectangle, ReplacedElementInfoProvider, ReplacedKind, layout_block_tree};
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -67,7 +68,7 @@ impl<'a, R, F> ViewportCtx<'a, R, F> {
     }
 }
 
-pub fn page_viewport<R: ImageProvider, F: FormControlHandler>(
+pub fn page_viewport<R: ImageProvider, F: FormControlHandler<CoreInputValueStore>>(
     ctx: ViewportCtx<'_, R, F>,
 ) -> Option<PageAction> {
     let ViewportCtx {
@@ -142,7 +143,7 @@ pub fn page_viewport<R: ImageProvider, F: FormControlHandler>(
                 match lb.replaced {
                     Some(ReplacedKind::InputText) => {
                         sync_input_scroll_for_caret(
-                            input_values,
+                            input_values.inner_mut(),
                             focus_id,
                             viewport.width.max(1.0),
                             &measurer,
@@ -153,7 +154,7 @@ pub fn page_viewport<R: ImageProvider, F: FormControlHandler>(
                         let (pad_l, pad_r, _pad_t, _pad_b) = input_text_padding(lb.style);
                         let available_text_w = (viewport.width - pad_l - pad_r).max(0.0);
                         let lines = interaction.textarea.ensure_layout_cache(
-                            &*input_values,
+                            input_values.inner(),
                             focus_id,
                             available_text_w,
                             &measurer,
@@ -161,7 +162,7 @@ pub fn page_viewport<R: ImageProvider, F: FormControlHandler>(
                         );
 
                         sync_textarea_scroll_for_caret(
-                            input_values,
+                            input_values.inner_mut(),
                             focus_id,
                             viewport.height.max(1.0),
                             lines,
@@ -216,7 +217,7 @@ pub fn page_viewport<R: ImageProvider, F: FormControlHandler>(
                 layout_changed,
                 fragment_rects: &fragment_rects,
                 base_url,
-                input_values,
+                input_values: input_values.inner_mut(),
                 form_controls,
                 interaction,
             })

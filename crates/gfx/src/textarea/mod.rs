@@ -3,10 +3,11 @@ mod caret;
 mod selection;
 
 use crate::EguiTextMeasurer;
-use crate::input::InputValueStore;
+use crate::input::to_input_id;
 use crate::util::{clamp_to_char_boundary, input_text_padding};
 use css::{ComputedStyle, Length};
 use html::Id;
+use input_core::InputStore;
 
 pub use cache::{TextareaCachedLine, TextareaCachedTextFragment, TextareaLayoutCache};
 
@@ -52,16 +53,17 @@ impl TextareaState {
             .map(|c| c.lines.as_slice())
     }
 
-    pub(crate) fn ensure_layout_cache<'a>(
+    pub(crate) fn ensure_layout_cache<'a, S: InputStore + ?Sized>(
         &'a mut self,
-        input_values: &InputValueStore,
+        input_values: &S,
         input_id: Id,
         available_text_w: f32,
         measurer: &EguiTextMeasurer,
         style: &ComputedStyle,
     ) -> &'a [TextareaCachedLine] {
+        let core_id = to_input_id(input_id);
         let available_text_w = available_text_w.max(0.0);
-        let value_rev = input_values.value_revision(input_id);
+        let value_rev = input_values.value_revision(core_id);
         let Length::Px(font_px) = style.font_size;
 
         let cache_valid = self.layout_cache.as_ref().is_some_and(|c| {
@@ -72,7 +74,7 @@ impl TextareaState {
         });
 
         if !cache_valid {
-            let value = input_values.get(input_id).unwrap_or("");
+            let value = input_values.get(core_id).unwrap_or("");
             let lines =
                 layout_textarea_cached_lines(measurer, style, available_text_w, value, true);
             self.layout_cache = Some(TextareaLayoutCache {
@@ -88,19 +90,23 @@ impl TextareaState {
     }
 }
 
-pub(crate) fn sync_textarea_scroll_for_caret(
-    input_values: &mut InputValueStore,
+/// Update scroll position to keep the caret visible in a textarea.
+///
+/// Takes `html::Id` and converts to `InputId` internally for store operations.
+pub(crate) fn sync_textarea_scroll_for_caret<S: InputStore + ?Sized>(
+    input_values: &mut S,
     input_id: Id,
     control_rect_h: f32,
     lines: &[TextareaCachedLine],
     measurer: &dyn layout::TextMeasurer,
     style: &ComputedStyle,
 ) {
+    let core_id = to_input_id(input_id);
     let (_pad_l, _pad_r, pad_t, pad_b) = input_text_padding(style);
     let available_text_h = (control_rect_h - pad_t - pad_b).max(0.0);
 
     let (caret_y, caret_h, text_h) = {
-        let Some((value, caret, _sel, _scroll_x, _scroll_y)) = input_values.get_state(input_id)
+        let Some((value, caret, _sel, _scroll_x, _scroll_y)) = input_values.get_state(core_id)
         else {
             return;
         };
@@ -112,5 +118,5 @@ pub(crate) fn sync_textarea_scroll_for_caret(
         (caret_y, caret_h, text_h)
     };
 
-    input_values.update_scroll_for_caret_y(input_id, caret_y, caret_h, text_h, available_text_h);
+    input_values.update_scroll_for_caret_y(core_id, caret_y, caret_h, text_h, available_text_h);
 }

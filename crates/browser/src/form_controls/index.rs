@@ -1,5 +1,6 @@
-use gfx::input::{FormControlHandler, InputValueStore};
+use gfx::input::{FormControlHandler, InputValueStore, from_input_id, to_input_id};
 use html::Id;
+use input_core::{InputId, InputStore};
 use std::collections::HashMap;
 
 #[derive(Clone, Debug, Default)]
@@ -21,9 +22,10 @@ impl FormControlIndex {
     }
 }
 
-impl FormControlHandler for FormControlIndex {
-    fn on_radio_clicked(&self, store: &mut InputValueStore, radio_id: Id) -> bool {
-        self.click_radio(store, radio_id)
+impl<S: InputStore> FormControlHandler<S> for FormControlIndex {
+    fn on_radio_clicked(&self, store: &mut S, radio_id: InputId) -> bool {
+        // Convert InputId to html::Id for group lookup, then use InputId for store operations
+        self.radio.click_with_core(store, radio_id)
     }
 }
 
@@ -89,6 +91,28 @@ impl RadioGroupIndex {
         let mut changed = false;
         for &id in members {
             changed |= store.set_checked(id, id == radio_id);
+        }
+        changed
+    }
+
+    /// Version of `click` that works with `InputStore` trait and `InputId`.
+    ///
+    /// Converts `InputId` to `html::Id` for group lookup, then uses the
+    /// `InputStore` trait methods with `InputId` for store operations.
+    pub(super) fn click_with_core<S: InputStore>(&self, store: &mut S, radio_id: InputId) -> bool {
+        let html_id = from_input_id(radio_id);
+        let Some(group_id) = self.group_by_radio.get(&html_id).copied() else {
+            return store.set_checked(radio_id, true);
+        };
+
+        let Some(members) = self.groups.get(group_id) else {
+            return store.set_checked(radio_id, true);
+        };
+
+        let mut changed = false;
+        for &id in members {
+            let member_input_id = to_input_id(id);
+            changed |= store.set_checked(member_input_id, id == html_id);
         }
         changed
     }

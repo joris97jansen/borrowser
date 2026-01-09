@@ -238,6 +238,7 @@ dependencies = [
  "gfx",
  "html",
  "image",
+ "input_core",
  "layout",
  "net",
  "tools",

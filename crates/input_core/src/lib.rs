@@ -6,6 +6,7 @@
 //! - [`InputId`]: A generic, opaque identifier for input elements
 //! - [`InputValueStore`]: Central store for input values, caret positions, and selections
 //! - [`SelectionRange`]: Represents a text selection with start/end byte offsets
+//! - [`InputStore`]: Trait abstracting input store operations for dependency inversion
 //!
 //! ## Design Principles
 //!
@@ -19,13 +20,12 @@
 //!
 //! ## Integration
 //!
-//! To integrate with DOM-based systems, use the `From` implementation for [`InputId`]:
+//! To integrate with DOM-based systems, convert IDs at the routing boundary:
 //! ```ignore
-//! // In your integration layer:
-//! impl From<html::Id> for InputId {
-//!     fn from(id: html::Id) -> Self {
-//!         InputId(id.0 as u64)
-//!     }
+//! // In your routing layer:
+//! fn handle_input(html_id: html::Id, store: &mut impl InputStore) {
+//!     let id = InputId::from_raw(html_id.0 as u64);
+//!     store.focus(id);
 //! }
 //! ```
 
@@ -34,10 +34,12 @@ mod selection;
 mod state;
 mod store;
 mod text;
+mod traits;
 
 pub use id::InputId;
 pub use selection::SelectionRange;
 pub use store::InputValueStore;
+pub use traits::InputStore;
 
 // Re-export text utilities for use by integration layers that need
 // caret positioning with custom measurement functions.
