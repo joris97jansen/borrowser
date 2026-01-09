@@ -1,13 +1,8 @@
 use css::ComputedStyle;
 use layout::TextMeasurer;
 
-pub(crate) fn clamp_to_char_boundary(s: &str, index: usize) -> usize {
-    let mut index = index.min(s.len());
-    while index > 0 && !s.is_char_boundary(index) {
-        index -= 1;
-    }
-    index
-}
+// Re-export from input_core for use within gfx
+pub(crate) use input_core::clamp_to_char_boundary;
 
 pub(crate) fn input_text_padding(style: &ComputedStyle) -> (f32, f32, f32, f32) {
     let bm = style.box_metrics;

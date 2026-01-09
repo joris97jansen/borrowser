@@ -33,7 +33,9 @@ members = [
   "crates/runtime_net", 
   "crates/runtime_parse", 
   "crates/runtime_css", 
-  "crates/core_types", "crates/bus",
+  "crates/core_types",
+  "crates/bus",
+  "crates/input_core",
 ]
 resolver = "2"
 

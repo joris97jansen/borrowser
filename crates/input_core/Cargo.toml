@@ -1,0 +1,12 @@
+[package]
+name = "input_core"
+version = "0.1.0"
+edition = "2024"
+description = "UI-agnostic input editing/state layer for the browser engine"
+
+# This crate intentionally has NO dependencies on egui, layout, or gfx.
+# It may optionally depend on html for Id interoperability.
+
+[dependencies]
+
+[dev-dependencies]
