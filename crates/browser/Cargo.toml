@@ -13,6 +13,7 @@ core_types = { path = "../core_types" }
 tools = { path = "../tools" }
 layout = { path = "../layout" }
 gfx = { path = "../gfx" }
+input_core = { path = "../input_core" }
 
 egui = { workspace = true }
 url = { workspace = true }

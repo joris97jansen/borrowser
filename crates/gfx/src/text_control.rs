@@ -1,20 +1,25 @@
-use crate::input::InputValueStore;
+use crate::input::to_input_id;
 use crate::util::{clamp_to_char_boundary, input_text_padding};
 use css::ComputedStyle;
 use html::Id;
+use input_core::InputStore;
 use layout::{LayoutBox, TextMeasurer};
 
-pub(crate) fn sync_input_scroll_for_caret(
-    input_values: &mut InputValueStore,
+/// Update scroll position to keep the caret visible in an input field.
+///
+/// Takes `html::Id` and converts to `InputId` internally for store operations.
+pub(crate) fn sync_input_scroll_for_caret<S: InputStore + ?Sized>(
+    input_values: &mut S,
     input_id: Id,
     input_rect_w: f32,
     measurer: &dyn TextMeasurer,
     style: &ComputedStyle,
 ) {
+    let core_id = to_input_id(input_id);
     let (pad_l, pad_r, _pad_t, _pad_b) = input_text_padding(style);
     let available_text_w = (input_rect_w - pad_l - pad_r).max(0.0);
 
-    let (caret_px, text_w) = match input_values.get_state(input_id) {
+    let (caret_px, text_w) = match input_values.get_state(core_id) {
         Some((value, caret, _sel, _scroll_x, _scroll_y)) => {
             let caret = clamp_to_char_boundary(value, caret);
             (
@@ -25,7 +30,7 @@ pub(crate) fn sync_input_scroll_for_caret(
         None => (0.0, 0.0),
     };
 
-    input_values.update_scroll_for_caret(input_id, caret_px, text_w, available_text_w);
+    input_values.update_scroll_for_caret(core_id, caret_px, text_w, available_text_w);
 }
 
 pub(crate) fn consume_focus_nav_keys(i: &mut egui::InputState) {

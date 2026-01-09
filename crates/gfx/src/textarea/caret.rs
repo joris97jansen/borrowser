@@ -1,8 +1,9 @@
 use super::{TextareaCachedLine, TextareaCachedTextFragment};
-use crate::input::InputValueStore;
+use crate::input::to_input_id;
 use crate::util::clamp_to_char_boundary;
 use css::ComputedStyle;
 use html::Id;
+use input_core::InputStore;
 use layout::TextMeasurer;
 
 pub(crate) fn textarea_line_index_from_y(
@@ -293,14 +294,18 @@ pub(crate) struct TextareaVerticalMoveCtx<'a> {
     pub(crate) style: &'a ComputedStyle,
 }
 
-pub(crate) fn textarea_move_caret_vertically(
-    input_values: &mut InputValueStore,
+/// Move the caret vertically by the given number of lines.
+///
+/// Takes `html::Id` and converts to `InputId` internally for store operations.
+pub(crate) fn textarea_move_caret_vertically<S: InputStore + ?Sized>(
+    input_values: &mut S,
     input_id: Id,
     delta_lines: i32,
     preferred_x: Option<f32>,
     ctx: TextareaVerticalMoveCtx<'_>,
     selecting: bool,
 ) -> Option<f32> {
+    let core_id = to_input_id(input_id);
     let TextareaVerticalMoveCtx {
         lines,
         measurer,
@@ -312,7 +317,7 @@ pub(crate) fn textarea_move_caret_vertically(
     }
 
     let Some((value, caret)) = input_values
-        .get_state(input_id)
+        .get_state(core_id)
         .map(|(value, caret, _sel, _sx, _sy)| (value, caret))
     else {
         return preferred_x;
@@ -335,12 +340,12 @@ pub(crate) fn textarea_move_caret_vertically(
     if selecting {
         if delta_lines < 0 && cur_line == 0 {
             let (line_start, _line_end) = textarea_line_byte_range(lines, value, cur_line);
-            input_values.set_caret(input_id, line_start, true);
+            input_values.set_caret(core_id, line_start, true);
             return Some(x.max(0.0));
         }
         if delta_lines > 0 && cur_line == last_line {
             let (_line_start, line_end) = textarea_line_byte_range(lines, value, cur_line);
-            input_values.set_caret(input_id, line_end, true);
+            input_values.set_caret(core_id, line_end, true);
             return Some(x.max(0.0));
         }
     }
@@ -355,7 +360,7 @@ pub(crate) fn textarea_move_caret_vertically(
     let line = &lines[target_line];
     let new_caret = textarea_caret_for_x_in_line(line, value, x, line_start, line_end);
 
-    input_values.set_caret(input_id, new_caret, selecting);
+    input_values.set_caret(core_id, new_caret, selecting);
     Some(x.max(0.0))
 }
 

@@ -1,4 +1,4 @@
-use super::{ActiveTarget, InputDragState, InputValueStore, InteractionState, PageAction};
+use super::{ActiveTarget, InputDragState, InteractionState, PageAction, to_input_id};
 use crate::EguiTextMeasurer;
 use crate::text_control::{
     consume_focus_nav_keys, find_layout_box_by_id, sync_input_scroll_for_caret,
@@ -10,6 +10,7 @@ use crate::textarea::{
 use crate::util::{input_text_padding, resolve_relative_url};
 use egui::{CursorIcon, Event, Key, Pos2, Rect, Sense, Ui, Vec2};
 use html::Id;
+use input_core::{InputId, InputStore};
 use layout::{
     HitKind, LayoutBox, Rectangle, ReplacedKind, TextMeasurer,
     hit_test::{HitResult, hit_test},
@@ -17,11 +18,15 @@ use layout::{
 use std::cell::RefCell;
 use std::collections::HashMap;
 
-pub trait FormControlHandler {
-    fn on_radio_clicked(&self, store: &mut InputValueStore, radio_id: Id) -> bool;
+/// Handler for form control interactions that require DOM-level coordination.
+///
+/// The store parameter `S` is any `InputStore` implementor using `InputId`.
+/// Implementors are responsible for converting `html::Id` to `InputId` as needed.
+pub trait FormControlHandler<S: InputStore + ?Sized> {
+    fn on_radio_clicked(&self, store: &mut S, radio_id: InputId) -> bool;
 }
 
-pub(crate) struct FrameInputCtx<'a, 'layout, F> {
+pub(crate) struct FrameInputCtx<'a, 'layout, S: InputStore + ?Sized, F> {
     pub ui: &'a mut Ui,
     pub resp: egui::Response,
     pub content_rect: Rect,
@@ -31,13 +36,13 @@ pub(crate) struct FrameInputCtx<'a, 'layout, F> {
     pub layout_changed: bool,
     pub fragment_rects: &'a RefCell<HashMap<Id, Rectangle>>,
     pub base_url: Option<&'a str>,
-    pub input_values: &'a mut InputValueStore,
+    pub input_values: &'a mut S,
     pub form_controls: &'a F,
     pub interaction: &'a mut InteractionState,
 }
 
-pub(crate) fn route_frame_input<F: FormControlHandler>(
-    ctx: FrameInputCtx<'_, '_, F>,
+pub(crate) fn route_frame_input<S: InputStore, F: FormControlHandler<S>>(
+    ctx: FrameInputCtx<'_, '_, S, F>,
 ) -> Option<PageAction> {
     let FrameInputCtx {
         ui,
@@ -162,22 +167,22 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                 && let Some(prev_focus) = interaction.focused_node_id
                 && matches!(prev_focus_kind, Some(HitKind::Input))
             {
-                input_values.blur(prev_focus);
+                input_values.blur(to_input_id(prev_focus));
             }
 
             match h.kind {
                 HitKind::Input => {
-                    input_values.ensure_initial(h.node_id, String::new());
+                    input_values.ensure_initial(to_input_id(h.node_id), String::new());
                 }
                 HitKind::Checkbox | HitKind::Radio => {
-                    input_values.ensure_initial_checked(h.node_id, false);
+                    input_values.ensure_initial_checked(to_input_id(h.node_id), false);
                 }
                 _ => {}
             }
             interaction.set_focus(h.node_id, h.kind, h.fragment_rect);
 
             if focus_changed && matches!(h.kind, HitKind::Input) {
-                input_values.focus(h.node_id);
+                input_values.focus(to_input_id(h.node_id));
             }
 
             let egui_focus_id = ui.make_persistent_id(("dom-input", h.node_id));
@@ -199,10 +204,10 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
 
                             let x_in_viewport = (h.local_pos.0 - pad_l).max(0.0);
                             input_values.set_caret_from_viewport_x(
-                                h.node_id,
+                                to_input_id(h.node_id),
                                 x_in_viewport,
                                 selecting,
-                                |s| measurer.measure(s, style),
+                                &mut |s| measurer.measure(s, style),
                             );
                             sync_input_scroll_for_caret(
                                 input_values,
@@ -227,7 +232,7 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
 
                                 let caret = {
                                     let (value, scroll_y) = input_values
-                                        .get_state(h.node_id)
+                                        .get_state(to_input_id(h.node_id))
                                         .map(|(v, _c, _sel, _sx, sy)| (v, sy))
                                         .unwrap_or(("", 0.0));
 
@@ -247,7 +252,7 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                                     )
                                 };
 
-                                input_values.set_caret(h.node_id, caret, selecting);
+                                input_values.set_caret(to_input_id(h.node_id), caret, selecting);
 
                                 sync_textarea_scroll_for_caret(
                                     input_values,
@@ -316,10 +321,10 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                         let (pad_l, _pad_r, _pad_t, _pad_b) = input_text_padding(style);
 
                         input_values.set_caret_from_viewport_x(
-                            drag_input_id,
+                            to_input_id(drag_input_id),
                             (local_x - pad_l).max(0.0),
                             true,
-                            |s| measurer.measure(s, style),
+                            &mut |s| measurer.measure(s, style),
                         );
                         sync_input_scroll_for_caret(
                             input_values,
@@ -347,7 +352,7 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
 
                             let caret = {
                                 let (value, scroll_y) = input_values
-                                    .get_state(drag_input_id)
+                                    .get_state(to_input_id(drag_input_id))
                                     .map(|(v, _c, _sel, _sx, sy)| (v, sy))
                                     .unwrap_or(("", 0.0));
 
@@ -361,7 +366,7 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                                 textarea_caret_for_x_in_lines(lines, value, line_idx, x_in_viewport)
                             };
 
-                            input_values.set_caret(drag_input_id, caret, true);
+                            input_values.set_caret(to_input_id(drag_input_id), caret, true);
 
                             sync_textarea_scroll_for_caret(
                                 input_values,
@@ -438,7 +443,7 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                             }
 
                             HitKind::Checkbox => {
-                                let changed = input_values.toggle_checked(h.node_id);
+                                let changed = input_values.toggle_checked(to_input_id(h.node_id));
 
                                 // Checkbox remains focused after activation (browser-like)
                                 interaction.set_focus(h.node_id, h.kind, h.fragment_rect);
@@ -448,8 +453,8 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                             }
 
                             HitKind::Radio => {
-                                let changed =
-                                    form_controls.on_radio_clicked(input_values, h.node_id);
+                                let changed = form_controls
+                                    .on_radio_clicked(input_values, to_input_id(h.node_id));
 
                                 // Radio remains focused after activation (browser-like)
                                 interaction.set_focus(h.node_id, h.kind, h.fragment_rect);
@@ -494,7 +499,7 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
             if let Some(old) = prev_focus
                 && matches!(prev_focus_kind, Some(HitKind::Input))
             {
-                input_values.blur(old);
+                input_values.blur(to_input_id(old));
             }
 
             if let Some(old) = prev_focus {
@@ -599,9 +604,10 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                                 if is_textarea {
                                     interaction.textarea.clear_preferred_x();
                                     saw_text_newline |= t.contains('\n') || t.contains('\r');
-                                    input_values.insert_text_multiline(focus_id, t.as_str());
+                                    input_values
+                                        .insert_text_multiline(to_input_id(focus_id), t.as_str());
                                 } else {
-                                    input_values.insert_text(focus_id, t.as_str());
+                                    input_values.insert_text(to_input_id(focus_id), t.as_str());
                                 }
                                 value_changed = true;
                             }
@@ -620,28 +626,30 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                                     if is_textarea {
                                         interaction.textarea.clear_preferred_x();
                                     }
-                                    input_values.backspace(focus_id);
+                                    input_values.backspace(to_input_id(focus_id));
                                     value_changed = true;
                                 }
                                 Key::Delete => {
                                     if is_textarea {
                                         interaction.textarea.clear_preferred_x();
                                     }
-                                    input_values.delete(focus_id);
+                                    input_values.delete(to_input_id(focus_id));
                                     value_changed = true;
                                 }
                                 Key::ArrowLeft => {
                                     if is_textarea {
                                         interaction.textarea.clear_preferred_x();
                                     }
-                                    input_values.move_caret_left(focus_id, modifiers.shift);
+                                    input_values
+                                        .move_caret_left(to_input_id(focus_id), modifiers.shift);
                                     caret_or_selection_changed = true;
                                 }
                                 Key::ArrowRight => {
                                     if is_textarea {
                                         interaction.textarea.clear_preferred_x();
                                     }
-                                    input_values.move_caret_right(focus_id, modifiers.shift);
+                                    input_values
+                                        .move_caret_right(to_input_id(focus_id), modifiers.shift);
                                     caret_or_selection_changed = true;
                                 }
                                 Key::ArrowUp => {
@@ -734,21 +742,25 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                                     if is_textarea {
                                         interaction.textarea.clear_preferred_x();
                                     }
-                                    input_values.move_caret_to_start(focus_id, modifiers.shift);
+                                    input_values.move_caret_to_start(
+                                        to_input_id(focus_id),
+                                        modifiers.shift,
+                                    );
                                     caret_or_selection_changed = true;
                                 }
                                 Key::End => {
                                     if is_textarea {
                                         interaction.textarea.clear_preferred_x();
                                     }
-                                    input_values.move_caret_to_end(focus_id, modifiers.shift);
+                                    input_values
+                                        .move_caret_to_end(to_input_id(focus_id), modifiers.shift);
                                     caret_or_selection_changed = true;
                                 }
                                 Key::A if modifiers.command || modifiers.ctrl => {
                                     if is_textarea {
                                         interaction.textarea.clear_preferred_x();
                                     }
-                                    input_values.select_all(focus_id);
+                                    input_values.select_all(to_input_id(focus_id));
                                     caret_or_selection_changed = true;
                                 }
                                 _ => {}
@@ -763,7 +775,8 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                             match evt {
                                 Event::Text(t) if t == " " => {
                                     handled_activation = true;
-                                    non_text_state_changed |= input_values.toggle_checked(focus_id);
+                                    non_text_state_changed |=
+                                        input_values.toggle_checked(to_input_id(focus_id));
                                 }
                                 Event::Key {
                                     key: Key::Space,
@@ -771,7 +784,8 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                                     ..
                                 } => {
                                     handled_activation = true;
-                                    non_text_state_changed |= input_values.toggle_checked(focus_id);
+                                    non_text_state_changed |=
+                                        input_values.toggle_checked(to_input_id(focus_id));
                                 }
                                 _ => {}
                             }
@@ -784,8 +798,8 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                             match evt {
                                 Event::Text(t) if t == " " => {
                                     handled_activation = true;
-                                    non_text_state_changed |=
-                                        form_controls.on_radio_clicked(input_values, focus_id);
+                                    non_text_state_changed |= form_controls
+                                        .on_radio_clicked(input_values, to_input_id(focus_id));
                                 }
                                 Event::Key {
                                     key: Key::Space,
@@ -793,8 +807,8 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
                                     ..
                                 } => {
                                     handled_activation = true;
-                                    non_text_state_changed |=
-                                        form_controls.on_radio_clicked(input_values, focus_id);
+                                    non_text_state_changed |= form_controls
+                                        .on_radio_clicked(input_values, to_input_id(focus_id));
                                 }
                                 _ => {}
                             }
@@ -809,7 +823,7 @@ pub(crate) fn route_frame_input<F: FormControlHandler>(
             // treat it as a newline insertion for `<textarea>`.
             if is_textarea && enter_pressed && !saw_text_newline {
                 interaction.textarea.clear_preferred_x();
-                input_values.insert_text_multiline(focus_id, "\n");
+                input_values.insert_text_multiline(to_input_id(focus_id), "\n");
                 value_changed = true;
             }
 
