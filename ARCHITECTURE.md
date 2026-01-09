@@ -39,12 +39,13 @@ Borrowser is organized into modular crates, each with a focused role:
 crates/
 ├── core_types      # Shared IDs/types (TabId, ResourceKind, BrowserInput, …)
 ├── tools           # Small shared helpers/constants
+├── input_core      # UI-agnostic input state + editing semantics
 ├── app_api         # UI-facing traits + runtime/bus glue
 │
 ├── html            # Tokenizer + DOM tree builder
 ├── css             # CSS parser, cascade, computed styles
 ├── layout          # Block + inline layout engine and box model
-├── gfx             # egui + wgpu renderer + input/paint layer (text measurer, toolbar widgets, text controls)
+├── gfx             # egui + wgpu renderer + input/paint layer (text controls, caret, hit-testing)
 │
 ├── net             # HTTP streaming client
 ├── runtime_net     # Network runtime thread
@@ -351,6 +352,28 @@ See the full [ROADMAP.md](ROADMAP.md) for upcoming work:
 * Debug overlay (paint lines, box outlines)
 * More CSS properties (width, height, overflow, font, etc.)
 * JavaScript runtime integration
+
+---
+
+# ⌨️ Input Subsystem Boundaries
+
+The input subsystem is split across crates with explicit responsibilities:
+
+- input_core: state + editing semantics, UI-agnostic, deterministic, heavily tested
+- gfx::input: routing + focus policy + hit-test integration + caret positioning
+- browser: owns lifecycle + navigation reset semantics + persistence rules
+
+Allowed dependencies for input-related modules:
+
+| crate | allowed dependencies |
+| --- | --- |
+| input_core | std (+ html if chosen) |
+| gfx | layout, egui, input_core |
+| browser | gfx, input_core |
+
+Reviewer note: these boundaries are enforceable without cross-checking other
+subsystems; keep input logic within the crates listed above and avoid adding
+new dependencies that bypass this table.
 
 ---
 
