@@ -14,8 +14,6 @@ pub struct PageState {
     pub head: HeadMetadata,
 
     pub visible_text_cache: String,
-
-    pub input_values: InputValueStore,
     pub form_controls: FormControlIndex,
 
     css_pending: HashSet<String>,
@@ -29,7 +27,6 @@ impl PageState {
             dom: None,
             head: HeadMetadata::default(),
             visible_text_cache: String::new(),
-            input_values: InputValueStore::new(),
             form_controls: FormControlIndex::default(),
             css_pending: HashSet::new(),
             css_sheet: Stylesheet { rules: Vec::new() },
@@ -42,7 +39,6 @@ impl PageState {
         self.dom = None;
         self.head = HeadMetadata::default();
         self.visible_text_cache.clear();
-        self.input_values.clear();
         self.form_controls = FormControlIndex::default();
         self.css_pending.clear();
         self.css_sheet.rules.clear();
@@ -112,11 +108,11 @@ impl PageState {
         }
     }
 
-    pub fn seed_input_values_from_dom(&mut self) {
+    pub fn seed_input_values_from_dom(&mut self, store: &mut InputValueStore) {
         let Some(dom) = self.dom.as_ref() else {
             return;
         };
-        self.form_controls = seed_input_state_from_dom(&mut self.input_values, dom);
+        self.form_controls = seed_input_state_from_dom(store, dom);
     }
 }
 

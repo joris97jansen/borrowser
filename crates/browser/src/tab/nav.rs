@@ -1,6 +1,7 @@
 use super::Tab;
 use bus::CoreCommand;
 use core_types::ResourceKind;
+use url::Url;
 
 impl Tab {
     // -- Navigation Methods ---
@@ -16,7 +17,16 @@ impl Tab {
                 return;
             }
         };
+        let current_url = self.url.clone();
         self.url = url.clone();
+
+        if self.is_same_document_navigation_with(&current_url, &url) {
+            self.history.truncate(self.history_index + 1);
+            self.history.push(url.clone());
+            self.history_index = self.history.len() - 1;
+            self.poke_redraw();
+            return;
+        }
 
         // record to history (truncate forward branch)
         self.history.truncate(self.history_index + 1);
@@ -44,7 +54,8 @@ impl Tab {
 
     pub fn refresh(&mut self) {
         if let Some(url) = self.history.get(self.history_index).cloned() {
-            self.load_current(url);
+            self.url = url.clone();
+            self.start_fetch(url);
         }
     }
 
@@ -56,7 +67,7 @@ impl Tab {
                 request_id: self.nav_gen,
             });
         }
-        self.interaction.clear_for_navigation();
+        self.document_input.clear_for_navigation();
         self.nav_gen = self.nav_gen.wrapping_add(1);
         let request_id = self.nav_gen;
 
@@ -75,7 +86,11 @@ impl Tab {
 
     fn load_current(&mut self, url: String) {
         // do NOT touch history; just fetch the given URL
-        self.interaction.clear_for_navigation();
+        if self.is_same_document_navigation(&url) {
+            self.url = url;
+            self.poke_redraw();
+            return;
+        }
         self.url = url.clone();
         self.start_fetch(url);
     }
@@ -96,5 +111,28 @@ impl Tab {
 
         // For everything else, keep your old "guess https" behavior
         Ok(format!("https://{trimmed}"))
+    }
+
+    fn is_same_document_navigation(&self, next_url: &str) -> bool {
+        self.is_same_document_navigation_with(&self.url, next_url)
+    }
+
+    fn is_same_document_navigation_with(&self, current_url: &str, next_url: &str) -> bool {
+        if current_url.is_empty() {
+            return false;
+        }
+
+        let Ok(current) = Url::parse(current_url) else {
+            return false;
+        };
+        let Ok(next) = Url::parse(next_url) else {
+            return false;
+        };
+
+        current.scheme() == next.scheme()
+            && current.host_str() == next.host_str()
+            && current.port_or_known_default() == next.port_or_known_default()
+            && current.path() == next.path()
+            && current.query() == next.query()
     }
 }

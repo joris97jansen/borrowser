@@ -7,15 +7,15 @@
 //! - `PageState::pending_count()` is the single source of truth for whether
 //!   the tab is still loading; `loading` is derived from it and only tracks
 //!   user-visible state.
-//! - Each `Tab` owns its `PageState`, `ResourceManager`, and `InteractionState`.
+//! - Each `Tab` owns its `PageState`, `ResourceManager`, and `DocumentInputState`.
 //!   There is no cross-tab sharing of DOM, resources, or input state; any
 //!   shared work must go through the bus/runtime layers.
 
+use crate::input_state::DocumentInputState;
 use crate::page::PageState;
 use crate::resources::ResourceManager;
 use app_api::RepaintHandle;
 use bus::{CoreCommand, CoreEvent};
-use gfx::input::InteractionState;
 use std::sync::mpsc;
 
 use html::{Node, dom_utils::assign_node_ids};
@@ -42,7 +42,7 @@ pub struct Tab {
     resources: ResourceManager,
     repaint: Option<RepaintHandle>,
     cmd_tx: Option<mpsc::Sender<CoreCommand>>,
-    interaction: InteractionState,
+    document_input: DocumentInputState,
 }
 
 impl Tab {
@@ -59,7 +59,7 @@ impl Tab {
             resources: ResourceManager::new(),
             repaint: None,
             cmd_tx: None,
-            interaction: InteractionState::default(),
+            document_input: DocumentInputState::default(),
         }
     }
 
@@ -243,7 +243,8 @@ impl Tab {
         self.page.dom = Some(dom);
         self.page.update_head_metadata();
         self.page.apply_inline_style_blocks();
-        self.page.seed_input_values_from_dom();
+        self.page
+            .seed_input_values_from_dom(&mut self.document_input.input_values);
         self.page.update_visible_text_cache();
 
         self.discover_resources(request_id);
