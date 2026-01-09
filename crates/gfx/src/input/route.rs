@@ -890,3 +890,719 @@ pub(crate) fn route_frame_input<S: InputStore + ?Sized, F: FormControlHandler<S>
     }
     action
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::text_measurer::EguiTextMeasurer;
+    use css::build_style_tree;
+    use egui::{
+        CentralPanel, Context, Event, Key, Modifiers, PointerButton, Pos2, RawInput, Rect, Sense,
+        Vec2,
+    };
+    use html::{Id, Node};
+    use input_core::{InputId, InputValueStore, SelectionRange, caret_from_x_with_boundaries,
+        rebuild_cursor_boundaries};
+    use layout::{
+        InlineActionKind, InlineFragment, LayoutBox, Rectangle, TextMeasurer, content_height,
+        content_x_and_width, content_y, layout_block_tree,
+    };
+    use std::cell::RefCell;
+    use std::collections::HashMap;
+
+    struct TestFormControls;
+
+    impl<S: InputStore + ?Sized> FormControlHandler<S> for TestFormControls {
+        fn on_radio_clicked(&self, store: &mut S, radio_id: InputId) -> bool {
+            store.set_checked(radio_id, true)
+        }
+    }
+
+    fn doc(children: Vec<Node>) -> Node {
+        Node::Document {
+            id: Id(0),
+            doctype: None,
+            children,
+        }
+    }
+
+    fn elem(
+        id: u32,
+        name: &str,
+        attributes: Vec<(String, Option<String>)>,
+        style: Vec<(String, String)>,
+        children: Vec<Node>,
+    ) -> Node {
+        Node::Element {
+            id: Id(id),
+            name: name.to_string(),
+            attributes,
+            style,
+            children,
+        }
+    }
+
+    fn text(id: u32, value: &str) -> Node {
+        Node::Text {
+            id: Id(id),
+            text: value.to_string(),
+        }
+    }
+
+    fn style_inline_block() -> Vec<(String, String)> {
+        vec![("display".to_string(), "inline-block".to_string())]
+    }
+
+    fn style_inline() -> Vec<(String, String)> {
+        vec![("display".to_string(), "inline".to_string())]
+    }
+
+    fn input_text(id: u32) -> Node {
+        elem(
+            id,
+            "input",
+            vec![("type".to_string(), Some("text".to_string()))],
+            style_inline_block(),
+            Vec::new(),
+        )
+    }
+
+    fn input_checkbox(id: u32) -> Node {
+        elem(
+            id,
+            "input",
+            vec![("type".to_string(), Some("checkbox".to_string()))],
+            style_inline_block(),
+            Vec::new(),
+        )
+    }
+
+    fn input_radio(id: u32) -> Node {
+        elem(
+            id,
+            "input",
+            vec![("type".to_string(), Some("radio".to_string()))],
+            style_inline_block(),
+            Vec::new(),
+        )
+    }
+
+    fn link(id: u32, href: &str, children: Vec<Node>) -> Node {
+        elem(
+            id,
+            "a",
+            vec![("href".to_string(), Some(href.to_string()))],
+            style_inline(),
+            children,
+        )
+    }
+
+    fn raw_input(events: Vec<Event>) -> RawInput {
+        RawInput {
+            events,
+            screen_rect: Some(Rect::from_min_size(
+                Pos2::new(0.0, 0.0),
+                Vec2::new(1200.0, 900.0),
+            )),
+            ..Default::default()
+        }
+    }
+
+    fn content_origin(ctx: &Context, size: Vec2) -> Pos2 {
+        let origin = RefCell::new(None);
+        ctx.run(RawInput::default(), |ctx| {
+            CentralPanel::default().show(ctx, |ui| {
+                let (content_rect, _resp) = ui.allocate_exact_size(size, Sense::hover());
+                *origin.borrow_mut() = Some(content_rect.min);
+            });
+        });
+        origin.into_inner().unwrap()
+    }
+
+    fn run_frame<S: InputStore + ?Sized, F: FormControlHandler<S>>(
+        ctx: &Context,
+        raw_input: RawInput,
+        layout_root: &LayoutBox<'_>,
+        measurer: &EguiTextMeasurer,
+        base_url: Option<&str>,
+        input_values: &mut S,
+        form_controls: &F,
+        interaction: &mut InteractionState,
+        content_size: Vec2,
+        layout_changed: bool,
+    ) -> Option<PageAction> {
+        let action_cell = RefCell::new(None);
+        ctx.run(raw_input, |ctx| {
+            CentralPanel::default().show(ctx, |ui| {
+                let (content_rect, resp) = ui.allocate_exact_size(content_size, Sense::hover());
+                let origin = content_rect.min;
+                let fragment_rects: RefCell<HashMap<Id, Rectangle>> =
+                    RefCell::new(HashMap::new());
+
+                let action = route_frame_input(FrameInputCtx {
+                    ui,
+                    resp,
+                    content_rect,
+                    origin,
+                    layout_root,
+                    measurer,
+                    layout_changed,
+                    fragment_rects: &fragment_rects,
+                    base_url,
+                    input_values,
+                    form_controls,
+                    interaction,
+                });
+                *action_cell.borrow_mut() = action;
+            });
+        });
+        action_cell.into_inner().unwrap()
+    }
+
+    fn pos_in_rect(origin: Pos2, rect: Rectangle, dx: f32, dy: f32) -> Pos2 {
+        Pos2::new(origin.x + rect.x + dx, origin.y + rect.y + dy)
+    }
+
+    fn find_link_fragment_rect<'a>(
+        root: &'a LayoutBox<'a>,
+        measurer: &dyn TextMeasurer,
+        link_id: Id,
+    ) -> Option<Rectangle> {
+        let mut stack = vec![root];
+        while let Some(node) = stack.pop() {
+            if let Node::Element { .. } = node.node.node {
+                let (content_x, content_w) =
+                    content_x_and_width(node.style, node.rect.x, node.rect.width);
+                let content_y = content_y(node.style, node.rect.y);
+                let content_h = content_height(node.style, node.rect.height);
+                let block_rect = Rectangle {
+                    x: content_x,
+                    y: content_y,
+                    width: content_w,
+                    height: content_h,
+                };
+
+                for line in layout::layout_inline_for_paint(measurer, block_rect, node) {
+                    for frag in line.fragments {
+                        let action = match &frag.kind {
+                            InlineFragment::Text { action, .. } => action,
+                            InlineFragment::Box { action, .. } => action,
+                            InlineFragment::Replaced { action, .. } => action,
+                        };
+                        if let Some((id, InlineActionKind::Link, _)) = action {
+                            if *id == link_id {
+                                return Some(frag.rect);
+                            }
+                        }
+                    }
+                }
+            }
+            for child in &node.children {
+                stack.push(child);
+            }
+        }
+        None
+    }
+
+    fn expected_caret_for_x(
+        measurer: &EguiTextMeasurer,
+        style: &css::ComputedStyle,
+        value: &str,
+        x: f32,
+    ) -> usize {
+        let mut boundaries = Vec::new();
+        rebuild_cursor_boundaries(value, &mut boundaries);
+        caret_from_x_with_boundaries(value, &boundaries, x, |s| measurer.measure(s, style))
+    }
+
+    #[test]
+    fn clicking_input_focuses_and_blurs_previous_input() {
+        let ctx = Context::default();
+        let measurer = EguiTextMeasurer::new(&ctx);
+
+        let dom = doc(vec![elem(
+            1,
+            "div",
+            Vec::new(),
+            Vec::new(),
+            vec![input_text(2), input_text(3)],
+        )]);
+        let style_root = build_style_tree(&dom, None);
+        let layout_root = layout_block_tree(&style_root, 400.0, &measurer, None);
+        let content_size = Vec2::new(400.0, layout_root.rect.height.max(200.0));
+        let origin = content_origin(&ctx, content_size);
+
+        let rect_a = find_layout_box_by_id(&layout_root, Id(2)).unwrap().rect;
+        let rect_b = find_layout_box_by_id(&layout_root, Id(3)).unwrap().rect;
+        let pos_a = pos_in_rect(origin, rect_a, 2.0, 2.0);
+        let pos_b = pos_in_rect(origin, rect_b, 2.0, 2.0);
+
+        let mut store = InputValueStore::new();
+        store.ensure_initial(to_input_id(Id(2)), "hello".to_string());
+        store.ensure_initial(to_input_id(Id(3)), "world".to_string());
+
+        let mut interaction = InteractionState::default();
+        let form_controls = TestFormControls;
+
+        // Focus input A.
+        run_frame(
+            &ctx,
+            raw_input(vec![
+                Event::PointerMoved(pos_a),
+                Event::PointerButton {
+                    pos: pos_a,
+                    button: PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Modifiers::NONE,
+                },
+            ]),
+            &layout_root,
+            &measurer,
+            None,
+            &mut store,
+            &form_controls,
+            &mut interaction,
+            content_size,
+            false,
+        );
+        run_frame(
+            &ctx,
+            raw_input(vec![Event::PointerButton {
+                pos: pos_a,
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: Modifiers::NONE,
+            }]),
+            &layout_root,
+            &measurer,
+            None,
+            &mut store,
+            &form_controls,
+            &mut interaction,
+            content_size,
+            false,
+        );
+
+        // Add a selection to input A.
+        store.set_caret(to_input_id(Id(2)), 0, false);
+        store.set_caret(to_input_id(Id(2)), 5, true);
+        let sel = store.get_state(to_input_id(Id(2))).unwrap().2;
+        assert!(sel.is_some());
+
+        // Click input B, which should blur A and clear its selection.
+        run_frame(
+            &ctx,
+            raw_input(vec![
+                Event::PointerMoved(pos_b),
+                Event::PointerButton {
+                    pos: pos_b,
+                    button: PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Modifiers::NONE,
+                },
+            ]),
+            &layout_root,
+            &measurer,
+            None,
+            &mut store,
+            &form_controls,
+            &mut interaction,
+            content_size,
+            false,
+        );
+
+        assert_eq!(interaction.focused_node_id, Some(Id(3)));
+        let sel = store.get_state(to_input_id(Id(2))).unwrap().2;
+        assert!(sel.is_none());
+    }
+
+    #[test]
+    fn drag_selection_updates_caret_and_selection() {
+        let ctx = Context::default();
+        let measurer = EguiTextMeasurer::new(&ctx);
+
+        let dom = doc(vec![elem(
+            1,
+            "div",
+            Vec::new(),
+            Vec::new(),
+            vec![input_text(2)],
+        )]);
+        let style_root = build_style_tree(&dom, None);
+        let layout_root = layout_block_tree(&style_root, 500.0, &measurer, None);
+        let content_size = Vec2::new(500.0, layout_root.rect.height.max(200.0));
+        let origin = content_origin(&ctx, content_size);
+
+        let rect = find_layout_box_by_id(&layout_root, Id(2)).unwrap().rect;
+        let start_local_x = 4.0;
+        let end_local_x = (rect.width * 0.8).max(start_local_x + 1.0);
+        let start_pos = pos_in_rect(origin, rect, start_local_x, 2.0);
+        let end_pos = pos_in_rect(origin, rect, end_local_x, 2.0);
+
+        let mut store = InputValueStore::new();
+        let value = "hello world";
+        store.ensure_initial(to_input_id(Id(2)), value.to_string());
+
+        let mut interaction = InteractionState::default();
+        let form_controls = TestFormControls;
+
+        run_frame(
+            &ctx,
+            raw_input(vec![
+                Event::PointerMoved(start_pos),
+                Event::PointerButton {
+                    pos: start_pos,
+                    button: PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Modifiers::NONE,
+                },
+            ]),
+            &layout_root,
+            &measurer,
+            None,
+            &mut store,
+            &form_controls,
+            &mut interaction,
+            content_size,
+            false,
+        );
+
+        run_frame(
+            &ctx,
+            raw_input(vec![Event::PointerMoved(end_pos)]),
+            &layout_root,
+            &measurer,
+            None,
+            &mut store,
+            &form_controls,
+            &mut interaction,
+            content_size,
+            false,
+        );
+
+        let style = find_layout_box_by_id(&layout_root, Id(2)).unwrap().style;
+        let expected_start =
+            expected_caret_for_x(&measurer, style, value, start_local_x.max(0.0));
+        let expected_end = expected_caret_for_x(&measurer, style, value, end_local_x.max(0.0));
+        let expected_sel = SelectionRange {
+            start: expected_start.min(expected_end),
+            end: expected_start.max(expected_end),
+        };
+
+        let (_, caret, selection, _, _) = store.get_state(to_input_id(Id(2))).unwrap();
+        assert_eq!(caret, expected_end);
+        assert_eq!(selection, Some(expected_sel));
+    }
+
+    #[test]
+    fn checkbox_and_radio_activate_on_mouse_and_space() {
+        let ctx = Context::default();
+        let measurer = EguiTextMeasurer::new(&ctx);
+
+        let dom = doc(vec![elem(
+            1,
+            "div",
+            Vec::new(),
+            Vec::new(),
+            vec![input_checkbox(2), input_radio(3)],
+        )]);
+        let style_root = build_style_tree(&dom, None);
+        let layout_root = layout_block_tree(&style_root, 400.0, &measurer, None);
+        let content_size = Vec2::new(400.0, layout_root.rect.height.max(200.0));
+        let origin = content_origin(&ctx, content_size);
+
+        let rect_checkbox = find_layout_box_by_id(&layout_root, Id(2)).unwrap().rect;
+        let rect_radio = find_layout_box_by_id(&layout_root, Id(3)).unwrap().rect;
+        let pos_checkbox = pos_in_rect(origin, rect_checkbox, 2.0, 2.0);
+        let pos_radio = pos_in_rect(origin, rect_radio, 2.0, 2.0);
+
+        let mut store = InputValueStore::new();
+        store.ensure_initial_checked(to_input_id(Id(2)), false);
+        store.ensure_initial_checked(to_input_id(Id(3)), false);
+
+        let mut interaction = InteractionState::default();
+        let form_controls = TestFormControls;
+
+        // Checkbox click.
+        run_frame(
+            &ctx,
+            raw_input(vec![
+                Event::PointerMoved(pos_checkbox),
+                Event::PointerButton {
+                    pos: pos_checkbox,
+                    button: PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Modifiers::NONE,
+                },
+            ]),
+            &layout_root,
+            &measurer,
+            None,
+            &mut store,
+            &form_controls,
+            &mut interaction,
+            content_size,
+            false,
+        );
+        run_frame(
+            &ctx,
+            raw_input(vec![Event::PointerButton {
+                pos: pos_checkbox,
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: Modifiers::NONE,
+            }]),
+            &layout_root,
+            &measurer,
+            None,
+            &mut store,
+            &form_controls,
+            &mut interaction,
+            content_size,
+            false,
+        );
+        assert!(store.is_checked(to_input_id(Id(2))));
+
+        // Radio click.
+        run_frame(
+            &ctx,
+            raw_input(vec![
+                Event::PointerMoved(pos_radio),
+                Event::PointerButton {
+                    pos: pos_radio,
+                    button: PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Modifiers::NONE,
+                },
+            ]),
+            &layout_root,
+            &measurer,
+            None,
+            &mut store,
+            &form_controls,
+            &mut interaction,
+            content_size,
+            false,
+        );
+        run_frame(
+            &ctx,
+            raw_input(vec![Event::PointerButton {
+                pos: pos_radio,
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: Modifiers::NONE,
+            }]),
+            &layout_root,
+            &measurer,
+            None,
+            &mut store,
+            &form_controls,
+            &mut interaction,
+            content_size,
+            false,
+        );
+        assert!(store.is_checked(to_input_id(Id(3))));
+
+        // Space toggles checkbox when focused.
+        store.set_checked(to_input_id(Id(2)), false);
+        run_frame(
+            &ctx,
+            raw_input(vec![
+                Event::PointerMoved(pos_checkbox),
+                Event::PointerButton {
+                    pos: pos_checkbox,
+                    button: PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Modifiers::NONE,
+                },
+            ]),
+            &layout_root,
+            &measurer,
+            None,
+            &mut store,
+            &form_controls,
+            &mut interaction,
+            content_size,
+            false,
+        );
+        run_frame(
+            &ctx,
+            raw_input(vec![Event::Key {
+                key: Key::Space,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: Modifiers::NONE,
+            }]),
+            &layout_root,
+            &measurer,
+            None,
+            &mut store,
+            &form_controls,
+            &mut interaction,
+            content_size,
+            false,
+        );
+        assert!(store.is_checked(to_input_id(Id(2))));
+
+        // Space activates radio when focused.
+        store.set_checked(to_input_id(Id(3)), false);
+        run_frame(
+            &ctx,
+            raw_input(vec![
+                Event::PointerMoved(pos_radio),
+                Event::PointerButton {
+                    pos: pos_radio,
+                    button: PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Modifiers::NONE,
+                },
+            ]),
+            &layout_root,
+            &measurer,
+            None,
+            &mut store,
+            &form_controls,
+            &mut interaction,
+            content_size,
+            false,
+        );
+        run_frame(
+            &ctx,
+            raw_input(vec![Event::Key {
+                key: Key::Space,
+                physical_key: None,
+                pressed: true,
+                repeat: false,
+                modifiers: Modifiers::NONE,
+            }]),
+            &layout_root,
+            &measurer,
+            None,
+            &mut store,
+            &form_controls,
+            &mut interaction,
+            content_size,
+            false,
+        );
+        assert!(store.is_checked(to_input_id(Id(3))));
+    }
+
+    #[test]
+    fn link_click_clears_focus_and_returns_navigation() {
+        let ctx = Context::default();
+        let measurer = EguiTextMeasurer::new(&ctx);
+
+        let dom = doc(vec![elem(
+            1,
+            "div",
+            Vec::new(),
+            Vec::new(),
+            vec![
+                input_text(2),
+                link(3, "https://example.com/next", vec![text(4, "next")]),
+            ],
+        )]);
+        let style_root = build_style_tree(&dom, None);
+        let layout_root = layout_block_tree(&style_root, 600.0, &measurer, None);
+        let content_size = Vec2::new(600.0, layout_root.rect.height.max(200.0));
+        let origin = content_origin(&ctx, content_size);
+
+        let input_rect = find_layout_box_by_id(&layout_root, Id(2)).unwrap().rect;
+        let input_pos = pos_in_rect(origin, input_rect, 2.0, 2.0);
+        let link_rect = find_link_fragment_rect(&layout_root, &measurer, Id(3)).unwrap();
+        let link_pos = pos_in_rect(origin, link_rect, 1.0, 1.0);
+
+        let mut store = InputValueStore::new();
+        store.ensure_initial(to_input_id(Id(2)), "hello".to_string());
+
+        let mut interaction = InteractionState::default();
+        let form_controls = TestFormControls;
+
+        // Focus the input first.
+        run_frame(
+            &ctx,
+            raw_input(vec![
+                Event::PointerMoved(input_pos),
+                Event::PointerButton {
+                    pos: input_pos,
+                    button: PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Modifiers::NONE,
+                },
+            ]),
+            &layout_root,
+            &measurer,
+            None,
+            &mut store,
+            &form_controls,
+            &mut interaction,
+            content_size,
+            false,
+        );
+        run_frame(
+            &ctx,
+            raw_input(vec![Event::PointerButton {
+                pos: input_pos,
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: Modifiers::NONE,
+            }]),
+            &layout_root,
+            &measurer,
+            None,
+            &mut store,
+            &form_controls,
+            &mut interaction,
+            content_size,
+            false,
+        );
+
+        // Click the link.
+        run_frame(
+            &ctx,
+            raw_input(vec![
+                Event::PointerMoved(link_pos),
+                Event::PointerButton {
+                    pos: link_pos,
+                    button: PointerButton::Primary,
+                    pressed: true,
+                    modifiers: Modifiers::NONE,
+                },
+            ]),
+            &layout_root,
+            &measurer,
+            None,
+            &mut store,
+            &form_controls,
+            &mut interaction,
+            content_size,
+            false,
+        );
+        let action = run_frame(
+            &ctx,
+            raw_input(vec![Event::PointerButton {
+                pos: link_pos,
+                button: PointerButton::Primary,
+                pressed: false,
+                modifiers: Modifiers::NONE,
+            }]),
+            &layout_root,
+            &measurer,
+            None,
+            &mut store,
+            &form_controls,
+            &mut interaction,
+            content_size,
+            false,
+        );
+
+        assert!(interaction.focused_node_id.is_none());
+        match action {
+            Some(PageAction::Navigate(url)) => {
+                assert_eq!(url, "https://example.com/next".to_string());
+            }
+            _ => panic!("expected PageAction::Navigate"),
+        }
+    }
+}
