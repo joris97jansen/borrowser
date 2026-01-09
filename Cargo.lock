@@ -871,6 +871,7 @@ dependencies = [
  "egui-wgpu",
  "egui-winit",
  "html",
+ "input_core",
  "layout",
  "pollster",
  "url",
@@ -1286,6 +1287,10 @@ dependencies = [
  "equivalent",
  "hashbrown 0.16.0",
 ]
+
+[[package]]
+name = "input_core"
+version = "0.1.0"
 
 [[package]]
 name = "io-uring"
