@@ -3,7 +3,6 @@ mod interaction;
 mod route;
 mod store;
 
-pub use crate::textarea::{TextareaCachedLine, TextareaCachedTextFragment, TextareaLayoutCache};
 pub use action::PageAction;
 pub use interaction::{ActiveTarget, InputDragState, InteractionState};
 pub use route::FormControlHandler;

@@ -1,7 +1,8 @@
 use super::{ActiveTarget, InputDragState, InteractionState, PageAction, to_input_id};
 use crate::EguiTextMeasurer;
 use crate::text_control::{
-    consume_focus_nav_keys, find_layout_box_by_id, sync_input_scroll_for_caret,
+    consume_focus_nav_keys, find_layout_box_by_id, set_input_caret_from_viewport_x,
+    sync_input_scroll_for_caret,
 };
 use crate::textarea::{
     TextareaVerticalMoveCtx, sync_textarea_scroll_for_caret, textarea_caret_for_x_in_lines,
@@ -41,7 +42,7 @@ pub(crate) struct FrameInputCtx<'a, 'layout, S: InputStore + ?Sized, F> {
     pub interaction: &'a mut InteractionState,
 }
 
-pub(crate) fn route_frame_input<S: InputStore, F: FormControlHandler<S>>(
+pub(crate) fn route_frame_input<S: InputStore + ?Sized, F: FormControlHandler<S>>(
     ctx: FrameInputCtx<'_, '_, S, F>,
 ) -> Option<PageAction> {
     let FrameInputCtx {
@@ -203,11 +204,13 @@ pub(crate) fn route_frame_input<S: InputStore, F: FormControlHandler<S>>(
                             let (pad_l, _pad_r, _pad_t, _pad_b) = input_text_padding(style);
 
                             let x_in_viewport = (h.local_pos.0 - pad_l).max(0.0);
-                            input_values.set_caret_from_viewport_x(
-                                to_input_id(h.node_id),
+                            set_input_caret_from_viewport_x(
+                                input_values,
+                                h.node_id,
                                 x_in_viewport,
                                 selecting,
-                                &mut |s| measurer.measure(s, style),
+                                measurer,
+                                style,
                             );
                             sync_input_scroll_for_caret(
                                 input_values,
@@ -320,11 +323,13 @@ pub(crate) fn route_frame_input<S: InputStore, F: FormControlHandler<S>>(
                     Some(ReplacedKind::InputText) => {
                         let (pad_l, _pad_r, _pad_t, _pad_b) = input_text_padding(style);
 
-                        input_values.set_caret_from_viewport_x(
-                            to_input_id(drag_input_id),
+                        set_input_caret_from_viewport_x(
+                            input_values,
+                            drag_input_id,
                             (local_x - pad_l).max(0.0),
                             true,
-                            &mut |s| measurer.measure(s, style),
+                            measurer,
+                            style,
                         );
                         sync_input_scroll_for_caret(
                             input_values,

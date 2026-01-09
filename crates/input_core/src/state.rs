@@ -28,14 +28,8 @@ pub(crate) struct InputState {
     /// Horizontal scroll offset in px for single-line inputs.
     pub scroll_x: f32,
 
-    /// Vertical scroll offset in px for multi-line text controls (e.g. `<textarea>`).
+    /// Vertical scroll offset in px for multi-line text controls.
     pub scroll_y: f32,
-
-    /// Cached cursor boundary positions for efficient caret-from-x calculations.
-    pub cursor_boundaries: Vec<usize>,
-
-    /// Whether the cursor boundaries need to be rebuilt.
-    pub cursor_boundaries_dirty: bool,
 }
 
 impl Default for InputState {
@@ -48,8 +42,6 @@ impl Default for InputState {
             selection_anchor: None,
             scroll_x: 0.0,
             scroll_y: 0.0,
-            cursor_boundaries: Vec::new(),
-            cursor_boundaries_dirty: true,
         }
     }
 }

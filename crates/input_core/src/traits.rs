@@ -9,8 +9,7 @@
 //! - Uses `InputId` as the identifier type, keeping the trait UI-agnostic
 //! - Integration layers (e.g., gfx) are responsible for converting their
 //!   domain IDs (e.g., `html::Id`) to `InputId` at call boundaries
-//! - Trait is object-safe where practical, but uses `&mut dyn FnMut` for
-//!   measurement callbacks to maintain zero-overhead for the common case
+//! - Trait is object-safe where practical and avoids UI or layout dependencies
 
 use crate::id::InputId;
 use crate::selection::SelectionRange;
@@ -21,9 +20,12 @@ use crate::selection::SelectionRange;
 /// - Input lifecycle management (initialization, focus, blur)
 /// - Text editing (insertion, deletion)
 /// - Caret and selection manipulation
-/// - Read-only state access for rendering/layout
+/// - Read-only state access for rendering/metrics
 /// - Scroll position management for caret visibility
 /// - Checkbox/radio state management
+///
+/// Layout, measurement, and hit-testing should be handled by the integration
+/// layer. This trait deals only in byte indices, selections, and scroll values.
 ///
 /// # Integration Pattern
 ///
@@ -123,20 +125,6 @@ pub trait InputStore {
     ///
     /// If `selecting` is true, extends/modifies the selection.
     fn set_caret(&mut self, id: InputId, caret: usize, selecting: bool);
-
-    /// Set the caret based on a viewport x-coordinate.
-    ///
-    /// Uses the provided measurement function to determine which character
-    /// boundary is closest to the given x position.
-    ///
-    /// Returns the byte index of the new caret position.
-    fn set_caret_from_viewport_x(
-        &mut self,
-        id: InputId,
-        x_in_viewport: f32,
-        selecting: bool,
-        measure_prefix: &mut dyn FnMut(&str) -> f32,
-    ) -> usize;
 
     // =========================================================================
     // Read-Only Getters
@@ -266,23 +254,6 @@ impl InputStore for crate::store::InputValueStore {
     #[inline]
     fn set_caret(&mut self, id: InputId, caret: usize, selecting: bool) {
         crate::store::InputValueStore::set_caret(self, id, caret, selecting)
-    }
-
-    #[inline]
-    fn set_caret_from_viewport_x(
-        &mut self,
-        id: InputId,
-        x_in_viewport: f32,
-        selecting: bool,
-        measure_prefix: &mut dyn FnMut(&str) -> f32,
-    ) -> usize {
-        crate::store::InputValueStore::set_caret_from_viewport_x(
-            self,
-            id,
-            x_in_viewport,
-            selecting,
-            measure_prefix,
-        )
     }
 
     #[inline]

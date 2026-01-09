@@ -2,6 +2,9 @@
 //!
 //! This module provides low-level text manipulation functions that are
 //! essential for correct cursor/caret positioning in UTF-8 strings.
+//!
+//! Measurement callbacks are provided by integration layers and should be
+//! pure functions (no UI or platform API calls).
 
 use std::borrow::Cow;
 
