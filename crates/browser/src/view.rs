@@ -1,9 +1,8 @@
+use crate::input_state::DocumentInputState;
 use crate::page::PageState;
 use crate::resources::ResourceManager;
-
 use css::{StyledNode, build_style_tree};
 use egui::{CentralPanel, Color32, Context, Frame};
-use gfx::input::InteractionState;
 pub use gfx::input::PageAction;
 use gfx::viewport::{ViewportCtx, page_viewport};
 use html::Node;
@@ -11,7 +10,7 @@ use html::Node;
 pub fn content(
     ctx: &Context,
     page: &mut PageState,
-    interaction: &mut InteractionState,
+    input_state: &mut DocumentInputState,
     resources: &ResourceManager,
     status: Option<&String>,
     loading: bool,
@@ -53,8 +52,9 @@ pub fn content(
 
             // disjoint borrow: OK (dom is immutably borrowed, input_values mutably borrowed)
             let base_url = page.base_url.as_deref();
-            let input_values = &mut page.input_values;
+            let input_values = &mut input_state.input_values;
             let form_controls = &page.form_controls;
+            let interaction = &mut input_state.interaction;
 
             let action = page_viewport(ViewportCtx::new(
                 ui,

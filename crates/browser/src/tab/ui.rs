@@ -12,7 +12,7 @@ impl Tab {
         if let Some(action) = content(
             ctx,
             &mut self.page,
-            &mut self.interaction,
+            &mut self.document_input,
             &self.resources,
             self.last_status.as_ref(),
             self.loading,
