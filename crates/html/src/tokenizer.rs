@@ -8,18 +8,27 @@ fn starts_with_ignore_ascii_case(haystack: &[u8], needle: &[u8]) -> bool {
     haystack.len() >= needle.len() && haystack[..needle.len()].eq_ignore_ascii_case(needle)
 }
 
-fn find_ignore_ascii_case(haystack: &str, needle: &str) -> Option<usize> {
+// it only attempts matches starting at ASCII <
+// < cannot appear in UTF-8 continuation bytes
+fn find_close_tag_from(haystack: &str, close_tag: &str) -> Option<usize> {
     let hay_bytes = haystack.as_bytes();
-    let needle_bytes = needle.as_bytes();
-    if needle_bytes.is_empty() {
-        return Some(0);
-    }
-    if needle_bytes.len() > hay_bytes.len() {
+    let tag_bytes = close_tag.as_bytes();
+    if tag_bytes.is_empty() || tag_bytes.len() > hay_bytes.len() {
         return None;
     }
-    (0..=hay_bytes.len() - needle_bytes.len()).find(|&offset| {
-        hay_bytes[offset..offset + needle_bytes.len()].eq_ignore_ascii_case(needle_bytes)
-    })
+    let mut offset = 0;
+    while offset + tag_bytes.len() <= hay_bytes.len() {
+        if let Some(rel) = hay_bytes[offset..].iter().position(|&b| b == b'<') {
+            offset += rel;
+            if hay_bytes[offset..offset + tag_bytes.len()].eq_ignore_ascii_case(tag_bytes) {
+                return Some(offset);
+            }
+            offset += 1;
+        } else {
+            break;
+        }
+    }
+    None
 }
 
 fn is_void_element(name: &str) -> bool {
@@ -46,6 +55,9 @@ pub fn tokenize(input: &str) -> Vec<Token> {
     let mut out = Vec::new();
     let mut i = 0;
     let bytes = input.as_bytes();
+    // Invariant: we scan by byte, but any slice endpoints must be UTF-8 char boundaries.
+    // We only terminate spans on ASCII delimiter bytes (<, >, quotes, whitespace), which
+    // cannot appear inside a UTF-8 multi-byte sequence.
     while i < bytes.len() {
         if bytes[i] != b'<' {
             // collect text until next '<'
@@ -53,6 +65,8 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             while i < bytes.len() && bytes[i] != b'<' {
                 i += 1;
             }
+            debug_assert!(input.is_char_boundary(start));
+            debug_assert!(input.is_char_boundary(i));
             let text = &input[start..i];
             let decoded = decode_entities(text);
             if !decoded.is_empty() {
@@ -61,15 +75,21 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             continue;
         }
         // now b[i] == b'<'
+        debug_assert!(input.is_char_boundary(i));
         if input[i..].starts_with(HTML_COMMENT_START) {
             // comment
+            let comment_start = i + HTML_COMMENT_START.len();
+            debug_assert!(input.is_char_boundary(comment_start));
             if let Some(end) = input[i + HTML_COMMENT_START.len()..].find(HTML_COMMENT_END) {
+                let comment_end = i + HTML_COMMENT_START.len() + end;
+                debug_assert!(input.is_char_boundary(comment_end));
                 let comment =
                     &input[i + HTML_COMMENT_START.len()..i + HTML_COMMENT_START.len() + end];
                 out.push(Token::Comment(comment.to_string()));
                 i += HTML_COMMENT_START.len() + end + HTML_COMMENT_END.len();
                 continue;
             } else {
+                debug_assert!(input.is_char_boundary(comment_start));
                 out.push(Token::Comment(
                     input[i + HTML_COMMENT_START.len()..].to_string(),
                 ));
@@ -78,8 +98,11 @@ pub fn tokenize(input: &str) -> Vec<Token> {
         }
         if starts_with_ignore_ascii_case(&bytes[i..], b"<!doctype") {
             // doctype
+            let doctype_start = i + 2;
+            debug_assert!(input.is_char_boundary(doctype_start));
             let rest = &input[i + 2..];
             if let Some(end) = rest.find('>') {
+                debug_assert!(rest.is_char_boundary(end));
                 let doctype = rest[..end].trim().to_string();
                 out.push(Token::Doctype(doctype));
                 i += 2 + end + 1;
@@ -95,6 +118,8 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             while j < bytes.len() && bytes[j].is_ascii_alphanumeric() {
                 j += 1;
             }
+            debug_assert!(input.is_char_boundary(start));
+            debug_assert!(input.is_char_boundary(j));
             let name = input[start..j].to_ascii_lowercase();
             // skip to '>'
             while j < bytes.len() && bytes[j] != b'>' {
@@ -114,6 +139,8 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             j += 1;
         }
         if j <= bytes.len() {
+            debug_assert!(input.is_char_boundary(start));
+            debug_assert!(input.is_char_boundary(j));
             let name = input[start..j].to_ascii_lowercase();
             let mut k = j;
             let mut attributes: Vec<(String, Option<String>)> = Vec::new();
@@ -155,6 +182,8 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     k += 1;
                     continue;
                 }
+                debug_assert!(input.is_char_boundary(name_start));
+                debug_assert!(input.is_char_boundary(k));
                 let attribute_name = input[name_start..k].to_ascii_lowercase();
 
                 skip_whitespace(&mut k);
@@ -170,6 +199,8 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                         while k < len && bytes[k] != quote {
                             k += 1;
                         }
+                        debug_assert!(input.is_char_boundary(vstart));
+                        debug_assert!(input.is_char_boundary(k));
                         let raw = &input[vstart..k];
                         if k < len {
                             k += 1;
@@ -184,6 +215,8 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                             k += 1;
                         }
                         if k > vstart {
+                            debug_assert!(input.is_char_boundary(vstart));
+                            debug_assert!(input.is_char_boundary(k));
                             value = Some(input[vstart..k].to_string());
                         } else {
                             value = Some(String::new());
@@ -218,7 +251,10 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 };
                 let close_tag_len = close_tag.len();
                 let j = k;
-                if let Some(rel) = find_ignore_ascii_case(&input[j..], close_tag) {
+                debug_assert!(input.is_char_boundary(j));
+                if let Some(rel) = find_close_tag_from(&input[j..], close_tag) {
+                    let slice_end = j + rel;
+                    debug_assert!(input.is_char_boundary(slice_end));
                     let raw = &input[j..j + rel];
                     if !raw.is_empty() {
                         out.push(Token::Text(raw.to_string()));
@@ -283,6 +319,63 @@ mod tests {
                 ] if name == "script" && body == "let x = 1;" && end == "script"
             ),
             "expected raw script text and matching end tag, got: {tokens:?}"
+        );
+    }
+
+    #[test]
+    fn tokenize_handles_non_ascii_text_around_tags() {
+        let tokens = tokenize("¡Hola <b>café</b> 😊");
+        assert!(
+            tokens
+                .iter()
+                .any(|t| matches!(t, Token::Text(s) if s == "¡Hola ")),
+            "expected leading UTF-8 text token, got: {tokens:?}"
+        );
+        assert!(
+            tokens
+                .iter()
+                .any(|t| matches!(t, Token::Text(s) if s == "café")),
+            "expected UTF-8 text inside tag, got: {tokens:?}"
+        );
+        assert!(
+            tokens
+                .iter()
+                .any(|t| matches!(t, Token::Text(s) if s == " 😊")),
+            "expected trailing UTF-8 text token, got: {tokens:?}"
+        );
+    }
+
+    #[test]
+    fn tokenize_handles_non_ascii_attribute_values() {
+        let tokens = tokenize("<p data=naïve>ok</p>");
+        assert!(
+            tokens.iter().any(|t| matches!(
+                t,
+                Token::StartTag { name, attributes, .. }
+                    if name == "p"
+                        && attributes.iter().any(|(k, v)| k == "data" && v.as_deref() == Some("naïve"))
+            )),
+            "expected UTF-8 attribute value, got: {tokens:?}"
+        );
+    }
+
+    #[test]
+    fn tokenize_handles_utf8_adjacent_to_angle_brackets() {
+        let tokens = tokenize("é<b>ï</b>ö");
+        assert!(
+            tokens
+                .iter()
+                .any(|t| matches!(t, Token::Text(s) if s == "é"))
+        );
+        assert!(
+            tokens
+                .iter()
+                .any(|t| matches!(t, Token::Text(s) if s == "ï"))
+        );
+        assert!(
+            tokens
+                .iter()
+                .any(|t| matches!(t, Token::Text(s) if s == "ö"))
         );
     }
 }
