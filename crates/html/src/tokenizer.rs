@@ -1,5 +1,6 @@
 use crate::entities::decode_entities;
 use crate::types::Token;
+use memchr::memchr;
 
 const HTML_COMMENT_START: &str = "<!--";
 const HTML_COMMENT_END: &str = "-->";
@@ -10,11 +11,12 @@ fn starts_with_ignore_ascii_case(haystack: &[u8], needle: &[u8]) -> bool {
 
 // it only attempts matches starting at ASCII <
 // < cannot appear in UTF-8 continuation bytes
-const SCRIPT_CLOSE_TAG: &[u8] = b"</script>";
-const STYLE_CLOSE_TAG: &[u8] = b"</style>";
+const SCRIPT_CLOSE_TAG: &[u8] = b"</script";
+const STYLE_CLOSE_TAG: &[u8] = b"</style";
 
-fn find_rawtext_close_tag(haystack: &str, close_tag: &[u8]) -> Option<usize> {
+fn find_rawtext_close_tag(haystack: &str, close_tag: &[u8]) -> Option<(usize, usize)> {
     let hay_bytes = haystack.as_bytes();
+    let len = hay_bytes.len();
     let n = close_tag.len();
     debug_assert!(n >= 2);
     debug_assert!(close_tag[0] == b'<' && close_tag[1] == b'/');
@@ -23,21 +25,26 @@ fn find_rawtext_close_tag(haystack: &str, close_tag: &[u8]) -> Option<usize> {
         close_tag.eq_ignore_ascii_case(SCRIPT_CLOSE_TAG)
             || close_tag.eq_ignore_ascii_case(STYLE_CLOSE_TAG)
     );
-    if hay_bytes.len() < n {
+    if len < n {
         return None;
     }
     let mut i = 0;
-    while i + n <= hay_bytes.len() {
-        let rel = hay_bytes[i..].iter().position(|&b| b == b'<')?;
+    while i + n <= len {
+        let rel = memchr(b'<', &hay_bytes[i..])?;
         i += rel;
-        if i + n > hay_bytes.len() {
+        if i + n > len {
             return None;
         }
-        if i + 1 < hay_bytes.len()
-            && hay_bytes[i + 1] == b'/'
-            && hay_bytes[i..i + n].eq_ignore_ascii_case(close_tag)
-        {
-            return Some(i);
+        if hay_bytes[i + 1] == b'/' && hay_bytes[i..i + n].eq_ignore_ascii_case(close_tag) {
+            let mut k = i + n;
+            // Spec allows other parse-error paths like `</script foo>`, but we only
+            // accept ASCII whitespace before `>` to keep the scan simple/alloc-free.
+            while k < len && hay_bytes[k].is_ascii_whitespace() {
+                k += 1;
+            }
+            if k < len && hay_bytes[k] == b'>' {
+                return Some((i, k + 1));
+            }
         }
         i += 1;
     }
@@ -258,22 +265,22 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             if (name == "script" || name == "style") && !self_closing {
                 // Rawtext close tags are fixed-length ASCII sequences; we can scan linearly
                 // without allocating or creating lowercase buffers.
-                let (close_tag, close_tag_len) = if name == "script" {
-                    (SCRIPT_CLOSE_TAG, SCRIPT_CLOSE_TAG.len())
+                let close_tag = if name == "script" {
+                    SCRIPT_CLOSE_TAG
                 } else {
-                    (STYLE_CLOSE_TAG, STYLE_CLOSE_TAG.len())
+                    STYLE_CLOSE_TAG
                 };
                 let j = k;
                 debug_assert!(input.is_char_boundary(j));
-                if let Some(rel) = find_rawtext_close_tag(&input[j..], close_tag) {
-                    let slice_end = j + rel;
+                if let Some((rel_start, rel_end)) = find_rawtext_close_tag(&input[j..], close_tag) {
+                    let slice_end = j + rel_start;
                     debug_assert!(input.is_char_boundary(slice_end));
-                    let raw = &input[j..j + rel];
+                    let raw = &input[j..slice_end];
                     if !raw.is_empty() {
                         out.push(Token::Text(raw.to_string()));
                     }
                     out.push(Token::EndTag(name.clone()));
-                    i = j + rel + close_tag_len;
+                    i = j + rel_end;
                     continue;
                 } else {
                     // If the rawtext close tag is missing, emit an implicit end tag and
@@ -420,6 +427,54 @@ mod tests {
                 ] if name == "style" && text == &body && end == "style"
             ),
             "expected dense style rawtext body to tokenize correctly, got: {tokens:?}"
+        );
+    }
+
+    #[test]
+    fn tokenize_allows_whitespace_before_rawtext_close_gt() {
+        let tokens = tokenize("<script>let x=1;</script >");
+        assert!(
+            matches!(
+                tokens.as_slice(),
+                [
+                    Token::StartTag { name, .. },
+                    Token::Text(body),
+                    Token::EndTag(end)
+                ] if name == "script" && body == "let x=1;" && end == "script"
+            ),
+            "expected script end tag with whitespace before >, got: {tokens:?}"
+        );
+    }
+
+    #[test]
+    fn tokenize_allows_whitespace_before_rawtext_close_gt_case_insensitive() {
+        let tokens = tokenize("<style>body{}</STYLE\t>");
+        assert!(
+            matches!(
+                tokens.as_slice(),
+                [
+                    Token::StartTag { name, .. },
+                    Token::Text(body),
+                    Token::EndTag(end)
+                ] if name == "style" && body == "body{}" && end == "style"
+            ),
+            "expected style end tag with whitespace before >, got: {tokens:?}"
+        );
+    }
+
+    #[test]
+    fn rawtext_close_tag_does_not_accept_near_matches() {
+        let tokens = tokenize("<script>ok</scriptx >no</script >");
+        assert!(
+            matches!(
+                tokens.as_slice(),
+                [
+                    Token::StartTag { name, .. },
+                    Token::Text(body),
+                    Token::EndTag(end),
+                ] if name == "script" && body == "ok</scriptx >no" && end == "script"
+            ),
+            "expected near-match not to close rawtext, got: {tokens:?}"
         );
     }
 
