@@ -1,6 +1,9 @@
-use crate::types::{Id, Node, Token};
+use crate::types::{Id, Node, Token, TokenStream};
+use std::sync::Arc;
 
-pub fn build_dom(tokens: &[Token]) -> Node {
+pub fn build_dom(stream: &TokenStream) -> Node {
+    let tokens = stream.tokens();
+    let atoms = stream.atoms();
     let mut arena = NodeArena::new();
     let root_index = arena.push(ArenaNode::Document {
         id: Id(0),
@@ -44,12 +47,16 @@ pub fn build_dom(tokens: &[Token]) -> Node {
                 ..
             } => {
                 let parent_index = open_elements.last().copied().unwrap_or(root_index);
+                let resolved_attributes: Vec<(Arc<str>, Option<String>)> = attributes
+                    .iter()
+                    .map(|(k, v)| (atoms.resolve_arc(*k), v.clone()))
+                    .collect();
                 let new_index = arena.add_child(
                     parent_index,
                     ArenaNode::Element {
                         id: Id(0),
-                        name: name.clone(),
-                        attributes: attributes.clone(),
+                        name: atoms.resolve_arc(*name),
+                        attributes: resolved_attributes,
                         children: Vec::new(),
                         style: Vec::new(),
                     },
@@ -60,7 +67,7 @@ pub fn build_dom(tokens: &[Token]) -> Node {
                 }
             }
             Token::EndTag(name) => {
-                let target = name.as_str();
+                let target = atoms.resolve(*name);
                 while let Some(open_index) = open_elements.pop() {
                     if arena.is_element_named(open_index, target) {
                         break;
@@ -82,8 +89,8 @@ enum ArenaNode {
     },
     Element {
         id: Id,
-        name: String,
-        attributes: Vec<(String, Option<String>)>,
+        name: Arc<str>,
+        attributes: Vec<(Arc<str>, Option<String>)>,
         style: Vec<(String, String)>,
         children: Vec<usize>,
     },
@@ -243,24 +250,27 @@ impl NodeArena {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::AtomTable;
 
     #[test]
     fn build_dom_stress_deep_nesting() {
         let depth: usize = 10_000;
         let mut tokens = Vec::with_capacity(depth * 2);
+        let mut atoms = AtomTable::new();
+        let div = atoms.intern_ascii_lowercase("div");
 
         for _ in 0..depth {
             tokens.push(Token::StartTag {
-                name: "div".to_string(),
+                name: div,
                 attributes: Vec::new(),
                 self_closing: false,
             });
         }
         for _ in 0..depth {
-            tokens.push(Token::EndTag("div".to_string()));
+            tokens.push(Token::EndTag(div));
         }
 
-        let dom = build_dom(&tokens);
+        let dom = build_dom(&TokenStream::new(tokens, atoms));
 
         let mut current = &dom;
         let mut seen = 0usize;
@@ -271,7 +281,7 @@ mod tests {
                     current = &children[0];
                 }
                 Node::Element { name, children, .. } => {
-                    assert_eq!(name, "div");
+                    assert_eq!(name.as_ref(), "div");
                     seen += 1;
                     if seen == depth {
                         assert!(children.is_empty());

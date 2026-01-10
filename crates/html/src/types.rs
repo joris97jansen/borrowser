@@ -1,19 +1,101 @@
+use std::borrow::Cow;
+use std::collections::HashMap;
+use std::sync::Arc;
+
 pub type NodeId = u32;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Id(pub NodeId);
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct AtomId(pub u32);
+
+#[derive(Debug, Default)]
+pub struct AtomTable {
+    atoms: Vec<Arc<str>>,
+    map: HashMap<Arc<str>, AtomId>,
+}
+
+impl AtomTable {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Interns ASCII-lowercased tag and attribute names to avoid per-token allocations.
+    /// Tradeoff: tokenization carries a per-document atom table for name resolution.
+    pub fn intern_ascii_lowercase(&mut self, value: &str) -> AtomId {
+        let lookup = if value.bytes().any(|b| b.is_ascii_uppercase()) {
+            Cow::Owned(value.to_ascii_lowercase())
+        } else {
+            Cow::Borrowed(value)
+        };
+
+        if let Some(id) = self.map.get(lookup.as_ref()) {
+            return *id;
+        }
+
+        let atom = Arc::<str>::from(lookup.as_ref());
+        let id = AtomId(self.atoms.len() as u32);
+        self.atoms.push(Arc::clone(&atom));
+        self.map.insert(atom, id);
+        id
+    }
+
+    pub fn resolve(&self, id: AtomId) -> &str {
+        self.atoms
+            .get(id.0 as usize)
+            .map(|s| s.as_ref())
+            .expect("atom id out of range")
+    }
+
+    pub fn resolve_arc(&self, id: AtomId) -> Arc<str> {
+        Arc::clone(self.atoms.get(id.0 as usize).expect("atom id out of range"))
+    }
+
+    pub fn len(&self) -> usize {
+        self.atoms.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.atoms.is_empty()
+    }
+}
+
 #[derive(Debug)]
 pub enum Token {
     Doctype(String),
     StartTag {
-        name: String,
-        attributes: Vec<(String, Option<String>)>,
+        name: AtomId,
+        attributes: Vec<(AtomId, Option<String>)>,
         self_closing: bool,
     },
-    EndTag(String),
+    EndTag(AtomId),
     Comment(String),
     Text(String),
+}
+
+#[derive(Debug)]
+pub struct TokenStream {
+    tokens: Vec<Token>,
+    atoms: AtomTable,
+}
+
+impl TokenStream {
+    pub fn new(tokens: Vec<Token>, atoms: AtomTable) -> Self {
+        Self { tokens, atoms }
+    }
+
+    pub fn tokens(&self) -> &[Token] {
+        &self.tokens
+    }
+
+    pub fn atoms(&self) -> &AtomTable {
+        &self.atoms
+    }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, Token> {
+        self.tokens.iter()
+    }
 }
 
 #[derive(Debug)]
@@ -25,9 +107,9 @@ pub enum Node {
     },
     Element {
         id: Id,
-        name: String,
+        name: Arc<str>,
         // Keep as Vec to preserve source order and allow duplicates; use helpers for lookups.
-        attributes: Vec<(String, Option<String>)>,
+        attributes: Vec<(Arc<str>, Option<String>)>,
         style: Vec<(String, String)>,
         children: Vec<Node>,
     },

@@ -912,6 +912,7 @@ mod tests {
     };
     use std::cell::RefCell;
     use std::collections::HashMap;
+    use std::sync::Arc;
 
     struct TestFormControls;
 
@@ -932,13 +933,13 @@ mod tests {
     fn elem(
         id: u32,
         name: &str,
-        attributes: Vec<(String, Option<String>)>,
+        attributes: Vec<(Arc<str>, Option<String>)>,
         style: Vec<(String, String)>,
         children: Vec<Node>,
     ) -> Node {
         Node::Element {
             id: Id(id),
-            name: name.to_string(),
+            name: Arc::from(name),
             attributes,
             style,
             children,
@@ -964,7 +965,7 @@ mod tests {
         elem(
             id,
             "input",
-            vec![("type".to_string(), Some("text".to_string()))],
+            vec![(Arc::from("type"), Some("text".to_string()))],
             style_inline_block(),
             Vec::new(),
         )
@@ -974,7 +975,7 @@ mod tests {
         elem(
             id,
             "input",
-            vec![("type".to_string(), Some("checkbox".to_string()))],
+            vec![(Arc::from("type"), Some("checkbox".to_string()))],
             style_inline_block(),
             Vec::new(),
         )
@@ -984,7 +985,7 @@ mod tests {
         elem(
             id,
             "input",
-            vec![("type".to_string(), Some("radio".to_string()))],
+            vec![(Arc::from("type"), Some("radio".to_string()))],
             style_inline_block(),
             Vec::new(),
         )
@@ -994,7 +995,7 @@ mod tests {
         elem(
             id,
             "a",
-            vec![("href".to_string(), Some(href.to_string()))],
+            vec![(Arc::from("href"), Some(href.to_string()))],
             style_inline(),
             children,
         )

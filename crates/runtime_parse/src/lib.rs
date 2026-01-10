@@ -45,7 +45,8 @@ pub fn start_parse_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEve
                         push_utf8_chunk(&mut st.text, &mut st.carry, &bytes);
                         if st.last_emit.elapsed() >= TICK {
                             st.last_emit = Instant::now();
-                            let dom = build_dom(&tokenize(&st.text));
+                            let stream = tokenize(&st.text);
+                            let dom = build_dom(&stream);
                             let _ = evt_tx.send(CoreEvent::DomUpdate {
                                 tab_id,
                                 request_id,
@@ -57,7 +58,8 @@ pub fn start_parse_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEve
                 CoreCommand::ParseHtmlDone { tab_id, request_id } => {
                     if let Some(mut st) = htmls.remove(&(tab_id, request_id)) {
                         finish_utf8(&mut st.text, &mut st.carry);
-                        let dom = build_dom(&tokenize(&st.text));
+                        let stream = tokenize(&st.text);
+                        let dom = build_dom(&stream);
                         let _ = evt_tx.send(CoreEvent::DomUpdate {
                             tab_id,
                             request_id,

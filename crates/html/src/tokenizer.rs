@@ -1,5 +1,5 @@
 use crate::entities::decode_entities;
-use crate::types::Token;
+use crate::types::{AtomId, AtomTable, Token, TokenStream};
 use memchr::memchr;
 
 const HTML_COMMENT_START: &str = "<!--";
@@ -71,8 +71,10 @@ fn is_void_element(name: &str) -> bool {
     )
 }
 
-pub fn tokenize(input: &str) -> Vec<Token> {
+/// Tokenizes into a token stream with interned tag/attribute names to reduce allocations.
+pub fn tokenize(input: &str) -> TokenStream {
     let mut out = Vec::new();
+    let mut atoms = AtomTable::new();
     let mut i = 0;
     let bytes = input.as_bytes();
     // Invariant: we scan by byte, but any slice endpoints must be UTF-8 char boundaries.
@@ -135,12 +137,17 @@ pub fn tokenize(input: &str) -> Vec<Token> {
         if i + 2 <= bytes.len() && bytes[i + 1] == b'/' {
             let start = i + 2;
             let mut j = start;
-            while j < bytes.len() && bytes[j].is_ascii_alphanumeric() {
+            while j < bytes.len()
+                && (bytes[j].is_ascii_alphanumeric()
+                    || bytes[j] == b'-'
+                    || bytes[j] == b'_'
+                    || bytes[j] == b':')
+            {
                 j += 1;
             }
             debug_assert!(input.is_char_boundary(start));
             debug_assert!(input.is_char_boundary(j));
-            let name = input[start..j].to_ascii_lowercase();
+            let name = atoms.intern_ascii_lowercase(&input[start..j]);
             // skip to '>'
             while j < bytes.len() && bytes[j] != b'>' {
                 j += 1;
@@ -155,15 +162,20 @@ pub fn tokenize(input: &str) -> Vec<Token> {
         // start tag
         let start = i + 1;
         let mut j = start;
-        while j < bytes.len() && bytes[j].is_ascii_alphanumeric() {
+        while j < bytes.len()
+            && (bytes[j].is_ascii_alphanumeric()
+                || bytes[j] == b'-'
+                || bytes[j] == b'_'
+                || bytes[j] == b':')
+        {
             j += 1;
         }
         if j <= bytes.len() {
             debug_assert!(input.is_char_boundary(start));
             debug_assert!(input.is_char_boundary(j));
-            let name = input[start..j].to_ascii_lowercase();
+            let name = atoms.intern_ascii_lowercase(&input[start..j]);
             let mut k = j;
-            let mut attributes: Vec<(String, Option<String>)> = Vec::new();
+            let mut attributes: Vec<(AtomId, Option<String>)> = Vec::new();
             let bytes = input.as_bytes();
             let len = bytes.len();
             let mut self_closing = false;
@@ -204,7 +216,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 }
                 debug_assert!(input.is_char_boundary(name_start));
                 debug_assert!(input.is_char_boundary(k));
-                let attribute_name = input[name_start..k].to_ascii_lowercase();
+                let attribute_name = atoms.intern_ascii_lowercase(&input[name_start..k]);
 
                 skip_whitespace(&mut k);
                 let value: Option<String>;
@@ -247,7 +259,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                 }
                 attributes.push((attribute_name, value));
             }
-            if is_void_element(&name) {
+            if is_void_element(atoms.resolve(name)) {
                 self_closing = true;
             }
 
@@ -257,15 +269,16 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             let content_start = k;
 
             out.push(Token::StartTag {
-                name: name.clone(),
+                name,
                 attributes,
                 self_closing,
             });
 
-            if (name == "script" || name == "style") && !self_closing {
+            let name_str = atoms.resolve(name);
+            if (name_str == "script" || name_str == "style") && !self_closing {
                 // Rawtext close tags are fixed-length ASCII sequences; we can scan linearly
                 // without allocating or creating lowercase buffers.
-                let close_tag = if name == "script" {
+                let close_tag = if name_str == "script" {
                     SCRIPT_CLOSE_TAG
                 } else {
                     STYLE_CLOSE_TAG
@@ -279,7 +292,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     if !raw.is_empty() {
                         out.push(Token::Text(raw.to_string()));
                     }
-                    out.push(Token::EndTag(name.clone()));
+                    out.push(Token::EndTag(name));
                     i = j + rel_end;
                     continue;
                 } else {
@@ -289,7 +302,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     if !raw.is_empty() {
                         out.push(Token::Text(raw.to_string()));
                     }
-                    out.push(Token::EndTag(name.clone()));
+                    out.push(Token::EndTag(name));
                     break;
                 }
             }
@@ -299,7 +312,7 @@ pub fn tokenize(input: &str) -> Vec<Token> {
         }
         i += 1;
     }
-    out
+    TokenStream::new(out, atoms)
 }
 
 #[cfg(test)]
@@ -308,62 +321,65 @@ mod tests {
 
     #[test]
     fn tokenize_preserves_utf8_text_nodes() {
-        let tokens = tokenize("<p>120×32</p>");
+        let stream = tokenize("<p>120×32</p>");
         assert!(
-            tokens
+            stream
                 .iter()
                 .any(|t| matches!(t, Token::Text(s) if s == "120×32")),
-            "expected UTF-8 text token, got: {tokens:?}"
+            "expected UTF-8 text token, got: {stream:?}"
         );
     }
 
     #[test]
     fn tokenize_handles_uppercase_doctype() {
-        let tokens = tokenize("<!DOCTYPE html>");
+        let stream = tokenize("<!DOCTYPE html>");
         assert!(
-            tokens
+            stream
                 .iter()
                 .any(|t| matches!(t, Token::Doctype(s) if s == "DOCTYPE html")),
-            "expected case-insensitive doctype, got: {tokens:?}"
+            "expected case-insensitive doctype, got: {stream:?}"
         );
     }
 
     #[test]
     fn tokenize_finds_script_end_tag_case_insensitive() {
-        let tokens = tokenize("<script>let x = 1;</ScRiPt>");
+        let stream = tokenize("<script>let x = 1;</ScRiPt>");
+        let atoms = stream.atoms();
         assert!(
             matches!(
-                tokens.as_slice(),
+                stream.tokens(),
                 [
                     Token::StartTag { name, .. },
                     Token::Text(body),
                     Token::EndTag(end)
-                ] if name == "script" && body == "let x = 1;" && end == "script"
+                ] if atoms.resolve(*name) == "script"
+                    && body == "let x = 1;"
+                    && atoms.resolve(*end) == "script"
             ),
-            "expected raw script text and matching end tag, got: {tokens:?}"
+            "expected raw script text and matching end tag, got: {stream:?}"
         );
     }
 
     #[test]
     fn tokenize_handles_non_ascii_text_around_tags() {
-        let tokens = tokenize("¡Hola <b>café</b> 😊");
+        let stream = tokenize("¡Hola <b>café</b> 😊");
         assert!(
-            tokens
+            stream
                 .iter()
                 .any(|t| matches!(t, Token::Text(s) if s == "¡Hola ")),
-            "expected leading UTF-8 text token, got: {tokens:?}"
+            "expected leading UTF-8 text token, got: {stream:?}"
         );
         assert!(
-            tokens
+            stream
                 .iter()
                 .any(|t| matches!(t, Token::Text(s) if s == "café")),
-            "expected UTF-8 text inside tag, got: {tokens:?}"
+            "expected UTF-8 text inside tag, got: {stream:?}"
         );
         assert!(
-            tokens
+            stream
                 .iter()
                 .any(|t| matches!(t, Token::Text(s) if s == " 😊")),
-            "expected trailing UTF-8 text token, got: {tokens:?}"
+            "expected trailing UTF-8 text token, got: {stream:?}"
         );
     }
 
@@ -374,17 +390,20 @@ mod tests {
             body.push_str("let x = 1; < not a tag\n");
         }
         let input = format!("<script>{}</ScRiPt>", body);
-        let tokens = tokenize(&input);
+        let stream = tokenize(&input);
+        let atoms = stream.atoms();
         assert!(
             matches!(
-                tokens.as_slice(),
+                stream.tokens(),
                 [
                     Token::StartTag { name, .. },
                     Token::Text(text),
                     Token::EndTag(end)
-                ] if name == "script" && text == &body && end == "script"
+                ] if atoms.resolve(*name) == "script"
+                    && *text == body
+                    && atoms.resolve(*end) == "script"
             ),
-            "expected large rawtext body to tokenize correctly, got: {tokens:?}"
+            "expected large rawtext body to tokenize correctly, got: {stream:?}"
         );
     }
 
@@ -395,17 +414,20 @@ mod tests {
             body.push_str("</scripX>");
         }
         let input = format!("<script>{}</ScRiPt>", body);
-        let tokens = tokenize(&input);
+        let stream = tokenize(&input);
+        let atoms = stream.atoms();
         assert!(
             matches!(
-                tokens.as_slice(),
+                stream.tokens(),
                 [
                     Token::StartTag { name, .. },
                     Token::Text(text),
                     Token::EndTag(end)
-                ] if name == "script" && text == &body && end == "script"
+                ] if atoms.resolve(*name) == "script"
+                    && *text == body
+                    && atoms.resolve(*end) == "script"
             ),
-            "expected dense rawtext body to tokenize correctly, got: {tokens:?}"
+            "expected dense rawtext body to tokenize correctly, got: {stream:?}"
         );
     }
 
@@ -416,99 +438,168 @@ mod tests {
             body.push_str("</stylX>");
         }
         let input = format!("<style>{}</StYle>", body);
-        let tokens = tokenize(&input);
+        let stream = tokenize(&input);
+        let atoms = stream.atoms();
         assert!(
             matches!(
-                tokens.as_slice(),
+                stream.tokens(),
                 [
                     Token::StartTag { name, .. },
                     Token::Text(text),
                     Token::EndTag(end)
-                ] if name == "style" && text == &body && end == "style"
+                ] if atoms.resolve(*name) == "style"
+                    && *text == body
+                    && atoms.resolve(*end) == "style"
             ),
-            "expected dense style rawtext body to tokenize correctly, got: {tokens:?}"
+            "expected dense style rawtext body to tokenize correctly, got: {stream:?}"
         );
     }
 
     #[test]
     fn tokenize_allows_whitespace_before_rawtext_close_gt() {
-        let tokens = tokenize("<script>let x=1;</script >");
+        let stream = tokenize("<script>let x=1;</script >");
+        let atoms = stream.atoms();
         assert!(
             matches!(
-                tokens.as_slice(),
+                stream.tokens(),
                 [
                     Token::StartTag { name, .. },
                     Token::Text(body),
                     Token::EndTag(end)
-                ] if name == "script" && body == "let x=1;" && end == "script"
+                ] if atoms.resolve(*name) == "script"
+                    && body == "let x=1;"
+                    && atoms.resolve(*end) == "script"
             ),
-            "expected script end tag with whitespace before >, got: {tokens:?}"
+            "expected script end tag with whitespace before >, got: {stream:?}"
         );
     }
 
     #[test]
     fn tokenize_allows_whitespace_before_rawtext_close_gt_case_insensitive() {
-        let tokens = tokenize("<style>body{}</STYLE\t>");
+        let stream = tokenize("<style>body{}</STYLE\t>");
+        let atoms = stream.atoms();
         assert!(
             matches!(
-                tokens.as_slice(),
+                stream.tokens(),
                 [
                     Token::StartTag { name, .. },
                     Token::Text(body),
                     Token::EndTag(end)
-                ] if name == "style" && body == "body{}" && end == "style"
+                ] if atoms.resolve(*name) == "style"
+                    && body == "body{}"
+                    && atoms.resolve(*end) == "style"
             ),
-            "expected style end tag with whitespace before >, got: {tokens:?}"
+            "expected style end tag with whitespace before >, got: {stream:?}"
         );
     }
 
     #[test]
     fn rawtext_close_tag_does_not_accept_near_matches() {
-        let tokens = tokenize("<script>ok</scriptx >no</script >");
+        let stream = tokenize("<script>ok</scriptx >no</script >");
+        let atoms = stream.atoms();
         assert!(
             matches!(
-                tokens.as_slice(),
+                stream.tokens(),
                 [
                     Token::StartTag { name, .. },
                     Token::Text(body),
                     Token::EndTag(end),
-                ] if name == "script" && body == "ok</scriptx >no" && end == "script"
+                ] if atoms.resolve(*name) == "script"
+                    && body == "ok</scriptx >no"
+                    && atoms.resolve(*end) == "script"
             ),
-            "expected near-match not to close rawtext, got: {tokens:?}"
+            "expected near-match not to close rawtext, got: {stream:?}"
         );
     }
 
     #[test]
     fn tokenize_handles_non_ascii_attribute_values() {
-        let tokens = tokenize("<p data=naïve>ok</p>");
+        let stream = tokenize("<p data=naïve>ok</p>");
+        let atoms = stream.atoms();
         assert!(
-            tokens.iter().any(|t| matches!(
+            stream.iter().any(|t| matches!(
                 t,
                 Token::StartTag { name, attributes, .. }
-                    if name == "p"
-                        && attributes.iter().any(|(k, v)| k == "data" && v.as_deref() == Some("naïve"))
+                    if atoms.resolve(*name) == "p"
+                        && attributes.iter().any(|(k, v)| {
+                            atoms.resolve(*k) == "data" && v.as_deref() == Some("naïve")
+                        })
             )),
-            "expected UTF-8 attribute value, got: {tokens:?}"
+            "expected UTF-8 attribute value, got: {stream:?}"
         );
     }
 
     #[test]
     fn tokenize_handles_utf8_adjacent_to_angle_brackets() {
-        let tokens = tokenize("é<b>ï</b>ö");
+        let stream = tokenize("é<b>ï</b>ö");
         assert!(
-            tokens
+            stream
                 .iter()
                 .any(|t| matches!(t, Token::Text(s) if s == "é"))
         );
         assert!(
-            tokens
+            stream
                 .iter()
                 .any(|t| matches!(t, Token::Text(s) if s == "ï"))
         );
         assert!(
-            tokens
+            stream
                 .iter()
                 .any(|t| matches!(t, Token::Text(s) if s == "ö"))
         );
+    }
+
+    #[test]
+    fn tokenize_interns_case_insensitive_tag_and_attr_names() {
+        let stream = tokenize("<DiV id=one></div><div ID=two></DIV>");
+        let atoms = stream.atoms();
+        let mut div_ids = Vec::new();
+        let mut id_ids = Vec::new();
+
+        for token in stream.iter() {
+            match token {
+                Token::StartTag {
+                    name, attributes, ..
+                } => {
+                    div_ids.push(*name);
+                    for (attr_name, _) in attributes {
+                        id_ids.push(*attr_name);
+                    }
+                }
+                Token::EndTag(name) => div_ids.push(*name),
+                _ => {}
+            }
+        }
+
+        assert!(
+            div_ids.windows(2).all(|w| w[0] == w[1]),
+            "expected all div atoms to match, got: {div_ids:?}"
+        );
+        assert!(
+            id_ids.windows(2).all(|w| w[0] == w[1]),
+            "expected all id atoms to match, got: {id_ids:?}"
+        );
+        assert_eq!(atoms.resolve(div_ids[0]), "div");
+        assert_eq!(atoms.resolve(id_ids[0]), "id");
+        assert_eq!(atoms.len(), 2, "expected only two interned names");
+    }
+
+    #[test]
+    fn tokenize_allows_custom_element_and_namespaced_tags() {
+        let stream = tokenize("<my-component></my-component><svg:rect></svg:rect>");
+        let atoms = stream.atoms();
+        let mut names = Vec::new();
+
+        for token in stream.iter() {
+            match token {
+                Token::StartTag { name, .. } | Token::EndTag(name) => names.push(*name),
+                _ => {}
+            }
+        }
+
+        assert_eq!(atoms.resolve(names[0]), "my-component");
+        assert_eq!(atoms.resolve(names[1]), "my-component");
+        assert_eq!(atoms.resolve(names[2]), "svg:rect");
+        assert_eq!(atoms.resolve(names[3]), "svg:rect");
     }
 }
