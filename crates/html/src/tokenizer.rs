@@ -10,23 +10,36 @@ fn starts_with_ignore_ascii_case(haystack: &[u8], needle: &[u8]) -> bool {
 
 // it only attempts matches starting at ASCII <
 // < cannot appear in UTF-8 continuation bytes
-fn find_close_tag_from(haystack: &str, close_tag: &str) -> Option<usize> {
+const SCRIPT_CLOSE_TAG: &[u8] = b"</script>";
+const STYLE_CLOSE_TAG: &[u8] = b"</style>";
+
+fn find_rawtext_close_tag(haystack: &str, close_tag: &[u8]) -> Option<usize> {
     let hay_bytes = haystack.as_bytes();
-    let tag_bytes = close_tag.as_bytes();
-    if tag_bytes.is_empty() || tag_bytes.len() > hay_bytes.len() {
+    let n = close_tag.len();
+    debug_assert!(n >= 2);
+    debug_assert!(close_tag[0] == b'<' && close_tag[1] == b'/');
+    debug_assert!(close_tag.is_ascii());
+    debug_assert!(
+        close_tag.eq_ignore_ascii_case(SCRIPT_CLOSE_TAG)
+            || close_tag.eq_ignore_ascii_case(STYLE_CLOSE_TAG)
+    );
+    if hay_bytes.len() < n {
         return None;
     }
-    let mut offset = 0;
-    while offset + tag_bytes.len() <= hay_bytes.len() {
-        if let Some(rel) = hay_bytes[offset..].iter().position(|&b| b == b'<') {
-            offset += rel;
-            if hay_bytes[offset..offset + tag_bytes.len()].eq_ignore_ascii_case(tag_bytes) {
-                return Some(offset);
-            }
-            offset += 1;
-        } else {
-            break;
+    let mut i = 0;
+    while i + n <= hay_bytes.len() {
+        let rel = hay_bytes[i..].iter().position(|&b| b == b'<')?;
+        i += rel;
+        if i + n > hay_bytes.len() {
+            return None;
         }
+        if i + 1 < hay_bytes.len()
+            && hay_bytes[i + 1] == b'/'
+            && hay_bytes[i..i + n].eq_ignore_ascii_case(close_tag)
+        {
+            return Some(i);
+        }
+        i += 1;
     }
     None
 }
@@ -56,8 +69,8 @@ pub fn tokenize(input: &str) -> Vec<Token> {
     let mut i = 0;
     let bytes = input.as_bytes();
     // Invariant: we scan by byte, but any slice endpoints must be UTF-8 char boundaries.
-    // We only terminate spans on ASCII delimiter bytes (<, >, quotes, whitespace), which
-    // cannot appear inside a UTF-8 multi-byte sequence.
+    // We only cut slices at ASCII structural bytes or at positions reached by scanning
+    // ASCII-only tokens; therefore slice endpoints remain UTF-8 boundaries.
     while i < bytes.len() {
         if bytes[i] != b'<' {
             // collect text until next '<'
@@ -243,16 +256,16 @@ pub fn tokenize(input: &str) -> Vec<Token> {
             });
 
             if (name == "script" || name == "style") && !self_closing {
-                // Find the matching closing tag without allocating
-                let close_tag = if name == "script" {
-                    "</script>"
+                // Rawtext close tags are fixed-length ASCII sequences; we can scan linearly
+                // without allocating or creating lowercase buffers.
+                let (close_tag, close_tag_len) = if name == "script" {
+                    (SCRIPT_CLOSE_TAG, SCRIPT_CLOSE_TAG.len())
                 } else {
-                    "</style>"
+                    (STYLE_CLOSE_TAG, STYLE_CLOSE_TAG.len())
                 };
-                let close_tag_len = close_tag.len();
                 let j = k;
                 debug_assert!(input.is_char_boundary(j));
-                if let Some(rel) = find_close_tag_from(&input[j..], close_tag) {
+                if let Some(rel) = find_rawtext_close_tag(&input[j..], close_tag) {
                     let slice_end = j + rel;
                     debug_assert!(input.is_char_boundary(slice_end));
                     let raw = &input[j..j + rel];
@@ -263,6 +276,8 @@ pub fn tokenize(input: &str) -> Vec<Token> {
                     i = j + rel + close_tag_len;
                     continue;
                 } else {
+                    // If the rawtext close tag is missing, emit an implicit end tag and
+                    // treat the remainder as rawtext content.
                     let raw = &input[j..];
                     if !raw.is_empty() {
                         out.push(Token::Text(raw.to_string()));
@@ -342,6 +357,69 @@ mod tests {
                 .iter()
                 .any(|t| matches!(t, Token::Text(s) if s == " 😊")),
             "expected trailing UTF-8 text token, got: {tokens:?}"
+        );
+    }
+
+    #[test]
+    fn tokenize_handles_large_rawtext_body_without_pathological_slowdown() {
+        let mut body = String::new();
+        for _ in 0..100_000 {
+            body.push_str("let x = 1; < not a tag\n");
+        }
+        let input = format!("<script>{}</ScRiPt>", body);
+        let tokens = tokenize(&input);
+        assert!(
+            matches!(
+                tokens.as_slice(),
+                [
+                    Token::StartTag { name, .. },
+                    Token::Text(text),
+                    Token::EndTag(end)
+                ] if name == "script" && text == &body && end == "script"
+            ),
+            "expected large rawtext body to tokenize correctly, got: {tokens:?}"
+        );
+    }
+
+    #[test]
+    fn tokenize_handles_dense_near_match_rawtext_body() {
+        let mut body = String::new();
+        for _ in 0..50_000 {
+            body.push_str("</scripX>");
+        }
+        let input = format!("<script>{}</ScRiPt>", body);
+        let tokens = tokenize(&input);
+        assert!(
+            matches!(
+                tokens.as_slice(),
+                [
+                    Token::StartTag { name, .. },
+                    Token::Text(text),
+                    Token::EndTag(end)
+                ] if name == "script" && text == &body && end == "script"
+            ),
+            "expected dense rawtext body to tokenize correctly, got: {tokens:?}"
+        );
+    }
+
+    #[test]
+    fn tokenize_handles_dense_near_match_style_rawtext_body() {
+        let mut body = String::new();
+        for _ in 0..50_000 {
+            body.push_str("</stylX>");
+        }
+        let input = format!("<style>{}</StYle>", body);
+        let tokens = tokenize(&input);
+        assert!(
+            matches!(
+                tokens.as_slice(),
+                [
+                    Token::StartTag { name, .. },
+                    Token::Text(text),
+                    Token::EndTag(end)
+                ] if name == "style" && text == &body && end == "style"
+            ),
+            "expected dense style rawtext body to tokenize correctly, got: {tokens:?}"
         );
     }
 
