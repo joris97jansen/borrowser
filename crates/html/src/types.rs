@@ -48,6 +48,10 @@ impl AtomTable {
             .expect("atom id out of range")
     }
 
+    pub fn resolve_arc(&self, id: AtomId) -> Arc<str> {
+        Arc::clone(self.atoms.get(id.0 as usize).expect("atom id out of range"))
+    }
+
     pub fn len(&self) -> usize {
         self.atoms.len()
     }
@@ -72,8 +76,8 @@ pub enum Token {
 
 #[derive(Debug)]
 pub struct TokenStream {
-    pub tokens: Vec<Token>,
-    pub atoms: AtomTable,
+    tokens: Vec<Token>,
+    atoms: AtomTable,
 }
 
 impl TokenStream {
@@ -88,6 +92,10 @@ impl TokenStream {
     pub fn atoms(&self) -> &AtomTable {
         &self.atoms
     }
+
+    pub fn iter(&self) -> std::slice::Iter<'_, Token> {
+        self.tokens.iter()
+    }
 }
 
 #[derive(Debug)]
@@ -99,9 +107,9 @@ pub enum Node {
     },
     Element {
         id: Id,
-        name: String,
+        name: Arc<str>,
         // Keep as Vec to preserve source order and allow duplicates; use helpers for lookups.
-        attributes: Vec<(String, Option<String>)>,
+        attributes: Vec<(Arc<str>, Option<String>)>,
         style: Vec<(String, String)>,
         children: Vec<Node>,
     },

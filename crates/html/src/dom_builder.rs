@@ -1,4 +1,5 @@
-use crate::types::{AtomTable, Id, Node, Token, TokenStream};
+use crate::types::{Id, Node, Token, TokenStream};
+use std::sync::Arc;
 
 pub fn build_dom(stream: &TokenStream) -> Node {
     let tokens = stream.tokens();
@@ -46,15 +47,15 @@ pub fn build_dom(stream: &TokenStream) -> Node {
                 ..
             } => {
                 let parent_index = open_elements.last().copied().unwrap_or(root_index);
-                let resolved_attributes: Vec<(String, Option<String>)> = attributes
+                let resolved_attributes: Vec<(Arc<str>, Option<String>)> = attributes
                     .iter()
-                    .map(|(k, v)| (atoms.resolve(*k).to_string(), v.clone()))
+                    .map(|(k, v)| (atoms.resolve_arc(*k), v.clone()))
                     .collect();
                 let new_index = arena.add_child(
                     parent_index,
                     ArenaNode::Element {
                         id: Id(0),
-                        name: atoms.resolve(*name).to_string(),
+                        name: atoms.resolve_arc(*name),
                         attributes: resolved_attributes,
                         children: Vec::new(),
                         style: Vec::new(),
@@ -88,8 +89,8 @@ enum ArenaNode {
     },
     Element {
         id: Id,
-        name: String,
-        attributes: Vec<(String, Option<String>)>,
+        name: Arc<str>,
+        attributes: Vec<(Arc<str>, Option<String>)>,
         style: Vec<(String, String)>,
         children: Vec<usize>,
     },
@@ -249,6 +250,7 @@ impl NodeArena {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::types::AtomTable;
 
     #[test]
     fn build_dom_stress_deep_nesting() {
@@ -279,7 +281,7 @@ mod tests {
                     current = &children[0];
                 }
                 Node::Element { name, children, .. } => {
-                    assert_eq!(name, "div");
+                    assert_eq!(name.as_ref(), "div");
                     seen += 1;
                     if seen == depth {
                         assert!(children.is_empty());

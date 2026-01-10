@@ -1,6 +1,7 @@
 use crate::syntax::{Selector, Stylesheet, parse_declarations};
 use html::Node;
 use std::cmp::Ordering::Equal;
+use std::sync::Arc;
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
 struct Specificity(u16, u16, u16); // (id, class, type)
@@ -22,7 +23,7 @@ fn specificity_of(selector: &Selector) -> Specificity {
 }
 
 // Given an element name and its attributes, and a stylesheet, return the merged styles
-fn get_attributes<'a>(attributes: &'a [(String, Option<String>)], key: &str) -> Option<&'a str> {
+fn get_attributes<'a>(attributes: &'a [(Arc<str>, Option<String>)], key: &str) -> Option<&'a str> {
     attributes
         .iter()
         .find(|(k, _)| k.eq_ignore_ascii_case(key))
@@ -32,7 +33,7 @@ fn get_attributes<'a>(attributes: &'a [(String, Option<String>)], key: &str) -> 
 // Check if an element matches a selector
 fn matches_selector(
     name: &str,
-    attributes: &[(String, Option<String>)],
+    attributes: &[(Arc<str>, Option<String>)],
     selector: &Selector,
 ) -> bool {
     match selector {
@@ -58,7 +59,7 @@ pub fn is_css(ct: &Option<String>) -> bool {
 }
 
 // If the element has an inline style attribute, return its value
-pub fn get_inline_style(attributes: &[(String, Option<String>)]) -> Option<&str> {
+pub fn get_inline_style(attributes: &[(Arc<str>, Option<String>)]) -> Option<&str> {
     attributes
         .iter()
         .find(|(k, _)| k.eq_ignore_ascii_case("style"))
