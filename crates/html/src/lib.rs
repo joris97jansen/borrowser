@@ -18,4 +18,4 @@ pub fn is_html(ct: &Option<String>) -> bool {
 
 pub use crate::dom_builder::build_dom;
 pub use crate::tokenizer::tokenize;
-pub use crate::types::{Id, Node, NodeId, Token};
+pub use crate::types::{AtomId, AtomTable, Id, Node, NodeId, Token, TokenStream};
