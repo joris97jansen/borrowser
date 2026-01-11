@@ -173,3 +173,45 @@ impl Node {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::AtomTable;
+    use std::sync::Arc;
+
+    #[test]
+    fn intern_ascii_lowercase_is_case_insensitive() {
+        let mut atoms = AtomTable::new();
+        let upper = atoms.intern_ascii_lowercase("DIV");
+        let lower = atoms.intern_ascii_lowercase("div");
+        assert_eq!(upper, lower);
+        assert_eq!(atoms.len(), 1);
+    }
+
+    #[test]
+    fn intern_stores_canonical_lowercase_value() {
+        let mut atoms = AtomTable::new();
+        let id = atoms.intern_ascii_lowercase("DiV");
+        assert_eq!(atoms.resolve(id), "div");
+    }
+
+    #[test]
+    fn resolve_arc_reuses_allocation() {
+        let mut atoms = AtomTable::new();
+        let id = atoms.intern_ascii_lowercase("div");
+        let a = atoms.resolve_arc(id);
+        let b = atoms.resolve_arc(id);
+        assert!(Arc::ptr_eq(&a, &b));
+    }
+
+    #[test]
+    fn different_atoms_do_not_share_allocation() {
+        let mut atoms = AtomTable::new();
+        let a_id = atoms.intern_ascii_lowercase("div");
+        let b_id = atoms.intern_ascii_lowercase("span");
+        assert_ne!(a_id, b_id);
+        let a = atoms.resolve_arc(a_id);
+        let b = atoms.resolve_arc(b_id);
+        assert!(!Arc::ptr_eq(&a, &b));
+    }
+}
