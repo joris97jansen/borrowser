@@ -9,15 +9,21 @@ use html::{build_dom, tokenize};
 use tools::utf8::{finish_utf8, push_utf8_chunk};
 
 const TICK: Duration = Duration::from_millis(180);
+const DEBUG_LARGE_BUFFER_BYTES: usize = 1_048_576;
 
 struct HtmlState {
     raw: Vec<u8>,
     carry: Vec<u8>,
     text: String,
     last_emit: Instant,
+    logged_large_buffer: bool,
 }
 type Key = (TabId, RequestId);
 
+/// Parses HTML incrementally for streaming previews.
+///
+/// Note: periodic preview parsing currently reprocesses the full accumulated buffer on each tick
+/// (O(n^2) total work). See TODO(runtime_parse/perf).
 pub fn start_parse_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent>) {
     thread::spawn(move || {
         let mut htmls: HashMap<Key, HtmlState> = HashMap::new();
@@ -32,6 +38,7 @@ pub fn start_parse_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEve
                             carry: Vec::new(),
                             text: String::new(),
                             last_emit: Instant::now(),
+                            logged_large_buffer: false,
                         },
                     );
                 }
@@ -45,6 +52,28 @@ pub fn start_parse_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEve
                         push_utf8_chunk(&mut st.text, &mut st.carry, &bytes);
                         if st.last_emit.elapsed() >= TICK {
                             st.last_emit = Instant::now();
+                            #[cfg(debug_assertions)]
+                            {
+                                if !st.logged_large_buffer
+                                    && st.text.len() >= DEBUG_LARGE_BUFFER_BYTES
+                                {
+                                    eprintln!(
+                                        "runtime_parse: large buffer ({} bytes), periodic full reparse is O(n^2)",
+                                        st.text.len()
+                                    );
+                                    st.logged_large_buffer = true;
+                                }
+                            }
+                            // NOTE: This re-tokenizes and rebuilds the DOM from scratch on every
+                            // TICK using the full accumulated buffer (`st.text`). That means total
+                            // work grows quadratically with input size (O(n^2)). This is currently
+                            // acceptable for MVP streaming previews, but it is a known hot-path
+                            // performance limitation that must be addressed before production scale.
+                            //
+                            // Future directions (explicitly tracked):
+                            // - Stateful incremental tokenizer that consumes only new bytes.
+                            // - Incremental tree builder / parser state machine to avoid full rebuilds.
+                            // - Product decision: parse only on Done (no periodic preview).
                             let stream = tokenize(&st.text);
                             let dom = build_dom(&stream);
                             let _ = evt_tx.send(CoreEvent::DomUpdate {
