@@ -13,6 +13,9 @@ pub fn build_dom(stream: &TokenStream) -> Node {
 
     let mut open_elements: Vec<usize> = Vec::new();
 
+    // Invariant: tokenized tag/attribute names are interned as ASCII-only atoms with no
+    // uppercase A–Z bytes (canonical lowercase).
+    // DOM construction and end-tag matching rely on direct equality for correctness.
     for token in tokens {
         match token {
             Token::Doctype(s) => {
@@ -51,11 +54,17 @@ pub fn build_dom(stream: &TokenStream) -> Node {
                     .iter()
                     .map(|(k, v)| (atoms.resolve_arc(*k), v.clone()))
                     .collect();
+                let resolved_name = atoms.resolve_arc(*name);
+                debug_assert_canonical_ascii_lower(resolved_name.as_ref(), "dom builder tag atom");
+                #[cfg(debug_assertions)]
+                for (k, _) in &resolved_attributes {
+                    debug_assert_canonical_ascii_lower(k.as_ref(), "dom builder attribute atom");
+                }
                 let new_index = arena.add_child(
                     parent_index,
                     ArenaNode::Element {
                         id: Id(0),
-                        name: atoms.resolve_arc(*name),
+                        name: resolved_name,
                         attributes: resolved_attributes,
                         children: Vec::new(),
                         style: Vec::new(),
@@ -68,6 +77,7 @@ pub fn build_dom(stream: &TokenStream) -> Node {
             }
             Token::EndTag(name) => {
                 let target = atoms.resolve(*name);
+                debug_assert_canonical_ascii_lower(target, "dom builder end-tag atom");
                 while let Some(open_index) = open_elements.pop() {
                     if arena.is_element_named(open_index, target) {
                         break;
@@ -78,6 +88,15 @@ pub fn build_dom(stream: &TokenStream) -> Node {
     }
 
     arena.into_dom(root_index)
+}
+
+#[inline]
+fn debug_assert_canonical_ascii_lower(s: &str, what: &'static str) {
+    debug_assert!(s.is_ascii(), "{what} must be ASCII");
+    debug_assert!(
+        !s.as_bytes().iter().any(|b| b'A' <= *b && *b <= b'Z'),
+        "{what} must be canonical lowercase (no ASCII uppercase)"
+    );
 }
 
 #[derive(Debug)]
@@ -151,7 +170,7 @@ impl NodeArena {
 
     fn is_element_named(&self, node_index: usize, target: &str) -> bool {
         match &self.nodes[node_index] {
-            ArenaNode::Element { name, .. } => name.eq_ignore_ascii_case(target),
+            ArenaNode::Element { name, .. } => name.as_ref() == target,
             _ => false,
         }
     }
