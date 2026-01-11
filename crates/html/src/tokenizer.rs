@@ -1,3 +1,19 @@
+//! Simplified HTML tokenizer with a constrained, practical tag-name character set.
+//!
+//! Supported tag-name characters (ASCII only): `[A-Za-z0-9:_-]`.
+//! Attribute names use the same ASCII character class.
+//!
+//! This is not a full HTML5 tokenizer/state machine yet. The constraint is intentional to keep
+//! tokenization fast and allocation-light while the DOM pipeline is still evolving, and to defer
+//! the complexity of the HTML5 parsing algorithm until a dedicated state machine lands.
+//!
+//! Known limitations (intentional):
+//! - Not a full HTML5 tokenizer/state machine (no spec parse-error recovery).
+//! - Tag/attribute names are restricted to ASCII `[A-Za-z0-9:_-]`.
+//! - Rawtext close-tag scanning accepts only ASCII whitespace before `>` (see
+//!   `find_rawtext_close_tag`).
+//!
+//! TODO(html/tokenizer/html5): replace with a full HTML5 tokenizer + tree builder state machine.
 use crate::entities::decode_entities;
 use crate::types::{AtomId, AtomTable, Token, TokenStream};
 use memchr::memchr;
