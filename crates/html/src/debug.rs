@@ -13,7 +13,7 @@ pub fn first_styles(style: &[(String, String)]) -> String {
 }
 
 pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
-    fn preview(s: &str, max_chars: usize) -> String {
+    fn preview_replace_newlines(s: &str, max_chars: usize) -> String {
         let mut out = String::new();
         let mut truncated = false;
         for (i, ch) in s.chars().enumerate() {
@@ -21,7 +21,11 @@ pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
                 truncated = true;
                 break;
             }
-            out.push(ch);
+            if ch == '\n' {
+                out.push(' ');
+            } else {
+                out.push(ch);
+            }
         }
         if truncated {
             out.push('…');
@@ -29,24 +33,32 @@ pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
         out
     }
 
-    fn walk(node: &Node, depth: usize, out: &mut Vec<String>, left: &mut usize) {
+    const INDENT_STEP: &str = "  ";
+
+    fn walk(node: &Node, indent: &mut String, out: &mut Vec<String>, left: &mut usize) {
         if *left == 0 {
             return;
         }
         *left -= 1;
-        let indent = "  ".repeat(depth);
         match node {
             Node::Document {
                 doctype, children, ..
             } => {
+                let mut line = String::new();
+                line.push_str(indent);
                 if let Some(dt) = doctype {
-                    out.push(format!("{indent}<!DOCTYPE {dt}>"));
+                    line.push_str("<!DOCTYPE ");
+                    line.push_str(dt);
+                    line.push('>');
                 } else {
-                    out.push(format!("{indent}#document"));
+                    line.push_str("#document");
                 }
+                out.push(line);
+                indent.push_str(INDENT_STEP);
                 for c in children {
-                    walk(c, depth + 1, out, left);
+                    walk(c, indent, out, left);
                 }
+                indent.truncate(indent.len() - INDENT_STEP.len());
             }
             Node::Element {
                 name,
@@ -57,38 +69,59 @@ pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
                 let id = node.attr("id").unwrap_or("");
                 let class = node.attr("class").unwrap_or("");
                 let styl = first_styles(style);
-                let mut line = format!("{indent}<{name}");
+                let mut line = String::new();
+                line.push_str(indent);
+                line.push('<');
+                line.push_str(name);
                 if !id.is_empty() {
-                    line.push_str(&format!(r#" id="{id}""#));
+                    line.push_str(r#" id=""#);
+                    line.push_str(id);
+                    line.push('"');
                 }
                 if !class.is_empty() {
-                    line.push_str(&format!(r#" class="{class}""#));
+                    line.push_str(r#" class=""#);
+                    line.push_str(class);
+                    line.push('"');
                 }
                 line.push('>');
                 if !styl.is_empty() {
-                    line.push_str(&format!("  /* {styl} */"));
+                    line.push_str("  /* ");
+                    line.push_str(&styl);
+                    line.push_str(" */");
                 }
                 out.push(line);
+                indent.push_str(INDENT_STEP);
                 for c in children {
-                    walk(c, depth + 1, out, left);
+                    walk(c, indent, out, left);
                 }
+                indent.truncate(indent.len() - INDENT_STEP.len());
             }
             Node::Text { text, .. } => {
-                let t = text.replace('\n', " ").trim().to_string();
-                if !t.is_empty() {
-                    let show = preview(&t, 40);
-                    out.push(format!("{indent}\"{show}\""));
+                let trimmed = text.trim();
+                if !trimmed.is_empty() {
+                    let show = preview_replace_newlines(trimmed, 40);
+                    let mut line = String::new();
+                    line.push_str(indent);
+                    line.push('"');
+                    line.push_str(&show);
+                    line.push('"');
+                    out.push(line);
                 }
             }
             Node::Comment { text, .. } => {
-                let t = text.replace('\n', " ");
-                let show = preview(&t, 40);
-                out.push(format!("{indent}<!-- {show} -->"));
+                let show = preview_replace_newlines(text, 40);
+                let mut line = String::new();
+                line.push_str(indent);
+                line.push_str("<!-- ");
+                line.push_str(&show);
+                line.push_str(" -->");
+                out.push(line);
             }
         }
     }
     let mut out = Vec::new();
     let mut left = cap;
-    walk(root, 0, &mut out, &mut left);
+    let mut indent = String::new();
+    walk(root, &mut indent, &mut out, &mut left);
     out
 }
