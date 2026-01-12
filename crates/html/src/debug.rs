@@ -13,21 +13,26 @@ pub fn first_styles(style: &[(String, String)]) -> String {
 }
 
 pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
-    struct IndentGuard<'a> {
-        indent: &'a mut String,
+    struct IndentGuard {
+        indent: std::ptr::NonNull<String>,
         prev_len: usize,
     }
 
-    impl<'a> IndentGuard<'a> {
-        fn new(indent: &'a mut String) -> Self {
+    impl IndentGuard {
+        fn new(indent: &mut String) -> Self {
             let prev_len = indent.len();
-            Self { indent, prev_len }
+            Self {
+                indent: std::ptr::NonNull::from(indent),
+                prev_len,
+            }
         }
     }
 
-    impl Drop for IndentGuard<'_> {
+    impl Drop for IndentGuard {
         fn drop(&mut self) {
-            self.indent.truncate(self.prev_len);
+            unsafe {
+                self.indent.as_mut().truncate(self.prev_len);
+            }
         }
     }
 
