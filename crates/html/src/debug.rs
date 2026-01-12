@@ -15,13 +15,19 @@ pub fn first_styles(style: &[(String, String)]) -> String {
 pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
     struct IndentGuard<'a> {
         indent: &'a mut String,
-        step: usize,
+        prev_len: usize,
+    }
+
+    impl<'a> IndentGuard<'a> {
+        fn new(indent: &'a mut String) -> Self {
+            let prev_len = indent.len();
+            Self { indent, prev_len }
+        }
     }
 
     impl Drop for IndentGuard<'_> {
         fn drop(&mut self) {
-            let new_len = self.indent.len() - self.step;
-            self.indent.truncate(new_len);
+            self.indent.truncate(self.prev_len);
         }
     }
 
@@ -55,6 +61,7 @@ pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
 
     const INDENT_STEP: &str = "  ";
     const PREVIEW_CHARS: usize = 40;
+    const LINE_SLACK: usize = 64;
 
     fn walk(node: &Node, indent: &mut String, out: &mut Vec<String>, left: &mut usize) {
         if *left == 0 {
@@ -65,7 +72,7 @@ pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
             Node::Document {
                 doctype, children, ..
             } => {
-                let mut line = String::with_capacity(indent.len() + 64);
+                let mut line = String::with_capacity(indent.len() + LINE_SLACK);
                 line.push_str(indent);
                 if let Some(dt) = doctype {
                     line.push_str("<!DOCTYPE ");
@@ -76,10 +83,7 @@ pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
                 }
                 out.push(line);
                 indent.push_str(INDENT_STEP);
-                let _guard = IndentGuard {
-                    indent,
-                    step: INDENT_STEP.len(),
-                };
+                let _guard = IndentGuard::new(indent);
                 for c in children {
                     walk(c, indent, out, left);
                 }
@@ -92,8 +96,12 @@ pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
             } => {
                 let id = node.attr("id").unwrap_or("");
                 let class = node.attr("class").unwrap_or("");
-                let styl = first_styles(style);
-                let mut line = String::with_capacity(indent.len() + 64);
+                let styl = if style.is_empty() {
+                    String::new()
+                } else {
+                    first_styles(style)
+                };
+                let mut line = String::with_capacity(indent.len() + LINE_SLACK);
                 line.push_str(indent);
                 line.push('<');
                 line.push_str(name);
@@ -115,17 +123,14 @@ pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
                 }
                 out.push(line);
                 indent.push_str(INDENT_STEP);
-                let _guard = IndentGuard {
-                    indent,
-                    step: INDENT_STEP.len(),
-                };
+                let _guard = IndentGuard::new(indent);
                 for c in children {
                     walk(c, indent, out, left);
                 }
             }
             Node::Text { text, .. } => {
                 if let Some(trimmed) = trimmed_nonempty_slice(text) {
-                    let mut line = String::with_capacity(indent.len() + 64);
+                    let mut line = String::with_capacity(indent.len() + LINE_SLACK);
                     line.push_str(indent);
                     line.push('"');
                     push_preview_replace_newlines(&mut line, trimmed, PREVIEW_CHARS);
@@ -134,7 +139,7 @@ pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
                 }
             }
             Node::Comment { text, .. } => {
-                let mut line = String::with_capacity(indent.len() + 64);
+                let mut line = String::with_capacity(indent.len() + LINE_SLACK);
                 line.push_str(indent);
                 line.push_str("<!-- ");
                 push_preview_replace_newlines(&mut line, text, PREVIEW_CHARS);
