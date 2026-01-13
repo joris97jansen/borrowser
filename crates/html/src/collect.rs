@@ -91,9 +91,7 @@ pub fn collect_img_srcs(node: &Node, out: &mut Vec<String>) {
     }
 }
 
-// `ancestors` is threaded for future context-aware extraction (e.g., spacing rules, aria).
-// It is currently maintained but not inspected.
-pub fn collect_visible_text<'a>(node: &'a Node, ancestors: &mut Vec<&'a Node>, out: &mut String) {
+pub fn collect_visible_text(node: &Node, out: &mut String) {
     fn push_block_break(out: &mut String) {
         if out.is_empty() {
             return;
@@ -118,11 +116,9 @@ pub fn collect_visible_text<'a>(node: &'a Node, ancestors: &mut Vec<&'a Node>, o
             if name.eq_ignore_ascii_case("script") || name.eq_ignore_ascii_case("style") {
                 return; // skip
             }
-            ancestors.push(node);
             for c in children {
-                collect_visible_text(c, ancestors, out);
+                collect_visible_text(c, out);
             }
-            ancestors.pop();
 
             if is_blockish_break(name) {
                 push_block_break(out);
@@ -130,7 +126,7 @@ pub fn collect_visible_text<'a>(node: &'a Node, ancestors: &mut Vec<&'a Node>, o
         }
         Node::Document { children, .. } => {
             for c in children {
-                collect_visible_text(c, ancestors, out);
+                collect_visible_text(c, out);
             }
         }
         _ => {}
@@ -145,8 +141,7 @@ pub fn collect_visible_text<'a>(node: &'a Node, ancestors: &mut Vec<&'a Node>, o
 /// - Trims leading/trailing ASCII whitespace from the final output.
 pub fn collect_visible_text_string(root: &Node) -> String {
     let mut out = String::new();
-    let mut ancestors = Vec::new();
-    collect_visible_text(root, &mut ancestors, &mut out);
+    collect_visible_text(root, &mut out);
 
     // Trim trailing ASCII whitespace without allocating a new String.
     while out.as_bytes().last().is_some_and(|b| is_ascii_ws(*b)) {

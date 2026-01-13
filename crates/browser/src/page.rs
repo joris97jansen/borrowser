@@ -84,12 +84,7 @@ impl PageState {
     pub fn update_visible_text_cache(&mut self) {
         self.visible_text_cache.clear();
         if let Some(dom) = self.dom.as_ref() {
-            let mut ancestors = Vec::new();
-            html::dom_utils::collect_visible_text(
-                dom,
-                &mut ancestors,
-                &mut self.visible_text_cache,
-            );
+            html::dom_utils::collect_visible_text(dom, &mut self.visible_text_cache);
         }
     }
 
