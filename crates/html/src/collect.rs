@@ -108,7 +108,7 @@ pub fn collect_visible_text<'a>(node: &'a Node, ancestors: &mut Vec<&'a Node>, o
         Node::Text { text, .. } => {
             let t = text.trim();
             if !t.is_empty() {
-                if !out.is_empty() {
+                if out.as_bytes().last().is_some_and(|b| !is_ascii_ws(*b)) {
                     out.push(' ');
                 }
                 out.push_str(t);
