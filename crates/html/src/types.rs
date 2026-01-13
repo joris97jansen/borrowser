@@ -133,6 +133,7 @@ impl Node {
         }
     }
 
+    /// Updates only the ID field; must not mutate or reorder child storage.
     pub fn set_id(&mut self, new_id: Id) {
         match self {
             Node::Document { id, .. } => *id = new_id,
