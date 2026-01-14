@@ -301,7 +301,7 @@ mod tests {
     }
 
     #[test]
-    fn malformed_entity_does_not_consume_following_entity() {
-        assert_eq!(decode_entities("&#xZZ;&amp;"), "&#xZZ;&amp;");
+    fn malformed_entity_allows_following_entity() {
+        assert_eq!(decode_entities("&#xZZ;&amp;"), "&#xZZ;&");
     }
 }
