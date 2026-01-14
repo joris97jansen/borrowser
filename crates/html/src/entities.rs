@@ -1,8 +1,14 @@
-// Minimal entity decoding: only a tiny named set, numeric references must be well-formed and
-// semicolon-terminated, and only valid Unicode scalar values decode. Everything else passes
-// through unchanged (including missing semicolons, unknown names, malformed numerics). This is
-// intentionally not HTML5-spec-complete; keep behavior documented to avoid accidental reliance on
-// broader entity handling elsewhere.
+/// Decode a minimal, explicitly limited subset of HTML entities.
+///
+/// Contract:
+/// - Named entities decoded: `&amp;`, `&lt;`, `&gt;`, `&quot;`, `&apos;`, `&nbsp;`.
+/// - Numeric entities decoded only when well-formed and semicolon-terminated:
+///   `&#123;` (decimal) and `&#x1F4A9;` (hex).
+/// - Only valid Unicode scalar values decode; invalid scalars pass through unchanged.
+/// - Missing semicolons, unknown names, malformed numerics, or overlong digit runs are left
+///   unchanged.
+///
+/// This is intentionally not HTML5-spec-complete. Keep the behavior narrow and stable.
 pub(crate) fn decode_entities(s: &str) -> String {
     // Minimal, fast path for common entities
     let bytes = s.as_bytes();
@@ -17,17 +23,19 @@ pub(crate) fn decode_entities(s: &str) -> String {
     fn scan_numeric_entity(
         bytes: &[u8],
         start: usize,
-        max_len: usize,
+        max_digits: usize,
         is_hex: bool,
     ) -> Option<usize> {
         let mut j = start;
-        while j < bytes.len() && (j - start) <= max_len {
+        let mut digits = 0usize;
+
+        while j < bytes.len() {
             let b = bytes[j];
             if b == b';' {
-                return Some(j);
+                return (digits > 0).then_some(j);
             }
-            if (j - start) == max_len {
-                return None; // too many digits
+            if digits == max_digits {
+                return None;
             }
             let ok = if is_hex {
                 b.is_ascii_hexdigit()
@@ -37,9 +45,38 @@ pub(crate) fn decode_entities(s: &str) -> String {
             if !ok {
                 return None;
             }
+            digits += 1;
             j += 1;
         }
+
         None
+    }
+
+    fn emit_malformed_entity(out: &mut String, s: &str, bytes: &[u8], start: usize) -> usize {
+        let mut j = start + 1;
+        while j < bytes.len() {
+            let b = bytes[j];
+            // Stop at `;`, whitespace, or `&` to avoid spanning into adjacent tokens.
+            if b == b';' {
+                out.push_str(&s[start..=j]);
+                return j + 1;
+            }
+            if b == b'&' {
+                out.push_str(&s[start..j]);
+                return j;
+            }
+            if b.is_ascii_whitespace() {
+                out.push_str(&s[start..j]);
+                return j;
+            }
+            j += 1;
+        }
+        out.push_str(&s[start..]);
+        bytes.len()
+    }
+
+    fn starts_with_bytes(bytes: &[u8], i: usize, pat: &[u8]) -> bool {
+        bytes.get(i..i + pat.len()).is_some_and(|s| s == pat)
     }
 
     while i < bytes.len() {
@@ -53,37 +90,37 @@ pub(crate) fn decode_entities(s: &str) -> String {
             out.push_str(&s[copy_start..i]);
         }
 
-        if s[i..].starts_with("&amp;") {
+        if starts_with_bytes(bytes, i, b"&amp;") {
             out.push('&');
             i += 5;
             copy_start = i;
             continue;
         }
-        if s[i..].starts_with("&lt;") {
+        if starts_with_bytes(bytes, i, b"&lt;") {
             out.push('<');
             i += 4;
             copy_start = i;
             continue;
         }
-        if s[i..].starts_with("&gt;") {
+        if starts_with_bytes(bytes, i, b"&gt;") {
             out.push('>');
             i += 4;
             copy_start = i;
             continue;
         }
-        if s[i..].starts_with("&quot;") {
+        if starts_with_bytes(bytes, i, b"&quot;") {
             out.push('"');
             i += 6;
             copy_start = i;
             continue;
         }
-        if s[i..].starts_with("&apos;") {
+        if starts_with_bytes(bytes, i, b"&apos;") {
             out.push('\'');
             i += 6;
             copy_start = i;
             continue;
         }
-        if s[i..].starts_with("&nbsp;") {
+        if starts_with_bytes(bytes, i, b"&nbsp;") {
             out.push('\u{00A0}');
             i += 6;
             copy_start = i;
@@ -91,12 +128,10 @@ pub(crate) fn decode_entities(s: &str) -> String {
         }
 
         // numeric entities: &#123; or &#x1F4A9;
-        if s[i..].starts_with("&#x") || s[i..].starts_with("&#X") {
+        if starts_with_bytes(bytes, i, b"&#x") || starts_with_bytes(bytes, i, b"&#X") {
             let digits_start = i + 3;
             let Some(end) = scan_numeric_entity(bytes, digits_start, MAX_HEX_DIGITS, true) else {
-                // fallback to keep '&' as-is; not consuming means the rest flushes unchanged
-                out.push('&');
-                i += 1;
+                i = emit_malformed_entity(&mut out, s, bytes, i);
                 copy_start = i;
                 continue;
             };
@@ -114,12 +149,10 @@ pub(crate) fn decode_entities(s: &str) -> String {
                 copy_start = i;
                 continue;
             }
-        } else if s[i..].starts_with("&#") {
+        } else if starts_with_bytes(bytes, i, b"&#") {
             let digits_start = i + 2;
             let Some(end) = scan_numeric_entity(bytes, digits_start, MAX_DEC_DIGITS, false) else {
-                // fallback to keep '&' as-is; not consuming means the rest flushes unchanged
-                out.push('&');
-                i += 1;
+                i = emit_malformed_entity(&mut out, s, bytes, i);
                 copy_start = i;
                 continue;
             };
@@ -187,7 +220,10 @@ mod tests {
             decode_entities("before &notanentity; after"),
             "before &notanentity; after"
         );
+        assert_eq!(decode_entities("&amp"), "&amp");
         assert_eq!(decode_entities("loose &amp space"), "loose &amp space");
+        assert_eq!(decode_entities("&#xD7 "), "&#xD7 ");
+        assert_eq!(decode_entities("&#215 "), "&#215 ");
     }
 
     #[test]
@@ -195,6 +231,10 @@ mod tests {
         assert_eq!(decode_entities("&#xZZ;"), "&#xZZ;");
         assert_eq!(decode_entities("&#99999999;"), "&#99999999;");
         assert_eq!(decode_entities("&#xD800;"), "&#xD800;");
+        assert_eq!(decode_entities("&#x110000;"), "&#x110000;");
+        assert_eq!(decode_entities("&#-1;"), "&#-1;");
+        assert_eq!(decode_entities("&#x-1;"), "&#x-1;");
+        assert_eq!(decode_entities("&#12345678"), "&#12345678");
         assert_eq!(decode_entities("&#123"), "&#123");
         assert_eq!(decode_entities("&#;"), "&#;");
         assert_eq!(decode_entities("&#x;"), "&#x;");
@@ -204,5 +244,64 @@ mod tests {
     fn decode_entities_handles_long_numeric_like_patterns() {
         let noisy = "&#123456789;".repeat(100);
         assert_eq!(decode_entities(&noisy), noisy);
+    }
+
+    #[test]
+    fn decode_entities_respects_numeric_digit_limits() {
+        assert_eq!(decode_entities("&#1114111;"), "\u{10FFFF}");
+        assert_eq!(decode_entities("&#11141111;"), "&#11141111;");
+        assert_eq!(decode_entities("&#x10FFFF;"), "\u{10FFFF}");
+        assert_eq!(decode_entities("&#x110000;"), "&#x110000;");
+    }
+
+    #[test]
+    fn decode_entities_rejects_invalid_scalars() {
+        assert_eq!(decode_entities("&#xD800;"), "&#xD800;");
+        assert_eq!(decode_entities("&#xDFFF;"), "&#xDFFF;");
+        assert_eq!(decode_entities("&#55296;"), "&#55296;");
+    }
+
+    #[test]
+    fn decode_entities_property_like_adversarial_inputs() {
+        let samples = [
+            "&",
+            "&&",
+            "&;",
+            "&#;",
+            "&#x;",
+            "&#xFFFFFFFF;",
+            "&unknown;",
+            "&#9999999;",
+            "&amp;&lt;&gt;&quot;&apos;&nbsp;",
+        ];
+
+        for s in samples {
+            let out = decode_entities(s);
+            assert!(out.len() <= s.len());
+            assert_eq!(decode_entities(&out), out);
+        }
+
+        let unchanged = [
+            "",
+            "plain text",
+            "πσ",
+            "&",
+            "&&",
+            "&;",
+            "&#;",
+            "&#x;",
+            "&unknown;",
+            "&#xZZ;",
+            "&#9999999;",
+        ];
+
+        for s in unchanged {
+            assert_eq!(decode_entities(s), s);
+        }
+    }
+
+    #[test]
+    fn malformed_entity_does_not_consume_following_entity() {
+        assert_eq!(decode_entities("&#xZZ;&amp;"), "&#xZZ;&amp;");
     }
 }
