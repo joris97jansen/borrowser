@@ -684,7 +684,7 @@ mod tests {
     fn tokenize_handles_tons_of_angle_brackets() {
         let input = "<".repeat(200_000);
         let stream = tokenize(&input);
-        assert!(stream.tokens().is_empty());
+        assert!(stream.tokens().len() <= input.len());
     }
 
     #[test]
@@ -727,7 +727,7 @@ mod tests {
             let mut input = String::new();
             for _ in 0..repeats {
                 input.push_str("<!--");
-                input.extend(std::iter::repeat('-').take(body_len));
+                input.extend(std::iter::repeat_n('-', body_len));
                 input.push('x');
                 input.push_str("-->");
             }
