@@ -118,6 +118,7 @@ pub fn tokenize(input: &str) -> TokenStream {
             // comment
             let comment_start = i + HTML_COMMENT_START.len();
             debug_assert!(input.is_char_boundary(comment_start));
+            // Scan for the comment terminator once per comment (linear in comment length).
             if let Some(end) = input[i + HTML_COMMENT_START.len()..].find(HTML_COMMENT_END) {
                 let comment_end = i + HTML_COMMENT_START.len() + end;
                 debug_assert!(input.is_char_boundary(comment_end));
@@ -334,6 +335,7 @@ pub fn tokenize(input: &str) -> TokenStream {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::time::{Duration, Instant};
 
     #[test]
     fn tokenize_preserves_utf8_text_nodes() {
@@ -617,5 +619,141 @@ mod tests {
         assert_eq!(atoms.resolve(names[1]), "my-component");
         assert_eq!(atoms.resolve(names[2]), "svg:rect");
         assert_eq!(atoms.resolve(names[3]), "svg:rect");
+    }
+
+    #[test]
+    fn tokenize_handles_many_simple_tags_linearly() {
+        let mut input = String::new();
+        for _ in 0..20_000 {
+            input.push_str("<a></a>");
+        }
+        let stream = tokenize(&input);
+        assert_eq!(stream.tokens().len(), 40_000);
+    }
+
+    #[test]
+    fn tokenize_handles_rawtext_without_close_tag() {
+        let mut body = String::new();
+        for _ in 0..100_000 {
+            body.push_str("x<y>\n");
+        }
+        let input = format!("<script>{}", body);
+        let stream = tokenize(&input);
+        let atoms = stream.atoms();
+        assert!(
+            matches!(
+                stream.tokens(),
+                [
+                    Token::StartTag { name, .. },
+                    Token::Text(text),
+                    Token::EndTag(end)
+                ] if atoms.resolve(*name) == "script"
+                    && *text == body
+                    && atoms.resolve(*end) == "script"
+            ),
+            "expected rawtext body without close tag to tokenize correctly, got: {stream:?}"
+        );
+    }
+
+    #[test]
+    fn tokenize_handles_many_comments_and_doctypes() {
+        let mut input = String::new();
+        for _ in 0..5_000 {
+            input.push_str("<!--x-->");
+        }
+        for _ in 0..5_000 {
+            input.push_str("<!DOCTYPE html>");
+        }
+
+        let stream = tokenize(&input);
+        let mut comment_count = 0;
+        let mut doctype_count = 0;
+        for token in stream.iter() {
+            match token {
+                Token::Comment(_) => comment_count += 1,
+                Token::Doctype(_) => doctype_count += 1,
+                _ => {}
+            }
+        }
+
+        assert_eq!(comment_count, 5_000);
+        assert_eq!(doctype_count, 5_000);
+    }
+
+    #[test]
+    fn tokenize_handles_tons_of_angle_brackets() {
+        let input = "<".repeat(200_000);
+        let stream = tokenize(&input);
+        assert!(stream.tokens().is_empty());
+    }
+
+    #[test]
+    fn tokenize_scales_roughly_linearly_on_repeated_tags() {
+        fn build_input(repeats: usize) -> String {
+            let mut input = String::new();
+            for _ in 0..repeats {
+                input.push_str("<a></a>");
+            }
+            input
+        }
+
+        fn measure_total(input: &str) -> Duration {
+            let _ = tokenize(input);
+            let mut total = Duration::ZERO;
+            for _ in 0..5 {
+                let start = Instant::now();
+                let _ = tokenize(input);
+                total += start.elapsed();
+            }
+            total
+        }
+
+        let small = build_input(5_000);
+        let large = build_input(20_000);
+
+        let t_small = measure_total(&small);
+        let t_large = measure_total(&large);
+        assert!(!t_small.is_zero(), "timer resolution too coarse for test");
+        // Allow generous slack to avoid flakiness while still catching quadratic regressions.
+        assert!(
+            t_large <= t_small.saturating_mul(12),
+            "expected near-linear scaling; t_small={t_small:?} t_large={t_large:?}"
+        );
+    }
+
+    #[test]
+    fn tokenize_scales_roughly_linearly_on_comment_scan() {
+        fn build_input(repeats: usize, body_len: usize) -> String {
+            let mut input = String::new();
+            for _ in 0..repeats {
+                input.push_str("<!--");
+                input.extend(std::iter::repeat('-').take(body_len));
+                input.push('x');
+                input.push_str("-->");
+            }
+            input
+        }
+
+        fn measure_total(input: &str) -> Duration {
+            let _ = tokenize(input);
+            let mut total = Duration::ZERO;
+            for _ in 0..5 {
+                let start = Instant::now();
+                let _ = tokenize(input);
+                total += start.elapsed();
+            }
+            total
+        }
+
+        let small = build_input(500, 400);
+        let large = build_input(2_000, 400);
+
+        let t_small = measure_total(&small);
+        let t_large = measure_total(&large);
+        assert!(!t_small.is_zero(), "timer resolution too coarse for test");
+        assert!(
+            t_large <= t_small.saturating_mul(12),
+            "expected near-linear comment scan; t_small={t_small:?} t_large={t_large:?}"
+        );
     }
 }
