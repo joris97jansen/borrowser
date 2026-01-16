@@ -1,5 +1,6 @@
 use crate::{Id, Node};
 
+// Centralizes raw-pointer traversal handling for `assign_node_ids`.
 struct NodeStack {
     stack: Vec<*mut Node>,
 }
@@ -26,12 +27,13 @@ impl NodeStack {
 
 /// Assigns IDs in depth-first, pre-order traversal (document/element before children).
 /// Children are visited in source order (left-to-right), and existing non-zero IDs are preserved.
+/// Note: this function does not detect or resolve ID collisions if the tree already contains
+/// non-zero IDs. Callers must ensure pre-existing IDs are unique if uniqueness is required.
 pub fn assign_node_ids(root: &mut Node) {
     let mut next = 1;
     let mut stack = NodeStack::new(root);
 
     while let Some(node_ptr) = stack.pop_ptr() {
-        let mut child_ptrs = Vec::new();
         // SAFETY: pointers originate from nodes owned by `root` and stored inline
         // in `Vec<Node>`. We never mutate any `children` vectors during traversal,
         // so their backing storage does not reallocate and node addresses stay
@@ -45,14 +47,9 @@ pub fn assign_node_ids(root: &mut Node) {
         }
 
         if let Node::Document { children, .. } | Node::Element { children, .. } = node {
-            child_ptrs.reserve(children.len());
             for child in children.iter_mut().rev() {
-                child_ptrs.push(child as *mut Node);
+                stack.push_ptr(child as *mut Node);
             }
-        }
-
-        for ptr in child_ptrs {
-            stack.push_ptr(ptr);
         }
     }
 }
@@ -210,5 +207,71 @@ mod tests {
         assert_eq!(children[0].id(), Id(2));
         assert_eq!(children[1].id(), Id(3));
         assert_eq!(children[2].id(), Id(4));
+    }
+
+    #[test]
+    fn assign_node_ids_preserves_existing_ids() {
+        let mut root = Node::Document {
+            id: Id(0),
+            doctype: None,
+            children: vec![
+                Node::Element {
+                    id: Id(42),
+                    name: Arc::<str>::from("div"),
+                    attributes: Vec::new(),
+                    style: Vec::new(),
+                    children: vec![Node::Text {
+                        id: Id(0),
+                        text: "child".to_string(),
+                    }],
+                },
+                Node::Element {
+                    id: Id(0),
+                    name: Arc::<str>::from("span"),
+                    attributes: Vec::new(),
+                    style: Vec::new(),
+                    children: Vec::new(),
+                },
+            ],
+        };
+
+        assign_node_ids(&mut root);
+
+        let children = match &root {
+            Node::Document { children, .. } => children,
+            _ => panic!("expected document root"),
+        };
+
+        assert_eq!(children[0].id(), Id(42));
+        if let Node::Element { children, .. } = &children[0] {
+            assert_eq!(children[0].id(), Id(2));
+        }
+        assert_eq!(children[1].id(), Id(3));
+    }
+
+    #[test]
+    fn assign_node_ids_does_not_avoid_conflicting_existing_ids() {
+        let mut root = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(0),
+                name: Arc::<str>::from("div"),
+                attributes: Vec::new(),
+                style: Vec::new(),
+                children: Vec::new(),
+            }],
+        };
+
+        assign_node_ids(&mut root);
+
+        let children = match &root {
+            Node::Document { children, .. } => children,
+            _ => panic!("expected document root"),
+        };
+
+        assert_eq!(root.id(), Id(1));
+        // Collisions are allowed by contract; callers must not assume uniqueness.
+        assert_eq!(children[0].id(), Id(1));
     }
 }
