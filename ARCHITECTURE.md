@@ -117,6 +117,14 @@ enum Node {
 
 Inline style attributes are stored in the node but do not affect layout until the CSS cascade applies.
 
+### Node IDs
+
+Each `Node` has an `Id`. `Id(0)` means "unset". IDs are assigned on DOM updates via
+`html::traverse::assign_node_ids` before the DOM is used by layout, hit-testing, or input state.
+Assignment is deterministic for a given DOM snapshot: depth-first pre-order traversal with children
+visited in source order. Existing non-zero IDs are preserved. IDs are not guaranteed stable across
+different DOM builds or parse runs if the tree shape changes.
+
 ---
 
 # 🎨 CSS Engine
