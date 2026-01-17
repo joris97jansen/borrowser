@@ -2,16 +2,20 @@ use crate::types::{Id, Node, Token, TokenStream};
 use std::sync::Arc;
 
 pub fn build_dom(stream: &TokenStream) -> Node {
+    // IDs are unique and stable within this DOM instance. Cross-parse stability
+    // requires a persistent allocator and is a future milestone.
     let tokens = stream.tokens();
     let atoms = stream.atoms();
-    let mut arena = NodeArena::new();
+    let node_capacity = tokens.len().saturating_add(1);
+    let mut arena = NodeArena::with_capacity(node_capacity);
+    let root_id = arena.alloc_id();
     let root_index = arena.push(ArenaNode::Document {
-        id: Id(0),
+        id: root_id,
         children: Vec::new(),
         doctype: None,
     });
 
-    let mut open_elements: Vec<usize> = Vec::new();
+    let mut open_elements: Vec<usize> = Vec::with_capacity(tokens.len().min(1024));
 
     // Invariant: tokenized tag/attribute names are interned as ASCII-only atoms with no
     // uppercase A–Z bytes (canonical lowercase).
@@ -23,10 +27,11 @@ pub fn build_dom(stream: &TokenStream) -> Node {
             }
             Token::Comment(c) => {
                 let parent_index = open_elements.last().copied().unwrap_or(root_index);
+                let id = arena.alloc_id();
                 arena.add_child(
                     parent_index,
                     ArenaNode::Comment {
-                        id: Id(0),
+                        id,
                         text: c.clone(),
                     },
                 );
@@ -34,10 +39,11 @@ pub fn build_dom(stream: &TokenStream) -> Node {
             Token::Text(txt) => {
                 if !txt.is_empty() {
                     let parent_index = open_elements.last().copied().unwrap_or(root_index);
+                    let id = arena.alloc_id();
                     arena.add_child(
                         parent_index,
                         ArenaNode::Text {
-                            id: Id(0),
+                            id,
                             text: txt.clone(),
                         },
                     );
@@ -60,10 +66,11 @@ pub fn build_dom(stream: &TokenStream) -> Node {
                 for (k, _) in &resolved_attributes {
                     debug_assert_canonical_ascii_lower(k.as_ref(), "dom builder attribute atom");
                 }
+                let id = arena.alloc_id();
                 let new_index = arena.add_child(
                     parent_index,
                     ArenaNode::Element {
-                        id: Id(0),
+                        id,
                         name: resolved_name,
                         attributes: resolved_attributes,
                         children: Vec::new(),
@@ -137,11 +144,21 @@ impl ArenaNode {
 #[derive(Debug)]
 struct NodeArena {
     nodes: Vec<ArenaNode>,
+    next_id: u32,
 }
 
 impl NodeArena {
-    fn new() -> Self {
-        Self { nodes: Vec::new() }
+    fn with_capacity(capacity: usize) -> Self {
+        Self {
+            nodes: Vec::with_capacity(capacity),
+            next_id: 1,
+        }
+    }
+
+    fn alloc_id(&mut self) -> Id {
+        let id = Id(self.next_id);
+        self.next_id = self.next_id.checked_add(1).expect("node id overflow");
+        id
     }
 
     fn push(&mut self, node: ArenaNode) -> usize {
@@ -270,6 +287,7 @@ impl NodeArena {
 mod tests {
     use super::*;
     use crate::types::AtomTable;
+    use std::collections::HashSet;
 
     #[test]
     fn build_dom_stress_deep_nesting() {
@@ -314,5 +332,78 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn build_dom_assigns_unique_ids() {
+        let mut atoms = AtomTable::new();
+        let div = atoms.intern_ascii_lowercase("div");
+        let p = atoms.intern_ascii_lowercase("p");
+        let span = atoms.intern_ascii_lowercase("span");
+        let ul = atoms.intern_ascii_lowercase("ul");
+        let li = atoms.intern_ascii_lowercase("li");
+
+        let tokens = vec![
+            Token::StartTag {
+                name: div,
+                attributes: Vec::new(),
+                self_closing: false,
+            },
+            Token::StartTag {
+                name: p,
+                attributes: Vec::new(),
+                self_closing: false,
+            },
+            Token::Text("hello".to_string()),
+            Token::EndTag(p),
+            Token::StartTag {
+                name: span,
+                attributes: Vec::new(),
+                self_closing: false,
+            },
+            Token::Comment("note".to_string()),
+            Token::EndTag(span),
+            Token::StartTag {
+                name: ul,
+                attributes: Vec::new(),
+                self_closing: false,
+            },
+            Token::StartTag {
+                name: li,
+                attributes: Vec::new(),
+                self_closing: false,
+            },
+            Token::EndTag(li),
+            Token::StartTag {
+                name: li,
+                attributes: Vec::new(),
+                self_closing: false,
+            },
+            Token::Text("item".to_string()),
+            Token::EndTag(li),
+            Token::EndTag(ul),
+            Token::EndTag(div),
+        ];
+
+        let dom = build_dom(&TokenStream::new(tokens, atoms));
+
+        let mut ids = HashSet::new();
+        let mut count = 0usize;
+        let mut stack = vec![&dom];
+
+        while let Some(node) = stack.pop() {
+            let id = node.id();
+            assert_ne!(id, Id(0));
+            assert!(ids.insert(id), "duplicate id {:?} in dom", id);
+            count += 1;
+
+            if let Node::Document { children, .. } | Node::Element { children, .. } = node {
+                for child in children.iter() {
+                    stack.push(child);
+                }
+            }
+        }
+
+        assert_eq!(ids.len(), count);
     }
 }
