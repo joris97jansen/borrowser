@@ -4,6 +4,8 @@ use std::sync::Arc;
 pub fn build_dom(stream: &TokenStream) -> Node {
     // IDs are unique and stable within this DOM instance. Cross-parse stability
     // requires a persistent allocator and is a future milestone.
+    // Tokenizer uses text spans to avoid allocation; DOM materialization still
+    // owns text buffers (Node::Text uses String).
     let tokens = stream.tokens();
     let atoms = stream.atoms();
     let node_capacity = tokens.len().saturating_add(1);
@@ -36,15 +38,17 @@ pub fn build_dom(stream: &TokenStream) -> Node {
                     },
                 );
             }
-            Token::Text(txt) => {
-                if !txt.is_empty() {
+            Token::TextSpan { .. } | Token::TextOwned { .. } => {
+                if let Some(txt) = stream.text(token)
+                    && !txt.is_empty()
+                {
                     let parent_index = open_elements.last().copied().unwrap_or(root_index);
                     let id = arena.alloc_id();
                     arena.add_child(
                         parent_index,
                         ArenaNode::Text {
                             id,
-                            text: txt.clone(),
+                            text: txt.to_string(),
                         },
                     );
                 }
@@ -288,6 +292,7 @@ mod tests {
     use super::*;
     use crate::types::AtomTable;
     use std::collections::HashSet;
+    use std::sync::Arc;
 
     #[test]
     fn build_dom_stress_deep_nesting() {
@@ -307,7 +312,7 @@ mod tests {
             tokens.push(Token::EndTag(div));
         }
 
-        let dom = build_dom(&TokenStream::new(tokens, atoms));
+        let dom = build_dom(&TokenStream::new(tokens, atoms, Arc::from(""), Vec::new()));
 
         let mut current = &dom;
         let mut seen = 0usize;
@@ -354,7 +359,7 @@ mod tests {
                 attributes: Vec::new(),
                 self_closing: false,
             },
-            Token::Text("hello".to_string()),
+            Token::TextOwned { index: 0 },
             Token::EndTag(p),
             Token::StartTag {
                 name: span,
@@ -379,13 +384,13 @@ mod tests {
                 attributes: Vec::new(),
                 self_closing: false,
             },
-            Token::Text("item".to_string()),
+            Token::TextOwned { index: 1 },
             Token::EndTag(li),
             Token::EndTag(ul),
             Token::EndTag(div),
         ];
-
-        let dom = build_dom(&TokenStream::new(tokens, atoms));
+        let text_pool = vec!["hello".to_string(), "item".to_string()];
+        let dom = build_dom(&TokenStream::new(tokens, atoms, Arc::from(""), text_pool));
 
         let mut ids = HashSet::new();
         let mut count = 0usize;

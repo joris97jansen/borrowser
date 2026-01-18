@@ -1,5 +1,6 @@
 use std::borrow::Cow;
 use std::collections::HashMap;
+use std::ops::Range;
 use std::sync::Arc;
 
 pub type NodeId = u32;
@@ -71,18 +72,35 @@ pub enum Token {
     },
     EndTag(AtomId),
     Comment(String),
-    Text(String),
+    TextSpan {
+        range: Range<usize>,
+    },
+    TextOwned {
+        index: usize,
+    },
 }
 
 #[derive(Debug)]
 pub struct TokenStream {
     tokens: Vec<Token>,
     atoms: AtomTable,
+    source: Arc<str>,
+    text_pool: Vec<String>,
 }
 
 impl TokenStream {
-    pub fn new(tokens: Vec<Token>, atoms: AtomTable) -> Self {
-        Self { tokens, atoms }
+    pub fn new(
+        tokens: Vec<Token>,
+        atoms: AtomTable,
+        source: Arc<str>,
+        text_pool: Vec<String>,
+    ) -> Self {
+        Self {
+            tokens,
+            atoms,
+            source,
+            text_pool,
+        }
     }
 
     pub fn tokens(&self) -> &[Token] {
@@ -91,6 +109,25 @@ impl TokenStream {
 
     pub fn atoms(&self) -> &AtomTable {
         &self.atoms
+    }
+
+    pub fn source(&self) -> &str {
+        self.source.as_ref()
+    }
+
+    pub fn text(&self, token: &Token) -> Option<&str> {
+        match token {
+            Token::TextSpan { range } => {
+                debug_assert!(
+                    self.source.is_char_boundary(range.start)
+                        && self.source.is_char_boundary(range.end),
+                    "text span must be on UTF-8 boundaries"
+                );
+                Some(&self.source[range.clone()])
+            }
+            Token::TextOwned { index } => self.text_pool.get(*index).map(|s| s.as_str()),
+            _ => None,
+        }
     }
 
     pub fn iter(&self) -> std::slice::Iter<'_, Token> {
