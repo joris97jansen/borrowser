@@ -5,3 +5,7 @@ edition = "2024"
 
 [dependencies]
 memchr = "2"
+
+[features]
+count-alloc = []
+perf-tests = []
