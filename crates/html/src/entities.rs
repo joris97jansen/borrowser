@@ -225,6 +225,27 @@ mod tests {
     use std::borrow::Cow;
 
     #[test]
+    fn scan_numeric_entity_enforces_digit_boundaries() {
+        let bytes = b"12;";
+        assert_eq!(scan_numeric_entity(bytes, 0, 2, false), Some(2));
+
+        let bytes = b"x12;";
+        assert_eq!(scan_numeric_entity(bytes, 1, 2, false), Some(3));
+
+        let bytes = b"123;";
+        assert_eq!(scan_numeric_entity(bytes, 0, 2, false), None);
+
+        let input = "&#x1234567;";
+        assert_eq!(decode_entities(input).as_ref(), input);
+
+        let input = "&#x1234567;&amp;";
+        assert_eq!(decode_entities(input).as_ref(), "&#x1234567;&");
+
+        let input = "&#12345678;&amp;";
+        assert_eq!(decode_entities(input).as_ref(), "&#12345678;&");
+    }
+
+    #[test]
     fn decode_entities_preserves_utf8() {
         assert_eq!(decode_entities("120×32").as_ref(), "120×32");
     }
