@@ -15,6 +15,7 @@ const NAMED_ENTITIES: &[(&[u8], char)] = &[
 /// Internal policy boundary. Minimal is stable and used by default.
 /// Html5 is a placeholder for future spec-complete decoding and must not
 /// change Minimal behavior.
+#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum EntityDecodingPolicy {
     Minimal,
