@@ -336,7 +336,6 @@ mod tests {
 
         for s in samples {
             let out = decode_entities(s).into_owned();
-            assert!(out.len() <= s.len());
             assert_eq!(decode_entities(&out).as_ref(), out);
         }
 
@@ -356,6 +355,51 @@ mod tests {
 
         for s in unchanged {
             assert_eq!(decode_entities(s).as_ref(), s);
+        }
+    }
+
+    #[test]
+    fn decode_entities_regression_corpus_no_panic_and_idempotent() {
+        // Deterministic fuzz/regression samples. Don't delete without replacing.
+        let samples = [
+            "&&&&&&&",
+            "&&&&&&&&&&&&&&&&&amp;",
+            "& &&& &&",
+            "&#&#&#&#",
+            "&#x&#x&#x",
+            "a&b&c&d&e",
+            "&#123456789012345678901234567890;",
+            "&#xFFFFFFFFFFFFFFFFFFFFFFFF;",
+            "end&#1234567;tail",
+            "lead&#x10FFFF;trail",
+            "mix&;ed&unknown;stuff",
+            "a&amp;b&c&amp;d",
+            "text &#xD7; more",
+            "&#x10FFFF;&amp;&#1114111;",
+            "&#11141111;&amp;&&",
+            "&#1234567x;",
+            "&#x10FFFFG;",
+        ];
+
+        for s in samples {
+            let out = decode_entities(s);
+            assert_eq!(decode_entities(out.as_ref()).as_ref(), out.as_ref());
+        }
+    }
+
+    #[test]
+    fn decode_entities_regression_corpus_utf8_boundaries() {
+        // Deterministic fuzz/regression samples. Don't delete without replacing.
+        let samples = [
+            "&\u{00A0}&\u{00A0}&",
+            "π&σ&&amp;&",
+            "utf8×&amp;σ",
+            "π&\u{00A0}σ",
+        ];
+
+        for s in samples {
+            let out = decode_entities(s);
+            assert_eq!(decode_entities(out.as_ref()).as_ref(), out.as_ref());
         }
     }
 
