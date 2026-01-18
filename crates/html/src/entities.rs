@@ -74,7 +74,7 @@ pub(crate) fn decode_entities(s: &str) -> Cow<'_, str> {
 
         let mut matched_named = false;
         for (pat, ch) in NAMED_ENTITIES {
-            if starts_with_bytes(bytes, i, pat) {
+            if match_bytes(bytes, i, pat) {
                 out.push(*ch);
                 i += pat.len();
                 copy_start = i;
@@ -87,7 +87,7 @@ pub(crate) fn decode_entities(s: &str) -> Cow<'_, str> {
         }
 
         // numeric entities: &#123; or &#x1F4A9;
-        if starts_with_bytes(bytes, i, b"&#x") || starts_with_bytes(bytes, i, b"&#X") {
+        if match_bytes(bytes, i, b"&#x") || match_bytes(bytes, i, b"&#X") {
             let digits_start = i + 3;
             let Some(end) = scan_numeric_entity(bytes, digits_start, MAX_HEX_DIGITS, true) else {
                 i = emit_malformed_entity(&mut out, s, bytes, i);
@@ -108,7 +108,7 @@ pub(crate) fn decode_entities(s: &str) -> Cow<'_, str> {
                 copy_start = i;
                 continue;
             }
-        } else if starts_with_bytes(bytes, i, b"&#") {
+        } else if match_bytes(bytes, i, b"&#") {
             let digits_start = i + 2;
             let Some(end) = scan_numeric_entity(bytes, digits_start, MAX_DEC_DIGITS, false) else {
                 i = emit_malformed_entity(&mut out, s, bytes, i);
@@ -154,12 +154,12 @@ fn needs_entity_decode(s: &str) -> bool {
         };
         i += rel;
         for (pat, _) in NAMED_ENTITIES {
-            if starts_with_bytes(bytes, i, pat) {
+            if match_bytes(bytes, i, pat) {
                 return true;
             }
         }
 
-        if starts_with_bytes(bytes, i, b"&#x") || starts_with_bytes(bytes, i, b"&#X") {
+        if match_bytes(bytes, i, b"&#x") || match_bytes(bytes, i, b"&#X") {
             let digits_start = i + 3;
             if let Some(end) = scan_numeric_entity(bytes, digits_start, MAX_HEX_DIGITS, true)
                 && let Ok(value) = u32::from_str_radix(&s[digits_start..end], 16)
@@ -167,7 +167,7 @@ fn needs_entity_decode(s: &str) -> bool {
             {
                 return true;
             }
-        } else if starts_with_bytes(bytes, i, b"&#") {
+        } else if match_bytes(bytes, i, b"&#") {
             let digits_start = i + 2;
             if let Some(end) = scan_numeric_entity(bytes, digits_start, MAX_DEC_DIGITS, false)
                 && let Ok(value) = s[digits_start..end].parse::<u32>()
@@ -215,8 +215,8 @@ fn scan_numeric_entity(
     None
 }
 
-fn starts_with_bytes(bytes: &[u8], i: usize, pat: &[u8]) -> bool {
-    bytes.get(i..i + pat.len()).is_some_and(|s| s == pat)
+fn match_bytes(bytes: &[u8], i: usize, pat: &[u8]) -> bool {
+    bytes.get(i..i + pat.len()) == Some(pat)
 }
 
 #[cfg(test)]
