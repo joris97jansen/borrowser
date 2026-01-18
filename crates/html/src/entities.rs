@@ -12,6 +12,16 @@ const NAMED_ENTITIES: &[(&[u8], char)] = &[
     (b"&nbsp;", '\u{00A0}'),
 ];
 
+/// Internal policy boundary. Minimal is stable and used by default.
+/// Html5 is a placeholder for future spec-complete decoding and must not
+/// change Minimal behavior.
+#[allow(dead_code)]
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum EntityDecodingPolicy {
+    Minimal,
+    Html5,
+}
+
 /// Decode a minimal, explicitly limited subset of HTML entities.
 ///
 /// Contract:
@@ -25,11 +35,26 @@ const NAMED_ENTITIES: &[(&[u8], char)] = &[
 ///
 /// This is intentionally not HTML5-spec-complete. Keep the behavior narrow and stable.
 pub(crate) fn decode_entities(s: &str) -> Cow<'_, str> {
+    decode_entities_with_policy(s, EntityDecodingPolicy::Minimal)
+}
+
+fn decode_entities_with_policy(s: &str, policy: EntityDecodingPolicy) -> Cow<'_, str> {
+    match policy {
+        EntityDecodingPolicy::Minimal => decode_entities_minimal(s),
+        EntityDecodingPolicy::Html5 => {
+            // TODO: Implement HTML5-spec-complete decoding without altering minimal behavior.
+            debug_assert!(false, "Html5 entity decoding not implemented yet");
+            decode_entities_minimal(s)
+        }
+    }
+}
+
+fn decode_entities_minimal(s: &str) -> Cow<'_, str> {
     let bytes = s.as_bytes();
     if !bytes.contains(&b'&') {
         return Cow::Borrowed(s);
     }
-    if !needs_entity_decode(s) {
+    if !needs_entity_decode_minimal(s) {
         return Cow::Borrowed(s);
     }
 
@@ -144,7 +169,7 @@ pub(crate) fn decode_entities(s: &str) -> Cow<'_, str> {
     Cow::Owned(out)
 }
 
-fn needs_entity_decode(s: &str) -> bool {
+fn needs_entity_decode_minimal(s: &str) -> bool {
     let bytes = s.as_bytes();
     let mut i = 0;
     while i < bytes.len() {
