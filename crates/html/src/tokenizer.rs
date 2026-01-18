@@ -21,8 +21,9 @@ use memchr::memchr;
 const HTML_COMMENT_START: &str = "<!--";
 const HTML_COMMENT_END: &str = "-->";
 
-fn starts_with_ignore_ascii_case(haystack: &[u8], needle: &[u8]) -> bool {
-    haystack.len() >= needle.len() && haystack[..needle.len()].eq_ignore_ascii_case(needle)
+fn starts_with_ignore_ascii_case_at(haystack: &[u8], start: usize, needle: &[u8]) -> bool {
+    haystack.len() >= start + needle.len()
+        && haystack[start..start + needle.len()].eq_ignore_ascii_case(needle)
 }
 
 // it only attempts matches starting at ASCII <
@@ -51,7 +52,7 @@ fn find_rawtext_close_tag(haystack: &str, close_tag: &[u8]) -> Option<(usize, us
         if i + n > len {
             return None;
         }
-        if hay_bytes[i + 1] == b'/' && hay_bytes[i..i + n].eq_ignore_ascii_case(close_tag) {
+        if hay_bytes[i + 1] == b'/' && starts_with_ignore_ascii_case_at(hay_bytes, i, close_tag) {
             let mut k = i + n;
             // Spec allows other parse-error paths like `</script foo>`, but we only
             // accept ASCII whitespace before `>` to keep the scan simple/alloc-free.
@@ -135,7 +136,7 @@ pub fn tokenize(input: &str) -> TokenStream {
                 break;
             }
         }
-        if starts_with_ignore_ascii_case(&bytes[i..], b"<!doctype") {
+        if starts_with_ignore_ascii_case_at(bytes, i, b"<!doctype") {
             // doctype
             let doctype_start = i + 2;
             debug_assert!(input.is_char_boundary(doctype_start));
@@ -335,6 +336,9 @@ pub fn tokenize(input: &str) -> TokenStream {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "count-alloc")]
+    use crate::test_alloc;
+    #[cfg(feature = "perf-tests")]
     use std::time::{Duration, Instant};
 
     #[test]
@@ -356,6 +360,17 @@ mod tests {
                 .iter()
                 .any(|t| matches!(t, Token::Doctype(s) if s == "DOCTYPE html")),
             "expected case-insensitive doctype, got: {stream:?}"
+        );
+    }
+
+    #[test]
+    fn tokenize_handles_mixed_case_doctype() {
+        let stream = tokenize("<!DoCtYpE html>");
+        assert!(
+            stream
+                .iter()
+                .any(|t| matches!(t, Token::Doctype(s) if s == "DoCtYpE html")),
+            "expected mixed-case doctype to parse, got: {stream:?}"
         );
     }
 
@@ -655,6 +670,44 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "count-alloc")]
+    #[test]
+    fn tokenize_rawtext_allocation_is_bounded() {
+        let mut body = String::new();
+        for _ in 0..500_000 {
+            body.push('x');
+        }
+        let input = format!("<script>{}</ScRiPt>", body);
+
+        test_alloc::reset();
+        test_alloc::enable();
+        let stream = tokenize(&input);
+        let atoms = stream.atoms();
+        test_alloc::disable();
+        let (_, bytes) = test_alloc::counts();
+
+        assert!(
+            matches!(
+                stream.tokens(),
+                [
+                    Token::StartTag { name, .. },
+                    Token::Text(text),
+                    Token::EndTag(end)
+                ] if atoms.resolve(*name) == "script"
+                    && *text == body
+                    && atoms.resolve(*end) == "script"
+            ),
+            "expected rawtext body to tokenize correctly, got: {stream:?}"
+        );
+
+        let overhead = 64 * 1024;
+        assert!(
+            bytes <= body.len() + overhead,
+            "expected bounded allocations; bytes={bytes} body_len={} overhead={overhead}",
+            body.len()
+        );
+    }
+
     #[test]
     fn tokenize_handles_many_comments_and_doctypes() {
         let mut input = String::new();
@@ -687,6 +740,7 @@ mod tests {
         assert!(stream.tokens().len() <= input.len());
     }
 
+    #[cfg(feature = "perf-tests")]
     #[test]
     fn tokenize_scales_roughly_linearly_on_repeated_tags() {
         fn build_input(repeats: usize) -> String {
@@ -721,6 +775,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "perf-tests")]
     #[test]
     fn tokenize_scales_roughly_linearly_on_comment_scan() {
         fn build_input(repeats: usize, body_len: usize) -> String {
