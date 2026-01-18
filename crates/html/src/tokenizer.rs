@@ -17,6 +17,8 @@
 use crate::entities::decode_entities;
 use crate::types::{AtomId, AtomTable, Token, TokenStream};
 use memchr::memchr;
+use std::borrow::Cow;
+use std::sync::Arc;
 
 const HTML_COMMENT_START: &str = "<!--";
 const HTML_COMMENT_END: &str = "-->";
@@ -92,6 +94,9 @@ fn is_void_element(name: &str) -> bool {
 pub fn tokenize(input: &str) -> TokenStream {
     let mut out = Vec::new();
     let mut atoms = AtomTable::new();
+    let mut text_pool: Vec<String> = Vec::new();
+    let source: Arc<str> = Arc::from(input);
+    let input = source.as_ref();
     let mut i = 0;
     let bytes = input.as_bytes();
     // Invariant: we scan by byte, but any slice endpoints must be UTF-8 char boundaries.
@@ -109,7 +114,14 @@ pub fn tokenize(input: &str) -> TokenStream {
             let text = &input[start..i];
             let decoded = decode_entities(text);
             if !decoded.is_empty() {
-                out.push(Token::Text(decoded));
+                match decoded {
+                    Cow::Borrowed(_) => out.push(Token::TextSpan { range: start..i }),
+                    Cow::Owned(decoded) => {
+                        let index = text_pool.len();
+                        text_pool.push(decoded);
+                        out.push(Token::TextOwned { index });
+                    }
+                }
             }
             continue;
         }
@@ -254,7 +266,7 @@ pub fn tokenize(input: &str) -> TokenStream {
                         if k < len {
                             k += 1;
                         }
-                        value = Some(decode_entities(raw));
+                        value = Some(decode_entities(raw).into_owned());
                     } else {
                         let vstart = k;
                         while k < len && !bytes[k].is_ascii_whitespace() && bytes[k] != b'>' {
@@ -266,7 +278,7 @@ pub fn tokenize(input: &str) -> TokenStream {
                         if k > vstart {
                             debug_assert!(input.is_char_boundary(vstart));
                             debug_assert!(input.is_char_boundary(k));
-                            value = Some(input[vstart..k].to_string());
+                            value = Some(decode_entities(&input[vstart..k]).into_owned());
                         } else {
                             value = Some(String::new());
                         }
@@ -307,7 +319,9 @@ pub fn tokenize(input: &str) -> TokenStream {
                     debug_assert!(input.is_char_boundary(slice_end));
                     let raw = &input[j..slice_end];
                     if !raw.is_empty() {
-                        out.push(Token::Text(raw.to_string()));
+                        out.push(Token::TextSpan {
+                            range: j..slice_end,
+                        });
                     }
                     out.push(Token::EndTag(name));
                     i = j + rel_end;
@@ -315,9 +329,10 @@ pub fn tokenize(input: &str) -> TokenStream {
                 } else {
                     // If the rawtext close tag is missing, emit an implicit end tag and
                     // treat the remainder as rawtext content.
-                    let raw = &input[j..];
-                    if !raw.is_empty() {
-                        out.push(Token::Text(raw.to_string()));
+                    if j < input.len() {
+                        out.push(Token::TextSpan {
+                            range: j..input.len(),
+                        });
                     }
                     out.push(Token::EndTag(name));
                     break;
@@ -329,7 +344,7 @@ pub fn tokenize(input: &str) -> TokenStream {
         }
         i += 1;
     }
-    TokenStream::new(out, atoms)
+    TokenStream::new(out, atoms, source, text_pool)
 }
 
 #[cfg(test)]
@@ -340,13 +355,15 @@ mod tests {
     #[cfg(feature = "perf-tests")]
     use std::time::{Duration, Instant};
 
+    fn text_eq(stream: &TokenStream, token: &Token, expected: &str) -> bool {
+        stream.text(token) == Some(expected)
+    }
+
     #[test]
     fn tokenize_preserves_utf8_text_nodes() {
         let stream = tokenize("<p>120×32</p>");
         assert!(
-            stream
-                .iter()
-                .any(|t| matches!(t, Token::Text(s) if s == "120×32")),
+            stream.iter().any(|t| text_eq(&stream, t, "120×32")),
             "expected UTF-8 text token, got: {stream:?}"
         );
     }
@@ -380,13 +397,10 @@ mod tests {
         assert!(
             matches!(
                 stream.tokens(),
-                [
-                    Token::StartTag { name, .. },
-                    Token::Text(body),
-                    Token::EndTag(end)
-                ] if atoms.resolve(*name) == "script"
-                    && body == "let x = 1;"
-                    && atoms.resolve(*end) == "script"
+                [Token::StartTag { name, .. }, body, Token::EndTag(end)]
+                    if atoms.resolve(*name) == "script"
+                        && text_eq(&stream, body, "let x = 1;")
+                        && atoms.resolve(*end) == "script"
             ),
             "expected raw script text and matching end tag, got: {stream:?}"
         );
@@ -396,21 +410,15 @@ mod tests {
     fn tokenize_handles_non_ascii_text_around_tags() {
         let stream = tokenize("¡Hola <b>café</b> 😊");
         assert!(
-            stream
-                .iter()
-                .any(|t| matches!(t, Token::Text(s) if s == "¡Hola ")),
+            stream.iter().any(|t| text_eq(&stream, t, "¡Hola ")),
             "expected leading UTF-8 text token, got: {stream:?}"
         );
         assert!(
-            stream
-                .iter()
-                .any(|t| matches!(t, Token::Text(s) if s == "café")),
+            stream.iter().any(|t| text_eq(&stream, t, "café")),
             "expected UTF-8 text inside tag, got: {stream:?}"
         );
         assert!(
-            stream
-                .iter()
-                .any(|t| matches!(t, Token::Text(s) if s == " 😊")),
+            stream.iter().any(|t| text_eq(&stream, t, " 😊")),
             "expected trailing UTF-8 text token, got: {stream:?}"
         );
     }
@@ -427,13 +435,10 @@ mod tests {
         assert!(
             matches!(
                 stream.tokens(),
-                [
-                    Token::StartTag { name, .. },
-                    Token::Text(text),
-                    Token::EndTag(end)
-                ] if atoms.resolve(*name) == "script"
-                    && *text == body
-                    && atoms.resolve(*end) == "script"
+                [Token::StartTag { name, .. }, text, Token::EndTag(end)]
+                    if atoms.resolve(*name) == "script"
+                        && text_eq(&stream, text, &body)
+                        && atoms.resolve(*end) == "script"
             ),
             "expected large rawtext body to tokenize correctly, got: {stream:?}"
         );
@@ -451,13 +456,10 @@ mod tests {
         assert!(
             matches!(
                 stream.tokens(),
-                [
-                    Token::StartTag { name, .. },
-                    Token::Text(text),
-                    Token::EndTag(end)
-                ] if atoms.resolve(*name) == "script"
-                    && *text == body
-                    && atoms.resolve(*end) == "script"
+                [Token::StartTag { name, .. }, text, Token::EndTag(end)]
+                    if atoms.resolve(*name) == "script"
+                        && text_eq(&stream, text, &body)
+                        && atoms.resolve(*end) == "script"
             ),
             "expected dense rawtext body to tokenize correctly, got: {stream:?}"
         );
@@ -475,13 +477,10 @@ mod tests {
         assert!(
             matches!(
                 stream.tokens(),
-                [
-                    Token::StartTag { name, .. },
-                    Token::Text(text),
-                    Token::EndTag(end)
-                ] if atoms.resolve(*name) == "style"
-                    && *text == body
-                    && atoms.resolve(*end) == "style"
+                [Token::StartTag { name, .. }, text, Token::EndTag(end)]
+                    if atoms.resolve(*name) == "style"
+                        && text_eq(&stream, text, &body)
+                        && atoms.resolve(*end) == "style"
             ),
             "expected dense style rawtext body to tokenize correctly, got: {stream:?}"
         );
@@ -494,13 +493,10 @@ mod tests {
         assert!(
             matches!(
                 stream.tokens(),
-                [
-                    Token::StartTag { name, .. },
-                    Token::Text(body),
-                    Token::EndTag(end)
-                ] if atoms.resolve(*name) == "script"
-                    && body == "let x=1;"
-                    && atoms.resolve(*end) == "script"
+                [Token::StartTag { name, .. }, body, Token::EndTag(end)]
+                    if atoms.resolve(*name) == "script"
+                        && text_eq(&stream, body, "let x=1;")
+                        && atoms.resolve(*end) == "script"
             ),
             "expected script end tag with whitespace before >, got: {stream:?}"
         );
@@ -513,13 +509,10 @@ mod tests {
         assert!(
             matches!(
                 stream.tokens(),
-                [
-                    Token::StartTag { name, .. },
-                    Token::Text(body),
-                    Token::EndTag(end)
-                ] if atoms.resolve(*name) == "style"
-                    && body == "body{}"
-                    && atoms.resolve(*end) == "style"
+                [Token::StartTag { name, .. }, body, Token::EndTag(end)]
+                    if atoms.resolve(*name) == "style"
+                        && text_eq(&stream, body, "body{}")
+                        && atoms.resolve(*end) == "style"
             ),
             "expected style end tag with whitespace before >, got: {stream:?}"
         );
@@ -532,13 +525,10 @@ mod tests {
         assert!(
             matches!(
                 stream.tokens(),
-                [
-                    Token::StartTag { name, .. },
-                    Token::Text(body),
-                    Token::EndTag(end),
-                ] if atoms.resolve(*name) == "script"
-                    && body == "ok</scriptx >no"
-                    && atoms.resolve(*end) == "script"
+                [Token::StartTag { name, .. }, body, Token::EndTag(end)]
+                    if atoms.resolve(*name) == "script"
+                        && text_eq(&stream, body, "ok</scriptx >no")
+                        && atoms.resolve(*end) == "script"
             ),
             "expected near-match not to close rawtext, got: {stream:?}"
         );
@@ -562,23 +552,31 @@ mod tests {
     }
 
     #[test]
+    fn tokenize_decodes_entities_in_unquoted_attributes() {
+        let stream = tokenize("<p data=Tom&amp;Jerry title=&#x3C;ok&#x3E;>ok</p>");
+        let atoms = stream.atoms();
+        assert!(
+            stream.iter().any(|t| matches!(
+                t,
+                Token::StartTag { name, attributes, .. }
+                    if atoms.resolve(*name) == "p"
+                        && attributes.iter().any(|(k, v)| {
+                            atoms.resolve(*k) == "data" && v.as_deref() == Some("Tom&Jerry")
+                        })
+                        && attributes.iter().any(|(k, v)| {
+                            atoms.resolve(*k) == "title" && v.as_deref() == Some("<ok>")
+                        })
+            )),
+            "expected entity-decoded unquoted attributes, got: {stream:?}"
+        );
+    }
+
+    #[test]
     fn tokenize_handles_utf8_adjacent_to_angle_brackets() {
         let stream = tokenize("é<b>ï</b>ö");
-        assert!(
-            stream
-                .iter()
-                .any(|t| matches!(t, Token::Text(s) if s == "é"))
-        );
-        assert!(
-            stream
-                .iter()
-                .any(|t| matches!(t, Token::Text(s) if s == "ï"))
-        );
-        assert!(
-            stream
-                .iter()
-                .any(|t| matches!(t, Token::Text(s) if s == "ö"))
-        );
+        assert!(stream.iter().any(|t| text_eq(&stream, t, "é")));
+        assert!(stream.iter().any(|t| text_eq(&stream, t, "ï")));
+        assert!(stream.iter().any(|t| text_eq(&stream, t, "ö")));
     }
 
     #[test]
@@ -657,13 +655,10 @@ mod tests {
         assert!(
             matches!(
                 stream.tokens(),
-                [
-                    Token::StartTag { name, .. },
-                    Token::Text(text),
-                    Token::EndTag(end)
-                ] if atoms.resolve(*name) == "script"
-                    && *text == body
-                    && atoms.resolve(*end) == "script"
+                [Token::StartTag { name, .. }, text, Token::EndTag(end)]
+                    if atoms.resolve(*name) == "script"
+                        && text_eq(&stream, text, &body)
+                        && atoms.resolve(*end) == "script"
             ),
             "expected rawtext body without close tag to tokenize correctly, got: {stream:?}"
         );
@@ -686,22 +681,54 @@ mod tests {
         assert!(
             matches!(
                 stream.tokens(),
-                [
-                    Token::StartTag { name, .. },
-                    Token::Text(text),
-                    Token::EndTag(end)
-                ] if atoms.resolve(*name) == "script"
-                    && *text == body
-                    && atoms.resolve(*end) == "script"
+                [Token::StartTag { name, .. }, text, Token::EndTag(end)]
+                    if atoms.resolve(*name) == "script"
+                        && text_eq(&stream, text, &body)
+                        && atoms.resolve(*end) == "script"
             ),
             "expected rawtext body to tokenize correctly, got: {stream:?}"
         );
 
         let overhead = 64 * 1024;
+        let expected_source = input.len();
+        let extra = bytes.saturating_sub(expected_source);
         assert!(
-            bytes <= body.len() + overhead,
-            "expected bounded allocations; bytes={bytes} body_len={} overhead={overhead}",
-            body.len()
+            extra <= overhead,
+            "expected bounded extra allocations; bytes={bytes} input_len={expected_source} extra={extra} overhead={overhead}"
+        );
+    }
+
+    #[cfg(feature = "count-alloc")]
+    #[test]
+    fn tokenize_plain_text_avoids_text_allocation() {
+        let mut body = String::new();
+        for _ in 0..500_000 {
+            body.push('x');
+        }
+        let input = format!("<p>{}</p>", body);
+
+        let _guard = test_alloc::AllocGuard::new();
+        let stream = tokenize(&input);
+        let atoms = stream.atoms();
+        let (_, bytes) = test_alloc::counts();
+
+        assert!(
+            matches!(
+                stream.tokens(),
+                [Token::StartTag { name, .. }, text, Token::EndTag(end)]
+                    if atoms.resolve(*name) == "p"
+                        && text_eq(&stream, text, &body)
+                        && atoms.resolve(*end) == "p"
+            ),
+            "expected plain text to tokenize correctly, got: {stream:?}"
+        );
+
+        let overhead = 128 * 1024;
+        let expected_source = input.len();
+        let extra = bytes.saturating_sub(expected_source);
+        assert!(
+            extra <= overhead,
+            "expected bounded extra allocations; bytes={bytes} input_len={expected_source} extra={extra} overhead={overhead}"
         );
     }
 

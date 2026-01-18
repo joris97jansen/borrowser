@@ -1,3 +1,17 @@
+use memchr::memchr;
+use std::borrow::Cow;
+
+const MAX_HEX_DIGITS: usize = 6; // 0x10FFFF
+const MAX_DEC_DIGITS: usize = 7; // 1114111
+const NAMED_ENTITIES: &[(&[u8], char)] = &[
+    (b"&amp;", '&'),
+    (b"&lt;", '<'),
+    (b"&gt;", '>'),
+    (b"&quot;", '"'),
+    (b"&apos;", '\''),
+    (b"&nbsp;", '\u{00A0}'),
+];
+
 /// Decode a minimal, explicitly limited subset of HTML entities.
 ///
 /// Contract:
@@ -7,50 +21,22 @@
 /// - Only valid Unicode scalar values decode; invalid scalars pass through unchanged.
 /// - Missing semicolons, unknown names, malformed numerics, or overlong digit runs are left
 ///   unchanged.
+/// - Returns a borrowed `Cow` when no `&` is present in the input.
 ///
 /// This is intentionally not HTML5-spec-complete. Keep the behavior narrow and stable.
-pub(crate) fn decode_entities(s: &str) -> String {
-    // Minimal, fast path for common entities
+pub(crate) fn decode_entities(s: &str) -> Cow<'_, str> {
     let bytes = s.as_bytes();
+    if !bytes.contains(&b'&') {
+        return Cow::Borrowed(s);
+    }
+    if !needs_entity_decode(s) {
+        return Cow::Borrowed(s);
+    }
+
+    // Minimal, fast path for common entities
     let mut out = String::with_capacity(s.len());
     let mut i = 0;
     let mut copy_start = 0;
-
-    const MAX_HEX_DIGITS: usize = 6; // 0x10FFFF
-    const MAX_DEC_DIGITS: usize = 7; // 1114111
-
-    // Bounded scan to avoid quadratic behavior on adversarial input.
-    fn scan_numeric_entity(
-        bytes: &[u8],
-        start: usize,
-        max_digits: usize,
-        is_hex: bool,
-    ) -> Option<usize> {
-        let mut j = start;
-        let mut digits = 0usize;
-
-        while j < bytes.len() {
-            let b = bytes[j];
-            if b == b';' {
-                return (digits > 0).then_some(j);
-            }
-            if digits == max_digits {
-                return None;
-            }
-            let ok = if is_hex {
-                b.is_ascii_hexdigit()
-            } else {
-                b.is_ascii_digit()
-            };
-            if !ok {
-                return None;
-            }
-            digits += 1;
-            j += 1;
-        }
-
-        None
-    }
 
     fn emit_malformed_entity(out: &mut String, s: &str, bytes: &[u8], start: usize) -> usize {
         let mut j = start + 1;
@@ -75,10 +61,6 @@ pub(crate) fn decode_entities(s: &str) -> String {
         bytes.len()
     }
 
-    fn starts_with_bytes(bytes: &[u8], i: usize, pat: &[u8]) -> bool {
-        bytes.get(i..i + pat.len()).is_some_and(|s| s == pat)
-    }
-
     while i < bytes.len() {
         if bytes[i] != b'&' {
             i += 1;
@@ -90,40 +72,17 @@ pub(crate) fn decode_entities(s: &str) -> String {
             out.push_str(&s[copy_start..i]);
         }
 
-        if starts_with_bytes(bytes, i, b"&amp;") {
-            out.push('&');
-            i += 5;
-            copy_start = i;
-            continue;
+        let mut matched_named = false;
+        for (pat, ch) in NAMED_ENTITIES {
+            if starts_with_bytes(bytes, i, pat) {
+                out.push(*ch);
+                i += pat.len();
+                copy_start = i;
+                matched_named = true;
+                break;
+            }
         }
-        if starts_with_bytes(bytes, i, b"&lt;") {
-            out.push('<');
-            i += 4;
-            copy_start = i;
-            continue;
-        }
-        if starts_with_bytes(bytes, i, b"&gt;") {
-            out.push('>');
-            i += 4;
-            copy_start = i;
-            continue;
-        }
-        if starts_with_bytes(bytes, i, b"&quot;") {
-            out.push('"');
-            i += 6;
-            copy_start = i;
-            continue;
-        }
-        if starts_with_bytes(bytes, i, b"&apos;") {
-            out.push('\'');
-            i += 6;
-            copy_start = i;
-            continue;
-        }
-        if starts_with_bytes(bytes, i, b"&nbsp;") {
-            out.push('\u{00A0}');
-            i += 6;
-            copy_start = i;
+        if matched_named {
             continue;
         }
 
@@ -182,83 +141,162 @@ pub(crate) fn decode_entities(s: &str) -> String {
         out.push_str(&s[copy_start..]);
     }
 
-    out
+    Cow::Owned(out)
+}
+
+fn needs_entity_decode(s: &str) -> bool {
+    let bytes = s.as_bytes();
+    let mut i = 0;
+    while i < bytes.len() {
+        let rel = memchr(b'&', &bytes[i..]);
+        let Some(rel) = rel else {
+            return false;
+        };
+        i += rel;
+        for (pat, _) in NAMED_ENTITIES {
+            if starts_with_bytes(bytes, i, pat) {
+                return true;
+            }
+        }
+
+        if starts_with_bytes(bytes, i, b"&#x") || starts_with_bytes(bytes, i, b"&#X") {
+            let digits_start = i + 3;
+            if let Some(end) = scan_numeric_entity(bytes, digits_start, MAX_HEX_DIGITS, true)
+                && let Ok(value) = u32::from_str_radix(&s[digits_start..end], 16)
+                && char::from_u32(value).is_some()
+            {
+                return true;
+            }
+        } else if starts_with_bytes(bytes, i, b"&#") {
+            let digits_start = i + 2;
+            if let Some(end) = scan_numeric_entity(bytes, digits_start, MAX_DEC_DIGITS, false)
+                && let Ok(value) = s[digits_start..end].parse::<u32>()
+                && char::from_u32(value).is_some()
+            {
+                return true;
+            }
+        }
+
+        i += 1;
+    }
+    false
+}
+
+// Bounded scan to avoid quadratic behavior on adversarial input.
+fn scan_numeric_entity(
+    bytes: &[u8],
+    start: usize,
+    max_digits: usize,
+    is_hex: bool,
+) -> Option<usize> {
+    let mut j = start;
+    let mut digits = 0usize;
+
+    while j < bytes.len() {
+        let b = bytes[j];
+        if b == b';' {
+            return (digits > 0).then_some(j);
+        }
+        if digits == max_digits {
+            return None;
+        }
+        let ok = if is_hex {
+            b.is_ascii_hexdigit()
+        } else {
+            b.is_ascii_digit()
+        };
+        if !ok {
+            return None;
+        }
+        digits += 1;
+        j += 1;
+    }
+
+    None
+}
+
+fn starts_with_bytes(bytes: &[u8], i: usize, pat: &[u8]) -> bool {
+    bytes.get(i..i + pat.len()).is_some_and(|s| s == pat)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::borrow::Cow;
 
     #[test]
     fn decode_entities_preserves_utf8() {
-        assert_eq!(decode_entities("120×32"), "120×32");
+        assert_eq!(decode_entities("120×32").as_ref(), "120×32");
     }
 
     #[test]
     fn decode_entities_decodes_common_entities() {
-        assert_eq!(decode_entities("a &amp; b"), "a & b");
-        assert_eq!(decode_entities("&lt;tag&gt;"), "<tag>");
-        assert_eq!(decode_entities("&quot;hi&quot;"), "\"hi\"");
-        assert_eq!(decode_entities("&apos;x&apos;"), "'x'");
-        assert_eq!(decode_entities("a&nbsp;b"), "a\u{00A0}b");
+        assert_eq!(decode_entities("a &amp; b").as_ref(), "a & b");
+        assert_eq!(decode_entities("&lt;tag&gt;").as_ref(), "<tag>");
+        assert_eq!(decode_entities("&quot;hi&quot;").as_ref(), "\"hi\"");
+        assert_eq!(decode_entities("&apos;x&apos;").as_ref(), "'x'");
+        assert_eq!(decode_entities("a&nbsp;b").as_ref(), "a\u{00A0}b");
     }
 
     #[test]
     fn decode_entities_decodes_numeric_entities() {
-        assert_eq!(decode_entities("&#215;"), "×");
-        assert_eq!(decode_entities("&#xD7;"), "×");
+        assert_eq!(decode_entities("&#215;").as_ref(), "×");
+        assert_eq!(decode_entities("&#xD7;").as_ref(), "×");
     }
 
     #[test]
     fn decode_entities_utf8_then_entity() {
-        assert_eq!(decode_entities("π &amp; σ"), "π & σ");
+        assert_eq!(decode_entities("π &amp; σ").as_ref(), "π & σ");
     }
 
     #[test]
     fn decode_entities_passes_through_unknown_and_missing_semicolon() {
         assert_eq!(
-            decode_entities("before &notanentity; after"),
+            decode_entities("before &notanentity; after").as_ref(),
             "before &notanentity; after"
         );
-        assert_eq!(decode_entities("&amp"), "&amp");
-        assert_eq!(decode_entities("loose &amp space"), "loose &amp space");
-        assert_eq!(decode_entities("&#xD7 "), "&#xD7 ");
-        assert_eq!(decode_entities("&#215 "), "&#215 ");
+        assert_eq!(decode_entities("&amp").as_ref(), "&amp");
+        assert_eq!(
+            decode_entities("loose &amp space").as_ref(),
+            "loose &amp space"
+        );
+        assert_eq!(decode_entities("&#xD7 ").as_ref(), "&#xD7 ");
+        assert_eq!(decode_entities("&#215 ").as_ref(), "&#215 ");
     }
 
     #[test]
     fn decode_entities_passes_through_malformed_numeric() {
-        assert_eq!(decode_entities("&#xZZ;"), "&#xZZ;");
-        assert_eq!(decode_entities("&#99999999;"), "&#99999999;");
-        assert_eq!(decode_entities("&#xD800;"), "&#xD800;");
-        assert_eq!(decode_entities("&#x110000;"), "&#x110000;");
-        assert_eq!(decode_entities("&#-1;"), "&#-1;");
-        assert_eq!(decode_entities("&#x-1;"), "&#x-1;");
-        assert_eq!(decode_entities("&#12345678"), "&#12345678");
-        assert_eq!(decode_entities("&#123"), "&#123");
-        assert_eq!(decode_entities("&#;"), "&#;");
-        assert_eq!(decode_entities("&#x;"), "&#x;");
+        assert_eq!(decode_entities("&#xZZ;").as_ref(), "&#xZZ;");
+        assert_eq!(decode_entities("&#99999999;").as_ref(), "&#99999999;");
+        assert_eq!(decode_entities("&#xD800;").as_ref(), "&#xD800;");
+        assert_eq!(decode_entities("&#x110000;").as_ref(), "&#x110000;");
+        assert_eq!(decode_entities("&#-1;").as_ref(), "&#-1;");
+        assert_eq!(decode_entities("&#x-1;").as_ref(), "&#x-1;");
+        assert_eq!(decode_entities("&#12345678").as_ref(), "&#12345678");
+        assert_eq!(decode_entities("&#123").as_ref(), "&#123");
+        assert_eq!(decode_entities("&#;").as_ref(), "&#;");
+        assert_eq!(decode_entities("&#x;").as_ref(), "&#x;");
     }
 
     #[test]
     fn decode_entities_handles_long_numeric_like_patterns() {
         let noisy = "&#123456789;".repeat(100);
-        assert_eq!(decode_entities(&noisy), noisy);
+        assert_eq!(decode_entities(&noisy).as_ref(), noisy);
     }
 
     #[test]
     fn decode_entities_respects_numeric_digit_limits() {
-        assert_eq!(decode_entities("&#1114111;"), "\u{10FFFF}");
-        assert_eq!(decode_entities("&#11141111;"), "&#11141111;");
-        assert_eq!(decode_entities("&#x10FFFF;"), "\u{10FFFF}");
-        assert_eq!(decode_entities("&#x110000;"), "&#x110000;");
+        assert_eq!(decode_entities("&#1114111;").as_ref(), "\u{10FFFF}");
+        assert_eq!(decode_entities("&#11141111;").as_ref(), "&#11141111;");
+        assert_eq!(decode_entities("&#x10FFFF;").as_ref(), "\u{10FFFF}");
+        assert_eq!(decode_entities("&#x110000;").as_ref(), "&#x110000;");
     }
 
     #[test]
     fn decode_entities_rejects_invalid_scalars() {
-        assert_eq!(decode_entities("&#xD800;"), "&#xD800;");
-        assert_eq!(decode_entities("&#xDFFF;"), "&#xDFFF;");
-        assert_eq!(decode_entities("&#55296;"), "&#55296;");
+        assert_eq!(decode_entities("&#xD800;").as_ref(), "&#xD800;");
+        assert_eq!(decode_entities("&#xDFFF;").as_ref(), "&#xDFFF;");
+        assert_eq!(decode_entities("&#55296;").as_ref(), "&#55296;");
     }
 
     #[test]
@@ -276,9 +314,9 @@ mod tests {
         ];
 
         for s in samples {
-            let out = decode_entities(s);
+            let out = decode_entities(s).into_owned();
             assert!(out.len() <= s.len());
-            assert_eq!(decode_entities(&out), out);
+            assert_eq!(decode_entities(&out).as_ref(), out);
         }
 
         let unchanged = [
@@ -296,12 +334,43 @@ mod tests {
         ];
 
         for s in unchanged {
-            assert_eq!(decode_entities(s), s);
+            assert_eq!(decode_entities(s).as_ref(), s);
         }
     }
 
     #[test]
     fn malformed_entity_allows_following_entity() {
-        assert_eq!(decode_entities("&#xZZ;&amp;"), "&#xZZ;&");
+        assert_eq!(decode_entities("&#xZZ;&amp;").as_ref(), "&#xZZ;&");
+    }
+
+    #[test]
+    fn decode_entities_returns_borrowed_when_no_entities() {
+        let out = decode_entities("plain text");
+        assert!(matches!(out, Cow::Borrowed(_)));
+        assert_eq!(out.as_ref(), "plain text");
+    }
+
+    #[test]
+    fn decode_entities_borrows_when_ampersand_has_no_decodable_entity() {
+        let samples = ["hello & world", "a &amp b", "&#xZZ;", "&unknown;"];
+        for s in samples {
+            let out = decode_entities(s);
+            assert!(matches!(out, Cow::Borrowed(_)), "expected borrowed for {s}");
+            assert_eq!(out.as_ref(), s);
+        }
+    }
+
+    #[test]
+    fn decode_entities_owns_when_decoding_occurs() {
+        let samples = [
+            ("Tom&amp;Jerry", "Tom&Jerry"),
+            ("&#215;", "×"),
+            ("&#xD7;", "×"),
+        ];
+        for (input, expected) in samples {
+            let out = decode_entities(input);
+            assert!(matches!(out, Cow::Owned(_)), "expected owned for {input}");
+            assert_eq!(out.as_ref(), expected);
+        }
     }
 }
