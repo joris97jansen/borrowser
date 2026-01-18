@@ -194,7 +194,6 @@ pub fn tokenize(input: &str) -> TokenStream {
             let name = atoms.intern_ascii_lowercase(&input[start..j]);
             let mut k = j;
             let mut attributes: Vec<(AtomId, Option<String>)> = Vec::new();
-            let bytes = input.as_bytes();
             let len = bytes.len();
             let mut self_closing = false;
 
@@ -679,11 +678,9 @@ mod tests {
         }
         let input = format!("<script>{}</ScRiPt>", body);
 
-        test_alloc::reset();
-        test_alloc::enable();
+        let _guard = test_alloc::AllocGuard::new();
         let stream = tokenize(&input);
         let atoms = stream.atoms();
-        test_alloc::disable();
         let (_, bytes) = test_alloc::counts();
 
         assert!(

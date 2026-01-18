@@ -25,7 +25,8 @@ fn contains_ignore_ascii_case(haystack: &str, needle: &[u8]) -> bool {
     if n == 0 {
         return true;
     }
-    if hay.len() < n {
+    let hay_len = hay.len();
+    if hay_len < n {
         return false;
     }
     let first = needle[0];
@@ -34,8 +35,14 @@ fn contains_ignore_ascii_case(haystack: &str, needle: &[u8]) -> bool {
     } else {
         (first, first)
     };
+    if n == 1 {
+        if a == b {
+            return memchr(a, hay).is_some();
+        }
+        return memchr2(a, b, hay).is_some();
+    }
     let mut i = 0;
-    while i + n <= hay.len() {
+    while i + n <= hay_len {
         let rel = if a == b {
             memchr(a, &hay[i..])
         } else {
@@ -45,7 +52,7 @@ fn contains_ignore_ascii_case(haystack: &str, needle: &[u8]) -> bool {
             return false;
         };
         let pos = i + rel;
-        if pos + n <= hay.len() && hay[pos..pos + n].eq_ignore_ascii_case(needle) {
+        if pos + n <= hay_len && hay[pos..pos + n].eq_ignore_ascii_case(needle) {
             return true;
         }
         i = pos + 1;
@@ -59,6 +66,8 @@ pub use crate::types::{AtomId, AtomTable, Id, Node, NodeId, Token, TokenStream};
 
 #[cfg(all(test, feature = "count-alloc"))]
 mod test_alloc {
+    // Counters are intentionally lightweight: they measure allocation events and growth bytes
+    // while enabled, not current live heap usage.
     use std::alloc::{GlobalAlloc, Layout, System};
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
@@ -117,6 +126,7 @@ mod test_alloc {
     pub fn reset() {
         ALLOC_COUNT.store(0, Ordering::Relaxed);
         ALLOC_BYTES.store(0, Ordering::Relaxed);
+        ENABLED.store(false, Ordering::Relaxed);
     }
 
     pub fn enable() {
@@ -132,5 +142,21 @@ mod test_alloc {
             ALLOC_COUNT.load(Ordering::Relaxed),
             ALLOC_BYTES.load(Ordering::Relaxed),
         )
+    }
+
+    pub struct AllocGuard;
+
+    impl AllocGuard {
+        pub fn new() -> Self {
+            reset();
+            enable();
+            Self
+        }
+    }
+
+    impl Drop for AllocGuard {
+        fn drop(&mut self) {
+            disable();
+        }
     }
 }
