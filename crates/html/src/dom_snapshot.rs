@@ -403,7 +403,8 @@ fn walk_snapshot(
     let mut line = String::new();
     const INDENT_STEP: usize = 2;
     #[allow(clippy::manual_repeat_n)]
-    line.extend(std::iter::repeat(' ').take(*indent_level * INDENT_STEP));
+    let spaces = indent_level.saturating_mul(INDENT_STEP);
+    line.extend(std::iter::repeat(' ').take(spaces));
     write_node_line(&mut line, node, options);
     out.push(line);
     match node {
@@ -412,7 +413,11 @@ fn walk_snapshot(
             for child in children {
                 walk_snapshot(child, options, indent_level, out);
             }
-            debug_assert!(*indent_level > 0, "indent level underflow");
+            debug_assert!(
+                *indent_level > 0,
+                "indent level underflow at {}",
+                node_label(node)
+            );
             *indent_level -= 1;
         }
         Node::Text { .. } | Node::Comment { .. } => {}
