@@ -4,6 +4,8 @@ pub mod debug;
 pub mod dom_snapshot;
 pub mod dom_utils;
 pub mod head;
+#[cfg(test)]
+pub mod test_harness;
 pub mod traverse;
 
 mod dom_builder;
