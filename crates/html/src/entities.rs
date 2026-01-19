@@ -1,5 +1,9 @@
 use memchr::memchr;
 use std::borrow::Cow;
+#[cfg(feature = "html5-entities")]
+mod entities_html5;
+#[cfg(feature = "html5-entities")]
+use self::entities_html5::{HTML5_ENTITIES, MAX_HTML5_ENTITY_LEN};
 
 const MAX_HEX_DIGITS: usize = 6; // 0x10FFFF
 const MAX_DEC_DIGITS: usize = 7; // 1114111
@@ -15,10 +19,11 @@ const NAMED_ENTITIES: &[(&[u8], char)] = &[
 /// Internal policy boundary. Minimal is stable and used by default.
 /// Html5 is a placeholder for future spec-complete decoding and must not
 /// change Minimal behavior.
-#[allow(dead_code)]
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum EntityDecodingPolicy {
     Minimal,
+    #[cfg(feature = "html5-entities")]
+    #[allow(dead_code)] // Until a real parser/tokenizer policy toggle constructs this in non-test code.
     Html5,
 }
 
@@ -41,12 +46,32 @@ pub(crate) fn decode_entities(s: &str) -> Cow<'_, str> {
 fn decode_entities_with_policy(s: &str, policy: EntityDecodingPolicy) -> Cow<'_, str> {
     match policy {
         EntityDecodingPolicy::Minimal => decode_entities_minimal(s),
-        EntityDecodingPolicy::Html5 => {
-            // TODO: Implement HTML5-spec-complete decoding without altering minimal behavior.
-            debug_assert!(false, "Html5 entity decoding not implemented yet");
-            decode_entities_minimal(s)
-        }
+        #[cfg(feature = "html5-entities")]
+        EntityDecodingPolicy::Html5 => decode_entities_html5_semicolon_terminated(s),
     }
+}
+
+fn emit_malformed_entity(out: &mut String, s: &str, bytes: &[u8], start: usize) -> usize {
+    let mut j = start + 1;
+    while j < bytes.len() {
+        let b = bytes[j];
+        // Stop at `;`, whitespace, or `&` to avoid spanning into adjacent tokens.
+        if b == b';' {
+            out.push_str(&s[start..=j]);
+            return j + 1;
+        }
+        if b == b'&' {
+            out.push_str(&s[start..j]);
+            return j;
+        }
+        if b.is_ascii_whitespace() {
+            out.push_str(&s[start..j]);
+            return j;
+        }
+        j += 1;
+    }
+    out.push_str(&s[start..]);
+    bytes.len()
 }
 
 fn decode_entities_minimal(s: &str) -> Cow<'_, str> {
@@ -62,29 +87,6 @@ fn decode_entities_minimal(s: &str) -> Cow<'_, str> {
     let mut out = String::with_capacity(s.len());
     let mut i = 0;
     let mut copy_start = 0;
-
-    fn emit_malformed_entity(out: &mut String, s: &str, bytes: &[u8], start: usize) -> usize {
-        let mut j = start + 1;
-        while j < bytes.len() {
-            let b = bytes[j];
-            // Stop at `;`, whitespace, or `&` to avoid spanning into adjacent tokens.
-            if b == b';' {
-                out.push_str(&s[start..=j]);
-                return j + 1;
-            }
-            if b == b'&' {
-                out.push_str(&s[start..j]);
-                return j;
-            }
-            if b.is_ascii_whitespace() {
-                out.push_str(&s[start..j]);
-                return j;
-            }
-            j += 1;
-        }
-        out.push_str(&s[start..]);
-        bytes.len()
-    }
 
     while i < bytes.len() {
         if bytes[i] != b'&' {
@@ -112,51 +114,62 @@ fn decode_entities_minimal(s: &str) -> Cow<'_, str> {
         }
 
         // numeric entities: &#123; or &#x1F4A9;
-        if match_bytes(bytes, i, b"&#x") || match_bytes(bytes, i, b"&#X") {
-            let digits_start = i + 3;
-            let Some(end) = scan_numeric_entity(bytes, digits_start, MAX_HEX_DIGITS, true) else {
-                i = emit_malformed_entity(&mut out, s, bytes, i);
-                copy_start = i;
-                continue;
-            };
-
-            let hex = &s[digits_start..end];
-            if let Some(ch) = u32::from_str_radix(hex, 16).ok().and_then(char::from_u32) {
-                out.push(ch);
-                i = end + 1;
-                copy_start = i;
-                continue;
-            } else {
-                // Known end; preserve entire sequence unchanged.
-                out.push_str(&s[i..=end]);
-                i = end + 1;
-                copy_start = i;
-                continue;
-            }
-        } else if match_bytes(bytes, i, b"&#") {
-            let digits_start = i + 2;
-            let Some(end) = scan_numeric_entity(bytes, digits_start, MAX_DEC_DIGITS, false) else {
-                i = emit_malformed_entity(&mut out, s, bytes, i);
-                copy_start = i;
-                continue;
-            };
-
-            let dec = &s[digits_start..end];
-            if let Some(ch) = dec.parse::<u32>().ok().and_then(char::from_u32) {
-                out.push(ch);
-                i = end + 1;
-                copy_start = i;
-                continue;
-            } else {
-                // Known end; preserve entire sequence unchanged.
-                out.push_str(&s[i..=end]);
-                i = end + 1;
-                copy_start = i;
-                continue;
-            }
+        if let Some(next) = decode_numeric_entity(bytes, s, i, &mut out) {
+            i = next;
+            copy_start = i;
+            continue;
         }
 
         // fallback to keep '&' as-is
+        out.push('&');
+        i += 1;
+        copy_start = i;
+    }
+
+    if copy_start < bytes.len() {
+        out.push_str(&s[copy_start..]);
+    }
+
+    Cow::Owned(out)
+}
+
+/// HTML5 named entities, semicolon-terminated only (phase 1).
+/// Exact `&name;` matches only; longest-match and legacy no-semicolon behavior
+/// are future tokenizer work.
+#[cfg(feature = "html5-entities")]
+fn decode_entities_html5_semicolon_terminated(s: &str) -> Cow<'_, str> {
+    let bytes = s.as_bytes();
+    if !bytes.contains(&b'&') {
+        return Cow::Borrowed(s);
+    }
+
+    let mut out = String::with_capacity(s.len());
+    let mut i = 0;
+    let mut copy_start = 0;
+
+    while i < bytes.len() {
+        if bytes[i] != b'&' {
+            i += 1;
+            continue;
+        }
+
+        if copy_start < i {
+            out.push_str(&s[copy_start..i]);
+        }
+
+        if let Some((value, next)) = html5_named_entity(bytes, i) {
+            out.push_str(value);
+            i = next;
+            copy_start = i;
+            continue;
+        }
+
+        if let Some(next) = decode_numeric_entity(bytes, s, i, &mut out) {
+            i = next;
+            copy_start = i;
+            continue;
+        }
+
         out.push('&');
         i += 1;
         copy_start = i;
@@ -207,6 +220,25 @@ fn needs_entity_decode_minimal(s: &str) -> bool {
     false
 }
 
+#[cfg(feature = "html5-entities")]
+fn html5_named_entity(bytes: &[u8], start: usize) -> Option<(&'static str, usize)> {
+    if start >= bytes.len() {
+        return None;
+    }
+    let max_len = MAX_HTML5_ENTITY_LEN;
+    if max_len == 0 {
+        return None;
+    }
+    let max_end = (start + max_len - 1).min(bytes.len() - 1);
+    let rel = memchr(b';', &bytes[start..=max_end])?;
+    let end = start + rel;
+    let candidate = &bytes[start..=end];
+    let index = HTML5_ENTITIES
+        .binary_search_by(|entity| entity.name.cmp(candidate))
+        .ok()?;
+    Some((HTML5_ENTITIES[index].value, end + 1))
+}
+
 // Bounded scan to avoid quadratic behavior on adversarial input.
 fn scan_numeric_entity(
     bytes: &[u8],
@@ -244,10 +276,51 @@ fn match_bytes(bytes: &[u8], i: usize, pat: &[u8]) -> bool {
     bytes.get(i..i + pat.len()) == Some(pat)
 }
 
+fn decode_numeric_entity(bytes: &[u8], s: &str, i: usize, out: &mut String) -> Option<usize> {
+    if match_bytes(bytes, i, b"&#x") || match_bytes(bytes, i, b"&#X") {
+        let digits_start = i + 3;
+        let Some(end) = scan_numeric_entity(bytes, digits_start, MAX_HEX_DIGITS, true) else {
+            return Some(emit_malformed_entity(out, s, bytes, i));
+        };
+
+        let hex = &s[digits_start..end];
+        if let Some(ch) = u32::from_str_radix(hex, 16).ok().and_then(char::from_u32) {
+            out.push(ch);
+            return Some(end + 1);
+        }
+
+        out.push_str(&s[i..=end]);
+        return Some(end + 1);
+    }
+
+    if match_bytes(bytes, i, b"&#") {
+        let digits_start = i + 2;
+        let Some(end) = scan_numeric_entity(bytes, digits_start, MAX_DEC_DIGITS, false) else {
+            return Some(emit_malformed_entity(out, s, bytes, i));
+        };
+
+        let dec = &s[digits_start..end];
+        if let Some(ch) = dec.parse::<u32>().ok().and_then(char::from_u32) {
+            out.push(ch);
+            return Some(end + 1);
+        }
+
+        out.push_str(&s[i..=end]);
+        return Some(end + 1);
+    }
+
+    None
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use std::borrow::Cow;
+
+    #[cfg(feature = "html5-entities")]
+    fn decode_entities_html5(s: &str) -> Cow<'_, str> {
+        decode_entities_with_policy(s, EntityDecodingPolicy::Html5)
+    }
 
     #[test]
     fn scan_numeric_entity_enforces_digit_boundaries() {
@@ -282,6 +355,28 @@ mod tests {
         assert_eq!(decode_entities("&quot;hi&quot;").as_ref(), "\"hi\"");
         assert_eq!(decode_entities("&apos;x&apos;").as_ref(), "'x'");
         assert_eq!(decode_entities("a&nbsp;b").as_ref(), "a\u{00A0}b");
+    }
+
+    #[cfg(feature = "html5-entities")]
+    #[test]
+    fn decode_entities_html5_decodes_named_entities() {
+        let samples = [
+            ("&AElig;", "Æ"),
+            ("&NotEqualTilde;", "\u{2242}\u{0338}"),
+            ("&NotSubset;", "\u{2282}\u{20D2}"),
+        ];
+        for (input, expected) in samples {
+            assert_eq!(decode_entities_html5(input).as_ref(), expected);
+        }
+    }
+
+    #[cfg(feature = "html5-entities")]
+    #[test]
+    fn decode_entities_html5_requires_semicolon() {
+        let samples = ["&AElig", "&notin", "pre &AElig post"];
+        for input in samples {
+            assert_eq!(decode_entities_html5(input).as_ref(), input);
+        }
     }
 
     #[test]
@@ -425,6 +520,19 @@ mod tests {
         for s in samples {
             let out = decode_entities(s);
             assert_eq!(decode_entities(out.as_ref()).as_ref(), out.as_ref());
+        }
+    }
+
+    #[cfg(feature = "html5-entities")]
+    #[test]
+    fn decode_entities_html5_semicolon_terminated_samples() {
+        let stride = (HTML5_ENTITIES.len() / 64).max(1);
+        for i in (0..HTML5_ENTITIES.len()).step_by(stride) {
+            let entity = &HTML5_ENTITIES[i];
+            let name = std::str::from_utf8(entity.name).expect("ascii entity name");
+            let input = format!("x{name}y");
+            let expected = format!("x{}y", entity.value);
+            assert_eq!(decode_entities_html5(&input).as_ref(), expected);
         }
     }
 
