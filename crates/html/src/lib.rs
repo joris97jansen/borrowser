@@ -1,5 +1,7 @@
 pub mod collect;
 pub mod debug;
+#[cfg(test)]
+pub mod dom_snapshot;
 pub mod dom_utils;
 pub mod head;
 pub mod traverse;
