@@ -15,6 +15,8 @@
 //!
 //! TODO(html/tokenizer/html5): replace with a full HTML5 tokenizer + tree builder state machine.
 use crate::entities::decode_entities;
+#[cfg(feature = "html5-entities")]
+use crate::entities::{decode_entities_html5_in_attribute, decode_entities_html5_in_text};
 use crate::types::{AtomId, AtomTable, Token, TokenStream};
 use memchr::memchr;
 use std::borrow::Cow;
@@ -112,6 +114,9 @@ pub fn tokenize(input: &str) -> TokenStream {
             debug_assert!(input.is_char_boundary(start));
             debug_assert!(input.is_char_boundary(i));
             let text = &input[start..i];
+            #[cfg(feature = "html5-entities")]
+            let decoded = decode_entities_html5_in_text(text);
+            #[cfg(not(feature = "html5-entities"))]
             let decoded = decode_entities(text);
             if !decoded.is_empty() {
                 match decoded {
@@ -266,7 +271,11 @@ pub fn tokenize(input: &str) -> TokenStream {
                         if k < len {
                             k += 1;
                         }
-                        value = Some(decode_entities(raw).into_owned());
+                        #[cfg(feature = "html5-entities")]
+                        let decoded = decode_entities_html5_in_attribute(raw);
+                        #[cfg(not(feature = "html5-entities"))]
+                        let decoded = decode_entities(raw);
+                        value = Some(decoded.into_owned());
                     } else {
                         let vstart = k;
                         while k < len && !bytes[k].is_ascii_whitespace() && bytes[k] != b'>' {
@@ -278,7 +287,11 @@ pub fn tokenize(input: &str) -> TokenStream {
                         if k > vstart {
                             debug_assert!(input.is_char_boundary(vstart));
                             debug_assert!(input.is_char_boundary(k));
-                            value = Some(decode_entities(&input[vstart..k]).into_owned());
+                            #[cfg(feature = "html5-entities")]
+                            let decoded = decode_entities_html5_in_attribute(&input[vstart..k]);
+                            #[cfg(not(feature = "html5-entities"))]
+                            let decoded = decode_entities(&input[vstart..k]);
+                            value = Some(decoded.into_owned());
                         } else {
                             value = Some(String::new());
                         }
