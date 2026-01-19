@@ -8,4 +8,5 @@ memchr = "2"
 
 [features]
 count-alloc = []
+html5-entities = []
 perf-tests = []
