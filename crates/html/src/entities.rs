@@ -23,7 +23,8 @@ const NAMED_ENTITIES: &[(&[u8], char)] = &[
 enum EntityDecodingPolicy {
     Minimal,
     #[cfg(feature = "html5-entities")]
-    #[allow(dead_code)] // Until a real parser/tokenizer policy toggle constructs this in non-test code.
+    #[allow(dead_code)]
+    // Until a real parser/tokenizer policy toggle constructs this in non-test code.
     Html5,
 }
 
