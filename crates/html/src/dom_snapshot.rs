@@ -103,7 +103,7 @@ pub fn compare_dom<'a>(
     expected: &'a Node,
     actual: &'a Node,
     options: DomSnapshotOptions,
-) -> Result<(), DomMismatch<'a>> {
+) -> Result<(), Box<DomMismatch<'a>>> {
     let mut path = vec![node_label(expected)];
     compare_nodes(expected, actual, &options, &mut path)
 }
@@ -113,7 +113,7 @@ fn compare_nodes<'a>(
     actual: &'a Node,
     options: &DomSnapshotOptions,
     path: &mut Vec<String>,
-) -> Result<(), DomMismatch<'a>> {
+) -> Result<(), Box<DomMismatch<'a>>> {
     match (expected, actual) {
         (
             Node::Document {
@@ -128,24 +128,27 @@ fn compare_nodes<'a>(
             },
         ) => {
             if !options.ignore_ids && expected_id != actual_id {
-                return Err(mismatch(
+                return Err(Box::new(mismatch(
                     path,
                     "document id",
                     expected,
                     actual,
                     options,
-                ));
+                )));
             }
             if expected_doctype != actual_doctype {
-                return Err(mismatch(
-                    path,
-                    "doctype",
-                    expected,
-                    actual,
-                    options,
-                ));
+                return Err(Box::new(mismatch(
+                    path, "doctype", expected, actual, options,
+                )));
             }
-            compare_children(expected, actual, expected_children, actual_children, options, path)
+            compare_children(
+                expected,
+                actual,
+                expected_children,
+                actual_children,
+                options,
+                path,
+            )
         }
         (
             Node::Element {
@@ -164,74 +167,84 @@ fn compare_nodes<'a>(
             },
         ) => {
             if !options.ignore_ids && expected_id != actual_id {
-                return Err(mismatch(path, "element id", expected, actual, options));
+                return Err(Box::new(mismatch(
+                    path,
+                    "element id",
+                    expected,
+                    actual,
+                    options,
+                )));
             }
             if expected_name != actual_name {
-                return Err(mismatch(
+                return Err(Box::new(mismatch(
                     path,
                     "element name",
                     expected,
                     actual,
                     options,
-                ));
+                )));
             }
             if expected_attrs.len() != actual_attrs.len() {
-                return Err(mismatch(
+                return Err(Box::new(mismatch(
                     path,
                     "attribute count",
                     expected,
                     actual,
                     options,
-                ));
+                )));
             }
             for (i, (exp, act)) in expected_attrs.iter().zip(actual_attrs.iter()).enumerate() {
                 if exp.0 != act.0 {
-                    return Err(mismatch(
+                    return Err(Box::new(mismatch(
                         path,
                         &format!("attribute name at index {i}"),
                         expected,
                         actual,
                         options,
-                    ));
+                    )));
                 }
                 if exp.1 != act.1 {
-                    return Err(mismatch(
+                    return Err(Box::new(mismatch(
                         path,
                         &format!("attribute value at index {i}"),
                         expected,
                         actual,
                         options,
-                    ));
+                    )));
                 }
             }
-            let ignore_style = options.ignore_empty_style
-                && expected_style.is_empty()
-                && actual_style.is_empty();
+            let ignore_style =
+                options.ignore_empty_style && expected_style.is_empty() && actual_style.is_empty();
             if !ignore_style {
                 if expected_style.len() != actual_style.len() {
-                    return Err(mismatch(
+                    return Err(Box::new(mismatch(
                         path,
                         "style entry count",
                         expected,
                         actual,
                         options,
-                    ));
+                    )));
                 }
-                for (i, (exp, act)) in
-                    expected_style.iter().zip(actual_style.iter()).enumerate()
-                {
+                for (i, (exp, act)) in expected_style.iter().zip(actual_style.iter()).enumerate() {
                     if exp != act {
-                        return Err(mismatch(
+                        return Err(Box::new(mismatch(
                             path,
                             &format!("style entry at index {i}"),
                             expected,
                             actual,
                             options,
-                        ));
+                        )));
                     }
                 }
             }
-            compare_children(expected, actual, expected_children, actual_children, options, path)
+            compare_children(
+                expected,
+                actual,
+                expected_children,
+                actual_children,
+                options,
+                path,
+            )
         }
         (
             Node::Text {
@@ -244,10 +257,12 @@ fn compare_nodes<'a>(
             },
         ) => {
             if !options.ignore_ids && expected_id != actual_id {
-                return Err(mismatch(path, "text id", expected, actual, options));
+                return Err(Box::new(mismatch(
+                    path, "text id", expected, actual, options,
+                )));
             }
             if expected_text != actual_text {
-                return Err(mismatch(path, "text", expected, actual, options));
+                return Err(Box::new(mismatch(path, "text", expected, actual, options)));
             }
             Ok(())
         }
@@ -262,20 +277,28 @@ fn compare_nodes<'a>(
             },
         ) => {
             if !options.ignore_ids && expected_id != actual_id {
-                return Err(mismatch(path, "comment id", expected, actual, options));
+                return Err(Box::new(mismatch(
+                    path,
+                    "comment id",
+                    expected,
+                    actual,
+                    options,
+                )));
             }
             if expected_text != actual_text {
-                return Err(mismatch(path, "comment", expected, actual, options));
+                return Err(Box::new(mismatch(
+                    path, "comment", expected, actual, options,
+                )));
             }
             Ok(())
         }
-        _ => Err(mismatch(
+        _ => Err(Box::new(mismatch(
             path,
             "node kind",
             expected,
             actual,
             options,
-        )),
+        ))),
     }
 }
 
@@ -286,23 +309,25 @@ fn compare_children<'a>(
     actual: &'a [Node],
     options: &DomSnapshotOptions,
     path: &mut Vec<String>,
-) -> Result<(), DomMismatch<'a>> {
+) -> Result<(), Box<DomMismatch<'a>>> {
     if expected.len() != actual.len() {
-        return Err(mismatch(
+        return Err(Box::new(mismatch(
             path,
-            &format!("child count (expected {}, actual {})", expected.len(), actual.len()),
+            &format!(
+                "child count (expected {}, actual {})",
+                expected.len(),
+                actual.len()
+            ),
             expected_parent,
             actual_parent,
             options,
-        ));
+        )));
     }
     for (idx, (exp, act)) in expected.iter().zip(actual.iter()).enumerate() {
         path.push(format!("{}[{}]", node_label(exp), idx));
         let result = compare_nodes(exp, act, options, path);
         path.pop();
-        if result.is_err() {
-            return result;
-        }
+        result?;
     }
     Ok(())
 }
@@ -377,7 +402,8 @@ fn walk_snapshot(
 ) {
     let mut line = String::new();
     const INDENT_STEP: usize = 2;
-    line.extend(std::iter::repeat(' ').take(indent_level * INDENT_STEP));
+    #[allow(clippy::manual_repeat_n)]
+    line.extend(std::iter::repeat(' ').take(*indent_level * INDENT_STEP));
     write_node_line(&mut line, node, options);
     out.push(line);
     match node {
@@ -491,7 +517,7 @@ fn write_escaped(out: &mut String, value: &str) {
 
 #[cfg(test)]
 mod tests {
-    use super::{assert_dom_eq, compare_dom, DomSnapshotOptions};
+    use super::{DomSnapshotOptions, assert_dom_eq, compare_dom};
     use crate::{Id, Node};
     use std::sync::Arc;
 
@@ -510,18 +536,24 @@ mod tests {
         let expected = Node::Document {
             id: Id(1),
             doctype: Some("html".to_string()),
-            children: vec![elem("div", vec![Node::Text {
-                id: Id(2),
-                text: "hi".to_string(),
-            }])],
+            children: vec![elem(
+                "div",
+                vec![Node::Text {
+                    id: Id(2),
+                    text: "hi".to_string(),
+                }],
+            )],
         };
         let actual = Node::Document {
             id: Id(99),
             doctype: Some("html".to_string()),
-            children: vec![elem("div", vec![Node::Text {
-                id: Id(77),
-                text: "hi".to_string(),
-            }])],
+            children: vec![elem(
+                "div",
+                vec![Node::Text {
+                    id: Id(77),
+                    text: "hi".to_string(),
+                }],
+            )],
         };
         assert_dom_eq(&expected, &actual, DomSnapshotOptions::default());
     }
@@ -531,18 +563,24 @@ mod tests {
         let expected = Node::Document {
             id: Id(0),
             doctype: None,
-            children: vec![elem("p", vec![Node::Text {
-                id: Id(0),
-                text: "a".to_string(),
-            }])],
+            children: vec![elem(
+                "p",
+                vec![Node::Text {
+                    id: Id(0),
+                    text: "a".to_string(),
+                }],
+            )],
         };
         let actual = Node::Document {
             id: Id(0),
             doctype: None,
-            children: vec![elem("p", vec![Node::Text {
-                id: Id(0),
-                text: "b".to_string(),
-            }])],
+            children: vec![elem(
+                "p",
+                vec![Node::Text {
+                    id: Id(0),
+                    text: "b".to_string(),
+                }],
+            )],
         };
         let err = compare_dom(&expected, &actual, DomSnapshotOptions::default())
             .expect_err("expected mismatch");
