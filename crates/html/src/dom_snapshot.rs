@@ -402,8 +402,8 @@ fn walk_snapshot(
 ) {
     let mut line = String::new();
     const INDENT_STEP: usize = 2;
-    #[allow(clippy::manual_repeat_n)]
     let spaces = indent_level.saturating_mul(INDENT_STEP);
+    #[allow(clippy::manual_repeat_n)]
     line.extend(std::iter::repeat(' ').take(spaces));
     write_node_line(&mut line, node, options);
     out.push(line);

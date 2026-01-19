@@ -10,3 +10,6 @@ memchr = "2"
 count-alloc = []
 html5-entities = []
 perf-tests = []
+
+[dev-dependencies]
+tools = { path = "../tools" }
