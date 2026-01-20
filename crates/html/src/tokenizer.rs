@@ -21,6 +21,7 @@ use crate::types::{AtomId, AtomTable, Token, TokenStream};
 use memchr::memchr;
 use std::borrow::Cow;
 use std::sync::Arc;
+use tools::utf8::{finish_utf8, push_utf8_chunk};
 
 const HTML_COMMENT_START: &str = "<!--";
 const HTML_COMMENT_END: &str = "-->";
@@ -92,112 +93,333 @@ fn is_void_element(name: &str) -> bool {
     )
 }
 
-/// Tokenizes into a token stream with interned tag/attribute names to reduce allocations.
-pub fn tokenize(input: &str) -> TokenStream {
-    let mut out = Vec::new();
-    let mut atoms = AtomTable::new();
-    let mut text_pool: Vec<String> = Vec::new();
-    let source: Arc<str> = Arc::from(input);
-    let input = source.as_ref();
-    let mut i = 0;
-    let bytes = input.as_bytes();
-    // Invariant: we scan by byte, but any slice endpoints must be UTF-8 char boundaries.
-    // We only cut slices at ASCII structural bytes or at positions reached by scanning
-    // ASCII-only tokens; therefore slice endpoints remain UTF-8 boundaries.
-    while i < bytes.len() {
-        if bytes[i] != b'<' {
-            // collect text until next '<'
-            let start = i;
-            while i < bytes.len() && bytes[i] != b'<' {
-                i += 1;
+#[derive(Debug)]
+enum PendingState {
+    None,
+    Text {
+        start: usize,
+        scan_from: usize,
+    },
+    Comment {
+        start: usize,
+        scan_from: usize,
+    },
+    Doctype {
+        doctype_start: usize,
+        scan_from: usize,
+    },
+    Rawtext {
+        tag: AtomId,
+        close_tag: &'static [u8],
+        content_start: usize,
+        scan_from: usize,
+    },
+}
+
+/// Stateful tokenizer for incremental byte feeds.
+#[derive(Debug)]
+pub(crate) struct Tokenizer {
+    atoms: AtomTable,
+    text_pool: Vec<String>,
+    // NOTE: `source` is currently monolithic; spans are byte ranges into it.
+    // This means we cannot drop consumed prefixes yet. A later milestone should
+    // move to segmented storage / a sliding window once the parser consumes
+    // tokens incrementally.
+    source: String,
+    carry: Vec<u8>,
+    cursor: usize,
+    pending: PendingState,
+    tokens: Vec<Token>,
+}
+
+impl Tokenizer {
+    pub fn new() -> Self {
+        Self {
+            atoms: AtomTable::new(),
+            text_pool: Vec::new(),
+            source: String::new(),
+            carry: Vec::new(),
+            cursor: 0,
+            pending: PendingState::None,
+            tokens: Vec::new(),
+        }
+    }
+
+    pub fn feed(&mut self, input: &[u8]) -> usize {
+        if input.is_empty() {
+            return 0;
+        }
+        push_utf8_chunk(&mut self.source, &mut self.carry, input);
+        self.scan(false)
+    }
+
+    pub fn feed_str(&mut self, input: &str) -> usize {
+        self.feed(input.as_bytes())
+    }
+
+    pub fn finish(&mut self) -> usize {
+        finish_utf8(&mut self.source, &mut self.carry);
+        self.scan(true)
+    }
+
+    pub fn into_stream(self) -> TokenStream {
+        let source: Arc<str> = Arc::from(self.source);
+        TokenStream::new(self.tokens, self.atoms, source, self.text_pool)
+    }
+
+    fn scan(&mut self, is_final: bool) -> usize {
+        let start_len = self.tokens.len();
+        loop {
+            if !self.resume_pending(is_final) {
+                break;
             }
-            debug_assert!(input.is_char_boundary(start));
-            debug_assert!(input.is_char_boundary(i));
-            let text = &input[start..i];
-            #[cfg(feature = "html5-entities")]
-            let decoded = decode_entities_html5_in_text(text);
-            #[cfg(not(feature = "html5-entities"))]
-            let decoded = decode_entities(text);
-            if !decoded.is_empty() {
-                match decoded {
-                    Cow::Borrowed(_) => out.push(Token::TextSpan { range: start..i }),
-                    Cow::Owned(decoded) => {
-                        let index = text_pool.len();
-                        text_pool.push(decoded);
-                        out.push(Token::TextOwned { index });
-                    }
+            let input = self.source.as_str();
+            let bytes = input.as_bytes();
+            let len = bytes.len();
+            if self.cursor >= len {
+                break;
+            }
+            if bytes[self.cursor] != b'<' {
+                self.pending = PendingState::Text {
+                    start: self.cursor,
+                    scan_from: self.cursor,
+                };
+                continue;
+            }
+            if !is_final && is_partial_markup_prefix(bytes, self.cursor) {
+                break;
+            }
+            if input[self.cursor..].starts_with(HTML_COMMENT_START) {
+                let comment_start = self.cursor + HTML_COMMENT_START.len();
+                if let Some(end) = input[comment_start..].find(HTML_COMMENT_END) {
+                    let comment_end = comment_start + end;
+                    self.tokens.push(Token::Comment(
+                        input[comment_start..comment_end].to_string(),
+                    ));
+                    self.cursor = comment_end + HTML_COMMENT_END.len();
+                    continue;
                 }
-            }
-            continue;
-        }
-        // now b[i] == b'<'
-        debug_assert!(input.is_char_boundary(i));
-        if input[i..].starts_with(HTML_COMMENT_START) {
-            // comment
-            let comment_start = i + HTML_COMMENT_START.len();
-            debug_assert!(input.is_char_boundary(comment_start));
-            // Scan for the comment terminator once per comment (linear in comment length).
-            if let Some(end) = input[i + HTML_COMMENT_START.len()..].find(HTML_COMMENT_END) {
-                let comment_end = i + HTML_COMMENT_START.len() + end;
-                debug_assert!(input.is_char_boundary(comment_end));
-                let comment =
-                    &input[i + HTML_COMMENT_START.len()..i + HTML_COMMENT_START.len() + end];
-                out.push(Token::Comment(comment.to_string()));
-                i += HTML_COMMENT_START.len() + end + HTML_COMMENT_END.len();
-                continue;
-            } else {
-                debug_assert!(input.is_char_boundary(comment_start));
-                out.push(Token::Comment(
-                    input[i + HTML_COMMENT_START.len()..].to_string(),
-                ));
+                if is_final {
+                    self.tokens
+                        .push(Token::Comment(input[comment_start..].to_string()));
+                    self.cursor = len;
+                    continue;
+                }
+                // Scan near the tail to catch "--" + ">" overlaps across chunk boundaries.
+                let scan_from = (len.saturating_sub(HTML_COMMENT_END.len() - 1)).max(comment_start);
+                self.pending = PendingState::Comment {
+                    start: self.cursor,
+                    scan_from,
+                };
                 break;
             }
-        }
-        if starts_with_ignore_ascii_case_at(bytes, i, b"<!doctype") {
-            // doctype
-            let doctype_start = i + 2;
-            debug_assert!(input.is_char_boundary(doctype_start));
-            let rest = &input[i + 2..];
-            if let Some(end) = rest.find('>') {
-                debug_assert!(rest.is_char_boundary(end));
-                let doctype = rest[..end].trim().to_string();
-                out.push(Token::Doctype(doctype));
-                i += 2 + end + 1;
-                continue;
-            } else {
+            if starts_with_ignore_ascii_case_at(bytes, self.cursor, b"<!doctype") {
+                let doctype_start = self.cursor + 2;
+                if let Some(rel) = memchr(b'>', &bytes[doctype_start..]) {
+                    let end = doctype_start + rel;
+                    let doctype = input[doctype_start..end].trim().to_string();
+                    self.tokens.push(Token::Doctype(doctype));
+                    self.cursor = end + 1;
+                    continue;
+                }
+                if is_final {
+                    self.cursor = len;
+                } else {
+                    let scan_from = len.saturating_sub(1).max(doctype_start);
+                    self.pending = PendingState::Doctype {
+                        doctype_start,
+                        scan_from,
+                    };
+                }
                 break;
             }
+            if self.cursor + 2 <= len && bytes[self.cursor + 1] == b'/' {
+                let start = self.cursor + 2;
+                let mut j = start;
+                while j < len
+                    && (bytes[j].is_ascii_alphanumeric()
+                        || bytes[j] == b'-'
+                        || bytes[j] == b'_'
+                        || bytes[j] == b':')
+                {
+                    j += 1;
+                }
+                if j == len && !is_final {
+                    break;
+                }
+                let name = self.atoms.intern_ascii_lowercase(&input[start..j]);
+                while j < len && bytes[j] != b'>' {
+                    j += 1;
+                }
+                if j == len && !is_final {
+                    break;
+                }
+                if j < len {
+                    j += 1;
+                }
+                self.tokens.push(Token::EndTag(name));
+                self.cursor = j;
+                continue;
+            }
+            match self.parse_start_tag(is_final) {
+                ParseOutcome::Complete => continue,
+                ParseOutcome::Incomplete => break,
+            }
         }
-        // end tag?
-        if i + 2 <= bytes.len() && bytes[i + 1] == b'/' {
-            let start = i + 2;
-            let mut j = start;
-            while j < bytes.len()
-                && (bytes[j].is_ascii_alphanumeric()
-                    || bytes[j] == b'-'
-                    || bytes[j] == b'_'
-                    || bytes[j] == b':')
-            {
-                j += 1;
+        self.tokens.len() - start_len
+    }
+
+    fn resume_pending(&mut self, is_final: bool) -> bool {
+        match self.pending {
+            PendingState::None => true,
+            PendingState::Text { start, scan_from } => {
+                let input = self.source.as_str();
+                let bytes = input.as_bytes();
+                let len = bytes.len();
+                if let Some(rel) = memchr(b'<', &bytes[scan_from..]) {
+                    let end = scan_from + rel;
+                    self.emit_text(start, end);
+                    self.cursor = end;
+                    self.pending = PendingState::None;
+                    return true;
+                }
+                if is_final {
+                    self.emit_text(start, len);
+                    self.cursor = len;
+                    self.pending = PendingState::None;
+                    return true;
+                }
+                self.pending = PendingState::Text {
+                    start,
+                    scan_from: len,
+                };
+                false
             }
-            debug_assert!(input.is_char_boundary(start));
-            debug_assert!(input.is_char_boundary(j));
-            let name = atoms.intern_ascii_lowercase(&input[start..j]);
-            // skip to '>'
-            while j < bytes.len() && bytes[j] != b'>' {
-                j += 1;
+            PendingState::Comment { start, scan_from } => {
+                let input = self.source.as_str();
+                let len = input.len();
+                let comment_start = start + HTML_COMMENT_START.len();
+                if let Some(rel) = input[scan_from..].find(HTML_COMMENT_END) {
+                    let comment_end = scan_from + rel;
+                    self.tokens.push(Token::Comment(
+                        input[comment_start..comment_end].to_string(),
+                    ));
+                    self.cursor = comment_end + HTML_COMMENT_END.len();
+                    self.pending = PendingState::None;
+                    return true;
+                }
+                if is_final {
+                    self.tokens
+                        .push(Token::Comment(input[comment_start..].to_string()));
+                    self.cursor = len;
+                    self.pending = PendingState::None;
+                    return true;
+                }
+                let scan_from = (len.saturating_sub(HTML_COMMENT_END.len() - 1)).max(comment_start);
+                self.pending = PendingState::Comment { start, scan_from };
+                false
             }
-            if j < bytes.len() {
-                j += 1;
+            PendingState::Doctype {
+                doctype_start,
+                scan_from,
+            } => {
+                let input = self.source.as_str();
+                let bytes = input.as_bytes();
+                let len = bytes.len();
+                if let Some(rel) = memchr(b'>', &bytes[scan_from..]) {
+                    let end = scan_from + rel;
+                    let doctype = input[doctype_start..end].trim().to_string();
+                    self.tokens.push(Token::Doctype(doctype));
+                    self.cursor = end + 1;
+                    self.pending = PendingState::None;
+                    return true;
+                }
+                if is_final {
+                    self.cursor = len;
+                    self.pending = PendingState::None;
+                    return true;
+                }
+                let scan_from = len.saturating_sub(1).max(doctype_start);
+                self.pending = PendingState::Doctype {
+                    doctype_start,
+                    scan_from,
+                };
+                false
             }
-            out.push(Token::EndTag(name));
-            i = j;
-            continue;
+            PendingState::Rawtext {
+                tag,
+                close_tag,
+                content_start,
+                scan_from,
+            } => {
+                let input = self.source.as_str();
+                let len = input.len();
+                if let Some((rel_start, rel_end)) =
+                    find_rawtext_close_tag(&input[scan_from..], close_tag)
+                {
+                    let slice_end = scan_from + rel_start;
+                    if slice_end > content_start {
+                        self.tokens.push(Token::TextSpan {
+                            range: content_start..slice_end,
+                        });
+                    }
+                    self.tokens.push(Token::EndTag(tag));
+                    self.cursor = scan_from + rel_end;
+                    self.pending = PendingState::None;
+                    return true;
+                }
+                if is_final {
+                    if content_start < len {
+                        self.tokens.push(Token::TextSpan {
+                            range: content_start..len,
+                        });
+                    }
+                    self.tokens.push(Token::EndTag(tag));
+                    self.cursor = len;
+                    self.pending = PendingState::None;
+                    return true;
+                }
+                let scan_from = len.saturating_sub(close_tag.len() + 1).max(content_start);
+                self.pending = PendingState::Rawtext {
+                    tag,
+                    close_tag,
+                    content_start,
+                    scan_from,
+                };
+                false
+            }
         }
-        // start tag
-        let start = i + 1;
+    }
+
+    fn emit_text(&mut self, start: usize, end: usize) {
+        if start >= end {
+            return;
+        }
+        let text = &self.source[start..end];
+        #[cfg(feature = "html5-entities")]
+        let decoded = decode_entities_html5_in_text(text);
+        #[cfg(not(feature = "html5-entities"))]
+        let decoded = decode_entities(text);
+        if decoded.is_empty() {
+            return;
+        }
+        match decoded {
+            Cow::Borrowed(_) => self.tokens.push(Token::TextSpan { range: start..end }),
+            Cow::Owned(decoded) => {
+                let index = self.text_pool.len();
+                self.text_pool.push(decoded);
+                self.tokens.push(Token::TextOwned { index });
+            }
+        }
+    }
+
+    fn parse_start_tag(&mut self, is_final: bool) -> ParseOutcome {
+        let input = self.source.as_str();
+        let bytes = input.as_bytes();
+        let len = bytes.len();
+        let start = self.cursor + 1;
         let mut j = start;
-        while j < bytes.len()
+        while j < len
             && (bytes[j].is_ascii_alphanumeric()
                 || bytes[j] == b'-'
                 || bytes[j] == b'_'
@@ -205,159 +427,225 @@ pub fn tokenize(input: &str) -> TokenStream {
         {
             j += 1;
         }
-        if j <= bytes.len() {
-            debug_assert!(input.is_char_boundary(start));
-            debug_assert!(input.is_char_boundary(j));
-            let name = atoms.intern_ascii_lowercase(&input[start..j]);
-            let mut k = j;
-            let mut attributes: Vec<(AtomId, Option<String>)> = Vec::new();
-            let len = bytes.len();
-            let mut self_closing = false;
+        if j == len && !is_final {
+            return ParseOutcome::Incomplete;
+        }
+        let name = self.atoms.intern_ascii_lowercase(&input[start..j]);
+        let mut k = j;
+        let mut attributes: Vec<(AtomId, Option<String>)> = Vec::new();
+        let mut self_closing = false;
 
-            let skip_whitespace = |k: &mut usize| {
-                while *k < len && bytes[*k].is_ascii_whitespace() {
-                    *k += 1;
-                }
-            };
-            let is_name_char =
-                |c: u8| c.is_ascii_alphanumeric() || c == b'-' || c == b'_' || c == b':';
+        let skip_whitespace = |k: &mut usize| {
+            while *k < len && bytes[*k].is_ascii_whitespace() {
+                *k += 1;
+            }
+        };
+        let is_name_char = |c: u8| c.is_ascii_alphanumeric() || c == b'-' || c == b'_' || c == b':';
 
-            loop {
-                skip_whitespace(&mut k);
-                if k >= len {
+        loop {
+            skip_whitespace(&mut k);
+            if k >= len {
+                if is_final {
                     break;
                 }
-                if bytes[k] == b'>' {
-                    k += 1;
-                    break;
-                }
-                if bytes[k] == b'/' {
-                    if k + 1 < len && bytes[k + 1] == b'>' {
-                        self_closing = true;
-                        k += 2;
-                        break;
-                    }
-                    k += 1;
-                    continue;
-                }
-                let name_start = k;
-                while k < len && is_name_char(bytes[k]) {
-                    k += 1;
-                }
-                if name_start == k {
-                    k += 1;
-                    continue;
-                }
-                debug_assert!(input.is_char_boundary(name_start));
-                debug_assert!(input.is_char_boundary(k));
-                let attribute_name = atoms.intern_ascii_lowercase(&input[name_start..k]);
-
-                skip_whitespace(&mut k);
-                let value: Option<String>;
-
-                if k < len && bytes[k] == b'=' {
-                    k += 1;
-                    skip_whitespace(&mut k);
-                    if k < len && (bytes[k] == b'"' || bytes[k] == b'\'') {
-                        let quote = bytes[k];
+                return ParseOutcome::Incomplete;
+            }
+            if bytes[k] == b'>' {
+                k += 1;
+                break;
+            }
+            if bytes[k] == b'/' {
+                if k + 1 >= len {
+                    if is_final {
                         k += 1;
-                        let vstart = k;
-                        while k < len && bytes[k] != quote {
-                            k += 1;
-                        }
-                        debug_assert!(input.is_char_boundary(vstart));
-                        debug_assert!(input.is_char_boundary(k));
-                        let raw = &input[vstart..k];
-                        if k < len {
-                            k += 1;
-                        }
-                        #[cfg(feature = "html5-entities")]
-                        let decoded = decode_entities_html5_in_attribute(raw);
-                        #[cfg(not(feature = "html5-entities"))]
-                        let decoded = decode_entities(raw);
-                        value = Some(decoded.into_owned());
-                    } else {
-                        let vstart = k;
-                        while k < len && !bytes[k].is_ascii_whitespace() && bytes[k] != b'>' {
-                            if bytes[k] == b'/' && k + 1 < len && bytes[k + 1] == b'>' {
-                                break;
-                            }
-                            k += 1;
-                        }
-                        if k > vstart {
-                            debug_assert!(input.is_char_boundary(vstart));
-                            debug_assert!(input.is_char_boundary(k));
-                            #[cfg(feature = "html5-entities")]
-                            let decoded = decode_entities_html5_in_attribute(&input[vstart..k]);
-                            #[cfg(not(feature = "html5-entities"))]
-                            let decoded = decode_entities(&input[vstart..k]);
-                            value = Some(decoded.into_owned());
-                        } else {
-                            value = Some(String::new());
-                        }
+                        continue;
                     }
-                } else {
-                    value = None;
+                    return ParseOutcome::Incomplete;
                 }
-                attributes.push((attribute_name, value));
+                if bytes[k + 1] == b'>' {
+                    self_closing = true;
+                    k += 2;
+                    break;
+                }
+                k += 1;
+                continue;
             }
-            if is_void_element(atoms.resolve(name)) {
-                self_closing = true;
-            }
-
-            if k < len && bytes[k] == b'>' {
+            let name_start = k;
+            while k < len && is_name_char(bytes[k]) {
                 k += 1;
             }
-            let content_start = k;
+            if name_start == k {
+                if k >= len && !is_final {
+                    return ParseOutcome::Incomplete;
+                }
+                k += 1;
+                continue;
+            }
+            let attribute_name = self.atoms.intern_ascii_lowercase(&input[name_start..k]);
 
-            out.push(Token::StartTag {
-                name,
-                attributes,
-                self_closing,
-            });
-
-            let name_str = atoms.resolve(name);
-            if (name_str == "script" || name_str == "style") && !self_closing {
-                // Rawtext close tags are fixed-length ASCII sequences; we can scan linearly
-                // without allocating or creating lowercase buffers.
-                let close_tag = if name_str == "script" {
-                    SCRIPT_CLOSE_TAG
-                } else {
-                    STYLE_CLOSE_TAG
-                };
-                let j = k;
-                debug_assert!(input.is_char_boundary(j));
-                if let Some((rel_start, rel_end)) = find_rawtext_close_tag(&input[j..], close_tag) {
-                    let slice_end = j + rel_start;
-                    debug_assert!(input.is_char_boundary(slice_end));
-                    let raw = &input[j..slice_end];
-                    if !raw.is_empty() {
-                        out.push(Token::TextSpan {
-                            range: j..slice_end,
-                        });
-                    }
-                    out.push(Token::EndTag(name));
-                    i = j + rel_end;
-                    continue;
-                } else {
-                    // If the rawtext close tag is missing, emit an implicit end tag and
-                    // treat the remainder as rawtext content.
-                    if j < input.len() {
-                        out.push(Token::TextSpan {
-                            range: j..input.len(),
-                        });
-                    }
-                    out.push(Token::EndTag(name));
+            skip_whitespace(&mut k);
+            if k >= len {
+                if is_final {
+                    attributes.push((attribute_name, None));
                     break;
                 }
+                return ParseOutcome::Incomplete;
             }
 
-            i = content_start;
-            continue;
+            let value: Option<String>;
+            if bytes[k] == b'=' {
+                k += 1;
+                skip_whitespace(&mut k);
+                if k >= len {
+                    if is_final {
+                        value = Some(String::new());
+                    } else {
+                        return ParseOutcome::Incomplete;
+                    }
+                } else if bytes[k] == b'"' || bytes[k] == b'\'' {
+                    let quote = bytes[k];
+                    k += 1;
+                    let vstart = k;
+                    while k < len && bytes[k] != quote {
+                        k += 1;
+                    }
+                    if k >= len && !is_final {
+                        return ParseOutcome::Incomplete;
+                    }
+                    let raw = &input[vstart..k.min(len)];
+                    if k < len {
+                        k += 1;
+                    }
+                    #[cfg(feature = "html5-entities")]
+                    let decoded = decode_entities_html5_in_attribute(raw);
+                    #[cfg(not(feature = "html5-entities"))]
+                    let decoded = decode_entities(raw);
+                    value = Some(decoded.into_owned());
+                } else {
+                    let vstart = k;
+                    while k < len && !bytes[k].is_ascii_whitespace() && bytes[k] != b'>' {
+                        if bytes[k] == b'/' && k + 1 < len && bytes[k + 1] == b'>' {
+                            break;
+                        }
+                        k += 1;
+                    }
+                    if k == len && !is_final {
+                        return ParseOutcome::Incomplete;
+                    }
+                    if k > vstart {
+                        #[cfg(feature = "html5-entities")]
+                        let decoded = decode_entities_html5_in_attribute(&input[vstart..k]);
+                        #[cfg(not(feature = "html5-entities"))]
+                        let decoded = decode_entities(&input[vstart..k]);
+                        value = Some(decoded.into_owned());
+                    } else {
+                        value = Some(String::new());
+                    }
+                }
+            } else {
+                value = None;
+            }
+            attributes.push((attribute_name, value));
         }
-        i += 1;
+        if is_void_element(self.atoms.resolve(name)) {
+            self_closing = true;
+        }
+
+        if k < len && bytes[k] == b'>' {
+            k += 1;
+        }
+        let content_start = k;
+
+        self.tokens.push(Token::StartTag {
+            name,
+            attributes,
+            self_closing,
+        });
+
+        let name_str = self.atoms.resolve(name);
+        if (name_str == "script" || name_str == "style") && !self_closing {
+            let close_tag = if name_str == "script" {
+                SCRIPT_CLOSE_TAG
+            } else {
+                STYLE_CLOSE_TAG
+            };
+            if let Some((rel_start, rel_end)) =
+                find_rawtext_close_tag(&input[content_start..], close_tag)
+            {
+                let slice_end = content_start + rel_start;
+                if slice_end > content_start {
+                    self.tokens.push(Token::TextSpan {
+                        range: content_start..slice_end,
+                    });
+                }
+                self.tokens.push(Token::EndTag(name));
+                self.cursor = content_start + rel_end;
+                return ParseOutcome::Complete;
+            }
+            if is_final {
+                if content_start < input.len() {
+                    self.tokens.push(Token::TextSpan {
+                        range: content_start..input.len(),
+                    });
+                }
+                self.tokens.push(Token::EndTag(name));
+                self.cursor = input.len();
+                return ParseOutcome::Complete;
+            }
+            let scan_from = input
+                .len()
+                .saturating_sub(close_tag.len() + 1)
+                .max(content_start);
+            self.cursor = input.len();
+            self.pending = PendingState::Rawtext {
+                tag: name,
+                close_tag,
+                content_start,
+                scan_from,
+            };
+            return ParseOutcome::Complete;
+        }
+
+        self.cursor = content_start;
+        ParseOutcome::Complete
     }
-    TokenStream::new(out, atoms, source, text_pool)
+}
+
+#[derive(Debug)]
+enum ParseOutcome {
+    Complete,
+    Incomplete,
+}
+
+fn is_partial_markup_prefix(bytes: &[u8], start: usize) -> bool {
+    // Heuristic: avoid consuming '<' when the chunk may end mid-construct.
+    // Full parsing still handles other incomplete cases.
+    let remaining = bytes.len().saturating_sub(start);
+    if remaining < 2 {
+        return true;
+    }
+    is_partial_prefix(bytes, start, HTML_COMMENT_START.as_bytes())
+        || is_partial_prefix_case_insensitive(bytes, start, b"<!doctype")
+        || is_partial_prefix(bytes, start, b"</")
+}
+
+fn is_partial_prefix(bytes: &[u8], start: usize, needle: &[u8]) -> bool {
+    let remaining = bytes.len().saturating_sub(start);
+    remaining < needle.len() && needle[..remaining] == bytes[start..start + remaining]
+}
+
+fn is_partial_prefix_case_insensitive(bytes: &[u8], start: usize, needle: &[u8]) -> bool {
+    let remaining = bytes.len().saturating_sub(start);
+    remaining < needle.len()
+        && needle[..remaining].eq_ignore_ascii_case(&bytes[start..start + remaining])
+}
+
+/// Tokenizes into a token stream with interned tag/attribute names to reduce allocations.
+pub fn tokenize(input: &str) -> TokenStream {
+    let mut tokenizer = Tokenizer::new();
+    tokenizer.feed_str(input);
+    tokenizer.finish();
+    tokenizer.into_stream()
 }
 
 #[cfg(test)]
@@ -365,11 +653,70 @@ mod tests {
     use super::*;
     #[cfg(feature = "count-alloc")]
     use crate::test_alloc;
+    use std::fmt::Write;
     #[cfg(feature = "perf-tests")]
     use std::time::{Duration, Instant};
 
     fn text_eq(stream: &TokenStream, token: &Token, expected: &str) -> bool {
         stream.text(token) == Some(expected)
+    }
+
+    fn token_snapshot(stream: &TokenStream) -> Vec<String> {
+        let atoms = stream.atoms();
+        stream
+            .tokens()
+            .iter()
+            .map(|token| match token {
+                Token::Doctype(value) => format!("Doctype({value})"),
+                Token::StartTag {
+                    name,
+                    attributes,
+                    self_closing,
+                } => {
+                    let mut line = String::new();
+                    let _ = write!(&mut line, "StartTag({}", atoms.resolve(*name));
+                    for (attr, value) in attributes {
+                        line.push(' ');
+                        line.push_str(atoms.resolve(*attr));
+                        if let Some(value) = value {
+                            line.push_str("=\"");
+                            line.push_str(value);
+                            line.push('"');
+                        }
+                    }
+                    if *self_closing {
+                        line.push_str(" /");
+                    }
+                    line.push(')');
+                    line
+                }
+                Token::EndTag(name) => format!("EndTag({})", atoms.resolve(*name)),
+                Token::Comment(text) => format!("Comment({text})"),
+                Token::TextSpan { .. } | Token::TextOwned { .. } => {
+                    let text = stream.text(token).unwrap_or("");
+                    format!("Text({text})")
+                }
+            })
+            .collect()
+    }
+
+    fn tokenize_in_chunks(input: &str, sizes: &[usize]) -> TokenStream {
+        let bytes = input.as_bytes();
+        let mut tokenizer = Tokenizer::new();
+        let mut offset = 0usize;
+        for size in sizes {
+            if offset >= bytes.len() {
+                break;
+            }
+            let end = (offset + size).min(bytes.len());
+            tokenizer.feed(&bytes[offset..end]);
+            offset = end;
+        }
+        if offset < bytes.len() {
+            tokenizer.feed(&bytes[offset..]);
+        }
+        tokenizer.finish();
+        tokenizer.into_stream()
     }
 
     #[test]
@@ -775,6 +1122,59 @@ mod tests {
         let input = "<".repeat(200_000);
         let stream = tokenize(&input);
         assert!(stream.tokens().len() <= input.len());
+    }
+
+    #[test]
+    fn tokenize_incremental_matches_full_for_small_chunks() {
+        let input = "<!DOCTYPE html><!--c--><div class=one>Hi &amp; \
+                     <script>let x = 1;</script><style>p{}</style>é</div>";
+        let full = tokenize(input);
+        let chunked = tokenize_in_chunks(input, &[1, 2, 3, 7, 64]);
+        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+    }
+
+    #[test]
+    fn tokenize_incremental_matches_full_for_utf8_splits() {
+        let input = "<p>café 😊 &amp; naïve</p>";
+        let full = tokenize(input);
+        let chunked = tokenize_in_chunks(input, &[1, 1, 1, 2, 1, 4, 1]);
+        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+    }
+
+    #[test]
+    fn tokenize_incremental_handles_split_script_end_tag() {
+        let input = "<script>hi</script>";
+        let split = "<script>hi</scr".len();
+        let full = tokenize(input);
+        let chunked = tokenize_in_chunks(input, &[split]);
+        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+    }
+
+    #[test]
+    fn tokenize_incremental_handles_split_end_tag_prefix() {
+        let input = "<div></div>";
+        let split = "<div></".len();
+        let full = tokenize(input);
+        let chunked = tokenize_in_chunks(input, &[split]);
+        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+    }
+
+    #[test]
+    fn tokenize_incremental_handles_split_comment_terminator() {
+        let input = "<!--x-->";
+        let split = "<!--x--".len();
+        let full = tokenize(input);
+        let chunked = tokenize_in_chunks(input, &[split]);
+        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+    }
+
+    #[test]
+    fn tokenize_incremental_handles_split_doctype_end() {
+        let input = "<!DOCTYPE html>";
+        let split = "<!DOCTYPE html".len();
+        let full = tokenize(input);
+        let chunked = tokenize_in_chunks(input, &[split]);
+        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
     }
 
     #[cfg(feature = "perf-tests")]
