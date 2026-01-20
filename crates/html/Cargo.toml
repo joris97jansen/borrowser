@@ -5,11 +5,9 @@ edition = "2024"
 
 [dependencies]
 memchr = "2"
+tools = { path = "../tools" }
 
 [features]
 count-alloc = []
 html5-entities = []
 perf-tests = []
-
-[dev-dependencies]
-tools = { path = "../tools" }
