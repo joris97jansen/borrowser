@@ -12,6 +12,8 @@
 //! - Tag/attribute names are restricted to ASCII `[A-Za-z0-9:_-]`.
 //! - Rawtext close-tag scanning accepts only ASCII whitespace before `>` (see
 //!   `find_rawtext_close_tag`).
+//! - `Token::TextSpan` ranges are stable only while the tokenizer's `source` is
+//!   append-only; dropping prefixes will require a different storage model.
 //!
 //! TODO(html/tokenizer/html5): replace with a full HTML5 tokenizer + tree builder state machine.
 use crate::entities::decode_entities;
@@ -132,6 +134,37 @@ pub(crate) struct Tokenizer {
     tokens: Vec<Token>,
 }
 
+#[derive(Clone, Copy, Debug)]
+#[allow(dead_code)]
+pub(crate) struct TokenizerView<'a> {
+    atoms: &'a AtomTable,
+    source: &'a str,
+    text_pool: &'a [String],
+}
+
+impl<'a> TokenizerView<'a> {
+    #[allow(dead_code)]
+    pub(crate) fn resolve_atom(&self, id: AtomId) -> &str {
+        self.atoms.resolve(id)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn text(&self, token: &Token) -> Option<&str> {
+        match token {
+            Token::TextSpan { range } => {
+                debug_assert!(
+                    self.source.is_char_boundary(range.start)
+                        && self.source.is_char_boundary(range.end),
+                    "text span must be on UTF-8 boundaries"
+                );
+                Some(&self.source[range.clone()])
+            }
+            Token::TextOwned { index } => self.text_pool.get(*index).map(|s| s.as_str()),
+            _ => None,
+        }
+    }
+}
+
 impl Tokenizer {
     pub fn new() -> Self {
         Self {
@@ -160,6 +193,33 @@ impl Tokenizer {
     pub fn finish(&mut self) -> usize {
         finish_utf8(&mut self.source, &mut self.carry);
         self.scan(true)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn view(&self) -> TokenizerView<'_> {
+        TokenizerView {
+            atoms: &self.atoms,
+            source: self.source.as_str(),
+            text_pool: &self.text_pool,
+        }
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn drain_into(&mut self, out: &mut Vec<Token>) {
+        out.append(&mut self.tokens);
+    }
+
+    #[allow(dead_code)]
+    pub fn drain_tokens(&mut self) -> Vec<Token> {
+        let mut out = Vec::new();
+        self.drain_into(&mut out);
+        out
+    }
+
+    #[allow(dead_code)]
+    pub fn finish_and_drain(&mut self) -> Vec<Token> {
+        self.finish();
+        self.drain_tokens()
     }
 
     pub fn into_stream(self) -> TokenStream {
@@ -700,6 +760,43 @@ mod tests {
             .collect()
     }
 
+    fn token_snapshot_with_view(view: TokenizerView<'_>, tokens: &[Token]) -> Vec<String> {
+        tokens
+            .iter()
+            .map(|token| match token {
+                Token::Doctype(value) => format!("Doctype({value})"),
+                Token::StartTag {
+                    name,
+                    attributes,
+                    self_closing,
+                } => {
+                    let mut line = String::new();
+                    let _ = write!(&mut line, "StartTag({}", view.resolve_atom(*name));
+                    for (attr, value) in attributes {
+                        line.push(' ');
+                        line.push_str(view.resolve_atom(*attr));
+                        if let Some(value) = value {
+                            line.push_str("=\"");
+                            line.push_str(value);
+                            line.push('"');
+                        }
+                    }
+                    if *self_closing {
+                        line.push_str(" /");
+                    }
+                    line.push(')');
+                    line
+                }
+                Token::EndTag(name) => format!("EndTag({})", view.resolve_atom(*name)),
+                Token::Comment(text) => format!("Comment({text})"),
+                Token::TextSpan { .. } | Token::TextOwned { .. } => {
+                    let text = view.text(token).unwrap_or("");
+                    format!("Text({text})")
+                }
+            })
+            .collect()
+    }
+
     fn tokenize_in_chunks(input: &str, sizes: &[usize]) -> TokenStream {
         let bytes = input.as_bytes();
         let mut tokenizer = Tokenizer::new();
@@ -1175,6 +1272,45 @@ mod tests {
         let full = tokenize(input);
         let chunked = tokenize_in_chunks(input, &[split]);
         assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+    }
+
+    #[test]
+    fn tokenize_incremental_drain_view_matches_full() {
+        let input = "<!DOCTYPE html><!--c--><div class=one>Tom&amp;Jerry\
+                     <script>let x = 1;</script><style>p{}</style>é</div>";
+        let full = tokenize(input);
+        let expected = token_snapshot(&full);
+
+        let bytes = input.as_bytes();
+        let sizes = [1, 2, 3, 7, 64];
+        let mut tokenizer = Tokenizer::new();
+        let mut offset = 0usize;
+        let mut drained = Vec::new();
+        let mut snapshot = Vec::new();
+
+        for size in sizes {
+            if offset >= bytes.len() {
+                break;
+            }
+            let end = (offset + size).min(bytes.len());
+            tokenizer.feed(&bytes[offset..end]);
+            offset = end;
+            drained.clear();
+            tokenizer.drain_into(&mut drained);
+            let view = tokenizer.view();
+            snapshot.extend(token_snapshot_with_view(view, &drained));
+        }
+
+        if offset < bytes.len() {
+            tokenizer.feed(&bytes[offset..]);
+        }
+        tokenizer.finish();
+        drained.clear();
+        tokenizer.drain_into(&mut drained);
+        let view = tokenizer.view();
+        snapshot.extend(token_snapshot_with_view(view, &drained));
+
+        assert_eq!(expected, snapshot);
     }
 
     #[cfg(feature = "perf-tests")]
