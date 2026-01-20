@@ -3,6 +3,7 @@ pub mod debug;
 #[cfg(test)]
 pub mod dom_snapshot;
 pub mod dom_utils;
+pub mod golden_corpus;
 pub mod head;
 #[cfg(test)]
 pub mod test_harness;

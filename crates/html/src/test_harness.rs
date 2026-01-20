@@ -100,7 +100,6 @@ impl ChunkPlan {
                 }
             }
             ChunkPlan::Boundaries { indices, policy } => {
-                let validated = matches!(policy, BoundaryPolicy::EnforceUtf8);
                 // Boundaries are normalized (sorted, deduped, clipped to (0, len)).
                 let mut points = validate_boundaries_utf8(input, indices, *policy);
                 points.sort_unstable();
@@ -108,20 +107,16 @@ impl ChunkPlan {
                 points.retain(|&idx| idx > 0 && idx < bytes.len());
                 let mut last = 0usize;
                 for idx in points {
-                    if !validated {
-                        assert_chunk_boundary(input, last, *policy, "boundaries-start");
-                        assert_chunk_boundary(input, idx, *policy, "boundaries-end");
-                    }
+                    assert_chunk_boundary(input, last, *policy, "boundaries-start");
+                    assert_chunk_boundary(input, idx, *policy, "boundaries-end");
                     if idx > last {
                         f(&bytes[last..idx]);
                     }
                     last = idx;
                 }
                 if last < bytes.len() {
-                    if !validated {
-                        assert_chunk_boundary(input, last, *policy, "boundaries-final-start");
-                        assert_chunk_boundary(input, bytes.len(), *policy, "boundaries-final-end");
-                    }
+                    assert_chunk_boundary(input, last, *policy, "boundaries-final-start");
+                    assert_chunk_boundary(input, bytes.len(), *policy, "boundaries-final-end");
                     f(&bytes[last..]);
                 }
             }
@@ -139,16 +134,18 @@ fn assert_chunk_boundary(input: &str, idx: usize, policy: BoundaryPolicy, contex
 }
 
 fn validate_boundaries_utf8(input: &str, indices: &[usize], policy: BoundaryPolicy) -> Vec<usize> {
-    if matches!(policy, BoundaryPolicy::AllowUnaligned) {
-        return indices.to_vec();
-    }
+    let len = input.len();
+    let mut out = Vec::new();
     for &idx in indices {
-        assert!(
-            input.is_char_boundary(idx),
-            "boundary must be UTF-8 aligned: {idx}"
-        );
+        if idx == 0 || idx >= len {
+            continue;
+        }
+        if matches!(policy, BoundaryPolicy::EnforceUtf8) && !input.is_char_boundary(idx) {
+            continue;
+        }
+        out.push(idx);
     }
-    indices.to_vec()
+    out
 }
 
 pub fn run_full(input: &str) -> Node {
@@ -157,6 +154,11 @@ pub fn run_full(input: &str) -> Node {
 }
 
 pub fn run_chunked(input: &str, plan: &ChunkPlan) -> Node {
+    let (dom, _) = run_chunked_with_tokens(input, plan);
+    dom
+}
+
+pub fn run_chunked_with_tokens(input: &str, plan: &ChunkPlan) -> (Node, crate::TokenStream) {
     let mut tokenizer = Tokenizer::new();
     let mut tokens = Vec::new();
     plan.for_each_chunk(input, |chunk| {
@@ -167,7 +169,24 @@ pub fn run_chunked(input: &str, plan: &ChunkPlan) -> Node {
     tokenizer.drain_into(&mut tokens);
     let (atoms, source, text_pool) = tokenizer.into_parts();
     let stream = crate::TokenStream::new(tokens, atoms, source, text_pool);
-    build_dom(&stream)
+    let dom = build_dom(&stream);
+    (dom, stream)
+}
+
+pub fn default_chunk_plans() -> &'static [ChunkPlan] {
+    static PLANS: std::sync::OnceLock<Vec<ChunkPlan>> = std::sync::OnceLock::new();
+    PLANS.get_or_init(|| {
+        let mut plans = Vec::new();
+        plans.push(ChunkPlan::fixed(64));
+        for size in [1usize, 2, 3, 7] {
+            plans.push(ChunkPlan::fixed_unaligned(size));
+        }
+        plans.push(ChunkPlan::sizes_unaligned(vec![1, 1, 2, 1, 4, 8, 16, 3, 7]));
+        plans.push(ChunkPlan::sizes_unaligned(vec![2, 3, 1, 5, 1, 1, 9, 2]));
+        plans.push(ChunkPlan::boundaries_unaligned(vec![1, 2, 4, 5, 6, 7]));
+        plans.push(ChunkPlan::boundaries(vec![3, 5]));
+        plans
+    })
 }
 
 #[cfg(test)]
@@ -225,7 +244,7 @@ mod tests {
     }
 
     #[test]
-    fn chunked_boundary_plan_allows_unaligned_splits() {
+    fn chunked_boundary_plan_allows_unaligned_splits_in_ascii_prefix() {
         let input = "<p>é</p>";
         let boundaries = vec![1, 2];
         let full = run_full(input);
