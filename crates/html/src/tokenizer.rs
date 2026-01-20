@@ -134,21 +134,20 @@ pub(crate) struct Tokenizer {
     tokens: Vec<Token>,
 }
 
+#[cfg(test)]
 #[derive(Clone, Copy, Debug)]
-#[allow(dead_code)]
 pub(crate) struct TokenizerView<'a> {
     atoms: &'a AtomTable,
     source: &'a str,
     text_pool: &'a [String],
 }
 
+#[cfg(test)]
 impl<'a> TokenizerView<'a> {
-    #[allow(dead_code)]
     pub(crate) fn resolve_atom(&self, id: AtomId) -> &str {
         self.atoms.resolve(id)
     }
 
-    #[allow(dead_code)]
     pub(crate) fn text(&self, token: &Token) -> Option<&str> {
         match token {
             Token::TextSpan { range } => {
@@ -195,7 +194,7 @@ impl Tokenizer {
         self.scan(true)
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn view(&self) -> TokenizerView<'_> {
         TokenizerView {
             atoms: &self.atoms,
@@ -204,27 +203,27 @@ impl Tokenizer {
         }
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub(crate) fn drain_into(&mut self, out: &mut Vec<Token>) {
         out.append(&mut self.tokens);
     }
 
-    #[allow(dead_code)]
+    #[cfg(test)]
     pub fn drain_tokens(&mut self) -> Vec<Token> {
         let mut out = Vec::new();
         self.drain_into(&mut out);
         out
     }
 
-    #[allow(dead_code)]
-    pub fn finish_and_drain(&mut self) -> Vec<Token> {
-        self.finish();
-        self.drain_tokens()
-    }
-
     pub fn into_stream(self) -> TokenStream {
         let source: Arc<str> = Arc::from(self.source);
         TokenStream::new(self.tokens, self.atoms, source, self.text_pool)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn into_parts(self) -> (AtomTable, Arc<str>, Vec<String>) {
+        let source: Arc<str> = Arc::from(self.source);
+        (self.atoms, source, self.text_pool)
     }
 
     fn scan(&mut self, is_final: bool) -> usize {
