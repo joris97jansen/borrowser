@@ -72,6 +72,8 @@ pub enum Token {
     },
     EndTag(AtomId),
     Comment(String),
+    /// Byte range into the tokenizer's source; valid only while the source is append-only.
+    /// Dropping prefixes requires a different storage model or shifting ranges.
     TextSpan {
         range: Range<usize>,
     },
