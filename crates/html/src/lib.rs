@@ -6,6 +6,8 @@ pub mod dom_utils;
 pub mod golden_corpus;
 pub mod head;
 #[cfg(test)]
+mod streaming_parity;
+#[cfg(test)]
 pub mod test_harness;
 pub mod traverse;
 
