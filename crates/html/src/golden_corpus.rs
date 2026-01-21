@@ -517,10 +517,10 @@ mod tests {
                 }
             }
         }
-        if let Some(filter) = fixture_filter.as_deref() {
-            if matched == 0 {
-                panic!("no fixtures matched BORROWSER_FUZZ_FIXTURE={filter}");
-            }
+        if let Some(filter) = fixture_filter.as_deref()
+            && matched == 0
+        {
+            panic!("no fixtures matched BORROWSER_FUZZ_FIXTURE={filter}");
         }
         if !xfail_invariants.is_empty() {
             eprintln!(
@@ -595,12 +595,11 @@ mod tests {
     }
 
     fn fuzz_seed_count() -> usize {
-        if let Ok(value) = std::env::var("BORROWSER_FUZZ_SEEDS") {
-            if let Ok(parsed) = value.parse::<usize>() {
-                if parsed > 0 {
-                    return parsed;
-                }
-            }
+        if let Ok(value) = std::env::var("BORROWSER_FUZZ_SEEDS")
+            && let Ok(parsed) = value.parse::<usize>()
+            && parsed > 0
+        {
+            return parsed;
         }
         if std::env::var("CI").is_ok() { 50 } else { 200 }
     }

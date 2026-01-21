@@ -292,18 +292,18 @@ pub fn random_chunk_plan(input: &str, seed: u64, mode: FuzzMode) -> FuzzChunkPla
                 }
                 BoundaryPolicy::ByteStream => ChunkPlan::boundaries_unaligned(indices.clone()),
             };
-            let plan_indices = match &plan {
-                ChunkPlan::Boundaries { indices, .. } => indices.as_slice(),
-                _ => &[],
-            };
-            return FuzzChunkPlan {
-                plan,
-                summary: format!(
+            let summary = {
+                let plan_indices = match &plan {
+                    ChunkPlan::Boundaries { indices, .. } => indices.as_slice(),
+                    _ => &[],
+                };
+                format!(
                     "semantic_boundaries policy={policy} count={} len={} seed=0x{seed:016x} boundaries={plan_indices:?}",
                     plan_indices.len(),
                     len
-                ),
+                )
             };
+            return FuzzChunkPlan { plan, summary };
         }
     }
 
@@ -369,18 +369,18 @@ pub fn random_chunk_plan(input: &str, seed: u64, mode: FuzzMode) -> FuzzChunkPla
         }
         BoundaryPolicy::ByteStream => ChunkPlan::boundaries_unaligned(indices.clone()),
     };
-    let plan_indices = match &plan {
-        ChunkPlan::Boundaries { indices, .. } => indices.as_slice(),
-        _ => &[],
-    };
-    FuzzChunkPlan {
-        plan,
-        summary: format!(
+    let summary = {
+        let plan_indices = match &plan {
+            ChunkPlan::Boundaries { indices, .. } => indices.as_slice(),
+            _ => &[],
+        };
+        format!(
             "boundaries policy={policy} count={} len={} seed=0x{seed:016x} boundaries={plan_indices:?}",
             plan_indices.len(),
             len
-        ),
-    }
+        )
+    };
+    FuzzChunkPlan { plan, summary }
 }
 
 fn every_byte_boundaries(input: &str, max_len: usize) -> Option<Vec<usize>> {
@@ -422,7 +422,7 @@ fn random_sizes(rng: &mut LcgRng, len: usize, count: usize) -> Vec<usize> {
         }
         let max_size = remaining.saturating_sub(count.saturating_sub(i + 1)).max(1);
         let biased_max = if rng.gen_ratio(7, 10) {
-            max_size.min(8).max(1)
+            max_size.clamp(1, 8)
         } else {
             max_size
         };
