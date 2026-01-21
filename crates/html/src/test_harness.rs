@@ -761,10 +761,13 @@ impl LcgRng {
 
 #[cfg(test)]
 mod tests {
-    use super::{BoundaryPolicy, ChunkPlan, run_chunked, run_full, shrink_chunk_plan_with_stats};
-    use crate::dom_snapshot::{DomSnapshotOptions, assert_dom_eq};
+    use super::{
+        BoundaryPolicy, ChunkPlan, LcgRng, run_chunked, run_full, shrink_chunk_plan_with_stats,
+    };
+    use crate::dom_snapshot::{DomSnapshotOptions, assert_dom_eq, compare_dom};
     use crate::tokenizer::Tokenizer;
     use std::fmt::Write;
+    use tools::utf8::{finish_utf8, push_utf8_chunk};
 
     fn token_snapshot(stream: &crate::TokenStream) -> Vec<String> {
         let atoms = stream.atoms();
@@ -803,6 +806,184 @@ mod tests {
                 }
             })
             .collect()
+    }
+
+    fn assemble_utf8_from_bytes(bytes: &[u8], boundaries: &[usize]) -> String {
+        let mut text = String::new();
+        let mut carry = Vec::new();
+        let mut last = 0usize;
+        for &idx in boundaries {
+            assert!(idx > last && idx <= bytes.len(), "invalid boundary {idx}");
+            push_utf8_chunk(&mut text, &mut carry, &bytes[last..idx]);
+            last = idx;
+        }
+        if last < bytes.len() {
+            push_utf8_chunk(&mut text, &mut carry, &bytes[last..]);
+        }
+        finish_utf8(&mut text, &mut carry);
+        text
+    }
+
+    fn tokenize_chunked_bytes(bytes: &[u8], boundaries: &[usize]) -> crate::TokenStream {
+        let mut tokenizer = Tokenizer::new();
+        let mut tokens = Vec::new();
+        let mut last = 0usize;
+        for &idx in boundaries {
+            assert!(idx > last && idx <= bytes.len(), "invalid boundary {idx}");
+            tokenizer.feed(&bytes[last..idx]);
+            tokenizer.drain_into(&mut tokens);
+            last = idx;
+        }
+        if last < bytes.len() {
+            tokenizer.feed(&bytes[last..]);
+        }
+        tokenizer.finish();
+        tokenizer.drain_into(&mut tokens);
+        let (atoms, source, text_pool) = tokenizer.into_parts();
+        crate::TokenStream::new(tokens, atoms, source, text_pool)
+    }
+
+    fn fuzz_seed_count() -> usize {
+        if let Ok(value) = std::env::var("BORROWSER_UTF8_PARITY_SEEDS")
+            && let Ok(parsed) = value.parse::<usize>()
+            && parsed > 0
+        {
+            return parsed;
+        }
+        if std::env::var("CI").is_ok() { 50 } else { 200 }
+    }
+
+    fn random_boundaries(rng: &mut LcgRng, len: usize) -> Vec<usize> {
+        if len <= 1 {
+            return Vec::new();
+        }
+        let max_points = (len - 1).min(64);
+        let count = rng.gen_range_usize(0, max_points + 1);
+        let mut out = Vec::with_capacity(count);
+        for _ in 0..count {
+            let idx = rng.gen_range_usize(1, len);
+            out.push(idx);
+        }
+        out.sort_unstable();
+        out.dedup();
+        out
+    }
+
+    fn snapshot_preview(stream: &crate::TokenStream) -> String {
+        let snapshot = token_snapshot(stream);
+        let head = snapshot.iter().take(20).cloned().collect::<Vec<_>>();
+        format!("len={} head=[{}]", snapshot.len(), head.join(", "))
+    }
+
+    #[test]
+    fn runtime_utf8_carry_matches_byte_stream_tokenization() {
+        let cases = [
+            "plain ascii",
+            "café",
+            "e\u{0301}",
+            "👨\u{200D}👩\u{200D}👧\u{200D}👦",
+            "é<script>😀</script>ö",
+            "&amp; café 😀",
+        ];
+        let seeds = fuzz_seed_count();
+        for (case_idx, input) in cases.iter().enumerate() {
+            let bytes = input.as_bytes();
+            let mut explicit = Vec::new();
+            explicit.push(Vec::new());
+            if bytes.len() > 1 {
+                explicit.push(vec![1]);
+                explicit.push(vec![bytes.len() - 1]);
+            }
+            for boundaries in explicit {
+                let assembled = assemble_utf8_from_bytes(bytes, &boundaries);
+                let runtime_stream = crate::tokenize(&assembled);
+                let runtime_dom = crate::build_dom(&runtime_stream);
+                let stream = tokenize_chunked_bytes(bytes, &boundaries);
+                let harness_dom = crate::build_dom(&stream);
+                compare_dom(
+                    &runtime_dom,
+                    &harness_dom,
+                    DomSnapshotOptions::default(),
+                )
+                .unwrap_or_else(|err| {
+                    let payload = if assembled.len() <= 128 {
+                        format!("assembled={assembled:?}")
+                    } else {
+                        format!("assembled_len={}", assembled.len())
+                    };
+                    panic!(
+                        "utf8 carry parity mismatch for case={case_idx} boundaries={boundaries:?}: {err}\n{payload}\nruntime_tokens: {}\nharness_tokens: {}",
+                        snapshot_preview(&runtime_stream),
+                        snapshot_preview(&stream)
+                    )
+                });
+            }
+            for size in [1usize, 2, 3, 4, 7, 16] {
+                let mut boundaries = Vec::new();
+                let mut offset = size;
+                while offset < bytes.len() {
+                    boundaries.push(offset);
+                    offset += size;
+                }
+                let assembled = assemble_utf8_from_bytes(bytes, &boundaries);
+                let runtime_stream = crate::tokenize(&assembled);
+                let runtime_dom = crate::build_dom(&runtime_stream);
+                let stream = tokenize_chunked_bytes(bytes, &boundaries);
+                let harness_dom = crate::build_dom(&stream);
+                compare_dom(
+                    &runtime_dom,
+                    &harness_dom,
+                    DomSnapshotOptions::default(),
+                )
+                .unwrap_or_else(|err| {
+                    let payload = if assembled.len() <= 128 {
+                        format!("assembled={assembled:?}")
+                    } else {
+                        format!("assembled_len={}", assembled.len())
+                    };
+                    panic!(
+                        "utf8 carry parity mismatch for size={size} case={case_idx}: {err}\n{payload}\nruntime_tokens: {}\nharness_tokens: {}",
+                        snapshot_preview(&runtime_stream),
+                        snapshot_preview(&stream)
+                    )
+                });
+            }
+
+            let mut rng = LcgRng::new(0x4f6f726f6d207574 ^ case_idx as u64);
+            for _ in 0..seeds {
+                let boundaries = random_boundaries(&mut rng, bytes.len());
+                let assembled = assemble_utf8_from_bytes(bytes, &boundaries);
+                let runtime_stream = crate::tokenize(&assembled);
+                let runtime_dom = crate::build_dom(&runtime_stream);
+                let stream = tokenize_chunked_bytes(bytes, &boundaries);
+                let harness_dom = crate::build_dom(&stream);
+                compare_dom(
+                    &runtime_dom,
+                    &harness_dom,
+                    DomSnapshotOptions::default(),
+                )
+                .unwrap_or_else(|err| {
+                    let payload = if assembled.len() <= 128 {
+                        format!("assembled={assembled:?}")
+                    } else {
+                        format!("assembled_len={}", assembled.len())
+                    };
+                    panic!(
+                        "utf8 carry parity mismatch for case={case_idx} boundaries={boundaries:?}: {err}\n{payload}\nruntime_tokens: {}\nharness_tokens: {}",
+                        snapshot_preview(&runtime_stream),
+                        snapshot_preview(&stream)
+                    )
+                });
+            }
+        }
+    }
+
+    #[test]
+    fn utf8_carry_handles_invalid_bytes_lossily() {
+        let bytes = [0xFFu8, b'f', 0xC3];
+        let boundaries = vec![1, 2];
+        let assembled = assemble_utf8_from_bytes(&bytes, &boundaries);
+        assert_eq!(assembled, "�f�");
     }
 
     #[test]

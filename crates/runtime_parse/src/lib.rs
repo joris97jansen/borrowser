@@ -101,3 +101,39 @@ pub fn start_parse_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEve
         }
     });
 }
+
+#[cfg(test)]
+mod tests {
+    use tools::utf8::{finish_utf8, push_utf8_chunk};
+
+    // NOTE: The primary UTF-8 carry contract is validated in html::test_harness
+    // via runtime-assembly vs byte-stream tokenizer parity. This is a small
+    // smoke test to ensure runtime_parse keeps using the same helpers.
+    fn assemble_utf8(bytes: &[u8], boundaries: &[usize]) -> String {
+        let mut text = String::new();
+        let mut carry = Vec::new();
+        let mut last = 0usize;
+        for &idx in boundaries {
+            assert!(idx > last && idx <= bytes.len(), "invalid boundary {idx}");
+            push_utf8_chunk(&mut text, &mut carry, &bytes[last..idx]);
+            last = idx;
+        }
+        if last < bytes.len() {
+            push_utf8_chunk(&mut text, &mut carry, &bytes[last..]);
+        }
+        finish_utf8(&mut text, &mut carry);
+        text
+    }
+
+    #[test]
+    fn utf8_chunk_assembly_smoke_test() {
+        let input = "café 😀";
+        let bytes = input.as_bytes();
+        let boundaries = vec![1, bytes.len() - 1];
+        let rebuilt = assemble_utf8(bytes, &boundaries);
+        assert_eq!(
+            rebuilt, input,
+            "expected UTF-8 roundtrip for boundaries={boundaries:?}"
+        );
+    }
+}

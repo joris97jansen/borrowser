@@ -75,6 +75,14 @@ fn find_rawtext_close_tag(haystack: &str, close_tag: &[u8]) -> Option<(usize, us
     None
 }
 
+fn clamp_char_boundary(input: &str, idx: usize, floor: usize) -> usize {
+    let mut idx = idx.min(input.len());
+    while idx > floor && !input.is_char_boundary(idx) {
+        idx -= 1;
+    }
+    idx
+}
+
 fn is_void_element(name: &str) -> bool {
     matches!(
         name,
@@ -413,6 +421,7 @@ impl Tokenizer {
             } => {
                 let input = self.source.as_str();
                 let len = input.len();
+                let scan_from = clamp_char_boundary(input, scan_from, content_start);
                 if let Some((rel_start, rel_end)) =
                     find_rawtext_close_tag(&input[scan_from..], close_tag)
                 {
@@ -438,7 +447,11 @@ impl Tokenizer {
                     self.pending = PendingState::None;
                     return true;
                 }
-                let scan_from = len.saturating_sub(close_tag.len() + 1).max(content_start);
+                let scan_from = clamp_char_boundary(
+                    input,
+                    len.saturating_sub(close_tag.len() + 1).max(content_start),
+                    content_start,
+                );
                 self.pending = PendingState::Rawtext {
                     tag,
                     close_tag,
@@ -651,10 +664,14 @@ impl Tokenizer {
                 self.cursor = input.len();
                 return ParseOutcome::Complete;
             }
-            let scan_from = input
-                .len()
-                .saturating_sub(close_tag.len() + 1)
-                .max(content_start);
+            let scan_from = clamp_char_boundary(
+                input,
+                input
+                    .len()
+                    .saturating_sub(close_tag.len() + 1)
+                    .max(content_start),
+                content_start,
+            );
             self.cursor = input.len();
             self.pending = PendingState::Rawtext {
                 tag: name,
