@@ -316,7 +316,9 @@ pub fn fixtures() -> &'static [GoldenFixture] {
 mod tests {
     use super::{AllowedFailure, GoldenFixture, fixtures};
     use crate::dom_snapshot::{DomSnapshotOptions, compare_dom};
-    use crate::test_harness::{ChunkPlan, deterministic_chunk_plans, run_chunked_with_tokens, run_full};
+    use crate::test_harness::{
+        ChunkPlan, deterministic_chunk_plans, run_chunked_with_tokens, run_full,
+    };
     use crate::{Node, Token, TokenStream};
     use std::collections::{BTreeMap, HashMap, HashSet};
 
@@ -422,10 +424,7 @@ mod tests {
             }
         }
         if !xfails.is_empty() {
-            eprintln!(
-                "XFAIL summary ({} total):",
-                xfails.len()
-            );
+            eprintln!("XFAIL summary ({} total):", xfails.len());
             for (inv, count) in xfail_invariants {
                 eprintln!("  {inv}: {count}");
             }
@@ -490,10 +489,7 @@ mod tests {
                 }
             }
         }
-        FixtureRun {
-            failures,
-            xfails,
-        }
+        FixtureRun { failures, xfails }
     }
 
     struct XfailEntry {
