@@ -317,7 +317,8 @@ mod tests {
     use super::{AllowedFailure, GoldenFixture, fixtures};
     use crate::dom_snapshot::{DomSnapshotOptions, compare_dom};
     use crate::test_harness::{
-        ChunkPlan, deterministic_chunk_plans, run_chunked_with_tokens, run_full,
+        ChunkPlan, FuzzMode, deterministic_chunk_plans, random_chunk_plan, run_chunked_with_tokens,
+        run_full,
     };
     use crate::{Node, Token, TokenStream};
     use std::collections::{BTreeMap, HashMap, HashSet};
@@ -438,6 +439,107 @@ mod tests {
         }
     }
 
+    #[test]
+    fn golden_corpus_v1_runs_across_random_chunk_plans() {
+        let seeds_per_fixture = fuzz_seed_count();
+        let base_seed = fuzz_seed_base();
+        let fixture_filter = fuzz_fixture_filter();
+        let fuzz_mode = fuzz_mode();
+        let verbose = std::env::var("BORROWSER_FUZZ_VERBOSE").is_ok();
+        let strict_xpass = std::env::var("BORROWSER_STRICT_XPASS").is_ok();
+        let mut failures = Vec::new();
+        let mut primary_repro = None;
+        let mut matched = 0usize;
+        let mut xfail_invariants: HashMap<super::Invariant, usize> = HashMap::new();
+        for (fixture_index, fixture) in fixtures().iter().enumerate() {
+            if !fixture_matches_filter(fixture.name, fixture_filter.as_deref()) {
+                continue;
+            }
+            matched += 1;
+            let full_dom = run_full(fixture.input);
+            let fixture_seed = derive_seed(base_seed, fixture.name, fixture_index as u64);
+            for i in 0..seeds_per_fixture {
+                let seed = fixture_seed.wrapping_add(i as u64);
+                let fuzz_plan = random_chunk_plan(fixture.input, seed, fuzz_mode);
+                let (chunked_dom, chunked_tokens) =
+                    run_chunked_with_tokens(fixture.input, &fuzz_plan.plan);
+                for &inv in fixture.invariants {
+                    let result =
+                        check_invariant(fixture, inv, &full_dom, &chunked_dom, &chunked_tokens);
+                    if let Err(message) = result {
+                        if let Some(reason) = is_allowed_to_fail(fixture, inv) {
+                            *xfail_invariants.entry(inv).or_insert(0) += 1;
+                            if verbose {
+                                eprintln!(
+                                    "XFAIL: {} [{:?}] :: seed=0x{seed:016x} :: {} :: {} :: {message} :: {} ({reason})",
+                                    fixture.name,
+                                    fixture.kind,
+                                    fuzz_plan.plan,
+                                    inv,
+                                    fuzz_plan.summary
+                                );
+                            }
+                        } else {
+                            let repro = format!(
+                                "repro: BORROWSER_FUZZ_SEED=0x{seed:016x} BORROWSER_FUZZ_FIXTURE={} BORROWSER_FUZZ_SEEDS=1 BORROWSER_FUZZ_MODE={} cargo test -p html golden_corpus_v1_runs_across_random_chunk_plans -- --nocapture",
+                                fixture.name,
+                                fuzz_mode_label(fuzz_mode)
+                            );
+                            if primary_repro.is_none() {
+                                primary_repro = Some(repro.clone());
+                            }
+                            failures.push(format!(
+                                "{} [{:?}] :: seed=0x{seed:016x} :: {} :: {} :: {message} :: {} :: {repro}",
+                                fixture.name, fixture.kind, fuzz_plan.plan, inv, fuzz_plan.summary
+                            ));
+                        }
+                    } else if let Some(reason) = is_allowed_to_fail(fixture, inv) {
+                        if strict_xpass {
+                            let repro = format!(
+                                "repro: BORROWSER_FUZZ_SEED=0x{seed:016x} BORROWSER_FUZZ_FIXTURE={} BORROWSER_FUZZ_SEEDS=1 BORROWSER_FUZZ_MODE={} cargo test -p html golden_corpus_v1_runs_across_random_chunk_plans -- --nocapture",
+                                fixture.name,
+                                fuzz_mode_label(fuzz_mode)
+                            );
+                            if primary_repro.is_none() {
+                                primary_repro = Some(repro.clone());
+                            }
+                            failures.push(format!(
+                                "{} [{:?}] :: seed=0x{seed:016x} :: {} :: {} :: XPASS (allowed to fail: {reason}) :: {} :: {repro}",
+                                fixture.name, fixture.kind, fuzz_plan.plan, inv, fuzz_plan.summary
+                            ));
+                        } else if verbose {
+                            eprintln!(
+                                "XPASS: {} [{:?}] :: seed=0x{seed:016x} :: {} :: {} :: {reason} :: {}",
+                                fixture.name, fixture.kind, fuzz_plan.plan, inv, fuzz_plan.summary
+                            );
+                        }
+                    }
+                }
+            }
+        }
+        if let Some(filter) = fixture_filter.as_deref() {
+            if matched == 0 {
+                panic!("no fixtures matched BORROWSER_FUZZ_FIXTURE={filter}");
+            }
+        }
+        if !xfail_invariants.is_empty() {
+            eprintln!(
+                "XFAIL summary ({} total):",
+                xfail_invariants.values().sum::<usize>()
+            );
+            for (inv, count) in xfail_invariants {
+                eprintln!("  {inv}: {count}");
+            }
+        }
+        if !failures.is_empty() {
+            let report = failures.join("\n");
+            if let Some(repro) = primary_repro {
+                panic!("golden corpus random-chunk failures:\n{repro}\n{report}");
+            }
+            panic!("golden corpus random-chunk failures:\n{report}");
+        }
+    }
+
     struct FixtureRun {
         failures: Vec<String>,
         xfails: Vec<XfailEntry>,
@@ -459,12 +561,12 @@ mod tests {
                         if let Some(reason) = is_allowed_to_fail(fixture, inv) {
                             if strict_xpass {
                                 failures.push(format!(
-                                    "{} {} :: {:?} :: {} :: XPASS (allowed to fail: {reason})",
+                                    "{} {} :: {} :: {} :: XPASS (allowed to fail: {reason})",
                                     fixture.name, tags_label, plan, inv
                                 ));
                             } else {
                                 eprintln!(
-                                    "XPASS: {} {} :: {:?} :: {} :: {reason}",
+                                    "XPASS: {} {} :: {} :: {} :: {reason}",
                                     fixture.name, tags_label, plan, inv
                                 );
                             }
@@ -475,13 +577,13 @@ mod tests {
                             xfails.push(XfailEntry {
                                 invariant: inv,
                                 message: format!(
-                                    "XFAIL: {} {} :: {:?} :: {} :: {message} ({reason})",
+                                    "XFAIL: {} {} :: {} :: {} :: {message} ({reason})",
                                     fixture.name, tags_label, plan, inv
                                 ),
                             });
                         } else {
                             failures.push(format!(
-                                "{} {} :: {:?} :: {} :: {message}",
+                                "{} {} :: {} :: {} :: {message}",
                                 fixture.name, tags_label, plan, inv
                             ));
                         }
@@ -490,6 +592,83 @@ mod tests {
             }
         }
         FixtureRun { failures, xfails }
+    }
+
+    fn fuzz_seed_count() -> usize {
+        if let Ok(value) = std::env::var("BORROWSER_FUZZ_SEEDS") {
+            if let Ok(parsed) = value.parse::<usize>() {
+                if parsed > 0 {
+                    return parsed;
+                }
+            }
+        }
+        if std::env::var("CI").is_ok() { 50 } else { 200 }
+    }
+
+    fn fuzz_seed_base() -> u64 {
+        if let Ok(value) = std::env::var("BORROWSER_FUZZ_SEED") {
+            if let Ok(parsed) = u64::from_str_radix(value.trim_start_matches("0x"), 16) {
+                return parsed;
+            }
+            if let Ok(parsed) = value.parse::<u64>() {
+                return parsed;
+            }
+        }
+        0x6c8e9cf570932bd5
+    }
+
+    fn derive_seed(base: u64, name: &str, salt: u64) -> u64 {
+        let mut hash = 0xcbf29ce484222325u64;
+        for byte in name.as_bytes() {
+            hash ^= *byte as u64;
+            hash = hash.wrapping_mul(0x100000001b3);
+        }
+        base ^ hash ^ salt.wrapping_mul(0x9e3779b97f4a7c15)
+    }
+
+    fn fuzz_fixture_filter() -> Option<String> {
+        std::env::var("BORROWSER_FUZZ_FIXTURE")
+            .ok()
+            .map(|value| value.trim().to_string())
+            .filter(|value| !value.is_empty())
+    }
+
+    fn fixture_matches_filter(name: &str, filter: Option<&str>) -> bool {
+        let Some(filter) = filter else {
+            return true;
+        };
+        if !filter.contains('*') {
+            return name == filter || name.starts_with(filter);
+        }
+        let mut remainder = name;
+        for part in filter.split('*').filter(|part| !part.is_empty()) {
+            if let Some(idx) = remainder.find(part) {
+                remainder = &remainder[idx + part.len()..];
+            } else {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn fuzz_mode() -> FuzzMode {
+        let value = std::env::var("BORROWSER_FUZZ_MODE").unwrap_or_else(|_| "mixed".to_string());
+        match value.as_str() {
+            "sizes" => FuzzMode::Sizes,
+            "boundaries" => FuzzMode::Boundaries,
+            "semantic" => FuzzMode::Semantic,
+            "mixed" => FuzzMode::Mixed,
+            _ => panic!("unknown BORROWSER_FUZZ_MODE={value}"),
+        }
+    }
+
+    fn fuzz_mode_label(mode: FuzzMode) -> &'static str {
+        match mode {
+            FuzzMode::Sizes => "sizes",
+            FuzzMode::Boundaries => "boundaries",
+            FuzzMode::Semantic => "semantic",
+            FuzzMode::Mixed => "mixed",
+        }
     }
 
     struct XfailEntry {
