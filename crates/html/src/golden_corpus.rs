@@ -317,8 +317,8 @@ mod tests {
     use super::{AllowedFailure, GoldenFixture, fixtures};
     use crate::dom_snapshot::{DomSnapshotOptions, compare_dom};
     use crate::test_harness::{
-        ChunkPlan, FuzzMode, deterministic_chunk_plans, random_chunk_plan, run_chunked_with_tokens,
-        run_full,
+        ChunkPlan, FuzzMode, ShrinkStats, deterministic_chunk_plans, random_chunk_plan,
+        run_chunked_with_tokens, run_full, shrink_chunk_plan_with_stats,
     };
     use crate::{Node, Token, TokenStream};
     use std::collections::{BTreeMap, HashMap, HashSet};
@@ -485,12 +485,31 @@ mod tests {
                                 fixture.name,
                                 fuzz_mode_label(fuzz_mode)
                             );
+                            let (minimized, stats) = minimize_plan_for_failure(
+                                fixture,
+                                inv,
+                                &full_dom,
+                                fixture.input,
+                                &fuzz_plan.plan,
+                            );
                             if primary_repro.is_none() {
                                 primary_repro = Some(repro.clone());
                             }
                             failures.push(format!(
-                                "{} [{:?}] :: seed=0x{seed:016x} :: {} :: {} :: {message} :: {} :: {repro}",
-                                fixture.name, fixture.kind, fuzz_plan.plan, inv, fuzz_plan.summary
+                                "{} [{:?}] :: seed=0x{seed:016x} :: {} :: {} :: {message} :: {} :: minimized={} :: shrink(orig_boundaries={} orig_chunks={} min_boundaries={} min_chunks={} checks={} policy_upgraded={} budget_exhausted={}) :: {repro}",
+                                fixture.name,
+                                fixture.kind,
+                                fuzz_plan.plan,
+                                inv,
+                                fuzz_plan.summary,
+                                minimized,
+                                stats.original_boundaries,
+                                stats.original_chunks,
+                                stats.minimized_boundaries,
+                                stats.minimized_chunks,
+                                stats.checks,
+                                stats.policy_upgraded,
+                                stats.budget_exhausted
                             ));
                         }
                     } else if let Some(reason) = is_allowed_to_fail(fixture, inv) {
@@ -592,6 +611,19 @@ mod tests {
             }
         }
         FixtureRun { failures, xfails }
+    }
+
+    fn minimize_plan_for_failure(
+        fixture: &GoldenFixture,
+        inv: super::Invariant,
+        full_dom: &Node,
+        input: &str,
+        plan: &ChunkPlan,
+    ) -> (ChunkPlan, ShrinkStats) {
+        shrink_chunk_plan_with_stats(input, plan, |candidate| {
+            let (chunked_dom, chunked_tokens) = run_chunked_with_tokens(input, candidate);
+            check_invariant(fixture, inv, full_dom, &chunked_dom, &chunked_tokens).is_err()
+        })
     }
 
     fn fuzz_seed_count() -> usize {

@@ -137,7 +137,7 @@ impl ChunkPlan {
             }
             ChunkPlan::Boundaries { indices, policy } => {
                 // Boundaries are normalized (sorted, deduped, clipped to (0, len)).
-                let mut points = validate_boundaries_utf8(input, indices, *policy);
+                let mut points = filter_boundaries_by_policy(input, indices, *policy);
                 points.sort_unstable();
                 points.dedup();
                 points.retain(|&idx| idx > 0 && idx < bytes.len());
@@ -169,7 +169,11 @@ fn assert_chunk_boundary(input: &str, idx: usize, policy: BoundaryPolicy, contex
     }
 }
 
-fn validate_boundaries_utf8(input: &str, indices: &[usize], policy: BoundaryPolicy) -> Vec<usize> {
+fn filter_boundaries_by_policy(
+    input: &str,
+    indices: &[usize],
+    policy: BoundaryPolicy,
+) -> Vec<usize> {
     let len = input.len();
     let mut out = Vec::new();
     for &idx in indices {
@@ -236,7 +240,7 @@ pub fn deterministic_chunk_plans(input: &str) -> Vec<ChunkPlan> {
     let semantic_raw = semantic_boundaries(input, 256);
     if !semantic_raw.is_empty() {
         let semantic_aligned =
-            validate_boundaries_utf8(input, &semantic_raw, BoundaryPolicy::Utf8Aligned);
+            filter_boundaries_by_policy(input, &semantic_raw, BoundaryPolicy::Utf8Aligned);
         if !semantic_aligned.is_empty() {
             plans.push(ChunkPlan::boundaries(semantic_aligned));
         }
@@ -256,6 +260,194 @@ pub enum FuzzMode {
     Boundaries,
     Semantic,
     Mixed,
+}
+
+pub struct ShrinkStats {
+    pub original_boundaries: usize,
+    pub minimized_boundaries: usize,
+    pub original_chunks: usize,
+    pub minimized_chunks: usize,
+    pub checks: usize,
+    pub policy_upgraded: bool,
+    pub budget_exhausted: bool,
+}
+
+pub fn shrink_chunk_plan_with_stats(
+    input: &str,
+    plan: &ChunkPlan,
+    mut fails: impl FnMut(&ChunkPlan) -> bool,
+) -> (ChunkPlan, ShrinkStats) {
+    let policy = match plan {
+        ChunkPlan::Fixed { policy, .. }
+        | ChunkPlan::Sizes { policy, .. }
+        | ChunkPlan::Boundaries { policy, .. } => *policy,
+    };
+    let len = input.len();
+    let max_checks = shrink_budget();
+    let mut checks = 0usize;
+    let mut policy_upgraded = false;
+    let mut budget_exhausted = false;
+    let mut current_plan = plan.clone();
+
+    let mut original_boundaries_vec = plan_boundaries(plan, input);
+    original_boundaries_vec.sort_unstable();
+    original_boundaries_vec.dedup();
+    original_boundaries_vec.retain(|&idx| idx > 0 && idx < len);
+    let original_boundaries = original_boundaries_vec.len();
+    let original_chunks = chunk_count(len, original_boundaries);
+
+    if let ChunkPlan::Sizes { sizes, policy } = plan {
+        let mut trimmed = sizes.to_vec();
+        while !trimmed.is_empty() {
+            let candidate = ChunkPlan::Sizes {
+                sizes: trimmed[..trimmed.len() - 1].to_vec(),
+                policy: *policy,
+            };
+            checks += 1;
+            if checks > max_checks {
+                budget_exhausted = true;
+                break;
+            }
+            if fails(&candidate) {
+                trimmed.pop();
+                current_plan = candidate;
+            } else {
+                break;
+            }
+        }
+    }
+
+    let mut boundaries = plan_boundaries(&current_plan, input);
+    boundaries.sort_unstable();
+    boundaries.dedup();
+    boundaries.retain(|&idx| idx > 0 && idx < len);
+
+    if !boundaries.is_empty() && !budget_exhausted {
+        let mut changed = true;
+        while changed {
+            changed = false;
+            let mut i = 0usize;
+            while i < boundaries.len() {
+                let mut candidate = Vec::with_capacity(boundaries.len().saturating_sub(1));
+                candidate.extend_from_slice(&boundaries[..i]);
+                candidate.extend_from_slice(&boundaries[i + 1..]);
+                let candidate_plan = ChunkPlan::Boundaries {
+                    indices: candidate.clone(),
+                    policy,
+                };
+                checks += 1;
+                if checks > max_checks {
+                    budget_exhausted = true;
+                    break;
+                }
+                if fails(&candidate_plan) {
+                    boundaries = candidate;
+                    changed = true;
+                } else {
+                    i += 1;
+                }
+            }
+            if budget_exhausted {
+                break;
+            }
+        }
+    }
+
+    if !boundaries.is_empty() && !budget_exhausted {
+        let mut current = boundaries;
+        let mut granularity = 2usize;
+        loop {
+            if current.is_empty() {
+                break;
+            }
+            let n = current.len();
+            let chunk = n.div_ceil(granularity);
+            let mut reduced = false;
+            let mut i = 0usize;
+            while i < granularity {
+                let start = i * chunk;
+                if start >= n {
+                    break;
+                }
+                let end = (start + chunk).min(n);
+                let mut candidate = Vec::with_capacity(n - (end - start));
+                candidate.extend_from_slice(&current[..start]);
+                candidate.extend_from_slice(&current[end..]);
+                let candidate_plan = ChunkPlan::Boundaries {
+                    indices: candidate.clone(),
+                    policy,
+                };
+                checks += 1;
+                if checks > max_checks {
+                    budget_exhausted = true;
+                    break;
+                }
+                if fails(&candidate_plan) {
+                    current = candidate;
+                    reduced = true;
+                    if granularity > 2 {
+                        granularity -= 1;
+                    }
+                    break;
+                }
+                i += 1;
+            }
+            if budget_exhausted {
+                break;
+            }
+            if !reduced {
+                if granularity >= n {
+                    break;
+                }
+                granularity = (granularity * 2).min(n);
+            }
+        }
+        boundaries = current;
+    }
+
+    let mut minimized_policy = policy;
+    if !budget_exhausted && matches!(minimized_policy, BoundaryPolicy::ByteStream) {
+        let aligned = filter_boundaries_by_policy(input, &boundaries, BoundaryPolicy::Utf8Aligned);
+        let candidate_plan = ChunkPlan::Boundaries {
+            indices: aligned.clone(),
+            policy: BoundaryPolicy::Utf8Aligned,
+        };
+        checks += 1;
+        if checks > max_checks {
+            budget_exhausted = true;
+        } else if fails(&candidate_plan) {
+            minimized_policy = BoundaryPolicy::Utf8Aligned;
+            boundaries = aligned;
+            policy_upgraded = true;
+        }
+    }
+
+    let minimized_boundaries = boundaries.len();
+    let minimized_chunks = chunk_count(len, minimized_boundaries);
+    let minimized = ChunkPlan::Boundaries {
+        indices: boundaries,
+        policy: minimized_policy,
+    };
+    (
+        minimized,
+        ShrinkStats {
+            original_boundaries,
+            minimized_boundaries,
+            original_chunks,
+            minimized_chunks,
+            checks,
+            policy_upgraded,
+            budget_exhausted,
+        },
+    )
+}
+
+pub fn shrink_chunk_plan(
+    input: &str,
+    plan: &ChunkPlan,
+    fails: impl FnMut(&ChunkPlan) -> bool,
+) -> ChunkPlan {
+    shrink_chunk_plan_with_stats(input, plan, fails).0
 }
 
 pub fn random_chunk_plan(input: &str, seed: u64, mode: FuzzMode) -> FuzzChunkPlan {
@@ -282,7 +474,7 @@ pub fn random_chunk_plan(input: &str, seed: u64, mode: FuzzMode) -> FuzzChunkPla
             };
             let plan = match policy {
                 BoundaryPolicy::Utf8Aligned => {
-                    let aligned = validate_boundaries_utf8(input, &indices, policy);
+                    let aligned = filter_boundaries_by_policy(input, &indices, policy);
                     if aligned.is_empty() {
                         policy = BoundaryPolicy::ByteStream;
                         ChunkPlan::boundaries_unaligned(indices.clone())
@@ -359,7 +551,7 @@ pub fn random_chunk_plan(input: &str, seed: u64, mode: FuzzMode) -> FuzzChunkPla
     };
     let plan = match policy {
         BoundaryPolicy::Utf8Aligned => {
-            let aligned = validate_boundaries_utf8(input, &indices, policy);
+            let aligned = filter_boundaries_by_policy(input, &indices, policy);
             if aligned.is_empty() {
                 policy = BoundaryPolicy::ByteStream;
                 ChunkPlan::boundaries_unaligned(indices.clone())
@@ -381,6 +573,70 @@ pub fn random_chunk_plan(input: &str, seed: u64, mode: FuzzMode) -> FuzzChunkPla
         )
     };
     FuzzChunkPlan { plan, summary }
+}
+
+fn plan_boundaries(plan: &ChunkPlan, input: &str) -> Vec<usize> {
+    let bytes = input.as_bytes();
+    let mut boundaries = Vec::new();
+    match plan {
+        ChunkPlan::Fixed {
+            size,
+            policy: _policy,
+        } => {
+            assert!(*size > 0, "chunk size must be > 0");
+            let mut offset = 0usize;
+            while offset < bytes.len() {
+                let end = (offset + size).min(bytes.len());
+                if end < bytes.len() {
+                    boundaries.push(end);
+                }
+                offset = end;
+            }
+        }
+        ChunkPlan::Sizes {
+            sizes,
+            policy: _policy,
+        } => {
+            let mut offset = 0usize;
+            for size in sizes {
+                assert!(*size > 0, "chunk size must be > 0");
+                if offset >= bytes.len() {
+                    break;
+                }
+                let end = (offset + size).min(bytes.len());
+                if end < bytes.len() {
+                    boundaries.push(end);
+                }
+                offset = end;
+            }
+        }
+        ChunkPlan::Boundaries { indices, policy } => {
+            let mut points = filter_boundaries_by_policy(input, indices, *policy);
+            points.sort_unstable();
+            points.dedup();
+            points.retain(|&idx| idx > 0 && idx < bytes.len());
+            boundaries.extend(points);
+        }
+    }
+    boundaries
+}
+
+fn chunk_count(len: usize, boundaries: usize) -> usize {
+    if len == 0 { 0 } else { boundaries + 1 }
+}
+
+fn shrink_budget() -> usize {
+    if let Ok(value) = std::env::var("BORROWSER_SHRINK_CHECKS")
+        && let Ok(parsed) = value.parse::<usize>()
+        && parsed > 0
+    {
+        return parsed;
+    }
+    if std::env::var("CI").is_ok() {
+        1_000
+    } else {
+        10_000
+    }
 }
 
 fn every_byte_boundaries(input: &str, max_len: usize) -> Option<Vec<usize>> {
@@ -505,7 +761,7 @@ impl LcgRng {
 
 #[cfg(test)]
 mod tests {
-    use super::{ChunkPlan, run_chunked, run_full};
+    use super::{BoundaryPolicy, ChunkPlan, run_chunked, run_full, shrink_chunk_plan_with_stats};
     use crate::dom_snapshot::{DomSnapshotOptions, assert_dom_eq};
     use crate::tokenizer::Tokenizer;
     use std::fmt::Write;
@@ -629,6 +885,28 @@ mod tests {
             token_snapshot(&expected),
             token_snapshot(&stream),
             "expected drained tokens to match full tokenize() snapshot"
+        );
+    }
+
+    #[test]
+    fn shrinker_reduces_boundary_count() {
+        let input = "<p>abcd</p>";
+        let plan = ChunkPlan::Boundaries {
+            indices: vec![1, 2, 3, 4, 5, 6, 7],
+            policy: BoundaryPolicy::ByteStream,
+        };
+        let (minimized, _) =
+            shrink_chunk_plan_with_stats(input, &plan, |candidate| match candidate {
+                ChunkPlan::Boundaries { indices, .. } => indices.len() > 2,
+                _ => false,
+            });
+        let minimized_len = match minimized {
+            ChunkPlan::Boundaries { indices, .. } => indices.len(),
+            _ => 0,
+        };
+        assert!(
+            minimized_len > 0 && minimized_len < 7,
+            "expected shrinker to reduce boundary count, got {minimized_len}"
         );
     }
 }
