@@ -3,8 +3,10 @@ use crate::{Node, build_dom, tokenize};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BoundaryPolicy {
-    EnforceUtf8,
-    AllowUnaligned,
+    /// Enforce UTF-8 aligned boundaries between chunks.
+    Utf8Aligned,
+    /// Byte-stream mode; tokenizer must handle partial UTF-8 sequences.
+    ByteStream,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -27,42 +29,42 @@ impl ChunkPlan {
     pub fn fixed(size: usize) -> Self {
         Self::Fixed {
             size,
-            policy: BoundaryPolicy::EnforceUtf8,
+            policy: BoundaryPolicy::Utf8Aligned,
         }
     }
 
     pub fn fixed_unaligned(size: usize) -> Self {
         Self::Fixed {
             size,
-            policy: BoundaryPolicy::AllowUnaligned,
+            policy: BoundaryPolicy::ByteStream,
         }
     }
 
     pub fn sizes(sizes: impl Into<Vec<usize>>) -> Self {
         Self::Sizes {
             sizes: sizes.into(),
-            policy: BoundaryPolicy::EnforceUtf8,
+            policy: BoundaryPolicy::Utf8Aligned,
         }
     }
 
     pub fn sizes_unaligned(sizes: impl Into<Vec<usize>>) -> Self {
         Self::Sizes {
             sizes: sizes.into(),
-            policy: BoundaryPolicy::AllowUnaligned,
+            policy: BoundaryPolicy::ByteStream,
         }
     }
 
     pub fn boundaries(indices: impl Into<Vec<usize>>) -> Self {
         Self::Boundaries {
             indices: indices.into(),
-            policy: BoundaryPolicy::EnforceUtf8,
+            policy: BoundaryPolicy::Utf8Aligned,
         }
     }
 
     pub fn boundaries_unaligned(indices: impl Into<Vec<usize>>) -> Self {
         Self::Boundaries {
             indices: indices.into(),
-            policy: BoundaryPolicy::AllowUnaligned,
+            policy: BoundaryPolicy::ByteStream,
         }
     }
 
@@ -125,7 +127,7 @@ impl ChunkPlan {
 }
 
 fn assert_chunk_boundary(input: &str, idx: usize, policy: BoundaryPolicy, context: &str) {
-    if matches!(policy, BoundaryPolicy::EnforceUtf8) {
+    if matches!(policy, BoundaryPolicy::Utf8Aligned) {
         assert!(
             input.is_char_boundary(idx),
             "chunk boundary must be UTF-8 aligned ({context}): {idx}"
@@ -140,7 +142,7 @@ fn validate_boundaries_utf8(input: &str, indices: &[usize], policy: BoundaryPoli
         if idx == 0 || idx >= len {
             continue;
         }
-        if matches!(policy, BoundaryPolicy::EnforceUtf8) && !input.is_char_boundary(idx) {
+        if matches!(policy, BoundaryPolicy::Utf8Aligned) && !input.is_char_boundary(idx) {
             continue;
         }
         out.push(idx);
@@ -187,6 +189,53 @@ pub fn default_chunk_plans() -> &'static [ChunkPlan] {
         plans.push(ChunkPlan::boundaries(vec![3, 5]));
         plans
     })
+}
+
+pub fn deterministic_chunk_plans(input: &str) -> Vec<ChunkPlan> {
+    let mut plans = Vec::new();
+    for size in [1usize, 2, 3, 4, 7, 16, 64] {
+        plans.push(ChunkPlan::fixed_unaligned(size));
+    }
+    if let Some(boundaries) = every_byte_boundaries(input, 128) {
+        plans.push(ChunkPlan::boundaries_unaligned(boundaries));
+    }
+    let semantic_raw = semantic_boundaries(input, 256);
+    if !semantic_raw.is_empty() {
+        let semantic_aligned =
+            validate_boundaries_utf8(input, &semantic_raw, BoundaryPolicy::Utf8Aligned);
+        if !semantic_aligned.is_empty() {
+            plans.push(ChunkPlan::boundaries(semantic_aligned));
+        }
+        plans.push(ChunkPlan::boundaries_unaligned(semantic_raw));
+    }
+    plans
+}
+
+fn every_byte_boundaries(input: &str, max_len: usize) -> Option<Vec<usize>> {
+    let len = input.len();
+    if len <= 1 || len > max_len {
+        return None;
+    }
+    Some((1..len).collect())
+}
+
+fn semantic_boundaries(input: &str, max_points: usize) -> Vec<usize> {
+    let bytes = input.as_bytes();
+    let mut out = Vec::new();
+    for (idx, &byte) in bytes.iter().enumerate() {
+        if matches!(byte, b'<' | b'>' | b'&' | b';' | b'"' | b'\'' | b'-' | b'/') {
+            out.push(idx);
+            if idx + 1 < bytes.len() {
+                out.push(idx + 1);
+            }
+        }
+    }
+    out.sort_unstable();
+    out.dedup();
+    if out.len() > max_points {
+        out.truncate(max_points);
+    }
+    out
 }
 
 #[cfg(test)]

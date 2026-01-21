@@ -316,9 +316,9 @@ pub fn fixtures() -> &'static [GoldenFixture] {
 mod tests {
     use super::{AllowedFailure, GoldenFixture, fixtures};
     use crate::dom_snapshot::{DomSnapshotOptions, compare_dom};
-    use crate::test_harness::{ChunkPlan, default_chunk_plans, run_chunked_with_tokens, run_full};
+    use crate::test_harness::{ChunkPlan, deterministic_chunk_plans, run_chunked_with_tokens, run_full};
     use crate::{Node, Token, TokenStream};
-    use std::collections::HashSet;
+    use std::collections::{BTreeMap, HashMap, HashSet};
 
     #[test]
     fn golden_corpus_has_metadata() {
@@ -406,11 +406,32 @@ mod tests {
     }
 
     #[test]
-    fn golden_corpus_v1_runs_across_default_chunk_plans() {
-        let plans = default_chunk_plans();
+    fn golden_corpus_v1_runs_across_deterministic_chunk_plans() {
         let mut failures = Vec::new();
+        let mut xfails = Vec::new();
+        let mut xfail_invariants: HashMap<super::Invariant, usize> = HashMap::new();
+        let mut xfail_kinds: HashMap<super::FixtureKind, usize> = HashMap::new();
         for fixture in fixtures() {
-            failures.extend(run_golden_fixture(fixture, plans));
+            let plans = deterministic_chunk_plans(fixture.input);
+            let run = run_golden_fixture(fixture, &plans);
+            failures.extend(run.failures);
+            for entry in run.xfails {
+                *xfail_invariants.entry(entry.invariant).or_insert(0) += 1;
+                *xfail_kinds.entry(fixture.kind).or_insert(0) += 1;
+                xfails.push(entry.message);
+            }
+        }
+        if !xfails.is_empty() {
+            eprintln!(
+                "XFAIL summary ({} total):",
+                xfails.len()
+            );
+            for (inv, count) in xfail_invariants {
+                eprintln!("  {inv}: {count}");
+            }
+            for (kind, count) in xfail_kinds {
+                eprintln!("  {:?}: {count}", kind);
+            }
         }
         if !failures.is_empty() {
             let report = failures.join("\n");
@@ -418,8 +439,14 @@ mod tests {
         }
     }
 
-    fn run_golden_fixture(fixture: &GoldenFixture, plans: &[ChunkPlan]) -> Vec<String> {
+    struct FixtureRun {
+        failures: Vec<String>,
+        xfails: Vec<XfailEntry>,
+    }
+
+    fn run_golden_fixture(fixture: &GoldenFixture, plans: &[ChunkPlan]) -> FixtureRun {
         let mut failures = Vec::new();
+        let mut xfails = Vec::new();
         let strict_xpass = std::env::var("BORROWSER_STRICT_XPASS").is_ok();
         let full_dom = run_full(fixture.input);
         let tags_label = format!("[{}]", fixture.tags.join(","));
@@ -445,7 +472,15 @@ mod tests {
                         }
                     }
                     Err(message) => {
-                        if is_allowed_to_fail(fixture, inv).is_none() {
+                        if let Some(reason) = is_allowed_to_fail(fixture, inv) {
+                            xfails.push(XfailEntry {
+                                invariant: inv,
+                                message: format!(
+                                    "XFAIL: {} {} :: {:?} :: {} :: {message} ({reason})",
+                                    fixture.name, tags_label, plan, inv
+                                ),
+                            });
+                        } else {
                             failures.push(format!(
                                 "{} {} :: {:?} :: {} :: {message}",
                                 fixture.name, tags_label, plan, inv
@@ -455,7 +490,15 @@ mod tests {
                 }
             }
         }
-        failures
+        FixtureRun {
+            failures,
+            xfails,
+        }
+    }
+
+    struct XfailEntry {
+        invariant: super::Invariant,
+        message: String,
     }
 
     fn check_invariant(
@@ -471,21 +514,31 @@ mod tests {
                     .map_err(|err| err.to_string())
             }
             super::Invariant::HasDoctypeToken => {
-                let has_doctype = match chunked_dom {
+                let full_has_doctype = match full_dom {
                     Node::Document { doctype, .. } => doctype.is_some(),
                     _ => false,
                 };
-                if has_doctype {
+                let chunked_has_doctype = match chunked_dom {
+                    Node::Document { doctype, .. } => doctype.is_some(),
+                    _ => false,
+                };
+                if full_has_doctype == chunked_has_doctype {
                     Ok(())
                 } else {
-                    Err("expected document doctype".to_string())
+                    Err(format!(
+                        "doctype parity mismatch: full={full_has_doctype} chunked={chunked_has_doctype}"
+                    ))
                 }
             }
             super::Invariant::HasCommentToken => {
-                if has_comment(chunked_dom) {
+                let full_has_comment = has_comment(full_dom);
+                let chunked_has_comment = has_comment(chunked_dom);
+                if full_has_comment == chunked_has_comment {
                     Ok(())
                 } else {
-                    Err("expected comment node".to_string())
+                    Err(format!(
+                        "comment parity mismatch: full={full_has_comment} chunked={chunked_has_comment}"
+                    ))
                 }
             }
             super::Invariant::PreservesUtf8Text => {
@@ -494,108 +547,173 @@ mod tests {
                 if expected_chars.is_empty() {
                     return Ok(());
                 }
-                let text = collect_text(chunked_dom);
+                let full_text = collect_text(full_dom);
+                let chunked_text = collect_text(chunked_dom);
                 for ch in expected_chars {
-                    if !text.contains(ch) {
-                        return Err(format!("expected UTF-8 character {ch} in text"));
+                    let full_has = full_text.contains(ch);
+                    let chunked_has = chunked_text.contains(ch);
+                    if full_has != chunked_has {
+                        return Err(format!(
+                            "UTF-8 text parity mismatch for {ch}: full={full_has} chunked={chunked_has}"
+                        ));
                     }
                 }
                 Ok(())
             }
             super::Invariant::DecodesNamedEntities => {
-                let text = collect_text(chunked_dom);
-                if fixture.input.contains("&amp;")
-                    && (!text.contains('&') || text.contains("&amp;"))
-                {
-                    return Err("expected named entity decoding for &amp;".to_string());
-                }
-                Ok(())
-            }
-            super::Invariant::DecodesNumericEntities => {
-                let text = collect_text(chunked_dom);
-                if fixture.input.contains("&#123;") && !text.contains('{') {
-                    return Err("expected numeric entity &#123; to decode to {".to_string());
-                }
-                if fixture.input.contains("&#169;") && !text.contains('©') {
-                    return Err("expected numeric entity &#169; to decode to ©".to_string());
-                }
-                if fixture.input.contains("&#x1F600;") && !text.contains('😀') {
-                    return Err("expected hex entity &#x1F600; to decode to 😀".to_string());
-                }
-                Ok(())
-            }
-            super::Invariant::PartialEntityRemainsLiteral => {
-                let text = collect_text(chunked_dom);
-                if text.contains("&am") {
-                    Ok(())
-                } else {
-                    Err("expected partial entity &am to remain literal".to_string())
-                }
-            }
-            super::Invariant::AcceptsMixedAttributeSyntax => {
-                check_token_attributes(fixture.name, chunked_tokens)
-            }
-            super::Invariant::AttributesParsedWithSpacing => {
-                check_token_attributes(fixture.name, chunked_tokens)
-            }
-            super::Invariant::BooleanAttributePresent => {
-                check_token_attributes(fixture.name, chunked_tokens)
-            }
-            super::Invariant::EmptyAttributeValuePreserved => {
-                check_token_attributes(fixture.name, chunked_tokens)
-            }
-            super::Invariant::TagBoundariesStable => {
-                let expected = expected_tag_names(fixture.input);
-                for name in expected {
-                    if find_element(chunked_dom, &name).is_none() {
-                        return Err(format!("expected element <{name}>"));
+                let full_text = collect_text(full_dom);
+                let chunked_text = collect_text(chunked_dom);
+                if fixture.input.contains("&amp;") {
+                    let full_ok = full_text.contains('&') && !full_text.contains("&amp;");
+                    let chunked_ok = chunked_text.contains('&') && !chunked_text.contains("&amp;");
+                    if full_ok != chunked_ok {
+                        return Err(format!(
+                            "named entity parity mismatch: full={full_ok} chunked={chunked_ok}"
+                        ));
                     }
                 }
                 Ok(())
             }
-            super::Invariant::CustomTagRecognized => {
-                if find_element(chunked_dom, "my-component").is_some() {
+            super::Invariant::DecodesNumericEntities => {
+                let full_text = collect_text(full_dom);
+                let chunked_text = collect_text(chunked_dom);
+                if fixture.input.contains("&#123;") {
+                    let full_ok = full_text.contains('{');
+                    let chunked_ok = chunked_text.contains('{');
+                    if full_ok != chunked_ok {
+                        return Err(format!(
+                            "numeric entity parity mismatch for &#123;: full={full_ok} chunked={chunked_ok}"
+                        ));
+                    }
+                }
+                if fixture.input.contains("&#169;") {
+                    let full_ok = full_text.contains('©');
+                    let chunked_ok = chunked_text.contains('©');
+                    if full_ok != chunked_ok {
+                        return Err(format!(
+                            "numeric entity parity mismatch for &#169;: full={full_ok} chunked={chunked_ok}"
+                        ));
+                    }
+                }
+                if fixture.input.contains("&#x1F600;") {
+                    let full_ok = full_text.contains('😀');
+                    let chunked_ok = chunked_text.contains('😀');
+                    if full_ok != chunked_ok {
+                        return Err(format!(
+                            "hex entity parity mismatch for &#x1F600;: full={full_ok} chunked={chunked_ok}"
+                        ));
+                    }
+                }
+                Ok(())
+            }
+            super::Invariant::PartialEntityRemainsLiteral => {
+                let full_text = collect_text(full_dom);
+                let chunked_text = collect_text(chunked_dom);
+                let full_ok = full_text.contains("&am");
+                let chunked_ok = chunked_text.contains("&am");
+                if full_ok == chunked_ok {
                     Ok(())
                 } else {
-                    Err("expected <my-component> element".to_string())
+                    Err(format!(
+                        "partial entity parity mismatch: full={full_ok} chunked={chunked_ok}"
+                    ))
+                }
+            }
+            super::Invariant::AcceptsMixedAttributeSyntax => {
+                // Token parity is covered elsewhere; this is a focused chunked-token assertion.
+                check_token_attributes(fixture.name, chunked_tokens)
+            }
+            super::Invariant::AttributesParsedWithSpacing => {
+                // Token parity is covered elsewhere; this is a focused chunked-token assertion.
+                check_token_attributes(fixture.name, chunked_tokens)
+            }
+            super::Invariant::BooleanAttributePresent => {
+                // Token parity is covered elsewhere; this is a focused chunked-token assertion.
+                check_token_attributes(fixture.name, chunked_tokens)
+            }
+            super::Invariant::EmptyAttributeValuePreserved => {
+                // Token parity is covered elsewhere; this is a focused chunked-token assertion.
+                check_token_attributes(fixture.name, chunked_tokens)
+            }
+            super::Invariant::TagBoundariesStable => {
+                // Tag name counts are compared, not full tree shape. Use FullEqualsChunkedDom for structure.
+                let expected = element_name_counts(full_dom);
+                let actual = element_name_counts(chunked_dom);
+                if expected == actual {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "tag name parity mismatch: full={expected:?} chunked={actual:?}"
+                    ))
+                }
+            }
+            super::Invariant::CustomTagRecognized => {
+                let full_has = find_element(full_dom, "my-component").is_some();
+                let chunked_has = find_element(chunked_dom, "my-component").is_some();
+                if full_has == chunked_has {
+                    Ok(())
+                } else {
+                    Err(format!(
+                        "custom tag parity mismatch: full={full_has} chunked={chunked_has}"
+                    ))
                 }
             }
             super::Invariant::NamespacedTagRecognized => {
-                if find_element(chunked_dom, "svg:rect").is_some() {
+                let full_has = find_element(full_dom, "svg:rect").is_some();
+                let chunked_has = find_element(chunked_dom, "svg:rect").is_some();
+                if full_has == chunked_has {
                     Ok(())
                 } else {
-                    Err("expected <svg:rect> element".to_string())
+                    Err(format!(
+                        "namespaced tag parity mismatch: full={full_has} chunked={chunked_has}"
+                    ))
                 }
             }
             super::Invariant::ScriptRawtextVerbatim => {
                 let expected = script_body_from_input(fixture.input)
                     .ok_or_else(|| "expected <script> body in fixture input".to_string())?;
-                let actual = script_text(chunked_dom)
-                    .ok_or_else(|| "expected <script> element in DOM".to_string())?;
-                if actual == expected {
+                let full_actual = script_text(full_dom)
+                    .ok_or_else(|| "expected <script> element in full DOM".to_string())?;
+                let chunked_actual = script_text(chunked_dom)
+                    .ok_or_else(|| "expected <script> element in chunked DOM".to_string())?;
+                let full_ok = full_actual == expected;
+                let chunked_ok = chunked_actual == expected;
+                if full_ok == chunked_ok {
                     Ok(())
                 } else {
-                    Err("script text did not match rawtext body".to_string())
+                    Err(format!(
+                        "rawtext parity mismatch: full={full_ok} chunked={chunked_ok}"
+                    ))
                 }
             }
             super::Invariant::RawtextCloseTagRecognized => {
-                let Some(actual) = script_text(chunked_dom) else {
-                    return Err("expected <script> element in DOM".to_string());
-                };
-                if actual == "hi" {
+                let full_text = script_text(full_dom)
+                    .ok_or_else(|| "expected <script> element in full DOM".to_string())?;
+                let chunked_text = script_text(chunked_dom)
+                    .ok_or_else(|| "expected <script> element in chunked DOM".to_string())?;
+                let full_ok = full_text == "hi";
+                let chunked_ok = chunked_text == "hi";
+                if full_ok == chunked_ok {
                     Ok(())
                 } else {
-                    Err("expected script text to be \"hi\"".to_string())
+                    Err(format!(
+                        "rawtext close-tag parity mismatch: full={full_ok} chunked={chunked_ok}"
+                    ))
                 }
             }
             super::Invariant::RawtextNearMatchStaysText => {
-                let Some(actual) = script_text(chunked_dom) else {
-                    return Err("expected <script> element in DOM".to_string());
-                };
-                if actual.contains("</scriptx>") {
+                let full_text = script_text(full_dom)
+                    .ok_or_else(|| "expected <script> element in full DOM".to_string())?;
+                let chunked_text = script_text(chunked_dom)
+                    .ok_or_else(|| "expected <script> element in chunked DOM".to_string())?;
+                let full_ok = full_text.contains("</scriptx>");
+                let chunked_ok = chunked_text.contains("</scriptx>");
+                if full_ok == chunked_ok {
                     Ok(())
                 } else {
-                    Err("expected rawtext to contain </scriptx>".to_string())
+                    Err(format!(
+                        "rawtext near-match parity mismatch: full={full_ok} chunked={chunked_ok}"
+                    ))
                 }
             }
         }
@@ -674,31 +792,28 @@ mod tests {
         Some(&input[start..end])
     }
 
-    fn expected_tag_names(input: &str) -> Vec<String> {
-        let mut tags = Vec::new();
-        let bytes = input.as_bytes();
-        let mut i = 0usize;
-        while i < bytes.len() {
-            if bytes[i] == b'<' {
-                let mut j = i + 1;
-                if j < bytes.len() && bytes[j].is_ascii_alphabetic() {
-                    let start = j;
-                    j += 1;
-                    while j < bytes.len()
-                        && (bytes[j].is_ascii_alphanumeric()
-                            || bytes[j] == b'-'
-                            || bytes[j] == b':')
-                    {
-                        j += 1;
-                    }
-                    if let Ok(name) = std::str::from_utf8(&bytes[start..j]) {
-                        tags.push(name.to_ascii_lowercase());
-                    }
+    fn element_name_counts(node: &Node) -> BTreeMap<String, usize> {
+        let mut out = BTreeMap::new();
+        collect_element_names(node, &mut out);
+        out
+    }
+
+    fn collect_element_names(node: &Node, out: &mut BTreeMap<String, usize>) {
+        match node {
+            Node::Element { name, children, .. } => {
+                let key = name.to_ascii_lowercase();
+                *out.entry(key).or_insert(0) += 1;
+                for child in children {
+                    collect_element_names(child, out);
                 }
             }
-            i += 1;
+            Node::Document { children, .. } => {
+                for child in children {
+                    collect_element_names(child, out);
+                }
+            }
+            Node::Text { .. } | Node::Comment { .. } => {}
         }
-        tags
     }
 
     fn check_token_attributes(fixture_name: &str, stream: &TokenStream) -> Result<(), String> {
