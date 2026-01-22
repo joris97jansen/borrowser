@@ -9,8 +9,14 @@ use std::sync::Arc;
 #[derive(Debug)]
 pub enum DomPatchError {
     UnknownHandle(DomHandle),
-    VersionMismatch { expected: DomVersion, got: DomVersion },
-    NonMonotonicVersion { from: DomVersion, to: DomVersion },
+    VersionMismatch {
+        expected: DomVersion,
+        got: DomVersion,
+    },
+    NonMonotonicVersion {
+        from: DomVersion,
+        to: DomVersion,
+    },
     InvalidKey(PatchKey),
     DuplicateKey(PatchKey),
     MissingKey(PatchKey),
@@ -20,8 +26,14 @@ pub enum DomPatchError {
         actual: &'static str,
     },
     InvalidParent(PatchKey),
-    InvalidSibling { parent: PatchKey, before: PatchKey },
-    CycleDetected { parent: PatchKey, child: PatchKey },
+    InvalidSibling {
+        parent: PatchKey,
+        before: PatchKey,
+    },
+    CycleDetected {
+        parent: PatchKey,
+        child: PatchKey,
+    },
     MissingRoot,
 }
 
@@ -81,7 +93,9 @@ impl DomStore {
     }
 
     pub fn get_current(&self, handle: DomHandle) -> Option<&Node> {
-        self.docs.get(&handle).and_then(|doc| doc.current.as_deref())
+        self.docs
+            .get(&handle)
+            .and_then(|doc| doc.current.as_deref())
     }
 
     pub fn materialize(&self, handle: DomHandle) -> Result<Box<Node>, DomPatchError> {
@@ -127,9 +141,12 @@ impl DomDoc {
         match patch {
             DomPatch::CreateDocument { key, doctype } => {
                 self.ensure_key(*key)?;
-                self.arena.insert_node(*key, NodeKind::Document {
-                    doctype: doctype.clone(),
-                })?;
+                self.arena.insert_node(
+                    *key,
+                    NodeKind::Document {
+                        doctype: doctype.clone(),
+                    },
+                )?;
                 self.root = Some(*key);
             }
             DomPatch::CreateElement {
@@ -340,15 +357,12 @@ impl DomArena {
     }
 
     fn remove_subtree(&mut self, key: PatchKey) -> Result<(), DomPatchError> {
-        let index = *self
-            .live
-            .get(&key)
-            .ok_or(DomPatchError::MissingKey(key))?;
-        if let Some(parent) = self.nodes[index].parent.take() {
-            if let Some(parent_index) = self.live.get(&parent).copied() {
-                let siblings = &mut self.nodes[parent_index].children;
-                siblings.retain(|k| *k != key);
-            }
+        let index = *self.live.get(&key).ok_or(DomPatchError::MissingKey(key))?;
+        if let Some(parent) = self.nodes[index].parent.take()
+            && let Some(parent_index) = self.live.get(&parent).copied()
+        {
+            let siblings = &mut self.nodes[parent_index].children;
+            siblings.retain(|k| *k != key);
         }
         let children = self.nodes[index].children.clone();
         self.nodes[index].children.clear();
@@ -366,13 +380,12 @@ impl DomArena {
         key: PatchKey,
         attributes: &[(Arc<str>, Option<String>)],
     ) -> Result<(), DomPatchError> {
-        let index = *self
-            .live
-            .get(&key)
-            .ok_or(DomPatchError::MissingKey(key))?;
+        let index = *self.live.get(&key).ok_or(DomPatchError::MissingKey(key))?;
         let actual = self.nodes[index].kind_name();
         match &mut self.nodes[index].kind {
-            NodeKind::Element { attributes: attrs, .. } => {
+            NodeKind::Element {
+                attributes: attrs, ..
+            } => {
                 attrs.clear();
                 attrs.extend(attributes.iter().cloned());
                 Ok(())
@@ -386,10 +399,7 @@ impl DomArena {
     }
 
     fn set_text(&mut self, key: PatchKey, text: &str) -> Result<(), DomPatchError> {
-        let index = *self
-            .live
-            .get(&key)
-            .ok_or(DomPatchError::MissingKey(key))?;
+        let index = *self.live.get(&key).ok_or(DomPatchError::MissingKey(key))?;
         let actual = self.nodes[index].kind_name();
         match &mut self.nodes[index].kind {
             NodeKind::Text { text: existing } => {
@@ -476,7 +486,10 @@ struct NodeRecord {
 
 impl NodeRecord {
     fn allows_children(&self) -> bool {
-        matches!(self.kind, NodeKind::Document { .. } | NodeKind::Element { .. })
+        matches!(
+            self.kind,
+            NodeKind::Document { .. } | NodeKind::Element { .. }
+        )
     }
 
     fn kind_name(&self) -> &'static str {
@@ -490,11 +503,17 @@ impl NodeRecord {
 }
 
 enum NodeKind {
-    Document { doctype: Option<String> },
+    Document {
+        doctype: Option<String>,
+    },
     Element {
         name: Arc<str>,
         attributes: Vec<(Arc<str>, Option<String>)>,
     },
-    Text { text: String },
-    Comment { text: String },
+    Text {
+        text: String,
+    },
+    Comment {
+        text: String,
+    },
 }
