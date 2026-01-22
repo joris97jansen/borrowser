@@ -104,6 +104,12 @@ HTML is parsed incrementally:
 2. The parser builds the tree node-by-node.
 3. After each incremental update, a `DomUpdate` event is emitted.
 
+`DomUpdate` is the legacy snapshot path. A patch-based stream also exists:
+`DomPatchUpdate { handle, from, to, patches }` carries incremental DOM mutations
+for a specific document handle and version range. The patch event is defined but
+not applied yet; the snapshot path remains the default until the patch model and
+applier are finalized.
+
 DOM nodes are simple, ergonomic Rust enums:
 
 ```rust
