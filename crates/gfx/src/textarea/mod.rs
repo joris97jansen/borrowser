@@ -6,7 +6,7 @@ use crate::EguiTextMeasurer;
 use crate::input::to_input_id;
 use crate::util::{clamp_to_char_boundary, input_text_padding};
 use css::{ComputedStyle, Length};
-use html::Id;
+use html::internal::Id;
 use input_core::InputStore;
 
 pub use cache::{TextareaCachedLine, TextareaCachedTextFragment, TextareaLayoutCache};
@@ -92,7 +92,7 @@ impl TextareaState {
 
 /// Update scroll position to keep the caret visible in a textarea.
 ///
-/// Takes `html::Id` and converts to `InputId` internally for store operations.
+/// Takes `html::internal::Id` and converts to `InputId` internally for store operations.
 pub(crate) fn sync_textarea_scroll_for_caret<S: InputStore + ?Sized>(
     input_values: &mut S,
     input_id: Id,

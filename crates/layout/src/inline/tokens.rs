@@ -1,5 +1,5 @@
 use css::ComputedStyle;
-use html::{Id, Node};
+use html::{Node, internal::Id};
 
 use crate::{BoxKind, LayoutBox, ReplacedKind};
 

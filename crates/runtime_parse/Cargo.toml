@@ -5,6 +5,6 @@ edition = "2024"
 
 [dependencies]
 bus = { path = "../bus" }
-html = { path = "../html" }
+html = { path = "../html", features = ["internal-api"] }
 core_types = { path = "../core_types" }
 tools = { path = "../tools" }

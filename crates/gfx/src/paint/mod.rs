@@ -12,7 +12,7 @@ use crate::input::{ActiveTarget, InputValueStore};
 use crate::textarea::TextareaCachedLine;
 use css::{Display, Length};
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, Vec2};
-use html::{Id, dom_utils::is_non_rendering_element};
+use html::{dom_utils::is_non_rendering_element, internal::Id};
 use layout::{BoxKind, LayoutBox, ListMarker, Rectangle, TextMeasurer};
 use std::cell::RefCell;
 use std::collections::HashMap;

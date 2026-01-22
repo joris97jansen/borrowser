@@ -6,4 +6,4 @@ pub use crate::collect::{
     collect_visible_text_string,
 };
 pub use crate::debug::{first_styles, outline_from_dom};
-pub use crate::traverse::{assign_node_ids, find_node_by_id, is_non_rendering_element};
+pub use crate::traverse::is_non_rendering_element;

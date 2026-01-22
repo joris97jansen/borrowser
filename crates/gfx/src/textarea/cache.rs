@@ -1,7 +1,7 @@
 use crate::EguiTextMeasurer;
 use css::{ComputedStyle, Length};
 use egui::{Color32, FontId};
-use html::Id;
+use html::internal::Id;
 use layout::{
     Rectangle,
     inline::{InlineFragment, layout_textarea_value_for_paint},

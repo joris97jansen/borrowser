@@ -4,6 +4,6 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
-html = { path = "../html" }
+html = { path = "../html", features = ["internal-api"] }
 
 url = { workspace = true }

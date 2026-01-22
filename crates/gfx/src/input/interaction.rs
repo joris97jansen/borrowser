@@ -1,5 +1,5 @@
 use crate::textarea::TextareaState;
-use html::Id;
+use html::internal::Id;
 use layout::{HitKind, Rectangle};
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]

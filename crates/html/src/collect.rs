@@ -164,7 +164,8 @@ pub fn collect_visible_text_string(root: &Node) -> String {
 #[cfg(test)]
 mod tests {
     use super::collect_visible_text_string;
-    use crate::{Id, Node};
+    use crate::Node;
+    use crate::types::Id;
     use std::sync::Arc;
 
     fn text_node(text: &str) -> Node {

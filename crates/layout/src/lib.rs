@@ -8,7 +8,7 @@ pub use hit_test::{HitKind, hit_test};
 pub mod replaced;
 
 use css::{ComputedStyle, Display, StyledNode};
-use html::{Id, Node, dom_utils::is_non_rendering_element};
+use html::{Node, dom_utils::is_non_rendering_element, internal::Id};
 use replaced::intrinsic::IntrinsicSize;
 
 /// A rectangle in CSS px units (we'll treat everything as px for now).

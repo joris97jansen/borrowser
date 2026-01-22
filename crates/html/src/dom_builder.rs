@@ -2,8 +2,8 @@ use crate::types::{Id, Node, Token, TokenStream};
 use std::sync::Arc;
 
 pub fn build_dom(stream: &TokenStream) -> Node {
-    // IDs are unique and stable within this DOM instance. Cross-parse stability
-    // requires a persistent allocator and is a future milestone.
+    // Node keys are unique and stable for this document's lifetime. Cross-parse
+    // stability requires a persistent allocator and is a future milestone.
     // Tokenizer uses text spans to avoid allocation; DOM materialization still
     // owns text buffers (Node::Text uses String).
     let tokens = stream.tokens();
@@ -148,7 +148,7 @@ impl ArenaNode {
 #[derive(Debug)]
 struct NodeArena {
     nodes: Vec<ArenaNode>,
-    next_id: u32,
+    next_id: u32, // monotonic; never reused within a document lifetime
 }
 
 impl NodeArena {

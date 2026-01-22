@@ -69,7 +69,12 @@ fn contains_ignore_ascii_case(haystack: &str, needle: &[u8]) -> bool {
 
 pub use crate::dom_builder::build_dom;
 pub use crate::tokenizer::tokenize;
-pub use crate::types::{AtomId, AtomTable, Id, Node, NodeId, Token, TokenStream};
+pub use crate::types::{AtomId, AtomTable, Node, Token, TokenStream};
+
+#[cfg(feature = "internal-api")]
+pub mod internal {
+    pub use super::types::{Id, NodeId, NodeKey};
+}
 
 #[cfg(all(test, feature = "count-alloc"))]
 mod test_alloc {
