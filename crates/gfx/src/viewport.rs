@@ -9,7 +9,7 @@ use crate::textarea::sync_textarea_scroll_for_caret;
 use crate::util::{get_attr, input_text_padding, resolve_relative_url};
 use css::StyledNode;
 use egui::{Color32, ScrollArea, Sense, Stroke, Ui, Vec2};
-use html::{Node, types::Id};
+use html::{Node, internal::Id};
 use input_core::InputValueStore as CoreInputValueStore;
 use layout::{Rectangle, ReplacedElementInfoProvider, ReplacedKind, layout_block_tree};
 use std::cell::RefCell;

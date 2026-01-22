@@ -238,7 +238,7 @@ impl Tab {
         self.poke_redraw();
     }
 
-    fn on_dom_update(&mut self, mut dom: Node, request_id: RequestId) {
+    fn on_dom_update(&mut self, dom: Node, request_id: RequestId) {
         self.page.dom = Some(dom);
         self.page.update_head_metadata();
         self.page.apply_inline_style_blocks();

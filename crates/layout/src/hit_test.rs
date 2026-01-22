@@ -4,7 +4,7 @@ use crate::{
     inline::{InlineActionKind, InlineFragment, layout_inline_for_paint},
 };
 use css::Display;
-use html::{Node, types::Id};
+use html::{Node, internal::Id};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HitKind {

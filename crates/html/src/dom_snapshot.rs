@@ -523,7 +523,8 @@ fn write_escaped(out: &mut String, value: &str) {
 #[cfg(test)]
 mod tests {
     use super::{DomSnapshotOptions, assert_dom_eq, compare_dom};
-    use crate::{Id, Node};
+    use crate::Node;
+    use crate::types::Id;
     use std::sync::Arc;
 
     fn elem(name: &str, children: Vec<Node>) -> Node {

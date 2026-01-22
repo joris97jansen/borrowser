@@ -900,7 +900,7 @@ mod tests {
     use egui::{
         CentralPanel, Context, Event, Modifiers, PointerButton, Pos2, RawInput, Rect, Sense, Vec2,
     };
-    use html::{Node, types::Id};
+    use html::{Node, internal::Id};
     use input_core::{
         InputId, InputValueStore, SelectionRange, caret_from_x_with_boundaries,
         rebuild_cursor_boundaries,

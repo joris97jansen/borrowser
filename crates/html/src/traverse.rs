@@ -1,10 +1,12 @@
-use crate::types::{Id, Node};
+use crate::types::Node;
 
 // Centralizes raw-pointer traversal handling for `assign_missing_ids_allow_collisions`.
+#[cfg(test)]
 struct NodeStack {
     stack: Vec<*mut Node>,
 }
 
+#[cfg(test)]
 impl NodeStack {
     fn new(root: &mut Node) -> Self {
         Self {
@@ -32,7 +34,9 @@ impl NodeStack {
 /// - Collisions are not detected or resolved.
 ///
 /// This is intended for tests or legacy callers that need to fill in missing IDs.
+#[cfg(test)]
 pub(crate) fn assign_missing_ids_allow_collisions(root: &mut Node) {
+    use crate::types::Id;
     let mut next = 1;
     let mut stack = NodeStack::new(root);
 
@@ -57,7 +61,8 @@ pub(crate) fn assign_missing_ids_allow_collisions(root: &mut Node) {
     }
 }
 
-pub(crate) fn find_node_by_id(node: &Node, id: Id) -> Option<&Node> {
+#[cfg(test)]
+pub(crate) fn find_node_by_id(node: &Node, id: crate::types::Id) -> Option<&Node> {
     let mut stack: Vec<&Node> = Vec::with_capacity(128);
     stack.push(node);
 
@@ -93,7 +98,8 @@ pub fn is_non_rendering_element(node: &Node) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{assign_missing_ids_allow_collisions, find_node_by_id};
-    use crate::{Id, Node};
+    use crate::Node;
+    use crate::types::Id;
     use std::sync::Arc;
 
     fn deep_document(depth: usize) -> Node {
