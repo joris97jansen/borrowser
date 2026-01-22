@@ -1,4 +1,5 @@
 pub mod form_controls;
+pub mod dom_store;
 pub mod input_state;
 pub mod page;
 pub mod resources;
