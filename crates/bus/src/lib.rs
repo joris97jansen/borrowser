@@ -1,7 +1,8 @@
-use core_types::{ResourceKind, TabId};
-use html::Node;
+use core_types::{DomHandle, DomVersion, ResourceKind, TabId};
+use html::{DomPatch, Node};
 use std::sync::mpsc::{Receiver, Sender};
 
+#[derive(Debug)]
 pub enum CoreCommand {
     // Network requests
     FetchStream {
@@ -42,6 +43,7 @@ pub enum CoreCommand {
     },
 }
 
+#[derive(Debug)]
 pub enum CoreEvent {
     // Network -> UI
     NetworkStart {
@@ -72,11 +74,20 @@ pub enum CoreEvent {
         error: String,
     },
 
-    // HTML Parser -> UI
+    // HTML Parser -> UI (legacy snapshot path)
     DomUpdate {
         tab_id: TabId,
         request_id: u64,
-        dom: Node,
+        dom: Box<Node>,
+    },
+    // HTML Parser -> UI (patch stream)
+    DomPatchUpdate {
+        tab_id: TabId,
+        request_id: u64,
+        handle: DomHandle,
+        from: DomVersion,
+        to: DomVersion,
+        patches: Vec<DomPatch>,
     },
 
     // CSS Parser -> UI

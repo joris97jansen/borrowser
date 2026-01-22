@@ -79,7 +79,7 @@ pub fn start_parse_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEve
                             let _ = evt_tx.send(CoreEvent::DomUpdate {
                                 tab_id,
                                 request_id,
-                                dom,
+                                dom: Box::new(dom),
                             });
                         }
                     }
@@ -92,7 +92,7 @@ pub fn start_parse_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEve
                         let _ = evt_tx.send(CoreEvent::DomUpdate {
                             tab_id,
                             request_id,
-                            dom,
+                            dom: Box::new(dom),
                         });
                     }
                 }

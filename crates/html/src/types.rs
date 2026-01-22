@@ -1,6 +1,7 @@
-//! Internal DOM and tokenization types.
+//! DOM and tokenization implementation types.
 //!
-//! This module is intentionally not part of the stable public API surface.
+//! This module is not intended as the stable public API surface.
+//! Publicly supported types are re-exported from `html::lib.rs`.
 
 use std::borrow::Cow;
 use std::collections::HashMap;

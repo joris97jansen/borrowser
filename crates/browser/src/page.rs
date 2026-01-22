@@ -10,7 +10,7 @@ use std::collections::HashSet;
 
 pub struct PageState {
     pub base_url: Option<String>,
-    pub dom: Option<Node>,
+    pub dom: Option<Box<Node>>,
     pub head: HeadMetadata,
 
     pub visible_text_cache: String,
@@ -45,7 +45,7 @@ impl PageState {
     }
 
     pub fn update_head_metadata(&mut self) {
-        if let Some(dom) = self.dom.as_ref() {
+        if let Some(dom) = self.dom.as_deref() {
             self.head = extract_head_metadata(dom);
         } else {
             self.head = HeadMetadata::default();
@@ -60,7 +60,7 @@ impl PageState {
     pub fn apply_css_block(&mut self, block: &str) {
         let parsed = parse_stylesheet(block);
         self.css_sheet.rules.extend(parsed.rules);
-        if let Some(dom_mut) = self.dom.as_mut() {
+        if let Some(dom_mut) = self.dom.as_deref_mut() {
             attach_styles(dom_mut, &self.css_sheet);
         }
     }
@@ -74,7 +74,7 @@ impl PageState {
     }
 
     pub fn outline(&self, cap: usize) -> Vec<String> {
-        if let Some(dom_ref) = self.dom.as_ref() {
+        if let Some(dom_ref) = self.dom.as_deref() {
             outline_from_dom(dom_ref, cap)
         } else {
             Vec::new()
@@ -83,13 +83,13 @@ impl PageState {
 
     pub fn update_visible_text_cache(&mut self) {
         self.visible_text_cache.clear();
-        if let Some(dom) = self.dom.as_ref() {
+        if let Some(dom) = self.dom.as_deref() {
             html::dom_utils::collect_visible_text(dom, &mut self.visible_text_cache);
         }
     }
 
     pub fn apply_inline_style_blocks(&mut self) {
-        if let Some(dom_mut) = self.dom.as_mut() {
+        if let Some(dom_mut) = self.dom.as_deref_mut() {
             let mut css_text = String::new();
             collect_style_texts(dom_mut, &mut css_text);
 
@@ -104,7 +104,7 @@ impl PageState {
     }
 
     pub fn seed_input_values_from_dom(&mut self, store: &mut InputValueStore) {
-        let Some(dom) = self.dom.as_ref() else {
+        let Some(dom) = self.dom.as_deref() else {
             return;
         };
         self.form_controls = seed_input_state_from_dom(store, dom);

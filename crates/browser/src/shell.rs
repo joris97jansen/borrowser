@@ -346,6 +346,7 @@ impl UiApp for ShellApp {
             | CoreEvent::NetworkDone { tab_id, .. }
             | CoreEvent::NetworkError { tab_id, .. }
             | CoreEvent::DomUpdate { tab_id, .. }
+            | CoreEvent::DomPatchUpdate { tab_id, .. }
             | CoreEvent::CssParsedBlock { tab_id, .. }
             | CoreEvent::CssSheetDone { tab_id, .. } => *tab_id,
         };
