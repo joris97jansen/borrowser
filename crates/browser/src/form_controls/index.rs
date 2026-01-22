@@ -1,5 +1,5 @@
 use gfx::input::{FormControlHandler, InputValueStore, from_input_id, to_input_id};
-use html::Id;
+use html::types::Id;
 use input_core::{InputId, InputStore};
 use std::collections::HashMap;
 
@@ -24,7 +24,7 @@ impl FormControlIndex {
 
 impl<S: InputStore> FormControlHandler<S> for FormControlIndex {
     fn on_radio_clicked(&self, store: &mut S, radio_id: InputId) -> bool {
-        // Convert InputId to html::Id for group lookup, then use InputId for store operations
+        // Convert InputId to html::types::Id for group lookup, then use InputId for store operations
         self.radio.click_with_core(store, radio_id)
     }
 }
@@ -97,7 +97,7 @@ impl RadioGroupIndex {
 
     /// Version of `click` that works with `InputStore` trait and `InputId`.
     ///
-    /// Converts `InputId` to `html::Id` for group lookup, then uses the
+    /// Converts `InputId` to `html::types::Id` for group lookup, then uses the
     /// `InputStore` trait methods with `InputId` for store operations.
     pub(super) fn click_with_core<S: InputStore>(&self, store: &mut S, radio_id: InputId) -> bool {
         let html_id = from_input_id(radio_id);

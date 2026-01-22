@@ -8,7 +8,7 @@
 //!
 //! - Uses `InputId` as the identifier type, keeping the trait UI-agnostic
 //! - Integration layers (e.g., gfx) are responsible for converting their
-//!   domain IDs (e.g., `html::Id`) to `InputId` at call boundaries
+//!   domain IDs (e.g., `html::types::Id`) to `InputId` at call boundaries
 //! - Trait is object-safe where practical and avoids UI or layout dependencies
 
 use crate::id::InputId;
@@ -29,10 +29,10 @@ use crate::selection::SelectionRange;
 ///
 /// # Integration Pattern
 ///
-/// For DOM-based systems, convert `html::Id` to `InputId` at the routing boundary:
+/// For DOM-based systems, convert `html::types::Id` to `InputId` at the routing boundary:
 ///
 /// ```ignore
-/// fn handle_input(html_id: html::Id, store: &mut impl InputStore) {
+/// fn handle_input(html_id: html::types::Id, store: &mut impl InputStore) {
 ///     let id = InputId::from_raw(html_id.0 as u64);
 ///     store.focus(id);
 /// }

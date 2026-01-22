@@ -3,7 +3,7 @@ use super::dom::{
 };
 use super::index::{FormControlIndex, RadioGroupKey};
 use gfx::input::InputValueStore;
-use html::{Id, Node};
+use html::{types::Id, Node};
 use std::collections::HashMap;
 
 const DOCUMENT_SCOPE_ID: Id = Id(0);

@@ -27,7 +27,7 @@
 //! To integrate with DOM-based systems, convert IDs at the routing boundary:
 //! ```ignore
 //! // In your routing layer:
-//! fn handle_input(html_id: html::Id, store: &mut impl InputStore) {
+//! fn handle_input(html_id: html::types::Id, store: &mut impl InputStore) {
 //!     let id = InputId::from_raw(html_id.0 as u64);
 //!     store.focus(id);
 //! }

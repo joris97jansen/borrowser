@@ -14,7 +14,8 @@ pub mod traverse;
 mod dom_builder;
 mod entities;
 mod tokenizer;
-mod types;
+#[doc(hidden)]
+pub mod types;
 
 use memchr::{memchr, memchr2};
 
@@ -69,7 +70,7 @@ fn contains_ignore_ascii_case(haystack: &str, needle: &[u8]) -> bool {
 
 pub use crate::dom_builder::build_dom;
 pub use crate::tokenizer::tokenize;
-pub use crate::types::{AtomId, AtomTable, Id, Node, NodeId, Token, TokenStream};
+pub use crate::types::{AtomId, AtomTable, Node, Token, TokenStream};
 
 #[cfg(all(test, feature = "count-alloc"))]
 mod test_alloc {

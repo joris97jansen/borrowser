@@ -1,6 +1,5 @@
 use css::ComputedStyle;
-use html::Id;
-
+use html::types::Id;
 use crate::{LayoutBox, Rectangle, ReplacedKind};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

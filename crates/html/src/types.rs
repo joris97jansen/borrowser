@@ -1,3 +1,7 @@
+//! Internal DOM and tokenization types.
+//!
+//! This module is intentionally not part of the stable public API surface.
+
 use std::borrow::Cow;
 use std::collections::HashMap;
 use std::ops::Range;
@@ -5,8 +9,30 @@ use std::sync::Arc;
 
 pub type NodeId = u32;
 
+/// Stable node identity for DOM nodes within a document's lifetime.
+///
+/// Internal API: consumers should avoid depending on this type directly until
+/// patching and ownership contracts stabilize.
+///
+/// Invariants:
+/// - Newly created nodes always receive a fresh key.
+/// - Keys are stable across patches for the document's lifetime.
+/// - Keys map 1:1 to live DOM nodes and are never reused after deletion.
+/// - Keys are assigned by the owning DOM builder/patch applier.
+/// - `0` is reserved to represent "unassigned/invalid" during construction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Id(pub NodeId);
+
+impl Id {
+    /// Reserved sentinel for "unassigned/invalid" identity.
+    pub const INVALID: Id = Id(0);
+}
+
+/// Patch-layer name for stable node identity.
+///
+/// In v5.1 this is identical to `Id`; it may diverge later if patch transport
+/// requires a distinct sequencing or indirection model.
+pub type NodeKey = Id;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct AtomId(pub u32);

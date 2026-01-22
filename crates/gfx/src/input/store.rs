@@ -1,25 +1,25 @@
-//! Input value store wrapper that bridges `html::Id` to `input_core::InputId`.
+//! Input value store wrapper that bridges `html::types::Id` to `input_core::InputId`.
 //!
 //! This module provides a thin wrapper around `input_core::InputValueStore` that
-//! accepts `html::Id` and automatically converts it to the UI-agnostic `InputId`.
+//! accepts `html::types::Id` and automatically converts it to the UI-agnostic `InputId`.
 //!
 //! # Architecture Note
 //!
 //! The `InputStore` trait lives in `input_core` and uses `InputId`. This wrapper
-//! provides convenience methods using `html::Id` for common DOM operations.
+//! provides convenience methods using `html::types::Id` for common DOM operations.
 //! For code that needs to work with the `InputStore` trait directly, use
 //! `inner()` or `inner_mut()` to access the core store, and convert IDs using
 //! the exported `to_input_id()` function.
 
-use html::Id;
+use html::types::Id;
 use input_core::{InputId, InputValueStore as CoreInputValueStore};
 
 // Re-export SelectionRange directly since it has no Id dependency
 pub use input_core::SelectionRange;
 
-/// Wrapper around `input_core::InputValueStore` that uses `html::Id`.
+/// Wrapper around `input_core::InputValueStore` that uses `html::types::Id`.
 ///
-/// This provides the same API as the core store but accepts `html::Id` directly,
+/// This provides the same API as the core store but accepts `html::types::Id` directly,
 /// making it seamless to use with the DOM-based browser engine.
 #[derive(Clone, Debug, Default)]
 pub struct InputValueStore {
@@ -275,16 +275,16 @@ impl InputValueStore {
     }
 }
 
-/// Convert `html::Id` to `input_core::InputId`.
+/// Convert `html::types::Id` to `input_core::InputId`.
 #[inline]
 pub fn to_input_id(id: Id) -> InputId {
     InputId::from_raw(id.0 as u64)
 }
 
-/// Convert `input_core::InputId` to `html::Id`.
+/// Convert `input_core::InputId` to `html::types::Id`.
 ///
 /// This is the reverse of `to_input_id`. Useful for boundary conversions
-/// where the DOM layer needs to look up by `html::Id`.
+/// where the DOM layer needs to look up by `html::types::Id`.
 #[inline]
 pub fn from_input_id(id: InputId) -> Id {
     Id(id.as_raw() as u32)

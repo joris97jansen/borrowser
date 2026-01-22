@@ -10,7 +10,7 @@ use crate::textarea::{
 };
 use crate::util::{input_text_padding, resolve_relative_url};
 use egui::{CursorIcon, Event, Key, Pos2, Rect, Sense, Ui, Vec2};
-use html::Id;
+use html::types::Id;
 use input_core::{InputId, InputStore};
 use layout::{
     HitKind, LayoutBox, Rectangle, ReplacedKind, TextMeasurer,
@@ -22,7 +22,7 @@ use std::collections::HashMap;
 /// Handler for form control interactions that require DOM-level coordination.
 ///
 /// The store parameter `S` is any `InputStore` implementor using `InputId`.
-/// Implementors are responsible for converting `html::Id` to `InputId` as needed.
+/// Implementors are responsible for converting `html::types::Id` to `InputId` as needed.
 pub trait FormControlHandler<S: InputStore + ?Sized> {
     fn on_radio_clicked(&self, store: &mut S, radio_id: InputId) -> bool;
 }
@@ -900,7 +900,7 @@ mod tests {
     use egui::{
         CentralPanel, Context, Event, Modifiers, PointerButton, Pos2, RawInput, Rect, Sense, Vec2,
     };
-    use html::{Id, Node};
+    use html::{types::Id, Node};
     use input_core::{
         InputId, InputValueStore, SelectionRange, caret_from_x_with_boundaries,
         rebuild_cursor_boundaries,

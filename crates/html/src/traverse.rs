@@ -1,6 +1,6 @@
 use crate::{Id, Node};
 
-// Centralizes raw-pointer traversal handling for `assign_node_ids`.
+// Centralizes raw-pointer traversal handling for `assign_missing_ids_allow_collisions`.
 struct NodeStack {
     stack: Vec<*mut Node>,
 }
@@ -25,11 +25,14 @@ impl NodeStack {
     }
 }
 
-/// Assigns IDs in depth-first, pre-order traversal (document/element before children).
-/// Children are visited in source order (left-to-right), and existing non-zero IDs are preserved.
-/// Note: this function does not detect or resolve ID collisions if the tree already contains
-/// non-zero IDs. Callers must ensure pre-existing IDs are unique if uniqueness is required.
-pub fn assign_node_ids(root: &mut Node) {
+/// Assigns missing IDs in depth-first, pre-order traversal (document/element before children).
+///
+/// ⚠️ Not patch-identity safe:
+/// - Existing non-zero IDs are preserved.
+/// - Collisions are not detected or resolved.
+///
+/// This is intended for tests or legacy callers that need to fill in missing IDs.
+pub(crate) fn assign_missing_ids_allow_collisions(root: &mut Node) {
     let mut next = 1;
     let mut stack = NodeStack::new(root);
 
@@ -40,7 +43,7 @@ pub fn assign_node_ids(root: &mut Node) {
         // stable. We only mutate the `id` field, which does not move the node.
         let node = unsafe { &mut *node_ptr };
 
-        if node.id() == Id(0) {
+        if node.id() == Id::INVALID {
             let id = Id(next);
             next = next.checked_add(1).expect("node id overflow");
             node.set_id(id);
@@ -89,13 +92,13 @@ pub fn is_non_rendering_element(node: &Node) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{assign_node_ids, find_node_by_id};
+    use super::{assign_missing_ids_allow_collisions, find_node_by_id};
     use crate::{Id, Node};
     use std::sync::Arc;
 
     fn deep_document(depth: usize) -> Node {
         let mut current = Node::Element {
-            id: Id(0),
+            id: Id::INVALID,
             name: Arc::<str>::from("div"),
             attributes: Vec::new(),
             style: Vec::new(),
@@ -104,7 +107,7 @@ mod tests {
 
         for _ in 1..depth {
             current = Node::Element {
-                id: Id(0),
+                id: Id::INVALID,
                 name: Arc::<str>::from("div"),
                 attributes: Vec::new(),
                 style: Vec::new(),
@@ -113,17 +116,17 @@ mod tests {
         }
 
         Node::Document {
-            id: Id(0),
+            id: Id::INVALID,
             doctype: None,
             children: vec![current],
         }
     }
 
     #[test]
-    fn assign_node_ids_is_iterative_and_preorder() {
+    fn assign_missing_ids_is_iterative_and_preorder() {
         let depth = 10_000;
         let mut root = deep_document(depth);
-        assign_node_ids(&mut root);
+        assign_missing_ids_allow_collisions(&mut root);
 
         let mut expected = 1u32;
         let mut current = &root;
@@ -150,7 +153,7 @@ mod tests {
     fn find_node_by_id_is_iterative() {
         let depth = 10_000;
         let mut root = deep_document(depth);
-        assign_node_ids(&mut root);
+        assign_missing_ids_allow_collisions(&mut root);
 
         let target = Id((depth / 2) as u32 + 1);
         let found = find_node_by_id(&root, target);
@@ -162,33 +165,33 @@ mod tests {
     fn find_node_by_id_returns_none_when_missing() {
         let depth = 10_000;
         let mut root = deep_document(depth);
-        assign_node_ids(&mut root);
+        assign_missing_ids_allow_collisions(&mut root);
 
         assert!(find_node_by_id(&root, Id(999_999_999)).is_none());
     }
 
     #[test]
-    fn assign_node_ids_preserves_source_order_for_siblings() {
+    fn assign_missing_ids_preserves_source_order_for_siblings() {
         let mut root = Node::Document {
-            id: Id(0),
+            id: Id::INVALID,
             doctype: None,
             children: vec![
                 Node::Element {
-                    id: Id(0),
+                    id: Id::INVALID,
                     name: Arc::<str>::from("a"),
                     attributes: Vec::new(),
                     style: Vec::new(),
                     children: Vec::new(),
                 },
                 Node::Element {
-                    id: Id(0),
+                    id: Id::INVALID,
                     name: Arc::<str>::from("b"),
                     attributes: Vec::new(),
                     style: Vec::new(),
                     children: Vec::new(),
                 },
                 Node::Element {
-                    id: Id(0),
+                    id: Id::INVALID,
                     name: Arc::<str>::from("c"),
                     attributes: Vec::new(),
                     style: Vec::new(),
@@ -197,7 +200,7 @@ mod tests {
             ],
         };
 
-        assign_node_ids(&mut root);
+        assign_missing_ids_allow_collisions(&mut root);
 
         let children = match &root {
             Node::Document { children, .. } => children,
@@ -210,9 +213,9 @@ mod tests {
     }
 
     #[test]
-    fn assign_node_ids_preserves_existing_ids() {
+    fn assign_missing_ids_preserves_existing_ids() {
         let mut root = Node::Document {
-            id: Id(0),
+            id: Id::INVALID,
             doctype: None,
             children: vec![
                 Node::Element {
@@ -221,12 +224,12 @@ mod tests {
                     attributes: Vec::new(),
                     style: Vec::new(),
                     children: vec![Node::Text {
-                        id: Id(0),
+                        id: Id::INVALID,
                         text: "child".to_string(),
                     }],
                 },
                 Node::Element {
-                    id: Id(0),
+                    id: Id::INVALID,
                     name: Arc::<str>::from("span"),
                     attributes: Vec::new(),
                     style: Vec::new(),
@@ -235,7 +238,7 @@ mod tests {
             ],
         };
 
-        assign_node_ids(&mut root);
+        assign_missing_ids_allow_collisions(&mut root);
 
         let children = match &root {
             Node::Document { children, .. } => children,
@@ -250,12 +253,12 @@ mod tests {
     }
 
     #[test]
-    fn assign_node_ids_does_not_avoid_conflicting_existing_ids() {
+    fn assign_missing_ids_allows_conflicting_existing_ids() {
         let mut root = Node::Document {
             id: Id(1),
             doctype: None,
             children: vec![Node::Element {
-                id: Id(0),
+                id: Id::INVALID,
                 name: Arc::<str>::from("div"),
                 attributes: Vec::new(),
                 style: Vec::new(),
@@ -263,7 +266,7 @@ mod tests {
             }],
         };
 
-        assign_node_ids(&mut root);
+        assign_missing_ids_allow_collisions(&mut root);
 
         let children = match &root {
             Node::Document { children, .. } => children,
