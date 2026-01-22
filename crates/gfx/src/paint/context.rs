@@ -2,7 +2,7 @@ use crate::EguiTextMeasurer;
 use crate::input::{ActiveTarget, InputValueStore};
 use crate::textarea::TextareaCachedLine;
 use egui::{Color32, Painter, Pos2, Stroke};
-use html::types::Id;
+use html::internal::Id;
 use layout::Rectangle;
 use std::cell::RefCell;
 use std::collections::HashMap;

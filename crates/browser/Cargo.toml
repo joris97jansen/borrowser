@@ -7,7 +7,7 @@ edition = "2024"
 app_api = { path = "../app_api" }
 bus = { path = "../bus" }
 net = { path = "../net" }
-html = { path = "../html" }
+html = { path = "../html", features = ["internal-api"] }
 css = { path = "../css" }
 core_types = { path = "../core_types" }
 tools = { path = "../tools" }

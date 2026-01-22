@@ -2,7 +2,7 @@ use super::{TextareaCachedLine, TextareaCachedTextFragment};
 use crate::input::to_input_id;
 use crate::util::clamp_to_char_boundary;
 use css::ComputedStyle;
-use html::types::Id;
+use html::internal::Id;
 use input_core::InputStore;
 use layout::TextMeasurer;
 
@@ -296,7 +296,7 @@ pub(crate) struct TextareaVerticalMoveCtx<'a> {
 
 /// Move the caret vertically by the given number of lines.
 ///
-/// Takes `html::types::Id` and converts to `InputId` internally for store operations.
+/// Takes `html::internal::Id` and converts to `InputId` internally for store operations.
 pub(crate) fn textarea_move_caret_vertically<S: InputStore + ?Sized>(
     input_values: &mut S,
     input_id: Id,

@@ -1,4 +1,4 @@
-use crate::{Id, Node};
+use crate::types::{Id, Node};
 
 // Centralizes raw-pointer traversal handling for `assign_missing_ids_allow_collisions`.
 struct NodeStack {
@@ -57,7 +57,7 @@ pub(crate) fn assign_missing_ids_allow_collisions(root: &mut Node) {
     }
 }
 
-pub fn find_node_by_id(node: &Node, id: Id) -> Option<&Node> {
+pub(crate) fn find_node_by_id(node: &Node, id: Id) -> Option<&Node> {
     let mut stack: Vec<&Node> = Vec::with_capacity(128);
     stack.push(node);
 

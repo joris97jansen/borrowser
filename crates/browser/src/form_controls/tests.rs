@@ -2,7 +2,7 @@ use crate::form_controls::index::RadioGroupKey;
 
 use super::*;
 use gfx::input::InputValueStore;
-use html::{types::Id, Node};
+use html::{Node, types::Id};
 use std::sync::Arc;
 
 fn elem(

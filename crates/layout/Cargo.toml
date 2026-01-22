@@ -5,4 +5,4 @@ edition = "2024"
 
 [dependencies]
 css = { path = "../css" }
-html = { path = "../html" }
+html = { path = "../html", features = ["internal-api"] }

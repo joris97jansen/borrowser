@@ -1,13 +1,13 @@
 use crate::input::to_input_id;
 use crate::util::{clamp_to_char_boundary, input_text_padding};
 use css::ComputedStyle;
-use html::types::Id;
+use html::internal::Id;
 use input_core::{InputStore, caret_from_x_with_boundaries, rebuild_cursor_boundaries};
 use layout::{LayoutBox, TextMeasurer};
 
 /// Update scroll position to keep the caret visible in an input field.
 ///
-/// Takes `html::types::Id` and converts to `InputId` internally for store operations.
+/// Takes `html::internal::Id` and converts to `InputId` internally for store operations.
 pub(crate) fn sync_input_scroll_for_caret<S: InputStore + ?Sized>(
     input_values: &mut S,
     input_id: Id,

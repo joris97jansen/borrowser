@@ -12,6 +12,6 @@ pollster = { workspace = true }
 css = { path = "../css" }
 layout = { path = "../layout" }
 core_types = { path = "../core_types" }
-html = { path = "../html" }
+html = { path = "../html", features = ["internal-api"] }
 input_core = { path = "../input_core" }
 url = { workspace = true }

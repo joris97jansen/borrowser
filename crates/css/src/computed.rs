@@ -1,6 +1,6 @@
 use crate::values::{Display, Length, parse_color, parse_display, parse_length};
 
-use html::{types::Id, Node};
+use html::{Node, types::Id};
 
 #[derive(Clone, Copy, Debug)]
 pub struct BoxMetrics {

@@ -15,7 +15,7 @@
 ///
 /// ```ignore
 /// use input_core::InputId;
-/// use html::types::Id;
+/// use html::internal::Id;
 ///
 /// impl From<Id> for InputId {
 ///     fn from(id: Id) -> Self {

@@ -11,3 +11,4 @@ tools = { path = "../tools" }
 count-alloc = []
 html5-entities = []
 perf-tests = []
+internal-api = []

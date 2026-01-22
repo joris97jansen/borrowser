@@ -1,6 +1,6 @@
-use css::ComputedStyle;
-use html::types::Id;
 use crate::{LayoutBox, Rectangle, ReplacedKind};
+use css::ComputedStyle;
+use html::internal::Id;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InlineActionKind {
