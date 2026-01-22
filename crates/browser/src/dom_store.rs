@@ -1,6 +1,8 @@
 use core_types::{DomHandle, DomVersion};
-use html::internal::Id;
 use html::{DomPatch, Node, PatchKey};
+// Temporary: Node requires an id field; materialization uses INVALID until render
+// consumes the arena directly. Kept behind html's internal-api feature.
+use html::internal::Id;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -35,11 +37,8 @@ impl DomStore {
     }
 
     pub fn create(&mut self, handle: DomHandle) -> Result<(), DomPatchError> {
-        debug_assert!(
-            !self.docs.contains_key(&handle),
-            "dom handle already exists"
-        );
         if self.docs.contains_key(&handle) {
+            debug_assert!(false, "dom handle already exists");
             return Ok(());
         }
         self.docs.insert(handle, DomDoc::new());
@@ -371,6 +370,7 @@ impl DomArena {
             .live
             .get(&key)
             .ok_or(DomPatchError::MissingKey(key))?;
+        let actual = self.nodes[index].kind_name();
         match &mut self.nodes[index].kind {
             NodeKind::Element { attributes: attrs, .. } => {
                 attrs.clear();
@@ -380,7 +380,7 @@ impl DomArena {
             _ => Err(DomPatchError::WrongNodeKind {
                 key,
                 expected: "Element",
-                actual: self.nodes[index].kind_name(),
+                actual,
             }),
         }
     }
@@ -390,6 +390,7 @@ impl DomArena {
             .live
             .get(&key)
             .ok_or(DomPatchError::MissingKey(key))?;
+        let actual = self.nodes[index].kind_name();
         match &mut self.nodes[index].kind {
             NodeKind::Text { text: existing } => {
                 existing.clear();
@@ -399,7 +400,7 @@ impl DomArena {
             _ => Err(DomPatchError::WrongNodeKind {
                 key,
                 expected: "Text",
-                actual: self.nodes[index].kind_name(),
+                actual,
             }),
         }
     }
@@ -428,7 +429,7 @@ impl DomArena {
         self.materialize_node(index, root)
     }
 
-    fn materialize_node(&self, index: usize, key: PatchKey) -> Result<Node, DomPatchError> {
+    fn materialize_node(&self, index: usize, _key: PatchKey) -> Result<Node, DomPatchError> {
         let id = Id::INVALID;
         let children = self.nodes[index]
             .children
