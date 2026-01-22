@@ -124,6 +124,16 @@ impl Tab {
             } if self.is_current(tab_id, request_id) => {
                 self.on_dom_update(dom, request_id);
             }
+            CoreEvent::DomPatchUpdate {
+                tab_id,
+                request_id,
+                handle: _,
+                from: _,
+                to: _,
+                patches: _,
+            } if self.is_current(tab_id, request_id) => {
+                // TODO(v5.1): apply patch stream once patch model is finalized.
+            }
 
             // CSS streaming → CSS runtime
             CoreEvent::NetworkChunk {
@@ -238,7 +248,7 @@ impl Tab {
         self.poke_redraw();
     }
 
-    fn on_dom_update(&mut self, dom: Node, request_id: RequestId) {
+    fn on_dom_update(&mut self, dom: Box<Node>, request_id: RequestId) {
         self.page.dom = Some(dom);
         self.page.update_head_metadata();
         self.page.apply_inline_style_blocks();

@@ -11,7 +11,7 @@ impl Tab {
     }
 
     fn discover_stylesheets(&mut self, request_id: RequestId) {
-        let (Some(dom_ref), Some(base)) = (self.page.dom.as_ref(), self.base_url()) else {
+        let (Some(dom_ref), Some(base)) = (self.page.dom.as_deref(), self.base_url()) else {
             return;
         };
 
@@ -29,7 +29,7 @@ impl Tab {
     }
 
     fn discover_images(&mut self, request_id: RequestId) {
-        let (Some(dom_ref), Some(base)) = (self.page.dom.as_ref(), self.base_url()) else {
+        let (Some(dom_ref), Some(base)) = (self.page.dom.as_deref(), self.base_url()) else {
             return;
         };
 

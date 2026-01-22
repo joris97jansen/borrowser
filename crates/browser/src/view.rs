@@ -32,7 +32,7 @@ pub fn content(
 
     // IMPORTANT: borrow of page.dom is contained in this block and ends here.
     let base_fill = {
-        let dom = page.dom.as_ref().unwrap();
+        let dom = page.dom.as_deref().unwrap();
         let style_root = build_style_tree(dom, None);
         let page_bg = find_page_background_color(&style_root);
 
@@ -47,7 +47,7 @@ pub fn content(
         .frame(Frame::default().fill(base_fill))
         .show(ctx, |ui| {
             // Rebuild style_root inside closure (needed anyway for layout/paint).
-            let dom = page.dom.as_ref().unwrap();
+            let dom = page.dom.as_deref().unwrap();
             let style_root = build_style_tree(dom, None);
 
             // disjoint borrow: OK (dom is immutably borrowed, input_values mutably borrowed)
