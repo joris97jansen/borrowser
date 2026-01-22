@@ -11,6 +11,7 @@
 //!   There is no cross-tab sharing of DOM, resources, or input state; any
 //!   shared work must go through the bus/runtime layers.
 
+use crate::dom_store::DomStore;
 use crate::input_state::DocumentInputState;
 use crate::page::PageState;
 use crate::resources::ResourceManager;
@@ -20,7 +21,7 @@ use std::sync::mpsc;
 
 use html::Node;
 
-use core_types::{RequestId, ResourceKind, TabId};
+use core_types::{DomHandle, RequestId, ResourceKind, TabId};
 
 mod discovery;
 mod dom_style;
@@ -43,6 +44,8 @@ pub struct Tab {
     repaint: Option<RepaintHandle>,
     cmd_tx: Option<mpsc::Sender<CoreCommand>>,
     document_input: DocumentInputState,
+    dom_store: DomStore,
+    dom_handle: Option<DomHandle>,
 }
 
 impl Tab {
@@ -60,6 +63,8 @@ impl Tab {
             repaint: None,
             cmd_tx: None,
             document_input: DocumentInputState::default(),
+            dom_store: DomStore::new(),
+            dom_handle: None,
         }
     }
 
@@ -127,12 +132,26 @@ impl Tab {
             CoreEvent::DomPatchUpdate {
                 tab_id,
                 request_id,
-                handle: _,
-                from: _,
-                to: _,
-                patches: _,
+                handle,
+                from,
+                to,
+                patches,
             } if self.is_current(tab_id, request_id) => {
-                // TODO(v5.1): apply patch stream once patch model is finalized.
+                if self.dom_handle != Some(handle) {
+                    self.dom_store.clear();
+                    let _ = self.dom_store.create(handle);
+                    self.dom_handle = Some(handle);
+                }
+                match self.dom_store.apply(handle, from, to, &patches) {
+                    Ok(()) => {
+                        if let Ok(dom) = self.dom_store.materialize(handle) {
+                            self.on_dom_update(dom, request_id);
+                        }
+                    }
+                    Err(err) => {
+                        eprintln!("dom patch apply error: {err:?}");
+                    }
+                }
             }
 
             // CSS streaming → CSS runtime
@@ -215,6 +234,8 @@ impl Tab {
     }
 
     fn on_html_network_start(&mut self, url: String, request_id: RequestId) {
+        self.dom_store.clear();
+        self.dom_handle = None;
         self.page.start_nav(&url);
         self.loading = true;
         self.last_status = Some(format!("Started HTML stream: {url}"));
