@@ -6,13 +6,71 @@
 //! Notes:
 //! - This is intentionally separate from `types.rs` (internal DOM/tokenizer types).
 //! - The patch model is still evolving in v5.1, so the enum is `#[non_exhaustive]`.
+//!
+//! Invariants:
+//! - Patches are applied in order.
+//! - References must point to existing keys at the time they are used (except
+//!   the `key` in create operations).
+//! - Child ordering is explicit and deterministic.
+//! - A patch stream must be self-contained for the transition `N -> N+1`.
+//! - Element and attribute names are expected to be canonical ASCII-lowercase.
+//! - All `PatchKey` values used in patches must be non-zero (`PatchKey::INVALID`
+//!   is never valid in a patch stream).
+//! - Attribute order and duplicates are preserved; appliers must not dedupe.
+//! - Operations must not create cycles; a node may have at most one parent.
+
+use std::sync::Arc;
+
+/// Opaque patch-layer key for stable node identity within a document.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct PatchKey(pub u32);
+
+impl PatchKey {
+    /// Reserved sentinel for "unassigned/invalid" identity.
+    pub const INVALID: PatchKey = PatchKey(0);
+}
 
 /// Incremental DOM patch operation.
-///
-/// Placeholder until the patch model is fully specified.
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DomPatch {
-    /// No-op placeholder patch.
-    Noop,
+    /// Create a document root node.
+    CreateDocument {
+        key: PatchKey,
+        doctype: Option<String>,
+    },
+    /// Create an element node with initial attributes.
+    CreateElement {
+        key: PatchKey,
+        name: Arc<str>,
+        attributes: Vec<(Arc<str>, Option<String>)>,
+    },
+    /// Create a text node.
+    CreateText { key: PatchKey, text: String },
+    /// Create a comment node.
+    CreateComment { key: PatchKey, text: String },
+    /// Append a child to the end of a parent's children list.
+    AppendChild { parent: PatchKey, child: PatchKey },
+    /// Insert a child before an existing sibling.
+    InsertBefore {
+        parent: PatchKey,
+        child: PatchKey,
+        before: PatchKey,
+    },
+    /// Remove a node and its entire subtree from the document.
+    ///
+    /// After removal, keys in the subtree are invalid for the remainder of the
+    /// patch stream.
+    RemoveNode { key: PatchKey },
+    /// Replace all attributes on an element node.
+    ///
+    /// Applying this to a non-element node is a deterministic error.
+    SetAttributes {
+        key: PatchKey,
+        attributes: Vec<(Arc<str>, Option<String>)>,
+    },
+    /// Replace the text content of a text node.
+    ///
+    /// Applying this to a non-text node is a deterministic error.
+    SetText { key: PatchKey, text: String },
 }
