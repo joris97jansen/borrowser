@@ -1,6 +1,6 @@
 use core_types::{DomHandle, DomVersion};
-use html::{DomPatch, Node, PatchKey};
 use html::internal::Id;
+use html::{DomPatch, Node, PatchKey};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -12,7 +12,11 @@ pub enum DomPatchError {
     InvalidKey(PatchKey),
     DuplicateKey(PatchKey),
     MissingKey(PatchKey),
-    WrongNodeKind(PatchKey),
+    WrongNodeKind {
+        key: PatchKey,
+        expected: &'static str,
+        actual: &'static str,
+    },
     InvalidParent(PatchKey),
     InvalidSibling { parent: PatchKey, before: PatchKey },
     CycleDetected { parent: PatchKey, child: PatchKey },
@@ -31,6 +35,10 @@ impl DomStore {
     }
 
     pub fn create(&mut self, handle: DomHandle) -> Result<(), DomPatchError> {
+        debug_assert!(
+            !self.docs.contains_key(&handle),
+            "dom handle already exists"
+        );
         if self.docs.contains_key(&handle) {
             return Ok(());
         }
@@ -206,6 +214,7 @@ impl DomDoc {
             self.current = None;
             return Ok(());
         };
+        // TODO(v5.1): materialization is O(n); render pipeline should consume the arena directly.
         let node = self.arena.materialize(root)?;
         self.current = Some(Box::new(node));
         Ok(())
@@ -215,6 +224,7 @@ impl DomDoc {
         let Some(root) = self.root else {
             return Err(DomPatchError::MissingRoot);
         };
+        // TODO(v5.1): materialization is O(n); render pipeline should consume the arena directly.
         Ok(Box::new(self.arena.materialize(root)?))
     }
 }
@@ -255,18 +265,25 @@ impl DomArena {
             debug_assert!(false, "cannot create cycle");
             return Err(DomPatchError::CycleDetected { parent, child });
         }
-        if self.is_descendant(child, parent) {
+        if self.contains_in_subtree(child, parent) {
             debug_assert!(false, "cannot create cycle");
             return Err(DomPatchError::CycleDetected { parent, child });
         }
-        let parent_index = *self.live.get(&parent).unwrap();
-        let child_index = *self.live.get(&child).unwrap();
+        let parent_index = *self
+            .live
+            .get(&parent)
+            .ok_or(DomPatchError::MissingKey(parent))?;
+        let child_index = *self
+            .live
+            .get(&child)
+            .ok_or(DomPatchError::MissingKey(child))?;
         if !self.nodes[parent_index].allows_children() {
             debug_assert!(false, "parent node cannot have children");
             return Err(DomPatchError::InvalidParent(parent));
         }
         if self.nodes[child_index].parent.is_some() {
             debug_assert!(false, "child already has a parent");
+            // Moving nodes is not supported yet.
             return Err(DomPatchError::InvalidParent(child));
         }
         self.nodes[parent_index].children.push(child);
@@ -284,21 +301,31 @@ impl DomArena {
             debug_assert!(false, "cannot create cycle");
             return Err(DomPatchError::CycleDetected { parent, child });
         }
-        if self.is_descendant(child, parent) {
+        if self.contains_in_subtree(child, parent) {
             debug_assert!(false, "cannot create cycle");
             return Err(DomPatchError::CycleDetected { parent, child });
         }
-        let parent_index = *self.live.get(&parent).unwrap();
-        let child_index = *self.live.get(&child).unwrap();
+        let parent_index = *self
+            .live
+            .get(&parent)
+            .ok_or(DomPatchError::MissingKey(parent))?;
+        let child_index = *self
+            .live
+            .get(&child)
+            .ok_or(DomPatchError::MissingKey(child))?;
         if !self.nodes[parent_index].allows_children() {
             debug_assert!(false, "parent node cannot have children");
             return Err(DomPatchError::InvalidParent(parent));
         }
         if self.nodes[child_index].parent.is_some() {
             debug_assert!(false, "child already has a parent");
+            // Moving nodes is not supported yet.
             return Err(DomPatchError::InvalidParent(child));
         }
-        let before_index = *self.live.get(&before).unwrap();
+        let before_index = *self
+            .live
+            .get(&before)
+            .ok_or(DomPatchError::MissingKey(before))?;
         if self.nodes[before_index].parent != Some(parent) {
             debug_assert!(false, "before is not a child of parent");
             return Err(DomPatchError::InvalidSibling { parent, before });
@@ -314,7 +341,10 @@ impl DomArena {
     }
 
     fn remove_subtree(&mut self, key: PatchKey) -> Result<(), DomPatchError> {
-        let index = *self.live.get(&key).unwrap();
+        let index = *self
+            .live
+            .get(&key)
+            .ok_or(DomPatchError::MissingKey(key))?;
         if let Some(parent) = self.nodes[index].parent.take() {
             if let Some(parent_index) = self.live.get(&parent).copied() {
                 let siblings = &mut self.nodes[parent_index].children;
@@ -337,37 +367,51 @@ impl DomArena {
         key: PatchKey,
         attributes: &[(Arc<str>, Option<String>)],
     ) -> Result<(), DomPatchError> {
-        let index = *self.live.get(&key).unwrap();
+        let index = *self
+            .live
+            .get(&key)
+            .ok_or(DomPatchError::MissingKey(key))?;
         match &mut self.nodes[index].kind {
             NodeKind::Element { attributes: attrs, .. } => {
                 attrs.clear();
                 attrs.extend(attributes.iter().cloned());
                 Ok(())
             }
-            _ => Err(DomPatchError::WrongNodeKind(key)),
+            _ => Err(DomPatchError::WrongNodeKind {
+                key,
+                expected: "Element",
+                actual: self.nodes[index].kind_name(),
+            }),
         }
     }
 
     fn set_text(&mut self, key: PatchKey, text: &str) -> Result<(), DomPatchError> {
-        let index = *self.live.get(&key).unwrap();
+        let index = *self
+            .live
+            .get(&key)
+            .ok_or(DomPatchError::MissingKey(key))?;
         match &mut self.nodes[index].kind {
             NodeKind::Text { text: existing } => {
                 existing.clear();
                 existing.push_str(text);
                 Ok(())
             }
-            _ => Err(DomPatchError::WrongNodeKind(key)),
+            _ => Err(DomPatchError::WrongNodeKind {
+                key,
+                expected: "Text",
+                actual: self.nodes[index].kind_name(),
+            }),
         }
     }
 
-    fn is_descendant(&self, ancestor: PatchKey, maybe_descendant: PatchKey) -> bool {
-        let Some(&index) = self.live.get(&ancestor) else {
+    fn contains_in_subtree(&self, root: PatchKey, needle: PatchKey) -> bool {
+        let Some(&index) = self.live.get(&root) else {
             return false;
         };
         let mut stack = Vec::new();
         stack.extend(self.nodes[index].children.iter().copied());
         while let Some(current) = stack.pop() {
-            if current == maybe_descendant {
+            if current == needle {
                 return true;
             }
             if let Some(&child_index) = self.live.get(&current) {
@@ -385,7 +429,7 @@ impl DomArena {
     }
 
     fn materialize_node(&self, index: usize, key: PatchKey) -> Result<Node, DomPatchError> {
-        let id = Id(key.0);
+        let id = Id::INVALID;
         let children = self.nodes[index]
             .children
             .iter()
@@ -432,6 +476,15 @@ struct NodeRecord {
 impl NodeRecord {
     fn allows_children(&self) -> bool {
         matches!(self.kind, NodeKind::Document { .. } | NodeKind::Element { .. })
+    }
+
+    fn kind_name(&self) -> &'static str {
+        match self.kind {
+            NodeKind::Document { .. } => "Document",
+            NodeKind::Element { .. } => "Element",
+            NodeKind::Text { .. } => "Text",
+            NodeKind::Comment { .. } => "Comment",
+        }
     }
 }
 
