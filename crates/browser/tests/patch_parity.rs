@@ -2,7 +2,7 @@ use browser::dom_store::DomStore;
 use core_types::{DomHandle, DomVersion};
 use html::dom_snapshot::{DomSnapshotOptions, compare_dom};
 use html::golden_corpus::fixtures;
-use html::{DomPatch, Node, diff_dom, tokenize};
+use html::{DomDiffState, DomPatch, Node, diff_dom_with_state, diff_from_empty, tokenize};
 use tools::utf8::{finish_utf8, push_utf8_chunk};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -120,12 +120,6 @@ fn deterministic_chunk_plans(input: &str) -> Vec<ChunkPlan> {
             size,
             policy: BoundaryPolicy::ByteStream,
         });
-        if input.is_char_boundary(size.min(input.len())) {
-            plans.push(ChunkPlan::Fixed {
-                size,
-                policy: BoundaryPolicy::Utf8Aligned,
-            });
-        }
     }
     if let Some(boundaries) = every_byte_boundaries(input, 128) {
         plans.push(ChunkPlan::Boundaries {
@@ -227,16 +221,31 @@ fn fuzz_chunk_plan(input: &str, seed: u64) -> ChunkPlan {
     let mut rng = Lcg::new(seed);
     let len = input.len().max(1);
     let aligned = rng.gen_range(0, 10) == 0;
-    let policy = if aligned {
-        BoundaryPolicy::Utf8Aligned
-    } else {
-        BoundaryPolicy::ByteStream
-    };
+    if aligned {
+        let mut boundaries = utf8_aligned_boundaries(input, len.min(256));
+        if boundaries.is_empty() {
+            return ChunkPlan::Fixed {
+                size: 1,
+                policy: BoundaryPolicy::ByteStream,
+            };
+        }
+        boundaries.retain(|_| rng.gen_range(0, 3) != 0);
+        if boundaries.is_empty() {
+            boundaries.push(len.min(1));
+        }
+        boundaries.sort_unstable();
+        boundaries.dedup();
+        return ChunkPlan::Boundaries {
+            indices: boundaries,
+            policy: BoundaryPolicy::Utf8Aligned,
+        };
+    }
+    let policy = BoundaryPolicy::ByteStream;
     match rng.gen_range(0, 3) {
-        0 => ChunkPlan::Fixed {
-            size: rng.gen_range(1, len.min(32) + 1),
-            policy,
-        },
+        0 => {
+            let size = rng.gen_range(1, len.min(32) + 1);
+            ChunkPlan::Fixed { size, policy }
+        }
         1 => {
             let count = rng.gen_range(1, 8);
             let mut sizes = Vec::with_capacity(count);
@@ -259,7 +268,7 @@ fn fuzz_chunk_plan(input: &str, seed: u64) -> ChunkPlan {
 }
 
 fn shrink_plan(
-    input: &str,
+    _input: &str,
     plan: &ChunkPlan,
     mut fails: impl FnMut(&ChunkPlan) -> bool,
 ) -> ChunkPlan {
@@ -347,21 +356,24 @@ fn run_and_compare(
         version = to;
     }
     let actual = store.materialize(handle).map_err(|e| format!("{e:?}"))?;
-    compare_dom(
+    match compare_dom(
         baseline,
         &actual,
         DomSnapshotOptions {
             ignore_ids: true,
             ignore_empty_style: true,
         },
-    )
-    .map_err(|err| err.to_string())
+    ) {
+        Ok(()) => Ok(()),
+        Err(err) => Err(err.to_string()),
+    }
 }
 
 fn patch_batches_for_plan(input: &str, plan: &ChunkPlan) -> Result<Vec<Vec<DomPatch>>, String> {
     let mut text = String::new();
     let mut carry = Vec::new();
-    let mut prev_dom = build_dom("");
+    let mut prev_dom: Option<Node> = None;
+    let mut diff_state = DomDiffState::new();
     let mut batches = Vec::new();
     let mut err: Option<String> = None;
     plan.for_each_chunk(input, |chunk| {
@@ -370,9 +382,13 @@ fn patch_batches_for_plan(input: &str, plan: &ChunkPlan) -> Result<Vec<Vec<DomPa
         }
         push_utf8_chunk(&mut text, &mut carry, chunk);
         let dom = build_dom(&text);
-        match diff_dom(&prev_dom, &dom) {
+        let patches = match &prev_dom {
+            Some(prev) => diff_dom_with_state(prev, &dom, &mut diff_state),
+            None => diff_from_empty(&dom, &mut diff_state),
+        };
+        match patches {
             Ok(patches) => {
-                prev_dom = dom;
+                prev_dom = Some(dom);
                 batches.push(patches);
             }
             Err(e) => {
@@ -385,7 +401,11 @@ fn patch_batches_for_plan(input: &str, plan: &ChunkPlan) -> Result<Vec<Vec<DomPa
     }
     finish_utf8(&mut text, &mut carry);
     let dom = build_dom(&text);
-    let patches = diff_dom(&prev_dom, &dom).map_err(|e| format!("{e:?}"))?;
+    let patches = match &prev_dom {
+        Some(prev) => diff_dom_with_state(prev, &dom, &mut diff_state),
+        None => diff_from_empty(&dom, &mut diff_state),
+    }
+    .map_err(|e| format!("{e:?}"))?;
     batches.push(patches);
     Ok(batches)
 }
@@ -517,9 +537,9 @@ fn patch_parity_reset_semantics() {
     let mut store = DomStore::new();
     let handle = DomHandle(1);
     store.create(handle).expect("store create failed");
-    let mut version = DomVersion::INITIAL;
     let prev_dom = build_dom(prev);
-    let patches = diff_dom(&prev_dom, &baseline).expect("diff failed");
+    let mut diff_state = DomDiffState::new();
+    let patches = diff_dom_with_state(&prev_dom, &baseline, &mut diff_state).expect("diff failed");
     assert!(
         matches!(patches.first(), Some(DomPatch::Clear)),
         "expected reset to emit Clear"
@@ -528,12 +548,11 @@ fn patch_parity_reset_semantics() {
         patches.len() > 1,
         "reset must include create stream after Clear"
     );
-    let from = version;
+    let from = DomVersion::INITIAL;
     let to = from.next();
     store
         .apply(handle, from, to, &patches)
         .expect("apply failed");
-    version = to;
     let actual = store.materialize(handle).expect("materialize failed");
     compare_dom(
         &baseline,

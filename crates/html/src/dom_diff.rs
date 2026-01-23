@@ -10,6 +10,7 @@
 //! - Stage 1 uses `PatchKey == Id` to avoid a separate mapping layer.
 //!   This coupling may change once patch transport stabilizes.
 //! - `Id` stability is scoped to a parse session; `Clear` implies a new allocation epoch.
+//! - Within an epoch, `Id` values are never reused (monotonic identity).
 //! - Patch batches are ordered as: removals first, then updates/creates in pre-order.
 //!
 //! Complexity: O(n) in the number of nodes for both trees, plus set/map storage.
@@ -25,8 +26,40 @@ pub enum DomDiffError {
     InvalidRoot(&'static str),
 }
 
+#[derive(Debug, Default)]
+pub struct DomDiffState {
+    allocated: HashSet<Id>,
+}
+
+impl DomDiffState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    fn reset(&mut self, next_ids: &HashSet<Id>) {
+        self.allocated.clear();
+        self.allocated.extend(next_ids.iter().copied());
+    }
+
+    fn update_live(&mut self, next_ids: &HashSet<Id>) {
+        self.allocated.extend(next_ids.iter().copied());
+    }
+}
+
 pub fn diff_dom(prev: &Node, next: &Node) -> Result<Vec<DomPatch>, DomDiffError> {
+    let mut state = DomDiffState::default();
+    diff_dom_with_state(prev, next, &mut state)
+}
+
+pub fn diff_dom_with_state(
+    prev: &Node,
+    next: &Node,
+    state: &mut DomDiffState,
+) -> Result<Vec<DomPatch>, DomDiffError> {
     if !root_is_compatible(prev, next) {
+        let mut next_ids = HashSet::new();
+        collect_ids(next, &mut next_ids);
+        state.reset(&next_ids);
         return reset_stream(next);
     }
 
@@ -44,15 +77,28 @@ pub fn diff_dom(prev: &Node, next: &Node) -> Result<Vec<DomPatch>, DomDiffError>
         None,
         &prev_map,
         &next_ids,
+        &state.allocated,
         &mut patches,
         &mut need_reset,
     )?;
 
     if need_reset {
+        state.reset(&next_ids);
         return reset_stream(next);
     }
 
+    state.update_live(&next_ids);
     Ok(patches)
+}
+
+pub fn diff_from_empty(
+    next: &Node,
+    state: &mut DomDiffState,
+) -> Result<Vec<DomPatch>, DomDiffError> {
+    let mut next_ids = HashSet::new();
+    collect_ids(next, &mut next_ids);
+    state.reset(&next_ids);
+    reset_stream(next)
 }
 
 fn reset_stream(next: &Node) -> Result<Vec<DomPatch>, DomDiffError> {
@@ -165,6 +211,7 @@ fn emit_updates(
     parent_key: Option<PatchKey>,
     prev_map: &HashMap<Id, PrevNodeInfo>,
     next_ids: &HashSet<Id>,
+    allocated: &HashSet<Id>,
     patches: &mut Vec<DomPatch>,
     need_reset: &mut bool,
 ) -> Result<(), DomDiffError> {
@@ -173,6 +220,10 @@ fn emit_updates(
     let is_new = !prev_map.contains_key(&id);
 
     if is_new {
+        if allocated.contains(&id) {
+            *need_reset = true;
+            return Ok(());
+        }
         emit_create_node(node, key, patches)?;
         if let Some(parent) = parent_key {
             patches.push(DomPatch::AppendChild { parent, child: key });
@@ -268,7 +319,15 @@ fn emit_updates(
                 }
             }
             for child in children {
-                emit_updates(child, Some(key), prev_map, next_ids, patches, need_reset)?;
+                emit_updates(
+                    child,
+                    Some(key),
+                    prev_map,
+                    next_ids,
+                    allocated,
+                    patches,
+                    need_reset,
+                )?;
                 if *need_reset {
                     return Ok(());
                 }
