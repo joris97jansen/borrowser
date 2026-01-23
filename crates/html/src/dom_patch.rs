@@ -13,6 +13,7 @@
 //!   the `key` in create operations).
 //! - Child ordering is explicit and deterministic.
 //! - A patch stream must be self-contained for the transition `N -> N+1`.
+//! - Reset streams must begin with `DomPatch::Clear`.
 //! - Element and attribute names are expected to be canonical ASCII-lowercase.
 //! - All `PatchKey` values used in patches must be non-zero (`PatchKey::INVALID`
 //!   is never valid in a patch stream).
@@ -34,6 +35,10 @@ impl PatchKey {
 #[non_exhaustive]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum DomPatch {
+    /// Clear all existing nodes for the document before applying subsequent patches.
+    ///
+    /// This must be the first patch in a batch when used.
+    Clear,
     /// Create a document root node.
     CreateDocument {
         key: PatchKey,
