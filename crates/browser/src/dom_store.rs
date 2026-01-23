@@ -132,7 +132,7 @@ impl DomDoc {
     }
 
     fn clear(&mut self) {
-        // Clear resets DOM contents only; versioning is managed by DomStore.
+        // Clear resets DOM contents (arena, root, cache); versioning is managed by DomStore.
         self.arena = DomArena::new();
         self.root = None;
         self.current = None;
