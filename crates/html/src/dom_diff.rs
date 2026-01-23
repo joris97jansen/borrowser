@@ -9,6 +9,7 @@
 //! - Resets are encoded as `DomPatch::Clear` + full create stream.
 //! - Stage 1 uses `PatchKey == Id` to avoid a separate mapping layer.
 //!   This coupling may change once patch transport stabilizes.
+//! - `Id` stability is scoped to a parse session; `Clear` implies a new allocation epoch.
 //! - Patch batches are ordered as: removals first, then updates/creates in pre-order.
 //!
 //! Complexity: O(n) in the number of nodes for both trees, plus set/map storage.
