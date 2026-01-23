@@ -1,5 +1,6 @@
 pub mod collect;
 pub mod debug;
+pub mod dom_diff;
 #[cfg(test)]
 pub mod dom_snapshot;
 pub mod dom_utils;
@@ -69,6 +70,7 @@ fn contains_ignore_ascii_case(haystack: &str, needle: &[u8]) -> bool {
 }
 
 pub use crate::dom_builder::build_dom;
+pub use crate::dom_diff::diff_dom;
 pub use crate::dom_patch::{DomPatch, PatchKey};
 pub use crate::tokenizer::tokenize;
 pub use crate::types::{AtomId, AtomTable, Node, Token, TokenStream};

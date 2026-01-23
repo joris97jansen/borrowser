@@ -132,8 +132,8 @@ impl DomDoc {
     }
 
     fn clear(&mut self) {
-        // Clear resets DOM contents only; versioning is managed by DomStore.
-        self.arena = DomArena::new();
+        // Clear resets DOM contents (arena, root, cache); versioning is managed by DomStore.
+        self.arena.clear();
         self.root = None;
         self.current = None;
     }
@@ -306,6 +306,12 @@ impl DomArena {
             live: HashMap::new(),
             allocated: HashSet::new(),
         }
+    }
+
+    fn clear(&mut self) {
+        self.nodes.clear();
+        self.live.clear();
+        self.allocated.clear();
     }
 
     fn insert_node(&mut self, key: PatchKey, kind: NodeKind) -> Result<(), DomPatchError> {
