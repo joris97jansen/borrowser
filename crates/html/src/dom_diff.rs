@@ -345,10 +345,7 @@ fn patch_key(id: Id) -> Result<PatchKey, DomDiffError> {
 }
 
 fn root_is_compatible(prev: &Node, next: &Node) -> bool {
-    match (prev, next) {
-        (Node::Document { .. }, Node::Document { .. }) => true,
-        _ => false,
-    }
+    matches!((prev, next), (Node::Document { .. }, Node::Document { .. }))
 }
 
 #[cfg(test)]
@@ -530,16 +527,22 @@ mod tests {
                         self.allocated.insert(*key);
                     }
                     DomPatch::AppendChild { parent, child } => {
+                        let child_has_parent = self
+                            .nodes
+                            .get(child)
+                            .ok_or(DomDiffError::InvalidRoot("missing child"))?
+                            .parent
+                            .is_some();
+                        if child_has_parent {
+                            return Err(DomDiffError::InvalidRoot("child already has parent"));
+                        }
                         let Some(parent_node) = self.nodes.get_mut(parent) else {
                             return Err(DomDiffError::InvalidRoot("missing parent"));
                         };
+                        parent_node.children.push(*child);
                         let Some(child_node) = self.nodes.get_mut(child) else {
                             return Err(DomDiffError::InvalidRoot("missing child"));
                         };
-                        if child_node.parent.is_some() {
-                            return Err(DomDiffError::InvalidRoot("child already has parent"));
-                        }
-                        parent_node.children.push(*child);
                         child_node.parent = Some(*parent);
                     }
                     DomPatch::InsertBefore {
@@ -547,21 +550,32 @@ mod tests {
                         child,
                         before,
                     } => {
+                        let child_has_parent = self
+                            .nodes
+                            .get(child)
+                            .ok_or(DomDiffError::InvalidRoot("missing child"))?
+                            .parent
+                            .is_some();
+                        if child_has_parent {
+                            return Err(DomDiffError::InvalidRoot("child already has parent"));
+                        }
+                        let pos = {
+                            let Some(parent_node) = self.nodes.get(parent) else {
+                                return Err(DomDiffError::InvalidRoot("missing parent"));
+                            };
+                            parent_node
+                                .children
+                                .iter()
+                                .position(|k| k == before)
+                                .ok_or(DomDiffError::InvalidRoot("missing before"))?
+                        };
                         let Some(parent_node) = self.nodes.get_mut(parent) else {
                             return Err(DomDiffError::InvalidRoot("missing parent"));
                         };
+                        parent_node.children.insert(pos, *child);
                         let Some(child_node) = self.nodes.get_mut(child) else {
                             return Err(DomDiffError::InvalidRoot("missing child"));
                         };
-                        if child_node.parent.is_some() {
-                            return Err(DomDiffError::InvalidRoot("child already has parent"));
-                        }
-                        let pos = parent_node
-                            .children
-                            .iter()
-                            .position(|k| k == before)
-                            .ok_or(DomDiffError::InvalidRoot("missing before"))?;
-                        parent_node.children.insert(pos, *child);
                         child_node.parent = Some(*parent);
                     }
                     DomPatch::RemoveNode { key } => {
