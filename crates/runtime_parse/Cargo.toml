@@ -8,3 +8,6 @@ bus = { path = "../bus" }
 html = { path = "../html", features = ["internal-api"] }
 core_types = { path = "../core_types" }
 tools = { path = "../tools" }
+
+[features]
+patch-stats = []
