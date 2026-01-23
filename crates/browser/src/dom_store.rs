@@ -17,6 +17,7 @@ pub enum DomPatchError {
         from: DomVersion,
         to: DomVersion,
     },
+    Protocol(&'static str),
     InvalidKey(PatchKey),
     DuplicateKey(PatchKey),
     MissingKey(PatchKey),
@@ -130,16 +131,59 @@ impl DomDoc {
         }
     }
 
+    fn clear(&mut self) {
+        // Clear resets DOM contents only; versioning is managed by DomStore.
+        self.arena = DomArena::new();
+        self.root = None;
+        self.current = None;
+    }
+
     fn apply(&mut self, patches: &[DomPatch]) -> Result<(), DomPatchError> {
-        for patch in patches {
-            self.apply_one(patch)?;
+        if patches
+            .get(1..)
+            .is_some_and(|rest| rest.iter().any(|p| matches!(p, DomPatch::Clear)))
+        {
+            return Err(DomPatchError::Protocol(
+                "Clear may only appear as the first patch",
+            ));
+        }
+        let had_clear = matches!(patches.first(), Some(DomPatch::Clear));
+        let start = if had_clear {
+            self.clear();
+            1
+        } else {
+            0
+        };
+        for patch in &patches[start..] {
+            self.apply_one(patch, had_clear)?;
+        }
+        if !had_clear && self.root.is_none() {
+            return Err(DomPatchError::Protocol(
+                "document became rootless without Clear",
+            ));
         }
         Ok(())
     }
 
-    fn apply_one(&mut self, patch: &DomPatch) -> Result<(), DomPatchError> {
+    fn apply_one(&mut self, patch: &DomPatch, had_clear: bool) -> Result<(), DomPatchError> {
         match patch {
+            DomPatch::Clear => {
+                debug_assert!(false, "Clear must be first patch in a batch");
+                return Err(DomPatchError::Protocol(
+                    "Clear must be first patch in a batch",
+                ));
+            }
             DomPatch::CreateDocument { key, doctype } => {
+                if !had_clear && !self.is_fresh() {
+                    debug_assert!(false, "CreateDocument requires Clear or fresh doc");
+                    return Err(DomPatchError::Protocol(
+                        "CreateDocument requires Clear or fresh document",
+                    ));
+                }
+                if self.root.is_some() {
+                    debug_assert!(false, "root already set");
+                    return Err(DomPatchError::Protocol("root already set"));
+                }
                 self.ensure_key(*key)?;
                 self.arena.insert_node(
                     *key,
@@ -234,6 +278,10 @@ impl DomDoc {
         let node = self.arena.materialize(root)?;
         self.current = Some(Box::new(node));
         Ok(())
+    }
+
+    fn is_fresh(&self) -> bool {
+        self.root.is_none() && self.arena.nodes.is_empty()
     }
 
     fn materialize(&self) -> Result<Box<Node>, DomPatchError> {
@@ -356,13 +404,14 @@ impl DomArena {
         Ok(())
     }
 
+    #[allow(clippy::collapsible_if)]
     fn remove_subtree(&mut self, key: PatchKey) -> Result<(), DomPatchError> {
         let index = *self.live.get(&key).ok_or(DomPatchError::MissingKey(key))?;
-        if let Some(parent) = self.nodes[index].parent.take()
-            && let Some(parent_index) = self.live.get(&parent).copied()
-        {
-            let siblings = &mut self.nodes[parent_index].children;
-            siblings.retain(|k| *k != key);
+        if let Some(parent) = self.nodes[index].parent.take() {
+            if let Some(parent_index) = self.live.get(&parent).copied() {
+                let siblings = &mut self.nodes[parent_index].children;
+                siblings.retain(|k| *k != key);
+            }
         }
         let children = self.nodes[index].children.clone();
         self.nodes[index].children.clear();
