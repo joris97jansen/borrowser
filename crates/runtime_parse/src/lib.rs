@@ -65,6 +65,9 @@ impl HtmlState {
             return;
         };
 
+        #[cfg(feature = "patch-stats")]
+        log_patch_stats(tab_id, request_id, &patches);
+
         let from = self.version;
         let to = from.next();
         self.version = to;
@@ -79,6 +82,32 @@ impl HtmlState {
 
         self.prev_dom = Some(Box::new(dom));
     }
+}
+
+#[cfg(feature = "patch-stats")]
+fn log_patch_stats(tab_id: TabId, request_id: RequestId, patches: &[DomPatch]) {
+    let mut created = 0usize;
+    let mut removed = 0usize;
+    for patch in patches {
+        match patch {
+            DomPatch::CreateDocument { .. }
+            | DomPatch::CreateElement { .. }
+            | DomPatch::CreateText { .. }
+            | DomPatch::CreateComment { .. } => {
+                created += 1;
+            }
+            DomPatch::RemoveNode { .. } => {
+                removed += 1;
+            }
+            _ => {}
+        }
+    }
+    eprintln!(
+        "runtime_parse: patch_stats tab={tab_id:?} request={request_id:?} patches={} created={} removed={}",
+        patches.len(),
+        created,
+        removed
+    );
 }
 
 /// Parses HTML incrementally for streaming previews.
@@ -586,6 +615,8 @@ fn root_is_compatible(prev: &Node, next: &Node) -> bool {
 
 #[cfg(test)]
 mod tests {
+    use super::{PatchState, diff_dom, emit_create_subtree};
+    use html::{Node, build_dom, tokenize};
     use tools::utf8::{finish_utf8, push_utf8_chunk};
 
     // NOTE: The primary UTF-8 carry contract is validated in html::test_harness
@@ -617,5 +648,243 @@ mod tests {
             rebuilt, input,
             "expected UTF-8 roundtrip for boundaries={boundaries:?}"
         );
+    }
+
+    fn estimated_patch_bytes(patches: &[html::DomPatch]) -> usize {
+        let mut total = 0usize;
+        for patch in patches {
+            match patch {
+                html::DomPatch::Clear => {
+                    total += 1;
+                }
+                html::DomPatch::CreateDocument { doctype, .. } => {
+                    total += 8 + doctype.as_ref().map(|s| s.len()).unwrap_or(0);
+                }
+                html::DomPatch::CreateElement {
+                    name, attributes, ..
+                } => {
+                    total += 8 + name.len();
+                    for (k, v) in attributes {
+                        total += k.len();
+                        if let Some(value) = v {
+                            total += value.len();
+                        }
+                    }
+                }
+                html::DomPatch::CreateText { text, .. }
+                | html::DomPatch::CreateComment { text, .. } => {
+                    total += 8 + text.len();
+                }
+                html::DomPatch::AppendChild { .. }
+                | html::DomPatch::InsertBefore { .. }
+                | html::DomPatch::RemoveNode { .. }
+                | html::DomPatch::SetAttributes { .. }
+                | html::DomPatch::SetText { .. } => {
+                    total += 8;
+                }
+                _ => {
+                    total += 1;
+                }
+            }
+        }
+        total
+    }
+
+    fn full_create_patches(dom: &Node) -> Vec<html::DomPatch> {
+        let mut patch_state = PatchState::new();
+        let mut patches = Vec::new();
+        let mut need_reset = false;
+        emit_create_subtree(dom, None, &mut patch_state, &mut patches, &mut need_reset);
+        assert!(!need_reset, "full create stream failed");
+        patches
+    }
+
+    #[test]
+    fn patch_updates_do_not_resend_full_tree_each_tick() {
+        let inputs = [
+            "<div>",
+            "<div><span>",
+            "<div><span>hi</span>",
+            "<div><span>hi</span><em>ok</em>",
+        ];
+        let mut patch_state = PatchState::new();
+        let mut prev_dom: Option<Box<Node>> = None;
+
+        for (tick, input) in inputs.iter().enumerate() {
+            let stream = tokenize(input);
+            let dom = build_dom(&stream);
+            let full_patches = full_create_patches(&dom);
+            let full_bytes = estimated_patch_bytes(&full_patches);
+            let patches = match prev_dom.as_deref() {
+                Some(prev) => diff_dom(prev, &dom, &mut patch_state).expect("diff failed"),
+                None => {
+                    let mut patches = Vec::new();
+                    let mut need_reset = false;
+                    emit_create_subtree(
+                        &dom,
+                        None,
+                        &mut patch_state,
+                        &mut patches,
+                        &mut need_reset,
+                    );
+                    assert!(!need_reset, "initial create stream failed");
+                    patches
+                }
+            };
+
+            if tick == 0 {
+                assert!(
+                    !patches.is_empty(),
+                    "expected initial create stream on first tick"
+                );
+                assert_eq!(
+                    patches.len(),
+                    full_patches.len(),
+                    "first tick should be a full create stream"
+                );
+            } else {
+                assert!(
+                    !matches!(patches.first(), Some(html::DomPatch::Clear)),
+                    "unexpected reset on append-only tick {tick}"
+                );
+                let created = patches
+                    .iter()
+                    .filter(|p| {
+                        matches!(
+                            p,
+                            html::DomPatch::CreateDocument { .. }
+                                | html::DomPatch::CreateElement { .. }
+                                | html::DomPatch::CreateText { .. }
+                                | html::DomPatch::CreateComment { .. }
+                        )
+                    })
+                    .count();
+                let full_created = full_patches
+                    .iter()
+                    .filter(|p| {
+                        matches!(
+                            p,
+                            html::DomPatch::CreateDocument { .. }
+                                | html::DomPatch::CreateElement { .. }
+                                | html::DomPatch::CreateText { .. }
+                                | html::DomPatch::CreateComment { .. }
+                        )
+                    })
+                    .count();
+                let removed = patches
+                    .iter()
+                    .filter(|p| matches!(p, html::DomPatch::RemoveNode { .. }))
+                    .count();
+                assert_eq!(removed, 0, "unexpected removals on append-only tick {tick}");
+                let bytes = estimated_patch_bytes(&patches);
+                assert!(
+                    bytes <= full_bytes,
+                    "patch payload exceeded full create stream: tick={tick} bytes={bytes} full_bytes={full_bytes}"
+                );
+                assert!(
+                    patches.len() <= full_patches.len(),
+                    "patch count exceeded full create stream: tick={tick} patches={} full_patches={}",
+                    patches.len(),
+                    full_patches.len()
+                );
+                if full_created > 20 {
+                    assert!(
+                        created < full_created,
+                        "patch created too many nodes: tick={tick} created={created} full_created={full_created}"
+                    );
+                }
+                assert!(
+                    bytes < full_bytes,
+                    "patch payload regressed: tick={tick} bytes={bytes} full_bytes={full_bytes}"
+                );
+            }
+
+            prev_dom = Some(Box::new(dom));
+        }
+    }
+
+    #[test]
+    fn patch_updates_do_not_rebuild_medium_tree_each_tick() {
+        let mut inputs = Vec::new();
+        let mut buf = String::from("<div>");
+        inputs.push(buf.clone());
+        for i in 0..200 {
+            buf.push_str("<span>item</span>");
+            if i == 49 || i == 119 || i == 199 {
+                inputs.push(buf.clone());
+            }
+        }
+
+        let mut patch_state = PatchState::new();
+        let mut prev_dom: Option<Box<Node>> = None;
+
+        for (tick, input) in inputs.iter().enumerate() {
+            let stream = tokenize(input);
+            let dom = build_dom(&stream);
+            let full_patches = full_create_patches(&dom);
+            let full_bytes = estimated_patch_bytes(&full_patches);
+            let patches = match prev_dom.as_deref() {
+                Some(prev) => diff_dom(prev, &dom, &mut patch_state).expect("diff failed"),
+                None => {
+                    let mut patches = Vec::new();
+                    let mut need_reset = false;
+                    emit_create_subtree(
+                        &dom,
+                        None,
+                        &mut patch_state,
+                        &mut patches,
+                        &mut need_reset,
+                    );
+                    assert!(!need_reset, "initial create stream failed");
+                    patches
+                }
+            };
+
+            if tick == 0 {
+                assert!(
+                    !patches.is_empty(),
+                    "expected initial create stream on first tick"
+                );
+            } else {
+                assert!(
+                    !matches!(patches.first(), Some(html::DomPatch::Clear)),
+                    "unexpected reset on append-only tick {tick}"
+                );
+                let created = patches
+                    .iter()
+                    .filter(|p| {
+                        matches!(
+                            p,
+                            html::DomPatch::CreateDocument { .. }
+                                | html::DomPatch::CreateElement { .. }
+                                | html::DomPatch::CreateText { .. }
+                                | html::DomPatch::CreateComment { .. }
+                        )
+                    })
+                    .count();
+                assert!(
+                    created > 0,
+                    "expected growth to create nodes on tick {tick}"
+                );
+                let removed = patches
+                    .iter()
+                    .filter(|p| matches!(p, html::DomPatch::RemoveNode { .. }))
+                    .count();
+                assert_eq!(removed, 0, "unexpected removals on append-only tick {tick}");
+                let bytes = estimated_patch_bytes(&patches);
+                assert!(
+                    bytes < full_bytes,
+                    "patch payload regressed: tick={tick} bytes={bytes} full_bytes={full_bytes}"
+                );
+                assert!(
+                    patches.len() <= full_patches.len(),
+                    "patch count exceeded full create stream: tick={tick} patches={} full_patches={}",
+                    patches.len(),
+                    full_patches.len()
+                );
+            }
+
+            prev_dom = Some(Box::new(dom));
+        }
     }
 }
