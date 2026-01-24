@@ -16,10 +16,11 @@ pub type NodeId = u32;
 /// patching and ownership contracts stabilize.
 ///
 /// Invariants:
-/// - Newly created nodes always receive a fresh key.
-/// - Keys are stable across patches for the document's lifetime.
-/// - Keys map 1:1 to live DOM nodes and are never reused after deletion.
-/// - Keys are assigned by the owning DOM builder/patch applier.
+/// - Newly created nodes always receive a fresh ID.
+/// - IDs are stable across patches for the document's lifetime.
+/// - IDs map 1:1 to live DOM nodes and are never reused within a document lifetime.
+/// - When deletion is introduced, deleted IDs are never reused.
+/// - IDs are assigned by the owning DOM builder/patch applier.
 /// - `0` is reserved to represent "unassigned/invalid" during construction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct Id(pub NodeId);
@@ -27,13 +28,40 @@ pub struct Id(pub NodeId);
 impl Id {
     /// Reserved sentinel for "unassigned/invalid" identity.
     pub const INVALID: Id = Id(0);
+
+    #[allow(dead_code)]
+    pub(crate) fn from_key(key: NodeKey) -> Self {
+        Id(key.0)
+    }
 }
 
 /// Patch-layer name for stable node identity.
 ///
-/// In v5.1 this is identical to `Id`; it may diverge later if patch transport
-/// requires a distinct sequencing or indirection model.
-pub type NodeKey = Id;
+/// Invariants:
+/// - Keys are stable for the lifetime of a document.
+/// - Keys are never reused within a document lifetime.
+/// - When deletion is introduced, deleted keys are never reused.
+/// - `NodeKey(0)` is reserved as invalid.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub struct NodeKey(pub u32);
+
+impl NodeKey {
+    pub const INVALID: NodeKey = NodeKey(0);
+
+    #[allow(dead_code)]
+    pub(crate) fn try_from_id(id: Id) -> Result<Self, &'static str> {
+        if id == Id::INVALID {
+            return Err("Id::INVALID cannot be converted to NodeKey");
+        }
+        Ok(NodeKey(id.0))
+    }
+}
+
+impl From<NodeKey> for Id {
+    fn from(key: NodeKey) -> Self {
+        Id(key.0)
+    }
+}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct AtomId(pub u32);
