@@ -38,6 +38,7 @@ pub enum DomPatch {
     /// Clear all existing nodes for the document before applying subsequent patches.
     ///
     /// This must be the first patch in a batch when used, and resets all key allocation state.
+    /// Implementations should treat mid-stream `Clear` as a protocol violation.
     Clear,
     /// Create a document root node.
     CreateDocument {

@@ -1,3 +1,4 @@
+use crate::dom_patch::{DomPatch, PatchKey};
 use crate::types::{AtomTable, Id, Node, NodeKey, Token, TokenStream};
 use core::fmt;
 use std::sync::Arc;
@@ -86,6 +87,8 @@ struct PendingText {
 /// - Keys are stable for the lifetime of the built DOM; they are never re-assigned.
 /// - Patch appliers must treat unknown keys as protocol violations; keys are introduced
 ///   only when nodes are created and remain valid for the document lifetime.
+/// - When text coalescing is enabled, CreateText/AppendChild patches are emitted at
+///   flush boundaries (tag/comment/doctype/end/finish), not immediately on each text token.
 pub(crate) struct TreeBuilder<'a> {
     arena: NodeArena,
     root_index: usize,
@@ -95,6 +98,9 @@ pub(crate) struct TreeBuilder<'a> {
     #[allow(dead_code, reason = "placeholder for upcoming insertion mode handling")]
     insertion_mode: InsertionMode,
     text_resolver: &'a dyn TokenTextResolver,
+    patch_emitter: Option<&'a mut dyn PatchEmitter>,
+    document_emitted: bool,
+    pending_doctype: Option<String>,
     coalesce_text: bool,
     finished: bool,
 }
@@ -111,6 +117,15 @@ impl<'a> TreeBuilder<'a> {
         text_resolver: &'a dyn TokenTextResolver,
         node_capacity: usize,
         config: TreeBuilderConfig,
+    ) -> Self {
+        Self::with_capacity_and_emitter(text_resolver, node_capacity, config, None)
+    }
+
+    pub(crate) fn with_capacity_and_emitter(
+        text_resolver: &'a dyn TokenTextResolver,
+        node_capacity: usize,
+        config: TreeBuilderConfig,
+        patch_emitter: Option<&'a mut dyn PatchEmitter>,
     ) -> Self {
         // Node keys are unique and stable for this document's lifetime. Cross-parse
         // stability requires a persistent allocator and is a future milestone.
@@ -133,6 +148,9 @@ impl<'a> TreeBuilder<'a> {
             pending_text: None,
             insertion_mode: InsertionMode::Initial,
             text_resolver,
+            patch_emitter,
+            document_emitted: false,
+            pending_doctype: None,
             coalesce_text: config.coalesce_text,
             finished: false,
         }
@@ -172,69 +190,109 @@ impl<'a> TreeBuilder<'a> {
         match token {
             Token::Doctype(s) => {
                 self.flush_pending_text();
-                self.arena.set_doctype(self.root_index, s.clone());
-            }
-            Token::Comment(c) => {
-                self.flush_pending_text();
-                let parent_index = self.current_parent();
-                let key = self.arena.alloc_key();
-                self.arena.add_child(
-                    parent_index,
-                    ArenaNode::Comment {
-                        key,
-                        text: c.clone(),
-                    },
-                );
-            }
-            Token::TextSpan { .. } | Token::TextOwned { .. } => {
-                if let Some(txt) = self.text_resolver.text(token) {
-                    self.push_text(txt);
+                if self.pending_doctype.is_none() {
+                    self.arena.set_doctype(self.root_index, s.clone());
+                    self.pending_doctype = Some(s.clone());
+                }
+                if self.patch_emitter.is_some() && self.document_emitted {
+                    return Err(TreeBuilderError::Unsupported(
+                        "doctype after document emission",
+                    ));
                 }
             }
-            Token::StartTag {
-                name,
-                attributes,
-                self_closing,
-                ..
-            } => {
-                self.flush_pending_text();
-                let parent_index = self.current_parent();
-                // Materialize attribute values into owned DOM strings; revisit once
-                // attribute storage is arena-backed to reduce cloning.
-                let resolved_attributes: Vec<(Arc<str>, Option<String>)> = attributes
-                    .iter()
-                    .map(|(k, v)| (atoms.resolve_arc(*k), v.clone()))
-                    .collect();
-                let resolved_name = atoms.resolve_arc(*name);
-                debug_assert_canonical_ascii_lower(resolved_name.as_ref(), "dom builder tag atom");
-                #[cfg(debug_assertions)]
-                for (k, _) in &resolved_attributes {
-                    debug_assert_canonical_ascii_lower(k.as_ref(), "dom builder attribute atom");
-                }
-                let key = self.arena.alloc_key();
-                let new_index = self.arena.add_child(
-                    parent_index,
-                    ArenaNode::Element {
-                        key,
-                        name: resolved_name,
-                        attributes: resolved_attributes,
-                        children: Vec::new(),
-                        style: Vec::new(),
-                    },
-                );
-
-                if !*self_closing {
-                    self.open_elements.push(new_index);
-                }
-            }
-            Token::EndTag(name) => {
-                self.flush_pending_text();
-                let target = atoms.resolve(*name);
-                debug_assert_canonical_ascii_lower(target, "dom builder end-tag atom");
-                while let Some(open_index) = self.open_elements.pop() {
-                    if self.arena.is_element_named(open_index, target) {
-                        break;
+            _ => {
+                self.ensure_document_emitted()?;
+                match token {
+                    Token::Comment(c) => {
+                        self.flush_pending_text();
+                        let parent_index = self.current_parent();
+                        let key = self.arena.alloc_key();
+                        self.arena.add_child(
+                            parent_index,
+                            ArenaNode::Comment {
+                                key,
+                                text: c.clone(),
+                            },
+                        );
+                        self.emit_patch(DomPatch::CreateComment {
+                            key: patch_key(key),
+                            text: c.clone(),
+                        });
+                        self.emit_patch(DomPatch::AppendChild {
+                            parent: patch_key(self.arena.node_key(parent_index)),
+                            child: patch_key(key),
+                        });
                     }
+                    Token::TextSpan { .. } | Token::TextOwned { .. } => {
+                        if let Some(txt) = self.text_resolver.text(token) {
+                            self.push_text(txt);
+                        }
+                    }
+                    Token::StartTag {
+                        name,
+                        attributes,
+                        self_closing,
+                        ..
+                    } => {
+                        self.flush_pending_text();
+                        let parent_index = self.current_parent();
+                        // Materialize attribute values into owned DOM strings; revisit once
+                        // attribute storage is arena-backed to reduce cloning.
+                        let resolved_attributes: Vec<(Arc<str>, Option<String>)> = attributes
+                            .iter()
+                            .map(|(k, v)| (atoms.resolve_arc(*k), v.clone()))
+                            .collect();
+                        let resolved_name = atoms.resolve_arc(*name);
+                        debug_assert_canonical_ascii_lower(
+                            resolved_name.as_ref(),
+                            "dom builder tag atom",
+                        );
+                        #[cfg(debug_assertions)]
+                        for (k, _) in &resolved_attributes {
+                            debug_assert_canonical_ascii_lower(
+                                k.as_ref(),
+                                "dom builder attribute atom",
+                            );
+                        }
+                        let key = self.arena.alloc_key();
+                        let patch_name = Arc::clone(&resolved_name);
+                        let patch_attributes = resolved_attributes.clone();
+                        let new_index = self.arena.add_child(
+                            parent_index,
+                            ArenaNode::Element {
+                                key,
+                                name: resolved_name,
+                                attributes: resolved_attributes,
+                                children: Vec::new(),
+                                style: Vec::new(),
+                            },
+                        );
+                        // TODO(perf): avoid cloning attributes once patch storage is interned.
+                        self.emit_patch(DomPatch::CreateElement {
+                            key: patch_key(key),
+                            name: patch_name,
+                            attributes: patch_attributes,
+                        });
+                        self.emit_patch(DomPatch::AppendChild {
+                            parent: patch_key(self.arena.node_key(parent_index)),
+                            child: patch_key(key),
+                        });
+
+                        if !*self_closing {
+                            self.open_elements.push(new_index);
+                        }
+                    }
+                    Token::EndTag(name) => {
+                        self.flush_pending_text();
+                        let target = atoms.resolve(*name);
+                        debug_assert_canonical_ascii_lower(target, "dom builder end-tag atom");
+                        while let Some(open_index) = self.open_elements.pop() {
+                            if self.arena.is_element_named(open_index, target) {
+                                break;
+                            }
+                        }
+                    }
+                    Token::Doctype(_) => unreachable!("doctype is handled by outer match"),
                 }
             }
         }
@@ -250,6 +308,9 @@ impl<'a> TreeBuilder<'a> {
             return Err(TreeBuilderError::Finished);
         }
         self.flush_pending_text();
+        if self.patch_emitter.is_some() && !self.document_emitted {
+            self.ensure_document_emitted()?;
+        }
         self.finished = true;
         Ok(())
     }
@@ -313,9 +374,18 @@ impl<'a> TreeBuilder<'a> {
         if text.is_empty() {
             return;
         }
+        let patch_text = text.clone();
         let key = self.arena.alloc_key();
         self.arena
             .add_child(parent_index, ArenaNode::Text { key, text });
+        self.emit_patch(DomPatch::CreateText {
+            key: patch_key(key),
+            text: patch_text,
+        });
+        self.emit_patch(DomPatch::AppendChild {
+            parent: patch_key(self.arena.node_key(parent_index)),
+            child: patch_key(key),
+        });
     }
 
     #[cfg(debug_assertions)]
@@ -359,6 +429,69 @@ impl<'a> TreeBuilder<'a> {
                 pending.parent_index < self.arena.nodes.len(),
                 "pending text parent must be within arena bounds"
             );
+        }
+    }
+
+    fn emit_patch(&mut self, patch: DomPatch) {
+        let Some(emitter) = self.patch_emitter.as_deref_mut() else {
+            return;
+        };
+        #[cfg(any(test, debug_assertions))]
+        {
+            let invalid = patch_has_invalid_key(&patch);
+            debug_assert!(!invalid, "patch emission must not use invalid keys");
+            #[cfg(test)]
+            assert!(!invalid, "patch emission must not use invalid keys");
+        }
+        emitter.emit(patch);
+    }
+
+    fn ensure_document_emitted(&mut self) -> TreeBuilderResult<()> {
+        if self.document_emitted || self.patch_emitter.is_none() {
+            return Ok(());
+        }
+        let doctype = self.pending_doctype.clone();
+        self.emit_patch(DomPatch::CreateDocument {
+            key: patch_key(self.root_key),
+            doctype,
+        });
+        self.document_emitted = true;
+        Ok(())
+    }
+}
+
+pub(crate) trait PatchEmitter {
+    fn emit(&mut self, patch: DomPatch);
+}
+
+#[inline]
+fn patch_key(key: NodeKey) -> PatchKey {
+    debug_assert_ne!(key, NodeKey::INVALID, "node key must be valid");
+    PatchKey(key.0)
+}
+
+#[inline]
+fn patch_has_invalid_key(patch: &DomPatch) -> bool {
+    match patch {
+        DomPatch::Clear => false,
+        DomPatch::CreateDocument { key, .. }
+        | DomPatch::CreateElement { key, .. }
+        | DomPatch::CreateText { key, .. }
+        | DomPatch::CreateComment { key, .. }
+        | DomPatch::RemoveNode { key }
+        | DomPatch::SetAttributes { key, .. }
+        | DomPatch::SetText { key, .. } => *key == PatchKey::INVALID,
+        DomPatch::AppendChild { parent, child } => {
+            *parent == PatchKey::INVALID || *child == PatchKey::INVALID
+        }
+        DomPatch::InsertBefore {
+            parent,
+            child,
+            before,
+        } => {
+            *parent == PatchKey::INVALID
+                || *child == PatchKey::INVALID
+                || *before == PatchKey::INVALID
         }
     }
 }
@@ -448,6 +581,15 @@ impl NodeArena {
             _ => unreachable!("dom builder parent cannot have children"),
         }
         child_index
+    }
+
+    fn node_key(&self, node_index: usize) -> NodeKey {
+        match &self.nodes[node_index] {
+            ArenaNode::Document { key, .. }
+            | ArenaNode::Element { key, .. }
+            | ArenaNode::Text { key, .. }
+            | ArenaNode::Comment { key, .. } => *key,
+        }
     }
 
     fn set_doctype(&mut self, root_index: usize, doctype: String) {
@@ -558,6 +700,7 @@ impl NodeArena {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::dom_snapshot::{DomSnapshotOptions, assert_dom_eq};
     use crate::types::AtomTable;
     use std::collections::HashSet;
     use std::sync::Arc;
@@ -1019,5 +1162,203 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[derive(Default)]
+    struct PatchCollector {
+        patches: Vec<DomPatch>,
+    }
+
+    impl PatchEmitter for PatchCollector {
+        fn emit(&mut self, patch: DomPatch) {
+            self.patches.push(patch);
+        }
+    }
+
+    #[derive(Clone, Debug)]
+    struct PatchNode {
+        kind: PatchKind,
+        parent: Option<PatchKey>,
+        children: Vec<PatchKey>,
+    }
+
+    #[derive(Clone, Debug)]
+    enum PatchKind {
+        Document {
+            doctype: Option<String>,
+        },
+        Element {
+            name: Arc<str>,
+            attributes: Vec<(Arc<str>, Option<String>)>,
+        },
+        Text {
+            text: String,
+        },
+        Comment {
+            text: String,
+        },
+    }
+
+    #[derive(Default)]
+    struct PatchArena {
+        nodes: std::collections::HashMap<PatchKey, PatchNode>,
+        root: Option<PatchKey>,
+    }
+
+    fn get_two_mut<'m, K: Eq + std::hash::Hash, V>(
+        map: &'m mut std::collections::HashMap<K, V>,
+        a: &K,
+        b: &K,
+    ) -> Option<(&'m mut V, &'m mut V)> {
+        if a == b {
+            return None;
+        }
+        let a_ptr = map.get_mut(a)? as *mut V;
+        let b_ptr = map.get_mut(b)? as *mut V;
+        // SAFETY: a != b, so the pointers refer to distinct entries.
+        unsafe { Some((&mut *a_ptr, &mut *b_ptr)) }
+    }
+
+    impl PatchArena {
+        fn apply(&mut self, patches: &[DomPatch]) {
+            for patch in patches {
+                match patch {
+                    DomPatch::CreateDocument { key, doctype } => {
+                        assert!(self.root.is_none(), "document root already exists");
+                        assert!(
+                            !self.nodes.contains_key(key),
+                            "duplicate key in CreateDocument"
+                        );
+                        self.nodes.insert(
+                            *key,
+                            PatchNode {
+                                kind: PatchKind::Document {
+                                    doctype: doctype.clone(),
+                                },
+                                parent: None,
+                                children: Vec::new(),
+                            },
+                        );
+                        self.root = Some(*key);
+                    }
+                    DomPatch::CreateElement {
+                        key,
+                        name,
+                        attributes,
+                    } => {
+                        assert!(
+                            !self.nodes.contains_key(key),
+                            "duplicate key in CreateElement"
+                        );
+                        self.nodes.insert(
+                            *key,
+                            PatchNode {
+                                kind: PatchKind::Element {
+                                    name: Arc::clone(name),
+                                    attributes: attributes.clone(),
+                                },
+                                parent: None,
+                                children: Vec::new(),
+                            },
+                        );
+                    }
+                    DomPatch::CreateText { key, text } => {
+                        assert!(!self.nodes.contains_key(key), "duplicate key in CreateText");
+                        self.nodes.insert(
+                            *key,
+                            PatchNode {
+                                kind: PatchKind::Text { text: text.clone() },
+                                parent: None,
+                                children: Vec::new(),
+                            },
+                        );
+                    }
+                    DomPatch::CreateComment { key, text } => {
+                        assert!(
+                            !self.nodes.contains_key(key),
+                            "duplicate key in CreateComment"
+                        );
+                        self.nodes.insert(
+                            *key,
+                            PatchNode {
+                                kind: PatchKind::Comment { text: text.clone() },
+                                parent: None,
+                                children: Vec::new(),
+                            },
+                        );
+                    }
+                    DomPatch::AppendChild { parent, child } => {
+                        let (parent_node, child_node) = get_two_mut(&mut self.nodes, parent, child)
+                            .expect("missing parent/child in AppendChild");
+                        assert!(child_node.parent.is_none(), "child already has parent");
+                        parent_node.children.push(*child);
+                        child_node.parent = Some(*parent);
+                    }
+                    _ => panic!("unexpected patch in core emission test: {patch:?}"),
+                }
+            }
+        }
+
+        fn materialize(&self) -> Node {
+            let root = self.root.expect("missing root in patch arena");
+            self.materialize_node(root)
+        }
+
+        fn materialize_node(&self, key: PatchKey) -> Node {
+            let node = self.nodes.get(&key).expect("missing node");
+            let children = node
+                .children
+                .iter()
+                .map(|child| self.materialize_node(*child))
+                .collect();
+            match &node.kind {
+                PatchKind::Document { doctype } => Node::Document {
+                    id: Id::INVALID,
+                    doctype: doctype.clone(),
+                    children,
+                },
+                PatchKind::Element { name, attributes } => Node::Element {
+                    id: Id::INVALID,
+                    name: Arc::clone(name),
+                    attributes: attributes.clone(),
+                    style: Vec::new(),
+                    children,
+                },
+                PatchKind::Text { text } => Node::Text {
+                    id: Id::INVALID,
+                    text: text.clone(),
+                },
+                PatchKind::Comment { text } => Node::Comment {
+                    id: Id::INVALID,
+                    text: text.clone(),
+                },
+            }
+        }
+    }
+
+    #[test]
+    fn tree_builder_emits_core_patches_matching_dom() {
+        let input = "<!doctype html><div>hi<span>yo</span><!--c--></div>";
+        let stream = crate::tokenize(input);
+        let expected = build_dom(&stream);
+
+        let mut collector = PatchCollector::default();
+        let mut builder = TreeBuilder::with_capacity_and_emitter(
+            &stream,
+            stream.tokens().len().saturating_add(1),
+            TreeBuilderConfig::default(),
+            Some(&mut collector),
+        );
+        let atoms = stream.atoms();
+        for token in stream.tokens() {
+            builder.push_token(token, atoms).unwrap();
+        }
+        builder.finish().unwrap();
+        let _ = builder.into_dom().unwrap();
+
+        let mut arena = PatchArena::default();
+        arena.apply(&collector.patches);
+        let actual = arena.materialize();
+        assert_dom_eq(&expected, &actual, DomSnapshotOptions::default());
     }
 }
