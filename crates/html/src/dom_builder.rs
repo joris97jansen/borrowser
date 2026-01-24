@@ -1,4 +1,4 @@
-use crate::types::{AtomTable, Id, Node, Token, TokenStream};
+use crate::types::{AtomTable, Id, Node, NodeKey, Token, TokenStream};
 use core::fmt;
 use std::sync::Arc;
 
@@ -81,10 +81,15 @@ struct PendingText {
 /// - `open_elements` stores arena indices for open element nodes (never the document node).
 /// - `open_elements.last()` is the current insertion parent when non-empty.
 /// - `pending_text` (when enabled) is tied to the parent index that was current when buffering.
-/// - Node IDs are monotonically assigned and never reused within a document lifetime.
+/// - Node keys are monotonically assigned and never reused within a document lifetime.
+/// - The document root is assigned the first key for the parse.
+/// - Keys are stable for the lifetime of the built DOM; they are never re-assigned.
+/// - Patch appliers must treat unknown keys as protocol violations; keys are introduced
+///   only when nodes are created and remain valid for the document lifetime.
 pub(crate) struct TreeBuilder<'a> {
     arena: NodeArena,
     root_index: usize,
+    root_key: NodeKey,
     open_elements: Vec<usize>,
     pending_text: Option<PendingText>,
     #[allow(dead_code, reason = "placeholder for upcoming insertion mode handling")]
@@ -112,9 +117,9 @@ impl<'a> TreeBuilder<'a> {
         // Tokenizer uses text spans to avoid allocation; DOM materialization still
         // owns text buffers (Node::Text uses String).
         let mut arena = NodeArena::with_capacity(node_capacity);
-        let root_id = arena.alloc_id();
+        let root_key = arena.alloc_key();
         let root_index = arena.push(ArenaNode::Document {
-            id: root_id,
+            key: root_key,
             children: Vec::new(),
             doctype: None,
         });
@@ -123,6 +128,7 @@ impl<'a> TreeBuilder<'a> {
         Self {
             arena,
             root_index,
+            root_key,
             open_elements: Vec::with_capacity(open_capacity),
             pending_text: None,
             insertion_mode: InsertionMode::Initial,
@@ -143,6 +149,21 @@ impl<'a> TreeBuilder<'a> {
         self.coalesce_text = enabled;
     }
 
+    #[cfg(test)]
+    pub(crate) fn debug_root_key(&self) -> NodeKey {
+        self.root_key
+    }
+
+    #[cfg(test)]
+    pub(crate) fn debug_next_key(&self) -> NodeKey {
+        NodeKey(self.arena.next_key)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn debug_node_count(&self) -> u32 {
+        self.arena.nodes.len() as u32
+    }
+
     pub(crate) fn push_token(&mut self, token: &Token, atoms: &AtomTable) -> TreeBuilderResult<()> {
         if self.finished {
             return Err(TreeBuilderError::Finished);
@@ -156,11 +177,11 @@ impl<'a> TreeBuilder<'a> {
             Token::Comment(c) => {
                 self.flush_pending_text();
                 let parent_index = self.current_parent();
-                let id = self.arena.alloc_id();
+                let key = self.arena.alloc_key();
                 self.arena.add_child(
                     parent_index,
                     ArenaNode::Comment {
-                        id,
+                        key,
                         text: c.clone(),
                     },
                 );
@@ -190,11 +211,11 @@ impl<'a> TreeBuilder<'a> {
                 for (k, _) in &resolved_attributes {
                     debug_assert_canonical_ascii_lower(k.as_ref(), "dom builder attribute atom");
                 }
-                let id = self.arena.alloc_id();
+                let key = self.arena.alloc_key();
                 let new_index = self.arena.add_child(
                     parent_index,
                     ArenaNode::Element {
-                        id,
+                        key,
                         name: resolved_name,
                         attributes: resolved_attributes,
                         children: Vec::new(),
@@ -292,9 +313,9 @@ impl<'a> TreeBuilder<'a> {
         if text.is_empty() {
             return;
         }
-        let id = self.arena.alloc_id();
+        let key = self.arena.alloc_key();
         self.arena
-            .add_child(parent_index, ArenaNode::Text { id, text });
+            .add_child(parent_index, ArenaNode::Text { key, text });
     }
 
     #[cfg(debug_assertions)]
@@ -310,6 +331,13 @@ impl<'a> TreeBuilder<'a> {
             ),
             "root node must be a document"
         );
+        debug_assert_ne!(self.root_key, NodeKey::INVALID, "root key must be valid");
+        if let ArenaNode::Document { key, .. } = self.arena.nodes[self.root_index] {
+            debug_assert_eq!(
+                key, self.root_key,
+                "root key must match the document node key"
+            );
+        }
         debug_assert!(
             !self.open_elements.contains(&self.root_index),
             "open elements must not include the document node"
@@ -319,6 +347,12 @@ impl<'a> TreeBuilder<'a> {
                 .iter()
                 .all(|&idx| idx < self.arena.nodes.len()),
             "open element indices must be within arena bounds"
+        );
+        debug_assert!(
+            self.open_elements
+                .iter()
+                .all(|&idx| matches!(self.arena.nodes[idx], ArenaNode::Element { .. })),
+            "open elements must only contain element nodes"
         );
         if let Some(pending) = &self.pending_text {
             debug_assert!(
@@ -341,23 +375,23 @@ fn debug_assert_canonical_ascii_lower(s: &str, what: &'static str) {
 #[derive(Debug)]
 enum ArenaNode {
     Document {
-        id: Id,
+        key: NodeKey,
         doctype: Option<String>,
         children: Vec<usize>,
     },
     Element {
-        id: Id,
+        key: NodeKey,
         name: Arc<str>,
         attributes: Vec<(Arc<str>, Option<String>)>,
         style: Vec<(String, String)>,
         children: Vec<usize>,
     },
     Text {
-        id: Id,
+        key: NodeKey,
         text: String,
     },
     Comment {
-        id: Id,
+        key: NodeKey,
         text: String,
     },
 }
@@ -376,21 +410,27 @@ impl ArenaNode {
 #[derive(Debug)]
 struct NodeArena {
     nodes: Vec<ArenaNode>,
-    next_id: u32, // 32-bit IDs are intentional; overflow is a hard stop.
+    next_key: u32, // 32-bit keys are intentional; overflow is a hard stop.
 }
 
 impl NodeArena {
     fn with_capacity(capacity: usize) -> Self {
         Self {
             nodes: Vec::with_capacity(capacity),
-            next_id: 1,
+            next_key: 1,
         }
     }
 
-    fn alloc_id(&mut self) -> Id {
-        let id = Id(self.next_id);
-        self.next_id = self.next_id.checked_add(1).expect("node id overflow");
-        id
+    /// Allocates a new stable NodeKey for this document.
+    ///
+    /// Invariants:
+    /// - Keys are monotonically increasing.
+    /// - Keys are never reused within a document lifetime.
+    /// - `NodeKey(0)` is reserved as invalid and never emitted.
+    fn alloc_key(&mut self) -> NodeKey {
+        let key = NodeKey(self.next_key);
+        self.next_key = self.next_key.checked_add(1).expect("node key overflow");
+        key
     }
 
     fn push(&mut self, node: ArenaNode) -> usize {
@@ -464,20 +504,20 @@ impl NodeArena {
 
             let node = match &mut nodes[node_index] {
                 ArenaNode::Document {
-                    id,
+                    key,
                     doctype,
                     children,
                 } => {
                     let child_count = children.len();
                     children.clear();
                     Node::Document {
-                        id: *id,
+                        id: Id::from(*key),
                         doctype: doctype.take(),
                         children: take_children(child_count, &mut built_nodes),
                     }
                 }
                 ArenaNode::Element {
-                    id,
+                    key,
                     name,
                     attributes,
                     style,
@@ -486,19 +526,19 @@ impl NodeArena {
                     let child_count = children.len();
                     children.clear();
                     Node::Element {
-                        id: *id,
+                        id: Id::from(*key),
                         name: std::mem::take(name),
                         attributes: std::mem::take(attributes),
                         style: std::mem::take(style),
                         children: take_children(child_count, &mut built_nodes),
                     }
                 }
-                ArenaNode::Text { id, text } => Node::Text {
-                    id: *id,
+                ArenaNode::Text { key, text } => Node::Text {
+                    id: Id::from(*key),
                     text: std::mem::take(text),
                 },
-                ArenaNode::Comment { id, text } => Node::Comment {
-                    id: *id,
+                ArenaNode::Comment { key, text } => Node::Comment {
+                    id: Id::from(*key),
                     text: std::mem::take(text),
                 },
             };
@@ -863,5 +903,121 @@ mod tests {
             panic!("expected following text node");
         };
         assert_eq!(text, "b");
+    }
+
+    #[test]
+    fn tree_builder_ids_are_monotonic_and_start_at_root() {
+        let mut atoms = AtomTable::new();
+        let div = atoms.intern_ascii_lowercase("div");
+        let span = atoms.intern_ascii_lowercase("span");
+
+        let tokens = vec![
+            Token::StartTag {
+                name: div,
+                attributes: Vec::new(),
+                self_closing: false,
+            },
+            Token::StartTag {
+                name: span,
+                attributes: Vec::new(),
+                self_closing: false,
+            },
+            Token::TextOwned { index: 0 },
+            Token::EndTag(span),
+            Token::EndTag(div),
+        ];
+        let text_pool = vec!["hi".to_string()];
+        let stream = TokenStream::new(tokens, atoms, Arc::from(""), text_pool);
+
+        let mut builder =
+            TreeBuilder::with_capacity(&stream, stream.tokens().len().saturating_add(1));
+        let atoms = stream.atoms();
+        for token in stream.tokens() {
+            builder.push_token(token, atoms).unwrap();
+        }
+        assert_eq!(
+            builder.debug_root_key(),
+            NodeKey(1),
+            "root key should be the first allocated"
+        );
+        let node_count = builder.debug_node_count();
+        assert_eq!(
+            builder.debug_next_key(),
+            NodeKey(node_count + 1),
+            "next key should be one past the last allocated node key"
+        );
+        builder.finish().unwrap();
+        let dom = builder.into_dom().unwrap();
+
+        let mut ids: Vec<Id> = Vec::new();
+        let mut stack = vec![&dom];
+        while let Some(node) = stack.pop() {
+            ids.push(node.id());
+            if let Node::Document { children, .. } | Node::Element { children, .. } = node {
+                for child in children.iter() {
+                    stack.push(child);
+                }
+            }
+        }
+
+        assert!(!ids.is_empty(), "expected at least the document node id");
+
+        let root_id = dom.id();
+        assert_eq!(root_id, Id(1), "root id should be the first allocated");
+
+        let mut unique = std::collections::HashSet::new();
+        for id in &ids {
+            assert!(unique.insert(*id), "duplicate id detected: {id:?}");
+        }
+    }
+
+    #[test]
+    fn tree_builder_ids_are_never_reused() {
+        let mut atoms = AtomTable::new();
+        let div = atoms.intern_ascii_lowercase("div");
+        let span = atoms.intern_ascii_lowercase("span");
+
+        let tokens = vec![
+            Token::StartTag {
+                name: div,
+                attributes: Vec::new(),
+                self_closing: false,
+            },
+            Token::StartTag {
+                name: span,
+                attributes: Vec::new(),
+                self_closing: false,
+            },
+            Token::EndTag(span),
+            Token::StartTag {
+                name: span,
+                attributes: Vec::new(),
+                self_closing: false,
+            },
+            Token::EndTag(span),
+            Token::EndTag(div),
+        ];
+        let stream = TokenStream::new(tokens, atoms, Arc::from(""), Vec::new());
+
+        let mut builder =
+            TreeBuilder::with_capacity(&stream, stream.tokens().len().saturating_add(1));
+        let atoms = stream.atoms();
+        for token in stream.tokens() {
+            builder.push_token(token, atoms).unwrap();
+        }
+        builder.finish().unwrap();
+        let dom = builder.into_dom().unwrap();
+
+        let mut ids = std::collections::HashSet::new();
+        let mut stack = vec![&dom];
+        while let Some(node) = stack.pop() {
+            let id = node.id();
+            assert!(ids.insert(id), "id reuse detected: {id:?}");
+            if let Node::Document { children, .. } | Node::Element { children, .. } = node {
+                for child in children.iter() {
+                    stack.push(child);
+                }
+            }
+        }
     }
 }
