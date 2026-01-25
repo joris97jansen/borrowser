@@ -58,9 +58,17 @@ impl fmt::Display for TreeBuilderError {
     }
 }
 
-#[derive(Clone, Copy, Debug, Default)]
+#[derive(Clone, Copy, Debug)]
 pub(crate) struct TreeBuilderConfig {
     pub(crate) coalesce_text: bool,
+}
+
+impl Default for TreeBuilderConfig {
+    fn default() -> Self {
+        Self {
+            coalesce_text: true,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -72,7 +80,10 @@ enum InsertionMode {
 #[derive(Debug)]
 struct PendingText {
     parent_index: usize,
+    node_index: usize,
+    key: NodeKey,
     text: String,
+    dirty: bool,
 }
 
 /// Incremental DOM construction state machine.
@@ -87,8 +98,11 @@ struct PendingText {
 /// - Keys are stable for the lifetime of the built DOM; they are never re-assigned.
 /// - Patch appliers must treat unknown keys as protocol violations; keys are introduced
 ///   only when nodes are created and remain valid for the document lifetime.
-/// - When text coalescing is enabled, CreateText/AppendChild patches are emitted at
-///   flush boundaries (tag/comment/doctype/end/finish), not immediately on each text token.
+/// - When text coalescing is enabled, a single text node is created per insertion
+///   point and subsequent text tokens are buffered; `SetText` is emitted only at
+///   flush boundaries (tag/comment/doctype/end/finish).
+/// - `CreateDocument` is emitted before the first non-doctype mutation patch; doctype
+///   is captured before that point, and doctype-after-emission is rejected.
 pub(crate) struct TreeBuilder<'a> {
     arena: NodeArena,
     root_index: usize,
@@ -162,7 +176,7 @@ impl<'a> TreeBuilder<'a> {
     )]
     pub(crate) fn set_coalesce_text(&mut self, enabled: bool) {
         if self.coalesce_text && !enabled {
-            self.flush_pending_text();
+            self.finalize_pending_text();
         }
         self.coalesce_text = enabled;
     }
@@ -189,7 +203,7 @@ impl<'a> TreeBuilder<'a> {
 
         match token {
             Token::Doctype(s) => {
-                self.flush_pending_text();
+                self.finalize_pending_text();
                 if self.pending_doctype.is_none() {
                     self.arena.set_doctype(self.root_index, s.clone());
                     self.pending_doctype = Some(s.clone());
@@ -204,7 +218,7 @@ impl<'a> TreeBuilder<'a> {
                 self.ensure_document_emitted()?;
                 match token {
                     Token::Comment(c) => {
-                        self.flush_pending_text();
+                        self.finalize_pending_text();
                         let parent_index = self.current_parent();
                         let key = self.arena.alloc_key();
                         self.arena.add_child(
@@ -234,7 +248,7 @@ impl<'a> TreeBuilder<'a> {
                         self_closing,
                         ..
                     } => {
-                        self.flush_pending_text();
+                        self.finalize_pending_text();
                         let parent_index = self.current_parent();
                         // Materialize attribute values into owned DOM strings; revisit once
                         // attribute storage is arena-backed to reduce cloning.
@@ -283,7 +297,7 @@ impl<'a> TreeBuilder<'a> {
                         }
                     }
                     Token::EndTag(name) => {
-                        self.flush_pending_text();
+                        self.finalize_pending_text();
                         let target = atoms.resolve(*name);
                         debug_assert_canonical_ascii_lower(target, "dom builder end-tag atom");
                         while let Some(open_index) = self.open_elements.pop() {
@@ -307,7 +321,7 @@ impl<'a> TreeBuilder<'a> {
         if self.finished {
             return Err(TreeBuilderError::Finished);
         }
-        self.flush_pending_text();
+        self.finalize_pending_text();
         if self.patch_emitter.is_some() && !self.document_emitted {
             self.ensure_document_emitted()?;
         }
@@ -339,7 +353,7 @@ impl<'a> TreeBuilder<'a> {
 
         if !self.coalesce_text {
             let parent_index = self.current_parent();
-            self.add_text_node(parent_index, text.to_string());
+            let _ = self.add_text_node(parent_index, text.to_string());
             return;
         }
 
@@ -347,36 +361,61 @@ impl<'a> TreeBuilder<'a> {
         match &mut self.pending_text {
             Some(pending) if pending.parent_index == parent_index => {
                 pending.text.push_str(text);
+                self.arena.append_text(pending.node_index, text);
+                // dirty means the final text differs from the initial CreateText payload.
+                pending.dirty = true;
             }
             Some(_) => {
-                self.flush_pending_text();
-                self.pending_text = Some(PendingText {
-                    parent_index,
-                    text: text.to_string(),
-                });
+                self.finalize_pending_text();
+                let text_owned = text.to_string();
+                if let Some((node_index, key)) =
+                    self.add_text_node(parent_index, text_owned.clone())
+                {
+                    self.pending_text = Some(PendingText {
+                        parent_index,
+                        node_index,
+                        key,
+                        text: text_owned,
+                        dirty: false,
+                    });
+                }
             }
             None => {
-                self.pending_text = Some(PendingText {
-                    parent_index,
-                    text: text.to_string(),
-                });
+                let text_owned = text.to_string();
+                if let Some((node_index, key)) =
+                    self.add_text_node(parent_index, text_owned.clone())
+                {
+                    self.pending_text = Some(PendingText {
+                        parent_index,
+                        node_index,
+                        key,
+                        text: text_owned,
+                        dirty: false,
+                    });
+                }
             }
         }
     }
 
-    fn flush_pending_text(&mut self) {
-        if let Some(pending) = self.pending_text.take() {
-            self.add_text_node(pending.parent_index, pending.text);
+    fn finalize_pending_text(&mut self) {
+        if let Some(pending) = self.pending_text.take()
+            && pending.dirty
+        {
+            self.emit_patch(DomPatch::SetText {
+                key: patch_key(pending.key),
+                text: pending.text,
+            });
         }
     }
 
-    fn add_text_node(&mut self, parent_index: usize, text: String) {
+    fn add_text_node(&mut self, parent_index: usize, text: String) -> Option<(usize, NodeKey)> {
         if text.is_empty() {
-            return;
+            return None;
         }
         let patch_text = text.clone();
         let key = self.arena.alloc_key();
-        self.arena
+        let node_index = self
+            .arena
             .add_child(parent_index, ArenaNode::Text { key, text });
         self.emit_patch(DomPatch::CreateText {
             key: patch_key(key),
@@ -386,6 +425,7 @@ impl<'a> TreeBuilder<'a> {
             parent: patch_key(self.arena.node_key(parent_index)),
             child: patch_key(key),
         });
+        Some((node_index, key))
     }
 
     #[cfg(debug_assertions)]
@@ -428,6 +468,28 @@ impl<'a> TreeBuilder<'a> {
             debug_assert!(
                 pending.parent_index < self.arena.nodes.len(),
                 "pending text parent must be within arena bounds"
+            );
+            debug_assert!(
+                pending.node_index < self.arena.nodes.len(),
+                "pending text node must be within arena bounds"
+            );
+            debug_assert!(
+                matches!(self.arena.nodes[pending.node_index], ArenaNode::Text { .. }),
+                "pending text node must be a text node"
+            );
+            debug_assert_ne!(
+                pending.key,
+                NodeKey::INVALID,
+                "pending text key must be valid"
+            );
+            debug_assert_eq!(
+                self.arena.node_key(pending.node_index),
+                pending.key,
+                "pending text key must match arena node key"
+            );
+            debug_assert!(
+                !pending.text.is_empty(),
+                "pending text buffer must be non-empty"
             );
         }
     }
@@ -589,6 +651,15 @@ impl NodeArena {
             | ArenaNode::Element { key, .. }
             | ArenaNode::Text { key, .. }
             | ArenaNode::Comment { key, .. } => *key,
+        }
+    }
+
+    fn append_text(&mut self, node_index: usize, text: &str) {
+        match &mut self.nodes[node_index] {
+            ArenaNode::Text { text: slot, .. } => {
+                slot.push_str(text);
+            }
+            _ => unreachable!("append_text only valid for text nodes"),
         }
     }
 
@@ -1205,20 +1276,6 @@ mod tests {
         root: Option<PatchKey>,
     }
 
-    fn get_two_mut<'m, K: Eq + std::hash::Hash, V>(
-        map: &'m mut std::collections::HashMap<K, V>,
-        a: &K,
-        b: &K,
-    ) -> Option<(&'m mut V, &'m mut V)> {
-        if a == b {
-            return None;
-        }
-        let a_ptr = map.get_mut(a)? as *mut V;
-        let b_ptr = map.get_mut(b)? as *mut V;
-        // SAFETY: a != b, so the pointers refer to distinct entries.
-        unsafe { Some((&mut *a_ptr, &mut *b_ptr)) }
-    }
-
     impl PatchArena {
         fn apply(&mut self, patches: &[DomPatch]) {
             for patch in patches {
@@ -1288,11 +1345,40 @@ mod tests {
                         );
                     }
                     DomPatch::AppendChild { parent, child } => {
-                        let (parent_node, child_node) = get_two_mut(&mut self.nodes, parent, child)
-                            .expect("missing parent/child in AppendChild");
+                        if parent == child {
+                            panic!("AppendChild cannot attach a node to itself");
+                        }
+                        let Some(mut child_node) = self.nodes.remove(child) else {
+                            panic!("missing child in AppendChild");
+                        };
+                        let Some(parent_node) = self.nodes.get_mut(parent) else {
+                            self.nodes.insert(*child, child_node);
+                            panic!("missing parent in AppendChild");
+                        };
+                        match parent_node.kind {
+                            PatchKind::Document { .. } | PatchKind::Element { .. } => {}
+                            _ => {
+                                self.nodes.insert(*child, child_node);
+                                panic!("AppendChild parent must be a container");
+                            }
+                        }
                         assert!(child_node.parent.is_none(), "child already has parent");
+                        assert!(
+                            !parent_node.children.iter().any(|k| k == child),
+                            "child already present in parent"
+                        );
                         parent_node.children.push(*child);
                         child_node.parent = Some(*parent);
+                        self.nodes.insert(*child, child_node);
+                    }
+                    DomPatch::SetText { key, text } => {
+                        let Some(node) = self.nodes.get_mut(key) else {
+                            panic!("missing node in SetText");
+                        };
+                        match &mut node.kind {
+                            PatchKind::Text { text: slot } => *slot = text.clone(),
+                            _ => panic!("SetText applied to non-text node"),
+                        }
                     }
                     _ => panic!("unexpected patch in core emission test: {patch:?}"),
                 }
@@ -1355,6 +1441,211 @@ mod tests {
         }
         builder.finish().unwrap();
         let _ = builder.into_dom().unwrap();
+
+        let mut arena = PatchArena::default();
+        arena.apply(&collector.patches);
+        let actual = arena.materialize();
+        assert_dom_eq(&expected, &actual, DomSnapshotOptions::default());
+    }
+
+    #[test]
+    fn tree_builder_coalesces_text_with_settext_patches() {
+        let mut atoms = AtomTable::new();
+        let div = atoms.intern_ascii_lowercase("div");
+
+        let tokens = vec![
+            Token::StartTag {
+                name: div,
+                attributes: Vec::new(),
+                self_closing: false,
+            },
+            Token::TextOwned { index: 0 },
+            Token::TextOwned { index: 1 },
+            Token::EndTag(div),
+        ];
+        let text_pool = vec!["a".to_string(), "b".to_string()];
+        let stream = TokenStream::new(tokens, atoms, Arc::from(""), text_pool);
+
+        let mut collector = PatchCollector::default();
+        let mut builder = TreeBuilder::with_capacity_and_emitter(
+            &stream,
+            stream.tokens().len().saturating_add(1),
+            TreeBuilderConfig {
+                coalesce_text: true,
+            },
+            Some(&mut collector),
+        );
+        let atoms = stream.atoms();
+        for token in stream.tokens() {
+            builder.push_token(token, atoms).unwrap();
+        }
+        builder.finish().unwrap();
+        let expected = builder.into_dom().unwrap();
+
+        let create_text_count = collector
+            .patches
+            .iter()
+            .filter(|p| matches!(p, DomPatch::CreateText { .. }))
+            .count();
+        let text_key = collector.patches.iter().find_map(|p| match p {
+            DomPatch::CreateText { key, .. } => Some(*key),
+            _ => None,
+        });
+        let set_text_count = collector
+            .patches
+            .iter()
+            .filter(|p| matches!(p, DomPatch::SetText { .. }))
+            .count();
+        let text_append_count = collector
+            .patches
+            .iter()
+            .filter(|p| match (p, text_key) {
+                (DomPatch::AppendChild { child, .. }, Some(key)) => key == *child,
+                _ => false,
+            })
+            .count();
+
+        assert_eq!(create_text_count, 1, "expected one text node creation");
+        assert!(text_key.is_some(), "expected a text node key");
+        assert_eq!(set_text_count, 1, "expected one text update");
+        assert_eq!(text_append_count, 1, "expected text appended once");
+
+        let mut arena = PatchArena::default();
+        arena.apply(&collector.patches);
+        let actual = arena.materialize();
+        assert_dom_eq(&expected, &actual, DomSnapshotOptions::default());
+    }
+
+    #[test]
+    fn tree_builder_single_text_chunk_emits_no_settext() {
+        let mut atoms = AtomTable::new();
+        let div = atoms.intern_ascii_lowercase("div");
+
+        let tokens = vec![
+            Token::StartTag {
+                name: div,
+                attributes: Vec::new(),
+                self_closing: false,
+            },
+            Token::TextOwned { index: 0 },
+            Token::EndTag(div),
+        ];
+        let text_pool = vec!["a".to_string()];
+        let stream = TokenStream::new(tokens, atoms, Arc::from(""), text_pool);
+
+        let mut collector = PatchCollector::default();
+        let mut builder = TreeBuilder::with_capacity_and_emitter(
+            &stream,
+            stream.tokens().len().saturating_add(1),
+            TreeBuilderConfig {
+                coalesce_text: true,
+            },
+            Some(&mut collector),
+        );
+        let atoms = stream.atoms();
+        for token in stream.tokens() {
+            builder.push_token(token, atoms).unwrap();
+        }
+        builder.finish().unwrap();
+        let expected = builder.into_dom().unwrap();
+
+        let create_text_count = collector
+            .patches
+            .iter()
+            .filter(|p| matches!(p, DomPatch::CreateText { .. }))
+            .count();
+        let text_key = collector.patches.iter().find_map(|p| match p {
+            DomPatch::CreateText { key, .. } => Some(*key),
+            _ => None,
+        });
+        let set_text_count = collector
+            .patches
+            .iter()
+            .filter(|p| matches!(p, DomPatch::SetText { .. }))
+            .count();
+        let text_append_count = collector
+            .patches
+            .iter()
+            .filter(|p| match (p, text_key) {
+                (DomPatch::AppendChild { child, .. }, Some(key)) => key == *child,
+                _ => false,
+            })
+            .count();
+
+        assert_eq!(create_text_count, 1, "expected one text node creation");
+        assert!(text_key.is_some(), "expected a text node key");
+        assert_eq!(set_text_count, 0, "expected no text update");
+        assert_eq!(text_append_count, 1, "expected text appended once");
+
+        let mut arena = PatchArena::default();
+        arena.apply(&collector.patches);
+        let actual = arena.materialize();
+        assert_dom_eq(&expected, &actual, DomSnapshotOptions::default());
+    }
+
+    #[test]
+    fn tree_builder_many_text_chunks_is_bounded() {
+        let mut atoms = AtomTable::new();
+        let div = atoms.intern_ascii_lowercase("div");
+
+        let chunk_count = 10_000usize;
+        let mut tokens = Vec::with_capacity(chunk_count + 2);
+        tokens.push(Token::StartTag {
+            name: div,
+            attributes: Vec::new(),
+            self_closing: false,
+        });
+        for i in 0..chunk_count {
+            tokens.push(Token::TextOwned { index: i });
+        }
+        tokens.push(Token::EndTag(div));
+
+        let text_pool = vec!["x".to_string(); chunk_count];
+        let stream = TokenStream::new(tokens, atoms, Arc::from(""), text_pool);
+
+        let mut collector = PatchCollector::default();
+        let mut builder = TreeBuilder::with_capacity_and_emitter(
+            &stream,
+            stream.tokens().len().saturating_add(1),
+            TreeBuilderConfig {
+                coalesce_text: true,
+            },
+            Some(&mut collector),
+        );
+        let atoms = stream.atoms();
+        for token in stream.tokens() {
+            builder.push_token(token, atoms).unwrap();
+        }
+        builder.finish().unwrap();
+        let expected = builder.into_dom().unwrap();
+
+        let create_text_count = collector
+            .patches
+            .iter()
+            .filter(|p| matches!(p, DomPatch::CreateText { .. }))
+            .count();
+        let text_key = collector.patches.iter().find_map(|p| match p {
+            DomPatch::CreateText { key, .. } => Some(*key),
+            _ => None,
+        });
+        let set_text_count = collector
+            .patches
+            .iter()
+            .filter(|p| matches!(p, DomPatch::SetText { .. }))
+            .count();
+        let text_append_count = collector
+            .patches
+            .iter()
+            .filter(|p| match (p, text_key) {
+                (DomPatch::AppendChild { child, .. }, Some(key)) => key == *child,
+                _ => false,
+            })
+            .count();
+
+        assert_eq!(create_text_count, 1, "expected one text node creation");
+        assert!(text_key.is_some(), "expected a text node key");
+        assert_eq!(set_text_count, 1, "expected one text update");
+        assert_eq!(text_append_count, 1, "expected text appended once");
 
         let mut arena = PatchArena::default();
         arena.apply(&collector.patches);
