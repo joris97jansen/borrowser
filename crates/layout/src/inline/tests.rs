@@ -4,6 +4,8 @@ use super::tokens::{InlineContext, InlineToken};
 use super::types::InlineFragment;
 use crate::{Rectangle, ReplacedKind, TextMeasurer};
 use css::{ComputedStyle, Length};
+use html::{Node, internal::Id};
+use std::sync::Arc;
 
 struct TestMeasurer;
 
@@ -236,4 +238,95 @@ fn baseline_for_text_only_line_matches_strut() {
         line.baseline,
     );
     assert_approx_eq(frag.rect.height, 12.0);
+}
+
+#[test]
+fn drop_leading_space_before_first_content() {
+    let doc = Node::Document {
+        id: Id(1),
+        doctype: None,
+        children: vec![Node::Element {
+            id: Id(2),
+            name: Arc::from("div"),
+            attributes: Vec::new(),
+            style: Vec::new(),
+            children: vec![
+                Node::Element {
+                    id: Id(3),
+                    name: Arc::from("span"),
+                    attributes: Vec::new(),
+                    style: Vec::new(),
+                    children: vec![Node::Text {
+                        id: Id(4),
+                        text: " ".to_string(),
+                    }],
+                },
+                Node::Text {
+                    id: Id(5),
+                    text: "word".to_string(),
+                },
+            ],
+        }],
+    };
+
+    let styled = css::build_style_tree(&doc, None);
+    let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+    let div = &layout.children[0];
+
+    let tokens = super::tokens::collect_inline_tokens_for_block_layout(div);
+    assert_eq!(tokens.len(), 1);
+    match &tokens[0] {
+        InlineToken::Word { text, .. } => assert_eq!(text, "word"),
+        _ => panic!("expected word token"),
+    }
+}
+
+#[test]
+fn collapse_space_after_empty_inline_run() {
+    let doc = Node::Document {
+        id: Id(1),
+        doctype: None,
+        children: vec![Node::Element {
+            id: Id(2),
+            name: Arc::from("div"),
+            attributes: Vec::new(),
+            style: Vec::new(),
+            children: vec![
+                Node::Text {
+                    id: Id(3),
+                    text: "a".to_string(),
+                },
+                Node::Element {
+                    id: Id(4),
+                    name: Arc::from("span"),
+                    attributes: Vec::new(),
+                    style: Vec::new(),
+                    children: vec![Node::Text {
+                        id: Id(5),
+                        text: " ".to_string(),
+                    }],
+                },
+                Node::Text {
+                    id: Id(6),
+                    text: "word".to_string(),
+                },
+            ],
+        }],
+    };
+
+    let styled = css::build_style_tree(&doc, None);
+    let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+    let div = &layout.children[0];
+
+    let tokens = super::tokens::collect_inline_tokens_for_block_layout(div);
+    assert_eq!(tokens.len(), 3);
+    match &tokens[0] {
+        InlineToken::Word { text, .. } => assert_eq!(text, "a"),
+        _ => panic!("expected word token"),
+    }
+    assert!(matches!(tokens[1], InlineToken::Space { .. }));
+    match &tokens[2] {
+        InlineToken::Word { text, .. } => assert_eq!(text, "word"),
+        _ => panic!("expected word token"),
+    }
 }
