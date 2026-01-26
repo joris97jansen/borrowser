@@ -7,6 +7,7 @@
 //! - Attribute order is preserved; changes emit `SetAttributes`.
 //! - Text updates emit `SetText`; comment/doctype changes trigger a reset.
 //! - Resets are encoded as `DomPatch::Clear` + full create stream.
+//! - Duplicate IDs in `next` are treated as an error.
 //! - Stage 1 uses `PatchKey == Id` to avoid a separate mapping layer.
 //!   This coupling may change once patch transport stabilizes.
 //! - `Id` stability is scoped to a parse session; `Clear` implies a new allocation epoch.
@@ -28,6 +29,7 @@ pub enum DomDiffError {
 
 #[derive(Debug, Default)]
 pub struct DomDiffState {
+    /// IDs ever observed since the last reset; used to reject reuse within an epoch.
     allocated: HashSet<Id>,
 }
 
@@ -46,9 +48,17 @@ impl DomDiffState {
     }
 }
 
+/// Diff with a fresh state (does not enforce monotonic id reuse across calls).
 pub fn diff_dom(prev: &Node, next: &Node) -> Result<Vec<DomPatch>, DomDiffError> {
+    #[cfg(feature = "parse-guards")]
+    crate::parse_guards::record_dom_diff();
     let mut state = DomDiffState::default();
     diff_dom_with_state(prev, next, &mut state)
+}
+
+/// Diff with a fresh state (does not enforce monotonic id reuse across calls).
+pub fn diff_dom_stateless(prev: &Node, next: &Node) -> Result<Vec<DomPatch>, DomDiffError> {
+    diff_dom(prev, next)
 }
 
 pub fn diff_dom_with_state(
@@ -58,15 +68,19 @@ pub fn diff_dom_with_state(
 ) -> Result<Vec<DomPatch>, DomDiffError> {
     if !root_is_compatible(prev, next) {
         let mut next_ids = HashSet::new();
-        collect_ids(next, &mut next_ids);
+        if !collect_ids(next, &mut next_ids) {
+            return Err(DomDiffError::InvalidRoot("duplicate ids in next"));
+        }
         state.reset(&next_ids);
         return reset_stream(next);
     }
 
     let mut prev_map = HashMap::new();
-    build_prev_map(prev, &mut prev_map);
+    build_prev_map(prev, None, &mut prev_map);
     let mut next_ids = HashSet::new();
-    collect_ids(next, &mut next_ids);
+    if !collect_ids(next, &mut next_ids) {
+        return Err(DomDiffError::InvalidRoot("duplicate ids in next"));
+    }
 
     let mut patches = Vec::new();
     emit_removals(prev, &next_ids, &mut patches)?;
@@ -96,7 +110,9 @@ pub fn diff_from_empty(
     state: &mut DomDiffState,
 ) -> Result<Vec<DomPatch>, DomDiffError> {
     let mut next_ids = HashSet::new();
-    collect_ids(next, &mut next_ids);
+    if !collect_ids(next, &mut next_ids) {
+        return Err(DomDiffError::InvalidRoot("duplicate ids in next"));
+    }
     state.reset(&next_ids);
     reset_stream(next)
 }
@@ -112,21 +128,25 @@ enum PrevNodeInfo {
     Document {
         doctype: Option<String>,
         children: Vec<Id>,
+        parent: Option<Id>,
     },
     Element {
         name: Arc<str>,
         attributes: Vec<(Arc<str>, Option<String>)>,
         children: Vec<Id>,
+        parent: Option<Id>,
     },
     Text {
         text: String,
+        parent: Option<Id>,
     },
     Comment {
         text: String,
+        parent: Option<Id>,
     },
 }
 
-fn build_prev_map(node: &Node, map: &mut HashMap<Id, PrevNodeInfo>) {
+fn build_prev_map(node: &Node, parent: Option<Id>, map: &mut HashMap<Id, PrevNodeInfo>) {
     match node {
         Node::Document {
             id,
@@ -138,10 +158,11 @@ fn build_prev_map(node: &Node, map: &mut HashMap<Id, PrevNodeInfo>) {
                 PrevNodeInfo::Document {
                     doctype: doctype.clone(),
                     children: children.iter().map(Node::id).collect(),
+                    parent,
                 },
             );
             for child in children {
-                build_prev_map(child, map);
+                build_prev_map(child, Some(*id), map);
             }
         }
         Node::Element {
@@ -157,31 +178,49 @@ fn build_prev_map(node: &Node, map: &mut HashMap<Id, PrevNodeInfo>) {
                     name: Arc::clone(name),
                     attributes: attributes.clone(),
                     children: children.iter().map(Node::id).collect(),
+                    parent,
                 },
             );
             for child in children {
-                build_prev_map(child, map);
+                build_prev_map(child, Some(*id), map);
             }
         }
         Node::Text { id, text } => {
-            map.insert(*id, PrevNodeInfo::Text { text: text.clone() });
+            map.insert(
+                *id,
+                PrevNodeInfo::Text {
+                    text: text.clone(),
+                    parent,
+                },
+            );
         }
         Node::Comment { id, text } => {
-            map.insert(*id, PrevNodeInfo::Comment { text: text.clone() });
+            map.insert(
+                *id,
+                PrevNodeInfo::Comment {
+                    text: text.clone(),
+                    parent,
+                },
+            );
         }
     }
 }
 
-fn collect_ids(node: &Node, out: &mut HashSet<Id>) {
-    out.insert(node.id());
+fn collect_ids(node: &Node, out: &mut HashSet<Id>) -> bool {
+    if !out.insert(node.id()) {
+        return false;
+    }
     match node {
         Node::Document { children, .. } | Node::Element { children, .. } => {
             for child in children {
-                collect_ids(child, out);
+                if !collect_ids(child, out) {
+                    return false;
+                }
             }
         }
         Node::Text { .. } | Node::Comment { .. } => {}
     }
+    true
 }
 
 fn emit_removals(
@@ -231,6 +270,17 @@ fn emit_updates(
             return Err(DomDiffError::InvalidRoot("root must be Document"));
         }
     } else if let Some(prev) = prev_map.get(&id) {
+        let expected_parent = parent_key.map(id_from_patch_key);
+        let prev_parent = match prev {
+            PrevNodeInfo::Document { parent, .. }
+            | PrevNodeInfo::Element { parent, .. }
+            | PrevNodeInfo::Text { parent, .. }
+            | PrevNodeInfo::Comment { parent, .. } => *parent,
+        };
+        if prev_parent != expected_parent {
+            *need_reset = true;
+            return Ok(());
+        }
         match (prev, node) {
             (
                 PrevNodeInfo::Document { doctype, .. },
@@ -266,7 +316,7 @@ fn emit_updates(
                 }
             }
             (
-                PrevNodeInfo::Text { text },
+                PrevNodeInfo::Text { text, .. },
                 Node::Text {
                     text: next_text, ..
                 },
@@ -279,7 +329,7 @@ fn emit_updates(
                 }
             }
             (
-                PrevNodeInfo::Comment { text },
+                PrevNodeInfo::Comment { text, .. },
                 Node::Comment {
                     text: next_text, ..
                 },
@@ -400,11 +450,18 @@ fn patch_key(id: Id) -> Result<PatchKey, DomDiffError> {
     if id == Id::INVALID {
         return Err(DomDiffError::InvalidKey(id));
     }
-    Ok(PatchKey(id.0))
+    Ok(PatchKey::from_id(id))
+}
+
+fn id_from_patch_key(key: PatchKey) -> Id {
+    Id(key.0)
 }
 
 fn root_is_compatible(prev: &Node, next: &Node) -> bool {
-    matches!((prev, next), (Node::Document { .. }, Node::Document { .. }))
+    matches!(
+        (prev, next),
+        (Node::Document { id: a, .. }, Node::Document { id: b, .. }) if a == b
+    )
 }
 
 #[cfg(test)]
@@ -733,7 +790,7 @@ mod tests {
         };
         for fixture in fixtures() {
             let next = build(fixture.input);
-            let patches = diff_dom(&base, &next).expect("diff failed");
+            let patches = diff_dom_stateless(&base, &next).expect("diff failed");
             let mut arena = TestArena::from_dom(&base).expect("arena init failed");
             arena.apply(&patches).expect("apply failed");
             let materialized = arena.materialize().expect("materialize failed");
@@ -745,8 +802,8 @@ mod tests {
     fn diff_is_deterministic() {
         let prev = build("<div><span>hi</span></div>");
         let next = build("<div><span>hi</span><em>ok</em></div>");
-        let a = diff_dom(&prev, &next).expect("diff a failed");
-        let b = diff_dom(&prev, &next).expect("diff b failed");
+        let a = diff_dom_stateless(&prev, &next).expect("diff a failed");
+        let b = diff_dom_stateless(&prev, &next).expect("diff b failed");
         assert_eq!(a, b, "expected deterministic patch output");
     }
 
@@ -754,8 +811,71 @@ mod tests {
     fn diff_triggers_reset_on_midlist_insert() {
         let prev = build("<div><span>hi</span></div>");
         let next = build("<div><em>yo</em><span>hi</span></div>");
-        let patches = diff_dom(&prev, &next).expect("diff failed");
+        let patches = diff_dom_stateless(&prev, &next).expect("diff failed");
         assert!(matches!(patches.first(), Some(DomPatch::Clear)));
+    }
+
+    #[test]
+    fn diff_resets_on_reparented_node() {
+        let prev = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![
+                Node::Element {
+                    id: Id(2),
+                    name: Arc::from("div"),
+                    attributes: Vec::new(),
+                    style: Vec::new(),
+                    children: vec![Node::Element {
+                        id: Id(3),
+                        name: Arc::from("span"),
+                        attributes: Vec::new(),
+                        style: Vec::new(),
+                        children: Vec::new(),
+                    }],
+                },
+                Node::Element {
+                    id: Id(4),
+                    name: Arc::from("p"),
+                    attributes: Vec::new(),
+                    style: Vec::new(),
+                    children: Vec::new(),
+                },
+            ],
+        };
+
+        let next = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![
+                Node::Element {
+                    id: Id(2),
+                    name: Arc::from("div"),
+                    attributes: Vec::new(),
+                    style: Vec::new(),
+                    children: Vec::new(),
+                },
+                Node::Element {
+                    id: Id(4),
+                    name: Arc::from("p"),
+                    attributes: Vec::new(),
+                    style: Vec::new(),
+                    children: vec![Node::Element {
+                        id: Id(3),
+                        name: Arc::from("span"),
+                        attributes: Vec::new(),
+                        style: Vec::new(),
+                        children: Vec::new(),
+                    }],
+                },
+            ],
+        };
+
+        let patches = diff_dom_stateless(&prev, &next).expect("diff failed");
+        assert!(
+            matches!(patches.first(), Some(DomPatch::Clear)),
+            "expected reset on reparent"
+        );
     }
 
     #[test]
@@ -763,7 +883,7 @@ mod tests {
         let prev = build("<div><span>hi</span></div>");
         let next = build("<div><em>yo</em><span>hi</span></div>");
         let mut arena = TestArena::from_dom(&prev).expect("arena init failed");
-        let patches = diff_dom(&prev, &next).expect("diff failed");
+        let patches = diff_dom_stateless(&prev, &next).expect("diff failed");
         arena.apply(&patches).expect("apply failed");
         let materialized = arena.materialize().expect("materialize failed");
         assert_dom_eq(

@@ -11,3 +11,6 @@ tools = { path = "../tools" }
 
 [features]
 patch-stats = []
+
+[dev-dependencies]
+html = { path = "../html", features = ["internal-api", "parse-guards"] }

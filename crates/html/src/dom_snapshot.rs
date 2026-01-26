@@ -104,6 +104,8 @@ pub fn compare_dom<'a>(
     actual: &'a Node,
     options: DomSnapshotOptions,
 ) -> Result<(), Box<DomMismatch<'a>>> {
+    #[cfg(feature = "parse-guards")]
+    crate::parse_guards::record_dom_snapshot_compare();
     let mut path = vec![node_label(expected)];
     compare_nodes(expected, actual, &options, &mut path)
 }
