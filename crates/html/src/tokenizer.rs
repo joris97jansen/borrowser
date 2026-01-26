@@ -19,6 +19,7 @@
 use crate::entities::decode_entities;
 #[cfg(feature = "html5-entities")]
 use crate::entities::{decode_entities_html5_in_attribute, decode_entities_html5_in_text};
+use crate::dom_builder::TokenTextResolver;
 use crate::types::{AtomId, AtomTable, Token, TokenStream};
 use memchr::{memchr, memrchr};
 use std::borrow::Cow;
@@ -128,7 +129,7 @@ enum PendingState {
 
 /// Stateful tokenizer for incremental byte feeds.
 #[derive(Debug)]
-pub(crate) struct Tokenizer {
+pub struct Tokenizer {
     atoms: AtomTable,
     text_pool: Vec<String>,
     // NOTE: `source` is currently monolithic; spans are byte ranges into it.
@@ -252,6 +253,21 @@ impl Tokenizer {
     pub fn into_stream(self) -> TokenStream {
         let source: Arc<str> = Arc::from(self.source);
         TokenStream::new(self.tokens, self.atoms, source, self.text_pool)
+    }
+
+    pub fn text(&self, token: &Token) -> Option<&str> {
+        match token {
+            Token::TextSpan { range } => {
+                debug_assert!(
+                    self.source.is_char_boundary(range.start)
+                        && self.source.is_char_boundary(range.end),
+                    "text span must be on UTF-8 boundaries"
+                );
+                Some(&self.source[range.clone()])
+            }
+            Token::TextOwned { index } => self.text_pool.get(*index).map(|s| s.as_str()),
+            _ => None,
+        }
     }
 
     #[cfg(test)]
@@ -740,6 +756,12 @@ impl Tokenizer {
 
         self.cursor = content_start;
         ParseOutcome::Complete
+    }
+}
+
+impl TokenTextResolver for Tokenizer {
+    fn text(&self, token: &Token) -> Option<&str> {
+        Tokenizer::text(self, token)
     }
 }
 

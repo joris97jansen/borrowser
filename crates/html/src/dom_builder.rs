@@ -1,16 +1,18 @@
 use crate::dom_patch::{DomPatch, PatchKey};
 use crate::types::{AtomTable, Id, Node, NodeKey, Token, TokenStream};
 use core::fmt;
+use std::cell::RefCell;
+use std::rc::Rc;
 use std::sync::Arc;
 
 pub fn build_dom(stream: &TokenStream) -> Node {
     let tokens = stream.tokens();
-    let mut builder = TreeBuilder::with_capacity(stream, tokens.len().saturating_add(1));
+    let mut builder = TreeBuilder::with_capacity(tokens.len().saturating_add(1));
     let atoms = stream.atoms();
 
     for token in tokens {
         builder
-            .push_token(token, atoms)
+            .push_token(token, atoms, stream)
             .expect("dom builder token push should be infallible");
     }
 
@@ -23,7 +25,7 @@ pub fn build_dom(stream: &TokenStream) -> Node {
         .expect("dom builder into_dom should be infallible")
 }
 
-pub(crate) trait TokenTextResolver {
+pub trait TokenTextResolver {
     fn text(&self, token: &Token) -> Option<&str>;
 }
 
@@ -34,7 +36,7 @@ impl TokenTextResolver for TokenStream {
 }
 
 #[derive(Debug)]
-pub(crate) enum TreeBuilderError {
+pub enum TreeBuilderError {
     Finished,
     InvariantViolation(&'static str),
     #[allow(
@@ -44,7 +46,7 @@ pub(crate) enum TreeBuilderError {
     Unsupported(&'static str),
 }
 
-type TreeBuilderResult<T> = Result<T, TreeBuilderError>;
+pub type TreeBuilderResult<T> = Result<T, TreeBuilderError>;
 
 impl fmt::Display for TreeBuilderError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -59,8 +61,8 @@ impl fmt::Display for TreeBuilderError {
 }
 
 #[derive(Clone, Copy, Debug)]
-pub(crate) struct TreeBuilderConfig {
-    pub(crate) coalesce_text: bool,
+pub struct TreeBuilderConfig {
+    pub coalesce_text: bool,
 }
 
 impl Default for TreeBuilderConfig {
@@ -103,7 +105,7 @@ struct PendingText {
 ///   flush boundaries (tag/comment/doctype/end/finish).
 /// - `CreateDocument` is emitted before the first non-doctype mutation patch; doctype
 ///   is captured before that point, and doctype-after-emission is rejected.
-pub(crate) struct TreeBuilder<'a> {
+pub struct TreeBuilder {
     arena: NodeArena,
     root_index: usize,
     root_key: NodeKey,
@@ -111,35 +113,26 @@ pub(crate) struct TreeBuilder<'a> {
     pending_text: Option<PendingText>,
     #[allow(dead_code, reason = "placeholder for upcoming insertion mode handling")]
     insertion_mode: InsertionMode,
-    text_resolver: &'a dyn TokenTextResolver,
-    patch_emitter: Option<&'a mut dyn PatchEmitter>,
+    patch_emitter: Option<PatchEmitterHandle>,
     document_emitted: bool,
     pending_doctype: Option<String>,
     coalesce_text: bool,
     finished: bool,
 }
 
-impl<'a> TreeBuilder<'a> {
-    pub(crate) fn with_capacity(
-        text_resolver: &'a dyn TokenTextResolver,
-        node_capacity: usize,
-    ) -> Self {
-        Self::with_capacity_and_config(text_resolver, node_capacity, TreeBuilderConfig::default())
+impl TreeBuilder {
+    pub fn with_capacity(node_capacity: usize) -> Self {
+        Self::with_capacity_and_config(node_capacity, TreeBuilderConfig::default())
     }
 
-    pub(crate) fn with_capacity_and_config(
-        text_resolver: &'a dyn TokenTextResolver,
-        node_capacity: usize,
-        config: TreeBuilderConfig,
-    ) -> Self {
-        Self::with_capacity_and_emitter(text_resolver, node_capacity, config, None)
+    pub fn with_capacity_and_config(node_capacity: usize, config: TreeBuilderConfig) -> Self {
+        Self::with_capacity_and_emitter(node_capacity, config, None)
     }
 
-    pub(crate) fn with_capacity_and_emitter(
-        text_resolver: &'a dyn TokenTextResolver,
+    pub fn with_capacity_and_emitter(
         node_capacity: usize,
         config: TreeBuilderConfig,
-        patch_emitter: Option<&'a mut dyn PatchEmitter>,
+        patch_emitter: Option<PatchEmitterHandle>,
     ) -> Self {
         // Node keys are unique and stable for this document's lifetime. Cross-parse
         // stability requires a persistent allocator and is a future milestone.
@@ -161,7 +154,6 @@ impl<'a> TreeBuilder<'a> {
             open_elements: Vec::with_capacity(open_capacity),
             pending_text: None,
             insertion_mode: InsertionMode::Initial,
-            text_resolver,
             patch_emitter,
             document_emitted: false,
             pending_doctype: None,
@@ -174,7 +166,7 @@ impl<'a> TreeBuilder<'a> {
         dead_code,
         reason = "used by tests; runtime toggling is planned for streaming parse"
     )]
-    pub(crate) fn set_coalesce_text(&mut self, enabled: bool) {
+    pub fn set_coalesce_text(&mut self, enabled: bool) {
         if self.coalesce_text && !enabled {
             self.finalize_pending_text();
         }
@@ -196,7 +188,12 @@ impl<'a> TreeBuilder<'a> {
         self.arena.nodes.len() as u32
     }
 
-    pub(crate) fn push_token(&mut self, token: &Token, atoms: &AtomTable) -> TreeBuilderResult<()> {
+    pub fn push_token(
+        &mut self,
+        token: &Token,
+        atoms: &AtomTable,
+        text_resolver: &dyn TokenTextResolver,
+    ) -> TreeBuilderResult<()> {
         if self.finished {
             return Err(TreeBuilderError::Finished);
         }
@@ -238,7 +235,7 @@ impl<'a> TreeBuilder<'a> {
                         });
                     }
                     Token::TextSpan { .. } | Token::TextOwned { .. } => {
-                        if let Some(txt) = self.text_resolver.text(token) {
+                        if let Some(txt) = text_resolver.text(token) {
                             self.push_text(txt);
                         }
                     }
@@ -317,7 +314,7 @@ impl<'a> TreeBuilder<'a> {
         Ok(())
     }
 
-    pub(crate) fn finish(&mut self) -> TreeBuilderResult<()> {
+    pub fn finish(&mut self) -> TreeBuilderResult<()> {
         if self.finished {
             return Err(TreeBuilderError::Finished);
         }
@@ -329,7 +326,7 @@ impl<'a> TreeBuilder<'a> {
         Ok(())
     }
 
-    pub(crate) fn into_dom(self) -> TreeBuilderResult<Node> {
+    pub fn into_dom(self) -> TreeBuilderResult<Node> {
         if !self.finished {
             return Err(TreeBuilderError::InvariantViolation(
                 "TreeBuilder::finish() must be called before into_dom()",
@@ -495,7 +492,7 @@ impl<'a> TreeBuilder<'a> {
     }
 
     fn emit_patch(&mut self, patch: DomPatch) {
-        let Some(emitter) = self.patch_emitter.as_deref_mut() else {
+        let Some(emitter) = self.patch_emitter.as_ref() else {
             return;
         };
         #[cfg(any(test, debug_assertions))]
@@ -505,7 +502,7 @@ impl<'a> TreeBuilder<'a> {
             #[cfg(test)]
             assert!(!invalid, "patch emission must not use invalid keys");
         }
-        emitter.emit(patch);
+        emitter.borrow_mut().emit(patch);
     }
 
     fn ensure_document_emitted(&mut self) -> TreeBuilderResult<()> {
@@ -522,9 +519,11 @@ impl<'a> TreeBuilder<'a> {
     }
 }
 
-pub(crate) trait PatchEmitter {
+pub trait PatchEmitter {
     fn emit(&mut self, patch: DomPatch);
 }
+
+pub type PatchEmitterHandle = Rc<RefCell<dyn PatchEmitter>>;
 
 #[inline]
 fn patch_key(key: NodeKey) -> PatchKey {
@@ -919,10 +918,10 @@ mod tests {
         let text_pool = vec!["hi".to_string(), "bye".to_string()];
         let stream = TokenStream::new(tokens, atoms, Arc::from(""), text_pool);
 
-        let mut builder = TreeBuilder::with_capacity(&stream, 0);
+        let mut builder = TreeBuilder::with_capacity(0);
         let atoms = stream.atoms();
         for token in stream.tokens() {
-            builder.push_token(token, atoms).unwrap();
+            builder.push_token(token, atoms, &stream).unwrap();
         }
         builder.finish().unwrap();
         let dom = builder.into_dom().unwrap();
@@ -985,7 +984,6 @@ mod tests {
         ];
         let stream = TokenStream::new(tokens, atoms, Arc::from(""), text_pool);
         let mut builder = TreeBuilder::with_capacity_and_config(
-            &stream,
             stream.tokens().len().saturating_add(1),
             TreeBuilderConfig {
                 coalesce_text: true,
@@ -993,7 +991,7 @@ mod tests {
         );
         let atoms = stream.atoms();
         for token in stream.tokens() {
-            builder.push_token(token, atoms).unwrap();
+            builder.push_token(token, atoms, &stream).unwrap();
         }
         builder.finish().unwrap();
         let dom = builder.into_dom().unwrap();
@@ -1053,10 +1051,10 @@ mod tests {
             Vec::new(),
         );
 
-        let mut builder = TreeBuilder::with_capacity(&stream, 4);
+        let mut builder = TreeBuilder::with_capacity(4);
         builder.finish().unwrap();
         let err = builder
-            .push_token(&stream.tokens()[0], stream.atoms())
+            .push_token(&stream.tokens()[0], stream.atoms(), &stream)
             .unwrap_err();
         assert!(matches!(err, TreeBuilderError::Finished));
     }
@@ -1080,18 +1078,17 @@ mod tests {
         let stream = TokenStream::new(tokens, atoms, Arc::from(""), text_pool);
 
         let mut builder = TreeBuilder::with_capacity_and_config(
-            &stream,
             stream.tokens().len().saturating_add(1),
             TreeBuilderConfig {
                 coalesce_text: true,
             },
         );
         let atoms = stream.atoms();
-        builder.push_token(&stream.tokens()[0], atoms).unwrap();
-        builder.push_token(&stream.tokens()[1], atoms).unwrap();
+        builder.push_token(&stream.tokens()[0], atoms, &stream).unwrap();
+        builder.push_token(&stream.tokens()[1], atoms, &stream).unwrap();
         builder.set_coalesce_text(false);
-        builder.push_token(&stream.tokens()[2], atoms).unwrap();
-        builder.push_token(&stream.tokens()[3], atoms).unwrap();
+        builder.push_token(&stream.tokens()[2], atoms, &stream).unwrap();
+        builder.push_token(&stream.tokens()[3], atoms, &stream).unwrap();
         builder.finish().unwrap();
         let dom = builder.into_dom().unwrap();
 
@@ -1144,10 +1141,10 @@ mod tests {
         let stream = TokenStream::new(tokens, atoms, Arc::from(""), text_pool);
 
         let mut builder =
-            TreeBuilder::with_capacity(&stream, stream.tokens().len().saturating_add(1));
+            TreeBuilder::with_capacity(stream.tokens().len().saturating_add(1));
         let atoms = stream.atoms();
         for token in stream.tokens() {
-            builder.push_token(token, atoms).unwrap();
+            builder.push_token(token, atoms, &stream).unwrap();
         }
         assert_eq!(
             builder.debug_root_key(),
@@ -1214,10 +1211,10 @@ mod tests {
         let stream = TokenStream::new(tokens, atoms, Arc::from(""), Vec::new());
 
         let mut builder =
-            TreeBuilder::with_capacity(&stream, stream.tokens().len().saturating_add(1));
+            TreeBuilder::with_capacity(stream.tokens().len().saturating_add(1));
         let atoms = stream.atoms();
         for token in stream.tokens() {
-            builder.push_token(token, atoms).unwrap();
+            builder.push_token(token, atoms, &stream).unwrap();
         }
         builder.finish().unwrap();
         let dom = builder.into_dom().unwrap();
@@ -1428,22 +1425,21 @@ mod tests {
         let stream = crate::tokenize(input);
         let expected = build_dom(&stream);
 
-        let mut collector = PatchCollector::default();
+        let collector = Rc::new(RefCell::new(PatchCollector::default()));
         let mut builder = TreeBuilder::with_capacity_and_emitter(
-            &stream,
             stream.tokens().len().saturating_add(1),
             TreeBuilderConfig::default(),
-            Some(&mut collector),
+            Some(Rc::clone(&collector)),
         );
         let atoms = stream.atoms();
         for token in stream.tokens() {
-            builder.push_token(token, atoms).unwrap();
+            builder.push_token(token, atoms, &stream).unwrap();
         }
         builder.finish().unwrap();
         let _ = builder.into_dom().unwrap();
 
         let mut arena = PatchArena::default();
-        arena.apply(&collector.patches);
+        arena.apply(&collector.borrow().patches);
         let actual = arena.materialize();
         assert_dom_eq(&expected, &actual, DomSnapshotOptions::default());
     }
@@ -1466,37 +1462,39 @@ mod tests {
         let text_pool = vec!["a".to_string(), "b".to_string()];
         let stream = TokenStream::new(tokens, atoms, Arc::from(""), text_pool);
 
-        let mut collector = PatchCollector::default();
+        let collector = Rc::new(RefCell::new(PatchCollector::default()));
         let mut builder = TreeBuilder::with_capacity_and_emitter(
-            &stream,
             stream.tokens().len().saturating_add(1),
             TreeBuilderConfig {
                 coalesce_text: true,
             },
-            Some(&mut collector),
+            Some(Rc::clone(&collector)),
         );
         let atoms = stream.atoms();
         for token in stream.tokens() {
-            builder.push_token(token, atoms).unwrap();
+            builder.push_token(token, atoms, &stream).unwrap();
         }
         builder.finish().unwrap();
         let expected = builder.into_dom().unwrap();
 
         let create_text_count = collector
+            .borrow()
             .patches
             .iter()
             .filter(|p| matches!(p, DomPatch::CreateText { .. }))
             .count();
-        let text_key = collector.patches.iter().find_map(|p| match p {
+        let text_key = collector.borrow().patches.iter().find_map(|p| match p {
             DomPatch::CreateText { key, .. } => Some(*key),
             _ => None,
         });
         let set_text_count = collector
+            .borrow()
             .patches
             .iter()
             .filter(|p| matches!(p, DomPatch::SetText { .. }))
             .count();
         let text_append_count = collector
+            .borrow()
             .patches
             .iter()
             .filter(|p| match (p, text_key) {
@@ -1511,7 +1509,7 @@ mod tests {
         assert_eq!(text_append_count, 1, "expected text appended once");
 
         let mut arena = PatchArena::default();
-        arena.apply(&collector.patches);
+        arena.apply(&collector.borrow().patches);
         let actual = arena.materialize();
         assert_dom_eq(&expected, &actual, DomSnapshotOptions::default());
     }
@@ -1533,37 +1531,39 @@ mod tests {
         let text_pool = vec!["a".to_string()];
         let stream = TokenStream::new(tokens, atoms, Arc::from(""), text_pool);
 
-        let mut collector = PatchCollector::default();
+        let collector = Rc::new(RefCell::new(PatchCollector::default()));
         let mut builder = TreeBuilder::with_capacity_and_emitter(
-            &stream,
             stream.tokens().len().saturating_add(1),
             TreeBuilderConfig {
                 coalesce_text: true,
             },
-            Some(&mut collector),
+            Some(Rc::clone(&collector)),
         );
         let atoms = stream.atoms();
         for token in stream.tokens() {
-            builder.push_token(token, atoms).unwrap();
+            builder.push_token(token, atoms, &stream).unwrap();
         }
         builder.finish().unwrap();
         let expected = builder.into_dom().unwrap();
 
         let create_text_count = collector
+            .borrow()
             .patches
             .iter()
             .filter(|p| matches!(p, DomPatch::CreateText { .. }))
             .count();
-        let text_key = collector.patches.iter().find_map(|p| match p {
+        let text_key = collector.borrow().patches.iter().find_map(|p| match p {
             DomPatch::CreateText { key, .. } => Some(*key),
             _ => None,
         });
         let set_text_count = collector
+            .borrow()
             .patches
             .iter()
             .filter(|p| matches!(p, DomPatch::SetText { .. }))
             .count();
         let text_append_count = collector
+            .borrow()
             .patches
             .iter()
             .filter(|p| match (p, text_key) {
@@ -1578,7 +1578,7 @@ mod tests {
         assert_eq!(text_append_count, 1, "expected text appended once");
 
         let mut arena = PatchArena::default();
-        arena.apply(&collector.patches);
+        arena.apply(&collector.borrow().patches);
         let actual = arena.materialize();
         assert_dom_eq(&expected, &actual, DomSnapshotOptions::default());
     }
@@ -1603,37 +1603,39 @@ mod tests {
         let text_pool = vec!["x".to_string(); chunk_count];
         let stream = TokenStream::new(tokens, atoms, Arc::from(""), text_pool);
 
-        let mut collector = PatchCollector::default();
+        let collector = Rc::new(RefCell::new(PatchCollector::default()));
         let mut builder = TreeBuilder::with_capacity_and_emitter(
-            &stream,
             stream.tokens().len().saturating_add(1),
             TreeBuilderConfig {
                 coalesce_text: true,
             },
-            Some(&mut collector),
+            Some(Rc::clone(&collector)),
         );
         let atoms = stream.atoms();
         for token in stream.tokens() {
-            builder.push_token(token, atoms).unwrap();
+            builder.push_token(token, atoms, &stream).unwrap();
         }
         builder.finish().unwrap();
         let expected = builder.into_dom().unwrap();
 
         let create_text_count = collector
+            .borrow()
             .patches
             .iter()
             .filter(|p| matches!(p, DomPatch::CreateText { .. }))
             .count();
-        let text_key = collector.patches.iter().find_map(|p| match p {
+        let text_key = collector.borrow().patches.iter().find_map(|p| match p {
             DomPatch::CreateText { key, .. } => Some(*key),
             _ => None,
         });
         let set_text_count = collector
+            .borrow()
             .patches
             .iter()
             .filter(|p| matches!(p, DomPatch::SetText { .. }))
             .count();
         let text_append_count = collector
+            .borrow()
             .patches
             .iter()
             .filter(|p| match (p, text_key) {
@@ -1648,7 +1650,7 @@ mod tests {
         assert_eq!(text_append_count, 1, "expected text appended once");
 
         let mut arena = PatchArena::default();
-        arena.apply(&collector.patches);
+        arena.apply(&collector.borrow().patches);
         let actual = arena.materialize();
         assert_dom_eq(&expected, &actual, DomSnapshotOptions::default());
     }
