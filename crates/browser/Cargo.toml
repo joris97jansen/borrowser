@@ -20,4 +20,4 @@ url = { workspace = true }
 image = { workspace = true }
 
 [dev-dependencies]
-html = { path = "../html", features = ["dom-snapshot"] }
+html = { path = "../html", features = ["dom-snapshot", "test-harness"] }

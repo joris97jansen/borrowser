@@ -8,7 +8,7 @@ pub mod golden_corpus;
 pub mod head;
 #[cfg(test)]
 mod streaming_parity;
-#[cfg(test)]
+#[cfg(any(test, feature = "test-harness"))]
 pub mod test_harness;
 pub mod traverse;
 
