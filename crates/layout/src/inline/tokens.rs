@@ -13,6 +13,11 @@ pub(super) struct InlineContext {
 
 // Internal token representation after whitespace processing.
 // Not exported outside inline; only used within this module tree.
+// Token invariants:
+// - `Space` is a single collapsible space and should never be emitted consecutively.
+// - `Box`/`Replaced` height is the margin-box height (content height + vertical margins).
+// - Pending collapsible whitespace uses the first whitespace segment's style/ctx.
+// - `HardBreak` resets whitespace state (pending space cleared; next content is line-start).
 #[derive(Clone)]
 pub(super) enum InlineToken<'a> {
     Word {
@@ -55,17 +60,29 @@ pub(super) enum TokenCollectMode {
     Paint,
 }
 
+#[derive(Clone)]
+struct PendingSpace<'a> {
+    style: &'a ComputedStyle,
+    ctx: InlineContext,
+    source_range: Option<(usize, usize)>,
+}
+
+fn is_collapsible_ws(ch: char) -> bool {
+    matches!(ch, ' ' | '\n' | '\t' | '\r' | '\u{0C}')
+}
+
 fn push_text_as_tokens<'a>(
     text: &str,
     style: &'a ComputedStyle,
     tokens: &mut Vec<InlineToken<'a>>,
-    pending_space: &mut bool,
+    pending_space: &mut Option<PendingSpace<'a>>,
+    has_emitted_content: &mut bool,
     ctx: &InlineContext,
 ) {
     let mut current_word = String::new();
 
     for ch in text.chars() {
-        if ch.is_whitespace() {
+        if is_collapsible_ws(ch) {
             // End any current word.
             if !current_word.is_empty() {
                 tokens.push(InlineToken::Word {
@@ -74,19 +91,21 @@ fn push_text_as_tokens<'a>(
                     ctx: ctx.clone(),
                     source_range: None,
                 });
+                *has_emitted_content = true;
             }
-            // Remember that we've seen whitespace; may become a Space later.
-            *pending_space = true;
-        } else {
-            // Emit a single Space before this new word if needed.
-            if *pending_space && !tokens.is_empty() {
-                tokens.push(InlineToken::Space {
+            // Remember whitespace with its original style/context.
+            if pending_space.is_none() {
+                *pending_space = Some(PendingSpace {
                     style,
                     ctx: ctx.clone(),
                     source_range: None,
                 });
             }
-            *pending_space = false;
+        } else {
+            // Emit a single Space before this new word if needed.
+            if *has_emitted_content && let Some(space) = pending_space.take() {
+                push_space(tokens, space);
+            }
 
             current_word.push(ch);
         }
@@ -100,7 +119,19 @@ fn push_text_as_tokens<'a>(
             ctx: ctx.clone(),
             source_range: None,
         });
+        *has_emitted_content = true;
     }
+}
+
+fn push_space<'a>(tokens: &mut Vec<InlineToken<'a>>, space: PendingSpace<'a>) {
+    if matches!(tokens.last(), Some(InlineToken::Space { .. })) {
+        return;
+    }
+    tokens.push(InlineToken::Space {
+        style: space.style,
+        ctx: space.ctx,
+        source_range: space.source_range,
+    });
 }
 
 pub(super) fn collect_inline_tokens_for_block_layout<'a>(
@@ -120,7 +151,8 @@ fn collect_inline_tokens_for_block_layout_impl<'a>(
     mode: TokenCollectMode,
 ) -> Vec<InlineToken<'a>> {
     let mut tokens: Vec<InlineToken<'a>> = Vec::new();
-    let mut pending_space = false;
+    let mut pending_space: Option<PendingSpace<'a>> = None;
+    let mut has_emitted_content = false;
 
     let ctx = InlineContext::default();
 
@@ -130,9 +162,12 @@ fn collect_inline_tokens_for_block_layout_impl<'a>(
             mode,
             &mut tokens,
             &mut pending_space,
+            &mut has_emitted_content,
             ctx.clone(),
         );
     }
+    // Trailing collapsible whitespace is not rendered in HTML-ish collapsing.
+    pending_space.take();
     tokens
 }
 
@@ -140,7 +175,8 @@ fn collect_inline_tokens_from_layout_box<'a>(
     layout: &'a LayoutBox<'a>,
     mode: TokenCollectMode,
     tokens: &mut Vec<InlineToken<'a>>,
-    pending_space: &mut bool,
+    pending_space: &mut Option<PendingSpace<'a>>,
+    has_emitted_content: &mut bool,
     ctx: InlineContext,
 ) {
     match layout.node.node {
@@ -151,7 +187,14 @@ fn collect_inline_tokens_from_layout_box<'a>(
             // Treat the text content as part of the current inline
             // formatting context using the same whitespace behavior
             // as tokenize_runs.
-            push_text_as_tokens(text, layout.style, tokens, pending_space, &ctx);
+            push_text_as_tokens(
+                text,
+                layout.style,
+                tokens,
+                pending_space,
+                has_emitted_content,
+                &ctx,
+            );
         }
 
         Node::Element { .. } | Node::Document { .. } | Node::Comment { .. } => {
@@ -174,6 +217,7 @@ fn collect_inline_tokens_from_layout_box<'a>(
                             mode,
                             tokens,
                             pending_space,
+                            has_emitted_content,
                             next_ctx.clone(),
                         );
                     }
@@ -185,14 +229,8 @@ fn collect_inline_tokens_from_layout_box<'a>(
                     //
                     // If there was pending whitespace, flush it as a
                     // single Space token before the box (like a word).
-                    if *pending_space && !tokens.is_empty() {
-                        let style = layout.style;
-                        tokens.push(InlineToken::Space {
-                            style,
-                            ctx: next_ctx.clone(),
-                            source_range: None,
-                        });
-                        *pending_space = false;
+                    if *has_emitted_content && let Some(space) = pending_space.take() {
+                        push_space(tokens, space);
                     }
 
                     let style = layout.style;
@@ -213,6 +251,7 @@ fn collect_inline_tokens_from_layout_box<'a>(
                         ctx: next_ctx.clone(),
                         layout: layout_ref,
                     });
+                    *has_emitted_content = true;
                 }
 
                 BoxKind::Block => {
@@ -225,14 +264,8 @@ fn collect_inline_tokens_from_layout_box<'a>(
                 }
 
                 BoxKind::ReplacedInline => {
-                    if *pending_space && !tokens.is_empty() {
-                        let style = layout.style;
-                        tokens.push(InlineToken::Space {
-                            style,
-                            ctx: next_ctx.clone(),
-                            source_range: None,
-                        });
-                        *pending_space = false;
+                    if *has_emitted_content && let Some(space) = pending_space.take() {
+                        push_space(tokens, space);
                     }
 
                     let style = layout.style;
@@ -258,6 +291,7 @@ fn collect_inline_tokens_from_layout_box<'a>(
                         kind,
                         layout: layout_ref,
                     });
+                    *has_emitted_content = true;
                 }
             }
         }
