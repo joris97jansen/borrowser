@@ -16,13 +16,77 @@ use html::{Node, PatchKey};
 use std::collections::HashSet;
 #[cfg(test)]
 use std::sync::Arc;
-
-const TICK: Duration = Duration::from_millis(180);
+const DEFAULT_TICK: Duration = Duration::from_millis(180);
 const DEBUG_LARGE_BUFFER_BYTES: usize = 1_048_576;
 static HANDLE_GEN: AtomicU64 = AtomicU64::new(0);
 
+/// Preview flush strategy for incremental parse.
+///
+/// The policy is evaluated when new input arrives. A flush occurs if any enabled
+/// threshold is met and there are pending patches. This is input-driven; no
+/// background timer events are generated.
+#[derive(Clone, Copy, Debug)]
+pub struct PreviewPolicy {
+    pub tick: Duration,
+    pub token_threshold: Option<usize>,
+    pub byte_threshold: Option<usize>,
+}
+
+impl Default for PreviewPolicy {
+    fn default() -> Self {
+        Self {
+            tick: DEFAULT_TICK,
+            token_threshold: None,
+            byte_threshold: None,
+        }
+    }
+}
+
+impl PreviewPolicy {
+    fn should_flush(
+        &self,
+        elapsed: Duration,
+        pending_tokens: usize,
+        pending_bytes: usize,
+        has_patches: bool,
+    ) -> bool {
+        if !has_patches {
+            return false;
+        }
+        // tick == 0 disables time-based flushing.
+        if self.tick != Duration::ZERO && elapsed >= self.tick {
+            return true;
+        }
+        if let Some(threshold) = self.token_threshold
+            && pending_tokens >= threshold
+        {
+            return true;
+        }
+        if let Some(threshold) = self.byte_threshold
+            && pending_bytes >= threshold
+        {
+            return true;
+        }
+        false
+    }
+}
+
+trait PreviewClock: Send {
+    fn now(&self) -> Instant;
+}
+
+struct SystemClock;
+
+impl PreviewClock for SystemClock {
+    fn now(&self) -> Instant {
+        Instant::now()
+    }
+}
+
 struct HtmlState {
     total_bytes: usize,
+    pending_bytes: usize,
+    pending_tokens: usize,
     last_emit: Instant,
     logged_large_buffer: bool,
     failed: bool,
@@ -30,6 +94,7 @@ struct HtmlState {
     builder: TreeBuilder,
     token_buffer: Vec<Token>,
     patch_buffer: Vec<DomPatch>,
+    patch_out: Vec<DomPatch>,
     dom_handle: DomHandle,
     version: DomVersion,
 }
@@ -66,9 +131,12 @@ impl HtmlState {
         if self.patch_buffer.is_empty() {
             return;
         }
-        let mut patches = Vec::new();
-        std::mem::swap(&mut patches, &mut self.patch_buffer);
-        self.patch_buffer = Vec::with_capacity(patches.capacity());
+        std::mem::swap(&mut self.patch_out, &mut self.patch_buffer);
+        self.patch_buffer.clear();
+        let spare_capacity = self.patch_buffer.capacity();
+        let patches = std::mem::replace(&mut self.patch_out, Vec::with_capacity(spare_capacity));
+        self.pending_bytes = 0;
+        self.pending_tokens = 0;
 
         #[cfg(feature = "patch-stats")]
         log_patch_stats(tab_id, request_id, &patches);
@@ -118,10 +186,28 @@ fn log_patch_stats(tab_id: TabId, request_id: RequestId, patches: &[DomPatch]) {
 /// Patch emission is buffered and flushed on ticks; the tokenizer and tree builder
 /// retain state between chunks so work is proportional to new input.
 pub fn start_parse_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent>) {
+    start_parse_runtime_with_policy(cmd_rx, evt_tx, PreviewPolicy::default())
+}
+
+pub fn start_parse_runtime_with_policy(
+    cmd_rx: Receiver<CoreCommand>,
+    evt_tx: Sender<CoreEvent>,
+    policy: PreviewPolicy,
+) {
+    start_parse_runtime_with_policy_and_clock(cmd_rx, evt_tx, policy, SystemClock)
+}
+
+fn start_parse_runtime_with_policy_and_clock<C: PreviewClock + 'static>(
+    cmd_rx: Receiver<CoreCommand>,
+    evt_tx: Sender<CoreEvent>,
+    policy: PreviewPolicy,
+    clock: C,
+) {
     thread::spawn(move || {
         let mut htmls: HashMap<Key, HtmlState> = HashMap::new();
 
         while let Ok(cmd) = cmd_rx.recv() {
+            let now = clock.now();
             match cmd {
                 CoreCommand::ParseHtmlStart { tab_id, request_id } => {
                     // DomHandle is per-runtime unique today; future: global allocator.
@@ -134,7 +220,9 @@ pub fn start_parse_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEve
                         (tab_id, request_id),
                         HtmlState {
                             total_bytes: 0,
-                            last_emit: Instant::now(),
+                            pending_bytes: 0,
+                            pending_tokens: 0,
+                            last_emit: now,
                             logged_large_buffer: false,
                             failed: false,
                             tokenizer: Tokenizer::new(),
@@ -144,6 +232,7 @@ pub fn start_parse_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEve
                             ),
                             token_buffer: Vec::new(),
                             patch_buffer: Vec::new(),
+                            patch_out: Vec::new(),
                             dom_handle,
                             version: DomVersion::INITIAL,
                         },
@@ -159,12 +248,21 @@ pub fn start_parse_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEve
                             continue;
                         }
                         st.total_bytes = st.total_bytes.saturating_add(bytes.len());
-                        st.tokenizer.feed(&bytes);
+                        st.pending_bytes = st.pending_bytes.saturating_add(bytes.len());
+                        st.pending_tokens =
+                            st.pending_tokens.saturating_add(st.tokenizer.feed(&bytes));
+                        // Always drain tokenizer tokens immediately so flush decisions
+                        // reflect patch backlog, not buffered tokens.
                         st.tokenizer.drain_into(&mut st.token_buffer);
                         st.drain_tokens_into_builder();
 
-                        if st.last_emit.elapsed() >= TICK {
-                            st.last_emit = Instant::now();
+                        if policy.should_flush(
+                            now.saturating_duration_since(st.last_emit),
+                            st.pending_tokens,
+                            st.pending_bytes,
+                            !st.patch_buffer.is_empty(),
+                        ) {
+                            st.last_emit = now;
                             #[cfg(debug_assertions)]
                             {
                                 if !st.logged_large_buffer
@@ -186,7 +284,7 @@ pub fn start_parse_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEve
                         if st.failed {
                             continue;
                         }
-                        st.tokenizer.finish();
+                        st.pending_tokens = st.pending_tokens.saturating_add(st.tokenizer.finish());
                         st.tokenizer.drain_into(&mut st.token_buffer);
                         st.drain_tokens_into_builder();
                         if let Err(err) = st.builder.finish() {
@@ -628,8 +726,14 @@ fn root_is_compatible(prev: &Node, next: &Node) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{PatchState, diff_dom, emit_create_subtree};
+    use super::{
+        PatchState, PreviewClock, PreviewPolicy, diff_dom, emit_create_subtree,
+        start_parse_runtime_with_policy_and_clock,
+    };
+    use bus::{CoreCommand, CoreEvent};
     use html::{Node, Tokenizer, build_dom, tokenize};
+    use std::sync::{Arc, Mutex, mpsc};
+    use std::time::{Duration, Instant};
 
     fn tokenize_bytes_in_chunks(bytes: &[u8], boundaries: &[usize]) -> String {
         let mut tokenizer = Tokenizer::new();
@@ -658,6 +762,106 @@ mod tests {
             rebuilt, input,
             "expected UTF-8 roundtrip for boundaries={boundaries:?}"
         );
+    }
+
+    #[test]
+    fn preview_policy_flushes_on_thresholds() {
+        let policy = PreviewPolicy {
+            tick: Duration::from_millis(100),
+            token_threshold: Some(10),
+            byte_threshold: Some(256),
+        };
+
+        assert!(
+            !policy.should_flush(Duration::from_millis(50), 0, 0, true),
+            "should not flush before thresholds"
+        );
+        assert!(
+            policy.should_flush(Duration::from_millis(150), 0, 0, true),
+            "should flush on time"
+        );
+        assert!(
+            policy.should_flush(Duration::from_millis(10), 10, 0, true),
+            "should flush on token threshold"
+        );
+        assert!(
+            policy.should_flush(Duration::from_millis(10), 0, 256, true),
+            "should flush on byte threshold"
+        );
+        assert!(
+            !policy.should_flush(Duration::from_millis(150), 10, 256, false),
+            "should not flush without pending patches"
+        );
+    }
+
+    #[test]
+    fn runtime_flushes_on_tick_without_sleeping() {
+        #[derive(Clone)]
+        struct ManualClock {
+            now: Arc<Mutex<Instant>>,
+        }
+
+        impl PreviewClock for ManualClock {
+            fn now(&self) -> Instant {
+                *self.now.lock().expect("manual clock lock poisoned")
+            }
+        }
+
+        let (cmd_tx, cmd_rx) = mpsc::channel();
+        let (evt_tx, evt_rx) = mpsc::channel();
+        let clock = ManualClock {
+            now: Arc::new(Mutex::new(Instant::now())),
+        };
+        let clock_handle = Arc::clone(&clock.now);
+
+        let policy = PreviewPolicy {
+            tick: Duration::from_millis(50),
+            token_threshold: None,
+            byte_threshold: None,
+        };
+
+        start_parse_runtime_with_policy_and_clock(cmd_rx, evt_tx, policy, clock);
+
+        let tab_id = 1;
+        let request_id = 1;
+        cmd_tx
+            .send(CoreCommand::ParseHtmlStart { tab_id, request_id })
+            .unwrap();
+        cmd_tx
+            .send(CoreCommand::ParseHtmlChunk {
+                tab_id,
+                request_id,
+                bytes: b"<div>".to_vec(),
+            })
+            .unwrap();
+
+        assert!(
+            evt_rx.recv_timeout(Duration::from_millis(10)).is_err(),
+            "should not flush before tick"
+        );
+
+        {
+            let mut now = clock_handle.lock().expect("manual clock lock poisoned");
+            *now += Duration::from_millis(100);
+        }
+
+        cmd_tx
+            .send(CoreCommand::ParseHtmlChunk {
+                tab_id,
+                request_id,
+                bytes: b" ".to_vec(),
+            })
+            .unwrap();
+
+        let evt = evt_rx
+            .recv_timeout(Duration::from_millis(50))
+            .expect("expected DomPatchUpdate after tick");
+        match evt {
+            CoreEvent::DomPatchUpdate { .. } => {}
+            other => panic!("unexpected event: {other:?}"),
+        }
+
+        let _ = cmd_tx.send(CoreCommand::ParseHtmlDone { tab_id, request_id });
     }
 
     fn estimated_patch_bytes(patches: &[html::DomPatch]) -> usize {
