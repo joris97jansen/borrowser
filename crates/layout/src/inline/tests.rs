@@ -330,3 +330,52 @@ fn collapse_space_after_empty_inline_run() {
         _ => panic!("expected word token"),
     }
 }
+
+#[test]
+fn pending_space_does_not_cross_block_boundary() {
+    let doc = Node::Document {
+        id: Id(1),
+        doctype: None,
+        children: vec![Node::Element {
+            id: Id(2),
+            name: Arc::from("div"),
+            attributes: Vec::new(),
+            style: Vec::new(),
+            children: vec![
+                Node::Text {
+                    id: Id(3),
+                    text: "word ".to_string(),
+                },
+                Node::Element {
+                    id: Id(4),
+                    name: Arc::from("p"),
+                    attributes: Vec::new(),
+                    style: Vec::new(),
+                    children: vec![Node::Text {
+                        id: Id(5),
+                        text: "block".to_string(),
+                    }],
+                },
+                Node::Text {
+                    id: Id(6),
+                    text: "after".to_string(),
+                },
+            ],
+        }],
+    };
+
+    let styled = css::build_style_tree(&doc, None);
+    let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+    let div = &layout.children[0];
+
+    let tokens = super::tokens::collect_inline_tokens_for_block_layout(div);
+    assert_eq!(tokens.len(), 2);
+    match &tokens[0] {
+        InlineToken::Word { text, .. } => assert_eq!(text, "word"),
+        _ => panic!("expected word token"),
+    }
+    match &tokens[1] {
+        InlineToken::Word { text, .. } => assert_eq!(text, "after"),
+        _ => panic!("expected word token"),
+    }
+}

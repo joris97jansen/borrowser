@@ -67,7 +67,8 @@ struct PendingSpace<'a> {
     source_range: Option<(usize, usize)>,
 }
 
-fn is_collapsible_ws(ch: char) -> bool {
+// ASCII whitespace set used for HTML-like collapsing (excludes NBSP).
+fn is_ascii_collapsible_html_ws(ch: char) -> bool {
     matches!(ch, ' ' | '\n' | '\t' | '\r' | '\u{0C}')
 }
 
@@ -82,7 +83,7 @@ fn push_text_as_tokens<'a>(
     let mut current_word = String::new();
 
     for ch in text.chars() {
-        if is_collapsible_ws(ch) {
+        if is_ascii_collapsible_html_ws(ch) {
             // End any current word.
             if !current_word.is_empty() {
                 tokens.push(InlineToken::Word {
@@ -103,9 +104,7 @@ fn push_text_as_tokens<'a>(
             }
         } else {
             // Emit a single Space before this new word if needed.
-            if *has_emitted_content && let Some(space) = pending_space.take() {
-                push_space(tokens, space);
-            }
+            flush_pending_space(tokens, pending_space, has_emitted_content);
 
             current_word.push(ch);
         }
@@ -132,6 +131,33 @@ fn push_space<'a>(tokens: &mut Vec<InlineToken<'a>>, space: PendingSpace<'a>) {
         ctx: space.ctx,
         source_range: space.source_range,
     });
+}
+
+fn flush_pending_space<'a>(
+    tokens: &mut Vec<InlineToken<'a>>,
+    pending_space: &mut Option<PendingSpace<'a>>,
+    has_emitted_content: &bool,
+) {
+    if let Some(space) = pending_space.take() {
+        if *has_emitted_content {
+            push_space(tokens, space);
+        } else {
+            *pending_space = Some(space);
+        }
+    }
+}
+
+fn reset_pending_space<'a>(pending_space: &mut Option<PendingSpace<'a>>) {
+    *pending_space = None;
+}
+
+#[allow(dead_code)]
+fn reset_for_line_start<'a>(
+    pending_space: &mut Option<PendingSpace<'a>>,
+    has_emitted_content: &mut bool,
+) {
+    *pending_space = None;
+    *has_emitted_content = false;
 }
 
 pub(super) fn collect_inline_tokens_for_block_layout<'a>(
@@ -167,7 +193,7 @@ fn collect_inline_tokens_for_block_layout_impl<'a>(
         );
     }
     // Trailing collapsible whitespace is not rendered in HTML-ish collapsing.
-    pending_space.take();
+    reset_pending_space(&mut pending_space);
     tokens
 }
 
@@ -229,9 +255,7 @@ fn collect_inline_tokens_from_layout_box<'a>(
                     //
                     // If there was pending whitespace, flush it as a
                     // single Space token before the box (like a word).
-                    if *has_emitted_content && let Some(space) = pending_space.take() {
-                        push_space(tokens, space);
-                    }
+                    flush_pending_space(tokens, pending_space, has_emitted_content);
 
                     let style = layout.style;
                     let cbm = layout.style.box_metrics;
@@ -261,12 +285,14 @@ fn collect_inline_tokens_from_layout_box<'a>(
                     // inline content (handled above by Node::Text),
                     // but for Element/Document/Comment with Block kind
                     // we stop here.
+                    //
+                    // Reset pending whitespace so it cannot bridge across
+                    // block formatting context boundaries.
+                    reset_pending_space(pending_space);
                 }
 
                 BoxKind::ReplacedInline => {
-                    if *has_emitted_content && let Some(space) = pending_space.take() {
-                        push_space(tokens, space);
-                    }
+                    flush_pending_space(tokens, pending_space, has_emitted_content);
 
                     let style = layout.style;
                     let cbm = style.box_metrics;
