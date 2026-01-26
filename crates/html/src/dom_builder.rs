@@ -4,6 +4,8 @@ use core::fmt;
 use std::sync::Arc;
 
 pub fn build_dom(stream: &TokenStream) -> Node {
+    #[cfg(feature = "parse-guards")]
+    crate::parse_guards::record_full_build_dom();
     let tokens = stream.tokens();
     let mut builder = TreeBuilder::with_capacity(tokens.len().saturating_add(1));
     builder
@@ -88,6 +90,7 @@ struct PendingText {
     parent_index: usize,
     node_index: usize,
     key: NodeKey,
+    text: String,
     dirty: bool,
 }
 
@@ -187,6 +190,8 @@ impl TreeBuilder {
         atoms: &AtomTable,
         text_resolver: &R,
     ) -> TreeBuilderResult<()> {
+        #[cfg(feature = "parse-guards")]
+        crate::parse_guards::record_token_processed();
         if self.finished {
             return Err(TreeBuilderError::Finished);
         }
@@ -243,13 +248,14 @@ impl TreeBuilder {
                         // Materialize attribute values into owned DOM strings; revisit once
                         // attribute storage is arena-backed to reduce cloning.
                         let mut resolved_attributes = Vec::with_capacity(attributes.len());
-                        let mut patch_attributes = Vec::with_capacity(attributes.len());
                         for (k, v) in attributes {
                             let attr_name = atoms.resolve_arc(*k);
-                            let value = v.clone();
-                            resolved_attributes.push((Arc::clone(&attr_name), value.clone()));
-                            patch_attributes.push((attr_name, value));
+                            resolved_attributes.push((attr_name, v.clone()));
                         }
+                        let patch_attributes = resolved_attributes
+                            .iter()
+                            .map(|(k, v)| (Arc::clone(k), v.clone()))
+                            .collect();
                         let resolved_name = atoms.resolve_arc(*name);
                         debug_assert_canonical_ascii_lower(
                             resolved_name.as_ref(),
@@ -274,7 +280,6 @@ impl TreeBuilder {
                                 style: Vec::new(),
                             },
                         );
-                        // TODO(perf): avoid cloning attributes once patch storage is interned.
                         self.emit_patch(DomPatch::CreateElement {
                             key: patch_key(key),
                             name: patch_name,
@@ -317,6 +322,12 @@ impl TreeBuilder {
             return Err(TreeBuilderError::Finished);
         }
         self.finalize_pending_text();
+        debug_assert!(
+            self.pending_text.is_none(),
+            "pending text must be flushed on finish"
+        );
+        // Allow implicit closes at EOF for still-open elements.
+        self.open_elements.clear();
         if !self.document_emitted {
             self.ensure_document_emitted()?;
         }
@@ -353,35 +364,27 @@ impl TreeBuilder {
         }
 
         let parent_index = self.current_parent();
-        match &mut self.pending_text {
-            Some(pending) if pending.parent_index == parent_index => {
-                self.arena.append_text(pending.node_index, text);
+        if let Some(pending) = &mut self.pending_text {
+            if pending.parent_index == parent_index {
+                pending.text.push_str(text);
                 // dirty means the final text differs from the initial CreateText payload.
                 pending.dirty = true;
+                return;
             }
-            Some(_) => {
-                self.finalize_pending_text();
-                let text_owned = text.to_string();
-                if let Some((node_index, key)) = self.add_text_node(parent_index, text_owned) {
-                    self.pending_text = Some(PendingText {
-                        parent_index,
-                        node_index,
-                        key,
-                        dirty: false,
-                    });
-                }
-            }
-            None => {
-                let text_owned = text.to_string();
-                if let Some((node_index, key)) = self.add_text_node(parent_index, text_owned) {
-                    self.pending_text = Some(PendingText {
-                        parent_index,
-                        node_index,
-                        key,
-                        dirty: false,
-                    });
-                }
-            }
+            self.finalize_pending_text();
+        }
+
+        let text_owned = text.to_string();
+        if let Some((node_index, key)) =
+            self.add_text_node_with_patch(parent_index, text_owned.as_str())
+        {
+            self.pending_text = Some(PendingText {
+                parent_index,
+                node_index,
+                key,
+                text: text_owned,
+                dirty: false,
+            });
         }
     }
 
@@ -389,28 +392,49 @@ impl TreeBuilder {
         let Some(pending) = self.pending_text.take() else {
             return;
         };
-        if !pending.dirty {
+        if pending.text.is_empty() {
             return;
         }
-        let text = self.arena.text(pending.node_index).to_string();
-        if text.is_empty() {
-            return;
+        if pending.dirty {
+            self.emit_patch(DomPatch::SetText {
+                key: patch_key(pending.key),
+                text: pending.text.clone(),
+            });
         }
-        self.emit_patch(DomPatch::SetText {
-            key: patch_key(pending.key),
-            text,
-        });
+        self.arena.set_text(pending.node_index, pending.text);
     }
 
     fn add_text_node(&mut self, parent_index: usize, text: String) -> Option<(usize, NodeKey)> {
-        if text.is_empty() {
+        let patch_text = text.clone();
+        self.add_text_node_internal(parent_index, patch_text, Some(text))
+    }
+
+    fn add_text_node_with_patch(
+        &mut self,
+        parent_index: usize,
+        patch_text: &str,
+    ) -> Option<(usize, NodeKey)> {
+        self.add_text_node_internal(parent_index, patch_text.to_string(), None)
+    }
+
+    fn add_text_node_internal(
+        &mut self,
+        parent_index: usize,
+        patch_text: String,
+        arena_text: Option<String>,
+    ) -> Option<(usize, NodeKey)> {
+        if patch_text.is_empty() {
             return None;
         }
-        let patch_text = text.clone();
+        // Arena text is finalized only on flush boundaries; until then it may be empty.
         let key = self.arena.alloc_key();
-        let node_index = self
-            .arena
-            .add_child(parent_index, ArenaNode::Text { key, text });
+        let node_index = self.arena.add_child(
+            parent_index,
+            ArenaNode::Text {
+                key,
+                text: arena_text.unwrap_or_default(),
+            },
+        );
         self.emit_patch(DomPatch::CreateText {
             key: patch_key(key),
             text: patch_text,
@@ -505,7 +529,7 @@ impl TreeBuilder {
         if self.document_emitted {
             return Ok(());
         }
-        let doctype = self.arena.doctype(self.root_index);
+        let doctype = self.arena.doctype(self.root_index).map(|s| s.to_string());
         self.emit_patch(DomPatch::CreateDocument {
             key: patch_key(self.root_key),
             doctype,
@@ -519,6 +543,14 @@ impl TreeBuilder {
     /// Call this before consuming the builder with `into_dom()`.
     pub fn take_patches(&mut self) -> Vec<DomPatch> {
         std::mem::take(&mut self.patches)
+    }
+
+    /// Finish parsing and return both the DOM and all emitted patches.
+    pub fn finish_into_dom_and_patches(mut self) -> TreeBuilderResult<(Node, Vec<DomPatch>)> {
+        self.finish()?;
+        let patches = self.take_patches();
+        let dom = self.into_dom()?;
+        Ok((dom, patches))
     }
 
     pub fn push_stream_token(
@@ -541,7 +573,7 @@ impl TreeBuilder {
 #[inline]
 fn patch_key(key: NodeKey) -> PatchKey {
     debug_assert_ne!(key, NodeKey::INVALID, "node key must be valid");
-    PatchKey(key.0)
+    PatchKey::from_node_key(key)
 }
 
 #[inline]
@@ -666,19 +698,12 @@ impl NodeArena {
         }
     }
 
-    fn append_text(&mut self, node_index: usize, text: &str) {
+    fn set_text(&mut self, node_index: usize, text: String) {
         match &mut self.nodes[node_index] {
             ArenaNode::Text { text: slot, .. } => {
-                slot.push_str(text);
+                *slot = text;
             }
-            _ => unreachable!("append_text only valid for text nodes"),
-        }
-    }
-
-    fn text(&self, node_index: usize) -> &str {
-        match &self.nodes[node_index] {
-            ArenaNode::Text { text, .. } => text.as_str(),
-            _ => unreachable!("text only valid for text nodes"),
+            _ => unreachable!("set_text only valid for text nodes"),
         }
     }
 
@@ -689,11 +714,11 @@ impl NodeArena {
         *dt = Some(doctype);
     }
 
-    fn doctype(&self, root_index: usize) -> Option<String> {
+    fn doctype(&self, root_index: usize) -> Option<&str> {
         let ArenaNode::Document { doctype, .. } = &self.nodes[root_index] else {
             unreachable!("dom builder root is always a document node");
         };
-        doctype.clone()
+        doctype.as_deref()
     }
 
     fn is_element_named(&self, node_index: usize, target: &str) -> bool {
@@ -1722,5 +1747,100 @@ mod tests {
         arena.apply(&patches);
         let actual = arena.materialize();
         assert_dom_eq(&expected, &actual, DomSnapshotOptions::default());
+    }
+
+    #[test]
+    fn tree_builder_self_closing_does_not_capture_following_text() {
+        let mut atoms = AtomTable::new();
+        let div = atoms.intern_ascii_lowercase("div");
+
+        let tokens = vec![
+            Token::TextOwned { index: 0 },
+            Token::StartTag {
+                name: div,
+                attributes: Vec::new(),
+                self_closing: true,
+            },
+            Token::TextOwned { index: 1 },
+        ];
+        let text_pool = vec!["a".to_string(), "b".to_string()];
+        let stream = TokenStream::new(tokens, atoms, Arc::from(""), text_pool);
+
+        let mut builder = TreeBuilder::with_capacity_and_config(
+            stream.tokens().len().saturating_add(1),
+            TreeBuilderConfig {
+                coalesce_text: true,
+            },
+        );
+        builder.push_stream(&stream).unwrap();
+        builder.finish().unwrap();
+        let dom = builder.into_dom().unwrap();
+
+        let Node::Document { children, .. } = dom else {
+            panic!("expected document node");
+        };
+        assert_eq!(children.len(), 3);
+        let Node::Text { text, .. } = &children[0] else {
+            panic!("expected leading text node");
+        };
+        assert_eq!(text, "a");
+        let Node::Element { name, .. } = &children[1] else {
+            panic!("expected element node");
+        };
+        assert_eq!(name.as_ref(), "div");
+        let Node::Text { text, .. } = &children[2] else {
+            panic!("expected trailing text node");
+        };
+        assert_eq!(text, "b");
+    }
+
+    #[test]
+    fn tree_builder_flushes_pending_text_on_comment_and_starttag() {
+        let mut atoms = AtomTable::new();
+        let div = atoms.intern_ascii_lowercase("div");
+
+        let tokens = vec![
+            Token::StartTag {
+                name: div,
+                attributes: Vec::new(),
+                self_closing: false,
+            },
+            Token::TextOwned { index: 0 },
+            Token::Comment("x".to_string()),
+            Token::TextOwned { index: 1 },
+            Token::EndTag(div),
+        ];
+        let text_pool = vec!["a".to_string(), "b".to_string()];
+        let stream = TokenStream::new(tokens, atoms, Arc::from(""), text_pool);
+
+        let mut builder = TreeBuilder::with_capacity_and_config(
+            stream.tokens().len().saturating_add(1),
+            TreeBuilderConfig {
+                coalesce_text: true,
+            },
+        );
+        builder.push_stream(&stream).unwrap();
+        builder.finish().unwrap();
+        let dom = builder.into_dom().unwrap();
+
+        let Node::Document { children, .. } = dom else {
+            panic!("expected document node");
+        };
+        let Node::Element { children, .. } = &children[0] else {
+            panic!("expected element node");
+        };
+        assert_eq!(children.len(), 3);
+        let Node::Text { text, .. } = &children[0] else {
+            panic!("expected leading text node");
+        };
+        assert_eq!(text, "a");
+        let Node::Comment { text, .. } = &children[1] else {
+            panic!("expected comment node");
+        };
+        assert_eq!(text, "x");
+        let Node::Text { text, .. } = &children[2] else {
+            panic!("expected trailing text node");
+        };
+        assert_eq!(text, "b");
     }
 }

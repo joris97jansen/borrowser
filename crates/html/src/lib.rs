@@ -6,6 +6,8 @@ pub mod dom_snapshot;
 pub mod dom_utils;
 pub mod golden_corpus;
 pub mod head;
+#[cfg(feature = "parse-guards")]
+pub mod parse_guards;
 #[cfg(test)]
 mod streaming_parity;
 #[cfg(any(test, feature = "test-harness"))]
@@ -73,7 +75,9 @@ pub use crate::dom_builder::build_dom;
 pub use crate::dom_builder::{
     TokenTextResolver, TreeBuilder, TreeBuilderConfig, TreeBuilderError, TreeBuilderResult,
 };
-pub use crate::dom_diff::{DomDiffState, diff_dom, diff_dom_with_state, diff_from_empty};
+pub use crate::dom_diff::{
+    DomDiffState, diff_dom, diff_dom_stateless, diff_dom_with_state, diff_from_empty,
+};
 pub use crate::dom_patch::{DomPatch, PatchKey};
 pub use crate::tokenizer::Tokenizer;
 pub use crate::tokenizer::tokenize;

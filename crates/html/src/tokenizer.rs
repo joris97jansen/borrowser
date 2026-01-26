@@ -811,6 +811,8 @@ fn is_partial_prefix_case_insensitive(bytes: &[u8], start: usize, needle: &[u8])
 
 /// Tokenizes into a token stream with interned tag/attribute names to reduce allocations.
 pub fn tokenize(input: &str) -> TokenStream {
+    #[cfg(feature = "parse-guards")]
+    crate::parse_guards::record_full_tokenize();
     let mut tokenizer = Tokenizer::new();
     tokenizer.feed_str(input);
     tokenizer.finish();

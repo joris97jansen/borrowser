@@ -20,6 +20,7 @@
 //! - Attribute order and duplicates are preserved; appliers must not dedupe.
 //! - Operations must not create cycles; a node may have at most one parent.
 
+use crate::types::{Id, NodeKey};
 use std::sync::Arc;
 
 /// Opaque patch-layer key for stable node identity within a document.
@@ -29,6 +30,17 @@ pub struct PatchKey(pub u32);
 impl PatchKey {
     /// Reserved sentinel for "unassigned/invalid" identity.
     pub const INVALID: PatchKey = PatchKey(0);
+
+    // Stage 1 coupling points: PatchKey aliases NodeKey/Id.
+    /// Convert a NodeKey into a PatchKey (stage-1: PatchKey == NodeKey).
+    pub fn from_node_key(key: NodeKey) -> Self {
+        PatchKey(key.0)
+    }
+
+    /// Convert an Id into a PatchKey (stage-1: PatchKey == Id).
+    pub fn from_id(id: Id) -> Self {
+        PatchKey(id.0)
+    }
 }
 
 /// Incremental DOM patch operation.
@@ -38,7 +50,7 @@ pub enum DomPatch {
     /// Clear all existing nodes for the document before applying subsequent patches.
     ///
     /// This must be the first patch in a batch when used, and resets all key allocation state.
-    /// Implementations should treat mid-stream `Clear` as a protocol violation.
+    /// Implementations MUST treat mid-stream `Clear` as a protocol violation.
     Clear,
     /// Create a document root node.
     CreateDocument {
