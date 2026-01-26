@@ -102,7 +102,7 @@ impl ChunkPlan {
         }
     }
 
-    fn for_each_chunk(&self, input: &str, mut f: impl FnMut(&[u8])) {
+    pub fn for_each_chunk(&self, input: &str, mut f: impl FnMut(&[u8])) {
         let bytes = input.as_bytes();
         match self {
             ChunkPlan::Fixed { size, policy } => {
@@ -200,15 +200,11 @@ pub fn run_chunked(input: &str, plan: &ChunkPlan) -> Node {
 
 pub fn run_chunked_with_tokens(input: &str, plan: &ChunkPlan) -> (Node, crate::TokenStream) {
     let mut tokenizer = Tokenizer::new();
-    let mut tokens = Vec::new();
-    plan.for_each_chunk(input, |chunk| {
+    plan.for_each_chunk(input, |chunk: &[u8]| {
         tokenizer.feed(chunk);
-        tokenizer.drain_into(&mut tokens);
     });
     tokenizer.finish();
-    tokenizer.drain_into(&mut tokens);
-    let (atoms, source, text_pool) = tokenizer.into_parts();
-    let stream = crate::TokenStream::new(tokens, atoms, source, text_pool);
+    let stream = tokenizer.into_stream();
     let dom = build_dom(&stream);
     (dom, stream)
 }
@@ -220,21 +216,17 @@ pub fn run_chunked_bytes_with_tokens(
     boundaries: &[usize],
 ) -> (Node, crate::TokenStream) {
     let mut tokenizer = Tokenizer::new();
-    let mut tokens = Vec::new();
     let mut last = 0usize;
     for &idx in boundaries {
         assert!(idx > last && idx <= bytes.len(), "invalid boundary {idx}");
         tokenizer.feed(&bytes[last..idx]);
-        tokenizer.drain_into(&mut tokens);
         last = idx;
     }
     if last < bytes.len() {
         tokenizer.feed(&bytes[last..]);
     }
     tokenizer.finish();
-    tokenizer.drain_into(&mut tokens);
-    let (atoms, source, text_pool) = tokenizer.into_parts();
-    let stream = crate::TokenStream::new(tokens, atoms, source, text_pool);
+    let stream = tokenizer.into_stream();
     let dom = build_dom(&stream);
     (dom, stream)
 }
