@@ -20,7 +20,7 @@ use crate::entities::decode_entities;
 #[cfg(feature = "html5-entities")]
 use crate::entities::{decode_entities_html5_in_attribute, decode_entities_html5_in_text};
 use crate::types::{AtomId, AtomTable, Token, TokenStream};
-use memchr::memchr;
+use memchr::{memchr, memrchr};
 use std::borrow::Cow;
 use std::sync::Arc;
 use tools::utf8::{finish_utf8, push_utf8_chunk};
@@ -172,6 +172,7 @@ impl<'a> TokenizerView<'a> {
     }
 }
 
+#[allow(dead_code)]
 impl Tokenizer {
     pub fn new() -> Self {
         Self {
@@ -183,6 +184,31 @@ impl Tokenizer {
             pending: PendingState::None,
             tokens: Vec::new(),
         }
+    }
+
+    pub fn atoms(&self) -> &AtomTable {
+        &self.atoms
+    }
+
+    /// Append bytes and return any newly emitted tokens.
+    ///
+    /// For streaming without per-call allocations, prefer `feed()` + `drain_into()`.
+    pub fn push(&mut self, input: &[u8]) -> Vec<Token> {
+        self.feed(input);
+        self.take_tokens()
+    }
+
+    /// Append UTF-8 text and return any newly emitted tokens.
+    ///
+    /// For streaming without per-call allocations, prefer `feed_str()` + `drain_into()`.
+    pub fn push_str(&mut self, input: &str) -> Vec<Token> {
+        self.push(input.as_bytes())
+    }
+
+    /// Finish tokenization and return any remaining tokens.
+    pub fn finish_tokens(&mut self) -> Vec<Token> {
+        self.finish();
+        self.take_tokens()
     }
 
     pub fn feed(&mut self, input: &[u8]) -> usize {
@@ -211,8 +237,8 @@ impl Tokenizer {
         }
     }
 
-    #[cfg(test)]
-    pub(crate) fn drain_into(&mut self, out: &mut Vec<Token>) {
+    /// Drain any pending tokens into the provided output buffer.
+    pub fn drain_into(&mut self, out: &mut Vec<Token>) {
         out.append(&mut self.tokens);
     }
 
@@ -232,6 +258,12 @@ impl Tokenizer {
     pub(crate) fn into_parts(self) -> (AtomTable, Arc<str>, Vec<String>) {
         let source: Arc<str> = Arc::from(self.source);
         (self.atoms, source, self.text_pool)
+    }
+
+    fn take_tokens(&mut self) -> Vec<Token> {
+        let mut out = Vec::new();
+        out.append(&mut self.tokens);
+        out
     }
 
     fn scan(&mut self, is_final: bool) -> usize {
@@ -311,10 +343,19 @@ impl Tokenizer {
                 {
                     j += 1;
                 }
+                if j == start {
+                    if !is_final {
+                        break;
+                    }
+                    self.emit_raw_text_span(self.cursor, (self.cursor + 1).min(len));
+                    self.cursor = (self.cursor + 1).min(len);
+                    continue;
+                }
                 if j == len && !is_final {
                     break;
                 }
                 let name = self.atoms.intern_ascii_lowercase(&input[start..j]);
+                // NOTE: we accept `</div foo>` and ignore extra junk until `>`.
                 while j < len && bytes[j] != b'>' {
                     j += 1;
                 }
@@ -447,11 +488,10 @@ impl Tokenizer {
                     self.pending = PendingState::None;
                     return true;
                 }
-                let scan_from = clamp_char_boundary(
-                    input,
-                    len.saturating_sub(close_tag.len() + 1).max(content_start),
-                    content_start,
-                );
+                let bytes = input.as_bytes();
+                let scan_from = memrchr(b'<', &bytes[content_start..])
+                    .map(|rel| content_start + rel)
+                    .unwrap_or(len);
                 self.pending = PendingState::Rawtext {
                     tag,
                     close_tag,
@@ -485,6 +525,12 @@ impl Tokenizer {
         }
     }
 
+    fn emit_raw_text_span(&mut self, start: usize, end: usize) {
+        if start < end {
+            self.tokens.push(Token::TextSpan { range: start..end });
+        }
+    }
+
     fn parse_start_tag(&mut self, is_final: bool) -> ParseOutcome {
         let input = self.source.as_str();
         let bytes = input.as_bytes();
@@ -498,6 +544,14 @@ impl Tokenizer {
                 || bytes[j] == b':')
         {
             j += 1;
+        }
+        if j == start {
+            if !is_final {
+                return ParseOutcome::Incomplete;
+            }
+            self.emit_raw_text_span(self.cursor, (self.cursor + 1).min(len));
+            self.cursor = (self.cursor + 1).min(len);
+            return ParseOutcome::Complete;
         }
         if j == len && !is_final {
             return ParseOutcome::Incomplete;
@@ -672,6 +726,8 @@ impl Tokenizer {
                     .max(content_start),
                 content_start,
             );
+            // Cursor jumps to the end while rawtext scanning is pending; the close-tag
+            // search resumes from `scan_from` on the next chunk.
             self.cursor = input.len();
             self.pending = PendingState::Rawtext {
                 tag: name,
@@ -830,6 +886,42 @@ mod tests {
         }
         tokenizer.finish();
         tokenizer.into_stream()
+    }
+
+    fn tokenize_with_push_str(input: &str, sizes: &[usize]) -> TokenStream {
+        let mut tokenizer = Tokenizer::new();
+        let mut tokens = Vec::new();
+        let mut offset = 0usize;
+        for size in sizes {
+            if offset >= input.len() {
+                break;
+            }
+            let end = (offset + size).min(input.len());
+            let end = clamp_char_boundary(input, end, offset);
+            if end == offset {
+                break;
+            }
+            tokens.extend(tokenizer.push_str(&input[offset..end]));
+            offset = end;
+        }
+        if offset < input.len() {
+            tokens.extend(tokenizer.push_str(&input[offset..]));
+        }
+        tokens.extend(tokenizer.finish_tokens());
+        let (atoms, source, text_pool) = tokenizer.into_parts();
+        TokenStream::new(tokens, atoms, source, text_pool)
+    }
+
+    fn tokenize_with_feed_bytes(bytes: &[u8], split: usize) -> TokenStream {
+        let mut tokenizer = Tokenizer::new();
+        let mut tokens = Vec::new();
+        tokenizer.feed(&bytes[..split]);
+        tokenizer.drain_into(&mut tokens);
+        tokenizer.feed(&bytes[split..]);
+        tokenizer.finish();
+        tokenizer.drain_into(&mut tokens);
+        let (atoms, source, text_pool) = tokenizer.into_parts();
+        TokenStream::new(tokens, atoms, source, text_pool)
     }
 
     #[test]
@@ -1247,6 +1339,15 @@ mod tests {
     }
 
     #[test]
+    fn tokenize_push_str_matches_full_for_small_chunks() {
+        let input = "<!DOCTYPE html><!--c--><div class=one>Hi &amp; \
+                     <script>let x = 1;</script><style>p{}</style>é</div>";
+        let full = tokenize(input);
+        let chunked = tokenize_with_push_str(input, &[1, 2, 3, 7, 64]);
+        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+    }
+
+    #[test]
     fn tokenize_incremental_matches_full_for_utf8_splits() {
         let input = "<p>café 😊 &amp; naïve</p>";
         let full = tokenize(input);
@@ -1264,11 +1365,29 @@ mod tests {
     }
 
     #[test]
+    fn tokenize_push_str_handles_split_script_end_tag() {
+        let input = "<script>hi</script>";
+        let split = "<script>hi</scr".len();
+        let full = tokenize(input);
+        let chunked = tokenize_with_push_str(input, &[split]);
+        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+    }
+
+    #[test]
     fn tokenize_incremental_handles_split_end_tag_prefix() {
         let input = "<div></div>";
         let split = "<div></".len();
         let full = tokenize(input);
         let chunked = tokenize_in_chunks(input, &[split]);
+        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+    }
+
+    #[test]
+    fn tokenize_push_str_handles_split_tag_name() {
+        let input = "<div>ok</div>";
+        let split = "<d".len();
+        let full = tokenize(input);
+        let chunked = tokenize_with_push_str(input, &[split]);
         assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
     }
 
@@ -1282,12 +1401,119 @@ mod tests {
     }
 
     #[test]
+    fn tokenize_push_str_handles_split_comment_terminator() {
+        let input = "<!--x-->";
+        let split = "<!--x--".len();
+        let full = tokenize(input);
+        let chunked = tokenize_with_push_str(input, &[split]);
+        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+    }
+
+    #[test]
+    fn tokenize_push_str_handles_split_comment_terminator_dash() {
+        let input = "<!--x-->";
+        let split = "<!--x-".len();
+        let full = tokenize(input);
+        let chunked = tokenize_with_push_str(input, &[split]);
+        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+    }
+
+    #[test]
+    fn tokenize_push_str_handles_split_comment_terminator_arrow() {
+        let input = "<!--x-->";
+        let split = "<!--x".len();
+        let full = tokenize(input);
+        let chunked = tokenize_with_push_str(input, &[split]);
+        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+    }
+
+    #[test]
     fn tokenize_incremental_handles_split_doctype_end() {
         let input = "<!DOCTYPE html>";
         let split = "<!DOCTYPE html".len();
         let full = tokenize(input);
         let chunked = tokenize_in_chunks(input, &[split]);
         assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+    }
+
+    #[test]
+    fn tokenize_push_str_handles_split_doctype_end() {
+        let input = "<!DOCTYPE html>";
+        let split = "<!DOCTYPE html".len();
+        let full = tokenize(input);
+        let chunked = tokenize_with_push_str(input, &[split]);
+        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+    }
+
+    #[test]
+    fn tokenize_push_str_handles_split_attribute_name() {
+        let input = "<p data-value=ok>hi</p>";
+        let split = "<p da".len();
+        let full = tokenize(input);
+        let chunked = tokenize_with_push_str(input, &[split]);
+        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+    }
+
+    #[test]
+    fn tokenize_push_str_handles_split_attribute_value() {
+        let input = "<p data=\"value\">ok</p>";
+        let split = "<p data=\"va".len();
+        let full = tokenize(input);
+        let chunked = tokenize_with_push_str(input, &[split]);
+        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+    }
+
+    #[test]
+    fn tokenize_push_str_handles_split_rawtext_close_tag() {
+        let input = "<style>body{}</style>";
+        let split = "<style>body{}</sty".len();
+        let full = tokenize(input);
+        let chunked = tokenize_with_push_str(input, &[split]);
+        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+    }
+
+    #[test]
+    fn tokenize_push_str_handles_split_rawtext_close_tag_with_whitespace() {
+        let input = "<style>body{}</style \t>";
+        let split = "<style>body{}</style \t".len();
+        let full = tokenize(input);
+        let chunked = tokenize_with_push_str(input, &[split]);
+        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+    }
+
+    #[test]
+    fn tokenize_push_str_fuzz_boundaries_matches_full() {
+        let input = "<!DOCTYPE html><!--c--><div class=one data-x=\"y\">Hi &amp; é \
+                     <script>let x = 1;</script><style>p{}</style></div>";
+        let full = tokenize(input);
+        let expected = token_snapshot(&full);
+
+        for split in 0..=input.len() {
+            let chunked = tokenize_with_push_str(input, &[split]);
+            assert_eq!(
+                expected,
+                token_snapshot(&chunked),
+                "boundary split at {split} should match full tokenization"
+            );
+        }
+    }
+
+    #[test]
+    fn tokenize_feed_bytes_fuzz_boundaries_matches_full() {
+        let input = "<!DOCTYPE html><!--c--><div class=one data-x=\"y\">Hi &amp; é \
+                     <script>let x = 1;</script><style>p{}</style></div>";
+        let full = tokenize(input);
+        let expected = token_snapshot(&full);
+        let bytes = input.as_bytes();
+
+        for split in 0..=bytes.len() {
+            let chunked = tokenize_with_feed_bytes(bytes, split);
+            assert_eq!(
+                expected,
+                token_snapshot(&chunked),
+                "byte boundary split at {split} should match full tokenization"
+            );
+        }
     }
 
     #[test]
