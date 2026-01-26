@@ -70,8 +70,12 @@ fn contains_ignore_ascii_case(haystack: &str, needle: &[u8]) -> bool {
 }
 
 pub use crate::dom_builder::build_dom;
+pub use crate::dom_builder::{
+    TokenTextResolver, TreeBuilder, TreeBuilderConfig, TreeBuilderError, TreeBuilderResult,
+};
 pub use crate::dom_diff::{DomDiffState, diff_dom, diff_dom_with_state, diff_from_empty};
 pub use crate::dom_patch::{DomPatch, PatchKey};
+pub use crate::tokenizer::Tokenizer;
 pub use crate::tokenizer::tokenize;
 pub use crate::types::{AtomId, AtomTable, Node, Token, TokenStream};
 

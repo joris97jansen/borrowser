@@ -1,5 +1,4 @@
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
+use std::collections::HashMap;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
@@ -7,63 +6,69 @@ use std::time::{Duration, Instant};
 
 use bus::{CoreCommand, CoreEvent};
 use core_types::{DomHandle, DomVersion, RequestId, TabId};
-use html::{DomPatch, Node, PatchKey, build_dom, tokenize};
-// Temporary: runtime_parse needs stable IDs for baseline patching; keep behind internal-api.
+use html::{DomPatch, Token, Tokenizer, TreeBuilder, TreeBuilderConfig};
+
+#[cfg(test)]
 use html::internal::Id;
-use tools::utf8::{finish_utf8, push_utf8_chunk};
+#[cfg(test)]
+use html::{Node, PatchKey};
+#[cfg(test)]
+use std::collections::HashSet;
+#[cfg(test)]
+use std::sync::Arc;
 
 const TICK: Duration = Duration::from_millis(180);
 const DEBUG_LARGE_BUFFER_BYTES: usize = 1_048_576;
 static HANDLE_GEN: AtomicU64 = AtomicU64::new(0);
 
 struct HtmlState {
-    raw: Vec<u8>,
-    carry: Vec<u8>,
-    text: String,
+    total_bytes: usize,
     last_emit: Instant,
     logged_large_buffer: bool,
-    prev_dom: Option<Box<Node>>,
+    failed: bool,
+    tokenizer: Tokenizer,
+    builder: TreeBuilder,
+    token_buffer: Vec<Token>,
+    patch_buffer: Vec<DomPatch>,
     dom_handle: DomHandle,
     version: DomVersion,
-    patch_state: PatchState,
 }
 type Key = (TabId, RequestId);
 
 impl HtmlState {
-    fn emit_dom_patches(
+    fn drain_tokens_into_builder(&mut self) {
+        if self.token_buffer.is_empty() {
+            return;
+        }
+        let atoms = self.tokenizer.atoms();
+        let drained = std::mem::take(&mut self.token_buffer);
+        for token in drained {
+            if let Err(err) = self.builder.push_token(&token, atoms, &self.tokenizer) {
+                eprintln!("runtime_parse: tree builder error: {err}");
+                self.failed = true;
+                self.patch_buffer.clear();
+                break;
+            }
+        }
+        if self.failed {
+            let _ = self.builder.take_patches();
+            return;
+        }
+        self.patch_buffer.extend(self.builder.take_patches());
+    }
+
+    fn flush_patch_buffer(
         &mut self,
         evt_tx: &Sender<CoreEvent>,
         tab_id: TabId,
         request_id: RequestId,
-        dom: Node,
     ) {
-        let patches_opt = match self.prev_dom.as_deref() {
-            Some(prev) => diff_dom(prev, &dom, &mut self.patch_state),
-            None => {
-                let mut patches = Vec::new();
-                let mut need_reset = false;
-                emit_create_subtree(
-                    &dom,
-                    None,
-                    &mut self.patch_state,
-                    &mut patches,
-                    &mut need_reset,
-                );
-                if need_reset {
-                    patches.clear();
-                    self.patch_state.id_to_key.clear();
-                    eprintln!(
-                        "runtime_parse: failed to emit initial patch stream; dropping update"
-                    );
-                    None
-                } else {
-                    Some(patches)
-                }
-            }
-        };
-        let Some(patches) = patches_opt else {
+        if self.patch_buffer.is_empty() {
             return;
-        };
+        }
+        let mut patches = Vec::new();
+        std::mem::swap(&mut patches, &mut self.patch_buffer);
+        self.patch_buffer = Vec::with_capacity(patches.capacity());
 
         #[cfg(feature = "patch-stats")]
         log_patch_stats(tab_id, request_id, &patches);
@@ -79,8 +84,6 @@ impl HtmlState {
             to,
             patches,
         });
-
-        self.prev_dom = Some(Box::new(dom));
     }
 }
 
@@ -112,14 +115,8 @@ fn log_patch_stats(tab_id: TabId, request_id: RequestId, patches: &[DomPatch]) {
 
 /// Parses HTML incrementally for streaming previews.
 ///
-/// Note: periodic preview parsing currently reprocesses the full accumulated buffer on each tick
-/// (O(n^2) total work). See TODO(runtime_parse/perf).
-///
-/// Stage 1 patching contract (baseline diffing):
-/// - Child lists are append-only; reorder/moves trigger a reset.
-/// - Tag name changes, comment changes, and mid-list insertions trigger a reset.
-/// - Attributes and text updates are supported via `SetAttributes` / `SetText`.
-/// - IDs are assumed stable enough across full reparses to match nodes.
+/// Patch emission is buffered and flushed on ticks; the tokenizer and tree builder
+/// retain state between chunks so work is proportional to new input.
 pub fn start_parse_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent>) {
     thread::spawn(move || {
         let mut htmls: HashMap<Key, HtmlState> = HashMap::new();
@@ -136,15 +133,19 @@ pub fn start_parse_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEve
                     htmls.insert(
                         (tab_id, request_id),
                         HtmlState {
-                            raw: Vec::new(),
-                            carry: Vec::new(),
-                            text: String::new(),
+                            total_bytes: 0,
                             last_emit: Instant::now(),
                             logged_large_buffer: false,
-                            prev_dom: None,
+                            failed: false,
+                            tokenizer: Tokenizer::new(),
+                            builder: TreeBuilder::with_capacity_and_config(
+                                0,
+                                TreeBuilderConfig::default(),
+                            ),
+                            token_buffer: Vec::new(),
+                            patch_buffer: Vec::new(),
                             dom_handle,
                             version: DomVersion::INITIAL,
-                            patch_state: PatchState::new(),
                         },
                     );
                 }
@@ -154,44 +155,45 @@ pub fn start_parse_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEve
                     bytes,
                 } => {
                     if let Some(st) = htmls.get_mut(&(tab_id, request_id)) {
-                        st.raw.extend_from_slice(&bytes);
-                        push_utf8_chunk(&mut st.text, &mut st.carry, &bytes);
+                        if st.failed {
+                            continue;
+                        }
+                        st.total_bytes = st.total_bytes.saturating_add(bytes.len());
+                        st.tokenizer.feed(&bytes);
+                        st.tokenizer.drain_into(&mut st.token_buffer);
+                        st.drain_tokens_into_builder();
+
                         if st.last_emit.elapsed() >= TICK {
                             st.last_emit = Instant::now();
                             #[cfg(debug_assertions)]
                             {
                                 if !st.logged_large_buffer
-                                    && st.text.len() >= DEBUG_LARGE_BUFFER_BYTES
+                                    && st.total_bytes >= DEBUG_LARGE_BUFFER_BYTES
                                 {
                                     eprintln!(
-                                        "runtime_parse: large buffer ({} bytes), periodic full reparse is O(n^2)",
-                                        st.text.len()
+                                        "runtime_parse: large buffer ({} bytes), incremental parse active",
+                                        st.total_bytes
                                     );
                                     st.logged_large_buffer = true;
                                 }
                             }
-                            // NOTE: This re-tokenizes and rebuilds the DOM from scratch on every
-                            // TICK using the full accumulated buffer (`st.text`). That means total
-                            // work grows quadratically with input size (O(n^2)). This is currently
-                            // acceptable for MVP streaming previews, but it is a known hot-path
-                            // performance limitation that must be addressed before production scale.
-                            //
-                            // Future directions (explicitly tracked):
-                            // - Stateful incremental tokenizer that consumes only new bytes.
-                            // - Incremental tree builder / parser state machine to avoid full rebuilds.
-                            // - Product decision: parse only on Done (no periodic preview).
-                            let stream = tokenize(&st.text);
-                            let dom = build_dom(&stream);
-                            st.emit_dom_patches(&evt_tx, tab_id, request_id, dom);
+                            st.flush_patch_buffer(&evt_tx, tab_id, request_id);
                         }
                     }
                 }
                 CoreCommand::ParseHtmlDone { tab_id, request_id } => {
                     if let Some(mut st) = htmls.remove(&(tab_id, request_id)) {
-                        finish_utf8(&mut st.text, &mut st.carry);
-                        let stream = tokenize(&st.text);
-                        let dom = build_dom(&stream);
-                        st.emit_dom_patches(&evt_tx, tab_id, request_id, dom);
+                        if st.failed {
+                            continue;
+                        }
+                        st.tokenizer.finish();
+                        st.tokenizer.drain_into(&mut st.token_buffer);
+                        st.drain_tokens_into_builder();
+                        if let Err(err) = st.builder.finish() {
+                            eprintln!("runtime_parse: tree builder finish error: {err}");
+                        }
+                        st.patch_buffer.extend(st.builder.take_patches());
+                        st.flush_patch_buffer(&evt_tx, tab_id, request_id);
                     }
                 }
                 _ => {}
@@ -200,12 +202,14 @@ pub fn start_parse_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEve
     });
 }
 
+#[cfg(test)]
 #[derive(Debug)]
 struct PatchState {
     id_to_key: HashMap<Id, PatchKey>,
     next_key: u32,
 }
 
+#[cfg(test)]
 impl PatchState {
     fn new() -> Self {
         Self {
@@ -229,6 +233,7 @@ impl PatchState {
     }
 }
 
+#[cfg(test)]
 #[derive(Clone, Debug)]
 enum PrevNodeInfo {
     Document {
@@ -248,6 +253,7 @@ enum PrevNodeInfo {
     },
 }
 
+#[cfg(test)]
 fn diff_dom(prev: &Node, next: &Node, patch_state: &mut PatchState) -> Option<Vec<DomPatch>> {
     let mut prev_map = HashMap::new();
     build_prev_map(prev, &mut prev_map);
@@ -303,6 +309,7 @@ fn diff_dom(prev: &Node, next: &Node, patch_state: &mut PatchState) -> Option<Ve
     Some(patches)
 }
 
+#[cfg(test)]
 fn build_prev_map(node: &Node, map: &mut HashMap<Id, PrevNodeInfo>) {
     match node {
         Node::Document {
@@ -349,6 +356,7 @@ fn build_prev_map(node: &Node, map: &mut HashMap<Id, PrevNodeInfo>) {
     }
 }
 
+#[cfg(test)]
 fn collect_ids(node: &Node, out: &mut HashSet<Id>) {
     out.insert(node.id());
     match node {
@@ -361,6 +369,7 @@ fn collect_ids(node: &Node, out: &mut HashSet<Id>) {
     }
 }
 
+#[cfg(test)]
 fn emit_removals(
     node: &Node,
     next_ids: &HashSet<Id>,
@@ -399,6 +408,7 @@ fn emit_removals(
     }
 }
 
+#[cfg(test)]
 fn emit_updates(
     node: &Node,
     parent_key: Option<PatchKey>,
@@ -540,6 +550,7 @@ fn emit_updates(
     }
 }
 
+#[cfg(test)]
 fn emit_create_node(node: &Node, key: PatchKey, patches: &mut Vec<DomPatch>) {
     match node {
         Node::Document { doctype, .. } => {
@@ -572,6 +583,7 @@ fn emit_create_node(node: &Node, key: PatchKey, patches: &mut Vec<DomPatch>) {
     }
 }
 
+#[cfg(test)]
 fn emit_create_subtree(
     node: &Node,
     parent_key: Option<PatchKey>,
@@ -603,6 +615,7 @@ fn emit_create_subtree(
     }
 }
 
+#[cfg(test)]
 fn root_is_compatible(prev: &Node, next: &Node) -> bool {
     match (prev, next) {
         (Node::Document { .. }, Node::Document { .. }) => true,
@@ -616,26 +629,23 @@ fn root_is_compatible(prev: &Node, next: &Node) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{PatchState, diff_dom, emit_create_subtree};
-    use html::{Node, build_dom, tokenize};
-    use tools::utf8::{finish_utf8, push_utf8_chunk};
+    use html::{Node, Tokenizer, build_dom, tokenize};
 
-    // NOTE: The primary UTF-8 carry contract is validated in html::test_harness
-    // via runtime-assembly vs byte-stream tokenizer parity. This is a small
-    // smoke test to ensure runtime_parse keeps using the same helpers.
-    fn assemble_utf8(bytes: &[u8], boundaries: &[usize]) -> String {
-        let mut text = String::new();
-        let mut carry = Vec::new();
+    fn tokenize_bytes_in_chunks(bytes: &[u8], boundaries: &[usize]) -> String {
+        let mut tokenizer = Tokenizer::new();
         let mut last = 0usize;
         for &idx in boundaries {
             assert!(idx > last && idx <= bytes.len(), "invalid boundary {idx}");
-            push_utf8_chunk(&mut text, &mut carry, &bytes[last..idx]);
+            tokenizer.feed(&bytes[last..idx]);
             last = idx;
         }
         if last < bytes.len() {
-            push_utf8_chunk(&mut text, &mut carry, &bytes[last..]);
+            tokenizer.feed(&bytes[last..]);
         }
-        finish_utf8(&mut text, &mut carry);
-        text
+        tokenizer.finish();
+        let stream = tokenizer.into_stream();
+        let text = stream.iter().find_map(|t| stream.text(t)).unwrap_or("");
+        text.to_string()
     }
 
     #[test]
@@ -643,7 +653,7 @@ mod tests {
         let input = "café 😀";
         let bytes = input.as_bytes();
         let boundaries = vec![1, bytes.len() - 1];
-        let rebuilt = assemble_utf8(bytes, &boundaries);
+        let rebuilt = tokenize_bytes_in_chunks(bytes, &boundaries);
         assert_eq!(
             rebuilt, input,
             "expected UTF-8 roundtrip for boundaries={boundaries:?}"

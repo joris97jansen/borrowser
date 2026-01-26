@@ -16,6 +16,7 @@
 //!   append-only; dropping prefixes will require a different storage model.
 //!
 //! TODO(html/tokenizer/html5): replace with a full HTML5 tokenizer + tree builder state machine.
+use crate::dom_builder::TokenTextResolver;
 use crate::entities::decode_entities;
 #[cfg(feature = "html5-entities")]
 use crate::entities::{decode_entities_html5_in_attribute, decode_entities_html5_in_text};
@@ -128,7 +129,7 @@ enum PendingState {
 
 /// Stateful tokenizer for incremental byte feeds.
 #[derive(Debug)]
-pub(crate) struct Tokenizer {
+pub struct Tokenizer {
     atoms: AtomTable,
     text_pool: Vec<String>,
     // NOTE: `source` is currently monolithic; spans are byte ranges into it.
@@ -172,7 +173,6 @@ impl<'a> TokenizerView<'a> {
     }
 }
 
-#[allow(dead_code)]
 impl Tokenizer {
     pub fn new() -> Self {
         Self {
@@ -202,7 +202,8 @@ impl Tokenizer {
     ///
     /// For streaming without per-call allocations, prefer `feed_str()` + `drain_into()`.
     pub fn push_str(&mut self, input: &str) -> Vec<Token> {
-        self.push(input.as_bytes())
+        self.feed_str_valid(input);
+        self.take_tokens()
     }
 
     /// Finish tokenization and return any remaining tokens.
@@ -220,7 +221,16 @@ impl Tokenizer {
     }
 
     pub fn feed_str(&mut self, input: &str) -> usize {
-        self.feed(input.as_bytes())
+        self.feed_str_valid(input)
+    }
+
+    /// Append validated UTF-8 text and scan without re-validating.
+    pub fn feed_str_valid(&mut self, input: &str) -> usize {
+        if input.is_empty() {
+            return 0;
+        }
+        self.source.push_str(input);
+        self.scan(false)
     }
 
     pub fn finish(&mut self) -> usize {
@@ -252,6 +262,21 @@ impl Tokenizer {
     pub fn into_stream(self) -> TokenStream {
         let source: Arc<str> = Arc::from(self.source);
         TokenStream::new(self.tokens, self.atoms, source, self.text_pool)
+    }
+
+    pub fn text(&self, token: &Token) -> Option<&str> {
+        match token {
+            Token::TextSpan { range } => {
+                debug_assert!(
+                    self.source.is_char_boundary(range.start)
+                        && self.source.is_char_boundary(range.end),
+                    "text span must be on UTF-8 boundaries"
+                );
+                Some(&self.source[range.clone()])
+            }
+            Token::TextOwned { index } => self.text_pool.get(*index).map(|s| s.as_str()),
+            _ => None,
+        }
     }
 
     #[cfg(test)]
@@ -740,6 +765,18 @@ impl Tokenizer {
 
         self.cursor = content_start;
         ParseOutcome::Complete
+    }
+}
+
+impl Default for Tokenizer {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl TokenTextResolver for Tokenizer {
+    fn text(&self, token: &Token) -> Option<&str> {
+        Tokenizer::text(self, token)
     }
 }
 
