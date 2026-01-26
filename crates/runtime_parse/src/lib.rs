@@ -3,20 +3,17 @@ use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, Sender};
 use std::thread;
 use std::time::{Duration, Instant};
-use std::cell::RefCell;
-use std::rc::Rc;
 
 use bus::{CoreCommand, CoreEvent};
 use core_types::{DomHandle, DomVersion, RequestId, TabId};
-use html::{DomPatch, PatchEmitter, PatchEmitterHandle, Token, Tokenizer, TreeBuilder, TreeBuilderConfig};
-use tools::utf8::{finish_utf8, push_utf8_chunk};
+use html::{DomPatch, Token, Tokenizer, TreeBuilder, TreeBuilderConfig};
 
-#[cfg(test)]
-use std::collections::HashSet;
 #[cfg(test)]
 use html::internal::Id;
 #[cfg(test)]
 use html::{Node, PatchKey};
+#[cfg(test)]
+use std::collections::HashSet;
 #[cfg(test)]
 use std::sync::Arc;
 
@@ -24,39 +21,15 @@ const TICK: Duration = Duration::from_millis(180);
 const DEBUG_LARGE_BUFFER_BYTES: usize = 1_048_576;
 static HANDLE_GEN: AtomicU64 = AtomicU64::new(0);
 
-#[derive(Default)]
-struct PatchBuffer {
-    patches: Vec<DomPatch>,
-}
-
-impl PatchEmitter for PatchBuffer {
-    fn emit(&mut self, patch: DomPatch) {
-        self.patches.push(patch);
-    }
-}
-
-impl PatchBuffer {
-    fn is_empty(&self) -> bool {
-        self.patches.is_empty()
-    }
-
-    fn take(&mut self) -> Vec<DomPatch> {
-        std::mem::take(&mut self.patches)
-    }
-}
-
 struct HtmlState {
-    carry: Vec<u8>,
-    text: String,
-    text_len: usize,
+    total_bytes: usize,
     last_emit: Instant,
     logged_large_buffer: bool,
-    pending_bytes: usize,
-    pending_tokens: usize,
+    failed: bool,
     tokenizer: Tokenizer,
     builder: TreeBuilder,
-    patch_buffer: Rc<RefCell<PatchBuffer>>,
     token_buffer: Vec<Token>,
+    patch_buffer: Vec<DomPatch>,
     dom_handle: DomHandle,
     version: DomVersion,
 }
@@ -68,12 +41,20 @@ impl HtmlState {
             return;
         }
         let atoms = self.tokenizer.atoms();
-        for token in self.token_buffer.drain(..) {
+        let drained = std::mem::take(&mut self.token_buffer);
+        for token in drained {
             if let Err(err) = self.builder.push_token(&token, atoms, &self.tokenizer) {
                 eprintln!("runtime_parse: tree builder error: {err}");
+                self.failed = true;
+                self.patch_buffer.clear();
                 break;
             }
         }
+        if self.failed {
+            let _ = self.builder.take_patches();
+            return;
+        }
+        self.patch_buffer.extend(self.builder.take_patches());
     }
 
     fn flush_patch_buffer(
@@ -82,12 +63,12 @@ impl HtmlState {
         tab_id: TabId,
         request_id: RequestId,
     ) {
-        let mut buffer = self.patch_buffer.borrow_mut();
-        if buffer.is_empty() {
+        if self.patch_buffer.is_empty() {
             return;
         }
-        let patches = buffer.take();
-        drop(buffer);
+        let mut patches = Vec::new();
+        std::mem::swap(&mut patches, &mut self.patch_buffer);
+        self.patch_buffer = Vec::with_capacity(patches.capacity());
 
         #[cfg(feature = "patch-stats")]
         log_patch_stats(tab_id, request_id, &patches);
@@ -103,9 +84,6 @@ impl HtmlState {
             to,
             patches,
         });
-
-        self.pending_bytes = 0;
-        self.pending_tokens = 0;
     }
 }
 
@@ -152,26 +130,20 @@ pub fn start_parse_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEve
                         .expect("dom handle overflow");
                     let next = prev + 1;
                     let dom_handle = DomHandle(next);
-                    let patch_buffer = Rc::new(RefCell::new(PatchBuffer::default()));
-                    let patch_emitter: PatchEmitterHandle = Rc::clone(&patch_buffer);
                     htmls.insert(
                         (tab_id, request_id),
                         HtmlState {
-                            carry: Vec::new(),
-                            text: String::new(),
-                            text_len: 0,
+                            total_bytes: 0,
                             last_emit: Instant::now(),
                             logged_large_buffer: false,
-                            pending_bytes: 0,
-                            pending_tokens: 0,
+                            failed: false,
                             tokenizer: Tokenizer::new(),
-                            builder: TreeBuilder::with_capacity_and_emitter(
+                            builder: TreeBuilder::with_capacity_and_config(
                                 0,
                                 TreeBuilderConfig::default(),
-                                Some(patch_emitter),
                             ),
-                            patch_buffer,
                             token_buffer: Vec::new(),
+                            patch_buffer: Vec::new(),
                             dom_handle,
                             version: DomVersion::INITIAL,
                         },
@@ -183,29 +155,24 @@ pub fn start_parse_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEve
                     bytes,
                 } => {
                     if let Some(st) = htmls.get_mut(&(tab_id, request_id)) {
-                        st.pending_bytes = st.pending_bytes.saturating_add(bytes.len());
-                        let prev_len = st.text.len();
-                        push_utf8_chunk(&mut st.text, &mut st.carry, &bytes);
-                        let new_len = st.text.len();
-                        if new_len > prev_len {
-                            let new_text = &st.text[prev_len..new_len];
-                            st.pending_tokens =
-                                st.pending_tokens.saturating_add(st.tokenizer.feed_str(new_text));
-                            st.tokenizer.drain_into(&mut st.token_buffer);
-                            st.drain_tokens_into_builder();
+                        if st.failed {
+                            continue;
                         }
-                        st.text_len = new_len;
+                        st.total_bytes = st.total_bytes.saturating_add(bytes.len());
+                        st.tokenizer.feed(&bytes);
+                        st.tokenizer.drain_into(&mut st.token_buffer);
+                        st.drain_tokens_into_builder();
 
                         if st.last_emit.elapsed() >= TICK {
                             st.last_emit = Instant::now();
                             #[cfg(debug_assertions)]
                             {
                                 if !st.logged_large_buffer
-                                    && st.text.len() >= DEBUG_LARGE_BUFFER_BYTES
+                                    && st.total_bytes >= DEBUG_LARGE_BUFFER_BYTES
                                 {
                                     eprintln!(
                                         "runtime_parse: large buffer ({} bytes), incremental parse active",
-                                        st.text.len()
+                                        st.total_bytes
                                     );
                                     st.logged_large_buffer = true;
                                 }
@@ -216,21 +183,16 @@ pub fn start_parse_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEve
                 }
                 CoreCommand::ParseHtmlDone { tab_id, request_id } => {
                     if let Some(mut st) = htmls.remove(&(tab_id, request_id)) {
-                        let prev_len = st.text.len();
-                        finish_utf8(&mut st.text, &mut st.carry);
-                        let new_len = st.text.len();
-                        if new_len > prev_len {
-                            let new_text = &st.text[prev_len..new_len];
-                            st.pending_tokens =
-                                st.pending_tokens.saturating_add(st.tokenizer.feed_str(new_text));
+                        if st.failed {
+                            continue;
                         }
-                        st.pending_tokens =
-                            st.pending_tokens.saturating_add(st.tokenizer.finish());
+                        st.tokenizer.finish();
                         st.tokenizer.drain_into(&mut st.token_buffer);
                         st.drain_tokens_into_builder();
                         if let Err(err) = st.builder.finish() {
                             eprintln!("runtime_parse: tree builder finish error: {err}");
                         }
+                        st.patch_buffer.extend(st.builder.take_patches());
                         st.flush_patch_buffer(&evt_tx, tab_id, request_id);
                     }
                 }
@@ -667,26 +629,23 @@ fn root_is_compatible(prev: &Node, next: &Node) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{PatchState, diff_dom, emit_create_subtree};
-    use html::{Node, build_dom, tokenize};
-    use tools::utf8::{finish_utf8, push_utf8_chunk};
+    use html::{Node, Tokenizer, build_dom, tokenize};
 
-    // NOTE: The primary UTF-8 carry contract is validated in html::test_harness
-    // via runtime-assembly vs byte-stream tokenizer parity. This is a small
-    // smoke test to ensure runtime_parse keeps using the same helpers.
-    fn assemble_utf8(bytes: &[u8], boundaries: &[usize]) -> String {
-        let mut text = String::new();
-        let mut carry = Vec::new();
+    fn tokenize_bytes_in_chunks(bytes: &[u8], boundaries: &[usize]) -> String {
+        let mut tokenizer = Tokenizer::new();
         let mut last = 0usize;
         for &idx in boundaries {
             assert!(idx > last && idx <= bytes.len(), "invalid boundary {idx}");
-            push_utf8_chunk(&mut text, &mut carry, &bytes[last..idx]);
+            tokenizer.feed(&bytes[last..idx]);
             last = idx;
         }
         if last < bytes.len() {
-            push_utf8_chunk(&mut text, &mut carry, &bytes[last..]);
+            tokenizer.feed(&bytes[last..]);
         }
-        finish_utf8(&mut text, &mut carry);
-        text
+        tokenizer.finish();
+        let stream = tokenizer.into_stream();
+        let text = stream.iter().find_map(|t| stream.text(t)).unwrap_or("");
+        text.to_string()
     }
 
     #[test]
@@ -694,7 +653,7 @@ mod tests {
         let input = "café 😀";
         let bytes = input.as_bytes();
         let boundaries = vec![1, bytes.len() - 1];
-        let rebuilt = assemble_utf8(bytes, &boundaries);
+        let rebuilt = tokenize_bytes_in_chunks(bytes, &boundaries);
         assert_eq!(
             rebuilt, input,
             "expected UTF-8 roundtrip for boundaries={boundaries:?}"

@@ -16,10 +16,10 @@
 //!   append-only; dropping prefixes will require a different storage model.
 //!
 //! TODO(html/tokenizer/html5): replace with a full HTML5 tokenizer + tree builder state machine.
+use crate::dom_builder::TokenTextResolver;
 use crate::entities::decode_entities;
 #[cfg(feature = "html5-entities")]
 use crate::entities::{decode_entities_html5_in_attribute, decode_entities_html5_in_text};
-use crate::dom_builder::TokenTextResolver;
 use crate::types::{AtomId, AtomTable, Token, TokenStream};
 use memchr::{memchr, memrchr};
 use std::borrow::Cow;
@@ -173,7 +173,6 @@ impl<'a> TokenizerView<'a> {
     }
 }
 
-#[allow(dead_code)]
 impl Tokenizer {
     pub fn new() -> Self {
         Self {
@@ -203,7 +202,8 @@ impl Tokenizer {
     ///
     /// For streaming without per-call allocations, prefer `feed_str()` + `drain_into()`.
     pub fn push_str(&mut self, input: &str) -> Vec<Token> {
-        self.push(input.as_bytes())
+        self.feed_str_valid(input);
+        self.take_tokens()
     }
 
     /// Finish tokenization and return any remaining tokens.
@@ -221,7 +221,16 @@ impl Tokenizer {
     }
 
     pub fn feed_str(&mut self, input: &str) -> usize {
-        self.feed(input.as_bytes())
+        self.feed_str_valid(input)
+    }
+
+    /// Append validated UTF-8 text and scan without re-validating.
+    pub fn feed_str_valid(&mut self, input: &str) -> usize {
+        if input.is_empty() {
+            return 0;
+        }
+        self.source.push_str(input);
+        self.scan(false)
     }
 
     pub fn finish(&mut self) -> usize {
@@ -756,6 +765,12 @@ impl Tokenizer {
 
         self.cursor = content_start;
         ParseOutcome::Complete
+    }
+}
+
+impl Default for Tokenizer {
+    fn default() -> Self {
+        Self::new()
     }
 }
 
