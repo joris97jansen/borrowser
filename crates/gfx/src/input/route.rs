@@ -905,7 +905,7 @@ mod tests {
         InputId, InputValueStore, SelectionRange, caret_from_x_with_boundaries,
         rebuild_cursor_boundaries,
     };
-    use layout::inline::{InlineActionKind, InlineFragment};
+    use layout::inline::{InlineAction, InlineActionKind, InlineFragment};
     use layout::{
         LayoutBox, Rectangle, TextMeasurer, content_height, content_x_and_width, content_y,
         layout_block_tree,
@@ -1116,8 +1116,12 @@ mod tests {
                             InlineFragment::Box { action, .. } => action,
                             InlineFragment::Replaced { action, .. } => action,
                         };
-                        if let Some((id, InlineActionKind::Link, _)) = action
-                            && *id == link_id
+                        if let Some(InlineAction {
+                            target,
+                            kind: InlineActionKind::Link,
+                            ..
+                        }) = action.as_ref()
+                            && *target == link_id
                         {
                             return Some(frag.rect);
                         }

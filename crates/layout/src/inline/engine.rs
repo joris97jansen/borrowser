@@ -9,7 +9,7 @@ use super::metrics::{
 };
 use super::options::InlineLayoutOptions;
 use super::tokens::{InlineToken, collect_inline_tokens_for_block_layout_for_paint};
-use super::types::{InlineActionKind, InlineFragment, LineBox, LineFragment};
+use super::types::{InlineFragment, LineBox, LineFragment};
 
 // Inline layout pipeline facade used by painting and hit-testing.
 pub fn layout_inline_for_paint<'a>(
@@ -222,9 +222,7 @@ pub(super) fn layout_tokens_with_options<'a>(
                 let ascent = metrics.ascent;
                 let descent = metrics.descent;
 
-                let action = ctx
-                    .link_target
-                    .map(|id| (id, InlineActionKind::Link, ctx.link_href.clone()));
+                let action = ctx.to_action();
 
                 line_fragments.push(LineFragment {
                     kind: InlineFragment::Text {
@@ -267,9 +265,7 @@ pub(super) fn layout_tokens_with_options<'a>(
                 let ascent = metrics.ascent;
                 let descent = metrics.descent;
 
-                let action = ctx
-                    .link_target
-                    .map(|id| (id, InlineActionKind::Link, ctx.link_href.clone()));
+                let action = ctx.to_action();
 
                 let mut remaining_text = text;
                 let mut remaining_source_start = source_range.map(|(s, _e)| s);
@@ -534,9 +530,7 @@ pub(super) fn layout_tokens_with_options<'a>(
                     height: metrics.height(),
                 };
 
-                let action = ctx
-                    .link_target
-                    .map(|id| (id, InlineActionKind::Link, ctx.link_href.clone()));
+                let action = ctx.to_action();
 
                 line_fragments.push(LineFragment {
                     kind: InlineFragment::Box {
@@ -605,9 +599,7 @@ pub(super) fn layout_tokens_with_options<'a>(
                     height: metrics.height(),
                 };
 
-                let action = ctx
-                    .link_target
-                    .map(|id| (id, InlineActionKind::Link, ctx.link_href.clone()));
+                let action = ctx.to_action();
 
                 line_fragments.push(LineFragment {
                     kind: InlineFragment::Replaced {
