@@ -38,6 +38,9 @@ fn starts_with_ignore_ascii_case_at(haystack: &[u8], start: usize, needle: &[u8]
 // < cannot appear in UTF-8 continuation bytes
 const SCRIPT_CLOSE_TAG: &[u8] = b"</script";
 const STYLE_CLOSE_TAG: &[u8] = b"</style";
+// How far back we rescan around chunk boundaries for rawtext close tags.
+// Covers `</tag` plus a small ASCII-whitespace run before `>`.
+const RAWTEXT_TAIL_SLACK: usize = 32;
 
 fn find_rawtext_close_tag_internal(
     haystack: &str,
@@ -602,7 +605,7 @@ impl Tokenizer {
                 // previous/new buffer boundary. This bounds overlap to at most (close_tag.len() + 1)
                 // bytes from the prior buffer so we stay linear even with tiny chunks.
                 let tail_start = prev_len
-                    .saturating_sub(close_tag.len() + 1)
+                    .saturating_sub(close_tag.len() + RAWTEXT_TAIL_SLACK)
                     .max(content_start);
                 let scan_from = memrchr(b'<', &bytes[tail_start..len])
                     .map(|rel| tail_start + rel)
@@ -882,7 +885,7 @@ impl Tokenizer {
                 input,
                 input
                     .len()
-                    .saturating_sub(close_tag.len() + 1)
+                    .saturating_sub(close_tag.len() + RAWTEXT_TAIL_SLACK)
                     .max(content_start),
                 content_start,
             );
