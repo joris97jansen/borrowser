@@ -5,7 +5,7 @@ use html::golden_corpus::{Expectation, fixtures};
 use html::test_harness::{
     ChunkPlan, FuzzMode, deterministic_chunk_plans, random_chunk_plan, shrink_chunk_plan_with_stats,
 };
-use html::{DomPatch, Tokenizer, TreeBuilder, TreeBuilderConfig, build_dom, tokenize};
+use html::{DomPatch, Tokenizer, TreeBuilder, TreeBuilderConfig, build_owned_dom, tokenize};
 
 const DEFAULT_BUDGET_CI: usize = 150;
 const DEFAULT_BUDGET_LOCAL: usize = 600;
@@ -30,7 +30,7 @@ fn patch_stream_parity_golden_corpus() {
             continue;
         }
         let input = fixture.input;
-        let full_dom = build_dom(&tokenize(input));
+        let full_dom = build_owned_dom(&tokenize(input));
 
         for plan in deterministic_chunk_plans(input) {
             run_parity_case(fixture.name, input, &full_dom, &plan, None, None);

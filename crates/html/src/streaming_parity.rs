@@ -6,7 +6,7 @@
 
 use crate::dom_snapshot::{DomSnapshotOptions, compare_dom};
 use crate::test_harness::run_chunked_bytes_with_tokens;
-use crate::{build_dom, tokenize};
+use crate::{build_owned_dom, tokenize};
 use tools::utf8::{finish_utf8, push_utf8_chunk};
 
 const DEFAULT_BUDGET_CI: usize = 300;
@@ -112,7 +112,7 @@ fn streaming_parity_handles_invalid_utf8_lossily() {
 fn assert_parity(case_idx: usize, seed: Option<u64>, bytes: &[u8], boundaries: &[usize]) {
     let assembled = assemble_utf8_from_bytes(bytes, boundaries);
     let runtime_stream = tokenize(&assembled);
-    let runtime_dom = build_dom(&runtime_stream);
+    let runtime_dom = build_owned_dom(&runtime_stream);
     let (harness_dom, harness_stream) = run_chunked_bytes_with_tokens(bytes, boundaries);
     compare_dom(&runtime_dom, &harness_dom, DomSnapshotOptions::default()).unwrap_or_else(|err| {
         let payload = if assembled.len() <= 128 {

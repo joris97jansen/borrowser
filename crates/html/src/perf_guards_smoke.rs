@@ -1,5 +1,5 @@
 use crate::perf_fixtures::make_blocks;
-use crate::{Node, build_dom, tokenize};
+use crate::{Node, build_owned_dom, tokenize};
 
 const SMOKE_BLOCKS: usize = 512;
 // For "<div class=box><span>hello</span><img src=x></div>":
@@ -32,7 +32,7 @@ fn perf_guard_smoke_token_and_node_counts() {
         "token/byte ratio {ratio:.4} exceeded guard {MAX_TOKENS_PER_BYTE_SMOKE}"
     );
 
-    let dom = build_dom(&stream);
+    let dom = build_owned_dom(&stream);
     let expected_nodes = 1 + (SMOKE_BLOCKS * 4);
     assert_eq!(
         node_count(&dom),

@@ -381,7 +381,7 @@ fn patch_batches_for_plan(input: &str, plan: &ChunkPlan) -> Result<Vec<Vec<DomPa
             return;
         }
         push_utf8_chunk(&mut text, &mut carry, chunk);
-        let dom = build_dom(&text);
+        let dom = build_owned_dom(&text);
         let patches = match &prev_dom {
             Some(prev) => diff_dom_with_state(prev, &dom, &mut diff_state),
             None => diff_from_empty(&dom, &mut diff_state),
@@ -400,7 +400,7 @@ fn patch_batches_for_plan(input: &str, plan: &ChunkPlan) -> Result<Vec<Vec<DomPa
         return Err(message);
     }
     finish_utf8(&mut text, &mut carry);
-    let dom = build_dom(&text);
+    let dom = build_owned_dom(&text);
     let patches = match &prev_dom {
         Some(prev) => diff_dom_with_state(prev, &dom, &mut diff_state),
         None => diff_from_empty(&dom, &mut diff_state),
@@ -410,9 +410,9 @@ fn patch_batches_for_plan(input: &str, plan: &ChunkPlan) -> Result<Vec<Vec<DomPa
     Ok(batches)
 }
 
-fn build_dom(input: &str) -> Node {
+fn build_owned_dom(input: &str) -> Node {
     let stream = tokenize(input);
-    html::build_dom(&stream)
+    html::build_owned_dom(&stream)
 }
 
 fn plan_boundaries(input: &str, plan: &ChunkPlan) -> Vec<usize> {
@@ -471,7 +471,7 @@ fn boundary_at_batch(input: &str, plan: &ChunkPlan, batch_index: usize) -> Optio
 /// Parity test treats every chunk boundary as a preview tick to maximize coverage.
 fn patch_parity_corpus_deterministic() {
     for fixture in fixtures() {
-        let baseline = build_dom(fixture.input);
+        let baseline = build_owned_dom(fixture.input);
         for plan in deterministic_chunk_plans(fixture.input) {
             if let Err(err) = run_and_compare(fixture.input, &plan, &baseline, None) {
                 let minimized = shrink_plan(fixture.input, &plan, |candidate| {
@@ -501,7 +501,7 @@ fn patch_parity_corpus_fuzz() {
     let base = fuzz_seed_base();
     let count = fuzz_seed_count();
     for fixture in fixtures() {
-        let baseline = build_dom(fixture.input);
+        let baseline = build_owned_dom(fixture.input);
         for i in 0..count {
             let seed = derive_seed(base, fixture.name, i as u64);
             let plan = fuzz_chunk_plan(fixture.input, seed);
@@ -533,11 +533,11 @@ fn patch_parity_corpus_fuzz() {
 fn patch_parity_reset_semantics() {
     let prev = "<div><span>hi</span></div>";
     let next = "<div><em>yo</em><span>hi</span></div>";
-    let baseline = build_dom(next);
+    let baseline = build_owned_dom(next);
     let mut store = DomStore::new();
     let handle = DomHandle(1);
     store.create(handle).expect("store create failed");
-    let prev_dom = build_dom(prev);
+    let prev_dom = build_owned_dom(prev);
     let mut diff_state = DomDiffState::new();
     let patches = diff_dom_with_state(&prev_dom, &baseline, &mut diff_state).expect("diff failed");
     assert!(

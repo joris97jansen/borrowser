@@ -731,7 +731,7 @@ mod tests {
         start_parse_runtime_with_policy_and_clock,
     };
     use bus::{CoreCommand, CoreEvent};
-    use html::{Node, Tokenizer, build_dom, tokenize};
+    use html::{Node, Tokenizer, build_owned_dom, tokenize};
     use std::sync::{Arc, Mutex, mpsc};
     use std::time::{Duration, Instant};
 
@@ -926,7 +926,7 @@ mod tests {
 
         for (tick, input) in inputs.iter().enumerate() {
             let stream = tokenize(input);
-            let dom = build_dom(&stream);
+            let dom = build_owned_dom(&stream);
             let full_patches = full_create_patches(&dom);
             let full_bytes = estimated_patch_bytes(&full_patches);
             let patches = match prev_dom.as_deref() {
@@ -1034,7 +1034,7 @@ mod tests {
 
         for (tick, input) in inputs.iter().enumerate() {
             let stream = tokenize(input);
-            let dom = build_dom(&stream);
+            let dom = build_owned_dom(&stream);
             let full_patches = full_create_patches(&dom);
             let full_bytes = estimated_patch_bytes(&full_patches);
             let patches = match prev_dom.as_deref() {

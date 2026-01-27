@@ -1,6 +1,6 @@
 use crate::perf_fixtures::make_blocks;
 use crate::test_harness::ChunkPlan;
-use crate::{Node, build_dom, tokenize};
+use crate::{Node, build_owned_dom, tokenize};
 
 const LARGE_BLOCKS: usize = 5_000;
 // For "<div class=box><span>hello</span><img src=x></div>":
@@ -51,7 +51,7 @@ fn perf_guard_tokenize_large_token_count() {
 fn perf_guard_tree_build_large_node_count() {
     let input = make_blocks(LARGE_BLOCKS);
     let stream = tokenize(&input);
-    let dom = build_dom(&stream);
+    let dom = build_owned_dom(&stream);
     let expected_nodes = 1 + (LARGE_BLOCKS * 4);
     assert_eq!(
         node_count(&dom),
