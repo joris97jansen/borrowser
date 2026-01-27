@@ -20,6 +20,23 @@ impl TextMeasurer for TestMeasurer {
     }
 }
 
+struct SpaceWidthMeasurer;
+
+impl TextMeasurer for SpaceWidthMeasurer {
+    fn measure(&self, text: &str, _style: &ComputedStyle) -> f32 {
+        match text {
+            " " => 5.0,
+            "\u{00A0}" => 10.0,
+            _ => text.chars().count() as f32 * 10.0,
+        }
+    }
+
+    fn line_height(&self, style: &ComputedStyle) -> f32 {
+        let Length::Px(px) = style.font_size;
+        px * 1.2
+    }
+}
+
 fn assert_approx_eq(got: f32, want: f32) {
     let eps = 0.01;
     assert!(
@@ -238,6 +255,54 @@ fn baseline_for_text_only_line_matches_strut() {
         line.baseline,
     );
     assert_approx_eq(frag.rect.height, 12.0);
+}
+
+#[test]
+fn space_measurement_matches_rendered_space() {
+    let measurer = SpaceWidthMeasurer;
+    let style = ComputedStyle {
+        font_size: Length::Px(10.0),
+        ..ComputedStyle::initial()
+    };
+
+    let rect = Rectangle {
+        x: 0.0,
+        y: 0.0,
+        width: 500.0,
+        height: 200.0,
+    };
+
+    let ctx = InlineContext::default();
+    let tokens = vec![
+        InlineToken::Word {
+            text: "a".to_string(),
+            style: &style,
+            ctx: ctx.clone(),
+            source_range: None,
+        },
+        InlineToken::Space {
+            style: &style,
+            ctx: ctx.clone(),
+            source_range: None,
+        },
+        InlineToken::Word {
+            text: "b".to_string(),
+            style: &style,
+            ctx,
+            source_range: None,
+        },
+    ];
+
+    let lines = layout_tokens(&measurer, rect, &style, tokens);
+    assert_eq!(lines.len(), 1);
+    let line = &lines[0];
+    assert_eq!(line.fragments.len(), 3);
+
+    match &line.fragments[1].kind {
+        InlineFragment::Text { text, .. } => assert_eq!(text, " "),
+        _ => panic!("expected space fragment"),
+    }
+    assert_approx_eq(line.fragments[1].rect.width, 5.0);
 }
 
 #[test]

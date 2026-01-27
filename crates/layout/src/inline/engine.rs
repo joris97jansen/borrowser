@@ -35,6 +35,16 @@ struct LineGeometry {
     descent: f32,
 }
 
+// Clamp pathological text measurements so layout always makes progress.
+fn measure_nonzero(measurer: &dyn TextMeasurer, text: &str, style: &ComputedStyle) -> f32 {
+    let width = measurer.measure(text, style);
+    if width.is_finite() && width > 0.0 {
+        width
+    } else {
+        1.0
+    }
+}
+
 fn flush_line<'a>(
     lines: &mut Vec<LineBox<'a>>,
     line_fragments: &mut Vec<LineFragment<'a>>,
@@ -164,10 +174,8 @@ pub(super) fn layout_tokens_with_options<'a>(
                     continue;
                 }
 
-                let mut space_width = measurer.measure(" ", style);
-                if space_width <= 0.0 {
-                    space_width = 1.0;
-                }
+                // Use a breakable space for HTML-collapsed whitespace.
+                let space_width = measure_nonzero(measurer, " ", style);
 
                 let fits = cursor_x + space_width <= max_x;
 
@@ -220,7 +228,7 @@ pub(super) fn layout_tokens_with_options<'a>(
 
                 line_fragments.push(LineFragment {
                     kind: InlineFragment::Text {
-                        text: "\u{00A0}".to_string(),
+                        text: " ".to_string(),
                         style,
                         action,
                     },
@@ -268,15 +276,7 @@ pub(super) fn layout_tokens_with_options<'a>(
                 let remaining_source_end = source_range.map(|(_s, e)| e);
 
                 while !remaining_text.is_empty() {
-                    let word_width = measurer.measure(&remaining_text, style);
-                    let mut word_width = if word_width.is_finite() {
-                        word_width
-                    } else {
-                        0.0
-                    };
-                    if word_width <= 0.0 {
-                        word_width = 1.0;
-                    }
+                    let word_width = measure_nonzero(measurer, &remaining_text, style);
 
                     let fits = cursor_x + word_width <= max_x;
 
@@ -414,15 +414,7 @@ pub(super) fn layout_tokens_with_options<'a>(
                     let prefix_text = remaining_text;
                     remaining_text = rest;
 
-                    let frag_width = measurer.measure(&prefix_text, style);
-                    let mut frag_width = if frag_width.is_finite() {
-                        frag_width
-                    } else {
-                        0.0
-                    };
-                    if frag_width <= 0.0 {
-                        frag_width = 1.0;
-                    }
+                    let frag_width = measure_nonzero(measurer, &prefix_text, style);
 
                     let frag_source_range = remaining_source_start.map(|s| {
                         let mut end = s.saturating_add(prefix_text.len());
