@@ -18,6 +18,8 @@ mod perf_guards_smoke;
 mod streaming_parity;
 #[cfg(any(test, feature = "test-harness"))]
 pub mod test_harness;
+#[cfg(test)]
+mod test_utils;
 pub mod traverse;
 
 mod dom_builder;
@@ -87,7 +89,7 @@ pub use crate::dom_diff::{
 pub use crate::dom_patch::{DomPatch, PatchKey};
 pub use crate::tokenizer::Tokenizer;
 pub use crate::tokenizer::tokenize;
-pub use crate::types::{AtomId, AtomTable, Node, Token, TokenStream};
+pub use crate::types::{AtomId, AtomTable, AttributeValue, Node, TextPayload, Token, TokenStream};
 
 #[cfg(feature = "internal-api")]
 pub mod internal {

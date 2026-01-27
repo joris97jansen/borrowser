@@ -782,46 +782,6 @@ mod tests {
     use super::{BoundaryPolicy, ChunkPlan, run_chunked, run_full, shrink_chunk_plan_with_stats};
     use crate::dom_snapshot::{DomSnapshotOptions, assert_dom_eq};
     use crate::tokenizer::Tokenizer;
-    use std::fmt::Write;
-
-    fn token_snapshot(stream: &crate::TokenStream) -> Vec<String> {
-        let atoms = stream.atoms();
-        stream
-            .tokens()
-            .iter()
-            .map(|token| match token {
-                crate::Token::Doctype(value) => format!("Doctype({value})"),
-                crate::Token::StartTag {
-                    name,
-                    attributes,
-                    self_closing,
-                } => {
-                    let mut line = String::new();
-                    let _ = write!(&mut line, "StartTag({}", atoms.resolve(*name));
-                    for (attr, value) in attributes {
-                        line.push(' ');
-                        line.push_str(atoms.resolve(*attr));
-                        if let Some(value) = value {
-                            line.push_str("=\"");
-                            line.push_str(value);
-                            line.push('"');
-                        }
-                    }
-                    if *self_closing {
-                        line.push_str(" /");
-                    }
-                    line.push(')');
-                    line
-                }
-                crate::Token::EndTag(name) => format!("EndTag({})", atoms.resolve(*name)),
-                crate::Token::Comment(text) => format!("Comment({text})"),
-                crate::Token::TextSpan { .. } | crate::Token::TextOwned { .. } => {
-                    let text = stream.text(token).unwrap_or("");
-                    format!("Text({text})")
-                }
-            })
-            .collect()
-    }
 
     #[test]
     fn chunked_fixed_matches_full() {
@@ -900,8 +860,8 @@ mod tests {
         let stream = crate::TokenStream::new(tokens, atoms, source, text_pool);
         let expected = crate::tokenize(input);
         assert_eq!(
-            token_snapshot(&expected),
-            token_snapshot(&stream),
+            crate::test_utils::token_snapshot(&expected),
+            crate::test_utils::token_snapshot(&stream),
             "expected drained tokens to match full tokenize() snapshot"
         );
     }

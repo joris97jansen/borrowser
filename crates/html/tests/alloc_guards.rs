@@ -103,6 +103,7 @@ fn tokenize_rawtext_allocation_is_bounded() {
     }
     let input = format!("<script>{}</ScRiPt>", body);
 
+    let _ = tokenize(&input);
     let _guard = AllocGuard::new();
     let stream = tokenize(&input);
     let atoms = stream.atoms();
@@ -134,13 +135,14 @@ fn tokenize_rawtext_allocation_is_bounded() {
 }
 
 #[test]
-fn tokenize_plain_text_avoids_text_allocation() {
+fn tokenize_plain_text_allocation_is_bounded() {
     let mut body = String::new();
     for _ in 0..500_000 {
         body.push('x');
     }
     let input = format!("<p>{}</p>", body);
 
+    let _ = tokenize(&input);
     let _guard = AllocGuard::new();
     let stream = tokenize(&input);
     let atoms = stream.atoms();
@@ -168,5 +170,36 @@ fn tokenize_plain_text_avoids_text_allocation() {
     assert!(
         reallocs <= max_reallocs,
         "expected bounded realloc churn; reallocs={reallocs} max={max_reallocs}"
+    );
+}
+
+#[test]
+fn tokenize_attribute_values_avoid_unnecessary_allocs() {
+    fn measure(input: &str) -> (usize, usize, usize) {
+        let _ = tokenize(input);
+        let _guard = AllocGuard::new();
+        let _ = tokenize(input);
+        alloc_counts()
+    }
+
+    let plain = "<p data=Tom&Jerry title=plain>ok</p>";
+    let encoded = "<p data=Tom&amp;Jerry title=&#x3C;ok&#x3E;>ok</p>";
+
+    let (_, bytes_plain, reallocs_plain) = measure(plain);
+    let (_, bytes_encoded, reallocs_encoded) = measure(encoded);
+    let overhead = 64 * 1024;
+    let baseline = plain.len();
+
+    assert!(
+        bytes_plain <= baseline + overhead,
+        "expected bounded allocations for plain attrs; bytes={bytes_plain} input_len={baseline} overhead={overhead}"
+    );
+    assert!(
+        reallocs_plain <= 128,
+        "expected bounded realloc churn for plain attrs; reallocs={reallocs_plain}"
+    );
+    assert!(
+        reallocs_plain <= reallocs_encoded + 64,
+        "expected plain attrs to avoid excess realloc churn; plain={reallocs_plain} encoded={reallocs_encoded}"
     );
 }

@@ -1023,7 +1023,10 @@ mod tests {
     }
 
     fn check_token_attributes(fixture_name: &str, stream: &TokenStream) -> Result<(), String> {
-        type StartTagAttrs<'a> = (&'a str, &'a [(crate::AtomId, Option<String>)]);
+        type StartTagAttrs<'a> = (
+            &'a str,
+            &'a [(crate::AtomId, Option<crate::AttributeValue>)],
+        );
         let atoms = stream.atoms();
         let start_tags: Vec<StartTagAttrs<'_>> = stream
             .tokens()
@@ -1045,8 +1048,8 @@ mod tests {
                     .iter()
                     .find(|(tag, _)| *tag == "div")
                     .ok_or_else(|| "expected <div> start tag".to_string())?;
-                let class = find_attr(atoms, attrs, "class");
-                let data_x = find_attr(atoms, attrs, "data-x");
+                let class = find_attr(stream, atoms, attrs, "class");
+                let data_x = find_attr(stream, atoms, attrs, "data-x");
                 if class == Some("a b") && data_x == Some("1") {
                     Ok(())
                 } else {
@@ -1060,8 +1063,8 @@ mod tests {
                     .iter()
                     .find(|(tag, _)| *tag == "input")
                     .ok_or_else(|| "expected <input> start tag".to_string())?;
-                let value = find_attr(atoms, attrs, "value");
-                let title = find_attr(atoms, attrs, "title");
+                let value = find_attr(stream, atoms, attrs, "value");
+                let title = find_attr(stream, atoms, attrs, "title");
                 if value == Some("a b") && title == Some("c d") {
                     Ok(())
                 } else {
@@ -1073,8 +1076,8 @@ mod tests {
                     .iter()
                     .find(|(tag, _)| *tag == "div")
                     .ok_or_else(|| "expected <div> start tag".to_string())?;
-                let id = find_attr(atoms, attrs, "id");
-                let class = find_attr(atoms, attrs, "class");
+                let id = find_attr(stream, atoms, attrs, "id");
+                let class = find_attr(stream, atoms, attrs, "class");
                 if id == Some("a") && class == Some("foo") {
                     Ok(())
                 } else {
@@ -1088,7 +1091,7 @@ mod tests {
                     .ok_or_else(|| "expected <input> start tag".to_string())?;
                 let disabled_present = has_attr(atoms, attrs, "disabled");
                 let required_present = has_attr(atoms, attrs, "required");
-                let data_empty = find_attr(atoms, attrs, "data-empty");
+                let data_empty = find_attr(stream, atoms, attrs, "data-empty");
                 if disabled_present && required_present && data_empty == Some("") {
                     Ok(())
                 } else {
@@ -1102,13 +1105,14 @@ mod tests {
     }
 
     fn find_attr<'a>(
+        stream: &'a TokenStream,
         atoms: &'a crate::AtomTable,
-        attrs: &'a [(crate::AtomId, Option<String>)],
+        attrs: &'a [(crate::AtomId, Option<crate::AttributeValue>)],
         name: &str,
     ) -> Option<&'a str> {
         attrs.iter().find_map(|(key, value)| {
             if atoms.resolve(*key).eq_ignore_ascii_case(name) {
-                Some(value.as_deref().unwrap_or(""))
+                Some(value.as_ref().map(|v| stream.attr_value(v)).unwrap_or(""))
             } else {
                 None
             }
@@ -1117,7 +1121,7 @@ mod tests {
 
     fn has_attr(
         atoms: &crate::AtomTable,
-        attrs: &[(crate::AtomId, Option<String>)],
+        attrs: &[(crate::AtomId, Option<crate::AttributeValue>)],
         name: &str,
     ) -> bool {
         attrs

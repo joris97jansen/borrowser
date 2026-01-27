@@ -148,49 +148,9 @@ fn assemble_utf8_from_bytes(bytes: &[u8], boundaries: &[usize]) -> String {
 }
 
 fn snapshot_preview(stream: &crate::TokenStream) -> String {
-    let snapshot = token_snapshot(stream);
+    let snapshot = crate::test_utils::token_snapshot(stream);
     let head = snapshot.iter().take(20).cloned().collect::<Vec<_>>();
     format!("len={} head=[{}]", snapshot.len(), head.join(", "))
-}
-
-fn token_snapshot(stream: &crate::TokenStream) -> Vec<String> {
-    let atoms = stream.atoms();
-    stream
-        .tokens()
-        .iter()
-        .map(|token| match token {
-            crate::Token::Doctype(value) => format!("Doctype({value})"),
-            crate::Token::StartTag {
-                name,
-                attributes,
-                self_closing,
-            } => {
-                let mut line = String::new();
-                let _ =
-                    std::fmt::write(&mut line, format_args!("StartTag({}", atoms.resolve(*name)));
-                for (attr, value) in attributes {
-                    line.push(' ');
-                    line.push_str(atoms.resolve(*attr));
-                    if let Some(value) = value {
-                        line.push_str("=\"");
-                        line.push_str(value);
-                        line.push('"');
-                    }
-                }
-                if *self_closing {
-                    line.push_str(" /");
-                }
-                line.push(')');
-                line
-            }
-            crate::Token::EndTag(name) => format!("EndTag({})", atoms.resolve(*name)),
-            crate::Token::Comment(text) => format!("Comment({text})"),
-            crate::Token::TextSpan { .. } | crate::Token::TextOwned { .. } => {
-                let text = stream.text(token).unwrap_or("");
-                format!("Text({text})")
-            }
-        })
-        .collect()
 }
 
 fn seed_count() -> usize {

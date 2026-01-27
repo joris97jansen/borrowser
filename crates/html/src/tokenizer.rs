@@ -20,7 +20,7 @@ use crate::dom_builder::TokenTextResolver;
 use crate::entities::decode_entities;
 #[cfg(feature = "html5-entities")]
 use crate::entities::{decode_entities_html5_in_attribute, decode_entities_html5_in_text};
-use crate::types::{AtomId, AtomTable, Token, TokenStream};
+use crate::types::{AtomId, AtomTable, AttributeValue, TextPayload, Token, TokenStream};
 use memchr::{memchr, memrchr};
 use std::borrow::Cow;
 use std::sync::Arc;
@@ -82,6 +82,18 @@ fn clamp_char_boundary(input: &str, idx: usize, floor: usize) -> usize {
         idx -= 1;
     }
     idx
+}
+
+fn trim_range(input: &str, start: usize, end: usize) -> (usize, usize) {
+    let slice = &input[start..end];
+    let trimmed = slice.trim();
+    if trimmed.is_empty() {
+        return (start, start);
+    }
+    let base = slice.as_ptr() as usize;
+    let trimmed_start = trimmed.as_ptr() as usize - base + start;
+    let trimmed_end = trimmed_start + trimmed.len();
+    (trimmed_start, trimmed_end)
 }
 
 fn is_void_element(name: &str) -> bool {
@@ -153,10 +165,12 @@ pub(crate) struct TokenizerView<'a> {
 
 #[cfg(test)]
 impl<'a> TokenizerView<'a> {
+    #[inline]
     pub(crate) fn resolve_atom(&self, id: AtomId) -> &str {
         self.atoms.resolve(id)
     }
 
+    #[inline]
     pub(crate) fn text(&self, token: &Token) -> Option<&str> {
         match token {
             Token::TextSpan { range } => {
@@ -170,6 +184,16 @@ impl<'a> TokenizerView<'a> {
             Token::TextOwned { index } => self.text_pool.get(*index).map(|s| s.as_str()),
             _ => None,
         }
+    }
+
+    #[inline]
+    pub(crate) fn attr_value(&self, value: &'a AttributeValue) -> &'a str {
+        value.as_str(self.source)
+    }
+
+    #[inline]
+    pub(crate) fn payload_text(&self, payload: &'a TextPayload) -> &'a str {
+        payload.as_str(self.source)
     }
 }
 
@@ -225,7 +249,7 @@ impl Tokenizer {
     }
 
     /// Append validated UTF-8 text and scan without re-validating.
-    pub fn feed_str_valid(&mut self, input: &str) -> usize {
+    pub(crate) fn feed_str_valid(&mut self, input: &str) -> usize {
         if input.is_empty() {
             return 0;
         }
@@ -317,15 +341,16 @@ impl Tokenizer {
                 let comment_start = self.cursor + HTML_COMMENT_START.len();
                 if let Some(end) = input[comment_start..].find(HTML_COMMENT_END) {
                     let comment_end = comment_start + end;
-                    self.tokens.push(Token::Comment(
-                        input[comment_start..comment_end].to_string(),
-                    ));
+                    self.tokens.push(Token::Comment(TextPayload::Span {
+                        range: comment_start..comment_end,
+                    }));
                     self.cursor = comment_end + HTML_COMMENT_END.len();
                     continue;
                 }
                 if is_final {
-                    self.tokens
-                        .push(Token::Comment(input[comment_start..].to_string()));
+                    self.tokens.push(Token::Comment(TextPayload::Span {
+                        range: comment_start..len,
+                    }));
                     self.cursor = len;
                     continue;
                 }
@@ -341,8 +366,10 @@ impl Tokenizer {
                 let doctype_start = self.cursor + 2;
                 if let Some(rel) = memchr(b'>', &bytes[doctype_start..]) {
                     let end = doctype_start + rel;
-                    let doctype = input[doctype_start..end].trim().to_string();
-                    self.tokens.push(Token::Doctype(doctype));
+                    let (tstart, tend) = trim_range(input, doctype_start, end);
+                    self.tokens.push(Token::Doctype(TextPayload::Span {
+                        range: tstart..tend,
+                    }));
                     self.cursor = end + 1;
                     continue;
                 }
@@ -434,16 +461,17 @@ impl Tokenizer {
                 let comment_start = start + HTML_COMMENT_START.len();
                 if let Some(rel) = input[scan_from..].find(HTML_COMMENT_END) {
                     let comment_end = scan_from + rel;
-                    self.tokens.push(Token::Comment(
-                        input[comment_start..comment_end].to_string(),
-                    ));
+                    self.tokens.push(Token::Comment(TextPayload::Span {
+                        range: comment_start..comment_end,
+                    }));
                     self.cursor = comment_end + HTML_COMMENT_END.len();
                     self.pending = PendingState::None;
                     return true;
                 }
                 if is_final {
-                    self.tokens
-                        .push(Token::Comment(input[comment_start..].to_string()));
+                    self.tokens.push(Token::Comment(TextPayload::Span {
+                        range: comment_start..len,
+                    }));
                     self.cursor = len;
                     self.pending = PendingState::None;
                     return true;
@@ -461,8 +489,10 @@ impl Tokenizer {
                 let len = bytes.len();
                 if let Some(rel) = memchr(b'>', &bytes[scan_from..]) {
                     let end = scan_from + rel;
-                    let doctype = input[doctype_start..end].trim().to_string();
-                    self.tokens.push(Token::Doctype(doctype));
+                    let (tstart, tend) = trim_range(input, doctype_start, end);
+                    self.tokens.push(Token::Doctype(TextPayload::Span {
+                        range: tstart..tend,
+                    }));
                     self.cursor = end + 1;
                     self.pending = PendingState::None;
                     return true;
@@ -534,9 +564,17 @@ impl Tokenizer {
         }
         let text = &self.source[start..end];
         #[cfg(feature = "html5-entities")]
-        let decoded = decode_entities_html5_in_text(text);
+        let decoded = if memchr(b'&', text.as_bytes()).is_some() {
+            decode_entities_html5_in_text(text)
+        } else {
+            Cow::Borrowed(text)
+        };
         #[cfg(not(feature = "html5-entities"))]
-        let decoded = decode_entities(text);
+        let decoded = if memchr(b'&', text.as_bytes()).is_some() {
+            decode_entities(text)
+        } else {
+            Cow::Borrowed(text)
+        };
         if decoded.is_empty() {
             return;
         }
@@ -583,7 +621,7 @@ impl Tokenizer {
         }
         let name = self.atoms.intern_ascii_lowercase(&input[start..j]);
         let mut k = j;
-        let mut attributes: Vec<(AtomId, Option<String>)> = Vec::new();
+        let mut attributes: Vec<(AtomId, Option<AttributeValue>)> = Vec::new();
         let mut self_closing = false;
 
         let skip_whitespace = |k: &mut usize| {
@@ -643,13 +681,13 @@ impl Tokenizer {
                 return ParseOutcome::Incomplete;
             }
 
-            let value: Option<String>;
+            let value: Option<AttributeValue>;
             if bytes[k] == b'=' {
                 k += 1;
                 skip_whitespace(&mut k);
                 if k >= len {
                     if is_final {
-                        value = Some(String::new());
+                        value = Some(AttributeValue::Span { range: k..k });
                     } else {
                         return ParseOutcome::Incomplete;
                     }
@@ -663,15 +701,29 @@ impl Tokenizer {
                     if k >= len && !is_final {
                         return ParseOutcome::Incomplete;
                     }
-                    let raw = &input[vstart..k.min(len)];
+                    let value_end = k.min(len);
+                    let raw = &input[vstart..value_end];
                     if k < len {
                         k += 1;
                     }
                     #[cfg(feature = "html5-entities")]
-                    let decoded = decode_entities_html5_in_attribute(raw);
+                    let decoded = if memchr(b'&', raw.as_bytes()).is_some() {
+                        decode_entities_html5_in_attribute(raw)
+                    } else {
+                        Cow::Borrowed(raw)
+                    };
                     #[cfg(not(feature = "html5-entities"))]
-                    let decoded = decode_entities(raw);
-                    value = Some(decoded.into_owned());
+                    let decoded = if memchr(b'&', raw.as_bytes()).is_some() {
+                        decode_entities(raw)
+                    } else {
+                        Cow::Borrowed(raw)
+                    };
+                    value = Some(match decoded {
+                        Cow::Borrowed(_) => AttributeValue::Span {
+                            range: vstart..value_end,
+                        },
+                        Cow::Owned(decoded) => AttributeValue::Owned(decoded),
+                    });
                 } else {
                     let vstart = k;
                     while k < len && !bytes[k].is_ascii_whitespace() && bytes[k] != b'>' {
@@ -685,12 +737,25 @@ impl Tokenizer {
                     }
                     if k > vstart {
                         #[cfg(feature = "html5-entities")]
-                        let decoded = decode_entities_html5_in_attribute(&input[vstart..k]);
+                        let decoded = if memchr(b'&', &bytes[vstart..k]).is_some() {
+                            decode_entities_html5_in_attribute(&input[vstart..k])
+                        } else {
+                            Cow::Borrowed(&input[vstart..k])
+                        };
                         #[cfg(not(feature = "html5-entities"))]
-                        let decoded = decode_entities(&input[vstart..k]);
-                        value = Some(decoded.into_owned());
+                        let decoded = if memchr(b'&', &bytes[vstart..k]).is_some() {
+                            decode_entities(&input[vstart..k])
+                        } else {
+                            Cow::Borrowed(&input[vstart..k])
+                        };
+                        value = Some(match decoded {
+                            Cow::Borrowed(_) => AttributeValue::Span { range: vstart..k },
+                            Cow::Owned(decoded) => AttributeValue::Owned(decoded),
+                        });
                     } else {
-                        value = Some(String::new());
+                        value = Some(AttributeValue::Span {
+                            range: vstart..vstart,
+                        });
                     }
                 }
             } else {
@@ -778,6 +843,10 @@ impl TokenTextResolver for Tokenizer {
     fn text(&self, token: &Token) -> Option<&str> {
         Tokenizer::text(self, token)
     }
+
+    fn source(&self) -> &str {
+        self.source.as_str()
+    }
 }
 
 #[derive(Debug)]
@@ -822,88 +891,11 @@ pub fn tokenize(input: &str) -> TokenStream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::fmt::Write;
     #[cfg(feature = "perf-tests")]
     use std::time::{Duration, Instant};
 
     fn text_eq(stream: &TokenStream, token: &Token, expected: &str) -> bool {
         stream.text(token) == Some(expected)
-    }
-
-    fn token_snapshot(stream: &TokenStream) -> Vec<String> {
-        let atoms = stream.atoms();
-        stream
-            .tokens()
-            .iter()
-            .map(|token| match token {
-                Token::Doctype(value) => format!("Doctype({value})"),
-                Token::StartTag {
-                    name,
-                    attributes,
-                    self_closing,
-                } => {
-                    let mut line = String::new();
-                    let _ = write!(&mut line, "StartTag({}", atoms.resolve(*name));
-                    for (attr, value) in attributes {
-                        line.push(' ');
-                        line.push_str(atoms.resolve(*attr));
-                        if let Some(value) = value {
-                            line.push_str("=\"");
-                            line.push_str(value);
-                            line.push('"');
-                        }
-                    }
-                    if *self_closing {
-                        line.push_str(" /");
-                    }
-                    line.push(')');
-                    line
-                }
-                Token::EndTag(name) => format!("EndTag({})", atoms.resolve(*name)),
-                Token::Comment(text) => format!("Comment({text})"),
-                Token::TextSpan { .. } | Token::TextOwned { .. } => {
-                    let text = stream.text(token).unwrap_or("");
-                    format!("Text({text})")
-                }
-            })
-            .collect()
-    }
-
-    fn token_snapshot_with_view(view: TokenizerView<'_>, tokens: &[Token]) -> Vec<String> {
-        tokens
-            .iter()
-            .map(|token| match token {
-                Token::Doctype(value) => format!("Doctype({value})"),
-                Token::StartTag {
-                    name,
-                    attributes,
-                    self_closing,
-                } => {
-                    let mut line = String::new();
-                    let _ = write!(&mut line, "StartTag({}", view.resolve_atom(*name));
-                    for (attr, value) in attributes {
-                        line.push(' ');
-                        line.push_str(view.resolve_atom(*attr));
-                        if let Some(value) = value {
-                            line.push_str("=\"");
-                            line.push_str(value);
-                            line.push('"');
-                        }
-                    }
-                    if *self_closing {
-                        line.push_str(" /");
-                    }
-                    line.push(')');
-                    line
-                }
-                Token::EndTag(name) => format!("EndTag({})", view.resolve_atom(*name)),
-                Token::Comment(text) => format!("Comment({text})"),
-                Token::TextSpan { .. } | Token::TextOwned { .. } => {
-                    let text = view.text(token).unwrap_or("");
-                    format!("Text({text})")
-                }
-            })
-            .collect()
     }
 
     fn tokenize_in_chunks(input: &str, sizes: &[usize]) -> TokenStream {
@@ -974,9 +966,8 @@ mod tests {
     fn tokenize_handles_uppercase_doctype() {
         let stream = tokenize("<!DOCTYPE html>");
         assert!(
-            stream
-                .iter()
-                .any(|t| matches!(t, Token::Doctype(s) if s == "DOCTYPE html")),
+            stream.iter().any(|t| matches!(t, Token::Doctype(s)
+                if stream.payload_text(s) == "DOCTYPE html")),
             "expected case-insensitive doctype, got: {stream:?}"
         );
     }
@@ -985,9 +976,8 @@ mod tests {
     fn tokenize_handles_mixed_case_doctype() {
         let stream = tokenize("<!DoCtYpE html>");
         assert!(
-            stream
-                .iter()
-                .any(|t| matches!(t, Token::Doctype(s) if s == "DoCtYpE html")),
+            stream.iter().any(|t| matches!(t, Token::Doctype(s)
+                if stream.payload_text(s) == "DoCtYpE html")),
             "expected mixed-case doctype to parse, got: {stream:?}"
         );
     }
@@ -1146,7 +1136,8 @@ mod tests {
                 Token::StartTag { name, attributes, .. }
                     if atoms.resolve(*name) == "p"
                         && attributes.iter().any(|(k, v)| {
-                            atoms.resolve(*k) == "data" && v.as_deref() == Some("naïve")
+                            atoms.resolve(*k) == "data"
+                                && v.as_ref().map(|v| stream.attr_value(v)) == Some("naïve")
                         })
             )),
             "expected UTF-8 attribute value, got: {stream:?}"
@@ -1163,13 +1154,108 @@ mod tests {
                 Token::StartTag { name, attributes, .. }
                     if atoms.resolve(*name) == "p"
                         && attributes.iter().any(|(k, v)| {
-                            atoms.resolve(*k) == "data" && v.as_deref() == Some("Tom&Jerry")
+                            atoms.resolve(*k) == "data"
+                                && v.as_ref().map(|v| stream.attr_value(v)) == Some("Tom&Jerry")
                         })
                         && attributes.iter().any(|(k, v)| {
-                            atoms.resolve(*k) == "title" && v.as_deref() == Some("<ok>")
+                            atoms.resolve(*k) == "title"
+                                && v.as_ref().map(|v| stream.attr_value(v)) == Some("<ok>")
                         })
             )),
             "expected entity-decoded unquoted attributes, got: {stream:?}"
+        );
+    }
+
+    #[test]
+    fn tokenize_attribute_values_use_span_when_unchanged() {
+        let stream = tokenize("<p data=plain title=\"also-plain\" data-empty=>ok</p>");
+        let atoms = stream.atoms();
+        let mut spans = 0usize;
+        for token in stream.iter() {
+            if let Token::StartTag {
+                name, attributes, ..
+            } = token
+                && atoms.resolve(*name) == "p"
+            {
+                for (key, value) in attributes {
+                    let key_name = atoms.resolve(*key);
+                    if (key_name.starts_with("data") || key_name == "title")
+                        && matches!(value, Some(AttributeValue::Span { .. }))
+                    {
+                        spans += 1;
+                    }
+                }
+            }
+        }
+        assert!(
+            spans >= 2,
+            "expected unchanged attribute values to use spans, got {spans}"
+        );
+    }
+
+    #[test]
+    fn tokenize_attribute_values_allocate_when_decoded() {
+        let stream = tokenize("<p data=Tom&amp;Jerry>ok</p>");
+        let atoms = stream.atoms();
+        let mut owned = 0usize;
+        for token in stream.iter() {
+            if let Token::StartTag {
+                name, attributes, ..
+            } = token
+                && atoms.resolve(*name) == "p"
+            {
+                for (key, value) in attributes {
+                    if atoms.resolve(*key) == "data"
+                        && matches!(value, Some(AttributeValue::Owned(_)))
+                    {
+                        owned += 1;
+                    }
+                }
+            }
+        }
+        assert!(
+            owned >= 1,
+            "expected decoded attribute value to allocate, got {owned}"
+        );
+    }
+
+    #[test]
+    fn tokenize_text_preserves_literal_ampersand() {
+        let stream = tokenize("<p>Tom&Jerry</p>");
+        assert!(
+            stream.iter().any(|t| text_eq(&stream, t, "Tom&Jerry")),
+            "expected literal '&' text to remain unchanged, got: {stream:?}"
+        );
+    }
+
+    #[test]
+    fn tokenize_text_decodes_entities() {
+        let stream = tokenize("<p>Tom&amp;Jerry</p>");
+        assert!(
+            stream.iter().any(|t| text_eq(&stream, t, "Tom&Jerry")),
+            "expected entity-decoded text, got: {stream:?}"
+        );
+        assert!(
+            stream.iter().any(|t| matches!(t, Token::TextOwned { .. })),
+            "expected decoded text to be owned, got: {stream:?}"
+        );
+    }
+
+    #[test]
+    fn tokenize_text_preserves_malformed_entities() {
+        let stream = tokenize("<p>Tom&amp</p><p>&#xZZ;</p><p>&unknown;</p>");
+        let texts: Vec<&str> = stream.iter().filter_map(|t| stream.text(t)).collect();
+        assert!(
+            texts.contains(&"Tom&amp"),
+            "expected incomplete entity to remain unchanged, got: {texts:?}"
+        );
+        assert!(
+            texts.contains(&"&#xZZ;"),
+            "expected malformed numeric entity to remain unchanged, got: {texts:?}"
+        );
+        assert!(
+            texts.contains(&"&unknown;"),
+            "expected unknown entity to remain unchanged, got: {texts:?}"
         );
     }
 
@@ -1292,6 +1378,18 @@ mod tests {
     }
 
     #[test]
+    fn tokenize_does_not_emit_empty_text_tokens() {
+        let stream = tokenize("<p></p>");
+        assert!(
+            !stream
+                .tokens()
+                .iter()
+                .any(|t| matches!(t, Token::TextSpan { .. } | Token::TextOwned { .. })),
+            "expected no text tokens for empty element, got: {stream:?}"
+        );
+    }
+
+    #[test]
     fn tokenize_handles_tons_of_angle_brackets() {
         let input = "<".repeat(200_000);
         let stream = tokenize(&input);
@@ -1304,7 +1402,10 @@ mod tests {
                      <script>let x = 1;</script><style>p{}</style>é</div>";
         let full = tokenize(input);
         let chunked = tokenize_in_chunks(input, &[1, 2, 3, 7, 64]);
-        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+        assert_eq!(
+            crate::test_utils::token_snapshot(&full),
+            crate::test_utils::token_snapshot(&chunked)
+        );
     }
 
     #[test]
@@ -1313,7 +1414,10 @@ mod tests {
                      <script>let x = 1;</script><style>p{}</style>é</div>";
         let full = tokenize(input);
         let chunked = tokenize_with_push_str(input, &[1, 2, 3, 7, 64]);
-        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+        assert_eq!(
+            crate::test_utils::token_snapshot(&full),
+            crate::test_utils::token_snapshot(&chunked)
+        );
     }
 
     #[test]
@@ -1321,7 +1425,10 @@ mod tests {
         let input = "<p>café 😊 &amp; naïve</p>";
         let full = tokenize(input);
         let chunked = tokenize_in_chunks(input, &[1, 1, 1, 2, 1, 4, 1]);
-        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+        assert_eq!(
+            crate::test_utils::token_snapshot(&full),
+            crate::test_utils::token_snapshot(&chunked)
+        );
     }
 
     #[test]
@@ -1330,7 +1437,10 @@ mod tests {
         let split = "<script>hi</scr".len();
         let full = tokenize(input);
         let chunked = tokenize_in_chunks(input, &[split]);
-        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+        assert_eq!(
+            crate::test_utils::token_snapshot(&full),
+            crate::test_utils::token_snapshot(&chunked)
+        );
     }
 
     #[test]
@@ -1339,7 +1449,10 @@ mod tests {
         let split = "<script>hi</scr".len();
         let full = tokenize(input);
         let chunked = tokenize_with_push_str(input, &[split]);
-        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+        assert_eq!(
+            crate::test_utils::token_snapshot(&full),
+            crate::test_utils::token_snapshot(&chunked)
+        );
     }
 
     #[test]
@@ -1348,7 +1461,10 @@ mod tests {
         let split = "<div></".len();
         let full = tokenize(input);
         let chunked = tokenize_in_chunks(input, &[split]);
-        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+        assert_eq!(
+            crate::test_utils::token_snapshot(&full),
+            crate::test_utils::token_snapshot(&chunked)
+        );
     }
 
     #[test]
@@ -1357,7 +1473,10 @@ mod tests {
         let split = "<d".len();
         let full = tokenize(input);
         let chunked = tokenize_with_push_str(input, &[split]);
-        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+        assert_eq!(
+            crate::test_utils::token_snapshot(&full),
+            crate::test_utils::token_snapshot(&chunked)
+        );
     }
 
     #[test]
@@ -1366,7 +1485,10 @@ mod tests {
         let split = "<!--x--".len();
         let full = tokenize(input);
         let chunked = tokenize_in_chunks(input, &[split]);
-        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+        assert_eq!(
+            crate::test_utils::token_snapshot(&full),
+            crate::test_utils::token_snapshot(&chunked)
+        );
     }
 
     #[test]
@@ -1375,7 +1497,10 @@ mod tests {
         let split = "<!--x--".len();
         let full = tokenize(input);
         let chunked = tokenize_with_push_str(input, &[split]);
-        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+        assert_eq!(
+            crate::test_utils::token_snapshot(&full),
+            crate::test_utils::token_snapshot(&chunked)
+        );
     }
 
     #[test]
@@ -1384,7 +1509,10 @@ mod tests {
         let split = "<!--x-".len();
         let full = tokenize(input);
         let chunked = tokenize_with_push_str(input, &[split]);
-        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+        assert_eq!(
+            crate::test_utils::token_snapshot(&full),
+            crate::test_utils::token_snapshot(&chunked)
+        );
     }
 
     #[test]
@@ -1393,7 +1521,10 @@ mod tests {
         let split = "<!--x".len();
         let full = tokenize(input);
         let chunked = tokenize_with_push_str(input, &[split]);
-        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+        assert_eq!(
+            crate::test_utils::token_snapshot(&full),
+            crate::test_utils::token_snapshot(&chunked)
+        );
     }
 
     #[test]
@@ -1402,7 +1533,10 @@ mod tests {
         let split = "<!DOCTYPE html".len();
         let full = tokenize(input);
         let chunked = tokenize_in_chunks(input, &[split]);
-        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+        assert_eq!(
+            crate::test_utils::token_snapshot(&full),
+            crate::test_utils::token_snapshot(&chunked)
+        );
     }
 
     #[test]
@@ -1411,7 +1545,10 @@ mod tests {
         let split = "<!DOCTYPE html".len();
         let full = tokenize(input);
         let chunked = tokenize_with_push_str(input, &[split]);
-        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+        assert_eq!(
+            crate::test_utils::token_snapshot(&full),
+            crate::test_utils::token_snapshot(&chunked)
+        );
     }
 
     #[test]
@@ -1420,7 +1557,10 @@ mod tests {
         let split = "<p da".len();
         let full = tokenize(input);
         let chunked = tokenize_with_push_str(input, &[split]);
-        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+        assert_eq!(
+            crate::test_utils::token_snapshot(&full),
+            crate::test_utils::token_snapshot(&chunked)
+        );
     }
 
     #[test]
@@ -1429,7 +1569,10 @@ mod tests {
         let split = "<p data=\"va".len();
         let full = tokenize(input);
         let chunked = tokenize_with_push_str(input, &[split]);
-        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+        assert_eq!(
+            crate::test_utils::token_snapshot(&full),
+            crate::test_utils::token_snapshot(&chunked)
+        );
     }
 
     #[test]
@@ -1438,7 +1581,10 @@ mod tests {
         let split = "<style>body{}</sty".len();
         let full = tokenize(input);
         let chunked = tokenize_with_push_str(input, &[split]);
-        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+        assert_eq!(
+            crate::test_utils::token_snapshot(&full),
+            crate::test_utils::token_snapshot(&chunked)
+        );
     }
 
     #[test]
@@ -1447,7 +1593,10 @@ mod tests {
         let split = "<style>body{}</style \t".len();
         let full = tokenize(input);
         let chunked = tokenize_with_push_str(input, &[split]);
-        assert_eq!(token_snapshot(&full), token_snapshot(&chunked));
+        assert_eq!(
+            crate::test_utils::token_snapshot(&full),
+            crate::test_utils::token_snapshot(&chunked)
+        );
     }
 
     #[test]
@@ -1455,13 +1604,13 @@ mod tests {
         let input = "<!DOCTYPE html><!--c--><div class=one data-x=\"y\">Hi &amp; é \
                      <script>let x = 1;</script><style>p{}</style></div>";
         let full = tokenize(input);
-        let expected = token_snapshot(&full);
+        let expected = crate::test_utils::token_snapshot(&full);
 
         for split in 0..=input.len() {
             let chunked = tokenize_with_push_str(input, &[split]);
             assert_eq!(
                 expected,
-                token_snapshot(&chunked),
+                crate::test_utils::token_snapshot(&chunked),
                 "boundary split at {split} should match full tokenization"
             );
         }
@@ -1472,14 +1621,14 @@ mod tests {
         let input = "<!DOCTYPE html><!--c--><div class=one data-x=\"y\">Hi &amp; é \
                      <script>let x = 1;</script><style>p{}</style></div>";
         let full = tokenize(input);
-        let expected = token_snapshot(&full);
+        let expected = crate::test_utils::token_snapshot(&full);
         let bytes = input.as_bytes();
 
         for split in 0..=bytes.len() {
             let chunked = tokenize_with_feed_bytes(bytes, split);
             assert_eq!(
                 expected,
-                token_snapshot(&chunked),
+                crate::test_utils::token_snapshot(&chunked),
                 "byte boundary split at {split} should match full tokenization"
             );
         }
@@ -1490,7 +1639,7 @@ mod tests {
         let input = "<!DOCTYPE html><!--c--><div class=one>Tom&amp;Jerry\
                      <script>let x = 1;</script><style>p{}</style>é</div>";
         let full = tokenize(input);
-        let expected = token_snapshot(&full);
+        let expected = crate::test_utils::token_snapshot(&full);
 
         let bytes = input.as_bytes();
         let sizes = [1, 2, 3, 7, 64];
@@ -1509,7 +1658,7 @@ mod tests {
             drained.clear();
             tokenizer.drain_into(&mut drained);
             let view = tokenizer.view();
-            snapshot.extend(token_snapshot_with_view(view, &drained));
+            snapshot.extend(crate::test_utils::token_snapshot_with_view(view, &drained));
         }
 
         if offset < bytes.len() {
@@ -1519,7 +1668,7 @@ mod tests {
         drained.clear();
         tokenizer.drain_into(&mut drained);
         let view = tokenizer.view();
-        snapshot.extend(token_snapshot_with_view(view, &drained));
+        snapshot.extend(crate::test_utils::token_snapshot_with_view(view, &drained));
 
         assert_eq!(expected, snapshot);
     }
