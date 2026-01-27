@@ -22,7 +22,7 @@ fn make_rawtext_adversarial(bytes: usize) -> String {
     body.push_str("<script>");
     while body.len() < bytes {
         body.push_str("</scri");
-        body.push_str("<");
+        body.push('<');
         body.push_str("pt");
     }
     body.push_str("</script>");
