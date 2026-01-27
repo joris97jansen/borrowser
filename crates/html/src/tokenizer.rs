@@ -39,7 +39,11 @@ fn starts_with_ignore_ascii_case_at(haystack: &[u8], start: usize, needle: &[u8]
 const SCRIPT_CLOSE_TAG: &[u8] = b"</script";
 const STYLE_CLOSE_TAG: &[u8] = b"</style";
 
-fn find_rawtext_close_tag(haystack: &str, close_tag: &[u8]) -> Option<(usize, usize)> {
+fn find_rawtext_close_tag_internal(
+    haystack: &str,
+    close_tag: &[u8],
+    ops: Option<&mut usize>,
+) -> Option<(usize, usize)> {
     let hay_bytes = haystack.as_bytes();
     let len = hay_bytes.len();
     let n = close_tag.len();
@@ -53,9 +57,18 @@ fn find_rawtext_close_tag(haystack: &str, close_tag: &[u8]) -> Option<(usize, us
     if len < n {
         return None;
     }
-    let mut i = 0;
+    let mut i = 0usize;
+    let mut counter = ops;
     while i + n <= len {
-        let rel = memchr(b'<', &hay_bytes[i..])?;
+        let Some(rel) = memchr(b'<', &hay_bytes[i..]) else {
+            if let Some(c) = counter.as_deref_mut() {
+                *c += len.saturating_sub(i);
+            }
+            return None;
+        };
+        if let Some(c) = counter.as_deref_mut() {
+            *c += rel + 1;
+        }
         i += rel;
         if i + n > len {
             return None;
@@ -66,14 +79,30 @@ fn find_rawtext_close_tag(haystack: &str, close_tag: &[u8]) -> Option<(usize, us
             // accept ASCII whitespace before `>` to keep the scan simple/alloc-free.
             while k < len && hay_bytes[k].is_ascii_whitespace() {
                 k += 1;
+                if let Some(c) = counter.as_deref_mut() {
+                    *c += 1;
+                }
             }
             if k < len && hay_bytes[k] == b'>' {
                 return Some((i, k + 1));
             }
         }
         i += 1;
+        if let Some(c) = counter.as_deref_mut() {
+            *c += 1;
+        }
     }
     None
+}
+
+#[cfg(test)]
+fn find_rawtext_close_tag_counted(
+    haystack: &str,
+    close_tag: &[u8],
+) -> (Option<(usize, usize)>, usize) {
+    let mut ops = 0usize;
+    let result = find_rawtext_close_tag_internal(haystack, close_tag, Some(&mut ops));
+    (result, ops)
 }
 
 fn clamp_char_boundary(input: &str, idx: usize, floor: usize) -> usize {
@@ -136,6 +165,7 @@ enum PendingState {
         close_tag: &'static [u8],
         content_start: usize,
         scan_from: usize,
+        prev_len: usize,
     },
 }
 
@@ -153,6 +183,8 @@ pub struct Tokenizer {
     cursor: usize,
     pending: PendingState,
     tokens: Vec<Token>,
+    #[cfg(test)]
+    rawtext_scan_steps: usize,
 }
 
 #[cfg(test)]
@@ -207,6 +239,8 @@ impl Tokenizer {
             cursor: 0,
             pending: PendingState::None,
             tokens: Vec::new(),
+            #[cfg(test)]
+            rawtext_scan_steps: 0,
         }
     }
 
@@ -269,6 +303,16 @@ impl Tokenizer {
             source: self.source.as_str(),
             text_pool: &self.text_pool,
         }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn reset_rawtext_scan_steps(&mut self) {
+        self.rawtext_scan_steps = 0;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn rawtext_scan_steps(&self) -> usize {
+        self.rawtext_scan_steps
     }
 
     /// Drain any pending tokens into the provided output buffer.
@@ -514,13 +558,23 @@ impl Tokenizer {
                 close_tag,
                 content_start,
                 scan_from,
+                prev_len,
             } => {
                 let input = self.source.as_str();
                 let len = input.len();
                 let scan_from = clamp_char_boundary(input, scan_from, content_start);
-                if let Some((rel_start, rel_end)) =
-                    find_rawtext_close_tag(&input[scan_from..], close_tag)
+                #[cfg(test)]
+                let mut ops = 0usize;
+                #[cfg(test)]
+                let found =
+                    find_rawtext_close_tag_internal(&input[scan_from..], close_tag, Some(&mut ops));
+                #[cfg(test)]
                 {
+                    self.rawtext_scan_steps = self.rawtext_scan_steps.saturating_add(ops);
+                }
+                #[cfg(not(test))]
+                let found = find_rawtext_close_tag_internal(&input[scan_from..], close_tag, None);
+                if let Some((rel_start, rel_end)) = found {
                     let slice_end = scan_from + rel_start;
                     if slice_end > content_start {
                         self.tokens.push(Token::TextSpan {
@@ -544,14 +598,21 @@ impl Tokenizer {
                     return true;
                 }
                 let bytes = input.as_bytes();
-                let scan_from = memrchr(b'<', &bytes[content_start..])
-                    .map(|rel| content_start + rel)
-                    .unwrap_or(len);
+                // Rescan from the last possible '<' that could begin a closing tag spanning the
+                // previous/new buffer boundary. This bounds overlap to at most (close_tag.len() + 1)
+                // bytes from the prior buffer so we stay linear even with tiny chunks.
+                let tail_start = prev_len
+                    .saturating_sub(close_tag.len() + 1)
+                    .max(content_start);
+                let scan_from = memrchr(b'<', &bytes[tail_start..len])
+                    .map(|rel| tail_start + rel)
+                    .unwrap_or(tail_start);
                 self.pending = PendingState::Rawtext {
                     tag,
                     close_tag,
                     content_start,
                     scan_from,
+                    prev_len: len,
                 };
                 false
             }
@@ -785,9 +846,18 @@ impl Tokenizer {
             } else {
                 STYLE_CLOSE_TAG
             };
-            if let Some((rel_start, rel_end)) =
-                find_rawtext_close_tag(&input[content_start..], close_tag)
+            #[cfg(test)]
+            let mut ops = 0usize;
+            #[cfg(test)]
+            let found =
+                find_rawtext_close_tag_internal(&input[content_start..], close_tag, Some(&mut ops));
+            #[cfg(test)]
             {
+                self.rawtext_scan_steps = self.rawtext_scan_steps.saturating_add(ops);
+            }
+            #[cfg(not(test))]
+            let found = find_rawtext_close_tag_internal(&input[content_start..], close_tag, None);
+            if let Some((rel_start, rel_end)) = found {
                 let slice_end = content_start + rel_start;
                 if slice_end > content_start {
                     self.tokens.push(Token::TextSpan {
@@ -824,6 +894,7 @@ impl Tokenizer {
                 close_tag,
                 content_start,
                 scan_from,
+                prev_len: input.len(),
             };
             return ParseOutcome::Complete;
         }
@@ -1123,6 +1194,186 @@ mod tests {
                         && atoms.resolve(*end) == "script"
             ),
             "expected near-match not to close rawtext, got: {stream:?}"
+        );
+    }
+
+    #[test]
+    fn rawtext_scan_steps_dense_near_match_is_linear() {
+        let mut body = String::new();
+        for _ in 0..50_000 {
+            body.push_str("</scripX>");
+        }
+        let input = format!("{}</script>", body);
+        let (found, steps) = find_rawtext_close_tag_counted(&input, SCRIPT_CLOSE_TAG);
+        assert!(found.is_some(), "expected to find </script> close tag");
+        let max_steps = input.len().saturating_mul(3);
+        assert!(
+            steps <= max_steps,
+            "expected linear scan steps; steps={steps} len={} max={max_steps}",
+            input.len()
+        );
+    }
+
+    #[test]
+    fn rawtext_scan_steps_many_angle_brackets_is_linear() {
+        let body = "<".repeat(200_000);
+        let (found, steps) = find_rawtext_close_tag_counted(&body, SCRIPT_CLOSE_TAG);
+        assert!(
+            found.is_none(),
+            "unexpected close tag in angle-bracket body"
+        );
+        let max_steps = body.len().saturating_mul(3);
+        assert!(
+            steps <= max_steps,
+            "expected linear scan steps; steps={steps} len={} max={max_steps}",
+            body.len()
+        );
+    }
+
+    #[test]
+    fn rawtext_scan_steps_missing_close_is_linear() {
+        let mut body = String::new();
+        for _ in 0..100_000 {
+            body.push_str("let x = 1; < not a tag\n");
+        }
+        let (found, steps) = find_rawtext_close_tag_counted(&body, STYLE_CLOSE_TAG);
+        assert!(found.is_none(), "unexpected close tag in rawtext body");
+        let max_steps = body.len().saturating_mul(3);
+        assert!(
+            steps <= max_steps,
+            "expected linear scan steps; steps={steps} len={} max={max_steps}",
+            body.len()
+        );
+    }
+
+    #[test]
+    fn rawtext_scan_steps_many_slash_prefixes_is_linear() {
+        let mut body = String::new();
+        for _ in 0..80_000 {
+            body.push_str("</s");
+        }
+        body.push_str("</script>");
+        let (found, steps) = find_rawtext_close_tag_counted(&body, SCRIPT_CLOSE_TAG);
+        assert!(found.is_some(), "expected to find </script> close tag");
+        let max_steps = body.len().saturating_mul(3);
+        assert!(
+            steps <= max_steps,
+            "expected linear scan steps; steps={steps} len={} max={max_steps}",
+            body.len()
+        );
+    }
+
+    #[test]
+    fn rawtext_scan_steps_many_scri_prefixes_is_linear() {
+        let mut body = String::new();
+        for _ in 0..60_000 {
+            body.push_str("</scri");
+        }
+        body.push_str("</script>");
+        let (found, steps) = find_rawtext_close_tag_counted(&body, SCRIPT_CLOSE_TAG);
+        assert!(found.is_some(), "expected to find </script> close tag");
+        let max_steps = body.len().saturating_mul(3);
+        assert!(
+            steps <= max_steps,
+            "expected linear scan steps; steps={steps} len={} max={max_steps}",
+            body.len()
+        );
+    }
+
+    #[test]
+    fn rawtext_scan_steps_many_slash_brackets_is_linear() {
+        let mut body = String::new();
+        for _ in 0..80_000 {
+            body.push_str("</");
+        }
+        body.push_str("</script>");
+        let (found, steps) = find_rawtext_close_tag_counted(&body, SCRIPT_CLOSE_TAG);
+        assert!(found.is_some(), "expected to find </script> close tag");
+        let max_steps = body.len().saturating_mul(3);
+        assert!(
+            steps <= max_steps,
+            "expected linear scan steps; steps={steps} len={} max={max_steps}",
+            body.len()
+        );
+    }
+
+    #[test]
+    fn rawtext_streaming_dense_near_match_is_linear() {
+        let mut body = String::new();
+        for _ in 0..20_000 {
+            body.push_str("</scripX>");
+        }
+        let input = format!("<script>{}</script>", body);
+        let bytes = input.as_bytes();
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.reset_rawtext_scan_steps();
+        let mut offset = 0usize;
+        let chunk = 3usize;
+        while offset < bytes.len() {
+            let end = (offset + chunk).min(bytes.len());
+            tokenizer.feed(&bytes[offset..end]);
+            offset = end;
+        }
+        tokenizer.finish();
+        let steps = tokenizer.rawtext_scan_steps();
+        let max_steps = bytes.len().saturating_mul(5);
+        assert!(
+            steps <= max_steps,
+            "expected linear scan steps in streaming; steps={steps} len={} max={max_steps}",
+            bytes.len()
+        );
+    }
+
+    #[test]
+    fn rawtext_streaming_many_angle_brackets_is_linear() {
+        let body = "<".repeat(100_000);
+        let input = format!("<script>{}", body);
+        let bytes = input.as_bytes();
+        let mut tokenizer = Tokenizer::new();
+        tokenizer.reset_rawtext_scan_steps();
+        let mut offset = 0usize;
+        let chunk = 2usize;
+        while offset < bytes.len() {
+            let end = (offset + chunk).min(bytes.len());
+            tokenizer.feed(&bytes[offset..end]);
+            offset = end;
+        }
+        tokenizer.finish();
+        let steps = tokenizer.rawtext_scan_steps();
+        let max_steps = bytes.len().saturating_mul(5);
+        assert!(
+            steps <= max_steps,
+            "expected linear scan steps in streaming; steps={steps} len={} max={max_steps}",
+            bytes.len()
+        );
+    }
+
+    #[test]
+    fn rawtext_streaming_close_tag_boundary_is_linear() {
+        let body = "x".repeat(50_000);
+        let input = format!("<script>{}</script>", body);
+        let bytes = input.as_bytes();
+        let mut tokenizer = Tokenizer::new();
+        // Explicit reset for clarity in case more counters are added later.
+        tokenizer.reset_rawtext_scan_steps();
+        let tail = SCRIPT_CLOSE_TAG.len() + 5;
+        let head_len = bytes.len().saturating_sub(tail);
+        if head_len > 0 {
+            tokenizer.feed(&bytes[..head_len]);
+        }
+        let mut offset = head_len;
+        while offset < bytes.len() {
+            let end = (offset + 1).min(bytes.len());
+            tokenizer.feed(&bytes[offset..end]);
+            offset = end;
+        }
+        tokenizer.finish();
+        let steps = tokenizer.rawtext_scan_steps();
+        let max_steps = bytes.len().saturating_mul(5);
+        assert!(
+            steps <= max_steps,
+            "expected linear scan steps on close-tag boundary; steps={steps} len={} max={max_steps}",
+            bytes.len()
         );
     }
 
