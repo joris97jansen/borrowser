@@ -27,11 +27,16 @@ pub fn build_dom(stream: &TokenStream) -> Node {
 /// and remain valid for the duration of the `push_token` call.
 pub trait TokenTextResolver {
     fn text(&self, token: &Token) -> Option<&str>;
+    fn source(&self) -> &str;
 }
 
 impl TokenTextResolver for TokenStream {
     fn text(&self, token: &Token) -> Option<&str> {
         TokenStream::text(self, token)
+    }
+
+    fn source(&self) -> &str {
+        self.source()
     }
 }
 
@@ -207,7 +212,10 @@ impl TreeBuilder {
                 if self.arena.doctype(self.root_index).is_some() {
                     return Err(TreeBuilderError::Protocol("duplicate doctype"));
                 }
-                self.arena.set_doctype(self.root_index, s.clone());
+                self.arena.set_doctype(
+                    self.root_index,
+                    s.as_str(text_resolver.source()).to_string(),
+                );
             }
             _ => {
                 self.ensure_document_emitted()?;
@@ -216,16 +224,17 @@ impl TreeBuilder {
                         self.finalize_pending_text();
                         let parent_index = self.current_parent();
                         let key = self.arena.alloc_key();
+                        let text = c.as_str(text_resolver.source()).to_string();
                         self.arena.add_child(
                             parent_index,
                             ArenaNode::Comment {
                                 key,
-                                text: c.clone(),
+                                text: text.clone(),
                             },
                         );
                         self.emit_patch(DomPatch::CreateComment {
                             key: patch_key(key),
-                            text: c.clone(),
+                            text: text.clone(),
                         });
                         self.emit_patch(DomPatch::AppendChild {
                             parent: patch_key(self.arena.node_key(parent_index)),
@@ -248,14 +257,15 @@ impl TreeBuilder {
                         // Materialize attribute values into owned DOM strings; revisit once
                         // attribute storage is arena-backed to reduce cloning.
                         let mut resolved_attributes = Vec::with_capacity(attributes.len());
+                        let mut patch_attributes = Vec::with_capacity(attributes.len());
                         for (k, v) in attributes {
                             let attr_name = atoms.resolve_arc(*k);
-                            resolved_attributes.push((attr_name, v.clone()));
+                            let resolved_value = v
+                                .as_ref()
+                                .map(|value| value.as_str(text_resolver.source()).to_string());
+                            patch_attributes.push((Arc::clone(&attr_name), resolved_value.clone()));
+                            resolved_attributes.push((attr_name, resolved_value));
                         }
-                        let patch_attributes = resolved_attributes
-                            .iter()
-                            .map(|(k, v)| (Arc::clone(k), v.clone()))
-                            .collect();
                         let resolved_name = atoms.resolve_arc(*name);
                         debug_assert_canonical_ascii_lower(
                             resolved_name.as_ref(),
@@ -899,7 +909,7 @@ mod tests {
                 attributes: Vec::new(),
                 self_closing: false,
             },
-            Token::Comment("note".to_string()),
+            Token::Comment(crate::TextPayload::Owned("note".to_string())),
             Token::EndTag(span),
             Token::StartTag {
                 name: ul,
@@ -1114,8 +1124,8 @@ mod tests {
     #[test]
     fn tree_builder_rejects_duplicate_doctype() {
         let tokens = vec![
-            Token::Doctype("html".to_string()),
-            Token::Doctype("html".to_string()),
+            Token::Doctype(crate::TextPayload::Owned("html".to_string())),
+            Token::Doctype(crate::TextPayload::Owned("html".to_string())),
         ];
         let stream = TokenStream::new(tokens, AtomTable::new(), Arc::from(""), Vec::new());
         let atoms = stream.atoms();
@@ -1143,7 +1153,7 @@ mod tests {
                     attributes: Vec::new(),
                     self_closing: true,
                 },
-                Token::Doctype("html".to_string()),
+                Token::Doctype(crate::TextPayload::Owned("html".to_string())),
             ],
             atoms,
             Arc::from(""),
@@ -1806,7 +1816,7 @@ mod tests {
                 self_closing: false,
             },
             Token::TextOwned { index: 0 },
-            Token::Comment("x".to_string()),
+            Token::Comment(crate::TextPayload::Owned("x".to_string())),
             Token::TextOwned { index: 1 },
             Token::EndTag(div),
         ];

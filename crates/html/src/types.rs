@@ -119,14 +119,14 @@ impl AtomTable {
 
 #[derive(Debug)]
 pub enum Token {
-    Doctype(String),
+    Doctype(TextPayload),
     StartTag {
         name: AtomId,
-        attributes: Vec<(AtomId, Option<String>)>,
+        attributes: Vec<(AtomId, Option<AttributeValue>)>,
         self_closing: bool,
     },
     EndTag(AtomId),
-    Comment(String),
+    Comment(TextPayload),
     /// Byte range into the tokenizer's source; valid only while the source is append-only.
     /// Dropping prefixes requires a different storage model or shifting ranges.
     TextSpan {
@@ -135,6 +135,66 @@ pub enum Token {
     TextOwned {
         index: usize,
     },
+}
+
+#[derive(Debug, Clone)]
+pub enum AttributeValue {
+    /// Byte range into the tokenizer source for values that are unchanged.
+    Span { range: Range<usize> },
+    /// Allocated value for decoded entities or synthesized values.
+    Owned(String),
+}
+
+impl AttributeValue {
+    pub fn as_str<'a>(&'a self, source: &'a str) -> &'a str {
+        match self {
+            AttributeValue::Span { range } => {
+                debug_assert!(
+                    source.is_char_boundary(range.start) && source.is_char_boundary(range.end),
+                    "attribute value span must be on UTF-8 boundaries"
+                );
+                &source[range.clone()]
+            }
+            AttributeValue::Owned(value) => value.as_str(),
+        }
+    }
+
+    pub fn into_owned(self, source: &str) -> String {
+        match self {
+            AttributeValue::Span { range } => source[range].to_string(),
+            AttributeValue::Owned(value) => value,
+        }
+    }
+}
+
+#[derive(Debug, Clone)]
+pub enum TextPayload {
+    /// Byte range into the tokenizer source for values that are unchanged.
+    Span { range: Range<usize> },
+    /// Allocated value for decoded or synthesized strings.
+    Owned(String),
+}
+
+impl TextPayload {
+    pub fn as_str<'a>(&'a self, source: &'a str) -> &'a str {
+        match self {
+            TextPayload::Span { range } => {
+                debug_assert!(
+                    source.is_char_boundary(range.start) && source.is_char_boundary(range.end),
+                    "text span must be on UTF-8 boundaries"
+                );
+                &source[range.clone()]
+            }
+            TextPayload::Owned(value) => value.as_str(),
+        }
+    }
+
+    pub fn into_owned(self, source: &str) -> String {
+        match self {
+            TextPayload::Span { range } => source[range].to_string(),
+            TextPayload::Owned(value) => value,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -185,6 +245,14 @@ impl TokenStream {
             Token::TextOwned { index } => self.text_pool.get(*index).map(|s| s.as_str()),
             _ => None,
         }
+    }
+
+    pub fn attr_value<'a>(&'a self, value: &'a AttributeValue) -> &'a str {
+        value.as_str(self.source.as_ref())
+    }
+
+    pub fn payload_text<'a>(&'a self, payload: &'a TextPayload) -> &'a str {
+        payload.as_str(self.source.as_ref())
     }
 
     pub fn iter(&self) -> std::slice::Iter<'_, Token> {
