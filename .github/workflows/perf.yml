@@ -1,0 +1,53 @@
+name: Perf
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 3 * * *" # nightly at 03:00 UTC
+
+concurrency:
+  group: perf-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  html_bench:
+    name: html benches (criterion)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    env:
+      RUST_BACKTRACE: 1
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      # Uses rust-toolchain.toml automatically
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run html heavy perf guards (timing + deterministic)
+        env:
+          RUST_TEST_THREADS: 1
+        run: cargo test -p html --all-targets --locked --features perf-tests
+
+      - name: Run allocation guards
+        env:
+          RUST_TEST_THREADS: 1
+        run: cargo test -p html --test alloc_guards --locked --features count-alloc
+
+      - name: Run html benches
+        run: |
+          mkdir -p ci_artifacts
+          cargo bench -p html --bench html_bench --locked --features test-harness | tee ci_artifacts/html_bench.txt
+
+      - name: Upload benchmark artifacts (criterion + log)
+        uses: actions/upload-artifact@v4
+        with:
+          name: html-bench-${{ github.sha }}
+          path: |
+            ci_artifacts/html_bench.txt
+            target/criterion/**

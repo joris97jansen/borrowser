@@ -822,8 +822,6 @@ pub fn tokenize(input: &str) -> TokenStream {
 #[cfg(test)]
 mod tests {
     use super::*;
-    #[cfg(feature = "count-alloc")]
-    use crate::test_alloc;
     use std::fmt::Write;
     #[cfg(feature = "perf-tests")]
     use std::time::{Duration, Instant};
@@ -1265,74 +1263,6 @@ mod tests {
                         && atoms.resolve(*end) == "script"
             ),
             "expected rawtext body without close tag to tokenize correctly, got: {stream:?}"
-        );
-    }
-
-    #[cfg(feature = "count-alloc")]
-    #[test]
-    fn tokenize_rawtext_allocation_is_bounded() {
-        let mut body = String::new();
-        for _ in 0..500_000 {
-            body.push('x');
-        }
-        let input = format!("<script>{}</ScRiPt>", body);
-
-        let _guard = test_alloc::AllocGuard::new();
-        let stream = tokenize(&input);
-        let atoms = stream.atoms();
-        let (_, bytes) = test_alloc::counts();
-
-        assert!(
-            matches!(
-                stream.tokens(),
-                [Token::StartTag { name, .. }, text, Token::EndTag(end)]
-                    if atoms.resolve(*name) == "script"
-                        && text_eq(&stream, text, &body)
-                        && atoms.resolve(*end) == "script"
-            ),
-            "expected rawtext body to tokenize correctly, got: {stream:?}"
-        );
-
-        let overhead = 64 * 1024;
-        let expected_source = input.len();
-        let extra = bytes.saturating_sub(expected_source);
-        assert!(
-            extra <= overhead,
-            "expected bounded extra allocations; bytes={bytes} input_len={expected_source} extra={extra} overhead={overhead}"
-        );
-    }
-
-    #[cfg(feature = "count-alloc")]
-    #[test]
-    fn tokenize_plain_text_avoids_text_allocation() {
-        let mut body = String::new();
-        for _ in 0..500_000 {
-            body.push('x');
-        }
-        let input = format!("<p>{}</p>", body);
-
-        let _guard = test_alloc::AllocGuard::new();
-        let stream = tokenize(&input);
-        let atoms = stream.atoms();
-        let (_, bytes) = test_alloc::counts();
-
-        assert!(
-            matches!(
-                stream.tokens(),
-                [Token::StartTag { name, .. }, text, Token::EndTag(end)]
-                    if atoms.resolve(*name) == "p"
-                        && text_eq(&stream, text, &body)
-                        && atoms.resolve(*end) == "p"
-            ),
-            "expected plain text to tokenize correctly, got: {stream:?}"
-        );
-
-        let overhead = 128 * 1024;
-        let expected_source = input.len();
-        let extra = bytes.saturating_sub(expected_source);
-        assert!(
-            extra <= overhead,
-            "expected bounded extra allocations; bytes={bytes} input_len={expected_source} extra={extra} overhead={overhead}"
         );
     }
 

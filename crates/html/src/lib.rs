@@ -8,6 +8,12 @@ pub mod golden_corpus;
 pub mod head;
 #[cfg(feature = "parse-guards")]
 pub mod parse_guards;
+#[cfg(any(test, feature = "test-harness"))]
+pub mod perf_fixtures;
+#[cfg(all(test, feature = "perf-tests"))]
+mod perf_guards_heavy;
+#[cfg(test)]
+mod perf_guards_smoke;
 #[cfg(test)]
 mod streaming_parity;
 #[cfg(any(test, feature = "test-harness"))]
@@ -86,101 +92,4 @@ pub use crate::types::{AtomId, AtomTable, Node, Token, TokenStream};
 #[cfg(feature = "internal-api")]
 pub mod internal {
     pub use super::types::{Id, NodeId, NodeKey};
-}
-
-#[cfg(all(test, feature = "count-alloc"))]
-mod test_alloc {
-    // Counters are intentionally lightweight: they measure allocation events and growth bytes
-    // while enabled, not current live heap usage.
-    use std::alloc::{GlobalAlloc, Layout, System};
-    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-
-    pub struct CountingAlloc;
-
-    static ALLOC_COUNT: AtomicUsize = AtomicUsize::new(0);
-    static ALLOC_BYTES: AtomicUsize = AtomicUsize::new(0);
-
-    static ENABLED: AtomicBool = AtomicBool::new(false);
-
-    unsafe impl GlobalAlloc for CountingAlloc {
-        unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-            let ptr = System.alloc(layout);
-            if !ptr.is_null() {
-                if ENABLED.load(Ordering::Relaxed) {
-                    ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
-                    ALLOC_BYTES.fetch_add(layout.size(), Ordering::Relaxed);
-                }
-            }
-            ptr
-        }
-
-        unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-            let ptr = System.alloc_zeroed(layout);
-            if !ptr.is_null() {
-                if ENABLED.load(Ordering::Relaxed) {
-                    ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
-                    ALLOC_BYTES.fetch_add(layout.size(), Ordering::Relaxed);
-                }
-            }
-            ptr
-        }
-
-        unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-            System.dealloc(ptr, layout);
-        }
-
-        unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-            let new_ptr = System.realloc(ptr, layout, new_size);
-            if !new_ptr.is_null() {
-                if ENABLED.load(Ordering::Relaxed) {
-                    ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
-                    let old_size = layout.size();
-                    if new_size > old_size {
-                        ALLOC_BYTES.fetch_add(new_size - old_size, Ordering::Relaxed);
-                    }
-                }
-            }
-            new_ptr
-        }
-    }
-
-    #[global_allocator]
-    static GLOBAL: CountingAlloc = CountingAlloc;
-
-    pub fn reset() {
-        ALLOC_COUNT.store(0, Ordering::Relaxed);
-        ALLOC_BYTES.store(0, Ordering::Relaxed);
-        ENABLED.store(false, Ordering::Relaxed);
-    }
-
-    pub fn enable() {
-        ENABLED.store(true, Ordering::Relaxed);
-    }
-
-    pub fn disable() {
-        ENABLED.store(false, Ordering::Relaxed);
-    }
-
-    pub fn counts() -> (usize, usize) {
-        (
-            ALLOC_COUNT.load(Ordering::Relaxed),
-            ALLOC_BYTES.load(Ordering::Relaxed),
-        )
-    }
-
-    pub struct AllocGuard;
-
-    impl AllocGuard {
-        pub fn new() -> Self {
-            reset();
-            enable();
-            Self
-        }
-    }
-
-    impl Drop for AllocGuard {
-        fn drop(&mut self) {
-            disable();
-        }
-    }
 }
