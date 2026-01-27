@@ -1,3 +1,15 @@
+//! Inline tokenization for the inline layout engine.
+//!
+//! # Invariants
+//! - `TokenCollectMode::Height` produces tokens with `layout: None` for box/replaced kinds.
+//! - `TokenCollectMode::Paint` produces tokens with `layout: Some(&LayoutBox)` for box/replaced kinds.
+//! - `source_range` is `None` for DOM-driven inline layout; it is only populated by
+//!   special sources like `<textarea>` that provide their own text ranges.
+//! - `InlineToken::Space` represents one collapsed whitespace run; no consecutive `Space` tokens.
+//! - Collapsible whitespace is reset at block formatting context boundaries.
+//!
+//! These rules are relied upon by layout, painting, and hit-testing; keep them stable.
+
 use css::ComputedStyle;
 use html::{Node, internal::Id};
 use std::sync::Arc;
@@ -200,6 +212,46 @@ fn collect_inline_tokens_for_block_layout_impl<'a>(
     }
     // Trailing collapsible whitespace is not rendered in HTML-ish collapsing.
     reset_pending_space(&mut pending_space);
+    debug_assert!(
+        tokens
+            .windows(2)
+            .all(|w| !matches!(w, [InlineToken::Space { .. }, InlineToken::Space { .. }])),
+        "inline token stream must not contain consecutive Space tokens"
+    );
+    debug_assert!(
+        tokens.iter().all(|t| match (mode, t) {
+            (TokenCollectMode::Height, InlineToken::Box { layout: None, .. })
+            | (TokenCollectMode::Height, InlineToken::Replaced { layout: None, .. }) => true,
+            (
+                TokenCollectMode::Height,
+                InlineToken::Box {
+                    layout: Some(_), ..
+                },
+            )
+            | (
+                TokenCollectMode::Height,
+                InlineToken::Replaced {
+                    layout: Some(_), ..
+                },
+            ) => false,
+            (
+                TokenCollectMode::Paint,
+                InlineToken::Box {
+                    layout: Some(_), ..
+                },
+            )
+            | (
+                TokenCollectMode::Paint,
+                InlineToken::Replaced {
+                    layout: Some(_), ..
+                },
+            ) => true,
+            (TokenCollectMode::Paint, InlineToken::Box { layout: None, .. })
+            | (TokenCollectMode::Paint, InlineToken::Replaced { layout: None, .. }) => false,
+            (_, _) => true,
+        }),
+        "inline token layout refs must match TokenCollectMode"
+    );
     tokens
 }
 
