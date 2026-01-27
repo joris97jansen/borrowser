@@ -524,6 +524,9 @@ pub(super) fn layout_tokens_with_options<'a>(
                 let ascent = metrics.ascent;
                 let descent = metrics.descent;
 
+                // Fragment rect + advance are margin-box (includes horizontal margins).
+                // Paint must not apply margins again.
+                // TODO: encode advance-rect vs paint-rect semantics in types/helpers.
                 let frag_rect = Rectangle {
                     x: cursor_x,
                     y: cursor_y, // finalized on flush
@@ -592,6 +595,9 @@ pub(super) fn layout_tokens_with_options<'a>(
                 let ascent = metrics.ascent;
                 let descent = metrics.descent;
 
+                // Fragment rect + advance are margin-box (includes horizontal margins).
+                // Paint must not apply margins again.
+                // TODO: encode advance-rect vs paint-rect semantics in types/helpers.
                 let frag_rect = Rectangle {
                     x: cursor_x,
                     y: cursor_y, // finalized on flush
