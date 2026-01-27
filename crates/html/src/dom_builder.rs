@@ -456,7 +456,7 @@ impl TreeBuilder {
         Some((node_index, key))
     }
 
-    #[cfg(debug_assertions)]
+    #[cfg(any(test, debug_assertions))]
     fn debug_assert_invariants(&self) {
         debug_assert!(
             self.root_index < self.arena.nodes.len(),
@@ -516,6 +516,7 @@ impl TreeBuilder {
                 "pending text key must match arena node key"
             );
         }
+        self.arena.debug_validate();
     }
 
     fn emit_patch(&mut self, patch: DomPatch) {
@@ -646,6 +647,15 @@ enum ArenaNode {
 }
 
 impl ArenaNode {
+    fn key(&self) -> NodeKey {
+        match self {
+            ArenaNode::Document { key, .. }
+            | ArenaNode::Element { key, .. }
+            | ArenaNode::Text { key, .. }
+            | ArenaNode::Comment { key, .. } => *key,
+        }
+    }
+
     fn children(&self) -> Option<&[usize]> {
         match self {
             ArenaNode::Document { children, .. } | ArenaNode::Element { children, .. } => {
@@ -659,13 +669,19 @@ impl ArenaNode {
 #[derive(Debug)]
 struct NodeArena {
     nodes: Vec<ArenaNode>,
+    key_to_index: Vec<usize>,
     next_key: u32, // 32-bit keys are intentional; overflow is a hard stop.
 }
 
 impl NodeArena {
+    const MISSING: usize = usize::MAX;
+
     fn with_capacity(capacity: usize) -> Self {
+        let mut key_to_index = Vec::with_capacity(capacity.saturating_add(1));
+        key_to_index.push(Self::MISSING);
         Self {
             nodes: Vec::with_capacity(capacity),
+            key_to_index,
             next_key: 1,
         }
     }
@@ -679,12 +695,31 @@ impl NodeArena {
     fn alloc_key(&mut self) -> NodeKey {
         let key = NodeKey(self.next_key);
         self.next_key = self.next_key.checked_add(1).expect("node key overflow");
+        let k = key.0 as usize;
+        if self.key_to_index.len() <= k {
+            self.key_to_index.resize(k + 1, Self::MISSING);
+        }
         key
     }
 
     fn push(&mut self, node: ArenaNode) -> usize {
         let index = self.nodes.len();
+        let key = node.key();
+        debug_assert_ne!(
+            key,
+            NodeKey::INVALID,
+            "arena nodes must never use INVALID key"
+        );
+        let k = key.0 as usize;
+        debug_assert_eq!(
+            self.key_to_index[k],
+            Self::MISSING,
+            "NodeKey {:?} already mapped to index {}",
+            key,
+            self.key_to_index[k]
+        );
         self.nodes.push(node);
+        self.key_to_index[k] = index;
         index
     }
 
@@ -705,6 +740,38 @@ impl NodeArena {
             | ArenaNode::Element { key, .. }
             | ArenaNode::Text { key, .. }
             | ArenaNode::Comment { key, .. } => *key,
+        }
+    }
+
+    #[cfg(test)]
+    fn index_of(&self, key: NodeKey) -> Option<usize> {
+        if key == NodeKey::INVALID {
+            return None;
+        }
+        let k = key.0 as usize;
+        let idx = *self.key_to_index.get(k)?;
+        if idx == Self::MISSING {
+            return None;
+        }
+        Some(idx)
+    }
+
+    #[cfg(any(test, debug_assertions))]
+    fn debug_validate(&self) {
+        debug_assert_eq!(
+            self.key_to_index.len(),
+            self.next_key as usize,
+            "key_to_index length must track next_key"
+        );
+        debug_assert_eq!(self.key_to_index[0], Self::MISSING);
+        for (idx, node) in self.nodes.iter().enumerate() {
+            let key = node.key();
+            let k = key.0 as usize;
+            debug_assert!(
+                k < self.key_to_index.len(),
+                "key out of bounds in key_to_index"
+            );
+            debug_assert_eq!(self.key_to_index[k], idx, "mapping mismatch for {:?}", key);
         }
     }
 
@@ -1351,6 +1418,23 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn arena_key_mapping_roundtrips() {
+        let input = "<div>hi<span>yo</span><!--c--></div>";
+        let stream = crate::tokenize(input);
+        let mut builder = TreeBuilder::with_capacity(stream.tokens().len().saturating_add(1));
+        builder.push_stream(&stream).unwrap();
+
+        for idx in 0..builder.arena.nodes.len() {
+            let key = builder.arena.node_key(idx);
+            let idx2 = builder.arena.index_of(key).expect("key must resolve");
+            assert_eq!(idx, idx2);
+        }
+
+        assert!(builder.arena.index_of(NodeKey::INVALID).is_none());
+        assert!(builder.arena.index_of(builder.debug_next_key()).is_none());
     }
 
     #[derive(Clone, Debug)]
