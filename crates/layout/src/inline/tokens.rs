@@ -15,7 +15,7 @@ pub(super) struct InlineContext {
 // Not exported outside inline; only used within this module tree.
 // Token invariants:
 // - `Space` is a single collapsible space and should never be emitted consecutively.
-// - `Box`/`Replaced` height is the margin-box height (content height + vertical margins).
+// - `Box`/`Replaced` size uses margin-box dimensions (content size + margins).
 // - Pending collapsible whitespace uses the first whitespace segment's style/ctx.
 // - `HardBreak` resets whitespace state (pending space cleared; next content is line-start).
 #[derive(Clone)]
@@ -104,7 +104,7 @@ fn push_text_as_tokens<'a>(
             }
         } else {
             // Emit a single Space before this new word if needed.
-            flush_pending_space(tokens, pending_space, has_emitted_content);
+            flush_pending_space(tokens, pending_space, *has_emitted_content);
 
             current_word.push(ch);
         }
@@ -136,10 +136,10 @@ fn push_space<'a>(tokens: &mut Vec<InlineToken<'a>>, space: PendingSpace<'a>) {
 fn flush_pending_space<'a>(
     tokens: &mut Vec<InlineToken<'a>>,
     pending_space: &mut Option<PendingSpace<'a>>,
-    has_emitted_content: &bool,
+    has_emitted_content: bool,
 ) {
     if let Some(space) = pending_space.take() {
-        if *has_emitted_content {
+        if has_emitted_content {
             push_space(tokens, space);
         } else {
             *pending_space = Some(space);
@@ -149,15 +149,6 @@ fn flush_pending_space<'a>(
 
 fn reset_pending_space<'a>(pending_space: &mut Option<PendingSpace<'a>>) {
     *pending_space = None;
-}
-
-#[allow(dead_code)]
-fn reset_for_line_start<'a>(
-    pending_space: &mut Option<PendingSpace<'a>>,
-    has_emitted_content: &mut bool,
-) {
-    *pending_space = None;
-    *has_emitted_content = false;
 }
 
 pub(super) fn collect_inline_tokens_for_block_layout<'a>(
@@ -255,12 +246,12 @@ fn collect_inline_tokens_from_layout_box<'a>(
                     //
                     // If there was pending whitespace, flush it as a
                     // single Space token before the box (like a word).
-                    flush_pending_space(tokens, pending_space, has_emitted_content);
+                    flush_pending_space(tokens, pending_space, *has_emitted_content);
 
                     let style = layout.style;
                     let cbm = layout.style.box_metrics;
 
-                    let width = layout.rect.width;
+                    let width = layout.rect.width + cbm.margin_left + cbm.margin_right;
                     let height = layout.rect.height + cbm.margin_top + cbm.margin_bottom;
 
                     let layout_ref = match mode {
@@ -292,12 +283,12 @@ fn collect_inline_tokens_from_layout_box<'a>(
                 }
 
                 BoxKind::ReplacedInline => {
-                    flush_pending_space(tokens, pending_space, has_emitted_content);
+                    flush_pending_space(tokens, pending_space, *has_emitted_content);
 
                     let style = layout.style;
                     let cbm = style.box_metrics;
 
-                    let width = layout.rect.width;
+                    let width = layout.rect.width + cbm.margin_left + cbm.margin_right;
                     let height = layout.rect.height + cbm.margin_top + cbm.margin_bottom;
 
                     let kind = layout

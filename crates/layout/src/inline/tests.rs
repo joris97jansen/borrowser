@@ -444,3 +444,59 @@ fn pending_space_does_not_cross_block_boundary() {
         _ => panic!("expected word token"),
     }
 }
+
+#[test]
+fn inline_block_margins_affect_wrapping() {
+    let doc = Node::Document {
+        id: Id(1),
+        doctype: None,
+        children: vec![Node::Element {
+            id: Id(2),
+            name: Arc::from("div"),
+            attributes: Vec::new(),
+            style: Vec::new(),
+            children: vec![
+                Node::Text {
+                    id: Id(3),
+                    text: "a".to_string(),
+                },
+                Node::Element {
+                    id: Id(4),
+                    name: Arc::from("span"),
+                    attributes: Vec::new(),
+                    style: vec![
+                        ("display".to_string(), "inline-block".to_string()),
+                        ("width".to_string(), "20px".to_string()),
+                        ("margin-left".to_string(), "10px".to_string()),
+                        ("margin-right".to_string(), "10px".to_string()),
+                    ],
+                    children: Vec::new(),
+                },
+            ],
+        }],
+    };
+
+    let styled = css::build_style_tree(&doc, None);
+    let layout = crate::layout_block_tree(&styled, 50.0, &TestMeasurer, None);
+    let div = &layout.children[0];
+
+    let tokens = super::tokens::collect_inline_tokens_for_block_layout(div);
+    let rect = Rectangle {
+        x: 0.0,
+        y: 0.0,
+        width: 50.0,
+        height: 200.0,
+    };
+    let lines = layout_tokens(&TestMeasurer, rect, div.style, tokens);
+    assert_eq!(lines.len(), 2);
+    assert_eq!(lines[0].fragments.len(), 1);
+    assert_eq!(lines[1].fragments.len(), 1);
+    match &lines[0].fragments[0].kind {
+        InlineFragment::Text { text, .. } => assert_eq!(text, "a"),
+        _ => panic!("expected text fragment"),
+    }
+    match &lines[1].fragments[0].kind {
+        InlineFragment::Box { .. } => {}
+        _ => panic!("expected box fragment"),
+    }
+}
