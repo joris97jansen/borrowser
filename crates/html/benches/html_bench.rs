@@ -1,6 +1,6 @@
 use criterion::{BatchSize, Criterion, black_box, criterion_group, criterion_main};
 use html::perf_fixtures::make_blocks;
-use html::{Tokenizer, TreeBuilder, build_dom, tokenize};
+use html::{Tokenizer, TreeBuilder, build_owned_dom, tokenize};
 
 const SMALL_BLOCKS: usize = 64;
 const LARGE_BLOCKS: usize = 20_000;
@@ -54,7 +54,7 @@ fn bench_tree_build_large(c: &mut Criterion) {
     let stream = tokenize(&input);
     c.bench_function("bench_tree_build_large", |b| {
         b.iter(|| {
-            let dom = build_dom(black_box(&stream));
+            let dom = build_owned_dom(black_box(&stream));
             black_box(dom);
         });
     });
@@ -65,7 +65,7 @@ fn bench_parse_large_end_to_end(c: &mut Criterion) {
     c.bench_function("bench_parse_large_end_to_end", |b| {
         b.iter(|| {
             let stream = tokenize(black_box(&input));
-            let dom = build_dom(black_box(&stream));
+            let dom = build_owned_dom(black_box(&stream));
             black_box(dom);
         });
     });
@@ -111,7 +111,7 @@ fn bench_streaming_chunked(c: &mut Criterion) {
                     .finish()
                     .expect("streaming tree builder should finish");
                 let dom = builder
-                    .into_dom()
+                    .materialize()
                     .expect("streaming tree builder should build");
                 black_box(dom);
             },

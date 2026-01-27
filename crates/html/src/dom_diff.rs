@@ -469,11 +469,11 @@ mod tests {
     use super::*;
     use crate::dom_snapshot::{DomSnapshotOptions, assert_dom_eq};
     use crate::golden_corpus::fixtures;
-    use crate::{build_dom, tokenize};
+    use crate::{build_owned_dom, tokenize};
 
     fn build(input: &str) -> Node {
         let stream = tokenize(input);
-        build_dom(&stream)
+        build_owned_dom(&stream)
     }
 
     #[derive(Default)]

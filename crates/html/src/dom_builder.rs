@@ -3,7 +3,11 @@ use crate::types::{AtomTable, Id, Node, NodeKey, Token, TokenStream};
 use core::fmt;
 use std::sync::Arc;
 
-pub fn build_dom(stream: &TokenStream) -> Node {
+/// Build a fully owned DOM tree from a token stream.
+///
+/// This materializes the internal arena into recursive `Node` storage and can
+/// be expensive; avoid calling it on hot preview paths where patches suffice.
+pub fn build_owned_dom(stream: &TokenStream) -> Node {
     #[cfg(feature = "parse-guards")]
     crate::parse_guards::record_full_build_dom();
     let tokens = stream.tokens();
@@ -17,8 +21,8 @@ pub fn build_dom(stream: &TokenStream) -> Node {
         .expect("dom builder finish should be infallible");
 
     builder
-        .into_dom()
-        .expect("dom builder into_dom should be infallible")
+        .materialize()
+        .expect("dom builder materialize should be infallible")
 }
 
 /// Resolves text for tokens produced by the tokenizer.
@@ -345,13 +349,19 @@ impl TreeBuilder {
         Ok(())
     }
 
-    pub fn into_dom(self) -> TreeBuilderResult<Node> {
+    /// Materialize the internal arena into a fully owned `Node` tree.
+    ///
+    /// This is an explicitly expensive operation intended for debug/export paths,
+    /// not incremental preview ticks. Prefer patches and arena indices for hot paths.
+    pub fn materialize(self) -> TreeBuilderResult<Node> {
         if !self.finished {
             return Err(TreeBuilderError::InvariantViolation(
-                "TreeBuilder::finish() must be called before into_dom()",
+                "TreeBuilder::finish() must be called before materialize()",
             ));
         }
-        Ok(self.arena.into_dom(self.root_index))
+        #[cfg(feature = "parse-guards")]
+        crate::parse_guards::record_dom_materialize();
+        Ok(self.arena.materialize(self.root_index))
     }
 
     #[inline]
@@ -551,16 +561,18 @@ impl TreeBuilder {
 
     /// Drain any patches emitted so far.
     ///
-    /// Call this before consuming the builder with `into_dom()`.
+    /// Call this before consuming the builder with `materialize()`.
     pub fn take_patches(&mut self) -> Vec<DomPatch> {
         std::mem::take(&mut self.patches)
     }
 
-    /// Finish parsing and return both the DOM and all emitted patches.
-    pub fn finish_into_dom_and_patches(mut self) -> TreeBuilderResult<(Node, Vec<DomPatch>)> {
+    /// Finish parsing and return both the owned DOM and all emitted patches.
+    ///
+    /// This performs a full materialization; avoid calling it on hot paths.
+    pub fn finish_into_owned_dom_and_patches(mut self) -> TreeBuilderResult<(Node, Vec<DomPatch>)> {
         self.finish()?;
         let patches = self.take_patches();
-        let dom = self.into_dom()?;
+        let dom = self.materialize()?;
         Ok((dom, patches))
     }
 
@@ -743,19 +755,6 @@ impl NodeArena {
         }
     }
 
-    #[cfg(test)]
-    fn index_of(&self, key: NodeKey) -> Option<usize> {
-        if key == NodeKey::INVALID {
-            return None;
-        }
-        let k = key.0 as usize;
-        let idx = *self.key_to_index.get(k)?;
-        if idx == Self::MISSING {
-            return None;
-        }
-        Some(idx)
-    }
-
     #[cfg(any(test, debug_assertions))]
     fn debug_validate(&self) {
         debug_assert_eq!(
@@ -805,7 +804,7 @@ impl NodeArena {
         }
     }
 
-    fn into_dom(self, root_index: usize) -> Node {
+    fn materialize(self, root_index: usize) -> Node {
         let mut nodes = self.nodes;
         let mut built_nodes: Vec<Node> = Vec::with_capacity(nodes.len());
 
@@ -922,7 +921,11 @@ mod tests {
             tokens.push(Token::EndTag(div));
         }
 
-        let dom = build_dom(&TokenStream::new(tokens, atoms, Arc::from(""), Vec::new()));
+        let stream = TokenStream::new(tokens, atoms, Arc::from(""), Vec::new());
+        let mut builder = TreeBuilder::with_capacity(stream.tokens().len().saturating_add(1));
+        builder.push_stream(&stream).unwrap();
+        builder.finish().unwrap();
+        let dom = builder.materialize().unwrap();
 
         let mut current = &dom;
         let mut seen = 0usize;
@@ -1000,7 +1003,7 @@ mod tests {
             Token::EndTag(div),
         ];
         let text_pool = vec!["hello".to_string(), "item".to_string()];
-        let dom = build_dom(&TokenStream::new(tokens, atoms, Arc::from(""), text_pool));
+        let dom = build_owned_dom(&TokenStream::new(tokens, atoms, Arc::from(""), text_pool));
 
         let mut ids = HashSet::new();
         let mut count = 0usize;
@@ -1047,13 +1050,13 @@ mod tests {
         let text_pool = vec!["hi".to_string(), "bye".to_string()];
         let stream = TokenStream::new(tokens, atoms, Arc::from(""), text_pool);
 
-        let mut builder = TreeBuilder::with_capacity(0);
+        let mut builder = TreeBuilder::with_capacity(stream.tokens().len().saturating_add(1));
         let atoms = stream.atoms();
         for token in stream.tokens() {
             builder.push_token(token, atoms, &stream).unwrap();
         }
         builder.finish().unwrap();
-        let dom = builder.into_dom().unwrap();
+        let dom = builder.materialize().unwrap();
 
         let Node::Document { children, .. } = dom else {
             panic!("expected document node");
@@ -1123,7 +1126,7 @@ mod tests {
             builder.push_token(token, atoms, &stream).unwrap();
         }
         builder.finish().unwrap();
-        let dom = builder.into_dom().unwrap();
+        let dom = builder.materialize().unwrap();
 
         let Node::Document { children, .. } = dom else {
             panic!("expected document node");
@@ -1280,7 +1283,7 @@ mod tests {
             .push_token(&stream.tokens()[3], atoms, &stream)
             .unwrap();
         builder.finish().unwrap();
-        let dom = builder.into_dom().unwrap();
+        let dom = builder.materialize().unwrap();
 
         let Node::Document { children, .. } = dom else {
             panic!("expected document node");
@@ -1347,7 +1350,7 @@ mod tests {
             "next key should be one past the last allocated node key"
         );
         builder.finish().unwrap();
-        let dom = builder.into_dom().unwrap();
+        let dom = builder.materialize().unwrap();
 
         let mut ids: Vec<Id> = Vec::new();
         let mut stack = vec![&dom];
@@ -1405,7 +1408,7 @@ mod tests {
             builder.push_token(token, atoms, &stream).unwrap();
         }
         builder.finish().unwrap();
-        let dom = builder.into_dom().unwrap();
+        let dom = builder.materialize().unwrap();
 
         let mut ids = std::collections::HashSet::new();
         let mut stack = vec![&dom];
@@ -1427,14 +1430,26 @@ mod tests {
         let mut builder = TreeBuilder::with_capacity(stream.tokens().len().saturating_add(1));
         builder.push_stream(&stream).unwrap();
 
+        fn index_of(arena: &NodeArena, key: NodeKey) -> Option<usize> {
+            if key == NodeKey::INVALID {
+                return None;
+            }
+            let k = key.0 as usize;
+            let idx = *arena.key_to_index.get(k)?;
+            if idx == NodeArena::MISSING {
+                return None;
+            }
+            Some(idx)
+        }
+
         for idx in 0..builder.arena.nodes.len() {
             let key = builder.arena.node_key(idx);
-            let idx2 = builder.arena.index_of(key).expect("key must resolve");
+            let idx2 = index_of(&builder.arena, key).expect("key must resolve");
             assert_eq!(idx, idx2);
         }
 
-        assert!(builder.arena.index_of(NodeKey::INVALID).is_none());
-        assert!(builder.arena.index_of(builder.debug_next_key()).is_none());
+        assert!(index_of(&builder.arena, NodeKey::INVALID).is_none());
+        assert!(index_of(&builder.arena, builder.debug_next_key()).is_none());
     }
 
     #[derive(Clone, Debug)]
@@ -1633,7 +1648,7 @@ mod tests {
     fn tree_builder_emits_core_patches_matching_dom() {
         let input = "<!doctype html><div>hi<span>yo</span><!--c--></div>";
         let stream = crate::tokenize(input);
-        let expected = build_dom(&stream);
+        let expected = build_owned_dom(&stream);
 
         let mut builder = TreeBuilder::with_capacity_and_config(
             stream.tokens().len().saturating_add(1),
@@ -1645,7 +1660,7 @@ mod tests {
         }
         builder.finish().unwrap();
         let patches = builder.take_patches();
-        let _ = builder.into_dom().unwrap();
+        let _ = builder.materialize().unwrap();
 
         let mut arena = PatchArena::default();
         arena.apply(&patches);
@@ -1683,7 +1698,7 @@ mod tests {
         }
         builder.finish().unwrap();
         let patches = builder.take_patches();
-        let expected = builder.into_dom().unwrap();
+        let expected = builder.materialize().unwrap();
 
         let create_text_count = patches
             .iter()
@@ -1745,7 +1760,7 @@ mod tests {
         }
         builder.finish().unwrap();
         let patches = builder.take_patches();
-        let expected = builder.into_dom().unwrap();
+        let expected = builder.materialize().unwrap();
 
         let create_text_count = patches
             .iter()
@@ -1810,7 +1825,7 @@ mod tests {
         }
         builder.finish().unwrap();
         let patches = builder.take_patches();
-        let expected = builder.into_dom().unwrap();
+        let expected = builder.materialize().unwrap();
 
         let create_text_count = patches
             .iter()
@@ -1868,7 +1883,7 @@ mod tests {
         );
         builder.push_stream(&stream).unwrap();
         builder.finish().unwrap();
-        let dom = builder.into_dom().unwrap();
+        let dom = builder.materialize().unwrap();
 
         let Node::Document { children, .. } = dom else {
             panic!("expected document node");
@@ -1915,7 +1930,7 @@ mod tests {
         );
         builder.push_stream(&stream).unwrap();
         builder.finish().unwrap();
-        let dom = builder.into_dom().unwrap();
+        let dom = builder.materialize().unwrap();
 
         let Node::Document { children, .. } = dom else {
             panic!("expected document node");

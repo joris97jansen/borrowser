@@ -167,6 +167,7 @@ fn assert_parse_guard_delta_zero(
 ) {
     let delta_full_tokenize = after.full_tokenize_calls - before.full_tokenize_calls;
     let delta_full_build = after.full_dom_build_calls - before.full_dom_build_calls;
+    let delta_materialize = after.dom_materialize_calls - before.dom_materialize_calls;
     let delta_snapshot = after.dom_snapshot_compare_calls - before.dom_snapshot_compare_calls;
     let delta_diff = after.dom_diff_calls - before.dom_diff_calls;
     assert_eq!(
@@ -175,7 +176,11 @@ fn assert_parse_guard_delta_zero(
     );
     assert_eq!(
         delta_full_build, 0,
-        "unexpected build_dom() calls during {label}"
+        "unexpected build_owned_dom() calls during {label}"
+    );
+    assert_eq!(
+        delta_materialize, 0,
+        "unexpected materialize() calls during {label}"
     );
     assert_eq!(
         delta_snapshot, 0,

@@ -79,7 +79,7 @@ fn contains_ignore_ascii_case(haystack: &str, needle: &[u8]) -> bool {
     false
 }
 
-pub use crate::dom_builder::build_dom;
+pub use crate::dom_builder::build_owned_dom;
 pub use crate::dom_builder::{
     TokenTextResolver, TreeBuilder, TreeBuilderConfig, TreeBuilderError, TreeBuilderResult,
 };

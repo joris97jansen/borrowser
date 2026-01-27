@@ -1,5 +1,5 @@
 use crate::tokenizer::Tokenizer;
-use crate::{Node, build_dom, tokenize};
+use crate::{Node, build_owned_dom, tokenize};
 use std::fmt;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -190,7 +190,7 @@ fn filter_boundaries_by_policy(
 
 pub fn run_full(input: &str) -> Node {
     let stream = tokenize(input);
-    build_dom(&stream)
+    build_owned_dom(&stream)
 }
 
 pub fn run_chunked(input: &str, plan: &ChunkPlan) -> Node {
@@ -205,7 +205,7 @@ pub fn run_chunked_with_tokens(input: &str, plan: &ChunkPlan) -> (Node, crate::T
     });
     tokenizer.finish();
     let stream = tokenizer.into_stream();
-    let dom = build_dom(&stream);
+    let dom = build_owned_dom(&stream);
     (dom, stream)
 }
 
@@ -227,7 +227,7 @@ pub fn run_chunked_bytes_with_tokens(
     }
     tokenizer.finish();
     let stream = tokenizer.into_stream();
-    let dom = build_dom(&stream);
+    let dom = build_owned_dom(&stream);
     (dom, stream)
 }
 
