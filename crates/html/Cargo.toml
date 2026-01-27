@@ -7,6 +7,9 @@ edition = "2024"
 memchr = "2"
 tools = { path = "../tools" }
 
+[dev-dependencies]
+criterion = "0.5"
+
 [features]
 count-alloc = []
 html5-entities = []
@@ -15,3 +18,7 @@ internal-api = []
 dom-snapshot = []
 test-harness = []
 parse-guards = []
+
+[[bench]]
+name = "html_bench"
+harness = false
