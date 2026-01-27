@@ -1,7 +1,7 @@
 use crate::{
     BoxKind, LayoutBox, Rectangle, ReplacedKind, TextMeasurer, content_height, content_x_and_width,
     content_y,
-    inline::{InlineActionKind, InlineFragment, layout_inline_for_paint},
+    inline::{InlineAction, InlineActionKind, InlineFragment, layout_inline_for_paint},
 };
 use css::Display;
 use html::{Node, internal::Id};
@@ -122,7 +122,7 @@ fn hit_test_inline_fragments<'a>(
 
             match &frag.kind {
                 InlineFragment::Text { action, .. } => {
-                    if let Some((link_id, href)) = link_from_action(action) {
+                    if let Some((link_id, href)) = as_link(action) {
                         return Some(HitResult {
                             node_id: link_id,
                             kind: HitKind::Link,
@@ -147,7 +147,7 @@ fn hit_test_inline_fragments<'a>(
                     ..
                 } => {
                     // If box is inside <a>, clicking it should be a link click.
-                    if let Some((link_id, href)) = link_from_action(action) {
+                    if let Some((link_id, href)) = as_link(action) {
                         return Some(HitResult {
                             node_id: link_id,
                             kind: HitKind::Link,
@@ -176,7 +176,7 @@ fn hit_test_inline_fragments<'a>(
                     ..
                 } => {
                     // If replaced is inside <a>, it’s a link click
-                    if let Some((link_id, href)) = link_from_action(action) {
+                    if let Some((link_id, href)) = as_link(action) {
                         return Some(HitResult {
                             node_id: link_id,
                             kind: HitKind::Link,
@@ -213,11 +213,16 @@ fn hit_test_inline_fragments<'a>(
     None
 }
 
-fn link_from_action(
-    action: &Option<(Id, InlineActionKind, Option<String>)>,
-) -> Option<(Id, Option<String>)> {
+fn as_link(action: &Option<InlineAction>) -> Option<(Id, Option<String>)> {
     match action {
-        Some((id, InlineActionKind::Link, href)) => Some((*id, href.clone())),
+        Some(InlineAction {
+            target,
+            kind: InlineActionKind::Link,
+            href,
+        }) => {
+            let href = href.as_ref().map(|s| s.as_ref().to_string());
+            Some((*target, href))
+        }
         _ => None,
     }
 }

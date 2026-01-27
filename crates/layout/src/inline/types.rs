@@ -1,10 +1,18 @@
 use crate::{LayoutBox, Rectangle, ReplacedKind};
 use css::ComputedStyle;
 use html::internal::Id;
+use std::sync::Arc;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InlineActionKind {
     Link,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct InlineAction {
+    pub target: Id,
+    pub kind: InlineActionKind,
+    pub href: Option<Arc<str>>,
 }
 
 /// The logical content carried by a line fragment.
@@ -14,12 +22,12 @@ pub enum InlineFragment<'a> {
     Text {
         text: String,
         style: &'a ComputedStyle,
-        action: Option<(Id, InlineActionKind, Option<String>)>,
+        action: Option<InlineAction>,
     },
     Box {
         /// Style of the inline box (for color, etc.).
         style: &'a ComputedStyle,
-        action: Option<(Id, InlineActionKind, Option<String>)>,
+        action: Option<InlineAction>,
         /// Layout box for this inline-level box, if we have one.
         /// - `Some(..)` in the painting path
         /// - `None` in the height computation path
@@ -28,7 +36,7 @@ pub enum InlineFragment<'a> {
     Replaced {
         style: &'a ComputedStyle,
         kind: ReplacedKind,
-        action: Option<(Id, InlineActionKind, Option<String>)>,
+        action: Option<InlineAction>,
         layout: Option<&'a LayoutBox<'a>>, // usually None; future-proof (e.g. <button>)
     },
 }

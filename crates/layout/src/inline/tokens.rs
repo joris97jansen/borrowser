@@ -1,14 +1,29 @@
 use css::ComputedStyle;
 use html::{Node, internal::Id};
+use std::sync::Arc;
 
 use crate::{BoxKind, LayoutBox, ReplacedKind};
 
 use super::get_attr;
+use super::types::{InlineAction, InlineActionKind};
 
 #[derive(Clone, Default)]
 pub(super) struct InlineContext {
     pub(super) link_target: Option<Id>,
-    pub(super) link_href: Option<String>,
+    /// Cloned per token; keep this cheap (shared string).
+    pub(super) link_href: Option<Arc<str>>,
+}
+
+impl InlineContext {
+    #[inline(always)]
+    pub(super) fn to_action(&self) -> Option<InlineAction> {
+        let id = self.link_target?;
+        Some(InlineAction {
+            target: id,
+            kind: InlineActionKind::Link,
+            href: self.link_href.clone(),
+        })
+    }
 }
 
 // Internal token representation after whitespace processing.
@@ -221,7 +236,7 @@ fn collect_inline_tokens_from_layout_box<'a>(
                 Node::Element { name, .. } if name.eq_ignore_ascii_case("a")
             ) {
                 next_ctx.link_target = Some(layout.node_id());
-                next_ctx.link_href = get_attr(layout.node.node, "href").map(|s| s.to_string());
+                next_ctx.link_href = get_attr(layout.node.node, "href").map(Arc::from);
             }
 
             match layout.kind {
