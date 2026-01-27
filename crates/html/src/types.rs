@@ -66,6 +66,9 @@ impl From<NodeKey> for Id {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct AtomId(pub u32);
 
+/// Interns ASCII, lowercase tag/attribute names with one allocation per distinct name.
+/// Invariants: stored names are canonical ASCII lowercase and interned once per table.
+/// Lookup by `&str` is allocation-free via `Borrow<str>` on `Arc<str>`.
 #[derive(Debug, Default)]
 pub struct AtomTable {
     atoms: Vec<Arc<str>>,
@@ -79,7 +82,9 @@ impl AtomTable {
 
     /// Interns ASCII-lowercased tag and attribute names to avoid per-token allocations.
     /// Tradeoff: tokenization carries a per-document atom table for name resolution.
+    /// Caller must ensure the input is ASCII-only; non-ASCII is outside current invariants.
     pub fn intern_ascii_lowercase(&mut self, value: &str) -> AtomId {
+        assert!(value.is_ascii(), "AtomTable only supports ASCII names");
         let lookup = if value.bytes().any(|b| b.is_ascii_uppercase()) {
             Cow::Owned(value.to_ascii_lowercase())
         } else {
@@ -91,6 +96,10 @@ impl AtomTable {
         }
 
         let atom = Arc::<str>::from(lookup.as_ref());
+        debug_assert!(
+            self.atoms.len() < u32::MAX as usize,
+            "atom table exceeded AtomId capacity"
+        );
         let id = AtomId(self.atoms.len() as u32);
         self.atoms.push(Arc::clone(&atom));
         self.map.insert(atom, id);
@@ -114,6 +123,26 @@ impl AtomTable {
 
     pub fn is_empty(&self) -> bool {
         self.atoms.is_empty()
+    }
+
+    #[cfg(any(test, debug_assertions))]
+    #[allow(dead_code)] // Debug-only invariant checker; may be called ad-hoc
+    pub(crate) fn debug_validate(&self) {
+        debug_assert_eq!(
+            self.atoms.len(),
+            self.map.len(),
+            "atom table map/vec size mismatch"
+        );
+        for (idx, atom) in self.atoms.iter().enumerate() {
+            let id = AtomId(idx as u32);
+            let mapped = self.map.get(atom).expect("atom table missing map entry");
+            debug_assert_eq!(*mapped, id, "atom table id mismatch");
+            debug_assert!(
+                atom.bytes()
+                    .all(|b| b.is_ascii() && !b.is_ascii_uppercase()),
+                "atom table contains non-ascii or non-lowercase value"
+            );
+        }
     }
 }
 
@@ -346,7 +375,9 @@ mod tests {
     fn intern_ascii_lowercase_is_case_insensitive() {
         let mut atoms = AtomTable::new();
         let upper = atoms.intern_ascii_lowercase("DIV");
+        let mixed = atoms.intern_ascii_lowercase("DiV");
         let lower = atoms.intern_ascii_lowercase("div");
+        assert_eq!(upper, mixed);
         assert_eq!(upper, lower);
         assert_eq!(atoms.len(), 1);
     }
@@ -376,5 +407,21 @@ mod tests {
         let a = atoms.resolve_arc(a_id);
         let b = atoms.resolve_arc(b_id);
         assert!(!Arc::ptr_eq(&a, &b));
+    }
+
+    #[test]
+    fn intern_stress_keeps_table_consistent() {
+        let mut atoms = AtomTable::new();
+        for i in 0..10_000usize {
+            let name = format!("tag{i}");
+            let id = atoms.intern_ascii_lowercase(&name);
+            let upper = name.to_ascii_uppercase();
+            let id2 = atoms.intern_ascii_lowercase(&upper);
+            assert_eq!(id, id2);
+            assert_eq!(atoms.resolve(id), name.as_str());
+        }
+        assert_eq!(atoms.atoms.len(), 10_000);
+        assert_eq!(atoms.map.len(), 10_000);
+        atoms.debug_validate();
     }
 }

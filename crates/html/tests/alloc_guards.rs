@@ -1,6 +1,6 @@
 #![cfg(feature = "count-alloc")]
 
-use html::{Token, TokenStream, tokenize};
+use html::{AtomTable, Token, TokenStream, tokenize};
 use std::alloc::{GlobalAlloc, Layout, System};
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 
@@ -107,7 +107,7 @@ fn tokenize_rawtext_allocation_is_bounded() {
     let _guard = AllocGuard::new();
     let stream = tokenize(&input);
     let atoms = stream.atoms();
-    let (_, bytes, reallocs) = alloc_counts();
+    let (allocs, bytes, reallocs) = alloc_counts();
 
     assert!(
         matches!(
@@ -124,6 +124,7 @@ fn tokenize_rawtext_allocation_is_bounded() {
     let expected_source = input.len();
     let extra = bytes.saturating_sub(expected_source);
     let max_reallocs = 128;
+    let max_allocs = 50_000;
     assert!(
         extra <= overhead,
         "expected bounded extra allocations; bytes={bytes} input_len={expected_source} extra={extra} overhead={overhead}"
@@ -131,6 +132,10 @@ fn tokenize_rawtext_allocation_is_bounded() {
     assert!(
         reallocs <= max_reallocs,
         "expected bounded realloc churn; reallocs={reallocs} max={max_reallocs}"
+    );
+    assert!(
+        allocs <= max_allocs,
+        "expected bounded allocation events; allocs={allocs} max={max_allocs}"
     );
 }
 
@@ -146,7 +151,7 @@ fn tokenize_plain_text_allocation_is_bounded() {
     let _guard = AllocGuard::new();
     let stream = tokenize(&input);
     let atoms = stream.atoms();
-    let (_, bytes, reallocs) = alloc_counts();
+    let (allocs, bytes, reallocs) = alloc_counts();
 
     assert!(
         matches!(
@@ -163,6 +168,7 @@ fn tokenize_plain_text_allocation_is_bounded() {
     let expected_source = input.len();
     let extra = bytes.saturating_sub(expected_source);
     let max_reallocs = 128;
+    let max_allocs = 50_000;
     assert!(
         extra <= overhead,
         "expected bounded extra allocations; bytes={bytes} input_len={expected_source} extra={extra} overhead={overhead}"
@@ -170,6 +176,10 @@ fn tokenize_plain_text_allocation_is_bounded() {
     assert!(
         reallocs <= max_reallocs,
         "expected bounded realloc churn; reallocs={reallocs} max={max_reallocs}"
+    );
+    assert!(
+        allocs <= max_allocs,
+        "expected bounded allocation events; allocs={allocs} max={max_allocs}"
     );
 }
 
@@ -185,14 +195,23 @@ fn tokenize_attribute_values_avoid_unnecessary_allocs() {
     let plain = "<p data=Tom&Jerry title=plain>ok</p>";
     let encoded = "<p data=Tom&amp;Jerry title=&#x3C;ok&#x3E;>ok</p>";
 
-    let (_, bytes_plain, reallocs_plain) = measure(plain);
-    let (_, bytes_encoded, reallocs_encoded) = measure(encoded);
+    let (allocs_plain, bytes_plain, reallocs_plain) = measure(plain);
+    let (allocs_encoded, _bytes_encoded, reallocs_encoded) = measure(encoded);
     let overhead = 64 * 1024;
     let baseline = plain.len();
+    let max_allocs = 10_000;
 
     assert!(
         bytes_plain <= baseline + overhead,
         "expected bounded allocations for plain attrs; bytes={bytes_plain} input_len={baseline} overhead={overhead}"
+    );
+    assert!(
+        allocs_plain <= max_allocs,
+        "expected bounded allocation events for plain attrs; allocs={allocs_plain} max={max_allocs}"
+    );
+    assert!(
+        allocs_plain <= allocs_encoded + 256,
+        "expected plain attrs to avoid excess alloc churn; plain={allocs_plain} encoded={allocs_encoded}"
     );
     assert!(
         reallocs_plain <= 128,
@@ -202,4 +221,32 @@ fn tokenize_attribute_values_avoid_unnecessary_allocs() {
         reallocs_plain <= reallocs_encoded + 64,
         "expected plain attrs to avoid excess realloc churn; plain={reallocs_plain} encoded={reallocs_encoded}"
     );
+}
+
+#[test]
+fn atom_intern_reuse_does_not_allocate() {
+    let mut atoms = AtomTable::new();
+    let first = atoms.intern_ascii_lowercase("div");
+    let _guard = AllocGuard::new();
+    let (a1, b1, r1) = alloc_counts();
+    let second = atoms.intern_ascii_lowercase("div");
+    let (a2, b2, r2) = alloc_counts();
+
+    assert_eq!(first, second);
+    assert_eq!(a1, a2, "expected no extra alloc events on reuse");
+    assert_eq!(b1, b2, "expected no extra alloc bytes on reuse");
+    assert_eq!(r1, r2, "expected no extra reallocs on reuse");
+}
+
+#[test]
+fn atom_lookup_path_does_not_allocate() {
+    let mut atoms = AtomTable::new();
+    atoms.intern_ascii_lowercase("div");
+
+    let _guard = AllocGuard::new();
+    let (a1, b1, r1) = alloc_counts();
+    let _ = atoms.intern_ascii_lowercase("div");
+    let (a2, b2, r2) = alloc_counts();
+
+    assert_eq!((a1, b1, r1), (a2, b2, r2));
 }
