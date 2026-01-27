@@ -94,8 +94,8 @@ struct PendingSpace<'a> {
     source_range: Option<(usize, usize)>,
 }
 
-// ASCII whitespace set used for HTML-like collapsing (excludes NBSP).
-fn is_ascii_collapsible_html_ws(ch: char) -> bool {
+// ASCII whitespace set used for HTML-like collapsing (excludes NBSP and Unicode spaces).
+fn is_html_ascii_whitespace(ch: char) -> bool {
     matches!(ch, ' ' | '\n' | '\t' | '\r' | '\u{0C}')
 }
 
@@ -110,7 +110,7 @@ fn push_text_as_tokens<'a>(
     let mut current_word = String::new();
 
     for ch in text.chars() {
-        if is_ascii_collapsible_html_ws(ch) {
+        if is_html_ascii_whitespace(ch) {
             // End any current word.
             if !current_word.is_empty() {
                 tokens.push(InlineToken::Word {
@@ -378,6 +378,21 @@ fn collect_inline_tokens_from_layout_box<'a>(
                     *has_emitted_content = true;
                 }
             }
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::is_html_ascii_whitespace;
+
+    #[test]
+    fn html_ascii_whitespace_set() {
+        for ch in [' ', '\n', '\t', '\r', '\u{0C}'] {
+            assert!(is_html_ascii_whitespace(ch));
+        }
+        for ch in ['\u{00A0}', '\u{2003}', 'a'] {
+            assert!(!is_html_ascii_whitespace(ch));
         }
     }
 }
