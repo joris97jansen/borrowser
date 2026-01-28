@@ -146,6 +146,15 @@ impl AtomTable {
     }
 }
 
+#[inline]
+pub(crate) fn debug_assert_lowercase_atom(value: &str, what: &'static str) {
+    debug_assert!(value.is_ascii(), "{what} must be ASCII");
+    debug_assert!(
+        value.bytes().all(|b| !b.is_ascii_uppercase()),
+        "{what} must be canonical lowercase (no ASCII uppercase)"
+    );
+}
+
 #[derive(Debug)]
 pub enum Token {
     Doctype(TextPayload),
@@ -342,11 +351,15 @@ impl Node {
         }
     }
 
+    /// Returns true if an attribute with the given name exists.
+    /// Attribute names are matched case-insensitively per HTML semantics.
     pub fn has_attr(&self, name: &str) -> bool {
         matches!(self, Node::Element { attributes, .. }
             if attributes.iter().any(|(k, _)| k.eq_ignore_ascii_case(name)))
     }
 
+    /// Returns true if the attribute contains the given whitespace-separated token.
+    /// Token matching is ASCII case-insensitive per HTML semantics.
     pub fn attr_has_token(&self, attr: &str, token: &str) -> bool {
         if token.is_empty() {
             return false;
@@ -355,6 +368,8 @@ impl Node {
             .is_some_and(|v| v.split_whitespace().any(|t| t.eq_ignore_ascii_case(token)))
     }
 
+    /// Returns the first matching attribute value, if any.
+    /// Attribute names are matched case-insensitively per HTML semantics.
     pub fn attr(&self, name: &str) -> Option<&str> {
         match self {
             Node::Element { attributes, .. } => attributes

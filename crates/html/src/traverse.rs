@@ -1,4 +1,4 @@
-use crate::types::Node;
+use crate::types::{Node, debug_assert_lowercase_atom};
 
 // Centralizes raw-pointer traversal handling for `assign_missing_ids_allow_collisions`.
 #[cfg(test)]
@@ -84,12 +84,13 @@ pub(crate) fn find_node_by_id(node: &Node, id: crate::types::Id) -> Option<&Node
 pub fn is_non_rendering_element(node: &Node) -> bool {
     match node {
         Node::Element { name, .. } => {
-            name.eq_ignore_ascii_case("head")
-                || name.eq_ignore_ascii_case("style")
-                || name.eq_ignore_ascii_case("script")
-                || name.eq_ignore_ascii_case("title")
-                || name.eq_ignore_ascii_case("meta")
-                || name.eq_ignore_ascii_case("link")
+            debug_assert_lowercase_atom(name, "non-rendering tag");
+            name.as_ref() == "head"
+                || name.as_ref() == "style"
+                || name.as_ref() == "script"
+                || name.as_ref() == "title"
+                || name.as_ref() == "meta"
+                || name.as_ref() == "link"
         }
         _ => false,
     }

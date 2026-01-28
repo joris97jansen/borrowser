@@ -1,5 +1,5 @@
 use crate::dom_patch::{DomPatch, PatchKey};
-use crate::types::{AtomTable, Id, Node, NodeKey, Token, TokenStream};
+use crate::types::{AtomTable, Id, Node, NodeKey, Token, TokenStream, debug_assert_lowercase_atom};
 use core::fmt;
 use std::sync::Arc;
 
@@ -171,11 +171,12 @@ impl TreeBuilder {
         dead_code,
         reason = "used by tests; runtime toggling is planned for streaming parse"
     )]
-    pub fn set_coalesce_text(&mut self, enabled: bool) {
+    pub fn set_coalesce_text(&mut self, enabled: bool) -> TreeBuilderResult<()> {
         if self.coalesce_text && !enabled {
-            self.finalize_pending_text();
+            self.finalize_pending_text()?;
         }
         self.coalesce_text = enabled;
+        Ok(())
     }
 
     #[cfg(test)]
@@ -207,7 +208,7 @@ impl TreeBuilder {
 
         match token {
             Token::Doctype(s) => {
-                self.finalize_pending_text();
+                self.finalize_pending_text()?;
                 if self.document_emitted {
                     return Err(TreeBuilderError::Protocol(
                         "doctype after document emission",
@@ -225,7 +226,7 @@ impl TreeBuilder {
                 self.ensure_document_emitted()?;
                 match token {
                     Token::Comment(c) => {
-                        self.finalize_pending_text();
+                        self.finalize_pending_text()?;
                         let parent_index = self.current_parent();
                         let key = self.arena.alloc_key();
                         let text = c.as_str(text_resolver.source()).to_string();
@@ -239,15 +240,15 @@ impl TreeBuilder {
                         self.emit_patch(DomPatch::CreateComment {
                             key: patch_key(key),
                             text: text.clone(),
-                        });
+                        })?;
                         self.emit_patch(DomPatch::AppendChild {
                             parent: patch_key(self.arena.node_key(parent_index)),
                             child: patch_key(key),
-                        });
+                        })?;
                     }
                     Token::TextSpan { .. } | Token::TextOwned { .. } => {
                         if let Some(txt) = text_resolver.text(token) {
-                            self.push_text(txt);
+                            self.push_text(txt)?;
                         }
                     }
                     Token::StartTag {
@@ -256,7 +257,7 @@ impl TreeBuilder {
                         self_closing,
                         ..
                     } => {
-                        self.finalize_pending_text();
+                        self.finalize_pending_text()?;
                         let parent_index = self.current_parent();
                         // Materialize attribute values into owned DOM strings; revisit once
                         // attribute storage is arena-backed to reduce cloning.
@@ -271,16 +272,10 @@ impl TreeBuilder {
                             resolved_attributes.push((attr_name, resolved_value));
                         }
                         let resolved_name = atoms.resolve_arc(*name);
-                        debug_assert_canonical_ascii_lower(
-                            resolved_name.as_ref(),
-                            "dom builder tag atom",
-                        );
+                        debug_assert_lowercase_atom(resolved_name.as_ref(), "dom builder tag atom");
                         #[cfg(debug_assertions)]
                         for (k, _) in &resolved_attributes {
-                            debug_assert_canonical_ascii_lower(
-                                k.as_ref(),
-                                "dom builder attribute atom",
-                            );
+                            debug_assert_lowercase_atom(k.as_ref(), "dom builder attribute atom");
                         }
                         let key = self.arena.alloc_key();
                         let patch_name = Arc::clone(&resolved_name);
@@ -298,21 +293,21 @@ impl TreeBuilder {
                             key: patch_key(key),
                             name: patch_name,
                             attributes: patch_attributes,
-                        });
+                        })?;
                         self.emit_patch(DomPatch::AppendChild {
                             parent: patch_key(self.arena.node_key(parent_index)),
                             child: patch_key(key),
-                        });
+                        })?;
 
                         if !*self_closing {
                             self.open_elements.push(new_index);
                         }
                     }
                     Token::EndTag(name) => {
-                        self.finalize_pending_text();
+                        self.finalize_pending_text()?;
                         // End tags only affect tree builder state; they do not emit patches.
                         let target = atoms.resolve(*name);
-                        debug_assert_canonical_ascii_lower(target, "dom builder end-tag atom");
+                        debug_assert_lowercase_atom(target, "dom builder end-tag atom");
                         while let Some(open_index) = self.open_elements.pop() {
                             debug_assert!(open_index != self.root_index);
                             if self.arena.is_element_named(open_index, target) {
@@ -335,7 +330,7 @@ impl TreeBuilder {
         if self.finished {
             return Err(TreeBuilderError::Finished);
         }
-        self.finalize_pending_text();
+        self.finalize_pending_text()?;
         debug_assert!(
             self.pending_text.is_none(),
             "pending text must be flushed on finish"
@@ -372,15 +367,15 @@ impl TreeBuilder {
             .unwrap_or(self.root_index)
     }
 
-    fn push_text(&mut self, text: &str) {
+    fn push_text(&mut self, text: &str) -> TreeBuilderResult<()> {
         if text.is_empty() {
-            return;
+            return Ok(());
         }
 
         if !self.coalesce_text {
             let parent_index = self.current_parent();
-            let _ = self.add_text_node(parent_index, text.to_string());
-            return;
+            let _ = self.add_text_node(parent_index, text.to_string())?;
+            return Ok(());
         }
 
         let parent_index = self.current_parent();
@@ -389,14 +384,13 @@ impl TreeBuilder {
                 pending.text.push_str(text);
                 // dirty means the final text differs from the initial CreateText payload.
                 pending.dirty = true;
-                return;
+                return Ok(());
             }
-            self.finalize_pending_text();
+            self.finalize_pending_text()?;
         }
 
-        let text_owned = text.to_string();
-        if let Some((node_index, key)) =
-            self.add_text_node_with_patch(parent_index, text_owned.as_str())
+        if let Some((node_index, key, text_owned)) =
+            self.add_text_node_and_return(parent_index, text.to_string())?
         {
             self.pending_text = Some(PendingText {
                 parent_index,
@@ -406,64 +400,63 @@ impl TreeBuilder {
                 dirty: false,
             });
         }
+        Ok(())
     }
 
-    fn finalize_pending_text(&mut self) {
+    fn finalize_pending_text(&mut self) -> TreeBuilderResult<()> {
         let Some(pending) = self.pending_text.take() else {
-            return;
+            return Ok(());
         };
-        if pending.text.is_empty() {
-            return;
-        }
         if pending.dirty {
             self.emit_patch(DomPatch::SetText {
                 key: patch_key(pending.key),
                 text: pending.text.clone(),
-            });
+            })?;
         }
         self.arena.set_text(pending.node_index, pending.text);
+        Ok(())
     }
 
-    fn add_text_node(&mut self, parent_index: usize, text: String) -> Option<(usize, NodeKey)> {
-        let patch_text = text.clone();
-        self.add_text_node_internal(parent_index, patch_text, Some(text))
-    }
-
-    fn add_text_node_with_patch(
+    fn add_text_node(
         &mut self,
         parent_index: usize,
-        patch_text: &str,
-    ) -> Option<(usize, NodeKey)> {
-        self.add_text_node_internal(parent_index, patch_text.to_string(), None)
+        text: String,
+    ) -> TreeBuilderResult<Option<(usize, NodeKey)>> {
+        self.add_text_node_internal(parent_index, text)
+            .map(|opt| opt.map(|(idx, key, _)| (idx, key)))
+    }
+
+    fn add_text_node_and_return(
+        &mut self,
+        parent_index: usize,
+        text: String,
+    ) -> TreeBuilderResult<Option<(usize, NodeKey, String)>> {
+        self.add_text_node_internal(parent_index, text)
     }
 
     fn add_text_node_internal(
         &mut self,
         parent_index: usize,
-        patch_text: String,
-        arena_text: Option<String>,
-    ) -> Option<(usize, NodeKey)> {
-        if patch_text.is_empty() {
-            return None;
+        text: String,
+    ) -> TreeBuilderResult<Option<(usize, NodeKey, String)>> {
+        if text.is_empty() {
+            return Ok(None);
         }
-        // Arena text is finalized only on flush boundaries; until then it may be empty.
+        // Arena text starts with the initial payload and is updated on flush boundaries.
+        let text_out = text.clone();
         let key = self.arena.alloc_key();
-        let node_index = self.arena.add_child(
-            parent_index,
-            ArenaNode::Text {
-                key,
-                text: arena_text.unwrap_or_default(),
-            },
-        );
+        let node_index = self
+            .arena
+            .add_child(parent_index, ArenaNode::Text { key, text });
         self.emit_patch(DomPatch::CreateText {
             key: patch_key(key),
-            text: patch_text,
-        });
+            text: text_out.clone(),
+        })?;
         self.emit_patch(DomPatch::AppendChild {
             parent: patch_key(self.arena.node_key(parent_index)),
             child: patch_key(key),
-        });
-        Some((node_index, key))
+        })?;
+        Ok(Some((node_index, key, text_out)))
     }
 
     #[cfg(any(test, debug_assertions))]
@@ -529,7 +522,7 @@ impl TreeBuilder {
         self.arena.debug_validate();
     }
 
-    fn emit_patch(&mut self, patch: DomPatch) {
+    fn emit_patch(&mut self, patch: DomPatch) -> TreeBuilderResult<()> {
         #[cfg(any(test, debug_assertions))]
         {
             let invalid = patch_has_invalid_key(&patch);
@@ -543,7 +536,18 @@ impl TreeBuilder {
                 );
             }
         }
+        if patch_has_invalid_key(&patch) {
+            return Err(TreeBuilderError::InvariantViolation(
+                "patch emission used invalid key",
+            ));
+        }
+        if !self.document_emitted && !matches!(patch, DomPatch::CreateDocument { .. }) {
+            return Err(TreeBuilderError::Protocol(
+                "CreateDocument must be the first emitted patch",
+            ));
+        }
         self.patches.push(patch);
+        Ok(())
     }
 
     fn ensure_document_emitted(&mut self) -> TreeBuilderResult<()> {
@@ -554,7 +558,7 @@ impl TreeBuilder {
         self.emit_patch(DomPatch::CreateDocument {
             key: patch_key(self.root_key),
             doctype,
-        });
+        })?;
         self.document_emitted = true;
         Ok(())
     }
@@ -623,15 +627,6 @@ fn patch_has_invalid_key(patch: &DomPatch) -> bool {
                 || *before == PatchKey::INVALID
         }
     }
-}
-
-#[inline]
-fn debug_assert_canonical_ascii_lower(s: &str, what: &'static str) {
-    debug_assert!(s.is_ascii(), "{what} must be ASCII");
-    debug_assert!(
-        !s.as_bytes().iter().any(|b| b'A' <= *b && *b <= b'Z'),
-        "{what} must be canonical lowercase (no ASCII uppercase)"
-    );
 }
 
 #[derive(Debug)]
@@ -1275,7 +1270,7 @@ mod tests {
         builder
             .push_token(&stream.tokens()[1], atoms, &stream)
             .unwrap();
-        builder.set_coalesce_text(false);
+        builder.set_coalesce_text(false).unwrap();
         builder
             .push_token(&stream.tokens()[2], atoms, &stream)
             .unwrap();
@@ -1901,6 +1896,22 @@ mod tests {
             panic!("expected trailing text node");
         };
         assert_eq!(text, "b");
+    }
+
+    #[test]
+    fn create_document_is_first_patch_without_doctype() {
+        let input = "hi<div>ok</div>";
+        let stream = crate::tokenize(input);
+
+        let mut builder = TreeBuilder::with_capacity(stream.tokens().len().saturating_add(1));
+        builder.push_stream(&stream).unwrap();
+        builder.finish().unwrap();
+
+        let patches = builder.take_patches();
+        assert!(matches!(
+            patches.first(),
+            Some(DomPatch::CreateDocument { .. })
+        ));
     }
 
     #[test]

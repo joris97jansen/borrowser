@@ -1,4 +1,5 @@
 use crate::Node;
+use crate::types::debug_assert_lowercase_atom;
 
 #[derive(Debug, Clone, Default)]
 pub struct HeadMetadata {
@@ -48,7 +49,8 @@ fn find_head(dom: &Node) -> Option<&Node> {
             continue;
         };
 
-        if !name.eq_ignore_ascii_case("html") {
+        debug_assert_lowercase_atom(name, "head extraction tag");
+        if name.as_ref() != "html" {
             continue;
         }
 
@@ -58,7 +60,8 @@ fn find_head(dom: &Node) -> Option<&Node> {
                 continue;
             };
 
-            if name.eq_ignore_ascii_case("head") {
+            debug_assert_lowercase_atom(name, "head extraction tag");
+            if name.as_ref() == "head" {
                 return Some(hc);
             }
         }
@@ -71,13 +74,14 @@ fn fill_head_metadata_from(head: &Node, out: &mut HeadMetadata) {
     if let Node::Element { children, .. } = head {
         for child in children {
             if let Node::Element { name, children, .. } = child {
+                debug_assert_lowercase_atom(name, "head extraction tag");
                 // <title>
-                if name.eq_ignore_ascii_case("title") && out.title.is_none() {
+                if name.as_ref() == "title" && out.title.is_none() {
                     out.title = first_text_child(children);
                 }
 
                 // <meta>
-                if name.eq_ignore_ascii_case("meta") {
+                if name.as_ref() == "meta" {
                     let tag = MetaTag {
                         name: child.attr("name").map(|s| s.to_string()),
                         property: child.attr("property").map(|s| s.to_string()),
@@ -89,7 +93,7 @@ fn fill_head_metadata_from(head: &Node, out: &mut HeadMetadata) {
                 }
 
                 // <link>
-                if name.eq_ignore_ascii_case("link") {
+                if name.as_ref() == "link" {
                     let rel_raw = child.attr("rel").unwrap_or("");
                     let rels = rel_raw
                         .split_whitespace()
@@ -104,7 +108,7 @@ fn fill_head_metadata_from(head: &Node, out: &mut HeadMetadata) {
                 }
 
                 // <base>
-                if name.eq_ignore_ascii_case("base") && out.base_href.is_none() {
+                if name.as_ref() == "base" && out.base_href.is_none() {
                     out.base_href = child.attr("href").map(|h| h.to_string());
                 }
             }
