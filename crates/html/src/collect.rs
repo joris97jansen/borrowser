@@ -1,18 +1,26 @@
 use crate::Node;
+use crate::types::debug_assert_lowercase_atom;
 
 fn is_heading(name: &str) -> bool {
     let b = name.as_bytes();
-    b.len() == 2 && (b[0] | 0x20) == b'h' && (b'1'..=b'6').contains(&b[1])
+    b.len() == 2 && b[0] == b'h' && (b'1'..=b'6').contains(&b[1])
 }
 
 fn is_blockish_break(name: &str) -> bool {
-    name.eq_ignore_ascii_case("p")
-        || name.eq_ignore_ascii_case("div")
-        || name.eq_ignore_ascii_case("section")
-        || name.eq_ignore_ascii_case("article")
-        || name.eq_ignore_ascii_case("header")
-        || name.eq_ignore_ascii_case("footer")
-        || name.eq_ignore_ascii_case("li")
+    name == "p"
+        || name == "div"
+        || name == "section"
+        || name == "article"
+        || name == "header"
+        || name == "footer"
+        || name == "main"
+        || name == "nav"
+        || name == "aside"
+        || name == "table"
+        || name == "thead"
+        || name == "tbody"
+        || name == "tfoot"
+        || name == "li"
         || is_heading(name)
 }
 
@@ -21,10 +29,42 @@ fn is_ascii_ws(byte: u8) -> bool {
     matches!(byte, b' ' | b'\n' | b'\t' | b'\r')
 }
 
+fn trim_ascii_end(s: &mut String) {
+    let bytes = s.as_bytes();
+    let mut end = bytes.len();
+    while end > 0 && is_ascii_ws(bytes[end - 1]) {
+        end -= 1;
+    }
+    s.truncate(end);
+}
+
+fn trim_ascii_end_preserve_newlines(s: &mut String) {
+    let bytes = s.as_bytes();
+    let mut end = bytes.len();
+    while end > 0 {
+        match bytes[end - 1] {
+            b' ' | b'\t' | b'\r' => end -= 1,
+            _ => break,
+        }
+    }
+    s.truncate(end);
+}
+
+fn ensure_paragraph_boundary_before_block(out: &mut String) {
+    if out.is_empty() {
+        return;
+    }
+    trim_ascii_end_preserve_newlines(out);
+    if out.ends_with('\n') && !out.ends_with("\n\n") {
+        out.push('\n');
+    }
+}
+
 /// Collect concatenated text from <style> elements.
 pub fn collect_style_texts(node: &Node, out: &mut String) {
     match node {
-        Node::Element { name, children, .. } if name.eq_ignore_ascii_case("style") => {
+        Node::Element { name, children, .. } if name.as_ref() == "style" => {
+            debug_assert_lowercase_atom(name, "collect style tag");
             for c in children {
                 if let Node::Text { text, .. } = c {
                     out.push_str(text);
@@ -45,10 +85,11 @@ pub fn collect_style_texts(node: &Node, out: &mut String) {
 pub fn collect_stylesheet_hrefs(node: &Node, out: &mut Vec<String>) {
     match node {
         Node::Element { name, children, .. } => {
-            if name.eq_ignore_ascii_case("link")
+            if name.as_ref() == "link"
                 && node.attr_has_token("rel", "stylesheet")
                 && let Some(href) = node.attr("href")
             {
+                debug_assert_lowercase_atom(name, "collect link tag");
                 out.push(href.to_string());
             }
 
@@ -69,9 +110,10 @@ pub fn collect_stylesheet_hrefs(node: &Node, out: &mut Vec<String>) {
 pub fn collect_img_srcs(node: &Node, out: &mut Vec<String>) {
     match node {
         Node::Element { name, children, .. } => {
-            if name.eq_ignore_ascii_case("img")
+            if name.as_ref() == "img"
                 && let Some(src) = node.attr("src")
             {
+                debug_assert_lowercase_atom(name, "collect img tag");
                 let src = src.trim();
                 if !src.is_empty() {
                     out.push(src.to_string());
@@ -92,14 +134,31 @@ pub fn collect_img_srcs(node: &Node, out: &mut Vec<String>) {
 }
 
 pub fn collect_visible_text(node: &Node, out: &mut String) {
-    fn push_block_break(out: &mut String) {
+    fn push_break(out: &mut String, break_str: &str) {
         if out.is_empty() {
             return;
         }
-        while out.as_bytes().last().is_some_and(|b| is_ascii_ws(*b)) {
-            out.pop();
+        trim_ascii_end_preserve_newlines(out);
+        if break_str == "\n\n" && out.ends_with('\n') && !out.ends_with("\n\n") {
+            out.push('\n');
+            return;
         }
-        out.push_str("\n\n");
+        if !out.ends_with(break_str) {
+            out.push_str(break_str);
+        }
+    }
+
+    fn break_kind(name: &str) -> Option<&'static str> {
+        if name == "br" {
+            return Some("\n");
+        }
+        if name == "hr" || is_blockish_break(name) {
+            return Some("\n\n");
+        }
+        if name == "tr" || name == "td" || name == "th" {
+            return Some("\n");
+        }
+        None
     }
 
     match node {
@@ -113,15 +172,23 @@ pub fn collect_visible_text(node: &Node, out: &mut String) {
             }
         }
         Node::Element { name, children, .. } => {
-            if name.eq_ignore_ascii_case("script") || name.eq_ignore_ascii_case("style") {
+            debug_assert_lowercase_atom(name, "collect visible text tag");
+            if name.as_ref() == "script" || name.as_ref() == "style" {
                 return; // skip
+            }
+
+            if let Some("\n\n") = break_kind(name.as_ref()) {
+                ensure_paragraph_boundary_before_block(out);
             }
             for c in children {
                 collect_visible_text(c, out);
             }
 
-            if is_blockish_break(name) {
-                push_block_break(out);
+            if let Some(break_str) = break_kind(name.as_ref()) {
+                // Breaks are inserted after children (post-order), which may
+                // introduce extra spacing for nested block elements. Trimming
+                // in `push_break` keeps output deterministic.
+                push_break(out, break_str);
             }
         }
         Node::Document { children, .. } => {
@@ -137,16 +204,15 @@ pub fn collect_visible_text(node: &Node, out: &mut String) {
 ///
 /// - Trims each text node and joins non-empty nodes with single spaces.
 /// - Skips text in <script> and <style>.
-/// - Inserts a paragraph break (`\n\n`) after blockish elements.
+/// - Inserts a paragraph break (`\n\n`) after blockish elements (and <hr>).
+/// - Inserts a single newline (`\n`) after <br>.
 /// - Trims leading/trailing ASCII whitespace from the final output.
 pub fn collect_visible_text_string(root: &Node) -> String {
     let mut out = String::new();
     collect_visible_text(root, &mut out);
 
     // Trim trailing ASCII whitespace without allocating a new String.
-    while out.as_bytes().last().is_some_and(|b| is_ascii_ws(*b)) {
-        out.pop();
-    }
+    trim_ascii_end(&mut out);
 
     // Trim leading ASCII whitespace in place.
     let prefix_len = out
@@ -267,5 +333,67 @@ mod tests {
 
         let out = collect_visible_text_string(&root);
         assert_eq!(out, "Hello\n\nWorld");
+    }
+
+    #[test]
+    fn whitespace_only_text_nodes_do_not_create_double_spaces() {
+        let root = doc(vec![
+            text_node("Hello"),
+            text_node("   "),
+            text_node("world"),
+        ]);
+
+        let out = collect_visible_text_string(&root);
+        assert_eq!(out, "Hello world");
+    }
+
+    #[test]
+    fn br_inserts_single_newline() {
+        let root = doc(vec![
+            text_node("Hello"),
+            elem("br", vec![]),
+            text_node("world"),
+        ]);
+
+        let out = collect_visible_text_string(&root);
+        assert_eq!(out, "Hello\nworld");
+    }
+
+    #[test]
+    fn hr_inserts_paragraph_break() {
+        let root = doc(vec![
+            text_node("Hello"),
+            elem("hr", vec![]),
+            text_node("world"),
+        ]);
+
+        let out = collect_visible_text_string(&root);
+        assert_eq!(out, "Hello\n\nworld");
+    }
+
+    #[test]
+    fn br_then_block_results_in_single_paragraph_break() {
+        let root = doc(vec![
+            text_node("Hello"),
+            elem("br", vec![]),
+            elem("div", vec![text_node("World")]),
+        ]);
+
+        let out = collect_visible_text_string(&root);
+        assert_eq!(out, "Hello\n\nWorld");
+    }
+
+    #[test]
+    fn nested_block_breaks_do_not_double_insert() {
+        let root = doc(vec![elem(
+            "div",
+            vec![
+                elem("div", vec![text_node("One")]),
+                elem("div", vec![text_node("Two")]),
+            ],
+        )]);
+
+        let out = collect_visible_text_string(&root);
+        assert_eq!(out, "One\n\nTwo");
     }
 }

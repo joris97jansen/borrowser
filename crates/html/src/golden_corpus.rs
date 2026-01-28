@@ -968,8 +968,15 @@ mod tests {
 
     fn find_element<'a>(node: &'a Node, name: &str) -> Option<&'a Node> {
         match node {
-            Node::Element { name: tag, .. } if tag.eq_ignore_ascii_case(name) => Some(node),
-            Node::Document { children, .. } | Node::Element { children, .. } => {
+            Node::Element { name: tag, .. } => {
+                crate::types::debug_assert_lowercase_atom(tag, "golden find_element tag");
+                if tag.as_ref() == name {
+                    Some(node)
+                } else {
+                    None
+                }
+            }
+            Node::Document { children, .. } => {
                 children.iter().find_map(|child| find_element(child, name))
             }
             _ => None,
@@ -1007,7 +1014,8 @@ mod tests {
     fn collect_element_names(node: &Node, out: &mut BTreeMap<String, usize>) {
         match node {
             Node::Element { name, children, .. } => {
-                let key = name.to_ascii_lowercase();
+                crate::types::debug_assert_lowercase_atom(name, "golden element name");
+                let key = name.to_string();
                 *out.entry(key).or_insert(0) += 1;
                 for child in children {
                     collect_element_names(child, out);
@@ -1111,7 +1119,9 @@ mod tests {
         name: &str,
     ) -> Option<&'a str> {
         attrs.iter().find_map(|(key, value)| {
-            if atoms.resolve(*key).eq_ignore_ascii_case(name) {
+            let key_name = atoms.resolve(*key);
+            crate::types::debug_assert_lowercase_atom(key_name, "golden attribute name");
+            if key_name == name {
                 Some(value.as_ref().map(|v| stream.attr_value(v)).unwrap_or(""))
             } else {
                 None
@@ -1124,8 +1134,10 @@ mod tests {
         attrs: &[(crate::AtomId, Option<crate::AttributeValue>)],
         name: &str,
     ) -> bool {
-        attrs
-            .iter()
-            .any(|(key, _)| atoms.resolve(*key).eq_ignore_ascii_case(name))
+        attrs.iter().any(|(key, _)| {
+            let key_name = atoms.resolve(*key);
+            crate::types::debug_assert_lowercase_atom(key_name, "golden attribute name");
+            key_name == name
+        })
     }
 }
