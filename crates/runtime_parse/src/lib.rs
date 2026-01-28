@@ -18,18 +18,43 @@ use std::collections::HashSet;
 use std::sync::Arc;
 const DEFAULT_TICK: Duration = Duration::from_millis(180);
 const DEBUG_LARGE_BUFFER_BYTES: usize = 1_048_576;
+// Cap retained patch buffer capacity to avoid pinning memory after a spike.
+const MAX_PATCH_BUFFER_RETAIN: usize = 4_096;
+const MIN_PATCH_BUFFER_RETAIN: usize = 256;
+const EST_PATCH_BYTES: usize = 64;
 static HANDLE_GEN: AtomicU64 = AtomicU64::new(0);
+
+/// Retain capacity for patch vectors to reduce allocator churn while capping memory.
+fn patch_buffer_retain_target(
+    patch_threshold: Option<usize>,
+    patch_byte_threshold: Option<usize>,
+) -> usize {
+    let base = if let Some(threshold) = patch_threshold {
+        threshold.saturating_mul(2).max(MIN_PATCH_BUFFER_RETAIN)
+    } else if let Some(bytes) = patch_byte_threshold {
+        // Approximate patch count from bytes; conservative to avoid churn.
+        (bytes / EST_PATCH_BYTES).max(MIN_PATCH_BUFFER_RETAIN)
+    } else {
+        MIN_PATCH_BUFFER_RETAIN
+    };
+    base.min(MAX_PATCH_BUFFER_RETAIN)
+}
 
 /// Preview flush strategy for incremental parse.
 ///
 /// The policy is evaluated when new input arrives. A flush occurs if any enabled
-/// threshold is met and there are pending patches. This is input-driven; no
-/// background timer events are generated.
+/// threshold is met and there are pending patches. Thresholds include time, input
+/// tokens/bytes, and buffered patch count/bytes. Time-based checks are activity
+/// driven: ticks are evaluated only when input arrives (no background timer). If
+/// input stalls, pending patches are flushed on `ParseHtmlDone`. Boundedness
+/// assumes continued input or an eventual `ParseHtmlDone`.
 #[derive(Clone, Copy, Debug)]
 pub struct PreviewPolicy {
     pub tick: Duration,
     pub token_threshold: Option<usize>,
     pub byte_threshold: Option<usize>,
+    pub patch_threshold: Option<usize>,
+    pub patch_byte_threshold: Option<usize>,
 }
 
 impl Default for PreviewPolicy {
@@ -38,16 +63,35 @@ impl Default for PreviewPolicy {
             tick: DEFAULT_TICK,
             token_threshold: None,
             byte_threshold: None,
+            patch_threshold: None,
+            patch_byte_threshold: None,
         }
     }
 }
 
 impl PreviewPolicy {
+    fn is_bounded(&self) -> bool {
+        self.tick != Duration::ZERO
+            || self.token_threshold.is_some()
+            || self.byte_threshold.is_some()
+            || self.patch_threshold.is_some()
+            || self.patch_byte_threshold.is_some()
+    }
+
+    fn ensure_bounded(mut self) -> Self {
+        if !self.is_bounded() {
+            self.tick = DEFAULT_TICK;
+        }
+        self
+    }
+
     fn should_flush(
         &self,
         elapsed: Duration,
         pending_tokens: usize,
         pending_bytes: usize,
+        pending_patches: usize,
+        pending_patch_bytes: usize,
         has_patches: bool,
     ) -> bool {
         if !has_patches {
@@ -64,6 +108,16 @@ impl PreviewPolicy {
         }
         if let Some(threshold) = self.byte_threshold
             && pending_bytes >= threshold
+        {
+            return true;
+        }
+        if let Some(threshold) = self.patch_threshold
+            && pending_patches >= threshold
+        {
+            return true;
+        }
+        if let Some(threshold) = self.patch_byte_threshold
+            && pending_patch_bytes >= threshold
         {
             return true;
         }
@@ -87,6 +141,7 @@ struct HtmlState {
     total_bytes: usize,
     pending_bytes: usize,
     pending_tokens: usize,
+    pending_patch_bytes: usize,
     last_emit: Instant,
     logged_large_buffer: bool,
     failed: bool,
@@ -94,7 +149,9 @@ struct HtmlState {
     builder: TreeBuilder,
     token_buffer: Vec<Token>,
     patch_buffer: Vec<DomPatch>,
-    patch_out: Vec<DomPatch>,
+    patch_buffer_retain: usize,
+    max_patch_buffer_len: usize,
+    max_patch_buffer_bytes: usize,
     dom_handle: DomHandle,
     version: DomVersion,
 }
@@ -112,6 +169,7 @@ impl HtmlState {
                 eprintln!("runtime_parse: tree builder error: {err}");
                 self.failed = true;
                 self.patch_buffer.clear();
+                self.pending_patch_bytes = 0;
                 break;
             }
         }
@@ -119,7 +177,14 @@ impl HtmlState {
             let _ = self.builder.take_patches();
             return;
         }
-        self.patch_buffer.extend(self.builder.take_patches());
+        let new_patches = self.builder.take_patches();
+        if !new_patches.is_empty() {
+            self.pending_patch_bytes = self
+                .pending_patch_bytes
+                .saturating_add(estimate_patch_bytes_slice(&new_patches));
+            self.patch_buffer.extend(new_patches);
+            self.update_patch_buffer_max();
+        }
     }
 
     fn flush_patch_buffer(
@@ -131,20 +196,17 @@ impl HtmlState {
         if self.patch_buffer.is_empty() {
             return;
         }
-        std::mem::swap(&mut self.patch_out, &mut self.patch_buffer);
-        self.patch_buffer.clear();
-        let spare_capacity = self.patch_buffer.capacity();
-        let patches = std::mem::replace(&mut self.patch_out, Vec::with_capacity(spare_capacity));
-        self.pending_bytes = 0;
-        self.pending_tokens = 0;
+        let patches = std::mem::replace(
+            &mut self.patch_buffer,
+            Vec::with_capacity(self.patch_buffer_retain),
+        );
 
         #[cfg(feature = "patch-stats")]
         log_patch_stats(tab_id, request_id, &patches);
 
         let from = self.version;
         let to = from.next();
-        self.version = to;
-        let _ = evt_tx.send(CoreEvent::DomPatchUpdate {
+        let send_result = evt_tx.send(CoreEvent::DomPatchUpdate {
             tab_id,
             request_id,
             handle: self.dom_handle,
@@ -152,7 +214,68 @@ impl HtmlState {
             to,
             patches,
         });
+        if send_result.is_err() {
+            eprintln!(
+                "runtime_parse: patch sink dropped; stopping updates for tab={tab_id:?} request={request_id:?}"
+            );
+            self.failed = true;
+            self.pending_bytes = 0;
+            self.pending_tokens = 0;
+            self.pending_patch_bytes = 0;
+            return;
+        }
+        self.version = to;
+        self.pending_bytes = 0;
+        self.pending_tokens = 0;
+        self.pending_patch_bytes = 0;
     }
+
+    fn update_patch_buffer_max(&mut self) {
+        let len = self.patch_buffer.len();
+        if len > self.max_patch_buffer_len {
+            self.max_patch_buffer_len = len;
+        }
+        if self.pending_patch_bytes > self.max_patch_buffer_bytes {
+            self.max_patch_buffer_bytes = self.pending_patch_bytes;
+        }
+    }
+}
+
+fn estimate_patch_bytes(patch: &DomPatch) -> usize {
+    const PATCH_OVERHEAD: usize = 8;
+    match patch {
+        DomPatch::Clear => PATCH_OVERHEAD,
+        DomPatch::CreateDocument { doctype, .. } => {
+            PATCH_OVERHEAD + doctype.as_ref().map(|s| s.len()).unwrap_or(0)
+        }
+        DomPatch::CreateElement {
+            name, attributes, ..
+        } => {
+            let mut total = PATCH_OVERHEAD + name.len();
+            for (k, v) in attributes {
+                total += k.len();
+                if let Some(value) = v {
+                    total += value.len();
+                }
+            }
+            total
+        }
+        DomPatch::CreateText { text, .. } | DomPatch::CreateComment { text, .. } => {
+            PATCH_OVERHEAD + text.len()
+        }
+        DomPatch::AppendChild { .. }
+        | DomPatch::InsertBefore { .. }
+        | DomPatch::RemoveNode { .. }
+        | DomPatch::SetAttributes { .. }
+        | DomPatch::SetText { .. } => PATCH_OVERHEAD,
+        _ => PATCH_OVERHEAD,
+    }
+}
+
+fn estimate_patch_bytes_slice(patches: &[DomPatch]) -> usize {
+    patches.iter().fold(0usize, |total, patch| {
+        total.saturating_add(estimate_patch_bytes(patch))
+    })
 }
 
 #[cfg(feature = "patch-stats")]
@@ -194,6 +317,7 @@ pub fn start_parse_runtime_with_policy(
     evt_tx: Sender<CoreEvent>,
     policy: PreviewPolicy,
 ) {
+    let policy = policy.ensure_bounded();
     start_parse_runtime_with_policy_and_clock(cmd_rx, evt_tx, policy, SystemClock)
 }
 
@@ -204,6 +328,8 @@ fn start_parse_runtime_with_policy_and_clock<C: PreviewClock + 'static>(
     clock: C,
 ) {
     thread::spawn(move || {
+        let patch_buffer_retain =
+            patch_buffer_retain_target(policy.patch_threshold, policy.patch_byte_threshold);
         let mut htmls: HashMap<Key, HtmlState> = HashMap::new();
 
         while let Ok(cmd) = cmd_rx.recv() {
@@ -222,6 +348,7 @@ fn start_parse_runtime_with_policy_and_clock<C: PreviewClock + 'static>(
                             total_bytes: 0,
                             pending_bytes: 0,
                             pending_tokens: 0,
+                            pending_patch_bytes: 0,
                             last_emit: now,
                             logged_large_buffer: false,
                             failed: false,
@@ -232,7 +359,9 @@ fn start_parse_runtime_with_policy_and_clock<C: PreviewClock + 'static>(
                             ),
                             token_buffer: Vec::new(),
                             patch_buffer: Vec::new(),
-                            patch_out: Vec::new(),
+                            patch_buffer_retain,
+                            max_patch_buffer_len: 0,
+                            max_patch_buffer_bytes: 0,
                             dom_handle,
                             version: DomVersion::INITIAL,
                         },
@@ -243,40 +372,51 @@ fn start_parse_runtime_with_policy_and_clock<C: PreviewClock + 'static>(
                     request_id,
                     bytes,
                 } => {
+                    let mut remove_state = false;
                     if let Some(st) = htmls.get_mut(&(tab_id, request_id)) {
                         if st.failed {
-                            continue;
-                        }
-                        st.total_bytes = st.total_bytes.saturating_add(bytes.len());
-                        st.pending_bytes = st.pending_bytes.saturating_add(bytes.len());
-                        st.pending_tokens =
-                            st.pending_tokens.saturating_add(st.tokenizer.feed(&bytes));
-                        // Always drain tokenizer tokens immediately so flush decisions
-                        // reflect patch backlog, not buffered tokens.
-                        st.tokenizer.drain_into(&mut st.token_buffer);
-                        st.drain_tokens_into_builder();
+                            // failed means terminal; drop state to free memory.
+                            remove_state = true;
+                        } else {
+                            st.total_bytes = st.total_bytes.saturating_add(bytes.len());
+                            st.pending_bytes = st.pending_bytes.saturating_add(bytes.len());
+                            st.pending_tokens =
+                                st.pending_tokens.saturating_add(st.tokenizer.feed(&bytes));
+                            // Always drain tokenizer tokens immediately so flush decisions
+                            // reflect patch backlog, not buffered tokens.
+                            st.tokenizer.drain_into(&mut st.token_buffer);
+                            st.drain_tokens_into_builder();
 
-                        if policy.should_flush(
-                            now.saturating_duration_since(st.last_emit),
-                            st.pending_tokens,
-                            st.pending_bytes,
-                            !st.patch_buffer.is_empty(),
-                        ) {
-                            st.last_emit = now;
-                            #[cfg(debug_assertions)]
-                            {
-                                if !st.logged_large_buffer
-                                    && st.total_bytes >= DEBUG_LARGE_BUFFER_BYTES
+                            if policy.should_flush(
+                                now.saturating_duration_since(st.last_emit),
+                                st.pending_tokens,
+                                st.pending_bytes,
+                                st.patch_buffer.len(),
+                                st.pending_patch_bytes,
+                                !st.patch_buffer.is_empty(),
+                            ) {
+                                st.last_emit = now;
+                                #[cfg(debug_assertions)]
                                 {
-                                    eprintln!(
-                                        "runtime_parse: large buffer ({} bytes), incremental parse active",
-                                        st.total_bytes
-                                    );
-                                    st.logged_large_buffer = true;
+                                    if !st.logged_large_buffer
+                                        && st.total_bytes >= DEBUG_LARGE_BUFFER_BYTES
+                                    {
+                                        eprintln!(
+                                            "runtime_parse: large buffer ({} bytes), incremental parse active",
+                                            st.total_bytes
+                                        );
+                                        st.logged_large_buffer = true;
+                                    }
+                                }
+                                st.flush_patch_buffer(&evt_tx, tab_id, request_id);
+                                if st.failed {
+                                    remove_state = true;
                                 }
                             }
-                            st.flush_patch_buffer(&evt_tx, tab_id, request_id);
                         }
+                    }
+                    if remove_state {
+                        htmls.remove(&(tab_id, request_id));
                     }
                 }
                 CoreCommand::ParseHtmlDone { tab_id, request_id } => {
@@ -290,7 +430,14 @@ fn start_parse_runtime_with_policy_and_clock<C: PreviewClock + 'static>(
                         if let Err(err) = st.builder.finish() {
                             eprintln!("runtime_parse: tree builder finish error: {err}");
                         }
-                        st.patch_buffer.extend(st.builder.take_patches());
+                        let final_patches = st.builder.take_patches();
+                        if !final_patches.is_empty() {
+                            st.pending_patch_bytes = st
+                                .pending_patch_bytes
+                                .saturating_add(estimate_patch_bytes_slice(&final_patches));
+                            st.patch_buffer.extend(final_patches);
+                            st.update_patch_buffer_max();
+                        }
                         st.flush_patch_buffer(&evt_tx, tab_id, request_id);
                     }
                 }
@@ -727,11 +874,13 @@ fn root_is_compatible(prev: &Node, next: &Node) -> bool {
 #[cfg(test)]
 mod tests {
     use super::{
-        PatchState, PreviewClock, PreviewPolicy, diff_dom, emit_create_subtree,
+        DomHandle, DomVersion, HtmlState, MAX_PATCH_BUFFER_RETAIN, MIN_PATCH_BUFFER_RETAIN,
+        PatchState, PreviewClock, PreviewPolicy, SystemClock, TreeBuilderConfig, diff_dom,
+        emit_create_subtree, estimate_patch_bytes_slice, patch_buffer_retain_target,
         start_parse_runtime_with_policy_and_clock,
     };
     use bus::{CoreCommand, CoreEvent};
-    use html::{Node, Tokenizer, build_owned_dom, tokenize};
+    use html::{DomPatch, Node, Tokenizer, TreeBuilder, build_owned_dom, tokenize};
     use std::sync::{Arc, Mutex, mpsc};
     use std::time::{Duration, Instant};
 
@@ -770,27 +919,57 @@ mod tests {
             tick: Duration::from_millis(100),
             token_threshold: Some(10),
             byte_threshold: Some(256),
+            patch_threshold: Some(5),
+            patch_byte_threshold: Some(64),
         };
 
         assert!(
-            !policy.should_flush(Duration::from_millis(50), 0, 0, true),
+            !policy.should_flush(Duration::from_millis(50), 0, 0, 0, 0, false),
             "should not flush before thresholds"
         );
         assert!(
-            policy.should_flush(Duration::from_millis(150), 0, 0, true),
+            policy.should_flush(Duration::from_millis(150), 0, 0, 0, 0, true),
             "should flush on time"
         );
         assert!(
-            policy.should_flush(Duration::from_millis(10), 10, 0, true),
+            policy.should_flush(Duration::from_millis(10), 10, 0, 0, 0, true),
             "should flush on token threshold"
         );
         assert!(
-            policy.should_flush(Duration::from_millis(10), 0, 256, true),
+            policy.should_flush(Duration::from_millis(10), 0, 256, 0, 0, true),
             "should flush on byte threshold"
         );
         assert!(
-            !policy.should_flush(Duration::from_millis(150), 10, 256, false),
+            policy.should_flush(Duration::from_millis(10), 0, 0, 5, 0, true),
+            "should flush on patch threshold"
+        );
+        assert!(
+            policy.should_flush(Duration::from_millis(10), 0, 0, 0, 64, true),
+            "should flush on patch byte threshold"
+        );
+        assert!(
+            !policy.should_flush(Duration::from_millis(150), 10, 256, 5, 64, false),
             "should not flush without pending patches"
+        );
+    }
+
+    #[test]
+    fn preview_policy_unbounded_is_clamped() {
+        let policy = PreviewPolicy {
+            tick: Duration::ZERO,
+            token_threshold: None,
+            byte_threshold: None,
+            patch_threshold: None,
+            patch_byte_threshold: None,
+        };
+        let bounded = policy.ensure_bounded();
+        assert!(
+            bounded.is_bounded(),
+            "expected unbounded policy to be clamped"
+        );
+        assert!(
+            bounded.tick != Duration::ZERO,
+            "expected clamped policy to restore a tick"
         );
     }
 
@@ -818,6 +997,8 @@ mod tests {
             tick: Duration::from_millis(50),
             token_threshold: None,
             byte_threshold: None,
+            patch_threshold: None,
+            patch_byte_threshold: None,
         };
 
         start_parse_runtime_with_policy_and_clock(cmd_rx, evt_tx, policy, clock);
@@ -864,44 +1045,225 @@ mod tests {
         let _ = cmd_tx.send(CoreCommand::ParseHtmlDone { tab_id, request_id });
     }
 
-    fn estimated_patch_bytes(patches: &[html::DomPatch]) -> usize {
-        let mut total = 0usize;
-        for patch in patches {
-            match patch {
-                html::DomPatch::Clear => {
-                    total += 1;
-                }
-                html::DomPatch::CreateDocument { doctype, .. } => {
-                    total += 8 + doctype.as_ref().map(|s| s.len()).unwrap_or(0);
-                }
-                html::DomPatch::CreateElement {
-                    name, attributes, ..
-                } => {
-                    total += 8 + name.len();
-                    for (k, v) in attributes {
-                        total += k.len();
-                        if let Some(value) = v {
-                            total += value.len();
-                        }
+    #[test]
+    fn patch_buffer_does_not_grow_unbounded_in_streaming() {
+        let policy = PreviewPolicy {
+            tick: Duration::ZERO,
+            token_threshold: None,
+            byte_threshold: None,
+            patch_threshold: Some(256),
+            patch_byte_threshold: Some(64 * 1024),
+        };
+        let patch_threshold = policy.patch_threshold.expect("patch threshold missing");
+        let patch_byte_threshold = policy
+            .patch_byte_threshold
+            .expect("patch byte threshold missing");
+        // Slack allows for bursts between threshold checks (builder emits in batches).
+        let slack_patches = 64usize;
+        // Byte slack covers worst-case single-burst patch payloads.
+        let slack_bytes = 32 * 1024usize;
+
+        let now = Instant::now();
+        let mut st = HtmlState {
+            total_bytes: 0,
+            pending_bytes: 0,
+            pending_tokens: 0,
+            pending_patch_bytes: 0,
+            last_emit: now,
+            logged_large_buffer: false,
+            failed: false,
+            tokenizer: Tokenizer::new(),
+            builder: TreeBuilder::with_capacity_and_config(0, TreeBuilderConfig::default()),
+            token_buffer: Vec::new(),
+            patch_buffer: Vec::new(),
+            patch_buffer_retain: patch_buffer_retain_target(
+                policy.patch_threshold,
+                policy.patch_byte_threshold,
+            ),
+            max_patch_buffer_len: 0,
+            max_patch_buffer_bytes: 0,
+            dom_handle: DomHandle(1),
+            version: DomVersion::INITIAL,
+        };
+
+        let (evt_tx, _evt_rx) = mpsc::channel();
+        let tab_id = 1;
+        let request_id = 1;
+        let input = "<div><span>hi</span></div>".repeat(20_000);
+
+        for chunk in input.as_bytes().chunks(1) {
+            st.total_bytes = st.total_bytes.saturating_add(chunk.len());
+            st.pending_bytes = st.pending_bytes.saturating_add(chunk.len());
+            st.pending_tokens = st.pending_tokens.saturating_add(st.tokenizer.feed(chunk));
+            st.tokenizer.drain_into(&mut st.token_buffer);
+            st.drain_tokens_into_builder();
+
+            if policy.should_flush(
+                Duration::ZERO,
+                st.pending_tokens,
+                st.pending_bytes,
+                st.patch_buffer.len(),
+                st.pending_patch_bytes,
+                !st.patch_buffer.is_empty(),
+            ) {
+                st.last_emit = now;
+                st.flush_patch_buffer(&evt_tx, tab_id, request_id);
+            }
+        }
+
+        st.pending_tokens = st.pending_tokens.saturating_add(st.tokenizer.finish());
+        st.tokenizer.drain_into(&mut st.token_buffer);
+        st.drain_tokens_into_builder();
+        let _ = st.builder.finish();
+        let final_patches = st.builder.take_patches();
+        if !final_patches.is_empty() {
+            st.pending_patch_bytes = st
+                .pending_patch_bytes
+                .saturating_add(estimate_patch_bytes_slice(&final_patches));
+            st.patch_buffer.extend(final_patches);
+            st.update_patch_buffer_max();
+        }
+        st.flush_patch_buffer(&evt_tx, tab_id, request_id);
+
+        assert!(
+            st.max_patch_buffer_len <= patch_threshold + slack_patches,
+            "patch buffer grew beyond bound: max_len={} threshold={} slack={}",
+            st.max_patch_buffer_len,
+            patch_threshold,
+            slack_patches
+        );
+        assert!(
+            st.max_patch_buffer_bytes <= patch_byte_threshold + slack_bytes,
+            "patch buffer bytes grew beyond bound: max_bytes={} threshold={} slack={}",
+            st.max_patch_buffer_bytes,
+            patch_byte_threshold,
+            slack_bytes
+        );
+    }
+
+    #[test]
+    fn patch_updates_are_bounded_under_streaming_policy() {
+        let policy = PreviewPolicy {
+            tick: Duration::ZERO,
+            token_threshold: None,
+            byte_threshold: None,
+            patch_threshold: Some(200),
+            patch_byte_threshold: Some(64 * 1024),
+        };
+
+        let (cmd_tx, cmd_rx) = mpsc::channel();
+        let (evt_tx, evt_rx) = mpsc::channel();
+        start_parse_runtime_with_policy_and_clock(cmd_rx, evt_tx, policy, SystemClock);
+
+        let tab_id = 1;
+        let request_id = 42;
+        cmd_tx
+            .send(CoreCommand::ParseHtmlStart { tab_id, request_id })
+            .unwrap();
+
+        let input = "<div><span>hi</span></div>".repeat(20_000);
+        for chunk in input.as_bytes().chunks(1) {
+            cmd_tx
+                .send(CoreCommand::ParseHtmlChunk {
+                    tab_id,
+                    request_id,
+                    bytes: chunk.to_vec(),
+                })
+                .unwrap();
+        }
+        cmd_tx
+            .send(CoreCommand::ParseHtmlDone { tab_id, request_id })
+            .unwrap();
+
+        let mut max_patches = 0usize;
+        let mut max_bytes = 0usize;
+        let slack_patches = 64usize;
+        // Slack allows for bursts between threshold checks (builder emits in batches).
+        let slack_bytes = 16 * 1024usize;
+
+        let mut saw_update = false;
+        let mut idle_ticks = 0usize;
+        while idle_ticks < 10 {
+            match evt_rx.recv_timeout(Duration::from_millis(100)) {
+                Ok(CoreEvent::DomPatchUpdate { patches, .. }) => {
+                    saw_update = true;
+                    idle_ticks = 0;
+                    let count = patches.len();
+                    let bytes = estimate_patch_bytes_slice_test(&patches);
+                    if count > max_patches {
+                        max_patches = count;
                     }
+                    if bytes > max_bytes {
+                        max_bytes = bytes;
+                    }
+                    assert!(
+                        count <= 200 + slack_patches,
+                        "patch update exceeded bound: count={count}"
+                    );
+                    assert!(
+                        bytes <= 64 * 1024 + slack_bytes,
+                        "patch update exceeded byte bound: bytes={bytes}"
+                    );
                 }
-                html::DomPatch::CreateText { text, .. }
-                | html::DomPatch::CreateComment { text, .. } => {
-                    total += 8 + text.len();
-                }
-                html::DomPatch::AppendChild { .. }
-                | html::DomPatch::InsertBefore { .. }
-                | html::DomPatch::RemoveNode { .. }
-                | html::DomPatch::SetAttributes { .. }
-                | html::DomPatch::SetText { .. } => {
-                    total += 8;
-                }
-                _ => {
-                    total += 1;
+                Ok(_) => {}
+                Err(_) => {
+                    idle_ticks += 1;
                 }
             }
         }
-        total
+
+        assert!(saw_update, "expected at least one patch update");
+        assert!(max_patches > 0, "expected patch count to be non-zero");
+        assert!(max_bytes > 0, "expected patch payload to be non-zero");
+    }
+
+    #[test]
+    fn patch_buffer_retain_capacity_is_bounded_on_flush() {
+        let now = Instant::now();
+        let mut st = HtmlState {
+            total_bytes: 0,
+            pending_bytes: 0,
+            pending_tokens: 0,
+            pending_patch_bytes: 0,
+            last_emit: now,
+            logged_large_buffer: false,
+            failed: false,
+            tokenizer: Tokenizer::new(),
+            builder: TreeBuilder::with_capacity_and_config(0, TreeBuilderConfig::default()),
+            token_buffer: Vec::new(),
+            patch_buffer: Vec::with_capacity(100_000),
+            patch_buffer_retain: patch_buffer_retain_target(Some(128), None),
+            max_patch_buffer_len: 0,
+            max_patch_buffer_bytes: 0,
+            dom_handle: DomHandle(1),
+            version: DomVersion::INITIAL,
+        };
+        st.patch_buffer.push(DomPatch::Clear);
+        let (evt_tx, _evt_rx) = mpsc::channel();
+        st.flush_patch_buffer(&evt_tx, 1, 1);
+        let cap = st.patch_buffer.capacity();
+        assert!(
+            cap <= MAX_PATCH_BUFFER_RETAIN,
+            "expected capped retain capacity, got {cap}"
+        );
+        assert!(
+            cap >= MIN_PATCH_BUFFER_RETAIN,
+            "expected retain capacity to be at least the floor, got {cap}"
+        );
+    }
+
+    #[test]
+    fn patch_buffer_retain_target_clamps_to_max() {
+        let huge = MAX_PATCH_BUFFER_RETAIN.saturating_mul(10);
+        let retain = patch_buffer_retain_target(Some(huge), None);
+        assert_eq!(
+            retain, MAX_PATCH_BUFFER_RETAIN,
+            "expected retain target to clamp to max"
+        );
+    }
+
+    fn estimate_patch_bytes_slice_test(patches: &[html::DomPatch]) -> usize {
+        super::estimate_patch_bytes_slice(patches)
     }
 
     fn full_create_patches(dom: &Node) -> Vec<html::DomPatch> {
@@ -928,7 +1290,7 @@ mod tests {
             let stream = tokenize(input);
             let dom = build_owned_dom(&stream);
             let full_patches = full_create_patches(&dom);
-            let full_bytes = estimated_patch_bytes(&full_patches);
+            let full_bytes = estimate_patch_bytes_slice_test(&full_patches);
             let patches = match prev_dom.as_deref() {
                 Some(prev) => diff_dom(prev, &dom, &mut patch_state).expect("diff failed"),
                 None => {
@@ -990,7 +1352,7 @@ mod tests {
                     .filter(|p| matches!(p, html::DomPatch::RemoveNode { .. }))
                     .count();
                 assert_eq!(removed, 0, "unexpected removals on append-only tick {tick}");
-                let bytes = estimated_patch_bytes(&patches);
+                let bytes = estimate_patch_bytes_slice_test(&patches);
                 assert!(
                     bytes <= full_bytes,
                     "patch payload exceeded full create stream: tick={tick} bytes={bytes} full_bytes={full_bytes}"
@@ -1036,7 +1398,7 @@ mod tests {
             let stream = tokenize(input);
             let dom = build_owned_dom(&stream);
             let full_patches = full_create_patches(&dom);
-            let full_bytes = estimated_patch_bytes(&full_patches);
+            let full_bytes = estimate_patch_bytes_slice_test(&full_patches);
             let patches = match prev_dom.as_deref() {
                 Some(prev) => diff_dom(prev, &dom, &mut patch_state).expect("diff failed"),
                 None => {
@@ -1085,7 +1447,7 @@ mod tests {
                     .filter(|p| matches!(p, html::DomPatch::RemoveNode { .. }))
                     .count();
                 assert_eq!(removed, 0, "unexpected removals on append-only tick {tick}");
-                let bytes = estimated_patch_bytes(&patches);
+                let bytes = estimate_patch_bytes_slice_test(&patches);
                 assert!(
                     bytes < full_bytes,
                     "patch payload regressed: tick={tick} bytes={bytes} full_bytes={full_bytes}"

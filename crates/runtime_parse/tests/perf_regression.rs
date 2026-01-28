@@ -26,6 +26,8 @@ fn runtime_parse_linear_streaming_guard() {
         tick: Duration::ZERO,
         token_threshold: None,
         byte_threshold: Some(chunk_size),
+        patch_threshold: None,
+        patch_byte_threshold: None,
     };
 
     parse_guards::reset();
