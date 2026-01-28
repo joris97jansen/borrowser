@@ -41,14 +41,25 @@ const STYLE_CLOSE_TAG: &[u8] = b"</style";
 // How far back we rescan around chunk boundaries for rawtext close tags.
 // Covers `</tag` plus a small ASCII-whitespace run before `>`.
 const RAWTEXT_TAIL_SLACK: usize = 32;
+const TOKEN_CAPACITY_MIN: usize = 16;
+const TEXT_POOL_CAPACITY_MIN: usize = 4;
+
+#[inline]
+fn estimate_token_capacity(input_len: usize) -> usize {
+    (input_len / 8).saturating_add(TOKEN_CAPACITY_MIN)
+}
+
+#[inline]
+fn estimate_text_pool_capacity(input_len: usize) -> usize {
+    (input_len / 64).saturating_add(TEXT_POOL_CAPACITY_MIN)
+}
 
 fn find_rawtext_close_tag_internal(
-    haystack: &str,
+    haystack: &[u8],
     close_tag: &[u8],
     ops: Option<&mut usize>,
 ) -> Option<(usize, usize)> {
-    let hay_bytes = haystack.as_bytes();
-    let len = hay_bytes.len();
+    let len = haystack.len();
     let n = close_tag.len();
     debug_assert!(n >= 2);
     debug_assert!(close_tag[0] == b'<' && close_tag[1] == b'/');
@@ -63,7 +74,7 @@ fn find_rawtext_close_tag_internal(
     let mut i = 0usize;
     let mut counter = ops;
     while i + n <= len {
-        let Some(rel) = memchr(b'<', &hay_bytes[i..]) else {
+        let Some(rel) = memchr(b'<', &haystack[i..]) else {
             if let Some(c) = counter.as_deref_mut() {
                 *c += len.saturating_sub(i);
             }
@@ -76,17 +87,17 @@ fn find_rawtext_close_tag_internal(
         if i + n > len {
             return None;
         }
-        if hay_bytes[i + 1] == b'/' && starts_with_ignore_ascii_case_at(hay_bytes, i, close_tag) {
+        if starts_with_ignore_ascii_case_at(haystack, i, close_tag) {
             let mut k = i + n;
             // Spec allows other parse-error paths like `</script foo>`, but we only
             // accept ASCII whitespace before `>` to keep the scan simple/alloc-free.
-            while k < len && hay_bytes[k].is_ascii_whitespace() {
+            while k < len && haystack[k].is_ascii_whitespace() {
                 k += 1;
                 if let Some(c) = counter.as_deref_mut() {
                     *c += 1;
                 }
             }
-            if k < len && hay_bytes[k] == b'>' {
+            if k < len && haystack[k] == b'>' {
                 return Some((i, k + 1));
             }
         }
@@ -104,7 +115,7 @@ fn find_rawtext_close_tag_counted(
     close_tag: &[u8],
 ) -> (Option<(usize, usize)>, usize) {
     let mut ops = 0usize;
-    let result = find_rawtext_close_tag_internal(haystack, close_tag, Some(&mut ops));
+    let result = find_rawtext_close_tag_internal(haystack.as_bytes(), close_tag, Some(&mut ops));
     (result, ops)
 }
 
@@ -247,6 +258,13 @@ impl Tokenizer {
         }
     }
 
+    /// Create a tokenizer with pre-allocated buffers based on an input length estimate.
+    pub fn with_capacity_estimate(input_len: usize) -> Self {
+        let mut tokenizer = Self::new();
+        tokenizer.reserve_for_total_input(input_len);
+        tokenizer
+    }
+
     pub fn atoms(&self) -> &AtomTable {
         &self.atoms
     }
@@ -277,6 +295,8 @@ impl Tokenizer {
         if input.is_empty() {
             return 0;
         }
+        let total = self.source.len().saturating_add(input.len());
+        self.reserve_for_total_input(total);
         push_utf8_chunk(&mut self.source, &mut self.carry, input);
         self.scan(false)
     }
@@ -290,6 +310,8 @@ impl Tokenizer {
         if input.is_empty() {
             return 0;
         }
+        let total = self.source.len().saturating_add(input.len());
+        self.reserve_for_total_input(total);
         self.source.push_str(input);
         self.scan(false)
     }
@@ -316,6 +338,29 @@ impl Tokenizer {
     #[cfg(test)]
     pub(crate) fn rawtext_scan_steps(&self) -> usize {
         self.rawtext_scan_steps
+    }
+
+    #[cfg(test)]
+    pub(crate) fn tokens_capacity(&self) -> usize {
+        self.tokens.capacity()
+    }
+
+    /// Append bytes and drain emitted tokens into the provided buffer.
+    pub fn push_into(&mut self, input: &[u8], out: &mut Vec<Token>) {
+        self.feed(input);
+        self.drain_into(out);
+    }
+
+    /// Append UTF-8 text and drain emitted tokens into the provided buffer.
+    pub fn push_str_into(&mut self, input: &str, out: &mut Vec<Token>) {
+        self.feed_str_valid(input);
+        self.drain_into(out);
+    }
+
+    /// Finish tokenization and drain any remaining tokens into the provided buffer.
+    pub fn finish_into(&mut self, out: &mut Vec<Token>) {
+        self.finish();
+        self.drain_into(out);
     }
 
     /// Drain any pending tokens into the provided output buffer.
@@ -360,6 +405,27 @@ impl Tokenizer {
         let mut out = Vec::new();
         out.append(&mut self.tokens);
         out
+    }
+
+    fn reserve_for_total_input(&mut self, total_len_estimate: usize) {
+        if total_len_estimate == 0 {
+            return;
+        }
+        if self.source.capacity() < total_len_estimate {
+            let need = total_len_estimate.saturating_sub(self.source.len());
+            self.source.reserve(need);
+        }
+
+        let want_tokens = estimate_token_capacity(total_len_estimate);
+        if self.tokens.capacity() < want_tokens {
+            self.tokens.reserve(want_tokens - self.tokens.capacity());
+        }
+
+        let want_pool = estimate_text_pool_capacity(total_len_estimate);
+        if self.text_pool.capacity() < want_pool {
+            self.text_pool
+                .reserve(want_pool - self.text_pool.capacity());
+        }
     }
 
     fn scan(&mut self, is_final: bool) -> usize {
@@ -566,17 +632,18 @@ impl Tokenizer {
                 let input = self.source.as_str();
                 let len = input.len();
                 let scan_from = clamp_char_boundary(input, scan_from, content_start);
+                let bytes = input.as_bytes();
                 #[cfg(test)]
                 let mut ops = 0usize;
                 #[cfg(test)]
                 let found =
-                    find_rawtext_close_tag_internal(&input[scan_from..], close_tag, Some(&mut ops));
+                    find_rawtext_close_tag_internal(&bytes[scan_from..], close_tag, Some(&mut ops));
                 #[cfg(test)]
                 {
                     self.rawtext_scan_steps = self.rawtext_scan_steps.saturating_add(ops);
                 }
                 #[cfg(not(test))]
-                let found = find_rawtext_close_tag_internal(&input[scan_from..], close_tag, None);
+                let found = find_rawtext_close_tag_internal(&bytes[scan_from..], close_tag, None);
                 if let Some((rel_start, rel_end)) = found {
                     let slice_end = scan_from + rel_start;
                     if slice_end > content_start {
@@ -600,7 +667,6 @@ impl Tokenizer {
                     self.pending = PendingState::None;
                     return true;
                 }
-                let bytes = input.as_bytes();
                 // Rescan from the last possible '<' that could begin a closing tag spanning the
                 // previous/new buffer boundary. This bounds overlap to at most (close_tag.len() + 1)
                 // bytes from the prior buffer so we stay linear even with tiny chunks.
@@ -685,7 +751,7 @@ impl Tokenizer {
         }
         let name = self.atoms.intern_ascii_lowercase(&input[start..j]);
         let mut k = j;
-        let mut attributes: Vec<(AtomId, Option<AttributeValue>)> = Vec::new();
+        let mut attributes: Vec<(AtomId, Option<AttributeValue>)> = Vec::with_capacity(4);
         let mut self_closing = false;
 
         let skip_whitespace = |k: &mut usize| {
@@ -853,13 +919,13 @@ impl Tokenizer {
             let mut ops = 0usize;
             #[cfg(test)]
             let found =
-                find_rawtext_close_tag_internal(&input[content_start..], close_tag, Some(&mut ops));
+                find_rawtext_close_tag_internal(&bytes[content_start..], close_tag, Some(&mut ops));
             #[cfg(test)]
             {
                 self.rawtext_scan_steps = self.rawtext_scan_steps.saturating_add(ops);
             }
             #[cfg(not(test))]
-            let found = find_rawtext_close_tag_internal(&input[content_start..], close_tag, None);
+            let found = find_rawtext_close_tag_internal(&bytes[content_start..], close_tag, None);
             if let Some((rel_start, rel_end)) = found {
                 let slice_end = content_start + rel_start;
                 if slice_end > content_start {
@@ -956,7 +1022,7 @@ fn is_partial_prefix_case_insensitive(bytes: &[u8], start: usize, needle: &[u8])
 pub fn tokenize(input: &str) -> TokenStream {
     #[cfg(feature = "parse-guards")]
     crate::parse_guards::record_full_tokenize();
-    let mut tokenizer = Tokenizer::new();
+    let mut tokenizer = Tokenizer::with_capacity_estimate(input.len());
     tokenizer.feed_str(input);
     tokenizer.finish();
     tokenizer.into_stream()
@@ -993,7 +1059,7 @@ mod tests {
 
     fn tokenize_with_push_str(input: &str, sizes: &[usize]) -> TokenStream {
         let mut tokenizer = Tokenizer::new();
-        let mut tokens = Vec::new();
+        let mut tokens = Vec::with_capacity(estimate_token_capacity(input.len()));
         let mut offset = 0usize;
         for size in sizes {
             if offset >= input.len() {
@@ -1004,20 +1070,20 @@ mod tests {
             if end == offset {
                 break;
             }
-            tokens.extend(tokenizer.push_str(&input[offset..end]));
+            tokenizer.push_str_into(&input[offset..end], &mut tokens);
             offset = end;
         }
         if offset < input.len() {
-            tokens.extend(tokenizer.push_str(&input[offset..]));
+            tokenizer.push_str_into(&input[offset..], &mut tokens);
         }
-        tokens.extend(tokenizer.finish_tokens());
+        tokenizer.finish_into(&mut tokens);
         let (atoms, source, text_pool) = tokenizer.into_parts();
         TokenStream::new(tokens, atoms, source, text_pool)
     }
 
     fn tokenize_with_feed_bytes(bytes: &[u8], split: usize) -> TokenStream {
         let mut tokenizer = Tokenizer::new();
-        let mut tokens = Vec::new();
+        let mut tokens = Vec::with_capacity(estimate_token_capacity(bytes.len()));
         tokenizer.feed(&bytes[..split]);
         tokenizer.drain_into(&mut tokens);
         tokenizer.feed(&bytes[split..]);
@@ -1053,6 +1119,16 @@ mod tests {
             stream.iter().any(|t| matches!(t, Token::Doctype(s)
                 if stream.payload_text(s) == "DoCtYpE html")),
             "expected mixed-case doctype to parse, got: {stream:?}"
+        );
+    }
+
+    #[test]
+    fn tokenize_trims_doctype_whitespace_with_utf8() {
+        let stream = tokenize("<!DOCTYPE  café  >");
+        assert!(
+            stream.iter().any(|t| matches!(t, Token::Doctype(s)
+                if stream.payload_text(s) == "DOCTYPE  café")),
+            "expected trimmed doctype payload, got: {stream:?}"
         );
     }
 
@@ -1197,6 +1273,34 @@ mod tests {
                         && atoms.resolve(*end) == "script"
             ),
             "expected near-match not to close rawtext, got: {stream:?}"
+        );
+    }
+
+    #[test]
+    fn tokenize_accepts_end_tag_with_trailing_junk() {
+        let stream = tokenize("</div foo>");
+        let atoms = stream.atoms();
+        assert!(
+            matches!(stream.tokens(), [Token::EndTag(name)] if atoms.resolve(*name) == "div"),
+            "expected end tag to ignore trailing junk, got: {stream:?}"
+        );
+    }
+
+    #[test]
+    fn tokenize_accepts_attributes_after_invalid_name_char() {
+        let stream = tokenize("<div @id=one></div>");
+        let atoms = stream.atoms();
+        assert!(
+            stream.iter().any(|t| matches!(
+                t,
+                Token::StartTag { name, attributes, .. }
+                    if atoms.resolve(*name) == "div"
+                        && attributes.iter().any(|(k, v)| {
+                            atoms.resolve(*k) == "id"
+                                && v.as_ref().map(|v| stream.attr_value(v)) == Some("one")
+                        })
+            )),
+            "expected permissive attribute parsing after invalid name char, got: {stream:?}"
         );
     }
 
@@ -1925,6 +2029,54 @@ mod tests {
         snapshot.extend(crate::test_utils::token_snapshot_with_view(view, &drained));
 
         assert_eq!(expected, snapshot);
+    }
+
+    #[test]
+    fn streaming_does_not_reallocate_internal_tokens_pathologically() {
+        let input = "<a></a>".repeat(50_000);
+        let mut tokenizer = Tokenizer::new();
+        let mut grows = 0usize;
+        let mut last_cap = tokenizer.tokens_capacity();
+
+        for b in input.as_bytes() {
+            tokenizer.feed(std::slice::from_ref(b));
+            let cap = tokenizer.tokens_capacity();
+            if cap != last_cap {
+                grows += 1;
+                last_cap = cap;
+            }
+        }
+
+        tokenizer.finish();
+
+        assert!(grows <= 32, "too many internal token vec growths: {grows}");
+    }
+
+    #[test]
+    fn streaming_does_not_reallocate_internal_tokens_with_drains_pathologically() {
+        let input = "<a></a>".repeat(50_000);
+        let mut tokenizer = Tokenizer::new();
+        let mut sink = Vec::new();
+        let mut grows = 0usize;
+        let mut last_cap = tokenizer.tokens_capacity();
+
+        for b in input.as_bytes() {
+            tokenizer.feed(std::slice::from_ref(b));
+            tokenizer.drain_into(&mut sink);
+            let cap = tokenizer.tokens_capacity();
+            if cap != last_cap {
+                grows += 1;
+                last_cap = cap;
+            }
+        }
+
+        tokenizer.finish();
+        tokenizer.drain_into(&mut sink);
+
+        assert!(
+            grows <= 32,
+            "too many internal token vec growths with drains: {grows}"
+        );
     }
 
     #[cfg(feature = "perf-tests")]
