@@ -1,0 +1,1 @@
+//! Patch emission helpers (placeholder).

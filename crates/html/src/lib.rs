@@ -22,6 +22,9 @@ pub mod test_harness;
 mod test_utils;
 pub mod traverse;
 
+#[cfg(feature = "html5-parse")]
+pub mod html5;
+
 mod dom_builder;
 mod dom_patch;
 mod entities;

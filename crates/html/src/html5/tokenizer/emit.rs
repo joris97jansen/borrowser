@@ -1,0 +1,1 @@
+//! Token emission helpers (placeholder).
