@@ -20,6 +20,22 @@ pub struct Rectangle {
     pub height: f32,
 }
 
+impl Rectangle {
+    pub fn approx_eq(self, other: Self, eps: f32) -> bool {
+        (self.x - other.x).abs() <= eps
+            && (self.y - other.y).abs() <= eps
+            && (self.width - other.width).abs() <= eps
+            && (self.height - other.height).abs() <= eps
+    }
+}
+
+impl PartialEq for Rectangle {
+    fn eq(&self, other: &Self) -> bool {
+        const EPS: f32 = 1e-6;
+        (*self).approx_eq(*other, EPS)
+    }
+}
+
 /// What kind of layout box this is. For now: only block.
 #[derive(Clone, Copy, Debug)]
 pub enum BoxKind {

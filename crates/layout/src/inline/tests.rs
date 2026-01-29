@@ -101,14 +101,17 @@ fn baseline_aligns_replaced_bottom_to_line_baseline() {
     for frag in &line.fragments {
         // All fragment baselines must match the line baseline.
         assert_approx_eq(
-            frag.rect.y + frag.ascent + frag.baseline_shift,
+            frag.advance_rect.rect().y + frag.ascent + frag.baseline_shift,
             line.baseline,
         );
 
         match &frag.kind {
             InlineFragment::Text { .. } => {
                 saw_text = true;
-                assert_approx_eq(frag.rect.y, expected_baseline - expected_text_ascent);
+                assert_approx_eq(
+                    frag.advance_rect.rect().y,
+                    expected_baseline - expected_text_ascent,
+                );
             }
             InlineFragment::Replaced {
                 kind: ReplacedKind::Img,
@@ -116,9 +119,12 @@ fn baseline_aligns_replaced_bottom_to_line_baseline() {
             } => {
                 saw_img = true;
                 // Bottom aligned to baseline.
-                assert_approx_eq(frag.rect.y + frag.rect.height, line.baseline);
+                assert_approx_eq(
+                    frag.advance_rect.rect().y + frag.advance_rect.rect().height,
+                    line.baseline,
+                );
                 // The tallest replaced element sits on the top of the line box.
-                assert_approx_eq(frag.rect.y, line_top);
+                assert_approx_eq(frag.advance_rect.rect().y, line_top);
             }
             _ => {}
         }
@@ -246,15 +252,15 @@ fn baseline_for_text_only_line_matches_strut() {
     assert_approx_eq(line.rect.height, 12.0);
 
     let frag = &line.fragments[0];
-    assert_approx_eq(frag.rect.y, line_top);
+    assert_approx_eq(frag.advance_rect.rect().y, line_top);
     assert_approx_eq(frag.ascent, 9.0);
     assert_approx_eq(frag.descent, 3.0);
     assert_approx_eq(frag.baseline_shift, 0.0);
     assert_approx_eq(
-        frag.rect.y + frag.ascent + frag.baseline_shift,
+        frag.advance_rect.rect().y + frag.ascent + frag.baseline_shift,
         line.baseline,
     );
-    assert_approx_eq(frag.rect.height, 12.0);
+    assert_approx_eq(frag.advance_rect.rect().height, 12.0);
 }
 
 #[test]
@@ -302,7 +308,7 @@ fn space_measurement_matches_rendered_space() {
         InlineFragment::Text { text, .. } => assert_eq!(text, " "),
         _ => panic!("expected space fragment"),
     }
-    assert_approx_eq(line.fragments[1].rect.width, 5.0);
+    assert_approx_eq(line.fragments[1].advance_rect.rect().width, 5.0);
 }
 
 #[test]

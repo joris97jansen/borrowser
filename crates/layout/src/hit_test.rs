@@ -114,11 +114,12 @@ fn hit_test_inline_fragments<'a>(
 
     for line in &lines {
         for frag in &line.fragments {
-            if !point_in_rect(point, frag.rect) {
+            if !point_in_rect(point, frag.paint_rect.rect()) {
                 continue;
             }
 
-            let local_pos = (point.0 - frag.rect.x, point.1 - frag.rect.y);
+            let paint_rect = frag.paint_rect.rect();
+            let local_pos = (point.0 - paint_rect.x, point.1 - paint_rect.y);
 
             match &frag.kind {
                 InlineFragment::Text { action, .. } => {
@@ -126,7 +127,7 @@ fn hit_test_inline_fragments<'a>(
                         return Some(HitResult {
                             node_id: link_id,
                             kind: HitKind::Link,
-                            fragment_rect: frag.rect,
+                            fragment_rect: paint_rect,
                             local_pos,
                             href,
                         });
@@ -135,7 +136,7 @@ fn hit_test_inline_fragments<'a>(
                     return Some(HitResult {
                         node_id: layout.node_id(),
                         kind: HitKind::Text,
-                        fragment_rect: frag.rect,
+                        fragment_rect: paint_rect,
                         local_pos,
                         href: None,
                     });
@@ -151,7 +152,7 @@ fn hit_test_inline_fragments<'a>(
                         return Some(HitResult {
                             node_id: link_id,
                             kind: HitKind::Link,
-                            fragment_rect: frag.rect,
+                            fragment_rect: paint_rect,
                             local_pos,
                             href,
                         });
@@ -163,7 +164,7 @@ fn hit_test_inline_fragments<'a>(
                     return Some(HitResult {
                         node_id: id,
                         kind: HitKind::InlineBlockBox,
-                        fragment_rect: frag.rect,
+                        fragment_rect: paint_rect,
                         local_pos,
                         href: None,
                     });
@@ -180,7 +181,7 @@ fn hit_test_inline_fragments<'a>(
                         return Some(HitResult {
                             node_id: link_id,
                             kind: HitKind::Link,
-                            fragment_rect: frag.rect,
+                            fragment_rect: paint_rect,
                             local_pos,
                             href,
                         });
@@ -201,7 +202,7 @@ fn hit_test_inline_fragments<'a>(
                     return Some(HitResult {
                         node_id: id,
                         kind: hit_kind,
-                        fragment_rect: frag.rect,
+                        fragment_rect: paint_rect,
                         local_pos,
                         href: None,
                     });

@@ -3,13 +3,14 @@ use css::ComputedStyle;
 use crate::{LayoutBox, Rectangle, TextMeasurer};
 
 use super::breaker::break_word_prefix_end;
+use super::geometry::{MarginBoxSize, Margins, Pos, split_margin_and_paint_rect};
 use super::metrics::{
     compute_strut_metrics, compute_text_metrics,
     inline_block_baseline_metrics_placeholder_bottom_edge, replaced_baseline_metrics_bottom_edge,
 };
 use super::options::InlineLayoutOptions;
 use super::tokens::{InlineToken, collect_inline_tokens_for_block_layout_for_paint};
-use super::types::{InlineFragment, LineBox, LineFragment};
+use super::types::{AdvanceRect, InlineFragment, LineBox, LineFragment, PaintRect};
 
 // Inline layout pipeline facade used by painting and hit-testing.
 pub fn layout_inline_for_paint<'a>(
@@ -59,7 +60,14 @@ fn flush_line<'a>(
     let baseline = geom.y + geom.ascent;
 
     for frag in line_fragments.iter_mut() {
-        frag.rect.y = baseline - (frag.ascent + frag.baseline_shift);
+        let new_y = baseline - (frag.ascent + frag.baseline_shift);
+        let mut advance = frag.advance_rect.rect();
+        let mut paint = frag.paint_rect.rect();
+        let delta = new_y - advance.y;
+        advance.y = new_y;
+        paint.y += delta;
+        frag.advance_rect = AdvanceRect::new(advance);
+        frag.paint_rect = PaintRect::new(paint);
     }
 
     let line_width = (geom.end_x - geom.start_x).max(0.0);
@@ -230,12 +238,18 @@ pub(super) fn layout_tokens_with_options<'a>(
                         style,
                         action,
                     },
-                    rect: Rectangle {
+                    advance_rect: AdvanceRect::new(Rectangle {
                         x: cursor_x,
                         y: cursor_y, // finalized on flush
                         width: space_width,
                         height: metrics.height(),
-                    },
+                    }),
+                    paint_rect: PaintRect::new(Rectangle {
+                        x: cursor_x,
+                        y: cursor_y, // finalized on flush
+                        width: space_width,
+                        height: metrics.height(),
+                    }),
                     source_range,
                     ascent,
                     descent,
@@ -331,7 +345,8 @@ pub(super) fn layout_tokens_with_options<'a>(
                                 style,
                                 action: action.clone(),
                             },
-                            rect: frag_rect,
+                            advance_rect: AdvanceRect::new(frag_rect),
+                            paint_rect: PaintRect::new(frag_rect),
                             source_range: frag_source_range,
                             ascent,
                             descent,
@@ -384,7 +399,8 @@ pub(super) fn layout_tokens_with_options<'a>(
                                 style,
                                 action: action.clone(),
                             },
-                            rect: frag_rect,
+                            advance_rect: AdvanceRect::new(frag_rect),
+                            paint_rect: PaintRect::new(frag_rect),
                             source_range: frag_source_range,
                             ascent,
                             descent,
@@ -426,12 +442,18 @@ pub(super) fn layout_tokens_with_options<'a>(
                             style,
                             action: action.clone(),
                         },
-                        rect: Rectangle {
+                        advance_rect: AdvanceRect::new(Rectangle {
                             x: cursor_x,
                             y: cursor_y, // finalized on flush
                             width: frag_width,
                             height: metrics.height(),
-                        },
+                        }),
+                        paint_rect: PaintRect::new(Rectangle {
+                            x: cursor_x,
+                            y: cursor_y, // finalized on flush
+                            width: frag_width,
+                            height: metrics.height(),
+                        }),
                         source_range: frag_source_range,
                         ascent,
                         descent,
@@ -520,15 +542,23 @@ pub(super) fn layout_tokens_with_options<'a>(
                 let ascent = metrics.ascent;
                 let descent = metrics.descent;
 
-                // Fragment rect + advance are margin-box (includes horizontal margins).
-                // Paint must not apply margins again.
-                // TODO: encode advance-rect vs paint-rect semantics in types/helpers.
-                let frag_rect = Rectangle {
-                    x: cursor_x,
-                    y: cursor_y, // finalized on flush
-                    width: box_width,
-                    height: metrics.height(),
-                };
+                let bm = style.box_metrics;
+                let (advance_rect, paint_rect) = split_margin_and_paint_rect(
+                    Pos {
+                        x: cursor_x,
+                        y: cursor_y, // finalized on flush
+                    },
+                    MarginBoxSize {
+                        width: box_width,
+                        height: metrics.height(),
+                    },
+                    Margins {
+                        left: bm.margin_left,
+                        right: bm.margin_right,
+                        top: bm.margin_top,
+                        bottom: bm.margin_bottom,
+                    },
+                );
 
                 let action = ctx.to_action();
 
@@ -538,7 +568,8 @@ pub(super) fn layout_tokens_with_options<'a>(
                         action,
                         layout,
                     },
-                    rect: frag_rect,
+                    advance_rect,
+                    paint_rect,
                     source_range: None,
                     ascent,
                     descent,
@@ -589,15 +620,23 @@ pub(super) fn layout_tokens_with_options<'a>(
                 let ascent = metrics.ascent;
                 let descent = metrics.descent;
 
-                // Fragment rect + advance are margin-box (includes horizontal margins).
-                // Paint must not apply margins again.
-                // TODO: encode advance-rect vs paint-rect semantics in types/helpers.
-                let frag_rect = Rectangle {
-                    x: cursor_x,
-                    y: cursor_y, // finalized on flush
-                    width,
-                    height: metrics.height(),
-                };
+                let bm = style.box_metrics;
+                let (advance_rect, paint_rect) = split_margin_and_paint_rect(
+                    Pos {
+                        x: cursor_x,
+                        y: cursor_y, // finalized on flush
+                    },
+                    MarginBoxSize {
+                        width,
+                        height: metrics.height(),
+                    },
+                    Margins {
+                        left: bm.margin_left,
+                        right: bm.margin_right,
+                        top: bm.margin_top,
+                        bottom: bm.margin_bottom,
+                    },
+                );
 
                 let action = ctx.to_action();
 
@@ -608,7 +647,8 @@ pub(super) fn layout_tokens_with_options<'a>(
                         action,
                         layout,
                     },
-                    rect: frag_rect,
+                    advance_rect,
+                    paint_rect,
                     source_range: None,
                     ascent,
                     descent,

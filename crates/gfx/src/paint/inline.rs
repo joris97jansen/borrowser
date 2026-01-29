@@ -74,28 +74,33 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
                     let Length::Px(font_px) = style.font_size;
                     let font_id = FontId::proportional(font_px);
 
+                    let paint_rect = frag.paint_rect.rect();
                     let pos = Pos2 {
-                        x: origin.x + frag.rect.x,
-                        y: origin.y + frag.rect.y,
+                        x: origin.x + paint_rect.x,
+                        y: origin.y + paint_rect.y,
                     };
 
                     painter.text(pos, Align2::LEFT_TOP, text, font_id, text_color);
                 }
 
                 InlineFragment::Box { style, layout, .. } => {
+                    let paint_rect = frag.paint_rect.rect();
+
                     if let Some(cache) = fragment_rects
                         && let Some(lb) = layout
                         && lb.replaced.is_some()
                     {
-                        cache.borrow_mut().insert(lb.node_id(), frag.rect);
+                        cache
+                            .borrow_mut()
+                            .insert(lb.node_id(), frag.paint_rect.rect());
                     }
 
                     let rect = Rect::from_min_size(
                         Pos2 {
-                            x: origin.x + frag.rect.x,
-                            y: origin.y + frag.rect.y,
+                            x: origin.x + paint_rect.x,
+                            y: origin.y + paint_rect.y,
                         },
-                        Vec2::new(frag.rect.width, frag.rect.height),
+                        Vec2::new(paint_rect.width, paint_rect.height),
                     );
 
                     if let Some(child_box) = layout {
@@ -132,18 +137,21 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
                     layout,
                     ..
                 } => {
+                    let paint_rect = frag.paint_rect.rect();
                     let rect = Rect::from_min_size(
                         Pos2 {
-                            x: origin.x + frag.rect.x,
-                            y: origin.y + frag.rect.y,
+                            x: origin.x + paint_rect.x,
+                            y: origin.y + paint_rect.y,
                         },
-                        Vec2::new(frag.rect.width, frag.rect.height),
+                        Vec2::new(paint_rect.width, paint_rect.height),
                     );
 
                     if let Some(cache) = fragment_rects
                         && let Some(lb) = layout
                     {
-                        cache.borrow_mut().insert(lb.node_id(), frag.rect);
+                        cache
+                            .borrow_mut()
+                            .insert(lb.node_id(), frag.paint_rect.rect());
                     }
 
                     super::replaced::paint_replaced_fragment(rect, style, *kind, *layout, ctx);

@@ -318,8 +318,11 @@ fn collect_inline_tokens_from_layout_box<'a>(
                     let style = layout.style;
                     let cbm = layout.style.box_metrics;
 
-                    let width = layout.rect.width + cbm.margin_left + cbm.margin_right;
-                    let height = layout.rect.height + cbm.margin_top + cbm.margin_bottom;
+                    let margin_box_width =
+                        (layout.rect.width + cbm.margin_left + cbm.margin_right).max(0.0);
+                    let margin_box_height =
+                        (layout.rect.height + cbm.margin_top + cbm.margin_bottom).max(0.0);
+                    debug_assert!(margin_box_width.is_finite() && margin_box_height.is_finite());
 
                     let layout_ref = match mode {
                         TokenCollectMode::Height => None,
@@ -327,8 +330,8 @@ fn collect_inline_tokens_from_layout_box<'a>(
                     };
 
                     tokens.push(InlineToken::Box {
-                        width,
-                        height,
+                        width: margin_box_width,
+                        height: margin_box_height,
                         style,
                         ctx: next_ctx.clone(),
                         layout: layout_ref,
@@ -355,8 +358,11 @@ fn collect_inline_tokens_from_layout_box<'a>(
                     let style = layout.style;
                     let cbm = style.box_metrics;
 
-                    let width = layout.rect.width + cbm.margin_left + cbm.margin_right;
-                    let height = layout.rect.height + cbm.margin_top + cbm.margin_bottom;
+                    let margin_box_width =
+                        (layout.rect.width + cbm.margin_left + cbm.margin_right).max(0.0);
+                    let margin_box_height =
+                        (layout.rect.height + cbm.margin_top + cbm.margin_bottom).max(0.0);
+                    debug_assert!(margin_box_width.is_finite() && margin_box_height.is_finite());
 
                     let kind = layout
                         .replaced
@@ -368,8 +374,8 @@ fn collect_inline_tokens_from_layout_box<'a>(
                     };
 
                     tokens.push(InlineToken::Replaced {
-                        width,
-                        height,
+                        width: margin_box_width,
+                        height: margin_box_height,
                         style,
                         ctx: next_ctx.clone(),
                         kind,
