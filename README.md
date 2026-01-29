@@ -1,104 +1,456 @@
-# The Borrowser 🦀🌐  
-*A web browser engine written from scratch in Rust.*
+#  The Borrowser 🦀🌐
 
-Borrowser is a learning-focused project that builds a real browser stack—HTML parsing, CSS cascade, layout, rendering, networking, and desktop UI—from the ground up.  
-The goal: deeply understand *every* part of a browser engine, while keeping code clean, modular, and production-quality.
+*A browser engine written from scratch in Rust.*
+
+  
+
+Borrowser is a learning-focused but **engine-grade** browser project that builds a real web stack from first principles:
+
+  
+
+- HTML parsing
+
+- CSS cascade and layout
+
+- Rendering and input handling
+
+- Networking and concurrency
+
+  
+
+Everything is implemented explicitly, with correctness, clarity, and long-term architecture as the primary goals.
+
+  
+
+Borrowser is not a wrapper around an existing engine.
+
+It is built to understand — and eventually **own** — every layer of the rendering pipeline.
+
+  
 
 ---
+
+  
 
 ## 🙋 Why “Borrowser”?
 
-Think **Borrow Checker** + **Browser** → **Borrowser**.  
-A full browser engine built with Rust’s safety and clarity, nothing borrowed from Chromium 😉.
+  
+
+**Borrowser = Borrow Checker + Browser**
+
+  
+
+The project is written in Rust and intentionally embraces Rust’s strengths:
+
+- explicit ownership
+
+- deterministic behavior
+
+- safe concurrency
+
+- clarity over cleverness
+
+  
+
+The name reflects the project’s original scope:
+
+**a browser engine, built properly, without shortcuts.**
+
+  
 
 ---
-## Next steps
 
-See [ROADMAP.md](ROADMAP.md) for the full plan. Current focus areas:
+  
 
-1.  **Border Support** (borders + border-radius basics)
-    
-    -   inputs/buttons look awful without borders; also helps with debugging layout boxes.
-        
-2.  **CSS Unit Support** (em/rem/% etc.)
-    
-3.  **Layout Caching & Dirty Flags** (avoid rebuilding style/layout every frame)
+## 🧱 What Borrowser is today
 
-4.  **Debug Overlays** (box outlines, line boxes, etc.)
+  
 
-5.  **Inline Formatting Polishing** (baseline/vertical-align, better line-height behavior, etc.)
+Today, Borrowser is **a standalone browser engine** with a custom desktop shell.
+
+  
+
+It follows a modern multi-runtime architecture:
+
+  
+  
+
+```
+
+  
+
+HTML / CSS → Parsing → DOM → Style → Layout → Paint → GPU
+
+  
+
+```
+
+  
+
+### Current focus areas
+
+  
+
+Borrowser is primarily focused on:
+
+- incremental HTML parsing
+
+- CSS cascade correctness
+
+- deterministic layout
+
+- explicit rendering pipelines
+
+- message-driven concurrency
+
+  
+
+The goal is not feature parity with Chromium, but **engine-grade foundations** that are:
+
+- understandable
+
+- testable
+
+- extensible
+
+- performance-conscious
+
+  
+
 ---
 
-## ✨ Current Capabilities
+  
 
-Borrowser currently supports:
+## ✨ Current capabilities
 
-### **Browser Shell**
+  
+
+### **Browser shell**
+
 - Native desktop window (via `winit`)
-- Custom tab strip with navigation (Back / Forward / Refresh / New Tab)
-- Independent per-tab session state and navigation history
-- URL bar with proper navigation handling
+
+- Custom tab strip and navigation
+
+- Independent per-tab session state
+
+- URL bar and navigation history
+
+  
 
 ### **Networking**
+
 - Streaming HTML over HTTP
-- Parallel streaming of external CSS files
-- Supports `file://` URLs for local pages and examples
-- Streaming images (PNG/JPEG) with async decode + egui textures
+
+- Parallel streaming of external CSS
+
+- `file://` URL support for local pages
+
+- Async image loading (PNG/JPEG)
+
+  
 
 ### **HTML & CSS**
-- HTML tokenizer + DOM tree builder
-- CSS parser: selectors, specificity, inline styles
-- Cascade + computed styles (inheritance + defaults)
-- Incremental DOM/CSS updates via multi-threaded runtimes
 
-### **Layout & Rendering**
+- Incremental HTML tokenizer and DOM builder
+
+- CSS parsing (selectors, specificity, inline styles)
+
+- Cascade and computed styles (inheritance + defaults)
+
+- Multi-threaded parsing runtimes
+
+  
+
+### **Layout & rendering**
+
 - Styled tree construction
-- Block layout engine (CSS box model, margins, padding)
+
+- Block layout engine (CSS box model)
+
 - Inline layout engine with:
-  - whitespace collapsing  
-  - word-wrapping  
-  - line boxes + fragments  
-- Painting backgrounds + text via `egui` + `wgpu`
-- Replaced elements: `<img>`, `<input type="text|checkbox|radio">`, `<textarea>`, `<button>` (basic behavior)
-- Scrollable viewport with proper page background selection
+
+- whitespace collapsing
+
+- word wrapping
+
+- line boxes and fragments
+
+- Custom painting using `egui` + `wgpu`
+
+- Basic replaced elements (`img`, `input`, `textarea`, `button`)
+
+- Scrollable viewport with correct background behavior
+
+  
 
 ### **Architecture**
-- Fully session-aware message bus (CoreCommand / CoreEvent)
-- Separate runtimes for:
-  - Networking  
-  - HTML parsing  
-  - CSS parsing  
-- Navigation toolbar widgets live in `gfx::ui::toolbar` (input: `core_types::BrowserInput`, output: intent)
-- Text controls (caret/selection/scroll for `<input>`/`<textarea>`) live in `gfx` (`gfx::input`, `gfx::textarea`)
-- Thread-safe, highly modular design
+
+- Session-aware message bus (`CoreCommand` / `CoreEvent`)
+
+- Dedicated runtimes for:
+
+- networking
+
+- HTML parsing
+
+- CSS parsing
+
+- No shared mutable state across threads
+
+- Strong crate boundaries and testability
+
+  
 
 ---
 
-## 🧩 Documentation
+  
 
-Borrowser is built to be understood, not black magic.
+## 🧭 Project direction: beyond a browser
 
-- 📘 **[Architecture Overview](ARCHITECTURE.md)**  
-  Deep dive into every subsystem: DOM, CSS cascade, layout, runtimes, rendering pipeline, message bus, and threading model.
+  
 
-- 🗺️ **[Project Roadmap](ROADMAP.md)**  
-  The long-term vision, planned features, and sequencing of future work.
+Borrowser is intentionally presented **today** as a browser engine.
+
+  
+
+However, its architecture is designed with a broader goal in mind.
+
+  
+
+### Why?
+
+  
+
+Modern computing still largely follows this model:
+
+  
+  
+
+```
+
+  
+
+Device → OS → Apps → Cloud / AI
+
+  
+
+```
+
+  
+
+This leads to:
+
+- fragmented state
+
+- fragile syncing
+
+- app-owned data
+
+- AI bolted on at the edges
+
+- recovery as a special case
+
+  
+
+While browsers have evolved enormously, the **core model has not**.
+
+  
 
 ---
+
+  
+
+## 🔮 Looking ahead: Continuum
+
+  
+
+Borrowser is being built as the **UI runtime foundation** for a future project called **Continuum**.
+
+  
+
+**Continuum** is an experimental concept for a **state-native, event-driven user operating system**, built on top of Borrowser.
+
+  
+
+The core idea is a different stack:
+
+  
+  
+
+```
+
+  
+
+Event → State → UI / Cloud / AI
+
+  
+
+```
+
+  
+
+Where:
+
+- state is canonical
+
+- UI is a deterministic projection of state
+
+- cloud replication is native, not “sync”
+
+- AI observes events and proposes actions
+
+- devices are temporary participants, not authorities
+
+  
+
+In this future architecture:
+
+- **Borrowser remains the engine**
+
+- **Continuum becomes the user OS built on top of it**
+
+  
+
+The current repository focuses entirely on the engine layer.
+
+OS-level work will begin only once the HTML/CSS runtime is sufficiently complete and stable.
+
+  
+
+Nothing in Borrowser’s design is accidental — it is built to support that future without rewrites.
+
+  
+
+---
+
+  
+
+## 🧪 Why build this?
+
+  
+
+Borrowser exists to deeply understand and explore:
+
+  
+
+- how browsers actually work
+
+- how modern UI systems can be deterministic
+
+- how event-driven state can simplify complexity
+
+- how HTML/CSS can function as a general UI runtime
+
+  
+
+Continuum exists as the *logical extension* of those foundations.
+
+  
+
+This project prioritizes:
+
+- correctness over shortcuts
+
+- clarity over cleverness
+
+- explicit state over hidden mutation
+
+- architecture that can evolve over decades
+
+  
+
+---
+
+  
+
+## 🚧 Non-goals (for now)
+
+  
+
+- Competing with Chrome or Safari
+
+- Full web-platform parity
+
+- Writing a kernel
+
+- Shipping a consumer OS
+
+  
+
+This is about **foundations**, not polish or hype.
+
+  
+
+---
+
+  
+
+## 📚 Documentation
+
+  
+
+- 📘 **Architecture** — deep dive into parsing, layout, rendering, and concurrency
+
+- 🧠 **ADRs** — design decisions and trade-offs, documented explicitly
+
+- 🗺️ **Roadmap** — planned milestones and long-term direction
+
+  
+
+---
+
+  
 
 ## 🚀 Running Borrowser
 
-Requirements:
-- Rust toolchain pinned in `rust-toolchain.toml` (currently `1.92.0`)
-- A GPU that supports `wgpu` (almost all modern machines)
+  
 
-Run in release mode for a smooth experience:
+Requirements:
+
+- Rust toolchain (pinned in `rust-toolchain.toml`)
+
+- A GPU supported by `wgpu`
+
+  
+
+Run in release mode:
+
+  
 
 ```bash
+
 cargo run --release
+
 ```
 
-Then try a local example in the URL bar:
+  
 
-- `file://examples/href.html`
-- `file://examples/image.html`
+Try local examples:
+
+  
+
+-  `file://examples/basic.html`
+
+-  `file://examples/layout.html`
+
+  
+
+----------
+
+  
+
+## ✨ Final note
+
+  
+
+Borrowser is what this project **is today**.
+
+  
+
+Continuum is what this architecture is **intentionally moving toward**.
+
+  
+
+The goal is not to rush that transition —
+
+but to earn it by building the right foundations first.
