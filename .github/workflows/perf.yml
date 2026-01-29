@@ -32,7 +32,7 @@ jobs:
       - name: Run html heavy perf guards (timing + deterministic)
         env:
           RUST_TEST_THREADS: 1
-        run: cargo test -p html --all-targets --locked --features perf-tests
+        run: cargo test -p html --all-targets --locked --features perf-tests,test-harness
 
       - name: Run allocation guards
         env:
