@@ -1,7 +1,7 @@
 # ADR 001: HTML5 Parsing Architecture (Tokenizer → Tree Builder → DomPatch)
 
 Date: 2026-01-29
-Status: Accepted
+Status: Accepted (architecture locked; implementation staged under feature gate)
 
 ## Context
 Borrowser needs an HTML5-compliant parsing architecture that supports streaming input and incremental rendering without building a full DOM and then diffing it. The current runtime pipeline consumes `Tokenizer` tokens and feeds a `TreeBuilder` that emits `DomPatch` updates; this ADR formalizes the future HTML5 parser architecture (tokenizer + tree builder), its module boundaries, ownership rules, error strategy, and integration plan with `runtime_parse`.
@@ -37,7 +37,8 @@ We will implement an HTML5 parsing pipeline with a tokenizer state machine feedi
   - The “DOM-first then diff” path remains as a debug/test path only.
 
 ### Streaming model
-- Tokenizer input is a sequence of UTF-8 chunks (current network layer already yields UTF-8).
+- Tokenizer input is a byte stream. An explicit decoding layer determines encoding and produces text for tokenization.
+- The architecture does not assume UTF-8 at the tokenizer boundary; decoding must handle BOM, HTTP headers, and `<meta charset>` sniffing per HTML5 rules.
 - Tokenizer owns an append-only source buffer (or segmented buffer) to support `TextSpan` and `AttributeValue::Span` without copying.
 - Tokens are drained in batches; the tokenizer preserves enough buffer history to keep spans valid until the tree builder has consumed them.
 - Tree builder is fully resumable; it can pause between tokens and resume with preserved internal state.
@@ -54,8 +55,11 @@ Proposed module layout in `crates/html`:
 Ownership rules:
 - Tokenizer owns:
   - Source buffer and any zero-copy spans.
-  - Atom table (`AtomTable`) for canonical lowercase tag/attribute names.
   - Tokenizer state machine and parse error accumulator.
+- DocumentParseContext (new) owns:
+  - Atom table (`AtomTable`) for canonical ASCII-folded names (HTML namespace matching).
+  - Encoding state and decoder configuration.
+  - Shared, document-lifetime resources used by tokenizer and tree builder.
 - Tree builder owns:
   - Node/key allocator and DOM construction state.
   - Patch emission buffer and invariant validation.
@@ -67,14 +71,16 @@ Ownership rules:
 ### Public/internal APIs (sketch)
 Public API (feature gated, `html5-parse`):
 - `pub struct Html5Tokenizer { ... }`
-  - `new(config) -> Self`
-  - `push_chunk(&mut self, chunk: &str) -> TokenizeResult`
-  - `drain_tokens(&mut self) -> &[Token]` or `take_tokens()`
+  - `new(config, ctx: &mut DocumentParseContext) -> Self`
+  - `push_bytes(&mut self, bytes: &[u8]) -> TokenizeResult`
+  - `next_batch(&mut self) -> TokenBatch` (tokens/spans valid for the batch epoch; includes `TextResolver` view bound to the batch)
   - `finish(&mut self) -> TokenizeResult` (emit EOF)
+- `pub struct DocumentParseContext { ... }`
   - `atoms(&self) -> &AtomTable`
+  - `decoder(&mut self) -> &mut ByteStreamDecoder`
 - `pub struct Html5TreeBuilder { ... }`
-  - `new(config) -> Self`
-  - `push_token(&mut self, token: &Token, atoms: &AtomTable, source: &Html5Tokenizer) -> Result<(), TreeBuilderError>`
+  - `new(config, ctx: &mut DocumentParseContext) -> Self`
+  - `push_token(&mut self, token: &Token, atoms: &AtomTable, text: &dyn TextResolver) -> Result<(), TreeBuilderError>`
   - `take_patches(&mut self) -> Vec<DomPatch>`
 
 Internal API:
@@ -89,7 +95,7 @@ Error strategy:
 ### Invariants (explicit)
 Tokenizer invariants:
 - Source buffer is append-only while spans are live.
-- All tag/attribute names are ASCII-lowercase in the atom table.
+- For HTML namespace elements/attributes, matching is ASCII case-insensitive; atoms store a canonical ASCII-lowercased form for ASCII letters.
 - `TextSpan` and `AttributeValue::Span` ranges are valid UTF-8 boundaries.
 
 Tree builder invariants:
@@ -101,6 +107,15 @@ Tree builder invariants:
 Runtime invariants:
 - DOM handle + versioning is monotonic (`from -> to` increment only).
 - Patch batches preserve order and are not interleaved across documents.
+
+Token lifetime invariants:
+- Token batches that borrow spans must be consumed within the same batch epoch.
+- Tree builder must not store borrowed slices beyond a batch; it must intern/copy if data is retained.
+- Source buffer trimming/compaction is only allowed when no outstanding batches exist.
+
+Encoding invariants:
+- The decoder may use provisional encoding and supports a restart window until charset is locked.
+- Charset locking policy is explicit and consistent across runs.
 
 ### Performance model
 - Zero-copy spans (`TextSpan`/`AttributeValue::Span`) are used whenever token data is a direct slice of the source buffer.
@@ -136,6 +151,19 @@ Runtime invariants:
 - **Tree builder invariant violation**: log error, mark parser failed, stop emitting patches for that document; runtime emits a reset on next full rebuild.
 - **Tokenizer buffer growth**: if zero-copy spans prevent trimming, fall back to owned text for subsequent tokens or flush chunks earlier.
 - **Patch protocol violation** (e.g., `Clear` mid-batch): treated as a bug; `DomStore` rejects updates and logs.
+
+Patch transaction semantics:
+- A patch batch is an atomic transaction: apply all patches or none.
+- A `Clear` starts a new baseline for the document handle; it invalidates all prior keys for that handle.
+- On fatal parse failure, the runtime must either (a) emit a new handle and a full create stream, or (b) emit `Clear` + full create on the existing handle. The choice is explicit and consistent.
+- A “full create stream” is `CreateDocument` + a complete create/append stream for every node in document order, with fresh patch keys allocated from scratch for that baseline.
+- `CreateDocument` is part of the patch protocol in this design; if not already present, it is introduced as a first-class patch operation.
+
+Parser suspension points (future-proofing):
+- Tree builder can signal suspension (e.g., script execution) and resume later with preserved tokenizer and tree builder state.
+- Suspension API: `TreeBuilderStepResult::{Continue, Suspend(SuspendReason)}` with a well-defined resume contract.
+- On `Suspend`, the runtime stops advancing the parse pump; it may continue buffering input and resumes from the same token/batch boundary.
+- Injection points (e.g., document.write-like input) are modeled as additional byte stream chunks with ordering guarantees.
 
 ## Follow-up plan
 - Define HTML5 tokenizer state enum + insertion mode enum and scaffolding modules.
