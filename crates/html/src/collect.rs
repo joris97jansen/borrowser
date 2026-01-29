@@ -2,6 +2,7 @@ use crate::Node;
 use crate::types::debug_assert_lowercase_atom;
 
 fn is_heading(name: &str) -> bool {
+    debug_assert_lowercase_atom(name, "collect heading tag");
     let b = name.as_bytes();
     b.len() == 2 && b[0] == b'h' && (b'1'..=b'6').contains(&b[1])
 }
@@ -27,6 +28,19 @@ fn is_blockish_break(name: &str) -> bool {
 #[inline]
 fn is_ascii_ws(byte: u8) -> bool {
     matches!(byte, b' ' | b'\n' | b'\t' | b'\r')
+}
+
+fn trim_ascii(s: &str) -> &str {
+    let bytes = s.as_bytes();
+    let mut start = 0usize;
+    while start < bytes.len() && is_ascii_ws(bytes[start]) {
+        start += 1;
+    }
+    let mut end = bytes.len();
+    while end > start && is_ascii_ws(bytes[end - 1]) {
+        end -= 1;
+    }
+    &s[start..end]
 }
 
 fn trim_ascii_end(s: &mut String) {
@@ -85,11 +99,11 @@ pub fn collect_style_texts(node: &Node, out: &mut String) {
 pub fn collect_stylesheet_hrefs(node: &Node, out: &mut Vec<String>) {
     match node {
         Node::Element { name, children, .. } => {
+            debug_assert_lowercase_atom(name, "collect stylesheet tag");
             if name.as_ref() == "link"
                 && node.attr_has_token("rel", "stylesheet")
                 && let Some(href) = node.attr("href")
             {
-                debug_assert_lowercase_atom(name, "collect link tag");
                 out.push(href.to_string());
             }
 
@@ -110,11 +124,11 @@ pub fn collect_stylesheet_hrefs(node: &Node, out: &mut Vec<String>) {
 pub fn collect_img_srcs(node: &Node, out: &mut Vec<String>) {
     match node {
         Node::Element { name, children, .. } => {
+            debug_assert_lowercase_atom(name, "collect img tag");
             if name.as_ref() == "img"
                 && let Some(src) = node.attr("src")
             {
-                debug_assert_lowercase_atom(name, "collect img tag");
-                let src = src.trim();
+                let src = trim_ascii(src);
                 if !src.is_empty() {
                     out.push(src.to_string());
                 }
@@ -163,7 +177,7 @@ pub fn collect_visible_text(node: &Node, out: &mut String) {
 
     match node {
         Node::Text { text, .. } => {
-            let t = text.trim();
+            let t = trim_ascii(text);
             if !t.is_empty() {
                 if out.as_bytes().last().is_some_and(|b| !is_ascii_ws(*b)) {
                     out.push(' ');
