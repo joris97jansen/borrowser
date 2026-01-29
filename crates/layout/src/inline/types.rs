@@ -3,6 +3,36 @@ use css::ComputedStyle;
 use html::internal::Id;
 use std::sync::Arc;
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AdvanceRect(Rectangle);
+
+impl AdvanceRect {
+    #[inline]
+    pub(super) fn new(rect: Rectangle) -> Self {
+        Self(rect)
+    }
+
+    #[inline]
+    pub fn rect(self) -> Rectangle {
+        self.0
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PaintRect(Rectangle);
+
+impl PaintRect {
+    #[inline]
+    pub(super) fn new(rect: Rectangle) -> Self {
+        Self(rect)
+    }
+
+    #[inline]
+    pub fn rect(self) -> Rectangle {
+        self.0
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InlineActionKind {
     Link,
@@ -44,7 +74,10 @@ pub enum InlineFragment<'a> {
 // One fragment of text within a line (later this can be per <span>, <a>, etc.)
 pub struct LineFragment<'a> {
     pub kind: InlineFragment<'a>,
-    pub rect: Rectangle,
+    /// Rect used for inline layout advance (typically margin-box for inline boxes).
+    pub advance_rect: AdvanceRect,
+    /// Rect used for painting/hit-testing (typically border-box for inline boxes).
+    pub paint_rect: PaintRect,
     /// Optional mapping back to a source text byte range (start, end).
     ///
     /// This is `None` for DOM-driven inline layout, but can be populated by
@@ -59,7 +92,8 @@ pub struct LineFragment<'a> {
     /// This is a forward-compatible hook for CSS `vertical-align` (e.g. `super`,
     /// `sub`, `middle`, `top`, explicit lengths, etc).
     ///
-    /// The fragment baseline in layout coordinates is `rect.y + ascent + baseline_shift`.
+    /// The fragment baseline in layout coordinates is
+    /// `advance_rect.rect().y + ascent + baseline_shift`.
     pub baseline_shift: f32,
 }
 

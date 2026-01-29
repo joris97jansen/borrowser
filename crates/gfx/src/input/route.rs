@@ -64,10 +64,12 @@ pub(crate) fn route_frame_input<S: InputStore + ?Sized, F: FormControlHandler<S>
     let mut action: Option<PageAction> = None;
 
     // Prefer the painted fragment rect for the focused control when available.
-    if let Some(focus_id) = interaction.focused_node_id
-        && let Some(r) = fragment_rects.borrow().get(&focus_id).copied()
-    {
-        interaction.focused_input_rect = Some(r);
+    if let Some(focus_id) = interaction.focused_node_id {
+        if let Some(r) = fragment_rects.borrow().get(&focus_id).copied() {
+            interaction.focused_input_rect = Some(r);
+        } else if layout_changed {
+            interaction.focused_input_rect = None;
+        }
     }
 
     let pointer_pos = |ui: &Ui, allow_latest_pos: bool| -> Option<Pos2> {
@@ -1123,7 +1125,7 @@ mod tests {
                         }) = action.as_ref()
                             && *target == link_id
                         {
-                            return Some(frag.rect);
+                            return Some(frag.paint_rect.rect());
                         }
                     }
                 }
@@ -1162,7 +1164,7 @@ mod tests {
                             InlineFragment::Text { .. } => None,
                         };
                         if layout_ref.is_some_and(|lb| lb.node_id() == node_id) {
-                            return Some(frag.rect);
+                            return Some(frag.paint_rect.rect());
                         }
                     }
                 }

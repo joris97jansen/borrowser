@@ -129,14 +129,14 @@ pub(crate) fn layout_textarea_cached_lines(
                             style,
                             text,
                             f.source_range,
-                            f.rect.width,
+                            f.paint_rect.rect().width,
                         )
                     } else {
                         (Vec::new(), Vec::new())
                     };
 
                     TextareaCachedTextFragment {
-                        rect: f.rect,
+                        rect: f.paint_rect.rect(),
                         source_range: f.source_range,
                         byte_positions,
                         x_advances,

@@ -2,6 +2,7 @@ mod breaker;
 mod button;
 mod dom_attrs;
 mod engine;
+mod geometry;
 mod metrics;
 mod options;
 mod refine;
@@ -18,4 +19,6 @@ pub(crate) use dom_attrs::get_attr;
 pub use engine::layout_inline_for_paint;
 pub use refine::refine_layout_with_inline;
 pub use textarea::layout_textarea_value_for_paint;
-pub use types::{InlineAction, InlineActionKind, InlineFragment, LineBox, LineFragment};
+pub use types::{
+    AdvanceRect, InlineAction, InlineActionKind, InlineFragment, LineBox, LineFragment, PaintRect,
+};
