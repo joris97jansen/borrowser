@@ -11,6 +11,7 @@ tools = { path = "../tools" }
 criterion = "0.5"
 
 [features]
+debug-stats = []
 count-alloc = []
 html5-entities = []
 perf-tests = []

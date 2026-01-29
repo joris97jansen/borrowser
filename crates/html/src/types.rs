@@ -125,6 +125,11 @@ impl AtomTable {
         self.atoms.is_empty()
     }
 
+    #[cfg(feature = "debug-stats")]
+    pub(crate) fn debug_atom_count(&self) -> usize {
+        self.atoms.len()
+    }
+
     #[cfg(any(test, debug_assertions))]
     #[allow(dead_code)] // Debug-only invariant checker; may be called ad-hoc
     pub(crate) fn debug_validate(&self) {

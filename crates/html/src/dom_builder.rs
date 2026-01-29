@@ -134,6 +134,14 @@ pub struct TreeBuilder {
     finished: bool,
 }
 
+#[cfg(feature = "debug-stats")]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub(crate) struct DebugArenaStats {
+    pub nodes: usize,
+    pub edges: usize,
+    pub text_bytes: usize,
+}
+
 impl TreeBuilder {
     pub fn with_capacity(node_capacity: usize) -> Self {
         Self::with_capacity_and_config(node_capacity, TreeBuilderConfig::default())
@@ -192,6 +200,11 @@ impl TreeBuilder {
     #[cfg(test)]
     pub(crate) fn debug_node_count(&self) -> u32 {
         self.arena.nodes.len() as u32
+    }
+
+    #[cfg(feature = "debug-stats")]
+    pub(crate) fn debug_arena_stats(&self) -> DebugArenaStats {
+        self.arena.debug_stats()
     }
 
     pub fn push_token<R: TokenTextResolver + ?Sized>(
@@ -766,6 +779,35 @@ impl NodeArena {
                 "key out of bounds in key_to_index"
             );
             debug_assert_eq!(self.key_to_index[k], idx, "mapping mismatch for {:?}", key);
+        }
+    }
+
+    #[cfg(feature = "debug-stats")]
+    fn debug_stats(&self) -> DebugArenaStats {
+        let mut edges = 0usize;
+        let mut text_bytes = 0usize;
+        for node in &self.nodes {
+            match node {
+                ArenaNode::Document {
+                    children, doctype, ..
+                } => {
+                    edges += children.len();
+                    if let Some(dt) = doctype {
+                        text_bytes += dt.len();
+                    }
+                }
+                ArenaNode::Element { children, .. } => {
+                    edges += children.len();
+                }
+                ArenaNode::Text { text, .. } | ArenaNode::Comment { text, .. } => {
+                    text_bytes += text.len();
+                }
+            }
+        }
+        DebugArenaStats {
+            nodes: self.nodes.len(),
+            edges,
+            text_bytes,
         }
     }
 
@@ -1896,6 +1938,42 @@ mod tests {
             panic!("expected trailing text node");
         };
         assert_eq!(text, "b");
+    }
+
+    #[cfg(feature = "debug-stats")]
+    #[test]
+    fn debug_arena_stats_track_nodes_edges_and_text_bytes() {
+        let mut atoms = AtomTable::new();
+        let div = atoms.intern_ascii_lowercase("div");
+        let tokens = vec![
+            Token::Doctype(crate::TextPayload::Owned("html".to_string())),
+            Token::StartTag {
+                name: div,
+                attributes: Vec::new(),
+                self_closing: false,
+            },
+            Token::TextOwned { index: 0 },
+            Token::Comment(crate::TextPayload::Owned("c".to_string())),
+            Token::EndTag(div),
+        ];
+        let text_pool = vec!["hi".to_string()];
+        let stream = TokenStream::new(tokens, atoms, Arc::from(""), text_pool);
+
+        let mut builder = TreeBuilder::with_capacity(stream.tokens().len().saturating_add(1));
+        builder.push_stream(&stream).unwrap();
+        builder.finish().unwrap();
+
+        let stats = builder.debug_arena_stats();
+        assert_eq!(stats.nodes, 4, "expected document, element, text, comment");
+        assert_eq!(stats.edges, 3, "expected doc->div and div->(text,comment)");
+        assert_eq!(
+            stats.text_bytes,
+            "html".len() + "hi".len() + "c".len(),
+            "expected doctype, text, and comment bytes"
+        );
+
+        let atom_count = stream.atoms().debug_atom_count();
+        assert_eq!(atom_count, 1, "expected one atom interned");
     }
 
     #[test]
