@@ -87,8 +87,7 @@ Public API (feature gated, `html5-parse`):
   - `take_patches(&mut self) -> Vec<DomPatch>`
 - `pub struct Html5TreeBuilder { ... }`
   - `new(config, ctx: &mut DocumentParseContext) -> Self`
-  - `push_token(&mut self, token: &Token, atoms: &AtomTable, text: &dyn TextResolver) -> Result<(), TreeBuilderError>`
-  - `take_patches(&mut self) -> Vec<DomPatch>`
+  - `push_token(&mut self, token: &Token, atoms: &AtomTable, text: &dyn TextResolver, sink: &mut dyn PatchSink) -> Result<(), TreeBuilderError>`
   - Note: `Html5Tokenizer` and `Html5TreeBuilder` are public for testing/tooling, but runtime integration must go through `Html5ParseSession`.
 
 Internal API:
@@ -211,6 +210,7 @@ Notes:
 **`html::html5::tree_builder` (public)**
 - Public items:
   - `Html5TreeBuilder`, `TreeBuilderConfig`
+  - `PatchSink`, `VecPatchSink`
   - `TreeBuilderStepResult`, `SuspendReason`
   - `TreeBuilderError`
 - Internal-only:
@@ -290,6 +290,20 @@ Parser suspension points (future-proofing):
 - Suspension API: `TreeBuilderStepResult::{Continue, Suspend(SuspendReason)}` with a well-defined resume contract.
 - On `Suspend`, the runtime stops advancing the parse pump; it may continue buffering input and resumes from the same token/batch boundary.
 - Injection points (e.g., document.write-like input) are modeled as additional byte stream chunks with ordering guarantees.
+
+## DomPatch contract (html5 tree builder)
+
+The HTML5 tree builder is the source of truth for the incremental patch stream. The following contract is normative for all consumers and tests:
+
+- **Ordering:** Patches are emitted in deterministic source order. Within a token, creation patches (e.g., `CreateElement`, `CreateText`) occur before structural attachments (`AppendChild`/`InsertBefore`). Text coalescing does not reorder nodes.
+- **Identity:** Patch keys are stable for the document handle and never reused. `CreateDocument` is always the first create operation in a full-create stream.
+- **Batching:** A batch is an atomic transaction. All patches in a batch must be applied in order, or none are applied. Batches must not interleave across documents.
+- **Text coalescing:** Adjacent text nodes created by consecutive character tokens may be coalesced within a batch. Coalescing is local: only when the last emitted node is a text node with the same parent and there are no intervening structural mutations.
+- **Attributes:** Tokenizer preserves attribute order and duplicates. Tree builder applies HTML parsing semantics (e.g., duplicate handling) deterministically when constructing elements; patch emission remains deterministic.
+- **Clear baseline:** `DomPatch::Clear` appears only at the start of a reset batch and invalidates all prior keys for that handle; it does not reset the key allocator.
+
+Patch emission strategy:
+- The tree builder emits patches only through a **streaming sink** (`PatchSink`) for immediate emission. Buffered delivery is implemented via a sink adapter (e.g., `VecPatchSink`) owned by the session/runtime. Ordering must be identical across sink implementations.
 
 ## Follow-up plan
 - Define HTML5 tokenizer state enum + insertion mode enum and scaffolding modules.
