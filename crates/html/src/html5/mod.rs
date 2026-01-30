@@ -1,4 +1,8 @@
 //! HTML5 parsing path (feature-gated).
+//!
+//! Note: `Html5ParseSession` is the intended runtime entrypoint. The tokenizer,
+//! tree builder, and shared input types are re-exported for testing and tooling
+//! and should be considered advanced APIs.
 
 mod bridge;
 mod session;
@@ -14,5 +18,6 @@ pub use shared::{
 };
 pub use tokenizer::{Html5Tokenizer, TextResolver, TokenBatch, TokenizeResult, TokenizerConfig};
 pub use tree_builder::{
-    Html5TreeBuilder, SuspendReason, TreeBuilderConfig, TreeBuilderError, TreeBuilderStepResult,
+    EngineInvariantError, Html5TreeBuilder, PatchSink, SuspendReason, TreeBuilderConfig,
+    TreeBuilderError, TreeBuilderStepResult, VecPatchSink,
 };
