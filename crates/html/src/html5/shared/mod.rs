@@ -14,7 +14,7 @@ mod token;
 pub use atom::{AtomId, AtomTable};
 pub use context::DocumentParseContext;
 pub use counters::Counters;
-pub use error::{ParseError, ParseErrorCode};
+pub use error::{ErrorOrigin, ErrorPolicy, ParseError, ParseErrorCode};
 pub use input::{ByteStreamDecoder, DecodeResult, Input};
 pub use span::{Span, TextSpan};
 pub use token::{Attribute, AttributeValue, Token};
