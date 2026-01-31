@@ -108,6 +108,20 @@ Parse error handling (html5):
 - **Panic-free guarantee:** malformed HTML must never panic; all spec parse errors are recoverable. Only engine invariant violations may stop the stream.
 - **Invariant violations include:** patch protocol violations, span resolution failures (epoch mismatch or invalid boundaries), and impossible internal state transitions.
 
+## Atom + tag/attribute name normalization (HTML5)
+
+Policy for HTML documents:
+- **Tag names:** ASCII case-insensitive. Canonical form is ASCII-lowercased. Non-ASCII code points are preserved as-is.
+- **Attribute names:** ASCII case-insensitive. Canonical form is ASCII-lowercased. Non-ASCII code points are preserved as-is.
+- **Original casing:** not preserved in DOM/patches; may be preserved later only for serialization/debug tooling.
+- **Non-ASCII policy:** no Unicode case folding beyond ASCII. This matches HTML5 behavior for tag/attribute matching.
+- **Scope:** applies to HTML namespace parsing; foreign content (SVG/MathML/XML) may use different case-sensitivity rules.
+
+Atom/interning interaction:
+- Atom table stores the canonical form (ASCII-lowercased for ASCII letters, non-ASCII unchanged).
+- Tokenizer interns tag/attribute names via `AtomTable::intern_ascii_folded` or UTF-8 byte helpers (`intern_html_tag_name_utf8_bytes`, `intern_html_attr_name_utf8_bytes`) after decoding.
+- Invalid UTF-8 in name helpers is treated as an **engine invariant violation** (not a recoverable parse error).
+
 ### Invariants (explicit)
 Tokenizer invariants:
 - Source buffer is append-only while spans are live.

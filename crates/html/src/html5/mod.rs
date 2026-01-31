@@ -13,7 +13,7 @@ pub mod tree_builder;
 // Public re-exports: consumers should import from `html::html5::*` rather than `shared::*`.
 pub use session::Html5ParseSession;
 pub use shared::{
-    AtomId, AtomTable, Attribute, AttributeValue, ByteStreamDecoder, Counters,
+    AtomError, AtomId, AtomTable, Attribute, AttributeValue, ByteStreamDecoder, Counters,
     DocumentParseContext, ErrorOrigin, ErrorPolicy, Input, ParseError, Span, TextSpan, Token,
 };
 pub use tokenizer::{Html5Tokenizer, TextResolver, TokenBatch, TokenizeResult, TokenizerConfig};
