@@ -4,4 +4,6 @@
 pub struct Counters {
     pub tokens_emitted: u64,
     pub parse_errors: u64,
+    pub invariant_errors: u64,
+    pub errors_dropped: u64,
 }

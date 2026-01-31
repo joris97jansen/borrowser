@@ -101,6 +101,13 @@ Error strategy:
 - `TreeBuilderError` may be kept for recoverable/spec-level cases if ever introduced; `EngineInvariantError` is reserved for bug/corruption failures (aliasing allowed).
 - Allocation failures or internal panics are treated as fatal and reported to `runtime_parse`.
 
+Parse error handling (html5):
+- **Model:** `ParseError { origin, code, position, detail, aux }` with `ErrorOrigin` (Tokenizer/TreeBuilder) and `ParseErrorCode` for spec-defined classes. `position` is a byte offset into the decoded Input buffer.
+- **Tracking policy:** configurable via `ErrorPolicy { track, max_stored, debug_only, track_counters }`.
+- **Storage:** store up to N most recent errors (oldest dropped). Counters increment when `track_counters` is enabled, even if storage is disabled.
+- **Panic-free guarantee:** malformed HTML must never panic; all spec parse errors are recoverable. Only engine invariant violations may stop the stream.
+- **Invariant violations include:** patch protocol violations, span resolution failures (epoch mismatch or invalid boundaries), and impossible internal state transitions.
+
 ### Invariants (explicit)
 Tokenizer invariants:
 - Source buffer is append-only while spans are live.
