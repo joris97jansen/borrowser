@@ -75,7 +75,7 @@ Public API (feature gated, `html5-parse`):
 - `pub struct Html5Tokenizer { ... }`
   - `new(config, ctx: &mut DocumentParseContext) -> Self`
   - `push_input(&mut self, input: &mut Input) -> TokenizeResult` (consumes decoded Unicode scalar input; processes until it needs more input or reaches EOF)
-  - `next_batch(&mut self) -> TokenBatch` (tokens/spans valid for the batch epoch; includes `TextResolver` view bound to the batch)
+  - `next_batch(&mut self, input: &mut Input) -> TokenBatch` (tokens/spans valid for the batch epoch; holds exclusive borrow of `Input`)
   - `finish(&mut self) -> TokenizeResult` (emit EOF)
 - `pub struct DocumentParseContext { ... }`
   - `atoms(&self) -> &AtomTable`
@@ -93,6 +93,7 @@ Public API (feature gated, `html5-parse`):
 Internal API:
 - Tokenizer state enums and insertion-mode enums are internal and not re-exported.
 - `TokenTextResolver` remains internal: it provides text extraction from spans and owned buffers.
+ - `TokenBatch` is parameterized by the lifetime of `Input` and cannot outlive the `&mut Input` borrow used to create it.
 
 Error strategy:
 - HTML5 tokenization parse errors are **non-fatal**; they are recorded and processing continues.
@@ -292,6 +293,52 @@ The bridge layer exists to let `runtime_parse` select the html5 path without bre
 - Default path remains unchanged; feature-gated path wires:
   - `Html5Tokenizer` → `Html5TreeBuilder` → `DomPatch` emission.
 - No behavior change without explicit feature enablement.
+
+## Compatibility + rollout plan (HTML5 vs legacy)
+
+Goal: keep the current simplified tokenizer/tree builder stable while the HTML5 path matures, with zero behavior change unless explicitly enabled.
+
+### Toggle design
+- **Compile-time:** `html5-parse` feature gates the new HTML5 modules.
+- **Runtime:** a startup config flag selects the parser mode (global per process), e.g. `ParserMode::Legacy | ParserMode::Html5`.
+  - Location: runtime_parse configuration (CLI flag or env var) is the single source of truth.
+  - If Html5 is requested but the feature is not compiled: **fail fast** in dev builds (return explicit startup error and refuse to run); **optional fallback to Legacy with a warning** in release builds only if enabled (see `runtime_parse.allow_legacy_fallback`, default: false).
+    - Warning is emitted to stderr/log and increments a runtime counter/metric.
+  - Mode is global per process (not per document) to avoid mixed-mode cache semantics (DomStore, key allocation) and nondeterministic CI parity diffs.
+- **Default:** Legacy remains the default until parity thresholds are met.
+
+### Expected behavioral differences (initial)
+- HTML5 tokenizer state machine will handle more edge cases (e.g., comments, DOCTYPE, rawtext).
+- Attribute duplicate handling may differ per spec (legacy may preserve duplicates).
+- Error reporting and recovery will be stricter in HTML5 mode but should remain panic-free.
+- Patch stream ordering must remain deterministic in both paths; content may differ where legacy is non-spec.
+
+### Test strategy and parity checks
+- **Golden corpus:** run the same HTML fixtures through both parsers and compare:
+  - Patch protocol invariants (ordering guarantees, key stability rules, Clear semantics)
+  - Determinism (same input + chunk plan => identical patch ordering)
+  - Materialized DOM equivalence (apply patches to separate DomStores, compare trees)
+  - Comparator lives in `tests/parity/` (or `runtime_parse::parity`) and is versioned with fixtures.
+- Patch ordering parity is required across modes when DOM-equivalent and the patch protocol has a unique canonical ordering (no extra reordering beyond spec differences).
+- **Streaming parity:** compare results under chunked input plans (small/large chunk boundaries).
+- **Spec harness:** WHATWG tokenizer/tree builder tests for HTML5 path only.
+
+### Migration plan
+- Phase 1: HTML5 path behind feature flag; optional runtime switch in dev builds.
+- Phase 2: enable parity mode (emit HTML5 patches to a shadow DomStore and compare) in CI.
+- Phase 3: flip default to HTML5 when parity targets are met (defined below).
+- Phase 4: deprecate legacy path after stability window.
+
+### Parity definition (for default flip)
+- Patch protocol invariants are identical (ordering, key stability, Clear semantics).
+- DOM materialization is equivalent for a curated corpus (allowing intentional spec fixes).
+- Streaming behavior is stable under chunked inputs with no regressions in perf guards.
+- Stability window: N consecutive CI runs with no parity regressions, no invariant failures, and perf within X% on representative pages (defined in a curated perf fixture set). N and X% are set in CI config (defaults: N=20, X=5%) and tracked in perf dashboards.
+  - DOM equivalence ignores internal ids/keys; compares tree shape, canonical tag names, attribute sets (and order if preserved), and normalized text content (normalize line endings to `\n`; do not collapse whitespace).
+  - Parity does not require preserving legacy duplicate attributes; HTML5 semantics may intentionally change output.
+
+### Optional rollout levels (dev/CI)
+- Runtime config selects `ParserMode::{Legacy, Html5Compare, Html5Apply, Html5Default}` (names bikesheddable), where Compare/Apply control shadow-store behavior and whether patches are applied.
 
 ## Failure modes & handling
 - **Tree builder invariant violation**: log error, mark parser failed, stop emitting patches for that document; runtime emits a reset on next full rebuild.
