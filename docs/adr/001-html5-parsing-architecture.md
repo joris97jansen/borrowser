@@ -71,7 +71,7 @@ Ownership rules:
   - Document handle + versioning used by the UI `DomStore`.
 
 ### Public/internal APIs (sketch)
-Public API (feature gated, `html5-parse`):
+Public API (feature gated, `html5`):
 - `pub struct Html5Tokenizer { ... }`
   - `new(config, ctx: &mut DocumentParseContext) -> Self`
   - `push_input(&mut self, input: &mut Input) -> TokenizeResult` (consumes decoded Unicode scalar input; processes until it needs more input or reaches EOF)
@@ -289,7 +289,7 @@ The bridge layer exists to let `runtime_parse` select the html5 path without bre
 - Provides a feature-gated “parity mode” that can emit both patch stream and owned DOM for test comparison.
 
 ## Integration plan (runtime_parse)
-- Add a feature flag `html5-parse` (and `runtime-parse-html5` if needed) to select the new parser.
+- Add a feature flag `html5` (and `runtime-parse-html5` if needed) to select the new parser.
 - Default path remains unchanged; feature-gated path wires:
   - `Html5Tokenizer` → `Html5TreeBuilder` → `DomPatch` emission.
 - No behavior change without explicit feature enablement.
@@ -299,7 +299,7 @@ The bridge layer exists to let `runtime_parse` select the html5 path without bre
 Goal: keep the current simplified tokenizer/tree builder stable while the HTML5 path matures, with zero behavior change unless explicitly enabled.
 
 ### Toggle design
-- **Compile-time:** `html5-parse` feature gates the new HTML5 modules.
+- **Compile-time:** `html5` feature gates the new HTML5 modules.
 - **Runtime:** a startup config flag selects the parser mode (global per process), e.g. `ParserMode::Legacy | ParserMode::Html5`.
   - Location: runtime_parse configuration (CLI flag or env var) is the single source of truth.
   - If Html5 is requested but the feature is not compiled: **fail fast** in dev builds (return explicit startup error and refuse to run); **optional fallback to Legacy with a warning** in release builds only if enabled (see `runtime_parse.allow_legacy_fallback`, default: false).
