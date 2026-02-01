@@ -49,3 +49,7 @@ impl Default for ErrorPolicy {
         }
     }
 }
+
+/// Engine invariant violation (bug/corruption), not a recoverable HTML error.
+#[derive(Debug)]
+pub struct EngineInvariantError;

@@ -5,7 +5,7 @@
 //! formatting list, etc.) and is resumable across token boundaries.
 
 use crate::dom_patch::DomPatch;
-use crate::html5::shared::{AtomTable, DocumentParseContext, Token};
+use crate::html5::shared::{AtomTable, DocumentParseContext, EngineInvariantError, Token};
 use crate::html5::tokenizer::TextResolver;
 
 #[derive(Clone, Debug, Default)]
@@ -16,6 +16,7 @@ pub struct TreeBuilderConfig {
 }
 
 /// Tree builder step result.
+#[must_use]
 #[derive(Clone, Debug)]
 pub enum TreeBuilderStepResult {
     Continue,
@@ -28,27 +29,27 @@ pub enum SuspendReason {
     Other,
 }
 
-#[derive(Clone, Debug)]
-/// Engine invariant violation (bug/corruption), not a recoverable HTML error.
-pub struct EngineInvariantError;
-
+/// Tree building should not fail on malformed HTML; invariants are the only error surface for now.
 pub type TreeBuilderError = EngineInvariantError;
 
 /// Patch sink for streaming emission.
 pub trait PatchSink {
     fn push(&mut self, patch: DomPatch);
 
-    /// Prefer `push_many` / `extend_owned` in hot paths to avoid per-item cloning.
-    fn extend(&mut self, patches: &[DomPatch]) {
+    /// Prefer move-based extension to avoid per-item cloning.
+    fn extend_cloned(&mut self, patches: &[DomPatch]) {
         for patch in patches {
             self.push(patch.clone());
         }
     }
 
-    fn extend_owned(&mut self, mut patches: Vec<DomPatch>) {
-        self.push_many(&mut patches);
+    fn extend_owned(&mut self, patches: Vec<DomPatch>) {
+        for patch in patches {
+            self.push(patch);
+        }
     }
 
+    /// Drains `patches` to enable caller-owned buffer reuse without reallocating.
     fn push_many(&mut self, patches: &mut Vec<DomPatch>) {
         for patch in patches.drain(..) {
             self.push(patch);
@@ -89,7 +90,7 @@ impl Html5TreeBuilder {
         self.push_token_impl(_token, _atoms, _text, _sink)
     }
 
-    fn push_token_impl<S: PatchSink>(
+    fn push_token_impl<S: PatchSink + ?Sized>(
         &mut self,
         _token: &Token,
         _atoms: &AtomTable,
