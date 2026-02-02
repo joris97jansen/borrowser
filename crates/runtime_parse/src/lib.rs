@@ -511,9 +511,19 @@ fn start_parse_runtime_with_policy_and_clock<C: PreviewClock + 'static>(
     policy: PreviewPolicy,
     clock: C,
 ) {
+    let mode = resolve_parser_mode(parser_mode_from_env());
+    start_parse_runtime_with_policy_and_clock_and_mode(cmd_rx, evt_tx, policy, clock, mode);
+}
+
+fn start_parse_runtime_with_policy_and_clock_and_mode<C: PreviewClock + 'static>(
+    cmd_rx: Receiver<CoreCommand>,
+    evt_tx: Sender<CoreEvent>,
+    policy: PreviewPolicy,
+    clock: C,
+    mode: ParserMode,
+) {
     thread::spawn(move || {
         // Mode is chosen once per runtime thread to keep behavior deterministic.
-        let mode = resolve_parser_mode(parser_mode_from_env());
         let patch_buffer_retain =
             patch_buffer_retain_target(policy.patch_threshold, policy.patch_byte_threshold);
         let mut htmls: HashMap<Key, RuntimeState> = HashMap::new();
@@ -1305,6 +1315,41 @@ mod tests {
     #[test]
     fn resolve_parser_mode_allows_html5_with_feature() {
         assert_eq!(resolve_parser_mode(ParserMode::Html5), ParserMode::Html5);
+    }
+
+    #[cfg(feature = "html5")]
+    #[test]
+    fn runtime_html5_mode_noop_patches() {
+        let (cmd_tx, cmd_rx) = mpsc::channel();
+        let (evt_tx, evt_rx) = mpsc::channel();
+        let policy = PreviewPolicy::default();
+
+        start_parse_runtime_with_policy_and_clock_and_mode(
+            cmd_rx,
+            evt_tx,
+            policy,
+            SystemClock,
+            ParserMode::Html5,
+        );
+
+        let tab_id = 7;
+        let request_id = 99;
+        cmd_tx
+            .send(CoreCommand::ParseHtmlStart { tab_id, request_id })
+            .unwrap();
+        cmd_tx
+            .send(CoreCommand::ParseHtmlChunk {
+                tab_id,
+                request_id,
+                bytes: b"<div>ok</div>".to_vec(),
+            })
+            .unwrap();
+        cmd_tx
+            .send(CoreCommand::ParseHtmlDone { tab_id, request_id })
+            .unwrap();
+
+        let evt = evt_rx.recv_timeout(Duration::from_millis(50));
+        assert!(evt.is_err(), "expected no patches in html5 stub path");
     }
 
     #[test]

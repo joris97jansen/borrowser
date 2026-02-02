@@ -1,7 +1,10 @@
 //! Runtime-facing parse session (placeholder).
 
 use crate::dom_patch::DomPatch;
-use crate::html5::shared::{ByteStreamDecoder, DocumentParseContext, EngineInvariantError, Input};
+use crate::html5::bridge::PatchEmitterAdapter;
+use crate::html5::shared::{
+    ByteStreamDecoder, DecodeResult, DocumentParseContext, EngineInvariantError, Input,
+};
 
 use crate::html5::tokenizer::{Html5Tokenizer, TokenizerConfig};
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderConfig};
@@ -13,6 +16,7 @@ pub struct Html5ParseSession {
     input: Input,
     tokenizer: Html5Tokenizer,
     builder: Html5TreeBuilder,
+    patch_emitter: PatchEmitterAdapter,
 }
 
 impl Html5ParseSession {
@@ -29,36 +33,39 @@ impl Html5ParseSession {
             input: Input::new(),
             tokenizer,
             builder,
+            patch_emitter: PatchEmitterAdapter::new(),
         }
     }
 
-    pub fn push_bytes(&mut self, _bytes: &[u8]) -> Result<(), EngineInvariantError> {
-        self.ensure_wired();
-        // TODO: decode bytes into input, then pump tokenizer/tree builder.
-        Ok(())
+    pub fn push_bytes(&mut self, bytes: &[u8]) -> Result<(), EngineInvariantError> {
+        // TODO(html5): introduce Html5SessionError to distinguish decode vs invariant failures.
+        match self.decoder.push_bytes(bytes, &mut self.input) {
+            DecodeResult::Progress | DecodeResult::NeedMoreInput => Ok(()),
+            DecodeResult::Error => Err(EngineInvariantError),
+        }
     }
 
     pub fn pump(&mut self) -> Result<(), EngineInvariantError> {
-        self.ensure_wired();
-        // TODO: advance tokenizer/tree builder using current input.
+        // TODO(html5): decide whether pump should loop until blocked (NeedMoreInput/suspend)
+        // or remain single-batch for fairness; update this when suspension is implemented.
+        let _tokenize_result = self.tokenizer.push_input(&mut self.input);
+        let batch = self.tokenizer.next_batch(&mut self.input);
+        let resolver = batch.resolver();
+        // Tokens and resolver are only valid for the lifetime of this batch.
+        let atoms = &self.ctx.atoms;
+        for token in batch.iter() {
+            let _ = self
+                .builder
+                .push_token(token, atoms, &resolver, &mut self.patch_emitter)?;
+        }
+        if self.patch_emitter.take_invariant_violation() {
+            return Err(EngineInvariantError);
+        }
         Ok(())
     }
 
     pub fn take_patches(&mut self) -> Vec<DomPatch> {
-        // TODO: return patches from tree builder.
-        Vec::new()
-    }
-
-    fn ensure_wired(&mut self) {
-        // Intentionally touch all session components: ensures wiring compiles and
-        // prevents drift while HTML5 integration is staged.
-        let _ = (
-            &mut self.ctx,
-            &mut self.decoder,
-            &mut self.input,
-            &mut self.tokenizer,
-            &mut self.builder,
-        );
+        self.patch_emitter.take_patches()
     }
 }
 
