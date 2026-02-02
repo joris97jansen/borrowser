@@ -7,6 +7,9 @@ use std::time::{Duration, Instant};
 use bus::{CoreCommand, CoreEvent};
 use core_types::{DomHandle, DomVersion, RequestId, TabId};
 use html::{DomPatch, Token, Tokenizer, TreeBuilder, TreeBuilderConfig};
+#[cfg(feature = "patch-stats")]
+use log::info;
+use log::{error, warn};
 
 #[cfg(test)]
 use html::internal::Id;
@@ -23,6 +26,69 @@ const MAX_PATCH_BUFFER_RETAIN: usize = 4_096;
 const MIN_PATCH_BUFFER_RETAIN: usize = 256;
 const EST_PATCH_BYTES: usize = 64;
 static HANDLE_GEN: AtomicU64 = AtomicU64::new(0);
+
+const HTML_PARSER_ENV: &str = "BORROWSER_HTML_PARSER";
+const PARSER_MODE_LEGACY: &str = "legacy";
+const PARSER_MODE_HTML5: &str = "html5";
+
+/// Runtime parser mode selection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ParserMode {
+    Legacy,
+    Html5,
+}
+
+fn parse_runtime_parser_mode(value: Option<&str>) -> Option<ParserMode> {
+    let value = value?.trim().to_ascii_lowercase();
+    match value.as_str() {
+        PARSER_MODE_LEGACY => Some(ParserMode::Legacy),
+        PARSER_MODE_HTML5 => Some(ParserMode::Html5),
+        _ => None,
+    }
+}
+
+fn parser_mode_from_env_with<F>(get_env: F) -> ParserMode
+where
+    F: Fn(&str) -> Option<String>,
+{
+    match get_env(HTML_PARSER_ENV) {
+        Some(value) => match parse_runtime_parser_mode(Some(&value)) {
+            Some(mode) => mode,
+            None => {
+                warn!(
+                    target: "runtime_parse",
+                    "unsupported parser mode '{value}' (env {HTML_PARSER_ENV}); defaulting to legacy"
+                );
+                ParserMode::Legacy
+            }
+        },
+        None => ParserMode::Legacy,
+    }
+}
+
+fn parser_mode_from_env() -> ParserMode {
+    parser_mode_from_env_with(|key| std::env::var(key).ok())
+}
+
+fn resolve_parser_mode(requested: ParserMode) -> ParserMode {
+    match requested {
+        ParserMode::Legacy => ParserMode::Legacy,
+        ParserMode::Html5 => {
+            #[cfg(feature = "html5")]
+            {
+                ParserMode::Html5
+            }
+            #[cfg(not(feature = "html5"))]
+            {
+                warn!(
+                    target: "runtime_parse",
+                    "html5 parser requested (env {HTML_PARSER_ENV}) but feature not enabled; defaulting to legacy"
+                );
+                ParserMode::Legacy
+            }
+        }
+    }
+}
 
 /// Retain capacity for patch vectors to reduce allocator churn while capping memory.
 fn patch_buffer_retain_target(
@@ -155,6 +221,93 @@ struct HtmlState {
     dom_handle: DomHandle,
     version: DomVersion,
 }
+
+#[cfg(feature = "html5")]
+struct Html5State {
+    total_bytes: usize,
+    pending_bytes: usize,
+    /// Token counts are not wired yet for HTML5; kept at zero for now.
+    pending_tokens: usize,
+    pending_patch_bytes: usize,
+    last_emit: Instant,
+    logged_large_buffer: bool,
+    failed: bool,
+    session: html::html5::Html5ParseSession,
+    patch_buffer: Vec<DomPatch>,
+    patch_buffer_retain: usize,
+    max_patch_buffer_len: usize,
+    max_patch_buffer_bytes: usize,
+    dom_handle: DomHandle,
+    version: DomVersion,
+}
+
+#[cfg(feature = "html5")]
+impl Html5State {
+    fn drain_patches(&mut self) {
+        let new_patches = self.session.take_patches();
+        if !new_patches.is_empty() {
+            self.pending_patch_bytes = self
+                .pending_patch_bytes
+                .saturating_add(estimate_patch_bytes_slice(&new_patches));
+            self.patch_buffer.extend(new_patches);
+            self.update_patch_buffer_max();
+        }
+    }
+
+    fn flush_patch_buffer(
+        &mut self,
+        evt_tx: &Sender<CoreEvent>,
+        tab_id: TabId,
+        request_id: RequestId,
+    ) {
+        if self.patch_buffer.is_empty() {
+            return;
+        }
+        let patches = std::mem::replace(
+            &mut self.patch_buffer,
+            Vec::with_capacity(self.patch_buffer_retain),
+        );
+
+        #[cfg(feature = "patch-stats")]
+        log_patch_stats(tab_id, request_id, &patches);
+
+        let ok = emit_patch_update(
+            evt_tx,
+            tab_id,
+            request_id,
+            self.dom_handle,
+            &mut self.version,
+            patches,
+        )
+        .is_ok();
+        self.reset_pending();
+        if !ok {
+            self.failed = true;
+        }
+    }
+
+    fn update_patch_buffer_max(&mut self) {
+        let len = self.patch_buffer.len();
+        if len > self.max_patch_buffer_len {
+            self.max_patch_buffer_len = len;
+        }
+        if self.pending_patch_bytes > self.max_patch_buffer_bytes {
+            self.max_patch_buffer_bytes = self.pending_patch_bytes;
+        }
+    }
+
+    fn reset_pending(&mut self) {
+        self.pending_bytes = 0;
+        self.pending_tokens = 0;
+        self.pending_patch_bytes = 0;
+    }
+}
+
+enum RuntimeState {
+    Legacy(HtmlState),
+    #[cfg(feature = "html5")]
+    Html5(Html5State),
+}
 type Key = (TabId, RequestId);
 
 impl HtmlState {
@@ -166,7 +319,7 @@ impl HtmlState {
         let drained = std::mem::take(&mut self.token_buffer);
         for token in drained {
             if let Err(err) = self.builder.push_token(&token, atoms, &self.tokenizer) {
-                eprintln!("runtime_parse: tree builder error: {err}");
+                error!(target: "runtime_parse", "tree builder error: {err}");
                 self.failed = true;
                 self.patch_buffer.clear();
                 self.pending_patch_bytes = 0;
@@ -204,30 +357,19 @@ impl HtmlState {
         #[cfg(feature = "patch-stats")]
         log_patch_stats(tab_id, request_id, &patches);
 
-        let from = self.version;
-        let to = from.next();
-        let send_result = evt_tx.send(CoreEvent::DomPatchUpdate {
+        let ok = emit_patch_update(
+            evt_tx,
             tab_id,
             request_id,
-            handle: self.dom_handle,
-            from,
-            to,
+            self.dom_handle,
+            &mut self.version,
             patches,
-        });
-        if send_result.is_err() {
-            eprintln!(
-                "runtime_parse: patch sink dropped; stopping updates for tab={tab_id:?} request={request_id:?}"
-            );
+        )
+        .is_ok();
+        self.reset_pending();
+        if !ok {
             self.failed = true;
-            self.pending_bytes = 0;
-            self.pending_tokens = 0;
-            self.pending_patch_bytes = 0;
-            return;
         }
-        self.version = to;
-        self.pending_bytes = 0;
-        self.pending_tokens = 0;
-        self.pending_patch_bytes = 0;
     }
 
     fn update_patch_buffer_max(&mut self) {
@@ -239,6 +381,41 @@ impl HtmlState {
             self.max_patch_buffer_bytes = self.pending_patch_bytes;
         }
     }
+
+    fn reset_pending(&mut self) {
+        self.pending_bytes = 0;
+        self.pending_tokens = 0;
+        self.pending_patch_bytes = 0;
+    }
+}
+
+fn emit_patch_update(
+    evt_tx: &Sender<CoreEvent>,
+    tab_id: TabId,
+    request_id: RequestId,
+    dom_handle: DomHandle,
+    version: &mut DomVersion,
+    patches: Vec<DomPatch>,
+) -> Result<(), std::sync::mpsc::SendError<CoreEvent>> {
+    let from = *version;
+    let to = from.next();
+    let send_result = evt_tx.send(CoreEvent::DomPatchUpdate {
+        tab_id,
+        request_id,
+        handle: dom_handle,
+        from,
+        to,
+        patches,
+    });
+    if let Err(err) = send_result {
+        error!(
+            target: "runtime_parse",
+            "patch sink dropped; stopping updates for tab={tab_id:?} request={request_id:?}"
+        );
+        return Err(err);
+    }
+    *version = to;
+    Ok(())
 }
 
 fn estimate_patch_bytes(patch: &DomPatch) -> usize {
@@ -296,8 +473,9 @@ fn log_patch_stats(tab_id: TabId, request_id: RequestId, patches: &[DomPatch]) {
             _ => {}
         }
     }
-    eprintln!(
-        "runtime_parse: patch_stats tab={tab_id:?} request={request_id:?} patches={} created={} removed={}",
+    info!(
+        target: "runtime_parse",
+        "patch_stats tab={tab_id:?} request={request_id:?} patches={} created={} removed={}",
         patches.len(),
         created,
         removed
@@ -305,6 +483,12 @@ fn log_patch_stats(tab_id: TabId, request_id: RequestId, patches: &[DomPatch]) {
 }
 
 /// Parses HTML incrementally for streaming previews.
+///
+/// Runtime parser selection can be controlled via the `BORROWSER_HTML_PARSER`
+/// environment variable (`legacy` | `html5`). When unset or invalid, legacy
+/// parsing is used. The `html5` mode requires the `runtime_parse/html5` feature.
+/// Mode is resolved once per runtime thread to avoid mixed-parser state.
+/// Token-threshold flushing is not wired for HTML5 yet; bytes/ticks/patches still apply.
 ///
 /// Patch emission is buffered and flushed on ticks; the tokenizer and tree builder
 /// retain state between chunks so work is proportional to new input.
@@ -328,9 +512,11 @@ fn start_parse_runtime_with_policy_and_clock<C: PreviewClock + 'static>(
     clock: C,
 ) {
     thread::spawn(move || {
+        // Mode is chosen once per runtime thread to keep behavior deterministic.
+        let mode = resolve_parser_mode(parser_mode_from_env());
         let patch_buffer_retain =
             patch_buffer_retain_target(policy.patch_threshold, policy.patch_byte_threshold);
-        let mut htmls: HashMap<Key, HtmlState> = HashMap::new();
+        let mut htmls: HashMap<Key, RuntimeState> = HashMap::new();
 
         while let Ok(cmd) = cmd_rx.recv() {
             let now = clock.now();
@@ -342,9 +528,8 @@ fn start_parse_runtime_with_policy_and_clock<C: PreviewClock + 'static>(
                         .expect("dom handle overflow");
                     let next = prev + 1;
                     let dom_handle = DomHandle(next);
-                    htmls.insert(
-                        (tab_id, request_id),
-                        HtmlState {
+                    let state = match mode {
+                        ParserMode::Legacy => RuntimeState::Legacy(HtmlState {
                             total_bytes: 0,
                             pending_bytes: 0,
                             pending_tokens: 0,
@@ -364,8 +549,42 @@ fn start_parse_runtime_with_policy_and_clock<C: PreviewClock + 'static>(
                             max_patch_buffer_bytes: 0,
                             dom_handle,
                             version: DomVersion::INITIAL,
-                        },
-                    );
+                        }),
+                        ParserMode::Html5 => {
+                            #[cfg(feature = "html5")]
+                            {
+                                let ctx = html::html5::DocumentParseContext::new();
+                                let session = html::html5::Html5ParseSession::new(
+                                    html::html5::TokenizerConfig::default(),
+                                    html::html5::TreeBuilderConfig::default(),
+                                    ctx,
+                                );
+                                RuntimeState::Html5(Html5State {
+                                    total_bytes: 0,
+                                    pending_bytes: 0,
+                                    pending_tokens: 0,
+                                    pending_patch_bytes: 0,
+                                    last_emit: now,
+                                    logged_large_buffer: false,
+                                    failed: false,
+                                    session,
+                                    patch_buffer: Vec::new(),
+                                    patch_buffer_retain,
+                                    max_patch_buffer_len: 0,
+                                    max_patch_buffer_bytes: 0,
+                                    dom_handle,
+                                    version: DomVersion::INITIAL,
+                                })
+                            }
+                            #[cfg(not(feature = "html5"))]
+                            {
+                                unreachable!(
+                                    "resolve_parser_mode prevents Html5 when feature is disabled"
+                                );
+                            }
+                        }
+                    };
+                    htmls.insert((tab_id, request_id), state);
                 }
                 CoreCommand::ParseHtmlChunk {
                     tab_id,
@@ -373,44 +592,101 @@ fn start_parse_runtime_with_policy_and_clock<C: PreviewClock + 'static>(
                     bytes,
                 } => {
                     let mut remove_state = false;
-                    if let Some(st) = htmls.get_mut(&(tab_id, request_id)) {
-                        if st.failed {
-                            // failed means terminal; drop state to free memory.
-                            remove_state = true;
-                        } else {
-                            st.total_bytes = st.total_bytes.saturating_add(bytes.len());
-                            st.pending_bytes = st.pending_bytes.saturating_add(bytes.len());
-                            st.pending_tokens =
-                                st.pending_tokens.saturating_add(st.tokenizer.feed(&bytes));
-                            // Always drain tokenizer tokens immediately so flush decisions
-                            // reflect patch backlog, not buffered tokens.
-                            st.tokenizer.drain_into(&mut st.token_buffer);
-                            st.drain_tokens_into_builder();
+                    if let Some(state) = htmls.get_mut(&(tab_id, request_id)) {
+                        match state {
+                            RuntimeState::Legacy(st) => {
+                                if st.failed {
+                                    // failed means terminal; drop state to free memory.
+                                    remove_state = true;
+                                } else {
+                                    st.total_bytes = st.total_bytes.saturating_add(bytes.len());
+                                    st.pending_bytes = st.pending_bytes.saturating_add(bytes.len());
+                                    st.pending_tokens =
+                                        st.pending_tokens.saturating_add(st.tokenizer.feed(&bytes));
+                                    // Always drain tokenizer tokens immediately so flush decisions
+                                    // reflect patch backlog, not buffered tokens.
+                                    st.tokenizer.drain_into(&mut st.token_buffer);
+                                    st.drain_tokens_into_builder();
 
-                            if policy.should_flush(
-                                now.saturating_duration_since(st.last_emit),
-                                st.pending_tokens,
-                                st.pending_bytes,
-                                st.patch_buffer.len(),
-                                st.pending_patch_bytes,
-                                !st.patch_buffer.is_empty(),
-                            ) {
-                                st.last_emit = now;
-                                #[cfg(debug_assertions)]
-                                {
-                                    if !st.logged_large_buffer
-                                        && st.total_bytes >= DEBUG_LARGE_BUFFER_BYTES
-                                    {
-                                        eprintln!(
-                                            "runtime_parse: large buffer ({} bytes), incremental parse active",
-                                            st.total_bytes
-                                        );
-                                        st.logged_large_buffer = true;
+                                    if policy.should_flush(
+                                        now.saturating_duration_since(st.last_emit),
+                                        st.pending_tokens,
+                                        st.pending_bytes,
+                                        st.patch_buffer.len(),
+                                        st.pending_patch_bytes,
+                                        !st.patch_buffer.is_empty(),
+                                    ) {
+                                        st.last_emit = now;
+                                        #[cfg(debug_assertions)]
+                                        {
+                                            if !st.logged_large_buffer
+                                                && st.total_bytes >= DEBUG_LARGE_BUFFER_BYTES
+                                            {
+                                                warn!(
+                                                    target: "runtime_parse",
+                                                    "large buffer ({} bytes), incremental parse active",
+                                                    st.total_bytes
+                                                );
+                                                st.logged_large_buffer = true;
+                                            }
+                                        }
+                                        st.flush_patch_buffer(&evt_tx, tab_id, request_id);
+                                        if st.failed {
+                                            remove_state = true;
+                                        }
                                     }
                                 }
-                                st.flush_patch_buffer(&evt_tx, tab_id, request_id);
+                            }
+                            #[cfg(feature = "html5")]
+                            RuntimeState::Html5(st) => {
                                 if st.failed {
                                     remove_state = true;
+                                } else {
+                                    st.total_bytes = st.total_bytes.saturating_add(bytes.len());
+                                    st.pending_bytes = st.pending_bytes.saturating_add(bytes.len());
+                                    // Token counts are not yet exposed by the HTML5 session.
+                                    st.pending_tokens = 0;
+                                    if let Err(err) = st.session.push_bytes(&bytes) {
+                                        error!(target: "runtime_parse", "html5 session error: {err:?}");
+                                        st.failed = true;
+                                        st.patch_buffer.clear();
+                                        st.pending_patch_bytes = 0;
+                                    } else if let Err(err) = st.session.pump() {
+                                        error!(target: "runtime_parse", "html5 session error: {err:?}");
+                                        st.failed = true;
+                                        st.patch_buffer.clear();
+                                        st.pending_patch_bytes = 0;
+                                    } else {
+                                        st.drain_patches();
+                                    }
+
+                                    if policy.should_flush(
+                                        now.saturating_duration_since(st.last_emit),
+                                        st.pending_tokens,
+                                        st.pending_bytes,
+                                        st.patch_buffer.len(),
+                                        st.pending_patch_bytes,
+                                        !st.patch_buffer.is_empty(),
+                                    ) {
+                                        st.last_emit = now;
+                                        #[cfg(debug_assertions)]
+                                        {
+                                            if !st.logged_large_buffer
+                                                && st.total_bytes >= DEBUG_LARGE_BUFFER_BYTES
+                                            {
+                                                warn!(
+                                                    target: "runtime_parse",
+                                                    "large buffer ({} bytes), incremental parse active",
+                                                    st.total_bytes
+                                                );
+                                                st.logged_large_buffer = true;
+                                            }
+                                        }
+                                        st.flush_patch_buffer(&evt_tx, tab_id, request_id);
+                                        if st.failed {
+                                            remove_state = true;
+                                        }
+                                    }
                                 }
                             }
                         }
@@ -420,25 +696,42 @@ fn start_parse_runtime_with_policy_and_clock<C: PreviewClock + 'static>(
                     }
                 }
                 CoreCommand::ParseHtmlDone { tab_id, request_id } => {
-                    if let Some(mut st) = htmls.remove(&(tab_id, request_id)) {
-                        if st.failed {
-                            continue;
+                    if let Some(state) = htmls.remove(&(tab_id, request_id)) {
+                        match state {
+                            RuntimeState::Legacy(mut st) => {
+                                if st.failed {
+                                    continue;
+                                }
+                                st.pending_tokens =
+                                    st.pending_tokens.saturating_add(st.tokenizer.finish());
+                                st.tokenizer.drain_into(&mut st.token_buffer);
+                                st.drain_tokens_into_builder();
+                                if let Err(err) = st.builder.finish() {
+                                    error!(target: "runtime_parse", "tree builder finish error: {err}");
+                                }
+                                let final_patches = st.builder.take_patches();
+                                if !final_patches.is_empty() {
+                                    st.pending_patch_bytes = st
+                                        .pending_patch_bytes
+                                        .saturating_add(estimate_patch_bytes_slice(&final_patches));
+                                    st.patch_buffer.extend(final_patches);
+                                    st.update_patch_buffer_max();
+                                }
+                                st.flush_patch_buffer(&evt_tx, tab_id, request_id);
+                            }
+                            #[cfg(feature = "html5")]
+                            RuntimeState::Html5(mut st) => {
+                                if st.failed {
+                                    continue;
+                                }
+                                if let Err(err) = st.session.pump() {
+                                    error!(target: "runtime_parse", "html5 session error: {err:?}");
+                                    continue;
+                                }
+                                st.drain_patches();
+                                st.flush_patch_buffer(&evt_tx, tab_id, request_id);
+                            }
                         }
-                        st.pending_tokens = st.pending_tokens.saturating_add(st.tokenizer.finish());
-                        st.tokenizer.drain_into(&mut st.token_buffer);
-                        st.drain_tokens_into_builder();
-                        if let Err(err) = st.builder.finish() {
-                            eprintln!("runtime_parse: tree builder finish error: {err}");
-                        }
-                        let final_patches = st.builder.take_patches();
-                        if !final_patches.is_empty() {
-                            st.pending_patch_bytes = st
-                                .pending_patch_bytes
-                                .saturating_add(estimate_patch_bytes_slice(&final_patches));
-                            st.patch_buffer.extend(final_patches);
-                            st.update_patch_buffer_max();
-                        }
-                        st.flush_patch_buffer(&evt_tx, tab_id, request_id);
                     }
                 }
                 _ => {}
@@ -541,7 +834,7 @@ fn diff_dom(prev: &Node, next: &Node, patch_state: &mut PatchState) -> Option<Ve
         emit_create_subtree(next, None, patch_state, &mut patches, &mut need_reset);
         if need_reset {
             patches.clear();
-            eprintln!("runtime_parse: failed to emit reset patch stream; dropping update");
+            error!(target: "runtime_parse", "failed to emit reset patch stream; dropping update");
             return None;
         }
         return Some(patches);
@@ -875,8 +1168,9 @@ fn root_is_compatible(prev: &Node, next: &Node) -> bool {
 mod tests {
     use super::{
         DomHandle, DomVersion, HtmlState, MAX_PATCH_BUFFER_RETAIN, MIN_PATCH_BUFFER_RETAIN,
-        PatchState, PreviewClock, PreviewPolicy, SystemClock, TreeBuilderConfig, diff_dom,
-        emit_create_subtree, estimate_patch_bytes_slice, patch_buffer_retain_target,
+        ParserMode, PatchState, PreviewClock, PreviewPolicy, SystemClock, TreeBuilderConfig,
+        diff_dom, emit_create_subtree, estimate_patch_bytes_slice, parse_runtime_parser_mode,
+        parser_mode_from_env_with, patch_buffer_retain_target, resolve_parser_mode,
         start_parse_runtime_with_policy_and_clock,
     };
     use bus::{CoreCommand, CoreEvent};
@@ -971,6 +1265,46 @@ mod tests {
             bounded.tick != Duration::ZERO,
             "expected clamped policy to restore a tick"
         );
+    }
+
+    #[test]
+    fn parser_mode_defaults_to_legacy() {
+        let mode = parser_mode_from_env_with(|_| None);
+        assert_eq!(mode, ParserMode::Legacy);
+    }
+
+    #[test]
+    fn parser_mode_parses_known_values() {
+        assert_eq!(
+            parse_runtime_parser_mode(Some("legacy")),
+            Some(ParserMode::Legacy)
+        );
+        assert_eq!(
+            parse_runtime_parser_mode(Some("html5")),
+            Some(ParserMode::Html5)
+        );
+        assert_eq!(
+            parse_runtime_parser_mode(Some("LeGaCy")),
+            Some(ParserMode::Legacy)
+        );
+    }
+
+    #[test]
+    fn parser_mode_from_env_handles_invalid_value() {
+        let mode = parser_mode_from_env_with(|_| Some("unknown".to_string()));
+        assert_eq!(mode, ParserMode::Legacy);
+    }
+
+    #[cfg(not(feature = "html5"))]
+    #[test]
+    fn resolve_parser_mode_falls_back_without_feature() {
+        assert_eq!(resolve_parser_mode(ParserMode::Html5), ParserMode::Legacy);
+    }
+
+    #[cfg(feature = "html5")]
+    #[test]
+    fn resolve_parser_mode_allows_html5_with_feature() {
+        assert_eq!(resolve_parser_mode(ParserMode::Html5), ParserMode::Html5);
     }
 
     #[test]
