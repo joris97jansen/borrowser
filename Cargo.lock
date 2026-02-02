@@ -2739,6 +2739,7 @@ dependencies = [
  "bus",
  "core_types",
  "html",
+ "log",
  "tools",
 ]
 
