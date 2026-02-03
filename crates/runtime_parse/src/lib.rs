@@ -158,9 +158,8 @@ impl PreviewPolicy {
         pending_bytes: usize,
         pending_patches: usize,
         pending_patch_bytes: usize,
-        has_patches: bool,
     ) -> bool {
-        if !has_patches {
+        if pending_patches == 0 {
             return false;
         }
         // tick == 0 disables time-based flushing.
@@ -226,9 +225,10 @@ struct HtmlState {
 struct Html5State {
     total_bytes: usize,
     pending_bytes: usize,
-    /// Token counts are not wired yet for HTML5; kept at zero for now.
+    /// Token counts observed from the HTML5 session since last flush.
     pending_tokens: usize,
     pending_patch_bytes: usize,
+    last_tokens_processed: u64,
     last_emit: Instant,
     logged_large_buffer: bool,
     failed: bool,
@@ -239,6 +239,28 @@ struct Html5State {
     max_patch_buffer_bytes: usize,
     dom_handle: DomHandle,
     version: DomVersion,
+}
+
+#[cfg(feature = "html5")]
+fn log_html5_session_error(
+    tab_id: TabId,
+    request_id: RequestId,
+    err: html::html5::Html5SessionError,
+) {
+    match err {
+        html::html5::Html5SessionError::Decode => {
+            error!(
+                target: "runtime_parse",
+                "html5 decode error tab={tab_id:?} request={request_id:?}"
+            );
+        }
+        html::html5::Html5SessionError::Invariant => {
+            error!(
+                target: "runtime_parse",
+                "html5 invariant error tab={tab_id:?} request={request_id:?}"
+            );
+        }
+    }
 }
 
 #[cfg(feature = "html5")]
@@ -301,6 +323,13 @@ impl Html5State {
         self.pending_tokens = 0;
         self.pending_patch_bytes = 0;
     }
+
+    fn update_pending_tokens(&mut self) {
+        let total = self.session.tokens_processed();
+        let delta = total.saturating_sub(self.last_tokens_processed);
+        self.last_tokens_processed = total;
+        self.pending_tokens = self.pending_tokens.saturating_add(delta as usize);
+    }
 }
 
 enum RuntimeState {
@@ -322,7 +351,7 @@ impl HtmlState {
                 error!(target: "runtime_parse", "tree builder error: {err}");
                 self.failed = true;
                 self.patch_buffer.clear();
-                self.pending_patch_bytes = 0;
+                self.reset_pending();
                 break;
             }
         }
@@ -445,6 +474,7 @@ fn estimate_patch_bytes(patch: &DomPatch) -> usize {
         | DomPatch::RemoveNode { .. }
         | DomPatch::SetAttributes { .. }
         | DomPatch::SetText { .. } => PATCH_OVERHEAD,
+        // NOTE: DomPatch may grow new variants; default to PATCH_OVERHEAD for unknown ones.
         _ => PATCH_OVERHEAD,
     }
 }
@@ -488,7 +518,7 @@ fn log_patch_stats(tab_id: TabId, request_id: RequestId, patches: &[DomPatch]) {
 /// environment variable (`legacy` | `html5`). When unset or invalid, legacy
 /// parsing is used. The `html5` mode requires the `runtime_parse/html5` feature.
 /// Mode is resolved once per runtime thread to avoid mixed-parser state.
-/// Token-threshold flushing is not wired for HTML5 yet; bytes/ticks/patches still apply.
+/// Token-threshold flushing is supported for HTML5 via session token counters.
 ///
 /// Patch emission is buffered and flushed on ticks; the tokenizer and tree builder
 /// retain state between chunks so work is proportional to new input.
@@ -533,9 +563,20 @@ fn start_parse_runtime_with_policy_and_clock_and_mode<C: PreviewClock + 'static>
             match cmd {
                 CoreCommand::ParseHtmlStart { tab_id, request_id } => {
                     // DomHandle is per-runtime unique today; future: global allocator.
-                    let prev = HANDLE_GEN
-                        .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |v| v.checked_add(1))
-                        .expect("dom handle overflow");
+                    let prev = match HANDLE_GEN.fetch_update(
+                        Ordering::Relaxed,
+                        Ordering::Relaxed,
+                        |v| v.checked_add(1),
+                    ) {
+                        Ok(prev) => prev,
+                        Err(_) => {
+                            error!(
+                                target: "runtime_parse",
+                                "dom handle overflow; dropping ParseHtmlStart tab={tab_id:?} request={request_id:?}"
+                            );
+                            continue;
+                        }
+                    };
                     let next = prev + 1;
                     let dom_handle = DomHandle(next);
                     let state = match mode {
@@ -574,6 +615,7 @@ fn start_parse_runtime_with_policy_and_clock_and_mode<C: PreviewClock + 'static>
                                     pending_bytes: 0,
                                     pending_tokens: 0,
                                     pending_patch_bytes: 0,
+                                    last_tokens_processed: 0,
                                     last_emit: now,
                                     logged_large_buffer: false,
                                     failed: false,
@@ -624,7 +666,6 @@ fn start_parse_runtime_with_policy_and_clock_and_mode<C: PreviewClock + 'static>
                                         st.pending_bytes,
                                         st.patch_buffer.len(),
                                         st.pending_patch_bytes,
-                                        !st.patch_buffer.is_empty(),
                                     ) {
                                         st.last_emit = now;
                                         #[cfg(debug_assertions)]
@@ -654,19 +695,19 @@ fn start_parse_runtime_with_policy_and_clock_and_mode<C: PreviewClock + 'static>
                                 } else {
                                     st.total_bytes = st.total_bytes.saturating_add(bytes.len());
                                     st.pending_bytes = st.pending_bytes.saturating_add(bytes.len());
-                                    // Token counts are not yet exposed by the HTML5 session.
-                                    st.pending_tokens = 0;
+                                    // pending_tokens accumulates observed session tokens since last flush.
                                     if let Err(err) = st.session.push_bytes(&bytes) {
-                                        error!(target: "runtime_parse", "html5 session error: {err:?}");
+                                        log_html5_session_error(tab_id, request_id, err);
+                                        // Decode errors stop further processing; any already-produced
+                                        // patches may still flush on ParseHtmlDone.
                                         st.failed = true;
-                                        st.patch_buffer.clear();
-                                        st.pending_patch_bytes = 0;
+                                        st.reset_pending();
                                     } else if let Err(err) = st.session.pump() {
-                                        error!(target: "runtime_parse", "html5 session error: {err:?}");
+                                        log_html5_session_error(tab_id, request_id, err);
                                         st.failed = true;
-                                        st.patch_buffer.clear();
-                                        st.pending_patch_bytes = 0;
+                                        st.reset_pending();
                                     } else {
+                                        st.update_pending_tokens();
                                         st.drain_patches();
                                     }
 
@@ -676,7 +717,6 @@ fn start_parse_runtime_with_policy_and_clock_and_mode<C: PreviewClock + 'static>
                                         st.pending_bytes,
                                         st.patch_buffer.len(),
                                         st.pending_patch_bytes,
-                                        !st.patch_buffer.is_empty(),
                                     ) {
                                         st.last_emit = now;
                                         #[cfg(debug_assertions)]
@@ -732,12 +772,21 @@ fn start_parse_runtime_with_policy_and_clock_and_mode<C: PreviewClock + 'static>
                             #[cfg(feature = "html5")]
                             RuntimeState::Html5(mut st) => {
                                 if st.failed {
+                                    st.flush_patch_buffer(&evt_tx, tab_id, request_id);
                                     continue;
                                 }
                                 if let Err(err) = st.session.pump() {
-                                    error!(target: "runtime_parse", "html5 session error: {err:?}");
+                                    log_html5_session_error(tab_id, request_id, err);
+                                    if matches!(err, html::html5::Html5SessionError::Decode) {
+                                        st.update_pending_tokens();
+                                        st.drain_patches();
+                                        st.flush_patch_buffer(&evt_tx, tab_id, request_id);
+                                    }
+                                    st.failed = true;
+                                    st.reset_pending();
                                     continue;
                                 }
+                                st.update_pending_tokens();
                                 st.drain_patches();
                                 st.flush_patch_buffer(&evt_tx, tab_id, request_id);
                             }
@@ -1228,31 +1277,31 @@ mod tests {
         };
 
         assert!(
-            !policy.should_flush(Duration::from_millis(50), 0, 0, 0, 0, false),
+            !policy.should_flush(Duration::from_millis(50), 0, 0, 0, 0),
             "should not flush before thresholds"
         );
         assert!(
-            policy.should_flush(Duration::from_millis(150), 0, 0, 0, 0, true),
+            policy.should_flush(Duration::from_millis(150), 0, 0, 1, 0),
             "should flush on time"
         );
         assert!(
-            policy.should_flush(Duration::from_millis(10), 10, 0, 0, 0, true),
+            policy.should_flush(Duration::from_millis(10), 10, 0, 1, 0),
             "should flush on token threshold"
         );
         assert!(
-            policy.should_flush(Duration::from_millis(10), 0, 256, 0, 0, true),
+            policy.should_flush(Duration::from_millis(10), 0, 256, 1, 0),
             "should flush on byte threshold"
         );
         assert!(
-            policy.should_flush(Duration::from_millis(10), 0, 0, 5, 0, true),
+            policy.should_flush(Duration::from_millis(10), 0, 0, 5, 0),
             "should flush on patch threshold"
         );
         assert!(
-            policy.should_flush(Duration::from_millis(10), 0, 0, 0, 64, true),
+            policy.should_flush(Duration::from_millis(10), 0, 0, 1, 64),
             "should flush on patch byte threshold"
         );
         assert!(
-            !policy.should_flush(Duration::from_millis(150), 10, 256, 5, 64, false),
+            !policy.should_flush(Duration::from_millis(150), 10, 256, 0, 64),
             "should not flush without pending patches"
         );
     }
@@ -1319,7 +1368,7 @@ mod tests {
 
     #[cfg(feature = "html5")]
     #[test]
-    fn runtime_html5_mode_noop_patches() {
+    fn runtime_html5_mode_updates_are_well_formed_if_any() {
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let (evt_tx, evt_rx) = mpsc::channel();
         let policy = PreviewPolicy::default();
@@ -1348,8 +1397,18 @@ mod tests {
             .send(CoreCommand::ParseHtmlDone { tab_id, request_id })
             .unwrap();
 
-        let evt = evt_rx.recv_timeout(Duration::from_millis(50));
-        assert!(evt.is_err(), "expected no patches in html5 stub path");
+        for _ in 0..5 {
+            match evt_rx.recv_timeout(Duration::from_millis(20)) {
+                Ok(CoreEvent::DomPatchUpdate {
+                    from, to, patches, ..
+                }) => {
+                    assert_ne!(from, to, "expected version bump on patch update");
+                    assert!(!patches.is_empty(), "expected non-empty patch updates");
+                }
+                Ok(_) => {}
+                Err(_) => {}
+            }
+        }
     }
 
     #[test]
@@ -1483,7 +1542,6 @@ mod tests {
                 st.pending_bytes,
                 st.patch_buffer.len(),
                 st.pending_patch_bytes,
-                !st.patch_buffer.is_empty(),
             ) {
                 st.last_emit = now;
                 st.flush_patch_buffer(&evt_tx, tab_id, request_id);
