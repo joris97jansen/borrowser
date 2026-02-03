@@ -69,11 +69,17 @@ impl<'a> PatchSink for VecPatchSink<'a> {
 /// HTML5 tree builder.
 pub struct Html5TreeBuilder {
     config: TreeBuilderConfig,
+    max_open_elements_depth: u32,
+    max_active_formatting_depth: u32,
 }
 
 impl Html5TreeBuilder {
     pub fn new(config: TreeBuilderConfig, _ctx: &mut DocumentParseContext) -> Self {
-        Self { config }
+        Self {
+            config,
+            max_open_elements_depth: 0,
+            max_active_formatting_depth: 0,
+        }
     }
 
     /// Push a token into the tree builder.
@@ -99,7 +105,21 @@ impl Html5TreeBuilder {
     ) -> Result<TreeBuilderStepResult, TreeBuilderError> {
         // TODO: implement tree builder insertion modes and patch emission.
         let _ = self.config.coalesce_text;
+        let _ = (
+            self.max_open_elements_depth,
+            self.max_active_formatting_depth,
+        );
         Ok(TreeBuilderStepResult::Continue)
+    }
+
+    /// Internal metric: max open elements depth observed since session start.
+    pub(crate) fn max_open_elements_depth(&self) -> u32 {
+        self.max_open_elements_depth
+    }
+
+    /// Internal metric: max active formatting depth observed since session start.
+    pub(crate) fn max_active_formatting_depth(&self) -> u32 {
+        self.max_active_formatting_depth
     }
 }
 

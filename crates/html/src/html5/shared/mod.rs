@@ -15,7 +15,9 @@ pub use atom::{AtomError, AtomId, AtomTable};
 pub use context::DocumentParseContext;
 pub use counters::Counters;
 #[allow(unused_imports)]
-pub use error::{EngineInvariantError, ErrorOrigin, ErrorPolicy, ParseError, ParseErrorCode};
+pub use error::{
+    EngineInvariantError, ErrorOrigin, ErrorPolicy, Html5SessionError, ParseError, ParseErrorCode,
+};
 #[allow(unused_imports)]
 pub use input::{ByteStreamDecoder, DecodeResult, Input};
 pub use span::{Span, TextSpan};

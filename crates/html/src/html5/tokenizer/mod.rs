@@ -83,6 +83,10 @@ impl Html5Tokenizer {
     /// reaches EOF. Token spans refer to the decoded input buffer.
     pub fn push_input(&mut self, _input: &mut Input) -> TokenizeResult {
         // TODO: implement HTML5 tokenizer state machine.
+        // TODO(html5/tokenizer): make tokenizer update DocumentParseContext counters when emitting
+        // tokens. This may require passing &mut DocumentParseContext into push_input/finish or
+        // storing a counters handle on the tokenizer. Session-level counting should be removed
+        // once tokenizer counters are authoritative.
         if let Some(id) = self.input_id {
             debug_assert_eq!(
                 id,

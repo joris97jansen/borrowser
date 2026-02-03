@@ -14,8 +14,8 @@ pub mod tree_builder;
 pub use session::Html5ParseSession;
 pub use shared::{
     AtomError, AtomId, AtomTable, Attribute, AttributeValue, ByteStreamDecoder, Counters,
-    DocumentParseContext, EngineInvariantError, ErrorOrigin, ErrorPolicy, Input, ParseError, Span,
-    TextSpan, Token,
+    DocumentParseContext, EngineInvariantError, ErrorOrigin, ErrorPolicy, Html5SessionError, Input,
+    ParseError, Span, TextSpan, Token,
 };
 pub use tokenizer::{Html5Tokenizer, TextResolver, TokenBatch, TokenizeResult, TokenizerConfig};
 pub use tree_builder::{

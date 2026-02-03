@@ -53,3 +53,12 @@ impl Default for ErrorPolicy {
 /// Engine invariant violation (bug/corruption), not a recoverable HTML error.
 #[derive(Debug)]
 pub struct EngineInvariantError;
+
+/// Session error classification for the HTML5 parsing path.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Html5SessionError {
+    /// Input/decoding failure (not an engine invariant).
+    Decode,
+    /// Engine invariant violation (bug/corruption).
+    Invariant,
+}
