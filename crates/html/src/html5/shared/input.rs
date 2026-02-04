@@ -46,6 +46,12 @@ impl Input {
     }
 }
 
+impl Default for Input {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 /// Decode bytes into Unicode scalar input.
 ///
 /// This is the pre-tokenizer stage: encoding sniffing/locking lives here.
@@ -61,7 +67,7 @@ pub enum DecodeResult {
 
 impl ByteStreamDecoder {
     pub fn new() -> Self {
-        Self::default()
+        Self
     }
 
     /// Push raw bytes into the decoder and append decoded text to `input`.

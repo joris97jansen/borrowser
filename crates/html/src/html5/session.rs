@@ -78,6 +78,8 @@ impl Html5ParseSession {
                     .saturating_add(1);
                 #[cfg(any(test, feature = "debug-stats"))]
                 error!(target: "html5", "tree builder invariant error: {err:?}");
+                #[cfg(not(any(test, feature = "debug-stats")))]
+                let _ = err;
                 return Err(Html5SessionError::Invariant);
             }
         }
