@@ -1225,14 +1225,12 @@ fn root_is_compatible(prev: &Node, next: &Node) -> bool {
 
 #[cfg(test)]
 mod tests {
-    #[cfg(feature = "html5")]
-    use super::start_parse_runtime_with_policy_and_clock_and_mode;
     use super::{
         DomHandle, DomVersion, HtmlState, MAX_PATCH_BUFFER_RETAIN, MIN_PATCH_BUFFER_RETAIN,
         ParserMode, PatchState, PreviewClock, PreviewPolicy, SystemClock, TreeBuilderConfig,
         diff_dom, emit_create_subtree, estimate_patch_bytes_slice, parse_runtime_parser_mode,
         parser_mode_from_env_with, patch_buffer_retain_target, resolve_parser_mode,
-        start_parse_runtime_with_policy_and_clock,
+        start_parse_runtime_with_policy_and_clock_and_mode,
     };
     use bus::{CoreCommand, CoreEvent};
     use html::{DomPatch, Node, Tokenizer, TreeBuilder, build_owned_dom, tokenize};
@@ -1441,7 +1439,13 @@ mod tests {
             patch_byte_threshold: None,
         };
 
-        start_parse_runtime_with_policy_and_clock(cmd_rx, evt_tx, policy, clock);
+        start_parse_runtime_with_policy_and_clock_and_mode(
+            cmd_rx,
+            evt_tx,
+            policy,
+            clock,
+            ParserMode::Legacy,
+        );
 
         let tab_id = 1;
         let request_id = 1;
@@ -1592,7 +1596,13 @@ mod tests {
 
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let (evt_tx, evt_rx) = mpsc::channel();
-        start_parse_runtime_with_policy_and_clock(cmd_rx, evt_tx, policy, SystemClock);
+        start_parse_runtime_with_policy_and_clock_and_mode(
+            cmd_rx,
+            evt_tx,
+            policy,
+            SystemClock,
+            ParserMode::Legacy,
+        );
 
         let tab_id = 1;
         let request_id = 42;
