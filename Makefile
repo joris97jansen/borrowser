@@ -3,7 +3,7 @@ HTML_ENTITIES_JSON := crates/html/data/entities.json
 HTML_ENTITIES_GEN := crates/html/src/entities_html5.rs
 HTML_ENTITIES_TOOL := crates/html/tools/generate_entities_html5.py
 
-.PHONY: fmt lint clippy test build run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check
+.PHONY: fmt lint lint-html5 test test-html5-legacy test-html5-toggle build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check
 
 # Format all crates
 format:
@@ -13,9 +13,21 @@ format:
 lint:
 	cargo clippy --workspace --all-targets --locked -- -D warnings
 
+# Lint with html5 feature enabled (matches CI)
+lint-html5:
+	cargo clippy --workspace --all-targets --features html5 --locked -- -D warnings
+
 # Run all tests
 test:
-	cargo test --workspace --all-targets --locked
+	BORROWSER_HTML_PARSER=legacy cargo test --workspace --all-targets --locked
+
+# Run tests with html5 feature enabled but legacy runtime toggle
+test-html5-legacy:
+	BORROWSER_HTML_PARSER=legacy cargo test --workspace --all-targets --features html5 --locked
+
+# Run tests with html5 feature enabled and html5 runtime toggle
+test-html5-toggle:
+	BORROWSER_HTML_PARSER=html5 cargo test --workspace --all-targets --features html5 --locked
 
 # Build all targets (debug)
 build:
@@ -57,12 +69,27 @@ html-entities-check:
 		(echo "error: generated entities table is out of date. Run: make html-entities-generate" && exit 1); \
 	rm -f "$$tmp"
 
+build-html5:
+	cargo build --workspace --all-targets --features html5 --locked
+
+build-release:
+	cargo build --workspace --release --locked
+
+build-release-html5:
+	cargo build --workspace --release --features html5 --locked
+
 # Full CI-equivalent pipeline
 ci:
 	@$(MAKE) format
 	@$(MAKE) lint
+	@$(MAKE) lint-html5
 	@$(MAKE) test
+	@$(MAKE) test-html5-legacy
+	@$(MAKE) test-html5-toggle
 	@$(MAKE) build
+	@$(MAKE) build-html5
+	@$(MAKE) build-release
+	@$(MAKE) build-release-html5
 	@$(MAKE) html-entities-check
 
 loc:

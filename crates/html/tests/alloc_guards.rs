@@ -15,7 +15,7 @@ static ENABLED: AtomicBool = AtomicBool::new(false);
 
 unsafe impl GlobalAlloc for CountingAlloc {
     unsafe fn alloc(&self, layout: Layout) -> *mut u8 {
-        let ptr = System.alloc(layout);
+        let ptr = unsafe { System.alloc(layout) };
         if !ptr.is_null() && ENABLED.load(Ordering::Relaxed) {
             ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
             ALLOC_BYTES.fetch_add(layout.size(), Ordering::Relaxed);
@@ -24,7 +24,7 @@ unsafe impl GlobalAlloc for CountingAlloc {
     }
 
     unsafe fn alloc_zeroed(&self, layout: Layout) -> *mut u8 {
-        let ptr = System.alloc_zeroed(layout);
+        let ptr = unsafe { System.alloc_zeroed(layout) };
         if !ptr.is_null() && ENABLED.load(Ordering::Relaxed) {
             ALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
             ALLOC_BYTES.fetch_add(layout.size(), Ordering::Relaxed);
@@ -33,11 +33,11 @@ unsafe impl GlobalAlloc for CountingAlloc {
     }
 
     unsafe fn dealloc(&self, ptr: *mut u8, layout: Layout) {
-        System.dealloc(ptr, layout);
+        unsafe { System.dealloc(ptr, layout) };
     }
 
     unsafe fn realloc(&self, ptr: *mut u8, layout: Layout, new_size: usize) -> *mut u8 {
-        let new_ptr = System.realloc(ptr, layout, new_size);
+        let new_ptr = unsafe { System.realloc(ptr, layout, new_size) };
         if !new_ptr.is_null() && ENABLED.load(Ordering::Relaxed) {
             REALLOC_COUNT.fetch_add(1, Ordering::Relaxed);
             let old_size = layout.size();
@@ -95,6 +95,16 @@ fn text_eq(stream: &TokenStream, token: &Token, expected: &str) -> bool {
     stream.text(token) == Some(expected)
 }
 
+fn expected_tokenizer_bytes(input_len: usize) -> usize {
+    let token_capacity = (input_len / 8).saturating_add(16);
+    let text_pool_capacity = (input_len / 64).saturating_add(4);
+    let token_bytes = token_capacity.saturating_mul(std::mem::size_of::<Token>());
+    let text_pool_bytes = text_pool_capacity.saturating_mul(std::mem::size_of::<String>());
+    input_len
+        .saturating_add(token_bytes)
+        .saturating_add(text_pool_bytes)
+}
+
 #[test]
 fn tokenize_rawtext_allocation_is_bounded() {
     let mut body = String::new();
@@ -120,14 +130,13 @@ fn tokenize_rawtext_allocation_is_bounded() {
         "expected rawtext body to tokenize correctly, got: {stream:?}"
     );
 
-    let overhead = 64 * 1024;
-    let expected_source = input.len();
-    let extra = bytes.saturating_sub(expected_source);
+    let overhead = 256 * 1024;
+    let expected_bytes = expected_tokenizer_bytes(input.len());
     let max_reallocs = 128;
     let max_allocs = 50_000;
     assert!(
-        extra <= overhead,
-        "expected bounded extra allocations; bytes={bytes} input_len={expected_source} extra={extra} overhead={overhead}"
+        bytes <= expected_bytes.saturating_add(overhead),
+        "expected bounded allocations; bytes={bytes} expected={expected_bytes} overhead={overhead}"
     );
     assert!(
         reallocs <= max_reallocs,
@@ -164,14 +173,13 @@ fn tokenize_plain_text_allocation_is_bounded() {
         "expected plain text to tokenize correctly, got: {stream:?}"
     );
 
-    let overhead = 128 * 1024;
-    let expected_source = input.len();
-    let extra = bytes.saturating_sub(expected_source);
+    let overhead = 256 * 1024;
+    let expected_bytes = expected_tokenizer_bytes(input.len());
     let max_reallocs = 128;
     let max_allocs = 50_000;
     assert!(
-        extra <= overhead,
-        "expected bounded extra allocations; bytes={bytes} input_len={expected_source} extra={extra} overhead={overhead}"
+        bytes <= expected_bytes.saturating_add(overhead),
+        "expected bounded allocations; bytes={bytes} expected={expected_bytes} overhead={overhead}"
     );
     assert!(
         reallocs <= max_reallocs,

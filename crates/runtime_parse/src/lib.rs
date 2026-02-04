@@ -71,15 +71,15 @@ fn parser_mode_from_env() -> ParserMode {
 }
 
 fn resolve_parser_mode(requested: ParserMode) -> ParserMode {
-    match requested {
-        ParserMode::Legacy => ParserMode::Legacy,
-        ParserMode::Html5 => {
-            #[cfg(feature = "html5")]
-            {
-                ParserMode::Html5
-            }
-            #[cfg(not(feature = "html5"))]
-            {
+    #[cfg(feature = "html5")]
+    {
+        requested
+    }
+    #[cfg(not(feature = "html5"))]
+    {
+        match requested {
+            ParserMode::Legacy => ParserMode::Legacy,
+            ParserMode::Html5 => {
                 warn!(
                     target: "runtime_parse",
                     "html5 parser requested (env {HTML_PARSER_ENV}) but feature not enabled; defaulting to legacy"
@@ -1225,6 +1225,8 @@ fn root_is_compatible(prev: &Node, next: &Node) -> bool {
 
 #[cfg(test)]
 mod tests {
+    #[cfg(feature = "html5")]
+    use super::start_parse_runtime_with_policy_and_clock_and_mode;
     use super::{
         DomHandle, DomVersion, HtmlState, MAX_PATCH_BUFFER_RETAIN, MIN_PATCH_BUFFER_RETAIN,
         ParserMode, PatchState, PreviewClock, PreviewPolicy, SystemClock, TreeBuilderConfig,
