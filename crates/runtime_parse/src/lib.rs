@@ -71,15 +71,15 @@ fn parser_mode_from_env() -> ParserMode {
 }
 
 fn resolve_parser_mode(requested: ParserMode) -> ParserMode {
-    match requested {
-        ParserMode::Legacy => ParserMode::Legacy,
-        ParserMode::Html5 => {
-            #[cfg(feature = "html5")]
-            {
-                ParserMode::Html5
-            }
-            #[cfg(not(feature = "html5"))]
-            {
+    #[cfg(feature = "html5")]
+    {
+        requested
+    }
+    #[cfg(not(feature = "html5"))]
+    {
+        match requested {
+            ParserMode::Legacy => ParserMode::Legacy,
+            ParserMode::Html5 => {
                 warn!(
                     target: "runtime_parse",
                     "html5 parser requested (env {HTML_PARSER_ENV}) but feature not enabled; defaulting to legacy"
@@ -1230,7 +1230,7 @@ mod tests {
         ParserMode, PatchState, PreviewClock, PreviewPolicy, SystemClock, TreeBuilderConfig,
         diff_dom, emit_create_subtree, estimate_patch_bytes_slice, parse_runtime_parser_mode,
         parser_mode_from_env_with, patch_buffer_retain_target, resolve_parser_mode,
-        start_parse_runtime_with_policy_and_clock,
+        start_parse_runtime_with_policy_and_clock_and_mode,
     };
     use bus::{CoreCommand, CoreEvent};
     use html::{DomPatch, Node, Tokenizer, TreeBuilder, build_owned_dom, tokenize};
@@ -1439,7 +1439,13 @@ mod tests {
             patch_byte_threshold: None,
         };
 
-        start_parse_runtime_with_policy_and_clock(cmd_rx, evt_tx, policy, clock);
+        start_parse_runtime_with_policy_and_clock_and_mode(
+            cmd_rx,
+            evt_tx,
+            policy,
+            clock,
+            ParserMode::Legacy,
+        );
 
         let tab_id = 1;
         let request_id = 1;
@@ -1590,7 +1596,13 @@ mod tests {
 
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let (evt_tx, evt_rx) = mpsc::channel();
-        start_parse_runtime_with_policy_and_clock(cmd_rx, evt_tx, policy, SystemClock);
+        start_parse_runtime_with_policy_and_clock_and_mode(
+            cmd_rx,
+            evt_tx,
+            policy,
+            SystemClock,
+            ParserMode::Legacy,
+        );
 
         let tab_id = 1;
         let request_id = 42;

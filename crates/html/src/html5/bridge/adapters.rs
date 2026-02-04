@@ -68,10 +68,10 @@ impl PatchSink for PatchEmitterAdapter {
         }
         #[cfg(debug_assertions)]
         {
-            if let Some(key) = created_key(&patch) {
-                if !self.created_keys.insert(key) {
-                    self.invariant_violation = true;
-                }
+            if let Some(key) = created_key(&patch)
+                && !self.created_keys.insert(key)
+            {
+                self.invariant_violation = true;
             }
         }
         self.patches.push(patch);
