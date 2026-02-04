@@ -71,11 +71,30 @@ jobs:
         if: matrix.run_lints
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
 
+      - name: Clippy (deny warnings, html5)
+        if: matrix.run_lints
+        run: cargo clippy --workspace --all-targets --features html5 --locked -- -D warnings
+
       - name: Build (debug, all targets)
         run: cargo build --workspace --all-targets --locked
 
       - name: Run tests
+        env:
+          BORROWSER_HTML_PARSER: legacy
         run: cargo test --workspace --all-targets --locked
+
+      - name: Run tests (html5, default legacy)
+        env:
+          BORROWSER_HTML_PARSER: legacy
+        run: cargo test --workspace --all-targets --features html5 --locked
+
+      - name: Run tests (html5, env toggle)
+        env:
+          BORROWSER_HTML_PARSER: html5
+        run: cargo test --workspace --all-targets --features html5 --locked
 
       - name: Build (release)
         run: cargo build --workspace --release --locked
+
+      - name: Build (release, html5)
+        run: cargo build --workspace --release --features html5 --locked
