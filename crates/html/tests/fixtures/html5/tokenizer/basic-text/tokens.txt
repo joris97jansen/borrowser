@@ -1,0 +1,5 @@
+# format: html5-token-v1
+# status: xfail
+# reason: html5 tokenizer not implemented yet
+CHAR text="Hello"
+EOF
