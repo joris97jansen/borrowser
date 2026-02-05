@@ -280,6 +280,7 @@ pub enum FuzzMode {
     Mixed,
 }
 
+#[derive(Clone, Copy, Debug)]
 pub struct ShrinkStats {
     pub original_boundaries: usize,
     pub minimized_boundaries: usize,
