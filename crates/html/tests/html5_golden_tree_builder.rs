@@ -334,13 +334,14 @@ fn parse_dom_file(path: &Path) -> ExpectedDom {
             if header.is_empty() {
                 continue;
             }
-            let (key, value) = header
-                .split_once(':')
-                .unwrap_or_else(|| panic!("invalid header in {path:?}: '{line}'"));
-            let key = key.trim().to_ascii_lowercase();
-            let value = value.trim().to_string();
-            if headers.insert(key.clone(), value).is_some() {
-                panic!("duplicate header '{key}' in {path:?}");
+            if let Some((key, value)) = header.split_once(':') {
+                let key = key.trim().to_ascii_lowercase();
+                let value = value.trim().to_string();
+                if headers.insert(key.clone(), value).is_some() {
+                    panic!("duplicate header '{key}' in {path:?}");
+                }
+            } else {
+                lines.push(line.to_string());
             }
         } else {
             lines.push(line.to_string());
