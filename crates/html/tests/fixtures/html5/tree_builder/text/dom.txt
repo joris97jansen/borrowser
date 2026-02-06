@@ -1,0 +1,5 @@
+# format: html5-dom-v1
+# status: xfail
+# reason: html5 tokenizer/tree builder not implemented yet
+#document
+  "Hello"
