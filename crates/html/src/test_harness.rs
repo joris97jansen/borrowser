@@ -169,7 +169,7 @@ fn assert_chunk_boundary(input: &str, idx: usize, policy: BoundaryPolicy, contex
     }
 }
 
-fn filter_boundaries_by_policy(
+pub(crate) fn filter_boundaries_by_policy(
     input: &str,
     indices: &[usize],
     policy: BoundaryPolicy,
