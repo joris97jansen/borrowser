@@ -1,3 +1,5 @@
+#[cfg(any(test, feature = "test-harness"))]
+pub mod chunker;
 pub mod collect;
 pub mod debug;
 pub mod dom_diff;

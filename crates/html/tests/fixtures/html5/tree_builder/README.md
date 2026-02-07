@@ -43,3 +43,6 @@ Streaming policy:
 
 - This harness uses UTF-8 aligned chunking only (matching the current `Input::push_str` pipeline).
 - Byte-stream chunking will be added once the HTML5 byte decoder path is wired into the session.
+- Chunk plans come from the shared generator in `html::chunker`.
+- Deterministic plans include fixed sizes (1,2,3,4,8,16,32,64) and semantic boundaries around `<`, `</`, `>`, quotes, etc.
+- Seeded fuzz plans are generated per fixture for CI reproducibility.

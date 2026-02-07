@@ -32,3 +32,9 @@ Escaping rules (applies to `text` and attribute values):
 - `\n`, `\r`, `\t`, `\\`, and `\"` are escaped.
 - Other control chars (< 0x20) are encoded as `\u{XX}`.
 - All other characters are emitted as-is.
+
+Chunking policy:
+
+- The harness uses the shared chunk plan generator in `html::chunker`.
+- Deterministic plans include fixed sizes (1,2,3,4,8,16,32,64) and semantic boundaries around `<`, `</`, `>`, quotes, etc.
+- Seeded fuzz plans are generated per fixture for CI reproducibility.

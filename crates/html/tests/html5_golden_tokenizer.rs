@@ -1,5 +1,6 @@
 #![cfg(feature = "html5")]
 
+use html::chunker::{ChunkerConfig, build_chunk_plans};
 use html::html5::{
     AttributeValue, DocumentParseContext, Html5Tokenizer, Input, TextResolver, Token,
     TokenizerConfig,
@@ -48,7 +49,10 @@ fn html5_golden_tokenizer_whole_input() {
 fn html5_golden_tokenizer_chunked_input() {
     let fixtures = load_fixtures();
     let filter = fixture_filter();
-    let fuzz_runs = env_u64("BORROWSER_HTML5_TOKEN_FUZZ_RUNS", 4) as usize;
+    let mut fuzz_runs = env_u64("BORROWSER_HTML5_TOKEN_FUZZ_RUNS", 4) as usize;
+    if env::var("CI").is_ok() && fuzz_runs == 0 {
+        fuzz_runs = 1;
+    }
     let fuzz_seed = env_u64("BORROWSER_HTML5_TOKEN_FUZZ_SEED", 0xC0FFEE);
     let mut ran = 0usize;
     for fixture in fixtures {
@@ -57,7 +61,7 @@ fn html5_golden_tokenizer_chunked_input() {
         }
         ran += 1;
         let whole = run_tokenizer_whole(&fixture);
-        let plans = chunk_plans(&fixture.input, fuzz_runs, fuzz_seed);
+        let plans = build_chunk_plans(&fixture.input, fuzz_runs, fuzz_seed, ChunkerConfig::utf8());
         for plan in plans {
             let actual = run_tokenizer_chunked(&fixture, &plan.plan, &plan.label);
             if actual != whole {
@@ -145,85 +149,6 @@ impl FixtureFilter {
 fn fixture_filter() -> FixtureFilter {
     FixtureFilter {
         raw: env::var("BORROWSER_HTML5_TOKEN_FIXTURE").ok(),
-    }
-}
-
-struct PlanCase {
-    label: String,
-    plan: ChunkPlan,
-}
-
-fn chunk_plans(input: &str, fuzz_runs: usize, fuzz_seed: u64) -> Vec<PlanCase> {
-    let mut plans = Vec::new();
-    for size in [1usize, 2, 3, 4, 8, 16, 32, 64] {
-        plans.push(PlanCase {
-            label: format!("fixed size={size}"),
-            plan: ChunkPlan::fixed(size),
-        });
-    }
-
-    let boundaries = char_boundaries(input);
-    if !boundaries.is_empty() && fuzz_runs > 0 {
-        let max = boundaries.len().clamp(1, 32);
-        for i in 0..fuzz_runs {
-            let seed = fuzz_seed.wrapping_add(i as u64);
-            let mut rng = Lcg::new(seed);
-            let mut picks = boundaries.clone();
-            rng.shuffle(&mut picks);
-            let count = 1 + rng.gen_range(max);
-            picks.truncate(count);
-            picks.sort_unstable();
-            picks.dedup();
-            plans.push(PlanCase {
-                label: format!("fuzz boundaries count={} seed=0x{:016x}", picks.len(), seed),
-                plan: ChunkPlan::boundaries(picks),
-            });
-        }
-    }
-
-    plans
-}
-
-fn char_boundaries(input: &str) -> Vec<usize> {
-    let mut out = Vec::new();
-    let len = input.len();
-    for (idx, _) in input.char_indices() {
-        if idx != 0 && idx != len {
-            out.push(idx);
-        }
-    }
-    out
-}
-
-struct Lcg {
-    state: u64,
-}
-
-impl Lcg {
-    fn new(seed: u64) -> Self {
-        Self { state: seed }
-    }
-
-    fn next_u64(&mut self) -> u64 {
-        self.state = self.state.wrapping_mul(6364136223846793005).wrapping_add(1);
-        self.state
-    }
-
-    fn gen_range(&mut self, upper: usize) -> usize {
-        if upper == 0 {
-            return 0;
-        }
-        (self.next_u64() >> 32) as usize % upper
-    }
-
-    fn shuffle<T>(&mut self, items: &mut [T]) {
-        if items.len() < 2 {
-            return;
-        }
-        for i in (1..items.len()).rev() {
-            let j = self.gen_range(i + 1);
-            items.swap(i, j);
-        }
     }
 }
 
