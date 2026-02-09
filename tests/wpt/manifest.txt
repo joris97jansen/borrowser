@@ -1,0 +1,28 @@
+# format: wpt-manifest-v1
+
+# Parsing-focused subset (WPT-derived, minimal vendored fixtures).
+
+id: basic-structure
+path: vendor/html/syntax/parsing/basic-structure.html
+expected: expected/basic-structure.dom.txt
+status: xfail
+reason: html5 parser not implemented yet
+
+id: comments-and-text
+path: vendor/html/syntax/parsing/comments-and-text.html
+expected: expected/comments-and-text.dom.txt
+status: xfail
+reason: html5 parser not implemented yet
+
+id: void-elements
+path: vendor/html/syntax/parsing/void-elements.html
+expected: expected/void-elements.dom.txt
+status: xfail
+reason: html5 parser not implemented yet
+
+id: tokenizer-basic
+kind: tokens
+path: vendor/html/syntax/parsing/tokenizer-basic.html
+expected: expected/tokenizer-basic.tokens.txt
+status: xfail
+reason: html5 tokenizer not implemented yet

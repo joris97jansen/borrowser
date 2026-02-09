@@ -1,0 +1,8 @@
+# format: html5-dom-v1
+#document doctype="html"
+  <html>
+    <head>
+    <body>
+      <!-- c -->
+      <div id="a">
+        "X"
