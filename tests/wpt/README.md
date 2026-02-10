@@ -31,7 +31,7 @@ CI fast and deterministic.
 1. Add or update the HTML file in `vendor/` (matching upstream WPT paths when possible).
 2. Update `manifest.txt` with the new case.
 3. Generate or edit the expected snapshot in `expected/`.
-4. Run `cargo test -p html --test wpt_runner` to validate.
+4. Run `cargo test -p html --test wpt_html5` to validate.
 
 ## Source / Upstream
 
@@ -43,3 +43,5 @@ or in a short note alongside the test.
 
 - Early on, tests can be marked `xfail` in the manifest with a reason.
 - The runner uses `html::dom_snapshot::DomSnapshot` and the same UTF-8 aligned streaming policy as the golden harnesses.
+- Filters: set `WPT_KIND=dom|tokens|all`, `WPT_FILTER=<substring>`, or `WPT_IDS=id1,id2` to run a subset.
+- Chunked runs: set `WPT_CHUNKED=1` (optional `WPT_FUZZ_RUNS` and `WPT_FUZZ_SEED`).
