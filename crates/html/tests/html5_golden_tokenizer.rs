@@ -1,15 +1,14 @@
 #![cfg(feature = "html5")]
 
 use html::chunker::{ChunkerConfig, build_chunk_plans};
-use html::html5::{
-    AttributeValue, DocumentParseContext, Html5Tokenizer, Input, TextResolver, Token,
-    TokenizerConfig,
-};
+use html::html5::{DocumentParseContext, Html5Tokenizer, Input, TokenizerConfig};
 use html::test_harness::{ChunkPlan, shrink_chunk_plan_with_stats};
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
+
+mod token_snapshot;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum FixtureStatus {
@@ -357,181 +356,28 @@ fn drain_tokens(
     plan_label: Option<&str>,
 ) {
     let mut index = out.len();
+    let context = token_snapshot::TokenFormatContext {
+        case_id: &fixture.name,
+        mode: plan_label.unwrap_or("whole"),
+    };
     loop {
         let batch = tokenizer.next_batch(buffer);
         if batch.tokens().is_empty() {
             break;
         }
         let resolver = batch.resolver();
-        out.extend(format_tokens(
-            batch.tokens(),
-            &resolver,
-            ctx,
-            fixture,
-            plan_label,
-            &mut index,
-        ));
+        out.extend(
+            token_snapshot::format_tokens(
+                batch.tokens(),
+                &resolver,
+                ctx,
+                &context,
+                &mut index,
+                None,
+            )
+            .unwrap_or_else(|err| panic!("{err}")),
+        );
     }
-}
-
-fn format_tokens(
-    tokens: &[Token],
-    resolver: &impl TextResolver,
-    ctx: &DocumentParseContext,
-    fixture: &Fixture,
-    plan_label: Option<&str>,
-    index: &mut usize,
-) -> Vec<String> {
-    let mut out = Vec::with_capacity(tokens.len());
-    for token in tokens {
-        let token_index = *index;
-        *index = index.saturating_add(1);
-        let line = match token {
-            Token::Doctype {
-                name,
-                public_id,
-                system_id,
-                force_quirks,
-            } => {
-                let name = match name {
-                    None => "null".to_string(),
-                    Some(id) => ctx
-                        .atoms
-                        .resolve(*id)
-                        .unwrap_or_else(|| panic!("unknown atom id in doctype: {id:?}"))
-                        .to_string(),
-                };
-                let public_id = public_id
-                    .as_ref()
-                    .map_or_else(|| "null".to_string(), |s| format!("\"{}\"", escape_text(s)));
-                let system_id = system_id
-                    .as_ref()
-                    .map_or_else(|| "null".to_string(), |s| format!("\"{}\"", escape_text(s)));
-                format!(
-                    "DOCTYPE name={name} public_id={public_id} system_id={system_id} force_quirks={force_quirks}"
-                )
-            }
-            Token::StartTag {
-                name,
-                attributes,
-                self_closing,
-            } => {
-                let name = ctx
-                    .atoms
-                    .resolve(*name)
-                    .unwrap_or_else(|| panic!("unknown atom id in start tag: {name:?}"));
-                let mut line = String::new();
-                line.push_str("START name=");
-                line.push_str(name);
-                line.push_str(" attrs=[");
-                for (attr_index, attr) in attributes.iter().enumerate() {
-                    if attr_index > 0 {
-                        line.push(' ');
-                    }
-                    line.push_str(
-                        format_attr(
-                            attr,
-                            resolver,
-                            ctx,
-                            fixture,
-                            plan_label,
-                            token_index,
-                            attr_index,
-                        )
-                        .as_str(),
-                    );
-                }
-                line.push_str("] self_closing=");
-                line.push_str(if *self_closing { "true" } else { "false" });
-                line
-            }
-            Token::EndTag { name } => {
-                let name = ctx
-                    .atoms
-                    .resolve(*name)
-                    .unwrap_or_else(|| panic!("unknown atom id in end tag: {name:?}"));
-                format!("END name={name}")
-            }
-            Token::Comment { text } => {
-                let text = resolver.resolve_span(*text).unwrap_or_else(|| {
-                    panic!(
-                        "invalid text span in fixture '{}' [{}] token #{} (comment)",
-                        fixture.name,
-                        plan_label.unwrap_or("whole"),
-                        token_index
-                    )
-                });
-                format!("COMMENT text=\"{}\"", escape_text(text))
-            }
-            Token::Character { span } => {
-                let text = resolver.resolve_span(*span).unwrap_or_else(|| {
-                    panic!(
-                        "invalid text span in fixture '{}' [{}] token #{} (char)",
-                        fixture.name,
-                        plan_label.unwrap_or("whole"),
-                        token_index
-                    )
-                });
-                format!("CHAR text=\"{}\"", escape_text(text))
-            }
-            Token::Eof => "EOF".to_string(),
-        };
-        out.push(line);
-    }
-    out
-}
-
-fn format_attr(
-    attr: &html::html5::Attribute,
-    resolver: &impl TextResolver,
-    ctx: &DocumentParseContext,
-    fixture: &Fixture,
-    plan_label: Option<&str>,
-    token_index: usize,
-    attr_index: usize,
-) -> String {
-    let name = ctx
-        .atoms
-        .resolve(attr.name)
-        .unwrap_or_else(|| panic!("unknown atom id in attribute: {:?}", attr.name));
-    match &attr.value {
-        None => name.to_string(),
-        Some(AttributeValue::Span(span)) => {
-            let value = resolver.resolve_span(*span).unwrap_or_else(|| {
-                panic!(
-                    "invalid attribute value span in fixture '{}' [{}] token_seq #{} attr #{} ({})",
-                    fixture.name,
-                    plan_label.unwrap_or("whole"),
-                    token_index,
-                    attr_index,
-                    name
-                )
-            });
-            format!("{name}=\"{}\"", escape_text(value))
-        }
-        Some(AttributeValue::Owned(value)) => {
-            format!("{name}=\"{}\"", escape_text(value))
-        }
-    }
-}
-
-fn escape_text(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for ch in text.chars() {
-        match ch {
-            '\\' => out.push_str("\\\\"),
-            '"' => out.push_str("\\\""),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            ch if ch < ' ' => {
-                use std::fmt::Write;
-                let _ = write!(&mut out, "\\u{{{:02X}}}", ch as u32);
-            }
-            _ => out.push(ch),
-        }
-    }
-    out
 }
 
 fn diff_lines(expected: &[String], actual: &[String]) -> String {
@@ -600,7 +446,9 @@ fn handle_tokenize_result(
                 plan_label.unwrap_or(mode.label())
             );
         }
-        ("finish", html::html5::TokenizeResult::EmittedEof) => {}
+        ("finish", html::html5::TokenizeResult::EmittedEof)
+        | ("finish", html::html5::TokenizeResult::NeedMoreInput)
+        | ("finish", html::html5::TokenizeResult::Progress) => {}
         ("push_input", html::html5::TokenizeResult::NeedMoreInput)
         | ("push_input", html::html5::TokenizeResult::Progress) => {}
         _ => {

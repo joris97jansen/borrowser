@@ -25,3 +25,13 @@ parse-guards = []
 [[bench]]
 name = "html_bench"
 harness = false
+
+[[test]]
+name = "wpt_html5"
+path = "tests/wpt_html5.rs"
+required-features = ["html5"]
+
+[[test]]
+name = "token_snapshot"
+path = "tests/token_snapshot.rs"
+required-features = ["html5"]
