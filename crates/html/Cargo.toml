@@ -35,3 +35,8 @@ required-features = ["html5"]
 name = "token_snapshot"
 path = "tests/token_snapshot.rs"
 required-features = ["html5"]
+
+[[test]]
+name = "diff_html5"
+path = "tests/diff_html5.rs"
+required-features = ["html5"]
