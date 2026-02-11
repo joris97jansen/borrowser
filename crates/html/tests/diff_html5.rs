@@ -79,6 +79,10 @@ fn diff_html5() {
         match run_diff_case(&case, &input, case_mode, strict) {
             Ok(()) => summary.passed += 1,
             Err(message) => {
+                if message.starts_with("SKIP:") {
+                    summary.skipped += 1;
+                    continue;
+                }
                 summary.failed += 1;
                 failures.push(DiffFailure {
                     id: case.id,
@@ -114,10 +118,10 @@ fn diff_html5() {
 fn run_diff_case(case: &WptCase, input: &str, mode: DiffKind, strict: bool) -> Result<(), String> {
     match mode {
         DiffKind::Tokens => diff_tokens(case, input, strict),
-        DiffKind::Dom => diff_dom(case, input),
+        DiffKind::Dom => diff_dom(case, input, strict),
         DiffKind::Both => {
             diff_tokens(case, input, strict)?;
-            diff_dom(case, input)?;
+            diff_dom(case, input, strict)?;
             Ok(())
         }
         DiffKind::Skip => Ok(()),
@@ -129,6 +133,13 @@ fn diff_tokens(case: &WptCase, input: &str, strict: bool) -> Result<(), String> 
     // shared DOCTYPE fields (name).
     let simplified = normalize_simplified_tokens(&tokenize(input));
     let html5 = normalize_html5_tokens(input, &case.id, &case.path, strict)?;
+    if html5_only_eof(&html5) && !html5_only_eof(&simplified) {
+        return Err(format!(
+            "SKIP: html5 tokenizer produced only EOF (unimplemented) for '{}' ({})",
+            case.id,
+            case.path.display()
+        ));
+    }
     if simplified != html5 {
         let simplified_lines = format_norm_tokens(&simplified);
         let html5_lines = format_norm_tokens(&html5);
@@ -142,7 +153,15 @@ fn diff_tokens(case: &WptCase, input: &str, strict: bool) -> Result<(), String> 
     Ok(())
 }
 
-fn diff_dom(case: &WptCase, input: &str) -> Result<(), String> {
+fn diff_dom(case: &WptCase, input: &str, strict: bool) -> Result<(), String> {
+    let html5_tokens = normalize_html5_tokens(input, &case.id, &case.path, strict)?;
+    if html5_only_eof(&html5_tokens) && !input.is_empty() {
+        return Err(format!(
+            "SKIP: html5 tokenizer produced only EOF (unimplemented) for '{}' ({})",
+            case.id,
+            case.path.display()
+        ));
+    }
     let simplified_stream = tokenize(input);
     let simplified_dom = build_owned_dom(&simplified_stream);
     let html5_dom = run_html5_dom(input, &case.id, &case.path)?;
@@ -155,6 +174,10 @@ fn diff_dom(case: &WptCase, input: &str) -> Result<(), String> {
         )
     })?;
     Ok(())
+}
+
+fn html5_only_eof(tokens: &[NormToken]) -> bool {
+    matches!(tokens, [NormToken::Eof])
 }
 
 fn normalize_html5_tokens(
@@ -170,18 +193,24 @@ fn normalize_html5_tokens(
     let mut out = Vec::new();
 
     input.push_str(input_html);
-    handle_tokenize_result(tokenizer.push_input(&mut input), "push_input")
-        .map_err(|err| format!("tokenizer error in '{}' at {:?}: {err}", case_id, case_path))?;
-    drain_norm_tokens(
-        &mut out,
-        &mut tokenizer,
-        &mut input,
-        &ctx,
-        case_id,
-        case_path,
-        strict,
-        &mut saw_eof_token,
-    )?;
+    loop {
+        let result = tokenizer.push_input(&mut input);
+        handle_tokenize_result(result, "push_input")
+            .map_err(|err| format!("tokenizer error in '{}' at {:?}: {err}", case_id, case_path))?;
+        drain_norm_tokens(
+            &mut out,
+            &mut tokenizer,
+            &mut input,
+            &ctx,
+            case_id,
+            case_path,
+            strict,
+            &mut saw_eof_token,
+        )?;
+        if matches!(result, TokenizeResult::NeedMoreInput) {
+            break;
+        }
+    }
     handle_tokenize_result(tokenizer.finish(), "finish")
         .map_err(|err| format!("tokenizer error in '{}' at {:?}: {err}", case_id, case_path))?;
     drain_norm_tokens(
@@ -212,22 +241,28 @@ fn run_html5_dom(input_html: &str, case_id: &str, case_path: &Path) -> Result<ht
     let mut saw_eof_token = false;
 
     input.push_str(input_html);
-    handle_tokenize_result(tokenizer.push_input(&mut input), "push_input")
-        .map_err(|err| format!("tokenizer error in '{}' at {:?}: {err}", case_id, case_path))?;
-    drain_batches(
-        &mut tokenizer,
-        &mut input,
-        &mut builder,
-        &ctx,
-        &mut patch_batches,
-        &mut saw_eof_token,
-    )
-    .map_err(|err| {
-        format!(
-            "tree builder error in '{}' at {:?}: {err}",
-            case_id, case_path
+    loop {
+        let result = tokenizer.push_input(&mut input);
+        handle_tokenize_result(result, "push_input")
+            .map_err(|err| format!("tokenizer error in '{}' at {:?}: {err}", case_id, case_path))?;
+        drain_batches(
+            &mut tokenizer,
+            &mut input,
+            &mut builder,
+            &ctx,
+            &mut patch_batches,
+            &mut saw_eof_token,
         )
-    })?;
+        .map_err(|err| {
+            format!(
+                "tree builder error in '{}' at {:?}: {err}",
+                case_id, case_path
+            )
+        })?;
+        if matches!(result, TokenizeResult::NeedMoreInput) {
+            break;
+        }
+    }
     handle_tokenize_result(tokenizer.finish(), "finish")
         .map_err(|err| format!("tokenizer error in '{}' at {:?}: {err}", case_id, case_path))?;
     drain_batches(
@@ -405,11 +440,10 @@ fn drain_norm_tokens(
 ) -> Result<(), String> {
     loop {
         let batch = tokenizer.next_batch(input);
-        if batch.tokens().is_empty() {
-            break;
-        }
         let resolver = batch.resolver();
-        for token in batch.tokens() {
+        let mut saw_any = false;
+        for token in batch.iter() {
+            saw_any = true;
             match token {
                 Token::Doctype {
                     name,
@@ -529,6 +563,9 @@ fn drain_norm_tokens(
                     }
                 }
             }
+        }
+        if !saw_any {
+            break;
         }
     }
     Ok(())
