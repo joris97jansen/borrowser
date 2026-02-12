@@ -1,0 +1,7 @@
+# format: html5-token-v1
+# status: xfail
+# reason: html5 tokenizer unquoted attribute value state not implemented yet
+START name=p attrs=[a="x" b="yz" c="123"] self_closing=false
+END name=p
+
+EOF

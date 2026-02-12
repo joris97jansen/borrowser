@@ -38,6 +38,7 @@ struct RunSummary {
     failed: usize,
     xfailed: usize,
     xpass: usize,
+    skipped: usize,
 }
 
 struct Failure {
@@ -82,10 +83,15 @@ fn wpt_html5() {
         failed: 0,
         xfailed: 0,
         xpass: 0,
+        skipped: 0,
     };
     let mut failures = Vec::new();
 
     for case in cases {
+        if case.status == FixtureStatus::Skip {
+            summary.skipped += 1;
+            continue;
+        }
         let input = fs::read_to_string(&case.path)
             .unwrap_or_else(|err| panic!("failed to read WPT input {:?}: {err}", case.path));
         let chunk_plans = if run_config.chunked {
@@ -250,6 +256,7 @@ fn wpt_html5() {
                             });
                         }
                     },
+                    FixtureStatus::Skip => unreachable!("skip cases are filtered before execution"),
                 }
             }
             CaseKind::Tokens => {
@@ -395,6 +402,7 @@ fn wpt_html5() {
                             });
                         }
                     },
+                    FixtureStatus::Skip => unreachable!("skip cases are filtered before execution"),
                 }
             }
         }
@@ -405,8 +413,13 @@ fn wpt_html5() {
         use std::fmt::Write;
         let _ = writeln!(
             &mut report,
-            "WPT run summary: total={} passed={} failed={} xfailed={} xpass={}",
-            summary.total, summary.passed, summary.failed, summary.xfailed, summary.xpass
+            "WPT run summary: total={} passed={} failed={} xfailed={} xpass={} skipped={}",
+            summary.total,
+            summary.passed,
+            summary.failed,
+            summary.xfailed,
+            summary.xpass,
+            summary.skipped
         );
         let mut failing_ids = failures
             .iter()

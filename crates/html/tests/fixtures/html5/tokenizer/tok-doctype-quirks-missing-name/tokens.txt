@@ -1,0 +1,6 @@
+# format: html5-token-v1
+# status: xfail
+# reason: html5 tokenizer bogus doctype/quirks triggers not implemented yet
+DOCTYPE name=null public_id=null system_id=null force_quirks=true
+
+EOF

@@ -1,0 +1,6 @@
+# format: html5-token-v1
+# status: xfail
+# reason: html5 tokenizer bogus comment state not implemented yet
+COMMENT text="?bogus?"
+
+EOF

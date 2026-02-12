@@ -1,6 +1,6 @@
 # format: html5-token-v1
 # status: xfail
-# reason: html5 tokenizer not implemented yet
+# reason: tokenizer tag-open/end-tag-open/tag-name and core attribute states are not implemented yet
 START name=p attrs=[class="a" disabled] self_closing=false
 CHAR text="Hi"
 END name=p

@@ -14,6 +14,7 @@ mod token_snapshot;
 enum FixtureStatus {
     Active,
     Xfail,
+    Skip,
 }
 
 struct ExpectedTokens {
@@ -38,6 +39,9 @@ fn html5_golden_tokenizer_whole_input() {
             continue;
         }
         ran += 1;
+        if fixture.expected.status == FixtureStatus::Skip {
+            continue;
+        }
         let actual = run_tokenizer_whole(&fixture);
         enforce_expected(&fixture, &actual, Mode::WholeInput, None);
     }
@@ -59,6 +63,9 @@ fn html5_golden_tokenizer_chunked_input() {
             continue;
         }
         ran += 1;
+        if fixture.expected.status == FixtureStatus::Skip {
+            continue;
+        }
         let whole = run_tokenizer_whole(&fixture);
         let plans = build_chunk_plans(&fixture.input, fuzz_runs, fuzz_seed, ChunkerConfig::utf8());
         for plan in plans {
@@ -129,6 +136,7 @@ fn enforce_expected(fixture: &Fixture, actual: &[String], mode: Mode, plan_label
                 );
             }
         }
+        FixtureStatus::Skip => {}
     }
 }
 
@@ -242,11 +250,14 @@ fn parse_tokens_file(path: &Path) -> ExpectedTokens {
     let status = match headers.get("status").map(|s| s.as_str()) {
         Some("active") | None => FixtureStatus::Active,
         Some("xfail") => FixtureStatus::Xfail,
+        Some("skip") => FixtureStatus::Skip,
         Some(other) => panic!("unsupported status '{other}' in {path:?}"),
     };
     let reason = headers.get("reason").cloned();
-    if status == FixtureStatus::Xfail && reason.as_deref().unwrap_or("").is_empty() {
-        panic!("xfail fixture missing reason in {path:?}");
+    if matches!(status, FixtureStatus::Xfail | FixtureStatus::Skip)
+        && reason.as_deref().unwrap_or("").is_empty()
+    {
+        panic!("non-active fixture missing reason in {path:?}");
     }
     if lines.is_empty() {
         panic!("tokens file {path:?} has no token lines");

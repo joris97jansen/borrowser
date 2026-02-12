@@ -1,0 +1,7 @@
+# format: html5-token-v1
+# status: xfail
+# reason: html5 tokenizer attribute name/state machine not implemented yet
+START name=p attrs=[class="a" disabled data-x="1"] self_closing=false
+END name=p
+
+EOF

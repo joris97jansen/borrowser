@@ -13,7 +13,7 @@ use std::path::{Path, PathBuf};
 
 mod wpt_manifest;
 
-use wpt_manifest::{DiffKind, WptCase, load_manifest};
+use wpt_manifest::{DiffKind, FixtureStatus, WptCase, load_manifest};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 enum NormToken {
@@ -69,6 +69,10 @@ fn diff_html5() {
     let mut failures = Vec::new();
 
     for case in cases {
+        if case.status == FixtureStatus::Skip {
+            summary.skipped += 1;
+            continue;
+        }
         let case_mode = case.diff.unwrap_or(mode);
         if case_mode == DiffKind::Skip {
             summary.skipped += 1;

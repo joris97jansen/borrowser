@@ -1,6 +1,6 @@
 # format: html5-token-v1
 # status: xfail
-# reason: html5 tokenizer not implemented yet
+# reason: html5 tokenizer doctype core states not implemented yet
 DOCTYPE name=html public_id=null system_id=null force_quirks=false
-COMMENT text="x"
+
 EOF
