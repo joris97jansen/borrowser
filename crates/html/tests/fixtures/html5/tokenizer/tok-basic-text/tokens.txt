@@ -1,0 +1,5 @@
+# format: html5-token-v1
+# status: xfail
+# reason: tokenizer Data state emission from push_input is not implemented yet
+CHAR text="Hello"
+EOF

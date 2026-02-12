@@ -6,6 +6,7 @@ use std::path::{Path, PathBuf};
 pub enum FixtureStatus {
     Active,
     Xfail,
+    Skip,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -35,6 +36,24 @@ pub struct WptCase {
     pub diff: Option<DiffKind>,
 }
 
+// Keep this list in sync with docs/html5/spec-matrix-tokenizer.md (Out-Of-Scope Policy).
+const POLICY_SKIP_PATTERNS: &[(&str, &str)] = &[
+    ("TOK-PATTERN-SCRIPT-01", "script-data"),
+    ("TOK-PATTERN-SCRIPT-02", "script-escaped"),
+    ("TOK-PATTERN-SCRIPT-03", "script-double-escaped"),
+];
+
+fn required_skip_pattern(id: &str, rel_path: &str) -> Option<(&'static str, &'static str)> {
+    let id_lower = id.to_ascii_lowercase();
+    let path_lower = rel_path.to_ascii_lowercase();
+    for (pattern_id, needle) in POLICY_SKIP_PATTERNS {
+        if id_lower.contains(needle) || path_lower.contains(needle) {
+            return Some((*pattern_id, *needle));
+        }
+    }
+    None
+}
+
 pub fn load_manifest(path: &Path) -> Vec<WptCase> {
     let content = fs::read_to_string(path)
         .unwrap_or_else(|err| panic!("failed to read WPT manifest {path:?}: {err}"));
@@ -62,15 +81,29 @@ pub fn load_manifest(path: &Path) -> Vec<WptCase> {
         };
         let status = match current.remove("status").as_deref() {
             Some("xfail") => FixtureStatus::Xfail,
+            Some("skip") => FixtureStatus::Skip,
             Some("active") | None => FixtureStatus::Active,
             Some(other) => panic!("unsupported status '{other}' for '{id}' in {path:?}"),
         };
         let reason = current.remove("reason");
-        if status == FixtureStatus::Xfail && reason.as_deref().unwrap_or("").is_empty() {
-            panic!("xfail case '{id}' missing reason in {path:?}");
+        match status {
+            FixtureStatus::Active => {
+                if reason.is_some() {
+                    panic!("case '{id}' has reason but is not xfail/skip in {path:?}");
+                }
+            }
+            FixtureStatus::Xfail | FixtureStatus::Skip => {
+                if reason.as_deref().unwrap_or("").is_empty() {
+                    panic!("case '{id}' with status '{status:?}' missing reason in {path:?}");
+                }
+            }
         }
-        if status != FixtureStatus::Xfail && reason.is_some() {
-            panic!("case '{id}' has reason but is not xfail in {path:?}");
+        if let Some((pattern_id, needle)) = required_skip_pattern(&id, &rel_path)
+            && status != FixtureStatus::Skip
+        {
+            panic!(
+                "case '{id}' matches out-of-scope pattern {pattern_id} ('{needle}') and must use status=skip in {path:?}"
+            );
         }
         let diff = match current.remove("diff").as_deref() {
             Some("tokens") => Some(DiffKind::Tokens),

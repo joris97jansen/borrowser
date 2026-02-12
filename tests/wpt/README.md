@@ -23,8 +23,9 @@ CI fast and deterministic.
 - `path`: relative path to the vendored HTML fixture.
 - `expected`: relative path to the expected snapshot file.
 - `kind`: optional (`dom` default, or `tokens` for tokenizer snapshots).
-- `status`: optional (`xfail` to mark expected failures).
-- `reason`: optional (required when `status` is `xfail`).
+- `status`: optional (`active` default, `xfail` for expected failures, `skip` for policy-excluded cases).
+- `reason`: required when `status` is `xfail` or `skip`.
+- Policy: out-of-scope script-data tokenizer cases must use `status: skip` (not `xfail`).
 
 ## Update Workflow
 

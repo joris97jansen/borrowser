@@ -1,0 +1,10 @@
+# format: html5-token-v1
+# status: xfail
+# reason: html5 tokenizer comment core states not implemented yet
+COMMENT text="x"
+COMMENT text="y"
+START name=p attrs=[] self_closing=false
+CHAR text="t"
+END name=p
+
+EOF

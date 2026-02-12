@@ -9,8 +9,8 @@ Each fixture is a directory containing:
 
 - Header lines begin with `#` and use `key: value`.
 - Required header: `# format: html5-token-v1`
-- Optional header: `# status: active | xfail`
-- Optional header (required if `status: xfail`): `# reason: <text>`
+- Optional header: `# status: active | xfail | skip`
+- Optional header (required if `status: xfail` or `status: skip`): `# reason: <text>`
 
 Token lines are one per line, with the following forms:
 
