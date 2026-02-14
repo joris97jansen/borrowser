@@ -22,6 +22,7 @@ Any behavior not listed as supported here is non-contractual and must not be rel
 
 `MUST`, `MUST NOT`, `SHOULD`, and `MAY` are normative.
 
+<a id="tier-mapping-and-id-authority"></a>
 ## Tier Mapping And ID Authority
 
 - Tier authority remains in the matrix documents.
@@ -44,12 +45,14 @@ Any behavior not listed as supported here is non-contractual and must not be rel
 
 Core v0 guarantees behavior for the following scope.
 
+<a id="input-and-streaming-model"></a>
 ### Input And Streaming Model
 
 - Input model is UTF-8 text streaming through session/tokenizer (`push_input` + `finish` flow).
 - Whole-input and chunked-input execution MUST be semantically equivalent for all Core v0 gate tests.
 - Parser state machines MUST be resumable at chunk boundaries without token duplication or token loss.
 
+<a id="tokenizer-state-families"></a>
 ### Tokenizer State Families
 
 Core v0 tokenizer support includes:
@@ -90,6 +93,7 @@ Character references are guaranteed only in:
 - For those contexts, Core v0 guarantees longest-match named-reference behavior and numeric replacement behavior exactly as implemented by `crates/html/src/entities.rs`; divergence from that module behavior is an in-scope Core v0 bug.
 - Legacy semicolon-less behavior is contractual only to the extent currently implemented in `entities.rs` for the supported contexts above.
 
+<a id="tree-builder-modes-and-algorithms"></a>
 ### Tree Builder Modes And Algorithms
 
 Core v0 tree-builder support includes:
@@ -114,6 +118,7 @@ Core v0 tree-builder partial-scope guards:
 - `TB-ALGO-AFE` (`MVP_PARTIAL`) guarantees basic AFE marker handling and reconstruction for simple inline formatting cases; full adoption-agency behavior remains deferred to `TB-ALGO-AAA`.
 - `TB-ALGO-REPROCESS` guarantees that reprocessing reuses the same token instance and does not emit duplicate patches for a single logical token unless explicitly required by the spec algorithm.
 
+<a id="supported-tags-and-contexts-baseline"></a>
 ### Supported Tags And Contexts Baseline
 
 Core v0 guarantees the following tag/context baseline:
@@ -132,6 +137,7 @@ Core v0 guarantees the following tag/context baseline:
 
 This is a context-level baseline, not a full tag-by-tag HTML5 completion claim.
 
+<a id="attribute-rules-baseline"></a>
 ### Attribute Rules Baseline
 
 Core v0 attribute behavior guarantees:
@@ -142,6 +148,7 @@ Core v0 attribute behavior guarantees:
 - value forms supported: double-quoted, single-quoted, unquoted.
 - character references in attribute values follow Core v0 charref scope and delegate named reference table/validation to `crates/html/src/entities.rs`.
 
+<a id="doctype-and-quirks-stance"></a>
 ### DOCTYPE And Quirks Stance
 
 Core v0 guarantees:
@@ -161,6 +168,7 @@ Core v0 stance:
 - Tree-builder `Text` insertion mode is `DEFERRED` (coupled to deferred tokenizer text families).
 - Parser-scripting interaction (parser pause/suspension and script execution integration) is not implemented in Core v0.
 
+<a id="tables-stance"></a>
 ### Tables Stance
 
 Core v0 stance:
@@ -177,6 +185,7 @@ Core v0 stance:
   - parser does not switch to table insertion modes,
   - foster parenting is not performed.
 
+<a id="explicitly-unsupported-or-deferred-in-core-v0"></a>
 ## Explicitly Unsupported Or Deferred In Core v0
 
 The following are intentionally not part of the Core v0 guarantee:
@@ -196,6 +205,7 @@ Policy classification requirements:
 - Out-of-scope tests MUST be `skip` (not `xfail`).
 - In-scope but not yet passing tests MAY be `xfail` with actionable reason text.
 
+<a id="unspecified-behavior-handling-fail-safe-contract"></a>
 ## Unspecified Behavior Handling (Fail-Safe Contract)
 
 For inputs or state combinations not fully covered by Core v0:
@@ -231,6 +241,7 @@ This contract prevents accidental reliance on unspecified behavior.
 - Adoption agency algorithm (`TB-ALGO-AAA`).
 - Full tree-builder text mode parity (`TB-MODE-TEXT`), including deferred RAWTEXT/RCDATA coupling.
 
+<a id="core-v0-gate-and-evidence-model"></a>
 ## Core v0 Gate And Evidence Model
 
 Core v0 exit depends on gate cases defined by acceptance inventories in:
