@@ -11,8 +11,8 @@ fn tree_builder_api_compiles() {
     }
     struct Resolver;
     impl crate::html5::tokenizer::TextResolver for Resolver {
-        fn resolve_span(&self, _span: crate::html5::shared::TextSpan) -> Option<&str> {
-            None
+        fn resolve_span(&self, _span: crate::html5::shared::TextSpan) -> &str {
+            ""
         }
     }
     let mut sink = Sink;

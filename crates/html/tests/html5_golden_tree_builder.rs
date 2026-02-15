@@ -10,6 +10,11 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[path = "common/mod.rs"]
+mod support;
+
+use support::diff_lines;
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum FixtureStatus {
     Active,
@@ -400,7 +405,7 @@ fn run_tree_builder_impl(
         return RunOutput::Err(err);
     }
 
-    let finish_result = tokenizer.finish();
+    let finish_result = tokenizer.finish(&input);
     if let Err(err) = handle_tokenize_result(finish_result, fixture, plan_label, "finish") {
         return RunOutput::Err(err);
     }
@@ -494,10 +499,14 @@ fn handle_tokenize_result(
                 fixture.name
             ))
         }
-        (
-            "finish",
-            TokenizeResult::EmittedEof | TokenizeResult::Progress | TokenizeResult::NeedMoreInput,
-        ) => Ok(()),
+        ("finish", TokenizeResult::EmittedEof) => Ok(()),
+        ("finish", other) => {
+            let plan = plan_label.unwrap_or("<whole>");
+            Err(format!(
+                "finish must emit EOF in fixture '{}' [{plan}], got {other:?}",
+                fixture.name
+            ))
+        }
         ("push_input", TokenizeResult::NeedMoreInput | TokenizeResult::Progress) => Ok(()),
         _ => {
             let plan = plan_label.unwrap_or("<whole>");
@@ -507,55 +516,4 @@ fn handle_tokenize_result(
             ))
         }
     }
-}
-
-fn diff_lines(expected: &[String], actual: &[String]) -> String {
-    let max = expected.len().max(actual.len());
-    let mut out = String::new();
-    use std::fmt::Write;
-    let mut mismatch = None;
-    for i in 0..max {
-        let left = expected.get(i).map(String::as_str).unwrap_or("<none>");
-        let right = actual.get(i).map(String::as_str).unwrap_or("<none>");
-        if left != right {
-            mismatch = Some(i);
-            break;
-        }
-    }
-    if let Some(i) = mismatch {
-        let start = i.saturating_sub(2);
-        let end = (i + 3).min(max);
-        let _ = writeln!(
-            &mut out,
-            "first mismatch at line {} (showing {}..={}):",
-            i + 1,
-            start + 1,
-            end
-        );
-        for line_idx in start..end {
-            let left = expected
-                .get(line_idx)
-                .map(String::as_str)
-                .unwrap_or("<none>");
-            let right = actual.get(line_idx).map(String::as_str).unwrap_or("<none>");
-            let marker = if line_idx == i { ">" } else { " " };
-            let _ = writeln!(&mut out, "{marker} {:>4}  expected: {left}", line_idx + 1);
-            let _ = writeln!(&mut out, "{marker} {:>4}    actual: {right}", line_idx + 1);
-        }
-    }
-    if expected.len() != actual.len() && mismatch.is_none() {
-        let _ = writeln!(
-            &mut out,
-            "prefix matched but lengths differ (expected {} lines, actual {} lines)",
-            expected.len(),
-            actual.len()
-        );
-    }
-    let _ = writeln!(
-        &mut out,
-        "expected {} lines, actual {} lines",
-        expected.len(),
-        actual.len()
-    );
-    out
 }

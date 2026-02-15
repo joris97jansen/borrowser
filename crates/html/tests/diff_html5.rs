@@ -11,8 +11,11 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[path = "common/mod.rs"]
+mod support;
 mod wpt_manifest;
 
+use support::{diff_lines, escape_text};
 use wpt_manifest::{DiffKind, FixtureStatus, WptCase, load_manifest};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -215,7 +218,7 @@ fn normalize_html5_tokens(
             break;
         }
     }
-    handle_tokenize_result(tokenizer.finish(), "finish")
+    handle_tokenize_result(tokenizer.finish(&input), "finish")
         .map_err(|err| format!("tokenizer error in '{}' at {:?}: {err}", case_id, case_path))?;
     drain_norm_tokens(
         &mut out,
@@ -267,7 +270,7 @@ fn run_html5_dom(input_html: &str, case_id: &str, case_path: &Path) -> Result<ht
             break;
         }
     }
-    handle_tokenize_result(tokenizer.finish(), "finish")
+    handle_tokenize_result(tokenizer.finish(&input), "finish")
         .map_err(|err| format!("tokenizer error in '{}' at {:?}: {err}", case_id, case_path))?;
     drain_batches(
         &mut tokenizer,
@@ -412,25 +415,6 @@ fn format_norm_tokens(tokens: &[NormToken]) -> Vec<String> {
     out
 }
 
-fn escape_text(text: &str) -> String {
-    let mut out = String::with_capacity(text.len());
-    for ch in text.chars() {
-        match ch {
-            '\\' => out.push_str("\\\\"),
-            '"' => out.push_str("\\\""),
-            '\n' => out.push_str("\\n"),
-            '\r' => out.push_str("\\r"),
-            '\t' => out.push_str("\\t"),
-            ch if ch < ' ' => {
-                use std::fmt::Write;
-                let _ = write!(&mut out, "\\u{{{:02X}}}", ch as u32);
-            }
-            _ => out.push(ch),
-        }
-    }
-    out
-}
-
 #[allow(clippy::too_many_arguments)]
 fn drain_norm_tokens(
     out: &mut Vec<NormToken>,
@@ -500,17 +484,9 @@ fn drain_norm_tokens(
                         let attr_name = attr_name.to_ascii_lowercase();
                         let value = match &attr.value {
                             None => None,
-                            Some(AttributeValue::Span(span)) => Some(
-                                resolver
-                                    .resolve_span(*span)
-                                    .map(str::to_string)
-                                    .ok_or_else(|| {
-                                        format!(
-                                            "invalid attribute value span in '{}' (attr {}) at {:?}",
-                                            case_id, attr_name, case_path
-                                        )
-                                    })?,
-                            ),
+                            Some(AttributeValue::Span(span)) => {
+                                Some(resolver.resolve_span(*span).to_string())
+                            }
                             Some(AttributeValue::Owned(value)) => Some(value.clone()),
                         };
                         attrs.push((attr_name, value, index));
@@ -547,17 +523,13 @@ fn drain_norm_tokens(
                     out.push(NormToken::EndTag { name });
                 }
                 Token::Comment { text } => {
-                    let text = resolver.resolve_span(*text).ok_or_else(|| {
-                        format!("invalid comment span in '{}' at {:?}", case_id, case_path)
-                    })?;
+                    let text = resolver.resolve_span(*text);
                     out.push(NormToken::Comment {
                         text: text.to_string(),
                     });
                 }
                 Token::Character { span } => {
-                    let text = resolver.resolve_span(*span).ok_or_else(|| {
-                        format!("invalid char span in '{}' at {:?}", case_id, case_path)
-                    })?;
+                    let text = resolver.resolve_span(*span);
                     push_char(out, text);
                 }
                 Token::Eof => {
@@ -619,10 +591,8 @@ fn handle_tokenize_result(result: TokenizeResult, stage: &str) -> Result<(), Str
         ("push_input", TokenizeResult::EmittedEof) => {
             Err("unexpected EOF while pushing input".to_string())
         }
-        (
-            "finish",
-            TokenizeResult::EmittedEof | TokenizeResult::Progress | TokenizeResult::NeedMoreInput,
-        ) => Ok(()),
+        ("finish", TokenizeResult::EmittedEof) => Ok(()),
+        ("finish", other) => Err(format!("finish must emit EOF, got {other:?}")),
         ("push_input", TokenizeResult::NeedMoreInput | TokenizeResult::Progress) => Ok(()),
         _ => Err(format!(
             "unexpected tokenizer state stage={stage} result={result:?}"
@@ -708,55 +678,4 @@ fn select_cases(cases: Vec<WptCase>) -> Vec<WptCase> {
         );
     }
     selected
-}
-
-fn diff_lines(expected: &[String], actual: &[String]) -> String {
-    let max = expected.len().max(actual.len());
-    let mut out = String::new();
-    use std::fmt::Write;
-    let mut mismatch = None;
-    for i in 0..max {
-        let left = expected.get(i).map(String::as_str).unwrap_or("<none>");
-        let right = actual.get(i).map(String::as_str).unwrap_or("<none>");
-        if left != right {
-            mismatch = Some(i);
-            break;
-        }
-    }
-    if let Some(i) = mismatch {
-        let start = i.saturating_sub(2);
-        let end = (i + 3).min(max);
-        let _ = writeln!(
-            &mut out,
-            "first mismatch at line {} (showing {}..={}):",
-            i + 1,
-            start + 1,
-            end
-        );
-        for line_idx in start..end {
-            let left = expected
-                .get(line_idx)
-                .map(String::as_str)
-                .unwrap_or("<none>");
-            let right = actual.get(line_idx).map(String::as_str).unwrap_or("<none>");
-            let marker = if line_idx == i { ">" } else { " " };
-            let _ = writeln!(&mut out, "{marker} {:>4}  expected: {left}", line_idx + 1);
-            let _ = writeln!(&mut out, "{marker} {:>4}    actual: {right}", line_idx + 1);
-        }
-    }
-    if expected.len() != actual.len() && mismatch.is_none() {
-        let _ = writeln!(
-            &mut out,
-            "prefix matched but lengths differ (expected {} lines, actual {} lines)",
-            expected.len(),
-            actual.len()
-        );
-    }
-    let _ = writeln!(
-        &mut out,
-        "expected {} lines, actual {} lines",
-        expected.len(),
-        actual.len()
-    );
-    out
 }
