@@ -21,4 +21,4 @@ pub use error::{
 #[allow(unused_imports)]
 pub use input::{ByteStreamDecoder, DecodeResult, Input};
 pub use span::{Span, TextSpan};
-pub use token::{Attribute, AttributeValue, Token};
+pub use token::{Attribute, AttributeValue, TextValue, Token};

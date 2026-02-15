@@ -19,6 +19,9 @@ use states::TokenizerState;
 mod emit;
 mod input;
 mod states;
+mod token_fmt;
+
+pub use token_fmt::{TokenFmt, TokenFmtError, TokenTestFormatExt};
 
 /// Configuration for the tokenizer.
 #[derive(Clone, Debug)]
@@ -54,8 +57,13 @@ pub struct TokenizerStats {
 }
 
 /// Resolve text spans into `&str` for the current batch epoch.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextResolveError {
+    InvalidSpan { span: TextSpan },
+}
+
 pub trait TextResolver {
-    fn resolve_span(&self, span: TextSpan) -> &str;
+    fn resolve_span(&self, span: TextSpan) -> Result<&str, TextResolveError>;
 }
 
 /// Token batch bound to a single epoch.
@@ -133,30 +141,57 @@ impl Html5Tokenizer {
         }
 
         let initial_token_count = self.tokens.len();
-        let mut made_progress = false;
+        let initial_cursor = self.cursor;
+        let initial_state_transitions = self.stats.state_transitions;
         let mut remaining_budget = MAX_STEPS_PER_PUMP;
 
         while remaining_budget > 0 {
             remaining_budget -= 1;
             self.stats.steps = self.stats.steps.saturating_add(1);
             match self.step(input) {
-                Step::Progress => made_progress = true,
+                Step::Progress => {}
                 Step::NeedMoreInput => break,
             }
         }
 
         if remaining_budget == 0 {
             self.stats.budget_exhaustions = self.stats.budget_exhaustions.saturating_add(1);
+            let final_cursor = self.cursor;
+            let final_tokens = self.tokens.len();
+            let final_transitions = self.stats.state_transitions;
             #[cfg(any(test, feature = "debug-stats"))]
             log::trace!(
                 target: "html5.tokenizer",
-                "step budget exhausted in push_input (state={:?}, cursor={})",
+                "step budget exhausted in push_input: state={:?} cursor={} tokens={} transitions={} (initial: cursor={} tokens={} transitions={})",
                 self.state,
-                self.cursor
+                final_cursor,
+                final_tokens,
+                final_transitions,
+                initial_cursor,
+                initial_token_count,
+                initial_state_transitions
+            );
+            let no_observable_progress = final_cursor == initial_cursor
+                && final_tokens == initial_token_count
+                && final_transitions == initial_state_transitions;
+            assert!(
+                !no_observable_progress,
+                "tokenizer step budget exhausted without observable progress: state={:?} cursor={} tokens={} transitions={} (initial: cursor={} tokens={} transitions={})",
+                self.state,
+                final_cursor,
+                final_tokens,
+                final_transitions,
+                initial_cursor,
+                initial_token_count,
+                initial_state_transitions
             );
         }
 
-        if self.tokens.len() > initial_token_count || made_progress {
+        let observable_progress = self.cursor != initial_cursor
+            || self.tokens.len() != initial_token_count
+            || self.stats.state_transitions != initial_state_transitions;
+
+        if observable_progress {
             TokenizeResult::Progress
         } else {
             TokenizeResult::NeedMoreInput
@@ -194,9 +229,10 @@ impl Html5Tokenizer {
         } else {
             self.input_id = Some(input.id());
         }
-        assert!(
-            self.cursor >= input.as_str().len(),
-            "Html5Tokenizer::finish called with unconsumed input (cursor={}, buffered={}); call push_input() until NeedMoreInput before finish()",
+        assert_eq!(
+            self.cursor,
+            input.as_str().len(),
+            "Html5Tokenizer::finish called with non-final cursor (cursor={}, buffered={}); call push_input() until NeedMoreInput before finish()",
             self.cursor,
             input.as_str().len()
         );
@@ -257,6 +293,8 @@ impl Html5Tokenizer {
             // Placeholder: state families are wired into the dispatcher now,
             // behavior will land incrementally in follow-up issues.
             _ => {
+                // Scaffold-only behavior: transition unknown states back to Data and
+                // allow progress only when buffered input remains for Data to consume.
                 self.transition_to(TokenizerState::Data);
                 if self.has_unconsumed_input(input) {
                     Step::Progress
@@ -273,7 +311,7 @@ impl Html5Tokenizer {
         }
         // Temporary E1 scaffold: consume all buffered input to validate streaming
         // contracts and pump semantics. Replace with per-codepoint consumption and
-        // spec reconsume behavior in E2 state implementations.
+        // spec reconsume behavior in E3+ state implementations.
         let progressed = self.consume_all_available_input_scaffold_only(input);
         assert!(progressed, "data state must make progress if input remains");
         Step::Progress
@@ -293,15 +331,16 @@ struct InputResolver<'t> {
 }
 
 impl<'t> TextResolver for InputResolver<'t> {
-    fn resolve_span(&self, span: TextSpan) -> &str {
+    fn resolve_span(&self, span: TextSpan) -> Result<&str, TextResolveError> {
         let text = self.input.as_str();
-        assert!(span.start <= span.end, "span start must be <= end");
-        assert!(
-            text.is_char_boundary(span.start) && text.is_char_boundary(span.end),
-            "span must be on UTF-8 boundaries"
-        );
-        assert!(span.end <= text.len(), "span end out of bounds");
-        &text[span.start..span.end]
+        if !(span.start <= span.end
+            && span.end <= text.len()
+            && text.is_char_boundary(span.start)
+            && text.is_char_boundary(span.end))
+        {
+            return Err(TextResolveError::InvalidSpan { span });
+        }
+        Ok(&text[span.start..span.end])
     }
 }
 
