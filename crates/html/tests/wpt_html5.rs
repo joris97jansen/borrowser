@@ -9,9 +9,13 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[path = "common/mod.rs"]
+mod support;
+#[path = "common/token_snapshot.rs"]
 mod token_snapshot;
 mod wpt_manifest;
 
+use support::diff_lines;
 use wpt_manifest::{CaseKind, FixtureStatus, WptCase, load_manifest};
 
 struct ExpectedDom {
@@ -679,7 +683,7 @@ fn run_tree_builder_whole(
         &mut saw_eof_token,
     )?;
 
-    handle_tokenize_result(tokenizer.finish(), "finish")?;
+    handle_tokenize_result(tokenizer.finish(&input), "finish")?;
     drain_batches(
         &mut tokenizer,
         &mut input,
@@ -747,7 +751,7 @@ fn run_tree_builder_chunked(
         return Err(err);
     }
 
-    handle_tokenize_result(tokenizer.finish(), "finish")?;
+    handle_tokenize_result(tokenizer.finish(&input), "finish")?;
     drain_batches(
         &mut tokenizer,
         &mut input,
@@ -790,7 +794,7 @@ fn run_tokenizer_whole(input_html: &str, case_id: &str) -> Result<Vec<String>, S
         &mut index,
         &mut saw_eof_token,
     )?;
-    handle_tokenize_result(tokenizer.finish(), "finish")?;
+    handle_tokenize_result(tokenizer.finish(&input), "finish")?;
     drain_tokens(
         &mut out,
         &mut tokenizer,
@@ -861,7 +865,7 @@ fn run_tokenizer_chunked(
     if let Some(err) = error {
         return Err(err);
     }
-    handle_tokenize_result(tokenizer.finish(), "finish")?;
+    handle_tokenize_result(tokenizer.finish(&input), "finish")?;
     drain_tokens(
         &mut out,
         &mut tokenizer,
@@ -951,64 +955,11 @@ fn handle_tokenize_result(result: TokenizeResult, stage: &str) -> Result<(), Str
         ("push_input", TokenizeResult::EmittedEof) => {
             Err("unexpected EOF while pushing input".to_string())
         }
-        (
-            "finish",
-            TokenizeResult::EmittedEof | TokenizeResult::Progress | TokenizeResult::NeedMoreInput,
-        ) => Ok(()),
+        ("finish", TokenizeResult::EmittedEof) => Ok(()),
+        ("finish", other) => Err(format!("finish must emit EOF, got {other:?}")),
         ("push_input", TokenizeResult::NeedMoreInput | TokenizeResult::Progress) => Ok(()),
         _ => Err(format!(
             "unexpected tokenizer state stage={stage} result={result:?}"
         )),
     }
-}
-
-fn diff_lines(expected: &[String], actual: &[String]) -> String {
-    let max = expected.len().max(actual.len());
-    let mut out = String::new();
-    use std::fmt::Write;
-    let mut mismatch = None;
-    for i in 0..max {
-        let left = expected.get(i).map(String::as_str).unwrap_or("<none>");
-        let right = actual.get(i).map(String::as_str).unwrap_or("<none>");
-        if left != right {
-            mismatch = Some(i);
-            break;
-        }
-    }
-    if let Some(i) = mismatch {
-        let start = i.saturating_sub(2);
-        let end = (i + 3).min(max);
-        let _ = writeln!(
-            &mut out,
-            "first mismatch at line {} (showing {}..={}):",
-            i + 1,
-            start + 1,
-            end
-        );
-        for line_idx in start..end {
-            let left = expected
-                .get(line_idx)
-                .map(String::as_str)
-                .unwrap_or("<none>");
-            let right = actual.get(line_idx).map(String::as_str).unwrap_or("<none>");
-            let marker = if line_idx == i { ">" } else { " " };
-            let _ = writeln!(&mut out, "{marker} {:>4}  expected: {left}", line_idx + 1);
-            let _ = writeln!(&mut out, "{marker} {:>4}    actual: {right}", line_idx + 1);
-        }
-    }
-    if expected.len() != actual.len() && mismatch.is_none() {
-        let _ = writeln!(
-            &mut out,
-            "prefix matched but lengths differ (expected {} lines, actual {} lines)",
-            expected.len(),
-            actual.len()
-        );
-    }
-    let _ = writeln!(
-        &mut out,
-        "expected {} lines, actual {} lines",
-        expected.len(),
-        actual.len()
-    );
-    out
 }

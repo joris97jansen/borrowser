@@ -17,7 +17,9 @@ pub use shared::{
     DocumentParseContext, EngineInvariantError, ErrorOrigin, ErrorPolicy, Html5SessionError, Input,
     ParseError, Span, TextSpan, Token,
 };
-pub use tokenizer::{Html5Tokenizer, TextResolver, TokenBatch, TokenizeResult, TokenizerConfig};
+pub use tokenizer::{
+    Html5Tokenizer, TextResolver, TokenBatch, TokenizeResult, TokenizerConfig, TokenizerStats,
+};
 pub use tree_builder::{
     Html5TreeBuilder, PatchSink, SuspendReason, TreeBuilderConfig, TreeBuilderError,
     TreeBuilderStepResult, VecPatchSink,

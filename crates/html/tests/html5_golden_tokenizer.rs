@@ -8,7 +8,12 @@ use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
+#[path = "common/mod.rs"]
+mod support;
+#[path = "common/token_snapshot.rs"]
 mod token_snapshot;
+
+use support::diff_lines;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum FixtureStatus {
@@ -288,7 +293,7 @@ fn run_tokenizer_whole(fixture: &Fixture) -> Vec<String> {
     let mut out = Vec::new();
     drain_tokens(&mut out, &mut tokenizer, &mut buffer, &ctx, fixture, None);
     handle_tokenize_result(
-        tokenizer.finish(),
+        tokenizer.finish(&buffer),
         fixture,
         Mode::WholeInput,
         None,
@@ -341,7 +346,7 @@ fn run_tokenizer_chunked(fixture: &Fixture, plan: &ChunkPlan, plan_label: &str) 
         );
     });
     handle_tokenize_result(
-        tokenizer.finish(),
+        tokenizer.finish(&buffer),
         fixture,
         Mode::ChunkedInput,
         Some(plan_label),
@@ -391,57 +396,6 @@ fn drain_tokens(
     }
 }
 
-fn diff_lines(expected: &[String], actual: &[String]) -> String {
-    let max = expected.len().max(actual.len());
-    let mut out = String::new();
-    use std::fmt::Write;
-    let mut mismatch = None;
-    for i in 0..max {
-        let left = expected.get(i).map(String::as_str).unwrap_or("<none>");
-        let right = actual.get(i).map(String::as_str).unwrap_or("<none>");
-        if left != right {
-            mismatch = Some(i);
-            break;
-        }
-    }
-    if let Some(i) = mismatch {
-        let start = i.saturating_sub(2);
-        let end = (i + 3).min(max);
-        let _ = writeln!(
-            &mut out,
-            "first mismatch at line {} (showing {}..={}):",
-            i + 1,
-            start + 1,
-            end
-        );
-        for line_idx in start..end {
-            let left = expected
-                .get(line_idx)
-                .map(String::as_str)
-                .unwrap_or("<none>");
-            let right = actual.get(line_idx).map(String::as_str).unwrap_or("<none>");
-            let marker = if line_idx == i { ">" } else { " " };
-            let _ = writeln!(&mut out, "{marker} {:>4}  expected: {left}", line_idx + 1);
-            let _ = writeln!(&mut out, "{marker} {:>4}    actual: {right}", line_idx + 1);
-        }
-    }
-    if expected.len() != actual.len() && mismatch.is_none() {
-        let _ = writeln!(
-            &mut out,
-            "prefix matched but lengths differ (expected {} lines, actual {} lines)",
-            expected.len(),
-            actual.len()
-        );
-    }
-    let _ = writeln!(
-        &mut out,
-        "expected {} lines, actual {} lines",
-        expected.len(),
-        actual.len()
-    );
-    out
-}
-
 fn handle_tokenize_result(
     result: html::html5::TokenizeResult,
     fixture: &Fixture,
@@ -457,9 +411,14 @@ fn handle_tokenize_result(
                 plan_label.unwrap_or(mode.label())
             );
         }
-        ("finish", html::html5::TokenizeResult::EmittedEof)
-        | ("finish", html::html5::TokenizeResult::NeedMoreInput)
-        | ("finish", html::html5::TokenizeResult::Progress) => {}
+        ("finish", html::html5::TokenizeResult::EmittedEof) => {}
+        ("finish", other) => {
+            panic!(
+                "finish must emit EOF in fixture '{}' [{}], got {other:?}",
+                fixture.name,
+                plan_label.unwrap_or(mode.label())
+            );
+        }
         ("push_input", html::html5::TokenizeResult::NeedMoreInput)
         | ("push_input", html::html5::TokenizeResult::Progress) => {}
         _ => {
