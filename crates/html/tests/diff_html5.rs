@@ -3,7 +3,7 @@
 use html::dom_snapshot::{DomSnapshotOptions, compare_dom};
 use html::html5::tree_builder::{Html5TreeBuilder, TreeBuilderConfig, TreeBuilderStepResult};
 use html::html5::{
-    AttributeValue, DocumentParseContext, Html5Tokenizer, Input, TextResolver, Token,
+    AttributeValue, DocumentParseContext, Html5Tokenizer, Input, TextResolver, TextValue, Token,
     TokenizeResult, TokenizerConfig,
 };
 use html::{TokenStream, build_owned_dom, tokenize};
@@ -460,7 +460,7 @@ fn drain_norm_tokens(
                 }
                 Token::StartTag {
                     name,
-                    attributes,
+                    attrs,
                     self_closing,
                 } => {
                     let name = ctx.atoms.resolve(*name).unwrap_or("");
@@ -471,9 +471,9 @@ fn drain_norm_tokens(
                         ));
                     }
                     let name = name.to_ascii_lowercase();
-                    let mut attrs: Vec<(String, Option<String>, usize)> =
-                        Vec::with_capacity(attributes.len());
-                    for (index, attr) in attributes.iter().enumerate() {
+                    let mut attrs_out: Vec<(String, Option<String>, usize)> =
+                        Vec::with_capacity(attrs.len());
+                    for (index, attr) in attrs.iter().enumerate() {
                         let attr_name = ctx.atoms.resolve(attr.name).unwrap_or("");
                         if attr_name.is_empty() && strict {
                             return Err(format!(
@@ -484,14 +484,22 @@ fn drain_norm_tokens(
                         let attr_name = attr_name.to_ascii_lowercase();
                         let value = match &attr.value {
                             None => None,
-                            Some(AttributeValue::Span(span)) => {
-                                Some(resolver.resolve_span(*span).to_string())
-                            }
+                            Some(AttributeValue::Span(span)) => Some(
+                                resolver
+                                    .resolve_span(*span)
+                                    .map_err(|err| {
+                                        format!(
+                                            "invalid attribute value span in '{}' (attr {}) at {:?}: {err:?}",
+                                            case_id, attr_name, case_path
+                                        )
+                                    })?
+                                    .to_string(),
+                            ),
                             Some(AttributeValue::Owned(value)) => Some(value.clone()),
                         };
-                        attrs.push((attr_name, value, index));
+                        attrs_out.push((attr_name, value, index));
                     }
-                    attrs.sort_by(|(a_name, a_value, a_index), (b_name, b_value, b_index)| {
+                    attrs_out.sort_by(|(a_name, a_value, a_index), (b_name, b_value, b_index)| {
                         let cmp = a_name
                             .cmp(b_name)
                             .then_with(|| a_value.as_deref().cmp(&b_value.as_deref()));
@@ -501,7 +509,7 @@ fn drain_norm_tokens(
                             cmp
                         }
                     });
-                    let attrs = attrs
+                    let attrs = attrs_out
                         .into_iter()
                         .map(|(name, value, _)| (name, value))
                         .collect();
@@ -523,13 +531,29 @@ fn drain_norm_tokens(
                     out.push(NormToken::EndTag { name });
                 }
                 Token::Comment { text } => {
-                    let text = resolver.resolve_span(*text);
+                    let text = match text {
+                        TextValue::Span(span) => resolver.resolve_span(*span).map_err(|err| {
+                            format!(
+                                "invalid comment span in '{}' at {:?}: {err:?}",
+                                case_id, case_path
+                            )
+                        })?,
+                        TextValue::Owned(text) => text.as_str(),
+                    };
                     out.push(NormToken::Comment {
                         text: text.to_string(),
                     });
                 }
-                Token::Character { span } => {
-                    let text = resolver.resolve_span(*span);
+                Token::Text { text } => {
+                    let text = match text {
+                        TextValue::Span(span) => resolver.resolve_span(*span).map_err(|err| {
+                            format!(
+                                "invalid text span in '{}' at {:?}: {err:?}",
+                                case_id, case_path
+                            )
+                        })?,
+                        TextValue::Owned(value) => value.as_str(),
+                    };
                     push_char(out, text);
                 }
                 Token::Eof => {

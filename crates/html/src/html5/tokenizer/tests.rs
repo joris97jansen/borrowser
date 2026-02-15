@@ -1,14 +1,27 @@
-use super::{Html5Tokenizer, TokenBatch, TokenizeResult, TokenizerConfig};
-use crate::html5::shared::{DocumentParseContext, Input};
+use super::{Html5Tokenizer, TokenBatch, TokenFmt, TokenizeResult, TokenizerConfig};
+use crate::html5::shared::{
+    Attribute, AttributeValue, DocumentParseContext, Input, TextValue, Token,
+};
 
-fn drain_all(tokenizer: &mut Html5Tokenizer, input: &mut Input) -> Vec<String> {
+fn drain_all_fmt(
+    tokenizer: &mut Html5Tokenizer,
+    input: &mut Input,
+    ctx: &DocumentParseContext,
+) -> Vec<String> {
     let mut out = Vec::new();
     loop {
         let batch = tokenizer.next_batch(input);
         if batch.tokens().is_empty() {
             break;
         }
-        out.extend(batch.iter().map(|t| format!("{t:?}")));
+        let resolver = batch.resolver();
+        let fmt = TokenFmt::new(&ctx.atoms, &resolver);
+        for token in batch.iter() {
+            out.push(
+                fmt.format_token(token)
+                    .expect("token formatting in tests must be deterministic"),
+            );
+        }
     }
     out
 }
@@ -34,9 +47,9 @@ fn tokenizer_api_compiles() {
     assert_push_ok(res);
 
     // Keep API usage aligned with harnesses: push, then drain-until-empty.
-    let _ = drain_all(&mut tokenizer, &mut input);
+    let _ = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
     assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
-    let _ = drain_all(&mut tokenizer, &mut input);
+    let _ = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
 
     let batch: TokenBatch<'_> = tokenizer.next_batch(&mut input);
     assert!(batch.tokens().is_empty());
@@ -53,10 +66,10 @@ fn tokenizer_two_chunks_match_single_chunk_sequence() {
         for chunk in chunks {
             input.push_str(chunk);
             assert_push_ok(tokenizer.push_input(&mut input));
-            out.extend(drain_all(&mut tokenizer, &mut input));
+            out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
         }
         assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
-        out.extend(drain_all(&mut tokenizer, &mut input));
+        out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
         out
     }
 
@@ -74,9 +87,9 @@ fn finish_is_idempotent() {
     assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
     assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
 
-    let tokens = drain_all(&mut tokenizer, &mut input);
-    assert_eq!(tokens, vec!["Eof".to_string()]);
-    assert!(drain_all(&mut tokenizer, &mut input).is_empty());
+    let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    assert_eq!(tokens, vec!["EOF".to_string()]);
+    assert!(drain_all_fmt(&mut tokenizer, &mut input, &ctx).is_empty());
 }
 
 #[test]
@@ -91,11 +104,83 @@ fn push_input_after_finish_panics() {
 }
 
 #[test]
-#[should_panic(expected = "finish called with unconsumed input")]
+#[should_panic(expected = "finish called with non-final cursor")]
 fn finish_with_unconsumed_input_panics() {
     let mut ctx = DocumentParseContext::new();
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
     let mut input = Input::new();
     input.push_str("<div>");
     let _ = tokenizer.finish(&input);
+}
+
+#[test]
+fn token_fmt_is_deterministic_and_preserves_attribute_order() {
+    struct Resolver;
+    impl super::TextResolver for Resolver {
+        fn resolve_span(
+            &self,
+            _span: crate::html5::shared::TextSpan,
+        ) -> Result<&str, super::TextResolveError> {
+            Ok("")
+        }
+    }
+
+    let mut ctx = DocumentParseContext::new();
+    let tag = ctx.atoms.intern_ascii_folded("div");
+    let attr_z = ctx.atoms.intern_ascii_folded("zeta");
+    let attr_a = ctx.atoms.intern_ascii_folded("alpha");
+    let token = Token::StartTag {
+        name: tag,
+        attrs: vec![
+            Attribute {
+                name: attr_z,
+                value: Some(AttributeValue::Owned("1".to_string())),
+            },
+            Attribute {
+                name: attr_a,
+                value: Some(AttributeValue::Owned("2".to_string())),
+            },
+        ],
+        self_closing: false,
+    };
+
+    let fmt = TokenFmt::new(&ctx.atoms, &Resolver);
+    let first = fmt.format_token(&token).expect("token fmt should succeed");
+    let second = fmt.format_token(&token).expect("token fmt should succeed");
+    assert_eq!(first, second);
+    assert_eq!(
+        first,
+        "START name=div attrs=[zeta=\"1\" alpha=\"2\"] self_closing=false"
+    );
+}
+
+#[test]
+fn token_fmt_text_is_storage_model_agnostic() {
+    struct Resolver;
+    impl super::TextResolver for Resolver {
+        fn resolve_span(
+            &self,
+            _span: crate::html5::shared::TextSpan,
+        ) -> Result<&str, super::TextResolveError> {
+            Ok("hello")
+        }
+    }
+
+    let span_token = Token::Text {
+        text: TextValue::Span(crate::html5::shared::Span::new(0, 0)),
+    };
+    let owned_token = Token::Text {
+        text: TextValue::Owned("hello".to_string()),
+    };
+
+    let ctx = DocumentParseContext::new();
+    let fmt = TokenFmt::new(&ctx.atoms, &Resolver);
+    let span_rendered = fmt
+        .format_token(&span_token)
+        .expect("span text token fmt should succeed");
+    let owned_rendered = fmt
+        .format_token(&owned_token)
+        .expect("owned text token fmt should succeed");
+    assert_eq!(span_rendered, owned_rendered);
+    assert_eq!(span_rendered, "CHAR text=\"hello\"");
 }

@@ -15,10 +15,11 @@ pub use session::Html5ParseSession;
 pub use shared::{
     AtomError, AtomId, AtomTable, Attribute, AttributeValue, ByteStreamDecoder, Counters,
     DocumentParseContext, EngineInvariantError, ErrorOrigin, ErrorPolicy, Html5SessionError, Input,
-    ParseError, Span, TextSpan, Token,
+    ParseError, Span, TextSpan, TextValue, Token,
 };
 pub use tokenizer::{
-    Html5Tokenizer, TextResolver, TokenBatch, TokenizeResult, TokenizerConfig, TokenizerStats,
+    Html5Tokenizer, TextResolveError, TextResolver, TokenBatch, TokenFmt, TokenFmtError,
+    TokenTestFormatExt, TokenizeResult, TokenizerConfig, TokenizerStats,
 };
 pub use tree_builder::{
     Html5TreeBuilder, PatchSink, SuspendReason, TreeBuilderConfig, TreeBuilderError,
