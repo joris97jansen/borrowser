@@ -114,6 +114,133 @@ fn finish_with_unconsumed_input_panics() {
 }
 
 #[test]
+fn tag_open_holds_on_lonely_lt_until_more_input() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<");
+
+    let res = tokenizer.push_input(&mut input);
+    assert!(
+        matches!(
+            res,
+            TokenizeResult::Progress | TokenizeResult::NeedMoreInput
+        ),
+        "unexpected first push result for lonely '<': {res:?}"
+    );
+    assert_eq!(tokenizer.cursor, 0, "cursor must stay on '<' while blocked");
+    assert_eq!(
+        tokenizer.push_input(&mut input),
+        TokenizeResult::NeedMoreInput,
+        "second pump with unchanged input must report NeedMoreInput"
+    );
+    assert_eq!(tokenizer.cursor, 0, "cursor must remain pinned on '<'");
+
+    input.push_str("x");
+    assert_push_ok(tokenizer.push_input(&mut input));
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    assert_eq!(tokens, vec!["EOF".to_string()]);
+}
+
+#[test]
+fn delimiter_paths_are_chunk_invariant_and_lossless() {
+    fn run(chunks: &[&str]) -> (Vec<String>, usize, usize, TokenizeResult) {
+        let mut ctx = DocumentParseContext::new();
+        let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+        let mut input = Input::new();
+        let mut out = Vec::new();
+        for chunk in chunks {
+            input.push_str(chunk);
+            let res = tokenizer.push_input(&mut input);
+            assert!(
+                matches!(
+                    res,
+                    TokenizeResult::NeedMoreInput | TokenizeResult::Progress
+                ),
+                "unexpected push result for chunks={chunks:?}: {res:?}"
+            );
+            out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
+        }
+        let cursor_before = tokenizer.cursor;
+        let res = tokenizer.push_input(&mut input);
+        let cursor_after = tokenizer.cursor;
+        assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+        out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
+        (out, cursor_before, cursor_after, res)
+    }
+
+    for sample in ["<x", "</x", "<!x", "&x"] {
+        let whole = run(&[sample]);
+        let split = run(&[&sample[..1], &sample[1..]]);
+        assert_eq!(
+            whole.0, split.0,
+            "tokens must be chunk-invariant for '{sample}'"
+        );
+        assert_eq!(
+            whole.3,
+            TokenizeResult::NeedMoreInput,
+            "whole-input run must settle to NeedMoreInput without extra input for '{sample}'"
+        );
+        assert_eq!(
+            split.3,
+            TokenizeResult::NeedMoreInput,
+            "chunked run must settle to NeedMoreInput without extra input for '{sample}'"
+        );
+        assert_eq!(
+            whole.1, whole.2,
+            "whole-input cursor must not advance when no new input is appended for '{sample}'"
+        );
+        assert_eq!(
+            split.1, split.2,
+            "chunked cursor must not advance when no new input is appended for '{sample}'"
+        );
+    }
+}
+
+#[test]
+fn partial_markup_prefix_splits_are_resume_safe() {
+    let patterns = ["</", "<!--", "<!DOCT"];
+    for pattern in patterns {
+        for split in 1..pattern.len() {
+            let mut ctx = DocumentParseContext::new();
+            let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+            let mut input = Input::new();
+
+            input.push_str(&pattern[..split]);
+            let first = tokenizer.push_input(&mut input);
+            assert!(
+                matches!(
+                    first,
+                    TokenizeResult::NeedMoreInput | TokenizeResult::Progress
+                ),
+                "unexpected first result for pattern='{pattern}' split={split}: {first:?}"
+            );
+            let cursor_after_first = tokenizer.cursor;
+            assert_eq!(
+                tokenizer.push_input(&mut input),
+                TokenizeResult::NeedMoreInput,
+                "second pump must block on incomplete prefix pattern='{pattern}' split={split}"
+            );
+            assert_eq!(
+                tokenizer.cursor, cursor_after_first,
+                "cursor must stay pinned while awaiting more input pattern='{pattern}' split={split}"
+            );
+
+            input.push_str(&pattern[split..]);
+            assert_push_ok(tokenizer.push_input(&mut input));
+            assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+            let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+            assert_eq!(
+                tokens,
+                vec!["EOF".to_string()],
+                "unexpected token output for pattern='{pattern}' split={split}"
+            );
+        }
+    }
+}
+
+#[test]
 fn token_fmt_is_deterministic_and_preserves_attribute_order() {
     struct Resolver;
     impl super::TextResolver for Resolver {

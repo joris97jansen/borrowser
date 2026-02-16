@@ -14,6 +14,7 @@
 //!   resolver.
 
 use crate::html5::shared::{DocumentParseContext, Input, TextSpan, Token};
+use input::MatchResult;
 use states::TokenizerState;
 
 mod emit;
@@ -286,10 +287,13 @@ impl Html5Tokenizer {
     }
 
     fn step(&mut self, input: &Input) -> Step {
+        self.assert_cursor_on_char_boundary(input);
         // Explicit dispatcher scaffold. New states should be implemented as
         // dedicated handlers that return `Step::Progress` or `Step::NeedMoreInput`.
         match self.state {
             TokenizerState::Data => self.step_data(input),
+            TokenizerState::TagOpen => self.step_tag_open_scaffold(input),
+            TokenizerState::CharacterReference => self.step_character_reference_scaffold(input),
             // Placeholder: state families are wired into the dispatcher now,
             // behavior will land incrementally in follow-up issues.
             _ => {
@@ -309,12 +313,104 @@ impl Html5Tokenizer {
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
         }
-        // Temporary E1 scaffold: consume all buffered input to validate streaming
-        // contracts and pump semantics. Replace with per-codepoint consumption and
-        // spec reconsume behavior in E3+ state implementations.
-        let progressed = self.consume_all_available_input_scaffold_only(input);
-        assert!(progressed, "data state must make progress if input remains");
+        if self.peek(input) == Some('<') {
+            self.transition_to(TokenizerState::TagOpen);
+            return Step::Progress;
+        }
+        if self.peek(input) == Some('&') {
+            self.transition_to(TokenizerState::CharacterReference);
+            return Step::Progress;
+        }
+        // Data-state scaffold: consume text runs only, stopping at markup/entity
+        // delimiters so subsequent states can observe `<`/`&`.
+        let consumed = self.consume_while(input, |ch| ch != '<' && ch != '&');
+        assert!(
+            consumed > 0,
+            "data state must make progress if input remains"
+        );
         Step::Progress
+    }
+
+    fn step_tag_open_scaffold(&mut self, input: &Input) -> Step {
+        debug_assert_eq!(self.state, TokenizerState::TagOpen);
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        assert_eq!(
+            self.peek(input),
+            Some('<'),
+            "TagOpen scaffold expects cursor at '<'"
+        );
+
+        let next = self.peek_next_char(input);
+        match next {
+            None => Step::NeedMoreInput,
+            Some('/') => {
+                if matches!(
+                    self.match_ascii_prefix(input, b"</"),
+                    MatchResult::NeedMoreInput
+                ) {
+                    return Step::NeedMoreInput;
+                }
+                self.consume_expect(input, '<', "TagOpen scaffold");
+                self.consume_expect(input, '/', "EndTagOpen scaffold entry");
+                self.transition_to(TokenizerState::EndTagOpen);
+                Step::Progress
+            }
+            Some('!') => {
+                // Keep TagOpen narrow: only dispatch `<!` into
+                // MarkupDeclarationOpen. Prefix classification (comments,
+                // doctype, bogus markup) belongs in MarkupDeclarationOpen.
+                if matches!(
+                    self.match_ascii_prefix(input, b"<!"),
+                    MatchResult::NeedMoreInput
+                ) {
+                    return Step::NeedMoreInput;
+                }
+                self.consume_expect(input, '<', "TagOpen scaffold");
+                self.consume_expect(input, '!', "MarkupDeclarationOpen scaffold entry");
+                // NOTE: DOCTYPE matching is ASCII case-insensitive (`<!DOCTYPE`).
+                // Implement that in MarkupDeclarationOpen state handlers.
+                self.transition_to(TokenizerState::MarkupDeclarationOpen);
+                Step::Progress
+            }
+            Some(ch) if ch.is_ascii_alphabetic() => {
+                self.consume_expect(input, '<', "TagOpen scaffold");
+                self.transition_to(TokenizerState::TagName);
+                Step::Progress
+            }
+            Some(_) => {
+                // Fallback scaffold: treat `<` as data by consuming it and
+                // returning to Data, where subsequent input is consumed normally.
+                self.consume_expect(input, '<', "TagOpen fallback");
+                self.transition_to(TokenizerState::Data);
+                Step::Progress
+            }
+        }
+    }
+
+    fn step_character_reference_scaffold(&mut self, input: &Input) -> Step {
+        debug_assert_eq!(self.state, TokenizerState::CharacterReference);
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        let consumed = self.consume(input);
+        assert_eq!(
+            consumed,
+            Some('&'),
+            "CharacterReference scaffold must consume '&'"
+        );
+        self.transition_to(TokenizerState::Data);
+        Step::Progress
+    }
+
+    fn consume_expect(&mut self, input: &Input, expected: char, context: &str) {
+        let consumed = self.consume(input);
+        assert_eq!(
+            consumed,
+            Some(expected),
+            "{context} must consume '{expected}'"
+        );
     }
 }
 
