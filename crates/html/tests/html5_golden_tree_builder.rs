@@ -346,7 +346,7 @@ fn run_tree_builder_impl(
     let mut push_and_drain = |chunk: &str| -> Result<(), String> {
         input.push_str(chunk);
         handle_tokenize_result(
-            tokenizer.push_input(&mut input),
+            tokenizer.push_input(&mut input, &mut ctx),
             fixture,
             plan_label,
             "push_input",
