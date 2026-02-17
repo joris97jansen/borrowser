@@ -53,7 +53,7 @@ impl Html5ParseSession {
     pub fn pump(&mut self) -> Result<(), Html5SessionError> {
         // TODO(html5): decide whether pump should loop until blocked (NeedMoreInput/suspend)
         // or remain single-batch for fairness; update this when suspension is implemented.
-        let result = self.tokenizer.push_input(&mut self.input);
+        let result = self.tokenizer.push_input(&mut self.input, &mut self.ctx);
         // Currently single-batch for fairness; once suspend is implemented we may loop
         // until NeedMoreInput or suspension.
         let _ = result;

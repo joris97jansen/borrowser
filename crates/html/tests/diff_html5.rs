@@ -201,7 +201,7 @@ fn normalize_html5_tokens(
 
     input.push_str(input_html);
     loop {
-        let result = tokenizer.push_input(&mut input);
+        let result = tokenizer.push_input(&mut input, &mut ctx);
         handle_tokenize_result(result, "push_input")
             .map_err(|err| format!("tokenizer error in '{}' at {:?}: {err}", case_id, case_path))?;
         drain_norm_tokens(
@@ -249,7 +249,7 @@ fn run_html5_dom(input_html: &str, case_id: &str, case_path: &Path) -> Result<ht
 
     input.push_str(input_html);
     loop {
-        let result = tokenizer.push_input(&mut input);
+        let result = tokenizer.push_input(&mut input, &mut ctx);
         handle_tokenize_result(result, "push_input")
             .map_err(|err| format!("tokenizer error in '{}' at {:?}: {err}", case_id, case_path))?;
         drain_batches(

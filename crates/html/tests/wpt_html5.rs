@@ -673,7 +673,7 @@ fn run_tree_builder_whole(
     let mut saw_eof_token = false;
 
     input.push_str(input_html);
-    handle_tokenize_result(tokenizer.push_input(&mut input), "push_input")?;
+    handle_tokenize_result(tokenizer.push_input(&mut input, &mut ctx), "push_input")?;
     drain_batches(
         &mut tokenizer,
         &mut input,
@@ -731,7 +731,9 @@ fn run_tree_builder_chunked(
             return;
         }
         input.push_str(chunk_str);
-        if let Err(err) = handle_tokenize_result(tokenizer.push_input(&mut input), "push_input") {
+        if let Err(err) =
+            handle_tokenize_result(tokenizer.push_input(&mut input, &mut ctx), "push_input")
+        {
             error = Some(format!("case '{}' [{plan_label}] error: {err}", case_id));
             return;
         }
@@ -778,7 +780,7 @@ fn run_tokenizer_whole(input_html: &str, case_id: &str) -> Result<Vec<String>, S
     let mut input = Input::new();
     let mut saw_eof_token = false;
     input.push_str(input_html);
-    handle_tokenize_result(tokenizer.push_input(&mut input), "push_input")?;
+    handle_tokenize_result(tokenizer.push_input(&mut input, &mut ctx), "push_input")?;
     let mut out = Vec::new();
     let mut index = 0usize;
     let context = token_snapshot::TokenFormatContext {
@@ -846,7 +848,9 @@ fn run_tokenizer_chunked(
             return;
         }
         input.push_str(chunk_str);
-        if let Err(err) = handle_tokenize_result(tokenizer.push_input(&mut input), "push_input") {
+        if let Err(err) =
+            handle_tokenize_result(tokenizer.push_input(&mut input, &mut ctx), "push_input")
+        {
             error = Some(format!("case '{}' [{plan_label}] error: {err}", case_id));
             return;
         }

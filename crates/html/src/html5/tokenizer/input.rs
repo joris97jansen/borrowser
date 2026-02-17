@@ -57,12 +57,16 @@ impl Html5Tokenizer {
     /// without consuming any input.
     pub(super) fn peek_next_char(&self, input: &Input) -> Option<char> {
         self.assert_cursor_on_char_boundary(input);
-        if !self.has_unconsumed_input(input) {
+        let text = input.as_str();
+        if self.cursor >= text.len() {
             return None;
         }
-        let mut chars = input.as_str()[self.cursor..].chars();
-        let _ = chars.next();
-        chars.next()
+        let first = text[self.cursor..].chars().next()?;
+        let next_offset = self.cursor.saturating_add(first.len_utf8());
+        if next_offset >= text.len() {
+            return None;
+        }
+        text[next_offset..].chars().next()
     }
 
     /// Consume as long as predicate matches and return consumed byte count.
@@ -101,6 +105,32 @@ impl Html5Tokenizer {
         let prefix_len = tail.len().min(pattern.len());
         if tail[..prefix_len] != pattern[..prefix_len] {
             return MatchResult::NoMatch;
+        }
+        if tail.len() < pattern.len() {
+            return MatchResult::NeedMoreInput;
+        }
+        MatchResult::Matched
+    }
+
+    pub(super) fn match_ascii_prefix_ci(&self, input: &Input, pattern: &[u8]) -> MatchResult {
+        self.assert_cursor_on_char_boundary(input);
+        debug_assert!(
+            pattern.iter().all(u8::is_ascii),
+            "match_ascii_prefix_ci is intended for ASCII tokenizer prefixes"
+        );
+        if pattern.is_empty() {
+            return MatchResult::Matched;
+        }
+        let bytes = input.as_str().as_bytes();
+        if self.cursor >= bytes.len() {
+            return MatchResult::NeedMoreInput;
+        }
+        let tail = &bytes[self.cursor..];
+        let prefix_len = tail.len().min(pattern.len());
+        for i in 0..prefix_len {
+            if !tail[i].eq_ignore_ascii_case(&pattern[i]) {
+                return MatchResult::NoMatch;
+            }
         }
         if tail.len() < pattern.len() {
             return MatchResult::NeedMoreInput;
@@ -193,5 +223,23 @@ mod tests {
             MatchResult::NoMatch
         );
         assert_eq!(tokenizer.cursor, 0);
+    }
+
+    #[test]
+    fn peek_next_char_none_for_lonely_lt() {
+        let mut input = Input::new();
+        input.push_str("<");
+        let tokenizer = new_tokenizer();
+        assert_eq!(tokenizer.peek(&input), Some('<'));
+        assert_eq!(tokenizer.peek_next_char(&input), None);
+    }
+
+    #[test]
+    fn peek_next_char_utf8_safe_lookahead() {
+        let mut input = Input::new();
+        input.push_str("<🙂");
+        let tokenizer = new_tokenizer();
+        assert_eq!(tokenizer.peek(&input), Some('<'));
+        assert_eq!(tokenizer.peek_next_char(&input), Some('🙂'));
     }
 }

@@ -284,7 +284,7 @@ fn run_tokenizer_whole(fixture: &Fixture) -> Vec<String> {
     let mut buffer = Input::new();
     buffer.push_str(&fixture.input);
     handle_tokenize_result(
-        tokenizer.push_input(&mut buffer),
+        tokenizer.push_input(&mut buffer, &mut ctx),
         fixture,
         Mode::WholeInput,
         None,
@@ -330,7 +330,7 @@ fn run_tokenizer_chunked(fixture: &Fixture, plan: &ChunkPlan, plan_label: &str) 
         });
         buffer.push_str(chunk_str);
         handle_tokenize_result(
-            tokenizer.push_input(&mut buffer),
+            tokenizer.push_input(&mut buffer, &mut ctx),
             fixture,
             Mode::ChunkedInput,
             Some(plan_label),
