@@ -105,6 +105,7 @@ pub struct Html5Tokenizer {
     cursor: usize,
     tokens: Vec<Token>,
     pending_text_start: Option<usize>,
+    pending_comment_start: Option<usize>,
     tag_name_start: Option<usize>,
     tag_name_end: Option<usize>,
     tag_name_complete: bool,
@@ -124,6 +125,7 @@ impl Html5Tokenizer {
             cursor: 0,
             tokens: Vec::new(),
             pending_text_start: None,
+            pending_comment_start: None,
             tag_name_start: None,
             tag_name_end: None,
             tag_name_complete: false,
@@ -323,6 +325,7 @@ impl Html5Tokenizer {
             TokenizerState::EndTagOpen => self.step_end_tag_open(input),
             TokenizerState::TagName => self.step_tag_name(input, ctx),
             TokenizerState::MarkupDeclarationOpen => self.step_markup_declaration_open(input, ctx),
+            TokenizerState::Comment => self.step_comment(input),
             // Placeholder: state families are wired into the dispatcher now,
             // behavior will land incrementally in follow-up issues.
             _ => {
@@ -537,18 +540,23 @@ impl Html5Tokenizer {
         // We enter this state after consuming "<!", so cursor is at declaration body.
         match self.match_ascii_prefix_ci(input, b"DOCTYPE") {
             MatchResult::Matched => {
+                // Transactional parse: only consume once full declaration through
+                // '>' is present, so chunked input cannot lose declaration context.
+                let text = input.as_str();
                 let payload_start = self.cursor;
-                let consumed = self.consume_ascii_sequence_ci(input, b"DOCTYPE");
-                debug_assert!(consumed, "matched doctype prefix must be consumable");
-
-                let _ = self.consume_while(input, |ch| ch != '>');
-                if self.peek(input) != Some('>') {
+                let prefix_len = b"DOCTYPE".len();
+                let after_prefix = payload_start + prefix_len;
+                if after_prefix > text.len() {
                     return Step::NeedMoreInput;
                 }
-                let payload_end = self.cursor;
-                let _ = self.consume_if(input, '>');
+                let close_rel = match text[after_prefix..].find('>') {
+                    Some(pos) => pos,
+                    None => return Step::NeedMoreInput,
+                };
+                let payload_end = after_prefix + close_rel;
+                self.cursor = payload_end + 1;
 
-                let raw = input.as_str()[payload_start..payload_end].trim();
+                let raw = text[payload_start..payload_end].trim();
                 let name = if raw.is_empty() {
                     None
                 } else {
@@ -571,27 +579,9 @@ impl Html5Tokenizer {
             MatchResult::Matched => {
                 let consumed = self.consume_ascii_sequence(input, b"--");
                 debug_assert!(consumed, "matched comment prefix must be consumable");
-                let comment_start = self.cursor;
-                loop {
-                    match self.match_ascii_prefix(input, b"-->") {
-                        MatchResult::Matched => {
-                            let comment_end = self.cursor;
-                            let consumed_end = self.consume_ascii_sequence(input, b"-->");
-                            debug_assert!(consumed_end, "matched comment close must be consumable");
-                            self.emit_token(Token::Comment {
-                                text: TextValue::Span(TextSpan::new(comment_start, comment_end)),
-                            });
-                            self.transition_to(TokenizerState::Data);
-                            return Step::Progress;
-                        }
-                        MatchResult::NeedMoreInput => return Step::NeedMoreInput,
-                        MatchResult::NoMatch => {
-                            if self.consume(input).is_none() {
-                                return Step::NeedMoreInput;
-                            }
-                        }
-                    }
-                }
+                self.pending_comment_start = Some(self.cursor);
+                self.transition_to(TokenizerState::Comment);
+                return Step::Progress;
             }
             MatchResult::NeedMoreInput => return Step::NeedMoreInput,
             MatchResult::NoMatch => {}
@@ -600,6 +590,49 @@ impl Html5Tokenizer {
         // Core v0 fallback for unsupported declarations.
         self.emit_text_owned("<!");
         self.transition_to(TokenizerState::Data);
+        Step::Progress
+    }
+
+    fn step_comment(&mut self, input: &Input) -> Step {
+        debug_assert_eq!(self.state, TokenizerState::Comment);
+        let comment_start = match self.pending_comment_start {
+            Some(start) => start,
+            None => {
+                self.transition_to(TokenizerState::Data);
+                return Step::Progress;
+            }
+        };
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+
+        let bytes = input.as_str().as_bytes();
+        let tail = &bytes[self.cursor..];
+        if let Some(pos) = tail.windows(3).position(|w| w == b"-->") {
+            let comment_end = self.cursor + pos;
+            self.emit_token(Token::Comment {
+                text: TextValue::Span(TextSpan::new(comment_start, comment_end)),
+            });
+            self.cursor = comment_end + 3;
+            self.pending_comment_start = None;
+            self.transition_to(TokenizerState::Data);
+            return Step::Progress;
+        }
+
+        // Keep the trailing two bytes in-buffer so a split "-->" terminator can
+        // be recognized when the next chunk is appended.
+        let len = input.as_str().len();
+        if len.saturating_sub(self.cursor) <= 2 {
+            return Step::NeedMoreInput;
+        }
+        let mut new_cursor = len - 2;
+        while new_cursor > self.cursor && !input.as_str().is_char_boundary(new_cursor) {
+            new_cursor -= 1;
+        }
+        if new_cursor == self.cursor {
+            return Step::NeedMoreInput;
+        }
+        self.cursor = new_cursor;
         Step::Progress
     }
 
@@ -628,29 +661,6 @@ impl Html5Tokenizer {
                 debug_assert!(
                     false,
                     "consume_ascii_sequence called without confirmed prefix: {:?}",
-                    seq
-                );
-                false
-            }
-        }
-    }
-
-    fn consume_ascii_sequence_ci(&mut self, input: &Input, seq: &[u8]) -> bool {
-        match self.match_ascii_prefix_ci(input, seq) {
-            MatchResult::Matched => {
-                let new_cursor = self.cursor + seq.len();
-                debug_assert!(
-                    new_cursor <= input.as_str().len(),
-                    "consume_ascii_sequence_ci moved cursor out of bounds"
-                );
-                self.cursor = new_cursor;
-                true
-            }
-            MatchResult::NeedMoreInput => false,
-            MatchResult::NoMatch => {
-                debug_assert!(
-                    false,
-                    "consume_ascii_sequence_ci called without confirmed prefix: {:?}",
                     seq
                 );
                 false
