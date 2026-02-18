@@ -1,4 +1,4 @@
-use super::{Html5Tokenizer, TokenBatch, TokenFmt, TokenizeResult, TokenizerConfig};
+use super::{Html5Tokenizer, TextResolver, TokenFmt, TokenizeResult, TokenizerConfig};
 use crate::html5::shared::{
     Attribute, AttributeValue, DocumentParseContext, Input, TextValue, Token,
 };
@@ -51,7 +51,7 @@ fn tokenizer_api_compiles() {
     assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
     let _ = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
 
-    let batch: TokenBatch<'_> = tokenizer.next_batch(&mut input);
+    let batch = tokenizer.next_batch(&mut input);
     assert!(batch.tokens().is_empty());
     let _ = batch.resolver();
 }
@@ -276,6 +276,215 @@ fn basic_tag_states_emit_expected_tokens() {
 }
 
 #[test]
+fn core_v0_attribute_states_parse_expected_forms() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<div a b=foo c=\"\" d='' e=></div>");
+
+    assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=div attrs=[a b=\"foo\" c=\"\" d=\"\" e=\"\"] self_closing=false"
+                .to_string(),
+            "END name=div".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn duplicate_attributes_are_dropped_first_wins() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<div a=1 a=2 A=3 b=4 b=5></div>");
+
+    assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=div attrs=[a=\"1\" b=\"4\"] self_closing=false".to_string(),
+            "END name=div".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn self_closing_start_tag_state_sets_flag() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<input a=\"x\" />");
+
+    assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=input attrs=[a=\"x\"] self_closing=true".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn tokenizer_self_closing_flag_reflects_syntax_not_voidness() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<br><br/>");
+
+    assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=br attrs=[] self_closing=false".to_string(),
+            "START name=br attrs=[] self_closing=true".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn unquoted_attribute_value_terminates_on_invalid_delimiters() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<div a=foo\"bar></div>");
+
+    assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    // Core v0 recovery policy: an invalid delimiter terminates the unquoted
+    // value, then remaining bytes continue through attribute parsing.
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=div attrs=[a=\"foo\" bar] self_closing=false".to_string(),
+            "END name=div".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn unquoted_invalid_delimiter_split_is_invariant() {
+    fn run(chunks: &[&str]) -> Vec<String> {
+        let mut ctx = DocumentParseContext::new();
+        let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+        let mut input = Input::new();
+        let mut out = Vec::new();
+        for chunk in chunks {
+            input.push_str(chunk);
+            assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+            out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
+        }
+        assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+        out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
+        out
+    }
+
+    let whole = run(&["<div a=foo\"bar></div>"]);
+    let split = run(&["<div a=foo", "\"bar></div>"]);
+    assert_eq!(whole, split);
+    assert_eq!(
+        whole,
+        vec![
+            "START name=div attrs=[a=\"foo\" bar] self_closing=false".to_string(),
+            "END name=div".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn unquoted_attribute_value_terminates_on_question_mark() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<div a=foo?bar></div>");
+
+    assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=div attrs=[a=\"foo\" bar] self_closing=false".to_string(),
+            "END name=div".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn quoted_attribute_value_split_at_closing_quote_is_invariant() {
+    fn run(chunks: &[&str]) -> Vec<String> {
+        let mut ctx = DocumentParseContext::new();
+        let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+        let mut input = Input::new();
+        let mut out = Vec::new();
+        for chunk in chunks {
+            input.push_str(chunk);
+            assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+            out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
+        }
+        assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+        out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
+        out
+    }
+
+    let whole = run(&["<div a=\"hello\" b=1>"]);
+    let split = run(&["<div a=\"hello", "\" b=1>"]);
+    assert_eq!(whole, split);
+    assert_eq!(
+        whole,
+        vec![
+            "START name=div attrs=[a=\"hello\" b=\"1\"] self_closing=false".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn attribute_chunk_splits_are_invariant_across_boundaries() {
+    fn run(chunks: &[&str]) -> Vec<String> {
+        let mut ctx = DocumentParseContext::new();
+        let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+        let mut input = Input::new();
+        let mut out = Vec::new();
+        for chunk in chunks {
+            input.push_str(chunk);
+            assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+            out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
+        }
+        assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+        out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
+        out
+    }
+
+    let sample = "<div a=\"hello\" b='x y' c=foo d e=\"\"/>";
+    let whole = run(&[sample]);
+    for split in 1..sample.len() {
+        let chunked = run(&[&sample[..split], &sample[split..]]);
+        assert_eq!(
+            whole, chunked,
+            "attribute token stream must be chunk-invariant for split={split}"
+        );
+    }
+}
+
+#[test]
 fn markup_declaration_open_emits_doctype_token() {
     let mut ctx = DocumentParseContext::new();
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
@@ -438,7 +647,7 @@ fn token_fmt_text_is_storage_model_agnostic() {
     }
 
     let span_token = Token::Text {
-        text: TextValue::Span(crate::html5::shared::Span::new(0, 0)),
+        text: TextValue::Span(crate::html5::shared::TextSpan::new(0, 0)),
     };
     let owned_token = Token::Text {
         text: TextValue::Owned("hello".to_string()),
@@ -454,4 +663,30 @@ fn token_fmt_text_is_storage_model_agnostic() {
         .expect("owned text token fmt should succeed");
     assert_eq!(span_rendered, owned_rendered);
     assert_eq!(span_rendered, "CHAR text=\"hello\"");
+}
+
+#[test]
+fn resolver_rejects_invalid_span() {
+    struct Resolver<'a>(&'a str);
+    impl<'a> super::TextResolver for Resolver<'a> {
+        fn resolve_span(
+            &self,
+            span: crate::html5::shared::TextSpan,
+        ) -> Result<&str, super::TextResolveError> {
+            let text = self.0;
+            if !(span.start <= span.end
+                && span.end <= text.len()
+                && text.is_char_boundary(span.start)
+                && text.is_char_boundary(span.end))
+            {
+                return Err(super::TextResolveError::InvalidSpan { span });
+            }
+            Ok(&text[span.start..span.end])
+        }
+    }
+    let resolver = Resolver("hi");
+    let err = resolver
+        .resolve_span(crate::html5::shared::TextSpan::new(0, 999))
+        .expect_err("resolver must reject out-of-bounds span");
+    assert!(matches!(err, super::TextResolveError::InvalidSpan { .. }));
 }

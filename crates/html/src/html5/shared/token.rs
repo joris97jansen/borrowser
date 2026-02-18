@@ -7,7 +7,8 @@ use super::{AtomId, TextSpan};
 /// Determinism contract:
 /// - Attributes on a `StartTag` are stored in encounter order.
 /// - The tokenizer does not sort attributes and does not use hash-based storage.
-/// - Duplicate attributes are preserved at tokenization stage (tree-builder policy).
+/// - Duplicate attributes in a single start tag are dropped after the first
+///   occurrence (HTML tokenizer "first-wins" behavior).
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Attribute {
     pub name: AtomId,

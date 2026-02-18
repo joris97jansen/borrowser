@@ -18,6 +18,8 @@ pub(crate) enum TokenizerState {
     AttributeValueDoubleQuoted,
     AttributeValueSingleQuoted,
     AttributeValueUnquoted,
+    AfterAttributeValueQuoted,
+    SelfClosingStartTag,
     MarkupDeclarationOpen,
     CommentStart,
     CommentStartDash,
