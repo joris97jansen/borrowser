@@ -110,6 +110,13 @@ pub struct Html5Tokenizer {
     tag_name_end: Option<usize>,
     tag_name_complete: bool,
     current_tag_is_end: bool,
+    current_tag_self_closing: bool,
+    current_tag_attrs: Vec<Attribute>,
+    current_attr_name_start: Option<usize>,
+    current_attr_name_end: Option<usize>,
+    current_attr_has_value: bool,
+    current_attr_value_start: Option<usize>,
+    current_attr_value_end: Option<usize>,
     end_tag_prefix_consumed: bool,
     input_id: Option<u64>,
     end_of_stream: bool,
@@ -130,6 +137,13 @@ impl Html5Tokenizer {
             tag_name_end: None,
             tag_name_complete: false,
             current_tag_is_end: false,
+            current_tag_self_closing: false,
+            current_tag_attrs: Vec::new(),
+            current_attr_name_start: None,
+            current_attr_name_end: None,
+            current_attr_has_value: false,
+            current_attr_value_start: None,
+            current_attr_value_end: None,
             end_tag_prefix_consumed: false,
             input_id: None,
             end_of_stream: false,
@@ -324,6 +338,23 @@ impl Html5Tokenizer {
             TokenizerState::TagOpen => self.step_tag_open(input),
             TokenizerState::EndTagOpen => self.step_end_tag_open(input),
             TokenizerState::TagName => self.step_tag_name(input, ctx),
+            TokenizerState::BeforeAttributeName => self.step_before_attribute_name(input, ctx),
+            TokenizerState::AttributeName => self.step_attribute_name(input, ctx),
+            TokenizerState::AfterAttributeName => self.step_after_attribute_name(input, ctx),
+            TokenizerState::BeforeAttributeValue => self.step_before_attribute_value(input, ctx),
+            TokenizerState::AttributeValueDoubleQuoted => {
+                self.step_attribute_value_double_quoted(input)
+            }
+            TokenizerState::AttributeValueSingleQuoted => {
+                self.step_attribute_value_single_quoted(input)
+            }
+            TokenizerState::AttributeValueUnquoted => {
+                self.step_attribute_value_unquoted(input, ctx)
+            }
+            TokenizerState::AfterAttributeValueQuoted => {
+                self.step_after_attribute_value_quoted(input, ctx)
+            }
+            TokenizerState::SelfClosingStartTag => self.step_self_closing_start_tag(input, ctx),
             TokenizerState::MarkupDeclarationOpen => self.step_markup_declaration_open(input, ctx),
             TokenizerState::Comment => self.step_comment(input),
             // Placeholder: state families are wired into the dispatcher now,
@@ -388,6 +419,7 @@ impl Html5Tokenizer {
                 let consumed = self.consume_ascii_sequence(input, b"</");
                 debug_assert!(consumed, "matched prefix must be consumable");
                 self.end_tag_prefix_consumed = true;
+                self.clear_current_attribute();
                 self.transition_to(TokenizerState::EndTagOpen);
                 return Step::Progress;
             }
@@ -416,6 +448,9 @@ impl Html5Tokenizer {
                 self.tag_name_end = None;
                 self.tag_name_complete = false;
                 self.current_tag_is_end = false;
+                self.current_tag_self_closing = false;
+                self.current_tag_attrs.clear();
+                self.clear_current_attribute();
                 self.transition_to(TokenizerState::TagName);
                 Step::Progress
             }
@@ -442,6 +477,9 @@ impl Html5Tokenizer {
                 self.tag_name_end = None;
                 self.tag_name_complete = false;
                 self.current_tag_is_end = true;
+                self.current_tag_self_closing = false;
+                self.current_tag_attrs.clear();
+                self.clear_current_attribute();
                 self.end_tag_prefix_consumed = false;
                 self.transition_to(TokenizerState::TagName);
                 Step::Progress
@@ -501,30 +539,387 @@ impl Html5Tokenizer {
             }
         }
 
+        if self.current_tag_is_end {
+            match self.peek(input) {
+                Some('>') => {
+                    let _ = self.consume_if(input, '>');
+                    self.emit_current_tag(input, ctx);
+                    self.transition_to(TokenizerState::Data);
+                    Step::Progress
+                }
+                Some(_) => {
+                    // End tags do not carry attributes in Core v0; skip until close.
+                    let _ = self.consume(input);
+                    Step::Progress
+                }
+                None => Step::NeedMoreInput,
+            }
+        } else {
+            match self.peek(input) {
+                Some(ch) if ch.is_ascii_whitespace() => {
+                    let _ = self.consume_if(input, ch);
+                    self.transition_to(TokenizerState::BeforeAttributeName);
+                    Step::Progress
+                }
+                Some('/') => {
+                    let _ = self.consume_if(input, '/');
+                    self.transition_to(TokenizerState::SelfClosingStartTag);
+                    Step::Progress
+                }
+                Some('>') => {
+                    let _ = self.consume_if(input, '>');
+                    self.emit_current_tag(input, ctx);
+                    self.transition_to(TokenizerState::Data);
+                    Step::Progress
+                }
+                Some(_) => {
+                    // Recovery: consume unexpected bytes in tag context.
+                    let _ = self.consume(input);
+                    Step::Progress
+                }
+                None => Step::NeedMoreInput,
+            }
+        }
+    }
+
+    fn step_before_attribute_name(
+        &mut self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+    ) -> Step {
+        debug_assert_eq!(self.state, TokenizerState::BeforeAttributeName);
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
         match self.peek(input) {
+            Some(ch) if ch.is_ascii_whitespace() => {
+                let _ = self.consume_if(input, ch);
+                Step::Progress
+            }
+            Some('/') => {
+                let _ = self.consume_if(input, '/');
+                self.transition_to(TokenizerState::SelfClosingStartTag);
+                Step::Progress
+            }
             Some('>') => {
                 let _ = self.consume_if(input, '>');
                 self.emit_current_tag(input, ctx);
                 self.transition_to(TokenizerState::Data);
                 Step::Progress
             }
-            Some('/') => {
-                // Core v0: self-closing and attributes are not parsed yet.
-                let _ = self.consume_if(input, '/');
-                Step::Progress
-            }
-            Some(ch) if ch.is_ascii_whitespace() => {
-                // Core v0: skip attributes payload until tag close.
-                let _ = self.consume_if(input, ch);
+            Some('"') | Some('\'') | Some('<') | Some('=') | Some('`') | Some('?') => {
+                // Core v0 recovery policy (broad): in BeforeAttributeName we drop
+                // delimiter-like/junk bytes that are not valid attribute-name
+                // starts, regardless of how we entered this state (including, but
+                // not limited to, unquoted-value recovery). This keeps name
+                // tokenization deterministic under malformed input.
+                let _ = self.consume(input);
                 Step::Progress
             }
             Some(_) => {
-                // Recovery: unknown byte in tag context, consume and continue.
-                let _ = self.consume(input);
+                self.current_attr_name_start = Some(self.cursor);
+                self.current_attr_name_end = None;
+                self.current_attr_has_value = false;
+                self.current_attr_value_start = None;
+                self.current_attr_value_end = None;
+                self.transition_to(TokenizerState::AttributeName);
                 Step::Progress
             }
             None => Step::NeedMoreInput,
         }
+    }
+
+    fn step_attribute_name(&mut self, input: &Input, _ctx: &mut DocumentParseContext) -> Step {
+        debug_assert_eq!(self.state, TokenizerState::AttributeName);
+        if self.current_attr_name_start.is_none() {
+            self.transition_to(TokenizerState::BeforeAttributeName);
+            return Step::Progress;
+        }
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        let consumed = self.consume_while(input, |ch| !is_attribute_name_stop(ch));
+        if consumed > 0 {
+            self.current_attr_name_end = Some(self.cursor);
+        }
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        match self.peek(input) {
+            Some(ch) if ch.is_ascii_whitespace() => {
+                let _ = self.consume_if(input, ch);
+                self.transition_to(TokenizerState::AfterAttributeName);
+                Step::Progress
+            }
+            Some('/') => {
+                self.transition_to(TokenizerState::AfterAttributeName);
+                Step::Progress
+            }
+            Some('>') => {
+                self.transition_to(TokenizerState::AfterAttributeName);
+                Step::Progress
+            }
+            Some('=') => {
+                let _ = self.consume_if(input, '=');
+                self.current_attr_has_value = true;
+                self.transition_to(TokenizerState::BeforeAttributeValue);
+                Step::Progress
+            }
+            Some(_) => {
+                // Core v0 policy: preserve non-stop bytes in attribute names.
+                let _ = self.consume(input);
+                self.current_attr_name_end = Some(self.cursor);
+                Step::Progress
+            }
+            None => Step::NeedMoreInput,
+        }
+    }
+
+    fn step_after_attribute_name(&mut self, input: &Input, ctx: &mut DocumentParseContext) -> Step {
+        debug_assert_eq!(self.state, TokenizerState::AfterAttributeName);
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        match self.peek(input) {
+            Some(ch) if ch.is_ascii_whitespace() => {
+                let _ = self.consume_if(input, ch);
+                Step::Progress
+            }
+            Some('/') => {
+                self.finalize_current_attribute(input, ctx);
+                let _ = self.consume_if(input, '/');
+                self.transition_to(TokenizerState::SelfClosingStartTag);
+                Step::Progress
+            }
+            Some('=') => {
+                let _ = self.consume_if(input, '=');
+                self.current_attr_has_value = true;
+                self.transition_to(TokenizerState::BeforeAttributeValue);
+                Step::Progress
+            }
+            Some('>') => {
+                self.finalize_current_attribute(input, ctx);
+                let _ = self.consume_if(input, '>');
+                self.emit_current_tag(input, ctx);
+                self.transition_to(TokenizerState::Data);
+                Step::Progress
+            }
+            Some(_) => {
+                self.finalize_current_attribute(input, ctx);
+                self.current_attr_name_start = Some(self.cursor);
+                self.current_attr_name_end = None;
+                self.current_attr_has_value = false;
+                self.current_attr_value_start = None;
+                self.current_attr_value_end = None;
+                self.transition_to(TokenizerState::AttributeName);
+                Step::Progress
+            }
+            None => Step::NeedMoreInput,
+        }
+    }
+
+    fn step_before_attribute_value(
+        &mut self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+    ) -> Step {
+        debug_assert_eq!(self.state, TokenizerState::BeforeAttributeValue);
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        match self.peek(input) {
+            Some(ch) if ch.is_ascii_whitespace() => {
+                let _ = self.consume_if(input, ch);
+                Step::Progress
+            }
+            Some('"') => {
+                let _ = self.consume_if(input, '"');
+                self.current_attr_has_value = true;
+                self.current_attr_value_start = Some(self.cursor);
+                self.current_attr_value_end = Some(self.cursor);
+                self.transition_to(TokenizerState::AttributeValueDoubleQuoted);
+                Step::Progress
+            }
+            Some('\'') => {
+                let _ = self.consume_if(input, '\'');
+                self.current_attr_has_value = true;
+                self.current_attr_value_start = Some(self.cursor);
+                self.current_attr_value_end = Some(self.cursor);
+                self.transition_to(TokenizerState::AttributeValueSingleQuoted);
+                Step::Progress
+            }
+            Some('>') => {
+                self.current_attr_has_value = true;
+                self.current_attr_value_start = Some(self.cursor);
+                self.current_attr_value_end = Some(self.cursor);
+                self.finalize_current_attribute(input, ctx);
+                let _ = self.consume_if(input, '>');
+                self.emit_current_tag(input, ctx);
+                self.transition_to(TokenizerState::Data);
+                Step::Progress
+            }
+            Some(_) => {
+                self.current_attr_has_value = true;
+                self.current_attr_value_start = Some(self.cursor);
+                self.current_attr_value_end = Some(self.cursor);
+                self.transition_to(TokenizerState::AttributeValueUnquoted);
+                Step::Progress
+            }
+            None => Step::NeedMoreInput,
+        }
+    }
+
+    fn step_attribute_value_double_quoted(&mut self, input: &Input) -> Step {
+        debug_assert_eq!(self.state, TokenizerState::AttributeValueDoubleQuoted);
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        let consumed = self.consume_while(input, |ch| ch != '"');
+        if consumed > 0 {
+            self.current_attr_value_end = Some(self.cursor);
+        }
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        if self.consume_if(input, '"') {
+            self.transition_to(TokenizerState::AfterAttributeValueQuoted);
+            Step::Progress
+        } else {
+            let _ = self.consume(input);
+            self.current_attr_value_end = Some(self.cursor);
+            Step::Progress
+        }
+    }
+
+    fn step_attribute_value_single_quoted(&mut self, input: &Input) -> Step {
+        debug_assert_eq!(self.state, TokenizerState::AttributeValueSingleQuoted);
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        let consumed = self.consume_while(input, |ch| ch != '\'');
+        if consumed > 0 {
+            self.current_attr_value_end = Some(self.cursor);
+        }
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        if self.consume_if(input, '\'') {
+            self.transition_to(TokenizerState::AfterAttributeValueQuoted);
+            Step::Progress
+        } else {
+            let _ = self.consume(input);
+            self.current_attr_value_end = Some(self.cursor);
+            Step::Progress
+        }
+    }
+
+    fn step_attribute_value_unquoted(
+        &mut self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+    ) -> Step {
+        debug_assert_eq!(self.state, TokenizerState::AttributeValueUnquoted);
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        let consumed = self.consume_while(input, |ch| !is_unquoted_attr_value_stop(ch));
+        if consumed > 0 {
+            self.current_attr_value_end = Some(self.cursor);
+        }
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        match self.peek(input) {
+            Some(ch) if ch.is_ascii_whitespace() => {
+                self.finalize_current_attribute(input, ctx);
+                let _ = self.consume_if(input, ch);
+                self.transition_to(TokenizerState::BeforeAttributeName);
+                Step::Progress
+            }
+            Some('/') => {
+                self.finalize_current_attribute(input, ctx);
+                let _ = self.consume_if(input, '/');
+                self.transition_to(TokenizerState::SelfClosingStartTag);
+                Step::Progress
+            }
+            Some('>') => {
+                self.finalize_current_attribute(input, ctx);
+                let _ = self.consume_if(input, '>');
+                self.emit_current_tag(input, ctx);
+                self.transition_to(TokenizerState::Data);
+                Step::Progress
+            }
+            Some('"') | Some('\'') | Some('<') | Some('=') | Some('`') | Some('?') => {
+                // Core v0 recovery: terminate current unquoted value and
+                // reconsume the delimiter in BeforeAttributeName.
+                self.finalize_current_attribute(input, ctx);
+                self.transition_to(TokenizerState::BeforeAttributeName);
+                Step::Progress
+            }
+            Some(_) => {
+                let _ = self.consume(input);
+                self.current_attr_value_end = Some(self.cursor);
+                Step::Progress
+            }
+            None => Step::NeedMoreInput,
+        }
+    }
+
+    fn step_after_attribute_value_quoted(
+        &mut self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+    ) -> Step {
+        debug_assert_eq!(self.state, TokenizerState::AfterAttributeValueQuoted);
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        match self.peek(input) {
+            Some(ch) if ch.is_ascii_whitespace() => {
+                self.finalize_current_attribute(input, ctx);
+                let _ = self.consume_if(input, ch);
+                self.transition_to(TokenizerState::BeforeAttributeName);
+                Step::Progress
+            }
+            Some('/') => {
+                self.finalize_current_attribute(input, ctx);
+                let _ = self.consume_if(input, '/');
+                self.transition_to(TokenizerState::SelfClosingStartTag);
+                Step::Progress
+            }
+            Some('>') => {
+                self.finalize_current_attribute(input, ctx);
+                let _ = self.consume_if(input, '>');
+                self.emit_current_tag(input, ctx);
+                self.transition_to(TokenizerState::Data);
+                Step::Progress
+            }
+            Some(_) => {
+                self.finalize_current_attribute(input, ctx);
+                self.transition_to(TokenizerState::BeforeAttributeName);
+                Step::Progress
+            }
+            None => Step::NeedMoreInput,
+        }
+    }
+
+    fn step_self_closing_start_tag(
+        &mut self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+    ) -> Step {
+        debug_assert_eq!(self.state, TokenizerState::SelfClosingStartTag);
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        if self.consume_if(input, '>') {
+            self.current_tag_self_closing = true;
+            self.emit_current_tag(input, ctx);
+            self.transition_to(TokenizerState::Data);
+            return Step::Progress;
+        }
+        self.transition_to(TokenizerState::BeforeAttributeName);
+        Step::Progress
     }
 
     fn step_markup_declaration_open(
@@ -668,6 +1063,57 @@ impl Html5Tokenizer {
         }
     }
 
+    fn clear_current_attribute(&mut self) {
+        self.current_attr_name_start = None;
+        self.current_attr_name_end = None;
+        self.current_attr_has_value = false;
+        self.current_attr_value_start = None;
+        self.current_attr_value_end = None;
+    }
+
+    fn finalize_current_attribute(&mut self, input: &Input, ctx: &mut DocumentParseContext) {
+        let (name_start, name_end) =
+            match (self.current_attr_name_start, self.current_attr_name_end) {
+                (Some(start), Some(end)) if start < end => (start, end),
+                _ => {
+                    self.clear_current_attribute();
+                    return;
+                }
+            };
+        if name_end > input.as_str().len() || name_start > name_end {
+            self.clear_current_attribute();
+            return;
+        }
+        let raw_name = &input.as_str()[name_start..name_end];
+        let name = ctx.atoms.intern_ascii_folded(raw_name);
+
+        // Duplicate attribute policy (Core v0): first-wins per start tag;
+        // later duplicates are dropped to match HTML tokenizer semantics.
+        if self.current_tag_attrs.iter().any(|attr| attr.name == name) {
+            self.clear_current_attribute();
+            return;
+        }
+
+        let value = if self.current_attr_has_value {
+            match (self.current_attr_value_start, self.current_attr_value_end) {
+                (Some(start), Some(end))
+                    if start <= end
+                        && end <= input.as_str().len()
+                        && input.as_str().is_char_boundary(start)
+                        && input.as_str().is_char_boundary(end) =>
+                {
+                    Some(AttributeValue::Span(TextSpan::new(start, end)))
+                }
+                _ => Some(AttributeValue::Owned(String::new())),
+            }
+        } else {
+            None
+        };
+
+        self.current_tag_attrs.push(Attribute { name, value });
+        self.clear_current_attribute();
+    }
+
     fn emit_text_span(&mut self, start: usize, end: usize) {
         if start == end {
             return;
@@ -691,8 +1137,7 @@ impl Html5Tokenizer {
             (Some(start), Some(end)) => (start, end),
             _ => return,
         };
-        let tag_end = self.cursor.saturating_sub(1);
-        if name_start > end || end > input.as_str().len() || tag_end > input.as_str().len() {
+        if name_start > end || end > input.as_str().len() {
             return;
         }
         let raw = &input.as_str()[name_start..end];
@@ -700,15 +1145,15 @@ impl Html5Tokenizer {
         // folding (`A-Z` -> `a-z`) and preserve non-ASCII bytes.
         let name = ctx.atoms.intern_ascii_folded(raw);
         if self.current_tag_is_end {
+            self.current_tag_self_closing = false;
+            self.current_tag_attrs.clear();
+            self.clear_current_attribute();
             self.emit_token(Token::EndTag { name });
         } else {
-            let tail = &input.as_str()[end..tag_end];
-            let (attrs, mut self_closing) = parse_start_tag_tail(tail, ctx);
-            if let Some(name_text) = ctx.atoms.resolve(name)
-                && is_html_void_tag(name_text)
-            {
-                self_closing = true;
-            }
+            let attrs = std::mem::take(&mut self.current_tag_attrs);
+            let self_closing = self.current_tag_self_closing;
+            self.current_tag_self_closing = false;
+            self.clear_current_attribute();
             self.emit_token(Token::StartTag {
                 name,
                 attrs,
@@ -733,125 +1178,22 @@ fn is_tag_name_stop(ch: char) -> bool {
     ch == '>' || ch == '/' || ch.is_ascii_whitespace()
 }
 
-fn parse_start_tag_tail(tail: &str, ctx: &mut DocumentParseContext) -> (Vec<Attribute>, bool) {
-    let mut attrs = Vec::new();
-    let mut self_closing = false;
-    let len = tail.len();
-    let mut i = 0usize;
-
-    while i < len {
-        while i < len {
-            let ch = tail[i..].chars().next().expect("valid utf-8");
-            if ch.is_ascii_whitespace() {
-                i += ch.len_utf8();
-            } else {
-                break;
-            }
-        }
-        if i >= len {
-            break;
-        }
-
-        let ch = tail[i..].chars().next().expect("valid utf-8");
-        if ch == '/' {
-            self_closing = true;
-            i += ch.len_utf8();
-            continue;
-        }
-
-        let name_start = i;
-        while i < len {
-            let ch = tail[i..].chars().next().expect("valid utf-8");
-            if ch.is_ascii_whitespace() || ch == '=' || ch == '/' {
-                break;
-            }
-            i += ch.len_utf8();
-        }
-        if name_start == i {
-            i += ch.len_utf8();
-            continue;
-        }
-        let attr_name = &tail[name_start..i];
-        let mut value = None;
-
-        while i < len {
-            let ch = tail[i..].chars().next().expect("valid utf-8");
-            if ch.is_ascii_whitespace() {
-                i += ch.len_utf8();
-            } else {
-                break;
-            }
-        }
-
-        if i < len && tail[i..].starts_with('=') {
-            i += '='.len_utf8();
-            while i < len {
-                let ch = tail[i..].chars().next().expect("valid utf-8");
-                if ch.is_ascii_whitespace() {
-                    i += ch.len_utf8();
-                } else {
-                    break;
-                }
-            }
-            if i < len {
-                let ch = tail[i..].chars().next().expect("valid utf-8");
-                if ch == '"' || ch == '\'' {
-                    i += ch.len_utf8();
-                    let value_start = i;
-                    while i < len {
-                        let vch = tail[i..].chars().next().expect("valid utf-8");
-                        if vch == ch {
-                            break;
-                        }
-                        i += vch.len_utf8();
-                    }
-                    value = Some(AttributeValue::Owned(tail[value_start..i].to_string()));
-                    if i < len {
-                        i += ch.len_utf8();
-                    }
-                } else {
-                    let value_start = i;
-                    while i < len {
-                        let vch = tail[i..].chars().next().expect("valid utf-8");
-                        if vch.is_ascii_whitespace() || vch == '/' {
-                            break;
-                        }
-                        i += vch.len_utf8();
-                    }
-                    value = Some(AttributeValue::Owned(tail[value_start..i].to_string()));
-                }
-            } else {
-                value = Some(AttributeValue::Owned(String::new()));
-            }
-        }
-
-        attrs.push(Attribute {
-            name: ctx.atoms.intern_ascii_folded(attr_name),
-            value,
-        });
-    }
-
-    (attrs, self_closing)
+fn is_attribute_name_stop(ch: char) -> bool {
+    // Core v0 attribute-name policy: consume bytes until one of
+    // whitespace, '/', '>', or '='. Other bytes are preserved as-is.
+    ch.is_ascii_whitespace() || ch == '/' || ch == '>' || ch == '='
 }
 
-fn is_html_void_tag(name: &str) -> bool {
-    matches!(
-        name,
-        "area"
-            | "base"
-            | "br"
-            | "col"
-            | "embed"
-            | "hr"
-            | "img"
-            | "input"
-            | "link"
-            | "meta"
-            | "param"
-            | "source"
-            | "track"
-            | "wbr"
-    )
+fn is_unquoted_attr_value_stop(ch: char) -> bool {
+    ch.is_ascii_whitespace()
+        || ch == '>'
+        || ch == '/'
+        || ch == '"'
+        || ch == '\''
+        || ch == '<'
+        || ch == '='
+        || ch == '`'
+        || ch == '?'
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

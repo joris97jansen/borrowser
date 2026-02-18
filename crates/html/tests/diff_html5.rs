@@ -336,10 +336,11 @@ fn normalize_simplified_tokens(stream: &TokenStream) -> Vec<NormToken> {
                     .into_iter()
                     .map(|(name, value, _)| (name, value))
                     .collect();
+                let self_closing = *self_closing || is_html_void_tag(&name);
                 out.push(NormToken::StartTag {
                     name,
                     attrs,
-                    self_closing: *self_closing,
+                    self_closing,
                 });
             }
             html::Token::EndTag(name) => {
@@ -513,10 +514,11 @@ fn drain_norm_tokens(
                         .into_iter()
                         .map(|(name, value, _)| (name, value))
                         .collect();
+                    let self_closing = *self_closing || is_html_void_tag(&name);
                     out.push(NormToken::StartTag {
                         name,
                         attrs,
-                        self_closing: *self_closing,
+                        self_closing,
                     });
                 }
                 Token::EndTag { name } => {
@@ -622,6 +624,26 @@ fn handle_tokenize_result(result: TokenizeResult, stage: &str) -> Result<(), Str
             "unexpected tokenizer state stage={stage} result={result:?}"
         )),
     }
+}
+
+fn is_html_void_tag(name: &str) -> bool {
+    matches!(
+        name,
+        "area"
+            | "base"
+            | "br"
+            | "col"
+            | "embed"
+            | "hr"
+            | "img"
+            | "input"
+            | "link"
+            | "meta"
+            | "param"
+            | "source"
+            | "track"
+            | "wbr"
+    )
 }
 
 fn wpt_root() -> PathBuf {
