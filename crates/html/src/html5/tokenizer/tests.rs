@@ -497,10 +497,162 @@ fn markup_declaration_open_emits_doctype_token() {
     assert_eq!(
         tokens,
         vec![
-            "DOCTYPE name=doctype html public_id=null system_id=null force_quirks=false"
-                .to_string(),
+            "DOCTYPE name=html public_id=null system_id=null force_quirks=false".to_string(),
             "CHAR text=\"\\n\"".to_string(),
             "START name=html attrs=[] self_closing=false".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn doctype_public_and_system_literals_are_parsed() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str(
+        "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">",
+    );
+
+    assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    assert_eq!(
+        tokens,
+        vec![
+            "DOCTYPE name=html public_id=\"-//W3C//DTD HTML 4.01//EN\" system_id=\"http://www.w3.org/TR/html4/strict.dtd\" force_quirks=false".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn malformed_doctype_without_name_forces_quirks() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<!DOCTYPE>");
+
+    assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    assert_eq!(
+        tokens,
+        vec![
+            "DOCTYPE name=null public_id=null system_id=null force_quirks=true".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn malformed_doctype_public_without_quoted_id_forces_quirks() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<!DOCTYPE html PUBLIC nope>");
+
+    assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    assert_eq!(
+        tokens,
+        vec![
+            "DOCTYPE name=html public_id=null system_id=null force_quirks=true".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn doctype_chunk_splits_inside_keyword_and_name_are_invariant() {
+    fn run(chunks: &[&str]) -> Vec<String> {
+        let mut ctx = DocumentParseContext::new();
+        let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+        let mut input = Input::new();
+        let mut out = Vec::new();
+        for chunk in chunks {
+            input.push_str(chunk);
+            assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+            out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
+        }
+        assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+        out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
+        out
+    }
+
+    let whole = run(&["<!DOCTYPE html>"]);
+    let split_keyword = run(&["<!DOC", "TYPE html>"]);
+    let split_name = run(&["<!DOCTYPE h", "tml>"]);
+    assert_eq!(whole, split_keyword);
+    assert_eq!(whole, split_name);
+    assert_eq!(
+        whole,
+        vec![
+            "DOCTYPE name=html public_id=null system_id=null force_quirks=false".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn doctype_public_system_chunk_splits_inside_ids_and_before_gt_are_invariant() {
+    fn run(chunks: &[&str]) -> Vec<String> {
+        let mut ctx = DocumentParseContext::new();
+        let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+        let mut input = Input::new();
+        let mut out = Vec::new();
+        for chunk in chunks {
+            input.push_str(chunk);
+            assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+            out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
+        }
+        assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+        out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
+        out
+    }
+
+    let sample = "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">";
+    let whole = run(&[sample]);
+    let split_quote = run(&[
+        "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01//EN",
+        "\" \"http://www.w3.org/TR/html4/strict.dtd\">",
+    ]);
+    let split_before_gt = run(&[
+        "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\"",
+        ">",
+    ]);
+    assert_eq!(whole, split_quote);
+    assert_eq!(whole, split_before_gt);
+    assert_eq!(
+        whole,
+        vec![
+            "DOCTYPE name=html public_id=\"-//W3C//DTD HTML 4.01//EN\" system_id=\"http://www.w3.org/TR/html4/strict.dtd\" force_quirks=false".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn doctype_public_id_eof_mid_quote_forces_quirks() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<!DOCTYPE html PUBLIC \"x");
+
+    loop {
+        let res = tokenizer.push_input(&mut input, &mut ctx);
+        let _ = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+        if matches!(res, TokenizeResult::NeedMoreInput) {
+            break;
+        }
+    }
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    assert_eq!(
+        tokens,
+        vec![
+            "DOCTYPE name=html public_id=null system_id=null force_quirks=true".to_string(),
             "EOF".to_string(),
         ]
     );
@@ -654,6 +806,12 @@ fn long_comment_processing_is_linearish() {
         "bytes_consumed must never exceed input length: bytes_consumed={} input_len={}",
         tokenizer.stats().bytes_consumed,
         source.len()
+    );
+    assert!(
+        tokenizer.stats().bytes_consumed <= tokenizer.cursor as u64,
+        "bytes_consumed must never exceed cursor: bytes_consumed={} cursor={}",
+        tokenizer.stats().bytes_consumed,
+        tokenizer.cursor
     );
 }
 

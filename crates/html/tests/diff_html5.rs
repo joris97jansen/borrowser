@@ -300,12 +300,7 @@ fn normalize_simplified_tokens(stream: &TokenStream) -> Vec<NormToken> {
     for token in stream.tokens() {
         match token {
             html::Token::Doctype(payload) => {
-                let name = stream.payload_text(payload);
-                let name = if name.is_empty() {
-                    None
-                } else {
-                    Some(name.to_ascii_lowercase())
-                };
+                let name = normalize_simplified_doctype_name(stream.payload_text(payload));
                 out.push(NormToken::Doctype { name });
             }
             html::Token::StartTag {
@@ -359,6 +354,37 @@ fn normalize_simplified_tokens(stream: &TokenStream) -> Vec<NormToken> {
     }
     out.push(NormToken::Eof);
     out
+}
+
+fn normalize_simplified_doctype_name(raw: &str) -> Option<String> {
+    let mut text = raw.trim();
+    if text.is_empty() {
+        return None;
+    }
+
+    // Legacy tokenizer payloads may include the keyword itself (e.g. "DOCTYPE html").
+    // Normalize to the semantic doctype name used by the html5 tokenizer diff path.
+    if text.len() >= 7
+        && text
+            .get(..7)
+            .is_some_and(|head| head.eq_ignore_ascii_case("doctype"))
+    {
+        let after_kw = &text[7..];
+        if after_kw
+            .chars()
+            .next()
+            .is_none_or(|ch| ch.is_ascii_whitespace())
+        {
+            text = after_kw.trim_start();
+        }
+    }
+
+    let name = text
+        .split_whitespace()
+        .next()
+        .unwrap_or_default()
+        .to_ascii_lowercase();
+    if name.is_empty() { None } else { Some(name) }
 }
 
 fn push_char(tokens: &mut Vec<NormToken>, text: &str) {

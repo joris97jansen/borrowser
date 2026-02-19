@@ -333,9 +333,9 @@ impl Html5State {
 }
 
 enum RuntimeState {
-    Legacy(HtmlState),
+    Legacy(Box<HtmlState>),
     #[cfg(feature = "html5")]
-    Html5(Html5State),
+    Html5(Box<Html5State>),
 }
 type Key = (TabId, RequestId);
 
@@ -580,7 +580,7 @@ fn start_parse_runtime_with_policy_and_clock_and_mode<C: PreviewClock + 'static>
                     let next = prev + 1;
                     let dom_handle = DomHandle(next);
                     let state = match mode {
-                        ParserMode::Legacy => RuntimeState::Legacy(HtmlState {
+                        ParserMode::Legacy => RuntimeState::Legacy(Box::new(HtmlState {
                             total_bytes: 0,
                             pending_bytes: 0,
                             pending_tokens: 0,
@@ -600,7 +600,7 @@ fn start_parse_runtime_with_policy_and_clock_and_mode<C: PreviewClock + 'static>
                             max_patch_buffer_bytes: 0,
                             dom_handle,
                             version: DomVersion::INITIAL,
-                        }),
+                        })),
                         ParserMode::Html5 => {
                             #[cfg(feature = "html5")]
                             {
@@ -610,7 +610,7 @@ fn start_parse_runtime_with_policy_and_clock_and_mode<C: PreviewClock + 'static>
                                     html::html5::TreeBuilderConfig::default(),
                                     ctx,
                                 );
-                                RuntimeState::Html5(Html5State {
+                                RuntimeState::Html5(Box::new(Html5State {
                                     total_bytes: 0,
                                     pending_bytes: 0,
                                     pending_tokens: 0,
@@ -626,7 +626,7 @@ fn start_parse_runtime_with_policy_and_clock_and_mode<C: PreviewClock + 'static>
                                     max_patch_buffer_bytes: 0,
                                     dom_handle,
                                     version: DomVersion::INITIAL,
-                                })
+                                }))
                             }
                             #[cfg(not(feature = "html5"))]
                             {
