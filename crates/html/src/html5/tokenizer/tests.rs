@@ -527,6 +527,137 @@ fn markup_declaration_open_emits_comment_token() {
 }
 
 #[test]
+fn markup_declaration_open_malformed_enters_bogus_comment() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<!oops>tail");
+
+    assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    assert_eq!(
+        tokens,
+        vec![
+            "COMMENT text=\"oops\"".to_string(),
+            "CHAR text=\"tail\"".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn bogus_comment_emits_on_eof_without_closing_gt() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<!oops");
+
+    assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    assert_eq!(
+        tokens,
+        vec!["COMMENT text=\"oops\"".to_string(), "EOF".to_string()]
+    );
+}
+
+#[test]
+fn comment_chunk_splits_across_dashes_and_gt_are_invariant() {
+    fn run(chunks: &[&str]) -> Vec<String> {
+        let mut ctx = DocumentParseContext::new();
+        let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+        let mut input = Input::new();
+        let mut out = Vec::new();
+        for chunk in chunks {
+            input.push_str(chunk);
+            assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+            out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
+        }
+        assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+        out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
+        out
+    }
+
+    let whole = run(&["<!--xy-->"]);
+    let split_dash = run(&["<!--xy-", "->"]);
+    let split_gt = run(&["<!--xy--", ">"]);
+    let split_three = run(&["<!--xy", "--", ">"]);
+    assert_eq!(whole, split_dash);
+    assert_eq!(whole, split_gt);
+    assert_eq!(whole, split_three);
+    assert_eq!(
+        whole,
+        vec!["COMMENT text=\"xy\"".to_string(), "EOF".to_string()]
+    );
+}
+
+#[test]
+fn comment_emits_on_eof_without_closing_terminator() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<!--oops");
+
+    assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    assert_eq!(
+        tokens,
+        vec!["COMMENT text=\"oops\"".to_string(), "EOF".to_string()]
+    );
+}
+
+#[test]
+fn comment_emits_on_eof_from_comment_end_dash_state() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<!--oops-");
+
+    assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    assert_eq!(
+        tokens,
+        vec!["COMMENT text=\"oops-\"".to_string(), "EOF".to_string()]
+    );
+}
+
+#[test]
+fn long_comment_processing_is_linearish() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let payload = "x".repeat(20_000);
+    let source = format!("<!--{payload}-->");
+    let expected_max_steps = (source.len() as u64) * 3;
+
+    let mut input = Input::new();
+    input.push_str(&source);
+    loop {
+        let res = tokenizer.push_input(&mut input, &mut ctx);
+        let _ = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+        if matches!(res, TokenizeResult::NeedMoreInput) {
+            break;
+        }
+    }
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    let _ = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    assert!(
+        tokenizer.stats().steps <= expected_max_steps,
+        "comment processing appears non-linear: steps={} expected_max={}",
+        tokenizer.stats().steps,
+        expected_max_steps
+    );
+    assert!(
+        tokenizer.stats().bytes_consumed <= source.len() as u64,
+        "bytes_consumed must never exceed input length: bytes_consumed={} input_len={}",
+        tokenizer.stats().bytes_consumed,
+        source.len()
+    );
+}
+
+#[test]
 fn data_flushes_text_before_tag_in_same_pump() {
     let mut ctx = DocumentParseContext::new();
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
