@@ -57,6 +57,7 @@ pub struct TokenizerStats {
     pub state_transitions: u64,
     pub tokens_emitted: u64,
     pub budget_exhaustions: u64,
+    pub bytes_consumed: u64,
 }
 
 /// Resolve text spans into `&str` for the current batch epoch.
@@ -186,10 +187,13 @@ impl Html5Tokenizer {
         while remaining_budget > 0 {
             remaining_budget -= 1;
             self.stats.steps = self.stats.steps.saturating_add(1);
+            let cursor_before_step = self.cursor;
             match self.step(input, ctx) {
                 Step::Progress => {}
                 Step::NeedMoreInput => break,
             }
+            let consumed = self.cursor.saturating_sub(cursor_before_step) as u64;
+            self.stats.bytes_consumed = self.stats.bytes_consumed.saturating_add(consumed);
         }
 
         if remaining_budget == 0 {
@@ -285,6 +289,7 @@ impl Html5Tokenizer {
             return TokenizeResult::EmittedEof;
         }
 
+        self.flush_pending_comment_eof(input);
         self.flush_pending_text(input);
         if self.config.emit_eof {
             self.emit_token(Token::Eof);
@@ -356,7 +361,12 @@ impl Html5Tokenizer {
             }
             TokenizerState::SelfClosingStartTag => self.step_self_closing_start_tag(input, ctx),
             TokenizerState::MarkupDeclarationOpen => self.step_markup_declaration_open(input, ctx),
+            TokenizerState::CommentStart => self.step_comment_start(input),
+            TokenizerState::CommentStartDash => self.step_comment_start_dash(input),
             TokenizerState::Comment => self.step_comment(input),
+            TokenizerState::CommentEndDash => self.step_comment_end_dash(input),
+            TokenizerState::CommentEnd => self.step_comment_end(input),
+            TokenizerState::BogusComment => self.step_bogus_comment(input),
             // Placeholder: state families are wired into the dispatcher now,
             // behavior will land incrementally in follow-up issues.
             _ => {
@@ -416,8 +426,8 @@ impl Html5Tokenizer {
         // for spec keywords that begin with `<`.
         match self.match_ascii_prefix(input, b"</") {
             MatchResult::Matched => {
-                let consumed = self.consume_ascii_sequence(input, b"</");
-                debug_assert!(consumed, "matched prefix must be consumable");
+                let did_consume = self.consume_ascii_sequence(input, b"</");
+                debug_assert!(did_consume, "matched prefix must be consumable");
                 self.end_tag_prefix_consumed = true;
                 self.clear_current_attribute();
                 self.transition_to(TokenizerState::EndTagOpen);
@@ -429,8 +439,8 @@ impl Html5Tokenizer {
 
         match self.match_ascii_prefix(input, b"<!") {
             MatchResult::Matched => {
-                let consumed = self.consume_ascii_sequence(input, b"<!");
-                debug_assert!(consumed, "matched prefix must be consumable");
+                let did_consume = self.consume_ascii_sequence(input, b"<!");
+                debug_assert!(did_consume, "matched prefix must be consumable");
                 self.transition_to(TokenizerState::MarkupDeclarationOpen);
                 return Step::Progress;
             }
@@ -932,6 +942,11 @@ impl Html5Tokenizer {
             return Step::NeedMoreInput;
         }
 
+        // Core v0 comment/markup simplifications:
+        // - Recognize only DOCTYPE and `<!--` entry points.
+        // - All other `<!...` forms enter BogusComment.
+        // - Fine-grained WHATWG parse-error branches are deferred.
+        //
         // We enter this state after consuming "<!", so cursor is at declaration body.
         match self.match_ascii_prefix_ci(input, b"DOCTYPE") {
             MatchResult::Matched => {
@@ -972,63 +987,162 @@ impl Html5Tokenizer {
 
         match self.match_ascii_prefix(input, b"--") {
             MatchResult::Matched => {
-                let consumed = self.consume_ascii_sequence(input, b"--");
-                debug_assert!(consumed, "matched comment prefix must be consumable");
+                let did_consume = self.consume_ascii_sequence(input, b"--");
+                debug_assert!(did_consume, "matched comment prefix must be consumable");
                 self.pending_comment_start = Some(self.cursor);
-                self.transition_to(TokenizerState::Comment);
+                self.transition_to(TokenizerState::CommentStart);
                 return Step::Progress;
             }
             MatchResult::NeedMoreInput => return Step::NeedMoreInput,
             MatchResult::NoMatch => {}
         }
 
-        // Core v0 fallback for unsupported declarations.
-        self.emit_text_owned("<!");
-        self.transition_to(TokenizerState::Data);
+        // Core v0: unsupported `<!...` declarations enter bogus comment mode.
+        self.pending_comment_start = Some(self.cursor);
+        self.transition_to(TokenizerState::BogusComment);
         Step::Progress
+    }
+
+    fn step_comment_start(&mut self, input: &Input) -> Step {
+        debug_assert_eq!(self.state, TokenizerState::CommentStart);
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        match self.peek(input) {
+            Some('-') => {
+                let _ = self.consume_if(input, '-');
+                self.transition_to(TokenizerState::CommentStartDash);
+                Step::Progress
+            }
+            Some('>') => {
+                let end = self.cursor;
+                let _ = self.consume_if(input, '>');
+                self.emit_pending_comment_range(input, end);
+                self.transition_to(TokenizerState::Data);
+                Step::Progress
+            }
+            Some(_) => {
+                self.transition_to(TokenizerState::Comment);
+                Step::Progress
+            }
+            None => Step::NeedMoreInput,
+        }
+    }
+
+    fn step_comment_start_dash(&mut self, input: &Input) -> Step {
+        debug_assert_eq!(self.state, TokenizerState::CommentStartDash);
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        match self.peek(input) {
+            Some('-') => {
+                let _ = self.consume_if(input, '-');
+                self.transition_to(TokenizerState::CommentEnd);
+                Step::Progress
+            }
+            Some('>') => {
+                let end = self.cursor;
+                let _ = self.consume_if(input, '>');
+                self.emit_pending_comment_range(input, end);
+                self.transition_to(TokenizerState::Data);
+                Step::Progress
+            }
+            Some(_) => {
+                self.transition_to(TokenizerState::Comment);
+                Step::Progress
+            }
+            None => Step::NeedMoreInput,
+        }
     }
 
     fn step_comment(&mut self, input: &Input) -> Step {
         debug_assert_eq!(self.state, TokenizerState::Comment);
-        let comment_start = match self.pending_comment_start {
-            Some(start) => start,
-            None => {
-                self.transition_to(TokenizerState::Data);
-                return Step::Progress;
-            }
-        };
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
         }
-
-        let bytes = input.as_str().as_bytes();
-        let tail = &bytes[self.cursor..];
-        if let Some(pos) = tail.windows(3).position(|w| w == b"-->") {
-            let comment_end = self.cursor + pos;
-            self.emit_token(Token::Comment {
-                text: TextValue::Span(TextSpan::new(comment_start, comment_end)),
-            });
-            self.cursor = comment_end + 3;
-            self.pending_comment_start = None;
+        if self.pending_comment_start.is_none() {
             self.transition_to(TokenizerState::Data);
             return Step::Progress;
         }
+        match self.peek(input) {
+            Some('-') => {
+                let _ = self.consume_if(input, '-');
+                self.transition_to(TokenizerState::CommentEndDash);
+                Step::Progress
+            }
+            Some(_) => {
+                let _ = self.consume(input);
+                Step::Progress
+            }
+            None => Step::NeedMoreInput,
+        }
+    }
 
-        // Keep the trailing two bytes in-buffer so a split "-->" terminator can
-        // be recognized when the next chunk is appended.
-        let len = input.as_str().len();
-        if len.saturating_sub(self.cursor) <= 2 {
+    fn step_comment_end_dash(&mut self, input: &Input) -> Step {
+        debug_assert_eq!(self.state, TokenizerState::CommentEndDash);
+        if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
         }
-        let mut new_cursor = len - 2;
-        while new_cursor > self.cursor && !input.as_str().is_char_boundary(new_cursor) {
-            new_cursor -= 1;
+        match self.peek(input) {
+            Some('-') => {
+                let _ = self.consume_if(input, '-');
+                self.transition_to(TokenizerState::CommentEnd);
+                Step::Progress
+            }
+            Some(_) => {
+                self.transition_to(TokenizerState::Comment);
+                Step::Progress
+            }
+            None => Step::NeedMoreInput,
         }
-        if new_cursor == self.cursor {
+    }
+
+    fn step_comment_end(&mut self, input: &Input) -> Step {
+        debug_assert_eq!(self.state, TokenizerState::CommentEnd);
+        if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
         }
-        self.cursor = new_cursor;
-        Step::Progress
+        match self.peek(input) {
+            Some('>') => {
+                let end = self.cursor.saturating_sub(2);
+                let _ = self.consume_if(input, '>');
+                self.emit_pending_comment_range(input, end);
+                self.transition_to(TokenizerState::Data);
+                Step::Progress
+            }
+            Some('-') => {
+                let _ = self.consume_if(input, '-');
+                Step::Progress
+            }
+            Some(_) => {
+                self.transition_to(TokenizerState::Comment);
+                Step::Progress
+            }
+            None => Step::NeedMoreInput,
+        }
+    }
+
+    fn step_bogus_comment(&mut self, input: &Input) -> Step {
+        debug_assert_eq!(self.state, TokenizerState::BogusComment);
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        if self.pending_comment_start.is_none() {
+            self.transition_to(TokenizerState::Data);
+            return Step::Progress;
+        }
+        let consumed = self.consume_while(input, |ch| ch != '>');
+        if consumed > 0 {
+            return Step::Progress;
+        }
+        if self.consume_if(input, '>') {
+            let end = self.cursor.saturating_sub(1);
+            self.emit_pending_comment_range(input, end);
+            self.transition_to(TokenizerState::Data);
+            Step::Progress
+        } else {
+            Step::NeedMoreInput
+        }
     }
 
     fn consume_if(&mut self, input: &Input, expected: char) -> bool {
@@ -1129,6 +1243,58 @@ impl Html5Tokenizer {
         }
         self.emit_token(Token::Text {
             text: TextValue::Owned(text.to_string()),
+        });
+    }
+
+    fn emit_pending_comment_range(&mut self, input: &Input, end: usize) {
+        let start = match self.pending_comment_start.take() {
+            Some(start) => start,
+            None => return,
+        };
+        if !(start <= end
+            && end <= input.as_str().len()
+            && input.as_str().is_char_boundary(start)
+            && input.as_str().is_char_boundary(end))
+        {
+            self.emit_token(Token::Comment {
+                text: TextValue::Owned(String::new()),
+            });
+            return;
+        }
+        self.emit_token(Token::Comment {
+            text: TextValue::Span(TextSpan::new(start, end)),
+        });
+    }
+
+    fn flush_pending_comment_eof(&mut self, input: &Input) {
+        let in_comment_family = matches!(
+            self.state,
+            TokenizerState::CommentStart
+                | TokenizerState::CommentStartDash
+                | TokenizerState::Comment
+                | TokenizerState::CommentEndDash
+                | TokenizerState::CommentEnd
+                | TokenizerState::BogusComment
+        );
+        if !in_comment_family {
+            return;
+        }
+        let Some(start) = self.pending_comment_start.take() else {
+            return;
+        };
+        let end = self.cursor;
+        if !(start <= end
+            && end <= input.as_str().len()
+            && input.as_str().is_char_boundary(start)
+            && input.as_str().is_char_boundary(end))
+        {
+            self.emit_token(Token::Comment {
+                text: TextValue::Owned(String::new()),
+            });
+            return;
+        }
+        self.emit_token(Token::Comment {
+            text: TextValue::Span(TextSpan::new(start, end)),
         });
     }
 
