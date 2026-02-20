@@ -1,4 +1,3 @@
-#![cfg(any(test, feature = "test-harness"))]
 //! Shared chunking utilities for test harnesses.
 //!
 //! Provides deterministic chunk plans plus seeded fuzz plans for reproducible
@@ -96,6 +95,10 @@ pub fn build_chunk_plans(
 
 pub fn build_chunk_plans_utf8(input: &str, fuzz_runs: usize, fuzz_seed: u64) -> Vec<ChunkPlanCase> {
     build_chunk_plans(input, fuzz_runs, fuzz_seed, ChunkerConfig::utf8())
+}
+
+pub fn utf8_internal_boundaries(input: &str) -> Vec<usize> {
+    char_boundaries(input, BoundaryPolicy::Utf8Aligned)
 }
 
 fn fixed_plan(size: usize, policy: BoundaryPolicy) -> ChunkPlan {

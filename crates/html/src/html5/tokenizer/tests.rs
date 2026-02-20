@@ -51,6 +51,33 @@ fn run_chunks(chunks: &[&str]) -> Vec<String> {
     out
 }
 
+fn run_chunks_raw_tokens(chunks: &[&str]) -> Vec<Token> {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    let mut out = Vec::new();
+    for chunk in chunks {
+        input.push_str(chunk);
+        assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+        loop {
+            let batch = tokenizer.next_batch(&mut input);
+            if batch.tokens().is_empty() {
+                break;
+            }
+            out.extend(batch.into_tokens());
+        }
+    }
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    loop {
+        let batch = tokenizer.next_batch(&mut input);
+        if batch.tokens().is_empty() {
+            break;
+        }
+        out.extend(batch.into_tokens());
+    }
+    out
+}
+
 #[test]
 fn tokenizer_api_compiles() {
     let mut ctx = DocumentParseContext::new();
@@ -200,7 +227,7 @@ fn delimiter_paths_are_chunk_invariant_and_lossless() {
 
 #[test]
 fn partial_markup_prefix_splits_are_resume_safe() {
-    let patterns = ["</", "<!--"];
+    let patterns = ["</", "<!", "<!--", "<!DOCTYPE"];
     for pattern in patterns {
         let whole = run_chunks(&[pattern]);
         for split in 1..pattern.len() {
@@ -722,6 +749,39 @@ fn markup_declaration_open_emits_comment_token() {
             "CHAR text=\"tail\"".to_string(),
             "EOF".to_string(),
         ]
+    );
+}
+
+#[test]
+fn comment_entry_split_between_lt_and_bang_is_invariant() {
+    let whole = run_chunks(&["<!--x-->"]);
+    let split = run_chunks(&["<", "!--x-->"]);
+    assert_eq!(whole, split);
+    assert_eq!(
+        whole,
+        vec!["COMMENT text=\"x\"".to_string(), "EOF".to_string()]
+    );
+}
+
+#[test]
+fn comment_entry_split_between_lt_and_bang_preserves_raw_token_kinds() {
+    let whole = run_chunks_raw_tokens(&["<!--x-->"]);
+    let split = run_chunks_raw_tokens(&["<", "!--x-->"]);
+    assert_eq!(whole, split);
+    assert!(
+        matches!(whole.as_slice(), [Token::Comment { .. }, Token::Eof]),
+        "expected comment then EOF, got: {whole:?}"
+    );
+}
+
+#[test]
+fn comment_entry_split_inside_opening_dashes_is_invariant() {
+    let whole = run_chunks(&["<!--x-->"]);
+    let split = run_chunks(&["<!-", "-x-->"]);
+    assert_eq!(whole, split);
+    assert_eq!(
+        whole,
+        vec!["COMMENT text=\"x\"".to_string(), "EOF".to_string()]
     );
 }
 

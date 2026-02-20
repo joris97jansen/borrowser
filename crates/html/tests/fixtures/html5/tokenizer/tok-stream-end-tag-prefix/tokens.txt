@@ -1,0 +1,5 @@
+# format: html5-token-v1
+START name=div attrs=[] self_closing=false
+CHAR text="x"
+END name=div
+EOF

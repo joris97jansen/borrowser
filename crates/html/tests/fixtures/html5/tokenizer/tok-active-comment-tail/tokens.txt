@@ -1,0 +1,4 @@
+# format: html5-token-v1
+COMMENT text="x"
+CHAR text="tail"
+EOF
