@@ -1,6 +1,4 @@
 # format: html5-token-v1
-# status: xfail
-# reason: html5 tokenizer character reference states in data text are not implemented yet
-CHAR text="& < A A"
+CHAR text="& < A A &amp &unknown;\n"
 
 EOF

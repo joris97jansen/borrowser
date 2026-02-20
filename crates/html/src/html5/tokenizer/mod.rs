@@ -12,7 +12,11 @@
 //! - Span validity: token spans are only valid for the lifetime of the
 //!   `TokenBatch` that resolved them, and must be resolved through the batch
 //!   resolver.
+//! - Character references are decoded by the tokenizer when text/attribute
+//!   values are finalized (Core v0 minimal subset); spec-complete named-entity
+//!   behavior remains deferred.
 
+use crate::entities::decode_entities;
 use crate::html5::shared::{
     AtomId, Attribute, AttributeValue, DocumentParseContext, Input, TextSpan, TextValue, Token,
 };
@@ -416,7 +420,7 @@ impl Html5Tokenizer {
         if self.pending_text_start.is_none() {
             self.pending_text_start = Some(self.cursor);
         }
-        // Core v0: keep `&` in text (character references land in later milestones).
+        // Core v0: character references are decoded in tokenizer text emission.
         let consumed = self.consume_while(input, |ch| ch != '<');
         assert!(
             consumed > 0,
@@ -1383,7 +1387,18 @@ impl Html5Tokenizer {
                         && input.as_str().is_char_boundary(start)
                         && input.as_str().is_char_boundary(end) =>
                 {
-                    Some(AttributeValue::Span(TextSpan::new(start, end)))
+                    let raw = &input.as_str()[start..end];
+                    if !raw.as_bytes().contains(&b'&') {
+                        Some(AttributeValue::Span(TextSpan::new(start, end)))
+                    } else {
+                        let decoded = decode_entities(raw);
+                        match decoded {
+                            std::borrow::Cow::Borrowed(_) => {
+                                Some(AttributeValue::Span(TextSpan::new(start, end)))
+                            }
+                            std::borrow::Cow::Owned(value) => Some(AttributeValue::Owned(value)),
+                        }
+                    }
                 }
                 _ => Some(AttributeValue::Owned(String::new())),
             }
@@ -1636,8 +1651,24 @@ impl Html5Tokenizer {
             None => return,
         };
         let end = self.cursor;
-        if start <= end && end <= input.as_str().len() && start != end {
+        let text = input.as_str();
+        if !(start <= end
+            && end <= text.len()
+            && start != end
+            && text.is_char_boundary(start)
+            && text.is_char_boundary(end))
+        {
+            return;
+        }
+        let raw = &text[start..end];
+        if !raw.as_bytes().contains(&b'&') {
             self.emit_text_span(start, end);
+            return;
+        }
+        let decoded = decode_entities(raw);
+        match decoded {
+            std::borrow::Cow::Borrowed(_) => self.emit_text_span(start, end),
+            std::borrow::Cow::Owned(text) => self.emit_text_owned(&text),
         }
     }
 }
