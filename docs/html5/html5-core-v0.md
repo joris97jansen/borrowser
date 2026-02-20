@@ -90,8 +90,12 @@ Character references are guaranteed only in:
 
 - Data text context.
 - Attribute value contexts (`DQ`, `SQ`, `UQ`).
-- For those contexts, Core v0 guarantees longest-match named-reference behavior and numeric replacement behavior exactly as implemented by `crates/html/src/entities.rs`; divergence from that module behavior is an in-scope Core v0 bug.
+- For those contexts, Core v0 guarantees named and numeric decoding behavior exactly as implemented by `crates/html/src/entities.rs`; divergence from that module behavior is an in-scope Core v0 bug.
 - Legacy semicolon-less behavior is contractual only to the extent currently implemented in `entities.rs` for the supported contexts above.
+- Deferred/explicitly out of Core v0 charref parity (unless already covered by `entities.rs` behavior):
+  - full WHATWG context-sensitive semicolonless named-reference rules in every edge context,
+  - attribute-specific ambiguous-ampersand branches beyond the implemented subset,
+  - guaranteed full named-entity table parity beyond the currently shipped decoder behavior.
 
 <a id="tree-builder-modes-and-algorithms"></a>
 ### Tree Builder Modes And Algorithms
@@ -144,7 +148,7 @@ Core v0 attribute behavior guarantees:
 
 - tag and attribute names are tokenizer-normalized per HTML tokenizer rules (ASCII case folding in relevant states).
 - attribute encounter order is preserved.
-- duplicate attributes are preserved at tokenization stage; dedupe semantics are not performed by tokenizer.
+- duplicate attributes are deduped at tokenization stage with first-wins semantics on tokenizer-normalized attribute names (for example `a` and `A` are treated as duplicates).
 - value forms supported: double-quoted, single-quoted, unquoted.
 - character references in attribute values follow Core v0 charref scope and delegate named reference table/validation to `crates/html/src/entities.rs`.
 

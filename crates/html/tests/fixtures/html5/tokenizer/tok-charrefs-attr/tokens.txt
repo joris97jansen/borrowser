@@ -1,7 +1,6 @@
 # format: html5-token-v1
-# status: xfail
-# reason: html5 tokenizer character reference states in attribute values are not implemented yet
-START name=p attrs=[a="&" b="A" c="A"] self_closing=false
+START name=p attrs=[a="&" b="A" c="A" d="&amp" e="&unknown;"] self_closing=false
 END name=p
+CHAR text="\n"
 
 EOF

@@ -36,6 +36,21 @@ fn assert_push_ok(res: TokenizeResult) {
     );
 }
 
+fn run_chunks(chunks: &[&str]) -> Vec<String> {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    let mut out = Vec::new();
+    for chunk in chunks {
+        input.push_str(chunk);
+        assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+        out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
+    }
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
+    out
+}
+
 #[test]
 fn tokenizer_api_compiles() {
     let mut ctx = DocumentParseContext::new();
@@ -58,23 +73,8 @@ fn tokenizer_api_compiles() {
 
 #[test]
 fn tokenizer_two_chunks_match_single_chunk_sequence() {
-    fn run(chunks: &[&str]) -> Vec<String> {
-        let mut ctx = DocumentParseContext::new();
-        let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
-        let mut input = Input::new();
-        let mut out = Vec::new();
-        for chunk in chunks {
-            input.push_str(chunk);
-            assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
-            out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
-        }
-        assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
-        out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
-        out
-    }
-
-    let whole = run(&["<div>Hello</div>"]);
-    let chunked = run(&["<div>", "Hello</div>"]);
+    let whole = run_chunks(&["<div>Hello</div>"]);
+    let chunked = run_chunks(&["<div>", "Hello</div>"]);
     assert_eq!(whole, chunked, "token sequence must be chunk-invariant");
 }
 
@@ -201,22 +201,8 @@ fn delimiter_paths_are_chunk_invariant_and_lossless() {
 #[test]
 fn partial_markup_prefix_splits_are_resume_safe() {
     let patterns = ["</", "<!--"];
-    fn run(chunks: &[&str]) -> Vec<String> {
-        let mut ctx = DocumentParseContext::new();
-        let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
-        let mut input = Input::new();
-        let mut out = Vec::new();
-        for chunk in chunks {
-            input.push_str(chunk);
-            assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
-            out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
-        }
-        assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
-        out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
-        out
-    }
     for pattern in patterns {
-        let whole = run(&[pattern]);
+        let whole = run_chunks(&[pattern]);
         for split in 1..pattern.len() {
             let mut ctx = DocumentParseContext::new();
             let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
@@ -317,6 +303,26 @@ fn duplicate_attributes_are_dropped_first_wins() {
 }
 
 #[test]
+fn duplicate_attribute_drop_preserves_other_order() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<div z=1 a=1 a=2 y=1></div>");
+
+    assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=div attrs=[z=\"1\" a=\"1\" y=\"1\"] self_closing=false".to_string(),
+            "END name=div".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
 fn self_closing_start_tag_state_sets_flag() {
     let mut ctx = DocumentParseContext::new();
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
@@ -379,23 +385,8 @@ fn unquoted_attribute_value_terminates_on_invalid_delimiters() {
 
 #[test]
 fn unquoted_invalid_delimiter_split_is_invariant() {
-    fn run(chunks: &[&str]) -> Vec<String> {
-        let mut ctx = DocumentParseContext::new();
-        let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
-        let mut input = Input::new();
-        let mut out = Vec::new();
-        for chunk in chunks {
-            input.push_str(chunk);
-            assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
-            out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
-        }
-        assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
-        out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
-        out
-    }
-
-    let whole = run(&["<div a=foo\"bar></div>"]);
-    let split = run(&["<div a=foo", "\"bar></div>"]);
+    let whole = run_chunks(&["<div a=foo\"bar></div>"]);
+    let split = run_chunks(&["<div a=foo", "\"bar></div>"]);
     assert_eq!(whole, split);
     assert_eq!(
         whole,
@@ -429,23 +420,8 @@ fn unquoted_attribute_value_terminates_on_question_mark() {
 
 #[test]
 fn quoted_attribute_value_split_at_closing_quote_is_invariant() {
-    fn run(chunks: &[&str]) -> Vec<String> {
-        let mut ctx = DocumentParseContext::new();
-        let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
-        let mut input = Input::new();
-        let mut out = Vec::new();
-        for chunk in chunks {
-            input.push_str(chunk);
-            assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
-            out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
-        }
-        assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
-        out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
-        out
-    }
-
-    let whole = run(&["<div a=\"hello\" b=1>"]);
-    let split = run(&["<div a=\"hello", "\" b=1>"]);
+    let whole = run_chunks(&["<div a=\"hello\" b=1>"]);
+    let split = run_chunks(&["<div a=\"hello", "\" b=1>"]);
     assert_eq!(whole, split);
     assert_eq!(
         whole,
@@ -458,25 +434,10 @@ fn quoted_attribute_value_split_at_closing_quote_is_invariant() {
 
 #[test]
 fn attribute_chunk_splits_are_invariant_across_boundaries() {
-    fn run(chunks: &[&str]) -> Vec<String> {
-        let mut ctx = DocumentParseContext::new();
-        let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
-        let mut input = Input::new();
-        let mut out = Vec::new();
-        for chunk in chunks {
-            input.push_str(chunk);
-            assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
-            out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
-        }
-        assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
-        out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
-        out
-    }
-
     let sample = "<div a=\"hello\" b='x y' c=foo d e=\"\"/>";
-    let whole = run(&[sample]);
+    let whole = run_chunks(&[sample]);
     for split in 1..sample.len() {
-        let chunked = run(&[&sample[..split], &sample[split..]]);
+        let chunked = run_chunks(&[&sample[..split], &sample[split..]]);
         assert_eq!(
             whole, chunked,
             "attribute token stream must be chunk-invariant for split={split}"
@@ -566,24 +527,9 @@ fn malformed_doctype_public_without_quoted_id_forces_quirks() {
 
 #[test]
 fn doctype_chunk_splits_inside_keyword_and_name_are_invariant() {
-    fn run(chunks: &[&str]) -> Vec<String> {
-        let mut ctx = DocumentParseContext::new();
-        let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
-        let mut input = Input::new();
-        let mut out = Vec::new();
-        for chunk in chunks {
-            input.push_str(chunk);
-            assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
-            out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
-        }
-        assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
-        out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
-        out
-    }
-
-    let whole = run(&["<!DOCTYPE html>"]);
-    let split_keyword = run(&["<!DOC", "TYPE html>"]);
-    let split_name = run(&["<!DOCTYPE h", "tml>"]);
+    let whole = run_chunks(&["<!DOCTYPE html>"]);
+    let split_keyword = run_chunks(&["<!DOC", "TYPE html>"]);
+    let split_name = run_chunks(&["<!DOCTYPE h", "tml>"]);
     assert_eq!(whole, split_keyword);
     assert_eq!(whole, split_name);
     assert_eq!(
@@ -597,28 +543,13 @@ fn doctype_chunk_splits_inside_keyword_and_name_are_invariant() {
 
 #[test]
 fn doctype_public_system_chunk_splits_inside_ids_and_before_gt_are_invariant() {
-    fn run(chunks: &[&str]) -> Vec<String> {
-        let mut ctx = DocumentParseContext::new();
-        let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
-        let mut input = Input::new();
-        let mut out = Vec::new();
-        for chunk in chunks {
-            input.push_str(chunk);
-            assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
-            out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
-        }
-        assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
-        out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
-        out
-    }
-
     let sample = "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">";
-    let whole = run(&[sample]);
-    let split_quote = run(&[
+    let whole = run_chunks(&[sample]);
+    let split_quote = run_chunks(&[
         "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01//EN",
         "\" \"http://www.w3.org/TR/html4/strict.dtd\">",
     ]);
-    let split_before_gt = run(&[
+    let split_before_gt = run_chunks(&[
         "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\"",
         ">",
     ]);
@@ -653,6 +584,122 @@ fn doctype_public_id_eof_mid_quote_forces_quirks() {
         tokens,
         vec![
             "DOCTYPE name=html public_id=null system_id=null force_quirks=true".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn data_text_decodes_minimal_character_references() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("Tom&amp;Jerry &lt;x&gt; &#65; &#x41;");
+
+    assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    assert_eq!(
+        tokens,
+        vec![
+            "CHAR text=\"Tom&Jerry <x> A A\"".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn data_text_missing_semicolon_entities_remain_literal() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("&amp &#65 &#x41");
+
+    assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    assert_eq!(
+        tokens,
+        vec![
+            "CHAR text=\"&amp &#65 &#x41\"".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn data_text_numeric_reference_edge_cases_are_deterministic() {
+    struct NoResolve;
+    impl TextResolver for NoResolve {
+        fn resolve_span(
+            &self,
+            _span: crate::html5::shared::TextSpan,
+        ) -> Result<&str, super::TextResolveError> {
+            panic!("resolver must not be used for Owned text in this test");
+        }
+    }
+
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    let raw = "&#0; &#xD800; &#x110000; &#9999999999;";
+    input.push_str(raw);
+
+    assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    let expected_text = crate::entities::decode_entities(raw).into_owned();
+    let fmt = TokenFmt::new(&ctx.atoms, &NoResolve);
+    let expected_line = fmt
+        .format_token(&Token::Text {
+            text: TextValue::Owned(expected_text),
+        })
+        .expect("token fmt should succeed");
+    assert_eq!(tokens, vec![expected_line, "EOF".to_string(),]);
+}
+
+#[test]
+fn data_text_entity_chunk_split_is_invariant() {
+    let whole = run_chunks(&["Tom &amp; Jerry"]);
+    let split = run_chunks(&["Tom &am", "p; Jerry"]);
+    assert_eq!(whole, split);
+    assert_eq!(
+        whole,
+        vec!["CHAR text=\"Tom & Jerry\"".to_string(), "EOF".to_string()]
+    );
+}
+
+#[test]
+fn attribute_values_decode_minimal_character_references() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<p a=\"Tom&amp;Jerry\" b='&#65;' c=&#x41; d='x&amp'></p>");
+
+    assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=p attrs=[a=\"Tom&Jerry\" b=\"A\" c=\"A\" d=\"x&amp\"] self_closing=false"
+                .to_string(),
+            "END name=p".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn attribute_entity_chunk_split_is_invariant() {
+    let whole = run_chunks(&["<p a=\"Tom&amp;Jerry\" b=&#x41;></p>"]);
+    let split = run_chunks(&["<p a=\"Tom&am", "p;Jerry\" b=&#x4", "1;></p>"]);
+    assert_eq!(whole, split);
+    assert_eq!(
+        whole,
+        vec![
+            "START name=p attrs=[a=\"Tom&Jerry\" b=\"A\"] self_closing=false".to_string(),
+            "END name=p".to_string(),
             "EOF".to_string(),
         ]
     );
@@ -716,25 +763,10 @@ fn bogus_comment_emits_on_eof_without_closing_gt() {
 
 #[test]
 fn comment_chunk_splits_across_dashes_and_gt_are_invariant() {
-    fn run(chunks: &[&str]) -> Vec<String> {
-        let mut ctx = DocumentParseContext::new();
-        let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
-        let mut input = Input::new();
-        let mut out = Vec::new();
-        for chunk in chunks {
-            input.push_str(chunk);
-            assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
-            out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
-        }
-        assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
-        out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
-        out
-    }
-
-    let whole = run(&["<!--xy-->"]);
-    let split_dash = run(&["<!--xy-", "->"]);
-    let split_gt = run(&["<!--xy--", ">"]);
-    let split_three = run(&["<!--xy", "--", ">"]);
+    let whole = run_chunks(&["<!--xy-->"]);
+    let split_dash = run_chunks(&["<!--xy-", "->"]);
+    let split_gt = run_chunks(&["<!--xy--", ">"]);
+    let split_three = run_chunks(&["<!--xy", "--", ">"]);
     assert_eq!(whole, split_dash);
     assert_eq!(whole, split_gt);
     assert_eq!(whole, split_three);
@@ -838,25 +870,10 @@ fn data_flushes_text_before_tag_in_same_pump() {
 
 #[test]
 fn tag_state_chunk_splits_inside_lt_slash_and_name_are_invariant() {
-    fn run(chunks: &[&str]) -> Vec<String> {
-        let mut ctx = DocumentParseContext::new();
-        let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
-        let mut input = Input::new();
-        let mut out = Vec::new();
-        for chunk in chunks {
-            input.push_str(chunk);
-            assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
-            out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
-        }
-        assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
-        out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
-        out
-    }
-
-    let whole = run(&["<div>t</div>"]);
-    let split_lt = run(&["<", "div>t</div>"]);
-    let split_end = run(&["<div>t<", "/div>"]);
-    let split_name = run(&["<di", "v>t</d", "iv>"]);
+    let whole = run_chunks(&["<div>t</div>"]);
+    let split_lt = run_chunks(&["<", "div>t</div>"]);
+    let split_end = run_chunks(&["<div>t<", "/div>"]);
+    let split_name = run_chunks(&["<di", "v>t</d", "iv>"]);
     assert_eq!(whole, split_lt);
     assert_eq!(whole, split_end);
     assert_eq!(whole, split_name);
@@ -885,7 +902,7 @@ fn end_tag_open_non_alpha_reconsumes_current_char_without_loss() {
 #[test]
 fn token_fmt_is_deterministic_and_preserves_attribute_order() {
     struct Resolver;
-    impl super::TextResolver for Resolver {
+    impl TextResolver for Resolver {
         fn resolve_span(
             &self,
             _span: crate::html5::shared::TextSpan,
@@ -926,7 +943,7 @@ fn token_fmt_is_deterministic_and_preserves_attribute_order() {
 #[test]
 fn token_fmt_text_is_storage_model_agnostic() {
     struct Resolver;
-    impl super::TextResolver for Resolver {
+    impl TextResolver for Resolver {
         fn resolve_span(
             &self,
             _span: crate::html5::shared::TextSpan,
@@ -957,7 +974,7 @@ fn token_fmt_text_is_storage_model_agnostic() {
 #[test]
 fn resolver_rejects_invalid_span() {
     struct Resolver<'a>(&'a str);
-    impl<'a> super::TextResolver for Resolver<'a> {
+    impl<'a> TextResolver for Resolver<'a> {
         fn resolve_span(
             &self,
             span: crate::html5::shared::TextSpan,
