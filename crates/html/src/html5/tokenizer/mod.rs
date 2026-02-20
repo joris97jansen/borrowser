@@ -201,13 +201,12 @@ impl Html5Tokenizer {
         while remaining_budget > 0 {
             remaining_budget -= 1;
             self.stats.steps = self.stats.steps.saturating_add(1);
-            let cursor_before_step = self.cursor;
-            match self.step(input, ctx) {
-                Step::Progress => {}
-                Step::NeedMoreInput => break,
+            let step_result = self.step(input, ctx);
+            // Keep bytes_consumed aligned with absolute cursor progress.
+            self.stats.bytes_consumed = self.cursor as u64;
+            if matches!(step_result, Step::NeedMoreInput) {
+                break;
             }
-            let consumed = self.cursor.saturating_sub(cursor_before_step) as u64;
-            self.stats.bytes_consumed = self.stats.bytes_consumed.saturating_add(consumed);
         }
 
         if remaining_budget == 0 {
@@ -227,9 +226,8 @@ impl Html5Tokenizer {
                 initial_token_count,
                 initial_state_transitions
             );
-            let no_observable_progress = final_cursor == initial_cursor
-                && final_tokens == initial_token_count
-                && final_transitions == initial_state_transitions;
+            let no_observable_progress =
+                final_cursor == initial_cursor && final_tokens == initial_token_count;
             assert!(
                 !no_observable_progress,
                 "tokenizer step budget exhausted without observable progress: state={:?} cursor={} tokens={} transitions={} (initial: cursor={} tokens={} transitions={})",
@@ -243,9 +241,8 @@ impl Html5Tokenizer {
             );
         }
 
-        let observable_progress = self.cursor != initial_cursor
-            || self.tokens.len() != initial_token_count
-            || self.stats.state_transitions != initial_state_transitions;
+        let observable_progress =
+            self.cursor != initial_cursor || self.tokens.len() != initial_token_count;
 
         if observable_progress {
             TokenizeResult::Progress
@@ -296,6 +293,7 @@ impl Html5Tokenizer {
                 // Core v0 EOF policy: unfinished doctype tails are finalized as
                 // quirks doctype at EOF, so we consume the remaining buffered tail.
                 self.cursor = buffered_len;
+                self.stats.bytes_consumed = self.cursor as u64;
             } else {
                 panic!(
                     "Html5Tokenizer::finish called with non-final cursor (cursor={}, buffered={}); call push_input() until NeedMoreInput before finish()",
@@ -441,6 +439,18 @@ impl Html5Tokenizer {
         debug_assert_eq!(self.state, TokenizerState::TagOpen);
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
+        }
+        #[cfg(any(test, feature = "debug-stats"))]
+        {
+            let tail: String = input.as_str()[self.cursor..].chars().take(8).collect();
+            log::trace!(
+                target: "html5.tokenizer",
+                "step_tag_open cursor={} head={:?} next={:?} tail={:?}",
+                self.cursor,
+                self.peek(input),
+                self.peek_next_char(input),
+                tail
+            );
         }
         if self.peek(input) != Some('<') {
             // Recovery: if state got desynchronized, continue in Data.

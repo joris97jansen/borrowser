@@ -37,4 +37,6 @@ Chunking policy:
 
 - The harness uses the shared chunk plan generator in `html::chunker`.
 - Deterministic plans include fixed sizes (1,2,3,4,8,16,32,64) and semantic boundaries around `<`, `</`, `>`, quotes, etc.
+- For small fixtures (<= 256 bytes), the harness also runs an explicit UTF-8 "every boundary" plan.
 - Seeded fuzz plans are generated per fixture for CI reproducibility.
+- Chunk-vs-whole equivalence is enforced for `active` fixtures. `xfail` fixtures still run under chunking, but chunk-vs-whole mismatch is treated as non-contractual while the fixture remains expected-failing.

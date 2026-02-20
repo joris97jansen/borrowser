@@ -98,18 +98,24 @@ impl Html5Tokenizer {
             return MatchResult::Matched;
         }
         let bytes = input.as_str().as_bytes();
-        if self.cursor >= bytes.len() {
+        let at = self.cursor;
+        if at >= bytes.len() {
             return MatchResult::NeedMoreInput;
         }
-        let tail = &bytes[self.cursor..];
-        let prefix_len = tail.len().min(pattern.len());
-        if tail[..prefix_len] != pattern[..prefix_len] {
+
+        if at + pattern.len() > bytes.len() {
+            let available = bytes.len().saturating_sub(at);
+            if bytes[at..].starts_with(&pattern[..available]) {
+                return MatchResult::NeedMoreInput;
+            }
             return MatchResult::NoMatch;
         }
-        if tail.len() < pattern.len() {
-            return MatchResult::NeedMoreInput;
+
+        if &bytes[at..at + pattern.len()] == pattern {
+            MatchResult::Matched
+        } else {
+            MatchResult::NoMatch
         }
-        MatchResult::Matched
     }
 
     pub(super) fn match_ascii_prefix_ci(&self, input: &Input, pattern: &[u8]) -> MatchResult {
@@ -122,20 +128,25 @@ impl Html5Tokenizer {
             return MatchResult::Matched;
         }
         let bytes = input.as_str().as_bytes();
-        if self.cursor >= bytes.len() {
+        let at = self.cursor;
+        if at >= bytes.len() {
             return MatchResult::NeedMoreInput;
         }
-        let tail = &bytes[self.cursor..];
-        let prefix_len = tail.len().min(pattern.len());
-        for i in 0..prefix_len {
-            if !tail[i].eq_ignore_ascii_case(&pattern[i]) {
-                return MatchResult::NoMatch;
+
+        if at + pattern.len() > bytes.len() {
+            let available = bytes.len().saturating_sub(at);
+            let tail = &bytes[at..];
+            if pattern[..available].eq_ignore_ascii_case(tail) {
+                return MatchResult::NeedMoreInput;
             }
+            return MatchResult::NoMatch;
         }
-        if tail.len() < pattern.len() {
-            return MatchResult::NeedMoreInput;
+
+        if bytes[at..at + pattern.len()].eq_ignore_ascii_case(pattern) {
+            MatchResult::Matched
+        } else {
+            MatchResult::NoMatch
         }
-        MatchResult::Matched
     }
 }
 

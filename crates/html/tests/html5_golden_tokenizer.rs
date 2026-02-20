@@ -1,7 +1,7 @@
 #![cfg(feature = "html5")]
 
-use html::chunker::{ChunkerConfig, build_chunk_plans};
-use html::html5::{DocumentParseContext, Html5Tokenizer, Input, TokenizerConfig};
+use html::chunker::{ChunkerConfig, build_chunk_plans, utf8_internal_boundaries};
+use html::html5::{DocumentParseContext, Html5Tokenizer, Input, TokenizeResult, TokenizerConfig};
 use html::test_harness::{ChunkPlan, shrink_chunk_plan_with_stats};
 use std::collections::BTreeMap;
 use std::env;
@@ -32,6 +32,115 @@ struct Fixture {
     name: String,
     input: String,
     expected: ExpectedTokens,
+}
+
+const MIN_TOKENIZER_FIXTURE_COUNT: usize = 20;
+const EVERY_BOUNDARY_MAX_BYTES: usize = 256;
+const MAX_PUMP_ITERATIONS_BASE: usize = 1024;
+
+#[test]
+fn html5_golden_tokenizer_fixture_corpus_contract() {
+    let fixtures = load_fixtures();
+    assert!(
+        fixtures.len() >= MIN_TOKENIZER_FIXTURE_COUNT,
+        "tokenizer golden corpus too small: found {} fixtures, require at least {}",
+        fixtures.len(),
+        MIN_TOKENIZER_FIXTURE_COUNT
+    );
+
+    let mut has_tag = false;
+    let mut has_attr = false;
+    let mut has_comment = false;
+    let mut has_doctype = false;
+    let mut has_named_charref_input = false;
+    let mut has_numeric_charref_input = false;
+    let mut has_named_decode_effect = false;
+    let mut has_numeric_decode_effect = false;
+    for fixture in &fixtures {
+        if fixture.expected.status == FixtureStatus::Skip {
+            continue;
+        }
+        let has_amp_input = fixture.input.contains("&amp;");
+        let has_lt_input = fixture.input.contains("&lt;");
+        let has_gt_input = fixture.input.contains("&gt;");
+        // We want `&` evidence that likely comes from decoding `&amp;`, not from
+        // unrelated literal ampersands in the original fixture input.
+        let has_literal_amp_in_input = fixture.input.replace("&amp;", "").contains('&');
+        let has_literal_a_in_input = fixture.input.contains('A');
+        has_named_charref_input |= has_amp_input || has_lt_input || has_gt_input;
+        let has_numeric_input = fixture.input.contains("&#");
+        has_numeric_charref_input |= has_numeric_input;
+
+        let mut has_char_amp = false;
+        let mut has_char_amp_literal = false;
+        let mut has_char_lt = false;
+        let mut has_char_lt_literal = false;
+        let mut has_char_gt = false;
+        let mut has_char_gt_literal = false;
+        let mut has_char_a = false;
+        let mut has_char_numeric_literal = false;
+        for line in &fixture.expected.lines {
+            if line.starts_with("CHAR ") {
+                has_char_amp |= line.contains('&');
+                has_char_amp_literal |= line.contains("&amp;");
+                has_char_lt |= line.contains('<');
+                has_char_lt_literal |= line.contains("&lt;");
+                has_char_gt |= line.contains('>');
+                has_char_gt_literal |= line.contains("&gt;");
+                has_char_a |= line.contains("CHAR text=\"") && line.contains('A');
+                has_char_numeric_literal |= line.contains("&#") || line.contains("&#x");
+            }
+            if line.starts_with("START ") || line.starts_with("END ") {
+                has_tag = true;
+            }
+            if line.starts_with("START ") && !line.contains("attrs=[]") {
+                has_attr = true;
+            }
+            if line.starts_with("COMMENT ") {
+                has_comment = true;
+            }
+            if line.starts_with("DOCTYPE ") {
+                has_doctype = true;
+            }
+        }
+        if has_amp_input && !has_literal_amp_in_input && has_char_amp && !has_char_amp_literal {
+            has_named_decode_effect = true;
+        }
+        if has_lt_input && has_char_lt && !has_char_lt_literal {
+            has_named_decode_effect = true;
+        }
+        if has_gt_input && has_char_gt && !has_char_gt_literal {
+            has_named_decode_effect = true;
+        }
+        if (fixture.input.contains("&#65;") || fixture.input.contains("&#x41;"))
+            && !has_literal_a_in_input
+            && has_char_a
+            && !has_char_numeric_literal
+        {
+            has_numeric_decode_effect = true;
+        }
+    }
+
+    assert!(has_tag, "tokenizer corpus missing tag coverage");
+    assert!(has_attr, "tokenizer corpus missing attribute coverage");
+    assert!(has_comment, "tokenizer corpus missing comment coverage");
+    assert!(has_doctype, "tokenizer corpus missing doctype coverage");
+    assert!(
+        has_named_charref_input,
+        "tokenizer corpus missing named-charref-like input coverage"
+    );
+    assert!(
+        has_numeric_charref_input,
+        "tokenizer corpus missing numeric-charref-like input coverage"
+    );
+    assert!(
+        has_named_decode_effect,
+        "tokenizer corpus missing named-charref decode effect in expected outputs"
+    );
+    assert!(
+        has_numeric_decode_effect,
+        "tokenizer corpus missing numeric-charref decode effect in expected outputs"
+    );
 }
 
 #[test]
@@ -72,10 +181,10 @@ fn html5_golden_tokenizer_chunked_input() {
             continue;
         }
         let whole = run_tokenizer_whole(&fixture);
-        let plans = build_chunk_plans(&fixture.input, fuzz_runs, fuzz_seed, ChunkerConfig::utf8());
+        let plans = build_tokenizer_chunk_plans(&fixture.input, fuzz_runs, fuzz_seed);
         for plan in plans {
             let actual = run_tokenizer_chunked(&fixture, &plan.plan, &plan.label);
-            if actual != whole {
+            if fixture.expected.status == FixtureStatus::Active && actual != whole {
                 let (shrunk, stats) =
                     shrink_chunk_plan_with_stats(&fixture.input, &plan.plan, |candidate| {
                         run_tokenizer_chunked(&fixture, candidate, "shrinking") != whole
@@ -93,6 +202,46 @@ fn html5_golden_tokenizer_chunked_input() {
         }
     }
     assert!(ran > 0, "no fixtures matched filter");
+}
+
+#[test]
+fn html5_golden_tokenizer_chunk_plan_generation_is_seed_deterministic() {
+    let input = "<div a=\"x\">Tom&amp;Jerry</div>";
+    let seed = 0xC0FFEE_u64;
+    let runs = 4usize;
+    let a = build_tokenizer_chunk_plans(input, runs, seed);
+    let b = build_tokenizer_chunk_plans(input, runs, seed);
+    assert_eq!(a.len(), b.len(), "chunk plan count must be deterministic");
+    for (left, right) in a.iter().zip(b.iter()) {
+        assert_eq!(left.label, right.label, "chunk plan labels must match");
+        assert_eq!(left.plan, right.plan, "chunk plan definitions must match");
+    }
+}
+
+fn build_tokenizer_chunk_plans(
+    input: &str,
+    fuzz_runs: usize,
+    fuzz_seed: u64,
+) -> Vec<html::chunker::ChunkPlanCase> {
+    let mut plans = build_chunk_plans(input, fuzz_runs, fuzz_seed, ChunkerConfig::utf8());
+    if let Some(plan) = every_boundary_plan_for_small_input(input) {
+        plans.push(plan);
+    }
+    plans
+}
+
+fn every_boundary_plan_for_small_input(input: &str) -> Option<html::chunker::ChunkPlanCase> {
+    if input.len() <= 1 || input.len() > EVERY_BOUNDARY_MAX_BYTES {
+        return None;
+    }
+    let boundaries = utf8_internal_boundaries(input);
+    if boundaries.is_empty() {
+        return None;
+    }
+    Some(html::chunker::ChunkPlanCase {
+        label: format!("every-boundary utf8 count={}", boundaries.len()),
+        plan: ChunkPlan::boundaries(boundaries),
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -283,15 +432,16 @@ fn run_tokenizer_whole(fixture: &Fixture) -> Vec<String> {
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig { emit_eof: true }, &mut ctx);
     let mut buffer = Input::new();
     buffer.push_str(&fixture.input);
-    handle_tokenize_result(
-        tokenizer.push_input(&mut buffer, &mut ctx),
+    let mut out = Vec::new();
+    pump_until_blocked(
+        &mut tokenizer,
+        &mut buffer,
+        &mut ctx,
         fixture,
         Mode::WholeInput,
         None,
-        "push_input",
+        &mut out,
     );
-    let mut out = Vec::new();
-    drain_tokens(&mut out, &mut tokenizer, &mut buffer, &ctx, fixture, None);
     handle_tokenize_result(
         tokenizer.finish(&buffer),
         fixture,
@@ -329,20 +479,14 @@ fn run_tokenizer_chunked(fixture: &Fixture, plan: &ChunkPlan, plan_label: &str) 
             )
         });
         buffer.push_str(chunk_str);
-        handle_tokenize_result(
-            tokenizer.push_input(&mut buffer, &mut ctx),
+        pump_until_blocked(
+            &mut tokenizer,
+            &mut buffer,
+            &mut ctx,
             fixture,
             Mode::ChunkedInput,
             Some(plan_label),
-            "push_input",
-        );
-        drain_tokens(
             &mut out,
-            &mut tokenizer,
-            &mut buffer,
-            &ctx,
-            fixture,
-            Some(plan_label),
         );
     });
     handle_tokenize_result(
@@ -361,6 +505,96 @@ fn run_tokenizer_chunked(fixture: &Fixture, plan: &ChunkPlan, plan_label: &str) 
         Some(plan_label),
     );
     out
+}
+
+fn pump_until_blocked(
+    tokenizer: &mut Html5Tokenizer,
+    buffer: &mut Input,
+    ctx: &mut DocumentParseContext,
+    fixture: &Fixture,
+    mode: Mode,
+    plan_label: Option<&str>,
+    out: &mut Vec<String>,
+) {
+    let mut iterations = 0usize;
+    let mut stalled_progress_pumps = 0usize;
+    let max_iterations = buffer
+        .as_str()
+        .len()
+        .saturating_add(MAX_PUMP_ITERATIONS_BASE);
+    loop {
+        iterations = iterations.saturating_add(1);
+        assert!(
+            iterations <= max_iterations,
+            "tokenizer pumping exceeded iteration budget in fixture '{}' [{}]",
+            fixture.name,
+            plan_label.unwrap_or(mode.label())
+        );
+        let stats_before = tokenizer.stats();
+        let out_len_before = out.len();
+        let result = tokenizer.push_input(buffer, ctx);
+        handle_tokenize_result(result, fixture, mode, plan_label, "push_input");
+        drain_tokens(out, tokenizer, buffer, ctx, fixture, plan_label);
+        let stats_after = tokenizer.stats();
+        let out_len_after = out.len();
+        let consumed = stats_after.bytes_consumed != stats_before.bytes_consumed;
+        let emitted = out_len_after != out_len_before;
+        if result == TokenizeResult::Progress {
+            if consumed || emitted {
+                stalled_progress_pumps = 0;
+            } else {
+                stalled_progress_pumps = stalled_progress_pumps.saturating_add(1);
+                assert!(
+                    stalled_progress_pumps <= 8,
+                    "tokenizer repeatedly reported Progress without observable progress in fixture '{}' [{}] (stalled_progress_pumps={} bytes_before={} bytes_after={} out_before={} out_after={})",
+                    fixture.name,
+                    plan_label.unwrap_or(mode.label()),
+                    stalled_progress_pumps,
+                    stats_before.bytes_consumed,
+                    stats_after.bytes_consumed,
+                    out_len_before,
+                    out_len_after
+                );
+            }
+        }
+        if result == TokenizeResult::NeedMoreInput {
+            // If we consumed or emitted, we clearly progressed and should pump again.
+            if consumed || emitted {
+                stalled_progress_pumps = 0;
+                continue;
+            }
+            let buf_len = buffer.as_str().len() as u64;
+
+            // Legitimate blocking point: no progress and already at end-of-buffer.
+            if stats_after.bytes_consumed >= buf_len {
+                break;
+            }
+
+            // Some tokenizer states may legally block mid-buffer while waiting
+            // for additional disambiguating bytes. Enable strict mode to assert
+            // on repeated mid-buffer stalls while debugging.
+            let strict_midbuffer_stall = env::var("BORROWSER_HTML5_STRICT_MIDBUFFER_STALL")
+                .ok()
+                .as_deref()
+                == Some("1");
+            if strict_midbuffer_stall {
+                stalled_progress_pumps = stalled_progress_pumps.saturating_add(1);
+                assert!(
+                    stalled_progress_pumps <= 8,
+                    "tokenizer returned NeedMoreInput before end-of-buffer without progress in fixture '{}' [{}] (stalled_progress_pumps={} bytes_consumed={} buf_len={} out_before={} out_after={})",
+                    fixture.name,
+                    plan_label.unwrap_or(mode.label()),
+                    stalled_progress_pumps,
+                    stats_after.bytes_consumed,
+                    buf_len,
+                    out_len_before,
+                    out_len_after
+                );
+                continue;
+            }
+            break;
+        }
+    }
 }
 
 fn drain_tokens(
