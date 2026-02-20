@@ -208,6 +208,8 @@ impl Html5Tokenizer {
                 break;
             }
         }
+        // Keep the metric consistent even if loop/control-flow changes later.
+        self.stats.bytes_consumed = self.cursor as u64;
 
         if remaining_budget == 0 {
             self.stats.budget_exhaustions = self.stats.budget_exhaustions.saturating_add(1);
