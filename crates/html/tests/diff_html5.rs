@@ -1,4 +1,4 @@
-#![cfg(feature = "html5")]
+#![cfg(all(feature = "html5", feature = "dom-snapshot"))]
 
 use html::dom_snapshot::{DomSnapshotOptions, compare_dom};
 use html::html5::tree_builder::{Html5TreeBuilder, TreeBuilderConfig, TreeBuilderStepResult};
@@ -7,15 +7,13 @@ use html::html5::{
     TokenizeResult, TokenizerConfig,
 };
 use html::{TokenStream, build_owned_dom, tokenize};
+use html_test_support::{diff_lines, escape_text};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[path = "common/mod.rs"]
-mod support;
 mod wpt_manifest;
 
-use support::{diff_lines, escape_text};
 use wpt_manifest::{DiffKind, FixtureStatus, WptCase, load_manifest};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -201,9 +199,26 @@ fn normalize_html5_tokens(
 
     input.push_str(input_html);
     loop {
+        let consumed_before = tokenizer.stats().bytes_consumed;
         let result = tokenizer.push_input(&mut input, &mut ctx);
+        let consumed_after = tokenizer.stats().bytes_consumed;
         handle_tokenize_result(result, "push_input")
             .map_err(|err| format!("tokenizer error in '{}' at {:?}: {err}", case_id, case_path))?;
+        // Diff harness assumes feed-all-then-finish semantics: NeedMoreInput should
+        // only occur at end-of-buffer. If this changes, fail fast with context.
+        if matches!(result, TokenizeResult::NeedMoreInput)
+            && consumed_after < input.as_str().len() as u64
+        {
+            return Err(format!(
+                "harness assumption violated: tokenizer returned NeedMoreInput despite buffered data in '{}' at {:?} (result={result:?}, consumed={} buffered={} before={}); either tokenizer stalled or input abstraction changed (repro: set DIFF_IDS={})",
+                case_id,
+                case_path,
+                consumed_after,
+                input.as_str().len(),
+                consumed_before,
+                case_id
+            ));
+        }
         drain_norm_tokens(
             &mut out,
             &mut tokenizer,
@@ -249,9 +264,24 @@ fn run_html5_dom(input_html: &str, case_id: &str, case_path: &Path) -> Result<ht
 
     input.push_str(input_html);
     loop {
+        let consumed_before = tokenizer.stats().bytes_consumed;
         let result = tokenizer.push_input(&mut input, &mut ctx);
+        let consumed_after = tokenizer.stats().bytes_consumed;
         handle_tokenize_result(result, "push_input")
             .map_err(|err| format!("tokenizer error in '{}' at {:?}: {err}", case_id, case_path))?;
+        if matches!(result, TokenizeResult::NeedMoreInput)
+            && consumed_after < input.as_str().len() as u64
+        {
+            return Err(format!(
+                "harness assumption violated: tokenizer returned NeedMoreInput despite buffered data in '{}' at {:?} (result={result:?}, consumed={} buffered={} before={}); either tokenizer stalled or input abstraction changed (repro: set DIFF_IDS={})",
+                case_id,
+                case_path,
+                consumed_after,
+                input.as_str().len(),
+                consumed_before,
+                case_id
+            ));
+        }
         drain_batches(
             &mut tokenizer,
             &mut input,
@@ -331,6 +361,8 @@ fn normalize_simplified_tokens(stream: &TokenStream) -> Vec<NormToken> {
                     .into_iter()
                     .map(|(name, value, _)| (name, value))
                     .collect();
+                // Diff normalization only: treat HTML void elements as self-closing
+                // to reduce cross-implementation noise in token comparisons.
                 let self_closing = *self_closing || is_html_void_tag(&name);
                 out.push(NormToken::StartTag {
                     name,
@@ -352,7 +384,9 @@ fn normalize_simplified_tokens(stream: &TokenStream) -> Vec<NormToken> {
             }
         }
     }
-    out.push(NormToken::Eof);
+    if !matches!(out.last(), Some(NormToken::Eof)) {
+        out.push(NormToken::Eof);
+    }
     out
 }
 
@@ -472,7 +506,7 @@ fn drain_norm_tokens(
                             let resolved = ctx.atoms.resolve(*id).unwrap_or("");
                             if resolved.is_empty() && strict {
                                 return Err(format!(
-                                    "empty doctype name in case '{}' at {:?} (DIFF_STRICT=1)",
+                                    "empty doctype name in case '{}' at {:?} (DIFF_STRICT=1, atom_id={id:?})",
                                     case_id, case_path
                                 ));
                             }
@@ -490,10 +524,11 @@ fn drain_norm_tokens(
                     attrs,
                     self_closing,
                 } => {
+                    let raw_name_id = *name;
                     let name = ctx.atoms.resolve(*name).unwrap_or("");
                     if name.is_empty() && strict {
                         return Err(format!(
-                            "empty start tag name in case '{}' at {:?} (DIFF_STRICT=1)",
+                            "empty start tag name in case '{}' at {:?} (DIFF_STRICT=1, atom_id={raw_name_id:?})",
                             case_id, case_path
                         ));
                     }
@@ -504,8 +539,8 @@ fn drain_norm_tokens(
                         let attr_name = ctx.atoms.resolve(attr.name).unwrap_or("");
                         if attr_name.is_empty() && strict {
                             return Err(format!(
-                                "empty attribute name in case '{}' at {:?} (DIFF_STRICT=1)",
-                                case_id, case_path
+                                "empty attribute name in case '{}' at {:?} (DIFF_STRICT=1, atom_id={:?})",
+                                case_id, case_path, attr.name
                             ));
                         }
                         let attr_name = attr_name.to_ascii_lowercase();
@@ -540,6 +575,8 @@ fn drain_norm_tokens(
                         .into_iter()
                         .map(|(name, value, _)| (name, value))
                         .collect();
+                    // Diff normalization only: treat HTML void elements as self-closing
+                    // to reduce cross-implementation noise in token comparisons.
                     let self_closing = *self_closing || is_html_void_tag(&name);
                     out.push(NormToken::StartTag {
                         name,
@@ -548,10 +585,11 @@ fn drain_norm_tokens(
                     });
                 }
                 Token::EndTag { name } => {
+                    let raw_name_id = *name;
                     let name = ctx.atoms.resolve(*name).unwrap_or("");
                     if name.is_empty() && strict {
                         return Err(format!(
-                            "empty end tag name in case '{}' at {:?} (DIFF_STRICT=1)",
+                            "empty end tag name in case '{}' at {:?} (DIFF_STRICT=1, atom_id={raw_name_id:?})",
                             case_id, case_path
                         ));
                     }

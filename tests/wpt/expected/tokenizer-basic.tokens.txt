@@ -1,6 +1,8 @@
 # format: html5-token-v1
 DOCTYPE name=html public_id=null system_id=null force_quirks=false
+CHAR text="\n"
 START name=p attrs=[] self_closing=false
 CHAR text="Hi"
 END name=p
+CHAR text="\n"
 EOF

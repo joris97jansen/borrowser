@@ -24,5 +24,28 @@ id: tokenizer-basic
 kind: tokens
 path: vendor/html/syntax/parsing/tokenizer-basic.html
 expected: expected/tokenizer-basic.tokens.txt
-status: xfail
-reason: html5 tokenizer not implemented yet
+status: active
+
+id: tokenizer-comments
+kind: tokens
+path: vendor/html/syntax/parsing/tokenizer-comments.html
+expected: expected/tokenizer-comments.tokens.txt
+status: active
+
+id: tokenizer-attrs-charref
+kind: tokens
+path: vendor/html/syntax/parsing/tokenizer-attrs-charref.html
+expected: expected/tokenizer-attrs-charref.tokens.txt
+status: active
+
+id: tokenizer-doctype-public-system
+kind: tokens
+path: vendor/html/syntax/parsing/tokenizer-doctype-public-system.html
+expected: expected/tokenizer-doctype-public-system.tokens.txt
+status: active
+
+id: tokenizer-script-data
+kind: tokens
+path: vendor/html/syntax/parsing/tokenizer-script-data.html
+expected: expected/tokenizer-script-data.tokens.txt
+status: active

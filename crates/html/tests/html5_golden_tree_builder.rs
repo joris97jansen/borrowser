@@ -1,19 +1,15 @@
-#![cfg(feature = "html5")]
+#![cfg(all(feature = "html5", feature = "dom-snapshot"))]
 
 use html::chunker::{ChunkerConfig, build_chunk_plans};
 use html::dom_snapshot::{DomSnapshot, DomSnapshotOptions};
 use html::html5::tree_builder::{Html5TreeBuilder, TreeBuilderConfig, TreeBuilderStepResult};
 use html::html5::{DocumentParseContext, Html5Tokenizer, Input, TokenizeResult, TokenizerConfig};
 use html::test_harness::{ChunkPlan, materialize_patch_batches, shrink_chunk_plan_with_stats};
+use html_test_support::diff_lines;
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-
-#[path = "common/mod.rs"]
-mod support;
-
-use support::diff_lines;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum FixtureStatus {

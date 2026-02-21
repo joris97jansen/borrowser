@@ -10,6 +10,10 @@ tools = { path = "../tools" }
 
 [dev-dependencies]
 criterion = "0.5"
+html-test-support = { path = "../html_test_support", features = ["html5"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+toml = "0.8"
 
 [features]
 debug-stats = []
@@ -29,14 +33,14 @@ harness = false
 [[test]]
 name = "wpt_html5"
 path = "tests/wpt_html5.rs"
-required-features = ["html5"]
+required-features = ["html5", "dom-snapshot"]
 
 [[test]]
-name = "token_snapshot"
-path = "tests/token_snapshot.rs"
+name = "wpt_html5_tokenizer"
+path = "tests/wpt_html5_tokenizer.rs"
 required-features = ["html5"]
 
 [[test]]
 name = "diff_html5"
 path = "tests/diff_html5.rs"
-required-features = ["html5"]
+required-features = ["html5", "dom-snapshot"]

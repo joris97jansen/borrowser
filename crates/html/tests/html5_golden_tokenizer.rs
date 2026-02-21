@@ -3,17 +3,12 @@
 use html::chunker::{ChunkerConfig, build_chunk_plans, utf8_internal_boundaries};
 use html::html5::{DocumentParseContext, Html5Tokenizer, Input, TokenizeResult, TokenizerConfig};
 use html::test_harness::{ChunkPlan, shrink_chunk_plan_with_stats};
+use html_test_support::diff_lines;
+use html_test_support::token_snapshot;
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-
-#[path = "common/mod.rs"]
-mod support;
-#[path = "common/token_snapshot.rs"]
-mod token_snapshot;
-
-use support::diff_lines;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum FixtureStatus {
