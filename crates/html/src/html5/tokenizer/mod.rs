@@ -15,6 +15,8 @@
 //! - Character references are decoded by the tokenizer when text/attribute
 //!   values are finalized (Core v0 minimal subset); spec-complete named-entity
 //!   behavior remains deferred.
+//! - Complexity posture (Core v0): tokenizer hot paths are single-pass over input
+//!   slices; comment and doctype tails are scanned linearly without backtracking.
 
 use crate::entities::decode_entities;
 use crate::html5::shared::{
@@ -200,19 +202,19 @@ impl Html5Tokenizer {
 
         while remaining_budget > 0 {
             remaining_budget -= 1;
-            self.stats.steps = self.stats.steps.saturating_add(1);
+            self.stats_inc_steps();
             let step_result = self.step(input, ctx);
             // Keep bytes_consumed aligned with absolute cursor progress.
-            self.stats.bytes_consumed = self.cursor as u64;
+            self.stats_set_bytes_consumed();
             if matches!(step_result, Step::NeedMoreInput) {
                 break;
             }
         }
         // Keep the metric consistent even if loop/control-flow changes later.
-        self.stats.bytes_consumed = self.cursor as u64;
+        self.stats_set_bytes_consumed();
 
         if remaining_budget == 0 {
-            self.stats.budget_exhaustions = self.stats.budget_exhaustions.saturating_add(1);
+            self.stats_inc_budget_exhaustions();
             let final_cursor = self.cursor;
             let final_tokens = self.tokens.len();
             let final_transitions = self.stats.state_transitions;
@@ -295,7 +297,7 @@ impl Html5Tokenizer {
                 // Core v0 EOF policy: unfinished doctype tails are finalized as
                 // quirks doctype at EOF, so we consume the remaining buffered tail.
                 self.cursor = buffered_len;
-                self.stats.bytes_consumed = self.cursor as u64;
+                self.stats_set_bytes_consumed();
             } else {
                 panic!(
                     "Html5Tokenizer::finish called with non-final cursor (cursor={}, buffered={}); call push_input() until NeedMoreInput before finish()",
@@ -352,7 +354,7 @@ impl Html5Tokenizer {
             );
         }
         self.state = next;
-        self.stats.state_transitions = self.stats.state_transitions.saturating_add(1);
+        self.stats_inc_state_transitions();
     }
 
     fn step(&mut self, input: &Input, ctx: &mut DocumentParseContext) -> Step {
@@ -1231,6 +1233,8 @@ impl Html5Tokenizer {
                 Step::Progress
             }
             Some(_) => {
+                // Linear scan invariant: each comment byte is consumed at most once
+                // while searching for '-'/'-->' boundaries.
                 let _ = self.consume(input);
                 Step::Progress
             }
@@ -1554,6 +1558,8 @@ impl Html5Tokenizer {
     }
 
     fn parse_doctype_after_name_tail(&self, input: &Input) -> DoctypeTailParse {
+        // Linear scan invariant: this parser advances a local cursor forward only.
+        // Each quoted id is scanned once; public/system ids are allocated once per doctype.
         let text = input.as_str();
         let bytes = text.as_bytes();
         let mut cursor = self.cursor;
@@ -1681,6 +1687,46 @@ impl Html5Tokenizer {
         match decoded {
             std::borrow::Cow::Borrowed(_) => self.emit_text_span(start, end),
             std::borrow::Cow::Owned(text) => self.emit_text_owned(&text),
+        }
+    }
+
+    #[inline]
+    fn stats_inc_steps(&mut self) {
+        #[cfg(any(test, debug_assertions, feature = "debug-stats"))]
+        {
+            self.stats.steps = self.stats.steps.saturating_add(1);
+        }
+    }
+
+    #[inline]
+    fn stats_inc_state_transitions(&mut self) {
+        #[cfg(any(test, debug_assertions, feature = "debug-stats"))]
+        {
+            self.stats.state_transitions = self.stats.state_transitions.saturating_add(1);
+        }
+    }
+
+    #[inline]
+    fn stats_inc_tokens_emitted(&mut self) {
+        #[cfg(any(test, debug_assertions, feature = "debug-stats"))]
+        {
+            self.stats.tokens_emitted = self.stats.tokens_emitted.saturating_add(1);
+        }
+    }
+
+    #[inline]
+    fn stats_inc_budget_exhaustions(&mut self) {
+        #[cfg(any(test, debug_assertions, feature = "debug-stats"))]
+        {
+            self.stats.budget_exhaustions = self.stats.budget_exhaustions.saturating_add(1);
+        }
+    }
+
+    #[inline]
+    fn stats_set_bytes_consumed(&mut self) {
+        #[cfg(any(test, debug_assertions, feature = "debug-stats"))]
+        {
+            self.stats.bytes_consumed = self.cursor as u64;
         }
     }
 }
