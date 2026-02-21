@@ -8,6 +8,6 @@ impl Html5Tokenizer {
         #[cfg(any(test, feature = "debug-stats"))]
         log::trace!(target: "html5.tokenizer", "emit token: {token:?}");
         self.tokens.push(token);
-        self.stats.tokens_emitted = self.stats.tokens_emitted.saturating_add(1);
+        self.stats_inc_tokens_emitted();
     }
 }
