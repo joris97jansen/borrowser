@@ -605,11 +605,20 @@ fn start_parse_runtime_with_policy_and_clock_and_mode<C: PreviewClock + 'static>
                             #[cfg(feature = "html5")]
                             {
                                 let ctx = html::html5::DocumentParseContext::new();
-                                let session = html::html5::Html5ParseSession::new(
+                                let session = match html::html5::Html5ParseSession::new(
                                     html::html5::TokenizerConfig::default(),
                                     html::html5::TreeBuilderConfig::default(),
                                     ctx,
-                                );
+                                ) {
+                                    Ok(session) => session,
+                                    Err(err) => {
+                                        error!(
+                                            target: "runtime_parse",
+                                            "failed to initialize html5 parse session: {err:?}"
+                                        );
+                                        continue;
+                                    }
+                                };
                                 RuntimeState::Html5(Box::new(Html5State {
                                     total_bytes: 0,
                                     pending_bytes: 0,

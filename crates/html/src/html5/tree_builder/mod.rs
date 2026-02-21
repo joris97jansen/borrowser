@@ -4,9 +4,16 @@
 //! tree-construction state (insertion modes, stack of open elements, active
 //! formatting list, etc.) and is resumable across token boundaries.
 
-use crate::dom_patch::DomPatch;
-use crate::html5::shared::{AtomTable, DocumentParseContext, EngineInvariantError, Token};
+use crate::dom_patch::{DomPatch, PatchKey};
+use crate::html5::shared::{
+    AtomError, AtomId, AtomTable, DocumentParseContext, EngineInvariantError, Token,
+};
 use crate::html5::tokenizer::TextResolver;
+use crate::html5::tree_builder::emit::{emit_append_child, emit_create_element};
+use crate::html5::tree_builder::formatting::ActiveFormattingList;
+use crate::html5::tree_builder::modes::InsertionMode;
+use crate::html5::tree_builder::stack::{OpenElement, OpenElementsStack};
+use std::num::NonZeroU32;
 
 #[derive(Clone, Debug, Default)]
 pub struct TreeBuilderConfig {
@@ -30,18 +37,17 @@ pub enum SuspendReason {
 }
 
 /// Tree building should not fail on malformed HTML; invariants are the only error surface for now.
+///
+/// Policy note:
+/// - Some invariants (like atom-table binding) are hard assertions and panic.
+/// - Other internal invariant failures continue to flow through this `Result`
+///   surface for now to keep integration call sites explicit while Core v0
+///   evolves.
 pub type TreeBuilderError = EngineInvariantError;
 
 /// Patch sink for streaming emission.
 pub trait PatchSink {
     fn push(&mut self, patch: DomPatch);
-
-    /// Prefer move-based extension to avoid per-item cloning.
-    fn extend_cloned(&mut self, patches: &[DomPatch]) {
-        for patch in patches {
-            self.push(patch.clone());
-        }
-    }
 
     fn extend_owned(&mut self, patches: Vec<DomPatch>) {
         for patch in patches {
@@ -67,48 +73,202 @@ impl<'a> PatchSink for VecPatchSink<'a> {
 }
 
 /// HTML5 tree builder.
+///
+/// Invariants:
+/// - Public methods are panic-free on malformed HTML content. Malformed input is
+///   treated as recoverable and does not surface as an error.
+/// - Public methods may panic on engine invariant violations/misuse (for
+///   example, passing a foreign `AtomTable`).
+/// - `TreeBuilderError` is reserved for engine invariant violations only
+///   (e.g., invalid text spans or internal key allocator exhaustion).
+/// - Emitted patch order is deterministic and source-ordered.
+/// - `PatchKey` values are monotonically increasing, non-zero, and never reused
+///   within a builder instance.
+/// - Core-v0 currently emits `Arc<str>` names in patches from canonical atoms;
+///   this will eventually move toward atom-first patch payloads.
+/// - The builder is bound to the `AtomTable` from `new()`; passing any other
+///   table to `process`/`push_token` is an engine invariant violation and panics.
 pub struct Html5TreeBuilder {
     config: TreeBuilderConfig,
+    atom_table_id: u64,
+    insertion_mode: InsertionMode,
+    original_insertion_mode: Option<InsertionMode>,
+    known_tags: KnownTagIds,
+    open_elements: OpenElementsStack,
+    active_formatting: ActiveFormattingList,
+    document_key: Option<PatchKey>,
+    next_patch_key: NonZeroU32,
+    pending_doctype: Option<String>,
+    patches: Vec<DomPatch>,
     max_open_elements_depth: u32,
     max_active_formatting_depth: u32,
 }
 
 impl Html5TreeBuilder {
-    pub fn new(config: TreeBuilderConfig, _ctx: &mut DocumentParseContext) -> Self {
-        Self {
+    pub fn new(
+        config: TreeBuilderConfig,
+        ctx: &mut DocumentParseContext,
+    ) -> Result<Self, TreeBuilderError> {
+        Ok(Self {
             config,
+            atom_table_id: ctx.atoms.id(),
+            insertion_mode: InsertionMode::Initial,
+            original_insertion_mode: None,
+            known_tags: KnownTagIds::intern(&mut ctx.atoms).map_err(|_| EngineInvariantError)?,
+            open_elements: OpenElementsStack::default(),
+            active_formatting: ActiveFormattingList::default(),
+            document_key: None,
+            next_patch_key: NonZeroU32::MIN,
+            pending_doctype: None,
+            patches: Vec::new(),
             max_open_elements_depth: 0,
             max_active_formatting_depth: 0,
-        }
+        })
+    }
+
+    /// Process a token and buffer resulting patches internally.
+    ///
+    /// The caller may retrieve buffered patches with `drain_patches()`.
+    /// This API is deterministic and equivalent to `push_token()` with a sink.
+    pub fn process(
+        &mut self,
+        token: &Token,
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
+    ) -> Result<TreeBuilderStepResult, TreeBuilderError> {
+        self.process_impl(token, atoms, text)
     }
 
     /// Push a token into the tree builder.
     ///
     /// Tokens are consumed in order; the builder may emit zero or more patches.
     /// The return value indicates whether parsing can continue or must suspend.
+    ///
+    /// This is the sink-based streaming adapter. For internal buffering, use
+    /// `process()` + `drain_patches()`.
     pub fn push_token(
         &mut self,
-        _token: &Token,
-        _atoms: &AtomTable,
-        _text: &dyn TextResolver,
-        _sink: &mut dyn PatchSink,
+        token: &Token,
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
+        sink: &mut dyn PatchSink,
     ) -> Result<TreeBuilderStepResult, TreeBuilderError> {
-        self.push_token_impl(_token, _atoms, _text, _sink)
+        let result = self.process_impl(token, atoms, text)?;
+        sink.push_many(&mut self.patches);
+        Ok(result)
     }
 
-    fn push_token_impl<S: PatchSink + ?Sized>(
+    /// Drain patches produced by previous `process()` calls.
+    ///
+    /// Patch ordering is stable: the returned vector preserves source token order.
+    #[must_use]
+    pub fn drain_patches(&mut self) -> Vec<DomPatch> {
+        std::mem::take(&mut self.patches)
+    }
+
+    fn process_impl(
         &mut self,
-        _token: &Token,
-        _atoms: &AtomTable,
-        _text: &dyn TextResolver,
-        _sink: &mut S,
+        token: &Token,
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
     ) -> Result<TreeBuilderStepResult, TreeBuilderError> {
-        // TODO: implement tree builder insertion modes and patch emission.
-        let _ = self.config.coalesce_text;
-        let _ = (
-            self.max_open_elements_depth,
-            self.max_active_formatting_depth,
+        self.assert_atom_table_binding(atoms);
+        // Core-v0 scaffold: config is wired into state; coalescing behavior lands
+        // in a follow-up and should not be dropped from the public config.
+        debug_assert!(
+            !self.config.coalesce_text,
+            "coalesce_text is configured but not implemented (Core-v0 scaffold)"
         );
+        // TODO(html5/tree_builder): implement deterministic text coalescing
+        // behavior when `self.config.coalesce_text` is enabled.
+        match token {
+            Token::Doctype { name, .. } => {
+                if self.document_key.is_none() && self.pending_doctype.is_none() {
+                    self.pending_doctype = match name {
+                        Some(id) => Some(resolve_atom(atoms, *id)?.to_string()),
+                        None => None,
+                    };
+                }
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } => {
+                let document_key = self.ensure_document_created()?;
+                let element_name = resolve_atom_arc(atoms, *name)?;
+                let parent = self
+                    .open_elements
+                    .current()
+                    .map(|entry| entry.key)
+                    .unwrap_or(document_key);
+                let key = self.alloc_patch_key()?;
+                let mut attributes = Vec::with_capacity(attrs.len());
+                for attr in attrs {
+                    let attr_name = resolve_atom_arc(atoms, attr.name)?;
+                    let attr_value = resolve_attribute_value(attr, text)?;
+                    attributes.push((attr_name, attr_value));
+                }
+                emit_create_element(&mut self.patches, key, element_name, attributes);
+                emit_append_child(&mut self.patches, parent, key);
+                if !*self_closing {
+                    self.open_elements.push(OpenElement { key, name: *name });
+                }
+                self.update_mode_for_start_tag(*name);
+            }
+            Token::EndTag { name } => {
+                // Core-v0 simplification: pop-until-matching without HTML scope checks
+                // or implied-end-tag handling. This is deterministic but intentionally
+                // weaker than the spec algorithm and will be replaced in a later step.
+                if let Some(position) = self.open_elements.position_from_top(*name) {
+                    self.open_elements.truncate(position + 1);
+                    let _ = self.open_elements.pop();
+                }
+                self.update_mode_for_end_tag(*name);
+            }
+            Token::Text { text: token_text } => {
+                let resolved = resolve_text_value(token_text, text)?;
+                if !resolved.is_empty() {
+                    let document_key = self.ensure_document_created()?;
+                    let parent = self
+                        .open_elements
+                        .current()
+                        .map(|entry| entry.key)
+                        .unwrap_or(document_key);
+                    let key = self.alloc_patch_key()?;
+                    self.patches.push(DomPatch::CreateText {
+                        key,
+                        text: resolved,
+                    });
+                    emit_append_child(&mut self.patches, parent, key);
+                }
+                self.insertion_mode = InsertionMode::InBody;
+            }
+            Token::Comment { text: token_text } => {
+                let resolved = resolve_text_value(token_text, text)?;
+                let document_key = self.ensure_document_created()?;
+                let parent = self
+                    .open_elements
+                    .current()
+                    .map(|entry| entry.key)
+                    .unwrap_or(document_key);
+                let key = self.alloc_patch_key()?;
+                self.patches.push(DomPatch::CreateComment {
+                    key,
+                    text: resolved,
+                });
+                emit_append_child(&mut self.patches, parent, key);
+            }
+            Token::Eof => {
+                let _ = self.ensure_document_created()?;
+            }
+        }
+        self.max_open_elements_depth = self
+            .max_open_elements_depth
+            .max(self.open_elements.max_depth());
+        self.max_active_formatting_depth = self
+            .max_active_formatting_depth
+            .max(self.active_formatting.max_depth());
         Ok(TreeBuilderStepResult::Continue)
     }
 
@@ -120,6 +280,145 @@ impl Html5TreeBuilder {
     /// Internal metric: max active formatting depth observed since session start.
     pub(crate) fn max_active_formatting_depth(&self) -> u32 {
         self.max_active_formatting_depth
+    }
+
+    fn alloc_patch_key(&mut self) -> Result<PatchKey, TreeBuilderError> {
+        let key = PatchKey(self.next_patch_key.get());
+        let next = self
+            .next_patch_key
+            .get()
+            .checked_add(1)
+            .ok_or(EngineInvariantError)?;
+        self.next_patch_key = NonZeroU32::new(next).ok_or(EngineInvariantError)?;
+        Ok(key)
+    }
+
+    #[cold]
+    #[track_caller]
+    fn assert_atom_table_binding(&self, atoms: &AtomTable) {
+        let actual = atoms.id();
+        let expected = self.atom_table_id;
+        assert_eq!(
+            actual, expected,
+            "tree builder atom table mismatch (expected={expected}, actual={actual})"
+        );
+    }
+
+    fn ensure_document_created(&mut self) -> Result<PatchKey, TreeBuilderError> {
+        if let Some(key) = self.document_key {
+            return Ok(key);
+        }
+        let key = self.alloc_patch_key()?;
+        self.patches.push(DomPatch::CreateDocument {
+            key,
+            doctype: self.pending_doctype.take(),
+        });
+        self.document_key = Some(key);
+        self.insertion_mode = InsertionMode::BeforeHtml;
+        self.open_elements.clear();
+        self.active_formatting.clear();
+        self.original_insertion_mode = None;
+        Ok(key)
+    }
+
+    fn update_mode_for_start_tag(&mut self, name: AtomId) {
+        self.insertion_mode = if name == self.known_tags.html {
+            InsertionMode::BeforeHead
+        } else if name == self.known_tags.head {
+            InsertionMode::InHead
+        } else if name == self.known_tags.body {
+            InsertionMode::InBody
+        } else if name == self.known_tags.script
+            || name == self.known_tags.style
+            || name == self.known_tags.title
+            || name == self.known_tags.textarea
+        {
+            self.original_insertion_mode = Some(self.insertion_mode);
+            InsertionMode::Text
+        } else {
+            InsertionMode::InBody
+        };
+    }
+
+    fn update_mode_for_end_tag(&mut self, name: AtomId) {
+        self.insertion_mode = if name == self.known_tags.head {
+            InsertionMode::AfterHead
+        } else if name == self.known_tags.script
+            || name == self.known_tags.style
+            || name == self.known_tags.title
+            || name == self.known_tags.textarea
+        {
+            self.original_insertion_mode
+                .take()
+                .unwrap_or(InsertionMode::InBody)
+        } else if name == self.known_tags.body {
+            InsertionMode::InBody
+        } else {
+            self.insertion_mode
+        };
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+struct KnownTagIds {
+    html: AtomId,
+    head: AtomId,
+    body: AtomId,
+    script: AtomId,
+    style: AtomId,
+    title: AtomId,
+    textarea: AtomId,
+}
+
+impl KnownTagIds {
+    fn intern(atoms: &mut AtomTable) -> Result<Self, AtomError> {
+        Ok(Self {
+            html: atoms.intern_ascii_folded("html")?,
+            head: atoms.intern_ascii_folded("head")?,
+            body: atoms.intern_ascii_folded("body")?,
+            script: atoms.intern_ascii_folded("script")?,
+            style: atoms.intern_ascii_folded("style")?,
+            title: atoms.intern_ascii_folded("title")?,
+            textarea: atoms.intern_ascii_folded("textarea")?,
+        })
+    }
+}
+
+fn resolve_atom(atoms: &AtomTable, id: AtomId) -> Result<&str, TreeBuilderError> {
+    atoms.resolve(id).ok_or(EngineInvariantError)
+}
+
+fn resolve_atom_arc(
+    atoms: &AtomTable,
+    id: AtomId,
+) -> Result<std::sync::Arc<str>, TreeBuilderError> {
+    atoms.resolve_arc(id).ok_or(EngineInvariantError)
+}
+
+fn resolve_attribute_value(
+    attribute: &crate::html5::shared::Attribute,
+    text: &dyn TextResolver,
+) -> Result<Option<String>, TreeBuilderError> {
+    match &attribute.value {
+        None => Ok(None),
+        Some(crate::html5::shared::AttributeValue::Owned(value)) => Ok(Some(value.clone())),
+        Some(crate::html5::shared::AttributeValue::Span(span)) => text
+            .resolve_span(*span)
+            .map(|value| Some(value.to_string()))
+            .map_err(|_| EngineInvariantError),
+    }
+}
+
+fn resolve_text_value(
+    value: &crate::html5::shared::TextValue,
+    text: &dyn TextResolver,
+) -> Result<String, TreeBuilderError> {
+    match value {
+        crate::html5::shared::TextValue::Owned(value) => Ok(value.clone()),
+        crate::html5::shared::TextValue::Span(span) => text
+            .resolve_span(*span)
+            .map(|value| value.to_string())
+            .map_err(|_| EngineInvariantError),
     }
 }
 

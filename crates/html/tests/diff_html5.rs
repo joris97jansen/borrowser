@@ -257,7 +257,13 @@ fn normalize_html5_tokens(
 fn run_html5_dom(input_html: &str, case_id: &str, case_path: &Path) -> Result<html::Node, String> {
     let mut ctx = DocumentParseContext::new();
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig { emit_eof: true }, &mut ctx);
-    let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx);
+    let mut builder =
+        Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).map_err(|err| {
+            format!(
+                "failed to init tree builder in '{}' at {:?}: {err:?}",
+                case_id, case_path
+            )
+        })?;
     let mut input = Input::new();
     let mut patch_batches: Vec<Vec<html::DomPatch>> = Vec::new();
     let mut saw_eof_token = false;

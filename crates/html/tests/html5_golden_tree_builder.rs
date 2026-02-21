@@ -333,7 +333,10 @@ fn run_tree_builder_impl(
 ) -> RunOutput {
     let mut ctx = DocumentParseContext::new();
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig { emit_eof: true }, &mut ctx);
-    let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx);
+    let mut builder = match Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx) {
+        Ok(builder) => builder,
+        Err(err) => return RunOutput::Err(format!("failed to init tree builder: {err:?}")),
+    };
     let mut input = Input::new();
     let mut patch_batches: Vec<Vec<html::DomPatch>> = Vec::new();
     let mut saw_eof_token = false;

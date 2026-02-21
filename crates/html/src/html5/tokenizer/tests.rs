@@ -143,6 +143,42 @@ fn finish_with_unconsumed_input_panics() {
 }
 
 #[test]
+#[should_panic(expected = "next_batch input must match the tokenizer-bound Input instance")]
+fn next_batch_with_foreign_input_panics() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut owner_input = Input::new();
+    owner_input.push_str("<div>");
+    let _ = tokenizer.push_input(&mut owner_input, &mut ctx);
+    let mut foreign_input = Input::new();
+    let _ = tokenizer.next_batch(&mut foreign_input);
+}
+
+#[test]
+#[should_panic(expected = "finish called with non-final cursor")]
+fn finish_with_unconsumed_input_in_comment_family_panics() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<!--x");
+    assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+    input.push_str("tail-without-pump");
+    let _ = tokenizer.finish(&input);
+}
+
+#[test]
+#[should_panic(expected = "finish called with non-final cursor")]
+fn finish_with_unconsumed_input_in_quoted_attribute_value_panics() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<div a=\"x");
+    assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+    input.push_str("tail-without-pump");
+    let _ = tokenizer.finish(&input);
+}
+
+#[test]
 fn tag_open_holds_on_lonely_lt_until_more_input() {
     let mut ctx = DocumentParseContext::new();
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
@@ -170,6 +206,14 @@ fn tag_open_holds_on_lonely_lt_until_more_input() {
     assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
     let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
     assert_eq!(tokens, vec!["EOF".to_string()]);
+}
+
+#[test]
+fn unterminated_start_tag_at_eof_is_stable() {
+    let whole = run_chunks(&["<div"]);
+    let split = run_chunks(&["<d", "iv"]);
+    assert_eq!(whole, split);
+    assert_eq!(whole, vec!["EOF".to_string()]);
 }
 
 #[test]
@@ -571,6 +615,22 @@ fn doctype_chunk_splits_inside_keyword_and_name_are_invariant() {
 }
 
 #[test]
+fn doctype_keyword_mixed_case_chunk_splits_are_invariant() {
+    let whole = run_chunks(&["<!DoCtYpE html>"]);
+    let split_1 = run_chunks(&["<!DO", "cTyPe html>"]);
+    let split_2 = run_chunks(&["<!D", "oCtYpE html>"]);
+    assert_eq!(whole, split_1);
+    assert_eq!(whole, split_2);
+    assert_eq!(
+        whole,
+        vec![
+            "DOCTYPE name=html public_id=null system_id=null force_quirks=false".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
 fn doctype_public_system_chunk_splits_inside_ids_and_before_gt_are_invariant() {
     let sample = "<!DOCTYPE html PUBLIC \"-//W3C//DTD HTML 4.01//EN\" \"http://www.w3.org/TR/html4/strict.dtd\">";
     let whole = run_chunks(&[sample]);
@@ -613,6 +673,56 @@ fn doctype_public_id_eof_mid_quote_forces_quirks() {
         tokens,
         vec![
             "DOCTYPE name=html public_id=null system_id=null force_quirks=true".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn doctype_finish_with_unconsumed_buffered_tail_in_doctype_family_forces_quirks() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<!DOCTYPE html PUBLIC \"x");
+    assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+
+    // Intentionally append bytes without another pump; finish() in doctype
+    // family should accept this Core-v0 shortcut and finalize quirks doctype.
+    input.push_str("tail-without-pump");
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    assert_eq!(
+        tokens,
+        vec![
+            "DOCTYPE name=html public_id=null system_id=null force_quirks=true".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn doctype_public_keyword_chunk_split_is_invariant() {
+    let whole = run_chunks(&["<!DOCTYPE html PUBLIC \"x\" \"y\">"]);
+    let split = run_chunks(&["<!DOCTYPE html PUB", "LIC \"x\" \"y\">"]);
+    assert_eq!(whole, split);
+    assert_eq!(
+        whole,
+        vec![
+            "DOCTYPE name=html public_id=\"x\" system_id=\"y\" force_quirks=false".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn doctype_system_keyword_chunk_split_is_invariant() {
+    let whole = run_chunks(&["<!DOCTYPE html SYSTEM \"sys\">"]);
+    let split = run_chunks(&["<!DOCTYPE html SYS", "TEM \"sys\">"]);
+    assert_eq!(whole, split);
+    assert_eq!(
+        whole,
+        vec![
+            "DOCTYPE name=html public_id=null system_id=\"sys\" force_quirks=false".to_string(),
             "EOF".to_string(),
         ]
     );
@@ -835,6 +945,26 @@ fn comment_chunk_splits_across_dashes_and_gt_are_invariant() {
     assert_eq!(
         whole,
         vec!["COMMENT text=\"xy\"".to_string(), "EOF".to_string()]
+    );
+}
+
+#[test]
+fn malformed_comment_terminator_dash_variants_are_stable() {
+    let three_dash = run_chunks(&["<!--a--->"]);
+    let four_dash = run_chunks(&["<!--a---->"]);
+    let bang_variant = run_chunks(&["<!--a--!>"]);
+
+    assert_eq!(
+        three_dash,
+        vec!["COMMENT text=\"a-\"".to_string(), "EOF".to_string()]
+    );
+    assert_eq!(
+        four_dash,
+        vec!["COMMENT text=\"a--\"".to_string(), "EOF".to_string()]
+    );
+    assert_eq!(
+        bang_variant,
+        vec!["COMMENT text=\"a--!>\"".to_string(), "EOF".to_string()]
     );
 }
 
@@ -1144,9 +1274,18 @@ fn token_fmt_is_deterministic_and_preserves_attribute_order() {
     }
 
     let mut ctx = DocumentParseContext::new();
-    let tag = ctx.atoms.intern_ascii_folded("div");
-    let attr_z = ctx.atoms.intern_ascii_folded("zeta");
-    let attr_a = ctx.atoms.intern_ascii_folded("alpha");
+    let tag = ctx
+        .atoms
+        .intern_ascii_folded("div")
+        .expect("atom interning");
+    let attr_z = ctx
+        .atoms
+        .intern_ascii_folded("zeta")
+        .expect("atom interning");
+    let attr_a = ctx
+        .atoms
+        .intern_ascii_folded("alpha")
+        .expect("atom interning");
     let token = Token::StartTag {
         name: tag,
         attrs: vec![
@@ -1227,4 +1366,15 @@ fn resolver_rejects_invalid_span() {
         .resolve_span(crate::html5::shared::TextSpan::new(0, 999))
         .expect_err("resolver must reject out-of-bounds span");
     assert!(matches!(err, super::TextResolveError::InvalidSpan { .. }));
+}
+
+#[test]
+#[should_panic(expected = "tokenizer atom table mismatch")]
+fn tokenizer_rejects_foreign_atom_table_context() {
+    let mut owner_ctx = DocumentParseContext::new();
+    let mut foreign_ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut owner_ctx);
+    let mut input = Input::new();
+    input.push_str("<div>");
+    let _ = tokenizer.push_input(&mut input, &mut foreign_ctx);
 }
