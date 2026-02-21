@@ -1,0 +1,7 @@
+format = "wpt-tokenizer-skips-v1"
+
+[[cases]]
+id = "tokenizer-script-data"
+status = "skip"
+reason = "Script-data tokenizer states are out of scope for Core v0 tokenizer slice."
+tracking_issue = "BORW-HTML5-TOK-SCRIPT-DATA-001"

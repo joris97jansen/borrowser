@@ -1,0 +1,5 @@
+# format: html5-token-v1
+START name=script attrs=[] self_closing=false
+CHAR text="if (a < b) c()"
+END name=script
+EOF

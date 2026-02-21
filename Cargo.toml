@@ -20,6 +20,7 @@ opt-level = 1
 
 [workspace]
 members = [
+  "crates/html_test_support",
   "crates/app_api",
   "crates/browser",
   "crates/net",

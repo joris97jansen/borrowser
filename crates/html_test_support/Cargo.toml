@@ -1,0 +1,18 @@
+[package]
+name = "html-test-support"
+version = "0.1.0"
+edition = "2024"
+
+[features]
+default = []
+html5 = ["dep:html"]
+
+[dependencies]
+html = { path = "../html", default-features = false, features = ["html5"], optional = true }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+toml = "0.9"
+
+[lib]
+name = "html_test_support"
+path = "src/lib.rs"

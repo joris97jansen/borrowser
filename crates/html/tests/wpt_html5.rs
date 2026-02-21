@@ -3,35 +3,28 @@
 use html::dom_snapshot::{DomSnapshot, DomSnapshotOptions};
 use html::html5::tree_builder::{Html5TreeBuilder, TreeBuilderConfig, TreeBuilderStepResult};
 use html::html5::{DocumentParseContext, Html5Tokenizer, Input, TokenizeResult, TokenizerConfig};
-use html::test_harness::{BoundaryPolicy, ChunkPlan, shrink_chunk_plan_with_stats};
-use std::collections::BTreeMap;
+use html::test_harness::{ChunkPlan, shrink_chunk_plan_with_stats};
+use html_test_support::diff_lines;
+use html_test_support::wpt_expected::{parse_expected_dom, parse_expected_tokens};
+use html_test_support::wpt_tokenizer::{
+    TokenizerSkipStatus, applied_skip_override, ensure_utf8_plan, load_tokenizer_skip_overrides,
+    parse_env_bool, parse_u64, run_tokenizer_chunked, run_tokenizer_whole,
+    validate_skip_override_ids,
+};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
-#[path = "common/mod.rs"]
-mod support;
-#[path = "common/token_snapshot.rs"]
-mod token_snapshot;
 mod wpt_manifest;
 
-use support::diff_lines;
 use wpt_manifest::{CaseKind, FixtureStatus, WptCase, load_manifest};
-
-struct ExpectedDom {
-    options: DomSnapshotOptions,
-    lines: Vec<String>,
-}
-
-struct ExpectedTokens {
-    lines: Vec<String>,
-}
 
 struct RunConfig {
     kind: Option<CaseKind>,
     filter: Option<String>,
     ids: Vec<String>,
     chunked: bool,
+    chunked_force: bool,
     fuzz_runs: usize,
     fuzz_seed: u64,
 }
@@ -57,27 +50,12 @@ fn err_kind(err: &str) -> &str {
         .unwrap_or(err)
 }
 
-fn ensure_utf8_plan(case_id: &str, plan: &ChunkPlan, plan_label: &str) -> Result<(), String> {
-    match plan {
-        ChunkPlan::Fixed { policy, .. }
-        | ChunkPlan::Sizes { policy, .. }
-        | ChunkPlan::Boundaries { policy, .. } => {
-            if matches!(policy, BoundaryPolicy::ByteStream) {
-                return Err(format!(
-                    "byte-stream chunking is not supported for case '{}' [{plan_label}]",
-                    case_id
-                ));
-            }
-        }
-    }
-    Ok(())
-}
-
 #[test]
 fn wpt_html5() {
     let manifest_path = wpt_root().join("manifest.txt");
-    let cases = load_manifest(&manifest_path);
+    let mut cases = load_manifest(&manifest_path);
     assert!(!cases.is_empty(), "no WPT cases found in {manifest_path:?}");
+    apply_tokenizer_skip_overrides(&mut cases, &manifest_path);
     let run_config = load_run_config();
     let cases = select_cases(cases, &run_config, &manifest_path);
 
@@ -109,8 +87,11 @@ fn wpt_html5() {
         };
         match case.kind {
             CaseKind::Dom => {
-                let expected = parse_dom_file(&case.expected);
-                let options = expected.options;
+                let expected = parse_expected_dom(&case.expected);
+                let options = DomSnapshotOptions {
+                    ignore_ids: expected.ignore_ids,
+                    ignore_empty_style: expected.ignore_empty_style,
+                };
                 let mut failure = None::<String>;
                 let mut whole_lines = None::<Vec<String>>;
                 match run_tree_builder_whole(&input, options) {
@@ -136,7 +117,7 @@ fn wpt_html5() {
                         ));
                     }
                 }
-                if failure.is_none() && run_config.chunked {
+                if run_config.chunked && (failure.is_none() || run_config.chunked_force) {
                     if chunk_plans.is_empty() {
                         failure = Some(format!(
                             "WPT case '{}' requested chunked mode but no chunk plans were generated",
@@ -264,17 +245,17 @@ fn wpt_html5() {
                 }
             }
             CaseKind::Tokens => {
-                let expected = parse_tokens_file(&case.expected);
+                let expected_lines = parse_expected_tokens(&case.expected);
                 let mut failure = None::<String>;
                 let mut whole_lines = None::<Vec<String>>;
                 match run_tokenizer_whole(&input, &case.id) {
                     Ok(lines) => {
-                        if lines.as_slice() != expected.lines.as_slice() {
+                        if lines.as_slice() != expected_lines.as_slice() {
                             failure = Some(format!(
                                 "WPT token mismatch for '{}' ({})\n{}\nexpected file: {:?}\ninput file: {:?}",
                                 case.id,
                                 case.path.display(),
-                                diff_lines(&expected.lines, &lines),
+                                diff_lines(&expected_lines, &lines),
                                 case.expected,
                                 case.path
                             ));
@@ -290,7 +271,7 @@ fn wpt_html5() {
                         ));
                     }
                 }
-                if failure.is_none() && run_config.chunked {
+                if run_config.chunked && (failure.is_none() || run_config.chunked_force) {
                     if chunk_plans.is_empty() {
                         failure = Some(format!(
                             "WPT case '{}' requested chunked mode but no chunk plans were generated",
@@ -308,7 +289,7 @@ fn wpt_html5() {
                                         match whole_lines.as_ref() {
                                             Some(whole) => ("whole-vs-chunked", whole.as_slice()),
                                             None => {
-                                                ("expected-vs-chunked", expected.lines.as_slice())
+                                                ("expected-vs-chunked", expected_lines.as_slice())
                                             }
                                         };
                                     if lines.as_slice() != diff_target {
@@ -440,6 +421,31 @@ fn wpt_html5() {
     }
 }
 
+fn apply_tokenizer_skip_overrides(cases: &mut [WptCase], manifest_path: &Path) {
+    let overrides = load_tokenizer_skip_overrides(&wpt_root());
+    let token_case_ids = cases
+        .iter()
+        .filter(|case| case.kind == CaseKind::Tokens)
+        .map(|case| case.id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    validate_skip_override_ids(&overrides, &token_case_ids, manifest_path);
+
+    for case in cases
+        .iter_mut()
+        .filter(|case| case.kind == CaseKind::Tokens)
+    {
+        if let Some((override_status, override_reason)) =
+            applied_skip_override(&case.id, &overrides)
+        {
+            case.status = match override_status {
+                TokenizerSkipStatus::Skip => FixtureStatus::Skip,
+                TokenizerSkipStatus::Xfail => FixtureStatus::Xfail,
+            };
+            case.reason = Some(override_reason);
+        }
+    }
+}
+
 fn wpt_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -475,6 +481,7 @@ fn load_run_config() -> RunConfig {
         })
         .unwrap_or_default();
     let chunked = parse_env_bool("WPT_CHUNKED");
+    let chunked_force = parse_env_bool("WPT_CHUNKED_FORCE");
     let fuzz_runs_raw = env::var("WPT_FUZZ_RUNS")
         .ok()
         .and_then(|value| value.trim().parse::<usize>().ok());
@@ -495,28 +502,9 @@ fn load_run_config() -> RunConfig {
         filter,
         ids,
         chunked,
+        chunked_force,
         fuzz_runs,
         fuzz_seed,
-    }
-}
-
-fn parse_env_bool(key: &str) -> bool {
-    match env::var(key).ok().as_deref() {
-        Some("1") | Some("true") | Some("yes") | Some("on") => true,
-        Some("0") | Some("false") | Some("no") | Some("off") | Some("") | None => false,
-        Some(other) => panic!("unsupported {key} value '{other}'; use 1/0 or true/false"),
-    }
-}
-
-fn parse_u64(raw: &str) -> Option<u64> {
-    let trimmed = raw.trim();
-    if trimmed.is_empty() {
-        return None;
-    }
-    if let Some(hex) = trimmed.strip_prefix("0x") {
-        u64::from_str_radix(hex, 16).ok()
-    } else {
-        trimmed.parse::<u64>().ok()
     }
 }
 
@@ -552,113 +540,6 @@ fn select_cases(cases: Vec<WptCase>, run_config: &RunConfig, manifest_path: &Pat
         );
     }
     selected
-}
-
-fn parse_dom_file(path: &Path) -> ExpectedDom {
-    let content = fs::read_to_string(path)
-        .unwrap_or_else(|err| panic!("failed to read expected DOM file {path:?}: {err}"));
-    let mut lines = Vec::new();
-    let mut headers: BTreeMap<String, String> = BTreeMap::new();
-    for raw_line in content.lines() {
-        let line = raw_line.trim_end();
-        if line.is_empty() {
-            continue;
-        }
-        if let Some(stripped) = line.strip_prefix('#') {
-            let header = stripped.trim();
-            if header.is_empty() {
-                continue;
-            }
-            if let Some((key, value)) = header.split_once(':') {
-                let key = key.trim().to_ascii_lowercase();
-                let value = value.trim().to_string();
-                if headers.insert(key.clone(), value).is_some() {
-                    panic!("duplicate header '{key}' in {path:?}");
-                }
-            } else {
-                lines.push(line.to_string());
-            }
-        } else {
-            lines.push(line.to_string());
-        }
-    }
-
-    let format = headers
-        .get("format")
-        .unwrap_or_else(|| panic!("missing format header in {path:?}"));
-    assert_eq!(format, "html5-dom-v1", "unsupported format in {path:?}");
-
-    let options = DomSnapshotOptions {
-        ignore_ids: header_bool(&headers, "ignore_ids", true, path),
-        ignore_empty_style: header_bool(&headers, "ignore_empty_style", true, path),
-    };
-
-    if lines.is_empty() {
-        panic!("expected DOM file {path:?} has no snapshot lines");
-    }
-    if !lines[0].starts_with("#document") {
-        panic!("expected DOM file {path:?} must start with #document");
-    }
-
-    ExpectedDom { options, lines }
-}
-
-fn parse_tokens_file(path: &Path) -> ExpectedTokens {
-    let content = fs::read_to_string(path)
-        .unwrap_or_else(|err| panic!("failed to read expected tokens file {path:?}: {err}"));
-    let mut lines = Vec::new();
-    let mut headers: BTreeMap<String, String> = BTreeMap::new();
-    for raw_line in content.lines() {
-        let line = raw_line.trim_end();
-        if line.is_empty() {
-            continue;
-        }
-        if let Some(stripped) = line.strip_prefix('#') {
-            let header = stripped.trim();
-            if header.is_empty() {
-                continue;
-            }
-            if let Some((key, value)) = header.split_once(':') {
-                let key = key.trim().to_ascii_lowercase();
-                let value = value.trim().to_string();
-                if headers.insert(key.clone(), value).is_some() {
-                    panic!("duplicate header '{key}' in {path:?}");
-                }
-            } else {
-                lines.push(line.to_string());
-            }
-        } else {
-            lines.push(line.to_string());
-        }
-    }
-
-    let format = headers
-        .get("format")
-        .unwrap_or_else(|| panic!("missing format header in {path:?}"));
-    assert_eq!(format, "html5-token-v1", "unsupported format in {path:?}");
-    if headers.contains_key("status") || headers.contains_key("reason") {
-        panic!(
-            "status/reason headers are not supported in {path:?}; use manifest.txt as the source of truth"
-        );
-    }
-
-    if lines.is_empty() {
-        panic!("expected tokens file {path:?} has no token lines");
-    }
-    if lines.last().map(String::as_str) != Some("EOF") {
-        panic!("expected tokens file {path:?} must end with EOF");
-    }
-
-    ExpectedTokens { lines }
-}
-
-fn header_bool(headers: &BTreeMap<String, String>, key: &str, default: bool, path: &Path) -> bool {
-    match headers.get(key).map(|s| s.as_str()) {
-        None => default,
-        Some("true") => true,
-        Some("false") => false,
-        Some(other) => panic!("invalid boolean '{other}' for {key} in {path:?}"),
-    }
 }
 
 fn run_tree_builder_whole(
@@ -772,147 +653,6 @@ fn run_tree_builder_chunked(
     let dom = html::test_harness::materialize_patch_batches(&patch_batches)?;
     let snapshot = DomSnapshot::new(&dom, options);
     Ok(snapshot.as_lines().to_vec())
-}
-
-fn run_tokenizer_whole(input_html: &str, case_id: &str) -> Result<Vec<String>, String> {
-    let mut ctx = DocumentParseContext::new();
-    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig { emit_eof: true }, &mut ctx);
-    let mut input = Input::new();
-    let mut saw_eof_token = false;
-    input.push_str(input_html);
-    handle_tokenize_result(tokenizer.push_input(&mut input, &mut ctx), "push_input")?;
-    let mut out = Vec::new();
-    let mut index = 0usize;
-    let context = token_snapshot::TokenFormatContext {
-        case_id,
-        mode: "whole",
-    };
-    drain_tokens(
-        &mut out,
-        &mut tokenizer,
-        &mut input,
-        &ctx,
-        &context,
-        &mut index,
-        &mut saw_eof_token,
-    )?;
-    handle_tokenize_result(tokenizer.finish(&input), "finish")?;
-    drain_tokens(
-        &mut out,
-        &mut tokenizer,
-        &mut input,
-        &ctx,
-        &context,
-        &mut index,
-        &mut saw_eof_token,
-    )?;
-    if !saw_eof_token {
-        return Err(format!(
-            "expected EOF token but none was observed (case '{}' [whole])",
-            case_id
-        ));
-    }
-    Ok(out)
-}
-
-fn run_tokenizer_chunked(
-    input_html: &str,
-    case_id: &str,
-    plan: &ChunkPlan,
-    plan_label: &str,
-) -> Result<Vec<String>, String> {
-    let mut ctx = DocumentParseContext::new();
-    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig { emit_eof: true }, &mut ctx);
-    let mut input = Input::new();
-    let mut out = Vec::new();
-    let mut index = 0usize;
-    let mut saw_eof_token = false;
-    let context = token_snapshot::TokenFormatContext {
-        case_id,
-        mode: plan_label,
-    };
-    let mut error = None::<String>;
-
-    plan.for_each_chunk(input_html, |chunk| {
-        if error.is_some() {
-            return;
-        }
-        let chunk_str = std::str::from_utf8(chunk).unwrap_or_else(|_| {
-            error = Some(format!(
-                "chunk plan produced invalid UTF-8 boundary in case '{}' [{plan_label}]",
-                case_id
-            ));
-            ""
-        });
-        if error.is_some() {
-            return;
-        }
-        input.push_str(chunk_str);
-        if let Err(err) =
-            handle_tokenize_result(tokenizer.push_input(&mut input, &mut ctx), "push_input")
-        {
-            error = Some(format!("case '{}' [{plan_label}] error: {err}", case_id));
-            return;
-        }
-        if let Err(err) = drain_tokens(
-            &mut out,
-            &mut tokenizer,
-            &mut input,
-            &ctx,
-            &context,
-            &mut index,
-            &mut saw_eof_token,
-        ) {
-            error = Some(format!("case '{}' [{plan_label}] error: {err}", case_id));
-        }
-    });
-    if let Some(err) = error {
-        return Err(err);
-    }
-    handle_tokenize_result(tokenizer.finish(&input), "finish")?;
-    drain_tokens(
-        &mut out,
-        &mut tokenizer,
-        &mut input,
-        &ctx,
-        &context,
-        &mut index,
-        &mut saw_eof_token,
-    )?;
-    if !saw_eof_token {
-        return Err(format!(
-            "expected EOF token but none was observed (case '{}' [{plan_label}])",
-            case_id
-        ));
-    }
-    Ok(out)
-}
-
-fn drain_tokens(
-    out: &mut Vec<String>,
-    tokenizer: &mut Html5Tokenizer,
-    input: &mut Input,
-    ctx: &DocumentParseContext,
-    context: &token_snapshot::TokenFormatContext<'_>,
-    index: &mut usize,
-    saw_eof_token: &mut bool,
-) -> Result<(), String> {
-    loop {
-        let batch = tokenizer.next_batch(input);
-        if batch.tokens().is_empty() {
-            break;
-        }
-        let resolver = batch.resolver();
-        out.extend(token_snapshot::format_tokens(
-            batch.tokens(),
-            &resolver,
-            ctx,
-            context,
-            index,
-            Some(saw_eof_token),
-        )?);
-    }
-    Ok(())
 }
 
 fn drain_batches(

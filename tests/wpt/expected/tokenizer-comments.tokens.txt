@@ -1,0 +1,6 @@
+# format: html5-token-v1
+COMMENT text="x"
+START name=p attrs=[] self_closing=false
+CHAR text="a"
+END name=p
+EOF
