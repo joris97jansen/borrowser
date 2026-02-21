@@ -9,6 +9,8 @@
 //!   token sequence for equivalent byte/text input.
 //! - Input ownership: a tokenizer instance is bound to one `Input` instance
 //!   (`Input::id`) for its lifetime.
+//! - Atom-table binding: a tokenizer instance is bound to the `AtomTable`
+//!   attached to the `DocumentParseContext` passed to `new()`.
 //! - Span validity: token spans are only valid for the lifetime of the
 //!   `TokenBatch` that resolved them, and must be resolved through the batch
 //!   resolver.
@@ -17,10 +19,12 @@
 //!   behavior remains deferred.
 //! - Complexity posture (Core v0): tokenizer hot paths are single-pass over input
 //!   slices; comment and doctype tails are scanned linearly without backtracking.
+//! - Atom interning failures are treated as engine invariant breaches (fatal).
 
 use crate::entities::decode_entities;
 use crate::html5::shared::{
-    AtomId, Attribute, AttributeValue, DocumentParseContext, Input, TextSpan, TextValue, Token,
+    AtomError, AtomId, Attribute, AttributeValue, DocumentParseContext, Input, TextSpan, TextValue,
+    Token,
 };
 use input::MatchResult;
 use states::TokenizerState;
@@ -57,6 +61,9 @@ pub enum TokenizeResult {
 }
 
 /// Minimal tokenizer instrumentation.
+///
+/// Note: counters are populated in test/debug builds and when the
+/// `debug-stats` feature is enabled.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TokenizerStats {
     pub steps: u64,
@@ -108,6 +115,7 @@ impl<'t> TokenBatch<'t> {
 /// HTML5 tokenizer.
 pub struct Html5Tokenizer {
     config: TokenizerConfig,
+    atom_table_id: u64,
     state: TokenizerState,
     cursor: usize,
     tokens: Vec<Token>,
@@ -137,9 +145,10 @@ pub struct Html5Tokenizer {
 }
 
 impl Html5Tokenizer {
-    pub fn new(config: TokenizerConfig, _ctx: &mut DocumentParseContext) -> Self {
+    pub fn new(config: TokenizerConfig, ctx: &mut DocumentParseContext) -> Self {
         Self {
             config,
+            atom_table_id: ctx.atoms.id(),
             state: TokenizerState::Data,
             cursor: 0,
             tokens: Vec::new(),
@@ -174,6 +183,12 @@ impl Html5Tokenizer {
     /// The tokenizer processes available input until it needs more input or
     /// reaches EOF. Token spans refer to the decoded input buffer.
     ///
+    /// Integration contract:
+    /// - Always drain available tokens after each pump.
+    /// - `Progress` means observable progress occurred (cursor and/or token
+    ///   growth), not necessarily that additional pumping without new input
+    ///   will continue to make progress.
+    ///
     /// `ctx` provides document-scoped resources used during tokenization
     /// (currently atom interning for tag-name canonicalization).
     pub fn push_input(
@@ -181,6 +196,7 @@ impl Html5Tokenizer {
         input: &mut Input,
         ctx: &mut DocumentParseContext,
     ) -> TokenizeResult {
+        self.assert_atom_table_binding(ctx);
         assert!(
             !self.end_of_stream,
             "Html5Tokenizer::push_input called after finish(); this violates end-of-stream contract"
@@ -258,7 +274,8 @@ impl Html5Tokenizer {
     /// Adapter: append UTF-8 text to `input` and advance the tokenizer.
     ///
     /// Canonical form is `push_input`; this helper is for convenience when the
-    /// caller already has decoded text.
+    /// caller already has decoded text. In hot/integration paths, prefer
+    /// `Input::push_str` + `push_input` directly for explicit input ownership.
     pub fn push_str(
         &mut self,
         input: &mut Input,
@@ -280,6 +297,9 @@ impl Html5Tokenizer {
     ///   `push_str(chunk_b)` -> `push_input()` until `NeedMoreInput` -> `finish()`.
     /// - Calling `finish()` with unconsumed buffered input is an internal API
     ///   misuse and triggers a panic.
+    /// - Core v0 exception: if the tokenizer is in the doctype state family,
+    ///   `finish()` consumes remaining buffered bytes and finalizes as quirks
+    ///   doctype without parsing the tail.
     /// - After `finish()`, no further input may be pushed.
     pub fn finish(&mut self, input: &Input) -> TokenizeResult {
         if let Some(id) = self.input_id {
@@ -295,7 +315,8 @@ impl Html5Tokenizer {
         if self.cursor != buffered_len {
             if self.in_doctype_family_state() {
                 // Core v0 EOF policy: unfinished doctype tails are finalized as
-                // quirks doctype at EOF, so we consume the remaining buffered tail.
+                // quirks doctype at EOF. We intentionally skip parsing the
+                // remaining doctype tail bytes and consume the buffered tail.
                 self.cursor = buffered_len;
                 self.stats_set_bytes_consumed();
             } else {
@@ -328,7 +349,7 @@ impl Html5Tokenizer {
     pub fn next_batch<'t>(&mut self, input: &'t mut Input) -> TokenBatch<'t> {
         assert!(
             self.input_id.is_none() || self.input_id == Some(input.id()),
-            "next_batch input must match the last push_input input"
+            "next_batch input must match the tokenizer-bound Input instance"
         );
         let tokens = std::mem::take(&mut self.tokens);
         TokenBatch { tokens, input }
@@ -702,10 +723,14 @@ impl Html5Tokenizer {
                 Step::Progress
             }
             Some('/') => {
+                // Delimiter handoff: keep '/' unconsumed here so
+                // AfterAttributeName can handle self-closing transitions.
                 self.transition_to(TokenizerState::AfterAttributeName);
                 Step::Progress
             }
             Some('>') => {
+                // Delimiter handoff: keep '>' unconsumed here so
+                // AfterAttributeName emits/finalizes uniformly.
                 self.transition_to(TokenizerState::AfterAttributeName);
                 Step::Progress
             }
@@ -1096,12 +1121,7 @@ impl Html5Tokenizer {
                 self.transition_to(TokenizerState::Data);
                 Step::Progress
             }
-            Some(other) => {
-                debug_assert!(
-                    false,
-                    "unexpected doctype-name terminator: {:?} at cursor {}",
-                    other, self.cursor
-                );
+            Some(_) => {
                 self.finalize_pending_doctype_name(input, ctx);
                 self.pending_doctype_force_quirks = true;
                 self.transition_to(TokenizerState::BogusDoctype);
@@ -1386,7 +1406,7 @@ impl Html5Tokenizer {
             return;
         }
         let raw_name = &input.as_str()[name_start..name_end];
-        let name = ctx.atoms.intern_ascii_folded(raw_name);
+        let name = self.intern_atom_or_invariant(ctx, raw_name, "attribute name");
 
         // Duplicate attribute policy (Core v0): first-wins per start tag;
         // later duplicates are dropped to match HTML tokenizer semantics.
@@ -1517,7 +1537,7 @@ impl Html5Tokenizer {
             return;
         }
         let raw = &input.as_str()[start..end];
-        self.pending_doctype_name = Some(ctx.atoms.intern_ascii_folded(raw));
+        self.pending_doctype_name = Some(self.intern_atom_or_invariant(ctx, raw, "doctype name"));
     }
 
     fn emit_pending_doctype(&mut self) {
@@ -1644,7 +1664,7 @@ impl Html5Tokenizer {
         let raw = &input.as_str()[name_start..end];
         // Canonicalization policy: HTML tag names are interned with ASCII
         // folding (`A-Z` -> `a-z`) and preserve non-ASCII bytes.
-        let name = ctx.atoms.intern_ascii_folded(raw);
+        let name = self.intern_atom_or_invariant(ctx, raw, "tag name");
         if self.current_tag_is_end {
             self.current_tag_self_closing = false;
             self.current_tag_attrs.clear();
@@ -1727,6 +1747,34 @@ impl Html5Tokenizer {
         #[cfg(any(test, debug_assertions, feature = "debug-stats"))]
         {
             self.stats.bytes_consumed = self.cursor as u64;
+        }
+    }
+
+    #[cold]
+    #[track_caller]
+    fn assert_atom_table_binding(&self, ctx: &DocumentParseContext) {
+        let actual = ctx.atoms.id();
+        let expected = self.atom_table_id;
+        assert_eq!(
+            actual, expected,
+            "tokenizer atom table mismatch (expected={expected}, actual={actual})"
+        );
+    }
+
+    fn intern_atom_or_invariant(
+        &self,
+        ctx: &mut DocumentParseContext,
+        raw: &str,
+        what: &str,
+    ) -> AtomId {
+        match ctx.atoms.intern_ascii_folded(raw) {
+            Ok(id) => id,
+            Err(AtomError::OutOfIds) => {
+                panic!("tokenizer atom table exhausted while interning {what}")
+            }
+            Err(AtomError::InvalidUtf8) => unreachable!(
+                "intern_ascii_folded received &str; invalid UTF-8 is impossible ({what})"
+            ),
         }
     }
 }

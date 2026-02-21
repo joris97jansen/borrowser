@@ -26,17 +26,18 @@ impl Html5ParseSession {
         tokenizer_config: TokenizerConfig,
         builder_config: TreeBuilderConfig,
         mut ctx: DocumentParseContext,
-    ) -> Self {
+    ) -> Result<Self, Html5SessionError> {
         let tokenizer = Html5Tokenizer::new(tokenizer_config, &mut ctx);
-        let builder = Html5TreeBuilder::new(builder_config, &mut ctx);
-        Self {
+        let builder = Html5TreeBuilder::new(builder_config, &mut ctx)
+            .map_err(|_| Html5SessionError::Invariant)?;
+        Ok(Self {
             ctx,
             decoder: ByteStreamDecoder::new(),
             input: Input::new(),
             tokenizer,
             builder,
             patch_emitter: PatchEmitterAdapter::new(),
-        }
+        })
     }
 
     pub fn push_bytes(&mut self, bytes: &[u8]) -> Result<(), Html5SessionError> {
@@ -143,7 +144,8 @@ mod tests {
             TokenizerConfig::default(),
             TreeBuilderConfig::default(),
             ctx,
-        );
+        )
+        .expect("session init");
         assert!(session.push_bytes(&[]).is_ok());
         assert!(session.pump().is_ok());
         let _ = session.take_patches();
