@@ -12,7 +12,7 @@ use crate::html5::tokenizer::TextResolver;
 use crate::html5::tree_builder::emit::{emit_append_child, emit_create_element};
 use crate::html5::tree_builder::formatting::ActiveFormattingList;
 use crate::html5::tree_builder::modes::InsertionMode;
-use crate::html5::tree_builder::stack::{OpenElement, OpenElementsStack};
+use crate::html5::tree_builder::stack::{OpenElement, OpenElementsStack, ScopeKind, ScopeTagSet};
 use std::num::NonZeroU32;
 
 #[derive(Clone, Debug, Default)]
@@ -36,14 +36,37 @@ pub enum SuspendReason {
     Other,
 }
 
-/// Tree building should not fail on malformed HTML; invariants are the only error surface for now.
+/// Tree building should not fail on malformed HTML; internal/resource failures
+/// are the only error surface for now.
 ///
 /// Policy note:
 /// - Some invariants (like atom-table binding) are hard assertions and panic.
-/// - Other internal invariant failures continue to flow through this `Result`
-///   surface for now to keep integration call sites explicit while Core v0
-///   evolves.
-pub type TreeBuilderError = EngineInvariantError;
+/// - Resource/internal failures continue to flow through this `Result` surface
+///   (for example, key allocator exhaustion) to keep integration call sites
+///   explicit while Core v0 evolves.
+pub type TreeBuilderInternalError = EngineInvariantError;
+pub type TreeBuilderError = TreeBuilderInternalError;
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum QuirksMode {
+    NoQuirks,
+    Quirks,
+}
+
+#[derive(Clone, Debug)]
+pub(crate) struct DocumentState {
+    quirks_mode: QuirksMode,
+    frameset_ok: bool,
+}
+
+impl Default for DocumentState {
+    fn default() -> Self {
+        Self {
+            quirks_mode: QuirksMode::NoQuirks,
+            frameset_ok: true,
+        }
+    }
+}
 
 /// Patch sink for streaming emission.
 pub trait PatchSink {
@@ -94,14 +117,27 @@ pub struct Html5TreeBuilder {
     insertion_mode: InsertionMode,
     original_insertion_mode: Option<InsertionMode>,
     known_tags: KnownTagIds,
+    scope_tags: ScopeTagSet,
     open_elements: OpenElementsStack,
     active_formatting: ActiveFormattingList,
     document_key: Option<PatchKey>,
     next_patch_key: NonZeroU32,
     pending_doctype: Option<String>,
+    document_state: DocumentState,
     patches: Vec<DomPatch>,
     max_open_elements_depth: u32,
     max_active_formatting_depth: u32,
+}
+
+#[cfg(any(test, feature = "internal-api"))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TreeBuilderStateSnapshot {
+    pub(crate) insertion_mode: InsertionMode,
+    pub(crate) original_insertion_mode: Option<InsertionMode>,
+    pub(crate) open_element_names: Vec<AtomId>,
+    pub(crate) open_element_keys: Vec<PatchKey>,
+    pub(crate) quirks_mode: QuirksMode,
+    pub(crate) frameset_ok: bool,
 }
 
 impl Html5TreeBuilder {
@@ -109,17 +145,21 @@ impl Html5TreeBuilder {
         config: TreeBuilderConfig,
         ctx: &mut DocumentParseContext,
     ) -> Result<Self, TreeBuilderError> {
+        let known_tags = KnownTagIds::intern(&mut ctx.atoms).map_err(|_| EngineInvariantError)?;
+        let scope_tags = known_tags.scope_tags();
         Ok(Self {
             config,
             atom_table_id: ctx.atoms.id(),
             insertion_mode: InsertionMode::Initial,
             original_insertion_mode: None,
-            known_tags: KnownTagIds::intern(&mut ctx.atoms).map_err(|_| EngineInvariantError)?,
+            known_tags,
+            scope_tags,
             open_elements: OpenElementsStack::default(),
             active_formatting: ActiveFormattingList::default(),
             document_key: None,
             next_patch_key: NonZeroU32::MIN,
             pending_doctype: None,
+            document_state: DocumentState::default(),
             patches: Vec::new(),
             max_open_elements_depth: 0,
             max_active_formatting_depth: 0,
@@ -182,12 +222,17 @@ impl Html5TreeBuilder {
         // TODO(html5/tree_builder): implement deterministic text coalescing
         // behavior when `self.config.coalesce_text` is enabled.
         match token {
-            Token::Doctype { name, .. } => {
+            Token::Doctype {
+                name, force_quirks, ..
+            } => {
                 if self.document_key.is_none() && self.pending_doctype.is_none() {
                     self.pending_doctype = match name {
                         Some(id) => Some(resolve_atom(atoms, *id)?.to_string()),
                         None => None,
                     };
+                }
+                if *force_quirks {
+                    self.document_state.quirks_mode = QuirksMode::Quirks;
                 }
             }
             Token::StartTag {
@@ -200,7 +245,7 @@ impl Html5TreeBuilder {
                 let parent = self
                     .open_elements
                     .current()
-                    .map(|entry| entry.key)
+                    .map(OpenElement::key)
                     .unwrap_or(document_key);
                 let key = self.alloc_patch_key()?;
                 let mut attributes = Vec::with_capacity(attrs.len());
@@ -212,18 +257,18 @@ impl Html5TreeBuilder {
                 emit_create_element(&mut self.patches, key, element_name, attributes);
                 emit_append_child(&mut self.patches, parent, key);
                 if !*self_closing {
-                    self.open_elements.push(OpenElement { key, name: *name });
+                    self.open_elements.push(OpenElement::new(key, *name));
                 }
                 self.update_mode_for_start_tag(*name);
             }
             Token::EndTag { name } => {
-                // Core-v0 simplification: pop-until-matching without HTML scope checks
-                // or implied-end-tag handling. This is deterministic but intentionally
-                // weaker than the spec algorithm and will be replaced in a later step.
-                if let Some(position) = self.open_elements.position_from_top(*name) {
-                    self.open_elements.truncate(position + 1);
-                    let _ = self.open_elements.pop();
-                }
+                // Core-v0: only pop-until-matching when the target is in baseline
+                // HTML scope; complete scope + implied-end-tag logic lands later.
+                let scope = self.scope_kind_for_in_body_end_tag(*name);
+                // Core-v0 intentionally ignores the matched element details.
+                let _ =
+                    self.open_elements
+                        .pop_until_including_in_scope(*name, scope, &self.scope_tags);
                 self.update_mode_for_end_tag(*name);
             }
             Token::Text { text: token_text } => {
@@ -233,7 +278,7 @@ impl Html5TreeBuilder {
                     let parent = self
                         .open_elements
                         .current()
-                        .map(|entry| entry.key)
+                        .map(OpenElement::key)
                         .unwrap_or(document_key);
                     let key = self.alloc_patch_key()?;
                     self.patches.push(DomPatch::CreateText {
@@ -250,7 +295,7 @@ impl Html5TreeBuilder {
                 let parent = self
                     .open_elements
                     .current()
-                    .map(|entry| entry.key)
+                    .map(OpenElement::key)
                     .unwrap_or(document_key);
                 let key = self.alloc_patch_key()?;
                 self.patches.push(DomPatch::CreateComment {
@@ -318,6 +363,7 @@ impl Html5TreeBuilder {
         self.open_elements.clear();
         self.active_formatting.clear();
         self.original_insertion_mode = None;
+        self.document_state.frameset_ok = true;
         Ok(key)
     }
 
@@ -357,6 +403,32 @@ impl Html5TreeBuilder {
             self.insertion_mode
         };
     }
+
+    // Core-v0 coupling: this scope decision is specific to the current InBody
+    // end-tag path and is not a universal "tag -> scope" rule.
+    fn scope_kind_for_in_body_end_tag(&self, name: AtomId) -> ScopeKind {
+        if name == self.known_tags.button {
+            ScopeKind::Button
+        } else if name == self.known_tags.li {
+            ScopeKind::ListItem
+        } else if name == self.known_tags.table {
+            ScopeKind::Table
+        } else {
+            ScopeKind::InScope
+        }
+    }
+
+    #[cfg(any(test, feature = "internal-api"))]
+    pub fn state_snapshot(&self) -> TreeBuilderStateSnapshot {
+        TreeBuilderStateSnapshot {
+            insertion_mode: self.insertion_mode,
+            original_insertion_mode: self.original_insertion_mode,
+            open_element_names: self.open_elements.iter_names().collect(),
+            open_element_keys: self.open_elements.iter_keys().collect(),
+            quirks_mode: self.document_state.quirks_mode,
+            frameset_ok: self.document_state.frameset_ok,
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -368,6 +440,18 @@ struct KnownTagIds {
     style: AtomId,
     title: AtomId,
     textarea: AtomId,
+    table: AtomId,
+    template: AtomId,
+    td: AtomId,
+    th: AtomId,
+    caption: AtomId,
+    marquee: AtomId,
+    object: AtomId,
+    applet: AtomId,
+    button: AtomId,
+    ol: AtomId,
+    ul: AtomId,
+    li: AtomId,
 }
 
 impl KnownTagIds {
@@ -380,7 +464,37 @@ impl KnownTagIds {
             style: atoms.intern_ascii_folded("style")?,
             title: atoms.intern_ascii_folded("title")?,
             textarea: atoms.intern_ascii_folded("textarea")?,
+            table: atoms.intern_ascii_folded("table")?,
+            template: atoms.intern_ascii_folded("template")?,
+            td: atoms.intern_ascii_folded("td")?,
+            th: atoms.intern_ascii_folded("th")?,
+            caption: atoms.intern_ascii_folded("caption")?,
+            marquee: atoms.intern_ascii_folded("marquee")?,
+            object: atoms.intern_ascii_folded("object")?,
+            applet: atoms.intern_ascii_folded("applet")?,
+            button: atoms.intern_ascii_folded("button")?,
+            ol: atoms.intern_ascii_folded("ol")?,
+            ul: atoms.intern_ascii_folded("ul")?,
+            li: atoms.intern_ascii_folded("li")?,
         })
+    }
+
+    #[inline]
+    fn scope_tags(&self) -> ScopeTagSet {
+        ScopeTagSet {
+            html: self.html,
+            table: self.table,
+            template: self.template,
+            td: self.td,
+            th: self.th,
+            caption: self.caption,
+            marquee: self.marquee,
+            object: self.object,
+            applet: self.applet,
+            button: self.button,
+            ol: self.ol,
+            ul: self.ul,
+        }
     }
 }
 
@@ -429,3 +543,28 @@ mod stack;
 
 #[cfg(test)]
 mod tests;
+
+#[cfg(test)]
+mod internal_tests {
+    use super::{DocumentParseContext, KnownTagIds};
+
+    #[test]
+    fn known_tag_scope_tag_view_shares_ids() {
+        let mut ctx = DocumentParseContext::new();
+        let known = KnownTagIds::intern(&mut ctx.atoms).expect("known tags");
+        let scope = known.scope_tags();
+
+        assert_eq!(scope.html, known.html);
+        assert_eq!(scope.table, known.table);
+        assert_eq!(scope.template, known.template);
+        assert_eq!(scope.td, known.td);
+        assert_eq!(scope.th, known.th);
+        assert_eq!(scope.caption, known.caption);
+        assert_eq!(scope.marquee, known.marquee);
+        assert_eq!(scope.object, known.object);
+        assert_eq!(scope.applet, known.applet);
+        assert_eq!(scope.button, known.button);
+        assert_eq!(scope.ol, known.ol);
+        assert_eq!(scope.ul, known.ul);
+    }
+}
