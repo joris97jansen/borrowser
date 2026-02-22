@@ -131,8 +131,8 @@ impl OpenElementsStack {
         tags: &ScopeTagSet,
     ) -> Option<OpenElement> {
         let match_index = self.find_in_scope_match_index(target, kind, tags)?;
-        debug_assert!(match_index < self.items.len());
         self.items.truncate(match_index + 1);
+        debug_assert!(!self.items.is_empty());
         self.items.pop()
     }
 
@@ -287,6 +287,7 @@ mod tests {
 
         let popped = stack.pop_until_including_in_scope(div, ScopeKind::InScope, &tags);
         assert_eq!(popped.map(|entry| entry.key()), Some(PatchKey(2)));
+        assert_eq!(popped.map(|entry| entry.name()), Some(div));
         assert_eq!(stack.current().map(|entry| entry.key()), Some(PatchKey(1)));
 
         let not_found = stack.pop_until_including_in_scope(div, ScopeKind::InScope, &tags);
