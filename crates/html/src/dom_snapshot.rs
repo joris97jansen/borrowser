@@ -4,11 +4,18 @@ use std::sync::OnceLock;
 
 /// Deterministic DOM serialization and equality rules for streaming/corpus tests.
 /// Not a public stable format; intended for internal test comparisons.
+/// This format is used by HTML5 golden fixture and WPT DOM test comparisons.
+///
+/// Serialization rules:
+/// - Child order follows tree order.
+/// - Attributes are rendered in lexical name order with deterministic tie-breaks.
+/// - Escaping is platform-independent (`\n`, `\r`, `\t`, `\\`, `\"`, `\u{HEX}`).
 ///
 /// Equivalence rules:
 /// - Node kinds must match.
 /// - Element names must match.
-/// - Attribute list order is significant; names and values must match.
+/// - Attribute list order is not significant; attributes are compared using the
+///   same canonical ordering as snapshot serialization.
 /// - Text nodes must match exactly (post entity decode).
 /// - Comments and doctypes must match exactly.
 /// - IDs and empty style vectors can be ignored by options.
@@ -186,7 +193,9 @@ fn compare_nodes<'a>(
                     options,
                 )));
             }
-            if expected_attrs.len() != actual_attrs.len() {
+            let expected_attr_indices = canonical_attr_indices(expected_attrs);
+            let actual_attr_indices = canonical_attr_indices(actual_attrs);
+            if expected_attr_indices.len() != actual_attr_indices.len() {
                 return Err(Box::new(mismatch(
                     path,
                     "attribute count",
@@ -195,11 +204,17 @@ fn compare_nodes<'a>(
                     options,
                 )));
             }
-            for (i, (exp, act)) in expected_attrs.iter().zip(actual_attrs.iter()).enumerate() {
+            for (i, (exp_idx, act_idx)) in expected_attr_indices
+                .iter()
+                .zip(actual_attr_indices.iter())
+                .enumerate()
+            {
+                let exp = &expected_attrs[*exp_idx];
+                let act = &actual_attrs[*act_idx];
                 if exp.0 != act.0 {
                     return Err(Box::new(mismatch(
                         path,
-                        &format!("attribute name at index {i}"),
+                        &format!("canonical attribute mismatch at index {i} (name)"),
                         expected,
                         actual,
                         options,
@@ -208,7 +223,7 @@ fn compare_nodes<'a>(
                 if exp.1 != act.1 {
                     return Err(Box::new(mismatch(
                         path,
-                        &format!("attribute value at index {i}"),
+                        &format!("canonical attribute mismatch at index {i} (value)"),
                         expected,
                         actual,
                         options,
@@ -218,6 +233,9 @@ fn compare_nodes<'a>(
             let ignore_style =
                 options.ignore_empty_style && expected_style.is_empty() && actual_style.is_empty();
             if !ignore_style {
+                // Core-v0 contract: style is represented as an ordered vector, so
+                // style entry order is significant unless both sides are empty
+                // and `ignore_empty_style` is enabled.
                 if expected_style.len() != actual_style.len() {
                     return Err(Box::new(mismatch(
                         path,
@@ -364,13 +382,18 @@ fn node_label(node: &Node) -> String {
             name, attributes, ..
         } => {
             let mut label = String::from(name.as_ref());
-            let id_attr = attributes
+            // Pick id/class via canonical attribute order so duplicate attributes
+            // produce deterministic labels in mismatch paths.
+            let canonical_indices = canonical_attr_indices(attributes);
+            let id_attr = canonical_indices
                 .iter()
+                .map(|index| &attributes[*index])
                 .find(|(key, _)| key.as_ref() == "id")
                 .and_then(|(_, value)| value.as_deref())
                 .filter(|value| !value.is_empty());
-            let class_attr = attributes
+            let class_attr = canonical_indices
                 .iter()
+                .map(|index| &attributes[*index])
                 .find(|(key, _)| key.as_ref() == "class")
                 .and_then(|(_, value)| value.as_deref())
                 .filter(|value| !value.is_empty());
@@ -389,8 +412,21 @@ fn node_label(node: &Node) -> String {
 }
 
 fn truncate_line(mut line: String, max_len: usize) -> String {
-    if line.len() > max_len {
-        line.truncate(max_len.saturating_sub(3));
+    let char_len = line.chars().count();
+    if char_len > max_len {
+        if max_len == 0 {
+            return String::new();
+        }
+        if max_len <= 3 {
+            return ".".repeat(max_len);
+        }
+        let keep_chars = max_len - 3;
+        let truncate_at = line
+            .char_indices()
+            .nth(keep_chars)
+            .map(|(idx, _)| idx)
+            .unwrap_or(line.len());
+        line.truncate(truncate_at);
         line.push_str("...");
     }
     line
@@ -455,7 +491,9 @@ fn write_node_line(out: &mut String, node: &Node, options: &DomSnapshotOptions) 
         } => {
             out.push('<');
             out.push_str(name);
-            for (attr, value) in attributes {
+            let canonical_indices = canonical_attr_indices(attributes);
+            for index in canonical_indices {
+                let (attr, value) = &attributes[index];
                 out.push(' ');
                 out.push_str(attr);
                 if let Some(value) = value {
@@ -464,11 +502,6 @@ fn write_node_line(out: &mut String, node: &Node, options: &DomSnapshotOptions) 
                     write_escaped(out, value);
                     out.push('"');
                 }
-            }
-            if !options.ignore_ids {
-                out.push_str(" data-node-id=\"");
-                write!(out, "{}", id.0).ok();
-                out.push('"');
             }
             let include_style = !(options.ignore_empty_style && style.is_empty());
             if include_style {
@@ -484,6 +517,10 @@ fn write_node_line(out: &mut String, node: &Node, options: &DomSnapshotOptions) 
                 out.push(']');
             }
             out.push('>');
+            if !options.ignore_ids {
+                out.push_str(" id=");
+                write!(out, "{}", id.0).ok();
+            }
         }
         Node::Text { text, id } => {
             out.push('"');
@@ -522,9 +559,30 @@ fn write_escaped(out: &mut String, value: &str) {
     }
 }
 
+fn canonical_attr_indices(attributes: &[(std::sync::Arc<str>, Option<String>)]) -> Vec<usize> {
+    let mut indexed: Vec<_> = attributes
+        .iter()
+        .enumerate()
+        .map(|(index, _)| index)
+        .collect();
+    indexed.sort_by(|ia, ib| {
+        let (na, va) = (&attributes[*ia].0, &attributes[*ia].1);
+        let (nb, vb) = (&attributes[*ib].0, &attributes[*ib].1);
+        let kind_a = if va.is_some() { 1u8 } else { 0u8 };
+        let kind_b = if vb.is_some() { 1u8 } else { 0u8 };
+        (na.as_ref(), kind_a, va.as_deref().unwrap_or(""), *ia).cmp(&(
+            nb.as_ref(),
+            kind_b,
+            vb.as_deref().unwrap_or(""),
+            *ib,
+        ))
+    });
+    indexed
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{DomSnapshotOptions, assert_dom_eq, compare_dom};
+    use super::{DomSnapshot, DomSnapshotOptions, assert_dom_eq, compare_dom, truncate_line};
     use crate::Node;
     use crate::types::Id;
     use std::sync::Arc;
@@ -629,5 +687,93 @@ mod tests {
         let err = compare_dom(&expected, &actual, DomSnapshotOptions::default())
             .expect_err("expected mismatch");
         assert!(err.to_string().contains("div#main[0]"));
+    }
+
+    #[test]
+    fn snapshot_serialization_sorts_attributes_lexically() {
+        let doc = Node::Document {
+            id: Id(0),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(0),
+                name: Arc::from("div"),
+                attributes: vec![
+                    (Arc::from("zeta"), Some("2".to_string())),
+                    (Arc::from("alpha"), Some("1".to_string())),
+                    (Arc::from("hidden"), None),
+                ],
+                style: Vec::new(),
+                children: Vec::new(),
+            }],
+        };
+        let lines = DomSnapshot::new(&doc, DomSnapshotOptions::default())
+            .as_lines()
+            .to_vec();
+        assert_eq!(lines[1], "  <div alpha=\"1\" hidden zeta=\"2\">");
+    }
+
+    #[test]
+    fn dom_eq_ignores_attribute_storage_order() {
+        let expected = Node::Document {
+            id: Id(0),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(0),
+                name: Arc::from("div"),
+                attributes: vec![
+                    (Arc::from("a"), Some("1".to_string())),
+                    (Arc::from("b"), Some("2".to_string())),
+                ],
+                style: Vec::new(),
+                children: Vec::new(),
+            }],
+        };
+        let actual = Node::Document {
+            id: Id(0),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(0),
+                name: Arc::from("div"),
+                attributes: vec![
+                    (Arc::from("b"), Some("2".to_string())),
+                    (Arc::from("a"), Some("1".to_string())),
+                ],
+                style: Vec::new(),
+                children: Vec::new(),
+            }],
+        };
+        assert_dom_eq(&expected, &actual, DomSnapshotOptions::default());
+    }
+
+    #[test]
+    fn snapshot_element_ids_are_suffix_not_synthetic_attribute() {
+        let doc = Node::Document {
+            id: Id(7),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(42),
+                name: Arc::from("div"),
+                attributes: vec![(Arc::from("class"), Some("x".to_string()))],
+                style: Vec::new(),
+                children: Vec::new(),
+            }],
+        };
+        let lines = DomSnapshot::new(
+            &doc,
+            DomSnapshotOptions {
+                ignore_ids: false,
+                ignore_empty_style: true,
+            },
+        )
+        .as_lines()
+        .to_vec();
+        assert_eq!(lines[0], "#document id=7");
+        assert_eq!(lines[1], "  <div class=\"x\"> id=42");
+    }
+
+    #[test]
+    fn truncate_line_handles_multibyte_characters() {
+        let line = "abc🙂def".to_string();
+        assert_eq!(truncate_line(line, 6), "abc...");
     }
 }

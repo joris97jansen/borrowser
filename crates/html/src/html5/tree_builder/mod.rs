@@ -15,6 +15,37 @@ use crate::html5::tree_builder::modes::InsertionMode;
 use crate::html5::tree_builder::stack::{OpenElement, OpenElementsStack, ScopeKind, ScopeTagSet};
 use std::num::NonZeroU32;
 
+/// Deterministic DOM serializer for HTML5 tree-builder tests.
+///
+/// This produces the `html5-dom-v1` line format used by golden fixtures and
+/// WPT DOM expected files:
+/// - document: `#document` (optionally with doctype)
+/// - element: `<name attr="value">`
+/// - text: `"..."` with deterministic escaping
+/// - comment: `<!-- ... -->` with deterministic escaping
+///
+/// Output ordering is stable and platform-independent:
+/// - child traversal follows source tree order
+/// - attributes are emitted in lexical name order (with deterministic
+///   name-equal tie-breaking)
+/// - escaping is explicit (`\n`, `\r`, `\t`, `\\`, `\"`, non-ASCII as `\u{HEX}`)
+#[cfg(feature = "dom-snapshot")]
+pub fn serialize_dom_for_test(root: &crate::Node) -> Vec<String> {
+    serialize_dom_for_test_with_options(root, crate::dom_snapshot::DomSnapshotOptions::default())
+}
+
+/// Deterministic DOM serializer for HTML5 tree-builder tests with explicit
+/// snapshot options.
+#[cfg(feature = "dom-snapshot")]
+pub fn serialize_dom_for_test_with_options(
+    root: &crate::Node,
+    options: crate::dom_snapshot::DomSnapshotOptions,
+) -> Vec<String> {
+    crate::dom_snapshot::DomSnapshot::new(root, options)
+        .as_lines()
+        .to_vec()
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct TreeBuilderConfig {
     /// Whether to coalesce adjacent text nodes within a batch.
