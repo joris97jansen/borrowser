@@ -1,8 +1,10 @@
 #![cfg(all(feature = "html5", feature = "dom-snapshot"))]
 
 use html::chunker::{ChunkerConfig, build_chunk_plans};
-use html::dom_snapshot::{DomSnapshot, DomSnapshotOptions};
-use html::html5::tree_builder::{Html5TreeBuilder, TreeBuilderConfig, TreeBuilderStepResult};
+use html::dom_snapshot::DomSnapshotOptions;
+use html::html5::tree_builder::{
+    Html5TreeBuilder, TreeBuilderConfig, TreeBuilderStepResult, serialize_dom_for_test_with_options,
+};
 use html::html5::{DocumentParseContext, Html5Tokenizer, Input, TokenizeResult, TokenizerConfig};
 use html::test_harness::{ChunkPlan, materialize_patch_batches, shrink_chunk_plan_with_stats};
 use html_test_support::diff_lines;
@@ -432,8 +434,10 @@ fn run_tree_builder_impl(
         Ok(dom) => dom,
         Err(err) => return RunOutput::Err(err),
     };
-    let snapshot = DomSnapshot::new(&dom, fixture.expected.options);
-    RunOutput::Ok(snapshot.as_lines().to_vec())
+    RunOutput::Ok(serialize_dom_for_test_with_options(
+        &dom,
+        fixture.expected.options,
+    ))
 }
 
 fn drain_batches(d: DrainCtx<'_>) -> Result<(), String> {

@@ -25,3 +25,5 @@ pub use tree_builder::{
     Html5TreeBuilder, PatchSink, SuspendReason, TreeBuilderConfig, TreeBuilderError,
     TreeBuilderStepResult, VecPatchSink,
 };
+#[cfg(feature = "dom-snapshot")]
+pub use tree_builder::{serialize_dom_for_test, serialize_dom_for_test_with_options};

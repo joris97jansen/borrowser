@@ -18,7 +18,10 @@ Each fixture is a directory containing:
 Snapshot lines:
 
 - One line per node, using a deterministic, depth-indented format (2 spaces per level).
-- The serializer matches `html::dom_snapshot::DomSnapshot` with the configured options.
+- The serializer is `html::html5::tree_builder::serialize_dom_for_test_with_options`.
+- Attributes are emitted in lexical name order for snapshot stability.
+- If `ignore_ids=false`, node IDs are rendered as a trailing `id=<n>` suffix on
+  node lines (not as synthetic DOM attributes).
 
 Why DOM snapshots:
 
@@ -37,7 +40,7 @@ Escaping rules (for doctype/text/attributes/comments):
 
 - `\n`, `\r`, `\t`, `\\`, and `\"` are escaped.
 - ASCII is emitted as-is.
-- Non-ASCII is encoded as `\u{HEX}`.
+- Non-ASCII is encoded as uppercase-hex `\u{HEX}`.
 
 Streaming policy:
 
