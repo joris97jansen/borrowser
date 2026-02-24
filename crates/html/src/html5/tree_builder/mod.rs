@@ -99,6 +99,19 @@ impl Default for DocumentState {
     }
 }
 
+#[derive(Clone, Copy, Debug)]
+struct LastTextPatch {
+    parent: PatchKey,
+    text_key: PatchKey,
+    create_patch_index: usize,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum DispatchOutcome {
+    Done,
+    Reprocess(InsertionMode),
+}
+
 /// Patch sink for streaming emission.
 pub trait PatchSink {
     fn push(&mut self, patch: DomPatch);
@@ -156,6 +169,7 @@ pub struct Html5TreeBuilder {
     pending_doctype: Option<String>,
     document_state: DocumentState,
     patches: Vec<DomPatch>,
+    last_text_patch: Option<LastTextPatch>,
     max_open_elements_depth: u32,
     max_active_formatting_depth: u32,
 }
@@ -192,6 +206,7 @@ impl Html5TreeBuilder {
             pending_doctype: None,
             document_state: DocumentState::default(),
             patches: Vec::new(),
+            last_text_patch: None,
             max_open_elements_depth: 0,
             max_active_formatting_depth: 0,
         })
@@ -226,6 +241,7 @@ impl Html5TreeBuilder {
     ) -> Result<TreeBuilderStepResult, TreeBuilderError> {
         let result = self.process_impl(token, atoms, text)?;
         sink.push_many(&mut self.patches);
+        self.last_text_patch = None;
         Ok(result)
     }
 
@@ -234,6 +250,7 @@ impl Html5TreeBuilder {
     /// Patch ordering is stable: the returned vector preserves source token order.
     #[must_use]
     pub fn drain_patches(&mut self) -> Vec<DomPatch> {
+        self.last_text_patch = None;
         std::mem::take(&mut self.patches)
     }
 
@@ -244,100 +261,34 @@ impl Html5TreeBuilder {
         text: &dyn TextResolver,
     ) -> Result<TreeBuilderStepResult, TreeBuilderError> {
         self.assert_atom_table_binding(atoms);
-        // Core-v0 scaffold: config is wired into state; coalescing behavior lands
-        // in a follow-up and should not be dropped from the public config.
-        debug_assert!(
-            !self.config.coalesce_text,
-            "coalesce_text is configured but not implemented (Core-v0 scaffold)"
-        );
-        // TODO(html5/tree_builder): implement deterministic text coalescing
-        // behavior when `self.config.coalesce_text` is enabled.
-        match token {
-            Token::Doctype {
-                name, force_quirks, ..
-            } => {
-                if self.document_key.is_none() && self.pending_doctype.is_none() {
-                    self.pending_doctype = match name {
-                        Some(id) => Some(resolve_atom(atoms, *id)?.to_string()),
-                        None => None,
-                    };
+        let mut mode = self.insertion_mode;
+        let mut handled = false;
+        let mut last_successful_mode = self.insertion_mode;
+        for _ in 0..12 {
+            self.insertion_mode = mode;
+            let outcome = match mode {
+                InsertionMode::Initial => self.handle_initial(token, atoms, text)?,
+                InsertionMode::BeforeHtml => self.handle_before_html(token, atoms, text)?,
+                InsertionMode::BeforeHead => self.handle_before_head(token, atoms, text)?,
+                InsertionMode::InHead => self.handle_in_head(token, atoms, text)?,
+                InsertionMode::AfterHead => self.handle_after_head(token, atoms, text)?,
+                InsertionMode::InBody => self.handle_in_body(token, atoms, text)?,
+                InsertionMode::Text => self.handle_text_mode(token, atoms, text)?,
+            };
+            match outcome {
+                DispatchOutcome::Done => {
+                    handled = true;
+                    last_successful_mode = self.insertion_mode;
+                    break;
                 }
-                if *force_quirks {
-                    self.document_state.quirks_mode = QuirksMode::Quirks;
+                DispatchOutcome::Reprocess(next_mode) => {
+                    mode = next_mode;
                 }
             }
-            Token::StartTag {
-                name,
-                attrs,
-                self_closing,
-            } => {
-                let document_key = self.ensure_document_created()?;
-                let element_name = resolve_atom_arc(atoms, *name)?;
-                let parent = self
-                    .open_elements
-                    .current()
-                    .map(OpenElement::key)
-                    .unwrap_or(document_key);
-                let key = self.alloc_patch_key()?;
-                let mut attributes = Vec::with_capacity(attrs.len());
-                for attr in attrs {
-                    let attr_name = resolve_atom_arc(atoms, attr.name)?;
-                    let attr_value = resolve_attribute_value(attr, text)?;
-                    attributes.push((attr_name, attr_value));
-                }
-                emit_create_element(&mut self.patches, key, element_name, attributes);
-                emit_append_child(&mut self.patches, parent, key);
-                if !*self_closing {
-                    self.open_elements.push(OpenElement::new(key, *name));
-                }
-                self.update_mode_for_start_tag(*name);
-            }
-            Token::EndTag { name } => {
-                // Core-v0: only pop-until-matching when the target is in baseline
-                // HTML scope; complete scope + implied-end-tag logic lands later.
-                let scope = self.scope_kind_for_in_body_end_tag(*name);
-                // Core-v0 intentionally ignores the matched element details.
-                let _ =
-                    self.open_elements
-                        .pop_until_including_in_scope(*name, scope, &self.scope_tags);
-                self.update_mode_for_end_tag(*name);
-            }
-            Token::Text { text: token_text } => {
-                let resolved = resolve_text_value(token_text, text)?;
-                if !resolved.is_empty() {
-                    let document_key = self.ensure_document_created()?;
-                    let parent = self
-                        .open_elements
-                        .current()
-                        .map(OpenElement::key)
-                        .unwrap_or(document_key);
-                    let key = self.alloc_patch_key()?;
-                    self.patches.push(DomPatch::CreateText {
-                        key,
-                        text: resolved,
-                    });
-                    emit_append_child(&mut self.patches, parent, key);
-                }
-                self.insertion_mode = InsertionMode::InBody;
-            }
-            Token::Comment { text: token_text } => {
-                let resolved = resolve_text_value(token_text, text)?;
-                let document_key = self.ensure_document_created()?;
-                let parent = self
-                    .open_elements
-                    .current()
-                    .map(OpenElement::key)
-                    .unwrap_or(document_key);
-                let key = self.alloc_patch_key()?;
-                self.patches.push(DomPatch::CreateComment {
-                    key,
-                    text: resolved,
-                });
-                emit_append_child(&mut self.patches, parent, key);
-            }
-            Token::Eof => {
-                let _ = self.ensure_document_created()?;
-            }
+        }
+        if !handled {
+            self.record_parse_error("mode-reprocess-budget-exhausted", None, Some(mode));
+            self.insertion_mode = last_successful_mode;
         }
         self.max_open_elements_depth = self
             .max_open_elements_depth
@@ -345,6 +296,8 @@ impl Html5TreeBuilder {
         self.max_active_formatting_depth = self
             .max_active_formatting_depth
             .max(self.active_formatting.max_depth());
+        // Core-v0 routing is fully recoverable and never suspends yet.
+        // Suspend paths remain reserved for script/loading integration.
         Ok(TreeBuilderStepResult::Continue)
     }
 
@@ -384,6 +337,7 @@ impl Html5TreeBuilder {
         if let Some(key) = self.document_key {
             return Ok(key);
         }
+        self.invalidate_text_coalescing();
         let key = self.alloc_patch_key()?;
         self.patches.push(DomPatch::CreateDocument {
             key,
@@ -396,6 +350,475 @@ impl Html5TreeBuilder {
         self.original_insertion_mode = None;
         self.document_state.frameset_ok = true;
         Ok(key)
+    }
+
+    fn handle_initial(
+        &mut self,
+        token: &Token,
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
+    ) -> Result<DispatchOutcome, TreeBuilderError> {
+        match token {
+            Token::Doctype {
+                name, force_quirks, ..
+            } => {
+                self.handle_doctype(name, *force_quirks, atoms)?;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::Comment { text: token_text } => {
+                self.insert_comment(token_text, text)?;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::Eof => {
+                let _ = self.ensure_document_created()?;
+                Ok(DispatchOutcome::Done)
+            }
+            _ => {
+                self.record_parse_error("initial-unexpected-token", None, None);
+                Ok(DispatchOutcome::Reprocess(InsertionMode::BeforeHtml))
+            }
+        }
+    }
+
+    fn handle_before_html(
+        &mut self,
+        token: &Token,
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
+    ) -> Result<DispatchOutcome, TreeBuilderError> {
+        match token {
+            Token::Doctype { .. } => {
+                self.record_parse_error("before-html-doctype", None, None);
+                Ok(DispatchOutcome::Done)
+            }
+            Token::Comment { text: token_text } => {
+                self.insert_comment(token_text, text)?;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } if *name == self.known_tags.html => {
+                let _ = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
+                self.insertion_mode = InsertionMode::BeforeHead;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::Eof => {
+                let _ = self.insert_element(self.known_tags.html, &[], false, atoms, text)?;
+                self.insertion_mode = InsertionMode::BeforeHead;
+                Ok(DispatchOutcome::Reprocess(InsertionMode::BeforeHead))
+            }
+            _ => {
+                let _ = self.insert_element(self.known_tags.html, &[], false, atoms, text)?;
+                self.insertion_mode = InsertionMode::BeforeHead;
+                Ok(DispatchOutcome::Reprocess(InsertionMode::BeforeHead))
+            }
+        }
+    }
+
+    fn handle_before_head(
+        &mut self,
+        token: &Token,
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
+    ) -> Result<DispatchOutcome, TreeBuilderError> {
+        match token {
+            Token::Comment { text: token_text } => {
+                self.insert_comment(token_text, text)?;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } if *name == self.known_tags.head => {
+                let _ = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
+                self.insertion_mode = InsertionMode::InHead;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::Eof => {
+                let _ = self.insert_element(self.known_tags.head, &[], false, atoms, text)?;
+                self.insertion_mode = InsertionMode::InHead;
+                Ok(DispatchOutcome::Reprocess(InsertionMode::InHead))
+            }
+            _ => {
+                let _ = self.insert_element(self.known_tags.head, &[], false, atoms, text)?;
+                self.insertion_mode = InsertionMode::InHead;
+                Ok(DispatchOutcome::Reprocess(InsertionMode::InHead))
+            }
+        }
+    }
+
+    fn handle_in_head(
+        &mut self,
+        token: &Token,
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
+    ) -> Result<DispatchOutcome, TreeBuilderError> {
+        match token {
+            Token::Comment { text: token_text } => {
+                self.insert_comment(token_text, text)?;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::Doctype { .. } => {
+                self.record_parse_error("in-head-doctype", None, None);
+                Ok(DispatchOutcome::Done)
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } if *name == self.known_tags.script
+                || *name == self.known_tags.style
+                || *name == self.known_tags.title
+                || *name == self.known_tags.textarea =>
+            {
+                let _ = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
+                self.original_insertion_mode = Some(self.insertion_mode);
+                self.insertion_mode = InsertionMode::Text;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::EndTag { name } if *name == self.known_tags.head => {
+                let _ = self.close_element_in_scope(*name, ScopeKind::InScope);
+                self.insertion_mode = InsertionMode::AfterHead;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::Eof => {
+                let _ = self.close_element_in_scope(self.known_tags.head, ScopeKind::InScope);
+                self.insertion_mode = InsertionMode::AfterHead;
+                Ok(DispatchOutcome::Reprocess(InsertionMode::AfterHead))
+            }
+            _ => {
+                let _ = self.close_element_in_scope(self.known_tags.head, ScopeKind::InScope);
+                self.insertion_mode = InsertionMode::AfterHead;
+                Ok(DispatchOutcome::Reprocess(InsertionMode::AfterHead))
+            }
+        }
+    }
+
+    fn handle_after_head(
+        &mut self,
+        token: &Token,
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
+    ) -> Result<DispatchOutcome, TreeBuilderError> {
+        match token {
+            Token::Comment { text: token_text } => {
+                self.insert_comment(token_text, text)?;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } if *name == self.known_tags.body => {
+                let _ = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
+                self.insertion_mode = InsertionMode::InBody;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::Eof => {
+                self.insertion_mode = InsertionMode::InBody;
+                Ok(DispatchOutcome::Reprocess(InsertionMode::InBody))
+            }
+            _ => {
+                let _ = self.insert_element(self.known_tags.body, &[], false, atoms, text)?;
+                self.insertion_mode = InsertionMode::InBody;
+                Ok(DispatchOutcome::Reprocess(InsertionMode::InBody))
+            }
+        }
+    }
+
+    fn handle_in_body(
+        &mut self,
+        token: &Token,
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
+    ) -> Result<DispatchOutcome, TreeBuilderError> {
+        match token {
+            Token::Doctype { .. } => {
+                self.record_parse_error("in-body-doctype", None, None);
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } => {
+                let _ = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
+                self.update_mode_for_start_tag(*name);
+            }
+            Token::EndTag { name } => {
+                let scope = self.scope_kind_for_in_body_end_tag(*name);
+                let _ = self.close_element_in_scope(*name, scope);
+                self.update_mode_for_end_tag(*name);
+            }
+            Token::Text { text: token_text } => {
+                self.insert_text(token_text, text)?;
+                self.insertion_mode = InsertionMode::InBody;
+            }
+            Token::Comment { text: token_text } => {
+                self.insert_comment(token_text, text)?;
+            }
+            Token::Eof => {
+                let _ = self.ensure_document_created()?;
+            }
+        }
+        Ok(DispatchOutcome::Done)
+    }
+
+    fn handle_text_mode(
+        &mut self,
+        token: &Token,
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
+    ) -> Result<DispatchOutcome, TreeBuilderError> {
+        match token {
+            Token::EndTag { name }
+                if *name == self.known_tags.script
+                    || *name == self.known_tags.style
+                    || *name == self.known_tags.title
+                    || *name == self.known_tags.textarea =>
+            {
+                let _ = self.close_element_in_scope(*name, ScopeKind::InScope);
+                self.insertion_mode = self
+                    .original_insertion_mode
+                    .take()
+                    .unwrap_or(InsertionMode::InBody);
+            }
+            Token::Text { text: token_text } => {
+                self.insert_text(token_text, text)?;
+            }
+            Token::Comment { text: token_text } => {
+                self.insert_comment(token_text, text)?;
+            }
+            Token::Eof => {
+                self.record_parse_error("eof-in-text-mode", None, None);
+                let _ = self.ensure_document_created()?;
+                self.insertion_mode = self
+                    .original_insertion_mode
+                    .take()
+                    .unwrap_or(InsertionMode::InBody);
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } => {
+                // Core-v0 safety rule: do not mutate tree structure from Text mode
+                // on unexpected start tags; keep stack shape deterministic and recoverable.
+                self.record_parse_error("start-tag-in-text-mode", Some(*name), None);
+                let tag_name = resolve_atom(atoms, *name)?;
+                if attrs.iter().any(|attr| attr.value.is_some()) {
+                    self.record_parse_error(
+                        "text-mode-literalized-start-tag-attribute-values-dropped",
+                        Some(*name),
+                        None,
+                    );
+                }
+                let mut attr_names = Vec::with_capacity(attrs.len());
+                for attr in attrs {
+                    attr_names.push(resolve_atom(atoms, attr.name)?.to_string());
+                }
+                attr_names.sort();
+                // Recovery formatting is intentionally non-spec serialization;
+                // deduping names keeps malformed-token diffs stable and less noisy.
+                let len_before_dedup = attr_names.len();
+                attr_names.dedup();
+                if attr_names.len() != len_before_dedup {
+                    self.record_parse_error(
+                        "text-mode-literalized-start-tag-duplicate-attributes-deduped",
+                        Some(*name),
+                        None,
+                    );
+                }
+                let mut literal = String::new();
+                literal.push('<');
+                literal.push_str(tag_name);
+                for attr_name in attr_names {
+                    literal.push(' ');
+                    literal.push_str(&attr_name);
+                }
+                if *self_closing {
+                    literal.push_str("/>");
+                } else {
+                    literal.push('>');
+                }
+                self.insert_recovery_literal_text(&literal)?;
+            }
+            Token::Doctype { .. } => {
+                self.record_parse_error("doctype-in-text-mode", None, None);
+            }
+            Token::EndTag { name } => {
+                self.record_parse_error("unexpected-end-tag-in-text-mode", Some(*name), None);
+                let tag_name = resolve_atom(atoms, *name)?;
+                let literal = format!("</{tag_name}>");
+                self.insert_recovery_literal_text(&literal)?;
+            }
+        }
+        Ok(DispatchOutcome::Done)
+    }
+
+    fn handle_doctype(
+        &mut self,
+        name: &Option<AtomId>,
+        force_quirks: bool,
+        atoms: &AtomTable,
+    ) -> Result<(), TreeBuilderError> {
+        self.invalidate_text_coalescing();
+        if self.document_key.is_none() && self.pending_doctype.is_none() {
+            self.pending_doctype = match name {
+                Some(id) => Some(resolve_atom(atoms, *id)?.to_string()),
+                None => None,
+            };
+        }
+        if force_quirks {
+            self.document_state.quirks_mode = QuirksMode::Quirks;
+        }
+        Ok(())
+    }
+
+    fn insert_element(
+        &mut self,
+        name: AtomId,
+        attrs: &[crate::html5::shared::Attribute],
+        self_closing: bool,
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
+    ) -> Result<PatchKey, TreeBuilderError> {
+        // All SOE push/pop mutations must flow through central helpers that
+        // invalidate coalescing state before changing tree structure.
+        self.invalidate_text_coalescing();
+        let document_key = self.ensure_document_created()?;
+        let element_name = resolve_atom_arc(atoms, name)?;
+        let parent = self
+            .open_elements
+            .current()
+            .map(OpenElement::key)
+            .unwrap_or(document_key);
+        let key = self.alloc_patch_key()?;
+        let mut attributes = Vec::with_capacity(attrs.len());
+        for attr in attrs {
+            let attr_name = resolve_atom_arc(atoms, attr.name)?;
+            let attr_value = resolve_attribute_value(attr, text)?;
+            attributes.push((attr_name, attr_value));
+        }
+        emit_create_element(&mut self.patches, key, element_name, attributes);
+        emit_append_child(&mut self.patches, parent, key);
+        if !self_closing {
+            self.open_elements.push(OpenElement::new(key, name));
+        }
+        Ok(key)
+    }
+
+    fn insert_text(
+        &mut self,
+        token_text: &crate::html5::shared::TextValue,
+        text: &dyn TextResolver,
+    ) -> Result<(), TreeBuilderError> {
+        let resolved = resolve_text_value(token_text, text)?;
+        self.insert_resolved_text(&resolved)
+    }
+
+    fn insert_literal_text(&mut self, literal: &str) -> Result<(), TreeBuilderError> {
+        self.insert_resolved_text(literal)
+    }
+
+    fn insert_recovery_literal_text(&mut self, literal: &str) -> Result<(), TreeBuilderError> {
+        // Keep synthetic recovery artifacts distinct from adjacent content.
+        self.invalidate_text_coalescing();
+        self.insert_literal_text(literal)?;
+        self.invalidate_text_coalescing();
+        Ok(())
+    }
+
+    fn insert_resolved_text(&mut self, resolved: &str) -> Result<(), TreeBuilderError> {
+        if resolved.is_empty() {
+            return Ok(());
+        }
+        let document_key = self.ensure_document_created()?;
+        let parent = self
+            .open_elements
+            .current()
+            .map(OpenElement::key)
+            .unwrap_or(document_key);
+        if self.config.coalesce_text
+            && let Some(last) = self.last_text_patch
+            && last.parent == parent
+            && let Some(DomPatch::CreateText {
+                key,
+                text: existing_text,
+            }) = self.patches.get_mut(last.create_patch_index)
+            && *key == last.text_key
+        {
+            existing_text.push_str(resolved);
+            return Ok(());
+        }
+        let key = self.alloc_patch_key()?;
+        let create_patch_index = self.patches.len();
+        self.patches.push(DomPatch::CreateText {
+            key,
+            text: resolved.to_string(),
+        });
+        emit_append_child(&mut self.patches, parent, key);
+        self.last_text_patch = if self.config.coalesce_text {
+            Some(LastTextPatch {
+                parent,
+                text_key: key,
+                create_patch_index,
+            })
+        } else {
+            None
+        };
+        Ok(())
+    }
+
+    fn insert_comment(
+        &mut self,
+        token_text: &crate::html5::shared::TextValue,
+        text: &dyn TextResolver,
+    ) -> Result<(), TreeBuilderError> {
+        self.invalidate_text_coalescing();
+        let resolved = resolve_text_value(token_text, text)?;
+        let document_key = self.ensure_document_created()?;
+        let parent = self
+            .open_elements
+            .current()
+            .map(OpenElement::key)
+            .unwrap_or(document_key);
+        let key = self.alloc_patch_key()?;
+        self.patches.push(DomPatch::CreateComment {
+            key,
+            text: resolved,
+        });
+        emit_append_child(&mut self.patches, parent, key);
+        Ok(())
+    }
+
+    fn close_element_in_scope(&mut self, name: AtomId, scope: ScopeKind) -> bool {
+        // Keep this as the single end-tag stack mutation path in Core-v0 so
+        // coalescing invalidation stays aligned with parent/adjacency changes.
+        let popped = self
+            .open_elements
+            .pop_until_including_in_scope(name, scope, &self.scope_tags);
+        if popped.is_none() {
+            self.record_parse_error("end-tag-not-in-scope", Some(name), None);
+            return false;
+        }
+        self.invalidate_text_coalescing();
+        true
+    }
+
+    fn invalidate_text_coalescing(&mut self) {
+        self.last_text_patch = None;
+    }
+
+    fn record_parse_error(
+        &mut self,
+        _kind: &'static str,
+        _tag: Option<AtomId>,
+        _mode: Option<InsertionMode>,
+    ) {
+        // Core-v0 intentionally keeps parse errors recoverable and non-fatal.
     }
 
     fn update_mode_for_start_tag(&mut self, name: AtomId) {
