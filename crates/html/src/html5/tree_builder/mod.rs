@@ -369,6 +369,14 @@ impl Html5TreeBuilder {
                 self.insert_comment(token_text, text)?;
                 Ok(DispatchOutcome::Done)
             }
+            Token::Text { text: token_text } => {
+                if is_html_whitespace_text(token_text, text)? {
+                    Ok(DispatchOutcome::Done)
+                } else {
+                    self.record_parse_error("initial-unexpected-token", None, None);
+                    Ok(DispatchOutcome::Reprocess(InsertionMode::BeforeHtml))
+                }
+            }
             Token::Eof => {
                 let _ = self.ensure_document_created()?;
                 Ok(DispatchOutcome::Done)
@@ -393,6 +401,9 @@ impl Html5TreeBuilder {
             }
             Token::Comment { text: token_text } => {
                 self.insert_comment(token_text, text)?;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::Text { text: token_text } if is_html_whitespace_text(token_text, text)? => {
                 Ok(DispatchOutcome::Done)
             }
             Token::StartTag {
@@ -518,6 +529,7 @@ impl Html5TreeBuilder {
                 Ok(DispatchOutcome::Done)
             }
             Token::Eof => {
+                let _ = self.insert_element(self.known_tags.body, &[], false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InBody;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InBody))
             }
@@ -535,9 +547,69 @@ impl Html5TreeBuilder {
         atoms: &AtomTable,
         text: &dyn TextResolver,
     ) -> Result<DispatchOutcome, TreeBuilderError> {
+        // Core-v0 malformed recovery can transiently reach InBody with an empty SOE.
+        // Once SOE is populated, <html> should always be present.
+        debug_assert!(
+            self.open_elements.current().is_none()
+                || self.open_elements.contains_name(self.known_tags.html),
+            "InBody invariant: non-empty SOE should include <html>"
+        );
         match token {
             Token::Doctype { .. } => {
                 self.record_parse_error("in-body-doctype", None, None);
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } if *name == self.known_tags.html => {
+                // InBody: a later <html> token must not create a second root element.
+                // Core-v0 keeps this deterministic by reporting a parse error and ignoring it.
+                self.record_parse_error(
+                    "unexpected-html-start-tag-after-html-created",
+                    Some(*name),
+                    Some(InsertionMode::InBody),
+                );
+                if !attrs.is_empty() {
+                    self.record_parse_error(
+                        "html-start-tag-attributes-ignored",
+                        Some(*name),
+                        Some(InsertionMode::InBody),
+                    );
+                }
+                if *self_closing {
+                    self.record_parse_error(
+                        "html-start-tag-self-closing-ignored",
+                        Some(*name),
+                        Some(InsertionMode::InBody),
+                    );
+                }
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } if *name == self.known_tags.body => {
+                // InBody: a later <body> token must not create a nested body element.
+                self.record_parse_error(
+                    "unexpected-body-start-tag-after-body-created",
+                    Some(*name),
+                    Some(InsertionMode::InBody),
+                );
+                if !attrs.is_empty() {
+                    self.record_parse_error(
+                        "body-start-tag-attributes-ignored",
+                        Some(*name),
+                        Some(InsertionMode::InBody),
+                    );
+                }
+                if *self_closing {
+                    self.record_parse_error(
+                        "body-start-tag-self-closing-ignored",
+                        Some(*name),
+                        Some(InsertionMode::InBody),
+                    );
+                }
             }
             Token::StartTag {
                 name,
@@ -779,6 +851,8 @@ impl Html5TreeBuilder {
     ) -> Result<(), TreeBuilderError> {
         self.invalidate_text_coalescing();
         let resolved = resolve_text_value(token_text, text)?;
+        // We materialize the document as soon as a concrete node must be attached
+        // (comment/text/element) to keep patch ordering stable and deterministic.
         let document_key = self.ensure_document_created()?;
         let parent = self
             .open_elements
@@ -988,6 +1062,33 @@ fn resolve_text_value(
             .map(|value| value.to_string())
             .map_err(|_| EngineInvariantError),
     }
+}
+
+fn is_html_whitespace_text(
+    value: &crate::html5::shared::TextValue,
+    text: &dyn TextResolver,
+) -> Result<bool, TreeBuilderError> {
+    match value {
+        crate::html5::shared::TextValue::Owned(value) => Ok(is_html_whitespace_str(value)),
+        crate::html5::shared::TextValue::Span(span) => text
+            .resolve_span(*span)
+            .map(is_html_whitespace_str)
+            .map_err(|_| EngineInvariantError),
+    }
+}
+
+#[inline]
+fn is_html_whitespace_str(value: &str) -> bool {
+    value
+        .as_bytes()
+        .iter()
+        .copied()
+        .all(is_html_whitespace_byte)
+}
+
+#[inline]
+fn is_html_whitespace_byte(byte: u8) -> bool {
+    matches!(byte, b'\t' | b'\n' | 0x0C | b'\r' | b' ')
 }
 
 mod emit;
