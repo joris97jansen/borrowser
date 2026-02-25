@@ -92,6 +92,11 @@ impl OpenElementsStack {
         self.items.last().copied()
     }
 
+    #[inline]
+    pub(crate) fn contains_name(&self, target: AtomId) -> bool {
+        self.items.iter().any(|entry| entry.name() == target)
+    }
+
     #[allow(
         dead_code,
         reason = "part of Core-v0 SOE API; used in test/internal paths"
@@ -131,8 +136,10 @@ impl OpenElementsStack {
         tags: &ScopeTagSet,
     ) -> Option<OpenElement> {
         let match_index = self.find_in_scope_match_index(target, kind, tags)?;
-        self.items.truncate(match_index + 1);
-        debug_assert!(!self.items.is_empty());
+        // Pop elements from the top until the matched entry becomes current.
+        while self.items.len() > match_index + 1 {
+            let _ = self.items.pop();
+        }
         self.items.pop()
     }
 
