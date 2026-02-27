@@ -435,8 +435,15 @@ impl Html5TreeBuilder {
         text: &dyn TextResolver,
     ) -> Result<DispatchOutcome, TreeBuilderError> {
         match token {
+            Token::Doctype { .. } => {
+                self.record_parse_error("before-head-doctype", None, None);
+                Ok(DispatchOutcome::Done)
+            }
             Token::Comment { text: token_text } => {
                 self.insert_comment(token_text, text)?;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::Text { text: token_text } if is_html_whitespace_text(token_text, text)? => {
                 Ok(DispatchOutcome::Done)
             }
             Token::StartTag {
@@ -476,6 +483,50 @@ impl Html5TreeBuilder {
                 self.record_parse_error("in-head-doctype", None, None);
                 Ok(DispatchOutcome::Done)
             }
+            Token::Text { text: token_text } if is_html_whitespace_text(token_text, text)? => {
+                // Core-v0 policy: preserve in-head whitespace text nodes deterministically.
+                self.insert_text(token_text, text)?;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::Text { .. } => {
+                // Core-v0 subset rule: non-whitespace character tokens in head
+                // force an implicit head close and are reprocessed in AfterHead.
+                self.record_parse_error(
+                    "in-head-non-whitespace-text-reprocessed",
+                    None,
+                    Some(InsertionMode::InHead),
+                );
+                let _ = self.close_element_in_scope(self.known_tags.head, ScopeKind::InScope);
+                self.insertion_mode = InsertionMode::AfterHead;
+                Ok(DispatchOutcome::Reprocess(InsertionMode::AfterHead))
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } if *name == self.known_tags.html => {
+                // Structural duplicates are explicit parse errors in Core-v0.
+                self.record_parse_error(
+                    "in-head-unexpected-html-start-tag",
+                    Some(*name),
+                    Some(InsertionMode::InHead),
+                );
+                if !attrs.is_empty() {
+                    self.record_parse_error(
+                        "html-start-tag-attributes-ignored",
+                        Some(*name),
+                        Some(InsertionMode::InHead),
+                    );
+                }
+                if *self_closing {
+                    self.record_parse_error(
+                        "html-start-tag-self-closing-ignored",
+                        Some(*name),
+                        Some(InsertionMode::InHead),
+                    );
+                }
+                Ok(DispatchOutcome::Done)
+            }
             Token::StartTag {
                 name,
                 attrs,
@@ -495,12 +546,27 @@ impl Html5TreeBuilder {
                 self.insertion_mode = InsertionMode::AfterHead;
                 Ok(DispatchOutcome::Done)
             }
+            Token::EndTag { name } if *name == self.known_tags.html => {
+                self.record_parse_error(
+                    "in-head-unexpected-html-end-tag",
+                    Some(*name),
+                    Some(InsertionMode::InHead),
+                );
+                let _ = self.close_element_in_scope(self.known_tags.head, ScopeKind::InScope);
+                self.insertion_mode = InsertionMode::AfterHead;
+                Ok(DispatchOutcome::Reprocess(InsertionMode::AfterHead))
+            }
             Token::Eof => {
+                // Core-v0 assumes <head> remains visible in scope when entering InHead.
+                // If template/table-family insertion modes are expanded, this may require
+                // specialized "pop head" handling rather than generic in-scope closure.
                 let _ = self.close_element_in_scope(self.known_tags.head, ScopeKind::InScope);
                 self.insertion_mode = InsertionMode::AfterHead;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::AfterHead))
             }
             _ => {
+                // TODO(core-v0): unsupported head tags (e.g. meta/link/base/noscript/template)
+                // currently force-close head and reprocess in AfterHead.
                 let _ = self.close_element_in_scope(self.known_tags.head, ScopeKind::InScope);
                 self.insertion_mode = InsertionMode::AfterHead;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::AfterHead))
@@ -526,6 +592,9 @@ impl Html5TreeBuilder {
             } if *name == self.known_tags.body => {
                 let _ = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
                 self.insertion_mode = InsertionMode::InBody;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::Text { text: token_text } if is_html_whitespace_text(token_text, text)? => {
                 Ok(DispatchOutcome::Done)
             }
             Token::Eof => {
@@ -621,8 +690,10 @@ impl Html5TreeBuilder {
             }
             Token::EndTag { name } => {
                 let scope = self.scope_kind_for_in_body_end_tag(*name);
-                let _ = self.close_element_in_scope(*name, scope);
-                self.update_mode_for_end_tag(*name);
+                let closed = self.close_element_in_scope(*name, scope);
+                if closed {
+                    self.update_mode_for_end_tag(*name);
+                }
             }
             Token::Text { text: token_text } => {
                 self.insert_text(token_text, text)?;
@@ -871,6 +942,8 @@ impl Html5TreeBuilder {
     fn close_element_in_scope(&mut self, name: AtomId, scope: ScopeKind) -> bool {
         // Keep this as the single end-tag stack mutation path in Core-v0 so
         // coalescing invalidation stays aligned with parent/adjacency changes.
+        // Future invariant: any additional SOE mutation helpers must either
+        // invalidate coalescing themselves or route through this boundary.
         let popped = self
             .open_elements
             .pop_until_including_in_scope(name, scope, &self.scope_tags);
@@ -878,6 +951,7 @@ impl Html5TreeBuilder {
             self.record_parse_error("end-tag-not-in-scope", Some(name), None);
             return false;
         }
+        // Parent/adjacency changed only on successful stack mutation.
         self.invalidate_text_coalescing();
         true
     }
@@ -896,6 +970,8 @@ impl Html5TreeBuilder {
     }
 
     fn update_mode_for_start_tag(&mut self, name: AtomId) {
+        // Core-v0 simplified routing. As insertion-mode coverage expands, move
+        // tag-dependent transitions into mode-specific handlers.
         self.insertion_mode = if name == self.known_tags.html {
             InsertionMode::BeforeHead
         } else if name == self.known_tags.head {
