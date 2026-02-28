@@ -1,0 +1,15 @@
+# format: html5-dom-v1
+# status: active
+#document
+  <html>
+    <head>
+    <body>
+      <p>
+        "a"
+        <b>
+          "b"
+        "c"
+        <i>
+          "d"
+        "e"
+      "\n"

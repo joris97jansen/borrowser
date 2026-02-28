@@ -172,6 +172,8 @@ pub struct Html5TreeBuilder {
     last_text_patch: Option<LastTextPatch>,
     max_open_elements_depth: u32,
     max_active_formatting_depth: u32,
+    #[cfg(any(test, feature = "internal-api"))]
+    parse_error_kinds: Vec<&'static str>,
 }
 
 #[cfg(any(test, feature = "internal-api"))]
@@ -209,6 +211,8 @@ impl Html5TreeBuilder {
             last_text_patch: None,
             max_open_elements_depth: 0,
             max_active_formatting_depth: 0,
+            #[cfg(any(test, feature = "internal-api"))]
+            parse_error_kinds: Vec::new(),
         })
     }
 
@@ -531,11 +535,7 @@ impl Html5TreeBuilder {
                 name,
                 attrs,
                 self_closing,
-            } if *name == self.known_tags.script
-                || *name == self.known_tags.style
-                || *name == self.known_tags.title
-                || *name == self.known_tags.textarea =>
-            {
+            } if self.is_text_mode_container_tag(*name) => {
                 let _ = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
                 self.original_insertion_mode = Some(self.insertion_mode);
                 self.insertion_mode = InsertionMode::Text;
@@ -594,7 +594,28 @@ impl Html5TreeBuilder {
                 self.insertion_mode = InsertionMode::InBody;
                 Ok(DispatchOutcome::Done)
             }
+            Token::Doctype { .. } => {
+                self.record_parse_error("after-head-doctype", None, Some(InsertionMode::AfterHead));
+                Ok(DispatchOutcome::Done)
+            }
             Token::Text { text: token_text } if is_html_whitespace_text(token_text, text)? => {
+                Ok(DispatchOutcome::Done)
+            }
+            Token::EndTag { name } if *name == self.known_tags.head => {
+                self.record_parse_error(
+                    "after-head-unexpected-head-end-tag",
+                    Some(*name),
+                    Some(InsertionMode::AfterHead),
+                );
+                Ok(DispatchOutcome::Done)
+            }
+            Token::EndTag { name } => {
+                // Core-v0 policy: stray end tags after head do not force implicit <body>.
+                self.record_parse_error(
+                    "after-head-unexpected-end-tag",
+                    Some(*name),
+                    Some(InsertionMode::AfterHead),
+                );
                 Ok(DispatchOutcome::Done)
             }
             Token::Eof => {
@@ -716,18 +737,6 @@ impl Html5TreeBuilder {
         text: &dyn TextResolver,
     ) -> Result<DispatchOutcome, TreeBuilderError> {
         match token {
-            Token::EndTag { name }
-                if *name == self.known_tags.script
-                    || *name == self.known_tags.style
-                    || *name == self.known_tags.title
-                    || *name == self.known_tags.textarea =>
-            {
-                let _ = self.close_element_in_scope(*name, ScopeKind::InScope);
-                self.insertion_mode = self
-                    .original_insertion_mode
-                    .take()
-                    .unwrap_or(InsertionMode::InBody);
-            }
             Token::Text { text: token_text } => {
                 self.insert_text(token_text, text)?;
             }
@@ -792,13 +801,42 @@ impl Html5TreeBuilder {
                 self.record_parse_error("doctype-in-text-mode", None, None);
             }
             Token::EndTag { name } => {
-                self.record_parse_error("unexpected-end-tag-in-text-mode", Some(*name), None);
-                let tag_name = resolve_atom(atoms, *name)?;
-                let literal = format!("</{tag_name}>");
-                self.insert_recovery_literal_text(&literal)?;
+                // Core-v0 policy: all text-mode containers share one close path.
+                // RAWTEXT/RCDATA/script-special behavior may diverge later.
+                let should_attempt_close = self.is_text_mode_container_tag(*name);
+                let closed = should_attempt_close
+                    && self.close_element_in_scope_with_reporting(*name, ScopeKind::InScope, false);
+                if closed {
+                    self.insertion_mode = self
+                        .original_insertion_mode
+                        .take()
+                        .unwrap_or(InsertionMode::InBody);
+                } else {
+                    self.record_parse_error(
+                        "unexpected-end-tag-in-text-mode",
+                        Some(*name),
+                        Some(InsertionMode::Text),
+                    );
+                    self.insert_text_mode_end_tag_literal(*name, atoms)?;
+                }
             }
         }
         Ok(DispatchOutcome::Done)
+    }
+
+    fn insert_text_mode_end_tag_literal(
+        &mut self,
+        name: AtomId,
+        atoms: &AtomTable,
+    ) -> Result<(), TreeBuilderError> {
+        debug_assert_eq!(
+            atoms.id(),
+            self.atom_table_id,
+            "text-mode end-tag literalization requires builder-bound atom table"
+        );
+        let tag_name = resolve_atom(atoms, name)?;
+        let literal = format!("</{tag_name}>");
+        self.insert_recovery_literal_text(&literal)
     }
 
     fn handle_doctype(
@@ -940,6 +978,16 @@ impl Html5TreeBuilder {
     }
 
     fn close_element_in_scope(&mut self, name: AtomId, scope: ScopeKind) -> bool {
+        self.close_element_in_scope_with_reporting(name, scope, true)
+    }
+
+    #[inline]
+    fn close_element_in_scope_with_reporting(
+        &mut self,
+        name: AtomId,
+        scope: ScopeKind,
+        report_not_in_scope_error: bool,
+    ) -> bool {
         // Keep this as the single end-tag stack mutation path in Core-v0 so
         // coalescing invalidation stays aligned with parent/adjacency changes.
         // Future invariant: any additional SOE mutation helpers must either
@@ -948,7 +996,9 @@ impl Html5TreeBuilder {
             .open_elements
             .pop_until_including_in_scope(name, scope, &self.scope_tags);
         if popped.is_none() {
-            self.record_parse_error("end-tag-not-in-scope", Some(name), None);
+            if report_not_in_scope_error {
+                self.record_parse_error("end-tag-not-in-scope", Some(name), None);
+            }
             return false;
         }
         // Parent/adjacency changed only on successful stack mutation.
@@ -962,11 +1012,17 @@ impl Html5TreeBuilder {
 
     fn record_parse_error(
         &mut self,
-        _kind: &'static str,
+        kind: &'static str,
         _tag: Option<AtomId>,
         _mode: Option<InsertionMode>,
     ) {
         // Core-v0 intentionally keeps parse errors recoverable and non-fatal.
+        #[cfg(any(test, feature = "internal-api"))]
+        self.parse_error_kinds.push(kind);
+        #[cfg(not(any(test, feature = "internal-api")))]
+        {
+            let _ = kind;
+        }
     }
 
     fn update_mode_for_start_tag(&mut self, name: AtomId) {
@@ -978,11 +1034,7 @@ impl Html5TreeBuilder {
             InsertionMode::InHead
         } else if name == self.known_tags.body {
             InsertionMode::InBody
-        } else if name == self.known_tags.script
-            || name == self.known_tags.style
-            || name == self.known_tags.title
-            || name == self.known_tags.textarea
-        {
+        } else if self.is_text_mode_container_tag(name) {
             self.original_insertion_mode = Some(self.insertion_mode);
             InsertionMode::Text
         } else {
@@ -993,11 +1045,7 @@ impl Html5TreeBuilder {
     fn update_mode_for_end_tag(&mut self, name: AtomId) {
         self.insertion_mode = if name == self.known_tags.head {
             InsertionMode::AfterHead
-        } else if name == self.known_tags.script
-            || name == self.known_tags.style
-            || name == self.known_tags.title
-            || name == self.known_tags.textarea
-        {
+        } else if self.is_text_mode_container_tag(name) {
             self.original_insertion_mode
                 .take()
                 .unwrap_or(InsertionMode::InBody)
@@ -1006,6 +1054,16 @@ impl Html5TreeBuilder {
         } else {
             self.insertion_mode
         };
+    }
+
+    #[inline]
+    fn is_text_mode_container_tag(&self, name: AtomId) -> bool {
+        // Core-v0 hook point: these tags all share Text-mode routing for now.
+        // RawText/RCDATA/script-special behavior can split from this helper later.
+        name == self.known_tags.script
+            || name == self.known_tags.style
+            || name == self.known_tags.title
+            || name == self.known_tags.textarea
     }
 
     // Core-v0 coupling: this scope decision is specific to the current InBody
@@ -1032,6 +1090,11 @@ impl Html5TreeBuilder {
             quirks_mode: self.document_state.quirks_mode,
             frameset_ok: self.document_state.frameset_ok,
         }
+    }
+
+    #[cfg(any(test, feature = "internal-api"))]
+    pub fn take_parse_error_kinds_for_test(&mut self) -> Vec<&'static str> {
+        std::mem::take(&mut self.parse_error_kinds)
     }
 }
 
