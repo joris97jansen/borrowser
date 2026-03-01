@@ -16,7 +16,18 @@ pub(crate) struct ActiveFormattingList {
 }
 
 impl ActiveFormattingList {
+    #[inline]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    #[inline]
+    pub(crate) fn len(&self) -> usize {
+        self.items.len()
+    }
+
     pub(crate) fn clear(&mut self) {
+        // Note: does not reset max_depth (high-water mark metric).
         self.items.clear();
     }
 
@@ -31,6 +42,7 @@ impl ActiveFormattingList {
         self.items.pop()
     }
 
+    #[inline]
     pub(crate) fn max_depth(&self) -> u32 {
         self.max_depth
     }

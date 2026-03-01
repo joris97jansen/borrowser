@@ -122,6 +122,26 @@ Core v0 tree-builder partial-scope guards:
 - `TB-ALGO-AFE` (`MVP_PARTIAL`) guarantees basic AFE marker handling and reconstruction for simple inline formatting cases; full adoption-agency behavior remains deferred to `TB-ALGO-AAA`.
 - `TB-ALGO-REPROCESS` guarantees that reprocessing reuses the same token instance and does not emit duplicate patches for a single logical token unless explicitly required by the spec algorithm.
 
+### Text Coalescing Policy (Core v0)
+
+- Tree-builder text coalescing is controlled by `TreeBuilderConfig::coalesce_text`.
+- When enabled, coalescing is deterministic and parent-local:
+  - first adjacent text insertion under a parent emits `CreateText` then `AppendChild`,
+  - subsequent adjacent text insertions under the same parent emit `SetText` on that same text-node key with cumulative content.
+- Coalescing MUST stop on any structural boundary, including:
+  - document materialization (`CreateDocument`),
+  - element insertion,
+  - successful SOE pop/end-tag closure,
+  - comment insertion,
+  - recovery literalization boundaries.
+- Batch/chunk boundaries MUST NOT change semantic coalescing behavior:
+  - whole-input and chunked-input runs must converge to the same final DOM,
+  - patch logs must remain deterministic under different drain boundaries.
+- Core v0 performance tradeoff (intentional and tracked):
+  - current coalescing semantics use cumulative `SetText` payloads for adjacent runs,
+  - this keeps patch semantics simple and deterministic but can increase payload-copy cost for very long tokenized text runs,
+  - planned evolution paths are: add append-style text patches (for example `AppendText`) or emit a single `SetText` at run-flush boundaries with explicitly documented observer semantics.
+
 <a id="supported-tags-and-contexts-baseline"></a>
 ### Supported Tags And Contexts Baseline
 

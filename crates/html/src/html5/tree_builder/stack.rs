@@ -79,15 +79,28 @@ pub(crate) struct OpenElementsStack {
 }
 
 impl OpenElementsStack {
+    #[inline]
+    pub(crate) fn is_empty(&self) -> bool {
+        self.items.is_empty()
+    }
+
+    #[inline]
+    pub(crate) fn len(&self) -> usize {
+        self.items.len()
+    }
+
     pub(crate) fn clear(&mut self) {
+        // Note: does not reset max_depth (high-water mark metric).
         self.items.clear();
     }
 
+    #[inline]
     pub(crate) fn push(&mut self, entry: OpenElement) {
         self.items.push(entry);
         self.max_depth = self.max_depth.max(self.items.len() as u32);
     }
 
+    #[inline]
     pub(crate) fn current(&self) -> Option<OpenElement> {
         self.items.last().copied()
     }
@@ -105,6 +118,7 @@ impl OpenElementsStack {
         self.items.pop()
     }
 
+    #[inline]
     pub(crate) fn max_depth(&self) -> u32 {
         self.max_depth
     }
@@ -129,6 +143,7 @@ impl OpenElementsStack {
 
     /// Removes elements from the top down to and including `target` when it is
     /// visible in the requested scope, and returns the matched element.
+    #[must_use]
     pub(crate) fn pop_until_including_in_scope(
         &mut self,
         target: AtomId,
@@ -136,13 +151,14 @@ impl OpenElementsStack {
         tags: &ScopeTagSet,
     ) -> Option<OpenElement> {
         let match_index = self.find_in_scope_match_index(target, kind, tags)?;
-        // Pop elements from the top until the matched entry becomes current.
-        while self.items.len() > match_index + 1 {
-            let _ = self.items.pop();
-        }
+        debug_assert!(match_index < self.items.len());
+        // Keep elements up to and including the matched entry, then pop it.
+        self.items.truncate(match_index + 1);
         self.items.pop()
     }
 
+    /// Probe-only scope lookup used before mutation so callers can preserve the
+    /// "no mutation on miss" contract.
     fn find_in_scope_match_index(
         &self,
         target: AtomId,
@@ -162,24 +178,26 @@ impl OpenElementsStack {
     }
 }
 
+#[inline]
+fn is_in_scope_boundary(name: AtomId, tags: &ScopeTagSet) -> bool {
+    name == tags.html
+        || name == tags.table
+        || name == tags.template
+        || name == tags.td
+        || name == tags.th
+        || name == tags.caption
+        || name == tags.marquee
+        || name == tags.object
+        || name == tags.applet
+}
+
+#[inline]
 fn is_scope_boundary(name: AtomId, kind: ScopeKind, tags: &ScopeTagSet) -> bool {
     match kind {
-        ScopeKind::InScope => {
-            name == tags.html
-                || name == tags.table
-                || name == tags.template
-                || name == tags.td
-                || name == tags.th
-                || name == tags.caption
-                || name == tags.marquee
-                || name == tags.object
-                || name == tags.applet
-        }
-        ScopeKind::Button => {
-            is_scope_boundary(name, ScopeKind::InScope, tags) || name == tags.button
-        }
+        ScopeKind::InScope => is_in_scope_boundary(name, tags),
+        ScopeKind::Button => is_in_scope_boundary(name, tags) || name == tags.button,
         ScopeKind::ListItem => {
-            is_scope_boundary(name, ScopeKind::InScope, tags) || name == tags.ol || name == tags.ul
+            is_in_scope_boundary(name, tags) || name == tags.ol || name == tags.ul
         }
         ScopeKind::Table => name == tags.html || name == tags.table || name == tags.template,
     }
@@ -299,5 +317,71 @@ mod tests {
 
         let not_found = stack.pop_until_including_in_scope(div, ScopeKind::InScope, &tags);
         assert!(not_found.is_none());
+    }
+
+    #[test]
+    fn pop_until_including_in_scope_does_not_mutate_when_boundary_hides_target() {
+        let mut ctx = DocumentParseContext::new();
+        let tags = make_scope_tags(&mut ctx);
+        let div = ctx.atoms.intern_ascii_folded("div").expect("atom");
+        let section = ctx.atoms.intern_ascii_folded("section").expect("atom");
+        let mut stack = OpenElementsStack::default();
+        stack.push(OpenElement::new(PatchKey(1), tags.html));
+        stack.push(OpenElement::new(PatchKey(2), div));
+        stack.push(OpenElement::new(PatchKey(3), tags.table));
+        stack.push(OpenElement::new(PatchKey(4), section));
+
+        let before: Vec<_> = stack.iter_keys().collect();
+        let not_found = stack.pop_until_including_in_scope(div, ScopeKind::InScope, &tags);
+        let after: Vec<_> = stack.iter_keys().collect();
+        assert!(not_found.is_none());
+        assert_eq!(
+            after, before,
+            "failed in-scope pop must not partially mutate SOE"
+        );
+    }
+
+    #[test]
+    fn pop_until_including_in_scope_respects_button_scope_boundary() {
+        let mut ctx = DocumentParseContext::new();
+        let tags = make_scope_tags(&mut ctx);
+        let p = ctx.atoms.intern_ascii_folded("p").expect("atom");
+        let span = ctx.atoms.intern_ascii_folded("span").expect("atom");
+        let mut stack = OpenElementsStack::default();
+        stack.push(OpenElement::new(PatchKey(1), tags.html));
+        stack.push(OpenElement::new(PatchKey(2), p));
+        stack.push(OpenElement::new(PatchKey(3), tags.button));
+        stack.push(OpenElement::new(PatchKey(4), span));
+
+        let before: Vec<_> = stack.iter_keys().collect();
+        let not_found = stack.pop_until_including_in_scope(p, ScopeKind::Button, &tags);
+        let after: Vec<_> = stack.iter_keys().collect();
+        assert!(not_found.is_none());
+        assert_eq!(
+            after, before,
+            "button-scope boundary should block pops below <button>"
+        );
+    }
+
+    #[test]
+    fn pop_until_including_in_scope_respects_list_item_scope_boundary() {
+        let mut ctx = DocumentParseContext::new();
+        let tags = make_scope_tags(&mut ctx);
+        let li = ctx.atoms.intern_ascii_folded("li").expect("atom");
+        let span = ctx.atoms.intern_ascii_folded("span").expect("atom");
+        let mut stack = OpenElementsStack::default();
+        stack.push(OpenElement::new(PatchKey(1), tags.html));
+        stack.push(OpenElement::new(PatchKey(2), li));
+        stack.push(OpenElement::new(PatchKey(3), tags.ul));
+        stack.push(OpenElement::new(PatchKey(4), span));
+
+        let before: Vec<_> = stack.iter_keys().collect();
+        let not_found = stack.pop_until_including_in_scope(li, ScopeKind::ListItem, &tags);
+        let after: Vec<_> = stack.iter_keys().collect();
+        assert!(not_found.is_none());
+        assert_eq!(
+            after, before,
+            "list-item-scope boundary should block pops below <ol>/<ul>"
+        );
     }
 }
