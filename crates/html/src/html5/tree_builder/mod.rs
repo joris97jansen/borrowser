@@ -9,7 +9,6 @@ use crate::html5::shared::{
     AtomError, AtomId, AtomTable, DocumentParseContext, EngineInvariantError, Token,
 };
 use crate::html5::tokenizer::TextResolver;
-use crate::html5::tree_builder::emit::{emit_append_child, emit_create_element};
 use crate::html5::tree_builder::formatting::ActiveFormattingList;
 use crate::html5::tree_builder::modes::InsertionMode;
 use crate::html5::tree_builder::stack::{OpenElement, OpenElementsStack, ScopeKind, ScopeTagSet};
@@ -48,8 +47,19 @@ pub fn serialize_dom_for_test_with_options(
 
 #[derive(Clone, Debug, Default)]
 pub struct TreeBuilderConfig {
-    /// Whether to coalesce adjacent text nodes within a batch.
-    /// Coalescing must be deterministic and purely local (no buffering thresholds).
+    /// Whether to coalesce adjacent text insertions under the same parent.
+    ///
+    /// Coalescing policy (Core-v0):
+    /// - first insertion in a run emits `CreateText` + `AppendChild`,
+    /// - adjacent insertions emit `SetText` with cumulative content on the same key,
+    /// - any structural mutation (insert/pop/comment/recovery-literal boundary) breaks the run.
+    ///
+    /// This policy keeps output deterministic for both buffered (`process`) and
+    /// sink-based (`push_token`) paths, including across chunk boundaries.
+    ///
+    /// Streaming flush behavior:
+    /// - Coalescing may span sink flush boundaries (`push_token` + sink push).
+    /// - A later batch may emit `SetText` for a text node created in an earlier batch.
     pub coalesce_text: bool,
 }
 
@@ -99,11 +109,22 @@ impl Default for DocumentState {
     }
 }
 
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Debug)]
 struct LastTextPatch {
     parent: PatchKey,
     text_key: PatchKey,
-    create_patch_index: usize,
+    cumulative_text: String,
+}
+
+// Drop exits the structural-mutation boundary.
+struct StructuralMutationScope<'a> {
+    tb: &'a mut Html5TreeBuilder,
+}
+
+impl Drop for StructuralMutationScope<'_> {
+    fn drop(&mut self) {
+        self.tb.end_structural_mutation();
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -168,8 +189,11 @@ pub struct Html5TreeBuilder {
     next_patch_key: NonZeroU32,
     pending_doctype: Option<String>,
     document_state: DocumentState,
+    // Do not push structural patches directly to `patches`.
+    // Route structural edits through `push_structural_patch` so invariants stay checkable.
     patches: Vec<DomPatch>,
     last_text_patch: Option<LastTextPatch>,
+    structural_mutation_depth: u16,
     max_open_elements_depth: u32,
     max_active_formatting_depth: u32,
     #[cfg(any(test, feature = "internal-api"))]
@@ -209,6 +233,7 @@ impl Html5TreeBuilder {
             document_state: DocumentState::default(),
             patches: Vec::new(),
             last_text_patch: None,
+            structural_mutation_depth: 0,
             max_open_elements_depth: 0,
             max_active_formatting_depth: 0,
             #[cfg(any(test, feature = "internal-api"))]
@@ -236,6 +261,11 @@ impl Html5TreeBuilder {
     ///
     /// This is the sink-based streaming adapter. For internal buffering, use
     /// `process()` + `drain_patches()`.
+    ///
+    /// Coalescing note:
+    /// - With `coalesce_text=true`, coalescing state may continue across calls.
+    /// - Therefore, `SetText` emitted in a later call may target a node created
+    ///   by an earlier flushed batch.
     pub fn push_token(
         &mut self,
         token: &Token,
@@ -245,7 +275,6 @@ impl Html5TreeBuilder {
     ) -> Result<TreeBuilderStepResult, TreeBuilderError> {
         let result = self.process_impl(token, atoms, text)?;
         sink.push_many(&mut self.patches);
-        self.last_text_patch = None;
         Ok(result)
     }
 
@@ -254,7 +283,6 @@ impl Html5TreeBuilder {
     /// Patch ordering is stable: the returned vector preserves source token order.
     #[must_use]
     pub fn drain_patches(&mut self) -> Vec<DomPatch> {
-        self.last_text_patch = None;
         std::mem::take(&mut self.patches)
     }
 
@@ -341,19 +369,28 @@ impl Html5TreeBuilder {
         if let Some(key) = self.document_key {
             return Ok(key);
         }
-        self.invalidate_text_coalescing();
-        let key = self.alloc_patch_key()?;
-        self.patches.push(DomPatch::CreateDocument {
-            key,
-            doctype: self.pending_doctype.take(),
-        });
-        self.document_key = Some(key);
-        self.insertion_mode = InsertionMode::BeforeHtml;
-        self.open_elements.clear();
-        self.active_formatting.clear();
-        self.original_insertion_mode = None;
-        self.document_state.frameset_ok = true;
-        Ok(key)
+        self.with_structural_mutation(|this| {
+            let key = this.alloc_patch_key()?;
+            let doctype = this.pending_doctype.take();
+            this.push_structural_patch(DomPatch::CreateDocument { key, doctype });
+            this.document_key = Some(key);
+            this.insertion_mode = InsertionMode::BeforeHtml;
+            debug_assert!(
+                this.open_elements.is_empty(),
+                "document creation expected empty SOE before bootstrap reset (len={})",
+                this.open_elements.len()
+            );
+            this.open_elements.clear();
+            debug_assert!(
+                this.active_formatting.is_empty(),
+                "document creation expected empty AFE before bootstrap reset (len={})",
+                this.active_formatting.len()
+            );
+            this.active_formatting.clear();
+            this.original_insertion_mode = None;
+            this.document_state.frameset_ok = true;
+            Ok(key)
+        })
     }
 
     fn handle_initial(
@@ -817,6 +854,11 @@ impl Html5TreeBuilder {
                         Some(*name),
                         Some(InsertionMode::Text),
                     );
+                    self.record_parse_error(
+                        "text-mode-end-tag-literalized",
+                        Some(*name),
+                        Some(InsertionMode::Text),
+                    );
                     self.insert_text_mode_end_tag_literal(*name, atoms)?;
                 }
             }
@@ -868,27 +910,32 @@ impl Html5TreeBuilder {
     ) -> Result<PatchKey, TreeBuilderError> {
         // All SOE push/pop mutations must flow through central helpers that
         // invalidate coalescing state before changing tree structure.
-        self.invalidate_text_coalescing();
-        let document_key = self.ensure_document_created()?;
-        let element_name = resolve_atom_arc(atoms, name)?;
-        let parent = self
-            .open_elements
-            .current()
-            .map(OpenElement::key)
-            .unwrap_or(document_key);
-        let key = self.alloc_patch_key()?;
-        let mut attributes = Vec::with_capacity(attrs.len());
-        for attr in attrs {
-            let attr_name = resolve_atom_arc(atoms, attr.name)?;
-            let attr_value = resolve_attribute_value(attr, text)?;
-            attributes.push((attr_name, attr_value));
-        }
-        emit_create_element(&mut self.patches, key, element_name, attributes);
-        emit_append_child(&mut self.patches, parent, key);
-        if !self_closing {
-            self.open_elements.push(OpenElement::new(key, name));
-        }
-        Ok(key)
+        self.with_structural_mutation(|this| {
+            let document_key = this.ensure_document_created()?;
+            let element_name = resolve_atom_arc(atoms, name)?;
+            let parent = this
+                .open_elements
+                .current()
+                .map(OpenElement::key)
+                .unwrap_or(document_key);
+            let key = this.alloc_patch_key()?;
+            let mut attributes = Vec::with_capacity(attrs.len());
+            for attr in attrs {
+                let attr_name = resolve_atom_arc(atoms, attr.name)?;
+                let attr_value = resolve_attribute_value(attr, text)?;
+                attributes.push((attr_name, attr_value));
+            }
+            this.push_structural_patch(DomPatch::CreateElement {
+                key,
+                name: element_name,
+                attributes,
+            });
+            this.push_structural_patch(DomPatch::AppendChild { parent, child: key });
+            if !self_closing {
+                this.open_elements.push(OpenElement::new(key, name));
+            }
+            Ok(key)
+        })
     }
 
     fn insert_text(
@@ -913,6 +960,10 @@ impl Html5TreeBuilder {
     }
 
     fn insert_resolved_text(&mut self, resolved: &str) -> Result<(), TreeBuilderError> {
+        debug_assert_eq!(
+            self.structural_mutation_depth, 0,
+            "text insertion must not occur inside structural mutation scope"
+        );
         if resolved.is_empty() {
             return Ok(());
         }
@@ -923,29 +974,40 @@ impl Html5TreeBuilder {
             .map(OpenElement::key)
             .unwrap_or(document_key);
         if self.config.coalesce_text
-            && let Some(last) = self.last_text_patch
+            && let Some(last) = self.last_text_patch.as_ref()
             && last.parent == parent
-            && let Some(DomPatch::CreateText {
-                key,
-                text: existing_text,
-            }) = self.patches.get_mut(last.create_patch_index)
-            && *key == last.text_key
         {
-            existing_text.push_str(resolved);
+            // Core-v0 policy currently emits full `SetText` payloads for each
+            // adjacent token in a run. This keeps semantics simple and stable
+            // across streaming boundaries, but can be O(n^2) over long runs.
+            // Follow-up options:
+            // - add `AppendText` patch semantics, or
+            // - defer `SetText` to run-flush boundaries.
+            let last = self
+                .last_text_patch
+                .as_mut()
+                .expect("coalescing state must remain present within branch");
+            last.cumulative_text.reserve(resolved.len());
+            last.cumulative_text.push_str(resolved);
+            let key = last.text_key;
+            let text = last.cumulative_text.clone();
+            self.push_patch(DomPatch::SetText { key, text });
             return Ok(());
         }
-        let key = self.alloc_patch_key()?;
-        let create_patch_index = self.patches.len();
-        self.patches.push(DomPatch::CreateText {
-            key,
-            text: resolved.to_string(),
-        });
-        emit_append_child(&mut self.patches, parent, key);
+        let key = self.with_structural_mutation(|this| {
+            let key = this.alloc_patch_key()?;
+            this.push_structural_patch(DomPatch::CreateText {
+                key,
+                text: resolved.to_string(),
+            });
+            this.push_structural_patch(DomPatch::AppendChild { parent, child: key });
+            Ok(key)
+        })?;
         self.last_text_patch = if self.config.coalesce_text {
             Some(LastTextPatch {
                 parent,
                 text_key: key,
-                create_patch_index,
+                cumulative_text: resolved.to_string(),
             })
         } else {
             None
@@ -958,23 +1020,24 @@ impl Html5TreeBuilder {
         token_text: &crate::html5::shared::TextValue,
         text: &dyn TextResolver,
     ) -> Result<(), TreeBuilderError> {
-        self.invalidate_text_coalescing();
-        let resolved = resolve_text_value(token_text, text)?;
-        // We materialize the document as soon as a concrete node must be attached
-        // (comment/text/element) to keep patch ordering stable and deterministic.
-        let document_key = self.ensure_document_created()?;
-        let parent = self
-            .open_elements
-            .current()
-            .map(OpenElement::key)
-            .unwrap_or(document_key);
-        let key = self.alloc_patch_key()?;
-        self.patches.push(DomPatch::CreateComment {
-            key,
-            text: resolved,
-        });
-        emit_append_child(&mut self.patches, parent, key);
-        Ok(())
+        self.with_structural_mutation(|this| {
+            let resolved = resolve_text_value(token_text, text)?;
+            // We materialize the document as soon as a concrete node must be attached
+            // (comment/text/element) to keep patch ordering stable and deterministic.
+            let document_key = this.ensure_document_created()?;
+            let parent = this
+                .open_elements
+                .current()
+                .map(OpenElement::key)
+                .unwrap_or(document_key);
+            let key = this.alloc_patch_key()?;
+            this.push_structural_patch(DomPatch::CreateComment {
+                key,
+                text: resolved,
+            });
+            this.push_structural_patch(DomPatch::AppendChild { parent, child: key });
+            Ok(())
+        })
     }
 
     fn close_element_in_scope(&mut self, name: AtomId, scope: ScopeKind) -> bool {
@@ -1007,7 +1070,76 @@ impl Html5TreeBuilder {
     }
 
     fn invalidate_text_coalescing(&mut self) {
+        // Authoritative structural boundaries that MUST reset text coalescing:
+        // - document materialization (CreateDocument),
+        // - element insertion / parent-child structural mutations,
+        // - successful SOE pop/closure only (failed closures are ignored),
+        // - comment insertion,
+        // - recovery literalization boundaries.
         self.last_text_patch = None;
+    }
+
+    fn begin_structural_mutation(&mut self) {
+        if self.structural_mutation_depth == 0 {
+            self.invalidate_text_coalescing();
+        }
+        self.structural_mutation_depth = self
+            .structural_mutation_depth
+            .checked_add(1)
+            .expect("structural mutation depth overflow");
+    }
+
+    fn end_structural_mutation(&mut self) {
+        assert!(
+            self.structural_mutation_depth > 0,
+            "structural mutation depth underflow"
+        );
+        self.structural_mutation_depth -= 1;
+    }
+
+    fn with_structural_mutation<T>(
+        &mut self,
+        f: impl FnOnce(&mut Self) -> Result<T, TreeBuilderError>,
+    ) -> Result<T, TreeBuilderError> {
+        // Rule: do not call text insertion APIs from within one structural
+        // mutation scope. Text coalescing must not cross structural edits.
+        self.begin_structural_mutation();
+        // NOTE: `scope` must stay alive until after `f(...)` returns.
+        let scope = StructuralMutationScope { tb: self };
+        let result = f(scope.tb);
+        drop(scope);
+        result
+    }
+
+    #[allow(dead_code)]
+    fn with_structural_mutation_no_fail<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
+        // Rule: do not call text insertion APIs from within one structural
+        // mutation scope. Text coalescing must not cross structural edits.
+        // Utility reserved for infallible structural edit call-sites.
+        self.begin_structural_mutation();
+        // NOTE: `scope` must stay alive until after `f(...)` returns.
+        let scope = StructuralMutationScope { tb: self };
+        let result = f(scope.tb);
+        drop(scope);
+        result
+    }
+
+    #[track_caller]
+    fn push_structural_patch(&mut self, patch: DomPatch) {
+        // Rule: structural patches (node creation and tree-shape edits) must
+        // flow through this path: CreateDocument/CreateElement/CreateText/
+        // CreateComment and ordering/parenting patches (AppendChild and
+        // future ordering patches such as InsertBefore).
+        // Content-only mutation patches (for example SetText) can use direct push.
+        debug_assert!(
+            self.structural_mutation_depth > 0,
+            "structural patch emitted outside structural-mutation boundary; call begin_structural_mutation() first"
+        );
+        self.push_patch(patch);
+    }
+
+    fn push_patch(&mut self, patch: DomPatch) {
+        self.patches.push(patch);
     }
 
     fn record_parse_error(
@@ -1230,7 +1362,6 @@ fn is_html_whitespace_byte(byte: u8) -> bool {
     matches!(byte, b'\t' | b'\n' | 0x0C | b'\r' | b' ')
 }
 
-mod emit;
 mod formatting;
 mod modes;
 mod stack;
