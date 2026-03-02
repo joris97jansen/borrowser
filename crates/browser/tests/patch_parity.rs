@@ -389,7 +389,9 @@ fn patch_batches_for_plan(input: &str, plan: &ChunkPlan) -> Result<Vec<Vec<DomPa
         match patches {
             Ok(patches) => {
                 prev_dom = Some(dom);
-                batches.push(patches);
+                if !patches.is_empty() {
+                    batches.push(patches);
+                }
             }
             Err(e) => {
                 err = Some(format!("{e:?}"));
@@ -406,7 +408,9 @@ fn patch_batches_for_plan(input: &str, plan: &ChunkPlan) -> Result<Vec<Vec<DomPa
         None => diff_from_empty(&dom, &mut diff_state),
     }
     .map_err(|e| format!("{e:?}"))?;
-    batches.push(patches);
+    if !patches.is_empty() {
+        batches.push(patches);
+    }
     Ok(batches)
 }
 

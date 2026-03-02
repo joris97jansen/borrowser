@@ -1262,20 +1262,20 @@ fn tree_builder_coalescing_merges_adjacent_text_tokens_under_same_parent() {
     assert_eq!(
         text_values,
         vec!["a".to_string()],
-        "coalescing keeps initial CreateText payload and evolves via SetText"
+        "coalescing keeps initial CreateText payload and evolves via AppendText"
     );
 
-    let set_text_values: Vec<_> = patches
+    let append_text_values: Vec<_> = patches
         .into_iter()
         .filter_map(|patch| match patch {
-            DomPatch::SetText { text, .. } => Some(text),
+            DomPatch::AppendText { text, .. } => Some(text),
             _ => None,
         })
         .collect();
     assert_eq!(
-        set_text_values,
-        vec!["ab".to_string(), "abc".to_string()],
-        "adjacent in-parent coalescing should emit cumulative SetText updates"
+        append_text_values,
+        vec!["b".to_string(), "c".to_string()],
+        "adjacent in-parent coalescing should emit incremental AppendText updates"
     );
 }
 
@@ -1393,8 +1393,8 @@ fn tree_builder_coalescing_does_not_cross_br_element_boundary() {
     assert!(
         !patches
             .iter()
-            .any(|patch| matches!(patch, DomPatch::SetText { .. })),
-        "coalescing must not emit SetText when text is split by an element boundary"
+            .any(|patch| matches!(patch, DomPatch::AppendText { .. })),
+        "coalescing must not emit AppendText when text is split by an element boundary"
     );
 }
 

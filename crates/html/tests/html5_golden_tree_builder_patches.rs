@@ -1,17 +1,11 @@
-#![cfg(all(feature = "html5", feature = "dom-snapshot"))]
-//! Semantic DOM regression harness.
-//!
-//! Core-v0 patch contract acceptance is covered by
-//! `html5_golden_tree_builder_patches.rs`.
+#![cfg(feature = "html5")]
 
 use html::chunker::{ChunkerConfig, build_chunk_plans};
-use html::dom_snapshot::DomSnapshotOptions;
 use html::html5::tree_builder::{
-    Html5TreeBuilder, TreeBuilderConfig, TreeBuilderStepResult, serialize_dom_for_test_with_options,
+    Html5TreeBuilder, TreeBuilderConfig, TreeBuilderStepResult, VecPatchSink,
 };
 use html::html5::{DocumentParseContext, Html5Tokenizer, Input, TokenizeResult, TokenizerConfig};
-use html::test_harness::{ChunkPlan, materialize_patch_batches, shrink_chunk_plan_with_stats};
-use html_test_support::diff_lines;
+use html_test_support::{diff_lines, escape_text};
 use std::collections::BTreeMap;
 use std::env;
 use std::fs;
@@ -23,17 +17,16 @@ enum FixtureStatus {
     Xfail,
 }
 
-struct ExpectedDom {
+struct ExpectedPatches {
     status: FixtureStatus,
     reason: Option<String>,
-    options: DomSnapshotOptions,
     lines: Vec<String>,
 }
 
 struct Fixture {
     name: String,
     input: String,
-    expected: ExpectedDom,
+    expected: ExpectedPatches,
 }
 
 #[derive(Debug)]
@@ -52,36 +45,45 @@ impl RunOutput {
 }
 
 #[test]
-fn html5_golden_tree_builder_whole_input() {
+fn html5_golden_tree_builder_patches_whole_input() {
     let fixtures = load_fixtures();
     let filter = fixture_filter();
+    let update = update_mode();
     let mut ran = 0usize;
+
     for fixture in fixtures {
         if !filter.matches(&fixture.name) {
             continue;
         }
         ran += 1;
         let actual = run_tree_builder_whole(&fixture);
-        enforce_expected(&fixture, &actual, Mode::WholeInput, None);
+        enforce_expected(&fixture, &actual, Mode::WholeInput, None, update);
     }
+
     assert!(ran > 0, "no fixtures matched filter");
 }
 
 #[test]
-fn html5_golden_tree_builder_chunked_input() {
+fn html5_golden_tree_builder_patches_chunked_input() {
     let fixtures = load_fixtures();
     let filter = fixture_filter();
-    let mut fuzz_runs = env_u64("BORROWSER_HTML5_DOM_FUZZ_RUNS", 4) as usize;
+    let update = update_mode();
+    if update {
+        return;
+    }
+    let mut fuzz_runs = env_u64("BORROWSER_HTML5_PATCH_FUZZ_RUNS", 4) as usize;
     if env::var("CI").is_ok() && fuzz_runs == 0 {
         fuzz_runs = 1;
     }
-    let fuzz_seed = env_u64("BORROWSER_HTML5_DOM_FUZZ_SEED", 0xC0FFEE);
+    let fuzz_seed = env_u64("BORROWSER_HTML5_PATCH_FUZZ_SEED", 0xC0FFEE);
     let mut ran = 0usize;
+
     for fixture in fixtures {
         if !filter.matches(&fixture.name) {
             continue;
         }
         ran += 1;
+
         let whole = run_tree_builder_whole(&fixture);
         if matches!(fixture.expected.status, FixtureStatus::Active)
             && matches!(whole, RunOutput::Err(_))
@@ -91,31 +93,30 @@ fn html5_golden_tree_builder_chunked_input() {
                 fixture.name, whole
             );
         }
+
         let plans = build_chunk_plans(&fixture.input, fuzz_runs, fuzz_seed, ChunkerConfig::utf8());
         for plan in plans {
             let actual = run_tree_builder_chunked(&fixture, &plan.plan, &plan.label);
             if let (Some(whole_lines), Some(actual_lines)) = (whole.lines(), actual.lines())
                 && actual_lines != whole_lines
             {
-                let (shrunk, stats) =
-                    shrink_chunk_plan_with_stats(&fixture.input, &plan.plan, |candidate| {
-                        match run_tree_builder_chunked(&fixture, candidate, "shrinking") {
-                            RunOutput::Ok(lines) => lines.as_slice() != whole_lines,
-                            RunOutput::Err(_) => true,
-                        }
-                    });
                 panic!(
-                    "chunked output mismatch in fixture '{}'\nplan: {}\nshrunk: {}\nshrink stats: {:?}\n{}",
+                    "chunked patch mismatch in fixture '{}'\nplan: {}\n{}",
                     fixture.name,
                     plan.label,
-                    shrunk,
-                    stats,
                     diff_lines(whole_lines, actual_lines)
                 );
             }
-            enforce_expected(&fixture, &actual, Mode::ChunkedInput, Some(&plan.label));
+            enforce_expected(
+                &fixture,
+                &actual,
+                Mode::ChunkedInput,
+                Some(&plan.label),
+                update,
+            );
         }
     }
+
     assert!(ran > 0, "no fixtures matched filter");
 }
 
@@ -134,17 +135,28 @@ impl Mode {
     }
 }
 
-fn enforce_expected(fixture: &Fixture, actual: &RunOutput, mode: Mode, plan_label: Option<&str>) {
+fn enforce_expected(
+    fixture: &Fixture,
+    actual: &RunOutput,
+    mode: Mode,
+    plan_label: Option<&str>,
+    update: bool,
+) {
     let label = match plan_label {
         Some(plan) => format!("{} ({})", mode.label(), plan),
         None => mode.label().to_string(),
     };
+
     match fixture.expected.status {
         FixtureStatus::Active => match actual {
             RunOutput::Ok(lines) => {
+                if update && mode == Mode::WholeInput && plan_label.is_none() {
+                    write_expected_patch_file(fixture, lines);
+                    return;
+                }
                 if lines.as_slice() != fixture.expected.lines.as_slice() {
                     panic!(
-                        "DOM mismatch in fixture '{}' [{label}]\npath: {}\n{}",
+                        "patch mismatch in fixture '{}' [{label}]\npath: {}\n{}",
                         fixture.name,
                         fixture_dir(&fixture.name).display(),
                         diff_lines(&fixture.expected.lines, lines)
@@ -159,7 +171,7 @@ fn enforce_expected(fixture: &Fixture, actual: &RunOutput, mode: Mode, plan_labe
             RunOutput::Ok(lines) => {
                 if lines.as_slice() == fixture.expected.lines.as_slice() {
                     panic!(
-                        "fixture '{}' [{label}] matched expected DOM but is marked xfail; reason: {}\npath: {}",
+                        "fixture '{}' [{label}] matched expected patches but is marked xfail; reason: {}\npath: {}",
                         fixture.name,
                         fixture
                             .expected
@@ -192,8 +204,15 @@ impl FixtureFilter {
 
 fn fixture_filter() -> FixtureFilter {
     FixtureFilter {
-        raw: env::var("BORROWSER_HTML5_DOM_FIXTURE").ok(),
+        raw: env::var("BORROWSER_HTML5_PATCH_FIXTURE").ok(),
     }
+}
+
+fn update_mode() -> bool {
+    matches!(
+        env::var("BORROWSER_HTML5_PATCH_FIXTURE_UPDATE").as_deref(),
+        Ok("1")
+    )
 }
 
 fn env_u64(key: &str, default: u64) -> u64 {
@@ -225,10 +244,10 @@ fn load_fixtures() -> Vec<Fixture> {
             continue;
         }
         let input_path = path.join("input.html");
-        let dom_path = path.join("dom.txt");
+        let patches_path = path.join("patches.txt");
         let input = fs::read_to_string(&input_path)
             .unwrap_or_else(|err| panic!("failed to read input {input_path:?}: {err}"));
-        let expected = parse_dom_file(&dom_path);
+        let expected = parse_patch_file(&patches_path);
         fixtures.push(Fixture {
             name,
             input,
@@ -244,16 +263,16 @@ fn fixture_root() -> PathBuf {
         .join("tests")
         .join("fixtures")
         .join("html5")
-        .join("tree_builder")
+        .join("tree_builder_patches")
 }
 
 fn fixture_dir(name: &str) -> PathBuf {
     fixture_root().join(name)
 }
 
-fn parse_dom_file(path: &Path) -> ExpectedDom {
+fn parse_patch_file(path: &Path) -> ExpectedPatches {
     let content = fs::read_to_string(path)
-        .unwrap_or_else(|err| panic!("failed to read dom file {path:?}: {err}"));
+        .unwrap_or_else(|err| panic!("failed to read patch file {path:?}: {err}"));
     let mut lines = Vec::new();
     let mut headers: BTreeMap<String, String> = BTreeMap::new();
     for raw_line in content.lines() {
@@ -283,7 +302,10 @@ fn parse_dom_file(path: &Path) -> ExpectedDom {
     let format = headers
         .get("format")
         .unwrap_or_else(|| panic!("missing format header in {path:?}"));
-    assert_eq!(format, "html5-dom-v1", "unsupported format in {path:?}");
+    assert_eq!(
+        format, "html5-dompatch-v1",
+        "unsupported format in {path:?}"
+    );
 
     let status = match headers.get("status").map(|s| s.as_str()) {
         Some("active") | None => FixtureStatus::Active,
@@ -295,46 +317,45 @@ fn parse_dom_file(path: &Path) -> ExpectedDom {
         panic!("xfail fixture missing reason in {path:?}");
     }
 
-    let options = DomSnapshotOptions {
-        ignore_ids: header_bool(&headers, "ignore_ids", true, path),
-        ignore_empty_style: header_bool(&headers, "ignore_empty_style", true, path),
-    };
-
     if lines.is_empty() {
-        panic!("dom file {path:?} has no snapshot lines");
-    }
-    if !lines[0].starts_with("#document") {
-        panic!("dom file {path:?} must start with #document");
+        panic!("patch file {path:?} has no patch lines");
     }
 
-    ExpectedDom {
+    ExpectedPatches {
         status,
         reason,
-        options,
         lines,
     }
 }
 
-fn header_bool(headers: &BTreeMap<String, String>, key: &str, default: bool, path: &Path) -> bool {
-    match headers.get(key).map(|s| s.as_str()) {
-        None => default,
-        Some("true") => true,
-        Some("false") => false,
-        Some(other) => panic!("invalid boolean '{other}' for {key} in {path:?}"),
+fn write_expected_patch_file(fixture: &Fixture, lines: &[String]) {
+    let path = fixture_dir(&fixture.name).join("patches.txt");
+    let mut out = String::new();
+    out.push_str("# format: html5-dompatch-v1\n");
+    out.push_str("# status: active\n\n");
+    for line in lines {
+        out.push_str(line);
+        out.push('\n');
     }
+    fs::write(&path, out)
+        .unwrap_or_else(|err| panic!("failed to write expected patches {path:?}: {err}"));
 }
 
 fn run_tree_builder_whole(fixture: &Fixture) -> RunOutput {
     run_tree_builder_impl(fixture, None, None)
 }
 
-fn run_tree_builder_chunked(fixture: &Fixture, plan: &ChunkPlan, plan_label: &str) -> RunOutput {
+fn run_tree_builder_chunked(
+    fixture: &Fixture,
+    plan: &html::test_harness::ChunkPlan,
+    plan_label: &str,
+) -> RunOutput {
     run_tree_builder_impl(fixture, Some(plan), Some(plan_label))
 }
 
 fn run_tree_builder_impl(
     fixture: &Fixture,
-    plan: Option<&ChunkPlan>,
+    plan: Option<&html::test_harness::ChunkPlan>,
     plan_label: Option<&str>,
 ) -> RunOutput {
     let mut ctx = DocumentParseContext::new();
@@ -356,7 +377,7 @@ fn run_tree_builder_impl(
             plan_label,
             "push_input",
         )?;
-        drain_batches(DrainCtx {
+        drain_batches(DrainBatchesCtx {
             tokenizer: &mut tokenizer,
             input: &mut input,
             builder: &mut builder,
@@ -369,11 +390,10 @@ fn run_tree_builder_impl(
     };
 
     if let Some(plan) = plan {
-        // NOTE: keep this exhaustive with ChunkPlan variants; this harness only supports UTF-8-safe input.
         match plan {
-            ChunkPlan::Fixed { policy, .. }
-            | ChunkPlan::Sizes { policy, .. }
-            | ChunkPlan::Boundaries { policy, .. } => {
+            html::test_harness::ChunkPlan::Fixed { policy, .. }
+            | html::test_harness::ChunkPlan::Sizes { policy, .. }
+            | html::test_harness::ChunkPlan::Boundaries { policy, .. } => {
                 if matches!(policy, html::test_harness::BoundaryPolicy::ByteStream) {
                     let plan = plan_label.unwrap_or("<whole>");
                     return RunOutput::Err(format!(
@@ -414,7 +434,7 @@ fn run_tree_builder_impl(
     if let Err(err) = handle_tokenize_result(finish_result, fixture, plan_label, "finish") {
         return RunOutput::Err(err);
     }
-    if let Err(err) = drain_batches(DrainCtx {
+    if let Err(err) = drain_batches(DrainBatchesCtx {
         tokenizer: &mut tokenizer,
         input: &mut input,
         builder: &mut builder,
@@ -434,54 +454,10 @@ fn run_tree_builder_impl(
         ));
     }
 
-    let dom = match materialize_patch_batches(&patch_batches) {
-        Ok(dom) => dom,
-        Err(err) => return RunOutput::Err(err),
-    };
-    RunOutput::Ok(serialize_dom_for_test_with_options(
-        &dom,
-        fixture.expected.options,
-    ))
+    RunOutput::Ok(format_patch_batches(&patch_batches))
 }
 
-fn drain_batches(d: DrainCtx<'_>) -> Result<(), String> {
-    let mut patches = Vec::new();
-    loop {
-        let batch = d.tokenizer.next_batch(d.input);
-        if batch.tokens().is_empty() {
-            break;
-        }
-        patches.clear();
-        let resolver = batch.resolver();
-        let mut sink = html::html5::tree_builder::VecPatchSink(&mut patches);
-        for token in batch.iter() {
-            if matches!(token, html::html5::Token::Eof) {
-                *d.saw_eof_token = true;
-            }
-            match d.builder.push_token(token, d.atoms, &resolver, &mut sink) {
-                Ok(TreeBuilderStepResult::Continue) => {}
-                Ok(TreeBuilderStepResult::Suspend(reason)) => {
-                    return Err(format!(
-                        "tree builder suspended in fixture '{}' [{}] reason={reason:?}",
-                        d.fixture_name, d.label
-                    ));
-                }
-                Err(err) => {
-                    return Err(format!(
-                        "tree builder error in fixture '{}' [{}] error={err:?}",
-                        d.fixture_name, d.label
-                    ));
-                }
-            }
-        }
-        if !patches.is_empty() {
-            d.patch_batches.push(std::mem::take(&mut patches));
-        }
-    }
-    Ok(())
-}
-
-struct DrainCtx<'a> {
+struct DrainBatchesCtx<'a> {
     tokenizer: &'a mut Html5Tokenizer,
     input: &'a mut Input,
     builder: &'a mut Html5TreeBuilder,
@@ -490,6 +466,53 @@ struct DrainCtx<'a> {
     fixture_name: &'a str,
     label: &'a str,
     saw_eof_token: &'a mut bool,
+}
+
+fn drain_batches(ctx: DrainBatchesCtx<'_>) -> Result<(), String> {
+    let DrainBatchesCtx {
+        tokenizer,
+        input,
+        builder,
+        atoms,
+        patch_batches,
+        fixture_name,
+        label,
+        saw_eof_token,
+    } = ctx;
+    let mut patches = Vec::new();
+    loop {
+        let batch = tokenizer.next_batch(input);
+        if batch.tokens().is_empty() {
+            break;
+        }
+        patches.clear();
+        let resolver = batch.resolver();
+        let mut sink = VecPatchSink(&mut patches);
+        for token in batch.iter() {
+            if matches!(token, html::html5::Token::Eof) {
+                *saw_eof_token = true;
+            }
+            match builder.push_token(token, atoms, &resolver, &mut sink) {
+                Ok(TreeBuilderStepResult::Continue) => {}
+                Ok(TreeBuilderStepResult::Suspend(reason)) => {
+                    return Err(format!(
+                        "tree builder suspended in fixture '{}' [{}] reason={reason:?}",
+                        fixture_name, label
+                    ));
+                }
+                Err(err) => {
+                    return Err(format!(
+                        "tree builder error in fixture '{}' [{}] error={err:?}",
+                        fixture_name, label
+                    ));
+                }
+            }
+        }
+        if !patches.is_empty() {
+            patch_batches.push(std::mem::take(&mut patches));
+        }
+    }
+    Ok(())
 }
 
 fn handle_tokenize_result(
@@ -523,4 +546,92 @@ fn handle_tokenize_result(
             ))
         }
     }
+}
+
+fn format_patch_batches(batches: &[Vec<html::DomPatch>]) -> Vec<String> {
+    let mut lines = Vec::new();
+    for batch in batches {
+        for patch in batch {
+            lines.push(format_patch(patch));
+        }
+    }
+    lines
+}
+
+fn format_patch(patch: &html::DomPatch) -> String {
+    match patch {
+        html::DomPatch::Clear => "Clear".to_string(),
+        html::DomPatch::CreateDocument { key, doctype } => match doctype {
+            Some(value) => {
+                format!(
+                    "CreateDocument key={} doctype=\"{}\"",
+                    key.0,
+                    escape_text(value)
+                )
+            }
+            None => format!("CreateDocument key={} doctype=<none>", key.0),
+        },
+        html::DomPatch::CreateElement {
+            key,
+            name,
+            attributes,
+        } => {
+            let attrs = format_attributes(attributes);
+            format!(
+                "CreateElement key={} name={} attrs=[{}]",
+                key.0, name, attrs
+            )
+        }
+        html::DomPatch::CreateText { key, text } => {
+            format!("CreateText key={} text=\"{}\"", key.0, escape_text(text))
+        }
+        html::DomPatch::CreateComment { key, text } => {
+            format!("CreateComment key={} text=\"{}\"", key.0, escape_text(text))
+        }
+        html::DomPatch::AppendChild { parent, child } => {
+            format!("AppendChild parent={} child={}", parent.0, child.0)
+        }
+        html::DomPatch::InsertBefore {
+            parent,
+            child,
+            before,
+        } => {
+            format!(
+                "InsertBefore parent={} child={} before={}",
+                parent.0, child.0, before.0
+            )
+        }
+        html::DomPatch::RemoveNode { key } => format!("RemoveNode key={}", key.0),
+        html::DomPatch::SetAttributes { key, attributes } => {
+            let attrs = format_attributes(attributes);
+            format!("SetAttributes key={} attrs=[{}]", key.0, attrs)
+        }
+        html::DomPatch::SetText { key, text } => {
+            format!("SetText key={} text=\"{}\"", key.0, escape_text(text))
+        }
+        html::DomPatch::AppendText { key, text } => {
+            format!("AppendText key={} text=\"{}\"", key.0, escape_text(text))
+        }
+        _ => format!("UnknownPatch {patch:?}"),
+    }
+}
+
+fn format_attributes(attributes: &[(std::sync::Arc<str>, Option<String>)]) -> String {
+    let mut out = String::new();
+    for (index, (name, value)) in attributes.iter().enumerate() {
+        if index > 0 {
+            out.push_str(", ");
+        }
+        out.push_str(name);
+        out.push('=');
+        match value {
+            Some(value) => {
+                out.push('"');
+                out.push_str(&escape_text(value));
+                out.push('"');
+            }
+            None => out.push_str("<none>"),
+        }
+    }
+    out
 }

@@ -1,0 +1,18 @@
+# format: html5-dompatch-v1
+# status: active
+
+CreateDocument key=1 doctype=<none>
+CreateElement key=2 name=html attrs=[]
+AppendChild parent=1 child=2
+CreateElement key=3 name=head attrs=[]
+AppendChild parent=2 child=3
+CreateElement key=4 name=body attrs=[]
+AppendChild parent=2 child=4
+CreateElement key=5 name=div attrs=[id="root"]
+AppendChild parent=4 child=5
+CreateText key=6 text="Hi"
+AppendChild parent=5 child=6
+CreateComment key=7 text="c"
+AppendChild parent=5 child=7
+CreateText key=8 text="\n"
+AppendChild parent=4 child=8

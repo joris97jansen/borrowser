@@ -361,17 +361,11 @@ Parser suspension points (future-proofing):
 
 ## DomPatch contract (html5 tree builder)
 
-The HTML5 tree builder is the source of truth for the incremental patch stream. The following contract is normative for all consumers and tests:
+The normative DomPatch contract moved to:
 
-- **Ordering:** Patches are emitted in deterministic source order. Within a token, creation patches (e.g., `CreateElement`, `CreateText`) occur before structural attachments (`AppendChild`/`InsertBefore`). Text coalescing does not reorder nodes.
-- **Identity:** Patch keys are stable for the document handle and never reused. `CreateDocument` is always the first create operation in a full-create stream.
-- **Batching:** A batch is an atomic transaction. All patches in a batch must be applied in order, or none are applied. Batches must not interleave across documents.
-- **Text coalescing:** Adjacent text nodes created by consecutive character tokens may be coalesced within a batch. Coalescing is local: only when the last emitted node is a text node with the same parent and there are no intervening structural mutations.
-- **Attributes:** Tokenizer preserves attribute order and duplicates. Tree builder applies HTML parsing semantics (e.g., duplicate handling) deterministically when constructing elements; patch emission remains deterministic.
-- **Clear baseline:** `DomPatch::Clear` appears only at the start of a reset batch and invalidates all prior keys for that handle; it does not reset the key allocator.
+- `docs/html5/dompatch-contract.md`
 
-Patch emission strategy:
-- The tree builder emits patches only through a **streaming sink** (`PatchSink`) for immediate emission. Buffered delivery is implemented via a sink adapter (e.g., `VecPatchSink`) owned by the session/runtime. Ordering must be identical across sink implementations.
+This ADR remains authoritative for architecture ownership and module boundaries.
 
 ## Follow-up plan
 - Define HTML5 tokenizer state enum + insertion mode enum and scaffolding modules.

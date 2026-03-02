@@ -474,6 +474,7 @@ fn estimate_patch_bytes(patch: &DomPatch) -> usize {
         | DomPatch::RemoveNode { .. }
         | DomPatch::SetAttributes { .. }
         | DomPatch::SetText { .. } => PATCH_OVERHEAD,
+        DomPatch::AppendText { text, .. } => PATCH_OVERHEAD + text.len(),
         // NOTE: DomPatch may grow new variants; default to PATCH_OVERHEAD for unknown ones.
         _ => PATCH_OVERHEAD,
     }

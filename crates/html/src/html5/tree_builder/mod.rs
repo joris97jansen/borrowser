@@ -51,7 +51,7 @@ pub struct TreeBuilderConfig {
     ///
     /// Coalescing policy (Core-v0):
     /// - first insertion in a run emits `CreateText` + `AppendChild`,
-    /// - adjacent insertions emit `SetText` with cumulative content on the same key,
+    /// - adjacent insertions emit `AppendText` on the same key,
     /// - any structural mutation (insert/pop/comment/recovery-literal boundary) breaks the run.
     ///
     /// This policy keeps output deterministic for both buffered (`process`) and
@@ -59,7 +59,7 @@ pub struct TreeBuilderConfig {
     ///
     /// Streaming flush behavior:
     /// - Coalescing may span sink flush boundaries (`push_token` + sink push).
-    /// - A later batch may emit `SetText` for a text node created in an earlier batch.
+    /// - A later batch may emit `AppendText` for a text node created in an earlier batch.
     pub coalesce_text: bool,
 }
 
@@ -113,7 +113,6 @@ impl Default for DocumentState {
 struct LastTextPatch {
     parent: PatchKey,
     text_key: PatchKey,
-    cumulative_text: String,
 }
 
 // Drop exits the structural-mutation boundary.
@@ -157,6 +156,20 @@ pub struct VecPatchSink<'a>(pub &'a mut Vec<DomPatch>);
 impl<'a> PatchSink for VecPatchSink<'a> {
     fn push(&mut self, patch: DomPatch) {
         self.0.push(patch);
+    }
+}
+
+/// Patch sink backed by a callback.
+pub struct CallbackPatchSink<F>(pub F)
+where
+    F: FnMut(DomPatch);
+
+impl<F> PatchSink for CallbackPatchSink<F>
+where
+    F: FnMut(DomPatch),
+{
+    fn push(&mut self, patch: DomPatch) {
+        (self.0)(patch);
     }
 }
 
@@ -264,7 +277,7 @@ impl Html5TreeBuilder {
     ///
     /// Coalescing note:
     /// - With `coalesce_text=true`, coalescing state may continue across calls.
-    /// - Therefore, `SetText` emitted in a later call may target a node created
+    /// - Therefore, `AppendText` emitted in a later call may target a node created
     ///   by an earlier flushed batch.
     pub fn push_token(
         &mut self,
@@ -977,21 +990,17 @@ impl Html5TreeBuilder {
             && let Some(last) = self.last_text_patch.as_ref()
             && last.parent == parent
         {
-            // Core-v0 policy currently emits full `SetText` payloads for each
-            // adjacent token in a run. This keeps semantics simple and stable
-            // across streaming boundaries, but can be O(n^2) over long runs.
-            // Follow-up options:
-            // - add `AppendText` patch semantics, or
-            // - defer `SetText` to run-flush boundaries.
+            // Core-v0 append semantics keep adjacent text deterministic while
+            // avoiding cumulative `SetText` payload growth.
             let last = self
                 .last_text_patch
                 .as_mut()
                 .expect("coalescing state must remain present within branch");
-            last.cumulative_text.reserve(resolved.len());
-            last.cumulative_text.push_str(resolved);
             let key = last.text_key;
-            let text = last.cumulative_text.clone();
-            self.push_patch(DomPatch::SetText { key, text });
+            self.push_patch(DomPatch::AppendText {
+                key,
+                text: resolved.to_string(),
+            });
             return Ok(());
         }
         let key = self.with_structural_mutation(|this| {
@@ -1007,7 +1016,6 @@ impl Html5TreeBuilder {
             Some(LastTextPatch {
                 parent,
                 text_key: key,
-                cumulative_text: resolved.to_string(),
             })
         } else {
             None
@@ -1130,7 +1138,8 @@ impl Html5TreeBuilder {
         // flow through this path: CreateDocument/CreateElement/CreateText/
         // CreateComment and ordering/parenting patches (AppendChild and
         // future ordering patches such as InsertBefore).
-        // Content-only mutation patches (for example SetText) can use direct push.
+        // Content-only mutation patches (for example SetText/AppendText) can
+        // use direct push.
         debug_assert!(
             self.structural_mutation_depth > 0,
             "structural patch emitted outside structural-mutation boundary; call begin_structural_mutation() first"

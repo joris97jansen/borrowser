@@ -716,7 +716,26 @@ mod tests {
                             TestKind::Text { text: existing } => *existing = text.clone(),
                             TestKind::Comment { .. }
                             | TestKind::Document { .. }
-                            | TestKind::Element { .. } => {}
+                            | TestKind::Element { .. } => {
+                                return Err(DomDiffError::InvalidRoot(
+                                    "SetText applied to non-text node",
+                                ));
+                            }
+                        }
+                    }
+                    DomPatch::AppendText { key, text } => {
+                        let Some(node) = self.nodes.get_mut(key) else {
+                            return Err(DomDiffError::InvalidRoot("missing node"));
+                        };
+                        match &mut node.kind {
+                            TestKind::Text { text: existing } => existing.push_str(text),
+                            TestKind::Comment { .. }
+                            | TestKind::Document { .. }
+                            | TestKind::Element { .. } => {
+                                return Err(DomDiffError::InvalidRoot(
+                                    "AppendText applied to non-text node",
+                                ));
+                            }
                         }
                     }
                 }

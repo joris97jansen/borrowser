@@ -25,9 +25,17 @@ Snapshot lines:
 
 Why DOM snapshots:
 
-- The golden contract is *DOM semantics*, not patch sequencing.
-- Patch logs are great for debugging but churn when patching evolves (keys, ordering, batching).
-- A stable DOM snapshot lets us refactor patch emission without rewriting the corpus, as long as the resulting DOM is identical.
+- These fixtures are semantic regression coverage for materialized DOM behavior.
+- Patch-contract acceptance and sequencing guarantees are covered by
+  `tests/fixtures/html5/tree_builder_patches`.
+- A stable DOM snapshot helps catch semantic tree regressions while patch
+  protocol tests evolve independently.
+
+Contract status:
+
+- For Core v0 patch-contract acceptance, patch-level golden fixtures in
+  `tests/fixtures/html5/tree_builder_patches` are authoritative.
+- This DOM fixture corpus remains useful for semantic regression coverage.
 
 Node line grammar (examples):
 

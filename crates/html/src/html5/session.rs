@@ -1,12 +1,13 @@
 //! Runtime-facing parse session (placeholder).
 
-use crate::dom_patch::DomPatch;
+use crate::dom_patch::{DomPatch, DomPatchBatch};
 use crate::html5::bridge::PatchEmitterAdapter;
 use crate::html5::shared::{
     ByteStreamDecoder, DecodeResult, DocumentParseContext, Html5SessionError, Input,
 };
-
 use crate::html5::tokenizer::{Html5Tokenizer, TokenizerConfig};
+#[cfg(test)]
+use crate::html5::tree_builder::PatchSink;
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderConfig};
 #[cfg(any(test, feature = "debug-stats"))]
 use log::error;
@@ -19,6 +20,7 @@ pub struct Html5ParseSession {
     tokenizer: Html5Tokenizer,
     builder: Html5TreeBuilder,
     patch_emitter: PatchEmitterAdapter,
+    next_patch_batch_version: u64,
 }
 
 impl Html5ParseSession {
@@ -37,6 +39,7 @@ impl Html5ParseSession {
             tokenizer,
             builder,
             patch_emitter: PatchEmitterAdapter::new(),
+            next_patch_batch_version: 0,
         })
     }
 
@@ -120,8 +123,27 @@ impl Html5ParseSession {
         patches
     }
 
+    /// Drain the next atomic patch batch with explicit version transition.
+    ///
+    /// Empty drains return `None` and do not advance version.
+    pub fn take_patch_batch(&mut self) -> Option<DomPatchBatch> {
+        let patches = self.take_patches();
+        if patches.is_empty() {
+            return None;
+        }
+        let from = self.next_patch_batch_version;
+        let batch = DomPatchBatch::new(from, patches);
+        self.next_patch_batch_version = batch.to;
+        Some(batch)
+    }
+
     pub fn tokens_processed(&self) -> u64 {
         self.ctx.counters.tokens_processed
+    }
+
+    #[cfg(test)]
+    pub(crate) fn inject_patch_for_test(&mut self, patch: DomPatch) {
+        self.patch_emitter.push(patch);
     }
 
     #[cfg(any(test, feature = "debug-stats"))]
@@ -133,6 +155,7 @@ impl Html5ParseSession {
 #[cfg(all(test, feature = "html5"))]
 mod tests {
     use super::Html5ParseSession;
+    use crate::dom_patch::{DomPatch, DomPatchBatch, PatchKey};
     use crate::html5::shared::DocumentParseContext;
     use crate::html5::tokenizer::TokenizerConfig;
     use crate::html5::tree_builder::TreeBuilderConfig;
@@ -149,10 +172,70 @@ mod tests {
         assert!(session.push_bytes(&[]).is_ok());
         assert!(session.pump().is_ok());
         let _ = session.take_patches();
+        assert!(session.take_patch_batch().is_none());
         let counters = session.debug_counters();
         assert_eq!(counters.patches_emitted, 0);
         assert_eq!(counters.decode_errors, 0);
         assert_eq!(counters.adapter_invariant_violations, 0);
         assert_eq!(counters.tree_builder_invariant_errors, 0);
+    }
+
+    #[test]
+    fn session_patch_batches_are_version_monotonic_and_atomic() {
+        let ctx = DocumentParseContext::new();
+        let mut session = Html5ParseSession::new(
+            TokenizerConfig::default(),
+            TreeBuilderConfig::default(),
+            ctx,
+        )
+        .expect("session init");
+
+        // Empty drains must not create or advance batches.
+        assert!(session.take_patch_batch().is_none());
+        assert!(session.take_patch_batch().is_none());
+
+        // First atomic batch.
+        session.inject_patch_for_test(DomPatch::CreateDocument {
+            key: PatchKey(1),
+            doctype: None,
+        });
+        let batch0: DomPatchBatch = session
+            .take_patch_batch()
+            .expect("first injected patch should produce batch");
+        assert_eq!(batch0.from, 0);
+        assert_eq!(batch0.to, 1);
+        assert_eq!(
+            batch0.patches,
+            vec![DomPatch::CreateDocument {
+                key: PatchKey(1),
+                doctype: None
+            }]
+        );
+        assert!(
+            session.take_patch_batch().is_none(),
+            "empty drain must not advance version"
+        );
+
+        // Second atomic batch.
+        session.inject_patch_for_test(DomPatch::CreateComment {
+            key: PatchKey(2),
+            text: "x".to_string(),
+        });
+        let batch1: DomPatchBatch = session
+            .take_patch_batch()
+            .expect("second injected patch should produce batch");
+        assert_eq!(batch1.from, 1);
+        assert_eq!(batch1.to, 2);
+        assert_eq!(
+            batch1.patches,
+            vec![DomPatch::CreateComment {
+                key: PatchKey(2),
+                text: "x".to_string()
+            }]
+        );
+        assert!(
+            session.take_patch_batch().is_none(),
+            "empty drain must not advance version"
+        );
     }
 }
