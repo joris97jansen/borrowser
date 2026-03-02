@@ -626,7 +626,8 @@ fn patch_has_invalid_key(patch: &DomPatch) -> bool {
         | DomPatch::CreateComment { key, .. }
         | DomPatch::RemoveNode { key }
         | DomPatch::SetAttributes { key, .. }
-        | DomPatch::SetText { key, .. } => *key == PatchKey::INVALID,
+        | DomPatch::SetText { key, .. }
+        | DomPatch::AppendText { key, .. } => *key == PatchKey::INVALID,
         DomPatch::AppendChild { parent, child } => {
             *parent == PatchKey::INVALID || *child == PatchKey::INVALID
         }
@@ -1621,6 +1622,15 @@ mod tests {
                         match &mut node.kind {
                             PatchKind::Text { text: slot } => *slot = text.clone(),
                             _ => panic!("SetText applied to non-text node"),
+                        }
+                    }
+                    DomPatch::AppendText { key, text } => {
+                        let Some(node) = self.nodes.get_mut(key) else {
+                            panic!("missing node in AppendText");
+                        };
+                        match &mut node.kind {
+                            PatchKind::Text { text: slot } => slot.push_str(text),
+                            _ => panic!("AppendText applied to non-text node"),
                         }
                     }
                     _ => panic!("unexpected patch in core emission test: {patch:?}"),

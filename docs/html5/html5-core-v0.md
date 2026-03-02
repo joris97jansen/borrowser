@@ -1,10 +1,11 @@
 # HTML5 Core v0 Supported Subset Contract (Milestone D3)
 
-Last updated: 2026-02-13
+Last updated: 2026-03-02
 Scope: `crates/html/src/html5` (feature `html5`)
 Normative matrix sources:
 - `docs/html5/spec-matrix-tokenizer.md`
 - `docs/html5/spec-matrix-treebuilder.md`
+- `docs/html5/dompatch-contract.md`
 
 ## Purpose
 
@@ -127,7 +128,7 @@ Core v0 tree-builder partial-scope guards:
 - Tree-builder text coalescing is controlled by `TreeBuilderConfig::coalesce_text`.
 - When enabled, coalescing is deterministic and parent-local:
   - first adjacent text insertion under a parent emits `CreateText` then `AppendChild`,
-  - subsequent adjacent text insertions under the same parent emit `SetText` on that same text-node key with cumulative content.
+  - subsequent adjacent text insertions under the same parent emit `AppendText` on that same text-node key.
 - Coalescing MUST stop on any structural boundary, including:
   - document materialization (`CreateDocument`),
   - element insertion,
@@ -137,10 +138,6 @@ Core v0 tree-builder partial-scope guards:
 - Batch/chunk boundaries MUST NOT change semantic coalescing behavior:
   - whole-input and chunked-input runs must converge to the same final DOM,
   - patch logs must remain deterministic under different drain boundaries.
-- Core v0 performance tradeoff (intentional and tracked):
-  - current coalescing semantics use cumulative `SetText` payloads for adjacent runs,
-  - this keeps patch semantics simple and deterministic but can increase payload-copy cost for very long tokenized text runs,
-  - planned evolution paths are: add append-style text patches (for example `AppendText`) or emit a single `SetText` at run-flush boundaries with explicitly documented observer semantics.
 
 <a id="supported-tags-and-contexts-baseline"></a>
 ### Supported Tags And Contexts Baseline

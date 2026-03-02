@@ -1,0 +1,4 @@
+# format: html5-dompatch-v1
+# status: active
+
+CreateDocument key=1 doctype=<none>

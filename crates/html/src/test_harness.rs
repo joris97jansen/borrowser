@@ -857,6 +857,19 @@ pub fn materialize_patch_batches(batches: &[Vec<crate::DomPatch>]) -> Result<Nod
                             _ => return Err("SetText applied to non-text".to_string()),
                         }
                     }
+                    crate::DomPatch::AppendText { key, text } => {
+                        self.ensure_node(*key, "AppendText")?;
+                        let node = self
+                            .nodes
+                            .get_mut(key)
+                            .ok_or_else(|| "missing node".to_string())?;
+                        match &mut node.kind {
+                            PatchKind::Text { text: slot } => {
+                                slot.push_str(text);
+                            }
+                            _ => return Err("AppendText applied to non-text".to_string()),
+                        }
+                    }
                 }
             }
             Ok(())

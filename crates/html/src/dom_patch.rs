@@ -5,7 +5,7 @@
 //!
 //! Notes:
 //! - This is intentionally separate from `types.rs` (internal DOM/tokenizer types).
-//! - The patch model is still evolving in v5.1, so the enum is `#[non_exhaustive]`.
+//! - The patch model is still evolving, so the enum is `#[non_exhaustive]`.
 //!
 //! Invariants:
 //! - Patches are applied in order.
@@ -19,6 +19,8 @@
 //!   is never valid in a patch stream).
 //! - Attribute order and duplicates are preserved; appliers must not dedupe.
 //! - Operations must not create cycles; a node may have at most one parent.
+//! - Batches are atomic: apply all patches in order or apply none.
+//! - Batch version transitions are monotonic and exactly +1 per non-empty batch.
 
 use crate::types::{Id, NodeKey};
 use std::sync::Arc;
@@ -40,6 +42,34 @@ impl PatchKey {
     /// Convert an Id into a PatchKey (stage-1: PatchKey == Id).
     pub fn from_id(id: Id) -> Self {
         PatchKey(id.0)
+    }
+}
+
+/// Atomic patch batch with explicit document-version transition.
+///
+/// The runtime applies all `patches` in order as one transaction from `from` to
+/// `to`. `from` and `to` must satisfy `to = from + 1`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DomPatchBatch {
+    pub from: u64,
+    pub to: u64,
+    pub patches: Vec<DomPatch>,
+}
+
+impl DomPatchBatch {
+    /// Construct a batch that advances one version.
+    #[must_use]
+    pub fn new(from: u64, patches: Vec<DomPatch>) -> Self {
+        let to = from
+            .checked_add(1)
+            .expect("dom patch batch version overflow");
+        Self { from, to, patches }
+    }
+
+    /// Returns true when this batch contains no patch operations.
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        self.patches.is_empty()
     }
 }
 
@@ -91,4 +121,8 @@ pub enum DomPatch {
     ///
     /// Applying this to a non-text node is a deterministic error.
     SetText { key: PatchKey, text: String },
+    /// Append text content to an existing text node.
+    ///
+    /// Applying this to a non-text node is a deterministic error.
+    AppendText { key: PatchKey, text: String },
 }
