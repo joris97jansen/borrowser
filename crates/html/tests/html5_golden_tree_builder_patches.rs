@@ -454,6 +454,20 @@ fn run_tree_builder_impl(
         ));
     }
 
+    for batch_index in 0..patch_batches.len() {
+        if let Err(err) =
+            html::test_harness::materialize_patch_batches(&patch_batches[..=batch_index])
+        {
+            return RunOutput::Err(format!(
+                "patch batches failed materialization in fixture '{}' [{}] at batch {batch_index}/{}: {}",
+                fixture.name,
+                label,
+                patch_batches.len().saturating_sub(1),
+                err
+            ));
+        }
+    }
+
     RunOutput::Ok(format_patch_batches(&patch_batches))
 }
 

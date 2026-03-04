@@ -13,6 +13,7 @@ log = "0.4"
 [features]
 patch-stats = []
 html5 = ["html/html5"]
+html5-strict-integration-tests = ["html5"]
 
 [dev-dependencies]
-html = { path = "../html", features = ["internal-api", "parse-guards"] }
+html = { path = "../html", features = ["internal-api", "parse-guards", "test-harness"] }

@@ -1247,6 +1247,105 @@ mod tests {
     use std::sync::{Arc, Mutex, mpsc};
     use std::time::{Duration, Instant};
 
+    #[cfg(feature = "html5")]
+    type Html5Update = (DomHandle, DomVersion, DomVersion, Vec<DomPatch>);
+
+    #[cfg(feature = "html5")]
+    fn collect_html5_updates(input: &[u8]) -> Vec<Html5Update> {
+        let (cmd_tx, cmd_rx) = mpsc::channel();
+        let (evt_tx, evt_rx) = mpsc::channel();
+        let policy = PreviewPolicy::default();
+
+        start_parse_runtime_with_policy_and_clock_and_mode(
+            cmd_rx,
+            evt_tx,
+            policy,
+            SystemClock,
+            ParserMode::Html5,
+        );
+
+        let tab_id = 7;
+        let request_id = 99;
+        cmd_tx
+            .send(CoreCommand::ParseHtmlStart { tab_id, request_id })
+            .unwrap();
+        cmd_tx
+            .send(CoreCommand::ParseHtmlChunk {
+                tab_id,
+                request_id,
+                bytes: input.to_vec(),
+            })
+            .unwrap();
+        cmd_tx
+            .send(CoreCommand::ParseHtmlDone { tab_id, request_id })
+            .unwrap();
+
+        let mut updates = Vec::new();
+        let mut idle_polls = 0usize;
+        while idle_polls < 5 {
+            match evt_rx.recv_timeout(Duration::from_millis(20)) {
+                Ok(CoreEvent::DomPatchUpdate {
+                    tab_id: evt_tab,
+                    request_id: evt_request,
+                    handle,
+                    from,
+                    to,
+                    patches,
+                }) => {
+                    assert_eq!(evt_tab, tab_id);
+                    assert_eq!(evt_request, request_id);
+                    assert_ne!(from, to, "expected version bump on patch update");
+                    assert!(!patches.is_empty(), "expected non-empty patch updates");
+                    updates.push((handle, from, to, patches));
+                    idle_polls = 0;
+                }
+                Ok(_) => {}
+                Err(_) => {
+                    idle_polls += 1;
+                }
+            }
+        }
+
+        updates
+    }
+
+    #[cfg(feature = "html5")]
+    fn assert_html5_updates_are_well_formed(
+        updates: Vec<Html5Update>,
+        require_non_empty: bool,
+        context: &str,
+    ) {
+        if updates.is_empty() {
+            assert!(
+                !require_non_empty,
+                "expected html5 runtime to emit at least one update for {context}"
+            );
+            return;
+        }
+
+        let expected_handle = updates[0].0;
+        let mut expected_from = DomVersion::INITIAL;
+        let mut batches = Vec::with_capacity(updates.len());
+        for (handle, from, to, patches) in updates {
+            assert_eq!(
+                handle, expected_handle,
+                "dom handle must be stable for one parse session"
+            );
+            assert_eq!(
+                from, expected_from,
+                "from-version must be contiguous across updates"
+            );
+            assert_eq!(to, from.next(), "version transition must be exactly +1");
+            expected_from = to;
+            batches.push(patches);
+        }
+
+        // Integration invariant: emitted patches must reference known nodes only.
+        // Materialization fails deterministically on missing/invalid references.
+        html::test_harness::materialize_patch_batches(&batches)
+            .expect("html5 patch updates must materialize without unknown-node references");
+    }
+
     fn tokenize_bytes_in_chunks(bytes: &[u8], boundaries: &[usize]) -> String {
         let mut tokenizer = Tokenizer::new();
         let mut last = 0usize;
@@ -1378,47 +1477,16 @@ mod tests {
 
     #[cfg(feature = "html5")]
     #[test]
-    fn runtime_html5_mode_updates_are_well_formed_if_any() {
-        let (cmd_tx, cmd_rx) = mpsc::channel();
-        let (evt_tx, evt_rx) = mpsc::channel();
-        let policy = PreviewPolicy::default();
+    fn runtime_html5_mode_updates_are_well_formed_and_materializable_if_any() {
+        let updates = collect_html5_updates(b"<div>ok</div>");
+        assert_html5_updates_are_well_formed(updates, false, "<div>ok</div>");
+    }
 
-        start_parse_runtime_with_policy_and_clock_and_mode(
-            cmd_rx,
-            evt_tx,
-            policy,
-            SystemClock,
-            ParserMode::Html5,
-        );
-
-        let tab_id = 7;
-        let request_id = 99;
-        cmd_tx
-            .send(CoreCommand::ParseHtmlStart { tab_id, request_id })
-            .unwrap();
-        cmd_tx
-            .send(CoreCommand::ParseHtmlChunk {
-                tab_id,
-                request_id,
-                bytes: b"<div>ok</div>".to_vec(),
-            })
-            .unwrap();
-        cmd_tx
-            .send(CoreCommand::ParseHtmlDone { tab_id, request_id })
-            .unwrap();
-
-        for _ in 0..5 {
-            match evt_rx.recv_timeout(Duration::from_millis(20)) {
-                Ok(CoreEvent::DomPatchUpdate {
-                    from, to, patches, ..
-                }) => {
-                    assert_ne!(from, to, "expected version bump on patch update");
-                    assert!(!patches.is_empty(), "expected non-empty patch updates");
-                }
-                Ok(_) => {}
-                Err(_) => {}
-            }
-        }
+    #[cfg(all(feature = "html5", feature = "html5-strict-integration-tests"))]
+    #[test]
+    fn runtime_html5_mode_emits_updates_for_simple_document_when_strict_enabled() {
+        let updates = collect_html5_updates(b"<div>ok</div>");
+        assert_html5_updates_are_well_formed(updates, true, "<div>ok</div>");
     }
 
     #[test]
