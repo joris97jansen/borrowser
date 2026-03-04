@@ -37,12 +37,24 @@ Contract status:
   `tests/fixtures/html5/tree_builder_patches` are authoritative.
 - This DOM fixture corpus remains useful for semantic regression coverage.
 
+Core F11 coverage baseline:
+
+- implicit document shell insertion (`html/head/body`) for fragment-like inputs,
+- comment handling (before root and inside body subtrees),
+- doctype propagation to document snapshots,
+- nested element structure and in-body ordering,
+- text coalescing semantics under whole + chunked + seeded-fuzz input delivery.
+
 Node line grammar (examples):
 
 - Document: `#document` or `#document doctype="html"`
 - Element: `<div class="a" disabled>`
 - Text: `"hello"`
 - Comment: `<!-- comment -->`
+
+Comment serialization rule:
+
+- Comments are serialized as `<!-- {text} -->` with single surrounding spaces.
 
 Escaping rules (for doctype/text/attributes/comments):
 
@@ -57,3 +69,9 @@ Streaming policy:
 - Chunk plans come from the shared generator in `html::chunker`.
 - Deterministic plans include fixed sizes (1,2,3,4,8,16,32,64) and semantic boundaries around `<`, `</`, `>`, quotes, etc.
 - Seeded fuzz plans are generated per fixture for CI reproducibility.
+
+Input normalization policy:
+
+- Loader strips one terminal line ending from `input.html` (`\n` or `\r\n`).
+- This avoids editor-dependent semantic drift from POSIX-style trailing newlines.
+- Any trailing newline that is semantically required by a fixture must be encoded explicitly in content, not as file-formatting newline.

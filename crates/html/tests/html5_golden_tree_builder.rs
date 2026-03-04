@@ -228,6 +228,7 @@ fn load_fixtures() -> Vec<Fixture> {
         let dom_path = path.join("dom.txt");
         let input = fs::read_to_string(&input_path)
             .unwrap_or_else(|err| panic!("failed to read input {input_path:?}: {err}"));
+        let input = normalize_fixture_input(input);
         let expected = parse_dom_file(&dom_path);
         fixtures.push(Fixture {
             name,
@@ -237,6 +238,45 @@ fn load_fixtures() -> Vec<Fixture> {
     }
 
     fixtures
+}
+
+fn normalize_fixture_input(mut input: String) -> String {
+    // Fixture files are text files and commonly end with a formatting newline.
+    // Strip one terminal line ending so DOM expectations are not editor-dependent.
+    if input.ends_with("\r\n") {
+        input.truncate(input.len() - 2);
+    } else if input.ends_with('\n') {
+        input.pop();
+    }
+    input
+}
+
+#[test]
+fn fixture_input_normalization_strips_single_terminal_lf() {
+    assert_eq!(
+        normalize_fixture_input("<div>ok</div>\n".to_string()),
+        "<div>ok</div>"
+    );
+}
+
+#[test]
+fn fixture_input_normalization_strips_single_terminal_crlf() {
+    assert_eq!(
+        normalize_fixture_input("<div>ok</div>\r\n".to_string()),
+        "<div>ok</div>"
+    );
+}
+
+#[test]
+fn fixture_input_normalization_strips_exactly_one_terminal_line_ending() {
+    assert_eq!(
+        normalize_fixture_input("<div>ok</div>\n\n".to_string()),
+        "<div>ok</div>\n"
+    );
+    assert_eq!(
+        normalize_fixture_input("<div>ok</div>\r\n\r\n".to_string()),
+        "<div>ok</div>\r\n"
+    );
 }
 
 fn fixture_root() -> PathBuf {
@@ -269,6 +309,12 @@ fn parse_dom_file(path: &Path) -> ExpectedDom {
             if let Some((key, value)) = header.split_once(':') {
                 let key = key.trim().to_ascii_lowercase();
                 let value = value.trim().to_string();
+                if !matches!(
+                    key.as_str(),
+                    "format" | "status" | "reason" | "ignore_ids" | "ignore_empty_style"
+                ) {
+                    panic!("unknown header '{key}' in {path:?}");
+                }
                 if headers.insert(key.clone(), value).is_some() {
                     panic!("duplicate header '{key}' in {path:?}");
                 }
@@ -305,6 +351,13 @@ fn parse_dom_file(path: &Path) -> ExpectedDom {
     }
     if !lines[0].starts_with("#document") {
         panic!("dom file {path:?} must start with #document");
+    }
+    for snapshot_line in &lines[1..] {
+        if snapshot_line.starts_with('#') {
+            panic!(
+                "invalid snapshot line starting with '#' for format=html5-dom-v1: {snapshot_line:?} in {path:?}"
+            );
+        }
     }
 
     ExpectedDom {
