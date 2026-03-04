@@ -3,7 +3,7 @@ HTML_ENTITIES_JSON := crates/html/data/entities.json
 HTML_ENTITIES_GEN := crates/html/src/entities_html5.rs
 HTML_ENTITIES_TOOL := crates/html/tools/generate_entities_html5.py
 
-.PHONY: fmt lint lint-html5 test test-html5-legacy test-html5-toggle build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check
+.PHONY: fmt lint lint-html5 test test-html5-legacy test-html5-toggle test-html5-dom-golden build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check
 
 # Format all crates
 format:
@@ -28,6 +28,10 @@ test-html5-legacy:
 # Run tests with html5 feature enabled and html5 runtime toggle
 test-html5-toggle:
 	BORROWSER_HTML_PARSER=html5 cargo test --workspace --all-targets --features html5 --locked
+
+# Run HTML5 semantic DOM golden fixtures (whole/chunked/fuzz)
+test-html5-dom-golden:
+	cargo test -p html --test html5_golden_tree_builder --features "html5 dom-snapshot" --locked
 
 # Build all targets (debug)
 build:
@@ -86,6 +90,7 @@ ci:
 	@$(MAKE) test
 	@$(MAKE) test-html5-legacy
 	@$(MAKE) test-html5-toggle
+	@$(MAKE) test-html5-dom-golden
 	@$(MAKE) build
 	@$(MAKE) build-html5
 	@$(MAKE) build-release

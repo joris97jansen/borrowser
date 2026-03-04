@@ -4,8 +4,5 @@
   <html>
     <head>
     <body>
-      <div>
-        "a"
-        "b"
-        "c"
-      "d"
+      <div id="root">
+        "Hi"
