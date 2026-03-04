@@ -5,6 +5,9 @@ Scope: `crates/html/src/html5` (`feature = "html5"`)
 
 This document is the normative contract for patch emission from the HTML5 tokenizer/tree-builder/session pipeline.
 
+Related identity contract:
+- [`docs/html5/node-identity-contract.md`](node-identity-contract.md)
+
 ## Goals
 
 - Make `DomPatch` the first-class parser output.
@@ -14,7 +17,7 @@ This document is the normative contract for patch emission from the HTML5 tokeni
 
 ## Patch Types (Core v0 Contract Surface)
 
-Core v0 patch protocol is defined by [`DomPatch`](/Users/jorisjansen/personal/code/borrowser/crates/html/src/dom_patch.rs):
+Core v0 patch protocol is defined by [`DomPatch`](../../crates/html/src/dom_patch.rs):
 
 - Node creation:
   - `CreateDocument`
@@ -54,7 +57,7 @@ HTML5 tree-builder Core v0 emission profile:
 
 ## Atomic Batch Rules
 
-Batch type is [`DomPatchBatch`](/Users/jorisjansen/personal/code/borrowser/crates/html/src/dom_patch.rs):
+Batch type is [`DomPatchBatch`](../../crates/html/src/dom_patch.rs):
 
 - A batch is atomic: apply all patches or none.
 - Batch boundaries are flush boundaries (`take_patches` / `take_patch_batch`) and must preserve in-batch order.
@@ -82,7 +85,7 @@ Session API surface:
 
 ## Sink Contract
 
-Tree-builder sink interface lives in [`PatchSink`](/Users/jorisjansen/personal/code/borrowser/crates/html/src/html5/tree_builder/mod.rs):
+Tree-builder sink interface lives in [`PatchSink`](../../crates/html/src/html5/tree_builder/mod.rs):
 
 - `VecPatchSink`: caller-owned buffer sink.
 - `CallbackPatchSink`: callback-based streaming sink.
@@ -93,11 +96,26 @@ Contract:
 2. Sink implementation must not mutate patch payload semantics.
 3. Tree builder emits through patch-producing operations; structural emissions must flow through structural boundary helpers.
 
+## Deterministic Materialization Failures
+
+Patch materialization and strict runtime application MUST fail deterministically for protocol violations.
+At minimum, the following error classes are contractual:
+
+- unknown/missing node references (`AppendChild`, `InsertBefore`, `RemoveNode`, `Set*`, `AppendText`),
+- invalid keys (`PatchKey::INVALID`),
+- duplicate key creation within one baseline,
+- invalid structural references (`InsertBefore` where `before` is not a child of `parent`),
+- invalid parent kind for child attachment (non-container parent),
+- cycle/self-attachment attempts,
+- node reattachment when move support is disabled (`MoveNotSupported`),
+- wrong node kind for content operations (`SetAttributes` on non-element, `SetText`/`AppendText` on non-text),
+- batch protocol violations (for example `Clear` not first, clear-only batch in strict appliers, rootless state where disallowed).
+
 ## Test Contract
 
 Core v0 patch correctness uses patch-level golden tests:
 
-- [`html5_golden_tree_builder_patches.rs`](/Users/jorisjansen/personal/code/borrowser/crates/html/tests/html5_golden_tree_builder_patches.rs)
+- [`html5_golden_tree_builder_patches.rs`](../../crates/html/tests/html5_golden_tree_builder_patches.rs)
 - fixtures in `crates/html/tests/fixtures/html5/tree_builder_patches/`
 
 These tests validate deterministic ordering, batching equivalence (whole vs chunked), and patch protocol stability without relying on DOM snapshot diffing for acceptance.

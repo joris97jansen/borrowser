@@ -6,6 +6,7 @@ Normative matrix sources:
 - `docs/html5/spec-matrix-tokenizer.md`
 - `docs/html5/spec-matrix-treebuilder.md`
 - `docs/html5/dompatch-contract.md`
+- `docs/html5/node-identity-contract.md`
 
 ## Purpose
 

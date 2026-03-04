@@ -347,8 +347,9 @@ Goal: keep the current simplified tokenizer/tree builder stable while the HTML5 
 
 Patch transaction semantics:
 - A patch batch is an atomic transaction: apply all patches or none.
-- A `Clear` starts a new baseline for the document handle; it invalidates all prior keys for that handle and does not reset the key allocator.
-- Patch keys are monotonic and never reused for a given document handle, including across `Clear` baselines.
+- A `Clear` starts a new baseline for the document handle and invalidates all prior keys for that baseline.
+- Strict runtime appliers reset key-allocation domain on `Clear`; keys may be reused after `Clear`.
+- Producers may still choose monotonic non-reuse within their own session allocators (for example, HTML5 tree-builder allocators).
 - On fatal parse failure, the runtime must either (a) emit a new handle and a full create stream, or (b) emit `Clear` + full create on the existing handle. The choice is explicit and consistent.
 - A “full create stream” is `CreateDocument` + a complete create/append stream for every node in document order, with a fresh key allocator for the new handle when a new handle is used.
 - `CreateDocument` is part of the patch protocol in this design; if not already present, it is introduced as a first-class patch operation.
@@ -364,6 +365,7 @@ Parser suspension points (future-proofing):
 The normative DomPatch contract moved to:
 
 - `docs/html5/dompatch-contract.md`
+- `docs/html5/node-identity-contract.md`
 
 This ADR remains authoritative for architecture ownership and module boundaries.
 
