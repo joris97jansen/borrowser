@@ -59,7 +59,7 @@ fn is_batch_marker_line(line: &str) -> bool {
     parse_batch_marker_line(line).is_some()
 }
 
-fn batch_markers_filtered<'a>(lines: &'a [String]) -> impl Iterator<Item = &'a str> {
+fn batch_markers_filtered(lines: &[String]) -> impl Iterator<Item = &str> {
     lines
         .iter()
         .map(String::as_str)
