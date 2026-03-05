@@ -5,6 +5,7 @@ use html::html5::tree_builder::{
     Html5TreeBuilder, TreeBuilderConfig, TreeBuilderStepResult, VecPatchSink,
 };
 use html::html5::{DocumentParseContext, Html5Tokenizer, Input, TokenizeResult, TokenizerConfig};
+use html::test_harness::shrink_chunk_plan_with_stats;
 use html_test_support::{diff_lines, escape_text};
 use std::collections::BTreeMap;
 use std::env;
@@ -41,6 +42,55 @@ impl RunOutput {
             RunOutput::Ok(lines) => Some(lines.as_slice()),
             RunOutput::Err(_) => None,
         }
+    }
+}
+
+const BATCH_MARKER_PREFIX: &str = "Batch index=";
+
+fn parse_batch_marker_line(line: &str) -> Option<(usize, usize)> {
+    let rest = line.strip_prefix(BATCH_MARKER_PREFIX)?;
+    let (index_str, size_str) = rest.split_once(" size=")?;
+    let index = index_str.parse::<usize>().ok()?;
+    let size = size_str.parse::<usize>().ok()?;
+    Some((index, size))
+}
+
+fn is_batch_marker_line(line: &str) -> bool {
+    parse_batch_marker_line(line).is_some()
+}
+
+fn batch_markers_filtered(lines: &[String]) -> impl Iterator<Item = &str> {
+    lines
+        .iter()
+        .map(String::as_str)
+        .filter(|line| !is_batch_marker_line(line))
+}
+
+fn filtered_lines_for_diff(lines: &[String]) -> Vec<String> {
+    batch_markers_filtered(lines)
+        .map(std::borrow::ToOwned::to_owned)
+        .collect()
+}
+
+fn batch_partition_summary(lines: &[String]) -> String {
+    let mut parts = Vec::new();
+    for line in lines {
+        if let Some((index, size)) = parse_batch_marker_line(line) {
+            parts.push(format!("{index}:{size}"));
+        }
+    }
+    if parts.is_empty() {
+        "<none>".to_string()
+    } else {
+        parts.join(", ")
+    }
+}
+
+fn lines_match(mode: Mode, actual: &[String], expected: &[String]) -> bool {
+    if mode == Mode::WholeInput {
+        actual == expected
+    } else {
+        batch_markers_filtered(actual).eq(batch_markers_filtered(expected))
     }
 }
 
@@ -98,13 +148,25 @@ fn html5_golden_tree_builder_patches_chunked_input() {
         for plan in plans {
             let actual = run_tree_builder_chunked(&fixture, &plan.plan, &plan.label);
             if let (Some(whole_lines), Some(actual_lines)) = (whole.lines(), actual.lines())
-                && actual_lines != whole_lines
+                && !lines_match(Mode::ChunkedInput, actual_lines, whole_lines)
             {
+                let (shrunk, stats) =
+                    shrink_chunk_plan_with_stats(&fixture.input, &plan.plan, |candidate| {
+                        match run_tree_builder_chunked(&fixture, candidate, "shrinking") {
+                            RunOutput::Ok(lines) => {
+                                !lines_match(Mode::ChunkedInput, lines.as_slice(), whole_lines)
+                            }
+                            RunOutput::Err(_) => true,
+                        }
+                    });
+                let whole_filtered = filtered_lines_for_diff(whole_lines);
+                let actual_filtered = filtered_lines_for_diff(actual_lines);
+                let diff = diff_lines(&whole_filtered, &actual_filtered);
+                let whole_batches = batch_partition_summary(whole_lines);
+                let actual_batches = batch_partition_summary(actual_lines);
                 panic!(
-                    "chunked patch mismatch in fixture '{}'\nplan: {}\n{}",
-                    fixture.name,
-                    plan.label,
-                    diff_lines(whole_lines, actual_lines)
+                    "chunked patch mismatch in fixture '{}'\nplan: {}\nshrunk: {}\nshrink stats: {:?}\nwhole batches: [{}]\nchunked batches: [{}]\n{}",
+                    fixture.name, plan.label, shrunk, stats, whole_batches, actual_batches, diff
                 );
             }
             enforce_expected(
@@ -147,14 +209,35 @@ fn enforce_expected(
         None => mode.label().to_string(),
     };
 
+    if update && mode == Mode::WholeInput && plan_label.is_none() {
+        if fixture.expected.status == FixtureStatus::Xfail {
+            panic!(
+                "refusing to update xfail fixture '{}' in update mode; resolve status first\npath: {}",
+                fixture.name,
+                fixture_dir(&fixture.name).display()
+            );
+        }
+        match actual {
+            RunOutput::Ok(lines) => {
+                write_expected_patch_file(fixture, lines);
+                return;
+            }
+            RunOutput::Err(err) => {
+                panic!(
+                    "refusing to update fixture '{}' because run failed: {err}\npath: {}",
+                    fixture.name,
+                    fixture_dir(&fixture.name).display()
+                );
+            }
+        }
+    }
+
     match fixture.expected.status {
         FixtureStatus::Active => match actual {
             RunOutput::Ok(lines) => {
-                if update && mode == Mode::WholeInput && plan_label.is_none() {
-                    write_expected_patch_file(fixture, lines);
-                    return;
-                }
-                if lines.as_slice() != fixture.expected.lines.as_slice() {
+                let matches_expected =
+                    lines_match(mode, lines.as_slice(), fixture.expected.lines.as_slice());
+                if !matches_expected {
                     panic!(
                         "patch mismatch in fixture '{}' [{label}]\npath: {}\n{}",
                         fixture.name,
@@ -169,7 +252,9 @@ fn enforce_expected(
         },
         FixtureStatus::Xfail => match actual {
             RunOutput::Ok(lines) => {
-                if lines.as_slice() == fixture.expected.lines.as_slice() {
+                let matches_expected =
+                    lines_match(mode, lines.as_slice(), fixture.expected.lines.as_slice());
+                if matches_expected {
                     panic!(
                         "fixture '{}' [{label}] matched expected patches but is marked xfail; reason: {}\npath: {}",
                         fixture.name,
@@ -247,6 +332,7 @@ fn load_fixtures() -> Vec<Fixture> {
         let patches_path = path.join("patches.txt");
         let input = fs::read_to_string(&input_path)
             .unwrap_or_else(|err| panic!("failed to read input {input_path:?}: {err}"));
+        let input = normalize_fixture_input(input);
         let expected = parse_patch_file(&patches_path);
         fixtures.push(Fixture {
             name,
@@ -256,6 +342,65 @@ fn load_fixtures() -> Vec<Fixture> {
     }
 
     fixtures
+}
+
+fn normalize_fixture_input(mut input: String) -> String {
+    // Strip one terminal line ending so fixture semantics are not editor-dependent.
+    if input.ends_with("\r\n") {
+        input.truncate(input.len() - 2);
+    } else if input.ends_with('\n') {
+        input.pop();
+    }
+    input
+}
+
+#[test]
+fn patch_fixture_input_normalization_strips_single_terminal_lf() {
+    assert_eq!(
+        normalize_fixture_input("<div>ok</div>\n".to_string()),
+        "<div>ok</div>"
+    );
+}
+
+#[test]
+fn patch_fixture_input_normalization_strips_single_terminal_crlf() {
+    assert_eq!(
+        normalize_fixture_input("<div>ok</div>\r\n".to_string()),
+        "<div>ok</div>"
+    );
+}
+
+#[test]
+fn patch_fixture_input_normalization_strips_exactly_one_terminal_line_ending() {
+    assert_eq!(
+        normalize_fixture_input("<div>ok</div>\n\n".to_string()),
+        "<div>ok</div>\n"
+    );
+    assert_eq!(
+        normalize_fixture_input("<div>ok</div>\r\n\r\n".to_string()),
+        "<div>ok</div>\r\n"
+    );
+}
+
+#[test]
+fn batch_marker_parsing_accepts_exact_numeric_shape() {
+    assert_eq!(
+        parse_batch_marker_line("Batch index=0 size=13"),
+        Some((0, 13))
+    );
+    assert!(is_batch_marker_line("Batch index=9 size=0"));
+}
+
+#[test]
+fn batch_marker_parsing_rejects_non_contract_shapes() {
+    assert_eq!(parse_batch_marker_line("Batch index=foo size=13"), None);
+    assert_eq!(parse_batch_marker_line("Batch index=1 size=bar"), None);
+    assert_eq!(parse_batch_marker_line("Batch index=1 size=13 extra"), None);
+    assert_eq!(
+        parse_batch_marker_line("CreateText key=1 text=\"Batch index=1 size=13\""),
+        None
+    );
+    assert!(!is_batch_marker_line("Batch index=1 size=13 extra"));
 }
 
 fn fixture_root() -> PathBuf {
@@ -288,6 +433,9 @@ fn parse_patch_file(path: &Path) -> ExpectedPatches {
             if let Some((key, value)) = header.split_once(':') {
                 let key = key.trim().to_ascii_lowercase();
                 let value = value.trim().to_string();
+                if !matches!(key.as_str(), "format" | "status" | "reason") {
+                    panic!("unknown header '{key}' in {path:?}");
+                }
                 if headers.insert(key.clone(), value).is_some() {
                     panic!("duplicate header '{key}' in {path:?}");
                 }
@@ -564,7 +712,8 @@ fn handle_tokenize_result(
 
 fn format_patch_batches(batches: &[Vec<html::DomPatch>]) -> Vec<String> {
     let mut lines = Vec::new();
-    for batch in batches {
+    for (batch_index, batch) in batches.iter().enumerate() {
+        lines.push(format!("Batch index={batch_index} size={}", batch.len()));
         for patch in batch {
             lines.push(format_patch(patch));
         }
@@ -626,13 +775,23 @@ fn format_patch(patch: &html::DomPatch) -> String {
         html::DomPatch::AppendText { key, text } => {
             format!("AppendText key={} text=\"{}\"", key.0, escape_text(text))
         }
-        _ => format!("UnknownPatch {patch:?}"),
+        other => panic!("unhandled DomPatch variant in golden formatter: {other:?}"),
     }
 }
 
 fn format_attributes(attributes: &[(std::sync::Arc<str>, Option<String>)]) -> String {
+    if attributes.is_empty() {
+        return String::new();
+    }
+
+    let mut sorted = attributes
+        .iter()
+        .map(|(name, value)| (name.as_ref(), value.as_deref()))
+        .collect::<Vec<_>>();
+    sorted.sort_by(|a, b| a.0.cmp(b.0).then_with(|| a.1.cmp(&b.1)));
+
     let mut out = String::new();
-    for (index, (name, value)) in attributes.iter().enumerate() {
+    for (index, (name, value)) in sorted.iter().enumerate() {
         if index > 0 {
             out.push_str(", ");
         }

@@ -1,0 +1,19 @@
+# format: html5-dompatch-v1
+# status: active
+
+Batch index=0 size=15
+CreateDocument key=1 doctype=<none>
+CreateComment key=2 text="pre"
+AppendChild parent=1 child=2
+CreateElement key=3 name=html attrs=[]
+AppendChild parent=1 child=3
+CreateElement key=4 name=head attrs=[]
+AppendChild parent=3 child=4
+CreateElement key=5 name=body attrs=[]
+AppendChild parent=3 child=5
+CreateElement key=6 name=div attrs=[]
+AppendChild parent=5 child=6
+CreateComment key=7 text="inner"
+AppendChild parent=6 child=7
+CreateText key=8 text="x"
+AppendChild parent=6 child=8
