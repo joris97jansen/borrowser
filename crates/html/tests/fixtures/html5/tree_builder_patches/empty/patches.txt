@@ -1,4 +1,5 @@
 # format: html5-dompatch-v1
 # status: active
 
+Batch index=0 size=1
 CreateDocument key=1 doctype=<none>

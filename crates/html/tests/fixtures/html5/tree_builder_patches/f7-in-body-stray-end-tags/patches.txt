@@ -1,6 +1,7 @@
 # format: html5-dompatch-v1
 # status: active
 
+Batch index=0 size=17
 CreateDocument key=1 doctype=<none>
 CreateElement key=2 name=html attrs=[]
 AppendChild parent=1 child=2
@@ -18,5 +19,3 @@ CreateText key=8 text="c"
 AppendChild parent=5 child=8
 CreateText key=9 text="d"
 AppendChild parent=4 child=9
-CreateText key=10 text="\n"
-AppendChild parent=4 child=10
