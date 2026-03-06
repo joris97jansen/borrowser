@@ -80,3 +80,6 @@ pub mod wpt_expected;
 
 #[cfg(feature = "html5")]
 pub mod wpt_formats;
+
+#[cfg(feature = "html5")]
+pub mod wpt_tree_builder;

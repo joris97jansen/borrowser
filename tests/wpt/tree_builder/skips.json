@@ -1,0 +1,23 @@
+{
+  "format": "wpt-tree-builder-skips-v1",
+  "cases": [
+    {
+      "id": "basic-structure",
+      "status": "xfail",
+      "reason": "Tree-construction parity for baseline document shell insertion is still incomplete.",
+      "tracking_issue": "BORW-HTML5-TB-SLICE-001"
+    },
+    {
+      "id": "comments-and-text",
+      "status": "xfail",
+      "reason": "Tree-construction parity for mixed comment/text insertion ordering is incomplete.",
+      "tracking_issue": "BORW-HTML5-TB-SLICE-002"
+    },
+    {
+      "id": "void-elements",
+      "status": "xfail",
+      "reason": "Tree-construction parity for void-element handling and implied end-tag behavior is incomplete.",
+      "tracking_issue": "BORW-HTML5-TB-SLICE-003"
+    }
+  ]
+}

@@ -1,17 +1,19 @@
 #![cfg(feature = "html5")]
 
 use html::dom_snapshot::DomSnapshotOptions;
-use html::html5::tree_builder::{
-    Html5TreeBuilder, TreeBuilderConfig, TreeBuilderStepResult, serialize_dom_for_test_with_options,
-};
-use html::html5::{DocumentParseContext, Html5Tokenizer, Input, TokenizeResult, TokenizerConfig};
 use html::test_harness::{ChunkPlan, shrink_chunk_plan_with_stats};
 use html_test_support::diff_lines;
 use html_test_support::wpt_expected::{parse_expected_dom, parse_expected_tokens};
 use html_test_support::wpt_tokenizer::{
-    TokenizerSkipStatus, applied_skip_override, ensure_utf8_plan, load_tokenizer_skip_overrides,
-    parse_env_bool, parse_u64, run_tokenizer_chunked, run_tokenizer_whole,
-    validate_skip_override_ids,
+    TokenizerSkipStatus, applied_skip_override, ensure_utf8_plan as ensure_utf8_tokenizer_plan,
+    load_tokenizer_skip_overrides, parse_env_bool, parse_u64, run_tokenizer_chunked,
+    run_tokenizer_whole, validate_skip_override_ids,
+};
+use html_test_support::wpt_tree_builder::{
+    TreeBuilderSkipStatus, applied_skip_override as applied_tree_builder_skip_override,
+    ensure_utf8_plan as ensure_utf8_tree_builder_plan, load_tree_builder_skip_overrides,
+    run_tree_builder_chunked, run_tree_builder_whole,
+    validate_skip_override_ids as validate_tree_builder_skip_ids,
 };
 use std::env;
 use std::fs;
@@ -52,12 +54,181 @@ fn err_kind(err: &str) -> &str {
         .unwrap_or(err)
 }
 
+fn apply_case_outcome(
+    summary: &mut RunSummary,
+    failures: &mut Vec<Failure>,
+    case: &WptCase,
+    failure: Option<String>,
+    expected_label: &str,
+) {
+    match case.status {
+        FixtureStatus::Active => match failure {
+            Some(message) => {
+                summary.failed += 1;
+                failures.push(Failure {
+                    id: case.id.clone(),
+                    message,
+                });
+            }
+            None => summary.passed += 1,
+        },
+        FixtureStatus::Xfail => match failure {
+            Some(_) => summary.xfailed += 1,
+            None => {
+                summary.xpass += 1;
+                failures.push(Failure {
+                    id: case.id.clone(),
+                    message: format!(
+                        "WPT case '{}' matched expected {expected_label} but is marked xfail; reason: {}",
+                        case.id,
+                        case.reason.as_deref().unwrap_or("<missing reason>")
+                    ),
+                });
+            }
+        },
+        FixtureStatus::Skip => unreachable!("skip cases are filtered before execution"),
+    }
+}
+
+struct LineCaseExecConfig<'a> {
+    run_config: &'a RunConfig,
+    mismatch_label: &'a str,
+    case_label: &'a str,
+    ensure_plan: fn(&str, &ChunkPlan, &str) -> Result<(), String>,
+}
+
+fn run_case_whole_and_chunked<FWhole, FChunked>(
+    case: &WptCase,
+    input: &str,
+    expected_lines: &[String],
+    config: LineCaseExecConfig<'_>,
+    run_whole: FWhole,
+    run_chunked: FChunked,
+) -> Option<String>
+where
+    FWhole: Fn() -> Result<Vec<String>, String>,
+    FChunked: Fn(&ChunkPlan, &str) -> Result<Vec<String>, String>,
+{
+    let chunk_plans = if config.run_config.chunked {
+        html::chunker::build_chunk_plans_utf8(
+            input,
+            config.run_config.fuzz_runs,
+            config.run_config.fuzz_seed,
+        )
+    } else {
+        Vec::new()
+    };
+
+    let mut failure = None::<String>;
+    let mut whole_lines = None::<Vec<String>>;
+
+    match run_whole() {
+        Ok(lines) => {
+            if lines.as_slice() != expected_lines {
+                failure = Some(format!(
+                    "{} for '{}' ({})\n{}\nexpected file: {:?}\ninput file: {:?}",
+                    config.mismatch_label,
+                    case.id,
+                    case.path.display(),
+                    diff_lines(expected_lines, &lines),
+                    case.expected,
+                    case.path
+                ));
+            } else {
+                whole_lines = Some(lines);
+            }
+        }
+        Err(err) => {
+            failure = Some(format!(
+                "{} '{}' failed ({}) error: {err}",
+                config.case_label,
+                case.id,
+                case.path.display()
+            ));
+        }
+    }
+
+    if config.run_config.chunked && (failure.is_none() || config.run_config.chunked_force) {
+        if chunk_plans.is_empty() {
+            failure = Some(format!(
+                "{} '{}' requested chunked mode but no chunk plans were generated",
+                config.case_label, case.id
+            ));
+        } else {
+            for plan in &chunk_plans {
+                if let Err(err) = (config.ensure_plan)(&case.id, &plan.plan, &plan.label) {
+                    failure = Some(format!("{err}\ninput file: {:?}", case.path));
+                    break;
+                }
+                match run_chunked(&plan.plan, &plan.label) {
+                    Ok(lines) => {
+                        let (diff_basis, diff_target): (&str, &[String]) =
+                            match whole_lines.as_ref() {
+                                Some(whole) => ("whole-vs-chunked", whole.as_slice()),
+                                None => ("expected-vs-chunked", expected_lines),
+                            };
+                        if lines.as_slice() != diff_target {
+                            let diff = diff_lines(diff_target, &lines);
+                            let shrink_predicate =
+                                |candidate: &ChunkPlan| match run_chunked(candidate, "shrinking") {
+                                    Ok(candidate_lines) => {
+                                        candidate_lines.as_slice() != diff_target
+                                    }
+                                    Err(_) => true,
+                                };
+                            let (shrunk, stats) =
+                                shrink_chunk_plan_with_stats(input, &plan.plan, shrink_predicate);
+                            failure = Some(format!(
+                                "{} for '{}' ({}) [chunked: {}]\ndiff basis: {diff_basis}\nshrunk: {}\nshrink stats: {:?}\n{}\nexpected file: {:?}\ninput file: {:?}",
+                                config.mismatch_label,
+                                case.id,
+                                case.path.display(),
+                                plan.label,
+                                shrunk,
+                                stats,
+                                diff,
+                                case.expected,
+                                case.path
+                            ));
+                            break;
+                        }
+                    }
+                    Err(err) => {
+                        let err_sig = err_kind(&err).to_string();
+                        let shrink_predicate =
+                            |candidate: &ChunkPlan| match run_chunked(candidate, "shrinking") {
+                                Ok(_) => false,
+                                Err(candidate_err) => err_kind(&candidate_err).contains(&err_sig),
+                            };
+                        let (shrunk, stats) =
+                            shrink_chunk_plan_with_stats(input, &plan.plan, shrink_predicate);
+                        failure = Some(format!(
+                            "{} '{}' failed ({}) [chunked: {}] error: {err}\nshrunk: {}\nshrink stats: {:?}\ninput file: {:?}",
+                            config.case_label,
+                            case.id,
+                            case.path.display(),
+                            plan.label,
+                            shrunk,
+                            stats,
+                            case.path
+                        ));
+                        break;
+                    }
+                }
+            }
+        }
+    }
+
+    failure
+}
+
 #[test]
 fn wpt_html5() {
     let manifest_path = wpt_root().join("manifest.txt");
     let mut cases = load_manifest(&manifest_path);
     assert!(!cases.is_empty(), "no WPT cases found in {manifest_path:?}");
     apply_tokenizer_skip_overrides(&mut cases, &manifest_path);
+    apply_tree_builder_skip_overrides(&mut cases, &manifest_path);
     let run_config = load_run_config();
     let cases = select_cases(cases, &run_config, &manifest_path);
 
@@ -78,15 +249,6 @@ fn wpt_html5() {
         }
         let input = fs::read_to_string(&case.path)
             .unwrap_or_else(|err| panic!("failed to read WPT input {:?}: {err}", case.path));
-        let chunk_plans = if run_config.chunked {
-            html::chunker::build_chunk_plans_utf8(
-                &input,
-                run_config.fuzz_runs,
-                run_config.fuzz_seed,
-            )
-        } else {
-            Vec::new()
-        };
         match case.kind {
             CaseKind::Dom => {
                 let expected = parse_expected_dom(&case.expected);
@@ -94,303 +256,37 @@ fn wpt_html5() {
                     ignore_ids: expected.ignore_ids,
                     ignore_empty_style: expected.ignore_empty_style,
                 };
-                let mut failure = None::<String>;
-                let mut whole_lines = None::<Vec<String>>;
-                match run_tree_builder_whole(&input, options) {
-                    Ok(lines) => {
-                        if lines.as_slice() != expected.lines.as_slice() {
-                            failure = Some(format!(
-                                "WPT DOM mismatch for '{}' ({})\n{}\nexpected file: {:?}\ninput file: {:?}",
-                                case.id,
-                                case.path.display(),
-                                diff_lines(&expected.lines, &lines),
-                                case.expected,
-                                case.path
-                            ));
-                        } else {
-                            whole_lines = Some(lines);
-                        }
-                    }
-                    Err(err) => {
-                        failure = Some(format!(
-                            "WPT case '{}' failed ({}) error: {err}",
-                            case.id,
-                            case.path.display()
-                        ));
-                    }
-                }
-                if run_config.chunked && (failure.is_none() || run_config.chunked_force) {
-                    if chunk_plans.is_empty() {
-                        failure = Some(format!(
-                            "WPT case '{}' requested chunked mode but no chunk plans were generated",
-                            case.id
-                        ));
-                    } else {
-                        for plan in &chunk_plans {
-                            if let Err(err) = ensure_utf8_plan(&case.id, &plan.plan, &plan.label) {
-                                failure = Some(format!("{err}\ninput file: {:?}", case.path));
-                                break;
-                            }
-                            match run_tree_builder_chunked(
-                                &input,
-                                options,
-                                &plan.plan,
-                                &plan.label,
-                                &case.id,
-                            ) {
-                                Ok(lines) => {
-                                    let (diff_basis, diff_target): (&str, &[String]) =
-                                        match whole_lines.as_ref() {
-                                            Some(whole) => ("whole-vs-chunked", whole.as_slice()),
-                                            None => {
-                                                ("expected-vs-chunked", expected.lines.as_slice())
-                                            }
-                                        };
-                                    if lines.as_slice() != diff_target {
-                                        let diff = diff_lines(diff_target, &lines);
-                                        let shrink_predicate =
-                                            |candidate: &ChunkPlan| match run_tree_builder_chunked(
-                                                &input,
-                                                options,
-                                                candidate,
-                                                "shrinking",
-                                                &case.id,
-                                            ) {
-                                                Ok(candidate_lines) => {
-                                                    candidate_lines.as_slice() != diff_target
-                                                }
-                                                Err(_) => true,
-                                            };
-                                        let (shrunk, stats) = shrink_chunk_plan_with_stats(
-                                            &input,
-                                            &plan.plan,
-                                            shrink_predicate,
-                                        );
-                                        failure = Some(format!(
-                                            "WPT DOM mismatch for '{}' ({}) [chunked: {}]\ndiff basis: {diff_basis}\nshrunk: {}\nshrink stats: {:?}\n{}\nexpected file: {:?}\ninput file: {:?}",
-                                            case.id,
-                                            case.path.display(),
-                                            plan.label,
-                                            shrunk,
-                                            stats,
-                                            diff,
-                                            case.expected,
-                                            case.path
-                                        ));
-                                        break;
-                                    }
-                                }
-                                Err(err) => {
-                                    let err_sig = err_kind(&err).to_string();
-                                    let shrink_predicate =
-                                        |candidate: &ChunkPlan| match run_tree_builder_chunked(
-                                            &input,
-                                            options,
-                                            candidate,
-                                            "shrinking",
-                                            &case.id,
-                                        ) {
-                                            Ok(_) => false,
-                                            Err(candidate_err) => {
-                                                err_kind(&candidate_err).contains(&err_sig)
-                                            }
-                                        };
-                                    let (shrunk, stats) = shrink_chunk_plan_with_stats(
-                                        &input,
-                                        &plan.plan,
-                                        shrink_predicate,
-                                    );
-                                    failure = Some(format!(
-                                        "WPT case '{}' failed ({}) [chunked: {}] error: {err}\nshrunk: {}\nshrink stats: {:?}\ninput file: {:?}",
-                                        case.id,
-                                        case.path.display(),
-                                        plan.label,
-                                        shrunk,
-                                        stats,
-                                        case.path
-                                    ));
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                match case.status {
-                    FixtureStatus::Active => match failure {
-                        Some(message) => {
-                            summary.failed += 1;
-                            failures.push(Failure {
-                                id: case.id,
-                                message,
-                            });
-                        }
-                        None => summary.passed += 1,
+                let failure = run_case_whole_and_chunked(
+                    &case,
+                    &input,
+                    &expected.lines,
+                    LineCaseExecConfig {
+                        run_config: &run_config,
+                        mismatch_label: "WPT DOM mismatch",
+                        case_label: "WPT DOM case",
+                        ensure_plan: ensure_utf8_tree_builder_plan,
                     },
-                    FixtureStatus::Xfail => match failure {
-                        Some(_) => summary.xfailed += 1,
-                        None => {
-                            summary.xpass += 1;
-                            let case_id = case.id.clone();
-                            let message = format!(
-                                "WPT case '{}' matched expected DOM but is marked xfail; reason: {}",
-                                case_id,
-                                case.reason.as_deref().unwrap_or("<missing reason>")
-                            );
-                            failures.push(Failure {
-                                id: case_id,
-                                message,
-                            });
-                        }
-                    },
-                    FixtureStatus::Skip => unreachable!("skip cases are filtered before execution"),
-                }
+                    || run_tree_builder_whole(&input, &case.id, options),
+                    |plan, label| run_tree_builder_chunked(&input, &case.id, plan, label, options),
+                );
+                apply_case_outcome(&mut summary, &mut failures, &case, failure, "DOM snapshot");
             }
             CaseKind::Tokens => {
                 let expected_lines = parse_expected_tokens(&case.expected);
-                let mut failure = None::<String>;
-                let mut whole_lines = None::<Vec<String>>;
-                match run_tokenizer_whole(&input, &case.id) {
-                    Ok(lines) => {
-                        if lines.as_slice() != expected_lines.as_slice() {
-                            failure = Some(format!(
-                                "WPT token mismatch for '{}' ({})\n{}\nexpected file: {:?}\ninput file: {:?}",
-                                case.id,
-                                case.path.display(),
-                                diff_lines(&expected_lines, &lines),
-                                case.expected,
-                                case.path
-                            ));
-                        } else {
-                            whole_lines = Some(lines);
-                        }
-                    }
-                    Err(err) => {
-                        failure = Some(format!(
-                            "WPT case '{}' failed ({}) error: {err}",
-                            case.id,
-                            case.path.display()
-                        ));
-                    }
-                }
-                if run_config.chunked && (failure.is_none() || run_config.chunked_force) {
-                    if chunk_plans.is_empty() {
-                        failure = Some(format!(
-                            "WPT case '{}' requested chunked mode but no chunk plans were generated",
-                            case.id
-                        ));
-                    } else {
-                        for plan in &chunk_plans {
-                            if let Err(err) = ensure_utf8_plan(&case.id, &plan.plan, &plan.label) {
-                                failure = Some(format!("{err}\ninput file: {:?}", case.path));
-                                break;
-                            }
-                            match run_tokenizer_chunked(&input, &case.id, &plan.plan, &plan.label) {
-                                Ok(lines) => {
-                                    let (diff_basis, diff_target): (&str, &[String]) =
-                                        match whole_lines.as_ref() {
-                                            Some(whole) => ("whole-vs-chunked", whole.as_slice()),
-                                            None => {
-                                                ("expected-vs-chunked", expected_lines.as_slice())
-                                            }
-                                        };
-                                    if lines.as_slice() != diff_target {
-                                        let diff = diff_lines(diff_target, &lines);
-                                        let shrink_predicate =
-                                            |candidate: &ChunkPlan| match run_tokenizer_chunked(
-                                                &input,
-                                                &case.id,
-                                                candidate,
-                                                "shrinking",
-                                            ) {
-                                                Ok(candidate_lines) => {
-                                                    candidate_lines.as_slice() != diff_target
-                                                }
-                                                Err(_) => true,
-                                            };
-                                        let (shrunk, stats) = shrink_chunk_plan_with_stats(
-                                            &input,
-                                            &plan.plan,
-                                            shrink_predicate,
-                                        );
-                                        failure = Some(format!(
-                                            "WPT token mismatch for '{}' ({}) [chunked: {}]\ndiff basis: {diff_basis}\nshrunk: {}\nshrink stats: {:?}\n{}\nexpected file: {:?}\ninput file: {:?}",
-                                            case.id,
-                                            case.path.display(),
-                                            plan.label,
-                                            shrunk,
-                                            stats,
-                                            diff,
-                                            case.expected,
-                                            case.path
-                                        ));
-                                        break;
-                                    }
-                                }
-                                Err(err) => {
-                                    let err_sig = err_kind(&err).to_string();
-                                    let shrink_predicate =
-                                        |candidate: &ChunkPlan| match run_tokenizer_chunked(
-                                            &input,
-                                            &case.id,
-                                            candidate,
-                                            "shrinking",
-                                        ) {
-                                            Ok(_) => false,
-                                            Err(candidate_err) => {
-                                                err_kind(&candidate_err).contains(&err_sig)
-                                            }
-                                        };
-                                    let (shrunk, stats) = shrink_chunk_plan_with_stats(
-                                        &input,
-                                        &plan.plan,
-                                        shrink_predicate,
-                                    );
-                                    failure = Some(format!(
-                                        "WPT case '{}' failed ({}) [chunked: {}] error: {err}\nshrunk: {}\nshrink stats: {:?}\ninput file: {:?}",
-                                        case.id,
-                                        case.path.display(),
-                                        plan.label,
-                                        shrunk,
-                                        stats,
-                                        case.path
-                                    ));
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                }
-
-                match case.status {
-                    FixtureStatus::Active => match failure {
-                        Some(message) => {
-                            summary.failed += 1;
-                            failures.push(Failure {
-                                id: case.id,
-                                message,
-                            });
-                        }
-                        None => summary.passed += 1,
+                let failure = run_case_whole_and_chunked(
+                    &case,
+                    &input,
+                    &expected_lines,
+                    LineCaseExecConfig {
+                        run_config: &run_config,
+                        mismatch_label: "WPT token mismatch",
+                        case_label: "WPT token case",
+                        ensure_plan: ensure_utf8_tokenizer_plan,
                     },
-                    FixtureStatus::Xfail => match failure {
-                        Some(_) => summary.xfailed += 1,
-                        None => {
-                            summary.xpass += 1;
-                            let case_id = case.id.clone();
-                            let message = format!(
-                                "WPT case '{}' matched expected tokens but is marked xfail; reason: {}",
-                                case_id,
-                                case.reason.as_deref().unwrap_or("<missing reason>")
-                            );
-                            failures.push(Failure {
-                                id: case_id,
-                                message,
-                            });
-                        }
-                    },
-                    FixtureStatus::Skip => unreachable!("skip cases are filtered before execution"),
-                }
+                    || run_tokenizer_whole(&input, &case.id),
+                    |plan, label| run_tokenizer_chunked(&input, &case.id, plan, label),
+                );
+                apply_case_outcome(&mut summary, &mut failures, &case, failure, "token stream");
             }
         }
     }
@@ -448,6 +344,28 @@ fn apply_tokenizer_skip_overrides(cases: &mut [WptCase], manifest_path: &Path) {
     }
 }
 
+fn apply_tree_builder_skip_overrides(cases: &mut [WptCase], manifest_path: &Path) {
+    let overrides = load_tree_builder_skip_overrides(&wpt_root());
+    let dom_case_ids = cases
+        .iter()
+        .filter(|case| case.kind == CaseKind::Dom)
+        .map(|case| case.id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    validate_tree_builder_skip_ids(&overrides, &dom_case_ids, manifest_path);
+
+    for case in cases.iter_mut().filter(|case| case.kind == CaseKind::Dom) {
+        if let Some((override_status, override_reason)) =
+            applied_tree_builder_skip_override(&case.id, &overrides)
+        {
+            case.status = match override_status {
+                TreeBuilderSkipStatus::Skip => FixtureStatus::Skip,
+                TreeBuilderSkipStatus::Xfail => FixtureStatus::Xfail,
+            };
+            case.reason = Some(override_reason);
+        }
+    }
+}
+
 fn wpt_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("..")
@@ -468,7 +386,7 @@ fn load_run_config() -> RunConfig {
         if trimmed.is_empty() {
             None
         } else {
-            Some(trimmed.to_string())
+            Some(trimmed.to_ascii_lowercase())
         }
     });
     let ids = env::var("WPT_IDS")
@@ -522,11 +440,10 @@ fn select_cases(cases: Vec<WptCase>, run_config: &RunConfig, manifest_path: &Pat
             continue;
         }
         if let Some(filter) = run_config.filter.as_deref() {
-            let filter = filter.to_lowercase();
             let id = case.id.to_lowercase();
             let path = case.path.to_string_lossy().to_lowercase();
             let expected = case.expected.to_string_lossy().to_lowercase();
-            if !id.contains(&filter) && !path.contains(&filter) && !expected.contains(&filter) {
+            if !id.contains(filter) && !path.contains(filter) && !expected.contains(filter) {
                 continue;
             }
         }
@@ -542,170 +459,4 @@ fn select_cases(cases: Vec<WptCase>, run_config: &RunConfig, manifest_path: &Pat
         );
     }
     selected
-}
-
-fn run_tree_builder_whole(
-    input_html: &str,
-    options: DomSnapshotOptions,
-) -> Result<Vec<String>, String> {
-    let mut ctx = DocumentParseContext::new();
-    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig { emit_eof: true }, &mut ctx);
-    let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx)
-        .map_err(|err| format!("failed to init tree builder: {err:?}"))?;
-    let mut input = Input::new();
-    let mut patch_batches: Vec<Vec<html::DomPatch>> = Vec::new();
-    let mut saw_eof_token = false;
-
-    input.push_str(input_html);
-    handle_tokenize_result(tokenizer.push_input(&mut input, &mut ctx), "push_input")?;
-    drain_batches(
-        &mut tokenizer,
-        &mut input,
-        &mut builder,
-        &ctx,
-        &mut patch_batches,
-        &mut saw_eof_token,
-    )?;
-
-    handle_tokenize_result(tokenizer.finish(&input), "finish")?;
-    drain_batches(
-        &mut tokenizer,
-        &mut input,
-        &mut builder,
-        &ctx,
-        &mut patch_batches,
-        &mut saw_eof_token,
-    )?;
-    if !saw_eof_token {
-        return Err("expected EOF token but none was observed".to_string());
-    }
-
-    let dom = html::test_harness::materialize_patch_batches(&patch_batches)?;
-    Ok(serialize_dom_for_test_with_options(&dom, options))
-}
-
-fn run_tree_builder_chunked(
-    input_html: &str,
-    options: DomSnapshotOptions,
-    plan: &ChunkPlan,
-    plan_label: &str,
-    case_id: &str,
-) -> Result<Vec<String>, String> {
-    let mut ctx = DocumentParseContext::new();
-    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig { emit_eof: true }, &mut ctx);
-    let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx)
-        .map_err(|err| format!("failed to init tree builder: {err:?}"))?;
-    let mut input = Input::new();
-    let mut patch_batches: Vec<Vec<html::DomPatch>> = Vec::new();
-    let mut saw_eof_token = false;
-    let mut error = None::<String>;
-
-    plan.for_each_chunk(input_html, |chunk| {
-        if error.is_some() {
-            return;
-        }
-        let chunk_str = std::str::from_utf8(chunk).unwrap_or_else(|_| {
-            error = Some(format!(
-                "chunk plan produced invalid UTF-8 boundary in case '{}' [{plan_label}]",
-                case_id
-            ));
-            ""
-        });
-        if error.is_some() {
-            return;
-        }
-        input.push_str(chunk_str);
-        if let Err(err) =
-            handle_tokenize_result(tokenizer.push_input(&mut input, &mut ctx), "push_input")
-        {
-            error = Some(format!("case '{}' [{plan_label}] error: {err}", case_id));
-            return;
-        }
-        if let Err(err) = drain_batches(
-            &mut tokenizer,
-            &mut input,
-            &mut builder,
-            &ctx,
-            &mut patch_batches,
-            &mut saw_eof_token,
-        ) {
-            error = Some(format!("case '{}' [{plan_label}] error: {err}", case_id));
-        }
-    });
-
-    if let Some(err) = error {
-        return Err(err);
-    }
-
-    handle_tokenize_result(tokenizer.finish(&input), "finish")?;
-    drain_batches(
-        &mut tokenizer,
-        &mut input,
-        &mut builder,
-        &ctx,
-        &mut patch_batches,
-        &mut saw_eof_token,
-    )?;
-    if !saw_eof_token {
-        return Err(format!(
-            "expected EOF token but none was observed (case '{}' [{plan_label}])",
-            case_id
-        ));
-    }
-
-    let dom = html::test_harness::materialize_patch_batches(&patch_batches)?;
-    Ok(serialize_dom_for_test_with_options(&dom, options))
-}
-
-fn drain_batches(
-    tokenizer: &mut Html5Tokenizer,
-    input: &mut Input,
-    builder: &mut Html5TreeBuilder,
-    ctx: &DocumentParseContext,
-    patch_batches: &mut Vec<Vec<html::DomPatch>>,
-    saw_eof_token: &mut bool,
-) -> Result<(), String> {
-    let mut patches = Vec::new();
-    loop {
-        let batch = tokenizer.next_batch(input);
-        if batch.tokens().is_empty() {
-            break;
-        }
-        patches.clear();
-        let resolver = batch.resolver();
-        let atoms = &ctx.atoms;
-        let mut sink = html::html5::tree_builder::VecPatchSink(&mut patches);
-        for token in batch.iter() {
-            if matches!(token, html::html5::Token::Eof) {
-                *saw_eof_token = true;
-            }
-            match builder.push_token(token, atoms, &resolver, &mut sink) {
-                Ok(TreeBuilderStepResult::Continue) => {}
-                Ok(TreeBuilderStepResult::Suspend(reason)) => {
-                    return Err(format!("tree builder suspended: {reason:?}"));
-                }
-                Err(err) => {
-                    return Err(format!("tree builder error: {err:?}"));
-                }
-            }
-        }
-        if !patches.is_empty() {
-            patch_batches.push(std::mem::take(&mut patches));
-        }
-    }
-    Ok(())
-}
-
-fn handle_tokenize_result(result: TokenizeResult, stage: &str) -> Result<(), String> {
-    match (stage, result) {
-        ("push_input", TokenizeResult::EmittedEof) => {
-            Err("unexpected EOF while pushing input".to_string())
-        }
-        ("finish", TokenizeResult::EmittedEof) => Ok(()),
-        ("finish", other) => Err(format!("finish must emit EOF, got {other:?}")),
-        ("push_input", TokenizeResult::NeedMoreInput | TokenizeResult::Progress) => Ok(()),
-        _ => Err(format!(
-            "unexpected tokenizer state stage={stage} result={result:?}"
-        )),
-    }
 }
