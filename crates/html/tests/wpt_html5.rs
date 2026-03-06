@@ -1,4 +1,4 @@
-#![cfg(feature = "html5")]
+#![cfg(all(feature = "html5", feature = "dom-snapshot"))]
 
 use html::dom_snapshot::DomSnapshotOptions;
 use html::test_harness::{ChunkPlan, shrink_chunk_plan_with_stats};

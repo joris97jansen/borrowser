@@ -81,5 +81,5 @@ pub mod wpt_expected;
 #[cfg(feature = "html5")]
 pub mod wpt_formats;
 
-#[cfg(feature = "html5")]
+#[cfg(all(feature = "html5", feature = "dom-snapshot"))]
 pub mod wpt_tree_builder;
