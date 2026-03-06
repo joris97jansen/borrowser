@@ -3,7 +3,7 @@ HTML_ENTITIES_JSON := crates/html/data/entities.json
 HTML_ENTITIES_GEN := crates/html/src/entities_html5.rs
 HTML_ENTITIES_TOOL := crates/html/tools/generate_entities_html5.py
 
-.PHONY: fmt lint lint-html5 test test-html5-legacy test-html5-toggle test-html5-dom-golden test-html5-patch-golden build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check
+.PHONY: fmt lint lint-html5 test test-html5-legacy test-html5-toggle test-html5-dom-golden test-html5-patch-golden test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check
 
 # Format all crates
 format:
@@ -36,6 +36,10 @@ test-html5-dom-golden:
 # Run HTML5 patch-log golden fixtures (whole/chunked/fuzz)
 test-html5-patch-golden:
 	cargo test -p html --test html5_golden_tree_builder_patches --features html5 --locked
+
+# Run WPT tree-construction slice (tokenizer + tree builder -> DOM snapshot)
+test-wpt-tree-builder:
+	cargo test -p html --test wpt_html5_tree_builder --features "html5 dom-snapshot" --locked
 
 # Build all targets (debug)
 build:
@@ -96,6 +100,7 @@ ci:
 	@$(MAKE) test-html5-toggle
 	@$(MAKE) test-html5-dom-golden
 	@$(MAKE) test-html5-patch-golden
+	@$(MAKE) test-wpt-tree-builder
 	@$(MAKE) build
 	@$(MAKE) build-html5
 	@$(MAKE) build-release

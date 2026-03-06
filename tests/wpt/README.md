@@ -19,18 +19,25 @@ CI fast and deterministic.
   - Tokenizer cases use `html5-token-v1` with `kind: tokens` in the manifest.
 - `tokenizer/skips.toml` + `tokenizer/skips.json`: tokenizer-only skip/xfail manifest
   with explicit reason and tracking issue reference; both files must stay in sync.
+- `tree_builder/skips.toml` + `tree_builder/skips.json`: tree-construction-only
+  skip/xfail manifest with explicit reason and tracking issue reference; both files
+  must stay in sync.
   - Policy: tokenizer `manifest.txt` entries stay `active` by default; temporary
     and policy exclusions are applied via `tokenizer/skips.*`.
+  - Policy: tree-construction `manifest.txt` entries stay `active` by default;
+    temporary and policy exclusions are applied via `tree_builder/skips.*`.
 
 **Manifest Schema**
 - `id`: unique case identifier.
 - `path`: relative path to the vendored HTML fixture.
 - `expected`: relative path to the expected snapshot file.
 - `kind`: optional (`dom` default, or `tokens` for tokenizer snapshots).
-- `status`: optional (`active` default, `xfail` for expected failures, `skip` for policy-excluded cases).
-- `reason`: required when `status` is `xfail` or `skip`.
+- `status`: optional (`active` default, `xfail` for expected failures, `skip` for policy-excluded cases). Kept for schema compatibility.
+- `reason`: required when `status` is `xfail` or `skip` when manifest status is used.
 - Policy: tokenizer out-of-scope/temporary exclusions are tracked in
   `tokenizer/skips.toml` + `tokenizer/skips.json` with reason + tracking issue.
+- Policy: tree-construction out-of-scope/temporary exclusions are tracked in
+  `tree_builder/skips.toml` + `tree_builder/skips.json` with reason + tracking issue.
 
 ## Update Workflow
 
@@ -39,6 +46,7 @@ CI fast and deterministic.
 3. Generate or edit the expected snapshot in `expected/`.
 4. Run `cargo test -p html --features html5,dom-snapshot --test wpt_html5` to validate DOM+token mixed WPT cases.
 5. Run `cargo test -p html --features html5 --test wpt_html5_tokenizer` for the tokenizer slice.
+6. Run `cargo test -p html --features html5,dom-snapshot --test wpt_html5_tree_builder` for the tree-construction slice.
 
 ## Source / Upstream
 
@@ -48,9 +56,11 @@ or in a short note alongside the test.
 
 ## Notes
 
-- Early on, tests can be marked `xfail` in the manifest with a reason.
+- Manifest `status`/`reason` remains supported for compatibility, but policy for tokenizer/tree-construction slices is to keep manifest entries `active` and use `tokenizer/skips.*` or `tree_builder/skips.*` for temporary exclusions.
 - Tokenizer slice skips/xfails are maintained in `tokenizer/skips.toml` and
   mirrored in `tokenizer/skips.json` (the tokenizer runner validates parity).
+- Tree-construction slice skips/xfails are maintained in `tree_builder/skips.toml`
+  and mirrored in `tree_builder/skips.json` (the tree-builder runner validates parity).
 - The runner uses `html::dom_snapshot::DomSnapshot` and the same UTF-8 aligned streaming policy as the golden harnesses.
 - Filters: set `WPT_KIND=dom|tokens|all`, `WPT_FILTER=<substring>`, or `WPT_IDS=id1,id2` to run a subset.
 - Chunked runs: set `WPT_CHUNKED=1` (optional `WPT_FUZZ_RUNS` and `WPT_FUZZ_SEED`).

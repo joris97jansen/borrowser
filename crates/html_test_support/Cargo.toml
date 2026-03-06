@@ -5,10 +5,11 @@ edition = "2024"
 
 [features]
 default = []
-html5 = ["dep:html"]
+html5 = ["dep:html", "html/html5"]
+dom-snapshot = ["html5", "html/dom-snapshot"]
 
 [dependencies]
-html = { path = "../html", default-features = false, features = ["html5"], optional = true }
+html = { path = "../html", default-features = false, optional = true }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 toml = "0.9"

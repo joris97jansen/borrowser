@@ -10,7 +10,7 @@ tools = { path = "../tools" }
 
 [dev-dependencies]
 criterion = "0.5"
-html-test-support = { path = "../html_test_support", features = ["html5"] }
+html-test-support = { path = "../html_test_support", features = ["html5", "dom-snapshot"] }
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"

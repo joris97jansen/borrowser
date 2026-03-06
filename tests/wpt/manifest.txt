@@ -5,20 +5,17 @@
 id: basic-structure
 path: vendor/html/syntax/parsing/basic-structure.html
 expected: expected/basic-structure.dom.txt
-status: xfail
-reason: html5 parser not implemented yet
+status: active
 
 id: comments-and-text
 path: vendor/html/syntax/parsing/comments-and-text.html
 expected: expected/comments-and-text.dom.txt
-status: xfail
-reason: html5 parser not implemented yet
+status: active
 
 id: void-elements
 path: vendor/html/syntax/parsing/void-elements.html
 expected: expected/void-elements.dom.txt
-status: xfail
-reason: html5 parser not implemented yet
+status: active
 
 id: tokenizer-basic
 kind: tokens
