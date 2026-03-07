@@ -468,7 +468,7 @@ impl Html5Tokenizer {
         self.stats
     }
 
-    #[cfg(any(test, feature = "internal-api"))]
+    #[cfg(test)]
     pub(crate) fn active_text_mode_for_test(&self) -> Option<TextModeSpec> {
         self.active_text_mode
     }

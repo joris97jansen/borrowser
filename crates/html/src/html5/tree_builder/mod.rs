@@ -1356,9 +1356,8 @@ impl Html5TreeBuilder {
             InsertionMode::BeforeHead
         } else if name == self.known_tags.head {
             InsertionMode::InHead
-        } else if name == self.known_tags.body {
-            InsertionMode::InBody
         } else {
+            // Core-v0: <body> and all other tags route to InBody here.
             InsertionMode::InBody
         };
     }
