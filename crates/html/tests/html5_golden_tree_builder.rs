@@ -7,7 +7,7 @@
 use html::chunker::{ChunkerConfig, build_chunk_plans};
 use html::dom_snapshot::DomSnapshotOptions;
 use html::html5::tree_builder::{
-    Html5TreeBuilder, TreeBuilderConfig, TreeBuilderStepResult, serialize_dom_for_test_with_options,
+    Html5TreeBuilder, TreeBuilderConfig, serialize_dom_for_test_with_options,
 };
 use html::html5::{DocumentParseContext, Html5Tokenizer, Input, TokenizeResult, TokenizerConfig};
 use html::test_harness::{ChunkPlan, materialize_patch_batches, shrink_chunk_plan_with_stats};
@@ -403,22 +403,20 @@ fn run_tree_builder_impl(
 
     let mut push_and_drain = |chunk: &str| -> Result<(), String> {
         input.push_str(chunk);
-        handle_tokenize_result(
-            tokenizer.push_input(&mut input, &mut ctx),
+        pump_tokenizer_until_blocked(
+            DrainCtx {
+                tokenizer: &mut tokenizer,
+                input: &mut input,
+                builder: &mut builder,
+                ctx: &mut ctx,
+                patch_batches: &mut patch_batches,
+                fixture_name: &fixture.name,
+                label,
+                saw_eof_token: &mut saw_eof_token,
+            },
             fixture,
             plan_label,
-            "push_input",
-        )?;
-        drain_batches(DrainCtx {
-            tokenizer: &mut tokenizer,
-            input: &mut input,
-            builder: &mut builder,
-            atoms: &ctx.atoms,
-            patch_batches: &mut patch_batches,
-            fixture_name: &fixture.name,
-            label,
-            saw_eof_token: &mut saw_eof_token,
-        })
+        )
     };
 
     if let Some(plan) = plan {
@@ -467,16 +465,19 @@ fn run_tree_builder_impl(
     if let Err(err) = handle_tokenize_result(finish_result, fixture, plan_label, "finish") {
         return RunOutput::Err(err);
     }
-    if let Err(err) = drain_batches(DrainCtx {
-        tokenizer: &mut tokenizer,
-        input: &mut input,
-        builder: &mut builder,
-        atoms: &ctx.atoms,
-        patch_batches: &mut patch_batches,
-        fixture_name: &fixture.name,
-        label,
-        saw_eof_token: &mut saw_eof_token,
-    }) {
+    if let Err(err) = drain_batches(
+        DrainCtx {
+            tokenizer: &mut tokenizer,
+            input: &mut input,
+            builder: &mut builder,
+            ctx: &mut ctx,
+            patch_batches: &mut patch_batches,
+            fixture_name: &fixture.name,
+            label,
+            saw_eof_token: &mut saw_eof_token,
+        },
+        false,
+    ) {
         return RunOutput::Err(err);
     }
     if !saw_eof_token {
@@ -497,12 +498,35 @@ fn run_tree_builder_impl(
     ))
 }
 
-fn drain_batches(d: DrainCtx<'_>) -> Result<(), String> {
+fn pump_tokenizer_until_blocked(
+    mut d: DrainCtx<'_>,
+    fixture: &Fixture,
+    plan_label: Option<&str>,
+) -> Result<(), String> {
+    loop {
+        let result = d.tokenizer.push_input_until_token(d.input, d.ctx);
+        handle_tokenize_result(result, fixture, plan_label, "push_input")?;
+        drain_batches(d.reborrow(), true)?;
+        if matches!(result, TokenizeResult::NeedMoreInput) {
+            break;
+        }
+    }
+    Ok(())
+}
+
+fn drain_batches(d: DrainCtx<'_>, expect_token_granular_batches: bool) -> Result<(), String> {
     let mut patches = Vec::new();
     loop {
         let batch = d.tokenizer.next_batch(d.input);
         if batch.tokens().is_empty() {
             break;
+        }
+        if expect_token_granular_batches {
+            assert_eq!(
+                batch.tokens().len(),
+                1,
+                "tokenizer control-aware tree-builder driver must observe exactly one token per pump"
+            );
         }
         patches.clear();
         let resolver = batch.resolver();
@@ -511,13 +535,20 @@ fn drain_batches(d: DrainCtx<'_>) -> Result<(), String> {
             if matches!(token, html::html5::Token::Eof) {
                 *d.saw_eof_token = true;
             }
-            match d.builder.push_token(token, d.atoms, &resolver, &mut sink) {
-                Ok(TreeBuilderStepResult::Continue) => {}
-                Ok(TreeBuilderStepResult::Suspend(reason)) => {
-                    return Err(format!(
-                        "tree builder suspended in fixture '{}' [{}] reason={reason:?}",
-                        d.fixture_name, d.label
-                    ));
+            match d
+                .builder
+                .push_token(token, &d.ctx.atoms, &resolver, &mut sink)
+            {
+                Ok(step) => {
+                    if let Some(control) = step.tokenizer_control {
+                        d.tokenizer.apply_control(control);
+                    }
+                    if let html::html5::TreeBuilderControlFlow::Suspend(reason) = step.flow {
+                        return Err(format!(
+                            "tree builder suspended in fixture '{}' [{}] reason={reason:?}",
+                            d.fixture_name, d.label
+                        ));
+                    }
                 }
                 Err(err) => {
                     return Err(format!(
@@ -538,11 +569,26 @@ struct DrainCtx<'a> {
     tokenizer: &'a mut Html5Tokenizer,
     input: &'a mut Input,
     builder: &'a mut Html5TreeBuilder,
-    atoms: &'a html::html5::AtomTable,
+    ctx: &'a mut DocumentParseContext,
     patch_batches: &'a mut Vec<Vec<html::DomPatch>>,
     fixture_name: &'a str,
     label: &'a str,
     saw_eof_token: &'a mut bool,
+}
+
+impl<'a> DrainCtx<'a> {
+    fn reborrow(&mut self) -> DrainCtx<'_> {
+        DrainCtx {
+            tokenizer: self.tokenizer,
+            input: self.input,
+            builder: self.builder,
+            ctx: self.ctx,
+            patch_batches: self.patch_batches,
+            fixture_name: self.fixture_name,
+            label: self.label,
+            saw_eof_token: self.saw_eof_token,
+        }
+    }
 }
 
 fn handle_tokenize_result(

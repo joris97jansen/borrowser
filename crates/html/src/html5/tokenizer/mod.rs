@@ -73,6 +73,60 @@ pub struct TokenizerStats {
     pub bytes_consumed: u64,
 }
 
+/// Raw-text family selected by the tree builder after inserting a start tag.
+///
+/// Contract:
+/// - The tree builder enters one of these modes immediately after it inserts the
+///   corresponding element and before the tokenizer consumes the next code point.
+/// - The tokenizer stays in the selected mode until the tree builder explicitly
+///   sends [`TokenizerControl::ExitTextMode`].
+/// - Mismatched end tags and other parse errors do not implicitly reset this
+///   state; the tree builder remains authoritative.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextModeKind {
+    RawText,
+    Rcdata,
+    ScriptData,
+}
+
+/// Namespace discriminator for future foreign-content text-mode handling.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextModeNamespace {
+    Html,
+}
+
+/// Context required for tokenizer text-mode switching.
+///
+/// Core v0 carries the text parsing family plus the canonical end-tag name.
+/// Namespace is included explicitly so later milestones can extend the contract
+/// without introducing hidden side channels.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TextModeSpec {
+    pub kind: TextModeKind,
+    pub end_tag_name: AtomId,
+    pub namespace: TextModeNamespace,
+}
+
+impl TextModeSpec {
+    pub fn new(kind: TextModeKind, end_tag_name: AtomId) -> Self {
+        Self {
+            kind,
+            end_tag_name,
+            namespace: TextModeNamespace::Html,
+        }
+    }
+}
+
+/// Explicit control channel from tree builder to tokenizer.
+///
+/// The runtime must apply these commands between tokens, before it allows the
+/// tokenizer to consume additional input.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TokenizerControl {
+    EnterTextMode(TextModeSpec),
+    ExitTextMode,
+}
+
 /// Resolve text spans into `&str` for the current batch epoch.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TextResolveError {
@@ -117,6 +171,7 @@ pub struct Html5Tokenizer {
     config: TokenizerConfig,
     atom_table_id: u64,
     state: TokenizerState,
+    active_text_mode: Option<TextModeSpec>,
     cursor: usize,
     tokens: Vec<Token>,
     pending_text_start: Option<usize>,
@@ -150,6 +205,7 @@ impl Html5Tokenizer {
             config,
             atom_table_id: ctx.atoms.id(),
             state: TokenizerState::Data,
+            active_text_mode: None,
             cursor: 0,
             tokens: Vec::new(),
             pending_text_start: None,
@@ -196,6 +252,27 @@ impl Html5Tokenizer {
         input: &mut Input,
         ctx: &mut DocumentParseContext,
     ) -> TokenizeResult {
+        self.push_input_internal(input, ctx, StopCondition::DrainAvailableInput)
+    }
+
+    /// Consume decoded input until at least one token is available or the tokenizer blocks.
+    ///
+    /// This is the token-granular integration API used by the HTML5 session to
+    /// honor tree-builder text-mode control between tokens.
+    pub fn push_input_until_token(
+        &mut self,
+        input: &mut Input,
+        ctx: &mut DocumentParseContext,
+    ) -> TokenizeResult {
+        self.push_input_internal(input, ctx, StopCondition::YieldAfterToken)
+    }
+
+    fn push_input_internal(
+        &mut self,
+        input: &mut Input,
+        ctx: &mut DocumentParseContext,
+        stop_condition: StopCondition,
+    ) -> TokenizeResult {
         self.assert_atom_table_binding(ctx);
         assert!(
             !self.end_of_stream,
@@ -210,6 +287,9 @@ impl Html5Tokenizer {
         } else {
             self.input_id = Some(input.id());
         }
+        if stop_condition == StopCondition::YieldAfterToken && !self.tokens.is_empty() {
+            return TokenizeResult::Progress;
+        }
 
         let initial_token_count = self.tokens.len();
         let initial_cursor = self.cursor;
@@ -222,6 +302,11 @@ impl Html5Tokenizer {
             let step_result = self.step(input, ctx);
             // Keep bytes_consumed aligned with absolute cursor progress.
             self.stats_set_bytes_consumed();
+            if stop_condition == StopCondition::YieldAfterToken
+                && self.tokens.len() > initial_token_count
+            {
+                break;
+            }
             if matches!(step_result, Step::NeedMoreInput) {
                 break;
             }
@@ -355,9 +440,37 @@ impl Html5Tokenizer {
         TokenBatch { tokens, input }
     }
 
+    pub fn apply_control(&mut self, control: TokenizerControl) {
+        assert!(
+            self.tokens.is_empty(),
+            "tokenizer controls must be applied between drained token boundaries"
+        );
+        match control {
+            TokenizerControl::EnterTextMode(spec) => {
+                assert!(
+                    self.active_text_mode.is_none(),
+                    "cannot enter tokenizer text mode while another text mode is active"
+                );
+                self.active_text_mode = Some(spec);
+            }
+            TokenizerControl::ExitTextMode => {
+                assert!(
+                    self.active_text_mode.is_some(),
+                    "cannot exit tokenizer text mode when no text mode is active"
+                );
+                self.active_text_mode = None;
+            }
+        }
+    }
+
     /// Return a copy of current instrumentation counters.
     pub fn stats(&self) -> TokenizerStats {
         self.stats
+    }
+
+    #[cfg(test)]
+    pub(crate) fn active_text_mode_for_test(&self) -> Option<TextModeSpec> {
+        self.active_text_mode
     }
 
     fn transition_to(&mut self, next: TokenizerState) {
@@ -1875,6 +1988,12 @@ enum QuotedParse<'a> {
 enum Step {
     Progress,
     NeedMoreInput,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StopCondition {
+    DrainAvailableInput,
+    YieldAfterToken,
 }
 
 const MAX_STEPS_PER_PUMP: usize = 16_384;

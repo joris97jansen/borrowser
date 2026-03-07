@@ -1,7 +1,8 @@
 use crate::wpt_formats::TREE_BUILDER_SKIPS_FORMAT_V1;
 use html::dom_snapshot::DomSnapshotOptions;
 use html::html5::tree_builder::{
-    Html5TreeBuilder, TreeBuilderConfig, TreeBuilderStepResult, serialize_dom_for_test_with_options,
+    Html5TreeBuilder, TreeBuilderConfig, TreeBuilderControlFlow,
+    serialize_dom_for_test_with_options,
 };
 use html::html5::{DocumentParseContext, Html5Tokenizer, Input, TokenizeResult, TokenizerConfig};
 use html::test_harness::{BoundaryPolicy, ChunkPlan};
@@ -165,12 +166,11 @@ pub fn run_tree_builder_whole(
     let mut saw_eof_token = false;
 
     input.push_str(input_html);
-    handle_tokenize_result(tokenizer.push_input(&mut input, &mut ctx), "push_input")?;
-    drain_batches(
+    pump_tokenizer_until_blocked(
         &mut tokenizer,
         &mut input,
+        &mut ctx,
         &mut builder,
-        &ctx,
         &mut patch_batches,
         &mut saw_eof_token,
     )?;
@@ -183,6 +183,7 @@ pub fn run_tree_builder_whole(
         &ctx,
         &mut patch_batches,
         &mut saw_eof_token,
+        false,
     )?;
     if !saw_eof_token {
         return Err(format!(
@@ -226,17 +227,11 @@ pub fn run_tree_builder_chunked(
             return;
         }
         input.push_str(chunk_str);
-        if let Err(err) =
-            handle_tokenize_result(tokenizer.push_input(&mut input, &mut ctx), "push_input")
-        {
-            error = Some(format!("case '{}' [{plan_label}] error: {err}", case_id));
-            return;
-        }
-        if let Err(err) = drain_batches(
+        if let Err(err) = pump_tokenizer_until_blocked(
             &mut tokenizer,
             &mut input,
+            &mut ctx,
             &mut builder,
-            &ctx,
             &mut patch_batches,
             &mut saw_eof_token,
         ) {
@@ -256,6 +251,7 @@ pub fn run_tree_builder_chunked(
         &ctx,
         &mut patch_batches,
         &mut saw_eof_token,
+        false,
     )?;
     if !saw_eof_token {
         return Err(format!(
@@ -275,12 +271,20 @@ fn drain_batches(
     ctx: &DocumentParseContext,
     patch_batches: &mut Vec<Vec<html::DomPatch>>,
     saw_eof_token: &mut bool,
+    expect_token_granular_batches: bool,
 ) -> Result<(), String> {
     let mut patches = Vec::new();
     loop {
         let batch = tokenizer.next_batch(input);
         if batch.tokens().is_empty() {
             break;
+        }
+        if expect_token_granular_batches {
+            assert_eq!(
+                batch.tokens().len(),
+                1,
+                "tokenizer control-aware tree-builder driver must observe exactly one token per pump"
+            );
         }
         patches.clear();
         let resolver = batch.resolver();
@@ -291,9 +295,13 @@ fn drain_batches(
                 *saw_eof_token = true;
             }
             match builder.push_token(token, atoms, &resolver, &mut sink) {
-                Ok(TreeBuilderStepResult::Continue) => {}
-                Ok(TreeBuilderStepResult::Suspend(reason)) => {
-                    return Err(format!("tree builder suspended: {reason:?}"));
+                Ok(step) => {
+                    if let Some(control) = step.tokenizer_control {
+                        tokenizer.apply_control(control);
+                    }
+                    if let TreeBuilderControlFlow::Suspend(reason) = step.flow {
+                        return Err(format!("tree builder suspended: {reason:?}"));
+                    }
                 }
                 Err(err) => {
                     return Err(format!("tree builder error: {err:?}"));
@@ -302,6 +310,33 @@ fn drain_batches(
         }
         if !patches.is_empty() {
             patch_batches.push(std::mem::take(&mut patches));
+        }
+    }
+    Ok(())
+}
+
+fn pump_tokenizer_until_blocked(
+    tokenizer: &mut Html5Tokenizer,
+    input: &mut Input,
+    ctx: &mut DocumentParseContext,
+    builder: &mut Html5TreeBuilder,
+    patch_batches: &mut Vec<Vec<html::DomPatch>>,
+    saw_eof_token: &mut bool,
+) -> Result<(), String> {
+    loop {
+        let result = tokenizer.push_input_until_token(input, ctx);
+        handle_tokenize_result(result, "push_input")?;
+        drain_batches(
+            tokenizer,
+            input,
+            builder,
+            ctx,
+            patch_batches,
+            saw_eof_token,
+            true,
+        )?;
+        if matches!(result, TokenizeResult::NeedMoreInput) {
+            break;
         }
     }
     Ok(())
