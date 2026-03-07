@@ -18,12 +18,13 @@ pub use shared::{
     ParseError, Span, TextSpan, TextValue, Token,
 };
 pub use tokenizer::{
-    Html5Tokenizer, TextResolveError, TextResolver, TokenBatch, TokenFmt, TokenFmtError,
-    TokenTestFormatExt, TokenizeResult, TokenizerConfig, TokenizerStats,
+    Html5Tokenizer, TextModeKind, TextModeNamespace, TextModeSpec, TextResolveError, TextResolver,
+    TokenBatch, TokenFmt, TokenFmtError, TokenTestFormatExt, TokenizeResult, TokenizerConfig,
+    TokenizerControl, TokenizerStats,
 };
 pub use tree_builder::{
-    Html5TreeBuilder, PatchSink, SuspendReason, TreeBuilderConfig, TreeBuilderError,
-    TreeBuilderStepResult, VecPatchSink,
+    Html5TreeBuilder, PatchSink, SuspendReason, TreeBuilderConfig, TreeBuilderControlFlow,
+    TreeBuilderError, TreeBuilderStepResult, VecPatchSink,
 };
 #[cfg(feature = "dom-snapshot")]
 pub use tree_builder::{serialize_dom_for_test, serialize_dom_for_test_with_options};

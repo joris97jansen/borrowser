@@ -8,7 +8,7 @@ use crate::dom_patch::{DomPatch, PatchKey};
 use crate::html5::shared::{
     AtomError, AtomId, AtomTable, DocumentParseContext, EngineInvariantError, Token,
 };
-use crate::html5::tokenizer::TextResolver;
+use crate::html5::tokenizer::{TextModeKind, TextModeSpec, TextResolver, TokenizerControl};
 use crate::html5::tree_builder::formatting::ActiveFormattingList;
 use crate::html5::tree_builder::modes::InsertionMode;
 use crate::html5::tree_builder::stack::{OpenElement, OpenElementsStack, ScopeKind, ScopeTagSet};
@@ -65,13 +65,28 @@ pub struct TreeBuilderConfig {
 
 /// Tree builder step result.
 #[must_use]
-#[derive(Clone, Debug)]
-pub enum TreeBuilderStepResult {
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct TreeBuilderStepResult {
+    pub flow: TreeBuilderControlFlow,
+    pub tokenizer_control: Option<TokenizerControl>,
+}
+
+impl TreeBuilderStepResult {
+    fn continue_with(tokenizer_control: Option<TokenizerControl>) -> Self {
+        Self {
+            flow: TreeBuilderControlFlow::Continue,
+            tokenizer_control,
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum TreeBuilderControlFlow {
     Continue,
     Suspend(SuspendReason),
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SuspendReason {
     Script,
     Other,
@@ -217,6 +232,8 @@ pub struct Html5TreeBuilder {
     perf_text_nodes_created: u64,
     perf_text_appends: u64,
     perf_text_coalescing_invalidations: u64,
+    active_text_mode: Option<TextModeSpec>,
+    pending_tokenizer_control: Option<TokenizerControl>,
     #[cfg(any(test, feature = "internal-api"))]
     parse_error_kinds: Vec<&'static str>,
 }
@@ -244,6 +261,7 @@ pub struct TreeBuilderPerfStats {
 pub struct TreeBuilderStateSnapshot {
     pub(crate) insertion_mode: InsertionMode,
     pub(crate) original_insertion_mode: Option<InsertionMode>,
+    pub(crate) active_text_mode: Option<TextModeSpec>,
     pub(crate) open_element_names: Vec<AtomId>,
     pub(crate) open_element_keys: Vec<PatchKey>,
     pub(crate) quirks_mode: QuirksMode,
@@ -283,6 +301,8 @@ impl Html5TreeBuilder {
             perf_text_nodes_created: 0,
             perf_text_appends: 0,
             perf_text_coalescing_invalidations: 0,
+            active_text_mode: None,
+            pending_tokenizer_control: None,
             #[cfg(any(test, feature = "internal-api"))]
             parse_error_kinds: Vec::new(),
         })
@@ -292,6 +312,10 @@ impl Html5TreeBuilder {
     ///
     /// The caller may retrieve buffered patches with `drain_patches()`.
     /// This API is deterministic and equivalent to `push_token()` with a sink.
+    ///
+    /// Text-mode contract:
+    /// - The returned [`TreeBuilderStepResult`] may contain tokenizer controls.
+    /// - Those controls must be applied before the tokenizer consumes the next token.
     pub fn process(
         &mut self,
         token: &Token,
@@ -313,6 +337,10 @@ impl Html5TreeBuilder {
     /// - With `coalesce_text=true`, coalescing state may continue across calls.
     /// - Therefore, `AppendText` emitted in a later call may target a node created
     ///   by an earlier flushed batch.
+    ///
+    /// Text-mode contract:
+    /// - Apply `result.tokenizer_control` immediately after this call returns.
+    /// - Do not let the tokenizer consume another token first.
     pub fn push_token(
         &mut self,
         token: &Token,
@@ -340,6 +368,10 @@ impl Html5TreeBuilder {
         text: &dyn TextResolver,
     ) -> Result<TreeBuilderStepResult, TreeBuilderError> {
         self.assert_atom_table_binding(atoms);
+        debug_assert!(
+            self.pending_tokenizer_control.is_none(),
+            "tree builder tokenizer controls must be drained from the previous step result"
+        );
         let mut mode = self.insertion_mode;
         let mut handled = false;
         let mut last_successful_mode = self.insertion_mode;
@@ -381,7 +413,9 @@ impl Html5TreeBuilder {
         self.perf_soe_scope_scan_steps = self.open_elements.scope_scan_steps();
         // Core-v0 routing is fully recoverable and never suspends yet.
         // Suspend paths remain reserved for script/loading integration.
-        Ok(TreeBuilderStepResult::Continue)
+        Ok(TreeBuilderStepResult::continue_with(
+            self.pending_tokenizer_control.take(),
+        ))
     }
 
     /// Internal metric: max open elements depth observed since session start.
@@ -484,7 +518,12 @@ impl Html5TreeBuilder {
                 this.active_formatting.len()
             );
             this.active_formatting.clear();
+            // Safe bootstrap reset: document creation is only reachable before any
+            // real text-mode container has been established, so clearing these
+            // fields here preserves the "no stale pre-document parser state"
+            // invariant without owning the normal text-mode lifecycle.
             this.original_insertion_mode = None;
+            this.active_text_mode = None;
             this.document_state.frameset_ok = true;
             Ok(key)
         })
@@ -671,8 +710,9 @@ impl Html5TreeBuilder {
                 self_closing,
             } if self.is_text_mode_container_tag(*name) => {
                 let _ = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
-                self.original_insertion_mode = Some(self.insertion_mode);
-                self.insertion_mode = InsertionMode::Text;
+                if !self_closing {
+                    self.enter_text_mode_for_element(*name);
+                }
                 Ok(DispatchOutcome::Done)
             }
             Token::EndTag { name } if *name == self.known_tags.head => {
@@ -841,7 +881,11 @@ impl Html5TreeBuilder {
                 self_closing,
             } => {
                 let _ = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
-                self.update_mode_for_start_tag(*name);
+                if self.is_text_mode_container_tag(*name) && !self_closing {
+                    self.enter_text_mode_for_element(*name);
+                } else {
+                    self.update_mode_for_start_tag(*name);
+                }
             }
             Token::EndTag { name } => {
                 let scope = self.scope_kind_for_in_body_end_tag(*name);
@@ -880,10 +924,7 @@ impl Html5TreeBuilder {
             Token::Eof => {
                 self.record_parse_error("eof-in-text-mode", None, None);
                 let _ = self.ensure_document_created()?;
-                self.insertion_mode = self
-                    .original_insertion_mode
-                    .take()
-                    .unwrap_or(InsertionMode::InBody);
+                self.exit_text_mode();
             }
             Token::StartTag {
                 name,
@@ -935,16 +976,10 @@ impl Html5TreeBuilder {
                 self.record_parse_error("doctype-in-text-mode", None, None);
             }
             Token::EndTag { name } => {
-                // Core-v0 policy: all text-mode containers share one close path.
-                // RAWTEXT/RCDATA/script-special behavior may diverge later.
-                let should_attempt_close = self.is_text_mode_container_tag(*name);
-                let closed = should_attempt_close
-                    && self.close_element_in_scope_with_reporting(*name, ScopeKind::InScope, false);
+                let closed = self.active_text_mode_end_tag_name() == Some(*name)
+                    && self.close_active_text_mode_element();
                 if closed {
-                    self.insertion_mode = self
-                        .original_insertion_mode
-                        .take()
-                        .unwrap_or(InsertionMode::InBody);
+                    self.exit_text_mode();
                 } else {
                     self.record_parse_error(
                         "unexpected-end-tag-in-text-mode",
@@ -1175,6 +1210,78 @@ impl Html5TreeBuilder {
         self.last_text_patch = None;
     }
 
+    fn queue_tokenizer_control(&mut self, control: TokenizerControl) {
+        assert!(
+            self.pending_tokenizer_control.is_none(),
+            "tree builder may emit at most one tokenizer control per token"
+        );
+        self.pending_tokenizer_control = Some(control);
+    }
+
+    fn enter_text_mode_for_element(&mut self, name: AtomId) {
+        let Some(text_mode) = self.text_mode_spec_for_tag(name) else {
+            return;
+        };
+        debug_assert!(
+            self.original_insertion_mode.is_none(),
+            "text-mode entry requires empty original insertion mode slot"
+        );
+        debug_assert!(
+            self.active_text_mode.is_none(),
+            "text-mode entry requires no active text-mode element"
+        );
+        self.original_insertion_mode = Some(self.insertion_mode);
+        self.active_text_mode = Some(text_mode);
+        self.insertion_mode = InsertionMode::Text;
+        self.queue_tokenizer_control(TokenizerControl::EnterTextMode(text_mode));
+    }
+
+    fn exit_text_mode(&mut self) {
+        debug_assert!(
+            self.original_insertion_mode.is_some(),
+            "text-mode exit requires a saved original insertion mode"
+        );
+        debug_assert!(
+            self.active_text_mode.is_some(),
+            "text-mode exit requires an active text-mode element"
+        );
+        self.active_text_mode = None;
+        self.insertion_mode = self
+            .original_insertion_mode
+            .take()
+            .unwrap_or(InsertionMode::InBody);
+        self.queue_tokenizer_control(TokenizerControl::ExitTextMode);
+    }
+
+    fn active_text_mode_end_tag_name(&self) -> Option<AtomId> {
+        self.active_text_mode.map(|mode| mode.end_tag_name)
+    }
+
+    fn close_active_text_mode_element(&mut self) -> bool {
+        let Some(active) = self.active_text_mode else {
+            return false;
+        };
+        let current = self.open_elements.current();
+        debug_assert_eq!(
+            current.map(OpenElement::name),
+            Some(active.end_tag_name),
+            "text-mode element must remain at the top of the open-elements stack while active"
+        );
+        if current.map(OpenElement::name) != Some(active.end_tag_name) {
+            // Fail closed if a partially-implemented insertion-mode path let the
+            // stack drift: keep text mode active and let the caller recover by
+            // literalizing the end tag instead of mutating the stack blindly.
+            return false;
+        }
+        let popped = self.open_elements.pop();
+        if popped.is_some() {
+            self.invalidate_text_coalescing();
+            true
+        } else {
+            false
+        }
+    }
+
     fn begin_structural_mutation(&mut self) {
         if self.structural_mutation_depth == 0 {
             self.invalidate_text_coalescing();
@@ -1251,9 +1358,6 @@ impl Html5TreeBuilder {
             InsertionMode::InHead
         } else if name == self.known_tags.body {
             InsertionMode::InBody
-        } else if self.is_text_mode_container_tag(name) {
-            self.original_insertion_mode = Some(self.insertion_mode);
-            InsertionMode::Text
         } else {
             InsertionMode::InBody
         };
@@ -1262,10 +1366,6 @@ impl Html5TreeBuilder {
     fn update_mode_for_end_tag(&mut self, name: AtomId) {
         self.insertion_mode = if name == self.known_tags.head {
             InsertionMode::AfterHead
-        } else if self.is_text_mode_container_tag(name) {
-            self.original_insertion_mode
-                .take()
-                .unwrap_or(InsertionMode::InBody)
         } else if name == self.known_tags.body {
             InsertionMode::InBody
         } else {
@@ -1281,6 +1381,19 @@ impl Html5TreeBuilder {
             || name == self.known_tags.style
             || name == self.known_tags.title
             || name == self.known_tags.textarea
+    }
+
+    fn text_mode_spec_for_tag(&self, name: AtomId) -> Option<TextModeSpec> {
+        let kind = if name == self.known_tags.style {
+            TextModeKind::RawText
+        } else if name == self.known_tags.title || name == self.known_tags.textarea {
+            TextModeKind::Rcdata
+        } else if name == self.known_tags.script {
+            TextModeKind::ScriptData
+        } else {
+            return None;
+        };
+        Some(TextModeSpec::new(kind, name))
     }
 
     // Core-v0 coupling: this scope decision is specific to the current InBody
@@ -1302,6 +1415,7 @@ impl Html5TreeBuilder {
         TreeBuilderStateSnapshot {
             insertion_mode: self.insertion_mode,
             original_insertion_mode: self.original_insertion_mode,
+            active_text_mode: self.active_text_mode,
             open_element_names: self.open_elements.iter_names().collect(),
             open_element_keys: self.open_elements.iter_keys().collect(),
             quirks_mode: self.document_state.quirks_mode,

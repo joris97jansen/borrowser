@@ -785,6 +785,13 @@ fn tree_builder_text_mode_end_tag_for_other_container_literalizes_and_stays_in_t
     let before = builder.state_snapshot();
     assert_eq!(before.insertion_mode, InsertionMode::Text);
     assert_eq!(before.open_element_names.last().copied(), Some(textarea));
+    assert_eq!(
+        before.active_text_mode,
+        Some(crate::html5::tokenizer::TextModeSpec::new(
+            crate::html5::tokenizer::TextModeKind::Rcdata,
+            textarea,
+        ))
+    );
 
     let _ = builder
         .process(&Token::EndTag { name: script }, &ctx.atoms, &resolver)
@@ -794,6 +801,14 @@ fn tree_builder_text_mode_end_tag_for_other_container_literalizes_and_stays_in_t
     assert_eq!(
         after_stray.open_element_names.last().copied(),
         Some(textarea)
+    );
+    assert_eq!(
+        after_stray.active_text_mode,
+        Some(crate::html5::tokenizer::TextModeSpec::new(
+            crate::html5::tokenizer::TextModeKind::Rcdata,
+            textarea,
+        )),
+        "mismatched end tags must keep the exact active text-mode element"
     );
 
     let text_values: Vec<_> = builder
@@ -807,6 +822,175 @@ fn tree_builder_text_mode_end_tag_for_other_container_literalizes_and_stays_in_t
     assert!(
         text_values.iter().any(|text| text == "</script>"),
         "failed text-mode close should literalize the end tag"
+    );
+}
+
+#[test]
+fn tree_builder_emits_explicit_tokenizer_text_mode_controls() {
+    use crate::html5::shared::Token;
+    use crate::html5::tokenizer::{TextModeKind, TextModeSpec, TokenizerControl};
+    use crate::html5::tree_builder::modes::InsertionMode;
+
+    let resolver = EmptyResolver;
+    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+
+    let html = ctx
+        .atoms
+        .intern_ascii_folded("html")
+        .expect("atom interning");
+    let body = ctx
+        .atoms
+        .intern_ascii_folded("body")
+        .expect("atom interning");
+    let textarea = ctx
+        .atoms
+        .intern_ascii_folded("textarea")
+        .expect("atom interning");
+
+    for token in [
+        Token::StartTag {
+            name: html,
+            attrs: Vec::new(),
+            self_closing: false,
+        },
+        Token::StartTag {
+            name: body,
+            attrs: Vec::new(),
+            self_closing: false,
+        },
+    ] {
+        let step = builder
+            .process(&token, &ctx.atoms, &resolver)
+            .expect("prelude should process");
+        assert!(
+            step.tokenizer_control.is_none(),
+            "ordinary body setup must not issue tokenizer text-mode controls"
+        );
+    }
+
+    let enter = builder
+        .process(
+            &Token::StartTag {
+                name: textarea,
+                attrs: Vec::new(),
+                self_closing: false,
+            },
+            &ctx.atoms,
+            &resolver,
+        )
+        .expect("textarea start tag should process");
+    assert_eq!(
+        enter.tokenizer_control,
+        Some(TokenizerControl::EnterTextMode(TextModeSpec::new(
+            TextModeKind::Rcdata,
+            textarea,
+        ))),
+        "text container start tag must emit explicit tokenizer entry control"
+    );
+    let in_text = builder.state_snapshot();
+    assert_eq!(in_text.insertion_mode, InsertionMode::Text);
+    assert_eq!(
+        in_text.active_text_mode,
+        Some(TextModeSpec::new(TextModeKind::Rcdata, textarea)),
+        "builder must track the exact active text-mode element"
+    );
+
+    let exit = builder
+        .process(&Token::EndTag { name: textarea }, &ctx.atoms, &resolver)
+        .expect("textarea close should process");
+    assert_eq!(
+        exit.tokenizer_control,
+        Some(TokenizerControl::ExitTextMode),
+        "matching text container end tag must emit explicit tokenizer exit control"
+    );
+    assert_eq!(
+        builder.state_snapshot().insertion_mode,
+        InsertionMode::InBody
+    );
+    assert_eq!(
+        builder.state_snapshot().active_text_mode,
+        None,
+        "matching text-mode close must clear the exact active text-mode element"
+    );
+}
+
+#[test]
+fn tree_builder_self_closing_text_mode_container_does_not_enter_text_mode() {
+    use crate::html5::shared::Token;
+    use crate::html5::tree_builder::modes::InsertionMode;
+
+    let resolver = EmptyResolver;
+    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+
+    let html = ctx
+        .atoms
+        .intern_ascii_folded("html")
+        .expect("atom interning");
+    let body = ctx
+        .atoms
+        .intern_ascii_folded("body")
+        .expect("atom interning");
+    let textarea = ctx
+        .atoms
+        .intern_ascii_folded("textarea")
+        .expect("atom interning");
+
+    for token in [
+        Token::StartTag {
+            name: html,
+            attrs: Vec::new(),
+            self_closing: false,
+        },
+        Token::StartTag {
+            name: body,
+            attrs: Vec::new(),
+            self_closing: false,
+        },
+    ] {
+        let _ = builder
+            .process(&token, &ctx.atoms, &resolver)
+            .expect("body prelude should process");
+    }
+
+    let step = builder
+        .process(
+            &Token::StartTag {
+                name: textarea,
+                attrs: Vec::new(),
+                self_closing: true,
+            },
+            &ctx.atoms,
+            &resolver,
+        )
+        .expect("self-closing textarea token should remain recoverable");
+    let state = builder.state_snapshot();
+    assert_eq!(
+        step.tokenizer_control, None,
+        "self-closing syntax must not enter text mode without a corresponding open element"
+    );
+    assert_eq!(
+        state.insertion_mode,
+        InsertionMode::InBody,
+        "self-closing text-mode containers must leave the builder in the surrounding insertion mode"
+    );
+    assert_eq!(
+        state.active_text_mode, None,
+        "self-closing text-mode containers must not become the active text-mode element"
+    );
+    assert_ne!(
+        state.open_element_names.last().copied(),
+        Some(textarea),
+        "self-closing text-mode container syntax must not leave an open element on the stack"
     );
 }
 

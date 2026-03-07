@@ -1,7 +1,7 @@
 #![cfg(all(feature = "html5", feature = "dom-snapshot"))]
 
 use html::dom_snapshot::{DomSnapshotOptions, compare_dom};
-use html::html5::tree_builder::{Html5TreeBuilder, TreeBuilderConfig, TreeBuilderStepResult};
+use html::html5::tree_builder::{Html5TreeBuilder, TreeBuilderConfig};
 use html::html5::{
     AttributeValue, DocumentParseContext, Html5Tokenizer, Input, TextResolver, TextValue, Token,
     TokenizeResult, TokenizerConfig,
@@ -200,7 +200,7 @@ fn normalize_html5_tokens(
     input.push_str(input_html);
     loop {
         let consumed_before = tokenizer.stats().bytes_consumed;
-        let result = tokenizer.push_input(&mut input, &mut ctx);
+        let result = tokenizer.push_input_until_token(&mut input, &mut ctx);
         let consumed_after = tokenizer.stats().bytes_consumed;
         handle_tokenize_result(result, "push_input")
             .map_err(|err| format!("tokenizer error in '{}' at {:?}: {err}", case_id, case_path))?;
@@ -271,7 +271,7 @@ fn run_html5_dom(input_html: &str, case_id: &str, case_path: &Path) -> Result<ht
     input.push_str(input_html);
     loop {
         let consumed_before = tokenizer.stats().bytes_consumed;
-        let result = tokenizer.push_input(&mut input, &mut ctx);
+        let result = tokenizer.push_input_until_token(&mut input, &mut ctx);
         let consumed_after = tokenizer.stats().bytes_consumed;
         handle_tokenize_result(result, "push_input")
             .map_err(|err| format!("tokenizer error in '{}' at {:?}: {err}", case_id, case_path))?;
@@ -295,6 +295,7 @@ fn run_html5_dom(input_html: &str, case_id: &str, case_path: &Path) -> Result<ht
             &ctx,
             &mut patch_batches,
             &mut saw_eof_token,
+            true,
         )
         .map_err(|err| {
             format!(
@@ -315,6 +316,7 @@ fn run_html5_dom(input_html: &str, case_id: &str, case_path: &Path) -> Result<ht
         &ctx,
         &mut patch_batches,
         &mut saw_eof_token,
+        false,
     )
     .map_err(|err| {
         format!(
@@ -650,12 +652,20 @@ fn drain_batches(
     ctx: &DocumentParseContext,
     patch_batches: &mut Vec<Vec<html::DomPatch>>,
     saw_eof_token: &mut bool,
+    expect_token_granular_batches: bool,
 ) -> Result<(), String> {
     let mut patches = Vec::new();
     loop {
         let batch = tokenizer.next_batch(input);
         if batch.tokens().is_empty() {
             break;
+        }
+        if expect_token_granular_batches {
+            assert_eq!(
+                batch.tokens().len(),
+                1,
+                "tokenizer control-aware tree-builder driver must observe exactly one token per pump"
+            );
         }
         patches.clear();
         let resolver = batch.resolver();
@@ -666,9 +676,13 @@ fn drain_batches(
                 *saw_eof_token = true;
             }
             match builder.push_token(token, atoms, &resolver, &mut sink) {
-                Ok(TreeBuilderStepResult::Continue) => {}
-                Ok(TreeBuilderStepResult::Suspend(reason)) => {
-                    return Err(format!("tree builder suspended: {reason:?}"));
+                Ok(step) => {
+                    if let Some(control) = step.tokenizer_control {
+                        tokenizer.apply_control(control);
+                    }
+                    if let html::html5::TreeBuilderControlFlow::Suspend(reason) = step.flow {
+                        return Err(format!("tree builder suspended: {reason:?}"));
+                    }
                 }
                 Err(err) => {
                     return Err(format!("tree builder error: {err:?}"));
