@@ -1,0 +1,31 @@
+# format: html5-dom-v1
+
+#document doctype="html"
+  <html>
+    <head>
+      <title>
+        "Settings"
+    <body>
+      "\n"
+      <h1>
+        "Preferences"
+      "\n"
+      <form>
+        "\n"
+        <label>
+          <input checked type="checkbox">
+            " Email notifications"
+        "\n"
+        <label>
+          <input type="checkbox">
+            " Product updates"
+        "\n"
+        <label>
+          "Language"
+          <select>
+            <option>
+              "English"
+            <option>
+              "Nederlands"
+        "\n"
+      "\n"

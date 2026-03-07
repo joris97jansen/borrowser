@@ -1,0 +1,30 @@
+# format: html5-dom-v1
+
+#document doctype="html"
+  <html>
+    <head>
+      <title>
+        "Dashboard"
+    <body>
+      "\n"
+      <main>
+        "\n"
+        <section>
+          <h2>
+            "Revenue"
+          <p>
+            "$128,430"
+        "\n"
+        <section>
+          <h2>
+            "Active users"
+          <p>
+            "3,492"
+        "\n"
+        <section>
+          <h2>
+            "Incidents"
+          <p>
+            "0 open"
+        "\n"
+      "\n"

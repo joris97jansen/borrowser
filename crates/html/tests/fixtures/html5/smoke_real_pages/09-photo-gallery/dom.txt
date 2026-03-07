@@ -1,0 +1,25 @@
+# format: html5-dom-v1
+
+#document doctype="html"
+  <html>
+    <head>
+      <title>
+        "Gallery"
+    <body>
+      "\n"
+      <main>
+        "\n"
+        <h1>
+          "Summer photos"
+        "\n"
+        <figure>
+          <img alt="beach" src="1.jpg">
+            <figcaption>
+              "Beach"
+        "\n"
+        <figure>
+          <img alt="mountain" src="2.jpg">
+            <figcaption>
+              "Mountain"
+        "\n"
+      "\n"

@@ -1,0 +1,17 @@
+# format: html5-dom-v1
+
+#document doctype="html"
+  <html>
+    <head>
+      <title>
+        "App shell"
+      <script>
+        "window.APP=true;"
+    <body>
+      "\n"
+      <noscript>
+        "Please enable JavaScript."
+      "\n"
+      <div id="app">
+        "Loading\u{2026}"
+      "\n"

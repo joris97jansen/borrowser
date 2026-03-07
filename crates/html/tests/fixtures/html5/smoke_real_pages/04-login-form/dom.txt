@@ -1,0 +1,29 @@
+# format: html5-dom-v1
+
+#document doctype="html"
+  <html>
+    <head>
+      <title>
+        "Sign in"
+    <body>
+      "\n"
+      <main>
+        "\n"
+        <h1>
+          "Welcome back"
+        "\n"
+        <form action="/login" method="post">
+          "\n"
+          <label>
+            "Email"
+            <input name="email" type="email">
+          "\n"
+          <label>
+            "Password"
+            <input name="password" type="password">
+          "\n"
+          <button type="submit">
+            "Sign in"
+          "\n"
+        "\n"
+      "\n"

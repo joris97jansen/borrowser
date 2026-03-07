@@ -1,0 +1,29 @@
+# format: html5-dom-v1
+
+#document doctype="html"
+  <html>
+    <head>
+      <title>
+        "Create account"
+    <body>
+      "\n"
+      <section>
+        "\n"
+        <h1>
+          "Create your account"
+        "\n"
+        <form>
+          "\n"
+          <input name="name" placeholder="Name">
+            "\n"
+            <input name="company" placeholder="Company">
+              "\n"
+              <label>
+                <input name="terms" type="checkbox">
+                  "I agree to terms"
+              "\n"
+              <button>
+                "Create account"
+              "\n"
+        "\n"
+      "\n"

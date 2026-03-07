@@ -1,0 +1,31 @@
+# format: html5-dom-v1
+
+#document doctype="html"
+  <html>
+    <head>
+      <title>
+        "Trail Shoes"
+    <body>
+      "\n"
+      <main>
+        "\n"
+        <h1>
+          "Summit Runner"
+        "\n"
+        <img alt="shoe" src="shoe.jpg">
+          "\n"
+          <p class="price">
+            "$129"
+          "\n"
+          <form>
+            <label>
+              "Size"
+              <select>
+                <option>
+                  "40"
+                <option>
+                  "41"
+            <button>
+              "Add to cart"
+          "\n"
+      "\n"

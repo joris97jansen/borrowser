@@ -1,0 +1,25 @@
+# format: html5-dom-v1
+
+#document doctype="html"
+  <html>
+    <head>
+      <title>
+        "Engineering Blog"
+    <body>
+      "\n"
+      <article>
+        "\n"
+        <h1>
+          "Release notes"
+        "\n"
+        <p>
+          "Today we launched a new parser pipeline."
+        "\n"
+        <p>
+          "It improves chunked streaming behavior."
+        "\n"
+        <aside>
+          <p>
+            "By J. Doe"
+        "\n"
+      "\n"

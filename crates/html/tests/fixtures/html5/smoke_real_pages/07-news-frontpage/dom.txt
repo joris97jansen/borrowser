@@ -1,0 +1,31 @@
+# format: html5-dom-v1
+
+#document doctype="html"
+  <html>
+    <head>
+      <title>
+        "Daily Wire"
+    <body>
+      "\n"
+      <header>
+        <h1>
+          "Daily Wire"
+      "\n"
+      <main>
+        "\n"
+        <section>
+          <h2>
+            "Top stories"
+          <ul>
+            <li>
+              "Markets rise"
+            <li>
+              "New satellite launch"
+        "\n"
+        <section>
+          <h2>
+            "World"
+          <p>
+            "Regional updates continue."
+        "\n"
+      "\n"
