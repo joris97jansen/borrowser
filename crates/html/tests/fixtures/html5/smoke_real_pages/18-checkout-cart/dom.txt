@@ -1,0 +1,26 @@
+# format: html5-dom-v1
+
+#document doctype="html"
+  <html>
+    <head>
+      <title>
+        "Checkout"
+    <body>
+      "\n"
+      <h1>
+        "Your cart"
+      "\n"
+      <ul>
+        <li>
+          "Keyboard x1"
+        <li>
+          "Monitor x2"
+      "\n"
+      <p>
+        "Total: $799"
+      "\n"
+      <form>
+        <input name="card" placeholder="Card number">
+          <button>
+            "Pay now"
+      "\n"

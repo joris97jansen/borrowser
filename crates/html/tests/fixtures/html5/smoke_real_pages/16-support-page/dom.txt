@@ -1,0 +1,27 @@
+# format: html5-dom-v1
+
+#document doctype="html"
+  <html>
+    <head>
+      <title>
+        "Support"
+    <body>
+      "\n"
+      <header>
+        <h1>
+          "Support center"
+      "\n"
+      <main>
+        "\n"
+        <p>
+          "Find guides and troubleshooting tips."
+        "\n"
+        <ul>
+          <li>
+            "Billing"
+          <li>
+            "Authentication"
+          <li>
+            "API limits"
+        "\n"
+      "\n"

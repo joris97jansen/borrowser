@@ -1,0 +1,21 @@
+# format: html5-dom-v1
+
+#document doctype="html"
+  <html>
+    <head>
+      <title>
+        "404"
+    <body>
+      "\n"
+      <main>
+        "\n"
+        <h1>
+          "Page not found"
+        "\n"
+        <p>
+          "We could not find the page you requested."
+        "\n"
+        <a href="/">
+          "Return home"
+        "\n"
+      "\n"

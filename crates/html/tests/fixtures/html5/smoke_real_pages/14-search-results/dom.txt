@@ -1,0 +1,29 @@
+# format: html5-dom-v1
+
+#document doctype="html"
+  <html>
+    <head>
+      <title>
+        "Search"
+    <body>
+      "\n"
+      <form>
+        <input type="search" value="html parser">
+          <button>
+            "Search"
+      "\n"
+      <ol>
+        "\n"
+        <li>
+          <a href="/docs/1">
+            "Parser architecture"
+          <p>
+            "Overview and design notes."
+        "\n"
+        <li>
+          <a href="/docs/2">
+            "Streaming behavior"
+          <p>
+            "Chunking and UTF-8 boundaries."
+        "\n"
+      "\n"

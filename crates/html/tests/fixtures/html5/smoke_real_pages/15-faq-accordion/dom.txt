@@ -1,0 +1,24 @@
+# format: html5-dom-v1
+
+#document doctype="html"
+  <html>
+    <head>
+      <title>
+        "FAQ"
+    <body>
+      "\n"
+      <h1>
+        "FAQ"
+      "\n"
+      <details>
+        <summary>
+          "Can I export data?"
+        <p>
+          "Yes, from account settings."
+      "\n"
+      <details>
+        <summary>
+          "Do you support SSO?"
+        <p>
+          "Available on enterprise plans."
+      "\n"

@@ -1,0 +1,28 @@
+# format: html5-dom-v1
+
+#document doctype="html"
+  <html>
+    <head>
+      <title>
+        "Docs"
+    <body>
+      "\n"
+      <div class="layout">
+        "\n"
+        <aside>
+          <ul>
+            <li>
+              "Intro"
+            <li>
+              "Install"
+            <li>
+              "API"
+        "\n"
+        <main>
+          <h1>
+            "Install"
+          <pre>
+            <code>
+              "cargo add acme"
+        "\n"
+      "\n"
