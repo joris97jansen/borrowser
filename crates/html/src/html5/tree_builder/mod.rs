@@ -209,8 +209,34 @@ pub struct Html5TreeBuilder {
     structural_mutation_depth: u16,
     max_open_elements_depth: u32,
     max_active_formatting_depth: u32,
+    perf_soe_push_ops: u64,
+    perf_soe_pop_ops: u64,
+    perf_soe_scope_scan_calls: u64,
+    perf_soe_scope_scan_steps: u64,
+    perf_patches_emitted: u64,
+    perf_text_nodes_created: u64,
+    perf_text_appends: u64,
+    perf_text_coalescing_invalidations: u64,
     #[cfg(any(test, feature = "internal-api"))]
     parse_error_kinds: Vec<&'static str>,
+}
+
+#[cfg(any(test, feature = "debug-stats"))]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct TreeBuilderPerfStats {
+    pub soe_push_ops: u64,
+    /// Explicit SOE removals (`pop()` and successful `pop_until_including_in_scope()`).
+    /// SOE resets via `clear()` are intentionally excluded.
+    pub soe_pop_ops: u64,
+    /// Scope scans across both probe-only checks (`has_in_scope`) and mutating
+    /// close operations (`pop_until_including_in_scope`).
+    pub soe_scope_scan_calls: u64,
+    /// Total SOE entries inspected while performing scope scans.
+    pub soe_scope_scan_steps: u64,
+    pub patches_emitted: u64,
+    pub text_nodes_created: u64,
+    pub text_appends: u64,
+    pub text_coalescing_invalidations: u64,
 }
 
 #[cfg(any(test, feature = "internal-api"))]
@@ -249,6 +275,14 @@ impl Html5TreeBuilder {
             structural_mutation_depth: 0,
             max_open_elements_depth: 0,
             max_active_formatting_depth: 0,
+            perf_soe_push_ops: 0,
+            perf_soe_pop_ops: 0,
+            perf_soe_scope_scan_calls: 0,
+            perf_soe_scope_scan_steps: 0,
+            perf_patches_emitted: 0,
+            perf_text_nodes_created: 0,
+            perf_text_appends: 0,
+            perf_text_coalescing_invalidations: 0,
             #[cfg(any(test, feature = "internal-api"))]
             parse_error_kinds: Vec::new(),
         })
@@ -341,6 +375,10 @@ impl Html5TreeBuilder {
         self.max_active_formatting_depth = self
             .max_active_formatting_depth
             .max(self.active_formatting.max_depth());
+        self.perf_soe_push_ops = self.open_elements.push_ops();
+        self.perf_soe_pop_ops = self.open_elements.pop_ops();
+        self.perf_soe_scope_scan_calls = self.open_elements.scope_scan_calls();
+        self.perf_soe_scope_scan_steps = self.open_elements.scope_scan_steps();
         // Core-v0 routing is fully recoverable and never suspends yet.
         // Suspend paths remain reserved for script/loading integration.
         Ok(TreeBuilderStepResult::Continue)
@@ -354,6 +392,52 @@ impl Html5TreeBuilder {
     /// Internal metric: max active formatting depth observed since session start.
     pub(crate) fn max_active_formatting_depth(&self) -> u32 {
         self.max_active_formatting_depth
+    }
+
+    pub(crate) fn perf_soe_push_ops(&self) -> u64 {
+        self.perf_soe_push_ops
+    }
+
+    pub(crate) fn perf_soe_pop_ops(&self) -> u64 {
+        self.perf_soe_pop_ops
+    }
+
+    pub(crate) fn perf_soe_scope_scan_calls(&self) -> u64 {
+        self.perf_soe_scope_scan_calls
+    }
+
+    pub(crate) fn perf_soe_scope_scan_steps(&self) -> u64 {
+        self.perf_soe_scope_scan_steps
+    }
+
+    pub(crate) fn perf_patches_emitted(&self) -> u64 {
+        self.perf_patches_emitted
+    }
+
+    pub(crate) fn perf_text_nodes_created(&self) -> u64 {
+        self.perf_text_nodes_created
+    }
+
+    pub(crate) fn perf_text_appends(&self) -> u64 {
+        self.perf_text_appends
+    }
+
+    pub(crate) fn perf_text_coalescing_invalidations(&self) -> u64 {
+        self.perf_text_coalescing_invalidations
+    }
+
+    #[cfg(any(test, feature = "debug-stats"))]
+    pub(crate) fn debug_perf_stats(&self) -> TreeBuilderPerfStats {
+        TreeBuilderPerfStats {
+            soe_push_ops: self.perf_soe_push_ops,
+            soe_pop_ops: self.perf_soe_pop_ops,
+            soe_scope_scan_calls: self.perf_soe_scope_scan_calls,
+            soe_scope_scan_steps: self.perf_soe_scope_scan_steps,
+            patches_emitted: self.perf_patches_emitted,
+            text_nodes_created: self.perf_text_nodes_created,
+            text_appends: self.perf_text_appends,
+            text_coalescing_invalidations: self.perf_text_coalescing_invalidations,
+        }
     }
 
     fn alloc_patch_key(&mut self) -> Result<PatchKey, TreeBuilderError> {
@@ -1001,6 +1085,7 @@ impl Html5TreeBuilder {
                 key,
                 text: resolved.to_string(),
             });
+            self.perf_text_appends = self.perf_text_appends.saturating_add(1);
             return Ok(());
         }
         let key = self.with_structural_mutation(|this| {
@@ -1010,6 +1095,7 @@ impl Html5TreeBuilder {
                 text: resolved.to_string(),
             });
             this.push_structural_patch(DomPatch::AppendChild { parent, child: key });
+            this.perf_text_nodes_created = this.perf_text_nodes_created.saturating_add(1);
             Ok(key)
         })?;
         self.last_text_patch = if self.config.coalesce_text {
@@ -1084,6 +1170,8 @@ impl Html5TreeBuilder {
         // - successful SOE pop/closure only (failed closures are ignored),
         // - comment insertion,
         // - recovery literalization boundaries.
+        self.perf_text_coalescing_invalidations =
+            self.perf_text_coalescing_invalidations.saturating_add(1);
         self.last_text_patch = None;
     }
 
@@ -1119,19 +1207,6 @@ impl Html5TreeBuilder {
         result
     }
 
-    #[allow(dead_code)]
-    fn with_structural_mutation_no_fail<T>(&mut self, f: impl FnOnce(&mut Self) -> T) -> T {
-        // Rule: do not call text insertion APIs from within one structural
-        // mutation scope. Text coalescing must not cross structural edits.
-        // Utility reserved for infallible structural edit call-sites.
-        self.begin_structural_mutation();
-        // NOTE: `scope` must stay alive until after `f(...)` returns.
-        let scope = StructuralMutationScope { tb: self };
-        let result = f(scope.tb);
-        drop(scope);
-        result
-    }
-
     #[track_caller]
     fn push_structural_patch(&mut self, patch: DomPatch) {
         // Rule: structural patches (node creation and tree-shape edits) must
@@ -1148,6 +1223,7 @@ impl Html5TreeBuilder {
     }
 
     fn push_patch(&mut self, patch: DomPatch) {
+        self.perf_patches_emitted = self.perf_patches_emitted.saturating_add(1);
         self.patches.push(patch);
     }
 

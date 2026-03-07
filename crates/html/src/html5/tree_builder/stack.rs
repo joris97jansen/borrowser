@@ -76,6 +76,10 @@ pub(crate) struct ScopeTagSet {
 pub(crate) struct OpenElementsStack {
     items: Vec<OpenElement>,
     max_depth: u32,
+    push_ops: u64,
+    pop_ops: u64,
+    scope_scan_calls: u64,
+    scope_scan_steps: u64,
 }
 
 impl OpenElementsStack {
@@ -90,13 +94,16 @@ impl OpenElementsStack {
     }
 
     pub(crate) fn clear(&mut self) {
-        // Note: does not reset max_depth (high-water mark metric).
+        // Reset stack contents only.
+        // - does not reset max_depth (high-water mark metric),
+        // - does not increment pop_ops (clear is modeled as a reset, not N pops).
         self.items.clear();
     }
 
     #[inline]
     pub(crate) fn push(&mut self, entry: OpenElement) {
         self.items.push(entry);
+        self.push_ops = self.push_ops.saturating_add(1);
         self.max_depth = self.max_depth.max(self.items.len() as u32);
     }
 
@@ -115,12 +122,38 @@ impl OpenElementsStack {
         reason = "part of Core-v0 SOE API; used in test/internal paths"
     )]
     pub(crate) fn pop(&mut self) -> Option<OpenElement> {
-        self.items.pop()
+        let popped = self.items.pop();
+        if popped.is_some() {
+            self.pop_ops = self.pop_ops.saturating_add(1);
+        }
+        popped
     }
 
     #[inline]
     pub(crate) fn max_depth(&self) -> u32 {
         self.max_depth
+    }
+
+    #[inline]
+    pub(crate) fn push_ops(&self) -> u64 {
+        self.push_ops
+    }
+
+    #[inline]
+    pub(crate) fn pop_ops(&self) -> u64 {
+        self.pop_ops
+    }
+
+    #[inline]
+    pub(crate) fn scope_scan_calls(&self) -> u64 {
+        // Includes both probe-only scope checks and mutating closure scans.
+        self.scope_scan_calls
+    }
+
+    #[inline]
+    pub(crate) fn scope_scan_steps(&self) -> u64 {
+        // Total entries inspected while evaluating scope checks.
+        self.scope_scan_steps
     }
 
     #[cfg(any(test, feature = "internal-api"))]
@@ -137,7 +170,13 @@ impl OpenElementsStack {
         dead_code,
         reason = "part of Core-v0 SOE API; upcoming insertion-mode algorithms use scope probes"
     )]
-    pub(crate) fn has_in_scope(&self, target: AtomId, kind: ScopeKind, tags: &ScopeTagSet) -> bool {
+    pub(crate) fn has_in_scope(
+        &mut self,
+        target: AtomId,
+        kind: ScopeKind,
+        tags: &ScopeTagSet,
+    ) -> bool {
+        // Probe-only check: no stack mutation, but contributes to scan counters.
         self.find_in_scope_match_index(target, kind, tags).is_some()
     }
 
@@ -150,22 +189,29 @@ impl OpenElementsStack {
         kind: ScopeKind,
         tags: &ScopeTagSet,
     ) -> Option<OpenElement> {
+        self.scope_scan_calls = self.scope_scan_calls.saturating_add(1);
         let match_index = self.find_in_scope_match_index(target, kind, tags)?;
         debug_assert!(match_index < self.items.len());
+        let removed = self.items.len() - match_index;
         // Keep elements up to and including the matched entry, then pop it.
         self.items.truncate(match_index + 1);
-        self.items.pop()
+        let popped = self.items.pop();
+        if popped.is_some() {
+            self.pop_ops = self.pop_ops.saturating_add(removed as u64);
+        }
+        popped
     }
 
     /// Probe-only scope lookup used before mutation so callers can preserve the
     /// "no mutation on miss" contract.
     fn find_in_scope_match_index(
-        &self,
+        &mut self,
         target: AtomId,
         kind: ScopeKind,
         tags: &ScopeTagSet,
     ) -> Option<usize> {
         for index in (0..self.items.len()).rev() {
+            self.scope_scan_steps = self.scope_scan_steps.saturating_add(1);
             let name = self.items[index].name();
             if name == target {
                 return Some(index);
