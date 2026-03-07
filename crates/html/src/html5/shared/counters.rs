@@ -18,4 +18,21 @@ pub struct Counters {
     pub max_open_elements_depth: u32,
     /// Max observed depth of the active formatting list (session lifetime).
     pub max_active_formatting_depth: u32,
+    /// Total stack-of-open-elements push operations observed.
+    pub soe_push_ops: u64,
+    /// Total explicit stack-of-open-elements removals observed.
+    /// Excludes SOE reset operations performed via `clear()`.
+    pub soe_pop_ops: u64,
+    /// Number of in-scope scans performed (probe-only and mutating paths).
+    pub soe_scope_scan_calls: u64,
+    /// Total SOE elements visited while evaluating in-scope scans.
+    pub soe_scope_scan_steps: u64,
+    /// Total patches emitted by the tree builder.
+    pub tree_builder_patches_emitted: u64,
+    /// Number of text-node creation patches emitted.
+    pub tree_builder_text_nodes_created: u64,
+    /// Number of append-text coalescing patches emitted.
+    pub tree_builder_text_appends: u64,
+    /// Number of times text coalescing state was invalidated by structural edits.
+    pub tree_builder_text_coalescing_invalidations: u64,
 }
