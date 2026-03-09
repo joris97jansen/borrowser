@@ -18,19 +18,19 @@ use crate::html5::shared::Input;
 use crate::html5::tokenizer::Html5Tokenizer;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(super) enum MatchResult {
+pub(crate) enum MatchResult {
     Matched,
     NeedMoreInput,
     NoMatch,
 }
 
 impl Html5Tokenizer {
-    pub(super) fn has_unconsumed_input(&self, input: &Input) -> bool {
+    pub(crate) fn has_unconsumed_input(&self, input: &Input) -> bool {
         self.assert_cursor_on_char_boundary(input);
         self.cursor < input.as_str().len()
     }
 
-    pub(super) fn assert_cursor_on_char_boundary(&self, input: &Input) {
+    pub(crate) fn assert_cursor_on_char_boundary(&self, input: &Input) {
         debug_assert!(
             input.as_str().is_char_boundary(self.cursor),
             "tokenizer cursor must stay on UTF-8 scalar boundary (cursor={}, len={})",
@@ -39,7 +39,7 @@ impl Html5Tokenizer {
         );
     }
 
-    pub(super) fn peek(&self, input: &Input) -> Option<char> {
+    pub(crate) fn peek(&self, input: &Input) -> Option<char> {
         self.assert_cursor_on_char_boundary(input);
         if !self.has_unconsumed_input(input) {
             return None;
@@ -47,7 +47,7 @@ impl Html5Tokenizer {
         input.as_str()[self.cursor..].chars().next()
     }
 
-    pub(super) fn consume(&mut self, input: &Input) -> Option<char> {
+    pub(crate) fn consume(&mut self, input: &Input) -> Option<char> {
         let ch = self.peek(input)?;
         self.cursor = self.cursor.saturating_add(ch.len_utf8());
         Some(ch)
@@ -55,7 +55,7 @@ impl Html5Tokenizer {
 
     /// Lookahead: returns the character immediately after the current cursor
     /// without consuming any input.
-    pub(super) fn peek_next_char(&self, input: &Input) -> Option<char> {
+    pub(crate) fn peek_next_char(&self, input: &Input) -> Option<char> {
         self.assert_cursor_on_char_boundary(input);
         let text = input.as_str();
         if self.cursor >= text.len() {
@@ -70,7 +70,7 @@ impl Html5Tokenizer {
     }
 
     /// Consume as long as predicate matches and return consumed byte count.
-    pub(super) fn consume_while<F>(&mut self, input: &Input, mut predicate: F) -> usize
+    pub(crate) fn consume_while<F>(&mut self, input: &Input, mut predicate: F) -> usize
     where
         F: FnMut(char) -> bool,
     {
@@ -88,7 +88,7 @@ impl Html5Tokenizer {
         self.cursor.saturating_sub(start)
     }
 
-    pub(super) fn match_ascii_prefix(&self, input: &Input, pattern: &[u8]) -> MatchResult {
+    pub(crate) fn match_ascii_prefix(&self, input: &Input, pattern: &[u8]) -> MatchResult {
         self.assert_cursor_on_char_boundary(input);
         debug_assert!(
             pattern.iter().all(u8::is_ascii),
@@ -118,7 +118,7 @@ impl Html5Tokenizer {
         }
     }
 
-    pub(super) fn match_ascii_prefix_ci(&self, input: &Input, pattern: &[u8]) -> MatchResult {
+    pub(crate) fn match_ascii_prefix_ci(&self, input: &Input, pattern: &[u8]) -> MatchResult {
         self.assert_cursor_on_char_boundary(input);
         debug_assert!(
             pattern.iter().all(u8::is_ascii),
@@ -146,6 +146,61 @@ impl Html5Tokenizer {
             MatchResult::Matched
         } else {
             MatchResult::NoMatch
+        }
+    }
+
+    pub(crate) fn consume_if(&mut self, input: &Input, expected: char) -> bool {
+        if self.peek(input) == Some(expected) {
+            let _ = self.consume(input);
+            true
+        } else {
+            false
+        }
+    }
+
+    pub(crate) fn consume_ascii_sequence(&mut self, input: &Input, seq: &[u8]) -> bool {
+        match self.match_ascii_prefix(input, seq) {
+            MatchResult::Matched => {
+                let new_cursor = self.cursor + seq.len();
+                debug_assert!(
+                    new_cursor <= input.as_str().len(),
+                    "consume_ascii_sequence moved cursor out of bounds"
+                );
+                self.cursor = new_cursor;
+                true
+            }
+            MatchResult::NeedMoreInput => false,
+            MatchResult::NoMatch => {
+                debug_assert!(
+                    false,
+                    "consume_ascii_sequence called without confirmed prefix: {:?}",
+                    seq
+                );
+                false
+            }
+        }
+    }
+
+    pub(crate) fn consume_ascii_sequence_ci(&mut self, input: &Input, seq: &[u8]) -> bool {
+        match self.match_ascii_prefix_ci(input, seq) {
+            MatchResult::Matched => {
+                let new_cursor = self.cursor + seq.len();
+                debug_assert!(
+                    new_cursor <= input.as_str().len(),
+                    "consume_ascii_sequence_ci moved cursor out of bounds"
+                );
+                self.cursor = new_cursor;
+                true
+            }
+            MatchResult::NeedMoreInput => false,
+            MatchResult::NoMatch => {
+                debug_assert!(
+                    false,
+                    "consume_ascii_sequence_ci called without confirmed prefix: {:?}",
+                    seq
+                );
+                false
+            }
         }
     }
 }
