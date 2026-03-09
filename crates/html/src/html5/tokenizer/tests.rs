@@ -1,5 +1,6 @@
 use super::{
-    Html5Tokenizer, MAX_STEPS_PER_PUMP, TextResolver, TokenFmt, TokenizeResult, TokenizerConfig,
+    Html5Tokenizer, MAX_STEPS_PER_PUMP, TextModeSpec, TextResolver, TokenFmt, TokenizeResult,
+    TokenizerConfig, TokenizerControl,
 };
 use crate::html5::shared::{
     Attribute, AttributeValue, DocumentParseContext, Input, TextValue, Token,
@@ -78,6 +79,71 @@ fn run_chunks_raw_tokens(chunks: &[&str]) -> Vec<Token> {
         out.extend(batch.into_tokens());
     }
     out
+}
+
+fn run_style_rawtext_chunks(chunks: &[&str]) -> (Vec<String>, super::TokenizerStats) {
+    let mut ctx = DocumentParseContext::new();
+    let style = ctx
+        .atoms
+        .intern_ascii_folded("style")
+        .expect("atom interning");
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    let mut out = Vec::new();
+
+    for chunk in chunks {
+        input.push_str(chunk);
+        loop {
+            let res = tokenizer.push_input_until_token(&mut input, &mut ctx);
+            let batch = tokenizer.next_batch(&mut input);
+            if !batch.tokens().is_empty() {
+                assert_eq!(
+                    batch.tokens().len(),
+                    1,
+                    "rawtext tokenizer test driver must observe exactly one token per pump"
+                );
+                let resolver = batch.resolver();
+                let fmt = TokenFmt::new(&ctx.atoms, &resolver);
+                let token = batch
+                    .iter()
+                    .next()
+                    .expect("non-empty rawtext batch must contain one token");
+                out.push(
+                    fmt.format_token(token)
+                        .expect("token formatting in tests must be deterministic"),
+                );
+                match token {
+                    Token::StartTag { name, .. } if *name == style => {
+                        tokenizer.apply_control(TokenizerControl::EnterTextMode(
+                            TextModeSpec::rawtext_style(style),
+                        ));
+                    }
+                    Token::EndTag { name } if *name == style => {
+                        tokenizer.apply_control(TokenizerControl::ExitTextMode);
+                    }
+                    _ => {}
+                }
+            }
+            if matches!(res, TokenizeResult::NeedMoreInput) {
+                break;
+            }
+        }
+    }
+
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
+    (out, tokenizer.stats())
+}
+
+fn assert_style_rawtext_chunk_invariant(input: &str) {
+    let (whole, _) = run_style_rawtext_chunks(&[input]);
+    for split in 1..input.len() {
+        let (chunked, _) = run_style_rawtext_chunks(&[&input[..split], &input[split..]]);
+        assert_eq!(
+            chunked, whole,
+            "style rawtext output must be chunk-invariant for split={split}"
+        );
+    }
 }
 
 #[test]
@@ -1377,4 +1443,131 @@ fn tokenizer_rejects_foreign_atom_table_context() {
     let mut input = Input::new();
     input.push_str("<div>");
     let _ = tokenizer.push_input(&mut input, &mut foreign_ctx);
+}
+
+#[test]
+fn rawtext_style_split_end_tag_is_chunk_invariant_at_every_boundary() {
+    let input = "<style>body{content:\"&amp;\";}<b></style>";
+    let (whole, _) = run_style_rawtext_chunks(&[input]);
+    for offset in 1.."</style>".len() {
+        let split = input.len() - "</style>".len() + offset;
+        let (chunked, _) = run_style_rawtext_chunks(&[&input[..split], &input[split..]]);
+        assert_eq!(
+            chunked, whole,
+            "style rawtext close-tag detection must be split-safe at offset={offset}"
+        );
+    }
+    assert_eq!(
+        whole,
+        vec![
+            "START name=style attrs=[] self_closing=false".to_string(),
+            "CHAR text=\"body{content:\\\"&amp;\\\";}<b>\"".to_string(),
+            "END name=style".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn rawtext_style_preserves_character_references_literally() {
+    let (tokens, _) = run_style_rawtext_chunks(&["<style>&amp;&lt;&gt;</style>"]);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=style attrs=[] self_closing=false".to_string(),
+            "CHAR text=\"&amp;&lt;&gt;\"".to_string(),
+            "END name=style".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn rawtext_style_end_tag_match_is_ascii_case_insensitive_and_allows_html_space() {
+    let input = "<style>x</StYlE \t\r\n>";
+    assert_style_rawtext_chunk_invariant(input);
+    let (tokens, _) = run_style_rawtext_chunks(&[input]);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=style attrs=[] self_closing=false".to_string(),
+            "CHAR text=\"x\"".to_string(),
+            "END name=style".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn rawtext_style_mismatched_end_tag_is_emitted_as_text_until_matching_close() {
+    let (tokens, _) = run_style_rawtext_chunks(&["<style>a</title>b</style>"]);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=style attrs=[] self_closing=false".to_string(),
+            "CHAR text=\"a</title>b\"".to_string(),
+            "END name=style".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn rawtext_style_incomplete_close_tail_at_eof_is_literal_text() {
+    assert_style_rawtext_chunk_invariant("<style>a</sty");
+    let (tokens, _) = run_style_rawtext_chunks(&["<style>a</sty"]);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=style attrs=[] self_closing=false".to_string(),
+            "CHAR text=\"a</sty\"".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn rawtext_style_large_near_miss_input_remains_linear() {
+    let repeats = 16_384usize;
+    let raw_body = "</stylex>".repeat(repeats);
+    let html = format!("<style>{raw_body}</style>");
+    let (tokens, stats) = run_style_rawtext_chunks(&[&html]);
+
+    assert_eq!(tokens.len(), 4, "style rawtext should emit one text token");
+    assert_eq!(tokens[0], "START name=style attrs=[] self_closing=false");
+    assert_eq!(tokens[2], "END name=style");
+    assert_eq!(tokens[3], "EOF");
+    assert!(
+        tokens[1].contains("</stylex>"),
+        "rawtext near-miss payload must remain literal text"
+    );
+    assert!(
+        stats.steps <= (repeats as u64 * 3) + 64,
+        "rawtext scanning regressed toward superlinear behavior: repeats={repeats} steps={}",
+        stats.steps
+    );
+}
+
+#[test]
+fn rawtext_style_prefix_near_misses_remain_literal_and_chunk_invariant() {
+    for tail in ["<<<<<<<<<<<", "</s", "</st", "</stylex", "</StyleX"] {
+        let input = format!("<style>{tail}</style>");
+        assert_style_rawtext_chunk_invariant(&input);
+        let (tokens, stats) = run_style_rawtext_chunks(&[&input]);
+        assert_eq!(
+            tokens.len(),
+            4,
+            "near-miss rawtext case should stay a single text run"
+        );
+        assert_eq!(
+            tokens[1],
+            format!("CHAR text=\"{tail}\""),
+            "near-miss close-tag prefix must remain literal rawtext"
+        );
+        assert!(
+            stats.steps <= (tail.len() as u64 * 4) + 32,
+            "near-miss rawtext prefix scan regressed: tail={tail:?} steps={}",
+            stats.steps
+        );
+    }
 }

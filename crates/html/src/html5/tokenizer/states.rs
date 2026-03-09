@@ -8,6 +8,7 @@
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum TokenizerState {
     Data,
+    RawText,
     TagOpen,
     EndTagOpen,
     TagName,

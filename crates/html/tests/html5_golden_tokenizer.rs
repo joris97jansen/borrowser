@@ -1,7 +1,10 @@
 #![cfg(feature = "html5")]
 
 use html::chunker::{ChunkerConfig, build_chunk_plans, utf8_internal_boundaries};
-use html::html5::{DocumentParseContext, Html5Tokenizer, Input, TokenizeResult, TokenizerConfig};
+use html::html5::{
+    AtomId, DocumentParseContext, Html5Tokenizer, Input, TextModeSpec, Token, TokenizeResult,
+    TokenizerConfig, TokenizerControl,
+};
 use html::test_harness::{ChunkPlan, shrink_chunk_plan_with_stats};
 use html_test_support::diff_lines;
 use html_test_support::token_snapshot;
@@ -51,10 +54,12 @@ fn html5_golden_tokenizer_fixture_corpus_contract() {
     let mut has_numeric_charref_input = false;
     let mut has_named_decode_effect = false;
     let mut has_numeric_decode_effect = false;
+    let mut has_rawtext_style = false;
     for fixture in &fixtures {
         if fixture.expected.status == FixtureStatus::Skip {
             continue;
         }
+        has_rawtext_style |= fixture.input.contains("<style");
         let has_amp_input = fixture.input.contains("&amp;");
         let has_lt_input = fixture.input.contains("&lt;");
         let has_gt_input = fixture.input.contains("&gt;");
@@ -135,6 +140,10 @@ fn html5_golden_tokenizer_fixture_corpus_contract() {
     assert!(
         has_numeric_decode_effect,
         "tokenizer corpus missing numeric-charref decode effect in expected outputs"
+    );
+    assert!(
+        has_rawtext_style,
+        "tokenizer corpus missing rawtext style coverage"
     );
 }
 
@@ -424,18 +433,35 @@ fn parse_tokens_file(path: &Path) -> ExpectedTokens {
 
 fn run_tokenizer_whole(fixture: &Fixture) -> Vec<String> {
     let mut ctx = DocumentParseContext::new();
+    let text_mode_support = TokenizerHarnessTextModeSupport::new(&mut ctx);
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig { emit_eof: true }, &mut ctx);
     let mut buffer = Input::new();
     buffer.push_str(&fixture.input);
     let mut out = Vec::new();
+    let mut index = out.len();
+    let context = token_snapshot::TokenFormatContext {
+        case_id: &fixture.name,
+        mode: Mode::WholeInput.label(),
+    };
+    let driver = TokenizerHarnessDriver {
+        context: &context,
+        text_mode_support: &text_mode_support,
+    };
+    let mut drain_state = TokenDrainState {
+        out: &mut out,
+        index: &mut index,
+    };
     pump_until_blocked(
+        &mut drain_state,
         &mut tokenizer,
         &mut buffer,
         &mut ctx,
-        fixture,
-        Mode::WholeInput,
-        None,
-        &mut out,
+        &driver,
+        &PumpConfig {
+            fixture,
+            mode: Mode::WholeInput,
+            plan_label: None,
+        },
     );
     handle_tokenize_result(
         tokenizer.finish(&buffer),
@@ -444,15 +470,36 @@ fn run_tokenizer_whole(fixture: &Fixture) -> Vec<String> {
         None,
         "finish",
     );
-    drain_tokens(&mut out, &mut tokenizer, &mut buffer, &ctx, fixture, None);
+    let _ = drain_tokens(
+        &mut drain_state,
+        &mut tokenizer,
+        &mut buffer,
+        &ctx,
+        &driver,
+        false,
+    );
     out
 }
 
 fn run_tokenizer_chunked(fixture: &Fixture, plan: &ChunkPlan, plan_label: &str) -> Vec<String> {
     let mut ctx = DocumentParseContext::new();
+    let text_mode_support = TokenizerHarnessTextModeSupport::new(&mut ctx);
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig { emit_eof: true }, &mut ctx);
     let mut buffer = Input::new();
     let mut out = Vec::new();
+    let mut index = out.len();
+    let context = token_snapshot::TokenFormatContext {
+        case_id: &fixture.name,
+        mode: plan_label,
+    };
+    let driver = TokenizerHarnessDriver {
+        context: &context,
+        text_mode_support: &text_mode_support,
+    };
+    let mut drain_state = TokenDrainState {
+        out: &mut out,
+        index: &mut index,
+    };
     // NOTE: keep this exhaustive with ChunkPlan variants; this harness only supports UTF-8-safe input.
     match plan {
         ChunkPlan::Fixed { policy, .. }
@@ -475,13 +522,16 @@ fn run_tokenizer_chunked(fixture: &Fixture, plan: &ChunkPlan, plan_label: &str) 
         });
         buffer.push_str(chunk_str);
         pump_until_blocked(
+            &mut drain_state,
             &mut tokenizer,
             &mut buffer,
             &mut ctx,
-            fixture,
-            Mode::ChunkedInput,
-            Some(plan_label),
-            &mut out,
+            &driver,
+            &PumpConfig {
+                fixture,
+                mode: Mode::ChunkedInput,
+                plan_label: Some(plan_label),
+            },
         );
     });
     handle_tokenize_result(
@@ -491,25 +541,24 @@ fn run_tokenizer_chunked(fixture: &Fixture, plan: &ChunkPlan, plan_label: &str) 
         Some(plan_label),
         "finish",
     );
-    drain_tokens(
-        &mut out,
+    let _ = drain_tokens(
+        &mut drain_state,
         &mut tokenizer,
         &mut buffer,
         &ctx,
-        fixture,
-        Some(plan_label),
+        &driver,
+        false,
     );
     out
 }
 
 fn pump_until_blocked(
+    drain_state: &mut TokenDrainState<'_>,
     tokenizer: &mut Html5Tokenizer,
     buffer: &mut Input,
     ctx: &mut DocumentParseContext,
-    fixture: &Fixture,
-    mode: Mode,
-    plan_label: Option<&str>,
-    out: &mut Vec<String>,
+    driver: &TokenizerHarnessDriver<'_>,
+    pump: &PumpConfig<'_>,
 ) {
     let mut iterations = 0usize;
     let mut stalled_progress_pumps = 0usize;
@@ -522,16 +571,22 @@ fn pump_until_blocked(
         assert!(
             iterations <= max_iterations,
             "tokenizer pumping exceeded iteration budget in fixture '{}' [{}]",
-            fixture.name,
-            plan_label.unwrap_or(mode.label())
+            pump.fixture.name,
+            pump.plan_label.unwrap_or(pump.mode.label())
         );
         let stats_before = tokenizer.stats();
-        let out_len_before = out.len();
-        let result = tokenizer.push_input(buffer, ctx);
-        handle_tokenize_result(result, fixture, mode, plan_label, "push_input");
-        drain_tokens(out, tokenizer, buffer, ctx, fixture, plan_label);
+        let out_len_before = drain_state.out.len();
+        let result = tokenizer.push_input_until_token(buffer, ctx);
+        handle_tokenize_result(
+            result,
+            pump.fixture,
+            pump.mode,
+            pump.plan_label,
+            "push_input",
+        );
+        let drained = drain_tokens(drain_state, tokenizer, buffer, ctx, driver, true);
         let stats_after = tokenizer.stats();
-        let out_len_after = out.len();
+        let out_len_after = drain_state.out.len();
         let consumed = stats_after.bytes_consumed != stats_before.bytes_consumed;
         let emitted = out_len_after != out_len_before;
         if result == TokenizeResult::Progress {
@@ -542,8 +597,8 @@ fn pump_until_blocked(
                 assert!(
                     stalled_progress_pumps <= 8,
                     "tokenizer repeatedly reported Progress without observable progress in fixture '{}' [{}] (stalled_progress_pumps={} bytes_before={} bytes_after={} out_before={} out_after={})",
-                    fixture.name,
-                    plan_label.unwrap_or(mode.label()),
+                    pump.fixture.name,
+                    pump.plan_label.unwrap_or(pump.mode.label()),
                     stalled_progress_pumps,
                     stats_before.bytes_consumed,
                     stats_after.bytes_consumed,
@@ -561,7 +616,7 @@ fn pump_until_blocked(
             let buf_len = buffer.as_str().len() as u64;
 
             // Legitimate blocking point: no progress and already at end-of-buffer.
-            if stats_after.bytes_consumed >= buf_len {
+            if stats_after.bytes_consumed >= buf_len && !drained {
                 break;
             }
 
@@ -577,8 +632,8 @@ fn pump_until_blocked(
                 assert!(
                     stalled_progress_pumps <= 8,
                     "tokenizer returned NeedMoreInput before end-of-buffer without progress in fixture '{}' [{}] (stalled_progress_pumps={} bytes_consumed={} buf_len={} out_before={} out_after={})",
-                    fixture.name,
-                    plan_label.unwrap_or(mode.label()),
+                    pump.fixture.name,
+                    pump.plan_label.unwrap_or(pump.mode.label()),
                     stalled_progress_pumps,
                     stats_after.bytes_consumed,
                     buf_len,
@@ -593,35 +648,90 @@ fn pump_until_blocked(
 }
 
 fn drain_tokens(
-    out: &mut Vec<String>,
+    drain_state: &mut TokenDrainState<'_>,
     tokenizer: &mut Html5Tokenizer,
     buffer: &mut Input,
     ctx: &DocumentParseContext,
-    fixture: &Fixture,
-    plan_label: Option<&str>,
-) {
-    let mut index = out.len();
-    let context = token_snapshot::TokenFormatContext {
-        case_id: &fixture.name,
-        mode: plan_label.unwrap_or("whole"),
-    };
+    driver: &TokenizerHarnessDriver<'_>,
+    expect_token_granular_batches: bool,
+) -> bool {
+    let mut saw_any = false;
     loop {
         let batch = tokenizer.next_batch(buffer);
         if batch.tokens().is_empty() {
             break;
         }
-        let resolver = batch.resolver();
-        out.extend(
-            token_snapshot::format_tokens(
+        saw_any = true;
+        if expect_token_granular_batches {
+            assert_eq!(
+                batch.tokens().len(),
+                1,
+                "tokenizer control-aware golden harness must observe exactly one token per pump"
+            );
+        }
+        let (formatted, control) = {
+            let resolver = batch.resolver();
+            let formatted = token_snapshot::format_tokens(
                 batch.tokens(),
                 &resolver,
                 ctx,
-                &context,
-                &mut index,
+                driver.context,
+                drain_state.index,
                 None,
             )
-            .unwrap_or_else(|err| panic!("{err}")),
-        );
+            .unwrap_or_else(|err| panic!("{err}"));
+            let control = batch
+                .tokens()
+                .first()
+                .and_then(|token| driver.text_mode_support.control_for_token(token));
+            (formatted, control)
+        };
+        drain_state.out.extend(formatted);
+        if let Some(control) = control {
+            tokenizer.apply_control(control);
+        }
+    }
+    saw_any
+}
+
+struct TokenizerHarnessDriver<'a> {
+    context: &'a token_snapshot::TokenFormatContext<'a>,
+    text_mode_support: &'a TokenizerHarnessTextModeSupport,
+}
+
+struct PumpConfig<'a> {
+    fixture: &'a Fixture,
+    mode: Mode,
+    plan_label: Option<&'a str>,
+}
+
+struct TokenDrainState<'a> {
+    out: &'a mut Vec<String>,
+    index: &'a mut usize,
+}
+
+struct TokenizerHarnessTextModeSupport {
+    style: AtomId,
+}
+
+impl TokenizerHarnessTextModeSupport {
+    fn new(ctx: &mut DocumentParseContext) -> Self {
+        let style = ctx
+            .atoms
+            .intern_ascii_folded("style")
+            .expect("style atom interning in tokenizer golden harness must succeed");
+        Self { style }
+    }
+
+    fn control_for_token(&self, token: &Token) -> Option<TokenizerControl> {
+        // G2 scope: only <style> participates in tokenizer-only RAWTEXT fixtures.
+        match token {
+            Token::StartTag { name, .. } if *name == self.style => Some(
+                TokenizerControl::EnterTextMode(TextModeSpec::rawtext_style(self.style)),
+            ),
+            Token::EndTag { name } if *name == self.style => Some(TokenizerControl::ExitTextMode),
+            _ => None,
+        }
     }
 }
 

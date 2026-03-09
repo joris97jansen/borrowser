@@ -299,7 +299,7 @@ mod tests {
     use super::Html5ParseSession;
     use crate::dom_patch::{DomPatch, DomPatchBatch, PatchKey};
     use crate::html5::shared::DocumentParseContext;
-    use crate::html5::tokenizer::{TextModeKind, TextModeSpec, TokenizerConfig};
+    use crate::html5::tokenizer::{TextModeSpec, TokenizerConfig};
     use crate::html5::tree_builder::TreeBuilderConfig;
     #[test]
     fn session_smoke() {
@@ -398,7 +398,7 @@ mod tests {
         session.pump().expect("first chunk should pump");
         assert_eq!(
             session.tokenizer_active_text_mode_for_test(),
-            Some(TextModeSpec::new(TextModeKind::Rcdata, textarea)),
+            Some(TextModeSpec::rcdata_textarea(textarea)),
             "start tag insertion must switch tokenizer into text mode before later chunks"
         );
         assert_eq!(
@@ -417,7 +417,7 @@ mod tests {
             session.pump().expect("split close tag prefix should pump");
             assert_eq!(
                 session.tokenizer_active_text_mode_for_test(),
-                Some(TextModeSpec::new(TextModeKind::Rcdata, textarea)),
+                Some(TextModeSpec::rcdata_textarea(textarea)),
                 "incomplete end tag across chunk boundaries must not exit text mode early"
             );
         }
@@ -463,12 +463,12 @@ mod tests {
         let builder_state = session.tree_builder_state_snapshot_for_test();
         assert_eq!(
             session.tokenizer_active_text_mode_for_test(),
-            Some(TextModeSpec::new(TextModeKind::Rcdata, textarea)),
+            Some(TextModeSpec::rcdata_textarea(textarea)),
             "mismatched end tags must not exit the active text mode"
         );
         assert_eq!(
             builder_state.active_text_mode,
-            Some(TextModeSpec::new(TextModeKind::Rcdata, textarea)),
+            Some(TextModeSpec::rcdata_textarea(textarea)),
             "builder should keep the exact active text-mode element"
         );
         assert_eq!(
@@ -496,7 +496,7 @@ mod tests {
         session.pump().expect("script prelude should pump");
         assert_eq!(
             session.tokenizer_active_text_mode_for_test(),
-            Some(TextModeSpec::new(TextModeKind::ScriptData, script)),
+            Some(TextModeSpec::script_data(script)),
             "script start tag should enter script-data text mode"
         );
 
@@ -507,7 +507,7 @@ mod tests {
                 .expect("one-byte script close prefix should pump");
             assert_eq!(
                 session.tokenizer_active_text_mode_for_test(),
-                Some(TextModeSpec::new(TextModeKind::ScriptData, script)),
+                Some(TextModeSpec::script_data(script)),
                 "script text mode must stay active until the full close tag has arrived"
             );
         }
@@ -541,7 +541,7 @@ mod tests {
         session.pump().expect("script prelude should pump");
         assert_eq!(
             session.tokenizer_active_text_mode_for_test(),
-            Some(TextModeSpec::new(TextModeKind::ScriptData, script)),
+            Some(TextModeSpec::script_data(script)),
             "script start tag should enter script-data text mode before EOF"
         );
 

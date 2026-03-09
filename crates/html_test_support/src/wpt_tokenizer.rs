@@ -1,6 +1,9 @@
 use crate::token_snapshot;
 use crate::wpt_formats::TOKENIZER_SKIPS_FORMAT_V1;
-use html::html5::{DocumentParseContext, Html5Tokenizer, Input, TokenizeResult, TokenizerConfig};
+use html::html5::{
+    AtomId, DocumentParseContext, Html5Tokenizer, Input, TextModeSpec, Token, TokenizeResult,
+    TokenizerConfig, TokenizerControl,
+};
 use html::test_harness::{BoundaryPolicy, ChunkPlan};
 use serde::Deserialize;
 use std::collections::{BTreeMap, BTreeSet};
@@ -168,10 +171,10 @@ pub fn applied_skip_override(
 
 pub fn run_tokenizer_whole(input_html: &str, case_id: &str) -> Result<Vec<String>, String> {
     let mut ctx = DocumentParseContext::new();
+    let text_mode_support = TokenizerHarnessTextModeSupport::new(&mut ctx);
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig { emit_eof: true }, &mut ctx);
     let mut input = Input::new();
     input.push_str(input_html);
-    handle_tokenize_result(tokenizer.push_input(&mut input, &mut ctx), "push_input")?;
     let mut out = Vec::new();
     let mut index = 0usize;
     let mut saw_eof_token = false;
@@ -179,24 +182,30 @@ pub fn run_tokenizer_whole(input_html: &str, case_id: &str) -> Result<Vec<String
         case_id,
         mode: "whole",
     };
-    drain_tokens(
-        &mut out,
+    let driver = TokenizerHarnessDriver {
+        context: &context,
+        text_mode_support: &text_mode_support,
+    };
+    let mut drain_state = TokenDrainState {
+        out: &mut out,
+        index: &mut index,
+        saw_eof_token: &mut saw_eof_token,
+    };
+    pump_until_blocked(
+        &mut drain_state,
         &mut tokenizer,
         &mut input,
-        &ctx,
-        &context,
-        &mut index,
-        &mut saw_eof_token,
+        &mut ctx,
+        &driver,
     )?;
     handle_tokenize_result(tokenizer.finish(&input), "finish")?;
-    drain_tokens(
-        &mut out,
+    let _ = drain_tokens(
+        &mut drain_state,
         &mut tokenizer,
         &mut input,
         &ctx,
-        &context,
-        &mut index,
-        &mut saw_eof_token,
+        &driver,
+        false,
     )?;
     if !saw_eof_token {
         return Err(format!(
@@ -214,6 +223,7 @@ pub fn run_tokenizer_chunked(
     plan_label: &str,
 ) -> Result<Vec<String>, String> {
     let mut ctx = DocumentParseContext::new();
+    let text_mode_support = TokenizerHarnessTextModeSupport::new(&mut ctx);
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig { emit_eof: true }, &mut ctx);
     let mut input = Input::new();
     let mut out = Vec::new();
@@ -222,6 +232,15 @@ pub fn run_tokenizer_chunked(
     let context = token_snapshot::TokenFormatContext {
         case_id,
         mode: plan_label,
+    };
+    let driver = TokenizerHarnessDriver {
+        context: &context,
+        text_mode_support: &text_mode_support,
+    };
+    let mut drain_state = TokenDrainState {
+        out: &mut out,
+        index: &mut index,
+        saw_eof_token: &mut saw_eof_token,
     };
     let mut error = None::<String>;
 
@@ -240,20 +259,12 @@ pub fn run_tokenizer_chunked(
             return;
         }
         input.push_str(chunk_str);
-        if let Err(err) =
-            handle_tokenize_result(tokenizer.push_input(&mut input, &mut ctx), "push_input")
-        {
-            error = Some(format!("case '{}' [{plan_label}] error: {err}", case_id));
-            return;
-        }
-        if let Err(err) = drain_tokens(
-            &mut out,
+        if let Err(err) = pump_until_blocked(
+            &mut drain_state,
             &mut tokenizer,
             &mut input,
-            &ctx,
-            &context,
-            &mut index,
-            &mut saw_eof_token,
+            &mut ctx,
+            &driver,
         ) {
             error = Some(format!("case '{}' [{plan_label}] error: {err}", case_id));
         }
@@ -264,14 +275,13 @@ pub fn run_tokenizer_chunked(
     }
 
     handle_tokenize_result(tokenizer.finish(&input), "finish")?;
-    drain_tokens(
-        &mut out,
+    let _ = drain_tokens(
+        &mut drain_state,
         &mut tokenizer,
         &mut input,
         &ctx,
-        &context,
-        &mut index,
-        &mut saw_eof_token,
+        &driver,
+        false,
     )?;
     if !saw_eof_token {
         return Err(format!(
@@ -282,30 +292,106 @@ pub fn run_tokenizer_chunked(
     Ok(out)
 }
 
+fn pump_until_blocked(
+    drain_state: &mut TokenDrainState<'_>,
+    tokenizer: &mut Html5Tokenizer,
+    input: &mut Input,
+    ctx: &mut DocumentParseContext,
+    driver: &TokenizerHarnessDriver<'_>,
+) -> Result<(), String> {
+    loop {
+        let result = tokenizer.push_input_until_token(input, ctx);
+        handle_tokenize_result(result, "push_input")?;
+        let drained = drain_tokens(drain_state, tokenizer, input, ctx, driver, true)?;
+        if matches!(result, TokenizeResult::NeedMoreInput) && !drained {
+            break;
+        }
+    }
+    Ok(())
+}
+
 fn drain_tokens(
-    out: &mut Vec<String>,
+    drain_state: &mut TokenDrainState<'_>,
     tokenizer: &mut Html5Tokenizer,
     input: &mut Input,
     ctx: &DocumentParseContext,
-    context: &token_snapshot::TokenFormatContext<'_>,
-    index: &mut usize,
-    saw_eof_token: &mut bool,
-) -> Result<(), String> {
+    driver: &TokenizerHarnessDriver<'_>,
+    expect_token_granular_batches: bool,
+) -> Result<bool, String> {
+    let mut saw_any = false;
     loop {
         let batch = tokenizer.next_batch(input);
         if batch.tokens().is_empty() {
             break;
         }
-        out.extend(token_snapshot::format_tokens(
-            batch.tokens(),
-            &batch.resolver(),
-            ctx,
-            context,
-            index,
-            Some(saw_eof_token),
-        )?);
+        saw_any = true;
+        if expect_token_granular_batches {
+            assert_eq!(
+                batch.tokens().len(),
+                1,
+                "tokenizer control-aware tokenizer harness must observe exactly one token per pump"
+            );
+        }
+        let (formatted, control) = {
+            let resolver = batch.resolver();
+            let formatted = token_snapshot::format_tokens(
+                batch.tokens(),
+                &resolver,
+                ctx,
+                driver.context,
+                drain_state.index,
+                Some(drain_state.saw_eof_token),
+            )?;
+            let control = batch
+                .tokens()
+                .first()
+                .and_then(|token| driver.text_mode_support.control_for_token(token));
+            (formatted, control)
+        };
+        drain_state.out.extend(formatted);
+        if let Some(control) = control {
+            tokenizer.apply_control(control);
+        }
     }
-    Ok(())
+    Ok(saw_any)
+}
+
+struct TokenizerHarnessDriver<'a> {
+    context: &'a token_snapshot::TokenFormatContext<'a>,
+    text_mode_support: &'a TokenizerHarnessTextModeSupport,
+}
+
+struct TokenDrainState<'a> {
+    out: &'a mut Vec<String>,
+    index: &'a mut usize,
+    saw_eof_token: &'a mut bool,
+}
+
+struct TokenizerHarnessTextModeSupport {
+    style: AtomId,
+}
+
+impl TokenizerHarnessTextModeSupport {
+    fn new(ctx: &mut DocumentParseContext) -> Self {
+        let style = ctx
+            .atoms
+            .intern_ascii_folded("style")
+            .expect("style atom interning in tokenizer harness must succeed");
+        Self { style }
+    }
+
+    fn control_for_token(&self, token: &Token) -> Option<TokenizerControl> {
+        let style = self.style;
+        // G2 scope: tokenizer-only text-mode harness support is intentionally
+        // limited to <style> RAWTEXT rather than shadowing tree-builder logic.
+        match token {
+            Token::StartTag { name, .. } if *name == style => Some(
+                TokenizerControl::EnterTextMode(TextModeSpec::rawtext_style(style)),
+            ),
+            Token::EndTag { name } if *name == style => Some(TokenizerControl::ExitTextMode),
+            _ => None,
+        }
+    }
 }
 
 fn handle_tokenize_result(result: TokenizeResult, stage: &str) -> Result<(), String> {

@@ -8,7 +8,7 @@ use crate::dom_patch::{DomPatch, PatchKey};
 use crate::html5::shared::{
     AtomError, AtomId, AtomTable, DocumentParseContext, EngineInvariantError, Token,
 };
-use crate::html5::tokenizer::{TextModeKind, TextModeSpec, TextResolver, TokenizerControl};
+use crate::html5::tokenizer::{TextModeSpec, TextResolver, TokenizerControl};
 use crate::html5::tree_builder::formatting::ActiveFormattingList;
 use crate::html5::tree_builder::modes::InsertionMode;
 use crate::html5::tree_builder::stack::{OpenElement, OpenElementsStack, ScopeKind, ScopeTagSet};
@@ -1383,16 +1383,19 @@ impl Html5TreeBuilder {
     }
 
     fn text_mode_spec_for_tag(&self, name: AtomId) -> Option<TextModeSpec> {
-        let kind = if name == self.known_tags.style {
-            TextModeKind::RawText
+        if name == self.known_tags.style {
+            Some(TextModeSpec::rawtext_style(name))
         } else if name == self.known_tags.title || name == self.known_tags.textarea {
-            TextModeKind::Rcdata
+            if name == self.known_tags.title {
+                Some(TextModeSpec::rcdata_title(name))
+            } else {
+                Some(TextModeSpec::rcdata_textarea(name))
+            }
         } else if name == self.known_tags.script {
-            TextModeKind::ScriptData
+            Some(TextModeSpec::script_data(name))
         } else {
-            return None;
-        };
-        Some(TextModeSpec::new(kind, name))
+            None
+        }
     }
 
     // Core-v0 coupling: this scope decision is specific to the current InBody
