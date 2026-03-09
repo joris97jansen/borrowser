@@ -1,0 +1,7 @@
+# format: html5-token-v1
+# note: input.html intentionally ends with a trailing newline byte
+START name=style attrs=[] self_closing=false
+CHAR text="body{content:\"&amp;\";}<b>"
+END name=style
+CHAR text="\n"
+EOF

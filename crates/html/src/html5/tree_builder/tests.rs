@@ -787,8 +787,7 @@ fn tree_builder_text_mode_end_tag_for_other_container_literalizes_and_stays_in_t
     assert_eq!(before.open_element_names.last().copied(), Some(textarea));
     assert_eq!(
         before.active_text_mode,
-        Some(crate::html5::tokenizer::TextModeSpec::new(
-            crate::html5::tokenizer::TextModeKind::Rcdata,
+        Some(crate::html5::tokenizer::TextModeSpec::rcdata_textarea(
             textarea,
         ))
     );
@@ -804,8 +803,7 @@ fn tree_builder_text_mode_end_tag_for_other_container_literalizes_and_stays_in_t
     );
     assert_eq!(
         after_stray.active_text_mode,
-        Some(crate::html5::tokenizer::TextModeSpec::new(
-            crate::html5::tokenizer::TextModeKind::Rcdata,
+        Some(crate::html5::tokenizer::TextModeSpec::rcdata_textarea(
             textarea,
         )),
         "mismatched end tags must keep the exact active text-mode element"
@@ -828,7 +826,7 @@ fn tree_builder_text_mode_end_tag_for_other_container_literalizes_and_stays_in_t
 #[test]
 fn tree_builder_emits_explicit_tokenizer_text_mode_controls() {
     use crate::html5::shared::Token;
-    use crate::html5::tokenizer::{TextModeKind, TextModeSpec, TokenizerControl};
+    use crate::html5::tokenizer::{TextModeSpec, TokenizerControl};
     use crate::html5::tree_builder::modes::InsertionMode;
 
     let resolver = EmptyResolver;
@@ -886,17 +884,16 @@ fn tree_builder_emits_explicit_tokenizer_text_mode_controls() {
         .expect("textarea start tag should process");
     assert_eq!(
         enter.tokenizer_control,
-        Some(TokenizerControl::EnterTextMode(TextModeSpec::new(
-            TextModeKind::Rcdata,
-            textarea,
-        ))),
+        Some(TokenizerControl::EnterTextMode(
+            TextModeSpec::rcdata_textarea(textarea),
+        )),
         "text container start tag must emit explicit tokenizer entry control"
     );
     let in_text = builder.state_snapshot();
     assert_eq!(in_text.insertion_mode, InsertionMode::Text);
     assert_eq!(
         in_text.active_text_mode,
-        Some(TextModeSpec::new(TextModeKind::Rcdata, textarea)),
+        Some(TextModeSpec::rcdata_textarea(textarea)),
         "builder must track the exact active text-mode element"
     );
 
