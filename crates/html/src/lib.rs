@@ -21,6 +21,8 @@ mod streaming_parity;
 #[cfg(any(test, feature = "test-harness", feature = "html5"))]
 pub mod test_harness;
 #[cfg(test)]
+pub(crate) mod test_support;
+#[cfg(test)]
 mod test_utils;
 pub mod traverse;
 
