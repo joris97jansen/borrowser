@@ -40,7 +40,7 @@ fn tree_builder_state_snapshot_exposes_core_v0_internal_model() {
     assert_eq!(state.open_element_keys.len(), 1);
     assert_eq!(
         state.quirks_mode,
-        crate::html5::tree_builder::QuirksMode::Quirks
+        crate::html5::tree_builder::document::QuirksMode::Quirks
     );
     assert!(state.frameset_ok);
 }
