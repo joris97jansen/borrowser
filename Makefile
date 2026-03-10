@@ -114,3 +114,7 @@ ci:
 
 loc:
 	git ls-files | xargs wc -l
+
+llf:
+	rg --files -g '**/*.rs' | xargs wc -l | sort -nr | head -n 30
+
