@@ -284,7 +284,7 @@ impl Html5ParseSession {
     #[cfg(test)]
     pub(crate) fn tree_builder_state_snapshot_for_test(
         &self,
-    ) -> crate::html5::tree_builder::TreeBuilderStateSnapshot {
+    ) -> crate::html5::tree_builder::api::TreeBuilderStateSnapshot {
         self.builder.state_snapshot()
     }
 
