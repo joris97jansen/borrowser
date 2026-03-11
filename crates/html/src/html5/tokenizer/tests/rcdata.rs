@@ -1,0 +1,118 @@
+use super::helpers::{
+    assert_textarea_rcdata_chunk_invariant, assert_title_rcdata_chunk_invariant,
+    run_textarea_rcdata_chunks, run_title_rcdata_chunks,
+};
+
+#[test]
+fn rcdata_title_split_end_tag_is_chunk_invariant_at_every_boundary() {
+    let input = "<title>Tom &amp; Jerry <b></title>";
+    let (whole, _) = run_title_rcdata_chunks(&[input]);
+    for offset in 1.."</title>".len() {
+        let split = input.len() - "</title>".len() + offset;
+        let (chunked, _) = run_title_rcdata_chunks(&[&input[..split], &input[split..]]);
+        assert_eq!(
+            chunked, whole,
+            "title rcdata close-tag detection must be split-safe at offset={offset}"
+        );
+    }
+    assert_eq!(
+        whole,
+        vec![
+            "START name=title attrs=[] self_closing=false".to_string(),
+            "CHAR text=\"Tom & Jerry <b>\"".to_string(),
+            "END name=title".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn rcdata_textarea_decodes_character_references_and_keeps_other_end_tags_literal() {
+    let (tokens, _) =
+        run_textarea_rcdata_chunks(&["<textarea>A&amp;B</title>&lt;x&gt;</textarea>"]);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=textarea attrs=[] self_closing=false".to_string(),
+            "CHAR text=\"A&B</title><x>\"".to_string(),
+            "END name=textarea".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn rcdata_title_end_tag_match_is_ascii_case_insensitive_and_allows_html_space() {
+    let input = "<title>x</TiTlE \t\r\n>";
+    assert_title_rcdata_chunk_invariant(input);
+    let (tokens, _) = run_title_rcdata_chunks(&[input]);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=title attrs=[] self_closing=false".to_string(),
+            "CHAR text=\"x\"".to_string(),
+            "END name=title".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn rcdata_textarea_handles_character_reference_split_across_chunks() {
+    let whole = run_textarea_rcdata_chunks(&["<textarea>Tom &amp; Jerry</textarea>"]).0;
+    let split = run_textarea_rcdata_chunks(&["<textarea>Tom &am", "p; Jerry</textarea>"]).0;
+    assert_eq!(split, whole);
+    assert_eq!(
+        whole,
+        vec![
+            "START name=textarea attrs=[] self_closing=false".to_string(),
+            "CHAR text=\"Tom & Jerry\"".to_string(),
+            "END name=textarea".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn rcdata_textarea_incomplete_close_tail_at_eof_is_literal_text() {
+    assert_textarea_rcdata_chunk_invariant("<textarea>a</text");
+    let (tokens, _) = run_textarea_rcdata_chunks(&["<textarea>a</text"]);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=textarea attrs=[] self_closing=false".to_string(),
+            "CHAR text=\"a</text\"".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn rcdata_title_incomplete_character_reference_at_eof_is_literal_and_chunk_invariant() {
+    let input = "<title>&am";
+    assert_title_rcdata_chunk_invariant(input);
+    let (tokens, _) = run_title_rcdata_chunks(&[input]);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=title attrs=[] self_closing=false".to_string(),
+            "CHAR text=\"&am\"".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn rcdata_title_large_near_miss_input_remains_linear() {
+    let repeats = 16_384usize;
+    let raw_body = "</titlex>&amp;".repeat(repeats);
+    let html = format!("<title>{raw_body}</title>");
+    let (tokens, stats) = run_title_rcdata_chunks(&[&html]);
+
+    assert_eq!(tokens.len(), 4);
+    assert_eq!(tokens[0], "START name=title attrs=[] self_closing=false");
+    assert_eq!(tokens[2], "END name=title");
+    assert_eq!(tokens[3], "EOF");
+    assert!(tokens[1].contains("</titlex>&"));
+    assert!(stats.steps <= (repeats as u64 * 4) + 64);
+}

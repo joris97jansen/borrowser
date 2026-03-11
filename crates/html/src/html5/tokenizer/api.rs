@@ -162,9 +162,9 @@ impl Html5Tokenizer {
     /// - Core v0 exception: if the tokenizer is in the doctype state family,
     ///   `finish()` consumes remaining buffered bytes and finalizes as quirks
     ///   doctype without parsing the tail.
-    /// - RAWTEXT exception: if close-tag recognition is pinned on an incomplete
-    ///   RAWTEXT tail, `finish()` consumes the remaining buffered tail as
-    ///   literal text. RCDATA/script EOF handling remains owned by later
+    /// - RAWTEXT/RCDATA exception: if close-tag recognition is pinned on an
+    ///   incomplete text-mode tail, `finish()` consumes the remaining buffered
+    ///   tail as literal text. Script EOF handling remains owned by later
     ///   milestones.
     /// - After `finish()`, no further input may be pushed.
     pub fn finish(&mut self, input: &Input) -> TokenizeResult {
@@ -185,10 +185,9 @@ impl Html5Tokenizer {
                 // remaining doctype tail bytes and consume the buffered tail.
                 self.cursor = buffered_len;
                 self.stats_set_bytes_consumed();
-            } else if self
-                .active_text_mode
-                .is_some_and(|mode| mode.kind == TextModeKind::RawText)
-            {
+            } else if self.active_text_mode.is_some_and(|mode| {
+                matches!(mode.kind, TextModeKind::RawText | TextModeKind::Rcdata)
+            }) {
                 if self.pending_text_start.is_none() {
                     self.pending_text_start = Some(self.cursor);
                 }
@@ -243,8 +242,13 @@ impl Html5Tokenizer {
                 );
                 self.active_text_mode = Some(spec);
                 self.pending_text_mode_end_tag = None;
-                if spec.kind == TextModeKind::RawText {
-                    self.transition_to(TokenizerState::RawText);
+                match spec.kind {
+                    TextModeKind::RawText => self.transition_to(TokenizerState::RawText),
+                    TextModeKind::Rcdata => self.transition_to(TokenizerState::Rcdata),
+                    // Script text-mode control is wired through the same
+                    // builder/tokenizer contract now, but dedicated script-data
+                    // tokenizer states are still implemented in later milestones.
+                    TextModeKind::ScriptData => {}
                 }
             }
             TokenizerControl::ExitTextMode => {

@@ -9,6 +9,7 @@
 pub(crate) enum TokenizerState {
     Data,
     RawText,
+    Rcdata,
     TagOpen,
     EndTagOpen,
     TagName,

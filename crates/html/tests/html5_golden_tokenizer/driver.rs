@@ -289,6 +289,8 @@ struct TokenDrainState<'a> {
 
 struct TokenizerHarnessTextModeSupport {
     style: AtomId,
+    title: AtomId,
+    textarea: AtomId,
 }
 
 impl TokenizerHarnessTextModeSupport {
@@ -297,7 +299,19 @@ impl TokenizerHarnessTextModeSupport {
             .atoms
             .intern_ascii_folded("style")
             .expect("style atom interning in tokenizer golden harness must succeed");
-        Self { style }
+        let title = ctx
+            .atoms
+            .intern_ascii_folded("title")
+            .expect("title atom interning in tokenizer golden harness must succeed");
+        let textarea = ctx
+            .atoms
+            .intern_ascii_folded("textarea")
+            .expect("textarea atom interning in tokenizer golden harness must succeed");
+        Self {
+            style,
+            title,
+            textarea,
+        }
     }
 
     fn control_for_token(&self, token: &Token) -> Option<TokenizerControl> {
@@ -305,7 +319,17 @@ impl TokenizerHarnessTextModeSupport {
             Token::StartTag { name, .. } if *name == self.style => Some(
                 TokenizerControl::EnterTextMode(TextModeSpec::rawtext_style(self.style)),
             ),
+            Token::StartTag { name, .. } if *name == self.title => Some(
+                TokenizerControl::EnterTextMode(TextModeSpec::rcdata_title(self.title)),
+            ),
+            Token::StartTag { name, .. } if *name == self.textarea => Some(
+                TokenizerControl::EnterTextMode(TextModeSpec::rcdata_textarea(self.textarea)),
+            ),
             Token::EndTag { name } if *name == self.style => Some(TokenizerControl::ExitTextMode),
+            Token::EndTag { name } if *name == self.title => Some(TokenizerControl::ExitTextMode),
+            Token::EndTag { name } if *name == self.textarea => {
+                Some(TokenizerControl::ExitTextMode)
+            }
             _ => None,
         }
     }

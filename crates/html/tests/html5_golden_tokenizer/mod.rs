@@ -33,11 +33,15 @@ fn html5_golden_tokenizer_fixture_corpus_contract() {
     let mut has_named_decode_effect = false;
     let mut has_numeric_decode_effect = false;
     let mut has_rawtext_style = false;
+    let mut has_rcdata_title = false;
+    let mut has_rcdata_textarea = false;
     for fixture in &fixtures {
         if fixture.expected.status == FixtureStatus::Skip {
             continue;
         }
         has_rawtext_style |= fixture.input.contains("<style");
+        has_rcdata_title |= fixture.input.contains("<title");
+        has_rcdata_textarea |= fixture.input.contains("<textarea");
         let has_amp_input = fixture.input.contains("&amp;");
         let has_lt_input = fixture.input.contains("&lt;");
         let has_gt_input = fixture.input.contains("&gt;");
@@ -120,6 +124,14 @@ fn html5_golden_tokenizer_fixture_corpus_contract() {
     assert!(
         has_rawtext_style,
         "tokenizer corpus missing rawtext style coverage"
+    );
+    assert!(
+        has_rcdata_title,
+        "tokenizer corpus missing rcdata title coverage"
+    );
+    assert!(
+        has_rcdata_textarea,
+        "tokenizer corpus missing rcdata textarea coverage"
     );
 }
 
