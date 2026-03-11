@@ -8,7 +8,7 @@ use crate::entities::decode_entities;
 use crate::html5::shared::{Input, TextSpan, TextValue, Token};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum RawTextEndTagMatch {
+pub(crate) enum TextModeEndTagMatch {
     Matched {
         cursor_after: usize,
         name: crate::html5::shared::AtomId,
@@ -26,62 +26,12 @@ pub(crate) struct PendingTextModeEndTag {
 impl Html5Tokenizer {
     pub(crate) fn step_raw_text(&mut self, input: &Input) -> Step {
         debug_assert_eq!(self.state, TokenizerState::RawText);
-        if let Some(pending_end_tag) = self.pending_text_mode_end_tag.take() {
-            self.cursor = pending_end_tag.cursor_after;
-            self.emit_token(Token::EndTag {
-                name: pending_end_tag.name,
-            });
-            self.transition_to(TokenizerState::Data);
-            return Step::Progress;
-        }
-        if !self.has_unconsumed_input(input) {
-            return Step::NeedMoreInput;
-        }
-        if self.peek(input) != Some('<') {
-            if self.pending_text_start.is_none() {
-                self.pending_text_start = Some(self.cursor);
-            }
-            let consumed = self.consume_while(input, |ch| ch != '<');
-            assert!(
-                consumed > 0,
-                "rawtext state must make progress if input remains"
-            );
-            if !self.has_unconsumed_input(input) {
-                return Step::NeedMoreInput;
-            }
-            debug_assert_eq!(self.peek(input), Some('<'));
-        }
+        self.step_text_mode_with_matching_end_tag(input, TextModeKind::RawText)
+    }
 
-        let less_than_pos = self.cursor;
-        match self.match_rawtext_end_tag(input) {
-            RawTextEndTagMatch::Matched { cursor_after, name } => {
-                if self
-                    .pending_text_start
-                    .is_some_and(|text_start| text_start < less_than_pos)
-                {
-                    self.pending_text_mode_end_tag =
-                        Some(PendingTextModeEndTag { cursor_after, name });
-                    self.flush_pending_text(input);
-                    Step::Progress
-                } else {
-                    self.cursor = cursor_after;
-                    self.emit_token(Token::EndTag { name });
-                    self.transition_to(TokenizerState::Data);
-                    Step::Progress
-                }
-            }
-            RawTextEndTagMatch::NeedMoreInput => {
-                self.cursor = less_than_pos;
-                Step::NeedMoreInput
-            }
-            RawTextEndTagMatch::NoMatch => {
-                if self.pending_text_start.is_none() {
-                    self.pending_text_start = Some(self.cursor);
-                }
-                let _ = self.consume_if(input, '<');
-                Step::Progress
-            }
-        }
+    pub(crate) fn step_rcdata(&mut self, input: &Input) -> Step {
+        debug_assert_eq!(self.state, TokenizerState::Rcdata);
+        self.step_text_mode_with_matching_end_tag(input, TextModeKind::Rcdata)
     }
 
     pub(crate) fn emit_text_span(&mut self, start: usize, end: usize) {
@@ -138,51 +88,116 @@ impl Html5Tokenizer {
         )
     }
 
-    fn match_rawtext_end_tag(&self, input: &Input) -> RawTextEndTagMatch {
-        let Some(active_text_mode) = self.active_text_mode else {
-            return RawTextEndTagMatch::NoMatch;
-        };
-        if active_text_mode.kind != TextModeKind::RawText {
-            return RawTextEndTagMatch::NoMatch;
+    fn step_text_mode_with_matching_end_tag(
+        &mut self,
+        input: &Input,
+        expected_kind: TextModeKind,
+    ) -> Step {
+        if let Some(pending_end_tag) = self.pending_text_mode_end_tag.take() {
+            self.cursor = pending_end_tag.cursor_after;
+            self.emit_token(Token::EndTag {
+                name: pending_end_tag.name,
+            });
+            self.transition_to(TokenizerState::Data);
+            return Step::Progress;
         }
-        let Some(hint) = active_text_mode.rawtext_end_tag_literal() else {
-            return RawTextEndTagMatch::NoMatch;
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        if self.peek(input) != Some('<') {
+            if self.pending_text_start.is_none() {
+                self.pending_text_start = Some(self.cursor);
+            }
+            let consumed = self.consume_while(input, |ch| ch != '<');
+            assert!(
+                consumed > 0,
+                "text-mode state must make progress if input remains"
+            );
+            if !self.has_unconsumed_input(input) {
+                return Step::NeedMoreInput;
+            }
+            debug_assert_eq!(self.peek(input), Some('<'));
+        }
+
+        let less_than_pos = self.cursor;
+        match self.match_text_mode_end_tag(input, expected_kind) {
+            TextModeEndTagMatch::Matched { cursor_after, name } => {
+                if self
+                    .pending_text_start
+                    .is_some_and(|text_start| text_start < less_than_pos)
+                {
+                    self.pending_text_mode_end_tag =
+                        Some(PendingTextModeEndTag { cursor_after, name });
+                    self.flush_pending_text(input);
+                    Step::Progress
+                } else {
+                    self.cursor = cursor_after;
+                    self.emit_token(Token::EndTag { name });
+                    self.transition_to(TokenizerState::Data);
+                    Step::Progress
+                }
+            }
+            TextModeEndTagMatch::NeedMoreInput => {
+                self.cursor = less_than_pos;
+                Step::NeedMoreInput
+            }
+            TextModeEndTagMatch::NoMatch => {
+                if self.pending_text_start.is_none() {
+                    self.pending_text_start = Some(self.cursor);
+                }
+                let _ = self.consume_if(input, '<');
+                Step::Progress
+            }
+        }
+    }
+
+    fn match_text_mode_end_tag(
+        &self,
+        input: &Input,
+        expected_kind: TextModeKind,
+    ) -> TextModeEndTagMatch {
+        let Some(active_text_mode) = self.active_text_mode else {
+            return TextModeEndTagMatch::NoMatch;
         };
+        if active_text_mode.kind != expected_kind {
+            return TextModeEndTagMatch::NoMatch;
+        }
+        let hint = active_text_mode.text_mode_end_tag_literal();
 
         let text = input.as_str();
         let bytes = text.as_bytes();
         let cursor = self.cursor;
         if bytes.get(cursor) != Some(&b'<') {
-            return RawTextEndTagMatch::NoMatch;
+            return TextModeEndTagMatch::NoMatch;
         }
         let slash = cursor + 1;
         if slash >= bytes.len() {
-            return RawTextEndTagMatch::NeedMoreInput;
+            return TextModeEndTagMatch::NeedMoreInput;
         }
         if bytes[slash] != b'/' {
-            return RawTextEndTagMatch::NoMatch;
+            return TextModeEndTagMatch::NoMatch;
         }
         let name_start = slash + 1;
         match super::scan::match_ascii_prefix_ci_at(bytes, name_start, hint) {
             MatchResult::Matched => {}
-            MatchResult::NeedMoreInput => return RawTextEndTagMatch::NeedMoreInput,
-            MatchResult::NoMatch => return RawTextEndTagMatch::NoMatch,
+            MatchResult::NeedMoreInput => return TextModeEndTagMatch::NeedMoreInput,
+            MatchResult::NoMatch => return TextModeEndTagMatch::NoMatch,
         }
 
         let mut cursor_after_name = name_start + hint.len();
         if cursor_after_name >= bytes.len() {
-            return RawTextEndTagMatch::NeedMoreInput;
+            return TextModeEndTagMatch::NeedMoreInput;
         }
         while cursor_after_name < bytes.len() && is_html_space_byte(bytes[cursor_after_name]) {
             cursor_after_name += 1;
         }
         if cursor_after_name >= bytes.len() {
-            return RawTextEndTagMatch::NeedMoreInput;
+            return TextModeEndTagMatch::NeedMoreInput;
         }
         if bytes[cursor_after_name] != b'>' {
-            return RawTextEndTagMatch::NoMatch;
+            return TextModeEndTagMatch::NoMatch;
         }
-        RawTextEndTagMatch::Matched {
+        TextModeEndTagMatch::Matched {
             cursor_after: cursor_after_name + 1,
             name: active_text_mode.end_tag_name,
         }

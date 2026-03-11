@@ -7,4 +7,5 @@ mod formatting;
 mod helpers;
 mod perf;
 mod rawtext;
+mod rcdata;
 mod tags_attrs;

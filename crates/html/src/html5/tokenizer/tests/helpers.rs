@@ -79,11 +79,18 @@ pub(super) fn run_chunks_raw_tokens(chunks: &[&str]) -> Vec<Token> {
     out
 }
 
-pub(super) fn run_style_rawtext_chunks(chunks: &[&str]) -> (Vec<String>, TokenizerStats) {
+fn run_text_mode_chunks<F>(
+    chunks: &[&str],
+    tag_name: &str,
+    enter_spec: F,
+) -> (Vec<String>, TokenizerStats)
+where
+    F: Fn(crate::html5::shared::AtomId) -> TextModeSpec,
+{
     let mut ctx = DocumentParseContext::new();
-    let style = ctx
+    let tag = ctx
         .atoms
-        .intern_ascii_folded("style")
+        .intern_ascii_folded(tag_name)
         .expect("atom interning");
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
     let mut input = Input::new();
@@ -111,12 +118,10 @@ pub(super) fn run_style_rawtext_chunks(chunks: &[&str]) -> (Vec<String>, Tokeniz
                         .expect("token formatting in tests must be deterministic"),
                 );
                 match token {
-                    Token::StartTag { name, .. } if *name == style => {
-                        tokenizer.apply_control(TokenizerControl::EnterTextMode(
-                            TextModeSpec::rawtext_style(style),
-                        ));
+                    Token::StartTag { name, .. } if *name == tag => {
+                        tokenizer.apply_control(TokenizerControl::EnterTextMode(enter_spec(tag)));
                     }
-                    Token::EndTag { name } if *name == style => {
+                    Token::EndTag { name } if *name == tag => {
                         tokenizer.apply_control(TokenizerControl::ExitTextMode);
                     }
                     _ => {}
@@ -133,6 +138,10 @@ pub(super) fn run_style_rawtext_chunks(chunks: &[&str]) -> (Vec<String>, Tokeniz
     (out, tokenizer.stats())
 }
 
+pub(super) fn run_style_rawtext_chunks(chunks: &[&str]) -> (Vec<String>, TokenizerStats) {
+    run_text_mode_chunks(chunks, "style", TextModeSpec::rawtext_style)
+}
+
 pub(super) fn assert_style_rawtext_chunk_invariant(input: &str) {
     let (whole, _) = run_style_rawtext_chunks(&[input]);
     for split in 1..input.len() {
@@ -140,6 +149,36 @@ pub(super) fn assert_style_rawtext_chunk_invariant(input: &str) {
         assert_eq!(
             chunked, whole,
             "style rawtext output must be chunk-invariant for split={split}"
+        );
+    }
+}
+
+pub(super) fn run_title_rcdata_chunks(chunks: &[&str]) -> (Vec<String>, TokenizerStats) {
+    run_text_mode_chunks(chunks, "title", TextModeSpec::rcdata_title)
+}
+
+pub(super) fn assert_title_rcdata_chunk_invariant(input: &str) {
+    let (whole, _) = run_title_rcdata_chunks(&[input]);
+    for split in 1..input.len() {
+        let (chunked, _) = run_title_rcdata_chunks(&[&input[..split], &input[split..]]);
+        assert_eq!(
+            chunked, whole,
+            "title rcdata output must be chunk-invariant for split={split}"
+        );
+    }
+}
+
+pub(super) fn run_textarea_rcdata_chunks(chunks: &[&str]) -> (Vec<String>, TokenizerStats) {
+    run_text_mode_chunks(chunks, "textarea", TextModeSpec::rcdata_textarea)
+}
+
+pub(super) fn assert_textarea_rcdata_chunk_invariant(input: &str) {
+    let (whole, _) = run_textarea_rcdata_chunks(&[input]);
+    for split in 1..input.len() {
+        let (chunked, _) = run_textarea_rcdata_chunks(&[&input[..split], &input[split..]]);
+        assert_eq!(
+            chunked, whole,
+            "textarea rcdata output must be chunk-invariant for split={split}"
         );
     }
 }

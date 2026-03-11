@@ -369,6 +369,8 @@ struct TokenDrainState<'a> {
 
 struct TokenizerHarnessTextModeSupport {
     style: AtomId,
+    title: AtomId,
+    textarea: AtomId,
 }
 
 impl TokenizerHarnessTextModeSupport {
@@ -377,18 +379,38 @@ impl TokenizerHarnessTextModeSupport {
             .atoms
             .intern_ascii_folded("style")
             .expect("style atom interning in tokenizer harness must succeed");
-        Self { style }
+        let title = ctx
+            .atoms
+            .intern_ascii_folded("title")
+            .expect("title atom interning in tokenizer harness must succeed");
+        let textarea = ctx
+            .atoms
+            .intern_ascii_folded("textarea")
+            .expect("textarea atom interning in tokenizer harness must succeed");
+        Self {
+            style,
+            title,
+            textarea,
+        }
     }
 
     fn control_for_token(&self, token: &Token) -> Option<TokenizerControl> {
         let style = self.style;
-        // G2 scope: tokenizer-only text-mode harness support is intentionally
-        // limited to <style> RAWTEXT rather than shadowing tree-builder logic.
+        let title = self.title;
+        let textarea = self.textarea;
         match token {
             Token::StartTag { name, .. } if *name == style => Some(
                 TokenizerControl::EnterTextMode(TextModeSpec::rawtext_style(style)),
             ),
+            Token::StartTag { name, .. } if *name == title => Some(
+                TokenizerControl::EnterTextMode(TextModeSpec::rcdata_title(title)),
+            ),
+            Token::StartTag { name, .. } if *name == textarea => Some(
+                TokenizerControl::EnterTextMode(TextModeSpec::rcdata_textarea(textarea)),
+            ),
             Token::EndTag { name } if *name == style => Some(TokenizerControl::ExitTextMode),
+            Token::EndTag { name } if *name == title => Some(TokenizerControl::ExitTextMode),
+            Token::EndTag { name } if *name == textarea => Some(TokenizerControl::ExitTextMode),
             _ => None,
         }
     }
