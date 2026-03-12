@@ -34,6 +34,14 @@ impl Html5Tokenizer {
         self.step_text_mode_with_matching_end_tag(input, TextModeKind::Rcdata)
     }
 
+    pub(crate) fn step_script_data(&mut self, input: &Input) -> Step {
+        debug_assert_eq!(self.state, TokenizerState::ScriptData);
+        // Core-v0 script text-mode subset intentionally implements the bounded
+        // "raw until matching </script>" behavior. Escaped/double-escaped
+        // script-data state-family work remains tracked separately.
+        self.step_text_mode_with_matching_end_tag(input, TextModeKind::ScriptData)
+    }
+
     pub(crate) fn emit_text_span(&mut self, start: usize, end: usize) {
         if start == end {
             return;

@@ -1,6 +1,6 @@
 # HTML5 Tokenizer Spec Mapping Matrix (Milestone D1)
 
-Last updated: 2026-02-12
+Last updated: 2026-03-12
 Scope: `crates/html/src/html5/tokenizer` (feature `html5`)
 Spec source: WHATWG HTML, section `Tokenization` (`parsing.html#tokenization`)
 
@@ -86,11 +86,11 @@ These invariants apply to every `TOK-STATE-*` row:
 | `TOK-STATE-CHARREF-NAMED` | MVP_PARTIAL | `Named character reference state` | `#named-character-reference-state` | `states.rs`, `mod.rs`, `crates/html/src/entities.rs` | Existing hardening tests in `entities.rs` (`html5-entities` feature); planned fixtures above. | Longest-match scan must suspend without data loss on partial name tail. | semicolon rules, legacy forms, attribute restrictions. | Core named reference behavior. |
 | `TOK-STATE-CHARREF-AMBIGUOUS-AMP` | MVP_PARTIAL | `Ambiguous ampersand state` | `#ambiguous-ampersand-state` | `states.rs`, `mod.rs`, `entities.rs` | Planned fixture: `tok-charrefs-attr`. | Return-to-state behavior must be stable under split alnum runs. | text vs attr handling differences. | Needed for spec-correct fallback behavior. |
 | `TOK-STATE-CHARREF-NUMERIC` | MVP_PARTIAL | `Numeric character reference state family` | `#numeric-character-reference-state`, `#hexadecimal-character-reference-state`, `#decimal-character-reference-state`, `#numeric-character-reference-end-state` | `states.rs`, `mod.rs`, `entities.rs` | Existing numeric hardening in `entities.rs`; planned fixture: `tok-charrefs-text`. | Numeric parse state must hold partial digit runs across chunks. | overflow, surrogate, invalid scalar replacement behavior. | Core numeric reference correctness. |
-| `TOK-STATE-RAWTEXT` | DEFERRED | `RAWTEXT state` | `#rawtext-state` | Planned: `states.rs`, `mod.rs` | Planned fixture: `tok-rawtext-style-end-tag`; planned WPT: `tokenizer-rawtext-style`. | Appropriate end-tag buffer must persist across chunked `</sty` + `le>`. | mismatched end-tag fallback to text. | Post-Core-v0 scope. |
-| `TOK-STATE-RAWTEXT-END-TAG` | DEFERRED | `RAWTEXT end tag detection` | `#rawtext-end-tag-open-state`, `#rawtext-end-tag-name-state` | Planned: `states.rs`, `mod.rs` | Planned fixture: `tok-rawtext-style-end-tag`. | Temporary end-tag buffer must be chunk-safe and reset-safe. | false positive/negative close-tag detection. | Needed for robust RAWTEXT handling. |
-| `TOK-STATE-RCDATA` | DEFERRED | `RCDATA state` | `#rcdata-state` | Planned: `states.rs`, `mod.rs` | Planned fixture: `tok-rcdata-title-charrefs`; planned WPT: `tokenizer-rcdata-title`. | Must combine charrefs + appropriate-end-tag logic under chunking. | charrefs in rcdata text, fallback behavior. | Deferred complexity after MVP stabilization. |
-| `TOK-STATE-RCDATA-END-TAG` | DEFERRED | `RCDATA end tag detection` | `#rcdata-end-tag-open-state`, `#rcdata-end-tag-name-state` | Planned: `states.rs`, `mod.rs` | Planned fixture: `tok-rcdata-title-charrefs`. | Same buffer semantics as rawtext end-tag path. | mismatched close-tag fallback. | Deferred with RCDATA family. |
-| `TOK-STATE-SCRIPT-DATA` | OUT_OF_SCOPE | `Script data state` | `#script-data-state` | Not scheduled in Core v0 | Policy fixture: `tok-script-data-out-of-scope` (`skip` only). | N/A in Core v0. | script text tokenization and close-tag detection. | Explicitly excluded from Core v0. |
+| `TOK-STATE-RAWTEXT` | MVP_PARTIAL | `RAWTEXT state` | `#rawtext-state` | `states.rs`, `text_mode.rs`, `api.rs` | Current fixtures: `tok-rawtext-style`; no WPT slice currently vendored. | Appropriate end-tag buffer must persist across chunked `</sty` + `le>`. | mismatched end-tag fallback to text. | Core-v0 text-mode subset for HTML RAWTEXT containers. |
+| `TOK-STATE-RAWTEXT-END-TAG` | MVP_PARTIAL | `RAWTEXT end tag detection` | `#rawtext-end-tag-open-state`, `#rawtext-end-tag-name-state` | `text_mode.rs`, `scan.rs` | Current fixture: `tok-rawtext-style`. | Temporary end-tag buffer must be chunk-safe and reset-safe. | false positive/negative close-tag detection. | Required for production-safe RAWTEXT close recognition. |
+| `TOK-STATE-RCDATA` | MVP_PARTIAL | `RCDATA state` | `#rcdata-state` | `states.rs`, `text_mode.rs`, `api.rs` | Current fixtures: `tok-rcdata-title`, `tok-rcdata-textarea`; no WPT slice currently vendored. | Must combine charrefs + appropriate-end-tag logic under chunking. | charrefs in rcdata text, fallback behavior. | Core-v0 text-mode subset for `title`/`textarea`. |
+| `TOK-STATE-RCDATA-END-TAG` | MVP_PARTIAL | `RCDATA end tag detection` | `#rcdata-end-tag-open-state`, `#rcdata-end-tag-name-state` | `text_mode.rs`, `scan.rs` | Current fixtures: `tok-rcdata-title`, `tok-rcdata-textarea`. | Same buffer semantics as rawtext end-tag path. | mismatched close-tag fallback. | Required for chunk-safe RCDATA end-tag recognition. |
+| `TOK-STATE-SCRIPT-DATA` | MVP_PARTIAL | `Script data state` | `#script-data-state` | `states.rs`, `text_mode.rs`, `api.rs` | Current fixtures: `tok-script-data-basic`, `tok-script-data-string-close`; WPT: `tokenizer-script-data`. | Core-v0 script text-mode subset treats `<script>` as raw text until matching ASCII-case-insensitive `</script>`, with chunk-safe end-tag detection and linear scanning. | literal `</script>` closes even inside JS strings; mismatched end tags remain text. | Core-v0 script text-mode subset only; full escaped/comment-like script-data state family is tracked separately in G5. |
 | `TOK-STATE-SCRIPT-DATA-ESCAPED` | OUT_OF_SCOPE | `Script data escaped families` | `#script-data-escaped-state`, `#script-data-double-escaped-state` | Not scheduled in Core v0 | Policy fixture: `tok-script-data-out-of-scope` (`skip` only). | N/A in Core v0. | escaped/double-escaped transitions and temp buffer handling. | Highest complexity, intentionally deferred to dedicated milestone. |
 
 ## Core v0 Must-Support Subset
@@ -142,9 +142,12 @@ Status source of truth:
 | `tok-doctype-quirks-missing-name` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-doctype-quirks-missing-name` | XFail | `tokenizer-doctype-quirks` |
 | `tok-charrefs-text` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-charrefs-text` | XFail | `tokenizer-charrefs-text` |
 | `tok-charrefs-attr` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-charrefs-attr` | XFail | `tokenizer-charrefs-attr` |
-| `tok-rawtext-style-end-tag` | No (`DEFERRED`) | `crates/html/tests/fixtures/html5/tokenizer/tok-rawtext-style-end-tag` | Planned | `tokenizer-rawtext-style` |
-| `tok-rcdata-title-charrefs` | No (`DEFERRED`) | `crates/html/tests/fixtures/html5/tokenizer/tok-rcdata-title-charrefs` | Planned | `tokenizer-rcdata-title` |
-| `tok-script-data-out-of-scope` | No (`OUT_OF_SCOPE`) | `crates/html/tests/fixtures/html5/tokenizer/tok-script-data-out-of-scope` | Planned (`skip`) | none in Core v0 |
+| `tok-rawtext-style` | Yes (`MVP_PARTIAL`) | `crates/html/tests/fixtures/html5/tokenizer/tok-rawtext-style` | Active | none currently vendored |
+| `tok-rcdata-title` | Yes (`MVP_PARTIAL`) | `crates/html/tests/fixtures/html5/tokenizer/tok-rcdata-title` | Active | none currently vendored |
+| `tok-rcdata-textarea` | Yes (`MVP_PARTIAL`) | `crates/html/tests/fixtures/html5/tokenizer/tok-rcdata-textarea` | Active | none currently vendored |
+| `tok-script-data-basic` | Yes (`MVP_PARTIAL`) | `crates/html/tests/fixtures/html5/tokenizer/tok-script-data-basic` | Active | `tokenizer-script-data` (basic close-tag behavior) |
+| `tok-script-data-string-close` | Yes (`MVP_PARTIAL`) | `crates/html/tests/fixtures/html5/tokenizer/tok-script-data-string-close` | Active | none currently vendored |
+| `tok-script-data-out-of-scope` | No (`OUT_OF_SCOPE`) | `crates/html/tests/fixtures/html5/tokenizer/tok-script-data-out-of-scope` | Skip | script escaped/double-escaped coverage only |
 
 ## Out-Of-Scope Policy (Enforceable)
 
@@ -155,7 +158,6 @@ It is represented as `skip` with policy reason.
 
 The following WPT case IDs or paths must be marked `skip`:
 
-- pattern ID `TOK-PATTERN-SCRIPT-01`: contains `script-data`
 - pattern ID `TOK-PATTERN-SCRIPT-02`: contains `script-escaped`
 - pattern ID `TOK-PATTERN-SCRIPT-03`: contains `script-double-escaped`
 
@@ -169,7 +171,7 @@ Harness policy contract:
 
 For HTML5 Core v0:
 
-- Script-data escaped and double-escaped families are out of scope and `skip` only.
-- RAWTEXT and RCDATA families are deferred and do not block Core v0 exit criteria.
+- Core-v0 supports RAWTEXT, RCDATA, and the bounded script text-mode subset (`TOK-STATE-SCRIPT-DATA`) as `MVP_PARTIAL`.
+- Script-data escaped and double-escaped families remain out of scope and `skip` only.
 - Deferred/out-of-scope WPT cases must not contribute to Core v0 pass/fail gate counts.
 - Any tier changes require an explicit update to this matrix and acceptance table.

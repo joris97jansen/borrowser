@@ -2,6 +2,10 @@ use crate::wpt_manifest::{DiffKind, FixtureStatus, WptCase, load_manifest};
 use html::dom_snapshot::{DomSnapshotOptions, compare_dom};
 use html::{build_owned_dom, tokenize};
 use html_test_support::diff_lines;
+use html_test_support::wpt_tokenizer::{
+    TokenizerSkipStatus, applied_skip_override, load_tokenizer_skip_overrides,
+    validate_skip_override_ids,
+};
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
@@ -43,8 +47,9 @@ struct DiffSummary {
 #[test]
 fn diff_html5() {
     let manifest_path = wpt_root().join("manifest.txt");
-    let cases = load_manifest(&manifest_path);
+    let mut cases = load_manifest(&manifest_path);
     assert!(!cases.is_empty(), "no WPT cases found in {manifest_path:?}");
+    apply_tokenizer_skip_overrides(&mut cases, &manifest_path);
 
     let mode = diff_mode();
     let strict = diff_strict();
@@ -216,6 +221,31 @@ fn wpt_root() -> PathBuf {
         .join("..")
         .join("tests")
         .join("wpt")
+}
+
+fn apply_tokenizer_skip_overrides(cases: &mut [WptCase], manifest_path: &Path) {
+    let overrides = load_tokenizer_skip_overrides(&wpt_root());
+    let token_case_ids = cases
+        .iter()
+        .filter(|case| case.kind == crate::wpt_manifest::CaseKind::Tokens)
+        .map(|case| case.id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    validate_skip_override_ids(&overrides, &token_case_ids, manifest_path);
+
+    for case in cases
+        .iter_mut()
+        .filter(|case| case.kind == crate::wpt_manifest::CaseKind::Tokens)
+    {
+        if let Some((override_status, override_reason)) =
+            applied_skip_override(&case.id, &overrides)
+        {
+            case.status = match override_status {
+                TokenizerSkipStatus::Skip => FixtureStatus::Skip,
+                TokenizerSkipStatus::Xfail => FixtureStatus::Xfail,
+            };
+            case.reason = Some(override_reason);
+        }
+    }
 }
 
 fn diff_mode() -> DiffKind {

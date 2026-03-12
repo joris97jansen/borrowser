@@ -8,4 +8,5 @@ mod helpers;
 mod perf;
 mod rawtext;
 mod rcdata;
+mod script_data;
 mod tags_attrs;

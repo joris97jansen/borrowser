@@ -80,9 +80,7 @@ impl TextModeSpec {
         }
     }
 
-    // Used by the shared RAWTEXT/RCDATA close-tag matcher. Script-specific
-    // tokenization still lands in later milestones even though the canonical
-    // tag literal is already part of the text-mode contract.
+    // Used by the shared RAWTEXT/RCDATA/script close-tag matcher.
     pub(crate) fn text_mode_end_tag_literal(self) -> &'static [u8] {
         match self.matcher {
             TextModeMatcher::Style => b"style",
