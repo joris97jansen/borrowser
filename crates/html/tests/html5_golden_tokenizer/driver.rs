@@ -18,6 +18,7 @@ pub(crate) fn run_tokenizer_whole(fixture: &Fixture) -> Vec<String> {
     buffer.push_str(&fixture.input);
     let mut out = Vec::new();
     let mut index = out.len();
+    let mut active_text_mode = None;
     let format_context = token_snapshot::TokenFormatContext {
         case_id: &fixture.name,
         mode: ExecutionMode::WholeInput.label(),
@@ -29,6 +30,7 @@ pub(crate) fn run_tokenizer_whole(fixture: &Fixture) -> Vec<String> {
     let mut drain_state = TokenDrainState {
         out: &mut out,
         index: &mut index,
+        active_text_mode: &mut active_text_mode,
     };
     pump_until_blocked(
         &mut drain_state,
@@ -71,6 +73,7 @@ pub(crate) fn run_tokenizer_chunked(
     let mut buffer = Input::new();
     let mut out = Vec::new();
     let mut index = out.len();
+    let mut active_text_mode = None;
     let format_context = token_snapshot::TokenFormatContext {
         case_id: &fixture.name,
         mode: plan_label,
@@ -82,6 +85,7 @@ pub(crate) fn run_tokenizer_chunked(
     let mut drain_state = TokenDrainState {
         out: &mut out,
         index: &mut index,
+        active_text_mode: &mut active_text_mode,
     };
     match plan {
         ChunkPlan::Fixed { policy, .. }
@@ -257,10 +261,11 @@ fn drain_tokens(
                 None,
             )
             .unwrap_or_else(|err| panic!("{err}"));
-            let control = batch
-                .tokens()
-                .first()
-                .and_then(|token| driver.text_mode_support.control_for_token(token));
+            let control = batch.tokens().first().and_then(|token| {
+                driver
+                    .text_mode_support
+                    .control_for_token(token, drain_state.active_text_mode)
+            });
             (formatted, control)
         };
         drain_state.out.extend(formatted);
@@ -285,12 +290,14 @@ struct PumpConfig<'a> {
 struct TokenDrainState<'a> {
     out: &'a mut Vec<String>,
     index: &'a mut usize,
+    active_text_mode: &'a mut Option<AtomId>,
 }
 
 struct TokenizerHarnessTextModeSupport {
     style: AtomId,
     title: AtomId,
     textarea: AtomId,
+    script: AtomId,
 }
 
 impl TokenizerHarnessTextModeSupport {
@@ -307,27 +314,41 @@ impl TokenizerHarnessTextModeSupport {
             .atoms
             .intern_ascii_folded("textarea")
             .expect("textarea atom interning in tokenizer golden harness must succeed");
+        let script = ctx
+            .atoms
+            .intern_ascii_folded("script")
+            .expect("script atom interning in tokenizer golden harness must succeed");
         Self {
             style,
             title,
             textarea,
+            script,
         }
     }
 
-    fn control_for_token(&self, token: &Token) -> Option<TokenizerControl> {
+    fn control_for_token(
+        &self,
+        token: &Token,
+        active_text_mode: &mut Option<AtomId>,
+    ) -> Option<TokenizerControl> {
         match token {
-            Token::StartTag { name, .. } if *name == self.style => Some(
-                TokenizerControl::EnterTextMode(TextModeSpec::rawtext_style(self.style)),
-            ),
-            Token::StartTag { name, .. } if *name == self.title => Some(
-                TokenizerControl::EnterTextMode(TextModeSpec::rcdata_title(self.title)),
-            ),
-            Token::StartTag { name, .. } if *name == self.textarea => Some(
-                TokenizerControl::EnterTextMode(TextModeSpec::rcdata_textarea(self.textarea)),
-            ),
-            Token::EndTag { name } if *name == self.style => Some(TokenizerControl::ExitTextMode),
-            Token::EndTag { name } if *name == self.title => Some(TokenizerControl::ExitTextMode),
-            Token::EndTag { name } if *name == self.textarea => {
+            Token::StartTag { name, .. } if active_text_mode.is_none() => {
+                let spec = if *name == self.style {
+                    Some(TextModeSpec::rawtext_style(self.style))
+                } else if *name == self.title {
+                    Some(TextModeSpec::rcdata_title(self.title))
+                } else if *name == self.textarea {
+                    Some(TextModeSpec::rcdata_textarea(self.textarea))
+                } else if *name == self.script {
+                    Some(TextModeSpec::script_data(self.script))
+                } else {
+                    None
+                }?;
+                *active_text_mode = Some(*name);
+                Some(TokenizerControl::EnterTextMode(spec))
+            }
+            Token::EndTag { name } if *active_text_mode == Some(*name) => {
+                *active_text_mode = None;
                 Some(TokenizerControl::ExitTextMode)
             }
             _ => None,

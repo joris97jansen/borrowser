@@ -95,6 +95,7 @@ where
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
     let mut input = Input::new();
     let mut out = Vec::new();
+    let mut text_mode_active = false;
 
     for chunk in chunks {
         input.push_str(chunk);
@@ -118,10 +119,12 @@ where
                         .expect("token formatting in tests must be deterministic"),
                 );
                 match token {
-                    Token::StartTag { name, .. } if *name == tag => {
+                    Token::StartTag { name, .. } if *name == tag && !text_mode_active => {
+                        text_mode_active = true;
                         tokenizer.apply_control(TokenizerControl::EnterTextMode(enter_spec(tag)));
                     }
-                    Token::EndTag { name } if *name == tag => {
+                    Token::EndTag { name } if *name == tag && text_mode_active => {
+                        text_mode_active = false;
                         tokenizer.apply_control(TokenizerControl::ExitTextMode);
                     }
                     _ => {}
@@ -179,6 +182,21 @@ pub(super) fn assert_textarea_rcdata_chunk_invariant(input: &str) {
         assert_eq!(
             chunked, whole,
             "textarea rcdata output must be chunk-invariant for split={split}"
+        );
+    }
+}
+
+pub(super) fn run_script_data_chunks(chunks: &[&str]) -> (Vec<String>, TokenizerStats) {
+    run_text_mode_chunks(chunks, "script", TextModeSpec::script_data)
+}
+
+pub(super) fn assert_script_data_chunk_invariant(input: &str) {
+    let (whole, _) = run_script_data_chunks(&[input]);
+    for split in 1..input.len() {
+        let (chunked, _) = run_script_data_chunks(&[&input[..split], &input[split..]]);
+        assert_eq!(
+            chunked, whole,
+            "script data output must be chunk-invariant for split={split}"
         );
     }
 }

@@ -133,6 +133,7 @@ impl Html5Tokenizer {
             TokenizerState::Data => self.step_data(input),
             TokenizerState::RawText => self.step_raw_text(input),
             TokenizerState::Rcdata => self.step_rcdata(input),
+            TokenizerState::ScriptData => self.step_script_data(input),
             TokenizerState::TagOpen => self.step_tag_open(input),
             TokenizerState::EndTagOpen => self.step_end_tag_open(input),
             TokenizerState::TagName => self.step_tag_name(input, ctx),

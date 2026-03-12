@@ -1,6 +1,6 @@
 # HTML5 Core v0 Supported Subset Contract (Milestone D3)
 
-Last updated: 2026-03-02
+Last updated: 2026-03-12
 Scope: `crates/html/src/html5` (feature `html5`)
 Normative matrix sources:
 - `docs/html5/spec-matrix-tokenizer.md`
@@ -87,6 +87,12 @@ Core v0 tokenizer support includes:
   - `TOK-STATE-CHARREF-NAMED`
   - `TOK-STATE-CHARREF-AMBIGUOUS-AMP`
   - `TOK-STATE-CHARREF-NUMERIC`
+- Text-mode tokenizer subset (`MVP_PARTIAL` scope):
+  - `TOK-STATE-RAWTEXT`
+  - `TOK-STATE-RAWTEXT-END-TAG`
+  - `TOK-STATE-RCDATA`
+  - `TOK-STATE-RCDATA-END-TAG`
+  - `TOK-STATE-SCRIPT-DATA`
 
 Character references are guaranteed only in:
 
@@ -185,9 +191,11 @@ Core v0 guarantees:
 
 Core v0 stance:
 
-- Script-data tokenizer families are `OUT_OF_SCOPE`.
-- RAWTEXT and RCDATA tokenizer families are `DEFERRED`.
-- Tree-builder `Text` insertion mode is `DEFERRED` (coupled to deferred tokenizer text families).
+- RAWTEXT is supported for HTML RAWTEXT containers using the Core-v0 shared text-mode subset.
+- RCDATA is supported for HTML `title`/`textarea` using the Core-v0 shared text-mode subset, including current tokenizer-side character-reference decoding behavior.
+- Script supports a bounded Core-v0 script text-mode subset in which `<script>` content is treated as raw until a matching ASCII-case-insensitive `</script>` end tag is recognized.
+- Full HTML script-data escaped/double-escaped/comment-like state-family work is not implemented in Core v0 and is tracked separately as follow-up `G5`.
+- Tree-builder `Text` insertion mode is supported only to the extent required by the supported tokenizer text-mode subset above.
 - Parser-scripting interaction (parser pause/suspension and script execution integration) is not implemented in Core v0.
 
 <a id="tables-stance"></a>
@@ -213,11 +221,9 @@ Core v0 stance:
 The following are intentionally not part of the Core v0 guarantee:
 
 - `OUT_OF_SCOPE`:
-  - tokenizer script-data escaped/double-escaped families (`TOK-STATE-SCRIPT-DATA`, `TOK-STATE-SCRIPT-DATA-ESCAPED`)
+  - tokenizer script-data escaped/double-escaped families (`TOK-STATE-SCRIPT-DATA-ESCAPED`)
   - template insertion mode stack (`TB-ALGO-TEMPLATE-MODES`)
 - `DEFERRED`:
-  - tokenizer RAWTEXT and RCDATA families (`TOK-STATE-RAWTEXT`, `TOK-STATE-RAWTEXT-END-TAG`, `TOK-STATE-RCDATA`, `TOK-STATE-RCDATA-END-TAG`)
-  - tree-builder `TB-MODE-TEXT`
   - adoption agency algorithm (`TB-ALGO-AAA`)
   - foster parenting (`TB-ALGO-FOSTER`)
   - full table insertion-mode set (see tree-builder matrix `Early Table Stance`)
@@ -256,7 +262,7 @@ This contract prevents accidental reliance on unspecified behavior.
 
 ## Non-Goals (Core v0)
 
-- Script-data escaped/double-escaped tokenizer families.
+- Script-data escaped/double-escaped tokenizer families and the remaining full HTML script-data state family beyond the Core-v0 script text-mode subset.
 - Parser-scripting interaction (parser suspension/pause and script execution coupling).
 - Template insertion mode stack.
 - Table insertion modes and foster parenting semantics.
