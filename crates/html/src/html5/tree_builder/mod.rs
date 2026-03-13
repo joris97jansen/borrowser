@@ -11,7 +11,7 @@ pub(crate) mod document;
 mod formatting;
 mod insert;
 mod known_tags;
-mod modes;
+pub(crate) mod modes;
 mod patch_sink;
 mod resolve;
 mod serialize;
