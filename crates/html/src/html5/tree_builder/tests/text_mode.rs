@@ -284,6 +284,132 @@ fn tree_builder_emits_explicit_tokenizer_text_mode_controls() {
 }
 
 #[test]
+fn tree_builder_emits_controls_for_all_supported_text_mode_containers() {
+    use crate::html5::shared::Token;
+    use crate::html5::tokenizer::{TextModeSpec, TokenizerControl};
+    use crate::html5::tree_builder::modes::InsertionMode;
+
+    #[derive(Clone, Copy)]
+    enum Prelude {
+        Head,
+        Body,
+    }
+
+    let cases = [
+        ("style", Prelude::Head, InsertionMode::InHead),
+        ("title", Prelude::Head, InsertionMode::InHead),
+        ("textarea", Prelude::Body, InsertionMode::InBody),
+        ("script", Prelude::Body, InsertionMode::InBody),
+    ];
+
+    for (tag_name, prelude, restored_mode) in cases {
+        let resolver = EmptyResolver;
+        let mut ctx = crate::html5::shared::DocumentParseContext::new();
+        let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+            crate::html5::tree_builder::TreeBuilderConfig::default(),
+            &mut ctx,
+        )
+        .expect("tree builder init");
+
+        let html = ctx
+            .atoms
+            .intern_ascii_folded("html")
+            .expect("atom interning");
+        let head = ctx
+            .atoms
+            .intern_ascii_folded("head")
+            .expect("atom interning");
+        let body = ctx
+            .atoms
+            .intern_ascii_folded("body")
+            .expect("atom interning");
+        let tag = ctx
+            .atoms
+            .intern_ascii_folded(tag_name)
+            .expect("atom interning");
+
+        let mut prelude_tokens = vec![Token::StartTag {
+            name: html,
+            attrs: Vec::new(),
+            self_closing: false,
+        }];
+        match prelude {
+            Prelude::Head => prelude_tokens.push(Token::StartTag {
+                name: head,
+                attrs: Vec::new(),
+                self_closing: false,
+            }),
+            Prelude::Body => prelude_tokens.extend([Token::StartTag {
+                name: body,
+                attrs: Vec::new(),
+                self_closing: false,
+            }]),
+        }
+
+        for token in prelude_tokens {
+            let step = builder
+                .process(&token, &ctx.atoms, &resolver)
+                .expect("prelude should process");
+            assert!(
+                step.tokenizer_control.is_none(),
+                "prelude setup must not emit text-mode controls for {tag_name}"
+            );
+        }
+
+        let enter = builder
+            .process(
+                &Token::StartTag {
+                    name: tag,
+                    attrs: Vec::new(),
+                    self_closing: false,
+                },
+                &ctx.atoms,
+                &resolver,
+            )
+            .expect("text-mode container start tag should process");
+        let expected_spec = if tag_name == "style" {
+            TextModeSpec::rawtext_style(tag)
+        } else if tag_name == "title" {
+            TextModeSpec::rcdata_title(tag)
+        } else if tag_name == "textarea" {
+            TextModeSpec::rcdata_textarea(tag)
+        } else {
+            TextModeSpec::script_data(tag)
+        };
+        assert_eq!(
+            enter.tokenizer_control,
+            Some(TokenizerControl::EnterTextMode(expected_spec)),
+            "{tag_name} start tag must emit explicit tokenizer entry control"
+        );
+        let in_text = builder.state_snapshot();
+        assert_eq!(in_text.insertion_mode, InsertionMode::Text);
+        assert_eq!(
+            in_text.active_text_mode,
+            Some(expected_spec),
+            "{tag_name} must become the active text-mode element"
+        );
+
+        let exit = builder
+            .process(&Token::EndTag { name: tag }, &ctx.atoms, &resolver)
+            .expect("matching text-mode container close should process");
+        assert_eq!(
+            exit.tokenizer_control,
+            Some(TokenizerControl::ExitTextMode),
+            "{tag_name} close tag must emit explicit tokenizer exit control"
+        );
+        let after_close = builder.state_snapshot();
+        assert_eq!(
+            after_close.insertion_mode, restored_mode,
+            "{tag_name} close must restore the previous insertion mode"
+        );
+        assert_eq!(
+            after_close.active_text_mode, None,
+            "{tag_name} close must clear the active text-mode element"
+        );
+    }
+}
+
+#[test]
 fn tree_builder_self_closing_text_mode_container_does_not_enter_text_mode() {
     use crate::html5::shared::Token;
     use crate::html5::tree_builder::modes::InsertionMode;
