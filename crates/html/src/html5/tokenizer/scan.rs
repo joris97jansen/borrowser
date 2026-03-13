@@ -48,6 +48,119 @@ pub(crate) fn match_ascii_prefix_ci_at(bytes: &[u8], at: usize, pattern: &[u8]) 
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum IncrementalEndTagMatch {
+    Matched { cursor_after: usize },
+    NeedMoreInput(IncrementalEndTagMatcher),
+    NoMatch,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct IncrementalEndTagMatcher {
+    start: usize,
+    cursor: usize,
+    matched_name_len: usize,
+    phase: IncrementalEndTagMatcherPhase,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum IncrementalEndTagMatcherPhase {
+    LessThan,
+    Solidus,
+    Name,
+    TrailingSpaceOrGt,
+}
+
+impl IncrementalEndTagMatcher {
+    /// Create a matcher anchored at the candidate `<` byte of an end-tag attempt.
+    ///
+    /// The caller must pass the absolute buffer offset of the candidate `<`
+    /// that begins the prospective `</tag-name ...>` sequence. The matcher is
+    /// incremental and resumable across buffer growth, but it does not search
+    /// for candidate positions on its own.
+    pub(crate) fn new(start: usize) -> Self {
+        Self {
+            start,
+            cursor: start,
+            matched_name_len: 0,
+            phase: IncrementalEndTagMatcherPhase::LessThan,
+        }
+    }
+
+    pub(crate) fn start(self) -> usize {
+        self.start
+    }
+
+    #[cfg(test)]
+    pub(crate) fn cursor_for_test(self) -> usize {
+        self.cursor
+    }
+
+    #[cfg(test)]
+    pub(crate) fn matched_name_len_for_test(self) -> usize {
+        self.matched_name_len
+    }
+
+    pub(crate) fn advance(mut self, bytes: &[u8], tag_name: &[u8]) -> IncrementalEndTagMatch {
+        loop {
+            match self.phase {
+                IncrementalEndTagMatcherPhase::LessThan => {
+                    let Some(&b'<') = bytes.get(self.cursor) else {
+                        return if self.cursor >= bytes.len() {
+                            IncrementalEndTagMatch::NeedMoreInput(self)
+                        } else {
+                            IncrementalEndTagMatch::NoMatch
+                        };
+                    };
+                    self.cursor += 1;
+                    self.phase = IncrementalEndTagMatcherPhase::Solidus;
+                }
+                IncrementalEndTagMatcherPhase::Solidus => {
+                    let Some(&byte) = bytes.get(self.cursor) else {
+                        return IncrementalEndTagMatch::NeedMoreInput(self);
+                    };
+                    if byte != b'/' {
+                        return IncrementalEndTagMatch::NoMatch;
+                    }
+                    self.cursor += 1;
+                    self.phase = IncrementalEndTagMatcherPhase::Name;
+                }
+                IncrementalEndTagMatcherPhase::Name => {
+                    while self.matched_name_len < tag_name.len() {
+                        let Some(&byte) = bytes.get(self.cursor) else {
+                            return IncrementalEndTagMatch::NeedMoreInput(self);
+                        };
+                        let expected = tag_name[self.matched_name_len];
+                        if !byte.eq_ignore_ascii_case(&expected) {
+                            return IncrementalEndTagMatch::NoMatch;
+                        }
+                        self.cursor += 1;
+                        self.matched_name_len += 1;
+                    }
+                    self.phase = IncrementalEndTagMatcherPhase::TrailingSpaceOrGt;
+                }
+                IncrementalEndTagMatcherPhase::TrailingSpaceOrGt => {
+                    while let Some(&byte) = bytes.get(self.cursor) {
+                        if !is_html_space_byte(byte) {
+                            break;
+                        }
+                        self.cursor += 1;
+                    }
+                    let Some(&byte) = bytes.get(self.cursor) else {
+                        return IncrementalEndTagMatch::NeedMoreInput(self);
+                    };
+                    if byte != b'>' {
+                        return IncrementalEndTagMatch::NoMatch;
+                    }
+                    return IncrementalEndTagMatch::Matched {
+                        cursor_after: self.cursor + 1,
+                    };
+                }
+            }
+        }
+    }
+}
+
 pub(crate) fn parse_quoted_slice(text: &str, quote_pos: usize) -> QuotedParse<'_> {
     let bytes = text.as_bytes();
     if quote_pos >= bytes.len() {

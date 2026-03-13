@@ -1,6 +1,7 @@
 use super::batch::TokenBatch;
 use super::control::{TextModeKind, TextModeSpec, TokenizerControl};
 use super::machine::StopCondition;
+use super::scan::IncrementalEndTagMatcher;
 use super::states::TokenizerState;
 use super::stats::TokenizerStats;
 use super::text_mode::PendingTextModeEndTag;
@@ -38,6 +39,8 @@ pub struct Html5Tokenizer {
     pub(in crate::html5::tokenizer) active_text_mode: Option<TextModeSpec>,
     pub(in crate::html5::tokenizer) cursor: usize,
     pub(in crate::html5::tokenizer) tokens: Vec<Token>,
+    pub(in crate::html5::tokenizer) pending_text_mode_end_tag_matcher:
+        Option<IncrementalEndTagMatcher>,
     pub(in crate::html5::tokenizer) pending_text_mode_end_tag: Option<PendingTextModeEndTag>,
     pub(in crate::html5::tokenizer) pending_text_start: Option<usize>,
     pub(in crate::html5::tokenizer) pending_comment_start: Option<usize>,
@@ -73,6 +76,7 @@ impl Html5Tokenizer {
             active_text_mode: None,
             cursor: 0,
             tokens: Vec::new(),
+            pending_text_mode_end_tag_matcher: None,
             pending_text_mode_end_tag: None,
             pending_text_start: None,
             pending_comment_start: None,
@@ -243,6 +247,7 @@ impl Html5Tokenizer {
                     "cannot enter tokenizer text mode while another text mode is active"
                 );
                 self.active_text_mode = Some(spec);
+                self.pending_text_mode_end_tag_matcher = None;
                 self.pending_text_mode_end_tag = None;
                 match spec.kind {
                     TextModeKind::RawText => self.transition_to(TokenizerState::RawText),
@@ -256,6 +261,7 @@ impl Html5Tokenizer {
                     "cannot exit tokenizer text mode when no text mode is active"
                 );
                 self.active_text_mode = None;
+                self.pending_text_mode_end_tag_matcher = None;
                 self.pending_text_mode_end_tag = None;
                 self.transition_to(TokenizerState::Data);
             }
