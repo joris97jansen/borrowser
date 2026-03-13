@@ -1,8 +1,7 @@
 use super::Html5Tokenizer;
 use super::control::TextModeKind;
-use super::input::MatchResult;
 use super::machine::Step;
-use super::scan::is_html_space_byte;
+use super::scan::{IncrementalEndTagMatch, IncrementalEndTagMatcher};
 use super::states::TokenizerState;
 use crate::entities::decode_entities;
 use crate::html5::shared::{Input, TextSpan, TextValue, Token};
@@ -13,7 +12,7 @@ pub(crate) enum TextModeEndTagMatch {
         cursor_after: usize,
         name: crate::html5::shared::AtomId,
     },
-    NeedMoreInput,
+    NeedMoreInput(IncrementalEndTagMatcher),
     NoMatch,
 }
 
@@ -109,6 +108,15 @@ impl Html5Tokenizer {
             self.transition_to(TokenizerState::Data);
             return Step::Progress;
         }
+        if let Some(matcher) = self.pending_text_mode_end_tag_matcher.take() {
+            debug_assert_eq!(matcher.start(), self.cursor);
+            return self.resolve_text_mode_end_tag_attempt(
+                input,
+                expected_kind,
+                matcher.start(),
+                Some(matcher),
+            );
+        }
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
         }
@@ -128,7 +136,17 @@ impl Html5Tokenizer {
         }
 
         let less_than_pos = self.cursor;
-        match self.match_text_mode_end_tag(input, expected_kind) {
+        self.resolve_text_mode_end_tag_attempt(input, expected_kind, less_than_pos, None)
+    }
+
+    fn resolve_text_mode_end_tag_attempt(
+        &mut self,
+        input: &Input,
+        expected_kind: TextModeKind,
+        less_than_pos: usize,
+        matcher: Option<IncrementalEndTagMatcher>,
+    ) -> Step {
+        match self.match_text_mode_end_tag(input, expected_kind, matcher) {
             TextModeEndTagMatch::Matched { cursor_after, name } => {
                 if self
                     .pending_text_start
@@ -145,7 +163,8 @@ impl Html5Tokenizer {
                     Step::Progress
                 }
             }
-            TextModeEndTagMatch::NeedMoreInput => {
+            TextModeEndTagMatch::NeedMoreInput(matcher) => {
+                self.pending_text_mode_end_tag_matcher = Some(matcher);
                 self.cursor = less_than_pos;
                 Step::NeedMoreInput
             }
@@ -163,6 +182,7 @@ impl Html5Tokenizer {
         &self,
         input: &Input,
         expected_kind: TextModeKind,
+        matcher: Option<IncrementalEndTagMatcher>,
     ) -> TextModeEndTagMatch {
         let Some(active_text_mode) = self.active_text_mode else {
             return TextModeEndTagMatch::NoMatch;
@@ -170,44 +190,17 @@ impl Html5Tokenizer {
         if active_text_mode.kind != expected_kind {
             return TextModeEndTagMatch::NoMatch;
         }
-        let hint = active_text_mode.text_mode_end_tag_literal();
-
-        let text = input.as_str();
-        let bytes = text.as_bytes();
-        let cursor = self.cursor;
-        if bytes.get(cursor) != Some(&b'<') {
-            return TextModeEndTagMatch::NoMatch;
-        }
-        let slash = cursor + 1;
-        if slash >= bytes.len() {
-            return TextModeEndTagMatch::NeedMoreInput;
-        }
-        if bytes[slash] != b'/' {
-            return TextModeEndTagMatch::NoMatch;
-        }
-        let name_start = slash + 1;
-        match super::scan::match_ascii_prefix_ci_at(bytes, name_start, hint) {
-            MatchResult::Matched => {}
-            MatchResult::NeedMoreInput => return TextModeEndTagMatch::NeedMoreInput,
-            MatchResult::NoMatch => return TextModeEndTagMatch::NoMatch,
-        }
-
-        let mut cursor_after_name = name_start + hint.len();
-        if cursor_after_name >= bytes.len() {
-            return TextModeEndTagMatch::NeedMoreInput;
-        }
-        while cursor_after_name < bytes.len() && is_html_space_byte(bytes[cursor_after_name]) {
-            cursor_after_name += 1;
-        }
-        if cursor_after_name >= bytes.len() {
-            return TextModeEndTagMatch::NeedMoreInput;
-        }
-        if bytes[cursor_after_name] != b'>' {
-            return TextModeEndTagMatch::NoMatch;
-        }
-        TextModeEndTagMatch::Matched {
-            cursor_after: cursor_after_name + 1,
-            name: active_text_mode.end_tag_name,
+        let tag_name = active_text_mode.text_mode_end_tag_literal();
+        let matcher = matcher.unwrap_or_else(|| IncrementalEndTagMatcher::new(self.cursor));
+        match matcher.advance(input.as_str().as_bytes(), tag_name) {
+            IncrementalEndTagMatch::Matched { cursor_after } => TextModeEndTagMatch::Matched {
+                cursor_after,
+                name: active_text_mode.end_tag_name,
+            },
+            IncrementalEndTagMatch::NeedMoreInput(matcher) => {
+                TextModeEndTagMatch::NeedMoreInput(matcher)
+            }
+            IncrementalEndTagMatch::NoMatch => TextModeEndTagMatch::NoMatch,
         }
     }
 }

@@ -2,6 +2,7 @@ mod api;
 mod chunking;
 mod comments;
 mod doctype;
+mod end_tag_matcher;
 mod entities;
 mod formatting;
 mod helpers;
