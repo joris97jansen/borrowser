@@ -1,0 +1,23 @@
+# format: html5-token-v1
+# note: input.html intentionally ends with a trailing newline byte
+START name=html attrs=[] self_closing=false
+START name=head attrs=[] self_closing=false
+START name=title attrs=[] self_closing=false
+CHAR text="Tom & Jerry <b>"
+END name=title
+END name=head
+START name=body attrs=[] self_closing=false
+START name=section attrs=[] self_closing=false
+START name=textarea attrs=[] self_closing=false
+CHAR text="A&B<x>"
+END name=textarea
+START name=p attrs=[] self_closing=false
+START name=em attrs=[] self_closing=false
+CHAR text="ok"
+END name=em
+END name=p
+END name=section
+END name=body
+END name=html
+CHAR text="\n"
+EOF

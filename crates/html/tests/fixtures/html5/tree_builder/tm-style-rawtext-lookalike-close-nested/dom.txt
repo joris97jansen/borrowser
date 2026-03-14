@@ -1,0 +1,11 @@
+# format: html5-dom-v1
+# status: active
+#document
+  <html>
+    <head>
+      <style>
+        "body{content:\"</stylex><\\\\/style>\";}"
+    <body>
+      <div>
+        <em>
+          "ok"

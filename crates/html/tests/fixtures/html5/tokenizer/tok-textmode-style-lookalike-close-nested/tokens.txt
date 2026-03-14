@@ -1,0 +1,18 @@
+# format: html5-token-v1
+# note: input.html intentionally ends with a trailing newline byte
+START name=html attrs=[] self_closing=false
+START name=head attrs=[] self_closing=false
+START name=style attrs=[] self_closing=false
+CHAR text="body{content:\"</stylex><\\\\/style>\";}"
+END name=style
+END name=head
+START name=body attrs=[] self_closing=false
+START name=div attrs=[] self_closing=false
+START name=em attrs=[] self_closing=false
+CHAR text="ok"
+END name=em
+END name=div
+END name=body
+END name=html
+CHAR text="\n"
+EOF

@@ -1,0 +1,21 @@
+# format: html5-dompatch-v1
+# status: active
+
+Batch index=0 size=17
+CreateDocument key=1 doctype=<none>
+CreateElement key=2 name=html attrs=[]
+AppendChild parent=1 child=2
+CreateElement key=3 name=head attrs=[]
+AppendChild parent=2 child=3
+CreateElement key=4 name=body attrs=[]
+AppendChild parent=2 child=4
+CreateElement key=5 name=script attrs=[]
+AppendChild parent=4 child=5
+CreateText key=6 text="var a='</scriptx>';var b='<\\\\/script>';done()"
+AppendChild parent=5 child=6
+CreateElement key=7 name=section attrs=[]
+AppendChild parent=4 child=7
+CreateElement key=8 name=p attrs=[]
+AppendChild parent=7 child=8
+CreateText key=9 text="ok"
+AppendChild parent=8 child=9
