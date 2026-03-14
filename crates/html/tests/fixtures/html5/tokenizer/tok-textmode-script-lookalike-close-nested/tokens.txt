@@ -1,0 +1,18 @@
+# format: html5-token-v1
+# note: input.html intentionally ends with a trailing newline byte
+START name=html attrs=[] self_closing=false
+START name=head attrs=[] self_closing=false
+END name=head
+START name=body attrs=[] self_closing=false
+START name=script attrs=[] self_closing=false
+CHAR text="var a='</scriptx>';var b='<\\\\/script>';done()"
+END name=script
+START name=section attrs=[] self_closing=false
+START name=p attrs=[] self_closing=false
+CHAR text="ok"
+END name=p
+END name=section
+END name=body
+END name=html
+CHAR text="\n"
+EOF

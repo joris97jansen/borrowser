@@ -1,0 +1,27 @@
+# format: html5-dompatch-v1
+# status: active
+
+Batch index=0 size=23
+CreateDocument key=1 doctype=<none>
+CreateElement key=2 name=html attrs=[]
+AppendChild parent=1 child=2
+CreateElement key=3 name=head attrs=[]
+AppendChild parent=2 child=3
+CreateElement key=4 name=title attrs=[]
+AppendChild parent=3 child=4
+CreateText key=5 text="Tom & Jerry <b>"
+AppendChild parent=4 child=5
+CreateElement key=6 name=body attrs=[]
+AppendChild parent=2 child=6
+CreateElement key=7 name=section attrs=[]
+AppendChild parent=6 child=7
+CreateElement key=8 name=textarea attrs=[]
+AppendChild parent=7 child=8
+CreateText key=9 text="A&B<x>"
+AppendChild parent=8 child=9
+CreateElement key=10 name=p attrs=[]
+AppendChild parent=7 child=10
+CreateElement key=11 name=em attrs=[]
+AppendChild parent=10 child=11
+CreateText key=12 text="ok"
+AppendChild parent=11 child=12

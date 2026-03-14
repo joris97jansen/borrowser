@@ -1,0 +1,14 @@
+# format: html5-dom-v1
+# status: active
+#document
+  <html>
+    <head>
+      <title>
+        "Tom & Jerry <b>"
+    <body>
+      <section>
+        <textarea>
+          "A&B<x>"
+        <p>
+          <em>
+            "ok"

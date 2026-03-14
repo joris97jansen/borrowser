@@ -1,0 +1,11 @@
+# format: html5-dom-v1
+# status: active
+#document
+  <html>
+    <head>
+    <body>
+      <script>
+        "var a='</scriptx>';var b='<\\\\/script>';done()"
+      <section>
+        <p>
+          "ok"
