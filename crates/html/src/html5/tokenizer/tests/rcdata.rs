@@ -58,6 +58,38 @@ fn rcdata_title_end_tag_match_is_ascii_case_insensitive_and_allows_html_space() 
 }
 
 #[test]
+fn rcdata_title_attribute_like_end_tag_remains_literal_until_plain_close() {
+    let input = "<title>a</title class=x>b</title>";
+    assert_title_rcdata_chunk_invariant(input);
+    let (tokens, _) = run_title_rcdata_chunks(&[input]);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=title attrs=[] self_closing=false".to_string(),
+            "CHAR text=\"a</title class=x>b\"".to_string(),
+            "END name=title".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn rcdata_textarea_slash_bearing_end_tag_remains_literal_until_plain_close() {
+    let input = "<textarea>a</textarea/>b</textarea>";
+    assert_textarea_rcdata_chunk_invariant(input);
+    let (tokens, _) = run_textarea_rcdata_chunks(&[input]);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=textarea attrs=[] self_closing=false".to_string(),
+            "CHAR text=\"a</textarea/>b\"".to_string(),
+            "END name=textarea".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
 fn rcdata_textarea_handles_character_reference_split_across_chunks() {
     let whole = run_textarea_rcdata_chunks(&["<textarea>Tom &amp; Jerry</textarea>"]).0;
     let split = run_textarea_rcdata_chunks(&["<textarea>Tom &am", "p; Jerry</textarea>"]).0;

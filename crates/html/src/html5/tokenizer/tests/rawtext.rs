@@ -68,6 +68,22 @@ fn rawtext_style_mismatched_end_tag_is_emitted_as_text_until_matching_close() {
 }
 
 #[test]
+fn rawtext_style_attribute_like_end_tag_remains_literal_until_plain_close() {
+    let input = "<style>a</style class=x>b</style>";
+    assert_style_rawtext_chunk_invariant(input);
+    let (tokens, _) = run_style_rawtext_chunks(&[input]);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=style attrs=[] self_closing=false".to_string(),
+            "CHAR text=\"a</style class=x>b\"".to_string(),
+            "END name=style".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
 fn rawtext_style_incomplete_close_tail_at_eof_is_literal_text() {
     assert_style_rawtext_chunk_invariant("<style>a</sty");
     let (tokens, _) = run_style_rawtext_chunks(&["<style>a</sty"]);

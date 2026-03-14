@@ -70,6 +70,22 @@ fn script_data_mismatched_end_tag_is_emitted_as_text_until_matching_close() {
 }
 
 #[test]
+fn script_data_attribute_like_end_tag_remains_literal_until_plain_close() {
+    let input = "<script>a</script type=text/plain>b</script>";
+    assert_script_data_chunk_invariant(input);
+    let (tokens, _) = run_script_data_chunks(&[input]);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=script attrs=[] self_closing=false".to_string(),
+            "CHAR text=\"a</script type=text/plain>b\"".to_string(),
+            "END name=script".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
 fn script_data_incomplete_close_tail_at_eof_is_literal_text() {
     assert_script_data_chunk_invariant("<script>a</scr");
     let (tokens, _) = run_script_data_chunks(&["<script>a</scr"]);

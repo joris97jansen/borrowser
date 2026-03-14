@@ -1,6 +1,6 @@
 # HTML5 Core v0 Supported Subset Contract (Milestone D3)
 
-Last updated: 2026-03-12
+Last updated: 2026-03-14
 Scope: `crates/html/src/html5` (feature `html5`)
 Normative matrix sources:
 - `docs/html5/spec-matrix-tokenizer.md`
@@ -194,6 +194,12 @@ Core v0 stance:
 - RAWTEXT is supported for HTML RAWTEXT containers using the Core-v0 shared text-mode subset.
 - RCDATA is supported for HTML `title`/`textarea` using the Core-v0 shared text-mode subset, including current tokenizer-side character-reference decoding behavior.
 - Script supports a bounded Core-v0 script text-mode subset in which `<script>` content is treated as raw until a matching ASCII-case-insensitive `</script>` end tag is recognized.
+- Core-v0 shared text-mode close-tag recognition for RAWTEXT/RCDATA/script:
+  - matches the expected end-tag name ASCII-case-insensitively,
+  - recognizes the close only when the following bytes are optional HTML whitespace followed by `>`,
+  - keeps the whole candidate sequence in text and resumes scanning when any other continuation follows the matching name.
+- In Core v0, sequences such as `</style class=x>`, `</script type=text/plain>`, and `</textarea/>` remain literal text until a plain matching close tag is reached.
+- Full HTML end-tag-state parity for attribute/slash continuations in RAWTEXT/RCDATA/script is deferred to follow-up `G8` (`docs/html5/issues/G8-text-mode-end-tag-parity.md`).
 - Full HTML script-data escaped/double-escaped/comment-like state-family work is not implemented in Core v0 and is tracked separately as follow-up `G5`.
 - Tree-builder `Text` insertion mode is supported only to the extent required by the supported tokenizer text-mode subset above.
 - Parser-scripting interaction (parser pause/suspension and script execution integration) is not implemented in Core v0.
