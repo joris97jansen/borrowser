@@ -73,6 +73,9 @@ pub fn diff_lines(expected: &[String], actual: &[String]) -> String {
 pub mod token_snapshot;
 
 #[cfg(feature = "html5")]
+pub mod tokenizer_text_mode;
+
+#[cfg(feature = "html5")]
 pub mod wpt_tokenizer;
 
 #[cfg(feature = "html5")]

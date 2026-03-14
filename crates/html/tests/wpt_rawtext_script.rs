@@ -5,6 +5,6 @@ mod wpt_manifest;
 mod wpt_tokenizer_suite;
 
 #[test]
-fn wpt_html5_tokenizer_slice() {
-    wpt_tokenizer_suite::run(wpt_tokenizer_suite::TokenizerSuiteSpec::all());
+fn wpt_rawtext_script_slice() {
+    wpt_tokenizer_suite::run(wpt_tokenizer_suite::TokenizerSuiteSpec::rawtext_script());
 }

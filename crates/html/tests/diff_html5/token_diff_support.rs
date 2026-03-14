@@ -4,7 +4,7 @@ use html::html5::{
     AttributeValue, DocumentParseContext, Html5Tokenizer, Input, TextResolver, TextValue, Token,
     TokenizeResult, TokenizerConfig,
 };
-use html_test_support::escape_text;
+use html_test_support::{escape_text, tokenizer_text_mode::TokenizerTextModeSupport};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum NormToken {
@@ -33,6 +33,12 @@ pub(super) struct Html5TokenDiffDriver<'a> {
     strict: bool,
 }
 
+struct Html5TokenDiffDrainState<'a> {
+    out: &'a mut Vec<NormToken>,
+    saw_eof_token: &'a mut bool,
+    active_text_mode: &'a mut Option<html::html5::AtomId>,
+}
+
 impl<'a> Html5TokenDiffDriver<'a> {
     pub(super) fn new(case: CaseContext<'a>, strict: bool) -> Self {
         Self { case, strict }
@@ -43,10 +49,17 @@ impl<'a> Html5TokenDiffDriver<'a> {
         input_html: &str,
     ) -> Result<Vec<NormToken>, String> {
         let mut ctx = DocumentParseContext::new();
+        let text_mode_support = TokenizerTextModeSupport::new(&mut ctx);
         let mut tokenizer = Html5Tokenizer::new(TokenizerConfig { emit_eof: true }, &mut ctx);
         let mut input = Input::new();
         let mut saw_eof_token = false;
         let mut out = Vec::new();
+        let mut active_text_mode = None;
+        let mut drain_state = Html5TokenDiffDrainState {
+            out: &mut out,
+            saw_eof_token: &mut saw_eof_token,
+            active_text_mode: &mut active_text_mode,
+        };
 
         input.push_str(input_html);
         loop {
@@ -67,11 +80,12 @@ impl<'a> Html5TokenDiffDriver<'a> {
                 input.as_str().len(),
             )?;
             self.collect_normalized_batch(
-                &mut out,
+                &mut drain_state,
                 &mut tokenizer,
                 &mut input,
                 &ctx,
-                &mut saw_eof_token,
+                &text_mode_support,
+                true,
             )?;
             if matches!(result, TokenizeResult::NeedMoreInput) {
                 break;
@@ -85,11 +99,12 @@ impl<'a> Html5TokenDiffDriver<'a> {
             )
         })?;
         self.collect_normalized_batch(
-            &mut out,
+            &mut drain_state,
             &mut tokenizer,
             &mut input,
             &ctx,
-            &mut saw_eof_token,
+            &text_mode_support,
+            false,
         )?;
         if !saw_eof_token {
             return Err(format!(
@@ -102,18 +117,29 @@ impl<'a> Html5TokenDiffDriver<'a> {
 
     fn collect_normalized_batch(
         &self,
-        out: &mut Vec<NormToken>,
+        drain_state: &mut Html5TokenDiffDrainState<'_>,
         tokenizer: &mut Html5Tokenizer,
         input: &mut Input,
         ctx: &DocumentParseContext,
-        saw_eof_token: &mut bool,
+        text_mode_support: &TokenizerTextModeSupport,
+        expect_token_granular_batches: bool,
     ) -> Result<(), String> {
         loop {
             let batch = tokenizer.next_batch(input);
+            if batch.tokens().is_empty() {
+                break;
+            }
+            if expect_token_granular_batches {
+                assert_eq!(
+                    batch.tokens().len(),
+                    1,
+                    "diff_html5 token driver must observe exactly one token per live tokenizer pump"
+                );
+            }
             let resolver = batch.resolver();
-            let mut saw_any = false;
             for token in batch.iter() {
-                saw_any = true;
+                let control =
+                    text_mode_support.control_for_token(token, drain_state.active_text_mode);
                 match token {
                     Token::Doctype {
                         name,
@@ -138,7 +164,7 @@ impl<'a> Html5TokenDiffDriver<'a> {
                                 }
                             }
                         };
-                        out.push(NormToken::Doctype { name });
+                        drain_state.out.push(NormToken::Doctype { name });
                     }
                     Token::StartTag {
                         name,
@@ -201,7 +227,7 @@ impl<'a> Html5TokenDiffDriver<'a> {
                         // Diff normalization only: treat HTML void elements as self-closing
                         // to reduce cross-implementation noise in token comparisons.
                         let self_closing = *self_closing || is_html_void_tag(&name);
-                        out.push(NormToken::StartTag {
+                        drain_state.out.push(NormToken::StartTag {
                             name,
                             attrs,
                             self_closing,
@@ -216,7 +242,7 @@ impl<'a> Html5TokenDiffDriver<'a> {
                                 self.case.id, self.case.path
                             ));
                         }
-                        out.push(NormToken::EndTag {
+                        drain_state.out.push(NormToken::EndTag {
                             name: name.to_ascii_lowercase(),
                         });
                     }
@@ -232,7 +258,7 @@ impl<'a> Html5TokenDiffDriver<'a> {
                             }
                             TextValue::Owned(text) => text.as_str(),
                         };
-                        out.push(NormToken::Comment {
+                        drain_state.out.push(NormToken::Comment {
                             text: text.to_string(),
                         });
                     }
@@ -248,18 +274,18 @@ impl<'a> Html5TokenDiffDriver<'a> {
                             }
                             TextValue::Owned(value) => value.as_str(),
                         };
-                        push_char(out, text);
+                        push_char(drain_state.out, text);
                     }
                     Token::Eof => {
-                        if !*saw_eof_token {
-                            *saw_eof_token = true;
-                            out.push(NormToken::Eof);
+                        if !*drain_state.saw_eof_token {
+                            *drain_state.saw_eof_token = true;
+                            drain_state.out.push(NormToken::Eof);
                         }
                     }
                 }
-            }
-            if !saw_any {
-                break;
+                if let Some(control) = control {
+                    tokenizer.apply_control(control);
+                }
             }
         }
         Ok(())

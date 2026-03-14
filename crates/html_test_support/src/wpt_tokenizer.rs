@@ -1,8 +1,8 @@
 use crate::token_snapshot;
+use crate::tokenizer_text_mode::TokenizerTextModeSupport;
 use crate::wpt_formats::TOKENIZER_SKIPS_FORMAT_V1;
 use html::html5::{
-    AtomId, DocumentParseContext, Html5Tokenizer, Input, TextModeSpec, Token, TokenizeResult,
-    TokenizerConfig, TokenizerControl,
+    AtomId, DocumentParseContext, Html5Tokenizer, Input, TokenizeResult, TokenizerConfig,
 };
 use html::test_harness::{BoundaryPolicy, ChunkPlan};
 use serde::Deserialize;
@@ -171,7 +171,7 @@ pub fn applied_skip_override(
 
 pub fn run_tokenizer_whole(input_html: &str, case_id: &str) -> Result<Vec<String>, String> {
     let mut ctx = DocumentParseContext::new();
-    let text_mode_support = TokenizerHarnessTextModeSupport::new(&mut ctx);
+    let text_mode_support = TokenizerTextModeSupport::new(&mut ctx);
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig { emit_eof: true }, &mut ctx);
     let mut input = Input::new();
     input.push_str(input_html);
@@ -225,7 +225,7 @@ pub fn run_tokenizer_chunked(
     plan_label: &str,
 ) -> Result<Vec<String>, String> {
     let mut ctx = DocumentParseContext::new();
-    let text_mode_support = TokenizerHarnessTextModeSupport::new(&mut ctx);
+    let text_mode_support = TokenizerTextModeSupport::new(&mut ctx);
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig { emit_eof: true }, &mut ctx);
     let mut input = Input::new();
     let mut out = Vec::new();
@@ -363,7 +363,7 @@ fn drain_tokens(
 
 struct TokenizerHarnessDriver<'a> {
     context: &'a token_snapshot::TokenFormatContext<'a>,
-    text_mode_support: &'a TokenizerHarnessTextModeSupport,
+    text_mode_support: &'a TokenizerTextModeSupport,
 }
 
 struct TokenDrainState<'a> {
@@ -371,73 +371,6 @@ struct TokenDrainState<'a> {
     index: &'a mut usize,
     saw_eof_token: &'a mut bool,
     active_text_mode: &'a mut Option<AtomId>,
-}
-
-struct TokenizerHarnessTextModeSupport {
-    style: AtomId,
-    title: AtomId,
-    textarea: AtomId,
-    script: AtomId,
-}
-
-impl TokenizerHarnessTextModeSupport {
-    fn new(ctx: &mut DocumentParseContext) -> Self {
-        let style = ctx
-            .atoms
-            .intern_ascii_folded("style")
-            .expect("style atom interning in tokenizer harness must succeed");
-        let title = ctx
-            .atoms
-            .intern_ascii_folded("title")
-            .expect("title atom interning in tokenizer harness must succeed");
-        let textarea = ctx
-            .atoms
-            .intern_ascii_folded("textarea")
-            .expect("textarea atom interning in tokenizer harness must succeed");
-        let script = ctx
-            .atoms
-            .intern_ascii_folded("script")
-            .expect("script atom interning in tokenizer harness must succeed");
-        Self {
-            style,
-            title,
-            textarea,
-            script,
-        }
-    }
-
-    fn control_for_token(
-        &self,
-        token: &Token,
-        active_text_mode: &mut Option<AtomId>,
-    ) -> Option<TokenizerControl> {
-        let style = self.style;
-        let title = self.title;
-        let textarea = self.textarea;
-        let script = self.script;
-        match token {
-            Token::StartTag { name, .. } if active_text_mode.is_none() => {
-                let spec = if *name == style {
-                    Some(TextModeSpec::rawtext_style(style))
-                } else if *name == title {
-                    Some(TextModeSpec::rcdata_title(title))
-                } else if *name == textarea {
-                    Some(TextModeSpec::rcdata_textarea(textarea))
-                } else if *name == script {
-                    Some(TextModeSpec::script_data(script))
-                } else {
-                    None
-                }?;
-                *active_text_mode = Some(*name);
-                Some(TokenizerControl::EnterTextMode(spec))
-            }
-            Token::EndTag { name } if *active_text_mode == Some(*name) => {
-                *active_text_mode = None;
-                Some(TokenizerControl::ExitTextMode)
-            }
-            _ => None,
-        }
-    }
 }
 
 fn handle_tokenize_result(result: TokenizeResult, stage: &str) -> Result<(), String> {

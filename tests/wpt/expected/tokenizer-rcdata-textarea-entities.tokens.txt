@@ -1,0 +1,6 @@
+# format: html5-token-v1
+START name=textarea attrs=[] self_closing=false
+CHAR text="A&B<x>"
+END name=textarea
+CHAR text="\n"
+EOF
