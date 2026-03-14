@@ -47,6 +47,30 @@ path: vendor/html/syntax/parsing/tokenizer-script-data.html
 expected: expected/tokenizer-script-data.tokens.txt
 status: active
 
+id: tokenizer-rawtext-style
+kind: tokens
+path: vendor/html/syntax/parsing/tokenizer-rawtext-style.html
+expected: expected/tokenizer-rawtext-style.tokens.txt
+status: active
+
+id: tokenizer-rcdata-title-entities
+kind: tokens
+path: vendor/html/syntax/parsing/tokenizer-rcdata-title-entities.html
+expected: expected/tokenizer-rcdata-title-entities.tokens.txt
+status: active
+
+id: tokenizer-rcdata-textarea-entities
+kind: tokens
+path: vendor/html/syntax/parsing/tokenizer-rcdata-textarea-entities.html
+expected: expected/tokenizer-rcdata-textarea-entities.tokens.txt
+status: active
+
+id: tokenizer-script-lookalike-close
+kind: tokens
+path: vendor/html/syntax/parsing/tokenizer-script-lookalike-close.html
+expected: expected/tokenizer-script-lookalike-close.tokens.txt
+status: active
+
 id: tokenizer-script-escaped
 kind: tokens
 path: vendor/html/syntax/parsing/tokenizer-script-escaped.html

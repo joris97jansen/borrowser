@@ -1,0 +1,6 @@
+# format: html5-token-v1
+START name=style attrs=[] self_closing=false
+CHAR text="body{content:\"</stylex><\\\\/style>\";}"
+END name=style
+CHAR text="\n"
+EOF

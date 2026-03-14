@@ -46,7 +46,8 @@ CI fast and deterministic.
 3. Generate or edit the expected snapshot in `expected/`.
 4. Run `cargo test -p html --features html5,dom-snapshot --test wpt_html5` to validate DOM+token mixed WPT cases.
 5. Run `cargo test -p html --features html5 --test wpt_html5_tokenizer` for the tokenizer slice.
-6. Run `cargo test -p html --features html5,dom-snapshot --test wpt_html5_tree_builder` for the tree-construction slice.
+6. Run `cargo test -p html --features html5 --test wpt_rawtext_script` for the focused RAWTEXT/RCDATA/script tokenizer slice.
+7. Run `cargo test -p html --features html5,dom-snapshot --test wpt_html5_tree_builder` for the tree-construction slice.
 
 ## Source / Upstream
 
@@ -63,5 +64,7 @@ or in a short note alongside the test.
   and mirrored in `tree_builder/skips.json` (the tree-builder runner validates parity).
 - The runner uses `html::dom_snapshot::DomSnapshot` and the same UTF-8 aligned streaming policy as the golden harnesses.
 - Filters: set `WPT_KIND=dom|tokens|all`, `WPT_FILTER=<substring>`, or `WPT_IDS=id1,id2` to run a subset.
+- The dedicated `wpt_rawtext_script` target runs a fixed tokenizer subset covering
+  RAWTEXT, RCDATA entities, script data, and the maintained skip-only escaped-script case.
 - Chunked runs: set `WPT_CHUNKED=1` (optional `WPT_FUZZ_RUNS` and `WPT_FUZZ_SEED`).
 - By default, chunked tokenizer runs are skipped when whole-input already mismatched expected to reduce noise; set `WPT_CHUNKED_FORCE=1` to force chunked diagnostics.
