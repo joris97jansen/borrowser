@@ -1,4 +1,7 @@
-use super::helpers::{assert_script_data_chunk_invariant, run_script_data_chunks};
+use super::helpers::{
+    assert_script_data_chunk_invariant, assert_text_mode_split_close_tag_regression,
+    run_script_data_chunks,
+};
 
 #[test]
 fn script_data_split_end_tag_is_chunk_invariant_at_every_boundary() {
@@ -117,5 +120,45 @@ fn script_data_large_near_miss_input_remains_linear() {
     assert!(
         stats.text_mode_end_tag_match_progress_bytes
             <= (repeats as u64 * b"</script".len() as u64) + 16
+    );
+}
+
+// Regression for G11: split script-data close tags with trailing HTML space
+// must still terminate exactly once at the real matching end tag.
+#[test]
+fn g11_regression_script_data_whitespace_close_tag_splits_at_every_boundary() {
+    let input = "<script>x</script \t\r\n>";
+    assert_text_mode_split_close_tag_regression(
+        run_script_data_chunks,
+        input,
+        "</script \t\r\n>",
+        &[
+            "START name=script attrs=[] self_closing=false",
+            "CHAR text=\"x\"",
+            "END name=script",
+            "EOF",
+        ],
+        "G11",
+        "script-data-whitespace-close-tag",
+    );
+}
+
+// Regression for G11: attribute-like script close-tag noise must remain text
+// across chunk splits inside the noisy candidate until the later plain close.
+#[test]
+fn g11_regression_script_data_attribute_like_noise_splits_at_every_boundary() {
+    let input = "<script>a</script type=text/plain>b</script>";
+    assert_text_mode_split_close_tag_regression(
+        run_script_data_chunks,
+        input,
+        "</script type=text/plain>",
+        &[
+            "START name=script attrs=[] self_closing=false",
+            "CHAR text=\"a</script type=text/plain>b\"",
+            "END name=script",
+            "EOF",
+        ],
+        "G11",
+        "script-data-attribute-like-noise",
     );
 }

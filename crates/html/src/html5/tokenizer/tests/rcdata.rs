@@ -1,6 +1,6 @@
 use super::helpers::{
-    assert_textarea_rcdata_chunk_invariant, assert_title_rcdata_chunk_invariant,
-    run_textarea_rcdata_chunks, run_title_rcdata_chunks,
+    assert_text_mode_split_close_tag_regression, assert_textarea_rcdata_chunk_invariant,
+    assert_title_rcdata_chunk_invariant, run_textarea_rcdata_chunks, run_title_rcdata_chunks,
 };
 
 #[test]
@@ -152,5 +152,45 @@ fn rcdata_title_large_near_miss_input_remains_linear() {
     assert!(
         stats.text_mode_end_tag_match_progress_bytes
             <= (repeats as u64 * b"</title".len() as u64) + 16
+    );
+}
+
+// Regression for G11: split RCDATA close tags with trailing HTML space once
+// failed to terminate cleanly when chunked inside the close-tag tail.
+#[test]
+fn g11_regression_rcdata_title_whitespace_close_tag_splits_at_every_boundary() {
+    let input = "<title>x</title \t\r\n>";
+    assert_text_mode_split_close_tag_regression(
+        run_title_rcdata_chunks,
+        input,
+        "</title \t\r\n>",
+        &[
+            "START name=title attrs=[] self_closing=false",
+            "CHAR text=\"x\"",
+            "END name=title",
+            "EOF",
+        ],
+        "G11",
+        "rcdata-title-whitespace-close-tag",
+    );
+}
+
+// Regression for G11: attribute-like close-tag noise in RCDATA must stay text
+// across every split inside the noisy candidate until the later plain close.
+#[test]
+fn g11_regression_rcdata_title_attribute_like_noise_splits_at_every_boundary() {
+    let input = "<title>a</title class=x>b</title>";
+    assert_text_mode_split_close_tag_regression(
+        run_title_rcdata_chunks,
+        input,
+        "</title class=x>",
+        &[
+            "START name=title attrs=[] self_closing=false",
+            "CHAR text=\"a</title class=x>b\"",
+            "END name=title",
+            "EOF",
+        ],
+        "G11",
+        "rcdata-title-attribute-like-noise",
     );
 }

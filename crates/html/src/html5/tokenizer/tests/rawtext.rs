@@ -1,4 +1,7 @@
-use super::helpers::{assert_style_rawtext_chunk_invariant, run_style_rawtext_chunks};
+use super::helpers::{
+    assert_style_rawtext_chunk_invariant, assert_text_mode_split_close_tag_regression,
+    run_style_rawtext_chunks,
+};
 
 #[test]
 fn rawtext_style_split_end_tag_is_chunk_invariant_at_every_boundary() {
@@ -128,4 +131,44 @@ fn rawtext_style_prefix_near_misses_remain_literal_and_chunk_invariant() {
         assert_eq!(tokens[1], format!("CHAR text=\"{tail}\""));
         assert!(stats.steps <= (tail.len() as u64 * 4) + 32);
     }
+}
+
+// Regression for G11: split RAWTEXT close tags with trailing HTML space once
+// failed to terminate correctly when chunked inside the close-tag tail.
+#[test]
+fn g11_regression_rawtext_style_whitespace_close_tag_splits_at_every_boundary() {
+    let input = "<style>x</style \t\r\n>";
+    assert_text_mode_split_close_tag_regression(
+        run_style_rawtext_chunks,
+        input,
+        "</style \t\r\n>",
+        &[
+            "START name=style attrs=[] self_closing=false",
+            "CHAR text=\"x\"",
+            "END name=style",
+            "EOF",
+        ],
+        "G11",
+        "rawtext-style-whitespace-close-tag",
+    );
+}
+
+// Regression for G11: attribute-like close-tag noise in RAWTEXT must stay text
+// across every split inside the noisy candidate until a later plain close tag.
+#[test]
+fn g11_regression_rawtext_style_attribute_like_noise_splits_at_every_boundary() {
+    let input = "<style>a</style class=x>b</style>";
+    assert_text_mode_split_close_tag_regression(
+        run_style_rawtext_chunks,
+        input,
+        "</style class=x>",
+        &[
+            "START name=style attrs=[] self_closing=false",
+            "CHAR text=\"a</style class=x>b\"",
+            "END name=style",
+            "EOF",
+        ],
+        "G11",
+        "rawtext-style-attribute-like-noise",
+    );
 }
