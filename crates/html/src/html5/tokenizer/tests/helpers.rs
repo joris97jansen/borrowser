@@ -200,3 +200,60 @@ pub(super) fn assert_script_data_chunk_invariant(input: &str) {
         );
     }
 }
+
+/// Assert a known split-close-tag regression against:
+/// - whole-input execution,
+/// - every two-chunk split boundary inside the selected candidate, and
+/// - one bytewise multi-pump feed across that full candidate.
+pub(super) fn assert_text_mode_split_close_tag_regression<F>(
+    run: F,
+    input: &str,
+    split_target: &str,
+    expected: &[&str],
+    issue_id: &'static str,
+    label: &'static str,
+) where
+    F: Fn(&[&str]) -> (Vec<String>, TokenizerStats),
+{
+    assert!(
+        split_target.is_ascii(),
+        "regression helper expects ASCII split targets for bytewise chunking ({label})"
+    );
+    let split_start = input.find(split_target).unwrap_or_else(|| {
+        panic!("regression helper could not find split target '{split_target}' in {label}")
+    });
+    let split_end = split_start + split_target.len();
+    let expected = expected
+        .iter()
+        .map(|line| (*line).to_string())
+        .collect::<Vec<_>>();
+    let (whole, _) = run(&[input]);
+    assert_eq!(
+        whole, expected,
+        "{issue_id} whole-input regression baseline mismatch for {label}"
+    );
+    for offset in 1..split_target.len() {
+        let split = split_start + offset;
+        let (chunked, _) = run(&[&input[..split], &input[split..]]);
+        assert_eq!(
+            chunked, whole,
+            "{issue_id} chunked regression mismatch for {label} at split offset={offset}"
+        );
+    }
+
+    let mut bytewise_chunks = Vec::<&str>::with_capacity(split_target.len() + 2);
+    if split_start > 0 {
+        bytewise_chunks.push(&input[..split_start]);
+    }
+    for idx in split_start..split_end {
+        bytewise_chunks.push(&input[idx..idx + 1]);
+    }
+    if split_end < input.len() {
+        bytewise_chunks.push(&input[split_end..]);
+    }
+    let (bytewise, _) = run(&bytewise_chunks);
+    assert_eq!(
+        bytewise, whole,
+        "{issue_id} bytewise multi-chunk regression mismatch for {label}"
+    );
+}
