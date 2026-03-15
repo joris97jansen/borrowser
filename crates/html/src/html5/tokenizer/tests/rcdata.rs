@@ -147,4 +147,10 @@ fn rcdata_title_large_near_miss_input_remains_linear() {
     assert_eq!(tokens[3], "EOF");
     assert!(tokens[1].contains("</titlex>&"));
     assert!(stats.steps <= (repeats as u64 * 4) + 64);
+    assert!(stats.text_mode_end_tag_matcher_starts <= repeats as u64 + 1);
+    assert_eq!(stats.text_mode_end_tag_matcher_resumes, 0);
+    assert!(
+        stats.text_mode_end_tag_match_progress_bytes
+            <= (repeats as u64 * b"</title".len() as u64) + 16
+    );
 }

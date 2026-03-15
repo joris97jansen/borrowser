@@ -19,6 +19,9 @@
 //!   behavior remains deferred.
 //! - Complexity posture (Core v0): tokenizer hot paths are single-pass over input
 //!   slices; comment and doctype tails are scanned linearly without backtracking.
+//! - Text-mode close-tag matching is incremental and resumable across chunk
+//!   growth; pending RAWTEXT/RCDATA/script candidates do not restart scanning
+//!   from the candidate `<` on every pump.
 //! - Atom interning failures are treated as engine invariant breaches (fatal).
 
 mod api;

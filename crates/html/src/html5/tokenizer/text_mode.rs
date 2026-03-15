@@ -179,7 +179,7 @@ impl Html5Tokenizer {
     }
 
     fn match_text_mode_end_tag(
-        &self,
+        &mut self,
         input: &Input,
         expected_kind: TextModeKind,
         matcher: Option<IncrementalEndTagMatcher>,
@@ -191,8 +191,21 @@ impl Html5Tokenizer {
             return TextModeEndTagMatch::NoMatch;
         }
         let tag_name = active_text_mode.text_mode_end_tag_literal();
-        let matcher = matcher.unwrap_or_else(|| IncrementalEndTagMatcher::new(self.cursor));
-        match matcher.advance(input.as_str().as_bytes(), tag_name) {
+        let matcher = match matcher {
+            Some(matcher) => {
+                self.stats_inc_text_mode_end_tag_matcher_resumes();
+                matcher
+            }
+            None => {
+                self.stats_inc_text_mode_end_tag_matcher_starts();
+                IncrementalEndTagMatcher::new(self.cursor)
+            }
+        };
+        let mut progress_bytes = 0u64;
+        let result =
+            matcher.advance_counted(input.as_str().as_bytes(), tag_name, &mut progress_bytes);
+        self.stats_add_text_mode_end_tag_match_progress_bytes(progress_bytes);
+        match result {
             IncrementalEndTagMatch::Matched { cursor_after } => TextModeEndTagMatch::Matched {
                 cursor_after,
                 name: active_text_mode.end_tag_name,
