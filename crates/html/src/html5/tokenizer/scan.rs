@@ -101,7 +101,26 @@ impl IncrementalEndTagMatcher {
         self.matched_name_len
     }
 
-    pub(crate) fn advance(mut self, bytes: &[u8], tag_name: &[u8]) -> IncrementalEndTagMatch {
+    #[cfg(test)]
+    pub(crate) fn advance(self, bytes: &[u8], tag_name: &[u8]) -> IncrementalEndTagMatch {
+        self.advance_internal(bytes, tag_name, None)
+    }
+
+    pub(crate) fn advance_counted(
+        self,
+        bytes: &[u8],
+        tag_name: &[u8],
+        progress_bytes: &mut u64,
+    ) -> IncrementalEndTagMatch {
+        self.advance_internal(bytes, tag_name, Some(progress_bytes))
+    }
+
+    fn advance_internal(
+        mut self,
+        bytes: &[u8],
+        tag_name: &[u8],
+        mut progress_bytes: Option<&mut u64>,
+    ) -> IncrementalEndTagMatch {
         loop {
             match self.phase {
                 IncrementalEndTagMatcherPhase::LessThan => {
@@ -113,6 +132,9 @@ impl IncrementalEndTagMatcher {
                         };
                     };
                     self.cursor += 1;
+                    if let Some(progress) = progress_bytes.as_deref_mut() {
+                        *progress = progress.saturating_add(1);
+                    }
                     self.phase = IncrementalEndTagMatcherPhase::Solidus;
                 }
                 IncrementalEndTagMatcherPhase::Solidus => {
@@ -123,6 +145,9 @@ impl IncrementalEndTagMatcher {
                         return IncrementalEndTagMatch::NoMatch;
                     }
                     self.cursor += 1;
+                    if let Some(progress) = progress_bytes.as_deref_mut() {
+                        *progress = progress.saturating_add(1);
+                    }
                     self.phase = IncrementalEndTagMatcherPhase::Name;
                 }
                 IncrementalEndTagMatcherPhase::Name => {
@@ -136,6 +161,9 @@ impl IncrementalEndTagMatcher {
                         }
                         self.cursor += 1;
                         self.matched_name_len += 1;
+                        if let Some(progress) = progress_bytes.as_deref_mut() {
+                            *progress = progress.saturating_add(1);
+                        }
                     }
                     self.phase = IncrementalEndTagMatcherPhase::TrailingSpaceOrGt;
                 }
@@ -145,12 +173,18 @@ impl IncrementalEndTagMatcher {
                             break;
                         }
                         self.cursor += 1;
+                        if let Some(progress) = progress_bytes.as_deref_mut() {
+                            *progress = progress.saturating_add(1);
+                        }
                     }
                     let Some(&byte) = bytes.get(self.cursor) else {
                         return IncrementalEndTagMatch::NeedMoreInput(self);
                     };
                     if byte != b'>' {
                         return IncrementalEndTagMatch::NoMatch;
+                    }
+                    if let Some(progress) = progress_bytes.as_deref_mut() {
+                        *progress = progress.saturating_add(1);
                     }
                     return IncrementalEndTagMatch::Matched {
                         cursor_after: self.cursor + 1,

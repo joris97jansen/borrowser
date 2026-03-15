@@ -110,6 +110,12 @@ fn rawtext_style_large_near_miss_input_remains_linear() {
     assert_eq!(tokens[3], "EOF");
     assert!(tokens[1].contains("</stylex>"));
     assert!(stats.steps <= (repeats as u64 * 3) + 64);
+    assert!(stats.text_mode_end_tag_matcher_starts <= repeats as u64 + 1);
+    assert_eq!(stats.text_mode_end_tag_matcher_resumes, 0);
+    assert!(
+        stats.text_mode_end_tag_match_progress_bytes
+            <= (repeats as u64 * b"</style".len() as u64) + 16
+    );
 }
 
 #[test]

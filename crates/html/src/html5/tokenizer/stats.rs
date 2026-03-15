@@ -11,6 +11,9 @@ pub struct TokenizerStats {
     pub tokens_emitted: u64,
     pub budget_exhaustions: u64,
     pub bytes_consumed: u64,
+    pub text_mode_end_tag_matcher_starts: u64,
+    pub text_mode_end_tag_matcher_resumes: u64,
+    pub text_mode_end_tag_match_progress_bytes: u64,
 }
 
 impl Html5Tokenizer {
@@ -51,6 +54,39 @@ impl Html5Tokenizer {
         #[cfg(any(test, debug_assertions, feature = "debug-stats"))]
         {
             self.stats.bytes_consumed = self.cursor as u64;
+        }
+    }
+
+    #[inline]
+    pub(crate) fn stats_inc_text_mode_end_tag_matcher_starts(&mut self) {
+        #[cfg(any(test, debug_assertions, feature = "debug-stats"))]
+        {
+            self.stats.text_mode_end_tag_matcher_starts = self
+                .stats
+                .text_mode_end_tag_matcher_starts
+                .saturating_add(1);
+        }
+    }
+
+    #[inline]
+    pub(crate) fn stats_inc_text_mode_end_tag_matcher_resumes(&mut self) {
+        #[cfg(any(test, debug_assertions, feature = "debug-stats"))]
+        {
+            self.stats.text_mode_end_tag_matcher_resumes = self
+                .stats
+                .text_mode_end_tag_matcher_resumes
+                .saturating_add(1);
+        }
+    }
+
+    #[inline]
+    pub(crate) fn stats_add_text_mode_end_tag_match_progress_bytes(&mut self, progress: u64) {
+        #[cfg(any(test, debug_assertions, feature = "debug-stats"))]
+        {
+            self.stats.text_mode_end_tag_match_progress_bytes = self
+                .stats
+                .text_mode_end_tag_match_progress_bytes
+                .saturating_add(progress);
         }
     }
 }
