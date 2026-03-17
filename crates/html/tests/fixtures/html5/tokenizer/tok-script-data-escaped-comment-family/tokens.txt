@@ -1,4 +1,5 @@
 # format: html5-token-v1
+# note: input.html intentionally ends with a trailing newline byte
 START name=script attrs=[] self_closing=false
 CHAR text="<!--\nif (window.x) {\n  document.write(\"<script>nested</script>\");\n}\n//-->"
 END name=script

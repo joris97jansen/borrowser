@@ -10,4 +10,5 @@ mod perf;
 mod rawtext;
 mod rcdata;
 mod script_data;
+mod script_tag_boundary;
 mod tags_attrs;

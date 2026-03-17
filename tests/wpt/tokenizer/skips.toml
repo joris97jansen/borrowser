@@ -1,7 +1,2 @@
 format = "wpt-tokenizer-skips-v1"
-
-[[cases]]
-id = "tokenizer-script-escaped"
-status = "skip"
-reason = "Core-v0 excludes script-data escaped/double-escaped tokenizer families; tracked in G5."
-tracking_issue = "G5"
+cases = []

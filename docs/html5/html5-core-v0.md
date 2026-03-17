@@ -193,7 +193,7 @@ Core v0 stance:
 
 - RAWTEXT is supported for HTML RAWTEXT containers using the Core-v0 shared text-mode subset.
 - RCDATA is supported for HTML `title`/`textarea` using the Core-v0 shared text-mode subset, including current tokenizer-side character-reference decoding behavior.
-- Script supports a bounded Core-v0 script text-mode subset in which `<script>` content is treated as raw until a matching ASCII-case-insensitive `</script>` end tag is recognized.
+- Script supports a dedicated Core-v0 script tokenizer state family, including escaped and double-escaped comment-like branches, while still using the shared script close-tag matcher.
 - Core-v0 shared text-mode close-tag recognition for RAWTEXT/RCDATA/script:
   - matches the expected end-tag name ASCII-case-insensitively,
   - treats `>`, HTML-space-led attribute continuations, and `/` self-closing continuations after the matched name as real end-tag tails,
@@ -201,7 +201,6 @@ Core v0 stance:
   - keeps the whole candidate sequence in text and resumes scanning only when the matched name is followed by any other continuation byte.
 - In Core v0, sequences such as `</style class=x>`, `</script type=text/plain>`, and `</textarea/>` now close the active RAWTEXT/RCDATA/script element instead of staying literal text.
 - Attribute-bearing and self-closing end-tag tails record tokenizer parse errors because end tags ignore attributes and self-closing syntax.
-- Full HTML script-data escaped/double-escaped/comment-like state-family work is not implemented in Core v0 and is tracked separately as follow-up `G5`.
 - Tree-builder `Text` insertion mode is supported only to the extent required by the supported tokenizer text-mode subset above.
 - Parser-scripting interaction (parser pause/suspension and script execution integration) is not implemented in Core v0.
 
@@ -228,7 +227,6 @@ Core v0 stance:
 The following are intentionally not part of the Core v0 guarantee:
 
 - `OUT_OF_SCOPE`:
-  - tokenizer script-data escaped/double-escaped families (`TOK-STATE-SCRIPT-DATA-ESCAPED`)
   - template insertion mode stack (`TB-ALGO-TEMPLATE-MODES`)
 - `DEFERRED`:
   - adoption agency algorithm (`TB-ALGO-AAA`)
@@ -269,8 +267,7 @@ This contract prevents accidental reliance on unspecified behavior.
 
 ## Non-Goals (Core v0)
 
-- Script-data escaped/double-escaped tokenizer families and the remaining full HTML script-data state family beyond the Core-v0 script text-mode subset.
-- Parser-scripting interaction (parser suspension/pause and script execution coupling).
+- parser pause/suspension and script execution integration for `<script>`.
 - Template insertion mode stack.
 - Table insertion modes and foster parenting semantics.
 - Adoption agency algorithm (`TB-ALGO-AAA`).

@@ -1,6 +1,6 @@
 # HTML5 Tree Builder Spec Mapping Matrix (Milestone D2)
 
-Last updated: 2026-03-12
+Last updated: 2026-03-17
 Scope: `crates/html/src/html5/tree_builder` (feature `html5`)
 Spec source: WHATWG HTML, section `Tree construction` (`parsing.html#tree-construction`)
 
@@ -70,7 +70,7 @@ It defines HTML5 Core v0 tree-builder scope and explicitly records deferred and 
 | `TB-MODE-IN-HEAD` | MVP_PARTIAL | `In head` | `#parsing-main-inhead` | `mod.rs`, `modes.rs` | Planned fixtures: `tb-in-head-meta-title`, `tb-in-head-misnested-head-content`. WPT proxy: `basic-structure`. | Proper handling of head-only tags vs body fallback; limited title/script handling in Core v0. | `tb-in-head-core` | Core head parsing needed; full script/template behavior deferred. |
 | `TB-MODE-AFTER-HEAD` | MVP | `After head` | `#parsing-main-afterhead` | `mod.rs`, `modes.rs` | Current proxy: `tree_builder/simple-element`, WPT `basic-structure`. Planned fixture: `tb-after-head-body-bootstrap`. | Implicit `<body>` insertion; mispositioned head tokens after head close. | `tb-after-head-body-bootstrap` | Required handoff into main body mode. |
 | `TB-MODE-IN-BODY` | MVP | `In body` | `#parsing-main-inbody` | `mod.rs`, `modes.rs`, `stack.rs`, `formatting.rs` | Current: `tree_builder/text`, `tree_builder/simple-element`; WPT: `comments-and-text`, `void-elements`. Planned fixture pack: `tb-in-body-core-inline-block`. | Character token insertion, end-tag matching via SOE, formatting elements hooks, comment insertion; unsupported table-family tags must follow deterministic fallback path without invariant breakage. | `tb-in-body-core` | Main workload mode; required for Core v0 semantics. |
-| `TB-MODE-TEXT` | MVP_PARTIAL | `Text` | `#the-text-insertion-mode` | `mod.rs`, `modes.rs`, `text_mode.rs` | Current coverage: `tree_builder/tests/text_mode.rs`; planned fixture umbrella: `tb-text-mode-core`. | Return-to-original-mode mechanics, mismatched end tags, and EOF in text mode. | `tb-text-mode-core` | Core-v0 text-mode routing for title/textarea/style and the Core-v0 script text-mode subset; full script escaped-family parity remains deferred with tokenizer G5 follow-up. |
+| `TB-MODE-TEXT` | MVP_PARTIAL | `Text` | `#the-text-insertion-mode` | `mod.rs`, `modes.rs`, `text_mode.rs` | Current coverage: `tree_builder/tests/text_mode.rs`; planned fixture umbrella: `tb-text-mode-core`. | Return-to-original-mode mechanics, mismatched end tags, and EOF in text mode. | `tb-text-mode-core` | Core-v0 text-mode routing for title/textarea/style and the dedicated script tokenizer family; parser execution/pause behavior remains out of scope. |
 
 ## `TB-MODE-IN-HEAD` Core v0 Partial Scope
 
@@ -85,7 +85,7 @@ Explicitly deferred from Core v0 `In head`:
 - parser-scripting interaction beyond tokenizer/tree-builder text-mode switching.
 - `template` handling and template mode stack interaction.
 - `noscript` script-enabled parsing nuances.
-- full script escaped/double-escaped tokenizer semantics beyond the Core-v0 text-mode subset.
+- parser execution/pause semantics for `<script>`.
 
 ## Algorithm Matrix (SOE/AFE/AAA/Foster/Template/Quirks)
 

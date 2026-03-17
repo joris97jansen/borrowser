@@ -65,6 +65,6 @@ or in a short note alongside the test.
 - The runner uses `html::dom_snapshot::DomSnapshot` and the same UTF-8 aligned streaming policy as the golden harnesses.
 - Filters: set `WPT_KIND=dom|tokens|all`, `WPT_FILTER=<substring>`, or `WPT_IDS=id1,id2` to run a subset.
 - The dedicated `wpt_rawtext_script` target runs a fixed tokenizer subset covering
-  RAWTEXT, RCDATA entities, script data, and the maintained skip-only escaped-script case.
+  RAWTEXT, RCDATA entities, basic script data, and the escaped-script family case.
 - Chunked runs: set `WPT_CHUNKED=1` (optional `WPT_FUZZ_RUNS` and `WPT_FUZZ_SEED`).
 - By default, chunked tokenizer runs are skipped when whole-input already mismatched expected to reduce noise; set `WPT_CHUNKED_FORCE=1` to force chunked diagnostics.

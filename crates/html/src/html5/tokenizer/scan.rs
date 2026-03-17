@@ -60,6 +60,13 @@ pub(crate) enum IncrementalEndTagMatch {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ScriptTagBoundaryMatch {
+    Matched { cursor_after: usize },
+    NeedMoreInput,
+    NoMatch,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct IncrementalEndTagMatcher {
     start: usize,
     cursor: usize,
@@ -545,6 +552,53 @@ pub(crate) fn parse_quoted_slice(text: &str, quote_pos: usize) -> QuotedParse<'_
         return QuotedParse::Malformed;
     }
     QuotedParse::Complete((&text[value_start..value_end], value_end + 1))
+}
+
+pub(crate) fn match_script_tag_boundary_at(
+    bytes: &[u8],
+    start: usize,
+    closing: bool,
+) -> ScriptTagBoundaryMatch {
+    let mut cursor = start;
+    let Some(&byte) = bytes.get(cursor) else {
+        return ScriptTagBoundaryMatch::NeedMoreInput;
+    };
+    if byte != b'<' {
+        return ScriptTagBoundaryMatch::NoMatch;
+    }
+    cursor += 1;
+
+    if closing {
+        let Some(&byte) = bytes.get(cursor) else {
+            return ScriptTagBoundaryMatch::NeedMoreInput;
+        };
+        if byte != b'/' {
+            return ScriptTagBoundaryMatch::NoMatch;
+        }
+        cursor += 1;
+    }
+
+    const SCRIPT: &[u8] = b"script";
+    for expected in SCRIPT {
+        let Some(&byte) = bytes.get(cursor) else {
+            return ScriptTagBoundaryMatch::NeedMoreInput;
+        };
+        if !byte.eq_ignore_ascii_case(expected) {
+            return ScriptTagBoundaryMatch::NoMatch;
+        }
+        cursor += 1;
+    }
+
+    let Some(&delimiter) = bytes.get(cursor) else {
+        return ScriptTagBoundaryMatch::NeedMoreInput;
+    };
+    if delimiter == b'>' || delimiter == b'/' || is_html_space_byte(delimiter) {
+        ScriptTagBoundaryMatch::Matched {
+            cursor_after: cursor + 1,
+        }
+    } else {
+        ScriptTagBoundaryMatch::NoMatch
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
