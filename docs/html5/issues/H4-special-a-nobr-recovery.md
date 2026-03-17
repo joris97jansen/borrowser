@@ -1,6 +1,6 @@
 # H4 — Special `a` / `nobr` Recovery Paths
 
-Status: ready  
+Status: ready; generic formatting-start-tag groundwork is already landed separately
 Milestone: H — Active formatting elements + adoption agency algorithm
 
 ## Goal
@@ -21,6 +21,10 @@ before inserting a new formatting element.
 This issue exists to close that spec gap before the broader formatting recovery
 pipeline is treated as complete.
 
+The generic formatting start-tag path and marker insertion groundwork are
+tracked separately in
+[`H4a — Generic Formatting Start-Tag Handling And AFE/Marker Insertion In The In body Mode`](H4a-generic-formatting-start-tag-handling.md).
+
 ## Current Boundary
 
 Current reconstruction work is landed, but these special paths are still
@@ -30,6 +34,9 @@ deferred:
   exists after the last marker
 - start tag `nobr` does not yet run the prescribed recovery when `nobr` is
   already present on SOE in scope
+- current explicit `a` / `nobr` branches still delegate to the generic
+  formatting start-tag helper introduced by
+  [`H4a`](H4a-generic-formatting-start-tag-handling.md)
 
 Generic formatting-element insertion is not sufficient for either case.
 
@@ -72,6 +79,7 @@ Generic formatting-element insertion is not sufficient for either case.
 ## Dependencies
 
 - builds on [`H3 — Reconstruct Active Formatting Elements`](H3-reconstruct-active-formatting-elements.md)
+- builds on [`H4a — Generic Formatting Start-Tag Handling And AFE/Marker Insertion In The In body Mode`](H4a-generic-formatting-start-tag-handling.md)
 - should land before treating the Milestone H reconstruction surface as fully
   integrated
 - remains orthogonal to the full Adoption Agency Algorithm work tracked by

@@ -1,4 +1,4 @@
-use crate::html5::shared::{AtomTable, Token};
+use crate::html5::shared::{AtomId, AtomTable, Token};
 use crate::html5::tokenizer::TextResolver;
 use crate::html5::tree_builder::modes::InsertionMode;
 use crate::html5::tree_builder::resolve::is_html_whitespace_text;
@@ -12,6 +12,23 @@ pub(in crate::html5::tree_builder) enum DispatchOutcome {
 }
 
 impl Html5TreeBuilder {
+    fn handle_in_body_formatting_start_tag(
+        &mut self,
+        name: AtomId,
+        attrs: &[crate::html5::shared::Attribute],
+        self_closing: bool,
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
+    ) -> Result<(), TreeBuilderError> {
+        let _ = self.reconstruct_active_formatting_elements(atoms)?;
+        let key = self.insert_element(name, attrs, self_closing, atoms, text)?;
+        if !self_closing {
+            self.push_active_formatting_element(key, name, attrs, text)?;
+        }
+        self.update_mode_for_start_tag(name);
+        Ok(())
+    }
+
     pub(in crate::html5::tree_builder) fn process_impl(
         &mut self,
         token: &Token,
@@ -409,13 +426,27 @@ impl Html5TreeBuilder {
                 name,
                 attrs,
                 self_closing,
+            } if *name == self.known_tags.a => {
+                // H4/H5 boundary: the special `a` recovery path is still
+                // deferred. Keep this branch explicit so the current generic
+                // formatting insertion does not read as final HTML5 behavior.
+                self.handle_in_body_formatting_start_tag(*name, attrs, *self_closing, atoms, text)?;
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } if *name == self.known_tags.nobr => {
+                // H4/H5 boundary: `nobr` currently shares the generic
+                // formatting path until the in-scope recovery behavior lands.
+                self.handle_in_body_formatting_start_tag(*name, attrs, *self_closing, atoms, text)?;
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
             } if self.known_tags.is_formatting_tag(*name) => {
-                let _ = self.reconstruct_active_formatting_elements(atoms)?;
-                let key = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
-                if !self_closing {
-                    self.push_active_formatting_element(key, *name, attrs, text)?;
-                }
-                self.update_mode_for_start_tag(*name);
+                self.handle_in_body_formatting_start_tag(*name, attrs, *self_closing, atoms, text)?;
             }
             Token::StartTag {
                 name,
