@@ -90,8 +90,8 @@ These invariants apply to every `TOK-STATE-*` row:
 | `TOK-STATE-RAWTEXT-END-TAG` | MVP_PARTIAL | `RAWTEXT end tag detection` | `#rawtext-end-tag-open-state`, `#rawtext-end-tag-name-state` | `text_mode.rs`, `scan.rs` | Current fixtures: `tok-rawtext-style`, `tok-rawtext-style-end-tag-attrs-close`, `tok-rawtext-style-end-tag-slash-close`. | Temporary end-tag buffer must be chunk-safe and reset-safe. | ASCII-case-insensitive match; `>`, HTML-space-led attribute tails, and `/` self-closing tails all close in Core v0 once the expected name matches; any other continuation literalizes the candidate. | Required for production-safe RAWTEXT close recognition. |
 | `TOK-STATE-RCDATA` | MVP_PARTIAL | `RCDATA state` | `#rcdata-state` | `states.rs`, `text_mode.rs`, `api.rs` | Current fixtures: `tok-rcdata-title`, `tok-rcdata-textarea`; no WPT slice currently vendored. | Must combine charrefs + appropriate-end-tag logic under chunking. | charrefs in rcdata text, fallback behavior. | Core-v0 text-mode subset for `title`/`textarea`. |
 | `TOK-STATE-RCDATA-END-TAG` | MVP_PARTIAL | `RCDATA end tag detection` | `#rcdata-end-tag-open-state`, `#rcdata-end-tag-name-state` | `text_mode.rs`, `scan.rs` | Current fixtures: `tok-rcdata-title`, `tok-rcdata-textarea`, `tok-rcdata-title-close-tag-whitespace`, `tok-rcdata-title-end-tag-attrs-close`, `tok-rcdata-textarea-end-tag-slash-close`. | Same buffer semantics as rawtext end-tag path. | ASCII-case-insensitive match; `>`, HTML-space-led attribute tails, and `/` self-closing tails all close in Core v0 once the expected name matches; any other continuation literalizes the candidate. | Required for chunk-safe RCDATA end-tag recognition. |
-| `TOK-STATE-SCRIPT-DATA` | MVP_PARTIAL | `Script data state` | `#script-data-state` | `states.rs`, `text_mode.rs`, `api.rs` | Current fixtures: `tok-script-data-basic`, `tok-script-data-close-tag-whitespace`, `tok-script-data-string-close`, `tok-script-data-end-tag-attrs-close`, `tok-script-data-end-tag-slash-close`; WPT: `tokenizer-script-data`. | Core-v0 script text-mode subset treats `<script>` as raw text until matching ASCII-case-insensitive `</script>`, with chunk-safe end-tag detection and linear scanning. | literal `</script>` closes even inside JS strings; HTML-space-led attribute tails and `/` self-closing tails after the matched name also close and record tokenizer parse errors. | Core-v0 script text-mode subset only; full escaped/comment-like script-data state family is tracked separately in G5. |
-| `TOK-STATE-SCRIPT-DATA-ESCAPED` | OUT_OF_SCOPE | `Script data escaped families` | `#script-data-escaped-state`, `#script-data-double-escaped-state` | Not scheduled in Core v0 | Policy fixture: `tok-script-data-out-of-scope` (`skip` only). | N/A in Core v0. | escaped/double-escaped transitions and temp buffer handling. | Highest complexity, intentionally deferred to dedicated milestone. |
+| `TOK-STATE-SCRIPT-DATA` | MVP_PARTIAL | `Script data state` | `#script-data-state` | `states.rs`, `text_mode.rs`, `api.rs` | Current fixtures: `tok-script-data-basic`, `tok-script-data-close-tag-whitespace`, `tok-script-data-string-close`, `tok-script-data-end-tag-attrs-close`, `tok-script-data-end-tag-slash-close`; WPT: `tokenizer-script-data`. | Dedicated script-family state machine must preserve chunk-safe script close detection and linear scanning. | literal `</script>` closes even inside JS strings; HTML-space-led attribute tails and `/` self-closing tails after the matched name also close and record tokenizer parse errors. | Core-v0 script tokenizer now uses a dedicated script-data family rather than the shared text-mode subset. |
+| `TOK-STATE-SCRIPT-DATA-ESCAPED` | MVP_PARTIAL | `Script data escaped families` | `#script-data-escaped-state`, `#script-data-double-escaped-state` | `states.rs`, `text_mode.rs`, `api.rs` | Current fixtures: `tok-script-data-escaped-comment-family`; WPT: `tokenizer-script-escaped`. | Escaped/double-escaped transitions must remain chunk-safe across `<!--`, `<script`, `</script`, and `-->` boundaries. | escaped entry, double-escape start/end transitions, comment-like script tails. | Dedicated script-family support landed in G5. |
 
 ## Core v0 Must-Support Subset
 
@@ -155,7 +155,7 @@ Status source of truth:
 | `tok-script-data-end-tag-attrs-close` | Yes (`MVP_PARTIAL`) | `crates/html/tests/fixtures/html5/tokenizer/tok-script-data-end-tag-attrs-close` | Active | none currently vendored |
 | `tok-script-data-end-tag-slash-close` | Yes (`MVP_PARTIAL`) | `crates/html/tests/fixtures/html5/tokenizer/tok-script-data-end-tag-slash-close` | Active | none currently vendored |
 | `tok-script-data-string-close` | Yes (`MVP_PARTIAL`) | `crates/html/tests/fixtures/html5/tokenizer/tok-script-data-string-close` | Active | none currently vendored |
-| `tok-script-data-out-of-scope` | No (`OUT_OF_SCOPE`) | `crates/html/tests/fixtures/html5/tokenizer/tok-script-data-out-of-scope` | Skip | script escaped/double-escaped coverage only |
+| `tok-script-data-escaped-comment-family` | Yes (`MVP_PARTIAL`) | `crates/html/tests/fixtures/html5/tokenizer/tok-script-data-escaped-comment-family` | Active | `tokenizer-script-escaped` |
 
 ## Out-Of-Scope Policy (Enforceable)
 
@@ -164,14 +164,13 @@ It is represented as `skip` with policy reason.
 
 ### Policy Patterns (Core v0)
 
-The following WPT case IDs or paths must be marked `skip`:
-
-- pattern ID `TOK-PATTERN-SCRIPT-02`: contains `script-escaped`
-- pattern ID `TOK-PATTERN-SCRIPT-03`: contains `script-double-escaped`
+There are currently no vendored tokenizer WPT script-family patterns that are
+out of scope after G5 landed.
 
 Harness policy contract:
 
-1. Manifest loader must reject matching cases unless `status: skip`.
+1. If future out-of-scope tokenizer script-family cases are vendored, manifest
+   loader must reject matching cases unless `status: skip`.
 2. CI reporting must keep `skip` separate from `xfail`.
 3. `xfail` is only for in-scope known-broken behavior.
 
@@ -179,8 +178,8 @@ Harness policy contract:
 
 For HTML5 Core v0:
 
-- Core-v0 supports RAWTEXT, RCDATA, and the bounded script text-mode subset (`TOK-STATE-SCRIPT-DATA`) as `MVP_PARTIAL`.
+- Core-v0 supports RAWTEXT, RCDATA, and the dedicated script tokenizer family (`TOK-STATE-SCRIPT-DATA`, `TOK-STATE-SCRIPT-DATA-ESCAPED`) as `MVP_PARTIAL`.
 - Core-v0 shared text-mode close-tag recognition now includes HTML-space-led attribute tails and `/` self-closing tails for the bounded RAWTEXT/RCDATA/script subset; `docs/html5/issues/G8-text-mode-end-tag-parity.md` is landed.
-- Script-data escaped and double-escaped families remain out of scope and `skip` only.
+- Script-data escaped and double-escaped families are in scope for Core v0; parser execution/pause semantics remain out of scope.
 - Deferred/out-of-scope WPT cases must not contribute to Core v0 pass/fail gate counts.
 - Any tier changes require an explicit update to this matrix and acceptance table.

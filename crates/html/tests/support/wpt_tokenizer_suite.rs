@@ -37,9 +37,8 @@ impl TokenizerSuiteSpec {
                 "tokenizer-rcdata-textarea-entities",
                 "tokenizer-script-data",
                 "tokenizer-script-lookalike-close",
-                // Kept in the focused slice on purpose so skip policy for the
-                // deferred escaped-script family is enforced alongside the
-                // in-scope text-mode cases.
+                // Kept in the focused slice so the escaped-script family stays
+                // covered alongside the other text-mode script cases.
                 "tokenizer-script-escaped",
             ],
         }

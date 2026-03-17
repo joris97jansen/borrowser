@@ -1,4 +1,0 @@
-# format: html5-token-v1
-# status: skip
-# reason: Policy fixture only: escaped/double-escaped script-data state-family coverage remains out of scope until G5.
-EOF

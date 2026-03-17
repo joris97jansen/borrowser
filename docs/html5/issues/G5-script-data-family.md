@@ -1,33 +1,57 @@
 # G5 — Implement Full HTML Script-Data State Family
 
-Status: follow-up to the Core-v0 script text-mode subset
+Status: landed
 Milestone: G — Rawtext / RCDATA / script correctness
 
-## Current Scope Boundary
+## Landed Behavior
 
-The current tokenizer supports a Core-v0 script text-mode subset for
-`<script>` that treats script contents as raw text until a matching
-ASCII-case-insensitive `</script>` end tag is recognized, with chunk-safe
-end-tag detection, literal EOF tail handling, and linear-time scanning.
+The tokenizer now implements a dedicated Core-v0 script-data family for the
+promoted script surface rather than treating `<script>` as the shared text-mode
+subset.
 
-This is intentionally narrower than the full HTML script-data state family.
+This landed implementation compresses some WHATWG named script states into
+shared helpers, but the promoted escaped and double-escaped transitions are
+covered as behaviorally equivalent tokenizer paths rather than as a literal
+1:1 state-name clone.
 
-## Follow-up Goal
+The landed family includes:
 
-Implement the dedicated script tokenizer state family rather than treating
-script content as the shared text-mode subset.
+- script data
+- script data escaped
+- script data double escaped
+- comment-like `<!--` entry into escaped script
+- `<script` entry into double-escaped script
+- `</script` exit from double-escaped back to escaped script
+- `-->` exit from escaped script back to script data
+- chunk-safe appropriate-end-tag handling throughout the script family
 
-The follow-up must add explicit state-machine handling for script-data
-transitions triggered by `<`, end-tag openings, and script-specific
-escaped/comment-like sequences, while preserving:
+## Landed Requirements
 
 - chunk safety
 - linear-time scanning
 - deterministic token boundaries
 
-## Out Of Scope For Core-v0 Subset
+## Remaining Out Of Scope
 
-- script-data escaped states
-- script-data double-escaped states
-- legacy comment-like script tokenizer branches beyond the current subset
 - parser pause/suspension and script execution integration
+
+## Evidence
+
+- dedicated script-family unit coverage in `crates/html/src/html5/tokenizer/tests/script_data.rs`
+  now covers:
+  - escaped comment entry,
+  - double-escaped nested `<script>...</script>` handling,
+  - split safety and bytewise growth across `<!--`, `<script>`, `</script>`, and `-->`,
+  - near-miss `<scriptx` / `</scriptx>` handling around escaped and double-escaped transitions,
+  - preservation of the existing G8/G11 script close-tag guarantees.
+- direct boundary-helper coverage in
+  `crates/html/src/html5/tokenizer/tests/script_tag_boundary.rs` now covers:
+  - `<script` / `</script` incremental growth,
+  - `>`, `/`, and HTML-space delimiter recognition,
+  - near-miss names such as `<scriptx` and `</scriptx>`,
+  - incomplete prefix handling via `NeedMoreInput`.
+- focused script-family acceptance fixture:
+  - `crates/html/tests/fixtures/html5/tokenizer/tok-script-data-escaped-comment-family`
+- vendored WPT tokenizer case:
+  - `tests/wpt/vendor/html/syntax/parsing/tokenizer-script-escaped.html`
+  - `tests/wpt/expected/tokenizer-script-escaped.tokens.txt`

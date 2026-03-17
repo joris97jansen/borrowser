@@ -76,3 +76,4 @@ kind: tokens
 path: vendor/html/syntax/parsing/tokenizer-script-escaped.html
 expected: expected/tokenizer-script-escaped.tokens.txt
 status: active
+diff: skip

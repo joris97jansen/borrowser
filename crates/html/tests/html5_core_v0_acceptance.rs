@@ -7,7 +7,6 @@
 //! tests are the live subset of contract enforcement promoted from inventory
 //! to CI-backed assertions.
 
-use html_test_support::wpt_tokenizer::{TokenizerSkipStatus, load_tokenizer_skip_overrides};
 use std::borrow::Cow;
 use std::collections::{BTreeMap, BTreeSet};
 use std::fs;
@@ -42,20 +41,6 @@ enum FixtureState {
 enum AcceptanceKind {
     Tokenizer,
     TreeBuilder,
-}
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ManifestFixtureStatus {
-    Active,
-    Xfail,
-    Skip,
-}
-
-#[derive(Clone, Debug)]
-struct WptTokenizerManifestCase {
-    id: String,
-    rel_path: String,
-    status: ManifestFixtureStatus,
 }
 
 fn expected_format(output: ExpectedOutput) -> &'static str {
@@ -111,10 +96,6 @@ fn repo_root() -> PathBuf {
         .to_path_buf()
 }
 
-fn wpt_root() -> PathBuf {
-    repo_root().join("tests").join("wpt")
-}
-
 fn parse_tokens_headers(path: &Path) -> (BTreeMap<String, String>, Vec<String>) {
     let content =
         fs::read_to_string(path).unwrap_or_else(|err| panic!("failed to read {path:?}: {err}"));
@@ -144,115 +125,6 @@ fn parse_tokens_headers(path: &Path) -> (BTreeMap<String, String>, Vec<String>) 
         }
     }
     (headers, lines)
-}
-
-fn load_wpt_tokenizer_manifest_cases(path: &Path) -> Vec<WptTokenizerManifestCase> {
-    let content =
-        fs::read_to_string(path).unwrap_or_else(|err| panic!("failed to read {path:?}: {err}"));
-    let mut format = None::<String>;
-    let mut current = BTreeMap::<String, String>::new();
-    let mut cases = Vec::<WptTokenizerManifestCase>::new();
-
-    let mut flush = |current: &mut BTreeMap<String, String>| {
-        if current.is_empty() {
-            return;
-        }
-
-        let id = current
-            .remove("id")
-            .unwrap_or_else(|| panic!("missing id in WPT manifest {path:?}"));
-        let rel_path = current
-            .remove("path")
-            .unwrap_or_else(|| panic!("missing path for '{id}' in WPT manifest {path:?}"));
-        let status = match current.remove("status").as_deref() {
-            Some("xfail") => ManifestFixtureStatus::Xfail,
-            Some("skip") => ManifestFixtureStatus::Skip,
-            Some("active") | None => ManifestFixtureStatus::Active,
-            Some(other) => panic!("unsupported status '{other}' for '{id}' in {path:?}"),
-        };
-        let reason = current.remove("reason");
-        match status {
-            ManifestFixtureStatus::Active => {
-                assert!(
-                    reason.is_none(),
-                    "case '{id}' has reason but active status in {path:?}"
-                );
-            }
-            ManifestFixtureStatus::Xfail | ManifestFixtureStatus::Skip => {
-                assert!(
-                    reason
-                        .as_deref()
-                        .is_some_and(|reason| !reason.trim().is_empty()),
-                    "case '{id}' with status '{status:?}' missing reason in {path:?}"
-                );
-            }
-        }
-
-        match current.remove("kind").as_deref() {
-            Some("tokens") => {}
-            Some("dom") | None => {
-                current.clear();
-                return;
-            }
-            Some(other) => panic!("unsupported kind '{other}' for '{id}' in {path:?}"),
-        }
-        current.remove("expected");
-        current.remove("diff");
-        if !current.is_empty() {
-            let keys = current.keys().cloned().collect::<Vec<_>>();
-            panic!("unknown keys for '{id}' in {path:?}: {keys:?}");
-        }
-
-        cases.push(WptTokenizerManifestCase {
-            id,
-            rel_path,
-            status,
-        });
-    };
-
-    for raw_line in content.lines() {
-        let line = raw_line.trim_end();
-        if line.is_empty() {
-            flush(&mut current);
-            current.clear();
-            continue;
-        }
-        if let Some(stripped) = line.strip_prefix('#') {
-            let header = stripped.trim();
-            if let Some((key, value)) = header.split_once(':')
-                && key.trim().eq_ignore_ascii_case("format")
-            {
-                format = Some(value.trim().to_string());
-            }
-            continue;
-        }
-        let (key, value) = line
-            .split_once(':')
-            .unwrap_or_else(|| panic!("invalid manifest line in {path:?}: '{line}'"));
-        let key = key.trim().to_ascii_lowercase();
-        let value = value.trim().to_string();
-        assert!(
-            current.insert(key.clone(), value).is_none(),
-            "duplicate key '{key}' in {path:?}"
-        );
-    }
-    flush(&mut current);
-
-    assert_eq!(
-        format.as_deref(),
-        Some("wpt-manifest-v1"),
-        "unsupported or missing WPT manifest format in {path:?}"
-    );
-
-    cases
-}
-
-fn matches_script_out_of_scope_wpt_pattern(case: &WptTokenizerManifestCase) -> bool {
-    let id = case.id.to_ascii_lowercase();
-    let rel_path = case.rel_path.to_ascii_lowercase();
-    ["script-escaped", "script-double-escaped"]
-        .into_iter()
-        .any(|needle| id.contains(needle) || rel_path.contains(needle))
 }
 
 fn collect_contract_ids(text: &str) -> BTreeSet<String> {
@@ -579,55 +451,54 @@ pending_test!(
 );
 
 #[test]
-fn tok_script_data_out_of_scope_policy_fixture_is_skip_only() {
+fn tok_script_data_escaped_comment_family_fixture_is_active() {
     let fixture_dir = Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("fixtures")
         .join("html5")
         .join("tokenizer")
-        .join("tok-script-data-out-of-scope");
+        .join("tok-script-data-escaped-comment-family");
     assert!(
         fixture_dir.is_dir(),
-        "missing policy fixture dir: {fixture_dir:?}"
+        "missing escaped script-data fixture dir: {fixture_dir:?}"
     );
 
     let input_path = fixture_dir.join("input.html");
     let tokens_path = fixture_dir.join("tokens.txt");
-    let notes_path = fixture_dir.join("notes.md");
     assert!(
         input_path.is_file(),
-        "missing policy fixture input: {input_path:?}"
+        "missing escaped script-data fixture input: {input_path:?}"
     );
     assert!(
         tokens_path.is_file(),
-        "missing policy fixture tokens: {tokens_path:?}"
-    );
-    assert!(
-        notes_path.is_file(),
-        "missing policy fixture notes: {notes_path:?}"
+        "missing escaped script-data fixture tokens: {tokens_path:?}"
     );
 
     let (headers, lines) = parse_tokens_headers(&tokens_path);
     assert_eq!(
         headers.get("format").map(String::as_str),
         Some("html5-token-v1"),
-        "policy fixture tokens must use html5-token-v1 format"
+        "escaped script-data fixture tokens must use html5-token-v1 format"
     );
     assert_eq!(
         headers.get("status").map(String::as_str),
-        Some("skip"),
-        "policy fixture must remain skip-only until G5 lands"
+        None,
+        "escaped script-data fixture should be active now that G5 landed"
     );
     assert!(
-        headers
-            .get("reason")
-            .is_some_and(|reason| !reason.trim().is_empty()),
-        "policy fixture skip reason must be non-empty"
+        !lines.is_empty(),
+        "escaped script-data fixture must contain actual token lines"
     );
     assert_eq!(
-        lines,
-        vec!["EOF".to_string()],
-        "policy fixture should remain metadata-only and terminate with EOF"
+        lines.first().map(String::as_str),
+        Some("START name=script attrs=[] self_closing=false")
+    );
+    assert_eq!(lines.last().map(String::as_str), Some("EOF"));
+    assert!(
+        lines
+            .iter()
+            .any(|line| line.contains("document.write(\\\"<script>nested</script>\\\")")),
+        "escaped script-data fixture should preserve nested script text"
     );
 }
 
@@ -776,70 +647,6 @@ pending_test!(
     ANCHOR_CORE_V0_GATE_AND_EVIDENCE_MODEL,
     ExpectedOutput::DomV1
 );
-
-#[test]
-fn policy_out_of_scope_wpt_script_patterns_are_skip_only() {
-    let wpt_root = wpt_root();
-    let manifest_path = wpt_root.join("manifest.txt");
-    let cases = load_wpt_tokenizer_manifest_cases(&manifest_path);
-    let skip_overrides = load_tokenizer_skip_overrides(&wpt_root);
-    let matched_cases = cases
-        .iter()
-        .filter(|case| matches_script_out_of_scope_wpt_pattern(case))
-        .collect::<Vec<_>>();
-
-    assert!(
-        !matched_cases.is_empty(),
-        "expected at least one WPT tokenizer case matching Core-v0 out-of-scope script policy patterns"
-    );
-
-    let mut violations = Vec::<String>::new();
-    for case in matched_cases {
-        let manifest_status = case.status;
-        if manifest_status == ManifestFixtureStatus::Xfail {
-            violations.push(format!(
-                "{} uses manifest status xfail; out-of-scope script tokenizer cases must be skip-only",
-                case.id
-            ));
-        }
-
-        let effective_status = match skip_overrides.get(&case.id) {
-            Some(override_entry) => {
-                if override_entry.status == TokenizerSkipStatus::Xfail {
-                    violations.push(format!(
-                        "{} uses tokenizer skip override xfail; out-of-scope script tokenizer cases must be skip-only",
-                        case.id
-                    ));
-                }
-                override_entry.status
-            }
-            None => match manifest_status {
-                ManifestFixtureStatus::Active => {
-                    violations.push(format!(
-                        "{} is active with no tokenizer skip override; out-of-scope script tokenizer cases must classify as skip",
-                        case.id
-                    ));
-                    continue;
-                }
-                ManifestFixtureStatus::Xfail => TokenizerSkipStatus::Xfail,
-                ManifestFixtureStatus::Skip => TokenizerSkipStatus::Skip,
-            },
-        };
-
-        if effective_status != TokenizerSkipStatus::Skip {
-            violations.push(format!(
-                "{} effective tokenizer policy is not skip (manifest={manifest_status:?}, path={})",
-                case.id, case.rel_path
-            ));
-        }
-    }
-
-    assert!(
-        violations.is_empty(),
-        "Core-v0 out-of-scope WPT script patterns must remain skip-only:\n{}",
-        violations.join("\n")
-    );
-}
 
 #[test]
 fn policy_id_drift_guard_matches_matrix_id_columns() {

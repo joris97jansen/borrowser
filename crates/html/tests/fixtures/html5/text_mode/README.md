@@ -61,6 +61,7 @@ Tokenizer fixtures:
 - `tok-script-data-close-tag-whitespace`
 - `tok-script-data-end-tag-attrs-close`
 - `tok-script-data-end-tag-slash-close`
+- `tok-script-data-escaped-comment-family`
 - `tok-script-data-string-close`
 - `tok-textmode-script-lookalike-close-nested`
 

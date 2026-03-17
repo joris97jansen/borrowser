@@ -134,6 +134,18 @@ impl Html5Tokenizer {
             TokenizerState::RawText => self.step_raw_text(input, ctx),
             TokenizerState::Rcdata => self.step_rcdata(input, ctx),
             TokenizerState::ScriptData => self.step_script_data(input, ctx),
+            TokenizerState::ScriptDataEscaped => self.step_script_data_escaped(input, ctx),
+            TokenizerState::ScriptDataEscapedDash => self.step_script_data_escaped_dash(input),
+            TokenizerState::ScriptDataEscapedDashDash => {
+                self.step_script_data_escaped_dash_dash(input)
+            }
+            TokenizerState::ScriptDataDoubleEscaped => self.step_script_data_double_escaped(input),
+            TokenizerState::ScriptDataDoubleEscapedDash => {
+                self.step_script_data_double_escaped_dash(input)
+            }
+            TokenizerState::ScriptDataDoubleEscapedDashDash => {
+                self.step_script_data_double_escaped_dash_dash(input)
+            }
             TokenizerState::TagOpen => self.step_tag_open(input),
             TokenizerState::EndTagOpen => self.step_end_tag_open(input),
             TokenizerState::TagName => self.step_tag_name(input, ctx),
