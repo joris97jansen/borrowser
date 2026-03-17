@@ -285,10 +285,9 @@ Patch ordering rules for AFE/AAA work:
 Move/reparenting semantics:
 
 - AAA may require identity-preserving node moves.
-- Borrowser permits either of these runtime encodings, provided semantics are identical:
-  - insertion patches (`AppendChild` / `InsertBefore`) on an already-parented node are defined as implicit reparenting
-  - an explicit detach-then-insert sequence is used
-- whichever encoding is used, node identity must be preserved across the move.
+- Borrowser uses insertion patches (`AppendChild` / `InsertBefore`) on an already-parented node as the canonical move encoding.
+- runtime appliers may implement that contract internally via detach-then-insert mechanics, but external patch traces remain canonicalized to insertion patches.
+- node identity must be preserved across the move.
 - move encoding must not change relative ordering semantics, and must remain deterministic under chunk-equivalent runs.
 
 Chunk-equivalence requirements:
@@ -309,7 +308,7 @@ Contractual consequence:
 
 This document therefore constrains both parser implementation and any supporting runtime patch work needed to make AAA patches materializable.
 
-Canonical move encoding for runtime/application traces is intentionally left open in this contract and is tracked as follow-up [`docs/html5/issues/H2-runtime-patch-move-semantics.md`](issues/H2-runtime-patch-move-semantics.md).
+Normative runtime move-semantics details are tracked in [`docs/html5/issues/H2-runtime-patch-move-semantics.md`](issues/H2-runtime-patch-move-semantics.md).
 
 ## Parse-Error Observability Policy
 

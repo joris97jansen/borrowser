@@ -33,7 +33,9 @@ This document defines how node identity maps across:
 - Parenting invariants:
   - a node has at most one parent,
   - cycles are forbidden,
-  - move/reattach is currently unsupported in strict runtime appliers.
+  - identity-preserving move/reattach is represented by `AppendChild` /
+    `InsertBefore` under the HTML5 move-semantics contract,
+  - document/document-root moves remain illegal.
 
 ## Lifetime and Stability Rules
 
@@ -48,6 +50,7 @@ This document defines how node identity maps across:
 - Applies patch batches atomically: all-or-none.
 - Rejects unknown/missing keys deterministically.
 - `Clear` resets DOM contents and key-allocation domain for that handle baseline.
+- Legal structural moves preserve the moved node's `PatchKey`.
 - Key reuse policy in strict applier:
   - keys are non-reusable until `Clear`,
   - keys MAY be reused after `Clear`.
@@ -73,5 +76,4 @@ For the feature-gated HTML5 runtime path (`runtime_parse/html5`):
 ## Non-Goals (Current Milestone)
 
 - Global cross-session key uniqueness.
-- Move-node patch semantics.
 - Persisted identity across handle replacement strategies.

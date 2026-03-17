@@ -1,6 +1,6 @@
 # H2 — Runtime Patch Move Semantics Contract For AAA-Compatible Structural Reparenting
 
-Status: follow-up to Milestone H contract foundation  
+Status: in progress; contract decision is complete, runtime/applier implementation remains to be completed
 Milestone: H — Active formatting elements + adoption agency algorithm
 
 ## Goal
@@ -13,44 +13,77 @@ This issue exists to remove ambiguity before production AAA code lands.
 
 ## Current Boundary
 
-The Milestone H AFE/AAA contract requires identity-preserving reparenting for
-some recovery paths, but intentionally does not yet choose one canonical patch
-encoding for those moves.
+The Milestone H AFE/AAA contracts now select implicit reparenting via
+`AppendChild` / `InsertBefore` as the canonical external move encoding for
+identity-preserving structural moves.
 
 Current strict runtime behavior still rejects reattaching an already-parented
 node (`MoveNotSupported`), so AAA-compatible move semantics are not yet fully
 contracted end-to-end.
 
-## Follow-Up Question
+## Contract Decision
 
-Borrowser must choose and document one of these canonical runtime models:
+Borrowser will use implicit reparenting as the canonical patch-stream model for
+Milestone H:
 
-- implicit reparenting via `AppendChild` / `InsertBefore` on an already-parented
-  node
-- explicit detach-then-insert move sequences
+- `AppendChild` and `InsertBefore` are defined to accept an already-parented
+  `child` and to perform an identity-preserving move
+- `RemoveNode` remains destructive subtree removal and is not used as a
+  temporary detach step for live-node moves
+- explicit detach-then-insert may still be used as an internal runtime
+  implementation strategy, but it is not the canonical patch-stream encoding
 
-Either model is acceptable only if it preserves node identity, deterministic
-ordering, and chunk-equivalent patch semantics.
+This selects one stable external contract while still allowing appliers to
+implement the move internally however they want, provided externally observable
+semantics are identical.
 
 ## Required Contract Decisions
 
-- Define the canonical move encoding used by HTML5 tree-builder output.
-- Define whether non-canonical move encodings are forbidden or merely
-  unsupported in strict appliers.
-- Define legality rules for moving an already-parented node.
-- Define explicit rejection rules for moving root or document nodes.
-- Define whether same-parent reordering uses the same canonical move semantics
-  as cross-parent reparenting.
-- Define ordering guarantees for sibling insertion during moves.
-- Define deterministic sibling-index results for both same-parent reordering
-  and cross-parent reparenting.
-- Define `PatchKey` stability guarantees across moves.
-- Define how move semantics interact with batch atomicity and rollback.
-- Define whether strict appliers treat move support as mandatory for HTML5 mode.
+- Canonical move encoding:
+  - HTML5 tree-builder output uses `AppendChild` / `InsertBefore` as the only
+    canonical encoding for identity-preserving moves
+  - no `MoveNode` or detach-only patch is introduced for Milestone H
+- Non-canonical encodings:
+  - strict HTML5 appliers may support internal detach-then-insert mechanics,
+    but external patch traces remain canonicalized to `AppendChild` /
+    `InsertBefore`
+  - `RemoveNode` is not a legal substitute for temporary detachment because it
+    invalidates the subtree keys
+- Legality rules:
+  - moving an already-parented element, text, or comment node is legal if the
+    target parent is a valid container and the move does not create a cycle
+  - moving a document node is illegal
+  - moving the document root node is illegal
+  - self-attachment and ancestor-cycle creation remain illegal
+- Same-parent vs cross-parent behavior:
+  - same-parent reordering uses the same canonical move semantics as
+    cross-parent reparenting
+  - both are modeled by one structural insertion operation on the existing node
+- Ordering guarantees:
+  - `AppendChild { parent, child }` moves `child` to the end of `parent`'s
+    child list after detaching it from any existing parent
+  - `InsertBefore { parent, child, before }` moves `child` so it becomes the
+    immediate previous sibling of `before` under `parent` after detaching it
+    from any existing parent
+  - if `child` is already in the requested position, the operation is a
+    deterministic structural no-op that preserves identity and sibling order
+- `PatchKey` stability:
+  - a moved node keeps the same `PatchKey`
+  - unaffected nodes keep both key identity and relative order
+  - only recreated/replacement nodes receive fresh keys
+- Batch/rollback rules:
+  - move semantics remain subject to atomic batch application
+  - if any patch in the batch fails, the runtime rolls back the whole batch and
+    no partial move is observable
+- Strict HTML5 requirement:
+  - move support is mandatory for strict HTML5-capable appliers
+  - appliers that still reject legal reparenting/reordering remain
+    non-compliant with the Milestone H HTML5 contract until upgraded
 
 ## Acceptance Criteria
 
-- `DomPatch` / runtime contract explicitly documents canonical move semantics.
+- `DomPatch` / runtime contract explicitly documents implicit-reparenting move
+  semantics for `AppendChild` / `InsertBefore`.
 - Runtime apply path can materialize AAA-required structural moves while
   preserving `PatchKey` identity.
 - Tests prove moved nodes keep identity while parent/child ordering remains
@@ -58,7 +91,7 @@ ordering, and chunk-equivalent patch semantics.
 - Tests cover both same-parent reordering and cross-parent reparenting.
 - Patch semantics remain chunk-equivalent for representative move-heavy AAA
   cases.
-- Any remaining unsupported move modes are explicitly rejected and documented.
+- Illegal move attempts remain explicitly rejected and documented.
 
 ## Evidence Expectations
 
@@ -66,3 +99,5 @@ ordering, and chunk-equivalent patch semantics.
 - targeted runtime/applier tests for deterministic same-parent reordering
 - HTML5 patch-level tests that exercise AAA move patterns
 - whole-input vs chunked-input parity tests showing stable patch semantics
+- representative move-heavy cases added here should also be reflected in the
+  Milestone H WPT/policy tracking as coverage expands

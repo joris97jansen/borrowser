@@ -26,7 +26,11 @@ Core v0 patch protocol is defined by [`DomPatch`](../../crates/html/src/dom_patc
   - `CreateComment`
 - Tree shape / ordering:
   - `AppendChild`
-  - `InsertBefore` (defined; currently not emitted by HTML5 tree builder)
+    - defined as identity-preserving implicit reparenting when `child` is
+      already parented
+  - `InsertBefore`
+    - defined as identity-preserving implicit reparenting/reordering when
+      `child` is already parented
   - `RemoveNode` (defined; currently not emitted by HTML5 tree builder for end-tag closure)
 - Content mutation:
   - `SetAttributes`
@@ -54,6 +58,20 @@ HTML5 tree-builder Core v0 emission profile:
 2. Element/text/comment insertion emits `Create*` followed by `AppendChild`.
 3. Coalesced adjacent text runs emit `AppendText` on the previously created text key.
 4. End-tag SOE pops do not directly emit close/remove patches.
+
+Structural move semantics for HTML5-capable appliers:
+
+- `AppendChild { parent, child }` MAY attach a detached node or move an
+  already-parented node to the end of `parent`'s child list while preserving
+  `PatchKey` identity.
+- `InsertBefore { parent, child, before }` MAY attach a detached node or move
+  an already-parented node so it becomes the immediate previous sibling of
+  `before` while preserving `PatchKey` identity.
+- same-parent reordering and cross-parent reparenting use the same structural
+  insertion semantics.
+- `RemoveNode` is destructive subtree removal, not a temporary detach
+  primitive.
+- moving a document node or document root node is illegal.
 
 ## Atomic Batch Rules
 
@@ -107,7 +125,9 @@ At minimum, the following error classes are contractual:
 - invalid structural references (`InsertBefore` where `before` is not a child of `parent`),
 - invalid parent kind for child attachment (non-container parent),
 - cycle/self-attachment attempts,
-- node reattachment when move support is disabled (`MoveNotSupported`),
+- illegal move attempts (for example document/document-root moves, cycle
+  creation, or move support disabled in a non-HTML5-capable applier)
+  (`MoveNotSupported`),
 - wrong node kind for content operations (`SetAttributes` on non-element, `SetText`/`AppendText` on non-text),
 - batch protocol violations (for example `Clear` not first, clear-only batch in strict appliers, rootless state where disallowed).
 
