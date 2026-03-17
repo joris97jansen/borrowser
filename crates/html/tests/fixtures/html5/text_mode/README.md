@@ -48,17 +48,19 @@ Trailing-newline note:
 Tokenizer fixtures:
 
 - `tok-rawtext-style`
-- `tok-rawtext-style-end-tag-literal-attrs`
+- `tok-rawtext-style-end-tag-attrs-close`
+- `tok-rawtext-style-end-tag-slash-close`
 - `tok-textmode-style-lookalike-close-nested`
 - `tok-rcdata-title`
 - `tok-rcdata-title-close-tag-whitespace`
-- `tok-rcdata-title-end-tag-literal-attrs`
+- `tok-rcdata-title-end-tag-attrs-close`
 - `tok-rcdata-textarea`
-- `tok-rcdata-textarea-end-tag-literal-slash`
+- `tok-rcdata-textarea-end-tag-slash-close`
 - `tok-textmode-rcdata-entities-nested`
 - `tok-script-data-basic`
 - `tok-script-data-close-tag-whitespace`
-- `tok-script-data-end-tag-literal-attrs`
+- `tok-script-data-end-tag-attrs-close`
+- `tok-script-data-end-tag-slash-close`
 - `tok-script-data-string-close`
 - `tok-textmode-script-lookalike-close-nested`
 

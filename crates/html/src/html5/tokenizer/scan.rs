@@ -50,7 +50,11 @@ pub(crate) fn match_ascii_prefix_ci_at(bytes: &[u8], at: usize, pattern: &[u8]) 
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum IncrementalEndTagMatch {
-    Matched { cursor_after: usize },
+    Matched {
+        cursor_after: usize,
+        had_attributes: bool,
+        self_closing: bool,
+    },
     NeedMoreInput(IncrementalEndTagMatcher),
     NoMatch,
 }
@@ -60,6 +64,7 @@ pub(crate) struct IncrementalEndTagMatcher {
     start: usize,
     cursor: usize,
     matched_name_len: usize,
+    had_attributes: bool,
     phase: IncrementalEndTagMatcherPhase,
 }
 
@@ -68,7 +73,16 @@ enum IncrementalEndTagMatcherPhase {
     LessThan,
     Solidus,
     Name,
-    TrailingSpaceOrGt,
+    AfterName,
+    BeforeAttributeName,
+    AttributeName,
+    AfterAttributeName,
+    BeforeAttributeValue,
+    AttributeValueDoubleQuoted,
+    AttributeValueSingleQuoted,
+    AttributeValueUnquoted,
+    AfterAttributeValueQuoted,
+    SelfClosingStartTag,
 }
 
 impl IncrementalEndTagMatcher {
@@ -83,6 +97,7 @@ impl IncrementalEndTagMatcher {
             start,
             cursor: start,
             matched_name_len: 0,
+            had_attributes: false,
             phase: IncrementalEndTagMatcherPhase::LessThan,
         }
     }
@@ -99,6 +114,11 @@ impl IncrementalEndTagMatcher {
     #[cfg(test)]
     pub(crate) fn matched_name_len_for_test(self) -> usize {
         self.matched_name_len
+    }
+
+    #[cfg(test)]
+    pub(crate) fn had_attributes_for_test(self) -> bool {
+        self.had_attributes
     }
 
     #[cfg(test)]
@@ -165,9 +185,37 @@ impl IncrementalEndTagMatcher {
                             *progress = progress.saturating_add(1);
                         }
                     }
-                    self.phase = IncrementalEndTagMatcherPhase::TrailingSpaceOrGt;
+                    self.phase = IncrementalEndTagMatcherPhase::AfterName;
                 }
-                IncrementalEndTagMatcherPhase::TrailingSpaceOrGt => {
+                IncrementalEndTagMatcherPhase::AfterName => {
+                    let Some(&byte) = bytes.get(self.cursor) else {
+                        return IncrementalEndTagMatch::NeedMoreInput(self);
+                    };
+                    match byte {
+                        b'>' => {
+                            if let Some(progress) = progress_bytes.as_deref_mut() {
+                                *progress = progress.saturating_add(1);
+                            }
+                            return IncrementalEndTagMatch::Matched {
+                                cursor_after: self.cursor + 1,
+                                had_attributes: self.had_attributes,
+                                self_closing: false,
+                            };
+                        }
+                        b'/' => {
+                            self.cursor += 1;
+                            if let Some(progress) = progress_bytes.as_deref_mut() {
+                                *progress = progress.saturating_add(1);
+                            }
+                            self.phase = IncrementalEndTagMatcherPhase::SelfClosingStartTag;
+                        }
+                        _ if is_html_space_byte(byte) => {
+                            self.phase = IncrementalEndTagMatcherPhase::BeforeAttributeName;
+                        }
+                        _ => return IncrementalEndTagMatch::NoMatch,
+                    }
+                }
+                IncrementalEndTagMatcherPhase::BeforeAttributeName => {
                     while let Some(&byte) = bytes.get(self.cursor) {
                         if !is_html_space_byte(byte) {
                             break;
@@ -180,19 +228,303 @@ impl IncrementalEndTagMatcher {
                     let Some(&byte) = bytes.get(self.cursor) else {
                         return IncrementalEndTagMatch::NeedMoreInput(self);
                     };
-                    if byte != b'>' {
-                        return IncrementalEndTagMatch::NoMatch;
+                    match byte {
+                        b'>' => {
+                            if let Some(progress) = progress_bytes.as_deref_mut() {
+                                *progress = progress.saturating_add(1);
+                            }
+                            return IncrementalEndTagMatch::Matched {
+                                cursor_after: self.cursor + 1,
+                                had_attributes: self.had_attributes,
+                                self_closing: false,
+                            };
+                        }
+                        b'/' => {
+                            self.cursor += 1;
+                            if let Some(progress) = progress_bytes.as_deref_mut() {
+                                *progress = progress.saturating_add(1);
+                            }
+                            self.phase = IncrementalEndTagMatcherPhase::SelfClosingStartTag;
+                        }
+                        _ => {
+                            self.had_attributes = true;
+                            self.phase = IncrementalEndTagMatcherPhase::AttributeName;
+                        }
                     }
-                    if let Some(progress) = progress_bytes.as_deref_mut() {
-                        *progress = progress.saturating_add(1);
+                }
+                IncrementalEndTagMatcherPhase::AttributeName => {
+                    while let Some(&byte) = bytes.get(self.cursor) {
+                        if is_attribute_name_stop_byte(byte) {
+                            break;
+                        }
+                        self.cursor += 1;
+                        if let Some(progress) = progress_bytes.as_deref_mut() {
+                            *progress = progress.saturating_add(1);
+                        }
                     }
-                    return IncrementalEndTagMatch::Matched {
-                        cursor_after: self.cursor + 1,
+                    let Some(&byte) = bytes.get(self.cursor) else {
+                        return IncrementalEndTagMatch::NeedMoreInput(self);
                     };
+                    match byte {
+                        b'=' => {
+                            self.cursor += 1;
+                            if let Some(progress) = progress_bytes.as_deref_mut() {
+                                *progress = progress.saturating_add(1);
+                            }
+                            self.phase = IncrementalEndTagMatcherPhase::BeforeAttributeValue;
+                        }
+                        b'/' => {
+                            self.cursor += 1;
+                            if let Some(progress) = progress_bytes.as_deref_mut() {
+                                *progress = progress.saturating_add(1);
+                            }
+                            self.phase = IncrementalEndTagMatcherPhase::SelfClosingStartTag;
+                        }
+                        b'>' => {
+                            if let Some(progress) = progress_bytes.as_deref_mut() {
+                                *progress = progress.saturating_add(1);
+                            }
+                            return IncrementalEndTagMatch::Matched {
+                                cursor_after: self.cursor + 1,
+                                had_attributes: self.had_attributes,
+                                self_closing: false,
+                            };
+                        }
+                        _ => {
+                            debug_assert!(is_html_space_byte(byte));
+                            self.phase = IncrementalEndTagMatcherPhase::AfterAttributeName;
+                        }
+                    }
+                }
+                IncrementalEndTagMatcherPhase::AfterAttributeName => {
+                    while let Some(&byte) = bytes.get(self.cursor) {
+                        if !is_html_space_byte(byte) {
+                            break;
+                        }
+                        self.cursor += 1;
+                        if let Some(progress) = progress_bytes.as_deref_mut() {
+                            *progress = progress.saturating_add(1);
+                        }
+                    }
+                    let Some(&byte) = bytes.get(self.cursor) else {
+                        return IncrementalEndTagMatch::NeedMoreInput(self);
+                    };
+                    match byte {
+                        b'=' => {
+                            self.cursor += 1;
+                            if let Some(progress) = progress_bytes.as_deref_mut() {
+                                *progress = progress.saturating_add(1);
+                            }
+                            self.phase = IncrementalEndTagMatcherPhase::BeforeAttributeValue;
+                        }
+                        b'/' => {
+                            self.cursor += 1;
+                            if let Some(progress) = progress_bytes.as_deref_mut() {
+                                *progress = progress.saturating_add(1);
+                            }
+                            self.phase = IncrementalEndTagMatcherPhase::SelfClosingStartTag;
+                        }
+                        b'>' => {
+                            if let Some(progress) = progress_bytes.as_deref_mut() {
+                                *progress = progress.saturating_add(1);
+                            }
+                            return IncrementalEndTagMatch::Matched {
+                                cursor_after: self.cursor + 1,
+                                had_attributes: self.had_attributes,
+                                self_closing: false,
+                            };
+                        }
+                        _ => {
+                            self.had_attributes = true;
+                            self.phase = IncrementalEndTagMatcherPhase::AttributeName;
+                        }
+                    }
+                }
+                IncrementalEndTagMatcherPhase::BeforeAttributeValue => {
+                    while let Some(&byte) = bytes.get(self.cursor) {
+                        if !is_html_space_byte(byte) {
+                            break;
+                        }
+                        self.cursor += 1;
+                        if let Some(progress) = progress_bytes.as_deref_mut() {
+                            *progress = progress.saturating_add(1);
+                        }
+                    }
+                    let Some(&byte) = bytes.get(self.cursor) else {
+                        return IncrementalEndTagMatch::NeedMoreInput(self);
+                    };
+                    match byte {
+                        b'"' => {
+                            self.cursor += 1;
+                            if let Some(progress) = progress_bytes.as_deref_mut() {
+                                *progress = progress.saturating_add(1);
+                            }
+                            self.phase = IncrementalEndTagMatcherPhase::AttributeValueDoubleQuoted;
+                        }
+                        b'\'' => {
+                            self.cursor += 1;
+                            if let Some(progress) = progress_bytes.as_deref_mut() {
+                                *progress = progress.saturating_add(1);
+                            }
+                            self.phase = IncrementalEndTagMatcherPhase::AttributeValueSingleQuoted;
+                        }
+                        b'>' => {
+                            if let Some(progress) = progress_bytes.as_deref_mut() {
+                                *progress = progress.saturating_add(1);
+                            }
+                            return IncrementalEndTagMatch::Matched {
+                                cursor_after: self.cursor + 1,
+                                had_attributes: self.had_attributes,
+                                self_closing: false,
+                            };
+                        }
+                        _ => self.phase = IncrementalEndTagMatcherPhase::AttributeValueUnquoted,
+                    }
+                }
+                IncrementalEndTagMatcherPhase::AttributeValueDoubleQuoted => {
+                    while let Some(&byte) = bytes.get(self.cursor) {
+                        self.cursor += 1;
+                        if let Some(progress) = progress_bytes.as_deref_mut() {
+                            *progress = progress.saturating_add(1);
+                        }
+                        if byte == b'"' {
+                            self.phase = IncrementalEndTagMatcherPhase::AfterAttributeValueQuoted;
+                            break;
+                        }
+                    }
+                    if self.phase == IncrementalEndTagMatcherPhase::AttributeValueDoubleQuoted {
+                        return IncrementalEndTagMatch::NeedMoreInput(self);
+                    }
+                }
+                IncrementalEndTagMatcherPhase::AttributeValueSingleQuoted => {
+                    while let Some(&byte) = bytes.get(self.cursor) {
+                        self.cursor += 1;
+                        if let Some(progress) = progress_bytes.as_deref_mut() {
+                            *progress = progress.saturating_add(1);
+                        }
+                        if byte == b'\'' {
+                            self.phase = IncrementalEndTagMatcherPhase::AfterAttributeValueQuoted;
+                            break;
+                        }
+                    }
+                    if self.phase == IncrementalEndTagMatcherPhase::AttributeValueSingleQuoted {
+                        return IncrementalEndTagMatch::NeedMoreInput(self);
+                    }
+                }
+                IncrementalEndTagMatcherPhase::AttributeValueUnquoted => {
+                    while let Some(&byte) = bytes.get(self.cursor) {
+                        if is_unquoted_attr_value_stop_byte(byte) {
+                            break;
+                        }
+                        self.cursor += 1;
+                        if let Some(progress) = progress_bytes.as_deref_mut() {
+                            *progress = progress.saturating_add(1);
+                        }
+                    }
+                    let Some(&byte) = bytes.get(self.cursor) else {
+                        return IncrementalEndTagMatch::NeedMoreInput(self);
+                    };
+                    match byte {
+                        b'>' => {
+                            if let Some(progress) = progress_bytes.as_deref_mut() {
+                                *progress = progress.saturating_add(1);
+                            }
+                            return IncrementalEndTagMatch::Matched {
+                                cursor_after: self.cursor + 1,
+                                had_attributes: self.had_attributes,
+                                self_closing: false,
+                            };
+                        }
+                        b'/' => {
+                            self.cursor += 1;
+                            if let Some(progress) = progress_bytes.as_deref_mut() {
+                                *progress = progress.saturating_add(1);
+                            }
+                            self.phase = IncrementalEndTagMatcherPhase::SelfClosingStartTag;
+                        }
+                        _ => {
+                            if byte == b'"'
+                                || byte == b'\''
+                                || byte == b'<'
+                                || byte == b'='
+                                || byte == b'`'
+                                || byte == b'?'
+                            {
+                                self.cursor += 1;
+                                if let Some(progress) = progress_bytes.as_deref_mut() {
+                                    *progress = progress.saturating_add(1);
+                                }
+                            }
+                            self.phase = IncrementalEndTagMatcherPhase::BeforeAttributeName;
+                        }
+                    }
+                }
+                IncrementalEndTagMatcherPhase::AfterAttributeValueQuoted => {
+                    let Some(&byte) = bytes.get(self.cursor) else {
+                        return IncrementalEndTagMatch::NeedMoreInput(self);
+                    };
+                    match byte {
+                        b'>' => {
+                            if let Some(progress) = progress_bytes.as_deref_mut() {
+                                *progress = progress.saturating_add(1);
+                            }
+                            return IncrementalEndTagMatch::Matched {
+                                cursor_after: self.cursor + 1,
+                                had_attributes: self.had_attributes,
+                                self_closing: false,
+                            };
+                        }
+                        b'/' => {
+                            self.cursor += 1;
+                            if let Some(progress) = progress_bytes.as_deref_mut() {
+                                *progress = progress.saturating_add(1);
+                            }
+                            self.phase = IncrementalEndTagMatcherPhase::SelfClosingStartTag;
+                        }
+                        _ if is_html_space_byte(byte) => {
+                            self.phase = IncrementalEndTagMatcherPhase::BeforeAttributeName;
+                        }
+                        _ => {
+                            self.had_attributes = true;
+                            self.phase = IncrementalEndTagMatcherPhase::AttributeName;
+                        }
+                    }
+                }
+                IncrementalEndTagMatcherPhase::SelfClosingStartTag => {
+                    let Some(&byte) = bytes.get(self.cursor) else {
+                        return IncrementalEndTagMatch::NeedMoreInput(self);
+                    };
+                    if byte == b'>' {
+                        if let Some(progress) = progress_bytes.as_deref_mut() {
+                            *progress = progress.saturating_add(1);
+                        }
+                        return IncrementalEndTagMatch::Matched {
+                            cursor_after: self.cursor + 1,
+                            had_attributes: self.had_attributes,
+                            self_closing: true,
+                        };
+                    }
+                    self.phase = IncrementalEndTagMatcherPhase::BeforeAttributeName;
                 }
             }
         }
     }
+}
+
+fn is_attribute_name_stop_byte(byte: u8) -> bool {
+    is_html_space_byte(byte) || byte == b'/' || byte == b'>' || byte == b'='
+}
+
+fn is_unquoted_attr_value_stop_byte(byte: u8) -> bool {
+    is_html_space_byte(byte)
+        || byte == b'>'
+        || byte == b'/'
+        || byte == b'"'
+        || byte == b'\''
+        || byte == b'<'
+        || byte == b'='
+        || byte == b'`'
+        || byte == b'?'
 }
 
 pub(crate) fn parse_quoted_slice(text: &str, quote_pos: usize) -> QuotedParse<'_> {

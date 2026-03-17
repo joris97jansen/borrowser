@@ -1,6 +1,8 @@
 use super::helpers::{
     assert_text_mode_split_close_tag_regression, assert_textarea_rcdata_chunk_invariant,
-    assert_title_rcdata_chunk_invariant, run_textarea_rcdata_chunks, run_title_rcdata_chunks,
+    assert_title_rcdata_chunk_invariant, run_textarea_rcdata_chunks,
+    run_textarea_rcdata_chunks_with_errors, run_title_rcdata_chunks,
+    run_title_rcdata_chunks_with_errors,
 };
 
 #[test]
@@ -58,7 +60,7 @@ fn rcdata_title_end_tag_match_is_ascii_case_insensitive_and_allows_html_space() 
 }
 
 #[test]
-fn rcdata_title_attribute_like_end_tag_remains_literal_until_plain_close() {
+fn rcdata_title_attribute_like_end_tag_closes_like_html() {
     let input = "<title>a</title class=x>b</title>";
     assert_title_rcdata_chunk_invariant(input);
     let (tokens, _) = run_title_rcdata_chunks(&[input]);
@@ -66,7 +68,9 @@ fn rcdata_title_attribute_like_end_tag_remains_literal_until_plain_close() {
         tokens,
         vec![
             "START name=title attrs=[] self_closing=false".to_string(),
-            "CHAR text=\"a</title class=x>b\"".to_string(),
+            "CHAR text=\"a\"".to_string(),
+            "END name=title".to_string(),
+            "CHAR text=\"b\"".to_string(),
             "END name=title".to_string(),
             "EOF".to_string(),
         ]
@@ -74,7 +78,17 @@ fn rcdata_title_attribute_like_end_tag_remains_literal_until_plain_close() {
 }
 
 #[test]
-fn rcdata_textarea_slash_bearing_end_tag_remains_literal_until_plain_close() {
+fn rcdata_title_attribute_like_end_tag_records_parse_error() {
+    let (_, _, errors) = run_title_rcdata_chunks_with_errors(&["<title>a</title class=x>"]);
+    assert!(
+        errors
+            .iter()
+            .any(|error| { error.detail == Some("text-mode-end-tag-attributes-ignored") })
+    );
+}
+
+#[test]
+fn rcdata_textarea_slash_bearing_end_tag_closes_like_html() {
     let input = "<textarea>a</textarea/>b</textarea>";
     assert_textarea_rcdata_chunk_invariant(input);
     let (tokens, _) = run_textarea_rcdata_chunks(&[input]);
@@ -82,10 +96,22 @@ fn rcdata_textarea_slash_bearing_end_tag_remains_literal_until_plain_close() {
         tokens,
         vec![
             "START name=textarea attrs=[] self_closing=false".to_string(),
-            "CHAR text=\"a</textarea/>b\"".to_string(),
+            "CHAR text=\"a\"".to_string(),
+            "END name=textarea".to_string(),
+            "CHAR text=\"b\"".to_string(),
             "END name=textarea".to_string(),
             "EOF".to_string(),
         ]
+    );
+}
+
+#[test]
+fn rcdata_textarea_self_closing_end_tag_records_parse_error() {
+    let (_, _, errors) = run_textarea_rcdata_chunks_with_errors(&["<textarea>a</textarea/>"]);
+    assert!(
+        errors
+            .iter()
+            .any(|error| { error.detail == Some("text-mode-end-tag-self-closing-ignored") })
     );
 }
 
@@ -102,6 +128,26 @@ fn rcdata_textarea_handles_character_reference_split_across_chunks() {
             "END name=textarea".to_string(),
             "EOF".to_string(),
         ]
+    );
+}
+
+#[test]
+fn g8_regression_rcdata_textarea_slash_bearing_close_tag_splits_at_every_boundary() {
+    let input = "<textarea>a</textarea/>b</textarea>";
+    assert_text_mode_split_close_tag_regression(
+        run_textarea_rcdata_chunks,
+        input,
+        "</textarea/>",
+        &[
+            "START name=textarea attrs=[] self_closing=false",
+            "CHAR text=\"a\"",
+            "END name=textarea",
+            "CHAR text=\"b\"",
+            "END name=textarea",
+            "EOF",
+        ],
+        "G8",
+        "rcdata-textarea-slash-bearing-close-tag",
     );
 }
 
@@ -175,10 +221,10 @@ fn g11_regression_rcdata_title_whitespace_close_tag_splits_at_every_boundary() {
     );
 }
 
-// Regression for G11: attribute-like close-tag noise in RCDATA must stay text
-// across every split inside the noisy candidate until the later plain close.
+// Regression for G8: attribute-bearing RCDATA end tags must terminate the
+// element across every split inside the candidate tail.
 #[test]
-fn g11_regression_rcdata_title_attribute_like_noise_splits_at_every_boundary() {
+fn g8_regression_rcdata_title_attribute_like_close_tag_splits_at_every_boundary() {
     let input = "<title>a</title class=x>b</title>";
     assert_text_mode_split_close_tag_regression(
         run_title_rcdata_chunks,
@@ -186,11 +232,13 @@ fn g11_regression_rcdata_title_attribute_like_noise_splits_at_every_boundary() {
         "</title class=x>",
         &[
             "START name=title attrs=[] self_closing=false",
-            "CHAR text=\"a</title class=x>b\"",
+            "CHAR text=\"a\"",
+            "END name=title",
+            "CHAR text=\"b\"",
             "END name=title",
             "EOF",
         ],
-        "G11",
-        "rcdata-title-attribute-like-noise",
+        "G8",
+        "rcdata-title-attribute-like-close-tag",
     );
 }

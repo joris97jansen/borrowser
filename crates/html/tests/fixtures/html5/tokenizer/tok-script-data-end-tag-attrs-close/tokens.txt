@@ -1,7 +1,9 @@
 # format: html5-token-v1
 # note: input.html intentionally ends with a trailing newline byte
-START name=title attrs=[] self_closing=false
-CHAR text="a</title class=x>b"
-END name=title
+START name=script attrs=[] self_closing=false
+CHAR text="a"
+END name=script
+CHAR text="b"
+END name=script
 CHAR text="\n"
 EOF
