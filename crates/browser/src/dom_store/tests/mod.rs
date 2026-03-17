@@ -261,6 +261,11 @@ fn cycle_detection_rejects_back_edge_and_is_atomic() {
                 doctype: None,
             },
             DomPatch::CreateElement {
+                key: PatchKey(4),
+                name: "root".into(),
+                attributes: Vec::new(),
+            },
+            DomPatch::CreateElement {
                 key: PatchKey(2),
                 name: "a".into(),
                 attributes: Vec::new(),
@@ -272,6 +277,10 @@ fn cycle_detection_rejects_back_edge_and_is_atomic() {
             },
             DomPatch::AppendChild {
                 parent: PatchKey(1),
+                child: PatchKey(4),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(4),
                 child: PatchKey(2),
             },
             DomPatch::AppendChild {
@@ -322,7 +331,7 @@ fn cycle_detection_rejects_back_edge_and_is_atomic() {
         h,
         &mut versions,
         &[DomPatch::CreateComment {
-            key: PatchKey(4),
+            key: PatchKey(5),
             text: "ok".to_string(),
         }],
         "version should remain unchanged after failed batch",
@@ -475,7 +484,7 @@ fn key_reuse_is_rejected_until_clear_then_allowed() {
 }
 
 #[test]
-fn reattaching_parented_node_returns_move_not_supported() {
+fn reattaching_parented_node_reparents_preserving_identity() {
     let (mut store, h) = new_store_with_handle(20);
     let mut versions = VersionSteps::new();
     apply_ok(
@@ -497,38 +506,50 @@ fn reattaching_parented_node_returns_move_not_supported() {
                 name: "b".into(),
                 attributes: Vec::new(),
             },
-            DomPatch::AppendChild {
-                parent: PatchKey(1),
-                child: PatchKey(2),
+            DomPatch::CreateElement {
+                key: PatchKey(4),
+                name: "root".into(),
+                attributes: Vec::new(),
             },
             DomPatch::AppendChild {
                 parent: PatchKey(1),
+                child: PatchKey(4),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(4),
                 child: PatchKey(3),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(3),
+                child: PatchKey(2),
             },
         ],
         "bootstrap apply",
     );
 
-    let (from, to) = versions.next_pair();
-    let err = store
-        .apply(
-            h,
-            from,
-            to,
-            &[DomPatch::AppendChild {
-                parent: PatchKey(3),
-                child: PatchKey(2),
-            }],
-        )
-        .expect_err("reattaching a parented node should fail");
-    assert!(matches!(
-        err,
-        DomPatchError::MoveNotSupported { key: PatchKey(2) }
-    ));
+    apply_ok(
+        &mut store,
+        h,
+        &mut versions,
+        &[DomPatch::AppendChild {
+            parent: PatchKey(4),
+            child: PatchKey(2),
+        }],
+        "reattaching a parented node should perform a move",
+    );
+    assert_eq!(
+        materialized_dom_lines(&store, h),
+        vec![
+            "#document doctype=<none>".to_string(),
+            "  <root attrs=[]>".to_string(),
+            "    <b attrs=[]>".to_string(),
+            "    <a attrs=[]>".to_string(),
+        ]
+    );
 }
 
 #[test]
-fn insert_before_with_parented_node_returns_move_not_supported() {
+fn insert_before_with_parented_node_reorders_and_noops() {
     let (mut store, h) = new_store_with_handle(21);
     let mut versions = VersionSteps::new();
     apply_ok(
@@ -541,8 +562,348 @@ fn insert_before_with_parented_node_returns_move_not_supported() {
                 doctype: None,
             },
             DomPatch::CreateElement {
+                key: PatchKey(5),
+                name: "root".into(),
+                attributes: Vec::new(),
+            },
+            DomPatch::CreateElement {
                 key: PatchKey(2),
+                name: "a".into(),
+                attributes: Vec::new(),
+            },
+            DomPatch::CreateElement {
+                key: PatchKey(3),
+                name: "b".into(),
+                attributes: Vec::new(),
+            },
+            DomPatch::CreateElement {
+                key: PatchKey(4),
+                name: "c".into(),
+                attributes: Vec::new(),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(1),
+                child: PatchKey(5),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(5),
+                child: PatchKey(2),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(5),
+                child: PatchKey(3),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(5),
+                child: PatchKey(4),
+            },
+        ],
+        "bootstrap apply",
+    );
+
+    apply_ok(
+        &mut store,
+        h,
+        &mut versions,
+        &[DomPatch::InsertBefore {
+            parent: PatchKey(5),
+            child: PatchKey(4),
+            before: PatchKey(2),
+        }],
+        "insert_before with already-parented child should reorder",
+    );
+    assert_eq!(
+        materialized_dom_lines(&store, h),
+        vec![
+            "#document doctype=<none>".to_string(),
+            "  <root attrs=[]>".to_string(),
+            "    <c attrs=[]>".to_string(),
+            "    <a attrs=[]>".to_string(),
+            "    <b attrs=[]>".to_string(),
+        ]
+    );
+
+    apply_ok(
+        &mut store,
+        h,
+        &mut versions,
+        &[DomPatch::InsertBefore {
+            parent: PatchKey(5),
+            child: PatchKey(2),
+            before: PatchKey(3),
+        }],
+        "insert_before in the existing position should be a no-op",
+    );
+    assert_eq!(
+        materialized_dom_lines(&store, h),
+        vec![
+            "#document doctype=<none>".to_string(),
+            "  <root attrs=[]>".to_string(),
+            "    <c attrs=[]>".to_string(),
+            "    <a attrs=[]>".to_string(),
+            "    <b attrs=[]>".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn append_child_with_same_parent_moves_node_to_end() {
+    let (mut store, h) = new_store_with_handle(23);
+    let mut versions = VersionSteps::new();
+    apply_ok(
+        &mut store,
+        h,
+        &mut versions,
+        &[
+            DomPatch::CreateDocument {
+                key: PatchKey(1),
+                doctype: None,
+            },
+            DomPatch::CreateElement {
+                key: PatchKey(5),
+                name: "root".into(),
+                attributes: Vec::new(),
+            },
+            DomPatch::CreateElement {
+                key: PatchKey(2),
+                name: "a".into(),
+                attributes: Vec::new(),
+            },
+            DomPatch::CreateElement {
+                key: PatchKey(3),
+                name: "b".into(),
+                attributes: Vec::new(),
+            },
+            DomPatch::CreateElement {
+                key: PatchKey(4),
+                name: "c".into(),
+                attributes: Vec::new(),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(1),
+                child: PatchKey(5),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(5),
+                child: PatchKey(2),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(5),
+                child: PatchKey(3),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(5),
+                child: PatchKey(4),
+            },
+        ],
+        "bootstrap apply",
+    );
+
+    apply_ok(
+        &mut store,
+        h,
+        &mut versions,
+        &[DomPatch::AppendChild {
+            parent: PatchKey(5),
+            child: PatchKey(2),
+        }],
+        "append_child on same parent should move the node to the end",
+    );
+    assert_eq!(
+        materialized_dom_lines(&store, h),
+        vec![
+            "#document doctype=<none>".to_string(),
+            "  <root attrs=[]>".to_string(),
+            "    <b attrs=[]>".to_string(),
+            "    <c attrs=[]>".to_string(),
+            "    <a attrs=[]>".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn insert_before_supports_cross_parent_reparenting() {
+    let (mut store, h) = new_store_with_handle(24);
+    let mut versions = VersionSteps::new();
+    apply_ok(
+        &mut store,
+        h,
+        &mut versions,
+        &[
+            DomPatch::CreateDocument {
+                key: PatchKey(1),
+                doctype: None,
+            },
+            DomPatch::CreateElement {
+                key: PatchKey(2),
+                name: "left".into(),
+                attributes: Vec::new(),
+            },
+            DomPatch::CreateElement {
+                key: PatchKey(3),
+                name: "right".into(),
+                attributes: Vec::new(),
+            },
+            DomPatch::CreateElement {
+                key: PatchKey(4),
                 name: "child".into(),
+                attributes: Vec::new(),
+            },
+            DomPatch::CreateElement {
+                key: PatchKey(5),
+                name: "anchor".into(),
+                attributes: Vec::new(),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(1),
+                child: PatchKey(2),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(1),
+                child: PatchKey(3),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(2),
+                child: PatchKey(4),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(3),
+                child: PatchKey(5),
+            },
+        ],
+        "bootstrap apply",
+    );
+
+    apply_ok(
+        &mut store,
+        h,
+        &mut versions,
+        &[DomPatch::InsertBefore {
+            parent: PatchKey(3),
+            child: PatchKey(4),
+            before: PatchKey(5),
+        }],
+        "insert_before should support cross-parent reparenting",
+    );
+    assert_eq!(
+        materialized_dom_lines(&store, h),
+        vec![
+            "#document doctype=<none>".to_string(),
+            "  <left attrs=[]>".to_string(),
+            "  <right attrs=[]>".to_string(),
+            "    <child attrs=[]>".to_string(),
+            "    <anchor attrs=[]>".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn insert_before_move_batch_rolls_back_atomically_on_later_failure() {
+    let (mut store, h) = new_store_with_handle(25);
+    let mut versions = VersionSteps::new();
+    apply_ok(
+        &mut store,
+        h,
+        &mut versions,
+        &[
+            DomPatch::CreateDocument {
+                key: PatchKey(1),
+                doctype: None,
+            },
+            DomPatch::CreateElement {
+                key: PatchKey(2),
+                name: "left".into(),
+                attributes: Vec::new(),
+            },
+            DomPatch::CreateElement {
+                key: PatchKey(3),
+                name: "right".into(),
+                attributes: Vec::new(),
+            },
+            DomPatch::CreateElement {
+                key: PatchKey(4),
+                name: "child".into(),
+                attributes: Vec::new(),
+            },
+            DomPatch::CreateElement {
+                key: PatchKey(5),
+                name: "anchor".into(),
+                attributes: Vec::new(),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(1),
+                child: PatchKey(2),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(1),
+                child: PatchKey(3),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(2),
+                child: PatchKey(4),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(3),
+                child: PatchKey(5),
+            },
+        ],
+        "bootstrap apply",
+    );
+
+    let (from, to) = versions.next_pair();
+    let err = assert_failed_apply_is_atomic(
+        &mut store,
+        h,
+        from,
+        to,
+        &[
+            DomPatch::InsertBefore {
+                parent: PatchKey(3),
+                child: PatchKey(4),
+                before: PatchKey(5),
+            },
+            DomPatch::SetText {
+                key: PatchKey(2),
+                text: "boom".to_string(),
+            },
+        ],
+    );
+    assert!(matches!(err, DomPatchError::WrongNodeKind { .. }));
+
+    assert_eq!(
+        materialized_dom_lines(&store, h),
+        vec![
+            "#document doctype=<none>".to_string(),
+            "  <left attrs=[]>".to_string(),
+            "    <child attrs=[]>".to_string(),
+            "  <right attrs=[]>".to_string(),
+            "    <anchor attrs=[]>".to_string(),
+        ],
+        "failed batch must leave the original pre-move structure intact"
+    );
+}
+
+#[test]
+fn illegal_document_and_root_element_moves_are_rejected() {
+    let (mut store, h) = new_store_with_handle(22);
+    let mut versions = VersionSteps::new();
+    apply_ok(
+        &mut store,
+        h,
+        &mut versions,
+        &[
+            DomPatch::CreateDocument {
+                key: PatchKey(1),
+                doctype: None,
+            },
+            DomPatch::CreateElement {
+                key: PatchKey(2),
+                name: "html".into(),
+                attributes: Vec::new(),
+            },
+            DomPatch::CreateElement {
+                key: PatchKey(3),
+                name: "body".into(),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
@@ -555,7 +916,11 @@ fn insert_before_with_parented_node_returns_move_not_supported() {
                 child: PatchKey(2),
             },
             DomPatch::AppendChild {
-                parent: PatchKey(1),
+                parent: PatchKey(2),
+                child: PatchKey(3),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(3),
                 child: PatchKey(4),
             },
         ],
@@ -563,20 +928,80 @@ fn insert_before_with_parented_node_returns_move_not_supported() {
     );
 
     let (from, to) = versions.next_pair();
-    let err = store
-        .apply(
-            h,
-            from,
-            to,
-            &[DomPatch::InsertBefore {
-                parent: PatchKey(1),
-                child: PatchKey(2),
-                before: PatchKey(4),
-            }],
-        )
-        .expect_err("insert_before with already-parented child should fail");
+    let err = assert_failed_apply_is_atomic(
+        &mut store,
+        h,
+        from,
+        to,
+        &[DomPatch::AppendChild {
+            parent: PatchKey(3),
+            child: PatchKey(1),
+        }],
+    );
     assert!(matches!(
         err,
-        DomPatchError::MoveNotSupported { key: PatchKey(2) }
+        DomPatchError::IllegalMove {
+            key: PatchKey(1),
+            ..
+        }
+    ));
+
+    let (from, to) = versions.next_pair();
+    let err = assert_failed_apply_is_atomic(
+        &mut store,
+        h,
+        from,
+        to,
+        &[DomPatch::AppendChild {
+            parent: PatchKey(3),
+            child: PatchKey(2),
+        }],
+    );
+    assert!(matches!(
+        err,
+        DomPatchError::IllegalMove {
+            key: PatchKey(2),
+            ..
+        }
+    ));
+
+    let (from, to) = versions.next_pair();
+    let err = assert_failed_apply_is_atomic(
+        &mut store,
+        h,
+        from,
+        to,
+        &[DomPatch::InsertBefore {
+            parent: PatchKey(3),
+            child: PatchKey(1),
+            before: PatchKey(4),
+        }],
+    );
+    assert!(matches!(
+        err,
+        DomPatchError::IllegalMove {
+            key: PatchKey(1),
+            ..
+        }
+    ));
+
+    let (from, to) = versions.next_pair();
+    let err = assert_failed_apply_is_atomic(
+        &mut store,
+        h,
+        from,
+        to,
+        &[DomPatch::InsertBefore {
+            parent: PatchKey(3),
+            child: PatchKey(2),
+            before: PatchKey(4),
+        }],
+    );
+    assert!(matches!(
+        err,
+        DomPatchError::IllegalMove {
+            key: PatchKey(2),
+            ..
+        }
     ));
 }

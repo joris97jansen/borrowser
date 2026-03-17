@@ -23,8 +23,15 @@ pub enum DomPatchError {
         actual: &'static str,
     },
     InvalidParent(PatchKey),
+    // Retained for legacy/non-HTML5-capable appliers that may still reject
+    // reparenting outright. Strict HTML5-capable appliers should instead
+    // support legal moves and use `IllegalMove` only for forbidden cases.
     MoveNotSupported {
         key: PatchKey,
+    },
+    IllegalMove {
+        key: PatchKey,
+        reason: &'static str,
     },
     InvalidSibling {
         parent: PatchKey,

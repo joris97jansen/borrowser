@@ -73,9 +73,6 @@ impl DomArena {
         if parent == child {
             return Err(DomPatchError::CycleDetected { parent, child });
         }
-        if self.contains_in_subtree(child, parent) {
-            return Err(DomPatchError::CycleDetected { parent, child });
-        }
         let parent_index = *self
             .live
             .get(&parent)
@@ -87,10 +84,28 @@ impl DomArena {
         if !self.nodes[parent_index].allows_children() {
             return Err(DomPatchError::InvalidParent(parent));
         }
-        if self.nodes[child_index].parent.is_some() {
-            // Moving nodes is not supported yet.
-            return Err(DomPatchError::MoveNotSupported { key: child });
+        if self.is_document_node(child_index) {
+            return Err(DomPatchError::IllegalMove {
+                key: child,
+                reason: "document nodes cannot be moved",
+            });
         }
+        if self.is_document_root_element(child_index) {
+            return Err(DomPatchError::IllegalMove {
+                key: child,
+                reason: "document root element cannot be moved",
+            });
+        }
+        if self.contains_in_subtree(child, parent) {
+            return Err(DomPatchError::CycleDetected { parent, child });
+        }
+        if self.nodes[child_index].parent == Some(parent)
+            && self.nodes[parent_index].children.last() == Some(&child)
+        {
+            self.debug_check_invariants();
+            return Ok(());
+        }
+        self.detach_child(child_index, child);
         self.nodes[parent_index].children.push(child);
         self.nodes[child_index].parent = Some(parent);
         self.debug_check_invariants();
@@ -107,9 +122,6 @@ impl DomArena {
         if parent == child {
             return Err(DomPatchError::CycleDetected { parent, child });
         }
-        if self.contains_in_subtree(child, parent) {
-            return Err(DomPatchError::CycleDetected { parent, child });
-        }
         let parent_index = *self
             .live
             .get(&parent)
@@ -121,10 +133,6 @@ impl DomArena {
         if !self.nodes[parent_index].allows_children() {
             return Err(DomPatchError::InvalidParent(parent));
         }
-        if self.nodes[child_index].parent.is_some() {
-            // Moving nodes is not supported yet.
-            return Err(DomPatchError::MoveNotSupported { key: child });
-        }
         let before_index = *self
             .live
             .get(&before)
@@ -132,6 +140,32 @@ impl DomArena {
         if self.nodes[before_index].parent != Some(parent) {
             return Err(DomPatchError::InvalidSibling { parent, before });
         }
+        if self.is_document_node(child_index) {
+            return Err(DomPatchError::IllegalMove {
+                key: child,
+                reason: "document nodes cannot be moved",
+            });
+        }
+        if self.is_document_root_element(child_index) {
+            return Err(DomPatchError::IllegalMove {
+                key: child,
+                reason: "document root element cannot be moved",
+            });
+        }
+        if self.contains_in_subtree(child, parent) {
+            return Err(DomPatchError::CycleDetected { parent, child });
+        }
+        if self.nodes[child_index].parent == Some(parent) {
+            let siblings = &self.nodes[parent_index].children;
+            let child_pos = siblings.iter().position(|key| *key == child);
+            let before_pos = siblings.iter().position(|key| *key == before);
+            if matches!((child_pos, before_pos), (Some(child_pos), Some(before_pos)) if child_pos + 1 == before_pos)
+            {
+                self.debug_check_invariants();
+                return Ok(());
+            }
+        }
+        self.detach_child(child_index, child);
         let siblings = &mut self.nodes[parent_index].children;
         let pos = siblings
             .iter()
@@ -225,6 +259,34 @@ impl DomArena {
                 actual,
             }),
         }
+    }
+
+    fn is_document_node(&self, index: usize) -> bool {
+        matches!(self.nodes[index].kind, NodeKind::Document { .. })
+    }
+
+    fn is_document_root_element(&self, index: usize) -> bool {
+        let Some(parent) = self.nodes[index].parent else {
+            return false;
+        };
+        let Some(&parent_index) = self.live.get(&parent) else {
+            return false;
+        };
+        matches!(
+            (&self.nodes[index].kind, &self.nodes[parent_index].kind),
+            (NodeKind::Element { .. }, NodeKind::Document { .. })
+        )
+    }
+
+    fn detach_child(&mut self, child_index: usize, child: PatchKey) {
+        if let Some(existing_parent) = self.nodes[child_index].parent
+            && let Some(&parent_index) = self.live.get(&existing_parent)
+        {
+            self.nodes[parent_index]
+                .children
+                .retain(|key| *key != child);
+        }
+        self.nodes[child_index].parent = None;
     }
 
     fn contains_in_subtree(&self, root: PatchKey, needle: PatchKey) -> bool {

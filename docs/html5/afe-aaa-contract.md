@@ -308,7 +308,7 @@ Contractual consequence:
 
 This document therefore constrains both parser implementation and any supporting runtime patch work needed to make AAA patches materializable.
 
-Normative runtime move-semantics details are tracked in [`docs/html5/issues/H2-runtime-patch-move-semantics.md`](issues/H2-runtime-patch-move-semantics.md).
+Normative runtime move-semantics details are tracked in [`docs/html5/adr/ADR-002-runtime-patch-move-semantics.md`](adr/ADR-002-runtime-patch-move-semantics.md).
 
 ## Parse-Error Observability Policy
 

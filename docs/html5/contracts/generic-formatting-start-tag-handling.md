@@ -1,6 +1,6 @@
-# H4a — Generic Formatting Start-Tag Handling And AFE/Marker Insertion In The `In body` Mode
+# Contract Record — Generic Formatting Start-Tag Handling And AFE/Marker Insertion In The `In body` Mode
 
-Status: landed  
+Status: landed record
 Milestone: H — Active formatting elements + adoption agency algorithm
 
 ## Goal
@@ -10,13 +10,13 @@ formatting reconstruction, element insertion, AFE push behavior, and
 marker-producing tag boundaries, without yet implementing the special `a` /
 `nobr` recovery behavior.
 
-## Why This Issue Exists
+## Why This Contract Record Exists
 
 Milestone H needs a stable generic formatting-element insertion path before the
 special `a` / `nobr` start-tag recovery and the adoption agency algorithm can
 land cleanly.
 
-This issue isolates the common start-tag behavior for:
+This contract record isolates the common start-tag behavior for:
 
 - generic formatting tags that follow the normal formatting insertion flow
 - marker-producing tags that must push an AFE marker boundary
@@ -47,23 +47,24 @@ This issue isolates the common start-tag behavior for:
 
 ## Current Boundary
 
-This issue intentionally does not implement:
+This contract record intentionally does not define:
 
 - special `a` recovery when an active `a` exists after the last marker
 - special `nobr` recovery when `nobr` is already present on the stack of open
   elements in scope
 - adoption agency handling for formatting end tags
 
-Those remain tracked by:
+Those remain defined by:
 
-- [`H4 — Special a / nobr recovery paths`](H4-special-a-nobr-recovery.md)
-- [`H5 — Adoption Agency Algorithm for supported formatting end tags`](H5-adoption-agency-algorithm.md)
+- [`Contract — Special a / nobr recovery paths`](special-a-nobr-recovery.md)
+- [`Draft Contract — Adoption agency algorithm for supported formatting end tags`](adoption-agency-algorithm.md)
 
 Current repository note:
 
 - the generic formatting and marker groundwork from H4a remains the active base
   path
 - bounded in-scope `a` / `nobr` recovery has since landed under
-  [`H4`](H4-special-a-nobr-recovery.md)
+  [`Contract — Special a / nobr recovery paths`](special-a-nobr-recovery.md)
 - full spec-prescribed formatting recovery still remains incomplete until
-  [`H5`](H5-adoption-agency-algorithm.md) lands
+  [`Draft Contract — Adoption agency algorithm for supported formatting end tags`](adoption-agency-algorithm.md)
+  lands

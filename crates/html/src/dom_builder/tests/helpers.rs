@@ -106,23 +106,96 @@ impl PatchArena {
                     let Some(mut child_node) = self.nodes.remove(child) else {
                         panic!("missing child in AppendChild");
                     };
+                    let parent_is_container = matches!(
+                        self.nodes.get(parent).map(|node| &node.kind),
+                        Some(PatchKind::Document { .. } | PatchKind::Element { .. })
+                    );
+                    if !self.nodes.contains_key(parent) {
+                        self.nodes.insert(*child, child_node);
+                        panic!("missing parent in AppendChild");
+                    }
+                    if !parent_is_container {
+                        self.nodes.insert(*child, child_node);
+                        panic!("AppendChild parent must be a container");
+                    }
+                    if let Some(existing_parent) = child_node.parent {
+                        let already_last = existing_parent == *parent
+                            && self.nodes.get(parent).and_then(|node| node.children.last())
+                                == Some(child);
+                        if already_last {
+                            self.nodes.insert(*child, child_node);
+                            continue;
+                        }
+                        if let Some(previous_parent) = self.nodes.get_mut(&existing_parent) {
+                            previous_parent.children.retain(|key| key != child);
+                        }
+                    }
                     let Some(parent_node) = self.nodes.get_mut(parent) else {
                         self.nodes.insert(*child, child_node);
                         panic!("missing parent in AppendChild");
                     };
-                    match parent_node.kind {
-                        PatchKind::Document { .. } | PatchKind::Element { .. } => {}
-                        _ => {
-                            self.nodes.insert(*child, child_node);
-                            panic!("AppendChild parent must be a container");
-                        }
-                    }
-                    assert!(child_node.parent.is_none(), "child already has parent");
                     assert!(
                         !parent_node.children.iter().any(|k| k == child),
-                        "child already present in parent"
+                        "child already present in parent after detach"
                     );
                     parent_node.children.push(*child);
+                    child_node.parent = Some(*parent);
+                    self.nodes.insert(*child, child_node);
+                }
+                DomPatch::InsertBefore {
+                    parent,
+                    child,
+                    before,
+                } => {
+                    assert_ne!(parent, child, "InsertBefore cannot attach a node to itself");
+                    assert_ne!(
+                        child, before,
+                        "InsertBefore cannot insert a node before itself"
+                    );
+                    let Some(mut child_node) = self.nodes.remove(child) else {
+                        panic!("missing child in InsertBefore");
+                    };
+                    let parent_is_container = matches!(
+                        self.nodes.get(parent).map(|node| &node.kind),
+                        Some(PatchKind::Document { .. } | PatchKind::Element { .. })
+                    );
+                    if !self.nodes.contains_key(parent) {
+                        self.nodes.insert(*child, child_node);
+                        panic!("missing parent in InsertBefore");
+                    }
+                    if !parent_is_container {
+                        self.nodes.insert(*child, child_node);
+                        panic!("InsertBefore parent must be a container");
+                    }
+                    if let Some(existing_parent) = child_node.parent {
+                        if existing_parent == *parent {
+                            let child_index = self
+                                .nodes
+                                .get(parent)
+                                .and_then(|node| node.children.iter().position(|key| key == child));
+                            let before_index = self.nodes.get(parent).and_then(|node| {
+                                node.children.iter().position(|key| key == before)
+                            });
+                            if matches!((child_index, before_index), (Some(child_index), Some(before_index)) if child_index + 1 == before_index)
+                            {
+                                self.nodes.insert(*child, child_node);
+                                continue;
+                            }
+                        }
+                        if let Some(previous_parent) = self.nodes.get_mut(&existing_parent) {
+                            previous_parent.children.retain(|key| key != child);
+                        }
+                    }
+                    let Some(parent_node) = self.nodes.get_mut(parent) else {
+                        self.nodes.insert(*child, child_node);
+                        panic!("missing parent in InsertBefore");
+                    };
+                    let before_index = parent_node
+                        .children
+                        .iter()
+                        .position(|key| key == before)
+                        .expect("before child missing in InsertBefore");
+                    parent_node.children.insert(before_index, *child);
                     child_node.parent = Some(*parent);
                     self.nodes.insert(*child, child_node);
                 }

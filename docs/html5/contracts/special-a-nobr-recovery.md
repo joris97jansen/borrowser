@@ -1,6 +1,6 @@
-# H4 — Special `a` / `nobr` Recovery Paths
+# Contract — Special `a` / `nobr` Recovery Paths
 
-Status: in progress; bounded in-scope `a` / `nobr` recovery and chunk-parity evidence are landed, full spec-prescribed recovery remains coupled to H5
+Status: partially implemented; bounded in-scope `a` / `nobr` recovery and chunk-parity evidence are landed, full spec-prescribed recovery remains coupled to H5
 Milestone: H — Active formatting elements + adoption agency algorithm
 
 ## Goal
@@ -10,7 +10,7 @@ Implement the HTML5 `In body` special recovery behavior for start tags `a` and
 reconstruction logic, stack of open elements (SOE), and deterministic
 `DomPatch` emission.
 
-## Why This Issue Exists
+## Why This Contract Exists
 
 Milestone H already supports generic formatting-element insertion plus
 reconstruction of missing active formatting elements. However, `a` and `nobr`
@@ -18,12 +18,12 @@ are not generic formatting-element start-tag paths in the HTML5 tree-builder.
 They require dedicated recovery logic that consults existing AFE / SOE state
 before inserting a new formatting element.
 
-This issue exists to close that spec gap before the broader formatting recovery
-pipeline is treated as complete.
+This contract exists to close that spec gap before the broader formatting
+recovery pipeline is treated as complete.
 
 The generic formatting start-tag path and marker insertion groundwork are
 tracked separately in
-[`H4a — Generic Formatting Start-Tag Handling And AFE/Marker Insertion In The In body Mode`](H4a-generic-formatting-start-tag-handling.md).
+[`Contract Record — Generic Formatting Start-Tag Handling And AFE/Marker Insertion In The In body Mode`](generic-formatting-start-tag-handling.md).
 
 ## Current Boundary
 
@@ -70,8 +70,9 @@ However, the full spec-prescribed recovery remains incomplete until H5 lands:
 - golden DOM/patch fixtures demonstrate the intended recovery behavior
 - unaffected node identities remain stable; any recreated nodes receive fresh
   keys in deterministic order
-- final close of this issue still requires revalidation of the special paths
-  once the H5 adoption-agency path replaces the bounded non-AAA closure logic
+- final completion of this contract slice still requires revalidation of the
+  special paths once the H5 adoption-agency path replaces the bounded non-AAA
+  closure logic
 
 ## Evidence Expectations
 
@@ -85,9 +86,9 @@ However, the full spec-prescribed recovery remains incomplete until H5 lands:
 
 ## Dependencies
 
-- builds on [`H3 — Reconstruct Active Formatting Elements`](H3-reconstruct-active-formatting-elements.md)
-- builds on [`H4a — Generic Formatting Start-Tag Handling And AFE/Marker Insertion In The In body Mode`](H4a-generic-formatting-start-tag-handling.md)
+- builds on [`Contract — Reconstruct Active Formatting Elements`](reconstruct-active-formatting-elements.md)
+- builds on [`Contract Record — Generic Formatting Start-Tag Handling And AFE/Marker Insertion In The In body Mode`](generic-formatting-start-tag-handling.md)
 - should land before treating the Milestone H reconstruction surface as fully
   integrated
 - remains orthogonal to the full Adoption Agency Algorithm work tracked by
-  [`H5`](H5-adoption-agency-algorithm.md)
+  [`Draft Contract — Adoption agency algorithm for supported formatting end tags`](adoption-agency-algorithm.md)
