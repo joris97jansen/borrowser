@@ -32,9 +32,9 @@ This issue isolates the common start-tag behavior for:
 - self-closing formatting start tags do not remain on SOE and do not enter AFE
 - marker-producing tags reconstruct first, insert normally, then push an AFE
   marker when not self-closing
-- `a` and `nobr` now have explicit dedicated branches in `handle_in_body`, but
-  they still delegate to the generic formatting start-tag helper until the
-  special recovery behavior lands
+- H4a established the shared generic formatting start-tag helper and the
+  explicit `a` / `nobr` branch points that later special recovery work builds
+  on; H4a itself did not implement the special `a` / `nobr` behavior
 
 ## Acceptance Evidence
 
@@ -42,8 +42,8 @@ This issue isolates the common start-tag behavior for:
 - targeted tree-builder tests verify marker boundaries are inserted into AFE
 - targeted tree-builder tests verify self-closing formatting tags do not enter
   AFE
-- malformed nested-`a` transitional sequences remain recoverable and
-  panic-free
+- malformed nested-`a` transitional sequences remained recoverable and
+  panic-free at the H4a landing stage before H4 special-path recovery was added
 
 ## Current Boundary
 
@@ -58,3 +58,12 @@ Those remain tracked by:
 
 - [`H4 — Special a / nobr recovery paths`](H4-special-a-nobr-recovery.md)
 - [`H5 — Adoption Agency Algorithm for supported formatting end tags`](H5-adoption-agency-algorithm.md)
+
+Current repository note:
+
+- the generic formatting and marker groundwork from H4a remains the active base
+  path
+- bounded in-scope `a` / `nobr` recovery has since landed under
+  [`H4`](H4-special-a-nobr-recovery.md)
+- full spec-prescribed formatting recovery still remains incomplete until
+  [`H5`](H5-adoption-agency-algorithm.md) lands
