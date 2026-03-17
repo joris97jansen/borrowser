@@ -397,7 +397,32 @@ impl Html5TreeBuilder {
                 name,
                 attrs,
                 self_closing,
+            } if self.known_tags.is_marker_tag(*name) => {
+                let _ = self.reconstruct_active_formatting_elements(atoms)?;
+                let _ = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
+                if !self_closing {
+                    self.active_formatting.push_marker();
+                }
+                self.update_mode_for_start_tag(*name);
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } if self.known_tags.is_formatting_tag(*name) => {
+                let _ = self.reconstruct_active_formatting_elements(atoms)?;
+                let key = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
+                if !self_closing {
+                    self.push_active_formatting_element(key, *name, attrs, text)?;
+                }
+                self.update_mode_for_start_tag(*name);
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
             } => {
+                let _ = self.reconstruct_active_formatting_elements(atoms)?;
                 let _ = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
                 if self.is_text_mode_container_tag(*name) && !self_closing {
                     self.enter_text_mode_for_element(*name);
@@ -406,13 +431,24 @@ impl Html5TreeBuilder {
                 }
             }
             Token::EndTag { name } => {
+                // Transitional Milestone H state: supported formatting end tags
+                // still flow through the generic scope-pop path until AAA lands.
+                // Reconstruction is real here; formatting-end-tag recovery is
+                // not yet spec-complete and is tracked separately.
                 let scope = self.scope_kind_for_in_body_end_tag(*name);
-                let closed = self.close_element_in_scope(*name, scope);
-                if closed {
+                let popped = self.pop_element_in_scope_with_reporting(*name, scope, true);
+                if let Some(popped) = popped {
+                    if self.known_tags.is_formatting_tag(popped.name()) {
+                        let _ = self.active_formatting.remove(popped.key());
+                    }
+                    if self.known_tags.is_marker_tag(popped.name()) {
+                        let _ = self.active_formatting.clear_to_last_marker();
+                    }
                     self.update_mode_for_end_tag(*name);
                 }
             }
             Token::Text { text: token_text } => {
+                let _ = self.reconstruct_active_formatting_elements(atoms)?;
                 self.insert_text(token_text, text)?;
                 self.insertion_mode = InsertionMode::InBody;
             }

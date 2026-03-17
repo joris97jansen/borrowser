@@ -14,7 +14,10 @@
 )]
 
 use crate::dom_patch::PatchKey;
-use crate::html5::shared::AtomId;
+use crate::html5::shared::{AtomId, AtomTable, Attribute};
+use crate::html5::tokenizer::TextResolver;
+use crate::html5::tree_builder::stack::OpenElementsStack;
+use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct AfeAttributeSnapshot {
@@ -170,6 +173,30 @@ impl ActiveFormattingList {
         &self.items
     }
 
+    fn reconstruction_start_index(&self, open_elements: &OpenElementsStack) -> Option<usize> {
+        let mut index = self.items.len().checked_sub(1)?;
+        match &self.items[index] {
+            AfeEntry::Marker => return None,
+            AfeEntry::Element(entry) if open_elements.contains_key(entry.key) => return None,
+            AfeEntry::Element(_) => {}
+        }
+        while index > 0 {
+            match &self.items[index - 1] {
+                AfeEntry::Marker => break,
+                AfeEntry::Element(entry) if open_elements.contains_key(entry.key) => break,
+                AfeEntry::Element(_) => index -= 1,
+            }
+        }
+        Some(index)
+    }
+
+    fn replace_key_at(&mut self, index: usize, key: PatchKey) {
+        match &mut self.items[index] {
+            AfeEntry::Marker => unreachable!("reconstruction key replacement targets elements"),
+            AfeEntry::Element(entry) => entry.key = key,
+        }
+    }
+
     fn trim_oldest_duplicate_if_needed(
         &mut self,
         candidate: &AfeElementEntry,
@@ -201,6 +228,48 @@ impl ActiveFormattingList {
             AfeEntry::Marker => false,
             AfeEntry::Element(element) => element.key == key,
         })
+    }
+}
+
+impl Html5TreeBuilder {
+    pub(in crate::html5::tree_builder) fn push_active_formatting_element(
+        &mut self,
+        key: PatchKey,
+        name: AtomId,
+        attrs: &[Attribute],
+        text: &dyn TextResolver,
+    ) -> Result<(), TreeBuilderError> {
+        let snapshot = self.snapshot_afe_attributes(attrs, text)?;
+        let _ = self
+            .active_formatting
+            .push_formatting_element(AfeElementEntry::new(key, name, snapshot));
+        Ok(())
+    }
+
+    pub(in crate::html5::tree_builder) fn reconstruct_active_formatting_elements(
+        &mut self,
+        atoms: &AtomTable,
+    ) -> Result<usize, TreeBuilderError> {
+        let Some(start_index) = self
+            .active_formatting
+            .reconstruction_start_index(&self.open_elements)
+        else {
+            return Ok(0);
+        };
+
+        let mut reconstructed = 0usize;
+        for index in start_index..self.active_formatting.items.len() {
+            let entry = match &self.active_formatting.items[index] {
+                AfeEntry::Marker => {
+                    unreachable!("reconstruction suffix must not contain markers")
+                }
+                AfeEntry::Element(entry) => entry.clone(),
+            };
+            let new_key = self.insert_element_from_afe_entry(&entry, atoms)?;
+            self.active_formatting.replace_key_at(index, new_key);
+            reconstructed += 1;
+        }
+        Ok(reconstructed)
     }
 }
 
