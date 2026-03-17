@@ -1,4 +1,4 @@
-use crate::html5::shared::{DocumentParseContext, Input, Token};
+use crate::html5::shared::{DocumentParseContext, Input, ParseError, Token};
 use crate::html5::tokenizer::{
     Html5Tokenizer, TextModeSpec, TokenFmt, TokenizeResult, TokenizerConfig, TokenizerControl,
     TokenizerStats,
@@ -87,6 +87,18 @@ fn run_text_mode_chunks<F>(
 where
     F: Fn(crate::html5::shared::AtomId) -> TextModeSpec,
 {
+    let (out, stats, _) = run_text_mode_chunks_with_errors(chunks, tag_name, enter_spec);
+    (out, stats)
+}
+
+fn run_text_mode_chunks_with_errors<F>(
+    chunks: &[&str],
+    tag_name: &str,
+    enter_spec: F,
+) -> (Vec<String>, TokenizerStats, Vec<ParseError>)
+where
+    F: Fn(crate::html5::shared::AtomId) -> TextModeSpec,
+{
     let mut ctx = DocumentParseContext::new();
     let tag = ctx
         .atoms
@@ -138,11 +150,22 @@ where
 
     assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
     out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
-    (out, tokenizer.stats())
+    let errors = ctx
+        .errors
+        .as_ref()
+        .map(|errors| errors.iter().cloned().collect())
+        .unwrap_or_default();
+    (out, tokenizer.stats(), errors)
 }
 
 pub(super) fn run_style_rawtext_chunks(chunks: &[&str]) -> (Vec<String>, TokenizerStats) {
     run_text_mode_chunks(chunks, "style", TextModeSpec::rawtext_style)
+}
+
+pub(super) fn run_style_rawtext_chunks_with_errors(
+    chunks: &[&str],
+) -> (Vec<String>, TokenizerStats, Vec<ParseError>) {
+    run_text_mode_chunks_with_errors(chunks, "style", TextModeSpec::rawtext_style)
 }
 
 pub(super) fn assert_style_rawtext_chunk_invariant(input: &str) {
@@ -160,6 +183,12 @@ pub(super) fn run_title_rcdata_chunks(chunks: &[&str]) -> (Vec<String>, Tokenize
     run_text_mode_chunks(chunks, "title", TextModeSpec::rcdata_title)
 }
 
+pub(super) fn run_title_rcdata_chunks_with_errors(
+    chunks: &[&str],
+) -> (Vec<String>, TokenizerStats, Vec<ParseError>) {
+    run_text_mode_chunks_with_errors(chunks, "title", TextModeSpec::rcdata_title)
+}
+
 pub(super) fn assert_title_rcdata_chunk_invariant(input: &str) {
     let (whole, _) = run_title_rcdata_chunks(&[input]);
     for split in 1..input.len() {
@@ -175,6 +204,12 @@ pub(super) fn run_textarea_rcdata_chunks(chunks: &[&str]) -> (Vec<String>, Token
     run_text_mode_chunks(chunks, "textarea", TextModeSpec::rcdata_textarea)
 }
 
+pub(super) fn run_textarea_rcdata_chunks_with_errors(
+    chunks: &[&str],
+) -> (Vec<String>, TokenizerStats, Vec<ParseError>) {
+    run_text_mode_chunks_with_errors(chunks, "textarea", TextModeSpec::rcdata_textarea)
+}
+
 pub(super) fn assert_textarea_rcdata_chunk_invariant(input: &str) {
     let (whole, _) = run_textarea_rcdata_chunks(&[input]);
     for split in 1..input.len() {
@@ -188,6 +223,12 @@ pub(super) fn assert_textarea_rcdata_chunk_invariant(input: &str) {
 
 pub(super) fn run_script_data_chunks(chunks: &[&str]) -> (Vec<String>, TokenizerStats) {
     run_text_mode_chunks(chunks, "script", TextModeSpec::script_data)
+}
+
+pub(super) fn run_script_data_chunks_with_errors(
+    chunks: &[&str],
+) -> (Vec<String>, TokenizerStats, Vec<ParseError>) {
+    run_text_mode_chunks_with_errors(chunks, "script", TextModeSpec::script_data)
 }
 
 pub(super) fn assert_script_data_chunk_invariant(input: &str) {

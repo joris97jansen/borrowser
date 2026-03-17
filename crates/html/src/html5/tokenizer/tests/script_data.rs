@@ -1,6 +1,6 @@
 use super::helpers::{
     assert_script_data_chunk_invariant, assert_text_mode_split_close_tag_regression,
-    run_script_data_chunks,
+    run_script_data_chunks, run_script_data_chunks_with_errors,
 };
 
 #[test]
@@ -73,7 +73,7 @@ fn script_data_mismatched_end_tag_is_emitted_as_text_until_matching_close() {
 }
 
 #[test]
-fn script_data_attribute_like_end_tag_remains_literal_until_plain_close() {
+fn script_data_attribute_like_end_tag_closes_like_html() {
     let input = "<script>a</script type=text/plain>b</script>";
     assert_script_data_chunk_invariant(input);
     let (tokens, _) = run_script_data_chunks(&[input]);
@@ -81,10 +81,41 @@ fn script_data_attribute_like_end_tag_remains_literal_until_plain_close() {
         tokens,
         vec![
             "START name=script attrs=[] self_closing=false".to_string(),
-            "CHAR text=\"a</script type=text/plain>b\"".to_string(),
+            "CHAR text=\"a\"".to_string(),
+            "END name=script".to_string(),
+            "CHAR text=\"b\"".to_string(),
             "END name=script".to_string(),
             "EOF".to_string(),
         ]
+    );
+}
+
+#[test]
+fn script_data_slash_bearing_end_tag_closes_like_html() {
+    let input = "<script>a</script/>b</script>";
+    assert_script_data_chunk_invariant(input);
+    let (tokens, _) = run_script_data_chunks(&[input]);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=script attrs=[] self_closing=false".to_string(),
+            "CHAR text=\"a\"".to_string(),
+            "END name=script".to_string(),
+            "CHAR text=\"b\"".to_string(),
+            "END name=script".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn script_data_attribute_like_end_tag_records_parse_error() {
+    let (_, _, errors) =
+        run_script_data_chunks_with_errors(&["<script>a</script type=text/plain>"]);
+    assert!(
+        errors
+            .iter()
+            .any(|error| { error.detail == Some("text-mode-end-tag-attributes-ignored") })
     );
 }
 
@@ -143,10 +174,10 @@ fn g11_regression_script_data_whitespace_close_tag_splits_at_every_boundary() {
     );
 }
 
-// Regression for G11: attribute-like script close-tag noise must remain text
-// across chunk splits inside the noisy candidate until the later plain close.
+// Regression for G8: attribute-bearing script end tags must terminate the
+// element across chunk splits inside the candidate tail.
 #[test]
-fn g11_regression_script_data_attribute_like_noise_splits_at_every_boundary() {
+fn g8_regression_script_data_attribute_like_close_tag_splits_at_every_boundary() {
     let input = "<script>a</script type=text/plain>b</script>";
     assert_text_mode_split_close_tag_regression(
         run_script_data_chunks,
@@ -154,11 +185,33 @@ fn g11_regression_script_data_attribute_like_noise_splits_at_every_boundary() {
         "</script type=text/plain>",
         &[
             "START name=script attrs=[] self_closing=false",
-            "CHAR text=\"a</script type=text/plain>b\"",
+            "CHAR text=\"a\"",
+            "END name=script",
+            "CHAR text=\"b\"",
             "END name=script",
             "EOF",
         ],
-        "G11",
-        "script-data-attribute-like-noise",
+        "G8",
+        "script-data-attribute-like-close-tag",
+    );
+}
+
+#[test]
+fn g8_regression_script_data_slash_bearing_close_tag_splits_at_every_boundary() {
+    let input = "<script>a</script/>b</script>";
+    assert_text_mode_split_close_tag_regression(
+        run_script_data_chunks,
+        input,
+        "</script/>",
+        &[
+            "START name=script attrs=[] self_closing=false",
+            "CHAR text=\"a\"",
+            "END name=script",
+            "CHAR text=\"b\"",
+            "END name=script",
+            "EOF",
+        ],
+        "G8",
+        "script-data-slash-bearing-close-tag",
     );
 }

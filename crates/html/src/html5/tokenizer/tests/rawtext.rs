@@ -1,6 +1,6 @@
 use super::helpers::{
     assert_style_rawtext_chunk_invariant, assert_text_mode_split_close_tag_regression,
-    run_style_rawtext_chunks,
+    run_style_rawtext_chunks, run_style_rawtext_chunks_with_errors,
 };
 
 #[test]
@@ -71,7 +71,7 @@ fn rawtext_style_mismatched_end_tag_is_emitted_as_text_until_matching_close() {
 }
 
 #[test]
-fn rawtext_style_attribute_like_end_tag_remains_literal_until_plain_close() {
+fn rawtext_style_attribute_like_end_tag_closes_like_html() {
     let input = "<style>a</style class=x>b</style>";
     assert_style_rawtext_chunk_invariant(input);
     let (tokens, _) = run_style_rawtext_chunks(&[input]);
@@ -79,10 +79,40 @@ fn rawtext_style_attribute_like_end_tag_remains_literal_until_plain_close() {
         tokens,
         vec![
             "START name=style attrs=[] self_closing=false".to_string(),
-            "CHAR text=\"a</style class=x>b\"".to_string(),
+            "CHAR text=\"a\"".to_string(),
+            "END name=style".to_string(),
+            "CHAR text=\"b\"".to_string(),
             "END name=style".to_string(),
             "EOF".to_string(),
         ]
+    );
+}
+
+#[test]
+fn rawtext_style_slash_bearing_end_tag_closes_like_html() {
+    let input = "<style>a</style/>b</style>";
+    assert_style_rawtext_chunk_invariant(input);
+    let (tokens, _) = run_style_rawtext_chunks(&[input]);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=style attrs=[] self_closing=false".to_string(),
+            "CHAR text=\"a\"".to_string(),
+            "END name=style".to_string(),
+            "CHAR text=\"b\"".to_string(),
+            "END name=style".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
+fn rawtext_style_attribute_like_end_tag_records_parse_error() {
+    let (_, _, errors) = run_style_rawtext_chunks_with_errors(&["<style>a</style class=x>"]);
+    assert!(
+        errors
+            .iter()
+            .any(|error| { error.detail == Some("text-mode-end-tag-attributes-ignored") })
     );
 }
 
@@ -153,10 +183,10 @@ fn g11_regression_rawtext_style_whitespace_close_tag_splits_at_every_boundary() 
     );
 }
 
-// Regression for G11: attribute-like close-tag noise in RAWTEXT must stay text
-// across every split inside the noisy candidate until a later plain close tag.
+// Regression for G8: attribute-bearing RAWTEXT end tags must terminate the
+// element across every split inside the candidate tail.
 #[test]
-fn g11_regression_rawtext_style_attribute_like_noise_splits_at_every_boundary() {
+fn g8_regression_rawtext_style_attribute_like_close_tag_splits_at_every_boundary() {
     let input = "<style>a</style class=x>b</style>";
     assert_text_mode_split_close_tag_regression(
         run_style_rawtext_chunks,
@@ -164,11 +194,33 @@ fn g11_regression_rawtext_style_attribute_like_noise_splits_at_every_boundary() 
         "</style class=x>",
         &[
             "START name=style attrs=[] self_closing=false",
-            "CHAR text=\"a</style class=x>b\"",
+            "CHAR text=\"a\"",
+            "END name=style",
+            "CHAR text=\"b\"",
             "END name=style",
             "EOF",
         ],
-        "G11",
-        "rawtext-style-attribute-like-noise",
+        "G8",
+        "rawtext-style-attribute-like-close-tag",
+    );
+}
+
+#[test]
+fn g8_regression_rawtext_style_slash_bearing_close_tag_splits_at_every_boundary() {
+    let input = "<style>a</style/>b</style>";
+    assert_text_mode_split_close_tag_regression(
+        run_style_rawtext_chunks,
+        input,
+        "</style/>",
+        &[
+            "START name=style attrs=[] self_closing=false",
+            "CHAR text=\"a\"",
+            "END name=style",
+            "CHAR text=\"b\"",
+            "END name=style",
+            "EOF",
+        ],
+        "G8",
+        "rawtext-style-slash-bearing-close-tag",
     );
 }

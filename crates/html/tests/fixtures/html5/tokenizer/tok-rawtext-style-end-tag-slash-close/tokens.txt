@@ -1,7 +1,9 @@
 # format: html5-token-v1
 # note: input.html intentionally ends with a trailing newline byte
-START name=textarea attrs=[] self_closing=false
-CHAR text="a</textarea/>b"
-END name=textarea
+START name=style attrs=[] self_closing=false
+CHAR text="a"
+END name=style
+CHAR text="b"
+END name=style
 CHAR text="\n"
 EOF

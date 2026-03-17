@@ -4,13 +4,18 @@ use super::machine::Step;
 use super::scan::{IncrementalEndTagMatch, IncrementalEndTagMatcher};
 use super::states::TokenizerState;
 use crate::entities::decode_entities;
-use crate::html5::shared::{Input, TextSpan, TextValue, Token};
+use crate::html5::shared::{
+    DocumentParseContext, ErrorOrigin, Input, ParseError, ParseErrorCode, TextSpan, TextValue,
+    Token,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum TextModeEndTagMatch {
     Matched {
         cursor_after: usize,
         name: crate::html5::shared::AtomId,
+        had_attributes: bool,
+        self_closing: bool,
     },
     NeedMoreInput(IncrementalEndTagMatcher),
     NoMatch,
@@ -23,22 +28,26 @@ pub(crate) struct PendingTextModeEndTag {
 }
 
 impl Html5Tokenizer {
-    pub(crate) fn step_raw_text(&mut self, input: &Input) -> Step {
+    pub(crate) fn step_raw_text(&mut self, input: &Input, ctx: &mut DocumentParseContext) -> Step {
         debug_assert_eq!(self.state, TokenizerState::RawText);
-        self.step_text_mode_with_matching_end_tag(input, TextModeKind::RawText)
+        self.step_text_mode_with_matching_end_tag(input, ctx, TextModeKind::RawText)
     }
 
-    pub(crate) fn step_rcdata(&mut self, input: &Input) -> Step {
+    pub(crate) fn step_rcdata(&mut self, input: &Input, ctx: &mut DocumentParseContext) -> Step {
         debug_assert_eq!(self.state, TokenizerState::Rcdata);
-        self.step_text_mode_with_matching_end_tag(input, TextModeKind::Rcdata)
+        self.step_text_mode_with_matching_end_tag(input, ctx, TextModeKind::Rcdata)
     }
 
-    pub(crate) fn step_script_data(&mut self, input: &Input) -> Step {
+    pub(crate) fn step_script_data(
+        &mut self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+    ) -> Step {
         debug_assert_eq!(self.state, TokenizerState::ScriptData);
         // Core-v0 script text-mode subset intentionally implements the bounded
         // "raw until matching </script>" behavior. Escaped/double-escaped
         // script-data state-family work remains tracked separately.
-        self.step_text_mode_with_matching_end_tag(input, TextModeKind::ScriptData)
+        self.step_text_mode_with_matching_end_tag(input, ctx, TextModeKind::ScriptData)
     }
 
     pub(crate) fn emit_text_span(&mut self, start: usize, end: usize) {
@@ -98,6 +107,7 @@ impl Html5Tokenizer {
     fn step_text_mode_with_matching_end_tag(
         &mut self,
         input: &Input,
+        ctx: &mut DocumentParseContext,
         expected_kind: TextModeKind,
     ) -> Step {
         if let Some(pending_end_tag) = self.pending_text_mode_end_tag.take() {
@@ -112,6 +122,7 @@ impl Html5Tokenizer {
             debug_assert_eq!(matcher.start(), self.cursor);
             return self.resolve_text_mode_end_tag_attempt(
                 input,
+                ctx,
                 expected_kind,
                 matcher.start(),
                 Some(matcher),
@@ -136,18 +147,30 @@ impl Html5Tokenizer {
         }
 
         let less_than_pos = self.cursor;
-        self.resolve_text_mode_end_tag_attempt(input, expected_kind, less_than_pos, None)
+        self.resolve_text_mode_end_tag_attempt(input, ctx, expected_kind, less_than_pos, None)
     }
 
     fn resolve_text_mode_end_tag_attempt(
         &mut self,
         input: &Input,
+        ctx: &mut DocumentParseContext,
         expected_kind: TextModeKind,
         less_than_pos: usize,
         matcher: Option<IncrementalEndTagMatcher>,
     ) -> Step {
         match self.match_text_mode_end_tag(input, expected_kind, matcher) {
-            TextModeEndTagMatch::Matched { cursor_after, name } => {
+            TextModeEndTagMatch::Matched {
+                cursor_after,
+                name,
+                had_attributes,
+                self_closing,
+            } => {
+                self.record_text_mode_end_tag_parse_errors(
+                    ctx,
+                    less_than_pos,
+                    had_attributes,
+                    self_closing,
+                );
                 if self
                     .pending_text_start
                     .is_some_and(|text_start| text_start < less_than_pos)
@@ -206,14 +229,47 @@ impl Html5Tokenizer {
             matcher.advance_counted(input.as_str().as_bytes(), tag_name, &mut progress_bytes);
         self.stats_add_text_mode_end_tag_match_progress_bytes(progress_bytes);
         match result {
-            IncrementalEndTagMatch::Matched { cursor_after } => TextModeEndTagMatch::Matched {
+            IncrementalEndTagMatch::Matched {
+                cursor_after,
+                had_attributes,
+                self_closing,
+            } => TextModeEndTagMatch::Matched {
                 cursor_after,
                 name: active_text_mode.end_tag_name,
+                had_attributes,
+                self_closing,
             },
             IncrementalEndTagMatch::NeedMoreInput(matcher) => {
                 TextModeEndTagMatch::NeedMoreInput(matcher)
             }
             IncrementalEndTagMatch::NoMatch => TextModeEndTagMatch::NoMatch,
+        }
+    }
+
+    fn record_text_mode_end_tag_parse_errors(
+        &mut self,
+        ctx: &mut DocumentParseContext,
+        position: usize,
+        had_attributes: bool,
+        self_closing: bool,
+    ) {
+        if had_attributes {
+            ctx.record_error(ParseError {
+                origin: ErrorOrigin::Tokenizer,
+                code: ParseErrorCode::Other,
+                position,
+                detail: Some("text-mode-end-tag-attributes-ignored"),
+                aux: None,
+            });
+        }
+        if self_closing {
+            ctx.record_error(ParseError {
+                origin: ErrorOrigin::Tokenizer,
+                code: ParseErrorCode::Other,
+                position,
+                detail: Some("text-mode-end-tag-self-closing-ignored"),
+                aux: None,
+            });
         }
     }
 }

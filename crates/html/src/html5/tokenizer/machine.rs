@@ -131,9 +131,9 @@ impl Html5Tokenizer {
         // dedicated handlers that return `Step::Progress` or `Step::NeedMoreInput`.
         match self.state {
             TokenizerState::Data => self.step_data(input),
-            TokenizerState::RawText => self.step_raw_text(input),
-            TokenizerState::Rcdata => self.step_rcdata(input),
-            TokenizerState::ScriptData => self.step_script_data(input),
+            TokenizerState::RawText => self.step_raw_text(input, ctx),
+            TokenizerState::Rcdata => self.step_rcdata(input, ctx),
+            TokenizerState::ScriptData => self.step_script_data(input, ctx),
             TokenizerState::TagOpen => self.step_tag_open(input),
             TokenizerState::EndTagOpen => self.step_end_tag_open(input),
             TokenizerState::TagName => self.step_tag_name(input, ctx),
