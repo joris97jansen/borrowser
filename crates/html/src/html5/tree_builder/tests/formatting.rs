@@ -171,7 +171,116 @@ fn tree_builder_in_body_self_closing_formatting_tag_does_not_enter_afe() {
 }
 
 #[test]
-fn tree_builder_in_body_nested_anchor_sequence_stays_panic_free_while_special_path_is_deferred() {
+fn tree_builder_in_body_repeated_anchor_start_tag_replaces_prior_active_anchor() {
+    use crate::html5::shared::Token;
+
+    let resolver = EmptyResolver;
+    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+
+    let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
+    let a = ctx.atoms.intern_ascii_folded("a").expect("atom interning");
+
+    for token in [
+        Token::StartTag {
+            name: a,
+            attrs: Vec::new(),
+            self_closing: false,
+        },
+        Token::StartTag {
+            name: a,
+            attrs: Vec::new(),
+            self_closing: false,
+        },
+        Token::Eof,
+    ] {
+        let _ = builder
+            .process(&token, &ctx.atoms, &resolver)
+            .expect("repeated anchor recovery should remain recoverable");
+    }
+
+    assert_eq!(
+        active_formatting_entries(&builder),
+        vec![Some(a)],
+        "repeated anchor insertion should leave only the latest anchor in AFE"
+    );
+    assert_eq!(
+        builder.state_snapshot().open_element_names,
+        vec![builder.known_tags.html, builder.known_tags.body, a],
+        "repeated anchor insertion should leave only the latest anchor on SOE"
+    );
+    let errors = builder.take_parse_error_kinds_for_test();
+    assert!(
+        errors
+            .iter()
+            .copied()
+            .any(|kind| kind == "in-body-active-anchor-start-tag-recovery"),
+        "repeated anchor insertion should record the special anchor recovery parse error"
+    );
+}
+
+#[test]
+fn tree_builder_in_body_repeated_nobr_start_tag_replaces_prior_in_scope_nobr() {
+    use crate::html5::shared::Token;
+
+    let resolver = EmptyResolver;
+    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+
+    let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
+    let nobr = ctx
+        .atoms
+        .intern_ascii_folded("nobr")
+        .expect("atom interning");
+
+    for token in [
+        Token::StartTag {
+            name: nobr,
+            attrs: Vec::new(),
+            self_closing: false,
+        },
+        Token::StartTag {
+            name: nobr,
+            attrs: Vec::new(),
+            self_closing: false,
+        },
+        Token::Eof,
+    ] {
+        let _ = builder
+            .process(&token, &ctx.atoms, &resolver)
+            .expect("repeated nobr recovery should remain recoverable");
+    }
+
+    assert_eq!(
+        active_formatting_entries(&builder),
+        vec![Some(nobr)],
+        "repeated nobr insertion should leave only the latest nobr in AFE"
+    );
+    assert_eq!(
+        builder.state_snapshot().open_element_names,
+        vec![builder.known_tags.html, builder.known_tags.body, nobr],
+        "repeated nobr insertion should leave only the latest nobr on SOE"
+    );
+    let errors = builder.take_parse_error_kinds_for_test();
+    assert!(
+        errors
+            .iter()
+            .copied()
+            .any(|kind| kind == "in-body-nobr-start-tag-recovery"),
+        "repeated nobr insertion should record the special nobr recovery parse error"
+    );
+}
+
+#[test]
+fn tree_builder_in_body_special_formatting_recovery_stays_panic_free_for_malformed_sequences() {
     use crate::html5::shared::Token;
     use crate::html5::tree_builder::modes::InsertionMode;
 
@@ -185,7 +294,10 @@ fn tree_builder_in_body_nested_anchor_sequence_stays_panic_free_while_special_pa
 
     let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
     let a = ctx.atoms.intern_ascii_folded("a").expect("atom interning");
-    let b = ctx.atoms.intern_ascii_folded("b").expect("atom interning");
+    let nobr = ctx
+        .atoms
+        .intern_ascii_folded("nobr")
+        .expect("atom interning");
 
     for token in [
         Token::StartTag {
@@ -199,28 +311,32 @@ fn tree_builder_in_body_nested_anchor_sequence_stays_panic_free_while_special_pa
             self_closing: false,
         },
         Token::StartTag {
-            name: b,
+            name: nobr,
             attrs: Vec::new(),
             self_closing: false,
         },
-        Token::EndTag { name: b },
+        Token::StartTag {
+            name: nobr,
+            attrs: Vec::new(),
+            self_closing: false,
+        },
         Token::Eof,
     ] {
         let _ = builder
             .process(&token, &ctx.atoms, &resolver)
-            .expect("deferred special-path sequence should remain recoverable");
+            .expect("special formatting recovery should remain panic-free");
     }
 
     assert_eq!(
         builder.state_snapshot().insertion_mode,
         InsertionMode::InBody,
-        "nested-anchor recovery staging must keep the builder in InBody"
+        "special formatting recovery staging must keep the builder in InBody"
     );
-    let patches = builder.drain_patches();
     assert!(
-        patches
+        builder
+            .drain_patches()
             .iter()
             .any(|patch| matches!(patch, crate::dom_patch::DomPatch::CreateElement { .. })),
-        "malformed nested-anchor sequence must remain panic-free and keep emitting structural patches"
+        "special formatting recovery must keep emitting structural patches"
     );
 }
