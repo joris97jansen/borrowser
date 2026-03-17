@@ -2,6 +2,7 @@ use crate::dom_patch::{DomPatch, PatchKey};
 use crate::html5::shared::{AtomId, AtomTable, Attribute, TextValue};
 use crate::html5::tokenizer::TextResolver;
 use crate::html5::tree_builder::coalescing::LastTextPatch;
+use crate::html5::tree_builder::formatting::{AfeAttributeSnapshot, AfeElementEntry};
 use crate::html5::tree_builder::modes::InsertionMode;
 use crate::html5::tree_builder::resolve::{
     resolve_atom_arc, resolve_attribute_value, resolve_text_value,
@@ -44,6 +45,51 @@ impl Html5TreeBuilder {
             }
             Ok(key)
         })
+    }
+
+    pub(in crate::html5::tree_builder) fn insert_element_from_afe_entry(
+        &mut self,
+        entry: &AfeElementEntry,
+        atoms: &AtomTable,
+    ) -> Result<PatchKey, TreeBuilderError> {
+        self.with_structural_mutation(|this| {
+            let document_key = this.ensure_document_created()?;
+            let element_name = resolve_atom_arc(atoms, entry.name)?;
+            let parent = this
+                .open_elements
+                .current()
+                .map(OpenElement::key)
+                .unwrap_or(document_key);
+            let key = this.alloc_patch_key()?;
+            let mut attributes = Vec::with_capacity(entry.attrs.len());
+            for attr in &entry.attrs {
+                let attr_name = resolve_atom_arc(atoms, attr.name)?;
+                attributes.push((attr_name, attr.value.clone()));
+            }
+            this.push_structural_patch(DomPatch::CreateElement {
+                key,
+                name: element_name,
+                attributes,
+            });
+            this.push_structural_patch(DomPatch::AppendChild { parent, child: key });
+            this.open_elements.push(OpenElement::new(key, entry.name));
+            Ok(key)
+        })
+    }
+
+    pub(in crate::html5::tree_builder) fn snapshot_afe_attributes(
+        &self,
+        attrs: &[Attribute],
+        text: &dyn TextResolver,
+    ) -> Result<Vec<AfeAttributeSnapshot>, TreeBuilderError> {
+        let mut snapshot = Vec::with_capacity(attrs.len());
+        for attr in attrs {
+            snapshot.push(AfeAttributeSnapshot::new(
+                attr.name,
+                resolve_attribute_value(attr, text)?,
+            ));
+        }
+        Ok(snapshot)
     }
 
     pub(in crate::html5::tree_builder) fn insert_text(
@@ -151,16 +197,32 @@ impl Html5TreeBuilder {
         name: AtomId,
         scope: ScopeKind,
     ) -> bool {
-        self.close_element_in_scope_with_reporting(name, scope, true)
+        self.pop_element_in_scope_with_reporting(name, scope, true)
+            .is_some()
     }
 
     #[inline]
+    #[allow(
+        dead_code,
+        reason = "kept as a convenience wrapper while insertion-mode AFE/AAA integration expands"
+    )]
     pub(in crate::html5::tree_builder) fn close_element_in_scope_with_reporting(
         &mut self,
         name: AtomId,
         scope: ScopeKind,
         report_not_in_scope_error: bool,
     ) -> bool {
+        self.pop_element_in_scope_with_reporting(name, scope, report_not_in_scope_error)
+            .is_some()
+    }
+
+    #[inline]
+    pub(in crate::html5::tree_builder) fn pop_element_in_scope_with_reporting(
+        &mut self,
+        name: AtomId,
+        scope: ScopeKind,
+        report_not_in_scope_error: bool,
+    ) -> Option<OpenElement> {
         let popped = self
             .open_elements
             .pop_until_including_in_scope(name, scope, &self.scope_tags);
@@ -168,10 +230,10 @@ impl Html5TreeBuilder {
             if report_not_in_scope_error {
                 self.record_parse_error("end-tag-not-in-scope", Some(name), None);
             }
-            return false;
+            return None;
         }
         self.invalidate_text_coalescing();
-        true
+        popped
     }
 
     pub(in crate::html5::tree_builder) fn update_mode_for_start_tag(&mut self, name: AtomId) {

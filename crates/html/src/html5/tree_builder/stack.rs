@@ -117,6 +117,11 @@ impl OpenElementsStack {
         self.items.iter().any(|entry| entry.name() == target)
     }
 
+    #[inline]
+    pub(crate) fn contains_key(&self, target: PatchKey) -> bool {
+        self.items.iter().any(|entry| entry.key() == target)
+    }
+
     #[allow(
         dead_code,
         reason = "part of Core-v0 SOE API; used in test/internal paths"
