@@ -82,6 +82,52 @@ pub(super) fn enter_after_head(
     builder.drain_patches()
 }
 
+pub(super) fn enter_in_body(
+    builder: &mut crate::html5::tree_builder::Html5TreeBuilder,
+    ctx: &mut crate::html5::shared::DocumentParseContext,
+    resolver: &EmptyResolver,
+) -> Vec<crate::dom_patch::DomPatch> {
+    use crate::html5::shared::Token;
+    use crate::html5::tree_builder::modes::InsertionMode;
+
+    let mut patches = enter_after_head(builder, ctx, resolver);
+    let body = ctx
+        .atoms
+        .intern_ascii_folded("body")
+        .expect("atom interning");
+
+    let _ = builder
+        .process(
+            &Token::StartTag {
+                name: body,
+                attrs: Vec::new(),
+                self_closing: false,
+            },
+            &ctx.atoms,
+            resolver,
+        )
+        .expect("in-body prelude should process");
+
+    let snap = builder.state_snapshot();
+    assert_eq!(
+        snap.insertion_mode,
+        InsertionMode::InBody,
+        "enter_in_body() must leave builder in InBody"
+    );
+    assert_eq!(
+        snap.open_element_names.last().copied(),
+        Some(body),
+        "enter_in_body() must leave <body> on top of SOE"
+    );
+    let errors = builder.take_parse_error_kinds_for_test();
+    assert!(
+        errors.is_empty(),
+        "enter_in_body() reported unexpected parse errors: {errors:?}"
+    );
+    patches.extend(builder.drain_patches());
+    patches
+}
+
 pub(super) fn panic_message_contains(payload: &(dyn std::any::Any + Send), needle: &str) -> bool {
     if let Some(msg) = payload.downcast_ref::<&str>() {
         return msg.contains(needle);

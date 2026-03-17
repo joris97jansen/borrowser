@@ -40,9 +40,10 @@ transitional:
 
 This means H3 currently proves the reconstruction algorithm core plus limited
 `In body` integration. It does not yet claim full spec-complete formatting
-recovery for the entire Milestone H surface. The remaining blockers are tracked
-as follow-up issues:
+recovery for the entire Milestone H surface. The surrounding Milestone H
+integration work is tracked in these issue docs:
 
+- [`H4a — Generic formatting start-tag handling and AFE/marker insertion`](H4a-generic-formatting-start-tag-handling.md)
 - [`H4 — Special a / nobr recovery paths`](H4-special-a-nobr-recovery.md)
 - [`H5 — Adoption Agency Algorithm for supported formatting end tags`](H5-adoption-agency-algorithm.md)
 

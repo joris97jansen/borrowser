@@ -1,6 +1,7 @@
 mod api;
 mod coalescing;
 mod determinism;
+mod formatting;
 mod helpers;
 mod insertion_modes;
 mod invariants;
