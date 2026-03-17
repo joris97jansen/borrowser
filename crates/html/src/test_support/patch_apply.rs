@@ -3,7 +3,7 @@ use crate::types::{Id, Node};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-#[derive(Default)]
+#[derive(Clone, Default)]
 pub(crate) struct TestPatchArena {
     nodes: HashMap<PatchKey, TestNode>,
     allocated: HashSet<PatchKey>,
@@ -86,6 +86,13 @@ impl TestPatchArena {
     }
 
     pub(crate) fn apply(&mut self, patches: &[DomPatch]) -> Result<(), String> {
+        let mut staged = self.clone();
+        staged.apply_in_place(patches)?;
+        *self = staged;
+        Ok(())
+    }
+
+    fn apply_in_place(&mut self, patches: &[DomPatch]) -> Result<(), String> {
         for patch in patches {
             match patch {
                 DomPatch::Clear => {
@@ -163,56 +170,14 @@ impl TestPatchArena {
                     self.allocated.insert(*key);
                 }
                 DomPatch::AppendChild { parent, child } => {
-                    let child_has_parent = self
-                        .nodes
-                        .get(child)
-                        .ok_or_else(|| "missing child".to_string())?
-                        .parent
-                        .is_some();
-                    if child_has_parent {
-                        return Err("child already has parent".to_string());
-                    }
-                    let Some(parent_node) = self.nodes.get_mut(parent) else {
-                        return Err("missing parent".to_string());
-                    };
-                    parent_node.children.push(*child);
-                    let Some(child_node) = self.nodes.get_mut(child) else {
-                        return Err("missing child".to_string());
-                    };
-                    child_node.parent = Some(*parent);
+                    self.append_child(*parent, *child)?;
                 }
                 DomPatch::InsertBefore {
                     parent,
                     child,
                     before,
                 } => {
-                    let child_has_parent = self
-                        .nodes
-                        .get(child)
-                        .ok_or_else(|| "missing child".to_string())?
-                        .parent
-                        .is_some();
-                    if child_has_parent {
-                        return Err("child already has parent".to_string());
-                    }
-                    let pos = {
-                        let Some(parent_node) = self.nodes.get(parent) else {
-                            return Err("missing parent".to_string());
-                        };
-                        parent_node
-                            .children
-                            .iter()
-                            .position(|k| k == before)
-                            .ok_or_else(|| "missing before".to_string())?
-                    };
-                    let Some(parent_node) = self.nodes.get_mut(parent) else {
-                        return Err("missing parent".to_string());
-                    };
-                    parent_node.children.insert(pos, *child);
-                    let Some(child_node) = self.nodes.get_mut(child) else {
-                        return Err("missing child".to_string());
-                    };
-                    child_node.parent = Some(*parent);
+                    self.insert_before(*parent, *child, *before)?;
                 }
                 DomPatch::RemoveNode { key } => {
                     self.remove_subtree(*key);
@@ -256,6 +221,176 @@ impl TestPatchArena {
                 }
             }
         }
+        Ok(())
+    }
+
+    fn ensure_container(&self, key: PatchKey, context: &str) -> Result<(), String> {
+        let Some(node) = self.nodes.get(&key) else {
+            return Err(format!("missing node in {context}"));
+        };
+        match node.kind {
+            TestKind::Document { .. } | TestKind::Element { .. } => Ok(()),
+            TestKind::Text { .. } | TestKind::Comment { .. } => {
+                Err(format!("{context} must be a container"))
+            }
+        }
+    }
+
+    fn node_parent(&self, key: PatchKey) -> Result<Option<PatchKey>, String> {
+        self.nodes
+            .get(&key)
+            .map(|node| node.parent)
+            .ok_or_else(|| "missing node".to_string())
+    }
+
+    fn is_document_node(&self, key: PatchKey) -> Result<bool, String> {
+        self.nodes
+            .get(&key)
+            .map(|node| matches!(node.kind, TestKind::Document { .. }))
+            .ok_or_else(|| "missing node".to_string())
+    }
+
+    fn is_document_root_element(&self, key: PatchKey) -> Result<bool, String> {
+        let Some(root) = self.root else {
+            return Ok(false);
+        };
+        let Some(node) = self.nodes.get(&key) else {
+            return Err("missing node".to_string());
+        };
+        Ok(node.parent == Some(root) && matches!(node.kind, TestKind::Element { .. }))
+    }
+
+    fn would_create_cycle(&self, parent: PatchKey, child: PatchKey) -> Result<bool, String> {
+        let mut cursor = Some(parent);
+        while let Some(current) = cursor {
+            if current == child {
+                return Ok(true);
+            }
+            cursor = self.node_parent(current)?;
+        }
+        Ok(false)
+    }
+
+    fn detach_child(&mut self, child: PatchKey) -> Result<(), String> {
+        let parent = self
+            .nodes
+            .get(&child)
+            .ok_or_else(|| "missing child".to_string())?
+            .parent;
+        if let Some(parent) = parent
+            && let Some(parent_node) = self.nodes.get_mut(&parent)
+        {
+            parent_node.children.retain(|key| *key != child);
+        }
+        let Some(child_node) = self.nodes.get_mut(&child) else {
+            return Err("missing child".to_string());
+        };
+        child_node.parent = None;
+        Ok(())
+    }
+
+    fn append_child(&mut self, parent: PatchKey, child: PatchKey) -> Result<(), String> {
+        if parent == child {
+            return Err("AppendChild cannot attach a node to itself".to_string());
+        }
+        self.ensure_container(parent, "AppendChild parent")?;
+        if !self.nodes.contains_key(&child) {
+            return Err("missing child".to_string());
+        }
+        if self.is_document_node(child)? {
+            return Err("AppendChild cannot move a document node".to_string());
+        }
+        if self.is_document_root_element(child)? {
+            return Err("AppendChild cannot move the document root element".to_string());
+        }
+        if self.would_create_cycle(parent, child)? {
+            return Err("AppendChild cannot create an ancestor cycle".to_string());
+        }
+        let already_last = self.node_parent(child)? == Some(parent)
+            && self
+                .nodes
+                .get(&parent)
+                .is_some_and(|node| node.children.last() == Some(&child));
+        if already_last {
+            return Ok(());
+        }
+        self.detach_child(child)?;
+        let Some(parent_node) = self.nodes.get_mut(&parent) else {
+            return Err("missing parent".to_string());
+        };
+        parent_node.children.push(child);
+        let Some(child_node) = self.nodes.get_mut(&child) else {
+            return Err("missing child".to_string());
+        };
+        child_node.parent = Some(parent);
+        Ok(())
+    }
+
+    fn insert_before(
+        &mut self,
+        parent: PatchKey,
+        child: PatchKey,
+        before: PatchKey,
+    ) -> Result<(), String> {
+        if parent == child {
+            return Err("InsertBefore cannot attach a node to itself".to_string());
+        }
+        if child == before {
+            return Err("InsertBefore cannot insert a node before itself".to_string());
+        }
+        self.ensure_container(parent, "InsertBefore parent")?;
+        if !self.nodes.contains_key(&child) {
+            return Err("missing child".to_string());
+        }
+        if !self.nodes.contains_key(&before) {
+            return Err("missing before".to_string());
+        }
+        if self.is_document_node(child)? {
+            return Err("InsertBefore cannot move a document node".to_string());
+        }
+        if self.is_document_root_element(child)? {
+            return Err("InsertBefore cannot move the document root element".to_string());
+        }
+        if self.node_parent(before)? != Some(parent) {
+            return Err("missing before".to_string());
+        }
+        if self.would_create_cycle(parent, child)? {
+            return Err("InsertBefore cannot create an ancestor cycle".to_string());
+        }
+        let already_in_place = if self.node_parent(child)? == Some(parent) {
+            let siblings = &self
+                .nodes
+                .get(&parent)
+                .ok_or_else(|| "missing parent".to_string())?
+                .children;
+            let child_index = siblings.iter().position(|key| *key == child);
+            let before_index = siblings.iter().position(|key| *key == before);
+            matches!((child_index, before_index), (Some(child_index), Some(before_index)) if child_index + 1 == before_index)
+        } else {
+            false
+        };
+        if already_in_place {
+            return Ok(());
+        }
+        self.detach_child(child)?;
+        let pos = {
+            let Some(parent_node) = self.nodes.get(&parent) else {
+                return Err("missing parent".to_string());
+            };
+            parent_node
+                .children
+                .iter()
+                .position(|key| *key == before)
+                .ok_or_else(|| "missing before".to_string())?
+        };
+        let Some(parent_node) = self.nodes.get_mut(&parent) else {
+            return Err("missing parent".to_string());
+        };
+        parent_node.children.insert(pos, child);
+        let Some(child_node) = self.nodes.get_mut(&child) else {
+            return Err("missing child".to_string());
+        };
+        child_node.parent = Some(parent);
         Ok(())
     }
 
@@ -321,4 +456,133 @@ fn patch_key(id: Id) -> Result<PatchKey, String> {
         return Err("invalid key".to_string());
     }
     Ok(PatchKey::from_id(id))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::TestPatchArena;
+    use crate::DomPatch;
+    use crate::dom_patch::PatchKey;
+
+    #[test]
+    fn test_patch_arena_supports_cross_parent_reparenting() {
+        let mut arena = TestPatchArena::default();
+        arena
+            .apply(&[
+                DomPatch::CreateDocument {
+                    key: PatchKey(1),
+                    doctype: None,
+                },
+                DomPatch::CreateElement {
+                    key: PatchKey(2),
+                    name: "div".into(),
+                    attributes: Vec::new(),
+                },
+                DomPatch::CreateElement {
+                    key: PatchKey(3),
+                    name: "p".into(),
+                    attributes: Vec::new(),
+                },
+                DomPatch::CreateElement {
+                    key: PatchKey(4),
+                    name: "span".into(),
+                    attributes: Vec::new(),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(1),
+                    child: PatchKey(2),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(1),
+                    child: PatchKey(3),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(2),
+                    child: PatchKey(4),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(3),
+                    child: PatchKey(4),
+                },
+            ])
+            .expect("cross-parent reparenting should apply");
+
+        assert_eq!(
+            arena.nodes.get(&PatchKey(4)).and_then(|node| node.parent),
+            Some(PatchKey(3))
+        );
+        assert_eq!(
+            arena
+                .nodes
+                .get(&PatchKey(2))
+                .map(|node| node.children.clone())
+                .unwrap_or_default(),
+            Vec::<PatchKey>::new()
+        );
+    }
+
+    #[test]
+    fn test_patch_arena_rolls_back_failed_batches() {
+        let mut arena = TestPatchArena::default();
+        arena
+            .apply(&[
+                DomPatch::CreateDocument {
+                    key: PatchKey(1),
+                    doctype: None,
+                },
+                DomPatch::CreateElement {
+                    key: PatchKey(2),
+                    name: "div".into(),
+                    attributes: Vec::new(),
+                },
+                DomPatch::CreateElement {
+                    key: PatchKey(3),
+                    name: "p".into(),
+                    attributes: Vec::new(),
+                },
+                DomPatch::CreateElement {
+                    key: PatchKey(4),
+                    name: "span".into(),
+                    attributes: Vec::new(),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(1),
+                    child: PatchKey(2),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(1),
+                    child: PatchKey(3),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(2),
+                    child: PatchKey(4),
+                },
+            ])
+            .expect("seed batch should apply");
+
+        let error = arena
+            .apply(&[
+                DomPatch::AppendChild {
+                    parent: PatchKey(3),
+                    child: PatchKey(4),
+                },
+                DomPatch::InsertBefore {
+                    parent: PatchKey(99),
+                    child: PatchKey(2),
+                    before: PatchKey(4),
+                },
+            ])
+            .expect_err("invalid second patch should fail");
+        assert!(
+            error.contains("missing node in InsertBefore parent")
+                || error.contains("missing parent")
+                || error.contains("missing before"),
+            "unexpected rollback error: {error}"
+        );
+        assert_eq!(
+            arena.nodes.get(&PatchKey(4)).and_then(|node| node.parent),
+            Some(PatchKey(2)),
+            "failed batch must preserve original parentage"
+        );
+    }
 }

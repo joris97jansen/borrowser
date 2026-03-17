@@ -1,6 +1,6 @@
-# H3 — Reconstruct Active Formatting Elements
+# Contract — Reconstruct Active Formatting Elements
 
-Status: in progress; reconstruction core and evidence are strong, closure is blocked by special formatting-path and AAA integration
+Status: partially implemented; reconstruction core and evidence are strong, full normative completion is blocked by special formatting-path and AAA integration
 Milestone: H — Active formatting elements + adoption agency algorithm
 
 ## Goal
@@ -29,8 +29,8 @@ The reconstruction core is landed:
 
 ## Current Boundary
 
-H3 is not closed yet because surrounding parser integration is still
-transitional:
+This contract slice is not complete yet because surrounding parser integration
+is still transitional:
 
 - supported formatting end tags still flow through the generic `In body`
   scope-pop path until AAA lands
@@ -38,16 +38,16 @@ transitional:
 - table-family and template insertion-mode reconstruction call sites remain out
   of scope
 
-This means H3 currently proves the reconstruction algorithm core plus limited
-`In body` integration. It does not yet claim full spec-complete formatting
-recovery for the entire Milestone H surface. The surrounding Milestone H
-integration work is tracked in these issue docs:
+This means the current repository proves the reconstruction algorithm core plus
+limited `In body` integration. It does not yet claim full spec-complete
+formatting recovery for the entire Milestone H surface. The surrounding
+Milestone H integration work is tracked in these companion documents:
 
-- [`H4a — Generic formatting start-tag handling and AFE/marker insertion`](H4a-generic-formatting-start-tag-handling.md)
-- [`H4 — Special a / nobr recovery paths`](H4-special-a-nobr-recovery.md)
-- [`H5 — Adoption Agency Algorithm for supported formatting end tags`](H5-adoption-agency-algorithm.md)
+- [`Contract Record — Generic formatting start-tag handling and AFE/marker insertion`](generic-formatting-start-tag-handling.md)
+- [`Contract — Special a / nobr recovery paths`](special-a-nobr-recovery.md)
+- [`Draft Contract — Adoption agency algorithm for supported formatting end tags`](adoption-agency-algorithm.md)
 
-## Evidence Required Before Close
+## Evidence Required For Normative Completion
 
 - no regressions in AFE/SOE identity invariants while reconstructed nodes
   replace stale AFE keys
@@ -56,12 +56,12 @@ integration work is tracked in these issue docs:
 - reconstruction behavior validated against the eventual AAA-driven formatting
   end-tag pipeline, not only the current transitional generic scope-pop path
 
-## Remaining Work
+## Outstanding Integration Work
 
 - keep the reconstruction golden fixtures and chunk-parity tests active as
   formatting integration expands
 - implement the special `a` / `nobr` formatting-element recovery paths
-  tracked by [`H4`](H4-special-a-nobr-recovery.md)
+  tracked by [`Contract — Special a / nobr recovery paths`](special-a-nobr-recovery.md)
 - finish AAA and special formatting-element end-tag recovery tracked by
-  [`H5`](H5-adoption-agency-algorithm.md) before calling the overall formatting
-  recovery pipeline complete
+  [`Draft Contract — Adoption agency algorithm for supported formatting end tags`](adoption-agency-algorithm.md)
+  before calling the overall formatting recovery pipeline complete

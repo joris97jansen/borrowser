@@ -1,6 +1,6 @@
-# H5 — Adoption Agency Algorithm For Supported Formatting End Tags
+# Draft Contract — Adoption Agency Algorithm For Supported Formatting End Tags
 
-Status: ready  
+Status: draft
 Milestone: H — Active formatting elements + adoption agency algorithm
 
 ## Goal
@@ -9,7 +9,7 @@ Implement the HTML5 Adoption Agency Algorithm (AAA) for Borrowser's supported
 formatting-element end tags, with deterministic AFE/SOE behavior,
 identity-preserving runtime mutations, and chunk-equivalent patch semantics.
 
-## Why This Issue Exists
+## Why This Contract Exists
 
 Current Milestone H reconstruction work is integrated into `In body`, but
 supported formatting end tags still flow through a transitional generic
@@ -27,9 +27,9 @@ Current behavior is intentionally incomplete:
 - supported formatting end tags still use generic scope-pop closure
 - reconstruction is validated only against that transitional path
 - identity-preserving structural move semantics remain governed by
-  [`H2`](H2-runtime-patch-move-semantics.md)
+  [`ADR-002`](../adr/ADR-002-runtime-patch-move-semantics.md)
 
-This issue resolves the supported formatting end-tag side of that boundary.
+This contract resolves the supported formatting end-tag side of that boundary.
 
 ## Required Behavior
 
@@ -64,7 +64,7 @@ This issue resolves the supported formatting end-tag side of that boundary.
 
 ## Dependencies
 
-- builds on [`H2 — Runtime Patch Move Semantics Contract`](H2-runtime-patch-move-semantics.md)
-- builds on [`H3 — Reconstruct Active Formatting Elements`](H3-reconstruct-active-formatting-elements.md)
+- builds on [`ADR-002 — Runtime Patch Move Semantics For AAA-Compatible Structural Reparenting`](../adr/ADR-002-runtime-patch-move-semantics.md)
+- builds on [`Contract — Reconstruct Active Formatting Elements`](reconstruct-active-formatting-elements.md)
 - complements the special `a` / `nobr` start-tag work tracked by
-  [`H4`](H4-special-a-nobr-recovery.md)
+  [`Contract — Special a / nobr recovery paths`](special-a-nobr-recovery.md)

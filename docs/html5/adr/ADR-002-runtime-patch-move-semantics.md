@@ -1,27 +1,33 @@
-# H2 — Runtime Patch Move Semantics Contract For AAA-Compatible Structural Reparenting
+# ADR-002 — Runtime Patch Move Semantics For AAA-Compatible Structural Reparenting
 
-Status: in progress; contract decision is complete, runtime/applier implementation remains to be completed
+Status: accepted; core runtime/applier move support is landed, move-heavy HTML5 evidence remains pending
 Milestone: H — Active formatting elements + adoption agency algorithm
 
-## Goal
+## Decision Scope
 
 Define and lock down how Borrowser runtime patch application materializes the
 identity-preserving structural moves required by the HTML5 adoption agency
 algorithm (AAA).
 
-This issue exists to remove ambiguity before production AAA code lands.
+This ADR removes ambiguity before production AAA code lands.
 
-## Current Boundary
+## Current Implementation Boundary
 
 The Milestone H AFE/AAA contracts now select implicit reparenting via
 `AppendChild` / `InsertBefore` as the canonical external move encoding for
 identity-preserving structural moves.
 
-Current strict runtime behavior still rejects reattaching an already-parented
-node (`MoveNotSupported`), so AAA-compatible move semantics are not yet fully
-contracted end-to-end.
+Core strict patch appliers/materializers in `crates/html` and
+`crates/browser` now implement identity-preserving reparenting/reordering for
+legal `AppendChild` / `InsertBefore` moves, including deterministic same-parent
+reordering, explicit document/document-root move rejection, and atomic
+rollback-on-failure behavior.
 
-## Contract Decision
+This ADR remains implementation-relevant because move semantics still need
+end-to-end HTML5 evidence from move-heavy AAA cases once the H5 parser-side
+emission path lands.
+
+## Decision
 
 Borrowser will use implicit reparenting as the canonical patch-stream model for
 Milestone H:
@@ -37,7 +43,7 @@ This selects one stable external contract while still allowing appliers to
 implement the move internally however they want, provided externally observable
 semantics are identical.
 
-## Required Contract Decisions
+## Normative Decision Details
 
 - Canonical move encoding:
   - HTML5 tree-builder output uses `AppendChild` / `InsertBefore` as the only
