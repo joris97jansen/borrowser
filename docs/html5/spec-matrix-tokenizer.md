@@ -179,7 +179,7 @@ Harness policy contract:
 For HTML5 Core v0:
 
 - Core-v0 supports RAWTEXT, RCDATA, and the dedicated script tokenizer family (`TOK-STATE-SCRIPT-DATA`, `TOK-STATE-SCRIPT-DATA-ESCAPED`) as `MVP_PARTIAL`.
-- Core-v0 shared text-mode close-tag recognition now includes HTML-space-led attribute tails and `/` self-closing tails for the bounded RAWTEXT/RCDATA/script subset; `docs/html5/issues/G8-text-mode-end-tag-parity.md` is landed.
+- Core-v0 shared text-mode close-tag recognition now includes HTML-space-led attribute tails and `/` self-closing tails for the bounded RAWTEXT/RCDATA/script subset.
 - Script-data escaped and double-escaped families are in scope for Core v0; parser execution/pause semantics remain out of scope.
 - Deferred/out-of-scope WPT cases must not contribute to Core v0 pass/fail gate counts.
 - Any tier changes require an explicit update to this matrix and acceptance table.
