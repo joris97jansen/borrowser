@@ -1,6 +1,6 @@
 # H4 — Special `a` / `nobr` Recovery Paths
 
-Status: ready; generic formatting-start-tag groundwork is already landed separately
+Status: in progress; bounded in-scope `a` / `nobr` recovery and chunk-parity evidence are landed, full spec-prescribed recovery remains coupled to H5
 Milestone: H — Active formatting elements + adoption agency algorithm
 
 ## Goal
@@ -27,18 +27,23 @@ tracked separately in
 
 ## Current Boundary
 
-Current reconstruction work is landed, but these special paths are still
-deferred:
+Current reconstruction work is landed, and the simple in-scope start-tag
+recovery cases are now handled through explicit `a` / `nobr` branches:
 
-- start tag `a` does not yet run the prescribed recovery when an active `a`
-  exists after the last marker
-- start tag `nobr` does not yet run the prescribed recovery when `nobr` is
-  already present on SOE in scope
-- current explicit `a` / `nobr` branches still delegate to the generic
-  formatting start-tag helper introduced by
-  [`H4a`](H4a-generic-formatting-start-tag-handling.md)
+- repeated `a` insertion removes the earlier active `a` from AFE and closes the
+  current in-scope `a` before inserting the new `a`
+- repeated in-scope `nobr` insertion closes the current `nobr`, reconstructs as
+  needed, and then inserts the new `nobr`
+- explicit session-level whole-input vs chunked-input parity tests exist for
+  the repeated `a` and repeated `nobr` recovery scenarios
 
-Generic formatting-element insertion is not sufficient for either case.
+However, the full spec-prescribed recovery remains incomplete until H5 lands:
+
+- complex cases that should flow through adoption-agency recovery still use the
+  current bounded non-AAA closure path
+- the special start-tag branches no longer delegate blindly to the generic
+  formatting helper, but they are not yet validated against the final AAA-aware
+  formatting pipeline
 
 ## Required Behavior
 
@@ -65,6 +70,8 @@ Generic formatting-element insertion is not sufficient for either case.
 - golden DOM/patch fixtures demonstrate the intended recovery behavior
 - unaffected node identities remain stable; any recreated nodes receive fresh
   keys in deterministic order
+- final close of this issue still requires revalidation of the special paths
+  once the H5 adoption-agency path replaces the bounded non-AAA closure logic
 
 ## Evidence Expectations
 

@@ -1,3 +1,4 @@
+use crate::dom_patch::PatchKey;
 use crate::html5::shared::{AtomId, AtomTable, Token};
 use crate::html5::tokenizer::TextResolver;
 use crate::html5::tree_builder::modes::InsertionMode;
@@ -12,6 +13,22 @@ pub(in crate::html5::tree_builder) enum DispatchOutcome {
 }
 
 impl Html5TreeBuilder {
+    fn insert_in_body_formatting_element(
+        &mut self,
+        name: AtomId,
+        attrs: &[crate::html5::shared::Attribute],
+        self_closing: bool,
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
+    ) -> Result<(), TreeBuilderError> {
+        let key = self.insert_element(name, attrs, self_closing, atoms, text)?;
+        if !self_closing {
+            self.push_active_formatting_element(key, name, attrs, text)?;
+        }
+        self.update_mode_for_start_tag(name);
+        Ok(())
+    }
+
     fn handle_in_body_formatting_start_tag(
         &mut self,
         name: AtomId,
@@ -21,12 +38,23 @@ impl Html5TreeBuilder {
         text: &dyn TextResolver,
     ) -> Result<(), TreeBuilderError> {
         let _ = self.reconstruct_active_formatting_elements(atoms)?;
-        let key = self.insert_element(name, attrs, self_closing, atoms, text)?;
-        if !self_closing {
-            self.push_active_formatting_element(key, name, attrs, text)?;
+        self.insert_in_body_formatting_element(name, attrs, self_closing, atoms, text)
+    }
+
+    fn recover_special_formatting_start_tag_conflict(
+        &mut self,
+        name: AtomId,
+        active_key: PatchKey,
+    ) {
+        let _ = self.active_formatting.remove(active_key);
+        if self
+            .open_elements
+            .has_in_scope(name, ScopeKind::InScope, &self.scope_tags)
+            && let Some(popped) =
+                self.pop_element_in_scope_with_reporting(name, ScopeKind::InScope, false)
+        {
+            let _ = self.active_formatting.remove(popped.key());
         }
-        self.update_mode_for_start_tag(name);
-        Ok(())
     }
 
     pub(in crate::html5::tree_builder) fn process_impl(
@@ -427,9 +455,22 @@ impl Html5TreeBuilder {
                 attrs,
                 self_closing,
             } if *name == self.known_tags.a => {
-                // H4/H5 boundary: the special `a` recovery path is still
-                // deferred. Keep this branch explicit so the current generic
-                // formatting insertion does not read as final HTML5 behavior.
+                if let Some(active_key) = self
+                    .active_formatting
+                    .find_last_by_name_after_last_marker(*name)
+                    .map(|entry| entry.key)
+                {
+                    // H4/H5 boundary: this is the bounded start-tag recovery
+                    // path that prevents nested anchors in the current
+                    // non-AAA architecture. H5 will replace the closure step
+                    // with the full adoption-agency algorithm.
+                    self.record_parse_error(
+                        "in-body-active-anchor-start-tag-recovery",
+                        Some(*name),
+                        Some(InsertionMode::InBody),
+                    );
+                    self.recover_special_formatting_start_tag_conflict(*name, active_key);
+                }
                 self.handle_in_body_formatting_start_tag(*name, attrs, *self_closing, atoms, text)?;
             }
             Token::StartTag {
@@ -437,8 +478,27 @@ impl Html5TreeBuilder {
                 attrs,
                 self_closing,
             } if *name == self.known_tags.nobr => {
-                // H4/H5 boundary: `nobr` currently shares the generic
-                // formatting path until the in-scope recovery behavior lands.
+                if self
+                    .open_elements
+                    .has_in_scope(*name, ScopeKind::InScope, &self.scope_tags)
+                {
+                    self.record_parse_error(
+                        "in-body-nobr-start-tag-recovery",
+                        Some(*name),
+                        Some(InsertionMode::InBody),
+                    );
+                    if let Some(active_key) = self
+                        .active_formatting
+                        .find_last_by_name_after_last_marker(*name)
+                        .map(|entry| entry.key)
+                    {
+                        self.recover_special_formatting_start_tag_conflict(*name, active_key);
+                    } else if let Some(popped) =
+                        self.pop_element_in_scope_with_reporting(*name, ScopeKind::InScope, false)
+                    {
+                        let _ = self.active_formatting.remove(popped.key());
+                    }
+                }
                 self.handle_in_body_formatting_start_tag(*name, attrs, *self_closing, atoms, text)?;
             }
             Token::StartTag {
