@@ -25,8 +25,11 @@ pub(in crate::html5::tree_builder) struct KnownTagIds {
     pub(in crate::html5::tree_builder) textarea: AtomId,
     pub(in crate::html5::tree_builder) table: AtomId,
     pub(in crate::html5::tree_builder) template: AtomId,
+    pub(in crate::html5::tree_builder) tbody: AtomId,
     pub(in crate::html5::tree_builder) td: AtomId,
+    pub(in crate::html5::tree_builder) tfoot: AtomId,
     pub(in crate::html5::tree_builder) th: AtomId,
+    pub(in crate::html5::tree_builder) thead: AtomId,
     pub(in crate::html5::tree_builder) caption: AtomId,
     pub(in crate::html5::tree_builder) marquee: AtomId,
     pub(in crate::html5::tree_builder) object: AtomId,
@@ -36,6 +39,7 @@ pub(in crate::html5::tree_builder) struct KnownTagIds {
     pub(in crate::html5::tree_builder) u: AtomId,
     pub(in crate::html5::tree_builder) ul: AtomId,
     pub(in crate::html5::tree_builder) li: AtomId,
+    pub(in crate::html5::tree_builder) tr: AtomId,
 }
 
 impl KnownTagIds {
@@ -63,8 +67,11 @@ impl KnownTagIds {
             textarea: atoms.intern_ascii_folded("textarea")?,
             table: atoms.intern_ascii_folded("table")?,
             template: atoms.intern_ascii_folded("template")?,
+            tbody: atoms.intern_ascii_folded("tbody")?,
             td: atoms.intern_ascii_folded("td")?,
+            tfoot: atoms.intern_ascii_folded("tfoot")?,
             th: atoms.intern_ascii_folded("th")?,
+            thead: atoms.intern_ascii_folded("thead")?,
             caption: atoms.intern_ascii_folded("caption")?,
             marquee: atoms.intern_ascii_folded("marquee")?,
             object: atoms.intern_ascii_folded("object")?,
@@ -74,6 +81,7 @@ impl KnownTagIds {
             u: atoms.intern_ascii_folded("u")?,
             ul: atoms.intern_ascii_folded("ul")?,
             li: atoms.intern_ascii_folded("li")?,
+            tr: atoms.intern_ascii_folded("tr")?,
         })
     }
 

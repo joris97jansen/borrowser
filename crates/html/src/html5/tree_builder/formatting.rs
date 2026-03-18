@@ -164,6 +164,20 @@ impl ActiveFormattingList {
     }
 
     #[inline]
+    pub(crate) fn find_last_index_by_name_after_last_marker(&self, name: AtomId) -> Option<usize> {
+        self.items
+            .iter()
+            .enumerate()
+            .rev()
+            .take_while(|(_, entry)| !matches!(entry, AfeEntry::Marker))
+            .find_map(|(index, entry)| match entry {
+                AfeEntry::Marker => None,
+                AfeEntry::Element(element) if element.name == name => Some(index),
+                AfeEntry::Element(_) => None,
+            })
+    }
+
+    #[inline]
     pub(crate) fn max_depth(&self) -> u32 {
         self.max_depth
     }
@@ -171,6 +185,46 @@ impl ActiveFormattingList {
     #[cfg(any(test, feature = "internal-api"))]
     pub(crate) fn entries(&self) -> &[AfeEntry] {
         &self.items
+    }
+
+    #[inline]
+    pub(crate) fn element_at(&self, index: usize) -> Option<&AfeElementEntry> {
+        match self.items.get(index)? {
+            AfeEntry::Marker => None,
+            AfeEntry::Element(element) => Some(element),
+        }
+    }
+
+    pub(crate) fn remove_element_at(&mut self, index: usize) -> AfeElementEntry {
+        match self.items.remove(index) {
+            AfeEntry::Marker => unreachable!("AAA must not remove a marker as an element"),
+            AfeEntry::Element(entry) => entry,
+        }
+    }
+
+    pub(crate) fn insert_element_at(&mut self, index: usize, entry: AfeElementEntry) {
+        debug_assert!(
+            self.find_by_key(entry.key).is_none(),
+            "AFE invariant violated: duplicate PatchKey inserted into active formatting list"
+        );
+        self.items.insert(index, AfeEntry::Element(entry));
+        self.max_depth = self.max_depth.max(self.items.len() as u32);
+    }
+
+    pub(crate) fn replace_element_at(
+        &mut self,
+        index: usize,
+        entry: AfeElementEntry,
+    ) -> AfeElementEntry {
+        debug_assert!(
+            self.find_by_key(entry.key).is_none()
+                || self.find_index_by_key(entry.key) == Some(index),
+            "AFE invariant violated: replacement PatchKey already present elsewhere in active formatting list"
+        );
+        match std::mem::replace(&mut self.items[index], AfeEntry::Element(entry)) {
+            AfeEntry::Marker => unreachable!("AAA must not replace a marker as an element"),
+            AfeEntry::Element(previous) => previous,
+        }
     }
 
     fn reconstruction_start_index(&self, open_elements: &OpenElementsStack) -> Option<usize> {
@@ -223,7 +277,7 @@ impl ActiveFormattingList {
         }
     }
 
-    fn find_index_by_key(&self, key: PatchKey) -> Option<usize> {
+    pub(crate) fn find_index_by_key(&self, key: PatchKey) -> Option<usize> {
         self.items.iter().position(|entry| match entry {
             AfeEntry::Marker => false,
             AfeEntry::Element(element) => element.key == key,

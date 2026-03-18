@@ -4,6 +4,7 @@ use crate::html5::tokenizer::{TextModeSpec, TextResolver, TokenizerControl};
 use crate::html5::tree_builder::document::DocumentState;
 use crate::html5::tree_builder::formatting::ActiveFormattingList;
 use crate::html5::tree_builder::known_tags::KnownTagIds;
+use crate::html5::tree_builder::live_tree::LiveTree;
 use crate::html5::tree_builder::modes::InsertionMode;
 use crate::html5::tree_builder::patch_sink::PatchSink;
 use crate::html5::tree_builder::stack::{OpenElementsStack, ScopeTagSet};
@@ -92,6 +93,7 @@ pub struct Html5TreeBuilder {
     pub(in crate::html5::tree_builder) original_insertion_mode: Option<InsertionMode>,
     pub(in crate::html5::tree_builder) known_tags: KnownTagIds,
     pub(in crate::html5::tree_builder) scope_tags: ScopeTagSet,
+    pub(in crate::html5::tree_builder) live_tree: LiveTree,
     pub(in crate::html5::tree_builder) open_elements: OpenElementsStack,
     pub(in crate::html5::tree_builder) active_formatting: ActiveFormattingList,
     pub(in crate::html5::tree_builder) document_key: Option<PatchKey>,
@@ -164,6 +166,7 @@ impl Html5TreeBuilder {
             original_insertion_mode: None,
             known_tags,
             scope_tags,
+            live_tree: LiveTree::default(),
             open_elements: OpenElementsStack::default(),
             active_formatting: ActiveFormattingList::default(),
             document_key: None,

@@ -4,6 +4,7 @@
 //! tree-construction state (insertion modes, stack of open elements, active
 //! formatting list, etc.) and is resumable across token boundaries.
 
+mod adoption;
 pub(crate) mod api;
 mod coalescing;
 mod dispatch;
@@ -11,6 +12,7 @@ pub(crate) mod document;
 mod formatting;
 mod insert;
 mod known_tags;
+mod live_tree;
 pub(crate) mod modes;
 mod patch_sink;
 mod resolve;
