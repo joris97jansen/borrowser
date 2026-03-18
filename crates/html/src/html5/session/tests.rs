@@ -699,3 +699,51 @@ fn session_special_nobr_recovery_is_chunk_equivalent() {
         );
     }
 }
+
+#[test]
+fn session_integrated_aaa_misnested_formatting_is_chunk_equivalent() {
+    let whole =
+        run_session_collect_patches(&["<!doctype html><b><i>one</b>two</i>"], "AAA misnesting");
+    let chunked = run_session_collect_patches(
+        &["<!doctype html><b>", "<i>one</b>", "two</i>"],
+        "AAA misnesting",
+    );
+
+    assert_eq!(
+        whole, chunked,
+        "integrated AAA end-tag dispatch must preserve exact patch order and key allocation across chunking"
+    );
+
+    #[cfg(feature = "dom-snapshot")]
+    {
+        let whole_dom =
+            crate::test_harness::materialize_patch_batches(std::slice::from_ref(&whole))
+                .expect("whole AAA misnesting patches should materialize");
+        let chunked_dom =
+            crate::test_harness::materialize_patch_batches(std::slice::from_ref(&chunked))
+                .expect("chunked AAA misnesting patches should materialize");
+
+        let whole_lines = crate::html5::serialize_dom_for_test(&whole_dom);
+        let chunked_lines = crate::html5::serialize_dom_for_test(&chunked_dom);
+        let expected_lines = vec![
+            "#document doctype=\"html\"".to_string(),
+            "  <html>".to_string(),
+            "    <head>".to_string(),
+            "    <body>".to_string(),
+            "      <b>".to_string(),
+            "        <i>".to_string(),
+            "          \"one\"".to_string(),
+            "      <i>".to_string(),
+            "        \"two\"".to_string(),
+        ];
+
+        assert_eq!(
+            whole_lines, expected_lines,
+            "whole-input integrated AAA misnesting should build the expected DOM"
+        );
+        assert_eq!(
+            chunked_lines, expected_lines,
+            "chunked integrated AAA misnesting should build the expected DOM"
+        );
+    }
+}
