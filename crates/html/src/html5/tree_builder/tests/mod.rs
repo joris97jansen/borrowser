@@ -1,4 +1,5 @@
 mod aaa;
+mod aaa_integration;
 mod api;
 mod coalescing;
 mod determinism;

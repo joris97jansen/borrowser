@@ -1,6 +1,7 @@
 use crate::dom_patch::PatchKey;
 use crate::html5::shared::{AtomId, AtomTable, Token};
 use crate::html5::tokenizer::TextResolver;
+use crate::html5::tree_builder::adoption::AdoptionAgencyOutcome;
 use crate::html5::tree_builder::modes::InsertionMode;
 use crate::html5::tree_builder::resolve::is_html_whitespace_text;
 use crate::html5::tree_builder::stack::ScopeKind;
@@ -41,20 +42,58 @@ impl Html5TreeBuilder {
         self.insert_in_body_formatting_element(name, attrs, self_closing, atoms, text)
     }
 
-    fn recover_special_formatting_start_tag_conflict(
+    // HTML5's repeated-`a` start-tag recovery explicitly removes the earlier
+    // anchor from AFE and SOE if AAA left that identity behind. This is not a
+    // generic SOE mutation primitive; it is limited to stale anchor cleanup.
+    fn remove_stale_active_anchor_entry_if_present(&mut self, stale_anchor_key: PatchKey) {
+        if let Some(entry) = self.active_formatting.find_by_key(stale_anchor_key) {
+            debug_assert_eq!(
+                entry.name, self.known_tags.a,
+                "stale anchor cleanup must only target <a> entries"
+            );
+        }
+        let _ = self.active_formatting.remove(stale_anchor_key);
+        if let Some(index) = self.open_elements.find_index_by_key(stale_anchor_key) {
+            let entry = self
+                .open_elements
+                .get(index)
+                .expect("stale anchor cleanup SOE index must remain valid");
+            debug_assert_eq!(
+                entry.name(),
+                self.known_tags.a,
+                "stale anchor cleanup must only target <a> entries"
+            );
+            let _ = self.open_elements.remove_at(index);
+        }
+    }
+
+    fn handle_in_body_generic_end_tag(&mut self, name: AtomId) {
+        let scope = self.scope_kind_for_in_body_end_tag(name);
+        let popped = self.pop_element_in_scope_with_reporting(name, scope, true);
+        if let Some(popped) = popped {
+            if self.known_tags.is_formatting_tag(popped.name()) {
+                let _ = self.active_formatting.remove(popped.key());
+            }
+            if self.known_tags.is_marker_tag(popped.name()) {
+                let _ = self.active_formatting.clear_to_last_marker();
+            }
+            self.update_mode_for_end_tag(name);
+        }
+    }
+
+    fn handle_in_body_formatting_end_tag(
         &mut self,
         name: AtomId,
-        active_key: PatchKey,
-    ) {
-        let _ = self.active_formatting.remove(active_key);
-        if self
-            .open_elements
-            .has_in_scope(name, ScopeKind::InScope, &self.scope_tags)
-            && let Some(popped) =
-                self.pop_element_in_scope_with_reporting(name, ScopeKind::InScope, false)
-        {
-            let _ = self.active_formatting.remove(popped.key());
+        atoms: &AtomTable,
+    ) -> Result<(), TreeBuilderError> {
+        let report = self.run_adoption_agency_algorithm(name, atoms)?;
+        if matches!(
+            report.outcome,
+            AdoptionAgencyOutcome::FallbackToGenericEndTag
+        ) {
+            self.handle_in_body_generic_end_tag(name);
         }
+        Ok(())
     }
 
     pub(in crate::html5::tree_builder) fn process_impl(
@@ -460,24 +499,23 @@ impl Html5TreeBuilder {
                     .find_last_by_name_after_last_marker(*name)
                     .map(|entry| entry.key)
                 {
-                    // H4/H5 boundary: this is the bounded start-tag recovery
-                    // path that prevents nested anchors in the current
-                    // non-AAA architecture. H5 will replace the closure step
-                    // with the full adoption-agency algorithm.
                     self.record_parse_error(
                         "in-body-active-anchor-start-tag-recovery",
                         Some(*name),
                         Some(InsertionMode::InBody),
                     );
-                    self.recover_special_formatting_start_tag_conflict(*name, active_key);
+                    self.handle_in_body_formatting_end_tag(*name, atoms)?;
+                    self.remove_stale_active_anchor_entry_if_present(active_key);
                 }
-                self.handle_in_body_formatting_start_tag(*name, attrs, *self_closing, atoms, text)?;
+                let _ = self.reconstruct_active_formatting_elements(atoms)?;
+                self.insert_in_body_formatting_element(*name, attrs, *self_closing, atoms, text)?;
             }
             Token::StartTag {
                 name,
                 attrs,
                 self_closing,
             } if *name == self.known_tags.nobr => {
+                let _ = self.reconstruct_active_formatting_elements(atoms)?;
                 if self
                     .open_elements
                     .has_in_scope(*name, ScopeKind::InScope, &self.scope_tags)
@@ -487,19 +525,10 @@ impl Html5TreeBuilder {
                         Some(*name),
                         Some(InsertionMode::InBody),
                     );
-                    if let Some(active_key) = self
-                        .active_formatting
-                        .find_last_by_name_after_last_marker(*name)
-                        .map(|entry| entry.key)
-                    {
-                        self.recover_special_formatting_start_tag_conflict(*name, active_key);
-                    } else if let Some(popped) =
-                        self.pop_element_in_scope_with_reporting(*name, ScopeKind::InScope, false)
-                    {
-                        let _ = self.active_formatting.remove(popped.key());
-                    }
+                    self.handle_in_body_formatting_end_tag(*name, atoms)?;
+                    let _ = self.reconstruct_active_formatting_elements(atoms)?;
                 }
-                self.handle_in_body_formatting_start_tag(*name, attrs, *self_closing, atoms, text)?;
+                self.insert_in_body_formatting_element(*name, attrs, *self_closing, atoms, text)?;
             }
             Token::StartTag {
                 name,
@@ -521,22 +550,11 @@ impl Html5TreeBuilder {
                     self.update_mode_for_start_tag(*name);
                 }
             }
+            Token::EndTag { name } if self.known_tags.is_formatting_tag(*name) => {
+                self.handle_in_body_formatting_end_tag(*name, atoms)?;
+            }
             Token::EndTag { name } => {
-                // Transitional Milestone H state: supported formatting end tags
-                // still flow through the generic scope-pop path until AAA lands.
-                // Reconstruction is real here; formatting-end-tag recovery is
-                // not yet spec-complete and is tracked separately.
-                let scope = self.scope_kind_for_in_body_end_tag(*name);
-                let popped = self.pop_element_in_scope_with_reporting(*name, scope, true);
-                if let Some(popped) = popped {
-                    if self.known_tags.is_formatting_tag(popped.name()) {
-                        let _ = self.active_formatting.remove(popped.key());
-                    }
-                    if self.known_tags.is_marker_tag(popped.name()) {
-                        let _ = self.active_formatting.clear_to_last_marker();
-                    }
-                    self.update_mode_for_end_tag(*name);
-                }
+                self.handle_in_body_generic_end_tag(*name);
             }
             Token::Text { text: token_text } => {
                 let _ = self.reconstruct_active_formatting_elements(atoms)?;
