@@ -11,6 +11,86 @@ use crate::html5::tree_builder::stack::{OpenElement, ScopeKind};
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
 
 impl Html5TreeBuilder {
+    fn current_insertion_parent(&self) -> Result<PatchKey, TreeBuilderError> {
+        let document_key = self
+            .document_key
+            .ok_or(crate::html5::shared::EngineInvariantError)?;
+        Ok(self
+            .open_elements
+            .current()
+            .map(OpenElement::key)
+            .unwrap_or(document_key))
+    }
+
+    pub(in crate::html5::tree_builder) fn append_existing_child(
+        &mut self,
+        parent: PatchKey,
+        child: PatchKey,
+    ) {
+        self.push_structural_patch(DomPatch::AppendChild { parent, child });
+    }
+
+    #[allow(
+        dead_code,
+        reason = "kept for upcoming AAA parser integration and foster-parent insertion work"
+    )]
+    pub(in crate::html5::tree_builder) fn insert_existing_child_before(
+        &mut self,
+        parent: PatchKey,
+        child: PatchKey,
+        before: PatchKey,
+    ) {
+        self.push_structural_patch(DomPatch::InsertBefore {
+            parent,
+            child,
+            before,
+        });
+    }
+
+    pub(in crate::html5::tree_builder) fn create_detached_element(
+        &mut self,
+        name: AtomId,
+        attrs: &[(std::sync::Arc<str>, Option<String>)],
+        atoms: &AtomTable,
+    ) -> Result<PatchKey, TreeBuilderError> {
+        let key = self.alloc_patch_key()?;
+        self.push_structural_patch(DomPatch::CreateElement {
+            key,
+            name: resolve_atom_arc(atoms, name)?,
+            attributes: attrs.to_vec(),
+        });
+        Ok(key)
+    }
+
+    fn create_detached_element_from_token_attrs(
+        &mut self,
+        name: AtomId,
+        attrs: &[Attribute],
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
+    ) -> Result<PatchKey, TreeBuilderError> {
+        let mut attributes = Vec::with_capacity(attrs.len());
+        for attr in attrs {
+            let attr_name = resolve_atom_arc(atoms, attr.name)?;
+            let attr_value = resolve_attribute_value(attr, text)?;
+            attributes.push((attr_name, attr_value));
+        }
+        self.create_detached_element(name, &attributes, atoms)
+    }
+
+    pub(in crate::html5::tree_builder) fn create_detached_element_from_afe_entry(
+        &mut self,
+        entry: &AfeElementEntry,
+        atoms: &AtomTable,
+    ) -> Result<PatchKey, TreeBuilderError> {
+        let mut attributes = Vec::with_capacity(entry.attrs.len());
+        for attr in &entry.attrs {
+            let attr_name = resolve_atom_arc(atoms, attr.name)?;
+            attributes.push((attr_name, attr.value.clone()));
+        }
+        self.create_detached_element(entry.name, &attributes, atoms)
+    }
+
     pub(in crate::html5::tree_builder) fn insert_element(
         &mut self,
         name: AtomId,
@@ -20,26 +100,10 @@ impl Html5TreeBuilder {
         text: &dyn TextResolver,
     ) -> Result<PatchKey, TreeBuilderError> {
         self.with_structural_mutation(|this| {
-            let document_key = this.ensure_document_created()?;
-            let element_name = resolve_atom_arc(atoms, name)?;
-            let parent = this
-                .open_elements
-                .current()
-                .map(OpenElement::key)
-                .unwrap_or(document_key);
-            let key = this.alloc_patch_key()?;
-            let mut attributes = Vec::with_capacity(attrs.len());
-            for attr in attrs {
-                let attr_name = resolve_atom_arc(atoms, attr.name)?;
-                let attr_value = resolve_attribute_value(attr, text)?;
-                attributes.push((attr_name, attr_value));
-            }
-            this.push_structural_patch(DomPatch::CreateElement {
-                key,
-                name: element_name,
-                attributes,
-            });
-            this.push_structural_patch(DomPatch::AppendChild { parent, child: key });
+            let _ = this.ensure_document_created()?;
+            let parent = this.current_insertion_parent()?;
+            let key = this.create_detached_element_from_token_attrs(name, attrs, atoms, text)?;
+            this.append_existing_child(parent, key);
             if !self_closing {
                 this.open_elements.push(OpenElement::new(key, name));
             }
@@ -53,25 +117,10 @@ impl Html5TreeBuilder {
         atoms: &AtomTable,
     ) -> Result<PatchKey, TreeBuilderError> {
         self.with_structural_mutation(|this| {
-            let document_key = this.ensure_document_created()?;
-            let element_name = resolve_atom_arc(atoms, entry.name)?;
-            let parent = this
-                .open_elements
-                .current()
-                .map(OpenElement::key)
-                .unwrap_or(document_key);
-            let key = this.alloc_patch_key()?;
-            let mut attributes = Vec::with_capacity(entry.attrs.len());
-            for attr in &entry.attrs {
-                let attr_name = resolve_atom_arc(atoms, attr.name)?;
-                attributes.push((attr_name, attr.value.clone()));
-            }
-            this.push_structural_patch(DomPatch::CreateElement {
-                key,
-                name: element_name,
-                attributes,
-            });
-            this.push_structural_patch(DomPatch::AppendChild { parent, child: key });
+            let _ = this.ensure_document_created()?;
+            let parent = this.current_insertion_parent()?;
+            let key = this.create_detached_element_from_afe_entry(entry, atoms)?;
+            this.append_existing_child(parent, key);
             this.open_elements.push(OpenElement::new(key, entry.name));
             Ok(key)
         })

@@ -60,6 +60,7 @@ impl Html5TreeBuilder {
     #[track_caller]
     pub(in crate::html5::tree_builder) fn push_structural_patch(&mut self, patch: DomPatch) {
         debug_assert!(self.structural_mutation_depth > 0);
+        self.live_tree.apply_structural_patch(&patch);
         self.push_patch(patch);
     }
 

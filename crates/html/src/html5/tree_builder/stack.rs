@@ -122,6 +122,16 @@ impl OpenElementsStack {
         self.items.iter().any(|entry| entry.key() == target)
     }
 
+    #[inline]
+    pub(crate) fn get(&self, index: usize) -> Option<OpenElement> {
+        self.items.get(index).copied()
+    }
+
+    #[inline]
+    pub(crate) fn find_index_by_key(&self, target: PatchKey) -> Option<usize> {
+        self.items.iter().position(|entry| entry.key() == target)
+    }
+
     #[allow(
         dead_code,
         reason = "part of Core-v0 SOE API; used in test/internal paths"
@@ -182,6 +192,7 @@ impl OpenElementsStack {
         tags: &ScopeTagSet,
     ) -> bool {
         // Probe-only check: no stack mutation, but contributes to scan counters.
+        self.scope_scan_calls = self.scope_scan_calls.saturating_add(1);
         self.find_in_scope_match_index(target, kind, tags).is_some()
     }
 
@@ -207,6 +218,47 @@ impl OpenElementsStack {
         popped
     }
 
+    pub(crate) fn classify_key_in_scope(
+        &mut self,
+        target: PatchKey,
+        kind: ScopeKind,
+        tags: &ScopeTagSet,
+    ) -> ScopeKeyMatch {
+        self.scope_scan_calls = self.scope_scan_calls.saturating_add(1);
+        let mut crossed_boundary = false;
+        for index in (0..self.items.len()).rev() {
+            self.scope_scan_steps = self.scope_scan_steps.saturating_add(1);
+            let entry = self.items[index];
+            if entry.key() == target {
+                return if crossed_boundary {
+                    ScopeKeyMatch::OutOfScope
+                } else {
+                    ScopeKeyMatch::InScope(index)
+                };
+            }
+            if !crossed_boundary && is_scope_boundary(entry.name(), kind, tags) {
+                crossed_boundary = true;
+            }
+        }
+        ScopeKeyMatch::Missing
+    }
+
+    pub(crate) fn remove_at(&mut self, index: usize) -> OpenElement {
+        let removed = self.items.remove(index);
+        self.pop_ops = self.pop_ops.saturating_add(1);
+        removed
+    }
+
+    pub(crate) fn insert_at(&mut self, index: usize, entry: OpenElement) {
+        self.items.insert(index, entry);
+        self.push_ops = self.push_ops.saturating_add(1);
+        self.max_depth = self.max_depth.max(self.items.len() as u32);
+    }
+
+    pub(crate) fn replace_at(&mut self, index: usize, entry: OpenElement) -> OpenElement {
+        std::mem::replace(&mut self.items[index], entry)
+    }
+
     /// Probe-only scope lookup used before mutation so callers can preserve the
     /// "no mutation on miss" contract.
     fn find_in_scope_match_index(
@@ -227,6 +279,13 @@ impl OpenElementsStack {
         }
         None
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum ScopeKeyMatch {
+    InScope(usize),
+    OutOfScope,
+    Missing,
 }
 
 #[inline]
