@@ -17,6 +17,50 @@ path: vendor/html/syntax/parsing/void-elements.html
 expected: expected/void-elements.dom.txt
 status: active
 
+# Milestone H formatting/adoption-agency slice.
+# These files are curated WPT-style local cases carried under the WPT runner and
+# policy model. They are not currently claimed to be verbatim upstream imports.
+
+id: formatting-nested-inline-attrs
+path: vendor/html/syntax/parsing/formatting/nested-inline-attrs.html
+expected: expected/formatting-nested-inline-attrs.dom.txt
+status: active
+
+id: formatting-aaa-misnest-b-i
+path: vendor/html/syntax/parsing/formatting/aaa-misnest-b-i.html
+expected: expected/formatting-aaa-misnest-b-i.dom.txt
+status: active
+
+id: formatting-aaa-misnest-a-b-attrs
+path: vendor/html/syntax/parsing/formatting/aaa-misnest-a-b-attrs.html
+expected: expected/formatting-aaa-misnest-a-b-attrs.dom.txt
+status: active
+
+id: formatting-reconstruct-single
+path: vendor/html/syntax/parsing/formatting/reconstruct-single.html
+expected: expected/formatting-reconstruct-single.dom.txt
+status: active
+
+id: formatting-reconstruct-multi
+path: vendor/html/syntax/parsing/formatting/reconstruct-multi.html
+expected: expected/formatting-reconstruct-multi.dom.txt
+status: active
+
+id: formatting-special-anchor-recovery
+path: vendor/html/syntax/parsing/formatting/special-anchor-recovery.html
+expected: expected/formatting-special-anchor-recovery.dom.txt
+status: active
+
+id: formatting-special-nobr-recovery
+path: vendor/html/syntax/parsing/formatting/special-nobr-recovery.html
+expected: expected/formatting-special-nobr-recovery.dom.txt
+status: active
+
+id: formatting-marker-applet-isolation
+path: vendor/html/syntax/parsing/formatting/marker-applet-isolation.html
+expected: expected/formatting-marker-applet-isolation.dom.txt
+status: active
+
 id: tokenizer-basic
 kind: tokens
 path: vendor/html/syntax/parsing/tokenizer-basic.html
