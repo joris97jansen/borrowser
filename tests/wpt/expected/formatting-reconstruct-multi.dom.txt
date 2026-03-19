@@ -1,0 +1,12 @@
+# format: html5-dom-v1
+#document doctype="html"
+  <html>
+    <head>
+    <body>
+      <div>
+        <b class="x">
+          <i class="y">
+            "one"
+      <b class="x">
+        <i class="y">
+          "two\n"

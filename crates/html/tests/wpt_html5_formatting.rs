@@ -5,6 +5,6 @@ mod wpt_manifest;
 mod wpt_tree_builder_suite;
 
 #[test]
-fn wpt_html5_tree_builder_slice() {
-    wpt_tree_builder_suite::run(wpt_tree_builder_suite::TreeBuilderSuiteSpec::all());
+fn wpt_html5_formatting_slice() {
+    wpt_tree_builder_suite::run(wpt_tree_builder_suite::TreeBuilderSuiteSpec::formatting());
 }
