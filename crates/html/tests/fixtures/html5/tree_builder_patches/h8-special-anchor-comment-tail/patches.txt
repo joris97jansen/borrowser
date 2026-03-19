@@ -1,0 +1,22 @@
+# format: html5-dompatch-v1
+# status: active
+
+Batch index=0 size=15
+CreateDocument key=1 doctype="html"
+CreateElement key=2 name=html attrs=[]
+AppendChild parent=1 child=2
+CreateElement key=3 name=head attrs=[]
+AppendChild parent=2 child=3
+CreateElement key=4 name=body attrs=[]
+AppendChild parent=2 child=4
+CreateElement key=5 name=a attrs=[class="one"]
+AppendChild parent=4 child=5
+CreateText key=6 text="one"
+AppendChild parent=5 child=6
+CreateComment key=7 text="gap"
+AppendChild parent=5 child=7
+CreateElement key=8 name=a attrs=[class="two"]
+AppendChild parent=4 child=8
+Batch index=1 size=2
+CreateText key=9 text="two"
+AppendChild parent=8 child=9

@@ -3,7 +3,7 @@ HTML_ENTITIES_JSON := crates/html/data/entities.json
 HTML_ENTITIES_GEN := crates/html/src/entities_html5.rs
 HTML_ENTITIES_TOOL := crates/html/tools/generate_entities_html5.py
 
-.PHONY: fmt lint lint-html5 test test-html5-legacy test-html5-toggle test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check
+.PHONY: fmt lint lint-html5 test test-html5-legacy test-html5-toggle test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc
 
 # Format all crates
 format:
@@ -118,3 +118,30 @@ loc:
 llf:
 	rg --files -g '**/*.rs' | xargs wc -l | sort -nr | head -n 30
 
+# Copy each tracked file with unstaged changes and each untracked file as
+# "path:" followed by its current contents. This excludes staged-only tracked
+# changes and skips deleted paths.
+cuc:
+	@command -v pbcopy >/dev/null 2>&1 || (echo "error: pbcopy not found" && exit 1)
+	@files="$$( { \
+		git diff --name-only; \
+		git ls-files --others --exclude-standard; \
+	} | sort -u )"; \
+	if [ -z "$$files" ]; then \
+		echo "No unstaged or untracked files."; \
+		exit 0; \
+	fi; \
+	tmp="$$(mktemp)"; \
+	trap 'rm -f "$$tmp"' EXIT; \
+	count=0; \
+	for file in $$files; do \
+		if [ ! -f "$$file" ]; then \
+			continue; \
+		fi; \
+		count=$$((count + 1)); \
+		printf '%s:\n' "$$file" >> "$$tmp"; \
+		cat -- "$$file" >> "$$tmp"; \
+		printf '\n\n' >> "$$tmp"; \
+	done; \
+	pbcopy < "$$tmp"; \
+	printf 'Copied %s unstaged/untracked file(s) to the clipboard.\n' "$$count"

@@ -32,6 +32,15 @@ Contract intent:
 - Attributes in patch text formatting are rendered in lexicographic name order, then value, for deterministic output.
 - Value tie-break ordering is `None` (rendered as `<none>`) before `Some("...")`.
 
+Milestone H corpus:
+
+- `h8-nested-*`: well-formed supported-formatting patch sequencing.
+- `h8-aaa-*`: mis-nesting / adoption agency patch sequencing and fresh-key recreation.
+- `h8-reconstruct-*`: reconstruction patch sequencing after generic ancestor pops.
+- `h8-special-*`: repeated `a` / `nobr` recovery sequencing.
+- `h8-marker-*`: marker-boundary interaction coverage with formatting state.
+
+
 Regenerate expected outputs:
 
 ```bash
