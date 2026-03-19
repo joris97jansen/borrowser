@@ -37,6 +37,14 @@ Contract status:
   `tests/fixtures/html5/tree_builder_patches` are authoritative.
 - This DOM fixture corpus remains useful for semantic regression coverage.
 
+Milestone H corpus:
+
+- `h8-nested-*`: well-formed nested supported formatting coverage.
+- `h8-aaa-*`: mis-nesting and AAA-driven end-tag recovery coverage.
+- `h8-reconstruct-*`: active formatting reconstruction after ancestor pops.
+- `h8-special-*`: repeated `a` / `nobr` start-tag recovery coverage.
+- `h8-marker-*`: marker-boundary interaction coverage around `applet` / marker tags.
+
 Core F11 coverage baseline:
 
 - implicit document shell insertion (`html/head/body`) for fragment-like inputs,

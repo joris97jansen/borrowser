@@ -1,0 +1,14 @@
+# format: html5-dom-v1
+# status: active
+#document doctype="html"
+  <html>
+    <head>
+    <body>
+      <div>
+        <b class="x">
+          <i class="y">
+            "one"
+      <!-- gap -->
+      <b class="x">
+        <i class="y">
+          "two"

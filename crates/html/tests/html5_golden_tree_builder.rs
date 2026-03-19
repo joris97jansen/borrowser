@@ -10,10 +10,14 @@ mod assertions;
 #[path = "html5_golden_tree_builder/fixtures.rs"]
 mod fixtures;
 
+#[path = "support/html5_fixture_bands.rs"]
+mod fixture_bands;
+
 #[path = "html5_golden_tree_builder/runner.rs"]
 mod runner;
 
 use assertions::enforce_expected;
+use fixture_bands::H8_FIXTURE_NAMES;
 use fixtures::{FixtureStatus, load_fixtures, normalize_fixture_input};
 use html::chunker::{ChunkerConfig, build_chunk_plans};
 use html::test_harness::shrink_chunk_plan_with_stats;
@@ -156,4 +160,46 @@ fn fixture_input_normalization_strips_exactly_one_terminal_line_ending() {
         normalize_fixture_input("<div>ok</div>\r\n\r\n".to_string()),
         "<div>ok</div>\r\n"
     );
+}
+
+#[test]
+fn h8_dom_fixture_band_is_auto_discovered() {
+    let fixtures = load_fixtures();
+    for name in H8_FIXTURE_NAMES {
+        let fixture = fixtures
+            .iter()
+            .find(|fixture| fixture.name == *name)
+            .unwrap_or_else(|| panic!("missing H8 DOM fixture '{name}'"));
+        assert_eq!(
+            fixture.expected.status,
+            FixtureStatus::Active,
+            "H8 DOM fixture '{name}' must participate in the active golden corpus"
+        );
+    }
+}
+
+#[test]
+fn h8_dom_fixture_band_runs_in_whole_and_chunked_modes() {
+    let fixtures = load_fixtures();
+    for name in H8_FIXTURE_NAMES {
+        let fixture = fixtures
+            .iter()
+            .find(|fixture| fixture.name == *name)
+            .unwrap_or_else(|| panic!("missing H8 DOM fixture '{name}'"));
+        let whole = run_tree_builder_whole(fixture);
+        enforce_expected(fixture, &whole, Mode::WholeInput, None);
+
+        let plans = build_chunk_plans(&fixture.input, 1, 0xC0FFEE, ChunkerConfig::utf8());
+        for plan in plans {
+            let actual = run_tree_builder_chunked(fixture, &plan.plan, &plan.label);
+            if let (Some(whole_lines), Some(actual_lines)) = (whole.lines(), actual.lines()) {
+                assert_eq!(
+                    actual_lines, whole_lines,
+                    "H8 DOM fixture '{}' diverged under chunk plan '{}'",
+                    fixture.name, plan.label
+                );
+            }
+            enforce_expected(fixture, &actual, Mode::ChunkedInput, Some(&plan.label));
+        }
+    }
 }
