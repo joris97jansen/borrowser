@@ -35,6 +35,56 @@ impl DomArena {
         );
     }
 
+    #[inline]
+    pub(crate) fn debug_assert_structural_invariants(&self) {
+        self.debug_check_invariants();
+        #[cfg(debug_assertions)]
+        {
+            for (&key, &index) in &self.live {
+                let node = &self.nodes[index];
+                if let Some(parent_key) = node.parent {
+                    let &parent_index = self
+                        .live
+                        .get(&parent_key)
+                        .expect("arena invariant violated: live parent key missing");
+                    let parent = &self.nodes[parent_index];
+                    let child_refs = parent
+                        .children
+                        .iter()
+                        .filter(|child_key| **child_key == key)
+                        .count();
+                    debug_assert_eq!(
+                        child_refs, 1,
+                        "arena invariant violated: parent must reference child exactly once"
+                    );
+                }
+
+                let mut seen_children = HashSet::new();
+                for &child_key in &node.children {
+                    let &child_index = self
+                        .live
+                        .get(&child_key)
+                        .expect("arena invariant violated: child key missing from live set");
+                    debug_assert!(
+                        seen_children.insert(child_key),
+                        "arena invariant violated: duplicate child reference under one parent"
+                    );
+                    debug_assert_eq!(
+                        self.nodes[child_index].parent,
+                        Some(key),
+                        "arena invariant violated: child parent backref mismatch"
+                    );
+                }
+            }
+
+            for &root_key in self.live.keys() {
+                let mut visiting = HashSet::new();
+                let mut visited = HashSet::new();
+                self.debug_assert_acyclic_from(root_key, &mut visiting, &mut visited);
+            }
+        }
+    }
+
     pub(crate) fn clear(&mut self) {
         self.debug_check_invariants();
         self.nodes.clear();
@@ -304,6 +354,31 @@ impl DomArena {
             }
         }
         false
+    }
+
+    #[cfg(debug_assertions)]
+    fn debug_assert_acyclic_from(
+        &self,
+        key: PatchKey,
+        visiting: &mut HashSet<PatchKey>,
+        visited: &mut HashSet<PatchKey>,
+    ) {
+        if visited.contains(&key) {
+            return;
+        }
+        debug_assert!(
+            visiting.insert(key),
+            "arena invariant violated: cycle detected while walking live subtree"
+        );
+        let &index = self
+            .live
+            .get(&key)
+            .expect("arena invariant violated: traversal reached missing live node");
+        for &child in &self.nodes[index].children {
+            self.debug_assert_acyclic_from(child, visiting, visited);
+        }
+        visiting.remove(&key);
+        visited.insert(key);
     }
 }
 

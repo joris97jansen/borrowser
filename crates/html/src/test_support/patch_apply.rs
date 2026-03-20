@@ -88,6 +88,7 @@ impl TestPatchArena {
     pub(crate) fn apply(&mut self, patches: &[DomPatch]) -> Result<(), String> {
         let mut staged = self.clone();
         staged.apply_in_place(patches)?;
+        staged.assert_invariants()?;
         *self = staged;
         Ok(())
     }
@@ -449,6 +450,87 @@ impl TestPatchArena {
         };
         Ok(result)
     }
+
+    fn assert_invariants(&self) -> Result<(), String> {
+        if let Some(root) = self.root {
+            let Some(root_node) = self.nodes.get(&root) else {
+                return Err("missing root node".to_string());
+            };
+            if root_node.parent.is_some() {
+                return Err("root node must not have a parent".to_string());
+            }
+        }
+
+        for (key, node) in &self.nodes {
+            if let Some(parent) = node.parent {
+                let Some(parent_node) = self.nodes.get(&parent) else {
+                    return Err(format!("dangling parent reference for {key:?}"));
+                };
+                let matches = parent_node
+                    .children
+                    .iter()
+                    .filter(|child| **child == *key)
+                    .count();
+                if matches != 1 {
+                    return Err(format!(
+                        "parent/child mismatch for {key:?}: expected exactly one reference from {parent:?}, found {matches}"
+                    ));
+                }
+            }
+
+            let mut unique_children = HashSet::new();
+            for child in &node.children {
+                if !self.nodes.contains_key(child) {
+                    return Err(format!("dangling child reference {child:?} under {key:?}"));
+                }
+                if !unique_children.insert(*child) {
+                    return Err(format!("duplicate child reference {child:?} under {key:?}"));
+                }
+                let child_parent = self
+                    .nodes
+                    .get(child)
+                    .and_then(|child_node| child_node.parent)
+                    .ok_or_else(|| format!("child {child:?} missing parent back-reference"))?;
+                if child_parent != *key {
+                    return Err(format!(
+                        "child {child:?} parent mismatch: expected {key:?}, found {child_parent:?}"
+                    ));
+                }
+            }
+        }
+
+        let mut visited = HashSet::new();
+        let mut visiting = HashSet::new();
+        for key in self.nodes.keys().copied() {
+            self.assert_acyclic_from(key, &mut visited, &mut visiting)?;
+        }
+
+        Ok(())
+    }
+
+    fn assert_acyclic_from(
+        &self,
+        key: PatchKey,
+        visited: &mut HashSet<PatchKey>,
+        visiting: &mut HashSet<PatchKey>,
+    ) -> Result<(), String> {
+        if visited.contains(&key) {
+            return Ok(());
+        }
+        if !visiting.insert(key) {
+            return Err(format!("cycle detected at {key:?}"));
+        }
+        let node = self
+            .nodes
+            .get(&key)
+            .ok_or_else(|| format!("missing node during cycle check: {key:?}"))?;
+        for child in &node.children {
+            self.assert_acyclic_from(*child, visited, visiting)?;
+        }
+        visiting.remove(&key);
+        visited.insert(key);
+        Ok(())
+    }
 }
 
 fn patch_key(id: Id) -> Result<PatchKey, String> {
@@ -583,6 +665,222 @@ mod tests {
             arena.nodes.get(&PatchKey(4)).and_then(|node| node.parent),
             Some(PatchKey(2)),
             "failed batch must preserve original parentage"
+        );
+    }
+
+    #[test]
+    fn test_patch_arena_supports_aaa_furthest_block_move_sequence() {
+        let mut arena = TestPatchArena::default();
+        arena
+            .apply(&[
+                DomPatch::CreateDocument {
+                    key: PatchKey(1),
+                    doctype: Some("html".to_string()),
+                },
+                DomPatch::CreateElement {
+                    key: PatchKey(2),
+                    name: "html".into(),
+                    attributes: Vec::new(),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(1),
+                    child: PatchKey(2),
+                },
+                DomPatch::CreateElement {
+                    key: PatchKey(3),
+                    name: "head".into(),
+                    attributes: Vec::new(),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(2),
+                    child: PatchKey(3),
+                },
+                DomPatch::CreateElement {
+                    key: PatchKey(4),
+                    name: "body".into(),
+                    attributes: Vec::new(),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(2),
+                    child: PatchKey(4),
+                },
+                DomPatch::CreateElement {
+                    key: PatchKey(5),
+                    name: "a".into(),
+                    attributes: Vec::new(),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(4),
+                    child: PatchKey(5),
+                },
+                DomPatch::CreateElement {
+                    key: PatchKey(6),
+                    name: "p".into(),
+                    attributes: Vec::new(),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(5),
+                    child: PatchKey(6),
+                },
+                DomPatch::CreateText {
+                    key: PatchKey(7),
+                    text: "one".to_string(),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(6),
+                    child: PatchKey(7),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(4),
+                    child: PatchKey(6),
+                },
+                DomPatch::CreateElement {
+                    key: PatchKey(8),
+                    name: "a".into(),
+                    attributes: Vec::new(),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(8),
+                    child: PatchKey(7),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(6),
+                    child: PatchKey(8),
+                },
+            ])
+            .expect("AAA furthest-block move sequence should apply");
+
+        assert_eq!(
+            arena.nodes.get(&PatchKey(6)).and_then(|node| node.parent),
+            Some(PatchKey(4)),
+            "furthest block should move under the common ancestor"
+        );
+        assert_eq!(
+            arena.nodes.get(&PatchKey(7)).and_then(|node| node.parent),
+            Some(PatchKey(8)),
+            "moved text node should retain its original key under the recreated formatting element"
+        );
+        assert_eq!(
+            arena
+                .nodes
+                .get(&PatchKey(4))
+                .map(|node| node.children.clone())
+                .unwrap_or_default(),
+            vec![PatchKey(5), PatchKey(6)],
+            "unaffected and moved siblings must keep deterministic ordering under body"
+        );
+    }
+
+    #[test]
+    fn test_patch_arena_supports_aaa_foster_parent_insert_before_sequence() {
+        let mut arena = TestPatchArena::default();
+        arena
+            .apply(&[
+                DomPatch::CreateDocument {
+                    key: PatchKey(1),
+                    doctype: Some("html".to_string()),
+                },
+                DomPatch::CreateElement {
+                    key: PatchKey(2),
+                    name: "html".into(),
+                    attributes: Vec::new(),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(1),
+                    child: PatchKey(2),
+                },
+                DomPatch::CreateElement {
+                    key: PatchKey(3),
+                    name: "head".into(),
+                    attributes: Vec::new(),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(2),
+                    child: PatchKey(3),
+                },
+                DomPatch::CreateElement {
+                    key: PatchKey(4),
+                    name: "body".into(),
+                    attributes: Vec::new(),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(2),
+                    child: PatchKey(4),
+                },
+                DomPatch::CreateElement {
+                    key: PatchKey(5),
+                    name: "table".into(),
+                    attributes: Vec::new(),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(4),
+                    child: PatchKey(5),
+                },
+                DomPatch::CreateElement {
+                    key: PatchKey(6),
+                    name: "a".into(),
+                    attributes: Vec::new(),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(5),
+                    child: PatchKey(6),
+                },
+                DomPatch::CreateElement {
+                    key: PatchKey(7),
+                    name: "tr".into(),
+                    attributes: Vec::new(),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(6),
+                    child: PatchKey(7),
+                },
+                DomPatch::CreateText {
+                    key: PatchKey(8),
+                    text: "x".to_string(),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(7),
+                    child: PatchKey(8),
+                },
+                DomPatch::InsertBefore {
+                    parent: PatchKey(4),
+                    child: PatchKey(7),
+                    before: PatchKey(5),
+                },
+                DomPatch::CreateElement {
+                    key: PatchKey(9),
+                    name: "a".into(),
+                    attributes: Vec::new(),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(9),
+                    child: PatchKey(8),
+                },
+                DomPatch::AppendChild {
+                    parent: PatchKey(7),
+                    child: PatchKey(9),
+                },
+            ])
+            .expect("AAA foster-parent move sequence should apply");
+
+        assert_eq!(
+            arena.nodes.get(&PatchKey(7)).and_then(|node| node.parent),
+            Some(PatchKey(4)),
+            "foster-parented furthest block should move before the table without losing identity"
+        );
+        assert_eq!(
+            arena.nodes.get(&PatchKey(8)).and_then(|node| node.parent),
+            Some(PatchKey(9)),
+            "moved text node should retain its original key under the recreated formatting element"
+        );
+        assert_eq!(
+            arena
+                .nodes
+                .get(&PatchKey(4))
+                .map(|node| node.children.clone())
+                .unwrap_or_default(),
+            vec![PatchKey(7), PatchKey(5)],
+            "foster-parent InsertBefore must leave the moved node immediately before the table"
         );
     }
 }

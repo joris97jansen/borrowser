@@ -1,6 +1,7 @@
 use crate::dom_patch::{DomPatch, PatchKey};
 use crate::html5::shared::{DocumentParseContext, Input};
 use crate::html5::tokenizer::{Html5Tokenizer, TokenizeResult, TokenizerConfig};
+use std::collections::BTreeMap;
 
 fn run_tree_builder_chunks(chunks: &[&str]) -> Vec<DomPatch> {
     let mut ctx = DocumentParseContext::new();
@@ -53,6 +54,36 @@ fn run_tree_builder_chunks(chunks: &[&str]) -> Vec<DomPatch> {
     builder.drain_patches()
 }
 
+fn create_count_by_key(patches: &[DomPatch]) -> BTreeMap<PatchKey, usize> {
+    let mut counts = BTreeMap::new();
+    for patch in patches {
+        let key = match patch {
+            DomPatch::CreateDocument { key, .. }
+            | DomPatch::CreateElement { key, .. }
+            | DomPatch::CreateText { key, .. }
+            | DomPatch::CreateComment { key, .. } => *key,
+            DomPatch::Clear
+            | DomPatch::AppendChild { .. }
+            | DomPatch::InsertBefore { .. }
+            | DomPatch::RemoveNode { .. }
+            | DomPatch::SetAttributes { .. }
+            | DomPatch::SetText { .. }
+            | DomPatch::AppendText { .. } => continue,
+        };
+        *counts.entry(key).or_insert(0) += 1;
+    }
+    counts
+}
+
+fn assert_no_remove_node_moves(patches: &[DomPatch], context: &str) {
+    assert!(
+        !patches
+            .iter()
+            .any(|patch| matches!(patch, DomPatch::RemoveNode { .. })),
+        "{context} must use canonical AppendChild/InsertBefore moves rather than destructive RemoveNode detaches"
+    );
+}
+
 #[test]
 fn in_body_formatting_end_tags_emit_aaa_patch_sequence_in_production_dispatch() {
     let patches = run_tree_builder_chunks(&["<!doctype html><a><p>one</a>"]);
@@ -79,6 +110,64 @@ fn in_body_formatting_end_tags_emit_aaa_patch_sequence_in_production_dispatch() 
             },
         ],
         "production InBody dispatch should route formatting end tags through the AAA move/recreate sequence"
+    );
+}
+
+#[test]
+fn aaa_furthest_block_moves_preserve_identity_with_canonical_patch_encoding() {
+    let patches = run_tree_builder_chunks(&["<!doctype html><a><p>one</a>"]);
+    let create_counts = create_count_by_key(&patches);
+
+    assert_no_remove_node_moves(&patches, "AAA furthest-block recovery");
+    assert_eq!(
+        create_counts.get(&PatchKey(6)),
+        Some(&1),
+        "furthest block should be created exactly once and then moved by identity"
+    );
+    assert_eq!(
+        create_counts.get(&PatchKey(7)),
+        Some(&1),
+        "moved text should retain its original PatchKey rather than being recreated"
+    );
+    assert!(
+        patches.contains(&DomPatch::AppendChild {
+            parent: PatchKey(4),
+            child: PatchKey(6),
+        }),
+        "AAA furthest-block recovery must reparent the existing block with AppendChild"
+    );
+    assert!(
+        patches.contains(&DomPatch::AppendChild {
+            parent: PatchKey(8),
+            child: PatchKey(7),
+        }),
+        "AAA furthest-block recovery must move the existing text node under the recreated formatting element"
+    );
+}
+
+#[test]
+fn aaa_foster_parent_moves_use_insert_before_without_identity_loss() {
+    let patches = run_tree_builder_chunks(&["<!doctype html><table><a><tr>x</a>"]);
+    let create_counts = create_count_by_key(&patches);
+
+    assert_no_remove_node_moves(&patches, "AAA foster-parent recovery");
+    assert_eq!(
+        create_counts.get(&PatchKey(7)),
+        Some(&1),
+        "foster-parented furthest block should be created exactly once and then moved by identity"
+    );
+    assert_eq!(
+        create_counts.get(&PatchKey(8)),
+        Some(&1),
+        "text moved through foster-parent recovery should retain its original PatchKey"
+    );
+    assert!(
+        patches.contains(&DomPatch::InsertBefore {
+            parent: PatchKey(4),
+            child: PatchKey(7),
+            before: PatchKey(5),
+        }),
+        "AAA foster-parent recovery must encode the move as InsertBefore relative to the existing table"
     );
 }
 

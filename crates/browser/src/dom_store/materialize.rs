@@ -9,11 +9,11 @@ impl DomArena {
         let Some(&index) = self.live.get(&root) else {
             return Err(DomPatchError::MissingKey(root));
         };
-        self.materialize_node(index)
+        self.materialize_node(root, index)
     }
 
-    fn materialize_node(&self, index: usize) -> Result<Node, DomPatchError> {
-        let id = Id::INVALID;
+    fn materialize_node(&self, key: PatchKey, index: usize) -> Result<Node, DomPatchError> {
+        let id = Id(key.0);
         let children = self.nodes[index]
             .children
             .iter()
@@ -22,7 +22,7 @@ impl DomArena {
                     .live
                     .get(child_key)
                     .ok_or(DomPatchError::MissingKey(*child_key))?;
-                self.materialize_node(child_index)
+                self.materialize_node(*child_key, child_index)
             })
             .collect::<Result<Vec<_>, _>>()?;
         let node = match &self.nodes[index].kind {
