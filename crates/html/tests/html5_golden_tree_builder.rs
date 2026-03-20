@@ -17,7 +17,7 @@ mod fixture_bands;
 mod runner;
 
 use assertions::enforce_expected;
-use fixture_bands::H8_FIXTURE_NAMES;
+use fixture_bands::{H8_FIXTURE_NAMES, H10_FIXTURE_NAMES};
 use fixtures::{FixtureStatus, load_fixtures, normalize_fixture_input};
 use html::chunker::{ChunkerConfig, build_chunk_plans};
 use html::test_harness::shrink_chunk_plan_with_stats;
@@ -196,6 +196,48 @@ fn h8_dom_fixture_band_runs_in_whole_and_chunked_modes() {
                 assert_eq!(
                     actual_lines, whole_lines,
                     "H8 DOM fixture '{}' diverged under chunk plan '{}'",
+                    fixture.name, plan.label
+                );
+            }
+            enforce_expected(fixture, &actual, Mode::ChunkedInput, Some(&plan.label));
+        }
+    }
+}
+
+#[test]
+fn h10_dom_fixture_band_is_auto_discovered() {
+    let fixtures = load_fixtures();
+    for name in H10_FIXTURE_NAMES {
+        let fixture = fixtures
+            .iter()
+            .find(|fixture| fixture.name == *name)
+            .unwrap_or_else(|| panic!("missing H10 DOM fixture '{name}'"));
+        assert_eq!(
+            fixture.expected.status,
+            FixtureStatus::Active,
+            "H10 DOM fixture '{name}' must participate in the active golden corpus"
+        );
+    }
+}
+
+#[test]
+fn h10_dom_fixture_band_runs_in_whole_and_chunked_modes() {
+    let fixtures = load_fixtures();
+    for name in H10_FIXTURE_NAMES {
+        let fixture = fixtures
+            .iter()
+            .find(|fixture| fixture.name == *name)
+            .unwrap_or_else(|| panic!("missing H10 DOM fixture '{name}'"));
+        let whole = run_tree_builder_whole(fixture);
+        enforce_expected(fixture, &whole, Mode::WholeInput, None);
+
+        let plans = build_chunk_plans(&fixture.input, 1, 0xC0FFEE, ChunkerConfig::utf8());
+        for plan in plans {
+            let actual = run_tree_builder_chunked(fixture, &plan.plan, &plan.label);
+            if let (Some(whole_lines), Some(actual_lines)) = (whole.lines(), actual.lines()) {
+                assert_eq!(
+                    actual_lines, whole_lines,
+                    "H10 DOM fixture '{}' diverged under chunk plan '{}'",
                     fixture.name, plan.label
                 );
             }

@@ -9,3 +9,8 @@ pub(crate) const H8_FIXTURE_NAMES: &[&str] = &[
     "h8-special-nobr-comment-tail",
     "h8-marker-applet-formatting-isolation",
 ];
+
+pub(crate) const H10_FIXTURE_NAMES: &[&str] = &[
+    "h10-aaa-furthest-block-reparent",
+    "h10-aaa-foster-parent-insert-before",
+];

@@ -12,7 +12,7 @@ mod formatting;
 mod runner;
 
 use assertions::{batch_partition_summary, enforce_expected, filtered_lines_for_diff, lines_match};
-use fixture_bands::H8_FIXTURE_NAMES;
+use fixture_bands::{H8_FIXTURE_NAMES, H10_FIXTURE_NAMES};
 use fixtures::{FixtureStatus, env_u64, fixture_filter, load_fixtures, update_mode};
 use runner::{ExecutionMode, PatchRunResult, run_tree_builder_chunked, run_tree_builder_whole};
 
@@ -144,6 +144,59 @@ fn h8_patch_fixture_band_runs_in_whole_and_chunked_modes() {
                 assert!(
                     lines_match(ExecutionMode::ChunkedInput, actual_lines, whole_lines),
                     "H8 patch fixture '{}' diverged under chunk plan '{}'",
+                    fixture.name,
+                    plan.label
+                );
+            }
+            enforce_expected(
+                fixture,
+                &actual,
+                ExecutionMode::ChunkedInput,
+                Some(&plan.label),
+                false,
+            );
+        }
+    }
+}
+
+#[test]
+fn h10_patch_fixture_band_is_auto_discovered() {
+    let fixtures = load_fixtures();
+    for name in H10_FIXTURE_NAMES {
+        let fixture = fixtures
+            .iter()
+            .find(|fixture| fixture.name == *name)
+            .unwrap_or_else(|| panic!("missing H10 patch fixture '{name}'"));
+        assert_eq!(
+            fixture.expected.status,
+            FixtureStatus::Active,
+            "H10 patch fixture '{name}' must participate in the active golden corpus"
+        );
+    }
+}
+
+#[test]
+fn h10_patch_fixture_band_runs_in_whole_and_chunked_modes() {
+    if update_mode() {
+        return;
+    }
+
+    let fixtures = load_fixtures();
+    for name in H10_FIXTURE_NAMES {
+        let fixture = fixtures
+            .iter()
+            .find(|fixture| fixture.name == *name)
+            .unwrap_or_else(|| panic!("missing H10 patch fixture '{name}'"));
+        let whole = run_tree_builder_whole(fixture);
+        enforce_expected(fixture, &whole, ExecutionMode::WholeInput, None, false);
+
+        let plans = build_chunk_plans(&fixture.input, 1, 0xC0FFEE, ChunkerConfig::utf8());
+        for plan in plans {
+            let actual = run_tree_builder_chunked(fixture, &plan.plan, &plan.label);
+            if let (Some(whole_lines), Some(actual_lines)) = (whole.lines(), actual.lines()) {
+                assert!(
+                    lines_match(ExecutionMode::ChunkedInput, actual_lines, whole_lines),
+                    "H10 patch fixture '{}' diverged under chunk plan '{}'",
                     fixture.name,
                     plan.label
                 );

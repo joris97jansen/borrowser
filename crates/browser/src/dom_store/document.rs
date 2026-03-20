@@ -73,6 +73,7 @@ impl DomDoc {
                 "document became rootless without Clear",
             ));
         }
+        self.debug_assert_structural_invariants();
         Ok(())
     }
 
@@ -204,5 +205,39 @@ impl DomDoc {
         };
         // TODO(v5.1): materialization is O(n); render pipeline should consume the arena directly.
         self.arena.materialize(root)
+    }
+
+    #[inline]
+    fn debug_assert_structural_invariants(&self) {
+        self.arena.debug_assert_structural_invariants();
+        #[cfg(debug_assertions)]
+        {
+            if let Some(root) = self.root {
+                let &root_index = self
+                    .arena
+                    .live
+                    .get(&root)
+                    .expect("document invariant violated: root key missing from live set");
+                debug_assert!(
+                    matches!(self.arena.nodes[root_index].kind, NodeKind::Document { .. }),
+                    "document invariant violated: root key must refer to a document node"
+                );
+                debug_assert_eq!(
+                    self.arena.nodes[root_index].parent, None,
+                    "document invariant violated: root document must not have a parent"
+                );
+            }
+
+            let live_document_nodes = self
+                .arena
+                .live
+                .values()
+                .filter(|&&index| matches!(self.arena.nodes[index].kind, NodeKind::Document { .. }))
+                .count();
+            debug_assert!(
+                live_document_nodes <= 1,
+                "document invariant violated: multiple live document nodes"
+            );
+        }
     }
 }

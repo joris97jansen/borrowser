@@ -1,6 +1,6 @@
 # ADR-002 — Runtime Patch Move Semantics For AAA-Compatible Structural Reparenting
 
-Status: accepted; core runtime/applier move support is landed, move-heavy HTML5 evidence remains pending
+Status: accepted; core runtime/applier move support and move-heavy HTML5 evidence are landed
 Milestone: H — Active formatting elements + adoption agency algorithm
 
 ## Decision Scope
@@ -23,9 +23,8 @@ legal `AppendChild` / `InsertBefore` moves, including deterministic same-parent
 reordering, explicit document/document-root move rejection, and atomic
 rollback-on-failure behavior.
 
-This ADR remains implementation-relevant because move semantics still need
-end-to-end HTML5 evidence from move-heavy AAA cases once the H5 parser-side
-emission path lands.
+This ADR remains implementation-relevant because future parser/runtime changes
+must preserve the landed end-to-end HTML5 evidence for move-heavy AAA cases.
 
 ## Decision
 

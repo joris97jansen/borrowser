@@ -132,6 +132,7 @@ pub fn fetch_stream(
         let response = match ureq::get(&url).call() {
             Ok(resp) => resp,
             Err(e) => {
+                println!("ureq error: {}", e);
                 callback(NetEvent::Error {
                     request_id,
                     url: url.clone(),
