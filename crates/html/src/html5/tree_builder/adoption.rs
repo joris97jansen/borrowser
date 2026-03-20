@@ -18,6 +18,8 @@ use crate::html5::tree_builder::resolve::resolve_atom;
 use crate::html5::tree_builder::stack::{OpenElement, ScopeKeyMatch};
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
 
+// The HTML spec caps the AAA outer loop at 8 iterations. Keep this explicit so
+// malformed formatting recovery cannot regress into unbounded retry behavior.
 const ADOPTION_AGENCY_OUTER_LOOP_LIMIT: u8 = 8;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -137,32 +139,29 @@ impl Html5TreeBuilder {
                 }
                 outer_iterations += 1;
 
-                let no_active_formatting_match = this
-                    .adoption_agency_lookup_formatting_element(subject)
-                    .is_none();
-                if no_active_formatting_match
-                    && this
+                let candidate = match this.adoption_agency_lookup_formatting_element(subject) {
+                    Some(candidate) => candidate,
+                    None if this
                         .open_elements
                         .current()
-                        .is_some_and(|current| current.name() == subject)
-                {
-                    let popped = this
-                        .open_elements
-                        .pop()
-                        .expect("current-node AAA shortcut requires a current node");
-                    debug_assert_eq!(popped.name(), subject);
-                    return Ok(AdoptionAgencyRunReport {
-                        outcome: AdoptionAgencyOutcome::Completed,
-                        outer_iterations,
-                    });
-                }
-
-                let Some(candidate) = this.adoption_agency_lookup_formatting_element(subject)
-                else {
-                    return Ok(AdoptionAgencyRunReport {
-                        outcome: AdoptionAgencyOutcome::FallbackToGenericEndTag,
-                        outer_iterations,
-                    });
+                        .is_some_and(|current| current.name() == subject) =>
+                    {
+                        let popped = this
+                            .open_elements
+                            .pop()
+                            .expect("current-node AAA shortcut requires a current node");
+                        debug_assert_eq!(popped.name(), subject);
+                        return Ok(AdoptionAgencyRunReport {
+                            outcome: AdoptionAgencyOutcome::Completed,
+                            outer_iterations,
+                        });
+                    }
+                    None => {
+                        return Ok(AdoptionAgencyRunReport {
+                            outcome: AdoptionAgencyOutcome::FallbackToGenericEndTag,
+                            outer_iterations,
+                        });
+                    }
                 };
                 let formatting_entry = this
                     .active_formatting
@@ -251,6 +250,11 @@ impl Html5TreeBuilder {
                                 break;
                             }
 
+                            // This stays as a direct Vec scan rather than an auxiliary key map:
+                            // AFE ordering is semantically significant, the scanned region is
+                            // marker-bounded, and AAA itself is capped to 8 outer iterations.
+                            // Keeping the search linear avoids synchronization bookkeeping while
+                            // preserving deterministic ordering in malformed-input recovery.
                             let mut node_afe_index =
                                 this.active_formatting.find_index_by_key(node.key());
                             if inner_iterations > 3
@@ -347,6 +351,41 @@ fn requires_foster_parenting(builder: &Html5TreeBuilder, name: AtomId) -> bool {
         || name == builder.known_tags.tr
 }
 
+fn find_last_table_and_template_indices(
+    builder: &Html5TreeBuilder,
+) -> (Option<usize>, Option<usize>) {
+    let mut table_index = None;
+    let mut template_index = None;
+    for index in (0..builder.open_elements.len()).rev() {
+        let element = builder
+            .open_elements
+            .get(index)
+            .expect("open-elements index must remain in bounds during foster scan");
+        if table_index.is_none() && element.name() == builder.known_tags.table {
+            table_index = Some(index);
+        } else if template_index.is_none() && element.name() == builder.known_tags.template {
+            template_index = Some(index);
+        }
+        if table_index.is_some() && template_index.is_some() {
+            break;
+        }
+    }
+    (table_index, template_index)
+}
+
+fn find_last_open_element_index(builder: &Html5TreeBuilder, target: AtomId) -> Option<usize> {
+    for index in (0..builder.open_elements.len()).rev() {
+        let element = builder
+            .open_elements
+            .get(index)
+            .expect("open-elements index must remain in bounds during foster scan");
+        if element.name() == target {
+            return Some(index);
+        }
+    }
+    None
+}
+
 impl Html5TreeBuilder {
     fn adoption_agency_insert_last_node(
         &mut self,
@@ -358,8 +397,7 @@ impl Html5TreeBuilder {
             return Ok(());
         }
 
-        let last_table_index = find_last_open_element_index(self, self.known_tags.table);
-        let last_template_index = find_last_open_element_index(self, self.known_tags.template);
+        let (last_table_index, last_template_index) = find_last_table_and_template_indices(self);
         if let (Some(table_index), Some(template_index)) = (last_table_index, last_template_index)
             && template_index > table_index
         {
@@ -397,19 +435,6 @@ impl Html5TreeBuilder {
         self.append_existing_child(html.key(), last_node);
         Ok(())
     }
-}
-
-fn find_last_open_element_index(builder: &Html5TreeBuilder, target: AtomId) -> Option<usize> {
-    for index in (0..builder.open_elements.len()).rev() {
-        let element = builder
-            .open_elements
-            .get(index)
-            .expect("open-elements index must remain in bounds during foster scan");
-        if element.name() == target {
-            return Some(index);
-        }
-    }
-    None
 }
 
 fn is_special_html_tag(name: AtomId, atoms: &AtomTable) -> Result<bool, TreeBuilderError> {
