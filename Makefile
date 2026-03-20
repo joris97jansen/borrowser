@@ -3,10 +3,14 @@ HTML_ENTITIES_JSON := crates/html/data/entities.json
 HTML_ENTITIES_GEN := crates/html/src/entities_html5.rs
 HTML_ENTITIES_TOOL := crates/html/tools/generate_entities_html5.py
 
-.PHONY: fmt lint lint-html5 test test-html5-legacy test-html5-toggle test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc
+.PHONY: format fmt-check lint lint-html5 test test-html5-legacy test-html5-toggle test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc
 
-# Format all crates
+# Format all crates in place
 format:
+	cargo fmt --all
+
+# Check formatting only (matches CI)
+fmt-check:
 	cargo fmt --all -- --check
 
 # Lint only (alias for clippy, matches CI)
@@ -96,7 +100,7 @@ build-release-html5:
 
 # Full CI-equivalent pipeline
 ci:
-	@$(MAKE) format
+	@$(MAKE) fmt-check
 	@$(MAKE) lint
 	@$(MAKE) lint-html5
 	@$(MAKE) test
