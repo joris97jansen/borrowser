@@ -1,5 +1,83 @@
 use super::helpers::EmptyResolver;
 
+fn run_tree_builder_chunks(chunks: &[&str]) -> Vec<crate::dom_patch::DomPatch> {
+    use crate::html5::shared::{DocumentParseContext, Input};
+    use crate::html5::tokenizer::{Html5Tokenizer, TokenizeResult, TokenizerConfig};
+
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+    let mut input = Input::new();
+
+    for chunk in chunks {
+        input.push_str(chunk);
+        loop {
+            let result = tokenizer.push_input_until_token(&mut input, &mut ctx);
+            let batch = tokenizer.next_batch(&mut input);
+            if batch.tokens().is_empty() {
+                assert!(
+                    matches!(
+                        result,
+                        TokenizeResult::NeedMoreInput | TokenizeResult::Progress
+                    ),
+                    "unexpected tokenizer state while draining chunk: {result:?}"
+                );
+                break;
+            }
+            let resolver = batch.resolver();
+            for token in batch.iter() {
+                let _ = builder
+                    .process(token, &ctx.atoms, &resolver)
+                    .expect("stress run should remain recoverable");
+            }
+        }
+    }
+
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    loop {
+        let batch = tokenizer.next_batch(&mut input);
+        if batch.tokens().is_empty() {
+            break;
+        }
+        let resolver = batch.resolver();
+        for token in batch.iter() {
+            let _ = builder
+                .process(token, &ctx.atoms, &resolver)
+                .expect("stress EOF drain should remain recoverable");
+        }
+    }
+
+    builder.drain_patches()
+}
+
+fn chunk_slices(input: &str, chunk_size: usize) -> Vec<&str> {
+    assert!(chunk_size > 0, "chunk size must be non-zero");
+    let mut chunks = Vec::new();
+    let mut start = 0usize;
+    while start < input.len() {
+        let mut end = (start + chunk_size).min(input.len());
+        while end < input.len() && !input.is_char_boundary(end) {
+            end -= 1;
+        }
+        chunks.push(&input[start..end]);
+        start = end;
+    }
+    chunks
+}
+
+fn assert_no_remove_node_moves(patches: &[crate::dom_patch::DomPatch], context: &str) {
+    assert!(
+        !patches
+            .iter()
+            .any(|patch| matches!(patch, crate::dom_patch::DomPatch::RemoveNode { .. })),
+        "{context} must keep using canonical AppendChild/InsertBefore move encoding under stress"
+    );
+}
+
 #[test]
 fn tree_builder_perf_sanity_deep_nesting_scope_scan_is_linear_on_typical_path() {
     use crate::html5::shared::Token;
@@ -163,5 +241,58 @@ fn tree_builder_perf_sanity_text_coalescing_avoids_quadratic_patch_payload_growt
     assert_eq!(
         append_max_bytes, 1,
         "append payload should remain token-local, not cumulative"
+    );
+}
+
+#[test]
+fn tree_builder_perf_sanity_repeated_aaa_misnesting_is_bounded_and_chunk_stable() {
+    use std::time::{Duration, Instant};
+
+    let repeats = 256usize;
+    let input = format!("<!doctype html>{}", "<b><i>x</b>y</i>".repeat(repeats));
+    let chunked_input = chunk_slices(&input, 31);
+
+    let started = Instant::now();
+    let whole = run_tree_builder_chunks(&[input.as_str()]);
+    let chunked = run_tree_builder_chunks(&chunked_input);
+    let elapsed = started.elapsed();
+
+    assert_eq!(
+        whole, chunked,
+        "repeated AAA misnesting stress must preserve exact patch order and key allocation across chunking"
+    );
+    assert_no_remove_node_moves(&whole, "repeated AAA misnesting stress");
+    assert!(
+        elapsed <= Duration::from_secs(5),
+        "repeated AAA misnesting stress took too long: {:?}",
+        elapsed
+    );
+}
+
+#[test]
+fn tree_builder_perf_sanity_reconstruction_plus_aaa_is_bounded_and_chunk_stable() {
+    use std::time::{Duration, Instant};
+
+    let repeats = 128usize;
+    let input = format!(
+        "<!doctype html>{}",
+        "<div><b><i>x</div>y</b></i>".repeat(repeats)
+    );
+    let chunked_input = chunk_slices(&input, 29);
+
+    let started = Instant::now();
+    let whole = run_tree_builder_chunks(&[input.as_str()]);
+    let chunked = run_tree_builder_chunks(&chunked_input);
+    let elapsed = started.elapsed();
+
+    assert_eq!(
+        whole, chunked,
+        "repeated reconstruction+AAA stress must preserve exact patch order and key allocation across chunking"
+    );
+    assert_no_remove_node_moves(&whole, "repeated reconstruction+AAA stress");
+    assert!(
+        elapsed <= Duration::from_secs(5),
+        "repeated reconstruction+AAA stress took too long: {:?}",
+        elapsed
     );
 }
