@@ -44,6 +44,7 @@ pub use batch::{TextResolveError, TextResolver, TokenBatch};
 pub use control::{TextModeKind, TextModeNamespace, TextModeSpec, TokenizerControl};
 #[cfg(test)]
 pub(crate) use machine::MAX_STEPS_PER_PUMP;
+pub(crate) use scan::is_html_space;
 pub use stats::TokenizerStats;
 pub use token_fmt::{TokenFmt, TokenFmtError, TokenTestFormatExt};
 

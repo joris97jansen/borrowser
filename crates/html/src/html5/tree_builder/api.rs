@@ -8,6 +8,7 @@ use crate::html5::tree_builder::live_tree::LiveTree;
 use crate::html5::tree_builder::modes::InsertionMode;
 use crate::html5::tree_builder::patch_sink::PatchSink;
 use crate::html5::tree_builder::stack::{OpenElementsStack, ScopeTagSet};
+use crate::html5::tree_builder::table::PendingTableCharacterTokens;
 use std::num::NonZeroU32;
 
 #[derive(Clone, Debug, Default)]
@@ -117,6 +118,7 @@ pub struct Html5TreeBuilder {
     pub(in crate::html5::tree_builder) perf_text_appends: u64,
     pub(in crate::html5::tree_builder) perf_text_coalescing_invalidations: u64,
     pub(in crate::html5::tree_builder) active_text_mode: Option<TextModeSpec>,
+    pub(in crate::html5::tree_builder) pending_table_character_tokens: PendingTableCharacterTokens,
     pub(in crate::html5::tree_builder) pending_tokenizer_control: Option<TokenizerControl>,
     #[cfg(any(test, feature = "internal-api"))]
     pub(in crate::html5::tree_builder) parse_error_kinds: Vec<&'static str>,
@@ -148,6 +150,9 @@ pub struct TreeBuilderStateSnapshot {
     pub(crate) active_text_mode: Option<TextModeSpec>,
     pub(crate) open_element_names: Vec<AtomId>,
     pub(crate) open_element_keys: Vec<PatchKey>,
+    pub(crate) current_table_key: Option<PatchKey>,
+    pub(crate) pending_table_character_tokens: Vec<String>,
+    pub(crate) pending_table_character_tokens_contains_non_space: bool,
     pub(crate) quirks_mode: crate::html5::tree_builder::document::QuirksMode,
     pub(crate) frameset_ok: bool,
 }
@@ -187,6 +192,7 @@ impl Html5TreeBuilder {
             perf_text_appends: 0,
             perf_text_coalescing_invalidations: 0,
             active_text_mode: None,
+            pending_table_character_tokens: PendingTableCharacterTokens::default(),
             pending_tokenizer_control: None,
             #[cfg(any(test, feature = "internal-api"))]
             parse_error_kinds: Vec::new(),
@@ -310,6 +316,11 @@ impl Html5TreeBuilder {
             active_text_mode: self.active_text_mode,
             open_element_names: self.open_elements.iter_names().collect(),
             open_element_keys: self.open_elements.iter_keys().collect(),
+            current_table_key: self.current_table_key(),
+            pending_table_character_tokens: self.pending_table_character_tokens.chunks().to_vec(),
+            pending_table_character_tokens_contains_non_space: self
+                .pending_table_character_tokens
+                .contains_non_space(),
             quirks_mode: self.document_state.quirks_mode,
             frameset_ok: self.document_state.frameset_ok,
         }

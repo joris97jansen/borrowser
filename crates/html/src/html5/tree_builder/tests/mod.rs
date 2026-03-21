@@ -11,6 +11,7 @@ mod noahs_ark;
 mod perf;
 mod recovery;
 mod state_snapshot;
+mod table_state;
 mod text_mode;
 
 #[cfg(feature = "dom-snapshot")]

@@ -132,6 +132,43 @@ impl OpenElementsStack {
         self.items.iter().position(|entry| entry.key() == target)
     }
 
+    #[inline]
+    #[allow(
+        dead_code,
+        reason = "table helper wiring lands incrementally across Milestone I"
+    )]
+    pub(crate) fn find_last_by_name(&self, target: AtomId) -> Option<OpenElement> {
+        self.items
+            .iter()
+            .rev()
+            .find(|entry| entry.name() == target)
+            .copied()
+    }
+
+    #[allow(
+        dead_code,
+        reason = "table helper wiring lands incrementally across Milestone I"
+    )]
+    pub(crate) fn find_last_table_cell_in_scope(
+        &mut self,
+        td: AtomId,
+        th: AtomId,
+        tags: &ScopeTagSet,
+    ) -> Option<OpenElement> {
+        self.scope_scan_calls = self.scope_scan_calls.saturating_add(1);
+        for entry in self.items.iter().rev() {
+            self.scope_scan_steps = self.scope_scan_steps.saturating_add(1);
+            let name = entry.name();
+            if name == td || name == th {
+                return Some(*entry);
+            }
+            if name == tags.html || name == tags.table || name == tags.template {
+                return None;
+            }
+        }
+        None
+    }
+
     #[allow(
         dead_code,
         reason = "part of Core-v0 SOE API; used in test/internal paths"
@@ -257,6 +294,32 @@ impl OpenElementsStack {
 
     pub(crate) fn replace_at(&mut self, index: usize, entry: OpenElement) -> OpenElement {
         std::mem::replace(&mut self.items[index], entry)
+    }
+
+    /// Pops elements until the current node is one of the HTML table-context
+    /// roots (`html`, `table`, or `template`).
+    ///
+    /// Returns the number of removed entries.
+    #[allow(
+        dead_code,
+        reason = "table helper wiring lands incrementally across Milestone I"
+    )]
+    pub(crate) fn clear_to_table_context(&mut self, tags: &ScopeTagSet) -> usize {
+        let mut removed = 0usize;
+        while let Some(current) = self.current() {
+            let name = current.name();
+            if name == tags.html || name == tags.table || name == tags.template {
+                break;
+            }
+            let popped = self
+                .items
+                .pop()
+                .expect("current() returned Some so pop() must succeed");
+            debug_assert_eq!(popped, current);
+            self.pop_ops = self.pop_ops.saturating_add(1);
+            removed += 1;
+        }
+        removed
     }
 
     /// Probe-only scope lookup used before mutation so callers can preserve the

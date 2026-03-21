@@ -38,9 +38,31 @@ fn tree_builder_state_snapshot_exposes_core_v0_internal_model() {
     let state = builder.state_snapshot();
     assert_eq!(state.open_element_names, vec![html]);
     assert_eq!(state.open_element_keys.len(), 1);
+    assert_eq!(state.current_table_key, None);
+    assert!(state.pending_table_character_tokens.is_empty());
+    assert!(!state.pending_table_character_tokens_contains_non_space);
     assert_eq!(
         state.quirks_mode,
         crate::html5::tree_builder::document::QuirksMode::Quirks
     );
     assert!(state.frameset_ok);
+}
+
+#[test]
+fn tree_builder_state_snapshot_can_expose_limited_quirks_mode() {
+    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+
+    builder.document_state.quirks_mode =
+        crate::html5::tree_builder::document::QuirksMode::LimitedQuirks;
+
+    let state = builder.state_snapshot();
+    assert_eq!(
+        state.quirks_mode,
+        crate::html5::tree_builder::document::QuirksMode::LimitedQuirks
+    );
 }

@@ -5,8 +5,13 @@ use crate::html5::tree_builder::resolve::resolve_atom;
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[allow(
+    dead_code,
+    reason = "tri-state document mode is contractual before the full limited-quirks classifier lands"
+)]
 pub(crate) enum QuirksMode {
     NoQuirks,
+    LimitedQuirks,
     Quirks,
 }
 
@@ -26,6 +31,28 @@ impl Default for DocumentState {
 }
 
 impl Html5TreeBuilder {
+    fn classify_doctype_quirks_mode(
+        name: &Option<AtomId>,
+        public_id: Option<&str>,
+        system_id: Option<&str>,
+        force_quirks: bool,
+    ) -> QuirksMode {
+        // Milestone I requires the tri-state document-mode model now, even while
+        // the doctype classifier is still landing incrementally. Keep all
+        // classification authority here so later milestones can expand the
+        // actual WHATWG mapping without reintroducing mode-specific ad hoc
+        // checks elsewhere in the tree builder.
+        if force_quirks {
+            return QuirksMode::Quirks;
+        }
+
+        let _ = name;
+        let _ = public_id;
+        let _ = system_id;
+
+        QuirksMode::NoQuirks
+    }
+
     pub(in crate::html5::tree_builder) fn ensure_document_created(
         &mut self,
     ) -> Result<PatchKey, TreeBuilderError> {
@@ -52,6 +79,7 @@ impl Html5TreeBuilder {
             this.active_formatting.clear();
             this.original_insertion_mode = None;
             this.active_text_mode = None;
+            this.clear_pending_table_character_tokens();
             this.document_state.frameset_ok = true;
             Ok(key)
         })
@@ -60,6 +88,8 @@ impl Html5TreeBuilder {
     pub(in crate::html5::tree_builder) fn handle_doctype(
         &mut self,
         name: &Option<AtomId>,
+        public_id: Option<&str>,
+        system_id: Option<&str>,
         force_quirks: bool,
         atoms: &AtomTable,
     ) -> Result<(), TreeBuilderError> {
@@ -70,9 +100,8 @@ impl Html5TreeBuilder {
                 None => None,
             };
         }
-        if force_quirks {
-            self.document_state.quirks_mode = QuirksMode::Quirks;
-        }
+        self.document_state.quirks_mode =
+            Self::classify_doctype_quirks_mode(name, public_id, system_id, force_quirks);
         Ok(())
     }
 }
