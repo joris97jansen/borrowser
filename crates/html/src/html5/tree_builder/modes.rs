@@ -4,7 +4,7 @@
 //! is still complete for the v0 contract so callers can assert mode transitions
 //! in tests without exposing internal implementation details.
 
-/// HTML5 tree-construction insertion mode (Core v0 subset).
+/// HTML5 tree-construction insertion mode.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub(crate) enum InsertionMode {
     #[default]
@@ -14,5 +14,12 @@ pub(crate) enum InsertionMode {
     InHead,
     AfterHead,
     InBody,
+    InTable,
+    InTableText,
+    InCaption,
+    InColumnGroup,
+    InTableBody,
+    InRow,
+    InCell,
     Text,
 }

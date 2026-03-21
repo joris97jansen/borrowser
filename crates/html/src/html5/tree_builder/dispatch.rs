@@ -116,6 +116,13 @@ impl Html5TreeBuilder {
                 InsertionMode::InHead => self.handle_in_head(token, atoms, text)?,
                 InsertionMode::AfterHead => self.handle_after_head(token, atoms, text)?,
                 InsertionMode::InBody => self.handle_in_body(token, atoms, text)?,
+                InsertionMode::InTable => self.handle_in_table(token, atoms, text)?,
+                InsertionMode::InTableText => self.handle_in_table_text(token, atoms, text)?,
+                InsertionMode::InCaption => self.handle_in_caption(token, atoms, text)?,
+                InsertionMode::InColumnGroup => self.handle_in_column_group(token, atoms, text)?,
+                InsertionMode::InTableBody => self.handle_in_table_body(token, atoms, text)?,
+                InsertionMode::InRow => self.handle_in_row(token, atoms, text)?,
+                InsertionMode::InCell => self.handle_in_cell(token, atoms, text)?,
                 InsertionMode::Text => self.handle_text_mode(token, atoms, text)?,
             };
             match outcome {
@@ -154,9 +161,18 @@ impl Html5TreeBuilder {
     ) -> Result<DispatchOutcome, TreeBuilderError> {
         match token {
             Token::Doctype {
-                name, force_quirks, ..
+                name,
+                public_id,
+                system_id,
+                force_quirks,
             } => {
-                self.handle_doctype(name, *force_quirks, atoms)?;
+                self.handle_doctype(
+                    name,
+                    public_id.as_deref(),
+                    system_id.as_deref(),
+                    *force_quirks,
+                    atoms,
+                )?;
                 Ok(DispatchOutcome::Done)
             }
             Token::Comment { text: token_text } => {

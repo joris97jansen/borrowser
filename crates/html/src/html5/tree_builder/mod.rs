@@ -18,6 +18,7 @@ mod patch_sink;
 mod resolve;
 mod serialize;
 mod stack;
+mod table;
 mod text_mode;
 
 pub use api::{

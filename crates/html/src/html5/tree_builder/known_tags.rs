@@ -31,6 +31,16 @@ pub(in crate::html5::tree_builder) struct KnownTagIds {
     pub(in crate::html5::tree_builder) th: AtomId,
     pub(in crate::html5::tree_builder) thead: AtomId,
     pub(in crate::html5::tree_builder) caption: AtomId,
+    #[allow(
+        dead_code,
+        reason = "table-family insertion-mode dispatch lands incrementally across Milestone I"
+    )]
+    pub(in crate::html5::tree_builder) col: AtomId,
+    #[allow(
+        dead_code,
+        reason = "table-family insertion-mode dispatch lands incrementally across Milestone I"
+    )]
+    pub(in crate::html5::tree_builder) colgroup: AtomId,
     pub(in crate::html5::tree_builder) marquee: AtomId,
     pub(in crate::html5::tree_builder) object: AtomId,
     pub(in crate::html5::tree_builder) applet: AtomId,
@@ -73,6 +83,8 @@ impl KnownTagIds {
             th: atoms.intern_ascii_folded("th")?,
             thead: atoms.intern_ascii_folded("thead")?,
             caption: atoms.intern_ascii_folded("caption")?,
+            col: atoms.intern_ascii_folded("col")?,
+            colgroup: atoms.intern_ascii_folded("colgroup")?,
             marquee: atoms.intern_ascii_folded("marquee")?,
             object: atoms.intern_ascii_folded("object")?,
             applet: atoms.intern_ascii_folded("applet")?,
