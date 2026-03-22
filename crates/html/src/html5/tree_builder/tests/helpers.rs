@@ -9,6 +9,67 @@ impl crate::html5::tokenizer::TextResolver for EmptyResolver {
     }
 }
 
+pub(super) fn run_tree_builder_chunks(chunks: &[&str]) -> Vec<crate::dom_patch::DomPatch> {
+    use crate::html5::shared::{DocumentParseContext, Input};
+    use crate::html5::tokenizer::{Html5Tokenizer, TokenizeResult, TokenizerConfig};
+
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+    let mut input = Input::new();
+
+    for chunk in chunks {
+        input.push_str(chunk);
+        loop {
+            let result = tokenizer.push_input_until_token(&mut input, &mut ctx);
+            let batch = tokenizer.next_batch(&mut input);
+            if batch.tokens().is_empty() {
+                assert!(
+                    matches!(
+                        result,
+                        TokenizeResult::NeedMoreInput | TokenizeResult::Progress
+                    ),
+                    "unexpected tokenizer state while draining chunk: {result:?}"
+                );
+                break;
+            }
+            let resolver = batch.resolver();
+            for token in batch.iter() {
+                let _ = builder
+                    .process(token, &ctx.atoms, &resolver)
+                    .expect("tree builder test run should remain recoverable");
+            }
+        }
+    }
+
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    loop {
+        let batch = tokenizer.next_batch(&mut input);
+        if batch.tokens().is_empty() {
+            break;
+        }
+        let resolver = batch.resolver();
+        for token in batch.iter() {
+            let _ = builder
+                .process(token, &ctx.atoms, &resolver)
+                .expect("tree builder EOF drain should remain recoverable");
+        }
+    }
+
+    builder.drain_patches()
+}
+
+pub(super) fn materialized_dom_lines(chunks: &[&str]) -> Vec<String> {
+    let patches = run_tree_builder_chunks(chunks);
+    let dom = crate::test_harness::materialize_patch_batches(&[patches])
+        .expect("patch batches should materialize");
+    crate::html5::tree_builder::serialize_dom_for_test(&dom)
+}
+
 pub(super) fn enter_after_head(
     builder: &mut crate::html5::tree_builder::Html5TreeBuilder,
     ctx: &mut crate::html5::shared::DocumentParseContext,

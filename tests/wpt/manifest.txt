@@ -61,6 +61,23 @@ path: vendor/html/syntax/parsing/formatting/marker-applet-isolation.html
 expected: expected/formatting-marker-applet-isolation.dom.txt
 status: active
 
+# Milestone I table caption/column-group slice.
+
+id: tables-caption-colgroup-transition
+path: vendor/html/syntax/parsing/tables/caption-colgroup-transition.html
+expected: expected/tables-caption-colgroup-transition.dom.txt
+status: active
+
+id: tables-colgroup-implied-end-tag
+path: vendor/html/syntax/parsing/tables/colgroup-implied-end-tag.html
+expected: expected/tables-colgroup-implied-end-tag.dom.txt
+status: active
+
+id: tables-colgroup-stray-tag-foster-parent
+path: vendor/html/syntax/parsing/tables/colgroup-stray-tag-foster-parent.html
+expected: expected/tables-colgroup-stray-tag-foster-parent.dom.txt
+status: active
+
 id: tokenizer-basic
 kind: tokens
 path: vendor/html/syntax/parsing/tokenizer-basic.html

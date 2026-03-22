@@ -1,0 +1,17 @@
+# format: html5-dompatch-v1
+# status: active
+
+Batch index=0 size=13
+CreateDocument key=1 doctype="html"
+CreateElement key=2 name=html attrs=[]
+AppendChild parent=1 child=2
+CreateElement key=3 name=head attrs=[]
+AppendChild parent=2 child=3
+CreateElement key=4 name=body attrs=[]
+AppendChild parent=2 child=4
+CreateElement key=5 name=table attrs=[]
+AppendChild parent=4 child=5
+CreateElement key=6 name=colgroup attrs=[]
+AppendChild parent=5 child=6
+CreateElement key=7 name=col attrs=[]
+AppendChild parent=6 child=7
