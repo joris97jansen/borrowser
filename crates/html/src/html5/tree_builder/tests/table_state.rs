@@ -236,8 +236,6 @@ fn placeholder_table_modes_reprocess_through_in_body_with_explicit_parse_error()
         .expect("atom interning");
 
     let table_modes = [
-        InsertionMode::InTable,
-        InsertionMode::InTableText,
         InsertionMode::InCaption,
         InsertionMode::InColumnGroup,
         InsertionMode::InTableBody,

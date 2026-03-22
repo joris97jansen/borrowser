@@ -867,19 +867,19 @@ fn session_aaa_foster_parent_insert_before_is_chunk_equivalent() {
     let create_counts = create_count_by_key(&whole);
     assert_no_remove_node_moves(&whole, "AAA foster-parent reparenting");
     assert_eq!(
-        create_counts.get(&PatchKey(7)),
+        create_counts.get(&PatchKey(9)),
         Some(&1),
         "foster-parented node should retain its original PatchKey"
     );
     assert_eq!(
-        create_counts.get(&PatchKey(8)),
+        create_counts.get(&PatchKey(10)),
         Some(&1),
         "moved text should retain its original PatchKey"
     );
     assert!(
         whole.contains(&DomPatch::InsertBefore {
             parent: PatchKey(4),
-            child: PatchKey(7),
+            child: PatchKey(9),
             before: PatchKey(5),
         }),
         "AAA foster-parent reparenting must emit the canonical InsertBefore move"
@@ -899,11 +899,13 @@ fn session_aaa_foster_parent_insert_before_is_chunk_equivalent() {
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),
+            "      <a>".to_string(),
             "      <tr>".to_string(),
             "        <a>".to_string(),
             "          \"x\"".to_string(),
             "      <table>".to_string(),
-            "        <a>".to_string(),
+            "        <tbody>".to_string(),
+            "          <a>".to_string(),
         ];
 
         assert_eq!(

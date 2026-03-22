@@ -5,10 +5,5 @@
   <html>
     <head>
     <body>
-      <a>
-      <tr>
-        <a>
-          "x"
+      "a"
       <table>
-        <tbody>
-          <a>

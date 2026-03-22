@@ -10,6 +10,12 @@ use crate::html5::tree_builder::resolve::{
 use crate::html5::tree_builder::stack::{OpenElement, ScopeKind};
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct InsertionLocation {
+    parent: PatchKey,
+    before: Option<PatchKey>,
+}
+
 impl Html5TreeBuilder {
     fn current_insertion_parent(&self) -> Result<PatchKey, TreeBuilderError> {
         let document_key = self
@@ -20,6 +26,52 @@ impl Html5TreeBuilder {
             .current()
             .map(OpenElement::key)
             .unwrap_or(document_key))
+    }
+
+    fn current_insertion_location(&self) -> Result<InsertionLocation, TreeBuilderError> {
+        Ok(InsertionLocation {
+            parent: self.current_insertion_parent()?,
+            before: None,
+        })
+    }
+
+    fn foster_parenting_insertion_location(&self) -> Result<InsertionLocation, TreeBuilderError> {
+        let Some(table) = self.current_table_key() else {
+            return self.current_insertion_location();
+        };
+        if let Some(parent) = self.live_tree.parent(table) {
+            return Ok(InsertionLocation {
+                parent,
+                before: Some(table),
+            });
+        }
+        let table_index = self
+            .open_elements
+            .find_index_by_key(table)
+            .expect("current table key must remain present on SOE");
+        let foster_parent = table_index
+            .checked_sub(1)
+            .and_then(|index| self.open_elements.get(index))
+            .expect("detached foster table must still have a previous SOE entry");
+        Ok(InsertionLocation {
+            parent: foster_parent.key(),
+            before: None,
+        })
+    }
+
+    fn element_or_text_insertion_location(&self) -> Result<InsertionLocation, TreeBuilderError> {
+        if self.foster_parenting_enabled {
+            self.foster_parenting_insertion_location()
+        } else {
+            self.current_insertion_location()
+        }
+    }
+
+    fn insert_existing_child_at(&mut self, location: InsertionLocation, child: PatchKey) {
+        match location.before {
+            Some(before) => self.insert_existing_child_before(location.parent, child, before),
+            None => self.append_existing_child(location.parent, child),
+        }
     }
 
     pub(in crate::html5::tree_builder) fn append_existing_child(
@@ -101,9 +153,9 @@ impl Html5TreeBuilder {
     ) -> Result<PatchKey, TreeBuilderError> {
         self.with_structural_mutation(|this| {
             let _ = this.ensure_document_created()?;
-            let parent = this.current_insertion_parent()?;
+            let location = this.element_or_text_insertion_location()?;
             let key = this.create_detached_element_from_token_attrs(name, attrs, atoms, text)?;
-            this.append_existing_child(parent, key);
+            this.insert_existing_child_at(location, key);
             if !self_closing {
                 this.open_elements.push(OpenElement::new(key, name));
             }
@@ -118,9 +170,9 @@ impl Html5TreeBuilder {
     ) -> Result<PatchKey, TreeBuilderError> {
         self.with_structural_mutation(|this| {
             let _ = this.ensure_document_created()?;
-            let parent = this.current_insertion_parent()?;
+            let location = this.element_or_text_insertion_location()?;
             let key = this.create_detached_element_from_afe_entry(entry, atoms)?;
-            this.append_existing_child(parent, key);
+            this.insert_existing_child_at(location, key);
             this.open_elements.push(OpenElement::new(key, entry.name));
             Ok(key)
         })
@@ -175,15 +227,11 @@ impl Html5TreeBuilder {
         if resolved.is_empty() {
             return Ok(());
         }
-        let document_key = self.ensure_document_created()?;
-        let parent = self
-            .open_elements
-            .current()
-            .map(OpenElement::key)
-            .unwrap_or(document_key);
+        let location = self.element_or_text_insertion_location()?;
         if self.config.coalesce_text
             && let Some(last) = self.last_text_patch.as_ref()
-            && last.parent == parent
+            && last.parent == location.parent
+            && last.before == location.before
         {
             let key = self
                 .last_text_patch
@@ -203,13 +251,14 @@ impl Html5TreeBuilder {
                 key,
                 text: resolved.to_string(),
             });
-            this.push_structural_patch(DomPatch::AppendChild { parent, child: key });
+            this.insert_existing_child_at(location, key);
             this.perf_text_nodes_created = this.perf_text_nodes_created.saturating_add(1);
             Ok(key)
         })?;
         self.last_text_patch = if self.config.coalesce_text {
             Some(LastTextPatch {
-                parent,
+                parent: location.parent,
+                before: location.before,
                 text_key: key,
             })
         } else {

@@ -152,19 +152,19 @@ fn aaa_foster_parent_moves_use_insert_before_without_identity_loss() {
 
     assert_no_remove_node_moves(&patches, "AAA foster-parent recovery");
     assert_eq!(
-        create_counts.get(&PatchKey(7)),
+        create_counts.get(&PatchKey(9)),
         Some(&1),
         "foster-parented furthest block should be created exactly once and then moved by identity"
     );
     assert_eq!(
-        create_counts.get(&PatchKey(8)),
+        create_counts.get(&PatchKey(10)),
         Some(&1),
         "text moved through foster-parent recovery should retain its original PatchKey"
     );
     assert!(
         patches.contains(&DomPatch::InsertBefore {
             parent: PatchKey(4),
-            child: PatchKey(7),
+            child: PatchKey(9),
             before: PatchKey(5),
         }),
         "AAA foster-parent recovery must encode the move as InsertBefore relative to the existing table"

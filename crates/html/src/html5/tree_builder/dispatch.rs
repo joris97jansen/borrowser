@@ -497,6 +497,22 @@ impl Html5TreeBuilder {
                 name,
                 attrs,
                 self_closing,
+            } if *name == self.known_tags.table => {
+                let _ = self.reconstruct_active_formatting_elements(atoms)?;
+                if *self_closing {
+                    self.record_parse_error(
+                        "in-body-table-start-tag-self-closing-ignored",
+                        Some(*name),
+                        Some(InsertionMode::InBody),
+                    );
+                }
+                let _ = self.insert_element(*name, attrs, false, atoms, text)?;
+                self.insertion_mode = InsertionMode::InTable;
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
             } if self.known_tags.is_marker_tag(*name) => {
                 let _ = self.reconstruct_active_formatting_elements(atoms)?;
                 let _ = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
