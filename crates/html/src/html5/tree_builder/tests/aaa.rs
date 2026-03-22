@@ -264,26 +264,43 @@ fn adoption_agency_foster_parenting_uses_insert_before() {
     assert_eq!(
         patches[15..],
         [
+            DomPatch::CreateElement {
+                key: PatchKey(9),
+                name: std::sync::Arc::from("tr"),
+                attributes: Vec::new(),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(8),
+                child: PatchKey(9),
+            },
+            DomPatch::CreateText {
+                key: PatchKey(10),
+                text: "x".to_string(),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(9),
+                child: PatchKey(10),
+            },
             DomPatch::InsertBefore {
                 parent: PatchKey(4),
-                child: PatchKey(7),
+                child: PatchKey(9),
                 before: PatchKey(5),
             },
             DomPatch::CreateElement {
-                key: PatchKey(9),
+                key: PatchKey(11),
                 name: std::sync::Arc::from("a"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
-                parent: PatchKey(9),
-                child: PatchKey(8),
+                parent: PatchKey(11),
+                child: PatchKey(10),
             },
             DomPatch::AppendChild {
-                parent: PatchKey(7),
-                child: PatchKey(9),
+                parent: PatchKey(9),
+                child: PatchKey(11),
             },
         ],
-        "table-related AAA recovery must foster-parent the furthest block before recreating the formatting element"
+        "table-related AAA recovery must keep using InsertBefore when the furthest block is foster-parented under the I3 table-mode entry path"
     );
 }
 
@@ -330,11 +347,13 @@ fn adoption_agency_foster_parenting_builds_expected_dom() {
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),
+            "      <a>".to_string(),
             "      <tr>".to_string(),
             "        <a>".to_string(),
             "          \"x\"".to_string(),
             "      <table>".to_string(),
-            "        <a>".to_string(),
+            "        <tbody>".to_string(),
+            "          <a>".to_string(),
         ]
     );
 }

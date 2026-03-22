@@ -4,6 +4,7 @@ use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
 #[derive(Clone, Debug)]
 pub(in crate::html5::tree_builder) struct LastTextPatch {
     pub(in crate::html5::tree_builder) parent: PatchKey,
+    pub(in crate::html5::tree_builder) before: Option<PatchKey>,
     pub(in crate::html5::tree_builder) text_key: PatchKey,
 }
 

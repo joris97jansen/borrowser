@@ -79,6 +79,7 @@ impl Html5TreeBuilder {
             this.active_formatting.clear();
             this.original_insertion_mode = None;
             this.active_text_mode = None;
+            this.foster_parenting_enabled = false;
             this.clear_pending_table_character_tokens();
             this.document_state.frameset_ok = true;
             Ok(key)

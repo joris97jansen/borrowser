@@ -118,6 +118,7 @@ pub struct Html5TreeBuilder {
     pub(in crate::html5::tree_builder) perf_text_appends: u64,
     pub(in crate::html5::tree_builder) perf_text_coalescing_invalidations: u64,
     pub(in crate::html5::tree_builder) active_text_mode: Option<TextModeSpec>,
+    pub(in crate::html5::tree_builder) foster_parenting_enabled: bool,
     pub(in crate::html5::tree_builder) pending_table_character_tokens: PendingTableCharacterTokens,
     pub(in crate::html5::tree_builder) pending_tokenizer_control: Option<TokenizerControl>,
     #[cfg(any(test, feature = "internal-api"))]
@@ -192,6 +193,7 @@ impl Html5TreeBuilder {
             perf_text_appends: 0,
             perf_text_coalescing_invalidations: 0,
             active_text_mode: None,
+            foster_parenting_enabled: false,
             pending_table_character_tokens: PendingTableCharacterTokens::default(),
             pending_tokenizer_control: None,
             #[cfg(any(test, feature = "internal-api"))]
