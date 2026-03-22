@@ -8,7 +8,7 @@ use crate::html5::shared::{AtomId, AtomTable, TextValue, Token};
 use crate::html5::tokenizer::{TextResolver, is_html_space};
 use crate::html5::tree_builder::dispatch::DispatchOutcome;
 use crate::html5::tree_builder::modes::InsertionMode;
-use crate::html5::tree_builder::resolve::resolve_text_value;
+use crate::html5::tree_builder::resolve::{is_html_whitespace_str, resolve_text_value};
 use crate::html5::tree_builder::stack::{OpenElement, ScopeKind};
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
 
@@ -121,6 +121,10 @@ impl Html5TreeBuilder {
         DispatchOutcome::Reprocess(InsertionMode::InBody)
     }
 
+    fn current_node_name(&self) -> Option<AtomId> {
+        self.open_elements.current().map(OpenElement::name)
+    }
+
     fn current_node_uses_in_table_text_mode(&self) -> bool {
         let Some(current) = self.open_elements.current() else {
             return false;
@@ -149,6 +153,43 @@ impl Html5TreeBuilder {
             self.insertion_mode = saved_mode;
         }
         result.map(|_| ())
+    }
+
+    fn close_caption(&mut self) -> bool {
+        if !self.has_in_table_scope(self.known_tags.caption) {
+            self.record_parse_error(
+                "caption-end-tag-not-in-table-scope",
+                Some(self.known_tags.caption),
+                Some(InsertionMode::InCaption),
+            );
+            return false;
+        }
+        if self.current_node_name() != Some(self.known_tags.caption) {
+            self.record_parse_error(
+                "caption-close-current-node-mismatch",
+                Some(self.known_tags.caption),
+                Some(InsertionMode::InCaption),
+            );
+        }
+        let closed = self.close_element_in_scope(self.known_tags.caption, ScopeKind::Table);
+        if !closed {
+            return false;
+        }
+        let _ = self.active_formatting.clear_to_last_marker();
+        self.insertion_mode = InsertionMode::InTable;
+        true
+    }
+
+    fn close_column_group(&mut self) -> bool {
+        if self.current_node_name() != Some(self.known_tags.colgroup) {
+            return false;
+        }
+        let closed = self.close_element_in_scope(self.known_tags.colgroup, ScopeKind::Table);
+        if !closed {
+            return false;
+        }
+        self.insertion_mode = InsertionMode::InTable;
+        true
     }
 
     fn flush_pending_table_character_tokens(
@@ -358,20 +399,161 @@ impl Html5TreeBuilder {
 
     pub(in crate::html5::tree_builder) fn handle_in_caption(
         &mut self,
-        _token: &Token,
-        _atoms: &AtomTable,
-        _text: &dyn TextResolver,
+        token: &Token,
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
     ) -> Result<DispatchOutcome, TreeBuilderError> {
-        Ok(self.handle_unimplemented_table_mode(InsertionMode::InCaption))
+        match token {
+            Token::Comment { text: token_text } => {
+                self.insert_comment(token_text, text)?;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::Doctype { .. } => {
+                self.record_parse_error("in-caption-doctype", None, Some(InsertionMode::InCaption));
+                Ok(DispatchOutcome::Done)
+            }
+            Token::StartTag { name, .. } if *name == self.known_tags.html => {
+                self.process_using_in_body_rules(token, atoms, text, false)?;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::EndTag { name } if *name == self.known_tags.caption => {
+                let _ = self.close_caption();
+                Ok(DispatchOutcome::Done)
+            }
+            Token::StartTag { name, .. }
+                if *name == self.known_tags.caption
+                    || *name == self.known_tags.col
+                    || *name == self.known_tags.colgroup
+                    || *name == self.known_tags.tbody
+                    || *name == self.known_tags.td
+                    || *name == self.known_tags.tfoot
+                    || *name == self.known_tags.th
+                    || *name == self.known_tags.thead
+                    || *name == self.known_tags.tr =>
+            {
+                if !self.close_caption() {
+                    return Ok(DispatchOutcome::Done);
+                }
+                Ok(DispatchOutcome::Reprocess(InsertionMode::InTable))
+            }
+            Token::EndTag { name } if *name == self.known_tags.table => {
+                if !self.close_caption() {
+                    return Ok(DispatchOutcome::Done);
+                }
+                Ok(DispatchOutcome::Reprocess(InsertionMode::InTable))
+            }
+            Token::EndTag { name }
+                if *name == self.known_tags.body
+                    || *name == self.known_tags.col
+                    || *name == self.known_tags.colgroup
+                    || *name == self.known_tags.html
+                    || *name == self.known_tags.tbody
+                    || *name == self.known_tags.td
+                    || *name == self.known_tags.tfoot
+                    || *name == self.known_tags.th
+                    || *name == self.known_tags.thead
+                    || *name == self.known_tags.tr =>
+            {
+                self.record_parse_error(
+                    "in-caption-unexpected-end-tag",
+                    Some(*name),
+                    Some(InsertionMode::InCaption),
+                );
+                Ok(DispatchOutcome::Done)
+            }
+            _ => {
+                self.process_using_in_body_rules(token, atoms, text, false)?;
+                Ok(DispatchOutcome::Done)
+            }
+        }
     }
 
     pub(in crate::html5::tree_builder) fn handle_in_column_group(
         &mut self,
-        _token: &Token,
-        _atoms: &AtomTable,
-        _text: &dyn TextResolver,
+        token: &Token,
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
     ) -> Result<DispatchOutcome, TreeBuilderError> {
-        Ok(self.handle_unimplemented_table_mode(InsertionMode::InColumnGroup))
+        match token {
+            Token::Comment { text: token_text } => {
+                self.insert_comment(token_text, text)?;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::Doctype { .. } => {
+                self.record_parse_error(
+                    "in-column-group-doctype",
+                    None,
+                    Some(InsertionMode::InColumnGroup),
+                );
+                Ok(DispatchOutcome::Done)
+            }
+            Token::Text { text: token_text } => {
+                let resolved = resolve_text_value(token_text, text)?;
+                if is_html_whitespace_str(&resolved) {
+                    self.insert_resolved_text(&resolved)?;
+                    Ok(DispatchOutcome::Done)
+                } else {
+                    self.record_parse_error(
+                        "in-column-group-non-space-text-closes-colgroup",
+                        None,
+                        Some(InsertionMode::InColumnGroup),
+                    );
+                    if !self.close_column_group() {
+                        return Ok(DispatchOutcome::Done);
+                    }
+                    Ok(DispatchOutcome::Reprocess(InsertionMode::InTable))
+                }
+            }
+            Token::StartTag { name, .. } if *name == self.known_tags.html => {
+                self.process_using_in_body_rules(token, atoms, text, false)?;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing: _,
+            } if *name == self.known_tags.col => {
+                let _ = self.insert_element(*name, attrs, true, atoms, text)?;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::EndTag { name } if *name == self.known_tags.colgroup => {
+                if !self.close_column_group() {
+                    self.record_parse_error(
+                        "in-column-group-colgroup-end-tag-ignored",
+                        Some(*name),
+                        Some(InsertionMode::InColumnGroup),
+                    );
+                }
+                Ok(DispatchOutcome::Done)
+            }
+            Token::EndTag { name } if *name == self.known_tags.col => {
+                self.record_parse_error(
+                    "in-column-group-col-end-tag-ignored",
+                    Some(*name),
+                    Some(InsertionMode::InColumnGroup),
+                );
+                Ok(DispatchOutcome::Done)
+            }
+            Token::Eof => {
+                if self.current_node_name() != Some(self.known_tags.colgroup) {
+                    let _ = self.ensure_document_created()?;
+                    return Ok(DispatchOutcome::Done);
+                }
+                let _ = self.close_column_group();
+                Ok(DispatchOutcome::Reprocess(InsertionMode::InTable))
+            }
+            _ => {
+                self.record_parse_error(
+                    "in-column-group-anything-else-closes-colgroup",
+                    None,
+                    Some(InsertionMode::InColumnGroup),
+                );
+                if !self.close_column_group() {
+                    return Ok(DispatchOutcome::Done);
+                }
+                Ok(DispatchOutcome::Reprocess(InsertionMode::InTable))
+            }
+        }
     }
 
     pub(in crate::html5::tree_builder) fn handle_in_table_body(

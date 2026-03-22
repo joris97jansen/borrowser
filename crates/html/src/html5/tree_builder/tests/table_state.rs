@@ -223,7 +223,7 @@ fn close_cell_pops_to_cell_boundary_clears_afe_and_switches_to_in_row() {
 }
 
 #[test]
-fn placeholder_table_modes_reprocess_through_in_body_with_explicit_parse_error() {
+fn deferred_table_modes_reprocess_through_in_body_with_explicit_parse_error() {
     use crate::html5::shared::{TextValue, Token};
     use crate::html5::tree_builder::modes::InsertionMode;
 
@@ -236,8 +236,6 @@ fn placeholder_table_modes_reprocess_through_in_body_with_explicit_parse_error()
         .expect("atom interning");
 
     let table_modes = [
-        InsertionMode::InCaption,
-        InsertionMode::InColumnGroup,
         InsertionMode::InTableBody,
         InsertionMode::InRow,
         InsertionMode::InCell,
