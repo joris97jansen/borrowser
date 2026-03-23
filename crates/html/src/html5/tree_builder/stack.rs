@@ -322,6 +322,61 @@ impl OpenElementsStack {
         removed
     }
 
+    /// Pops elements until the current node is one of the HTML table-body
+    /// context roots (`tbody`, `thead`, `tfoot`, `html`, or `template`).
+    ///
+    /// Returns the number of removed entries.
+    pub(crate) fn clear_to_table_body_context(
+        &mut self,
+        tbody: AtomId,
+        thead: AtomId,
+        tfoot: AtomId,
+        tags: &ScopeTagSet,
+    ) -> usize {
+        let mut removed = 0usize;
+        while let Some(current) = self.current() {
+            let name = current.name();
+            if name == tbody
+                || name == thead
+                || name == tfoot
+                || name == tags.html
+                || name == tags.template
+            {
+                break;
+            }
+            let popped = self
+                .items
+                .pop()
+                .expect("current() returned Some so pop() must succeed");
+            debug_assert_eq!(popped, current);
+            self.pop_ops = self.pop_ops.saturating_add(1);
+            removed += 1;
+        }
+        removed
+    }
+
+    /// Pops elements until the current node is one of the HTML table-row
+    /// context roots (`tr`, `html`, or `template`).
+    ///
+    /// Returns the number of removed entries.
+    pub(crate) fn clear_to_table_row_context(&mut self, tr: AtomId, tags: &ScopeTagSet) -> usize {
+        let mut removed = 0usize;
+        while let Some(current) = self.current() {
+            let name = current.name();
+            if name == tr || name == tags.html || name == tags.template {
+                break;
+            }
+            let popped = self
+                .items
+                .pop()
+                .expect("current() returned Some so pop() must succeed");
+            debug_assert_eq!(popped, current);
+            self.pop_ops = self.pop_ops.saturating_add(1);
+            removed += 1;
+        }
+        removed
+    }
+
     /// Probe-only scope lookup used before mutation so callers can preserve the
     /// "no mutation on miss" contract.
     fn find_in_scope_match_index(
@@ -556,5 +611,49 @@ mod tests {
             after, before,
             "list-item-scope boundary should block pops below <ol>/<ul>"
         );
+    }
+
+    #[test]
+    fn clear_to_table_body_context_stops_at_row_group_root() {
+        let mut ctx = DocumentParseContext::new();
+        let tags = make_scope_tags(&mut ctx);
+        let tbody = ctx.atoms.intern_ascii_folded("tbody").expect("atom");
+        let thead = ctx.atoms.intern_ascii_folded("thead").expect("atom");
+        let tfoot = ctx.atoms.intern_ascii_folded("tfoot").expect("atom");
+        let tr = ctx.atoms.intern_ascii_folded("tr").expect("atom");
+        let td = ctx.atoms.intern_ascii_folded("td").expect("atom");
+
+        let mut stack = OpenElementsStack::default();
+        stack.push(OpenElement::new(PatchKey(1), tags.html));
+        stack.push(OpenElement::new(PatchKey(2), tags.table));
+        stack.push(OpenElement::new(PatchKey(3), tbody));
+        stack.push(OpenElement::new(PatchKey(4), tr));
+        stack.push(OpenElement::new(PatchKey(5), td));
+
+        let removed = stack.clear_to_table_body_context(tbody, thead, tfoot, &tags);
+        assert_eq!(removed, 2);
+        assert_eq!(stack.current().map(|entry| entry.key()), Some(PatchKey(3)));
+    }
+
+    #[test]
+    fn clear_to_table_row_context_stops_at_row_root() {
+        let mut ctx = DocumentParseContext::new();
+        let tags = make_scope_tags(&mut ctx);
+        let tbody = ctx.atoms.intern_ascii_folded("tbody").expect("atom");
+        let tr = ctx.atoms.intern_ascii_folded("tr").expect("atom");
+        let td = ctx.atoms.intern_ascii_folded("td").expect("atom");
+        let b = ctx.atoms.intern_ascii_folded("b").expect("atom");
+
+        let mut stack = OpenElementsStack::default();
+        stack.push(OpenElement::new(PatchKey(1), tags.html));
+        stack.push(OpenElement::new(PatchKey(2), tags.table));
+        stack.push(OpenElement::new(PatchKey(3), tbody));
+        stack.push(OpenElement::new(PatchKey(4), tr));
+        stack.push(OpenElement::new(PatchKey(5), td));
+        stack.push(OpenElement::new(PatchKey(6), b));
+
+        let removed = stack.clear_to_table_row_context(tr, &tags);
+        assert_eq!(removed, 2);
+        assert_eq!(stack.current().map(|entry| entry.key()), Some(PatchKey(4)));
     }
 }

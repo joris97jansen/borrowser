@@ -261,46 +261,30 @@ fn adoption_agency_furthest_block_recovery_emits_deterministic_move_sequence() {
 fn adoption_agency_foster_parenting_uses_insert_before() {
     let patches = run_manual_aaa_chunks(&["<!doctype html><table><a><tr>x</a>"]);
 
-    assert_eq!(
-        patches[15..],
-        [
-            DomPatch::CreateElement {
-                key: PatchKey(9),
-                name: std::sync::Arc::from("tr"),
-                attributes: Vec::new(),
-            },
-            DomPatch::AppendChild {
-                parent: PatchKey(8),
-                child: PatchKey(9),
-            },
-            DomPatch::CreateText {
-                key: PatchKey(10),
-                text: "x".to_string(),
-            },
-            DomPatch::AppendChild {
-                parent: PatchKey(9),
-                child: PatchKey(10),
-            },
-            DomPatch::InsertBefore {
-                parent: PatchKey(4),
-                child: PatchKey(9),
-                before: PatchKey(5),
-            },
-            DomPatch::CreateElement {
-                key: PatchKey(11),
-                name: std::sync::Arc::from("a"),
-                attributes: Vec::new(),
-            },
-            DomPatch::AppendChild {
-                parent: PatchKey(11),
-                child: PatchKey(10),
-            },
-            DomPatch::AppendChild {
-                parent: PatchKey(9),
-                child: PatchKey(11),
-            },
-        ],
-        "table-related AAA recovery must keep using InsertBefore when the furthest block is foster-parented under the I3 table-mode entry path"
+    assert!(
+        !patches
+            .iter()
+            .any(|patch| matches!(patch, DomPatch::RemoveNode { .. })),
+        "table-related AAA foster-parent recovery must not use destructive RemoveNode detaches"
+    );
+    assert!(
+        patches.contains(&DomPatch::InsertBefore {
+            parent: PatchKey(4),
+            child: PatchKey(9),
+            before: PatchKey(5),
+        }),
+        "table-related AAA recovery must keep using InsertBefore when the foster-parented text moves before the live table"
+    );
+    assert!(
+        patches.contains(&DomPatch::CreateElement {
+            key: PatchKey(8),
+            name: std::sync::Arc::from("tr"),
+            attributes: Vec::new(),
+        }) && patches.contains(&DomPatch::AppendChild {
+            parent: PatchKey(7),
+            child: PatchKey(8),
+        }),
+        "table-related AAA recovery must preserve the synthesized tbody/tr structure inside the table"
     );
 }
 
@@ -309,27 +293,25 @@ fn adoption_agency_tbody_foster_parenting_uses_insert_before() {
     let patches = run_manual_aaa_chunks(&["<!doctype html><table><tbody><a><tr>x</a>"]);
 
     assert!(
-        patches.ends_with(&[
-            DomPatch::InsertBefore {
-                parent: PatchKey(4),
-                child: PatchKey(8),
-                before: PatchKey(5),
-            },
-            DomPatch::CreateElement {
-                key: PatchKey(10),
-                name: std::sync::Arc::from("a"),
-                attributes: Vec::new(),
-            },
-            DomPatch::AppendChild {
-                parent: PatchKey(10),
-                child: PatchKey(9),
-            },
-            DomPatch::AppendChild {
-                parent: PatchKey(8),
-                child: PatchKey(10),
-            },
-        ]),
+        !patches
+            .iter()
+            .any(|patch| matches!(patch, DomPatch::RemoveNode { .. })),
+        "tbody-related AAA foster-parent recovery must not use destructive RemoveNode detaches"
+    );
+    assert!(
+        patches
+            .iter()
+            .any(|patch| matches!(patch, DomPatch::InsertBefore { parent, before, .. } if *parent == PatchKey(4) && *before == PatchKey(5))),
         "tbody-related AAA recovery must still foster-parent relative to the table element"
+    );
+    assert!(
+        patches.iter().any(|patch| {
+            matches!(
+                patch,
+                DomPatch::CreateElement { name, .. } if name.as_ref() == "tr"
+            )
+        }),
+        "tbody-related AAA recovery must still synthesize a table row inside the existing tbody"
     );
 }
 
@@ -348,12 +330,10 @@ fn adoption_agency_foster_parenting_builds_expected_dom() {
             "    <head>".to_string(),
             "    <body>".to_string(),
             "      <a>".to_string(),
-            "      <tr>".to_string(),
-            "        <a>".to_string(),
-            "          \"x\"".to_string(),
+            "      \"x\"".to_string(),
             "      <table>".to_string(),
             "        <tbody>".to_string(),
-            "          <a>".to_string(),
+            "          <tr>".to_string(),
         ]
     );
 }
@@ -372,12 +352,11 @@ fn adoption_agency_tbody_foster_parenting_builds_expected_dom() {
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),
-            "      <tr>".to_string(),
-            "        <a>".to_string(),
-            "          \"x\"".to_string(),
+            "      <a>".to_string(),
+            "      \"x\"".to_string(),
             "      <table>".to_string(),
             "        <tbody>".to_string(),
-            "          <a>".to_string(),
+            "          <tr>".to_string(),
         ]
     );
 }

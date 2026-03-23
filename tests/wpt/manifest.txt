@@ -78,6 +78,21 @@ path: vendor/html/syntax/parsing/tables/colgroup-stray-tag-foster-parent.html
 expected: expected/tables-colgroup-stray-tag-foster-parent.dom.txt
 status: active
 
+id: tables-omitted-tbody
+path: vendor/html/syntax/parsing/tables/omitted-tbody.html
+expected: expected/tables-omitted-tbody.dom.txt
+status: active
+
+id: tables-nested-sections
+path: vendor/html/syntax/parsing/tables/nested-sections.html
+expected: expected/tables-nested-sections.dom.txt
+status: active
+
+id: tables-stray-tr
+path: vendor/html/syntax/parsing/tables/stray-tr.html
+expected: expected/tables-stray-tr.dom.txt
+status: active
+
 id: tokenizer-basic
 kind: tokens
 path: vendor/html/syntax/parsing/tokenizer-basic.html

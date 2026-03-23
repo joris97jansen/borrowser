@@ -1,7 +1,7 @@
 # format: html5-dompatch-v1
 # status: active
 
-Batch index=0 size=23
+Batch index=0 size=19
 CreateDocument key=1 doctype="html"
 CreateElement key=2 name=html attrs=[]
 AppendChild parent=1 child=2
@@ -15,13 +15,9 @@ CreateElement key=6 name=a attrs=[]
 InsertBefore parent=4 child=6 before=5
 CreateElement key=7 name=tbody attrs=[]
 AppendChild parent=5 child=7
-CreateElement key=8 name=a attrs=[]
+CreateElement key=8 name=tr attrs=[]
 AppendChild parent=7 child=8
-CreateElement key=9 name=tr attrs=[]
-AppendChild parent=8 child=9
-CreateText key=10 text="x"
-AppendChild parent=9 child=10
+CreateElement key=9 name=a attrs=[]
 InsertBefore parent=4 child=9 before=5
-CreateElement key=11 name=a attrs=[]
-AppendChild parent=11 child=10
-AppendChild parent=9 child=11
+CreateText key=10 text="x"
+InsertBefore parent=4 child=10 before=5
