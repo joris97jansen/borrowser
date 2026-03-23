@@ -5,9 +5,11 @@
   <html>
     <head>
     <body>
-      <a>
-      <a>
-      "x"
       <table>
         <tbody>
           <tr>
+            <td>
+              "a"
+          <tr>
+            <td>
+              "b"

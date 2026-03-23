@@ -900,12 +900,11 @@ fn session_aaa_foster_parent_insert_before_is_chunk_equivalent() {
             "    <head>".to_string(),
             "    <body>".to_string(),
             "      <a>".to_string(),
-            "      <tr>".to_string(),
-            "        <a>".to_string(),
-            "          \"x\"".to_string(),
+            "      <a>".to_string(),
+            "      \"x\"".to_string(),
             "      <table>".to_string(),
             "        <tbody>".to_string(),
-            "          <a>".to_string(),
+            "          <tr>".to_string(),
         ];
 
         assert_eq!(

@@ -1,13 +1,15 @@
 # format: html5-dom-v1
-# status: active
-
 #document doctype="html"
   <html>
     <head>
     <body>
-      <a>
-      <a>
-      "x"
       <table>
         <tbody>
           <tr>
+            <td>
+              "a"
+        <thead>
+          <tr>
+            <th>
+              "b"
+      "\n"

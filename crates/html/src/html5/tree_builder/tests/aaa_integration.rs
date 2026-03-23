@@ -221,6 +221,48 @@ fn special_anchor_start_tag_recovery_reconstructs_after_aaa() {
 
 #[cfg(feature = "dom-snapshot")]
 #[test]
+fn aaa_foster_parent_recovery_keeps_row_structure_and_foster_parented_content_stable() {
+    let patches = run_tree_builder_chunks(&["<!doctype html><table><a><tr>x</a>"]);
+    let dom = crate::test_harness::materialize_patch_batches(std::slice::from_ref(&patches))
+        .expect("materialize dom");
+    let lines = crate::html5::serialize_dom_for_test(&dom);
+
+    assert_eq!(
+        lines,
+        vec![
+            "#document doctype=\"html\"".to_string(),
+            "  <html>".to_string(),
+            "    <head>".to_string(),
+            "    <body>".to_string(),
+            "      <a>".to_string(),
+            "      <a>".to_string(),
+            "      \"x\"".to_string(),
+            "      <table>".to_string(),
+            "        <tbody>".to_string(),
+            "          <tr>".to_string(),
+        ],
+        "AAA foster-parent recovery should keep the synthesized table row structure while leaving foster-parented formatting/text before the table"
+    );
+    assert!(
+        patches.contains(&DomPatch::InsertBefore {
+            parent: PatchKey(4),
+            child: PatchKey(9),
+            before: PatchKey(5),
+        }),
+        "the foster-parented formatting element should be inserted before the live table"
+    );
+    assert!(
+        patches.contains(&DomPatch::InsertBefore {
+            parent: PatchKey(4),
+            child: PatchKey(10),
+            before: PatchKey(5),
+        }),
+        "the foster-parented text node should remain identity-preserving and move before the live table"
+    );
+}
+
+#[cfg(feature = "dom-snapshot")]
+#[test]
 fn special_nobr_start_tag_recovery_reconstructs_after_aaa() {
     let patches = run_tree_builder_chunks(&["<!doctype html><nobr><b>one<nobr>two"]);
     let dom = crate::test_harness::materialize_patch_batches(&[patches]).expect("materialize dom");
