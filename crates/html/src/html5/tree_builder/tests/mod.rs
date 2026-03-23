@@ -13,6 +13,7 @@ mod recovery;
 mod state_snapshot;
 mod table_body_row;
 mod table_caption_colgroup;
+mod table_cell;
 mod table_modes;
 mod table_state;
 mod text_mode;

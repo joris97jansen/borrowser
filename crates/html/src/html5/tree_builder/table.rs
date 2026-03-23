@@ -570,9 +570,9 @@ impl Html5TreeBuilder {
                 Ok(DispatchOutcome::Done)
             }
             _ => {
-                // Once table-structure escape cases are handled, cell contents
-                // intentionally use the normal InBody token path while the
-                // cell-scoped SOE/AFE boundaries remain in force.
+                // Caption contents intentionally use the normal InBody token
+                // path until a caption/table-structure escape token closes the
+                // caption and reprocesses in the outer table mode.
                 self.process_using_in_body_rules(token, atoms, text, false)?;
                 Ok(DispatchOutcome::Done)
             }
@@ -886,13 +886,20 @@ impl Html5TreeBuilder {
             Token::EndTag { name }
                 if *name == self.known_tags.td || *name == self.known_tags.th =>
             {
-                if !self.has_in_table_scope(*name) {
+                let Some(open_cell) = self.current_table_cell_in_scope() else {
                     self.record_parse_error(
                         "in-cell-cell-end-tag-not-in-table-scope",
                         Some(*name),
                         Some(InsertionMode::InCell),
                     );
                     return Ok(DispatchOutcome::Done);
+                };
+                if open_cell.name() != *name {
+                    self.record_parse_error(
+                        "in-cell-cell-end-tag-open-cell-mismatch",
+                        Some(*name),
+                        Some(InsertionMode::InCell),
+                    );
                 }
                 if self.current_node_name() != Some(*name) {
                     self.record_parse_error(
