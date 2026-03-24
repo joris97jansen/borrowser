@@ -42,6 +42,7 @@ Milestone H corpus:
 - `h10-aaa-*`: canonical `AppendChild` / `InsertBefore` move encoding and stable key-preserving AAA reparenting.
 - `i7-foster-parent-*`: direct foster-parent insertion-location patch sequencing for misplaced table text/element content and move-heavy AAA reparenting.
 - `i8-move-*`: issue-explicit move-contract evidence for `AppendChild` reparenting and `InsertBefore` foster-parent moves using existing node ids.
+- `i9-*-quirks-*`: patch-level evidence that document mode changes the `table` insertion parentage contract.
 
 
 Regenerate expected outputs:

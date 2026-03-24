@@ -183,8 +183,11 @@ Core v0 guarantees:
 
 - tokenizer emits DOCTYPE token fields including `force_quirks`.
 - tree builder determines document mode from DOCTYPE during early bootstrap.
+- after accepting a DOCTYPE in `Initial`, tree builder control moves to
+  `BeforeHtml` for subsequent tokens.
 - document mode MUST NOT change after the first non-DOCTYPE token that causes insertion of the root `html` element (implicit or explicit).
-- duplicate/late DOCTYPE tokens after that boundary MUST NOT change document mode.
+- duplicate/late DOCTYPE tokens after the `Initial` handoff or after that
+  boundary MUST NOT change document mode.
 - document mode is internal parser state in Core v0 (no dedicated `DomPatch` mode event).
 
 ### Script/RAWTEXT/RCDATA Stance

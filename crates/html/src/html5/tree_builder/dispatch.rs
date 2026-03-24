@@ -173,6 +173,7 @@ impl Html5TreeBuilder {
                     *force_quirks,
                     atoms,
                 )?;
+                self.insertion_mode = InsertionMode::BeforeHtml;
                 Ok(DispatchOutcome::Done)
             }
             Token::Comment { text: token_text } => {
@@ -206,7 +207,11 @@ impl Html5TreeBuilder {
     ) -> Result<DispatchOutcome, TreeBuilderError> {
         match token {
             Token::Doctype { .. } => {
-                self.record_parse_error("before-html-doctype", None, None);
+                self.record_parse_error(
+                    "before-html-doctype",
+                    None,
+                    Some(InsertionMode::BeforeHtml),
+                );
                 Ok(DispatchOutcome::Done)
             }
             Token::Comment { text: token_text } => {
@@ -246,7 +251,11 @@ impl Html5TreeBuilder {
     ) -> Result<DispatchOutcome, TreeBuilderError> {
         match token {
             Token::Doctype { .. } => {
-                self.record_parse_error("before-head-doctype", None, None);
+                self.record_parse_error(
+                    "before-head-doctype",
+                    None,
+                    Some(InsertionMode::BeforeHead),
+                );
                 Ok(DispatchOutcome::Done)
             }
             Token::Comment { text: token_text } => {
@@ -290,7 +299,7 @@ impl Html5TreeBuilder {
                 Ok(DispatchOutcome::Done)
             }
             Token::Doctype { .. } => {
-                self.record_parse_error("in-head-doctype", None, None);
+                self.record_parse_error("in-head-doctype", None, Some(InsertionMode::InHead));
                 Ok(DispatchOutcome::Done)
             }
             Token::Text { text: token_text } if is_html_whitespace_text(token_text, text)? => {
@@ -441,7 +450,7 @@ impl Html5TreeBuilder {
         );
         match token {
             Token::Doctype { .. } => {
-                self.record_parse_error("in-body-doctype", None, None);
+                self.record_parse_error("in-body-doctype", None, Some(InsertionMode::InBody));
             }
             Token::StartTag {
                 name,
@@ -498,7 +507,15 @@ impl Html5TreeBuilder {
                 attrs,
                 self_closing,
             } if *name == self.known_tags.table => {
-                let _ = self.reconstruct_active_formatting_elements(atoms)?;
+                if self.closes_p_before_table_in_body()
+                    && self.open_elements.has_in_scope(
+                        self.known_tags.p,
+                        ScopeKind::Button,
+                        &self.scope_tags,
+                    )
+                {
+                    let _ = self.close_element_in_scope(self.known_tags.p, ScopeKind::Button);
+                }
                 if *self_closing {
                     self.record_parse_error(
                         "in-body-table-start-tag-self-closing-ignored",
@@ -506,6 +523,7 @@ impl Html5TreeBuilder {
                         Some(InsertionMode::InBody),
                     );
                 }
+                self.document_state.frameset_ok = false;
                 let _ = self.insert_element(*name, attrs, false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InTable;
             }

@@ -1,6 +1,6 @@
 # HTML5 Tables, Foster Parenting, and Quirks Contract (Milestone I)
 
-Last updated: 2026-03-24  
+Last updated: 2026-03-24
 Scope: `crates/html/src/html5/tree_builder` (`feature = "html5"`)  
 Status: normative implementation contract for Milestone I; current repository code may still be partial
 
@@ -302,6 +302,10 @@ enum QuirksMode {
 - when `force_quirks = false`, the tree builder must still distinguish
   `NoQuirks` from `LimitedQuirks` using the spec doctype classifier; a
   boolean-only model is insufficient for Milestone I
+- accepting a DOCTYPE in `Initial` must hand parser control to `BeforeHtml`
+  for subsequent tokens
+- duplicate or late DOCTYPE tokens after that `Initial` handoff are parse-error
+  paths only and must not mutate the already-chosen document mode
 - document mode becomes immutable once early bootstrap is left under the
   existing document-mode immutability contract
 - document mode remains internal parser state; no `DomPatch` is emitted for it
@@ -325,6 +329,16 @@ Contractual requirements:
 - focused classifier conformance tests must live with the tree-builder test
   surface that validates `document.rs` ownership, rather than being scattered
   across unrelated insertion-mode tests
+
+Milestone I implemented classifier surface:
+
+- `force_quirks = true` => `Quirks`
+- missing or non-`html` DOCTYPE name => `Quirks`
+- XHTML 1.0 Transitional / Frameset public IDs => `LimitedQuirks`
+- HTML 4.01 Transitional / Frameset public IDs:
+  - with a system identifier => `LimitedQuirks`
+  - without a system identifier => `Quirks`
+- otherwise => `NoQuirks`
 
 ### Parser Behaviors Affected In Milestone I
 

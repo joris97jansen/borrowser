@@ -1,0 +1,9 @@
+# format: html5-dom-v1
+# status: active
+
+#document doctype="foo"
+  <html>
+    <head>
+    <body>
+      <p>
+        <table>

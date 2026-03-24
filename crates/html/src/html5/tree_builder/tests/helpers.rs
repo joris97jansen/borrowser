@@ -130,14 +130,8 @@ pub(super) fn enter_after_head(
         "enter_after_head() should keep NoQuirks for a normal html doctype"
     );
     let errors = builder.take_parse_error_kinds_for_test();
-    // Core-v0: Initial mode may still report a placeholder error here.
-    // Once DOCTYPE handling in Initial is fully wired, this should become error-free.
     assert!(
-        errors.is_empty()
-            || errors
-                .iter()
-                .copied()
-                .all(|kind| kind == "initial-unexpected-token"),
+        errors.is_empty(),
         "enter_after_head() prelude reported unexpected parse errors: {errors:?}"
     );
     builder.drain_patches()

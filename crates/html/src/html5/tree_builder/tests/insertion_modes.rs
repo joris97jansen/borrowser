@@ -38,7 +38,7 @@ fn tree_builder_mode_dispatch_transitions_for_representative_sequence() {
                 system_id: None,
                 force_quirks: false,
             },
-            InsertionMode::Initial,
+            InsertionMode::BeforeHtml,
         ),
         (
             Token::StartTag {

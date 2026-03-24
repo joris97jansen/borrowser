@@ -9,6 +9,7 @@ mod insertion_modes;
 mod invariants;
 mod noahs_ark;
 mod perf;
+mod quirks;
 mod recovery;
 mod state_snapshot;
 mod table_body_row;
