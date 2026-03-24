@@ -122,6 +122,7 @@ impl Html5Tokenizer {
             );
         }
         self.state = next;
+        self.mark_progress();
         self.stats_inc_state_transitions();
     }
 

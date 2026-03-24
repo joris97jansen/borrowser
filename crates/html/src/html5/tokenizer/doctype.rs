@@ -138,7 +138,7 @@ impl Html5Tokenizer {
                 public_id,
                 system_id,
             } => {
-                self.cursor = cursor;
+                self.set_cursor(cursor);
                 self.pending_doctype_public_id = public_id;
                 self.pending_doctype_system_id = system_id;
                 self.emit_pending_doctype();

@@ -38,6 +38,7 @@ members = [
   "crates/bus",
   "crates/input_core",
 ]
+exclude = ["fuzz"]
 resolver = "2"
 
 [workspace.dependencies]

@@ -30,6 +30,7 @@ mod comment;
 mod control;
 mod doctype;
 mod emit;
+mod fuzz;
 mod input;
 mod machine;
 mod scan;
@@ -42,6 +43,10 @@ mod token_fmt;
 pub use api::{Html5Tokenizer, TokenizeResult, TokenizerConfig};
 pub use batch::{TextResolveError, TextResolver, TokenBatch};
 pub use control::{TextModeKind, TextModeNamespace, TextModeSpec, TokenizerControl};
+pub use fuzz::{
+    TokenizerFuzzConfig, TokenizerFuzzError, TokenizerFuzzSummary, TokenizerFuzzTermination,
+    derive_fuzz_seed, run_seeded_byte_fuzz_case,
+};
 #[cfg(test)]
 pub(crate) use machine::MAX_STEPS_PER_PUMP;
 pub(crate) use scan::is_html_space;

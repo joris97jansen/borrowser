@@ -7,11 +7,6 @@ use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderControlFlow, TreeB
 use log::error;
 
 impl Html5ParseSession {
-    pub(super) fn fail_decode(&mut self) -> Result<(), Html5SessionError> {
-        self.ctx.counters.decode_errors = self.ctx.counters.decode_errors.saturating_add(1);
-        Err(Html5SessionError::Decode)
-    }
-
     pub(super) fn pump_live_input(&mut self) -> Result<(), Html5SessionError> {
         loop {
             let tokenize_result = self
@@ -99,6 +94,23 @@ impl Html5ParseSession {
         }
 
         Ok(DrainOutcome::Continue)
+    }
+
+    #[cfg(test)]
+    pub(super) fn drain_post_finish_batches_for_test(
+        &mut self,
+        budget: usize,
+    ) -> Result<(), Html5SessionError> {
+        for _ in 0..budget.max(1) {
+            match self.drain_emitted_tokens(DrainMode::ExhaustQueuedBatches)? {
+                DrainOutcome::Idle => return Ok(()),
+                DrainOutcome::Continue => {}
+                DrainOutcome::Suspended => {
+                    return Err(Html5SessionError::Invariant);
+                }
+            }
+        }
+        Err(Html5SessionError::Invariant)
     }
 
     pub(super) fn process_token(

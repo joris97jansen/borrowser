@@ -49,7 +49,7 @@ impl Html5Tokenizer {
 
     pub(crate) fn consume(&mut self, input: &Input) -> Option<char> {
         let ch = self.peek(input)?;
-        self.cursor = self.cursor.saturating_add(ch.len_utf8());
+        self.set_cursor(self.cursor.saturating_add(ch.len_utf8()));
         Some(ch)
     }
 
@@ -166,7 +166,7 @@ impl Html5Tokenizer {
                     new_cursor <= input.as_str().len(),
                     "consume_ascii_sequence moved cursor out of bounds"
                 );
-                self.cursor = new_cursor;
+                self.set_cursor(new_cursor);
                 true
             }
             MatchResult::NeedMoreInput => false,
@@ -189,7 +189,7 @@ impl Html5Tokenizer {
                     new_cursor <= input.as_str().len(),
                     "consume_ascii_sequence_ci moved cursor out of bounds"
                 );
-                self.cursor = new_cursor;
+                self.set_cursor(new_cursor);
                 true
             }
             MatchResult::NeedMoreInput => false,

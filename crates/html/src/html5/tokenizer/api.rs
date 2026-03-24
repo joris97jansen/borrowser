@@ -64,6 +64,7 @@ pub struct Html5Tokenizer {
     pub(in crate::html5::tokenizer) input_id: Option<u64>,
     pub(in crate::html5::tokenizer) end_of_stream: bool,
     pub(in crate::html5::tokenizer) eof_emitted: bool,
+    pub(in crate::html5::tokenizer) progress_epoch: u64,
     pub(in crate::html5::tokenizer) stats: TokenizerStats,
 }
 
@@ -100,7 +101,19 @@ impl Html5Tokenizer {
             input_id: None,
             end_of_stream: false,
             eof_emitted: false,
+            progress_epoch: 0,
             stats: TokenizerStats::default(),
+        }
+    }
+
+    pub(in crate::html5::tokenizer) fn mark_progress(&mut self) {
+        self.progress_epoch = self.progress_epoch.wrapping_add(1);
+    }
+
+    pub(in crate::html5::tokenizer) fn set_cursor(&mut self, next: usize) {
+        if self.cursor != next {
+            self.cursor = next;
+            self.mark_progress();
         }
     }
 
@@ -186,7 +199,7 @@ impl Html5Tokenizer {
                 // Core v0 EOF policy: unfinished doctype tails are finalized as
                 // quirks doctype at EOF. We intentionally skip parsing the
                 // remaining doctype tail bytes and consume the buffered tail.
-                self.cursor = buffered_len;
+                self.set_cursor(buffered_len);
                 self.stats_set_bytes_consumed();
             } else if self.active_text_mode.is_some_and(|mode| {
                 matches!(
@@ -197,7 +210,7 @@ impl Html5Tokenizer {
                 if self.pending_text_start.is_none() {
                     self.pending_text_start = Some(self.cursor);
                 }
-                self.cursor = buffered_len;
+                self.set_cursor(buffered_len);
                 self.stats_set_bytes_consumed();
             } else {
                 panic!(
@@ -207,7 +220,10 @@ impl Html5Tokenizer {
             }
         }
 
-        self.end_of_stream = true;
+        if !self.end_of_stream {
+            self.end_of_stream = true;
+            self.mark_progress();
+        }
         if self.eof_emitted {
             return TokenizeResult::EmittedEof;
         }
@@ -219,6 +235,7 @@ impl Html5Tokenizer {
             self.emit_token(Token::Eof);
         }
         self.eof_emitted = true;
+        self.mark_progress();
         TokenizeResult::EmittedEof
     }
 

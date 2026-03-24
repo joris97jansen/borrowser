@@ -243,7 +243,7 @@ impl Html5Tokenizer {
         expected_kind: TextModeKind,
     ) -> Step {
         if let Some(pending_end_tag) = self.pending_text_mode_end_tag.take() {
-            self.cursor = pending_end_tag.cursor_after;
+            self.set_cursor(pending_end_tag.cursor_after);
             self.emit_token(Token::EndTag {
                 name: pending_end_tag.name,
             });
@@ -289,7 +289,7 @@ impl Html5Tokenizer {
         family_state: ScriptFamilyState,
     ) -> Step {
         if let Some(pending_end_tag) = self.pending_text_mode_end_tag.take() {
-            self.cursor = pending_end_tag.cursor_after;
+            self.set_cursor(pending_end_tag.cursor_after);
             self.emit_token(Token::EndTag {
                 name: pending_end_tag.name,
             });
@@ -372,7 +372,7 @@ impl Html5Tokenizer {
                     self.flush_pending_text(input);
                     Step::Progress
                 } else {
-                    self.cursor = cursor_after;
+                    self.set_cursor(cursor_after);
                     self.emit_token(Token::EndTag { name });
                     self.transition_to(TokenizerState::Data);
                     Step::Progress
@@ -380,7 +380,7 @@ impl Html5Tokenizer {
             }
             TextModeEndTagMatch::NeedMoreInput(matcher) => {
                 self.pending_text_mode_end_tag_matcher = Some(matcher);
-                self.cursor = less_than_pos;
+                self.set_cursor(less_than_pos);
                 Step::NeedMoreInput
             }
             TextModeEndTagMatch::NoMatch => {
@@ -427,7 +427,7 @@ impl Html5Tokenizer {
                     self.flush_pending_text(input);
                     Step::Progress
                 } else {
-                    self.cursor = cursor_after;
+                    self.set_cursor(cursor_after);
                     self.emit_token(Token::EndTag { name });
                     self.transition_to(TokenizerState::Data);
                     Step::Progress
@@ -438,7 +438,7 @@ impl Html5Tokenizer {
                     MatchResult::NeedMoreInput => Step::NeedMoreInput,
                     _ => {
                         self.pending_text_mode_end_tag_matcher = Some(matcher);
-                        self.cursor = less_than_pos;
+                        self.set_cursor(less_than_pos);
                         Step::NeedMoreInput
                     }
                 }
@@ -488,7 +488,7 @@ impl Html5Tokenizer {
                     self.flush_pending_text(input);
                     Step::Progress
                 } else {
-                    self.cursor = cursor_after;
+                    self.set_cursor(cursor_after);
                     self.emit_token(Token::EndTag { name });
                     self.transition_to(TokenizerState::Data);
                     Step::Progress
@@ -500,7 +500,7 @@ impl Html5Tokenizer {
                     ScriptTagBoundaryMatch::NeedMoreInput => Step::NeedMoreInput,
                     _ => {
                         self.pending_text_mode_end_tag_matcher = Some(matcher);
-                        self.cursor = less_than_pos;
+                        self.set_cursor(less_than_pos);
                         Step::NeedMoreInput
                     }
                 }
@@ -510,7 +510,7 @@ impl Html5Tokenizer {
                 match match_script_tag_boundary_at(bytes, less_than_pos, false) {
                     ScriptTagBoundaryMatch::Matched { cursor_after } => {
                         self.ensure_pending_text_start();
-                        self.cursor = cursor_after;
+                        self.set_cursor(cursor_after);
                         self.transition_to(TokenizerState::ScriptDataDoubleEscaped);
                         Step::Progress
                     }
@@ -531,7 +531,7 @@ impl Html5Tokenizer {
         match match_script_tag_boundary_at(bytes, less_than_pos, true) {
             ScriptTagBoundaryMatch::Matched { cursor_after } => {
                 self.ensure_pending_text_start();
-                self.cursor = cursor_after;
+                self.set_cursor(cursor_after);
                 self.transition_to(TokenizerState::ScriptDataEscaped);
                 Step::Progress
             }
