@@ -45,6 +45,25 @@ impl TreeBuilderSuiteSpec {
             ],
         }
     }
+
+    pub(crate) const fn tables() -> Self {
+        Self {
+            suite_name: "WPT tree-builder tables/foster-parenting",
+            required_ids: &[
+                "tables-normal-sections",
+                "tables-caption-colgroup-transition",
+                "tables-colgroup-implied-end-tag",
+                "tables-colgroup-stray-tag-foster-parent",
+                "tables-omitted-tbody",
+                "tables-missing-cell-end-tags",
+                "tables-nested-sections",
+                "tables-stray-tr",
+                "tables-stray-text-foster-parent",
+                "tables-stray-tag-foster-parent",
+                "tables-nested-basic",
+            ],
+        }
+    }
 }
 
 #[derive(Clone, Debug)]

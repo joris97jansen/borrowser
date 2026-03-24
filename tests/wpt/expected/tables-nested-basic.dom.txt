@@ -1,0 +1,16 @@
+# format: html5-dom-v1
+#document doctype="html"
+  <html>
+    <head>
+    <body>
+      <table>
+        <tbody>
+          <tr>
+            <td>
+              "outer"
+              <table>
+                <tbody>
+                  <tr>
+                    <td>
+                      "inner"
+      "\n"
