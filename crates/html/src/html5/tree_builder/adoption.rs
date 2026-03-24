@@ -351,41 +351,6 @@ fn requires_foster_parenting(builder: &Html5TreeBuilder, name: AtomId) -> bool {
         || name == builder.known_tags.tr
 }
 
-fn find_last_table_and_template_indices(
-    builder: &Html5TreeBuilder,
-) -> (Option<usize>, Option<usize>) {
-    let mut table_index = None;
-    let mut template_index = None;
-    for index in (0..builder.open_elements.len()).rev() {
-        let element = builder
-            .open_elements
-            .get(index)
-            .expect("open-elements index must remain in bounds during foster scan");
-        if table_index.is_none() && element.name() == builder.known_tags.table {
-            table_index = Some(index);
-        } else if template_index.is_none() && element.name() == builder.known_tags.template {
-            template_index = Some(index);
-        }
-        if table_index.is_some() && template_index.is_some() {
-            break;
-        }
-    }
-    (table_index, template_index)
-}
-
-fn find_last_open_element_index(builder: &Html5TreeBuilder, target: AtomId) -> Option<usize> {
-    for index in (0..builder.open_elements.len()).rev() {
-        let element = builder
-            .open_elements
-            .get(index)
-            .expect("open-elements index must remain in bounds during foster scan");
-        if element.name() == target {
-            return Some(index);
-        }
-    }
-    None
-}
-
 impl Html5TreeBuilder {
     fn adoption_agency_insert_last_node(
         &mut self,
@@ -397,42 +362,7 @@ impl Html5TreeBuilder {
             return Ok(());
         }
 
-        let (last_table_index, last_template_index) = find_last_table_and_template_indices(self);
-        if let (Some(table_index), Some(template_index)) = (last_table_index, last_template_index)
-            && template_index > table_index
-        {
-            let template = self
-                .open_elements
-                .get(template_index)
-                .expect("template index must remain valid while computing foster location");
-            self.append_existing_child(template.key(), last_node);
-            return Ok(());
-        }
-
-        if let Some(table_index) = last_table_index {
-            let table = self
-                .open_elements
-                .get(table_index)
-                .expect("table index must remain valid while computing foster location");
-            if let Some(parent) = self.live_tree.parent(table.key()) {
-                self.insert_existing_child_before(parent, last_node, table.key());
-                return Ok(());
-            }
-            let foster_parent = table_index
-                .checked_sub(1)
-                .and_then(|index| self.open_elements.get(index))
-                .expect("detached foster table must still have a previous SOE entry");
-            self.append_existing_child(foster_parent.key(), last_node);
-            return Ok(());
-        }
-
-        let html_index = find_last_open_element_index(self, self.known_tags.html)
-            .expect("HTML parsing stack must contain <html> for foster parenting");
-        let html = self
-            .open_elements
-            .get(html_index)
-            .expect("html index must remain valid while computing foster location");
-        self.append_existing_child(html.key(), last_node);
+        self.insert_existing_child_using_foster_parenting_location(last_node)?;
         Ok(())
     }
 }

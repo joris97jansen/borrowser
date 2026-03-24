@@ -45,6 +45,7 @@ Milestone H corpus:
 - `h8-special-*`: repeated `a` / `nobr` start-tag recovery coverage.
 - `h8-marker-*`: marker-boundary interaction coverage around `applet` / marker tags.
 - `h10-aaa-*`: move-heavy AAA reparenting coverage for identity-preserving DOM outcomes.
+- `i7-foster-parent-*`: explicit I7 foster-parent coverage for direct text/element placement and move-heavy AAA reparenting.
 
 Core F11 coverage baseline:
 
