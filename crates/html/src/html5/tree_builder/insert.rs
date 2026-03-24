@@ -23,39 +23,6 @@ enum FosterParentAnchor {
 }
 
 impl Html5TreeBuilder {
-    fn find_last_table_and_template_indices(&self) -> (Option<usize>, Option<usize>) {
-        let mut table_index = None;
-        let mut template_index = None;
-        for index in (0..self.open_elements.len()).rev() {
-            let element = self
-                .open_elements
-                .get(index)
-                .expect("open-elements index must remain in bounds during foster scan");
-            if table_index.is_none() && element.name() == self.known_tags.table {
-                table_index = Some(index);
-            } else if template_index.is_none() && element.name() == self.known_tags.template {
-                template_index = Some(index);
-            }
-            if table_index.is_some() && template_index.is_some() {
-                break;
-            }
-        }
-        (table_index, template_index)
-    }
-
-    fn find_last_open_element_index(&self, target: AtomId) -> Option<usize> {
-        for index in (0..self.open_elements.len()).rev() {
-            let element = self
-                .open_elements
-                .get(index)
-                .expect("open-elements index must remain in bounds during foster scan");
-            if element.name() == target {
-                return Some(index);
-            }
-        }
-        None
-    }
-
     fn current_insertion_parent(&self) -> Result<PatchKey, TreeBuilderError> {
         let document_key = self
             .document_key
@@ -74,8 +41,14 @@ impl Html5TreeBuilder {
         })
     }
 
-    fn foster_parenting_anchor_from_soe(&self) -> Option<FosterParentAnchor> {
-        let (last_table_index, last_template_index) = self.find_last_table_and_template_indices();
+    fn foster_parenting_anchor_from_soe(&mut self) -> Option<FosterParentAnchor> {
+        let indices = self.open_elements.foster_parenting_anchor_indices(
+            self.known_tags.html,
+            self.known_tags.table,
+            self.known_tags.template,
+        );
+        let last_table_index = indices.table_index;
+        let last_template_index = indices.template_index;
         if let (Some(table_index), Some(template_index)) = (last_table_index, last_template_index)
             && template_index > table_index
         {
@@ -115,9 +88,17 @@ impl Html5TreeBuilder {
     }
 
     fn foster_parenting_location_without_table(
-        &self,
+        &mut self,
     ) -> Result<InsertionLocation, TreeBuilderError> {
-        let Some(html_index) = self.find_last_open_element_index(self.known_tags.html) else {
+        let Some(html_index) = self
+            .open_elements
+            .foster_parenting_anchor_indices(
+                self.known_tags.html,
+                self.known_tags.table,
+                self.known_tags.template,
+            )
+            .html_index
+        else {
             return self.current_insertion_location();
         };
         let html = self
@@ -131,7 +112,7 @@ impl Html5TreeBuilder {
     }
 
     pub(in crate::html5::tree_builder) fn foster_parenting_insertion_location(
-        &self,
+        &mut self,
     ) -> Result<InsertionLocation, TreeBuilderError> {
         match self.foster_parenting_anchor_from_soe() {
             Some(FosterParentAnchor::Template(parent)) => Ok(InsertionLocation {
@@ -145,7 +126,9 @@ impl Html5TreeBuilder {
         }
     }
 
-    fn element_or_text_insertion_location(&self) -> Result<InsertionLocation, TreeBuilderError> {
+    fn element_or_text_insertion_location(
+        &mut self,
+    ) -> Result<InsertionLocation, TreeBuilderError> {
         if self.foster_parenting_enabled {
             self.foster_parenting_insertion_location()
         } else {

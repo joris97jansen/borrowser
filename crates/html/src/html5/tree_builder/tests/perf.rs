@@ -1,4 +1,5 @@
 use super::helpers::EmptyResolver;
+use std::time::Duration;
 
 fn run_tree_builder_chunks(chunks: &[&str]) -> Vec<crate::dom_patch::DomPatch> {
     use crate::html5::shared::{DocumentParseContext, Input};
@@ -78,10 +79,82 @@ fn assert_no_remove_node_moves(patches: &[crate::dom_patch::DomPatch], context: 
     );
 }
 
+fn perf_wall_clock_budget(seconds: u64) -> Duration {
+    let multiplier = if std::env::var("CI").is_ok() { 3 } else { 1 };
+    Duration::from_secs(seconds.saturating_mul(multiplier))
+}
+
+fn assert_wall_clock_sanity(elapsed: Duration, base_seconds: u64, context: &str) {
+    // Structural counters are the primary perf contract in these tests. Keep a
+    // wall-clock sanity bound as a secondary guard, but relax it on contended
+    // CI runners where scheduler noise is common.
+    let budget = perf_wall_clock_budget(base_seconds);
+    assert!(
+        elapsed <= budget,
+        "{context} took too long: {:?} (budget {:?})",
+        elapsed,
+        budget
+    );
+}
+
+fn run_tree_builder_input_for_perf(
+    input_html: &str,
+) -> crate::html5::tree_builder::Html5TreeBuilder {
+    use crate::html5::shared::{DocumentParseContext, Input};
+    use crate::html5::tokenizer::{Html5Tokenizer, TokenizeResult, TokenizerConfig};
+
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+    let mut input = Input::new();
+    input.push_str(input_html);
+
+    loop {
+        let result = tokenizer.push_input_until_token(&mut input, &mut ctx);
+        let batch = tokenizer.next_batch(&mut input);
+        if batch.tokens().is_empty() {
+            assert!(
+                matches!(
+                    result,
+                    TokenizeResult::NeedMoreInput | TokenizeResult::Progress
+                ),
+                "unexpected tokenizer state while draining whole input: {result:?}"
+            );
+            break;
+        }
+        let resolver = batch.resolver();
+        for token in batch.iter() {
+            let _ = builder
+                .process(token, &ctx.atoms, &resolver)
+                .expect("stress parse should remain recoverable");
+        }
+    }
+
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    loop {
+        let batch = tokenizer.next_batch(&mut input);
+        if batch.tokens().is_empty() {
+            break;
+        }
+        let resolver = batch.resolver();
+        for token in batch.iter() {
+            let _ = builder
+                .process(token, &ctx.atoms, &resolver)
+                .expect("stress EOF drain should remain recoverable");
+        }
+    }
+
+    builder
+}
+
 #[test]
 fn tree_builder_perf_sanity_deep_nesting_scope_scan_is_linear_on_typical_path() {
     use crate::html5::shared::Token;
-    use std::time::{Duration, Instant};
+    use std::time::Instant;
 
     let mut ctx = crate::html5::shared::DocumentParseContext::new();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
@@ -130,18 +203,14 @@ fn tree_builder_perf_sanity_deep_nesting_scope_scan_is_linear_on_typical_path() 
         "common close-on-top path should stay near O(1) scan per end tag; steps={} depth={depth}",
         stats.soe_scope_scan_steps
     );
-    assert!(
-        elapsed <= Duration::from_secs(3),
-        "deep nesting stress parse took too long: {:?}",
-        elapsed
-    );
+    assert_wall_clock_sanity(elapsed, 3, "deep nesting stress parse");
 }
 
 #[test]
 fn tree_builder_perf_sanity_text_coalescing_avoids_quadratic_patch_payload_growth() {
     use crate::dom_patch::DomPatch;
     use crate::html5::shared::{TextValue, Token};
-    use std::time::{Duration, Instant};
+    use std::time::Instant;
 
     let mut ctx = crate::html5::shared::DocumentParseContext::new();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
@@ -199,11 +268,7 @@ fn tree_builder_perf_sanity_text_coalescing_avoids_quadratic_patch_payload_growt
         (text_tokens - 1) as u64,
         "remaining text tokens should emit incremental AppendText patches"
     );
-    assert!(
-        elapsed <= Duration::from_secs(3),
-        "large text coalescing stress took too long: {:?}",
-        elapsed
-    );
+    assert_wall_clock_sanity(elapsed, 3, "large text coalescing stress");
 
     let patches = builder.drain_patches();
     let create_text_count = patches
@@ -246,7 +311,7 @@ fn tree_builder_perf_sanity_text_coalescing_avoids_quadratic_patch_payload_growt
 
 #[test]
 fn tree_builder_perf_sanity_repeated_aaa_misnesting_is_bounded_and_chunk_stable() {
-    use std::time::{Duration, Instant};
+    use std::time::Instant;
 
     let repeats = 256usize;
     let input = format!("<!doctype html>{}", "<b><i>x</b>y</i>".repeat(repeats));
@@ -262,16 +327,12 @@ fn tree_builder_perf_sanity_repeated_aaa_misnesting_is_bounded_and_chunk_stable(
         "repeated AAA misnesting stress must preserve exact patch order and key allocation across chunking"
     );
     assert_no_remove_node_moves(&whole, "repeated AAA misnesting stress");
-    assert!(
-        elapsed <= Duration::from_secs(5),
-        "repeated AAA misnesting stress took too long: {:?}",
-        elapsed
-    );
+    assert_wall_clock_sanity(elapsed, 5, "repeated AAA misnesting stress");
 }
 
 #[test]
 fn tree_builder_perf_sanity_reconstruction_plus_aaa_is_bounded_and_chunk_stable() {
-    use std::time::{Duration, Instant};
+    use std::time::Instant;
 
     let repeats = 128usize;
     let input = format!(
@@ -290,9 +351,49 @@ fn tree_builder_perf_sanity_reconstruction_plus_aaa_is_bounded_and_chunk_stable(
         "repeated reconstruction+AAA stress must preserve exact patch order and key allocation across chunking"
     );
     assert_no_remove_node_moves(&whole, "repeated reconstruction+AAA stress");
+    assert_wall_clock_sanity(elapsed, 5, "repeated reconstruction+AAA stress");
+}
+
+#[test]
+fn tree_builder_perf_sanity_deep_table_foster_parenting_uses_amortized_anchor_scans() {
+    use std::time::Instant;
+
+    fn make_input(depth: usize, stray_divs: usize) -> String {
+        let mut input = String::from("<!doctype html>");
+        for _ in 0..depth {
+            input.push_str("<table><tr><td>");
+        }
+        input.push_str("<table>");
+        for _ in 0..stray_divs {
+            input.push_str("<div>x</div>");
+        }
+        input.push_str("</table>");
+        for _ in 0..depth {
+            input.push_str("</td></tr></table>");
+        }
+        input
+    }
+
+    let depth = 256usize;
+    let stray_divs = 1_024usize;
+    let input = make_input(depth, stray_divs);
+
+    let started = Instant::now();
+    let mut builder = run_tree_builder_input_for_perf(&input);
+    let elapsed = started.elapsed();
+
     assert!(
-        elapsed <= Duration::from_secs(5),
-        "repeated reconstruction+AAA stress took too long: {:?}",
-        elapsed
+        builder.open_elements.foster_parenting_scan_calls() <= 4,
+        "repeated foster-parented misplaced tags should reuse cached table/html anchors; calls={}",
+        builder.open_elements.foster_parenting_scan_calls()
     );
+    assert!(
+        builder.open_elements.foster_parenting_scan_steps() <= (depth as u64) * 4 + 16,
+        "foster-parent anchor rescans should stay proportional to table depth, not misplaced-token count; steps={} depth={depth}",
+        builder.open_elements.foster_parenting_scan_steps()
+    );
+
+    let patches = builder.drain_patches();
+    assert_no_remove_node_moves(&patches, "deep table foster-parenting stress");
+    assert_wall_clock_sanity(elapsed, 5, "deep table foster-parenting stress");
 }
