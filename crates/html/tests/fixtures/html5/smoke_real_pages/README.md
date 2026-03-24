@@ -13,6 +13,11 @@ Purpose:
 - Sanity gate for HTML5 mode using realistic document shapes.
 - Complements (does not replace) WPT and spec-focused golden tests.
 - Regression gate for current HTML5-mode behavior under the feature flag.
+- Includes a dedicated table-heavy band for newsletter/email layouts,
+  wikipedia-like infobox/wikitable markup, legacy table fragments, and basic
+  nested-table report layouts.
+- Fixtures are curated real-world-style snippets/pages, not archival copies of
+  third-party pages.
 
 Contract:
 
@@ -21,6 +26,8 @@ Contract:
 - Failures produce line-based snapshot diffs.
 - This corpus is not a normative conformance suite. Normative correctness is
   primarily enforced by WPT and focused golden fixtures.
+- The table-heavy band is a non-normative regression lane intended to catch
+  realistic parser regressions that WPT and focused goldens may miss.
 - While HTML5 tree-builder behavior is still being completed, some snapshots may
   reflect current non-final behavior and should be updated toward spec-faithful
   output as implementation maturity improves.

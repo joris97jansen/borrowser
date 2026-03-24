@@ -1,0 +1,59 @@
+# format: html5-dom-v1
+
+#document doctype="html"
+  <html>
+    <head>
+      <title>
+        "Spring Deals"
+    <body>
+      "\n"
+      <table cellpadding="0" cellspacing="0" role="presentation" width="600">
+        "\n  "
+        <tbody>
+          <tr>
+            <td>
+              "\n    "
+              <table role="presentation" width="100%">
+                "\n      "
+                <tbody>
+                  <tr>
+                    <td>
+                      <h1>
+                        "Spring Deals"
+                  "\n      "
+                <tbody>
+                  <tr>
+                    <td>
+                      <p>
+                        "Save on hosting and support bundles."
+                  "\n      "
+                <tbody>
+                  <tr>
+                    "\n        "
+                <tbody>
+                  <tr>
+                    <td>
+                      "\n          "
+                      <table role="presentation" width="100%">
+                        "\n            "
+                        <tbody>
+                          <tr>
+                            <td>
+                              "Starter"
+                            <td>
+                              "$9"
+                          "\n            "
+                        <tbody>
+                          <tr>
+                            <td>
+                              "Growth"
+                            <td>
+                              "$29"
+                          "\n          "
+                      "\n        "
+                    "\n      "
+                  "\n    "
+              "\n  "
+          "\n"
+      "\n"
+    "\n"

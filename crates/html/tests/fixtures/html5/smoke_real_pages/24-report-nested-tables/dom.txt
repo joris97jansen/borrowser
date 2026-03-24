@@ -1,0 +1,69 @@
+# format: html5-dom-v1
+
+#document doctype="html"
+  <html>
+    <head>
+      <title>
+        "Quarterly Report"
+    <body>
+      "\n"
+      <table class="report">
+        "\n  "
+        <tbody>
+          <tr>
+            "\n    "
+        <tbody>
+          <tr>
+            <td>
+              "\n      "
+              <h1>
+                "Quarterly Report"
+              "\n      "
+              <table class="inner">
+                "\n        "
+                <tbody>
+                  <tr>
+                    <th>
+                      "Region"
+                    <th>
+                      "Revenue"
+                  "\n        "
+                <tbody>
+                  <tr>
+                    <td>
+                      "EMEA"
+                    <td>
+                      "$1.2M"
+                  "\n        "
+                <tbody>
+                  <tr>
+                    <td>
+                      "APAC"
+                    <td>
+                      "$980k"
+                  "\n      "
+              "\n    "
+            "\n    "
+            <td>
+              "\n      "
+              <table class="summary">
+                "\n        "
+                <tbody>
+                  <tr>
+                    <td>
+                      "Margin"
+                    <td>
+                      "18%"
+                  "\n        "
+                <tbody>
+                  <tr>
+                    <td>
+                      "Growth"
+                    <td>
+                      "11%"
+                  "\n      "
+              "\n    "
+            "\n  "
+          "\n"
+      "\n"
+    "\n"

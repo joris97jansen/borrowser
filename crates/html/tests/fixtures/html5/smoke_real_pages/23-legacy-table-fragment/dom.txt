@@ -1,0 +1,29 @@
+# format: html5-dom-v1
+
+#document doctype="html"
+  <html>
+    <head>
+      <title>
+        "Legacy Accounts"
+    <body>
+      "\n"
+      <table border="1">
+        "\n  "
+        <tbody>
+          <tr>
+            <th>
+              "Account"
+            <th>
+              "Status\n  "
+          <tr>
+            <td>
+              "Northwind"
+            <td>
+              <b>
+                "Active\n  stray text\n  "
+          <tr>
+            <td>
+              "Contoso"
+            <td>
+              "Pending\n"
+      "\n"
