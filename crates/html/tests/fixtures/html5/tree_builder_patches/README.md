@@ -44,6 +44,13 @@ Milestone H corpus:
 - `i8-move-*`: issue-explicit move-contract evidence for `AppendChild` reparenting and `InsertBefore` foster-parent moves using existing node ids.
 - `i9-*-quirks-*`: patch-level evidence that document mode changes the `table` insertion parentage contract.
 
+Dedicated table-heavy corpus:
+
+- `../tables/patches/i10-table-*`: I10 patch goldens for normal tables, implied
+  closes, foster parenting, malformed recovery, and basic nested tables. These
+  fixtures are loaded by the same patch golden harness and run under whole,
+  deterministic chunked, and seeded fuzz-chunk execution.
+
 
 Regenerate expected outputs:
 

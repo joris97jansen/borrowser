@@ -48,6 +48,13 @@ Milestone H corpus:
 - `i7-foster-parent-*`: explicit I7 foster-parent coverage for direct text/element placement and move-heavy AAA reparenting.
 - `i9-*-quirks-*`: document-mode-driven parser behavior for `table` insertion with open `p`.
 
+Dedicated table-heavy corpus:
+
+- `../tables/dom/i10-table-*`: I10 table goldens for normal tables, implied closes,
+  foster parenting, malformed recovery, and basic nested tables. These fixtures
+  are loaded by the same DOM golden harness and run under whole, deterministic
+  chunked, and seeded fuzz-chunk execution.
+
 Core F11 coverage baseline:
 
 - implicit document shell insertion (`html/head/body`) for fragment-like inputs,

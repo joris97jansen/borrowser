@@ -1,0 +1,17 @@
+# format: html5-dom-v1
+# status: active
+
+#document doctype="html"
+  <html>
+    <head>
+    <body>
+      <table>
+        <tbody>
+          <tr>
+            <td>
+              "outer"
+              <table>
+                <tbody>
+                  <tr>
+                    <td>
+                      "inner"

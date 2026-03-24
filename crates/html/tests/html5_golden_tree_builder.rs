@@ -17,7 +17,10 @@ mod fixture_bands;
 mod runner;
 
 use assertions::enforce_expected;
-use fixture_bands::{H8_FIXTURE_NAMES, H10_FIXTURE_NAMES};
+use fixture_bands::{
+    H8_FIXTURE_BAND, H8_FIXTURE_NAMES, H10_FIXTURE_BAND, H10_FIXTURE_NAMES, I10_TABLE_FIXTURE_BAND,
+    I10_TABLE_FIXTURE_NAMES,
+};
 use fixtures::{FixtureStatus, load_fixtures, normalize_fixture_input};
 use html::chunker::{ChunkerConfig, build_chunk_plans};
 use html::test_harness::shrink_chunk_plan_with_stats;
@@ -163,7 +166,7 @@ fn fixture_input_normalization_strips_exactly_one_terminal_line_ending() {
 }
 
 #[test]
-fn h8_dom_fixture_band_is_auto_discovered() {
+fn h8_dom_fixture_band_members_are_registered() {
     let fixtures = load_fixtures();
     for name in H8_FIXTURE_NAMES {
         let fixture = fixtures
@@ -181,7 +184,7 @@ fn h8_dom_fixture_band_is_auto_discovered() {
 #[test]
 fn h8_dom_fixture_band_runs_in_whole_and_chunked_modes() {
     let fixtures = load_fixtures();
-    for name in H8_FIXTURE_NAMES {
+    for name in H8_FIXTURE_BAND.names {
         let fixture = fixtures
             .iter()
             .find(|fixture| fixture.name == *name)
@@ -189,7 +192,7 @@ fn h8_dom_fixture_band_runs_in_whole_and_chunked_modes() {
         let whole = run_tree_builder_whole(fixture);
         enforce_expected(fixture, &whole, Mode::WholeInput, None);
 
-        let plans = build_chunk_plans(&fixture.input, 1, 0xC0FFEE, ChunkerConfig::utf8());
+        let plans = H8_FIXTURE_BAND.chunk_plans(&fixture.input);
         for plan in plans {
             let actual = run_tree_builder_chunked(fixture, &plan.plan, &plan.label);
             if let (Some(whole_lines), Some(actual_lines)) = (whole.lines(), actual.lines()) {
@@ -205,7 +208,7 @@ fn h8_dom_fixture_band_runs_in_whole_and_chunked_modes() {
 }
 
 #[test]
-fn h10_dom_fixture_band_is_auto_discovered() {
+fn h10_dom_fixture_band_members_are_registered() {
     let fixtures = load_fixtures();
     for name in H10_FIXTURE_NAMES {
         let fixture = fixtures
@@ -223,7 +226,7 @@ fn h10_dom_fixture_band_is_auto_discovered() {
 #[test]
 fn h10_dom_fixture_band_runs_in_whole_and_chunked_modes() {
     let fixtures = load_fixtures();
-    for name in H10_FIXTURE_NAMES {
+    for name in H10_FIXTURE_BAND.names {
         let fixture = fixtures
             .iter()
             .find(|fixture| fixture.name == *name)
@@ -231,13 +234,55 @@ fn h10_dom_fixture_band_runs_in_whole_and_chunked_modes() {
         let whole = run_tree_builder_whole(fixture);
         enforce_expected(fixture, &whole, Mode::WholeInput, None);
 
-        let plans = build_chunk_plans(&fixture.input, 1, 0xC0FFEE, ChunkerConfig::utf8());
+        let plans = H10_FIXTURE_BAND.chunk_plans(&fixture.input);
         for plan in plans {
             let actual = run_tree_builder_chunked(fixture, &plan.plan, &plan.label);
             if let (Some(whole_lines), Some(actual_lines)) = (whole.lines(), actual.lines()) {
                 assert_eq!(
                     actual_lines, whole_lines,
                     "H10 DOM fixture '{}' diverged under chunk plan '{}'",
+                    fixture.name, plan.label
+                );
+            }
+            enforce_expected(fixture, &actual, Mode::ChunkedInput, Some(&plan.label));
+        }
+    }
+}
+
+#[test]
+fn i10_table_dom_fixture_band_members_are_registered() {
+    let fixtures = load_fixtures();
+    for name in I10_TABLE_FIXTURE_NAMES {
+        let fixture = fixtures
+            .iter()
+            .find(|fixture| fixture.name == *name)
+            .unwrap_or_else(|| panic!("missing I10 table DOM fixture '{name}'"));
+        assert_eq!(
+            fixture.expected.status,
+            FixtureStatus::Active,
+            "I10 table DOM fixture '{name}' must participate in the active golden corpus"
+        );
+    }
+}
+
+#[test]
+fn i10_table_dom_fixture_band_runs_in_whole_and_chunked_modes() {
+    let fixtures = load_fixtures();
+    for name in I10_TABLE_FIXTURE_BAND.names {
+        let fixture = fixtures
+            .iter()
+            .find(|fixture| fixture.name == *name)
+            .unwrap_or_else(|| panic!("missing I10 table DOM fixture '{name}'"));
+        let whole = run_tree_builder_whole(fixture);
+        enforce_expected(fixture, &whole, Mode::WholeInput, None);
+
+        let plans = I10_TABLE_FIXTURE_BAND.chunk_plans(&fixture.input);
+        for plan in plans {
+            let actual = run_tree_builder_chunked(fixture, &plan.plan, &plan.label);
+            if let (Some(whole_lines), Some(actual_lines)) = (whole.lines(), actual.lines()) {
+                assert_eq!(
+                    actual_lines, whole_lines,
+                    "I10 table DOM fixture '{}' diverged under chunk plan '{}'",
                     fixture.name, plan.label
                 );
             }

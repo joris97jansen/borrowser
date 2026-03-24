@@ -257,10 +257,28 @@ impl Html5TreeBuilder {
         self.foster_parenting_enabled = foster_parenting_enabled;
         let result = self.handle_in_body(token, atoms, text);
         self.foster_parenting_enabled = saved_foster_parenting;
-        if !matches!(self.insertion_mode, InsertionMode::Text) {
+        if !self.preserves_delegated_in_body_mode(self.insertion_mode) {
             self.insertion_mode = saved_mode;
         }
         result.map(|_| ())
+    }
+
+    // Delegation from table-family modes into InBody is allowed to commit only
+    // to explicit descendant parser states. This preserves nested tables inside
+    // cells: once InBody inserts an inner <table>, the parser must stay in the
+    // inner table-family mode chain instead of snapping back to the outer cell.
+    fn preserves_delegated_in_body_mode(&self, mode: InsertionMode) -> bool {
+        matches!(
+            mode,
+            InsertionMode::Text
+                | InsertionMode::InTable
+                | InsertionMode::InTableText
+                | InsertionMode::InCaption
+                | InsertionMode::InColumnGroup
+                | InsertionMode::InTableBody
+                | InsertionMode::InRow
+                | InsertionMode::InCell
+        )
     }
 
     fn close_caption(&mut self) -> bool {
