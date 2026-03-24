@@ -80,6 +80,7 @@ pub(crate) struct OpenElementsStack {
     pop_ops: u64,
     scope_scan_calls: u64,
     scope_scan_steps: u64,
+    foster_parenting_cache: FosterParentingIndexCache,
 }
 
 impl OpenElementsStack {
@@ -98,13 +99,17 @@ impl OpenElementsStack {
         // - does not reset max_depth (high-water mark metric),
         // - does not increment pop_ops (clear is modeled as a reset, not N pops).
         self.items.clear();
+        self.foster_parenting_cache.invalidate();
     }
 
     #[inline]
     pub(crate) fn push(&mut self, entry: OpenElement) {
+        let new_index = self.items.len();
         self.items.push(entry);
         self.push_ops = self.push_ops.saturating_add(1);
         self.max_depth = self.max_depth.max(self.items.len() as u32);
+        self.foster_parenting_cache
+            .note_push(new_index, entry.name());
     }
 
     #[inline]
@@ -178,7 +183,13 @@ impl OpenElementsStack {
         if popped.is_some() {
             self.pop_ops = self.pop_ops.saturating_add(1);
         }
-        popped
+        if let Some(entry) = popped {
+            self.foster_parenting_cache
+                .note_pop(self.items.len(), entry.name());
+            Some(entry)
+        } else {
+            None
+        }
     }
 
     #[inline]
@@ -206,6 +217,24 @@ impl OpenElementsStack {
     pub(crate) fn scope_scan_steps(&self) -> u64 {
         // Total entries inspected while evaluating scope checks.
         self.scope_scan_steps
+    }
+
+    #[inline]
+    #[allow(
+        dead_code,
+        reason = "internal perf stress tests inspect foster-parent scan counters directly"
+    )]
+    pub(crate) fn foster_parenting_scan_calls(&self) -> u64 {
+        self.foster_parenting_cache.scan_calls
+    }
+
+    #[inline]
+    #[allow(
+        dead_code,
+        reason = "internal perf stress tests inspect foster-parent scan counters directly"
+    )]
+    pub(crate) fn foster_parenting_scan_steps(&self) -> u64 {
+        self.foster_parenting_cache.scan_steps
     }
 
     #[cfg(any(test, feature = "internal-api"))]
@@ -245,6 +274,8 @@ impl OpenElementsStack {
         self.scope_scan_calls = self.scope_scan_calls.saturating_add(1);
         let match_index = self.find_in_scope_match_index(target, kind, tags)?;
         debug_assert!(match_index < self.items.len());
+        self.foster_parenting_cache
+            .note_suffix_removal(match_index, self.items.len());
         let removed = self.items.len() - match_index;
         // Keep elements up to and including the matched entry, then pop it.
         self.items.truncate(match_index + 1);
@@ -252,7 +283,13 @@ impl OpenElementsStack {
         if popped.is_some() {
             self.pop_ops = self.pop_ops.saturating_add(removed as u64);
         }
-        popped
+        if let Some(entry) = popped {
+            self.foster_parenting_cache
+                .note_pop(self.items.len(), entry.name());
+            Some(entry)
+        } else {
+            None
+        }
     }
 
     pub(crate) fn classify_key_in_scope(
@@ -281,18 +318,24 @@ impl OpenElementsStack {
     }
 
     pub(crate) fn remove_at(&mut self, index: usize) -> OpenElement {
+        let _ = index;
+        self.foster_parenting_cache.invalidate();
         let removed = self.items.remove(index);
         self.pop_ops = self.pop_ops.saturating_add(1);
         removed
     }
 
     pub(crate) fn insert_at(&mut self, index: usize, entry: OpenElement) {
+        let _ = index;
+        self.foster_parenting_cache.invalidate();
         self.items.insert(index, entry);
         self.push_ops = self.push_ops.saturating_add(1);
         self.max_depth = self.max_depth.max(self.items.len() as u32);
     }
 
     pub(crate) fn replace_at(&mut self, index: usize, entry: OpenElement) -> OpenElement {
+        let _ = index;
+        self.foster_parenting_cache.invalidate();
         std::mem::replace(&mut self.items[index], entry)
     }
 
@@ -317,6 +360,8 @@ impl OpenElementsStack {
                 .expect("current() returned Some so pop() must succeed");
             debug_assert_eq!(popped, current);
             self.pop_ops = self.pop_ops.saturating_add(1);
+            self.foster_parenting_cache
+                .note_pop(self.items.len(), popped.name());
             removed += 1;
         }
         removed
@@ -350,6 +395,8 @@ impl OpenElementsStack {
                 .expect("current() returned Some so pop() must succeed");
             debug_assert_eq!(popped, current);
             self.pop_ops = self.pop_ops.saturating_add(1);
+            self.foster_parenting_cache
+                .note_pop(self.items.len(), popped.name());
             removed += 1;
         }
         removed
@@ -372,9 +419,50 @@ impl OpenElementsStack {
                 .expect("current() returned Some so pop() must succeed");
             debug_assert_eq!(popped, current);
             self.pop_ops = self.pop_ops.saturating_add(1);
+            self.foster_parenting_cache
+                .note_pop(self.items.len(), popped.name());
             removed += 1;
         }
         removed
+    }
+
+    pub(crate) fn foster_parenting_anchor_indices(
+        &mut self,
+        html: AtomId,
+        table: AtomId,
+        template: AtomId,
+    ) -> FosterParentingAnchorIndices {
+        if let Some(cached) = self
+            .foster_parenting_cache
+            .get_if_valid(html, table, template)
+        {
+            return cached;
+        }
+
+        self.foster_parenting_cache.scan_calls =
+            self.foster_parenting_cache.scan_calls.saturating_add(1);
+        let mut indices = FosterParentingAnchorIndices::default();
+        for index in (0..self.items.len()).rev() {
+            self.foster_parenting_cache.scan_steps =
+                self.foster_parenting_cache.scan_steps.saturating_add(1);
+            let name = self.items[index].name();
+            if indices.table_index.is_none() && name == table {
+                indices.table_index = Some(index);
+            } else if indices.template_index.is_none() && name == template {
+                indices.template_index = Some(index);
+            } else if indices.html_index.is_none() && name == html {
+                indices.html_index = Some(index);
+            }
+            if indices.table_index.is_some()
+                && indices.template_index.is_some()
+                && indices.html_index.is_some()
+            {
+                break;
+            }
+        }
+        self.foster_parenting_cache
+            .store(html, table, template, indices);
+        indices
     }
 
     /// Probe-only scope lookup used before mutation so callers can preserve the
@@ -396,6 +484,109 @@ impl OpenElementsStack {
             }
         }
         None
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub(crate) struct FosterParentingAnchorIndices {
+    pub(crate) html_index: Option<usize>,
+    pub(crate) table_index: Option<usize>,
+    pub(crate) template_index: Option<usize>,
+}
+
+#[derive(Clone, Copy, Debug, Default)]
+struct FosterParentingIndexCache {
+    html: Option<AtomId>,
+    table: Option<AtomId>,
+    template: Option<AtomId>,
+    indices: FosterParentingAnchorIndices,
+    valid: bool,
+    scan_calls: u64,
+    scan_steps: u64,
+}
+
+impl FosterParentingIndexCache {
+    fn invalidate(&mut self) {
+        self.valid = false;
+    }
+
+    fn get_if_valid(
+        &self,
+        html: AtomId,
+        table: AtomId,
+        template: AtomId,
+    ) -> Option<FosterParentingAnchorIndices> {
+        if self.valid
+            && self.html == Some(html)
+            && self.table == Some(table)
+            && self.template == Some(template)
+        {
+            Some(self.indices)
+        } else {
+            None
+        }
+    }
+
+    fn store(
+        &mut self,
+        html: AtomId,
+        table: AtomId,
+        template: AtomId,
+        indices: FosterParentingAnchorIndices,
+    ) {
+        self.html = Some(html);
+        self.table = Some(table);
+        self.template = Some(template);
+        self.indices = indices;
+        self.valid = true;
+    }
+
+    fn note_push(&mut self, index: usize, name: AtomId) {
+        if !self.valid {
+            return;
+        }
+        if Some(name) == self.html {
+            self.indices.html_index = Some(index);
+        } else if Some(name) == self.table {
+            self.indices.table_index = Some(index);
+        } else if Some(name) == self.template {
+            self.indices.template_index = Some(index);
+        }
+    }
+
+    fn note_pop(&mut self, removed_index: usize, name: AtomId) {
+        if !self.valid {
+            return;
+        }
+        if (Some(name) == self.html && self.indices.html_index == Some(removed_index))
+            || (Some(name) == self.table && self.indices.table_index == Some(removed_index))
+            || (Some(name) == self.template && self.indices.template_index == Some(removed_index))
+        {
+            self.invalidate();
+        }
+    }
+
+    fn note_suffix_removal(&mut self, start_index: usize, old_len: usize) {
+        if !self.valid {
+            return;
+        }
+        debug_assert!(start_index < old_len);
+        let removed = start_index..old_len;
+        if self
+            .indices
+            .html_index
+            .is_some_and(|index| removed.contains(&index))
+            || self
+                .indices
+                .table_index
+                .is_some_and(|index| removed.contains(&index))
+            || self
+                .indices
+                .template_index
+                .is_some_and(|index| removed.contains(&index))
+        {
+            self.invalidate();
+        }
     }
 }
 
@@ -433,7 +624,9 @@ fn is_scope_boundary(name: AtomId, kind: ScopeKind, tags: &ScopeTagSet) -> bool 
 
 #[cfg(test)]
 mod tests {
-    use super::{OpenElement, OpenElementsStack, ScopeKind, ScopeTagSet};
+    use super::{
+        FosterParentingAnchorIndices, OpenElement, OpenElementsStack, ScopeKind, ScopeTagSet,
+    };
     use crate::dom_patch::PatchKey;
     use crate::html5::shared::DocumentParseContext;
 
@@ -655,5 +848,38 @@ mod tests {
         let removed = stack.clear_to_table_row_context(tr, &tags);
         assert_eq!(removed, 2);
         assert_eq!(stack.current().map(|entry| entry.key()), Some(PatchKey(4)));
+    }
+
+    #[test]
+    fn foster_parenting_anchor_cache_survives_non_tracked_push_pop_churn() {
+        let mut ctx = DocumentParseContext::new();
+        let tags = make_scope_tags(&mut ctx);
+        let div = ctx.atoms.intern_ascii_folded("div").expect("atom");
+        let mut stack = OpenElementsStack::default();
+
+        stack.push(OpenElement::new(PatchKey(1), tags.html));
+        stack.push(OpenElement::new(PatchKey(2), tags.table));
+
+        let first = stack.foster_parenting_anchor_indices(tags.html, tags.table, tags.template);
+        assert_eq!(
+            first,
+            FosterParentingAnchorIndices {
+                html_index: Some(0),
+                table_index: Some(1),
+                template_index: None,
+            }
+        );
+        assert_eq!(stack.foster_parenting_scan_calls(), 1);
+
+        stack.push(OpenElement::new(PatchKey(3), div));
+        let _ = stack.pop();
+
+        let second = stack.foster_parenting_anchor_indices(tags.html, tags.table, tags.template);
+        assert_eq!(second, first);
+        assert_eq!(
+            stack.foster_parenting_scan_calls(),
+            1,
+            "non-tracked push/pop churn above the table should reuse cached foster anchors"
+        );
     }
 }
