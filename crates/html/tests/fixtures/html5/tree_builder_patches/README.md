@@ -41,6 +41,7 @@ Milestone H corpus:
 - `h8-marker-*`: marker-boundary interaction coverage with formatting state.
 - `h10-aaa-*`: canonical `AppendChild` / `InsertBefore` move encoding and stable key-preserving AAA reparenting.
 - `i7-foster-parent-*`: direct foster-parent insertion-location patch sequencing for misplaced table text/element content and move-heavy AAA reparenting.
+- `i8-move-*`: issue-explicit move-contract evidence for `AppendChild` reparenting and `InsertBefore` foster-parent moves using existing node ids.
 
 
 Regenerate expected outputs:

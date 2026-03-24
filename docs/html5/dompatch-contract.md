@@ -1,6 +1,6 @@
 # HTML5 DomPatch Contract (Core v0)
 
-Last updated: 2026-03-02  
+Last updated: 2026-03-24  
 Scope: `crates/html/src/html5` (`feature = "html5"`)
 
 This document is the normative contract for patch emission from the HTML5 tokenizer/tree-builder/session pipeline.
@@ -42,6 +42,20 @@ Core v0 patch protocol is defined by [`DomPatch`](../../crates/html/src/dom_patc
 
 `Close` is not a patch in Core v0; end-tag closure is represented by SOE state transitions and subsequent structural emissions.
 
+### Move Semantics Confirmation (I8)
+
+Milestone I confirms that the existing structural patch model is sufficient for
+table-driven foster parenting and complex reparenting. No new `MoveNode`,
+`ReparentNode`, or detach-only patch opcode is added.
+
+Normative consequence:
+
+- `AppendChild` and `InsertBefore` with an already-created `child` are the
+  minimal engine-grade move surface for Core v0
+- same-parent reorder and cross-parent reparent remain one contract surface,
+  not separate opcode families
+- parser/runtime code must not encode temporary-detach moves with `RemoveNode`
+
 ## Ordering Rules
 
 For all patch streams:
@@ -72,6 +86,10 @@ Structural move semantics for HTML5-capable appliers:
 - `RemoveNode` is destructive subtree removal, not a temporary detach
   primitive.
 - moving a document node or document root node is illegal.
+- successful moves must leave no dangling parent references, dangling child
+  references, duplicate sibling references, or cycles in the materialized tree.
+- if a move attempt fails, atomic batch rollback means no partial detach or
+  half-applied reparent is observable.
 
 ## Atomic Batch Rules
 
@@ -139,3 +157,11 @@ Core v0 patch correctness uses patch-level golden tests:
 - fixtures in `crates/html/tests/fixtures/html5/tree_builder_patches/`
 
 These tests validate deterministic ordering, batching equivalence (whole vs chunked), and patch protocol stability without relying on DOM snapshot diffing for acceptance.
+
+Move-specific evidence for Core v0 / Milestone I includes:
+
+- runtime/applier unit tests for same-parent reorder and cross-parent reparent
+- HTML5 patch goldens that explicitly cover:
+  - `AppendChild`-encoded existing-node moves
+  - `InsertBefore`-encoded foster-parent moves
+  - deterministic ordering under whole vs chunked execution

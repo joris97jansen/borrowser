@@ -1,6 +1,6 @@
 # HTML5 Tables, Foster Parenting, and Quirks Contract (Milestone I)
 
-Last updated: 2026-03-20  
+Last updated: 2026-03-24  
 Scope: `crates/html/src/html5/tree_builder` (`feature = "html5"`)  
 Status: normative implementation contract for Milestone I; current repository code may still be partial
 
@@ -236,6 +236,9 @@ parenting must use the existing structural contract:
   current node path resolves to append-at-end behavior.
 - Identity-preserving reparent/reorder operations must use
   `AppendChild` / `InsertBefore` only.
+- Milestone I / I8 confirms that this existing patch surface is sufficient for
+  tables-specific foster parenting and complex reparenting; no `MoveNode` /
+  `ReparentNode` variant is introduced.
 - `RemoveNode` is never a legal temporary-detach primitive for foster
   parenting, table recovery, or any implied move.
 

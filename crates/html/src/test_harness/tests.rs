@@ -440,6 +440,181 @@ fn materialize_patch_batches_supports_cross_parent_insert_before_move() {
 }
 
 #[test]
+fn materialize_patch_batches_supports_same_parent_insert_before_move() {
+    let dom = materialize_patch_batches(&[vec![
+        DomPatch::CreateDocument {
+            key: PatchKey(1),
+            doctype: None,
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(2),
+            name: Arc::from("ul"),
+            attributes: Vec::new(),
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(3),
+            name: Arc::from("li"),
+            attributes: Vec::new(),
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(4),
+            name: Arc::from("li"),
+            attributes: Vec::new(),
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(5),
+            name: Arc::from("li"),
+            attributes: Vec::new(),
+        },
+        DomPatch::CreateText {
+            key: PatchKey(6),
+            text: "a".to_string(),
+        },
+        DomPatch::CreateText {
+            key: PatchKey(7),
+            text: "b".to_string(),
+        },
+        DomPatch::CreateText {
+            key: PatchKey(8),
+            text: "c".to_string(),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(1),
+            child: PatchKey(2),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(2),
+            child: PatchKey(3),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(2),
+            child: PatchKey(4),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(2),
+            child: PatchKey(5),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(3),
+            child: PatchKey(6),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(4),
+            child: PatchKey(7),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(5),
+            child: PatchKey(8),
+        },
+        DomPatch::InsertBefore {
+            parent: PatchKey(2),
+            child: PatchKey(5),
+            before: PatchKey(3),
+        },
+    ]])
+    .expect("same-parent insert-before move should materialize");
+
+    let expected = Node::Document {
+        id: Id::INVALID,
+        doctype: None,
+        children: vec![element(
+            "ul",
+            vec![
+                element("li", vec![text("c")]),
+                element("li", vec![text("a")]),
+                element("li", vec![text("b")]),
+            ],
+        )],
+    };
+    assert_dom_eq(&expected, &dom, DomSnapshotOptions::default());
+}
+
+#[test]
+fn materialize_patch_batches_rejects_moves_of_removed_nodes() {
+    let error = materialize_patch_batches(&[vec![
+        DomPatch::CreateDocument {
+            key: PatchKey(1),
+            doctype: None,
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(2),
+            name: Arc::from("div"),
+            attributes: Vec::new(),
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(3),
+            name: Arc::from("span"),
+            attributes: Vec::new(),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(1),
+            child: PatchKey(2),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(2),
+            child: PatchKey(3),
+        },
+        DomPatch::RemoveNode { key: PatchKey(3) },
+        DomPatch::AppendChild {
+            parent: PatchKey(2),
+            child: PatchKey(3),
+        },
+    ]])
+    .expect_err("moving a removed node should be rejected");
+    assert!(
+        error.contains("missing node") || error.contains("missing child"),
+        "unexpected removed-node move error: {error}"
+    );
+}
+
+#[test]
+fn materialize_patch_batches_rejects_moves_of_removed_subtree_descendants() {
+    let error = materialize_patch_batches(&[vec![
+        DomPatch::CreateDocument {
+            key: PatchKey(1),
+            doctype: None,
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(2),
+            name: Arc::from("div"),
+            attributes: Vec::new(),
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(3),
+            name: Arc::from("section"),
+            attributes: Vec::new(),
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(4),
+            name: Arc::from("span"),
+            attributes: Vec::new(),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(1),
+            child: PatchKey(2),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(2),
+            child: PatchKey(3),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(3),
+            child: PatchKey(4),
+        },
+        DomPatch::RemoveNode { key: PatchKey(3) },
+        DomPatch::AppendChild {
+            parent: PatchKey(2),
+            child: PatchKey(4),
+        },
+    ]])
+    .expect_err("moving a descendant of a removed subtree should be rejected");
+    assert!(
+        error.contains("missing node") || error.contains("missing child"),
+        "unexpected removed-subtree descendant move error: {error}"
+    );
+}
+
+#[test]
 fn materialize_patch_batches_rejects_document_and_root_element_moves() {
     let patches = vec![
         DomPatch::CreateDocument {
