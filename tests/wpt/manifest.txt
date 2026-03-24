@@ -63,6 +63,11 @@ status: active
 
 # Milestone I table caption/column-group slice.
 
+id: tables-normal-sections
+path: vendor/html/syntax/parsing/tables/normal-sections.html
+expected: expected/tables-normal-sections.dom.txt
+status: active
+
 id: tables-caption-colgroup-transition
 path: vendor/html/syntax/parsing/tables/caption-colgroup-transition.html
 expected: expected/tables-caption-colgroup-transition.dom.txt
@@ -83,6 +88,11 @@ path: vendor/html/syntax/parsing/tables/omitted-tbody.html
 expected: expected/tables-omitted-tbody.dom.txt
 status: active
 
+id: tables-missing-cell-end-tags
+path: vendor/html/syntax/parsing/tables/missing-cell-end-tags.html
+expected: expected/tables-missing-cell-end-tags.dom.txt
+status: active
+
 id: tables-nested-sections
 path: vendor/html/syntax/parsing/tables/nested-sections.html
 expected: expected/tables-nested-sections.dom.txt
@@ -91,6 +101,21 @@ status: active
 id: tables-stray-tr
 path: vendor/html/syntax/parsing/tables/stray-tr.html
 expected: expected/tables-stray-tr.dom.txt
+status: active
+
+id: tables-stray-text-foster-parent
+path: vendor/html/syntax/parsing/tables/stray-text-foster-parent.html
+expected: expected/tables-stray-text-foster-parent.dom.txt
+status: active
+
+id: tables-stray-tag-foster-parent
+path: vendor/html/syntax/parsing/tables/stray-tag-foster-parent.html
+expected: expected/tables-stray-tag-foster-parent.dom.txt
+status: active
+
+id: tables-nested-basic
+path: vendor/html/syntax/parsing/tables/nested-basic.html
+expected: expected/tables-nested-basic.dom.txt
 status: active
 
 id: tokenizer-basic

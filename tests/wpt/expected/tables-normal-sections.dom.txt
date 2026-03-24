@@ -1,0 +1,19 @@
+# format: html5-dom-v1
+#document doctype="html"
+  <html>
+    <head>
+    <body>
+      <table>
+        <thead>
+          <tr>
+            <th>
+              "a"
+        <tbody>
+          <tr>
+            <td>
+              "b"
+        <tfoot>
+          <tr>
+            <td>
+              "c"
+      "\n"

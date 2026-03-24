@@ -24,6 +24,8 @@ CI fast and deterministic.
   must stay in sync.
   - Includes a dedicated Milestone H formatting/adoption-agency suite exposed via
     `cargo test -p html --features html5,dom-snapshot --test wpt_html5_formatting`.
+  - Includes a dedicated Milestone I tables/foster-parenting suite exposed via
+    `cargo test -p html --features html5,dom-snapshot --test wpt_html5_tables`.
   - Policy: tokenizer `manifest.txt` entries stay `active` by default; temporary
     and policy exclusions are applied via `tokenizer/skips.*`.
   - Policy: tree-construction `manifest.txt` entries stay `active` by default;
@@ -51,6 +53,7 @@ CI fast and deterministic.
 6. Run `cargo test -p html --features html5 --test wpt_rawtext_script` for the focused RAWTEXT/RCDATA/script tokenizer slice.
 7. Run `cargo test -p html --features html5,dom-snapshot --test wpt_html5_tree_builder` for the tree-construction slice.
 8. Run `cargo test -p html --features html5,dom-snapshot --test wpt_html5_formatting` for the curated formatting/adoption-agency tree-construction slice.
+9. Run `cargo test -p html --features html5,dom-snapshot --test wpt_html5_tables` for the curated tables/foster-parenting tree-construction slice.
 
 ## Source / Upstream
 
@@ -69,6 +72,18 @@ Milestone H formatting note:
   prefer replacing the local file with the upstream-derived fixture and record
   that provenance here or in a nearby note.
 
+Milestone I tables note:
+
+- The `vendor/html/syntax/parsing/tables/` band is currently a curated mix of
+  upstream-shaped and local WPT-style coverage for Borrowser's Milestone I
+  table construction, foster-parenting, and implied-wrapper surface.
+- These cases run through the normal WPT manifest/policy/runner path so they
+  behave like the rest of the conformance slice, but they are not all claimed
+  to be verbatim upstream WPT imports unless explicitly noted.
+- When an upstream WPT case later supersedes one of these local table cases,
+  prefer replacing the local file with the upstream-derived fixture and record
+  that provenance here or in a nearby note.
+
 ## Notes
 
 - Manifest `status`/`reason` remains supported for compatibility, but policy for tokenizer/tree-construction slices is to keep manifest entries `active` and use `tokenizer/skips.*` or `tree_builder/skips.*` for temporary exclusions.
@@ -78,6 +93,12 @@ Milestone H formatting note:
   and mirrored in `tree_builder/skips.json` (the tree-builder runner validates parity).
 - The dedicated formatting slice is a fixed-id subset of the tree-builder WPT
   manifest so Milestone H formatting coverage stays curated and reviewable.
+- The dedicated tables slice is a fixed-id subset of the tree-builder WPT
+  manifest so Milestone I table construction, foster parenting, and implied
+  wrapper behavior stay curated and reviewable.
+- Table-specific temporary exclusions should also use `tree_builder/skips.*`
+  with explicit reason text and a tracking issue, rather than manifest-local
+  `skip`/`xfail` status.
 - The runner uses `html::dom_snapshot::DomSnapshot` and the same UTF-8 aligned streaming policy as the golden harnesses.
 - Unlike the internal golden fixture loaders, WPT inputs are read verbatim and do
   not strip a terminal file-format newline. If a vendored WPT HTML file ends in
