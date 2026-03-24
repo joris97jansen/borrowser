@@ -14,14 +14,32 @@ struct Fixture {
     expected_path: PathBuf,
 }
 
+const TABLE_HEAVY_FIXTURE_NAMES: &[&str] = &[
+    "21-email-newsletter-table-layout",
+    "22-wikipedia-like-infobox",
+    "23-legacy-table-fragment",
+    "24-report-nested-tables",
+];
+
 #[test]
 fn html5_smoke_real_pages_minimum_fixture_count() {
     let fixtures = load_fixtures(update_mode());
     assert!(
-        fixtures.len() >= 20,
-        "smoke corpus too small: expected >=20 fixtures, got {}",
+        fixtures.len() >= 24,
+        "smoke corpus too small: expected >=24 fixtures, got {}",
         fixtures.len()
     );
+}
+
+#[test]
+fn html5_smoke_real_pages_table_heavy_band_is_present() {
+    let fixtures = load_fixtures(update_mode());
+    for name in TABLE_HEAVY_FIXTURE_NAMES {
+        assert!(
+            fixtures.iter().any(|fixture| fixture.name == *name),
+            "missing table-heavy smoke fixture '{name}'"
+        );
+    }
 }
 
 #[test]
@@ -43,30 +61,24 @@ fn html5_smoke_real_pages() {
             continue;
         }
         ran += 1;
-        let actual =
-            run_tree_builder_whole(&fixture.input, &fixture.name, DomSnapshotOptions::default())
-                .unwrap_or_else(|err| {
-                    panic!(
-                        "failed to parse smoke fixture '{}' ({:?}): {err}",
-                        fixture.name, fixture.expected_path
-                    )
-                });
-        if update {
-            write_expected_dom(&fixture.expected_path, &actual);
-            continue;
-        }
-        let expected = parse_expected_dom(&fixture.expected_path);
-        if actual.as_slice() != expected.lines.as_slice() {
-            panic!(
-                "smoke DOM mismatch in fixture '{}'\npath: {}\n{}",
-                fixture.name,
-                fixture.expected_path.display(),
-                diff_lines(&expected.lines, &actual)
-            );
-        }
+        assert_fixture_matches(&fixture, update);
     }
 
     assert!(ran > 0, "no smoke fixtures matched filter");
+}
+
+#[test]
+fn html5_smoke_real_pages_table_heavy_band() {
+    let update = update_mode();
+    let fixtures = load_fixtures(update);
+
+    for name in TABLE_HEAVY_FIXTURE_NAMES {
+        let fixture = fixtures
+            .iter()
+            .find(|fixture| fixture.name == *name)
+            .unwrap_or_else(|| panic!("missing table-heavy smoke fixture '{name}'"));
+        assert_fixture_matches(fixture, update);
+    }
 }
 
 fn load_fixtures(update: bool) -> Vec<Fixture> {
@@ -144,6 +156,30 @@ fn fixture_filter() -> Option<String> {
 
 fn update_mode() -> bool {
     matches!(env::var("BORROWSER_HTML5_SMOKE_UPDATE").as_deref(), Ok("1"))
+}
+
+fn assert_fixture_matches(fixture: &Fixture, update: bool) {
+    let actual =
+        run_tree_builder_whole(&fixture.input, &fixture.name, DomSnapshotOptions::default())
+            .unwrap_or_else(|err| {
+                panic!(
+                    "failed to parse smoke fixture '{}' ({:?}): {err}",
+                    fixture.name, fixture.expected_path
+                )
+            });
+    if update {
+        write_expected_dom(&fixture.expected_path, &actual);
+        return;
+    }
+    let expected = parse_expected_dom(&fixture.expected_path);
+    if actual.as_slice() != expected.lines.as_slice() {
+        panic!(
+            "smoke DOM mismatch in fixture '{}'\npath: {}\n{}",
+            fixture.name,
+            fixture.expected_path.display(),
+            diff_lines(&expected.lines, &actual)
+        );
+    }
 }
 
 fn write_expected_dom(path: &Path, lines: &[String]) {
