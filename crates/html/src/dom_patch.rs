@@ -6,6 +6,9 @@
 //! Notes:
 //! - This is intentionally separate from `types.rs` (internal DOM/tokenizer types).
 //! - The patch model is still evolving, so the enum is `#[non_exhaustive]`.
+//! - Core v0 does not define a dedicated `MoveNode` / `ReparentNode` opcode:
+//!   identity-preserving moves are encoded canonically as `AppendChild` or
+//!   `InsertBefore` that reference an already-created `child`.
 //!
 //! Invariants:
 //! - Patches are applied in order.
@@ -98,8 +101,16 @@ pub enum DomPatch {
     /// Create a comment node.
     CreateComment { key: PatchKey, text: String },
     /// Append a child to the end of a parent's children list.
+    ///
+    /// If `child` is already parented, this is an identity-preserving move to
+    /// the end of `parent`'s child list rather than a destructive remove+insert
+    /// sequence.
     AppendChild { parent: PatchKey, child: PatchKey },
     /// Insert a child before an existing sibling.
+    ///
+    /// If `child` is already parented, this is an identity-preserving move or
+    /// reorder that makes `child` the immediate previous sibling of `before`
+    /// under `parent`.
     InsertBefore {
         parent: PatchKey,
         child: PatchKey,
