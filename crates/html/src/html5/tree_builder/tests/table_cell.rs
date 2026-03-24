@@ -189,3 +189,40 @@ fn table_end_tag_implies_cell_close_with_nested_formatting_and_is_chunk_invarian
         "chunk boundaries must not change implicit cell close on table-end recovery"
     );
 }
+
+#[test]
+fn nested_table_inside_cell_uses_real_inner_table_modes_and_is_chunk_invariant() {
+    let whole = materialized_dom_lines(&[
+        "<!doctype html><table><tr><td>outer<table><tr><td>inner</td></tr></table></td></tr></table>",
+    ]);
+    let chunked = materialized_dom_lines(&[
+        "<!doctype html><table><tr><td>outer<table>",
+        "<tr><td>inner</td></tr></table></td></tr></table>",
+    ]);
+
+    let expected = vec![
+        "#document doctype=\"html\"".to_string(),
+        "  <html>".to_string(),
+        "    <head>".to_string(),
+        "    <body>".to_string(),
+        "      <table>".to_string(),
+        "        <tbody>".to_string(),
+        "          <tr>".to_string(),
+        "            <td>".to_string(),
+        "              \"outer\"".to_string(),
+        "              <table>".to_string(),
+        "                <tbody>".to_string(),
+        "                  <tr>".to_string(),
+        "                    <td>".to_string(),
+        "                      \"inner\"".to_string(),
+    ];
+
+    assert_eq!(
+        whole, expected,
+        "nested tables inside cells must enter the inner table-family insertion modes"
+    );
+    assert_eq!(
+        chunked, whole,
+        "nested table parsing inside cells must remain chunk-invariant"
+    );
+}

@@ -1,0 +1,37 @@
+# format: html5-dompatch-v1
+# status: active
+
+Batch index=0 size=33
+CreateDocument key=1 doctype="html"
+CreateElement key=2 name=html attrs=[]
+AppendChild parent=1 child=2
+CreateElement key=3 name=head attrs=[]
+AppendChild parent=2 child=3
+CreateElement key=4 name=body attrs=[]
+AppendChild parent=2 child=4
+CreateElement key=5 name=table attrs=[]
+AppendChild parent=4 child=5
+CreateElement key=6 name=thead attrs=[]
+AppendChild parent=5 child=6
+CreateElement key=7 name=tr attrs=[]
+AppendChild parent=6 child=7
+CreateElement key=8 name=th attrs=[]
+AppendChild parent=7 child=8
+CreateText key=9 text="a"
+AppendChild parent=8 child=9
+CreateElement key=10 name=tbody attrs=[]
+AppendChild parent=5 child=10
+CreateElement key=11 name=tr attrs=[]
+AppendChild parent=10 child=11
+CreateElement key=12 name=td attrs=[]
+AppendChild parent=11 child=12
+CreateText key=13 text="b"
+AppendChild parent=12 child=13
+CreateElement key=14 name=tfoot attrs=[]
+AppendChild parent=5 child=14
+CreateElement key=15 name=tr attrs=[]
+AppendChild parent=14 child=15
+CreateElement key=16 name=td attrs=[]
+AppendChild parent=15 child=16
+CreateText key=17 text="c"
+AppendChild parent=16 child=17

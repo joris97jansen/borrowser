@@ -55,39 +55,46 @@ pub(crate) fn env_u64(key: &str, default: u64) -> u64 {
 }
 
 pub(crate) fn load_fixtures() -> Vec<Fixture> {
-    let root = fixture_root();
     let mut fixtures = Vec::new();
-    let mut entries: Vec<_> = fs::read_dir(&root)
-        .unwrap_or_else(|err| panic!("failed to read fixture root {root:?}: {err}"))
-        .filter_map(Result::ok)
-        .collect();
-    entries.sort_by_key(|entry| entry.file_name());
+    let mut seen_names = BTreeMap::new();
 
-    for entry in entries {
-        let path = entry.path();
-        if !path.is_dir() {
-            continue;
+    for root in fixture_roots() {
+        let mut entries: Vec<_> = fs::read_dir(&root)
+            .unwrap_or_else(|err| panic!("failed to read fixture root {root:?}: {err}"))
+            .filter_map(Result::ok)
+            .collect();
+        entries.sort_by_key(|entry| entry.file_name());
+
+        for entry in entries {
+            let path = entry.path();
+            if !path.is_dir() {
+                continue;
+            }
+            let name = entry.file_name().to_string_lossy().to_string();
+            if name != name.trim() {
+                panic!("fixture directory has leading/trailing whitespace: '{name}'");
+            }
+            if name.starts_with('.') {
+                continue;
+            }
+            if let Some(previous_root) = seen_names.insert(name.clone(), root.clone()) {
+                panic!("duplicate patch fixture name '{name}' in {previous_root:?} and {root:?}");
+            }
+            let input_path = path.join("input.html");
+            let patches_path = path.join("patches.txt");
+            let input = fs::read_to_string(&input_path)
+                .unwrap_or_else(|err| panic!("failed to read input {input_path:?}: {err}"));
+            let input = normalize_fixture_input(input);
+            let expected = parse_patch_file(&patches_path);
+            fixtures.push(Fixture {
+                name,
+                input,
+                expected,
+            });
         }
-        let name = entry.file_name().to_string_lossy().to_string();
-        if name != name.trim() {
-            panic!("fixture directory has leading/trailing whitespace: '{name}'");
-        }
-        if name.starts_with('.') {
-            continue;
-        }
-        let input_path = path.join("input.html");
-        let patches_path = path.join("patches.txt");
-        let input = fs::read_to_string(&input_path)
-            .unwrap_or_else(|err| panic!("failed to read input {input_path:?}: {err}"));
-        let input = normalize_fixture_input(input);
-        let expected = parse_patch_file(&patches_path);
-        fixtures.push(Fixture {
-            name,
-            input,
-            expected,
-        });
     }
 
+    fixtures.sort_by(|left, right| left.name.cmp(&right.name));
     fixtures
 }
 
@@ -101,15 +108,41 @@ fn normalize_fixture_input(mut input: String) -> String {
 }
 
 pub(crate) fn fixture_dir(name: &str) -> PathBuf {
-    fixture_root().join(name)
+    let mut matches = fixture_roots()
+        .into_iter()
+        .map(|root| root.join(name))
+        .filter(|path| path.is_dir());
+    let Some(first) = matches.next() else {
+        panic!("unknown patch fixture directory for '{name}'");
+    };
+    if let Some(second) = matches.next() {
+        panic!(
+            "ambiguous patch fixture directory for '{name}': {:?} and {:?}",
+            first, second
+        );
+    }
+    first
 }
 
-fn fixture_root() -> PathBuf {
+fn legacy_fixture_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
         .join("tests")
         .join("fixtures")
         .join("html5")
         .join("tree_builder_patches")
+}
+
+fn tables_fixture_root() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR"))
+        .join("tests")
+        .join("fixtures")
+        .join("html5")
+        .join("tables")
+        .join("patches")
+}
+
+fn fixture_roots() -> Vec<PathBuf> {
+    vec![legacy_fixture_root(), tables_fixture_root()]
 }
 
 fn parse_patch_file(path: &Path) -> ExpectedPatches {
