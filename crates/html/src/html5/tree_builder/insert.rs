@@ -11,12 +11,51 @@ use crate::html5::tree_builder::stack::{OpenElement, ScopeKind};
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct InsertionLocation {
+pub(in crate::html5::tree_builder) struct InsertionLocation {
     parent: PatchKey,
     before: Option<PatchKey>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum FosterParentAnchor {
+    Template(PatchKey),
+    TableIndex(usize),
+}
+
 impl Html5TreeBuilder {
+    fn find_last_table_and_template_indices(&self) -> (Option<usize>, Option<usize>) {
+        let mut table_index = None;
+        let mut template_index = None;
+        for index in (0..self.open_elements.len()).rev() {
+            let element = self
+                .open_elements
+                .get(index)
+                .expect("open-elements index must remain in bounds during foster scan");
+            if table_index.is_none() && element.name() == self.known_tags.table {
+                table_index = Some(index);
+            } else if template_index.is_none() && element.name() == self.known_tags.template {
+                template_index = Some(index);
+            }
+            if table_index.is_some() && template_index.is_some() {
+                break;
+            }
+        }
+        (table_index, template_index)
+    }
+
+    fn find_last_open_element_index(&self, target: AtomId) -> Option<usize> {
+        for index in (0..self.open_elements.len()).rev() {
+            let element = self
+                .open_elements
+                .get(index)
+                .expect("open-elements index must remain in bounds during foster scan");
+            if element.name() == target {
+                return Some(index);
+            }
+        }
+        None
+    }
+
     fn current_insertion_parent(&self) -> Result<PatchKey, TreeBuilderError> {
         let document_key = self
             .document_key
@@ -35,28 +74,75 @@ impl Html5TreeBuilder {
         })
     }
 
-    fn foster_parenting_insertion_location(&self) -> Result<InsertionLocation, TreeBuilderError> {
-        let Some(table) = self.current_table_key() else {
-            return self.current_insertion_location();
-        };
-        if let Some(parent) = self.live_tree.parent(table) {
-            return Ok(InsertionLocation {
-                parent,
-                before: Some(table),
-            });
+    fn foster_parenting_anchor_from_soe(&self) -> Option<FosterParentAnchor> {
+        let (last_table_index, last_template_index) = self.find_last_table_and_template_indices();
+        if let (Some(table_index), Some(template_index)) = (last_table_index, last_template_index)
+            && template_index > table_index
+        {
+            let template = self
+                .open_elements
+                .get(template_index)
+                .expect("template index must remain valid while computing foster location");
+            return Some(FosterParentAnchor::Template(template.key()));
         }
-        let table_index = self
+        last_table_index.map(FosterParentAnchor::TableIndex)
+    }
+
+    fn foster_parenting_location_for_table_anchor(&self, table_index: usize) -> InsertionLocation {
+        let table = self
             .open_elements
-            .find_index_by_key(table)
-            .expect("current table key must remain present on SOE");
+            .get(table_index)
+            .expect("table index must remain valid while computing foster location");
+        if let Some(parent) = self.live_tree.parent(table.key()) {
+            return InsertionLocation {
+                parent,
+                before: Some(table.key()),
+            };
+        }
+
+        // Foster parenting only uses this detached-table branch when the table is
+        // still represented on the SOE under a prior context element. A detached
+        // foster table therefore must have a previous SOE entry available as the
+        // append target.
         let foster_parent = table_index
             .checked_sub(1)
             .and_then(|index| self.open_elements.get(index))
             .expect("detached foster table must still have a previous SOE entry");
-        Ok(InsertionLocation {
+        InsertionLocation {
             parent: foster_parent.key(),
             before: None,
+        }
+    }
+
+    fn foster_parenting_location_without_table(
+        &self,
+    ) -> Result<InsertionLocation, TreeBuilderError> {
+        let Some(html_index) = self.find_last_open_element_index(self.known_tags.html) else {
+            return self.current_insertion_location();
+        };
+        let html = self
+            .open_elements
+            .get(html_index)
+            .expect("html index must remain valid while computing foster location");
+        Ok(InsertionLocation {
+            parent: html.key(),
+            before: None,
         })
+    }
+
+    pub(in crate::html5::tree_builder) fn foster_parenting_insertion_location(
+        &self,
+    ) -> Result<InsertionLocation, TreeBuilderError> {
+        match self.foster_parenting_anchor_from_soe() {
+            Some(FosterParentAnchor::Template(parent)) => Ok(InsertionLocation {
+                parent,
+                before: None,
+            }),
+            Some(FosterParentAnchor::TableIndex(table_index)) => {
+                Ok(self.foster_parenting_location_for_table_anchor(table_index))
+            }
+            None => self.foster_parenting_location_without_table(),
+        }
     }
 
     fn element_or_text_insertion_location(&self) -> Result<InsertionLocation, TreeBuilderError> {
@@ -72,6 +158,15 @@ impl Html5TreeBuilder {
             Some(before) => self.insert_existing_child_before(location.parent, child, before),
             None => self.append_existing_child(location.parent, child),
         }
+    }
+
+    pub(in crate::html5::tree_builder) fn insert_existing_child_using_foster_parenting_location(
+        &mut self,
+        child: PatchKey,
+    ) -> Result<(), TreeBuilderError> {
+        let location = self.foster_parenting_insertion_location()?;
+        self.insert_existing_child_at(location, child);
+        Ok(())
     }
 
     pub(in crate::html5::tree_builder) fn append_existing_child(
@@ -367,5 +462,277 @@ impl Html5TreeBuilder {
         } else {
             ScopeKind::InScope
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{Html5TreeBuilder, InsertionLocation};
+    use crate::dom_patch::{DomPatch, PatchKey};
+    use crate::html5::shared::DocumentParseContext;
+    use crate::html5::tokenizer::{TextResolveError, TextResolver};
+    use crate::html5::tree_builder::stack::OpenElement;
+
+    struct EmptyResolver;
+
+    impl TextResolver for EmptyResolver {
+        fn resolve_span(
+            &self,
+            span: crate::html5::shared::TextSpan,
+        ) -> Result<&str, TextResolveError> {
+            Err(TextResolveError::InvalidSpan { span })
+        }
+    }
+
+    fn bootstrap_html_body(
+        builder: &mut Html5TreeBuilder,
+        ctx: &DocumentParseContext,
+    ) -> (PatchKey, PatchKey) {
+        builder
+            .with_structural_mutation(|this| {
+                let document = this.ensure_document_created()?;
+                let html = this.create_detached_element(this.known_tags.html, &[], &ctx.atoms)?;
+                this.append_existing_child(document, html);
+                this.open_elements
+                    .push(OpenElement::new(html, this.known_tags.html));
+
+                let body = this.create_detached_element(this.known_tags.body, &[], &ctx.atoms)?;
+                this.append_existing_child(html, body);
+                this.open_elements
+                    .push(OpenElement::new(body, this.known_tags.body));
+                Ok((html, body))
+            })
+            .expect("bootstrap should remain recoverable")
+    }
+
+    fn attach_live_table(
+        builder: &mut Html5TreeBuilder,
+        ctx: &DocumentParseContext,
+        body: PatchKey,
+    ) -> PatchKey {
+        builder
+            .with_structural_mutation(|this| {
+                let table = this.create_detached_element(this.known_tags.table, &[], &ctx.atoms)?;
+                this.append_existing_child(body, table);
+                this.open_elements
+                    .push(OpenElement::new(table, this.known_tags.table));
+                Ok(table)
+            })
+            .expect("live table attach should remain recoverable")
+    }
+
+    #[test]
+    fn foster_parenting_location_uses_live_table_parent_and_before_key() {
+        let mut ctx = DocumentParseContext::new();
+        let mut builder = Html5TreeBuilder::new(
+            crate::html5::tree_builder::TreeBuilderConfig::default(),
+            &mut ctx,
+        )
+        .expect("tree builder init");
+
+        let (_html, body) = bootstrap_html_body(&mut builder, &ctx);
+        let table = attach_live_table(&mut builder, &ctx, body);
+
+        assert_eq!(
+            builder
+                .foster_parenting_insertion_location()
+                .expect("foster location"),
+            InsertionLocation {
+                parent: body,
+                before: Some(table),
+            }
+        );
+    }
+
+    #[test]
+    fn foster_parenting_location_uses_previous_soe_entry_for_detached_table() {
+        let mut ctx = DocumentParseContext::new();
+        let mut builder = Html5TreeBuilder::new(
+            crate::html5::tree_builder::TreeBuilderConfig::default(),
+            &mut ctx,
+        )
+        .expect("tree builder init");
+
+        let (_html, body) = bootstrap_html_body(&mut builder, &ctx);
+        builder
+            .with_structural_mutation(|this| {
+                let table = this.create_detached_element(this.known_tags.table, &[], &ctx.atoms)?;
+                this.open_elements
+                    .push(OpenElement::new(table, this.known_tags.table));
+                assert_eq!(
+                    this.foster_parenting_insertion_location()?,
+                    InsertionLocation {
+                        parent: body,
+                        before: None,
+                    }
+                );
+                Ok(())
+            })
+            .expect("detached foster-parent computation should remain recoverable");
+    }
+
+    #[test]
+    fn foster_parenting_location_prefers_template_above_table() {
+        let mut ctx = DocumentParseContext::new();
+        let mut builder = Html5TreeBuilder::new(
+            crate::html5::tree_builder::TreeBuilderConfig::default(),
+            &mut ctx,
+        )
+        .expect("tree builder init");
+
+        let (_html, body) = bootstrap_html_body(&mut builder, &ctx);
+        let _table = attach_live_table(&mut builder, &ctx, body);
+        builder
+            .with_structural_mutation(|this| {
+                let template =
+                    this.create_detached_element(this.known_tags.template, &[], &ctx.atoms)?;
+                this.open_elements
+                    .push(OpenElement::new(template, this.known_tags.template));
+                assert_eq!(
+                    this.foster_parenting_insertion_location()?,
+                    InsertionLocation {
+                        parent: template,
+                        before: None,
+                    }
+                );
+                Ok(())
+            })
+            .expect("template-preferred foster-parent computation should remain recoverable");
+    }
+
+    #[test]
+    fn foster_parenting_text_insertion_uses_insert_before_for_live_table() {
+        let mut ctx = DocumentParseContext::new();
+        let mut builder = Html5TreeBuilder::new(
+            crate::html5::tree_builder::TreeBuilderConfig::default(),
+            &mut ctx,
+        )
+        .expect("tree builder init");
+
+        let (_html, body) = bootstrap_html_body(&mut builder, &ctx);
+        let table = attach_live_table(&mut builder, &ctx, body);
+        let _ = builder.drain_patches();
+        builder.foster_parenting_enabled = true;
+
+        builder
+            .insert_literal_text("x")
+            .expect("foster-parent text insertion should remain recoverable");
+        let patches = builder.drain_patches();
+
+        assert_eq!(
+            patches,
+            vec![
+                DomPatch::CreateText {
+                    key: PatchKey(5),
+                    text: "x".to_string(),
+                },
+                DomPatch::InsertBefore {
+                    parent: body,
+                    child: PatchKey(5),
+                    before: table,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn foster_parenting_element_insertion_uses_insert_before_for_live_table() {
+        let resolver = EmptyResolver;
+        let mut ctx = DocumentParseContext::new();
+        let mut builder = Html5TreeBuilder::new(
+            crate::html5::tree_builder::TreeBuilderConfig::default(),
+            &mut ctx,
+        )
+        .expect("tree builder init");
+
+        let (_html, body) = bootstrap_html_body(&mut builder, &ctx);
+        let table = attach_live_table(&mut builder, &ctx, body);
+        let _ = builder.drain_patches();
+        builder.foster_parenting_enabled = true;
+        let div = ctx.atoms.intern_ascii_folded("div").expect("atom");
+
+        let inserted = builder
+            .insert_element(div, &[], false, &ctx.atoms, &resolver)
+            .expect("foster-parent element insertion should remain recoverable");
+        let patches = builder.drain_patches();
+
+        assert_eq!(inserted, PatchKey(5));
+        assert_eq!(
+            patches,
+            vec![
+                DomPatch::CreateElement {
+                    key: PatchKey(5),
+                    name: std::sync::Arc::from("div"),
+                    attributes: Vec::new(),
+                },
+                DomPatch::InsertBefore {
+                    parent: body,
+                    child: PatchKey(5),
+                    before: table,
+                },
+            ]
+        );
+    }
+
+    #[test]
+    fn foster_parenting_reparents_existing_nodes_with_insert_before_only() {
+        let mut ctx = DocumentParseContext::new();
+        let mut builder = Html5TreeBuilder::new(
+            crate::html5::tree_builder::TreeBuilderConfig::default(),
+            &mut ctx,
+        )
+        .expect("tree builder init");
+
+        let (_html, body) = bootstrap_html_body(&mut builder, &ctx);
+        let table = attach_live_table(&mut builder, &ctx, body);
+        let (container, child) = builder
+            .with_structural_mutation(|this| {
+                let div = this.create_detached_element(
+                    ctx.atoms.intern_ascii_folded("div").expect("atom"),
+                    &[],
+                    &ctx.atoms,
+                )?;
+                this.append_existing_child(body, div);
+                let span = this.create_detached_element(
+                    ctx.atoms.intern_ascii_folded("span").expect("atom"),
+                    &[],
+                    &ctx.atoms,
+                )?;
+                this.append_existing_child(div, span);
+                Ok((div, span))
+            })
+            .expect("existing child setup should remain recoverable");
+        let _ = builder.drain_patches();
+
+        builder
+            .with_structural_mutation(|this| {
+                this.insert_existing_child_using_foster_parenting_location(child)
+            })
+            .expect("existing child foster-parent move should remain recoverable");
+        let patches = builder.drain_patches();
+
+        assert_eq!(
+            patches,
+            vec![DomPatch::InsertBefore {
+                parent: body,
+                child,
+                before: table,
+            }]
+        );
+        assert!(
+            !patches
+                .iter()
+                .any(|patch| matches!(patch, DomPatch::RemoveNode { .. })),
+            "foster-parent reparenting must use canonical InsertBefore move encoding"
+        );
+        assert_eq!(builder.live_tree.parent(child), Some(body));
+        assert_eq!(
+            builder.live_tree.children_snapshot(container),
+            Vec::<PatchKey>::new()
+        );
+        assert_eq!(
+            builder.live_tree.children_snapshot(body),
+            vec![child, table, container]
+        );
     }
 }
