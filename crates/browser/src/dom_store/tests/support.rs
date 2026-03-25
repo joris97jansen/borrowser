@@ -1,4 +1,4 @@
-use super::{DomPatchError, DomStore};
+use super::super::{DomPatchError, DomStore};
 use core_types::{DomHandle, DomVersion};
 use html::{DomPatch, Node, PatchKey};
 
