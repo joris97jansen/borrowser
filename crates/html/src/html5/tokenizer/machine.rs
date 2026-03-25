@@ -1,4 +1,5 @@
 use super::input::MatchResult;
+use super::limits::LIMIT_DETAIL_TOKEN_BATCH;
 use super::states::TokenizerState;
 use super::{Html5Tokenizer, TokenizeResult};
 use crate::html5::shared::{AtomError, AtomId, DocumentParseContext, Input};
@@ -38,6 +39,13 @@ impl Html5Tokenizer {
         } else {
             self.input_id = Some(input.id());
         }
+        if stop_condition == StopCondition::DrainAvailableInput
+            && self.tokens.len() >= self.max_tokens_per_batch()
+        {
+            #[cfg(any(debug_assertions, feature = "parser_invariants", test))]
+            self.debug_assert_invariants(input);
+            return TokenizeResult::Progress;
+        }
         if stop_condition == StopCondition::YieldAfterToken && !self.tokens.is_empty() {
             #[cfg(any(debug_assertions, feature = "parser_invariants", test))]
             self.debug_assert_invariants(input);
@@ -62,6 +70,19 @@ impl Html5Tokenizer {
             self.stats_set_bytes_consumed();
             #[cfg(any(debug_assertions, feature = "parser_invariants", test))]
             self.debug_assert_step_result(input, step_before, step_result);
+            if stop_condition == StopCondition::DrainAvailableInput
+                && self.tokens.len() >= self.max_tokens_per_batch()
+            {
+                if self.has_unconsumed_input(input) {
+                    self.record_limit_error(
+                        ctx,
+                        self.cursor,
+                        LIMIT_DETAIL_TOKEN_BATCH,
+                        self.max_tokens_per_batch(),
+                    );
+                }
+                break;
+            }
             if stop_condition == StopCondition::YieldAfterToken
                 && self.tokens.len() > initial_token_count
             {
@@ -183,16 +204,16 @@ impl Html5Tokenizer {
             }
             TokenizerState::SelfClosingStartTag => self.step_self_closing_start_tag(input, ctx),
             TokenizerState::MarkupDeclarationOpen => self.step_markup_declaration_open(input, ctx),
-            TokenizerState::CommentStart => self.step_comment_start(input),
-            TokenizerState::CommentStartDash => self.step_comment_start_dash(input),
-            TokenizerState::Comment => self.step_comment(input),
-            TokenizerState::CommentEndDash => self.step_comment_end_dash(input),
-            TokenizerState::CommentEnd => self.step_comment_end(input),
-            TokenizerState::BogusComment => self.step_bogus_comment(input),
+            TokenizerState::CommentStart => self.step_comment_start(input, ctx),
+            TokenizerState::CommentStartDash => self.step_comment_start_dash(input, ctx),
+            TokenizerState::Comment => self.step_comment(input, ctx),
+            TokenizerState::CommentEndDash => self.step_comment_end_dash(input, ctx),
+            TokenizerState::CommentEnd => self.step_comment_end(input, ctx),
+            TokenizerState::BogusComment => self.step_bogus_comment(input, ctx),
             TokenizerState::Doctype => self.step_doctype(input),
             TokenizerState::BeforeDoctypeName => self.step_before_doctype_name(input),
             TokenizerState::DoctypeName => self.step_doctype_name(input, ctx),
-            TokenizerState::AfterDoctypeName => self.step_after_doctype_name(input),
+            TokenizerState::AfterDoctypeName => self.step_after_doctype_name(input, ctx),
             TokenizerState::BogusDoctype => self.step_bogus_doctype(input),
             // Placeholder: state families are wired into the dispatcher now,
             // behavior will land incrementally in follow-up issues.

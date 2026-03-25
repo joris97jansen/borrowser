@@ -1,6 +1,7 @@
 use super::Html5Tokenizer;
 use super::control::TextModeKind;
 use super::input::MatchResult;
+use super::limits::LIMIT_DETAIL_END_TAG_MATCHER;
 use super::machine::Step;
 use super::scan::{
     IncrementalEndTagMatch, IncrementalEndTagMatcher, ScriptTagBoundaryMatch,
@@ -21,6 +22,7 @@ pub(crate) enum TextModeEndTagMatch {
         had_attributes: bool,
         self_closing: bool,
     },
+    LimitExceeded,
     NeedMoreInput(IncrementalEndTagMatcher),
     NoMatch,
 }
@@ -383,6 +385,9 @@ impl Html5Tokenizer {
                 self.set_cursor(less_than_pos);
                 Step::NeedMoreInput
             }
+            TextModeEndTagMatch::LimitExceeded => {
+                self.recover_from_text_mode_end_tag_limit(ctx, input, less_than_pos)
+            }
             TextModeEndTagMatch::NoMatch => {
                 if self.pending_text_start.is_none() {
                     self.pending_text_start = Some(self.cursor);
@@ -442,6 +447,9 @@ impl Html5Tokenizer {
                         Step::NeedMoreInput
                     }
                 }
+            }
+            TextModeEndTagMatch::LimitExceeded => {
+                self.recover_from_text_mode_end_tag_limit(ctx, input, less_than_pos)
             }
             TextModeEndTagMatch::NoMatch => match self.match_ascii_prefix(input, b"<!--") {
                 MatchResult::Matched => {
@@ -504,6 +512,9 @@ impl Html5Tokenizer {
                         Step::NeedMoreInput
                     }
                 }
+            }
+            TextModeEndTagMatch::LimitExceeded => {
+                self.recover_from_text_mode_end_tag_limit(ctx, input, less_than_pos)
             }
             TextModeEndTagMatch::NoMatch => {
                 let bytes = input.as_str().as_bytes();
@@ -568,8 +579,12 @@ impl Html5Tokenizer {
             }
         };
         let mut progress_bytes = 0u64;
-        let result =
-            matcher.advance_counted(input.as_str().as_bytes(), tag_name, &mut progress_bytes);
+        let result = matcher.advance_counted_limited(
+            input.as_str().as_bytes(),
+            tag_name,
+            &mut progress_bytes,
+            self.max_end_tag_match_scan_bytes(),
+        );
         self.stats_add_text_mode_end_tag_match_progress_bytes(progress_bytes);
         match result {
             IncrementalEndTagMatch::Matched {
@@ -582,11 +597,31 @@ impl Html5Tokenizer {
                 had_attributes,
                 self_closing,
             },
+            IncrementalEndTagMatch::LimitExceeded => TextModeEndTagMatch::LimitExceeded,
             IncrementalEndTagMatch::NeedMoreInput(matcher) => {
                 TextModeEndTagMatch::NeedMoreInput(matcher)
             }
             IncrementalEndTagMatch::NoMatch => TextModeEndTagMatch::NoMatch,
         }
+    }
+
+    fn recover_from_text_mode_end_tag_limit(
+        &mut self,
+        ctx: &mut DocumentParseContext,
+        input: &Input,
+        less_than_pos: usize,
+    ) -> Step {
+        self.record_limit_error(
+            ctx,
+            less_than_pos,
+            LIMIT_DETAIL_END_TAG_MATCHER,
+            self.max_end_tag_match_scan_bytes(),
+        );
+        if self.pending_text_start.is_none() {
+            self.pending_text_start = Some(self.cursor);
+        }
+        let _ = self.consume_if(input, '<');
+        Step::Progress
     }
 
     fn record_text_mode_end_tag_parse_errors(

@@ -22,6 +22,10 @@
 //! - Text-mode close-tag matching is incremental and resumable across chunk
 //!   growth; pending RAWTEXT/RCDATA/script candidates do not restart scanning
 //!   from the candidate `<` on every pump.
+//! - Resource-limit posture: once a configured tokenizer limit is exceeded, the
+//!   tokenizer prioritizes boundedness and state integrity over exact token
+//!   fidelity. Recovery remains deterministic and may truncate data, drop
+//!   excess structures, or treat an oversized candidate as literal text.
 //! - Atom interning failures are treated as engine invariant breaches (fatal).
 //! - Panic posture: adversarial document input must not panic the tokenizer when
 //!   tokenizer API contracts are respected. Internal API misuse and engine
@@ -39,6 +43,7 @@ mod emit;
 mod fuzz;
 mod input;
 mod invariants;
+mod limits;
 mod machine;
 mod scan;
 mod states;
@@ -47,7 +52,7 @@ mod tag;
 mod text_mode;
 mod token_fmt;
 
-pub use api::{Html5Tokenizer, TokenizeResult, TokenizerConfig};
+pub use api::{Html5Tokenizer, TokenizeResult, TokenizerConfig, TokenizerLimits};
 pub use batch::{TextResolveError, TextResolver, TokenBatch};
 pub use control::{TextModeKind, TextModeNamespace, TextModeSpec, TokenizerControl};
 pub use fuzz::{

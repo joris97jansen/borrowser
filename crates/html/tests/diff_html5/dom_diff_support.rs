@@ -25,7 +25,13 @@ impl<'a> Html5DomDriver<'a> {
         input_html: &str,
     ) -> Result<html::Node, String> {
         let mut ctx = DocumentParseContext::new();
-        let mut tokenizer = Html5Tokenizer::new(TokenizerConfig { emit_eof: true }, &mut ctx);
+        let mut tokenizer = Html5Tokenizer::new(
+            TokenizerConfig {
+                emit_eof: true,
+                ..TokenizerConfig::default()
+            },
+            &mut ctx,
+        );
         let mut builder =
             Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).map_err(|err| {
                 format!(

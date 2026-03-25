@@ -143,6 +143,21 @@ fn incremental_end_tag_matcher_partial_prefix_growth_preserves_progress_until_mi
 }
 
 #[test]
+fn incremental_end_tag_matcher_respects_scan_window_limit() {
+    let mut progress_bytes = 0u64;
+    assert_eq!(
+        IncrementalEndTagMatcher::new(0).advance_counted_limited(
+            b"</script class=x>",
+            b"script",
+            &mut progress_bytes,
+            8,
+        ),
+        IncrementalEndTagMatch::LimitExceeded
+    );
+    assert_eq!(progress_bytes, 8);
+}
+
+#[test]
 fn incremental_end_tag_matcher_consumes_attribute_like_continuations() {
     assert_eq!(
         IncrementalEndTagMatcher::new(0).advance(b"</style class=x>", b"style"),

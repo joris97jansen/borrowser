@@ -158,7 +158,13 @@ pub fn run_tree_builder_whole(
     options: DomSnapshotOptions,
 ) -> Result<Vec<String>, String> {
     let mut ctx = DocumentParseContext::new();
-    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig { emit_eof: true }, &mut ctx);
+    let mut tokenizer = Html5Tokenizer::new(
+        TokenizerConfig {
+            emit_eof: true,
+            ..TokenizerConfig::default()
+        },
+        &mut ctx,
+    );
     let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx)
         .map_err(|err| format!("failed to init tree builder: {err:?}"))?;
     let mut input = Input::new();
@@ -204,7 +210,13 @@ pub fn run_tree_builder_chunked(
     options: DomSnapshotOptions,
 ) -> Result<Vec<String>, String> {
     let mut ctx = DocumentParseContext::new();
-    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig { emit_eof: true }, &mut ctx);
+    let mut tokenizer = Html5Tokenizer::new(
+        TokenizerConfig {
+            emit_eof: true,
+            ..TokenizerConfig::default()
+        },
+        &mut ctx,
+    );
     let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx)
         .map_err(|err| format!("failed to init tree builder: {err:?}"))?;
     let mut input = Input::new();

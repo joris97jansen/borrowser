@@ -1,4 +1,7 @@
 use super::super::Html5Tokenizer;
+use super::super::limits::{
+    LIMIT_DETAIL_ATTRIBUTE_NAME, LIMIT_DETAIL_ATTRIBUTE_VALUE, LIMIT_DETAIL_ATTRIBUTES_PER_TAG,
+};
 use super::super::machine::Step;
 use super::super::scan::{is_attribute_name_stop, is_unquoted_attr_value_stop};
 use super::super::states::TokenizerState;
@@ -381,7 +384,27 @@ impl Html5Tokenizer {
             self.clear_current_attribute();
             return;
         }
+        if self.current_tag_attrs.len() >= self.max_attributes_per_tag() {
+            self.record_limit_error(
+                ctx,
+                name_start,
+                LIMIT_DETAIL_ATTRIBUTES_PER_TAG,
+                self.max_attributes_per_tag(),
+            );
+            self.clear_current_attribute();
+            return;
+        }
         let raw_name = &input.as_str()[name_start..name_end];
+        let (raw_name, name_truncated) =
+            self.truncate_str_to_bytes(raw_name, self.max_attribute_name_bytes());
+        if name_truncated {
+            self.record_limit_error(
+                ctx,
+                name_start,
+                LIMIT_DETAIL_ATTRIBUTE_NAME,
+                self.max_attribute_name_bytes(),
+            );
+        }
         let name = self.intern_atom_or_invariant(ctx, raw_name, "attribute name");
 
         // Duplicate attribute policy (Core v0): first-wins per start tag;
@@ -400,13 +423,24 @@ impl Html5Tokenizer {
                         && input.as_str().is_char_boundary(end) =>
                 {
                     let raw = &input.as_str()[start..end];
+                    let (raw, value_truncated) =
+                        self.truncate_str_to_bytes(raw, self.max_attribute_value_bytes());
+                    let truncated_end = start + raw.len();
+                    if value_truncated {
+                        self.record_limit_error(
+                            ctx,
+                            start,
+                            LIMIT_DETAIL_ATTRIBUTE_VALUE,
+                            self.max_attribute_value_bytes(),
+                        );
+                    }
                     if !raw.as_bytes().contains(&b'&') {
-                        Some(AttributeValue::Span(TextSpan::new(start, end)))
+                        Some(AttributeValue::Span(TextSpan::new(start, truncated_end)))
                     } else {
                         let decoded = decode_entities(raw);
                         match decoded {
                             std::borrow::Cow::Borrowed(_) => {
-                                Some(AttributeValue::Span(TextSpan::new(start, end)))
+                                Some(AttributeValue::Span(TextSpan::new(start, truncated_end)))
                             }
                             std::borrow::Cow::Owned(value) => Some(AttributeValue::Owned(value)),
                         }

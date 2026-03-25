@@ -44,37 +44,69 @@ pub(super) fn assert_push_ok(res: TokenizeResult) {
 }
 
 pub(super) fn run_chunks(chunks: &[&str]) -> Vec<String> {
+    let (out, _) = run_chunks_with_config_and_errors(TokenizerConfig::default(), chunks);
+    out
+}
+
+pub(super) fn run_chunks_with_config_and_errors(
+    config: TokenizerConfig,
+    chunks: &[&str],
+) -> (Vec<String>, Vec<ParseError>) {
     let mut ctx = DocumentParseContext::new();
-    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut tokenizer = Html5Tokenizer::new(config, &mut ctx);
     let mut input = Input::new();
     let mut out = Vec::new();
     for chunk in chunks {
         input.push_str(chunk);
-        assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
-        assert_tokenizer_invariants(&tokenizer, &input);
-        out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
+        loop {
+            let res = tokenizer.push_input(&mut input, &mut ctx);
+            assert_push_ok(res);
+            assert_tokenizer_invariants(&tokenizer, &input);
+            out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
+            if matches!(res, TokenizeResult::NeedMoreInput) {
+                break;
+            }
+        }
     }
     assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
     assert_tokenizer_invariants(&tokenizer, &input);
     out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
-    out
+    let errors = ctx
+        .errors
+        .as_ref()
+        .map(|errors| errors.iter().cloned().collect())
+        .unwrap_or_default();
+    (out, errors)
 }
 
 pub(super) fn run_chunks_raw_tokens(chunks: &[&str]) -> Vec<Token> {
+    run_chunks_raw_tokens_with_config(TokenizerConfig::default(), chunks)
+}
+
+pub(super) fn run_chunks_raw_tokens_with_config(
+    config: TokenizerConfig,
+    chunks: &[&str],
+) -> Vec<Token> {
     let mut ctx = DocumentParseContext::new();
-    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut tokenizer = Html5Tokenizer::new(config, &mut ctx);
     let mut input = Input::new();
     let mut out = Vec::new();
     for chunk in chunks {
         input.push_str(chunk);
-        assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
-        assert_tokenizer_invariants(&tokenizer, &input);
         loop {
-            let batch = tokenizer.next_batch(&mut input);
-            if batch.tokens().is_empty() {
+            let res = tokenizer.push_input(&mut input, &mut ctx);
+            assert_push_ok(res);
+            assert_tokenizer_invariants(&tokenizer, &input);
+            loop {
+                let batch = tokenizer.next_batch(&mut input);
+                if batch.tokens().is_empty() {
+                    break;
+                }
+                out.extend(batch.into_tokens());
+            }
+            if matches!(res, TokenizeResult::NeedMoreInput) {
                 break;
             }
-            out.extend(batch.into_tokens());
         }
     }
     assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
@@ -97,11 +129,33 @@ fn run_text_mode_chunks<F>(
 where
     F: Fn(crate::html5::shared::AtomId) -> TextModeSpec,
 {
-    let (out, stats, _) = run_text_mode_chunks_with_errors(chunks, tag_name, enter_spec);
+    let (out, stats, _) = run_text_mode_chunks_with_config_and_errors(
+        TokenizerConfig::default(),
+        chunks,
+        tag_name,
+        enter_spec,
+    );
     (out, stats)
 }
 
 fn run_text_mode_chunks_with_errors<F>(
+    chunks: &[&str],
+    tag_name: &str,
+    enter_spec: F,
+) -> (Vec<String>, TokenizerStats, Vec<ParseError>)
+where
+    F: Fn(crate::html5::shared::AtomId) -> TextModeSpec,
+{
+    run_text_mode_chunks_with_config_and_errors(
+        TokenizerConfig::default(),
+        chunks,
+        tag_name,
+        enter_spec,
+    )
+}
+
+pub(super) fn run_text_mode_chunks_with_config_and_errors<F>(
+    config: TokenizerConfig,
     chunks: &[&str],
     tag_name: &str,
     enter_spec: F,
@@ -114,7 +168,7 @@ where
         .atoms
         .intern_ascii_folded(tag_name)
         .expect("atom interning");
-    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut tokenizer = Html5Tokenizer::new(config, &mut ctx);
     let mut input = Input::new();
     let mut out = Vec::new();
     let mut text_mode_active = false;

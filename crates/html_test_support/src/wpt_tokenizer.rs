@@ -172,7 +172,13 @@ pub fn applied_skip_override(
 pub fn run_tokenizer_whole(input_html: &str, case_id: &str) -> Result<Vec<String>, String> {
     let mut ctx = DocumentParseContext::new();
     let text_mode_support = TokenizerTextModeSupport::new(&mut ctx);
-    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig { emit_eof: true }, &mut ctx);
+    let mut tokenizer = Html5Tokenizer::new(
+        TokenizerConfig {
+            emit_eof: true,
+            ..TokenizerConfig::default()
+        },
+        &mut ctx,
+    );
     let mut input = Input::new();
     input.push_str(input_html);
     let mut out = Vec::new();
@@ -226,7 +232,13 @@ pub fn run_tokenizer_chunked(
 ) -> Result<Vec<String>, String> {
     let mut ctx = DocumentParseContext::new();
     let text_mode_support = TokenizerTextModeSupport::new(&mut ctx);
-    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig { emit_eof: true }, &mut ctx);
+    let mut tokenizer = Html5Tokenizer::new(
+        TokenizerConfig {
+            emit_eof: true,
+            ..TokenizerConfig::default()
+        },
+        &mut ctx,
+    );
     let mut input = Input::new();
     let mut out = Vec::new();
     let mut index = 0usize;

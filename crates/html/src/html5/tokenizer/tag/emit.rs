@@ -1,4 +1,5 @@
 use super::super::Html5Tokenizer;
+use super::super::limits::LIMIT_DETAIL_TAG_NAME;
 use crate::html5::shared::{DocumentParseContext, Input, Token};
 
 impl Html5Tokenizer {
@@ -11,6 +12,15 @@ impl Html5Tokenizer {
             return;
         }
         let raw = &input.as_str()[name_start..end];
+        let (raw, truncated) = self.truncate_str_to_bytes(raw, self.max_tag_name_bytes());
+        if truncated {
+            self.record_limit_error(
+                ctx,
+                name_start,
+                LIMIT_DETAIL_TAG_NAME,
+                self.max_tag_name_bytes(),
+            );
+        }
         // Canonicalization policy: HTML tag names are interned with ASCII
         // folding (`A-Z` -> `a-z`) and preserve non-ASCII bytes.
         let name = self.intern_atom_or_invariant(ctx, raw, "tag name");

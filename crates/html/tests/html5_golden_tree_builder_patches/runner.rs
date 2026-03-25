@@ -51,7 +51,13 @@ fn run_tree_builder_impl(
     plan_label: Option<&str>,
 ) -> PatchRunResult {
     let mut ctx = DocumentParseContext::new();
-    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig { emit_eof: true }, &mut ctx);
+    let mut tokenizer = Html5Tokenizer::new(
+        TokenizerConfig {
+            emit_eof: true,
+            ..TokenizerConfig::default()
+        },
+        &mut ctx,
+    );
     let mut builder = match Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx) {
         Ok(builder) => builder,
         Err(err) => return PatchRunResult::Err(format!("failed to init tree builder: {err:?}")),

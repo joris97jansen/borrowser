@@ -1,9 +1,9 @@
 use super::Html5Tokenizer;
 use super::input::MatchResult;
+use super::limits::LIMIT_DETAIL_DOCTYPE;
 use super::machine::Step;
 use super::scan::{
     DoctypeKeywordKind, QuotedParse, is_html_space, is_html_space_byte, match_ascii_prefix_ci_at,
-    parse_quoted_slice,
 };
 use super::states::TokenizerState;
 use crate::html5::shared::{DocumentParseContext, Input, Token};
@@ -12,6 +12,7 @@ use crate::html5::shared::{DocumentParseContext, Input, Token};
 pub(crate) enum DoctypeTailParse {
     NeedMoreInput,
     Malformed,
+    LimitExceeded,
     Complete {
         cursor: usize,
         public_id: Option<String>,
@@ -85,6 +86,7 @@ impl Html5Tokenizer {
             self.pending_doctype_name_start = Some(self.cursor);
         }
         let _ = self.consume_while(input, |ch| !is_html_space(ch) && ch != '>');
+        self.record_pending_doctype_limit_if_needed(ctx);
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
         }
@@ -112,7 +114,11 @@ impl Html5Tokenizer {
         }
     }
 
-    pub(crate) fn step_after_doctype_name(&mut self, input: &Input) -> Step {
+    pub(crate) fn step_after_doctype_name(
+        &mut self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+    ) -> Step {
         debug_assert_eq!(self.state, TokenizerState::AfterDoctypeName);
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
@@ -129,6 +135,12 @@ impl Html5Tokenizer {
         match self.parse_doctype_after_name_tail(input) {
             DoctypeTailParse::NeedMoreInput => Step::NeedMoreInput,
             DoctypeTailParse::Malformed => {
+                self.pending_doctype_force_quirks = true;
+                self.transition_to(TokenizerState::BogusDoctype);
+                Step::Progress
+            }
+            DoctypeTailParse::LimitExceeded => {
+                self.record_pending_doctype_limit_if_needed(ctx);
                 self.pending_doctype_force_quirks = true;
                 self.transition_to(TokenizerState::BogusDoctype);
                 Step::Progress
@@ -172,6 +184,7 @@ impl Html5Tokenizer {
         self.pending_doctype_public_id = None;
         self.pending_doctype_system_id = None;
         self.pending_doctype_force_quirks = false;
+        self.pending_doctype_limit_reported = false;
     }
 
     fn finalize_pending_doctype_name(&mut self, input: &Input, ctx: &mut DocumentParseContext) {
@@ -187,6 +200,11 @@ impl Html5Tokenizer {
             return;
         }
         let raw = &input.as_str()[start..end];
+        let (raw, truncated) = self.truncate_str_to_bytes(raw, self.max_doctype_bytes());
+        if truncated {
+            self.record_pending_doctype_limit_if_needed(ctx);
+            self.pending_doctype_force_quirks = true;
+        }
         self.pending_doctype_name = Some(self.intern_atom_or_invariant(ctx, raw, "doctype name"));
     }
 
@@ -206,6 +224,7 @@ impl Html5Tokenizer {
             force_quirks,
         });
         self.pending_doctype_force_quirks = false;
+        self.pending_doctype_limit_reported = false;
     }
 
     pub(crate) fn flush_pending_doctype_eof(&mut self, _input: &Input) {
@@ -233,6 +252,12 @@ impl Html5Tokenizer {
         let text = input.as_str();
         let bytes = text.as_bytes();
         let mut cursor = self.cursor;
+        let scan_start = self.pending_doctype_name_start.unwrap_or(self.cursor);
+        let max_scan_bytes = self.max_doctype_bytes();
+
+        if cursor.saturating_sub(scan_start) >= max_scan_bytes {
+            return DoctypeTailParse::LimitExceeded;
+        }
 
         let (kind, keyword_len) = match match_ascii_prefix_ci_at(bytes, cursor, b"PUBLIC") {
             MatchResult::Matched => (DoctypeKeywordKind::Public, 6),
@@ -244,6 +269,9 @@ impl Html5Tokenizer {
             },
         };
         cursor += keyword_len;
+        if cursor.saturating_sub(scan_start) > max_scan_bytes {
+            return DoctypeTailParse::LimitExceeded;
+        }
         if cursor >= bytes.len() {
             return DoctypeTailParse::NeedMoreInput;
         }
@@ -253,10 +281,18 @@ impl Html5Tokenizer {
         while cursor < bytes.len() && is_html_space_byte(bytes[cursor]) {
             cursor += 1;
         }
-        let (first_id, after_first) = match parse_quoted_slice(text, cursor) {
-            QuotedParse::Complete(result) => result,
-            QuotedParse::NeedMoreInput => return DoctypeTailParse::NeedMoreInput,
-            QuotedParse::Malformed => return DoctypeTailParse::Malformed,
+        if cursor.saturating_sub(scan_start) > max_scan_bytes {
+            return DoctypeTailParse::LimitExceeded;
+        }
+        let (first_id, after_first) =
+            match parse_quoted_slice_limited(text, cursor, scan_start, max_scan_bytes) {
+                QuotedParse::Complete(result) => result,
+                QuotedParse::NeedMoreInput => return DoctypeTailParse::NeedMoreInput,
+                QuotedParse::Malformed => return DoctypeTailParse::Malformed,
+                QuotedParse::LimitExceeded => return DoctypeTailParse::LimitExceeded,
+            };
+        if after_first.saturating_sub(scan_start) > max_scan_bytes {
+            return DoctypeTailParse::LimitExceeded;
         };
         cursor = after_first;
 
@@ -268,14 +304,23 @@ impl Html5Tokenizer {
                 while cursor < bytes.len() && is_html_space_byte(bytes[cursor]) {
                     cursor += 1;
                 }
+                if cursor.saturating_sub(scan_start) > max_scan_bytes {
+                    return DoctypeTailParse::LimitExceeded;
+                }
                 if cursor >= bytes.len() {
                     return DoctypeTailParse::NeedMoreInput;
                 }
                 if bytes[cursor] == b'"' || bytes[cursor] == b'\'' {
-                    let (value, after_second) = match parse_quoted_slice(text, cursor) {
+                    let (value, after_second) = match parse_quoted_slice_limited(
+                        text,
+                        cursor,
+                        scan_start,
+                        max_scan_bytes,
+                    ) {
                         QuotedParse::Complete(result) => result,
                         QuotedParse::NeedMoreInput => return DoctypeTailParse::NeedMoreInput,
                         QuotedParse::Malformed => return DoctypeTailParse::Malformed,
+                        QuotedParse::LimitExceeded => return DoctypeTailParse::LimitExceeded,
                     };
                     system_id = Some(value.to_string());
                     cursor = after_second;
@@ -288,6 +333,9 @@ impl Html5Tokenizer {
 
         while cursor < bytes.len() && is_html_space_byte(bytes[cursor]) {
             cursor += 1;
+        }
+        if cursor.saturating_sub(scan_start) > max_scan_bytes {
+            return DoctypeTailParse::LimitExceeded;
         }
         if cursor >= bytes.len() {
             return DoctypeTailParse::NeedMoreInput;
@@ -302,4 +350,54 @@ impl Html5Tokenizer {
             system_id,
         }
     }
+
+    fn record_pending_doctype_limit_if_needed(&mut self, ctx: &mut DocumentParseContext) {
+        if self.pending_doctype_limit_reported {
+            return;
+        }
+        self.pending_doctype_limit_reported = true;
+        let position = self.pending_doctype_name_start.unwrap_or(self.cursor);
+        self.record_limit_error(
+            ctx,
+            position,
+            LIMIT_DETAIL_DOCTYPE,
+            self.max_doctype_bytes(),
+        );
+    }
+}
+
+fn parse_quoted_slice_limited<'a>(
+    text: &'a str,
+    quote_pos: usize,
+    scan_start: usize,
+    max_scan_bytes: usize,
+) -> QuotedParse<'a> {
+    let bytes = text.as_bytes();
+    if quote_pos >= bytes.len() {
+        return QuotedParse::NeedMoreInput;
+    }
+    if quote_pos.saturating_sub(scan_start) >= max_scan_bytes {
+        return QuotedParse::LimitExceeded;
+    }
+    let quote = bytes[quote_pos];
+    if quote != b'"' && quote != b'\'' {
+        return QuotedParse::Malformed;
+    }
+    let value_start = quote_pos + 1;
+    let max_value_end = scan_start.saturating_add(max_scan_bytes);
+    let search_end = bytes.len().min(max_value_end);
+    let Some(rel_end) = bytes[value_start..search_end]
+        .iter()
+        .position(|b| *b == quote)
+    else {
+        if search_end == max_value_end {
+            return QuotedParse::LimitExceeded;
+        }
+        return QuotedParse::NeedMoreInput;
+    };
+    let value_end = value_start + rel_end;
+    if !text.is_char_boundary(value_start) || !text.is_char_boundary(value_end) {
+        return QuotedParse::Malformed;
+    }
+    QuotedParse::Complete((&text[value_start..value_end], value_end + 1))
 }
