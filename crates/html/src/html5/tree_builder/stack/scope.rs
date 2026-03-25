@@ -1,4 +1,4 @@
-use super::stack::OpenElementsStack;
+use super::open_elements::OpenElementsStack;
 use super::types::{OpenElement, ScopeKeyMatch, ScopeKind, ScopeTagSet};
 use crate::dom_patch::PatchKey;
 use crate::html5::shared::AtomId;

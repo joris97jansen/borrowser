@@ -1,4 +1,4 @@
-use super::stack::OpenElementsStack;
+use super::open_elements::OpenElementsStack;
 use super::types::FosterParentingAnchorIndices;
 use crate::html5::shared::AtomId;
 
