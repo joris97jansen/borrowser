@@ -124,9 +124,14 @@ impl Html5Tokenizer {
     ///
     /// Integration contract:
     /// - Always drain available tokens after each pump.
-    /// - `Progress` means observable progress occurred (cursor and/or token
-    ///   growth), not necessarily that additional pumping without new input
-    ///   will continue to make progress.
+    /// - `Progress` means observable machine progress occurred during this pump
+    ///   (for example cursor advance, token queue growth, state transition, or
+    ///   EOF/EOS progress witness change), not necessarily that additional
+    ///   pumping without new input will continue to make progress.
+    /// - `NeedMoreInput` means the tokenizer is blocked on the current decoded
+    ///   buffer and made no observable machine progress in that pump.
+    /// - Panic-freedom applies to adversarial document input under these API
+    ///   contracts; internal API misuse still hard-fails.
     ///
     /// `ctx` provides document-scoped resources used during tokenization
     /// (currently atom interning for tag-name canonicalization).
@@ -175,7 +180,8 @@ impl Html5Tokenizer {
     ///   `push_str(chunk_a)` -> `push_input()` until `NeedMoreInput` ->
     ///   `push_str(chunk_b)` -> `push_input()` until `NeedMoreInput` -> `finish()`.
     /// - Calling `finish()` with unconsumed buffered input is an internal API
-    ///   misuse and triggers a panic.
+    ///   misuse and triggers a panic; this is an engine contract violation, not
+    ///   a document-input failure mode.
     /// - Core v0 exception: if the tokenizer is in the doctype state family,
     ///   `finish()` consumes remaining buffered bytes and finalizes as quirks
     ///   doctype without parsing the tail.
@@ -225,6 +231,8 @@ impl Html5Tokenizer {
             self.mark_progress();
         }
         if self.eof_emitted {
+            #[cfg(any(debug_assertions, feature = "parser_invariants", test))]
+            self.debug_assert_invariants(input);
             return TokenizeResult::EmittedEof;
         }
 
@@ -236,6 +244,8 @@ impl Html5Tokenizer {
         }
         self.eof_emitted = true;
         self.mark_progress();
+        #[cfg(any(debug_assertions, feature = "parser_invariants", test))]
+        self.debug_assert_invariants(input);
         TokenizeResult::EmittedEof
     }
 

@@ -1,5 +1,5 @@
-use super::helpers::{assert_push_ok, drain_all_fmt, run_chunks};
-use crate::html5::shared::{DocumentParseContext, Input};
+use super::helpers::{assert_push_ok, assert_tokenizer_invariants, drain_all_fmt, run_chunks};
+use crate::html5::shared::{DocumentParseContext, Input, Token};
 use crate::html5::tokenizer::{Html5Tokenizer, TokenizeResult, TokenizerConfig};
 
 #[test]
@@ -21,16 +21,20 @@ fn tag_open_holds_on_lonely_lt_until_more_input() {
         res,
         TokenizeResult::Progress | TokenizeResult::NeedMoreInput
     ));
+    assert_tokenizer_invariants(&tokenizer, &input);
     assert_eq!(tokenizer.cursor, 0);
     assert_eq!(
         tokenizer.push_input(&mut input, &mut ctx),
         TokenizeResult::NeedMoreInput
     );
+    assert_tokenizer_invariants(&tokenizer, &input);
     assert_eq!(tokenizer.cursor, 0);
 
     input.push_str("x");
     assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+    assert_tokenizer_invariants(&tokenizer, &input);
     assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    assert_tokenizer_invariants(&tokenizer, &input);
     let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
     assert_eq!(tokens, vec!["EOF".to_string()]);
 }
@@ -97,16 +101,20 @@ fn partial_markup_prefix_splits_are_resume_safe() {
                 first,
                 TokenizeResult::NeedMoreInput | TokenizeResult::Progress
             ));
+            assert_tokenizer_invariants(&tokenizer, &input);
             let cursor_after_first = tokenizer.cursor;
             assert_eq!(
                 tokenizer.push_input(&mut input, &mut ctx),
                 TokenizeResult::NeedMoreInput
             );
+            assert_tokenizer_invariants(&tokenizer, &input);
             assert_eq!(tokenizer.cursor, cursor_after_first);
 
             input.push_str(&pattern[split..]);
             assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+            assert_tokenizer_invariants(&tokenizer, &input);
             assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+            assert_tokenizer_invariants(&tokenizer, &input);
             let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
             assert_eq!(
                 tokens, whole,
@@ -114,6 +122,80 @@ fn partial_markup_prefix_splits_are_resume_safe() {
             );
         }
     }
+}
+
+#[test]
+fn partial_start_tag_across_chunk_boundary_preserves_invariants() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+
+    input.push_str("<di");
+    let first = tokenizer.push_input_until_token(&mut input, &mut ctx);
+    assert!(matches!(
+        first,
+        TokenizeResult::Progress | TokenizeResult::NeedMoreInput
+    ));
+    assert_tokenizer_invariants(&tokenizer, &input);
+    assert!(tokenizer.next_batch(&mut input).tokens().is_empty());
+    let cursor_after_partial = tokenizer.cursor;
+
+    assert_eq!(
+        tokenizer.push_input_until_token(&mut input, &mut ctx),
+        TokenizeResult::NeedMoreInput
+    );
+    assert_tokenizer_invariants(&tokenizer, &input);
+    assert_eq!(tokenizer.cursor, cursor_after_partial);
+
+    input.push_str("v>");
+    assert_eq!(
+        tokenizer.push_input_until_token(&mut input, &mut ctx),
+        TokenizeResult::Progress
+    );
+    assert_tokenizer_invariants(&tokenizer, &input);
+
+    let batch = tokenizer.next_batch(&mut input);
+    assert_eq!(batch.tokens().len(), 1);
+    match &batch.tokens()[0] {
+        Token::StartTag {
+            name,
+            attrs,
+            self_closing,
+        } => {
+            assert_eq!(ctx.atoms.resolve(*name), Some("div"));
+            assert!(attrs.is_empty());
+            assert!(!self_closing);
+        }
+        other => panic!("expected start tag token, got {other:?}"),
+    }
+    drop(batch);
+
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    assert_tokenizer_invariants(&tokenizer, &input);
+}
+
+#[test]
+fn need_more_input_boundary_preserves_invariants_without_cursor_drift() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<");
+
+    let first = tokenizer.push_input_until_token(&mut input, &mut ctx);
+    assert!(matches!(
+        first,
+        TokenizeResult::Progress | TokenizeResult::NeedMoreInput
+    ));
+    assert_tokenizer_invariants(&tokenizer, &input);
+    let cursor_after_first_block = tokenizer.cursor;
+
+    assert_eq!(
+        tokenizer.push_input_until_token(&mut input, &mut ctx),
+        TokenizeResult::NeedMoreInput
+    );
+    assert_tokenizer_invariants(&tokenizer, &input);
+    assert_eq!(tokenizer.cursor, cursor_after_first_block);
+    assert!(tokenizer.next_batch(&mut input).tokens().is_empty());
 }
 
 #[test]

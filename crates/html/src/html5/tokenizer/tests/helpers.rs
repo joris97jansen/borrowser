@@ -27,6 +27,12 @@ pub(super) fn drain_all_fmt(
     out
 }
 
+pub(super) fn assert_tokenizer_invariants(tokenizer: &Html5Tokenizer, input: &Input) {
+    tokenizer
+        .check_invariants(input)
+        .expect("tokenizer invariants must hold during tests");
+}
+
 pub(super) fn assert_push_ok(res: TokenizeResult) {
     assert!(
         matches!(
@@ -45,9 +51,11 @@ pub(super) fn run_chunks(chunks: &[&str]) -> Vec<String> {
     for chunk in chunks {
         input.push_str(chunk);
         assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+        assert_tokenizer_invariants(&tokenizer, &input);
         out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
     }
     assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    assert_tokenizer_invariants(&tokenizer, &input);
     out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
     out
 }
@@ -60,6 +68,7 @@ pub(super) fn run_chunks_raw_tokens(chunks: &[&str]) -> Vec<Token> {
     for chunk in chunks {
         input.push_str(chunk);
         assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+        assert_tokenizer_invariants(&tokenizer, &input);
         loop {
             let batch = tokenizer.next_batch(&mut input);
             if batch.tokens().is_empty() {
@@ -69,6 +78,7 @@ pub(super) fn run_chunks_raw_tokens(chunks: &[&str]) -> Vec<Token> {
         }
     }
     assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    assert_tokenizer_invariants(&tokenizer, &input);
     loop {
         let batch = tokenizer.next_batch(&mut input);
         if batch.tokens().is_empty() {
@@ -113,34 +123,43 @@ where
         input.push_str(chunk);
         loop {
             let res = tokenizer.push_input_until_token(&mut input, &mut ctx);
-            let batch = tokenizer.next_batch(&mut input);
-            if !batch.tokens().is_empty() {
-                assert_eq!(
-                    batch.tokens().len(),
-                    1,
-                    "rawtext tokenizer test driver must observe exactly one token per pump"
-                );
-                let resolver = batch.resolver();
-                let fmt = TokenFmt::new(&ctx.atoms, &resolver);
-                let token = batch
-                    .iter()
-                    .next()
-                    .expect("non-empty rawtext batch must contain one token");
-                out.push(
-                    fmt.format_token(token)
-                        .expect("token formatting in tests must be deterministic"),
-                );
-                match token {
-                    Token::StartTag { name, .. } if *name == tag && !text_mode_active => {
-                        text_mode_active = true;
-                        tokenizer.apply_control(TokenizerControl::EnterTextMode(enter_spec(tag)));
+            assert_tokenizer_invariants(&tokenizer, &input);
+            let mut pending_control = None;
+            {
+                let batch = tokenizer.next_batch(&mut input);
+                if !batch.tokens().is_empty() {
+                    assert_eq!(
+                        batch.tokens().len(),
+                        1,
+                        "rawtext tokenizer test driver must observe exactly one token per pump"
+                    );
+                    let resolver = batch.resolver();
+                    let fmt = TokenFmt::new(&ctx.atoms, &resolver);
+                    let token = batch
+                        .iter()
+                        .next()
+                        .expect("non-empty rawtext batch must contain one token");
+                    out.push(
+                        fmt.format_token(token)
+                            .expect("token formatting in tests must be deterministic"),
+                    );
+                    match token {
+                        Token::StartTag { name, .. } if *name == tag && !text_mode_active => {
+                            text_mode_active = true;
+                            pending_control =
+                                Some(TokenizerControl::EnterTextMode(enter_spec(tag)));
+                        }
+                        Token::EndTag { name } if *name == tag && text_mode_active => {
+                            text_mode_active = false;
+                            pending_control = Some(TokenizerControl::ExitTextMode);
+                        }
+                        _ => {}
                     }
-                    Token::EndTag { name } if *name == tag && text_mode_active => {
-                        text_mode_active = false;
-                        tokenizer.apply_control(TokenizerControl::ExitTextMode);
-                    }
-                    _ => {}
                 }
+            }
+            if let Some(control) = pending_control {
+                tokenizer.apply_control(control);
+                assert_tokenizer_invariants(&tokenizer, &input);
             }
             if matches!(res, TokenizeResult::NeedMoreInput) {
                 break;
@@ -149,6 +168,7 @@ where
     }
 
     assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    assert_tokenizer_invariants(&tokenizer, &input);
     out.extend(drain_all_fmt(&mut tokenizer, &mut input, &ctx));
     let errors = ctx
         .errors

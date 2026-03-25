@@ -25,6 +25,7 @@ internal-api = []
 dom-snapshot = []
 test-harness = []
 parse-guards = []
+parser_invariants = []
 
 [[bench]]
 name = "html_bench"
