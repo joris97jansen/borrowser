@@ -39,8 +39,13 @@ impl Html5Tokenizer {
             self.input_id = Some(input.id());
         }
         if stop_condition == StopCondition::YieldAfterToken && !self.tokens.is_empty() {
+            #[cfg(any(debug_assertions, feature = "parser_invariants", test))]
+            self.debug_assert_invariants(input);
             return TokenizeResult::Progress;
         }
+        let initial_snapshot = self.capture_invariant_snapshot();
+        #[cfg(any(debug_assertions, feature = "parser_invariants", test))]
+        self.debug_assert_invariants(input);
 
         let initial_token_count = self.tokens.len();
         let initial_cursor = self.cursor;
@@ -50,9 +55,13 @@ impl Html5Tokenizer {
         while remaining_budget > 0 {
             remaining_budget -= 1;
             self.stats_inc_steps();
+            #[cfg(any(debug_assertions, feature = "parser_invariants", test))]
+            let step_before = self.capture_invariant_snapshot();
             let step_result = self.step(input, ctx);
             // Keep bytes_consumed aligned with absolute cursor progress.
             self.stats_set_bytes_consumed();
+            #[cfg(any(debug_assertions, feature = "parser_invariants", test))]
+            self.debug_assert_step_result(input, step_before, step_result);
             if stop_condition == StopCondition::YieldAfterToken
                 && self.tokens.len() > initial_token_count
             {
@@ -82,8 +91,10 @@ impl Html5Tokenizer {
                 initial_token_count,
                 initial_state_transitions
             );
-            let no_observable_progress =
-                final_cursor == initial_cursor && final_tokens == initial_token_count;
+            let no_observable_progress = {
+                let final_snapshot = self.capture_invariant_snapshot();
+                !initial_snapshot.made_observable_progress(final_snapshot)
+            };
             assert!(
                 !no_observable_progress,
                 "tokenizer step budget exhausted without observable progress: state={:?} cursor={} tokens={} transitions={} (initial: cursor={} tokens={} transitions={})",
@@ -97,12 +108,16 @@ impl Html5Tokenizer {
             );
         }
 
-        let observable_progress =
-            self.cursor != initial_cursor || self.tokens.len() != initial_token_count;
+        let final_snapshot = self.capture_invariant_snapshot();
+        let observable_progress = initial_snapshot.made_observable_progress(final_snapshot);
 
         if observable_progress {
+            #[cfg(any(debug_assertions, feature = "parser_invariants", test))]
+            self.debug_assert_pump_result(input, initial_snapshot, TokenizeResult::Progress);
             TokenizeResult::Progress
         } else {
+            #[cfg(any(debug_assertions, feature = "parser_invariants", test))]
+            self.debug_assert_pump_result(input, initial_snapshot, TokenizeResult::NeedMoreInput);
             TokenizeResult::NeedMoreInput
         }
     }

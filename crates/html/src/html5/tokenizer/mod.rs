@@ -23,6 +23,12 @@
 //!   growth; pending RAWTEXT/RCDATA/script candidates do not restart scanning
 //!   from the candidate `<` on every pump.
 //! - Atom interning failures are treated as engine invariant breaches (fatal).
+//! - Panic posture: adversarial document input must not panic the tokenizer when
+//!   tokenizer API contracts are respected. Internal API misuse and engine
+//!   invariant breaches may still hard-fail.
+//! - Debug hardening: in debug/test builds, and in release when the
+//!   `parser_invariants` feature is enabled, the tokenizer validates pump
+//!   progress, internal byte indices, and queued spans after state-machine work.
 
 mod api;
 mod batch;
@@ -32,6 +38,7 @@ mod doctype;
 mod emit;
 mod fuzz;
 mod input;
+mod invariants;
 mod machine;
 mod scan;
 mod states;
@@ -47,6 +54,7 @@ pub use fuzz::{
     TokenizerFuzzConfig, TokenizerFuzzError, TokenizerFuzzSummary, TokenizerFuzzTermination,
     derive_fuzz_seed, run_seeded_byte_fuzz_case,
 };
+pub(crate) use invariants::TokenizerInvariantSnapshot;
 #[cfg(test)]
 pub(crate) use machine::MAX_STEPS_PER_PUMP;
 pub(crate) use scan::is_html_space;

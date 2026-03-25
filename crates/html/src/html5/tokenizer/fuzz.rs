@@ -1,4 +1,8 @@
-use super::{Html5Tokenizer, TextResolveError, TextResolver, TokenizeResult, TokenizerConfig};
+use super::invariants::check_progress_contract;
+use super::{
+    Html5Tokenizer, TextResolveError, TextResolver, TokenizeResult, TokenizerConfig,
+    TokenizerInvariantSnapshot,
+};
 use crate::html5::shared::{
     AtomId, AtomTable, AttributeValue, ByteStreamDecoder, DocumentParseContext, Input, TextValue,
     Token,
@@ -90,6 +94,11 @@ pub enum TokenizerFuzzError {
         pump_index: usize,
         source: TextResolveError,
     },
+    InvariantViolation {
+        phase: &'static str,
+        pump_index: usize,
+        detail: String,
+    },
     DuplicateEof,
     MissingEof,
 }
@@ -124,6 +133,14 @@ impl std::fmt::Display for TokenizerFuzzError {
             } => write!(
                 f,
                 "tokenizer emitted an invalid span during {phase} pump={pump_index}: {source:?}"
+            ),
+            Self::InvariantViolation {
+                phase,
+                pump_index,
+                detail,
+            } => write!(
+                f,
+                "tokenizer invariant violation during {phase} pump={pump_index}: {detail}"
             ),
             Self::DuplicateEof => f.write_str("tokenizer emitted duplicate EOF tokens"),
             Self::MissingEof => f.write_str("tokenizer never emitted EOF"),
@@ -280,15 +297,29 @@ fn pump_until_blocked(
     observer: &mut TokenObserver,
     phase: &'static str,
 ) -> Result<Option<TokenizerFuzzTermination>, TokenizerFuzzError> {
+    if let Err(source) = tokenizer.check_invariants(input) {
+        return Err(TokenizerFuzzError::InvariantViolation {
+            phase,
+            pump_index: 0,
+            detail: source.to_string(),
+        });
+    }
     let budget = phase_pump_budget(input.as_str().len().saturating_sub(tokenizer.cursor));
     for pump_index in 0..budget {
-        let before = PumpSnapshot::capture(tokenizer);
+        let before = tokenizer.capture_invariant_snapshot();
         let result = tokenizer.push_input_until_token(input, ctx);
         let drain = drain_queued_tokens(tokenizer, input, &ctx.atoms, observer, phase, pump_index)?;
         if let Some(termination) = drain.termination {
             return Ok(Some(termination));
         }
-        let after = PumpSnapshot::capture(tokenizer);
+        if let Err(source) = tokenizer.check_invariants(input) {
+            return Err(TokenizerFuzzError::InvariantViolation {
+                phase,
+                pump_index,
+                detail: source.to_string(),
+            });
+        }
+        let after = tokenizer.capture_invariant_snapshot();
         if let PumpDecision::Fail(err) = ensure_pump_progress(
             phase,
             pump_index,
@@ -321,6 +352,13 @@ fn finish_and_drain(
     budget: usize,
 ) -> Result<Option<TokenizerFuzzTermination>, TokenizerFuzzError> {
     let _ = tokenizer.finish(input);
+    if let Err(source) = tokenizer.check_invariants(input) {
+        return Err(TokenizerFuzzError::InvariantViolation {
+            phase: "tokenizer-finish",
+            pump_index: 0,
+            detail: source.to_string(),
+        });
+    }
     for drain_index in 0..budget {
         let drain = drain_queued_tokens(
             tokenizer,
@@ -415,71 +453,45 @@ fn ensure_pump_progress(
     phase: &'static str,
     pump_index: usize,
     result: TokenizeResult,
-    before: PumpSnapshot,
-    after: PumpSnapshot,
+    before: TokenizerInvariantSnapshot,
+    after: TokenizerInvariantSnapshot,
     drained_tokens: usize,
 ) -> PumpDecision {
-    // Observable forward progress is broader than cursor advance or token drain
-    // alone. The tokenizer may legitimately move forward by transitioning
-    // states, toggling EOS/EOF flags, mutating queued-token readiness, or
-    // incrementing its internal progress witness without immediately emitting a
-    // token in the same pump.
-    let made_progress = before.progress_epoch != after.progress_epoch
-        || before.cursor != after.cursor
-        || drained_tokens != 0
-        || before.state != after.state
-        || before.queued_tokens != after.queued_tokens
-        || before.end_of_stream != after.end_of_stream
-        || before.eof_emitted != after.eof_emitted;
-    if made_progress || result == TokenizeResult::NeedMoreInput {
+    if drained_tokens != 0 {
         return PumpDecision::Ok;
     }
-
-    PumpDecision::Fail(TokenizerFuzzError::NoProgress {
-        phase,
-        pump_index,
-        cursor: after.cursor,
-        queued_tokens: after.queued_tokens,
-        detail: format!(
-            "result={result:?} state_before={} state_after={} epoch_before={} epoch_after={} queued_before={} queued_after={} eof_before={} eof_after={}",
-            before.state,
-            after.state,
-            before.progress_epoch,
-            after.progress_epoch,
-            before.queued_tokens,
-            after.queued_tokens,
-            before.eof_emitted,
-            after.eof_emitted
-        ),
-    })
+    match check_progress_contract("pump", result, before, after) {
+        Ok(()) => PumpDecision::Ok,
+        Err(_source) if result == TokenizeResult::Progress => {
+            PumpDecision::Fail(TokenizerFuzzError::NoProgress {
+                phase,
+                pump_index,
+                cursor: after.cursor,
+                queued_tokens: after.queued_tokens,
+                detail: format!(
+                    "result={result:?} state_before={:?} state_after={:?} epoch_before={} epoch_after={} queued_before={} queued_after={} eof_before={} eof_after={}",
+                    before.state,
+                    after.state,
+                    before.progress_epoch,
+                    after.progress_epoch,
+                    before.queued_tokens,
+                    after.queued_tokens,
+                    before.eof_emitted,
+                    after.eof_emitted
+                ),
+            })
+        }
+        Err(source) => PumpDecision::Fail(TokenizerFuzzError::InvariantViolation {
+            phase,
+            pump_index,
+            detail: source.to_string(),
+        }),
+    }
 }
 
 enum PumpDecision {
     Ok,
     Fail(TokenizerFuzzError),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-struct PumpSnapshot {
-    cursor: usize,
-    queued_tokens: usize,
-    state: &'static str,
-    end_of_stream: bool,
-    eof_emitted: bool,
-    progress_epoch: u64,
-}
-
-impl PumpSnapshot {
-    fn capture(tokenizer: &Html5Tokenizer) -> Self {
-        Self {
-            cursor: tokenizer.cursor,
-            queued_tokens: tokenizer.tokens.len(),
-            state: tokenizer.state.as_str(),
-            end_of_stream: tokenizer.end_of_stream,
-            eof_emitted: tokenizer.eof_emitted,
-            progress_epoch: tokenizer.progress_epoch,
-        }
-    }
 }
 
 struct TokenObserver {
@@ -691,62 +703,14 @@ impl HarnessRng {
     }
 }
 
-trait TokenizerStateDebugName {
-    fn as_str(&self) -> &'static str;
-}
-
-impl TokenizerStateDebugName for super::states::TokenizerState {
-    fn as_str(&self) -> &'static str {
-        match self {
-            Self::Data => "Data",
-            Self::RawText => "RawText",
-            Self::Rcdata => "Rcdata",
-            Self::ScriptData => "ScriptData",
-            Self::ScriptDataEscaped => "ScriptDataEscaped",
-            Self::ScriptDataEscapedDash => "ScriptDataEscapedDash",
-            Self::ScriptDataEscapedDashDash => "ScriptDataEscapedDashDash",
-            Self::ScriptDataDoubleEscaped => "ScriptDataDoubleEscaped",
-            Self::ScriptDataDoubleEscapedDash => "ScriptDataDoubleEscapedDash",
-            Self::ScriptDataDoubleEscapedDashDash => "ScriptDataDoubleEscapedDashDash",
-            Self::TagOpen => "TagOpen",
-            Self::EndTagOpen => "EndTagOpen",
-            Self::TagName => "TagName",
-            Self::BeforeAttributeName => "BeforeAttributeName",
-            Self::AttributeName => "AttributeName",
-            Self::AfterAttributeName => "AfterAttributeName",
-            Self::BeforeAttributeValue => "BeforeAttributeValue",
-            Self::AttributeValueDoubleQuoted => "AttributeValueDoubleQuoted",
-            Self::AttributeValueSingleQuoted => "AttributeValueSingleQuoted",
-            Self::AttributeValueUnquoted => "AttributeValueUnquoted",
-            Self::AfterAttributeValueQuoted => "AfterAttributeValueQuoted",
-            Self::SelfClosingStartTag => "SelfClosingStartTag",
-            Self::MarkupDeclarationOpen => "MarkupDeclarationOpen",
-            Self::CommentStart => "CommentStart",
-            Self::CommentStartDash => "CommentStartDash",
-            Self::Comment => "Comment",
-            Self::CommentEndDash => "CommentEndDash",
-            Self::CommentEnd => "CommentEnd",
-            Self::BogusComment => "BogusComment",
-            Self::Doctype => "Doctype",
-            Self::BeforeDoctypeName => "BeforeDoctypeName",
-            Self::DoctypeName => "DoctypeName",
-            Self::AfterDoctypeName => "AfterDoctypeName",
-            Self::BogusDoctype => "BogusDoctype",
-            Self::CharacterReference => "CharacterReference",
-            Self::NamedCharacterReference => "NamedCharacterReference",
-            Self::AmbiguousAmpersand => "AmbiguousAmpersand",
-            Self::NumericCharacterReference => "NumericCharacterReference",
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
-        PumpSnapshot, TokenizerFuzzConfig, TokenizerFuzzError, TokenizerFuzzTermination,
-        derive_fuzz_seed, ensure_pump_progress, next_chunk_len, run_seeded_byte_fuzz_case,
+        TokenizerFuzzConfig, TokenizerFuzzError, TokenizerFuzzTermination, derive_fuzz_seed,
+        ensure_pump_progress, next_chunk_len, run_seeded_byte_fuzz_case,
     };
-    use crate::html5::tokenizer::TokenizeResult;
+    use crate::html5::tokenizer::states::TokenizerState;
+    use crate::html5::tokenizer::{TokenizeResult, TokenizerInvariantSnapshot};
 
     #[test]
     fn fuzz_seed_is_stable_for_same_bytes() {
@@ -778,10 +742,10 @@ mod tests {
 
     #[test]
     fn progress_guard_rejects_progress_without_cursor_or_tokens() {
-        let before = PumpSnapshot {
+        let before = TokenizerInvariantSnapshot {
             cursor: 7,
             queued_tokens: 0,
-            state: "Data",
+            state: TokenizerState::Data,
             end_of_stream: false,
             eof_emitted: false,
             progress_epoch: 11,
@@ -797,16 +761,16 @@ mod tests {
 
     #[test]
     fn progress_guard_accepts_state_only_progress() {
-        let before = PumpSnapshot {
+        let before = TokenizerInvariantSnapshot {
             cursor: 7,
             queued_tokens: 0,
-            state: "Data",
+            state: TokenizerState::Data,
             end_of_stream: false,
             eof_emitted: false,
             progress_epoch: 11,
         };
-        let after = PumpSnapshot {
-            state: "TagOpen",
+        let after = TokenizerInvariantSnapshot {
+            state: TokenizerState::TagOpen,
             ..before
         };
         let decision =
@@ -816,21 +780,49 @@ mod tests {
 
     #[test]
     fn progress_guard_accepts_epoch_only_progress() {
-        let before = PumpSnapshot {
+        let before = TokenizerInvariantSnapshot {
             cursor: 7,
             queued_tokens: 0,
-            state: "Data",
+            state: TokenizerState::Data,
             end_of_stream: false,
             eof_emitted: false,
             progress_epoch: 11,
         };
-        let after = PumpSnapshot {
+        let after = TokenizerInvariantSnapshot {
             progress_epoch: 12,
             ..before
         };
         let decision =
             ensure_pump_progress("streaming", 2, TokenizeResult::Progress, before, after, 0);
         assert!(matches!(decision, super::PumpDecision::Ok));
+    }
+
+    #[test]
+    fn progress_guard_rejects_need_more_input_after_observable_progress() {
+        let before = TokenizerInvariantSnapshot {
+            cursor: 7,
+            queued_tokens: 0,
+            state: TokenizerState::Data,
+            end_of_stream: false,
+            eof_emitted: false,
+            progress_epoch: 11,
+        };
+        let after = TokenizerInvariantSnapshot {
+            state: TokenizerState::TagOpen,
+            ..before
+        };
+        let decision = ensure_pump_progress(
+            "streaming",
+            4,
+            TokenizeResult::NeedMoreInput,
+            before,
+            after,
+            0,
+        );
+        let super::PumpDecision::Fail(err) = decision else {
+            panic!("expected invariant violation for mismatched NeedMoreInput");
+        };
+        assert!(matches!(err, TokenizerFuzzError::InvariantViolation { .. }));
     }
 
     #[test]

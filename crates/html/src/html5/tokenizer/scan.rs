@@ -113,6 +113,10 @@ impl IncrementalEndTagMatcher {
         self.start
     }
 
+    pub(crate) fn cursor(self) -> usize {
+        self.cursor
+    }
+
     #[cfg(test)]
     pub(crate) fn cursor_for_test(self) -> usize {
         self.cursor
