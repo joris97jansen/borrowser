@@ -1,10 +1,15 @@
 use super::Html5Tokenizer;
+use super::limits::LIMIT_DETAIL_COMMENT;
 use super::machine::Step;
 use super::states::TokenizerState;
-use crate::html5::shared::{Input, TextSpan, TextValue, Token};
+use crate::html5::shared::{DocumentParseContext, Input, TextSpan, TextValue, Token};
 
 impl Html5Tokenizer {
-    pub(crate) fn step_comment_start(&mut self, input: &Input) -> Step {
+    pub(crate) fn step_comment_start(
+        &mut self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+    ) -> Step {
         debug_assert_eq!(self.state, TokenizerState::CommentStart);
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
@@ -12,6 +17,7 @@ impl Html5Tokenizer {
         match self.peek(input) {
             Some('-') => {
                 let _ = self.consume_if(input, '-');
+                self.check_pending_comment_limit(input, ctx);
                 self.transition_to(TokenizerState::CommentStartDash);
                 Step::Progress
             }
@@ -30,7 +36,11 @@ impl Html5Tokenizer {
         }
     }
 
-    pub(crate) fn step_comment_start_dash(&mut self, input: &Input) -> Step {
+    pub(crate) fn step_comment_start_dash(
+        &mut self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+    ) -> Step {
         debug_assert_eq!(self.state, TokenizerState::CommentStartDash);
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
@@ -38,6 +48,7 @@ impl Html5Tokenizer {
         match self.peek(input) {
             Some('-') => {
                 let _ = self.consume_if(input, '-');
+                self.check_pending_comment_limit(input, ctx);
                 self.transition_to(TokenizerState::CommentEnd);
                 Step::Progress
             }
@@ -56,7 +67,7 @@ impl Html5Tokenizer {
         }
     }
 
-    pub(crate) fn step_comment(&mut self, input: &Input) -> Step {
+    pub(crate) fn step_comment(&mut self, input: &Input, ctx: &mut DocumentParseContext) -> Step {
         debug_assert_eq!(self.state, TokenizerState::Comment);
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
@@ -75,13 +86,18 @@ impl Html5Tokenizer {
                 // Linear scan invariant: each comment byte is consumed at most once
                 // while searching for '-'/'-->' boundaries.
                 let _ = self.consume(input);
+                self.check_pending_comment_limit(input, ctx);
                 Step::Progress
             }
             None => Step::NeedMoreInput,
         }
     }
 
-    pub(crate) fn step_comment_end_dash(&mut self, input: &Input) -> Step {
+    pub(crate) fn step_comment_end_dash(
+        &mut self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+    ) -> Step {
         debug_assert_eq!(self.state, TokenizerState::CommentEndDash);
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
@@ -89,6 +105,7 @@ impl Html5Tokenizer {
         match self.peek(input) {
             Some('-') => {
                 let _ = self.consume_if(input, '-');
+                self.check_pending_comment_limit(input, ctx);
                 self.transition_to(TokenizerState::CommentEnd);
                 Step::Progress
             }
@@ -100,7 +117,11 @@ impl Html5Tokenizer {
         }
     }
 
-    pub(crate) fn step_comment_end(&mut self, input: &Input) -> Step {
+    pub(crate) fn step_comment_end(
+        &mut self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+    ) -> Step {
         debug_assert_eq!(self.state, TokenizerState::CommentEnd);
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
@@ -115,6 +136,7 @@ impl Html5Tokenizer {
             }
             Some('-') => {
                 let _ = self.consume_if(input, '-');
+                self.check_pending_comment_limit(input, ctx);
                 Step::Progress
             }
             Some(_) => {
@@ -125,7 +147,11 @@ impl Html5Tokenizer {
         }
     }
 
-    pub(crate) fn step_bogus_comment(&mut self, input: &Input) -> Step {
+    pub(crate) fn step_bogus_comment(
+        &mut self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+    ) -> Step {
         debug_assert_eq!(self.state, TokenizerState::BogusComment);
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
@@ -136,6 +162,7 @@ impl Html5Tokenizer {
         }
         let consumed = self.consume_while(input, |ch| ch != '>');
         if consumed > 0 {
+            self.check_pending_comment_limit(input, ctx);
             return Step::Progress;
         }
         let end = self.cursor;
@@ -148,10 +175,32 @@ impl Html5Tokenizer {
         }
     }
 
+    fn check_pending_comment_limit(&mut self, _input: &Input, ctx: &mut DocumentParseContext) {
+        let Some(start) = self.pending_comment_start else {
+            return;
+        };
+        if self.pending_comment_limit_reported {
+            return;
+        }
+        let len = self.cursor.saturating_sub(start);
+        if len > self.max_comment_bytes() {
+            self.pending_comment_limit_reported = true;
+            self.record_limit_error(ctx, start, LIMIT_DETAIL_COMMENT, self.max_comment_bytes());
+        }
+    }
+
     fn emit_pending_comment_range(&mut self, input: &Input, end: usize) {
         let start = match self.pending_comment_start.take() {
             Some(start) => start,
             None => return,
+        };
+        let truncated = self.truncate_input_range(input, start, end, self.max_comment_bytes());
+        self.pending_comment_limit_reported = false;
+        let Some((bounded_end, _was_truncated)) = truncated else {
+            self.emit_token(Token::Comment {
+                text: TextValue::Owned(String::new()),
+            });
+            return;
         };
         if !(start <= end
             && end <= input.as_str().len()
@@ -164,7 +213,7 @@ impl Html5Tokenizer {
             return;
         }
         self.emit_token(Token::Comment {
-            text: TextValue::Span(TextSpan::new(start, end)),
+            text: TextValue::Span(TextSpan::new(start, bounded_end)),
         });
     }
 
@@ -184,6 +233,15 @@ impl Html5Tokenizer {
         let Some(start) = self.pending_comment_start.take() else {
             return;
         };
+        let truncated =
+            self.truncate_input_range(input, start, self.cursor, self.max_comment_bytes());
+        self.pending_comment_limit_reported = false;
+        let Some((bounded_end, _was_truncated)) = truncated else {
+            self.emit_token(Token::Comment {
+                text: TextValue::Owned(String::new()),
+            });
+            return;
+        };
         let end = self.cursor;
         if !(start <= end
             && end <= input.as_str().len()
@@ -196,7 +254,7 @@ impl Html5Tokenizer {
             return;
         }
         self.emit_token(Token::Comment {
-            text: TextValue::Span(TextSpan::new(start, end)),
+            text: TextValue::Span(TextSpan::new(start, bounded_end)),
         });
     }
 }

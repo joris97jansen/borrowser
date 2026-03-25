@@ -50,7 +50,13 @@ impl<'a> Html5TokenDiffDriver<'a> {
     ) -> Result<Vec<NormToken>, String> {
         let mut ctx = DocumentParseContext::new();
         let text_mode_support = TokenizerTextModeSupport::new(&mut ctx);
-        let mut tokenizer = Html5Tokenizer::new(TokenizerConfig { emit_eof: true }, &mut ctx);
+        let mut tokenizer = Html5Tokenizer::new(
+            TokenizerConfig {
+                emit_eof: true,
+                ..TokenizerConfig::default()
+            },
+            &mut ctx,
+        );
         let mut input = Input::new();
         let mut saw_eof_token = false;
         let mut out = Vec::new();

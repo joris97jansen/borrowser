@@ -55,6 +55,7 @@ pub(crate) enum IncrementalEndTagMatch {
         had_attributes: bool,
         self_closing: bool,
     },
+    LimitExceeded,
     NeedMoreInput(IncrementalEndTagMatcher),
     NoMatch,
 }
@@ -134,16 +135,22 @@ impl IncrementalEndTagMatcher {
 
     #[cfg(test)]
     pub(crate) fn advance(self, bytes: &[u8], tag_name: &[u8]) -> IncrementalEndTagMatch {
-        self.advance_internal(bytes, tag_name, None)
+        self.advance_internal(bytes, tag_name, None, None)
     }
 
-    pub(crate) fn advance_counted(
+    pub(crate) fn advance_counted_limited(
         self,
         bytes: &[u8],
         tag_name: &[u8],
         progress_bytes: &mut u64,
+        max_scan_bytes: usize,
     ) -> IncrementalEndTagMatch {
-        self.advance_internal(bytes, tag_name, Some(progress_bytes))
+        self.advance_internal(
+            bytes,
+            tag_name,
+            Some(progress_bytes),
+            Some(max_scan_bytes.max(1)),
+        )
     }
 
     fn advance_internal(
@@ -151,8 +158,12 @@ impl IncrementalEndTagMatcher {
         bytes: &[u8],
         tag_name: &[u8],
         mut progress_bytes: Option<&mut u64>,
+        max_scan_bytes: Option<usize>,
     ) -> IncrementalEndTagMatch {
         loop {
+            if max_scan_bytes.is_some_and(|limit| self.cursor.saturating_sub(self.start) >= limit) {
+                return IncrementalEndTagMatch::LimitExceeded;
+            }
             match self.phase {
                 IncrementalEndTagMatcherPhase::LessThan => {
                     let Some(&b'<') = bytes.get(self.cursor) else {
@@ -538,26 +549,6 @@ fn is_unquoted_attr_value_stop_byte(byte: u8) -> bool {
         || byte == b'?'
 }
 
-pub(crate) fn parse_quoted_slice(text: &str, quote_pos: usize) -> QuotedParse<'_> {
-    let bytes = text.as_bytes();
-    if quote_pos >= bytes.len() {
-        return QuotedParse::NeedMoreInput;
-    }
-    let quote = bytes[quote_pos];
-    if quote != b'"' && quote != b'\'' {
-        return QuotedParse::Malformed;
-    }
-    let value_start = quote_pos + 1;
-    let Some(rel_end) = bytes[value_start..].iter().position(|b| *b == quote) else {
-        return QuotedParse::NeedMoreInput;
-    };
-    let value_end = value_start + rel_end;
-    if !text.is_char_boundary(value_start) || !text.is_char_boundary(value_end) {
-        return QuotedParse::Malformed;
-    }
-    QuotedParse::Complete((&text[value_start..value_end], value_end + 1))
-}
-
 pub(crate) fn match_script_tag_boundary_at(
     bytes: &[u8],
     start: usize,
@@ -614,6 +605,7 @@ pub(crate) enum DoctypeKeywordKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum QuotedParse<'a> {
     Complete((&'a str, usize)),
+    LimitExceeded,
     NeedMoreInput,
     Malformed,
 }

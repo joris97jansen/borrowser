@@ -3,7 +3,7 @@ HTML_ENTITIES_JSON := crates/html/data/entities.json
 HTML_ENTITIES_GEN := crates/html/src/entities_html5.rs
 HTML_ENTITIES_TOOL := crates/html/tools/generate_entities_html5.py
 
-.PHONY: format fmt-check lint lint-html5 test test-html5-legacy test-html5-toggle test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc
+.PHONY: format fmt-check lint lint-html5 test test-html5-legacy test-html5-toggle test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
 
 # Format all crates in place
 format:
@@ -149,3 +149,26 @@ cuc:
 	done; \
 	pbcopy < "$$tmp"; \
 	printf 'Copied %s unstaged/untracked file(s) to the clipboard.\n' "$$count"
+
+# Copy only unstaged tracked hunks plus untracked files as zero-context diffs.
+cuc-diff:
+	@command -v pbcopy >/dev/null 2>&1 || (echo "error: pbcopy not found" && exit 1)
+	@tmp="$$(mktemp)"; \
+	trap 'rm -f "$$tmp"' EXIT; \
+	git diff --no-ext-diff --no-color --unified=0 --relative > "$$tmp"; \
+	git ls-files --others --exclude-standard -z | \
+	while IFS= read -r -d '' file; do \
+		[ -e "$$file" ] || continue; \
+		[ ! -s "$$tmp" ] || printf '\n' >> "$$tmp"; \
+		git diff --no-index --no-ext-diff --no-color --unified=0 -- /dev/null "$$file" >> "$$tmp"; \
+		rc=$$?; \
+		if [ "$$rc" -gt 1 ]; then \
+			exit "$$rc"; \
+		fi; \
+	done; \
+	if [ ! -s "$$tmp" ]; then \
+		echo "No unstaged or untracked changes."; \
+		exit 0; \
+	fi; \
+	pbcopy < "$$tmp"; \
+	echo "Copied unstaged/untracked diff hunks to the clipboard."

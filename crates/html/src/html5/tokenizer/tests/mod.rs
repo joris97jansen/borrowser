@@ -6,6 +6,7 @@ mod end_tag_matcher;
 mod entities;
 mod formatting;
 mod helpers;
+mod limits;
 mod perf;
 mod rawtext;
 mod rcdata;

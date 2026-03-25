@@ -7,16 +7,75 @@ use super::stats::TokenizerStats;
 use super::text_mode::PendingTextModeEndTag;
 use crate::html5::shared::{Attribute, DocumentParseContext, Input, Token};
 
+/// Centralized tokenizer hardening/resource bounds.
+///
+/// These limits intentionally define lossy recovery once exceeded: the
+/// tokenizer preserves boundedness and internal state integrity first, then
+/// applies a deterministic fallback policy for the affected construct.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TokenizerLimits {
+    /// Maximum number of queued tokens the tokenizer will accumulate before it
+    /// stops the current `push_input()` pump and yields control back to the
+    /// caller for draining.
+    pub max_tokens_per_batch: usize,
+    /// Maximum decoded UTF-8 byte length for an emitted tag name. Oversized tag
+    /// names are truncated to this prefix.
+    pub max_tag_name_bytes: usize,
+    /// Maximum decoded UTF-8 byte length for an emitted attribute name.
+    /// Oversized names are truncated to this prefix.
+    pub max_attribute_name_bytes: usize,
+    /// Maximum decoded UTF-8 byte length for an emitted attribute value.
+    /// Oversized values are truncated to this prefix before entity decoding.
+    pub max_attribute_value_bytes: usize,
+    /// Maximum number of attributes retained on a single start tag. Additional
+    /// attributes are parsed but dropped deterministically.
+    ///
+    /// This limit intentionally allows `0`, which means start tags retain no
+    /// attributes at all while still tokenizing the tag itself deterministically.
+    pub max_attributes_per_tag: usize,
+    /// Maximum decoded UTF-8 byte length for an emitted comment token.
+    /// Oversized comments are truncated to this prefix.
+    pub max_comment_bytes: usize,
+    /// Maximum decoded UTF-8 byte length tolerated while parsing a doctype
+    /// declaration payload (name/public/system tail). Oversized doctypes are
+    /// forced into quirks/bogus recovery.
+    pub max_doctype_bytes: usize,
+    /// Maximum number of bytes the resumable RAWTEXT/RCDATA/script end-tag
+    /// matcher may scan from the candidate `<` before it abandons the candidate
+    /// and treats it as literal text.
+    pub max_end_tag_match_scan_bytes: usize,
+}
+
+impl Default for TokenizerLimits {
+    fn default() -> Self {
+        Self {
+            max_tokens_per_batch: 1024,
+            max_tag_name_bytes: 1024,
+            max_attribute_name_bytes: 1024,
+            max_attribute_value_bytes: 16 * 1024,
+            max_attributes_per_tag: 256,
+            max_comment_bytes: 64 * 1024,
+            max_doctype_bytes: 8 * 1024,
+            max_end_tag_match_scan_bytes: 64 * 1024,
+        }
+    }
+}
+
 /// Configuration for the tokenizer.
-#[derive(Clone, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct TokenizerConfig {
     /// Emit an `EOF` token from `finish()`.
     pub emit_eof: bool,
+    /// Explicit tokenizer hardening/resource bounds.
+    pub limits: TokenizerLimits,
 }
 
 impl Default for TokenizerConfig {
     fn default() -> Self {
-        Self { emit_eof: true }
+        Self {
+            emit_eof: true,
+            limits: TokenizerLimits::default(),
+        }
     }
 }
 
@@ -44,11 +103,13 @@ pub struct Html5Tokenizer {
     pub(in crate::html5::tokenizer) pending_text_mode_end_tag: Option<PendingTextModeEndTag>,
     pub(in crate::html5::tokenizer) pending_text_start: Option<usize>,
     pub(in crate::html5::tokenizer) pending_comment_start: Option<usize>,
+    pub(in crate::html5::tokenizer) pending_comment_limit_reported: bool,
     pub(in crate::html5::tokenizer) pending_doctype_name: Option<crate::html5::shared::AtomId>,
     pub(in crate::html5::tokenizer) pending_doctype_name_start: Option<usize>,
     pub(in crate::html5::tokenizer) pending_doctype_public_id: Option<String>,
     pub(in crate::html5::tokenizer) pending_doctype_system_id: Option<String>,
     pub(in crate::html5::tokenizer) pending_doctype_force_quirks: bool,
+    pub(in crate::html5::tokenizer) pending_doctype_limit_reported: bool,
     pub(in crate::html5::tokenizer) tag_name_start: Option<usize>,
     pub(in crate::html5::tokenizer) tag_name_end: Option<usize>,
     pub(in crate::html5::tokenizer) tag_name_complete: bool,
@@ -81,11 +142,13 @@ impl Html5Tokenizer {
             pending_text_mode_end_tag: None,
             pending_text_start: None,
             pending_comment_start: None,
+            pending_comment_limit_reported: false,
             pending_doctype_name: None,
             pending_doctype_name_start: None,
             pending_doctype_public_id: None,
             pending_doctype_system_id: None,
             pending_doctype_force_quirks: false,
+            pending_doctype_limit_reported: false,
             tag_name_start: None,
             tag_name_end: None,
             tag_name_complete: false,

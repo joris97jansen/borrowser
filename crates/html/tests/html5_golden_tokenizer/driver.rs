@@ -13,7 +13,13 @@ const MAX_PUMP_ITERATIONS_BASE: usize = 1024;
 pub(crate) fn run_tokenizer_whole(fixture: &Fixture) -> Vec<String> {
     let mut ctx = DocumentParseContext::new();
     let text_mode_support = TokenizerHarnessTextModeSupport::new(&mut ctx);
-    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig { emit_eof: true }, &mut ctx);
+    let mut tokenizer = Html5Tokenizer::new(
+        TokenizerConfig {
+            emit_eof: true,
+            ..TokenizerConfig::default()
+        },
+        &mut ctx,
+    );
     let mut buffer = Input::new();
     buffer.push_str(&fixture.input);
     let mut out = Vec::new();
@@ -69,7 +75,13 @@ pub(crate) fn run_tokenizer_chunked(
 ) -> Vec<String> {
     let mut ctx = DocumentParseContext::new();
     let text_mode_support = TokenizerHarnessTextModeSupport::new(&mut ctx);
-    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig { emit_eof: true }, &mut ctx);
+    let mut tokenizer = Html5Tokenizer::new(
+        TokenizerConfig {
+            emit_eof: true,
+            ..TokenizerConfig::default()
+        },
+        &mut ctx,
+    );
     let mut buffer = Input::new();
     let mut out = Vec::new();
     let mut index = out.len();

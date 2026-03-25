@@ -11,6 +11,7 @@ pub enum ParseErrorCode {
     UnexpectedNullCharacter,
     UnexpectedEof,
     InvalidCharacterReference,
+    ResourceLimit,
     Other,
 }
 
