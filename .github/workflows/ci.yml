@@ -98,3 +98,41 @@ jobs:
 
       - name: Build (release, html5)
         run: cargo build --workspace --release --features html5 --locked
+
+  html5_tokenizer_fuzz_smoke:
+    name: HTML5 tokenizer fuzz smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      RUST_BACKTRACE: 1
+      HTML5_TOKENIZER_FUZZ_SMOKE_SEED: "1592653589"
+      HTML5_TOKENIZER_FUZZ_SMOKE_RUNS: "128"
+      HTML5_TOKENIZER_FUZZ_SMOKE_INPUT_TIMEOUT_SEC: "5"
+      HTML5_TOKENIZER_FUZZ_SMOKE_WALL_TIMEOUT_SEC: "90"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run deterministic tokenizer fuzz smoke
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci_artifacts
+          bash ./tools/ci/html5_tokenizer_fuzz_smoke.sh 2>&1 | tee ci_artifacts/html5_tokenizer_fuzz_smoke.log
+
+      - name: Upload tokenizer fuzz smoke artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: html5-tokenizer-fuzz-smoke-${{ github.sha }}
+          path: |
+            ci_artifacts/html5_tokenizer_fuzz_smoke.log
+            ci_artifacts/html5_tokenizer_fuzz_failure

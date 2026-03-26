@@ -38,6 +38,26 @@ If `cargo-fuzz` is installed, replay a specific seed through the actual fuzz tar
 cargo fuzz run html5_tokenizer fuzz/corpus/html5_tokenizer/<seed-name>
 ```
 
+## CI Smoke
+
+PR CI runs a short deterministic smoke lane around the actual tokenizer fuzz
+target via:
+
+```sh
+make test-html5-tokenizer-fuzz-smoke
+```
+
+Current smoke budget:
+- fixed seed: `1592653589`
+- fixed runs: `128`
+- libFuzzer per-input timeout: `5s`
+- outer wall timeout: `90s`
+
+On failure, the CI logs print:
+- the fixed seed,
+- the exact failing artifact path if libFuzzer materialized one, and
+- direct-binary plus `cargo fuzz run` reproduction commands.
+
 ## Regression Workflow
 
 - Add the minimal reproducing bytes as a new file in `fuzz/corpus/html5_tokenizer/`.
