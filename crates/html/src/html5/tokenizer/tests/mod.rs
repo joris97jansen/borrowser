@@ -12,4 +12,5 @@ mod rawtext;
 mod rcdata;
 mod script_data;
 mod script_tag_boundary;
+mod stall;
 mod tags_attrs;

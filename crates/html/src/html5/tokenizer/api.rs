@@ -127,6 +127,8 @@ pub struct Html5Tokenizer {
     pub(in crate::html5::tokenizer) eof_emitted: bool,
     pub(in crate::html5::tokenizer) progress_epoch: u64,
     pub(in crate::html5::tokenizer) stats: TokenizerStats,
+    #[cfg(test)]
+    pub(in crate::html5::tokenizer) test_forced_stall_steps_remaining: usize,
 }
 
 impl Html5Tokenizer {
@@ -166,6 +168,8 @@ impl Html5Tokenizer {
             eof_emitted: false,
             progress_epoch: 0,
             stats: TokenizerStats::default(),
+            #[cfg(test)]
+            test_forced_stall_steps_remaining: 0,
         }
     }
 

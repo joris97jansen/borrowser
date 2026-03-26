@@ -16,6 +16,10 @@ use crate::html5::shared::{AtomTable, ByteStreamDecoder, DocumentParseContext, I
 /// - tokens are drained immediately and never accumulated,
 /// - every emitted span is resolved before the batch is dropped, and
 /// - the driver fails if pumping can no longer make observable progress.
+///
+/// In `parser_invariants`/debug/test builds, the driver also relies on the
+/// tokenizer's internal stall guardrail so repeated non-consuming `Progress`
+/// steps fail fast instead of hanging the harness.
 pub fn run_seeded_byte_fuzz_case(
     bytes: &[u8],
     config: TokenizerFuzzConfig,

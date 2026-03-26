@@ -26,6 +26,11 @@
 //!   tokenizer prioritizes boundedness and state integrity over exact token
 //!   fidelity. Recovery remains deterministic and may truncate data, drop
 //!   excess structures, or treat an oversized candidate as literal text.
+//! - Stall guardrail: if the state machine repeatedly reports `Progress`
+//!   without consuming input or emitting tokens, debug/test and
+//!   `parser_invariants` builds fail fast with a stall message. Other builds
+//!   recover deterministically by clearing transient construct state and
+//!   consuming one scalar as literal text.
 //! - Atom interning failures are treated as engine invariant breaches (fatal).
 //! - Panic posture: adversarial document input must not panic the tokenizer when
 //!   tokenizer API contracts are respected. Internal API misuse and engine
@@ -46,6 +51,7 @@ mod invariants;
 mod limits;
 mod machine;
 mod scan;
+mod stall;
 mod states;
 mod stats;
 mod tag;
@@ -63,6 +69,8 @@ pub(crate) use invariants::TokenizerInvariantSnapshot;
 #[cfg(test)]
 pub(crate) use machine::MAX_STEPS_PER_PUMP;
 pub(crate) use scan::is_html_space;
+#[cfg(test)]
+pub(crate) use stall::MAX_CONSECUTIVE_STALLED_PROGRESS_STEPS;
 pub use stats::TokenizerStats;
 pub use token_fmt::{TokenFmt, TokenFmtError, TokenTestFormatExt};
 
