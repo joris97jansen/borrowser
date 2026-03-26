@@ -1,7 +1,6 @@
 use super::Tokenizer;
 use super::capacity::{estimate_text_pool_capacity, estimate_token_capacity};
 use crate::types::{AtomTable, Token, TokenStream};
-use std::sync::Arc;
 use tools::utf8::{finish_utf8, push_utf8_chunk};
 
 impl Tokenizer {
@@ -113,8 +112,7 @@ impl Tokenizer {
     }
 
     pub fn into_stream(self) -> TokenStream {
-        let source: Arc<str> = Arc::from(self.source);
-        TokenStream::new(self.tokens, self.atoms, source, self.text_pool)
+        TokenStream::from_owned_source(self.tokens, self.atoms, self.source, self.text_pool)
     }
 
     pub fn text(&self, token: &Token) -> Option<&str> {

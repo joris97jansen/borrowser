@@ -241,10 +241,25 @@ impl TextPayload {
 }
 
 #[derive(Debug)]
+enum TokenStreamSource {
+    Shared(Arc<str>),
+    Owned(String),
+}
+
+impl TokenStreamSource {
+    fn as_str(&self) -> &str {
+        match self {
+            Self::Shared(source) => source.as_ref(),
+            Self::Owned(source) => source.as_str(),
+        }
+    }
+}
+
+#[derive(Debug)]
 pub struct TokenStream {
     tokens: Vec<Token>,
     atoms: AtomTable,
-    source: Arc<str>,
+    source: TokenStreamSource,
     text_pool: Vec<String>,
 }
 
@@ -258,7 +273,21 @@ impl TokenStream {
         Self {
             tokens,
             atoms,
-            source,
+            source: TokenStreamSource::Shared(source),
+            text_pool,
+        }
+    }
+
+    pub(crate) fn from_owned_source(
+        tokens: Vec<Token>,
+        atoms: AtomTable,
+        source: String,
+        text_pool: Vec<String>,
+    ) -> Self {
+        Self {
+            tokens,
+            atoms,
+            source: TokenStreamSource::Owned(source),
             text_pool,
         }
     }
@@ -272,18 +301,18 @@ impl TokenStream {
     }
 
     pub fn source(&self) -> &str {
-        self.source.as_ref()
+        self.source.as_str()
     }
 
     pub fn text(&self, token: &Token) -> Option<&str> {
         match token {
             Token::TextSpan { range } => {
                 debug_assert!(
-                    self.source.is_char_boundary(range.start)
-                        && self.source.is_char_boundary(range.end),
+                    self.source().is_char_boundary(range.start)
+                        && self.source().is_char_boundary(range.end),
                     "text span must be on UTF-8 boundaries"
                 );
-                Some(&self.source[range.clone()])
+                Some(&self.source()[range.clone()])
             }
             Token::TextOwned { index } => self.text_pool.get(*index).map(|s| s.as_str()),
             _ => None,
@@ -291,11 +320,11 @@ impl TokenStream {
     }
 
     pub fn attr_value<'a>(&'a self, value: &'a AttributeValue) -> &'a str {
-        value.as_str(self.source.as_ref())
+        value.as_str(self.source())
     }
 
     pub fn payload_text<'a>(&'a self, payload: &'a TextPayload) -> &'a str {
-        payload.as_str(self.source.as_ref())
+        payload.as_str(self.source())
     }
 
     pub fn iter(&self) -> std::slice::Iter<'_, Token> {
