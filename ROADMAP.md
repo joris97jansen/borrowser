@@ -161,3 +161,76 @@ Whenever a feature is completed:
 
 The roadmap lives in the repo so it evolves *with* the engine.
 
+
+
+After networking, CSS, and rendering, the next major areas to revisit are:
+
+DOM / Web Platform Runtime
+The DOM needs to become a real runtime-owned platform surface, not just a parsed tree.
+This means:
+
+DOM mutation model
+event dispatch
+live document state
+script-facing APIs later
+JavaScript Integration
+Once parsing, styling, and rendering are stronger, the next huge gap is JS driving the page.
+That means:
+
+event loop/task model
+timers/microtasks
+DOM bindings
+script-triggered style/layout invalidation
+Security / Origin / Policy Model
+To be production-grade, the browser needs clear policy boundaries:
+
+origin model
+same-origin rules
+file:// policy
+localhost/local resource rules
+subresource restrictions
+sandboxing direction
+Text / Fonts / Shaping
+This is a very big “professional polish” area:
+
+proper font fallback
+shaping
+metrics consistency
+selection/caret correctness
+international text handling
+Forms, Editing, and Interaction Fidelity
+If you want real websites to feel right:
+
+input controls
+selection/editing behavior
+keyboard focus/navigation
+form submission/state
+textarea/content-editing quality
+Images / Media / Asset Pipeline
+More professional decoding and lifecycle handling:
+
+image formats and decode policy
+font loading
+media pipeline later
+cache/reuse/invalidation
+Testing / Standards / WPT Expansion
+Professional engines live or die by regression discipline:
+
+more WPT coverage
+real-page regression suites
+perf/allocation guards
+runtime invariants and observability
+Accessibility
+Eventually essential for “professional browser engine” status:
+
+accessible tree
+roles/names/states
+focus semantics
+screen-reader integration direction
+If I had to prioritize the next tracks after those milestones, I would go:
+
+DOM/runtime ownership
+JavaScript/event loop
+Security/origin model
+Text/fonts/editing
+Accessibility and broader platform fidelity
