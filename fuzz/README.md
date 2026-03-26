@@ -4,6 +4,10 @@
 tokenizer fuzz harness. Triaged crashing inputs belong in
 `fuzz/regressions/html5_tokenizer/`.
 
+For the tokenizer threat model, panic-free scope, enforced limits, and the
+expected fuzz triage workflow, see
+`docs/security/html5-tokenizer-hardening.md`.
+
 Seed categories currently covered:
 - partial tags and unterminated attribute/value tails
 - broken comments and malformed doctypes
