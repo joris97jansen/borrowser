@@ -3,7 +3,7 @@ HTML_ENTITIES_JSON := crates/html/data/entities.json
 HTML_ENTITIES_GEN := crates/html/src/entities_html5.rs
 HTML_ENTITIES_TOOL := crates/html/tools/generate_entities_html5.py
 
-.PHONY: format fmt-check lint lint-html5 test test-html5-legacy test-html5-toggle test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-html5-tokenizer-fuzz-corpus test-html5-tokenizer-fuzz-smoke test-html5-tokenizer-fuzz-long test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
+.PHONY: format fmt-check lint lint-html5 lint-html5-hardening test test-html5-legacy test-html5-toggle test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-html5-tokenizer-fuzz-corpus test-html5-tokenizer-fuzz-smoke test-html5-tokenizer-fuzz-long test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
 
 # Format all crates in place
 format:
@@ -20,6 +20,10 @@ lint:
 # Lint with html5 feature enabled (matches CI)
 lint-html5:
 	cargo clippy --workspace --all-targets --features html5 --locked -- -D warnings
+
+# Lint the html5 hardening/fuzz feature set (matches CI)
+lint-html5-hardening:
+	cargo clippy --workspace --all-targets --features "html5 html5-fuzzing parser_invariants" --locked -- -D warnings
 
 # Run all tests
 test:
@@ -122,6 +126,7 @@ ci:
 	@$(MAKE) fmt-check
 	@$(MAKE) lint
 	@$(MAKE) lint-html5
+	@$(MAKE) lint-html5-hardening
 	@$(MAKE) test
 	@$(MAKE) test-html5-legacy
 	@$(MAKE) test-html5-toggle
