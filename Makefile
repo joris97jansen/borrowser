@@ -3,7 +3,7 @@ HTML_ENTITIES_JSON := crates/html/data/entities.json
 HTML_ENTITIES_GEN := crates/html/src/entities_html5.rs
 HTML_ENTITIES_TOOL := crates/html/tools/generate_entities_html5.py
 
-.PHONY: format fmt-check lint lint-html5 test test-html5-legacy test-html5-toggle test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-html5-tokenizer-fuzz-corpus test-html5-tokenizer-fuzz-smoke test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
+.PHONY: format fmt-check lint lint-html5 test test-html5-legacy test-html5-toggle test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-html5-tokenizer-fuzz-corpus test-html5-tokenizer-fuzz-smoke test-html5-tokenizer-fuzz-long test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
 
 # Format all crates in place
 format:
@@ -52,6 +52,16 @@ test-html5-tokenizer-fuzz-corpus:
 
 # Run a short deterministic tokenizer fuzz smoke against the actual fuzz target
 test-html5-tokenizer-fuzz-smoke:
+	bash ./tools/ci/html5_tokenizer_fuzz_smoke.sh
+
+# Run a longer deterministic tokenizer fuzz lane for nightly/manual use
+test-html5-tokenizer-fuzz-long:
+	HTML5_TOKENIZER_FUZZ_LABEL='html5 tokenizer fuzz nightly' \
+	HTML5_TOKENIZER_FUZZ_ARTIFACT_BASENAME='html5_tokenizer_fuzz_failure_nightly' \
+	HTML5_TOKENIZER_FUZZ_SMOKE_SEED=2718281828 \
+	HTML5_TOKENIZER_FUZZ_SMOKE_RUNS=20000 \
+	HTML5_TOKENIZER_FUZZ_SMOKE_INPUT_TIMEOUT_SEC=10 \
+	HTML5_TOKENIZER_FUZZ_SMOKE_WALL_TIMEOUT_SEC=600 \
 	bash ./tools/ci/html5_tokenizer_fuzz_smoke.sh
 
 # Run WPT tree-construction slice (tokenizer + tree builder -> DOM snapshot)

@@ -5,7 +5,7 @@ use std::path::{Path, PathBuf};
 
 #[test]
 fn replay_committed_html5_tokenizer_corpus_deterministically() {
-    let corpus = corpus_entries();
+    let corpus = committed_input_entries();
     assert!(
         !corpus.is_empty(),
         "expected committed tokenizer fuzz corpus entries"
@@ -72,9 +72,38 @@ fn replay_single_committed_seed_deterministically() {
 }
 
 fn corpus_entries() -> Vec<PathBuf> {
-    let corpus_dir = corpus_dir();
-    let mut entries = fs::read_dir(&corpus_dir)
-        .unwrap_or_else(|err| panic!("failed to read corpus dir {}: {err}", corpus_dir.display()))
+    entries_in_dir(corpus_dir())
+}
+
+fn regression_entries() -> Vec<PathBuf> {
+    entries_in_dir(regressions_dir())
+}
+
+fn committed_input_entries() -> Vec<PathBuf> {
+    let mut entries = corpus_entries();
+    entries.extend(regression_entries());
+    entries.sort();
+    entries
+}
+
+fn corpus_entry(name: &str) -> PathBuf {
+    corpus_dir().join(name)
+}
+
+fn corpus_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fuzz/corpus/html5_tokenizer")
+}
+
+fn regressions_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fuzz/regressions/html5_tokenizer")
+}
+
+fn entries_in_dir(dir: PathBuf) -> Vec<PathBuf> {
+    if !dir.is_dir() {
+        return Vec::new();
+    }
+    let mut entries = fs::read_dir(&dir)
+        .unwrap_or_else(|err| panic!("failed to read input dir {}: {err}", dir.display()))
         .filter_map(|entry| entry.ok().map(|entry| entry.path()))
         .filter(|path| {
             path.is_file()
@@ -86,12 +115,4 @@ fn corpus_entries() -> Vec<PathBuf> {
         .collect::<Vec<_>>();
     entries.sort();
     entries
-}
-
-fn corpus_entry(name: &str) -> PathBuf {
-    corpus_dir().join(name)
-}
-
-fn corpus_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fuzz/corpus/html5_tokenizer")
 }

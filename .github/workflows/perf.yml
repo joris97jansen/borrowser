@@ -51,3 +51,43 @@ jobs:
           path: |
             ci_artifacts/html_bench.txt
             target/criterion/**
+
+  html5_tokenizer_fuzz_long:
+    name: html5 tokenizer fuzz nightly
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      RUST_BACKTRACE: 1
+      HTML5_TOKENIZER_FUZZ_LABEL: "html5 tokenizer fuzz nightly"
+      HTML5_TOKENIZER_FUZZ_ARTIFACT_BASENAME: "html5_tokenizer_fuzz_failure_nightly"
+      HTML5_TOKENIZER_FUZZ_SMOKE_SEED: "2718281828"
+      HTML5_TOKENIZER_FUZZ_SMOKE_RUNS: "20000"
+      HTML5_TOKENIZER_FUZZ_SMOKE_INPUT_TIMEOUT_SEC: "10"
+      HTML5_TOKENIZER_FUZZ_SMOKE_WALL_TIMEOUT_SEC: "600"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run deterministic tokenizer fuzz nightly lane
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci_artifacts
+          bash ./tools/ci/html5_tokenizer_fuzz_smoke.sh 2>&1 | tee ci_artifacts/html5_tokenizer_fuzz_nightly.log
+
+      - name: Upload tokenizer fuzz nightly artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: html5-tokenizer-fuzz-nightly-${{ github.sha }}
+          path: |
+            ci_artifacts/html5_tokenizer_fuzz_nightly.log
+            ci_artifacts/html5_tokenizer_fuzz_failure_nightly
