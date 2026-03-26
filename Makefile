@@ -3,7 +3,7 @@ HTML_ENTITIES_JSON := crates/html/data/entities.json
 HTML_ENTITIES_GEN := crates/html/src/entities_html5.rs
 HTML_ENTITIES_TOOL := crates/html/tools/generate_entities_html5.py
 
-.PHONY: format fmt-check lint lint-html5 test test-html5-legacy test-html5-toggle test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
+.PHONY: format fmt-check lint lint-html5 test test-html5-legacy test-html5-toggle test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-html5-tokenizer-fuzz-corpus test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
 
 # Format all crates in place
 format:
@@ -44,6 +44,11 @@ test-html5-patch-golden:
 # Run HTML5 smoke corpus with real-world-style pages/snippets
 test-html5-smoke-real-pages:
 	cargo test -p html --test html5_smoke_real_pages --features "html5 dom-snapshot" --locked
+
+# Replay the committed HTML5 tokenizer fuzz corpus deterministically outside libFuzzer
+test-html5-tokenizer-fuzz-corpus:
+	cargo test -p html --features html5 --lib --locked \
+		html5::tokenizer::fuzz::tests::corpus::replay_committed_html5_tokenizer_corpus_deterministically
 
 # Run WPT tree-construction slice (tokenizer + tree builder -> DOM snapshot)
 test-wpt-tree-builder:

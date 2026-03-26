@@ -1,0 +1,46 @@
+# HTML5 Tokenizer Fuzzing
+
+`fuzz/corpus/html5_tokenizer/` contains the committed byte-stream regression
+corpus for the HTML5 tokenizer fuzz harness.
+
+Seed categories currently covered:
+- partial tags and unterminated attribute/value tails
+- broken comments and malformed doctypes
+- dense `<` runs and script/rawtext lookalikes
+- long attribute sequences
+- invalid UTF-8 and NUL-heavy byte streams
+
+## Replay
+
+Deterministic regression replay outside libFuzzer:
+
+```sh
+cargo test -p html --features html5 --lib \
+  html5::tokenizer::fuzz::tests::corpus::replay_committed_html5_tokenizer_corpus_deterministically
+```
+
+Equivalent Make target:
+
+```sh
+make test-html5-tokenizer-fuzz-corpus
+```
+
+Replay a single committed seed deterministically through normal test infrastructure:
+
+```sh
+cargo test -p html --features html5 --lib \
+  html5::tokenizer::fuzz::tests::corpus::replay_single_committed_seed_deterministically
+```
+
+If `cargo-fuzz` is installed, replay a specific seed through the actual fuzz target with:
+
+```sh
+cargo fuzz run html5_tokenizer fuzz/corpus/html5_tokenizer/<seed-name>
+```
+
+## Regression Workflow
+
+- Add the minimal reproducing bytes as a new file in `fuzz/corpus/html5_tokenizer/`.
+- Use a stable descriptive file name that describes the construct being stressed.
+- Keep corpus entries small and focused; prefer one failure mode per seed.
+- Re-run the corpus replay test above before landing the regression seed.
