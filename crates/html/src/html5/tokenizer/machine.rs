@@ -1,5 +1,6 @@
 use super::input::MatchResult;
 use super::limits::LIMIT_DETAIL_TOKEN_BATCH;
+use super::stall::StallResponseMode;
 use super::states::TokenizerState;
 use super::{Html5Tokenizer, TokenizeResult};
 use crate::html5::shared::{AtomError, AtomId, DocumentParseContext, Input};
@@ -59,13 +60,29 @@ impl Html5Tokenizer {
         let initial_cursor = self.cursor;
         let initial_state_transitions = self.stats.state_transitions;
         let mut remaining_budget = MAX_STEPS_PER_PUMP;
+        let mut consecutive_stalled_steps = 0usize;
 
         while remaining_budget > 0 {
             remaining_budget -= 1;
             self.stats_inc_steps();
             #[cfg(any(debug_assertions, feature = "parser_invariants", test))]
             let step_before = self.capture_invariant_snapshot();
-            let step_result = self.step(input, ctx);
+            let before_step_cursor = self.cursor;
+            let before_step_tokens = self.tokens.len();
+            let mut step_result = self.step(input, ctx);
+            if let Some(stall) = self.detect_stalled_progress_step(
+                before_step_cursor,
+                before_step_tokens,
+                step_result,
+                &mut consecutive_stalled_steps,
+            ) {
+                step_result = self.handle_detected_step_stall(
+                    input,
+                    ctx,
+                    stall,
+                    StallResponseMode::for_current_build(),
+                );
+            }
             // Keep bytes_consumed aligned with absolute cursor progress.
             self.stats_set_bytes_consumed();
             #[cfg(any(debug_assertions, feature = "parser_invariants", test))]
@@ -163,6 +180,12 @@ impl Html5Tokenizer {
     }
 
     fn step(&mut self, input: &Input, ctx: &mut DocumentParseContext) -> Step {
+        #[cfg(test)]
+        if self.test_forced_stall_steps_remaining != 0 {
+            self.test_forced_stall_steps_remaining -= 1;
+            self.mark_progress();
+            return Step::Progress;
+        }
         self.assert_cursor_on_char_boundary(input);
         // Explicit dispatcher scaffold. New states should be implemented as
         // dedicated handlers that return `Step::Progress` or `Step::NeedMoreInput`.

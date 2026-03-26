@@ -12,6 +12,7 @@ pub enum ParseErrorCode {
     UnexpectedEof,
     InvalidCharacterReference,
     ResourceLimit,
+    ImplementationGuardrail,
     Other,
 }
 
