@@ -12,7 +12,7 @@ libfuzzer-sys = "0.4"
 
 [dependencies.html]
 path = "../crates/html"
-features = ["html5", "parser_invariants"]
+features = ["html5", "html5-fuzzing", "parser_invariants"]
 
 [[bin]]
 name = "html5_tokenizer"

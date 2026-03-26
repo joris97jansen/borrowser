@@ -75,6 +75,10 @@ jobs:
         if: matrix.run_lints
         run: cargo clippy --workspace --all-targets --features html5 --locked -- -D warnings
 
+      - name: Clippy (deny warnings, html5 hardening/fuzz)
+        if: matrix.run_lints
+        run: cargo clippy --workspace --all-targets --features "html5 html5-fuzzing parser_invariants" --locked -- -D warnings
+
       - name: Build (debug, all targets)
         run: cargo build --workspace --all-targets --locked
 

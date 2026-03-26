@@ -45,6 +45,7 @@ mod comment;
 mod control;
 mod doctype;
 mod emit;
+#[cfg(any(test, feature = "html5-fuzzing"))]
 mod fuzz;
 mod input;
 mod invariants;
@@ -61,10 +62,12 @@ mod token_fmt;
 pub use api::{Html5Tokenizer, TokenizeResult, TokenizerConfig, TokenizerLimits};
 pub use batch::{TextResolveError, TextResolver, TokenBatch};
 pub use control::{TextModeKind, TextModeNamespace, TextModeSpec, TokenizerControl};
+#[cfg(any(test, feature = "html5-fuzzing"))]
 pub use fuzz::{
     TokenizerFuzzConfig, TokenizerFuzzError, TokenizerFuzzSummary, TokenizerFuzzTermination,
     derive_fuzz_seed, run_seeded_byte_fuzz_case,
 };
+#[cfg(any(test, feature = "html5-fuzzing"))]
 pub(crate) use invariants::TokenizerInvariantSnapshot;
 #[cfg(test)]
 pub(crate) use machine::MAX_STEPS_PER_PUMP;
