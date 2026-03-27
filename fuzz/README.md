@@ -8,12 +8,23 @@ tokenizer fuzz harness. Triaged crashing inputs belong in
 the synthetic token-stream HTML5 tree-builder fuzz harness. Triaged crashing
 inputs belong in `fuzz/regressions/html5_tree_builder_tokens/`.
 
+`fuzz/corpus/html5_pipeline/` contains the committed seed corpus for the
+end-to-end HTML5 pipeline fuzz harness (bytes -> tokenizer -> tree builder ->
+patches). Triaged crashing inputs belong in `fuzz/regressions/html5_pipeline/`.
+
 The tree-builder harness is intentionally byte-driven but not tokenizer-derived:
 it decodes arbitrary bytes into a bounded synthetic token stream using a mix of
 fixed HTML tag/attribute catalogs and fuzz-generated names, values, comments,
 text, and doctypes. The harness appends `EOF` itself so replay remains
 deterministic and the token-stream contract stays focused on tree-builder
 recovery semantics rather than tokenizer fidelity.
+
+The end-to-end pipeline harness is the realistic attacker-model lane: it feeds
+arbitrary bytes through the UTF-8 decoder and tokenizer with seeded chunking,
+streams emitted tokens into the tree builder one token at a time, applies
+tree-builder tokenizer controls immediately, drains patches incrementally, and
+checks tokenizer + DOM/patch invariants during streaming rather than only at
+EOF.
 
 For the tokenizer threat model, panic-free scope, enforced limits, and the
 expected fuzz triage workflow, see
@@ -26,6 +37,7 @@ Seed categories currently covered:
 - long attribute sequences
 - invalid UTF-8 and NUL-heavy byte streams
 - synthetic malformed token orderings and weird structural nesting
+- end-to-end chunked byte streams that exercise text-mode controls and patch streaming
 
 ## Replay
 
@@ -77,6 +89,25 @@ Replay a specific seed through the actual tree-builder fuzz target with:
 cargo fuzz run html5_tree_builder_tokens fuzz/corpus/html5_tree_builder_tokens/<seed-name>
 ```
 
+Deterministic replay for the end-to-end HTML5 pipeline harness:
+
+```sh
+cargo test -p html --features html5 --lib \
+  html5::fuzz::tests::corpus::replay_committed_html5_pipeline_corpus_deterministically
+```
+
+Equivalent Make target:
+
+```sh
+make test-html5-pipeline-fuzz-corpus
+```
+
+Replay a specific seed through the actual pipeline fuzz target with:
+
+```sh
+cargo fuzz run html5_pipeline fuzz/corpus/html5_pipeline/<seed-name>
+```
+
 ## CI Smoke
 
 PR CI runs a short deterministic smoke lane around the actual tokenizer fuzz
@@ -110,6 +141,19 @@ Current tree-builder smoke budget:
 - libFuzzer per-input timeout: `5s`
 - outer wall timeout: `90s`
 
+PR CI also runs a short deterministic smoke lane around the end-to-end pipeline
+fuzz target via:
+
+```sh
+make test-html5-pipeline-fuzz-smoke
+```
+
+Current pipeline smoke budget:
+- fixed seed: `1414213562`
+- fixed runs: `128`
+- libFuzzer per-input timeout: `5s`
+- outer wall timeout: `90s`
+
 ## Nightly / Long Run
 
 Nightly and manually triggered perf CI runs a longer deterministic tokenizer
@@ -134,6 +178,12 @@ The equivalent long-run tree-builder lane is:
 make test-html5-tree-builder-token-fuzz-long
 ```
 
+The equivalent long-run end-to-end pipeline lane is:
+
+```sh
+make test-html5-pipeline-fuzz-long
+```
+
 ## Triage
 
 - Download the failure artifact from CI.
@@ -141,6 +191,7 @@ make test-html5-tree-builder-token-fuzz-long
 - Minimize the input and commit it to the matching regression directory:
   `fuzz/regressions/html5_tokenizer/` for tokenizer crashes and
   `fuzz/regressions/html5_tree_builder_tokens/` for synthetic tree-builder
+  crashes, and `fuzz/regressions/html5_pipeline/` for end-to-end pipeline
   crashes.
 - Re-run the matching deterministic replay test to lock the regression in.
 
@@ -158,12 +209,20 @@ cargo test -p html --features html5 --lib \
   html5::tree_builder::fuzz::tests::corpus::replay_committed_tree_builder_token_corpus_deterministically
 ```
 
+End-to-end pipeline replay:
+
+```sh
+cargo test -p html --features html5 --lib \
+  html5::fuzz::tests::corpus::replay_committed_html5_pipeline_corpus_deterministically
+```
+
 ## Regression Workflow
 
 - Add minimized reusable seed inputs to the matching committed corpus when they
   improve steady-state coverage:
   `fuzz/corpus/html5_tokenizer/` for raw-byte tokenizer cases and
   `fuzz/corpus/html5_tree_builder_tokens/` for synthetic token-stream tree-builder
+  cases, and `fuzz/corpus/html5_pipeline/` for end-to-end byte-stream pipeline
   cases.
 - Keep crash or hang reproducers in the matching `fuzz/regressions/...`
   directory even if you also promote a minimized variant into the committed

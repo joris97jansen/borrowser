@@ -63,6 +63,11 @@ pub use api::{Html5Tokenizer, TokenizeResult, TokenizerConfig, TokenizerLimits};
 pub use batch::{TextResolveError, TextResolver, TokenBatch};
 pub use control::{TextModeKind, TextModeNamespace, TextModeSpec, TokenizerControl};
 #[cfg(any(test, feature = "html5-fuzzing"))]
+pub(crate) use fuzz::{
+    HarnessRng, MIN_PUMP_BUDGET, ObserveError, PUMP_BUDGET_FACTOR, PumpDecision, TokenObserver,
+    ensure_pump_progress, next_chunk_len,
+};
+#[cfg(any(test, feature = "html5-fuzzing"))]
 pub use fuzz::{
     TokenizerFuzzConfig, TokenizerFuzzError, TokenizerFuzzSummary, TokenizerFuzzTermination,
     derive_fuzz_seed, run_seeded_byte_fuzz_case,

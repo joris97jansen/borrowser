@@ -1,9 +1,9 @@
-pub(super) struct HarnessRng {
+pub(crate) struct HarnessRng {
     state: u64,
 }
 
 impl HarnessRng {
-    pub(super) fn new(seed: u64) -> Self {
+    pub(crate) fn new(seed: u64) -> Self {
         let state = if seed == 0 { 0x9e3779b97f4a7c15 } else { seed };
         Self { state }
     }
@@ -22,7 +22,7 @@ impl HarnessRng {
     }
 }
 
-pub(super) fn next_chunk_len(
+pub(crate) fn next_chunk_len(
     remaining: usize,
     chunk_index: usize,
     max_chunk_len: usize,
