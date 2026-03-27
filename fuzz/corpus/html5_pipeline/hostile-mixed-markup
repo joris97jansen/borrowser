@@ -1,0 +1,1 @@
+<body><style>body{color:red}</style><textarea>unterminated <b attr='x&y'>value</textarea><svg><p>fallback</body>

@@ -2,16 +2,16 @@ use super::super::{TextResolveError, TextResolver};
 use super::digest::{mix_atom_name, mix_bytes, mix_u64, token_discriminant};
 use crate::html5::shared::{AtomTable, AttributeValue, TextValue, Token};
 
-pub(super) struct TokenObserver {
+pub(crate) struct TokenObserver {
     max_tokens_observed: usize,
-    pub(super) saw_eof: bool,
-    pub(super) tokens_observed: usize,
-    pub(super) span_resolve_count: usize,
-    pub(super) digest: u64,
+    pub(crate) saw_eof: bool,
+    pub(crate) tokens_observed: usize,
+    pub(crate) span_resolve_count: usize,
+    pub(crate) digest: u64,
 }
 
 impl TokenObserver {
-    pub(super) fn new(max_tokens_observed: usize) -> Self {
+    pub(crate) fn new(max_tokens_observed: usize) -> Self {
         Self {
             max_tokens_observed: max_tokens_observed.max(1),
             saw_eof: false,
@@ -21,7 +21,7 @@ impl TokenObserver {
         }
     }
 
-    pub(super) fn observe(
+    pub(crate) fn observe(
         &mut self,
         token: &Token,
         atoms: &AtomTable,
@@ -121,7 +121,7 @@ impl TokenObserver {
     }
 }
 
-pub(super) enum ObserveError {
+pub(crate) enum ObserveError {
     InvalidSpan(TextResolveError),
     DuplicateEof,
     TokenBudgetReached,

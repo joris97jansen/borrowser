@@ -2,8 +2,8 @@ const DEFAULT_MAX_CHUNK_LEN: usize = 32;
 const DEFAULT_MAX_INPUT_BYTES: usize = 64 * 1024;
 const DEFAULT_MAX_DECODED_BYTES: usize = 256 * 1024;
 const DEFAULT_MAX_TOKENS_OBSERVED: usize = 128 * 1024;
-pub(super) const MIN_PUMP_BUDGET: usize = 32;
-pub(super) const PUMP_BUDGET_FACTOR: usize = 8;
+pub(crate) const MIN_PUMP_BUDGET: usize = 32;
+pub(crate) const PUMP_BUDGET_FACTOR: usize = 8;
 const DEFAULT_FINISH_DRAIN_BUDGET: usize = 32;
 
 /// Stable seed derivation for byte-oriented fuzz cases.

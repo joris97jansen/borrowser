@@ -2,7 +2,7 @@ use super::super::invariants::check_progress_contract;
 use super::super::{TokenizeResult, TokenizerInvariantSnapshot};
 use super::config::TokenizerFuzzError;
 
-pub(super) fn ensure_pump_progress(
+pub(crate) fn ensure_pump_progress(
     phase: &'static str,
     pump_index: usize,
     result: TokenizeResult,
@@ -42,7 +42,7 @@ pub(super) fn ensure_pump_progress(
     }
 }
 
-pub(super) enum PumpDecision {
+pub(crate) enum PumpDecision {
     Ok,
     Fail(TokenizerFuzzError),
 }

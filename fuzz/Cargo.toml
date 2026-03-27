@@ -27,3 +27,10 @@ path = "fuzz_targets/html5_tree_builder_tokens.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "html5_pipeline"
+path = "fuzz_targets/html5_pipeline.rs"
+test = false
+doc = false
+bench = false
