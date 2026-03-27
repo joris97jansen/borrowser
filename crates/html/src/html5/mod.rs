@@ -23,8 +23,10 @@ pub use tokenizer::{
     TokenizerControl, TokenizerStats,
 };
 pub use tree_builder::{
-    Html5TreeBuilder, PatchSink, SuspendReason, TreeBuilderConfig, TreeBuilderControlFlow,
-    TreeBuilderError, TreeBuilderStepResult, VecPatchSink,
+    DomInvariantError, DomInvariantNode, DomInvariantNodeKind, DomInvariantState, Html5TreeBuilder,
+    PatchInvariantError, PatchSink, SuspendReason, TreeBuilderConfig, TreeBuilderControlFlow,
+    TreeBuilderError, TreeBuilderStepResult, VecPatchSink, check_dom_invariants,
+    check_patch_invariants,
 };
 #[cfg(feature = "dom-snapshot")]
 pub use tree_builder::{serialize_dom_for_test, serialize_dom_for_test_with_options};

@@ -1,6 +1,9 @@
 use super::fixtures::Fixture;
 use super::formatting::format_patch_batches;
-use html::html5::tree_builder::{Html5TreeBuilder, TreeBuilderConfig, VecPatchSink};
+use html::html5::tree_builder::{
+    DomInvariantState, Html5TreeBuilder, TreeBuilderConfig, VecPatchSink, check_dom_invariants,
+    check_patch_invariants,
+};
 use html::html5::{DocumentParseContext, Html5Tokenizer, Input, TokenizeResult, TokenizerConfig};
 
 #[derive(Debug)]
@@ -63,6 +66,7 @@ fn run_tree_builder_impl(
         Err(err) => return PatchRunResult::Err(format!("failed to init tree builder: {err:?}")),
     };
     let mut input = Input::new();
+    let mut dom_state = DomInvariantState::default();
     let mut patch_batches: Vec<Vec<html::DomPatch>> = Vec::new();
     let mut saw_eof_token = false;
     let label = plan_label.unwrap_or("<whole>");
@@ -75,6 +79,7 @@ fn run_tree_builder_impl(
                 input: &mut input,
                 builder: &mut builder,
                 ctx: &mut ctx,
+                dom_state: &mut dom_state,
                 patch_batches: &mut patch_batches,
                 fixture_name: &fixture.name,
                 label,
@@ -136,6 +141,7 @@ fn run_tree_builder_impl(
             input: &mut input,
             builder: &mut builder,
             ctx: &mut ctx,
+            dom_state: &mut dom_state,
             patch_batches: &mut patch_batches,
             fixture_name: &fixture.name,
             label,
@@ -175,6 +181,7 @@ struct DrainBatchesCtx<'a> {
     input: &'a mut Input,
     builder: &'a mut Html5TreeBuilder,
     ctx: &'a mut DocumentParseContext,
+    dom_state: &'a mut DomInvariantState,
     patch_batches: &'a mut Vec<Vec<html::DomPatch>>,
     fixture_name: &'a str,
     label: &'a str,
@@ -188,6 +195,7 @@ impl<'a> DrainBatchesCtx<'a> {
             input: self.input,
             builder: self.builder,
             ctx: self.ctx,
+            dom_state: self.dom_state,
             patch_batches: self.patch_batches,
             fixture_name: self.fixture_name,
             label: self.label,
@@ -211,7 +219,14 @@ fn pump_tokenizer_until_blocked(
         }
     }
     if !pumped_patches.is_empty() {
-        ctx.patch_batches.push(pumped_patches);
+        record_checked_batch(
+            ctx.builder,
+            ctx.dom_state,
+            ctx.patch_batches,
+            pumped_patches,
+            ctx.fixture_name,
+            ctx.label,
+        )?;
     }
     Ok(())
 }
@@ -223,7 +238,14 @@ fn drain_batches(
     let mut drained = Vec::new();
     drain_batches_into(ctx.reborrow(), expect_token_granular_batches, &mut drained)?;
     if !drained.is_empty() {
-        ctx.patch_batches.push(drained);
+        record_checked_batch(
+            ctx.builder,
+            ctx.dom_state,
+            ctx.patch_batches,
+            drained,
+            ctx.fixture_name,
+            ctx.label,
+        )?;
     }
     Ok(())
 }
@@ -238,6 +260,7 @@ fn drain_batches_into(
         input,
         builder,
         ctx,
+        dom_state: _,
         patch_batches: _,
         fixture_name,
         label,
@@ -282,6 +305,38 @@ fn drain_batches_into(
             }
         }
     }
+    Ok(())
+}
+
+fn record_checked_batch(
+    builder: &Html5TreeBuilder,
+    dom_state: &mut DomInvariantState,
+    patch_batches: &mut Vec<Vec<html::DomPatch>>,
+    batch: Vec<html::DomPatch>,
+    fixture_name: &str,
+    label: &str,
+) -> Result<(), String> {
+    let checked_state = check_patch_invariants(&batch, dom_state).map_err(|err| {
+        format!(
+            "patch invariant error in fixture '{}' [{}]: {err}",
+            fixture_name, label
+        )
+    })?;
+    let live_state = builder.dom_invariant_state();
+    check_dom_invariants(&live_state).map_err(|err| {
+        format!(
+            "live DOM invariant error in fixture '{}' [{}]: {err}",
+            fixture_name, label
+        )
+    })?;
+    if live_state != checked_state {
+        return Err(format!(
+            "live DOM state diverged from patch-derived state in fixture '{}' [{}]",
+            fixture_name, label
+        ));
+    }
+    *dom_state = checked_state;
+    patch_batches.push(batch);
     Ok(())
 }
 

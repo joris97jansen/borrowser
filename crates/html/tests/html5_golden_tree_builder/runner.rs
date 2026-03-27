@@ -1,6 +1,7 @@
 use super::fixtures::Fixture;
 use html::html5::tree_builder::{
-    Html5TreeBuilder, TreeBuilderConfig, serialize_dom_for_test_with_options,
+    DomInvariantState, Html5TreeBuilder, TreeBuilderConfig, check_dom_invariants,
+    check_patch_invariants, serialize_dom_for_test_with_options,
 };
 use html::html5::{DocumentParseContext, Html5Tokenizer, Input, TokenizeResult, TokenizerConfig};
 use html::test_harness::{ChunkPlan, materialize_patch_batches};
@@ -50,6 +51,7 @@ fn run_tree_builder_impl(
         Err(err) => return RunOutput::Err(format!("failed to init tree builder: {err:?}")),
     };
     let mut input = Input::new();
+    let mut dom_state = DomInvariantState::default();
     let mut patch_batches: Vec<Vec<html::DomPatch>> = Vec::new();
     let mut saw_eof_token = false;
     let label = plan_label.unwrap_or("<whole>");
@@ -62,6 +64,7 @@ fn run_tree_builder_impl(
                 input: &mut input,
                 builder: &mut builder,
                 ctx: &mut ctx,
+                dom_state: &mut dom_state,
                 patch_batches: &mut patch_batches,
                 fixture_name: &fixture.name,
                 label,
@@ -124,6 +127,7 @@ fn run_tree_builder_impl(
             input: &mut input,
             builder: &mut builder,
             ctx: &mut ctx,
+            dom_state: &mut dom_state,
             patch_batches: &mut patch_batches,
             fixture_name: &fixture.name,
             label,
@@ -212,6 +216,26 @@ fn drain_batches(d: DrainCtx<'_>, expect_token_granular_batches: bool) -> Result
             }
         }
         if !patches.is_empty() {
+            let checked_state = check_patch_invariants(&patches, d.dom_state).map_err(|err| {
+                format!(
+                    "patch invariant error in fixture '{}' [{}]: {err}",
+                    d.fixture_name, d.label
+                )
+            })?;
+            let live_state = d.builder.dom_invariant_state();
+            check_dom_invariants(&live_state).map_err(|err| {
+                format!(
+                    "live DOM invariant error in fixture '{}' [{}]: {err}",
+                    d.fixture_name, d.label
+                )
+            })?;
+            if live_state != checked_state {
+                return Err(format!(
+                    "live DOM state diverged from patch-derived state in fixture '{}' [{}]",
+                    d.fixture_name, d.label
+                ));
+            }
+            *d.dom_state = checked_state;
             d.patch_batches.push(std::mem::take(&mut patches));
         }
     }
@@ -223,6 +247,7 @@ struct DrainCtx<'a> {
     input: &'a mut Input,
     builder: &'a mut Html5TreeBuilder,
     ctx: &'a mut DocumentParseContext,
+    dom_state: &'a mut DomInvariantState,
     patch_batches: &'a mut Vec<Vec<html::DomPatch>>,
     fixture_name: &'a str,
     label: &'a str,
@@ -236,6 +261,7 @@ impl<'a> DrainCtx<'a> {
             input: self.input,
             builder: self.builder,
             ctx: self.ctx,
+            dom_state: self.dom_state,
             patch_batches: self.patch_batches,
             fixture_name: self.fixture_name,
             label: self.label,

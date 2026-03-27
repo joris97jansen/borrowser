@@ -12,6 +12,9 @@ impl crate::html5::tokenizer::TextResolver for EmptyResolver {
 pub(super) fn run_tree_builder_chunks(chunks: &[&str]) -> Vec<crate::dom_patch::DomPatch> {
     use crate::html5::shared::{DocumentParseContext, Input};
     use crate::html5::tokenizer::{Html5Tokenizer, TokenizeResult, TokenizerConfig};
+    use crate::html5::tree_builder::{
+        DomInvariantState, check_dom_invariants, check_patch_invariants,
+    };
 
     let mut ctx = DocumentParseContext::new();
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
@@ -60,7 +63,17 @@ pub(super) fn run_tree_builder_chunks(chunks: &[&str]) -> Vec<crate::dom_patch::
         }
     }
 
-    builder.drain_patches()
+    let patches = builder.drain_patches();
+    let checked_state = check_patch_invariants(&patches, &DomInvariantState::default())
+        .expect("tree builder patch output must satisfy patch invariants");
+    let live_state = builder.dom_invariant_state();
+    check_dom_invariants(&live_state).expect("tree builder live DOM must satisfy DOM invariants");
+    assert_eq!(
+        live_state, checked_state,
+        "patch-derived DOM state must match the tree builder live DOM"
+    );
+
+    patches
 }
 
 pub(super) fn materialized_dom_lines(chunks: &[&str]) -> Vec<String> {
