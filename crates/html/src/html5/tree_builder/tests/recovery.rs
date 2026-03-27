@@ -106,6 +106,101 @@ fn tree_builder_recovers_from_early_end_tags_in_pre_body_modes() {
 }
 
 #[test]
+fn tree_builder_ignores_self_closing_flag_on_root_container_start_tags() {
+    use crate::html5::shared::Token;
+    use crate::html5::tree_builder::modes::InsertionMode;
+
+    let resolver = EmptyResolver;
+    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+
+    let html = ctx
+        .atoms
+        .intern_ascii_folded("html")
+        .expect("atom interning");
+    let head = ctx
+        .atoms
+        .intern_ascii_folded("head")
+        .expect("atom interning");
+    let body = ctx
+        .atoms
+        .intern_ascii_folded("body")
+        .expect("atom interning");
+
+    let _ = builder
+        .process(
+            &Token::StartTag {
+                name: html,
+                attrs: Vec::new(),
+                self_closing: true,
+            },
+            &ctx.atoms,
+            &resolver,
+        )
+        .expect("self-closing <html/> should stay recoverable");
+    let after_html = builder.state_snapshot();
+    assert_eq!(after_html.insertion_mode, InsertionMode::BeforeHead);
+    assert_eq!(
+        after_html.open_element_names,
+        vec![html],
+        "self-closing <html/> must still leave <html> on the open-elements stack"
+    );
+
+    let _ = builder
+        .process(
+            &Token::StartTag {
+                name: head,
+                attrs: Vec::new(),
+                self_closing: true,
+            },
+            &ctx.atoms,
+            &resolver,
+        )
+        .expect("self-closing <head/> should stay recoverable");
+    let after_head = builder.state_snapshot();
+    assert_eq!(after_head.insertion_mode, InsertionMode::InHead);
+    assert_eq!(
+        after_head.open_element_names,
+        vec![html, head],
+        "self-closing <head/> must still leave <head> on the open-elements stack"
+    );
+
+    let _ = builder
+        .process(&Token::EndTag { name: head }, &ctx.atoms, &resolver)
+        .expect("</head> should close the recovered head element");
+    let after_head_close = builder.state_snapshot();
+    assert_eq!(after_head_close.insertion_mode, InsertionMode::AfterHead);
+    assert_eq!(after_head_close.open_element_names, vec![html]);
+
+    let _ = builder
+        .process(
+            &Token::StartTag {
+                name: body,
+                attrs: Vec::new(),
+                self_closing: true,
+            },
+            &ctx.atoms,
+            &resolver,
+        )
+        .expect("self-closing <body/> should stay recoverable");
+    let after_body = builder.state_snapshot();
+    assert_eq!(after_body.insertion_mode, InsertionMode::InBody);
+    assert_eq!(
+        after_body.open_element_names,
+        vec![html, body],
+        "self-closing <body/> must still leave <body> on the open-elements stack"
+    );
+
+    let _ = builder
+        .process(&Token::Eof, &ctx.atoms, &resolver)
+        .expect("EOF after recovered self-closing container tags should process");
+}
+
+#[test]
 fn tree_builder_in_body_stray_end_tag_does_not_mutate_open_elements_stack() {
     use crate::html5::shared::Token;
 
