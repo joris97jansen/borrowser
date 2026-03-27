@@ -3,6 +3,8 @@ const DEFAULT_MAX_INPUT_BYTES: usize = 64 * 1024;
 const DEFAULT_MAX_DECODED_BYTES: usize = 256 * 1024;
 const DEFAULT_MAX_TOKENS_STREAMED: usize = 128 * 1024;
 const DEFAULT_MAX_PATCHES_OBSERVED: usize = 64 * 1024;
+const DEFAULT_MAX_PIPELINE_STEPS: usize = 1_048_576;
+const DEFAULT_MAX_TOKENS_WITHOUT_BUILDER_PROGRESS: usize = 32 * 1024;
 const DEFAULT_FINISH_DRAIN_BUDGET: usize = 32;
 
 pub fn derive_html5_pipeline_fuzz_seed(bytes: &[u8]) -> u64 {
@@ -17,6 +19,8 @@ pub struct Html5PipelineFuzzConfig {
     pub max_decoded_bytes: usize,
     pub max_tokens_streamed: usize,
     pub max_patches_observed: usize,
+    pub max_pipeline_steps: usize,
+    pub max_tokens_without_builder_progress: usize,
     pub finish_drain_budget: usize,
 }
 
@@ -29,6 +33,8 @@ impl Default for Html5PipelineFuzzConfig {
             max_decoded_bytes: DEFAULT_MAX_DECODED_BYTES,
             max_tokens_streamed: DEFAULT_MAX_TOKENS_STREAMED,
             max_patches_observed: DEFAULT_MAX_PATCHES_OBSERVED,
+            max_pipeline_steps: DEFAULT_MAX_PIPELINE_STEPS,
+            max_tokens_without_builder_progress: DEFAULT_MAX_TOKENS_WITHOUT_BUILDER_PROGRESS,
             finish_drain_budget: DEFAULT_FINISH_DRAIN_BUDGET,
         }
     }
@@ -41,6 +47,8 @@ pub enum Html5PipelineFuzzTermination {
     RejectedMaxDecodedBytes,
     RejectedMaxTokensStreamed,
     RejectedMaxPatchesObserved,
+    RejectedMaxPipelineSteps,
+    RejectedMaxBuilderNoProgressTokens,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

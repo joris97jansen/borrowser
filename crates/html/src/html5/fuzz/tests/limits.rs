@@ -53,3 +53,39 @@ fn html5_pipeline_fuzz_harness_rejects_patch_budget_deterministically() {
         Html5PipelineFuzzTermination::RejectedMaxPatchesObserved
     );
 }
+
+#[test]
+fn html5_pipeline_fuzz_harness_rejects_pipeline_step_budget_deterministically() {
+    let bytes = b"<!doctype html><html><body><p>x</p></body></html>";
+    let summary = run_seeded_html5_pipeline_fuzz_case(
+        bytes,
+        Html5PipelineFuzzConfig {
+            max_pipeline_steps: 1,
+            ..Html5PipelineFuzzConfig::default()
+        },
+    )
+    .expect("pipeline step budget rejection should be deterministic");
+
+    assert_eq!(
+        summary.termination,
+        Html5PipelineFuzzTermination::RejectedMaxPipelineSteps
+    );
+}
+
+#[test]
+fn html5_pipeline_fuzz_harness_rejects_tree_builder_no_progress_streak_deterministically() {
+    let bytes = b"</div></span></table>";
+    let summary = run_seeded_html5_pipeline_fuzz_case(
+        bytes,
+        Html5PipelineFuzzConfig {
+            max_tokens_without_builder_progress: 1,
+            ..Html5PipelineFuzzConfig::default()
+        },
+    )
+    .expect("tree-builder no-progress rejection should be deterministic");
+
+    assert_eq!(
+        summary.termination,
+        Html5PipelineFuzzTermination::RejectedMaxBuilderNoProgressTokens
+    );
+}

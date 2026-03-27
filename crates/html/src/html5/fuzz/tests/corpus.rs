@@ -20,16 +20,17 @@ fn replay_committed_html5_pipeline_corpus_deterministically() {
             seed: derive_html5_pipeline_fuzz_seed(&bytes),
             ..Html5PipelineFuzzConfig::default()
         };
+        let seed = config.seed;
         let first = run_seeded_html5_pipeline_fuzz_case(&bytes, config).unwrap_or_else(|err| {
             panic!(
-                "committed corpus entry {} should replay without invariant failure: {err}",
-                entry.display()
+                "committed corpus entry {} (seed={seed}) should replay without invariant failure: {err}",
+                entry.display(),
             )
         });
         let second = run_seeded_html5_pipeline_fuzz_case(&bytes, config).unwrap_or_else(|err| {
             panic!(
-                "committed corpus entry {} should replay deterministically: {err}",
-                entry.display()
+                "committed corpus entry {} (seed={seed}) should replay deterministically: {err}",
+                entry.display(),
             )
         });
 
@@ -37,8 +38,8 @@ fn replay_committed_html5_pipeline_corpus_deterministically() {
         assert_eq!(
             first.termination,
             Html5PipelineFuzzTermination::Completed,
-            "committed corpus entry {} should complete rather than hit harness limits",
-            entry.display()
+            "committed corpus entry {} (seed={seed}) should complete rather than hit harness limits",
+            entry.display(),
         );
     }
 }
@@ -52,16 +53,17 @@ fn replay_single_committed_html5_pipeline_seed_deterministically() {
         seed: derive_html5_pipeline_fuzz_seed(&bytes),
         ..Html5PipelineFuzzConfig::default()
     };
+    let seed = config.seed;
     let first = run_seeded_html5_pipeline_fuzz_case(&bytes, config).unwrap_or_else(|err| {
         panic!(
-            "single committed seed {} should replay without invariant failure: {err}",
-            entry.display()
+            "single committed seed {} (seed={seed}) should replay without invariant failure: {err}",
+            entry.display(),
         )
     });
     let second = run_seeded_html5_pipeline_fuzz_case(&bytes, config).unwrap_or_else(|err| {
         panic!(
-            "single committed seed {} should replay deterministically: {err}",
-            entry.display()
+            "single committed seed {} (seed={seed}) should replay deterministically: {err}",
+            entry.display(),
         )
     });
     assert_eq!(first, second);

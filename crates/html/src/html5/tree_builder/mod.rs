@@ -24,6 +24,8 @@ mod stack;
 mod table;
 mod text_mode;
 
+#[cfg(any(test, feature = "html5-fuzzing"))]
+pub(crate) use api::TreeBuilderProgressWitness;
 pub use api::{
     Html5TreeBuilder, SuspendReason, TreeBuilderConfig, TreeBuilderControlFlow, TreeBuilderError,
     TreeBuilderInternalError, TreeBuilderStepResult,

@@ -80,3 +80,22 @@ fn seeded_html5_pipeline_fuzz_harness_flushes_finish_time_text_deterministically
     assert!(first.tokenizer_controls_applied > 0);
     assert!(first.tokens_streamed >= 2);
 }
+
+#[test]
+fn seeded_html5_pipeline_fuzz_harness_handles_partial_rawtext_close_tail_at_eof() {
+    let bytes = b"<style>a</sty";
+    let config = Html5PipelineFuzzConfig {
+        seed: derive_html5_pipeline_fuzz_seed(bytes),
+        ..Html5PipelineFuzzConfig::default()
+    };
+
+    let first = run_seeded_html5_pipeline_fuzz_case(bytes, config)
+        .expect("partial rawtext tail at EOF should finalize cleanly");
+    let second = run_seeded_html5_pipeline_fuzz_case(bytes, config)
+        .expect("partial rawtext tail replay should stay deterministic");
+
+    assert_eq!(first, second);
+    assert_eq!(first.termination, Html5PipelineFuzzTermination::Completed);
+    assert!(first.tokenizer_controls_applied > 0);
+    assert!(first.tokens_streamed >= 2);
+}
