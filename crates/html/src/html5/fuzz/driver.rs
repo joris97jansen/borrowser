@@ -9,8 +9,8 @@ use crate::html5::tokenizer::{
     TokenizerFuzzError, ensure_pump_progress, next_chunk_len,
 };
 use crate::html5::tree_builder::{
-    DomInvariantState, Html5TreeBuilder, TreeBuilderConfig, TreeBuilderControlFlow, VecPatchSink,
-    check_dom_invariants, check_patch_invariants,
+    DomInvariantState, Html5TreeBuilder, TreeBuilderConfig, TreeBuilderControlFlow,
+    TreeBuilderProgressWitness, VecPatchSink, check_dom_invariants, check_patch_invariants,
 };
 
 pub fn run_seeded_html5_pipeline_fuzz_case(
@@ -49,6 +49,9 @@ pub fn run_seeded_html5_pipeline_fuzz_case(
         config.seed,
         config.max_tokens_streamed,
         config.max_patches_observed,
+        config.max_pipeline_steps,
+        config.max_tokens_without_builder_progress,
+        builder.progress_witness(),
     );
     let max_chunk_len = config.max_chunk_len.max(1);
     let mut chunk_count = 0usize;
@@ -131,6 +134,9 @@ pub fn run_seeded_html5_pipeline_fuzz_case(
         }
     }
 
+    // Exhausted decoded input without EOF is an expected pipeline boundary for
+    // partial constructs at EOF. Finalize through `finish()` rather than
+    // treating the last `NeedMoreInput` as a stall.
     if let Some(termination) = finish_and_drain(
         &mut tokenizer,
         &mut input,
@@ -196,6 +202,9 @@ fn pump_until_blocked(
 
     let budget = phase_pump_budget(input.as_str().len().saturating_sub(current.cursor));
     for pump_index in 0..budget {
+        if let Some(termination) = state.note_pipeline_step() {
+            return Ok(Some(termination));
+        }
         let before = tokenizer.capture_invariant_snapshot();
         let result = tokenizer.push_input_until_token(input, ctx);
         let drain =
@@ -248,6 +257,9 @@ fn finish_and_drain(
     state: &mut PipelineRunState,
     config: Html5PipelineFuzzConfig,
 ) -> Result<Option<Html5PipelineFuzzTermination>, Html5PipelineFuzzError> {
+    if let Some(termination) = state.note_pipeline_step() {
+        return Ok(Some(termination));
+    }
     let finish_result = tokenizer.finish(input);
     if finish_result != TokenizeResult::EmittedEof {
         return Err(Html5PipelineFuzzError::Tokenizer(
@@ -267,6 +279,9 @@ fn finish_and_drain(
     })?;
 
     for drain_index in 0..config.finish_drain_budget.max(1) {
+        if let Some(termination) = state.note_pipeline_step() {
+            return Ok(Some(termination));
+        }
         let drain = drain_finish_batch(tokenizer, input, ctx, builder, state, drain_index)?;
         if let Some(termination) = drain.termination {
             return Ok(Some(termination));
@@ -389,18 +404,64 @@ struct PipelineRunState {
     patches_emitted: usize,
     tokenizer_controls_applied: usize,
     max_patches_observed: usize,
+    pipeline_steps: usize,
+    max_pipeline_steps: usize,
+    tokens_without_builder_progress: usize,
+    max_tokens_without_builder_progress: usize,
+    last_builder_progress_witness: TreeBuilderProgressWitness,
     digest: PipelineFuzzDigest,
 }
 
 impl PipelineRunState {
-    fn new(seed: u64, max_tokens_streamed: usize, max_patches_observed: usize) -> Self {
+    fn new(
+        seed: u64,
+        max_tokens_streamed: usize,
+        max_patches_observed: usize,
+        max_pipeline_steps: usize,
+        max_tokens_without_builder_progress: usize,
+        initial_builder_progress_witness: TreeBuilderProgressWitness,
+    ) -> Self {
         Self {
             observer: TokenObserver::new(max_tokens_streamed),
             dom_state: DomInvariantState::default(),
             patches_emitted: 0,
             tokenizer_controls_applied: 0,
             max_patches_observed,
+            pipeline_steps: 0,
+            max_pipeline_steps,
+            tokens_without_builder_progress: 0,
+            max_tokens_without_builder_progress,
+            last_builder_progress_witness: initial_builder_progress_witness,
             digest: PipelineFuzzDigest::new(seed),
+        }
+    }
+
+    fn note_pipeline_step(&mut self) -> Option<Html5PipelineFuzzTermination> {
+        self.pipeline_steps = self.pipeline_steps.saturating_add(1);
+        if self.pipeline_steps > self.max_pipeline_steps {
+            Some(Html5PipelineFuzzTermination::RejectedMaxPipelineSteps)
+        } else {
+            None
+        }
+    }
+
+    fn note_builder_progress(
+        &mut self,
+        made_progress: bool,
+        witness: TreeBuilderProgressWitness,
+    ) -> Option<Html5PipelineFuzzTermination> {
+        self.last_builder_progress_witness = witness;
+        if made_progress {
+            self.tokens_without_builder_progress = 0;
+            return None;
+        }
+
+        self.tokens_without_builder_progress =
+            self.tokens_without_builder_progress.saturating_add(1);
+        if self.tokens_without_builder_progress > self.max_tokens_without_builder_progress {
+            Some(Html5PipelineFuzzTermination::RejectedMaxBuilderNoProgressTokens)
+        } else {
+            None
         }
     }
 
@@ -415,6 +476,10 @@ impl PipelineRunState {
         phase: &'static str,
         pump_index: usize,
     ) -> Result<Option<Html5PipelineFuzzTermination>, Html5PipelineFuzzError> {
+        if let Some(termination) = self.note_pipeline_step() {
+            return Ok(Some(termination));
+        }
+
         let token_index = self.observer.tokens_observed;
         match self.observer.observe(token, atoms, resolver) {
             Ok(()) => {}
@@ -439,6 +504,7 @@ impl PipelineRunState {
             }
         }
 
+        let before_builder_progress = builder.progress_witness();
         let mut patches = Vec::new();
         let mut sink = VecPatchSink(&mut patches);
         let step = builder
@@ -476,6 +542,10 @@ impl PipelineRunState {
             }
         }
 
+        let after_builder_progress = builder.progress_witness();
+        let made_builder_progress =
+            !patches.is_empty() || after_builder_progress != before_builder_progress;
+
         let live_state = builder.dom_invariant_state();
         check_dom_invariants(&live_state).map_err(|err| {
             Html5PipelineFuzzError::DomInvariantViolation {
@@ -485,6 +555,11 @@ impl PipelineRunState {
         })?;
         if live_state != self.dom_state {
             return Err(Html5PipelineFuzzError::LiveStateMismatch { token_index });
+        }
+        if let Some(termination) =
+            self.note_builder_progress(made_builder_progress, after_builder_progress)
+        {
+            return Ok(Some(termination));
         }
 
         Ok(None)

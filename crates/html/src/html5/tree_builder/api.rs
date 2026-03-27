@@ -144,6 +144,21 @@ pub struct TreeBuilderPerfStats {
     pub text_coalescing_invalidations: u64,
 }
 
+#[cfg(any(test, feature = "html5-fuzzing"))]
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(crate) struct TreeBuilderProgressWitness {
+    pub(crate) insertion_mode: InsertionMode,
+    pub(crate) original_insertion_mode: Option<InsertionMode>,
+    pub(crate) active_text_mode: Option<TextModeSpec>,
+    pub(crate) open_element_keys: Vec<PatchKey>,
+    pub(crate) current_table_key: Option<PatchKey>,
+    pub(crate) pending_table_character_tokens: Vec<String>,
+    pub(crate) pending_table_character_tokens_contains_non_space: bool,
+    pub(crate) quirks_mode: crate::html5::tree_builder::document::QuirksMode,
+    pub(crate) frameset_ok: bool,
+    pub(crate) foster_parenting_enabled: bool,
+}
+
 #[cfg(any(test, feature = "internal-api"))]
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct TreeBuilderStateSnapshot {
@@ -265,6 +280,27 @@ impl Html5TreeBuilder {
     #[must_use]
     pub fn dom_invariant_state(&self) -> DomInvariantState {
         self.live_tree.invariant_state()
+    }
+
+    #[cfg(any(test, feature = "html5-fuzzing"))]
+    pub(crate) fn progress_witness(&self) -> TreeBuilderProgressWitness {
+        TreeBuilderProgressWitness {
+            insertion_mode: self.insertion_mode,
+            original_insertion_mode: self.original_insertion_mode,
+            active_text_mode: self.active_text_mode,
+            open_element_keys: (0..self.open_elements.len())
+                .filter_map(|index| self.open_elements.get(index))
+                .map(|entry| entry.key())
+                .collect(),
+            current_table_key: self.current_table_key(),
+            pending_table_character_tokens: self.pending_table_character_tokens.chunks().to_vec(),
+            pending_table_character_tokens_contains_non_space: self
+                .pending_table_character_tokens
+                .contains_non_space(),
+            quirks_mode: self.document_state.quirks_mode,
+            frameset_ok: self.document_state.frameset_ok,
+            foster_parenting_enabled: self.foster_parenting_enabled,
+        }
     }
 
     /// Internal metric: max open elements depth observed since session start.
