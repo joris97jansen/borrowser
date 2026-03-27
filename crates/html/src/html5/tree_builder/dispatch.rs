@@ -226,7 +226,14 @@ impl Html5TreeBuilder {
                 attrs,
                 self_closing,
             } if *name == self.known_tags.html => {
-                let _ = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
+                if *self_closing {
+                    self.record_parse_error(
+                        "html-start-tag-self-closing-ignored",
+                        Some(*name),
+                        Some(InsertionMode::BeforeHtml),
+                    );
+                }
+                let _ = self.insert_element(*name, attrs, false, atoms, text)?;
                 self.insertion_mode = InsertionMode::BeforeHead;
                 Ok(DispatchOutcome::Done)
             }
@@ -270,7 +277,14 @@ impl Html5TreeBuilder {
                 attrs,
                 self_closing,
             } if *name == self.known_tags.head => {
-                let _ = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
+                if *self_closing {
+                    self.record_parse_error(
+                        "head-start-tag-self-closing-ignored",
+                        Some(*name),
+                        Some(InsertionMode::BeforeHead),
+                    );
+                }
+                let _ = self.insert_element(*name, attrs, false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InHead;
                 Ok(DispatchOutcome::Done)
             }
@@ -397,7 +411,14 @@ impl Html5TreeBuilder {
                 attrs,
                 self_closing,
             } if *name == self.known_tags.body => {
-                let _ = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
+                if *self_closing {
+                    self.record_parse_error(
+                        "body-start-tag-self-closing-ignored",
+                        Some(*name),
+                        Some(InsertionMode::AfterHead),
+                    );
+                }
+                let _ = self.insert_element(*name, attrs, false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InBody;
                 Ok(DispatchOutcome::Done)
             }

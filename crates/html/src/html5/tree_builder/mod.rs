@@ -10,6 +10,8 @@ mod coalescing;
 mod dispatch;
 pub(crate) mod document;
 mod formatting;
+#[cfg(any(test, feature = "html5-fuzzing"))]
+mod fuzz;
 mod insert;
 mod invariants;
 mod known_tags;
@@ -25,6 +27,11 @@ mod text_mode;
 pub use api::{
     Html5TreeBuilder, SuspendReason, TreeBuilderConfig, TreeBuilderControlFlow, TreeBuilderError,
     TreeBuilderInternalError, TreeBuilderStepResult,
+};
+#[cfg(any(test, feature = "html5-fuzzing"))]
+pub use fuzz::{
+    TreeBuilderFuzzConfig, TreeBuilderFuzzError, TreeBuilderFuzzSummary,
+    TreeBuilderFuzzTermination, derive_tree_builder_fuzz_seed, run_seeded_token_stream_fuzz_case,
 };
 pub use invariants::{
     DomInvariantError, DomInvariantNode, DomInvariantNodeKind, DomInvariantState,

@@ -3,7 +3,7 @@ HTML_ENTITIES_JSON := crates/html/data/entities.json
 HTML_ENTITIES_GEN := crates/html/src/entities_html5.rs
 HTML_ENTITIES_TOOL := crates/html/tools/generate_entities_html5.py
 
-.PHONY: format fmt-check lint lint-html5 lint-html5-hardening test test-html5-legacy test-html5-toggle test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-html5-tokenizer-fuzz-corpus test-html5-tokenizer-fuzz-smoke test-html5-tokenizer-fuzz-long test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
+.PHONY: format fmt-check lint lint-html5 lint-html5-hardening test test-html5-legacy test-html5-toggle test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-html5-tokenizer-fuzz-corpus test-html5-tokenizer-fuzz-smoke test-html5-tokenizer-fuzz-long test-html5-tree-builder-token-fuzz-corpus test-html5-tree-builder-token-fuzz-smoke test-html5-tree-builder-token-fuzz-long test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
 
 # Format all crates in place
 format:
@@ -67,6 +67,25 @@ test-html5-tokenizer-fuzz-long:
 	HTML5_TOKENIZER_FUZZ_SMOKE_INPUT_TIMEOUT_SEC=10 \
 	HTML5_TOKENIZER_FUZZ_SMOKE_WALL_TIMEOUT_SEC=600 \
 	bash ./tools/ci/html5_tokenizer_fuzz_smoke.sh
+
+# Replay the committed HTML5 tree-builder synthetic-token fuzz corpus deterministically outside libFuzzer
+test-html5-tree-builder-token-fuzz-corpus:
+	cargo test -p html --features html5 --lib --locked \
+		html5::tree_builder::fuzz::tests::corpus::replay_committed_tree_builder_token_corpus_deterministically
+
+# Run a short deterministic synthetic-token fuzz smoke against the actual tree-builder fuzz target
+test-html5-tree-builder-token-fuzz-smoke:
+	bash ./tools/ci/html5_tree_builder_tokens_fuzz_smoke.sh
+
+# Run a longer deterministic synthetic-token fuzz lane for nightly/manual use
+test-html5-tree-builder-token-fuzz-long:
+	HTML5_TREE_BUILDER_TOKEN_FUZZ_LABEL='html5 tree-builder token fuzz nightly' \
+	HTML5_TREE_BUILDER_TOKEN_FUZZ_ARTIFACT_BASENAME='html5_tree_builder_token_fuzz_failure_nightly' \
+	HTML5_TREE_BUILDER_TOKEN_FUZZ_SMOKE_SEED=1618033988 \
+	HTML5_TREE_BUILDER_TOKEN_FUZZ_SMOKE_RUNS=20000 \
+	HTML5_TREE_BUILDER_TOKEN_FUZZ_SMOKE_INPUT_TIMEOUT_SEC=10 \
+	HTML5_TREE_BUILDER_TOKEN_FUZZ_SMOKE_WALL_TIMEOUT_SEC=600 \
+	bash ./tools/ci/html5_tree_builder_tokens_fuzz_smoke.sh
 
 # Run WPT tree-construction slice (tokenizer + tree builder -> DOM snapshot)
 test-wpt-tree-builder:
@@ -134,6 +153,7 @@ ci:
 	@$(MAKE) test-html5-patch-golden
 	@$(MAKE) test-html5-smoke-real-pages
 	@$(MAKE) test-html5-tokenizer-fuzz-smoke
+	@$(MAKE) test-html5-tree-builder-token-fuzz-smoke
 	@$(MAKE) test-wpt-tree-builder
 	@$(MAKE) build
 	@$(MAKE) build-html5
