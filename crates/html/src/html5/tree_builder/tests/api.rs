@@ -28,7 +28,9 @@ fn tree_builder_api_compiles() {
 fn tree_builder_buffered_and_sink_paths_match() {
     use crate::dom_patch::DomPatch;
     use crate::html5::shared::{TextValue, Token};
-    use crate::html5::tree_builder::VecPatchSink;
+    use crate::html5::tree_builder::{
+        DomInvariantState, VecPatchSink, check_dom_invariants, check_patch_invariants,
+    };
 
     fn build_tokens(ctx: &mut crate::html5::shared::DocumentParseContext) -> [Token; 4] {
         let div = ctx
@@ -85,5 +87,8 @@ fn tree_builder_buffered_and_sink_paths_match() {
         patches
     };
 
+    let checked = check_patch_invariants(&buffered, &DomInvariantState::default())
+        .expect("buffered patch stream must satisfy patch invariants");
+    check_dom_invariants(&checked).expect("buffered patch stream must yield a valid DOM state");
     assert_eq!(buffered, sinked);
 }

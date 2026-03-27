@@ -1,4 +1,19 @@
+//! Internal structural mirror for the HTML5 tree builder.
+//!
+//! `LiveTree` is not the public typed-validation surface for parser hardening.
+//! It mirrors already-authoritative structural edits emitted by the tree builder
+//! and uses assertions intentionally: if a structural patch violates these
+//! assumptions, that indicates an engine bug in tree-builder logic rather than a
+//! recoverable malformed-HTML condition.
+//!
+//! Typed, reusable invariant validation for tests and fuzzing lives in
+//! `tree_builder::invariants` via `check_dom_invariants` and
+//! `check_patch_invariants`.
+
 use crate::dom_patch::{DomPatch, PatchKey};
+use crate::html5::tree_builder::invariants::{
+    DomInvariantNode, DomInvariantNodeKind, DomInvariantState,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LiveNodeKind {
@@ -66,6 +81,29 @@ impl LiveTree {
 
     pub(in crate::html5::tree_builder) fn children_snapshot(&self, key: PatchKey) -> Vec<PatchKey> {
         self.node(key).children.clone()
+    }
+
+    pub(in crate::html5::tree_builder) fn invariant_state(&self) -> DomInvariantState {
+        let mut state = DomInvariantState {
+            nodes: vec![None; self.nodes.len()],
+            root: self.root,
+        };
+        for (index, maybe_node) in self.nodes.iter().enumerate() {
+            let Some(node) = maybe_node else {
+                continue;
+            };
+            state.nodes[index] = Some(DomInvariantNode {
+                kind: match node.kind {
+                    LiveNodeKind::Document => DomInvariantNodeKind::Document,
+                    LiveNodeKind::Element => DomInvariantNodeKind::Element,
+                    LiveNodeKind::Text => DomInvariantNodeKind::Text,
+                    LiveNodeKind::Comment => DomInvariantNodeKind::Comment,
+                },
+                parent: node.parent,
+                children: node.children.clone(),
+            });
+        }
+        state
     }
 
     fn insert_node(&mut self, key: PatchKey, kind: LiveNodeKind) {

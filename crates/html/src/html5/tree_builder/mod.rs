@@ -11,6 +11,7 @@ mod dispatch;
 pub(crate) mod document;
 mod formatting;
 mod insert;
+mod invariants;
 mod known_tags;
 mod live_tree;
 pub(crate) mod modes;
@@ -24,6 +25,10 @@ mod text_mode;
 pub use api::{
     Html5TreeBuilder, SuspendReason, TreeBuilderConfig, TreeBuilderControlFlow, TreeBuilderError,
     TreeBuilderInternalError, TreeBuilderStepResult,
+};
+pub use invariants::{
+    DomInvariantError, DomInvariantNode, DomInvariantNodeKind, DomInvariantState,
+    PatchInvariantError, check_dom_invariants, check_patch_invariants,
 };
 pub use patch_sink::{CallbackPatchSink, PatchSink, VecPatchSink};
 #[cfg(feature = "dom-snapshot")]

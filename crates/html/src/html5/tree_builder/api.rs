@@ -3,6 +3,7 @@ use crate::html5::shared::{AtomId, AtomTable, DocumentParseContext, EngineInvari
 use crate::html5::tokenizer::{TextModeSpec, TextResolver, TokenizerControl};
 use crate::html5::tree_builder::document::DocumentState;
 use crate::html5::tree_builder::formatting::ActiveFormattingList;
+use crate::html5::tree_builder::invariants::DomInvariantState;
 use crate::html5::tree_builder::known_tags::KnownTagIds;
 use crate::html5::tree_builder::live_tree::LiveTree;
 use crate::html5::tree_builder::modes::InsertionMode;
@@ -252,6 +253,18 @@ impl Html5TreeBuilder {
     #[must_use]
     pub fn drain_patches(&mut self) -> Vec<DomPatch> {
         std::mem::take(&mut self.patches)
+    }
+
+    /// Snapshot the tree builder's current structural DOM state for invariant checking.
+    ///
+    /// This is an advanced API intended for tests, fuzzers, and strict integration
+    /// checks that need to validate emitted patch batches against the builder's
+    /// live tree. Typed invariant failures are surfaced by
+    /// `check_dom_invariants` / `check_patch_invariants`; the internal live-tree
+    /// mirror itself remains assertion-based and treats violations as engine bugs.
+    #[must_use]
+    pub fn dom_invariant_state(&self) -> DomInvariantState {
+        self.live_tree.invariant_state()
     }
 
     /// Internal metric: max open elements depth observed since session start.

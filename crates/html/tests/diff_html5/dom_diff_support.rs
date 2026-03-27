@@ -1,5 +1,8 @@
 use super::{CaseContext, ensure_need_more_input_only_at_buffer_end, validate_tokenize_result};
-use html::html5::tree_builder::{Html5TreeBuilder, TreeBuilderConfig, VecPatchSink};
+use html::html5::tree_builder::{
+    DomInvariantState, Html5TreeBuilder, TreeBuilderConfig, VecPatchSink, check_dom_invariants,
+    check_patch_invariants,
+};
 use html::html5::{DocumentParseContext, Html5Tokenizer, Input, TokenizeResult, TokenizerConfig};
 
 struct PatchCollectionCtx<'a> {
@@ -7,6 +10,7 @@ struct PatchCollectionCtx<'a> {
     input: &'a mut Input,
     builder: &'a mut Html5TreeBuilder,
     parse_ctx: &'a DocumentParseContext,
+    dom_state: &'a mut DomInvariantState,
     patch_batches: &'a mut Vec<Vec<html::DomPatch>>,
     saw_eof_token: &'a mut bool,
 }
@@ -40,6 +44,7 @@ impl<'a> Html5DomDriver<'a> {
                 )
             })?;
         let mut input = Input::new();
+        let mut dom_state = DomInvariantState::default();
         let mut patch_batches: Vec<Vec<html::DomPatch>> = Vec::new();
         let mut saw_eof_token = false;
 
@@ -67,6 +72,7 @@ impl<'a> Html5DomDriver<'a> {
                     input: &mut input,
                     builder: &mut builder,
                     parse_ctx: &ctx,
+                    dom_state: &mut dom_state,
                     patch_batches: &mut patch_batches,
                     saw_eof_token: &mut saw_eof_token,
                 },
@@ -89,6 +95,7 @@ impl<'a> Html5DomDriver<'a> {
                 input: &mut input,
                 builder: &mut builder,
                 parse_ctx: &ctx,
+                dom_state: &mut dom_state,
                 patch_batches: &mut patch_batches,
                 saw_eof_token: &mut saw_eof_token,
             },
@@ -113,6 +120,7 @@ impl<'a> Html5DomDriver<'a> {
             input,
             builder,
             parse_ctx,
+            dom_state,
             patch_batches,
             saw_eof_token,
         } = ctx;
@@ -152,6 +160,15 @@ impl<'a> Html5DomDriver<'a> {
                 }
             }
             if !patches.is_empty() {
+                let checked_state = check_patch_invariants(&patches, dom_state)
+                    .map_err(|err| format!("patch invariant error: {err}"))?;
+                let live_state = builder.dom_invariant_state();
+                check_dom_invariants(&live_state)
+                    .map_err(|err| format!("live DOM invariant error: {err}"))?;
+                if live_state != checked_state {
+                    return Err("live DOM state diverged from patch-derived state".to_string());
+                }
+                *dom_state = checked_state;
                 patch_batches.push(std::mem::take(&mut patches));
             }
         }
