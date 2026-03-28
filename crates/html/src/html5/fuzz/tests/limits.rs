@@ -55,6 +55,42 @@ fn html5_pipeline_fuzz_harness_rejects_patch_budget_deterministically() {
 }
 
 #[test]
+fn html5_pipeline_fuzz_harness_rejects_patch_flush_budget_deterministically() {
+    let bytes = b"<!doctype html><html><body><div>x</div></body></html>";
+    let summary = run_seeded_html5_pipeline_fuzz_case(
+        bytes,
+        Html5PipelineFuzzConfig {
+            max_patches_per_flush: 1,
+            ..Html5PipelineFuzzConfig::default()
+        },
+    )
+    .expect("patch flush budget rejection should be deterministic");
+
+    assert_eq!(
+        summary.termination,
+        Html5PipelineFuzzTermination::RejectedMaxPatchesPerFlush
+    );
+}
+
+#[test]
+fn html5_pipeline_fuzz_harness_rejects_patch_density_deterministically() {
+    let bytes = b"<!doctype html><html><body><div>x</div></body></html>";
+    let summary = run_seeded_html5_pipeline_fuzz_case(
+        bytes,
+        Html5PipelineFuzzConfig {
+            max_patches_per_input_byte: 0,
+            ..Html5PipelineFuzzConfig::default()
+        },
+    )
+    .expect("patch density rejection should be deterministic");
+
+    assert_eq!(
+        summary.termination,
+        Html5PipelineFuzzTermination::RejectedMaxPatchDensity
+    );
+}
+
+#[test]
 fn html5_pipeline_fuzz_harness_rejects_pipeline_step_budget_deterministically() {
     let bytes = b"<!doctype html><html><body><p>x</p></body></html>";
     let summary = run_seeded_html5_pipeline_fuzz_case(

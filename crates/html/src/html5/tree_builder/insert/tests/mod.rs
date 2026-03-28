@@ -22,12 +22,16 @@ fn bootstrap_html_body(
     builder
         .with_structural_mutation(|this| {
             let document = this.ensure_document_created()?;
-            let html = this.create_detached_element(this.known_tags.html, &[], &ctx.atoms)?;
+            let html = this
+                .create_detached_element(this.known_tags.html, &[], &ctx.atoms)?
+                .expect("html bootstrap should not hit resource limits");
             this.append_existing_child(document, html);
             this.open_elements
                 .push(OpenElement::new(html, this.known_tags.html));
 
-            let body = this.create_detached_element(this.known_tags.body, &[], &ctx.atoms)?;
+            let body = this
+                .create_detached_element(this.known_tags.body, &[], &ctx.atoms)?
+                .expect("body bootstrap should not hit resource limits");
             this.append_existing_child(html, body);
             this.open_elements
                 .push(OpenElement::new(body, this.known_tags.body));
@@ -43,7 +47,9 @@ fn attach_live_table(
 ) -> PatchKey {
     builder
         .with_structural_mutation(|this| {
-            let table = this.create_detached_element(this.known_tags.table, &[], &ctx.atoms)?;
+            let table = this
+                .create_detached_element(this.known_tags.table, &[], &ctx.atoms)?
+                .expect("table setup should not hit resource limits");
             this.append_existing_child(body, table);
             this.open_elements
                 .push(OpenElement::new(table, this.known_tags.table));

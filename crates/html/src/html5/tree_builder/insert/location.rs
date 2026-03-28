@@ -132,7 +132,7 @@ impl Html5TreeBuilder {
         &mut self,
         location: InsertionLocation,
         child: PatchKey,
-    ) {
+    ) -> bool {
         match location.before {
             Some(before) => self.insert_existing_child_before(location.parent, child, before),
             None => self.append_existing_child(location.parent, child),
@@ -144,7 +144,7 @@ impl Html5TreeBuilder {
         child: PatchKey,
     ) -> Result<(), TreeBuilderError> {
         let location = self.foster_parenting_insertion_location()?;
-        self.insert_existing_child_at(location, child);
+        let _ = self.insert_existing_child_at(location, child);
         Ok(())
     }
 
@@ -152,8 +152,12 @@ impl Html5TreeBuilder {
         &mut self,
         parent: PatchKey,
         child: PatchKey,
-    ) {
+    ) -> bool {
+        if !self.allow_existing_child_insertion(parent, child, None) {
+            return false;
+        }
         self.push_structural_patch(DomPatch::AppendChild { parent, child });
+        true
     }
 
     #[allow(
@@ -165,11 +169,15 @@ impl Html5TreeBuilder {
         parent: PatchKey,
         child: PatchKey,
         before: PatchKey,
-    ) {
+    ) -> bool {
+        if !self.allow_existing_child_insertion(parent, child, None) {
+            return false;
+        }
         self.push_structural_patch(DomPatch::InsertBefore {
             parent,
             child,
             before,
         });
+        true
     }
 }

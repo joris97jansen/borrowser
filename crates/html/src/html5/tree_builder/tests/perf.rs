@@ -216,6 +216,7 @@ fn tree_builder_perf_sanity_text_coalescing_avoids_quadratic_patch_payload_growt
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig {
             coalesce_text: true,
+            ..crate::html5::tree_builder::TreeBuilderConfig::default()
         },
         &mut ctx,
     )

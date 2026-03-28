@@ -7,6 +7,7 @@ mod formatting;
 mod helpers;
 mod insertion_modes;
 mod invariants;
+mod limits;
 mod noahs_ark;
 mod perf;
 mod quirks;

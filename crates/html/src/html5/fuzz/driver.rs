@@ -49,6 +49,11 @@ pub fn run_seeded_html5_pipeline_fuzz_case(
         config.seed,
         config.max_tokens_streamed,
         config.max_patches_observed,
+        config.max_patches_per_flush,
+        bytes
+            .len()
+            .max(1)
+            .saturating_mul(config.max_patches_per_input_byte),
         config.max_pipeline_steps,
         config.max_tokens_without_builder_progress,
         builder.progress_witness(),
@@ -404,6 +409,8 @@ struct PipelineRunState {
     patches_emitted: usize,
     tokenizer_controls_applied: usize,
     max_patches_observed: usize,
+    max_patches_per_flush: usize,
+    max_patches_for_input: usize,
     pipeline_steps: usize,
     max_pipeline_steps: usize,
     tokens_without_builder_progress: usize,
@@ -413,10 +420,13 @@ struct PipelineRunState {
 }
 
 impl PipelineRunState {
+    #[allow(clippy::too_many_arguments)]
     fn new(
         seed: u64,
         max_tokens_streamed: usize,
         max_patches_observed: usize,
+        max_patches_per_flush: usize,
+        max_patches_for_input: usize,
         max_pipeline_steps: usize,
         max_tokens_without_builder_progress: usize,
         initial_builder_progress_witness: TreeBuilderProgressWitness,
@@ -427,6 +437,8 @@ impl PipelineRunState {
             patches_emitted: 0,
             tokenizer_controls_applied: 0,
             max_patches_observed,
+            max_patches_per_flush,
+            max_patches_for_input,
             pipeline_steps: 0,
             max_pipeline_steps,
             tokens_without_builder_progress: 0,
@@ -535,10 +547,18 @@ impl PipelineRunState {
             })?;
             self.patches_emitted = self.patches_emitted.saturating_add(patches.len());
             self.digest.record_patches(&patches);
+            if patches.len() > self.max_patches_per_flush {
+                return Ok(Some(
+                    Html5PipelineFuzzTermination::RejectedMaxPatchesPerFlush,
+                ));
+            }
             if self.patches_emitted > self.max_patches_observed {
                 return Ok(Some(
                     Html5PipelineFuzzTermination::RejectedMaxPatchesObserved,
                 ));
+            }
+            if self.patches_emitted > self.max_patches_for_input {
+                return Ok(Some(Html5PipelineFuzzTermination::RejectedMaxPatchDensity));
             }
         }
 

@@ -33,7 +33,7 @@ pub use tokenizer::{
 pub use tree_builder::{
     DomInvariantError, DomInvariantNode, DomInvariantNodeKind, DomInvariantState, Html5TreeBuilder,
     PatchInvariantError, PatchSink, SuspendReason, TreeBuilderConfig, TreeBuilderControlFlow,
-    TreeBuilderError, TreeBuilderStepResult, VecPatchSink, check_dom_invariants,
+    TreeBuilderError, TreeBuilderLimits, TreeBuilderStepResult, VecPatchSink, check_dom_invariants,
     check_patch_invariants,
 };
 #[cfg(feature = "dom-snapshot")]
