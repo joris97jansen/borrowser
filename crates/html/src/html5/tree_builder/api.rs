@@ -12,6 +12,36 @@ use crate::html5::tree_builder::stack::{OpenElementsStack, ScopeTagSet};
 use crate::html5::tree_builder::table::PendingTableCharacterTokens;
 use std::num::NonZeroU32;
 
+/// Centralized tree-builder hardening/resource bounds.
+///
+/// Recovery policy:
+/// - a non-self-closing start tag that would exceed `max_open_elements_depth`
+///   is ignored;
+/// - creating an element/text/comment node after `max_nodes_created` is reached
+///   is ignored;
+/// - inserting another child under a full parent is ignored.
+///
+/// These limits intentionally preserve boundedness and internal consistency
+/// first under adversarial input.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct TreeBuilderLimits {
+    pub max_open_elements_depth: usize,
+    /// Maximum number of non-document DOM nodes created in a single document.
+    /// The synthetic document root is intentionally exempt.
+    pub max_nodes_created: usize,
+    pub max_children_per_node: usize,
+}
+
+impl Default for TreeBuilderLimits {
+    fn default() -> Self {
+        Self {
+            max_open_elements_depth: 1024,
+            max_nodes_created: 65_536,
+            max_children_per_node: 16_384,
+        }
+    }
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct TreeBuilderConfig {
     /// Whether to coalesce adjacent text insertions under the same parent.
@@ -28,6 +58,8 @@ pub struct TreeBuilderConfig {
     /// - Coalescing may span sink flush boundaries (`push_token` + sink push).
     /// - A later batch may emit `AppendText` for a text node created in an earlier batch.
     pub coalesce_text: bool,
+    /// Explicit tree-builder hardening/resource bounds.
+    pub limits: TreeBuilderLimits,
 }
 
 /// Tree builder step result.
@@ -102,6 +134,7 @@ pub struct Html5TreeBuilder {
     pub(in crate::html5::tree_builder) next_patch_key: NonZeroU32,
     pub(in crate::html5::tree_builder) pending_doctype: Option<String>,
     pub(in crate::html5::tree_builder) document_state: DocumentState,
+    pub(in crate::html5::tree_builder) non_document_nodes_created: usize,
     // Do not push structural patches directly to `patches`.
     // Route structural edits through `push_structural_patch` so invariants stay checkable.
     pub(in crate::html5::tree_builder) patches: Vec<DomPatch>,
@@ -195,6 +228,7 @@ impl Html5TreeBuilder {
             next_patch_key: NonZeroU32::MIN,
             pending_doctype: None,
             document_state: DocumentState::default(),
+            non_document_nodes_created: 0,
             patches: Vec::new(),
             last_text_patch: None,
             structural_mutation_depth: 0,

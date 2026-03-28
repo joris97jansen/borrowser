@@ -79,6 +79,10 @@ impl LiveTree {
         self.node(key).parent
     }
 
+    pub(in crate::html5::tree_builder) fn child_count(&self, key: PatchKey) -> usize {
+        self.node(key).children.len()
+    }
+
     pub(in crate::html5::tree_builder) fn children_snapshot(&self, key: PatchKey) -> Vec<PatchKey> {
         self.node(key).children.clone()
     }

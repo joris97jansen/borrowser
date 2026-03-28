@@ -319,7 +319,9 @@ impl Html5TreeBuilder {
                 }
                 AfeEntry::Element(entry) => entry.clone(),
             };
-            let new_key = self.insert_element_from_afe_entry(&entry, atoms)?;
+            let Some(new_key) = self.insert_element_from_afe_entry(&entry, atoms)? else {
+                break;
+            };
             self.active_formatting.replace_key_at(index, new_key);
             reconstructed += 1;
         }

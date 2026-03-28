@@ -1,4 +1,4 @@
-use crate::dom_patch::DomPatch;
+use crate::dom_patch::{DomPatch, PatchKey};
 use crate::html5::shared::TextValue;
 use crate::html5::tokenizer::TextResolver;
 use crate::html5::tree_builder::coalescing::LastTextPatch;
@@ -59,15 +59,26 @@ impl Html5TreeBuilder {
             return Ok(());
         }
         let key = self.with_structural_mutation(|this| {
+            if !this.allow_new_child(location.parent, None) || !this.allow_node_creation(None) {
+                return Ok(PatchKey::INVALID);
+            }
             let key = this.alloc_patch_key()?;
             this.push_structural_patch(DomPatch::CreateText {
                 key,
                 text: resolved.to_string(),
             });
-            this.insert_existing_child_at(location, key);
+            this.note_node_created();
+            let inserted = this.insert_existing_child_at(location, key);
+            debug_assert!(
+                inserted,
+                "newly created text insertion must succeed after precheck"
+            );
             this.perf_text_nodes_created = this.perf_text_nodes_created.saturating_add(1);
             Ok(key)
         })?;
+        if key == PatchKey::INVALID {
+            return Ok(());
+        }
         self.last_text_patch = if self.config.coalesce_text {
             Some(LastTextPatch {
                 parent: location.parent,

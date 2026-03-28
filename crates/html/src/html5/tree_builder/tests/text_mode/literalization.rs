@@ -7,6 +7,7 @@ fn tree_builder_text_mode_literalization_does_not_coalesce_with_real_text() {
 
     let mut h = TextModeHarness::with_config(TreeBuilderConfig {
         coalesce_text: true,
+        ..TreeBuilderConfig::default()
     });
     let textarea = h.enter_text_mode_container(Prelude::Head, "textarea").tag;
     let div = h.atom("div");

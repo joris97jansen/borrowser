@@ -15,6 +15,7 @@ mod fuzz;
 mod insert;
 mod invariants;
 mod known_tags;
+mod limits;
 mod live_tree;
 pub(crate) mod modes;
 mod patch_sink;
@@ -28,7 +29,7 @@ mod text_mode;
 pub(crate) use api::TreeBuilderProgressWitness;
 pub use api::{
     Html5TreeBuilder, SuspendReason, TreeBuilderConfig, TreeBuilderControlFlow, TreeBuilderError,
-    TreeBuilderInternalError, TreeBuilderStepResult,
+    TreeBuilderInternalError, TreeBuilderLimits, TreeBuilderStepResult,
 };
 #[cfg(any(test, feature = "html5-fuzzing"))]
 pub use fuzz::{

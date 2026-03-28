@@ -275,8 +275,14 @@ impl Html5TreeBuilder {
                                 .element_at(node_afe_index)
                                 .expect("AAA inner-loop AFE lookup must target an element")
                                 .clone();
-                            let replacement_key =
-                                this.create_detached_element_from_afe_entry(&node_entry, atoms)?;
+                            let Some(replacement_key) =
+                                this.create_detached_element_from_afe_entry(&node_entry, atoms)?
+                            else {
+                                return Ok(AdoptionAgencyRunReport {
+                                    outcome: AdoptionAgencyOutcome::Completed,
+                                    outer_iterations,
+                                });
+                            };
                             let replacement_entry = AfeElementEntry::new(
                                 replacement_key,
                                 node_entry.name,
@@ -299,8 +305,14 @@ impl Html5TreeBuilder {
 
                         this.adoption_agency_insert_last_node(common_ancestor, last_node)?;
 
-                        let replacement_key =
-                            this.create_detached_element_from_afe_entry(&formatting_entry, atoms)?;
+                        let Some(replacement_key) =
+                            this.create_detached_element_from_afe_entry(&formatting_entry, atoms)?
+                        else {
+                            return Ok(AdoptionAgencyRunReport {
+                                outcome: AdoptionAgencyOutcome::Completed,
+                                outer_iterations,
+                            });
+                        };
                         let furthest_block_children =
                             this.live_tree.children_snapshot(furthest_block_key);
                         for child in furthest_block_children {
@@ -467,12 +479,16 @@ mod tests {
         builder
             .with_structural_mutation(|this| {
                 let document = this.ensure_document_created()?;
-                let html = this.create_detached_element(this.known_tags.html, &[], &ctx.atoms)?;
+                let html = this
+                    .create_detached_element(this.known_tags.html, &[], &ctx.atoms)?
+                    .expect("html bootstrap should not hit resource limits");
                 this.append_existing_child(document, html);
                 this.open_elements
                     .push(OpenElement::new(html, this.known_tags.html));
 
-                let body = this.create_detached_element(this.known_tags.body, &[], &ctx.atoms)?;
+                let body = this
+                    .create_detached_element(this.known_tags.body, &[], &ctx.atoms)?
+                    .expect("body bootstrap should not hit resource limits");
                 this.append_existing_child(html, body);
                 this.open_elements
                     .push(OpenElement::new(body, this.known_tags.body));
@@ -494,8 +510,12 @@ mod tests {
         let div = ctx.atoms.intern_ascii_folded("div").expect("atom");
         builder
             .with_structural_mutation(|this| {
-                let table = this.create_detached_element(this.known_tags.table, &[], &ctx.atoms)?;
-                let last_node = this.create_detached_element(div, &[], &ctx.atoms)?;
+                let table = this
+                    .create_detached_element(this.known_tags.table, &[], &ctx.atoms)?
+                    .expect("table setup should not hit resource limits");
+                let last_node = this
+                    .create_detached_element(div, &[], &ctx.atoms)?
+                    .expect("div setup should not hit resource limits");
                 this.open_elements
                     .push(OpenElement::new(table, this.known_tags.table));
                 this.adoption_agency_insert_last_node(
@@ -521,10 +541,15 @@ mod tests {
         let div = ctx.atoms.intern_ascii_folded("div").expect("atom");
         builder
             .with_structural_mutation(|this| {
-                let table = this.create_detached_element(this.known_tags.table, &[], &ctx.atoms)?;
-                let template =
-                    this.create_detached_element(this.known_tags.template, &[], &ctx.atoms)?;
-                let last_node = this.create_detached_element(div, &[], &ctx.atoms)?;
+                let table = this
+                    .create_detached_element(this.known_tags.table, &[], &ctx.atoms)?
+                    .expect("table setup should not hit resource limits");
+                let template = this
+                    .create_detached_element(this.known_tags.template, &[], &ctx.atoms)?
+                    .expect("template setup should not hit resource limits");
+                let last_node = this
+                    .create_detached_element(div, &[], &ctx.atoms)?
+                    .expect("div setup should not hit resource limits");
                 this.open_elements
                     .push(OpenElement::new(table, this.known_tags.table));
                 this.open_elements

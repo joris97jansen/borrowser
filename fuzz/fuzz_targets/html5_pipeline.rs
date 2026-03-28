@@ -14,6 +14,8 @@ fuzz_target!(|data: &[u8]| {
         max_decoded_bytes: 16 * 1024,
         max_tokens_streamed: 8 * 1024,
         max_patches_observed: 16 * 1024,
+        max_patches_per_flush: 1024,
+        max_patches_per_input_byte: 16,
         max_pipeline_steps: 64 * 1024,
         max_tokens_without_builder_progress: 4 * 1024,
         finish_drain_budget: 32,

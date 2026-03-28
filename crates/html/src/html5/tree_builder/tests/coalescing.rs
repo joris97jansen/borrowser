@@ -10,6 +10,7 @@ fn tree_builder_coalescing_does_not_cross_structural_mutations() {
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig {
             coalesce_text: true,
+            ..crate::html5::tree_builder::TreeBuilderConfig::default()
         },
         &mut ctx,
     )
@@ -72,6 +73,7 @@ fn tree_builder_coalescing_merges_adjacent_text_tokens_under_same_parent() {
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig {
             coalesce_text: true,
+            ..crate::html5::tree_builder::TreeBuilderConfig::default()
         },
         &mut ctx,
     )
@@ -143,6 +145,7 @@ fn tree_builder_coalescing_does_not_cross_parent_change_after_pop() {
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig {
             coalesce_text: true,
+            ..crate::html5::tree_builder::TreeBuilderConfig::default()
         },
         &mut ctx,
     )
@@ -195,6 +198,7 @@ fn tree_builder_coalescing_does_not_cross_br_element_boundary() {
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig {
             coalesce_text: true,
+            ..crate::html5::tree_builder::TreeBuilderConfig::default()
         },
         &mut ctx,
     )
@@ -263,6 +267,7 @@ fn tree_builder_coalescing_patch_log_is_batch_boundary_invariant() {
         let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
             crate::html5::tree_builder::TreeBuilderConfig {
                 coalesce_text: true,
+                ..crate::html5::tree_builder::TreeBuilderConfig::default()
             },
             &mut ctx,
         )

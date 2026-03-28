@@ -23,6 +23,9 @@ impl Html5TreeBuilder {
         text: &dyn TextResolver,
     ) -> Result<(), TreeBuilderError> {
         let key = self.insert_element(name, attrs, self_closing, atoms, text)?;
+        let Some(key) = key else {
+            return Ok(());
+        };
         if !self_closing {
             self.push_active_formatting_element(key, name, attrs, text)?;
         }
@@ -361,8 +364,8 @@ impl Html5TreeBuilder {
                 attrs,
                 self_closing,
             } if self.is_text_mode_container_tag(*name) => {
-                let _ = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
-                if !self_closing {
+                let inserted = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
+                if !self_closing && inserted.is_some() {
                     self.enter_text_mode_for_element(*name);
                 }
                 Ok(DispatchOutcome::Done)
@@ -614,10 +617,10 @@ impl Html5TreeBuilder {
                 self_closing,
             } => {
                 let _ = self.reconstruct_active_formatting_elements(atoms)?;
-                let _ = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
-                if self.is_text_mode_container_tag(*name) && !self_closing {
+                let inserted = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
+                if self.is_text_mode_container_tag(*name) && !self_closing && inserted.is_some() {
                     self.enter_text_mode_for_element(*name);
-                } else {
+                } else if inserted.is_some() {
                     self.update_mode_for_start_tag(*name);
                 }
             }

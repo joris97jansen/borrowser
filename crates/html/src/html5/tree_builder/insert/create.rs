@@ -15,14 +15,18 @@ impl Html5TreeBuilder {
         name: AtomId,
         attrs: &[(std::sync::Arc<str>, Option<String>)],
         atoms: &AtomTable,
-    ) -> Result<PatchKey, TreeBuilderError> {
+    ) -> Result<Option<PatchKey>, TreeBuilderError> {
+        if !self.allow_node_creation(Some(name)) {
+            return Ok(None);
+        }
         let key = self.alloc_patch_key()?;
         self.push_structural_patch(DomPatch::CreateElement {
             key,
             name: resolve_atom_arc(atoms, name)?,
             attributes: attrs.to_vec(),
         });
-        Ok(key)
+        self.note_node_created();
+        Ok(Some(key))
     }
 
     fn create_detached_element_from_token_attrs(
@@ -31,7 +35,7 @@ impl Html5TreeBuilder {
         attrs: &[Attribute],
         atoms: &AtomTable,
         text: &dyn TextResolver,
-    ) -> Result<PatchKey, TreeBuilderError> {
+    ) -> Result<Option<PatchKey>, TreeBuilderError> {
         let mut attributes = Vec::with_capacity(attrs.len());
         for attr in attrs {
             let attr_name = resolve_atom_arc(atoms, attr.name)?;
@@ -45,7 +49,7 @@ impl Html5TreeBuilder {
         &mut self,
         entry: &AfeElementEntry,
         atoms: &AtomTable,
-    ) -> Result<PatchKey, TreeBuilderError> {
+    ) -> Result<Option<PatchKey>, TreeBuilderError> {
         let mut attributes = Vec::with_capacity(entry.attrs.len());
         for attr in &entry.attrs {
             let attr_name = resolve_atom_arc(atoms, attr.name)?;
@@ -61,16 +65,30 @@ impl Html5TreeBuilder {
         self_closing: bool,
         atoms: &AtomTable,
         text: &dyn TextResolver,
-    ) -> Result<PatchKey, TreeBuilderError> {
+    ) -> Result<Option<PatchKey>, TreeBuilderError> {
         self.with_structural_mutation(|this| {
+            if !self_closing && !this.allow_non_self_closing_element(name) {
+                return Ok(None);
+            }
             let _ = this.ensure_document_created()?;
             let location = this.element_or_text_insertion_location()?;
-            let key = this.create_detached_element_from_token_attrs(name, attrs, atoms, text)?;
-            this.insert_existing_child_at(location, key);
+            if !this.allow_new_child(location.parent, Some(name)) {
+                return Ok(None);
+            }
+            let Some(key) =
+                this.create_detached_element_from_token_attrs(name, attrs, atoms, text)?
+            else {
+                return Ok(None);
+            };
+            let inserted = this.insert_existing_child_at(location, key);
+            debug_assert!(
+                inserted,
+                "newly created element insertion must succeed after precheck"
+            );
             if !self_closing {
                 this.open_elements.push(OpenElement::new(key, name));
             }
-            Ok(key)
+            Ok(Some(key))
         })
     }
 
@@ -78,14 +96,26 @@ impl Html5TreeBuilder {
         &mut self,
         entry: &AfeElementEntry,
         atoms: &AtomTable,
-    ) -> Result<PatchKey, TreeBuilderError> {
+    ) -> Result<Option<PatchKey>, TreeBuilderError> {
         self.with_structural_mutation(|this| {
+            if !this.allow_non_self_closing_element(entry.name) {
+                return Ok(None);
+            }
             let _ = this.ensure_document_created()?;
             let location = this.element_or_text_insertion_location()?;
-            let key = this.create_detached_element_from_afe_entry(entry, atoms)?;
-            this.insert_existing_child_at(location, key);
+            if !this.allow_new_child(location.parent, Some(entry.name)) {
+                return Ok(None);
+            }
+            let Some(key) = this.create_detached_element_from_afe_entry(entry, atoms)? else {
+                return Ok(None);
+            };
+            let inserted = this.insert_existing_child_at(location, key);
+            debug_assert!(
+                inserted,
+                "newly created AFE element insertion must succeed after precheck"
+            );
             this.open_elements.push(OpenElement::new(key, entry.name));
-            Ok(key)
+            Ok(Some(key))
         })
     }
 
@@ -117,12 +147,20 @@ impl Html5TreeBuilder {
                 .current()
                 .map(OpenElement::key)
                 .unwrap_or(document_key);
+            if !this.allow_new_child(parent, None) || !this.allow_node_creation(None) {
+                return Ok(());
+            }
             let key = this.alloc_patch_key()?;
             this.push_structural_patch(DomPatch::CreateComment {
                 key,
                 text: resolved,
             });
-            this.push_structural_patch(DomPatch::AppendChild { parent, child: key });
+            this.note_node_created();
+            let inserted = this.append_existing_child(parent, key);
+            debug_assert!(
+                inserted,
+                "newly created comment insertion must succeed after precheck"
+            );
             Ok(())
         })
     }

@@ -40,7 +40,9 @@ fn foster_parenting_location_uses_previous_soe_entry_for_detached_table() {
     let (_html, body) = bootstrap_html_body(&mut builder, &ctx);
     builder
         .with_structural_mutation(|this| {
-            let table = this.create_detached_element(this.known_tags.table, &[], &ctx.atoms)?;
+            let table = this
+                .create_detached_element(this.known_tags.table, &[], &ctx.atoms)?
+                .expect("table setup should not hit resource limits");
             this.open_elements
                 .push(OpenElement::new(table, this.known_tags.table));
             assert_eq!(
@@ -68,8 +70,9 @@ fn foster_parenting_location_prefers_template_above_table() {
     let _table = attach_live_table(&mut builder, &ctx, body);
     builder
         .with_structural_mutation(|this| {
-            let template =
-                this.create_detached_element(this.known_tags.template, &[], &ctx.atoms)?;
+            let template = this
+                .create_detached_element(this.known_tags.template, &[], &ctx.atoms)?
+                .expect("template setup should not hit resource limits");
             this.open_elements
                 .push(OpenElement::new(template, this.known_tags.template));
             assert_eq!(
@@ -137,7 +140,8 @@ fn foster_parenting_element_insertion_uses_insert_before_for_live_table() {
 
     let inserted = builder
         .insert_element(div, &[], false, &ctx.atoms, &resolver)
-        .expect("foster-parent element insertion should remain recoverable");
+        .expect("foster-parent element insertion should remain recoverable")
+        .expect("foster-parent element insertion should not hit resource limits");
     let patches = builder.drain_patches();
 
     assert_eq!(inserted, PatchKey(5));
@@ -171,17 +175,21 @@ fn foster_parenting_reparents_existing_nodes_with_insert_before_only() {
     let table = attach_live_table(&mut builder, &ctx, body);
     let (container, child) = builder
         .with_structural_mutation(|this| {
-            let div = this.create_detached_element(
-                ctx.atoms.intern_ascii_folded("div").expect("atom"),
-                &[],
-                &ctx.atoms,
-            )?;
+            let div = this
+                .create_detached_element(
+                    ctx.atoms.intern_ascii_folded("div").expect("atom"),
+                    &[],
+                    &ctx.atoms,
+                )?
+                .expect("div setup should not hit resource limits");
             this.append_existing_child(body, div);
-            let span = this.create_detached_element(
-                ctx.atoms.intern_ascii_folded("span").expect("atom"),
-                &[],
-                &ctx.atoms,
-            )?;
+            let span = this
+                .create_detached_element(
+                    ctx.atoms.intern_ascii_folded("span").expect("atom"),
+                    &[],
+                    &ctx.atoms,
+                )?
+                .expect("span setup should not hit resource limits");
             this.append_existing_child(div, span);
             Ok((div, span))
         })
