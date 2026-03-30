@@ -13,7 +13,7 @@ pub use config::{
     TokenizerFuzzConfig, TokenizerFuzzError, TokenizerFuzzSummary, TokenizerFuzzTermination,
     derive_fuzz_seed,
 };
-pub use driver::run_seeded_byte_fuzz_case;
+pub use driver::{run_seeded_byte_fuzz_case, run_seeded_script_data_fuzz_case};
 pub(crate) use observe::{ObserveError, TokenObserver};
 pub(crate) use progress::{PumpDecision, ensure_pump_progress};
 pub(crate) use rng::{HarnessRng, next_chunk_len};

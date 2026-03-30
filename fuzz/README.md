@@ -4,6 +4,10 @@
 tokenizer fuzz harness. Triaged crashing inputs belong in
 `fuzz/regressions/html5_tokenizer/`.
 
+`fuzz/corpus/html5_tokenizer_script_data/` contains the committed seed corpus
+for the targeted HTML5 tokenizer script-data fuzz harness. Triaged crashing
+inputs belong in `fuzz/regressions/html5_tokenizer_script_data/`.
+
 `fuzz/corpus/html5_tree_builder_tokens/` contains the committed seed corpus for
 the synthetic token-stream HTML5 tree-builder fuzz harness. Triaged crashing
 inputs belong in `fuzz/regressions/html5_tree_builder_tokens/`.
@@ -34,6 +38,7 @@ Seed categories currently covered:
 - partial tags and unterminated attribute/value tails
 - broken comments and malformed doctypes
 - dense `<` runs and script/rawtext lookalikes
+- direct script-data close-tag storms, near-miss `</script>` tails, and escaped-script families
 - long attribute sequences
 - invalid UTF-8 and NUL-heavy byte streams
 - synthetic malformed token orderings and weird structural nesting
@@ -69,6 +74,26 @@ cargo fuzz run html5_tokenizer fuzz/corpus/html5_tokenizer/<seed-name>
 
 The deterministic replay test above replays both committed seed corpus entries
 and committed regression inputs from `fuzz/regressions/html5_tokenizer/`.
+
+Deterministic committed-input replay for the targeted script-data tokenizer
+harness:
+
+```sh
+cargo test -p html --features html5 --lib \
+  html5::tokenizer::fuzz::tests::corpus::replay_committed_html5_script_data_corpus_deterministically
+```
+
+Equivalent Make target:
+
+```sh
+make test-html5-tokenizer-script-data-fuzz-corpus
+```
+
+Replay a specific script-data seed through the actual fuzz target with:
+
+```sh
+cargo fuzz run html5_tokenizer_script_data fuzz/corpus/html5_tokenizer_script_data/<seed-name>
+```
 
 Deterministic replay for the synthetic token-stream tree-builder harness:
 
@@ -136,6 +161,19 @@ On failure, the CI logs print:
 - the exact failing artifact path if libFuzzer materialized one, and
 - direct-binary plus `cargo fuzz run` reproduction commands.
 
+PR CI also runs a short deterministic smoke lane around the targeted script-data
+tokenizer fuzz target via:
+
+```sh
+make test-html5-tokenizer-script-data-fuzz-smoke
+```
+
+Current script-data smoke budget:
+- fixed seed: `1123581321`
+- fixed runs: `128`
+- libFuzzer per-input timeout: `5s`
+- outer wall timeout: `90s`
+
 PR CI also runs a short deterministic smoke lane around the synthetic token
 tree-builder fuzz target via:
 
@@ -180,6 +218,12 @@ Current long-run budget:
 The nightly/manual workflow uses the same failure logging contract as the PR
 smoke lane and uploads the crashing artifact on failure.
 
+The equivalent long-run targeted script-data lane is:
+
+```sh
+make test-html5-tokenizer-script-data-fuzz-long
+```
+
 The equivalent long-run tree-builder lane is:
 
 ```sh
@@ -198,6 +242,8 @@ make test-html5-pipeline-fuzz-long
 - Reproduce it locally using the logged direct-binary or `cargo fuzz run` command.
 - Minimize the input and commit it to the matching regression directory:
   `fuzz/regressions/html5_tokenizer/` for tokenizer crashes and
+  `fuzz/regressions/html5_tokenizer_script_data/` for targeted script-data tokenizer
+  crashes,
   `fuzz/regressions/html5_tree_builder_tokens/` for synthetic tree-builder
   crashes, and `fuzz/regressions/html5_pipeline/` for end-to-end pipeline
   crashes.
@@ -227,6 +273,13 @@ cargo test -p html --features html5 --lib \
   html5::tokenizer::fuzz::tests::corpus::replay_committed_html5_tokenizer_corpus_deterministically
 ```
 
+Targeted script-data tokenizer replay:
+
+```sh
+cargo test -p html --features html5 --lib \
+  html5::tokenizer::fuzz::tests::corpus::replay_committed_html5_script_data_corpus_deterministically
+```
+
 Synthetic tree-builder replay:
 
 ```sh
@@ -246,6 +299,7 @@ cargo test -p html --features html5 --lib \
 - Add minimized reusable seed inputs to the matching committed corpus when they
   improve steady-state coverage:
   `fuzz/corpus/html5_tokenizer/` for raw-byte tokenizer cases and
+  `fuzz/corpus/html5_tokenizer_script_data/` for direct script-data tokenizer cases and
   `fuzz/corpus/html5_tree_builder_tokens/` for synthetic token-stream tree-builder
   cases, and `fuzz/corpus/html5_pipeline/` for end-to-end byte-stream pipeline
   cases.

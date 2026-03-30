@@ -214,6 +214,14 @@ impl Html5Tokenizer {
     ///
     /// This is the token-granular integration API used by the HTML5 session to
     /// honor tree-builder text-mode control between tokens.
+    ///
+    /// Token-granular contract:
+    /// - if the caller drains the token queue after every `Progress` result,
+    ///   the next successful `next_batch()` observes at most one newly emitted
+    ///   token before the tokenizer yields again;
+    /// - callers that depend on between-token control boundaries should keep
+    ///   the queue drained and apply controls before calling
+    ///   `push_input_until_token()` again.
     pub fn push_input_until_token(
         &mut self,
         input: &mut Input,
@@ -320,6 +328,11 @@ impl Html5Tokenizer {
     ///
     /// Spans are valid for the lifetime of the returned `TokenBatch` (which holds
     /// an exclusive borrow of `Input`).
+    ///
+    /// When paired with `push_input_until_token()` and a drained queue, the
+    /// returned batch contains at most one newly emitted token. This is the
+    /// integration contract used by token-by-token controllers such as the
+    /// HTML5 session text-mode boundary handling and targeted fuzz harnesses.
     pub fn next_batch<'t>(&mut self, input: &'t mut Input) -> TokenBatch<'t> {
         assert!(
             self.input_id.is_none() || self.input_id == Some(input.id()),

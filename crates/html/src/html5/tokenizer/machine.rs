@@ -87,6 +87,17 @@ impl Html5Tokenizer {
             self.stats_set_bytes_consumed();
             #[cfg(any(debug_assertions, feature = "parser_invariants", test))]
             self.debug_assert_step_result(input, step_before, step_result);
+            #[cfg(any(debug_assertions, feature = "parser_invariants", test))]
+            if stop_condition == StopCondition::YieldAfterToken {
+                assert!(
+                    self.tokens.len() <= initial_token_count.saturating_add(1),
+                    "push_input_until_token queued more than one new token in a single pump: initial_tokens={} current_tokens={} state={:?} cursor={}",
+                    initial_token_count,
+                    self.tokens.len(),
+                    self.state,
+                    self.cursor
+                );
+            }
             if stop_condition == StopCondition::DrainAvailableInput
                 && self.tokens.len() >= self.max_tokens_per_batch()
             {
