@@ -12,6 +12,7 @@ use crate::html5::tree_builder::{
     DomInvariantState, Html5TreeBuilder, TreeBuilderConfig, TreeBuilderControlFlow,
     TreeBuilderProgressWitness, VecPatchSink, check_dom_invariants, check_patch_invariants,
 };
+use crate::test_harness::PatchValidationArena;
 
 pub fn run_seeded_html5_pipeline_fuzz_case(
     bytes: &[u8],
@@ -406,6 +407,7 @@ struct DrainResult {
 struct PipelineRunState {
     observer: TokenObserver,
     dom_state: DomInvariantState,
+    patch_arena: PatchValidationArena,
     patches_emitted: usize,
     tokenizer_controls_applied: usize,
     max_patches_observed: usize,
@@ -434,6 +436,7 @@ impl PipelineRunState {
         Self {
             observer: TokenObserver::new(max_tokens_streamed),
             dom_state: DomInvariantState::default(),
+            patch_arena: PatchValidationArena::default(),
             patches_emitted: 0,
             tokenizer_controls_applied: 0,
             max_patches_observed,
@@ -541,6 +544,12 @@ impl PipelineRunState {
         if !patches.is_empty() {
             self.dom_state = check_patch_invariants(&patches, &self.dom_state).map_err(|err| {
                 Html5PipelineFuzzError::PatchInvariantViolation {
+                    token_index,
+                    detail: err.to_string(),
+                }
+            })?;
+            self.patch_arena.apply_batch(&patches).map_err(|err| {
+                Html5PipelineFuzzError::PatchApplicationViolation {
                     token_index,
                     detail: err.to_string(),
                 }

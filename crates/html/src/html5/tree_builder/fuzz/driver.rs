@@ -9,6 +9,7 @@ use crate::html5::tree_builder::{
     DomInvariantState, Html5TreeBuilder, TreeBuilderConfig, TreeBuilderControlFlow,
     check_dom_invariants, check_patch_invariants,
 };
+use crate::test_harness::PatchValidationArena;
 
 struct OwnedOnlyResolver;
 
@@ -72,6 +73,7 @@ fn run_decoded_tokens(
     let mut patches_emitted = 0usize;
     let mut tokenizer_controls_emitted = 0usize;
     let mut dom_state = DomInvariantState::default();
+    let mut patch_arena = PatchValidationArena::default();
     let scheduled_steps = decoded.tokens_generated.saturating_add(1);
 
     check_dom_invariants(&dom_state).map_err(|err| {
@@ -116,6 +118,12 @@ fn run_decoded_tokens(
         if !patches.is_empty() {
             dom_state = check_patch_invariants(&patches, &dom_state).map_err(|err| {
                 TreeBuilderFuzzError::PatchInvariantViolation {
+                    token_index: processed_steps,
+                    detail: err.to_string(),
+                }
+            })?;
+            patch_arena.apply_batch(&patches).map_err(|err| {
+                TreeBuilderFuzzError::PatchApplicationViolation {
                     token_index: processed_steps,
                     detail: err.to_string(),
                 }
