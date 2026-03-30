@@ -51,3 +51,8 @@ required-features = ["html5", "dom-snapshot"]
 name = "wpt_html5_formatting"
 path = "tests/wpt_html5_formatting.rs"
 required-features = ["html5", "dom-snapshot"]
+
+[[test]]
+name = "html5_pipeline_regressions"
+path = "tests/html5_pipeline_regressions.rs"
+required-features = ["html5", "html5-fuzzing", "dom-snapshot", "parser_invariants"]

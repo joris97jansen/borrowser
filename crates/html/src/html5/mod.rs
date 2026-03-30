@@ -19,6 +19,11 @@ pub use fuzz::{
     Html5PipelineFuzzTermination, derive_html5_pipeline_fuzz_seed,
     run_seeded_html5_pipeline_fuzz_case,
 };
+#[cfg(all(
+    any(test, feature = "html5-fuzzing"),
+    any(test, feature = "dom-snapshot")
+))]
+pub use fuzz::{Html5PipelineRegressionError, render_html5_pipeline_regression_snapshot};
 pub use session::Html5ParseSession;
 pub use shared::{
     AtomError, AtomId, AtomTable, Attribute, AttributeValue, ByteStreamDecoder, Counters,

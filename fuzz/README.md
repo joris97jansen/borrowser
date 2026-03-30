@@ -108,6 +108,14 @@ Replay a specific seed through the actual pipeline fuzz target with:
 cargo fuzz run html5_pipeline fuzz/corpus/html5_pipeline/<seed-name>
 ```
 
+Render a stable pipeline regression snapshot from a committed corpus/regression
+input:
+
+```sh
+make print-html5-pipeline-regression-snapshot \
+  INPUT=fuzz/regressions/html5_pipeline/<seed-name>
+```
+
 ## CI Smoke
 
 PR CI runs a short deterministic smoke lane around the actual tokenizer fuzz
@@ -193,7 +201,24 @@ make test-html5-pipeline-fuzz-long
   `fuzz/regressions/html5_tree_builder_tokens/` for synthetic tree-builder
   crashes, and `fuzz/regressions/html5_pipeline/` for end-to-end pipeline
   crashes.
+- For end-to-end pipeline regressions, render and commit the matching stable
+  snapshot under
+  `crates/html/tests/regressions/html5_pipeline/<seed-name>.snap`:
+
+```sh
+make print-html5-pipeline-regression-snapshot \
+  INPUT=fuzz/regressions/html5_pipeline/<seed-name> \
+  > crates/html/tests/regressions/html5_pipeline/<seed-name>.snap
+```
+
 - Re-run the matching deterministic replay test to lock the regression in.
+- Re-run the pipeline regression snapshot lane after updating or adding `.snap`
+  files:
+
+```sh
+cargo test -p html --test html5_pipeline_regressions \
+  --features "html5 html5-fuzzing dom-snapshot parser_invariants"
+```
 
 Tokenizer replay:
 
@@ -231,3 +256,6 @@ cargo test -p html --features html5 --lib \
 - Keep entries small and focused; prefer one failure mode per seed.
 - Re-run the matching committed-input replay target before landing new corpus or
   regression entries.
+- For pipeline regressions, keep the input bytes in `fuzz/regressions/html5_pipeline/`
+  and the snapshot in `crates/html/tests/regressions/html5_pipeline/` with the
+  same base name so the regression test can pair them deterministically.
