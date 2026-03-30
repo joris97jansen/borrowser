@@ -1,0 +1,110 @@
+use super::super::materialize_patch_batches;
+use super::support::{element, text};
+use crate::DomPatch;
+use crate::dom_patch::PatchKey;
+use crate::dom_snapshot::{DomSnapshotOptions, assert_dom_eq};
+use crate::types::{Id, Node};
+use std::sync::Arc;
+
+#[test]
+fn materialize_patch_batches_supports_same_parent_reordering_and_noops() {
+    let dom = materialize_patch_batches(&[vec![
+        DomPatch::CreateDocument {
+            key: PatchKey(1),
+            doctype: None,
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(2),
+            name: Arc::from("ul"),
+            attributes: Vec::new(),
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(3),
+            name: Arc::from("li"),
+            attributes: Vec::new(),
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(4),
+            name: Arc::from("li"),
+            attributes: Vec::new(),
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(5),
+            name: Arc::from("li"),
+            attributes: Vec::new(),
+        },
+        DomPatch::CreateText {
+            key: PatchKey(6),
+            text: "a".to_string(),
+        },
+        DomPatch::CreateText {
+            key: PatchKey(7),
+            text: "b".to_string(),
+        },
+        DomPatch::CreateText {
+            key: PatchKey(8),
+            text: "c".to_string(),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(1),
+            child: PatchKey(2),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(2),
+            child: PatchKey(3),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(2),
+            child: PatchKey(4),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(2),
+            child: PatchKey(5),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(3),
+            child: PatchKey(6),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(4),
+            child: PatchKey(7),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(5),
+            child: PatchKey(8),
+        },
+        DomPatch::InsertBefore {
+            parent: PatchKey(2),
+            child: PatchKey(5),
+            before: PatchKey(3),
+        },
+        DomPatch::InsertBefore {
+            parent: PatchKey(2),
+            child: PatchKey(3),
+            before: PatchKey(4),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(2),
+            child: PatchKey(4),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(2),
+            child: PatchKey(4),
+        },
+    ]])
+    .expect("same-parent reorder/no-op sequence should materialize");
+
+    let expected = Node::Document {
+        id: Id::INVALID,
+        doctype: None,
+        children: vec![element(
+            "ul",
+            vec![
+                element("li", vec![text("c")]),
+                element("li", vec![text("a")]),
+                element("li", vec![text("b")]),
+            ],
+        )],
+    };
+    assert_dom_eq(&expected, &dom, DomSnapshotOptions::default());
+}
