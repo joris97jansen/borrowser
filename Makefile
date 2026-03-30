@@ -3,7 +3,7 @@ HTML_ENTITIES_JSON := crates/html/data/entities.json
 HTML_ENTITIES_GEN := crates/html/src/entities_html5.rs
 HTML_ENTITIES_TOOL := crates/html/tools/generate_entities_html5.py
 
-.PHONY: format fmt-check lint lint-html5 lint-html5-hardening test test-html5-legacy test-html5-toggle test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-html5-tokenizer-fuzz-corpus test-html5-tokenizer-fuzz-smoke test-html5-tokenizer-fuzz-long test-html5-tokenizer-script-data-fuzz-corpus test-html5-tokenizer-script-data-fuzz-smoke test-html5-tokenizer-script-data-fuzz-long test-html5-tree-builder-token-fuzz-corpus test-html5-tree-builder-token-fuzz-smoke test-html5-tree-builder-token-fuzz-long test-html5-pipeline-fuzz-corpus test-html5-pipeline-regressions test-html5-pipeline-fuzz-smoke test-html5-pipeline-fuzz-long print-html5-pipeline-regression-snapshot test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
+.PHONY: format fmt-check lint lint-html5 lint-html5-hardening test test-html5-legacy test-html5-toggle test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-html5-tokenizer-fuzz-corpus test-html5-tokenizer-fuzz-smoke test-html5-tokenizer-fuzz-long test-html5-tokenizer-script-data-fuzz-corpus test-html5-tokenizer-script-data-fuzz-smoke test-html5-tokenizer-script-data-fuzz-long test-html5-tokenizer-rawtext-fuzz-corpus test-html5-tokenizer-rawtext-fuzz-smoke test-html5-tokenizer-rawtext-fuzz-long test-html5-tokenizer-rcdata-fuzz-corpus test-html5-tokenizer-rcdata-fuzz-smoke test-html5-tokenizer-rcdata-fuzz-long test-html5-tree-builder-token-fuzz-corpus test-html5-tree-builder-token-fuzz-smoke test-html5-tree-builder-token-fuzz-long test-html5-pipeline-fuzz-corpus test-html5-pipeline-regressions test-html5-pipeline-fuzz-smoke test-html5-pipeline-fuzz-long print-html5-pipeline-regression-snapshot test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
 
 # Format all crates in place
 format:
@@ -86,6 +86,44 @@ test-html5-tokenizer-script-data-fuzz-long:
 	HTML5_TOKENIZER_SCRIPT_DATA_FUZZ_SMOKE_INPUT_TIMEOUT_SEC=10 \
 	HTML5_TOKENIZER_SCRIPT_DATA_FUZZ_SMOKE_WALL_TIMEOUT_SEC=600 \
 	bash ./tools/ci/html5_tokenizer_script_data_fuzz_smoke.sh
+
+# Replay the committed HTML5 tokenizer RAWTEXT fuzz corpus deterministically outside libFuzzer
+test-html5-tokenizer-rawtext-fuzz-corpus:
+	cargo test -p html --features html5 --lib --locked \
+		html5::tokenizer::fuzz::tests::corpus::replay_committed_html5_rawtext_corpus_deterministically
+
+# Run a short deterministic RAWTEXT tokenizer fuzz smoke against the actual fuzz target
+test-html5-tokenizer-rawtext-fuzz-smoke:
+	bash ./tools/ci/html5_tokenizer_rawtext_fuzz_smoke.sh
+
+# Run a longer deterministic RAWTEXT tokenizer fuzz lane for nightly/manual use
+test-html5-tokenizer-rawtext-fuzz-long:
+	HTML5_TOKENIZER_RAWTEXT_FUZZ_LABEL='html5 tokenizer rawtext fuzz nightly' \
+	HTML5_TOKENIZER_RAWTEXT_FUZZ_ARTIFACT_BASENAME='html5_tokenizer_rawtext_fuzz_failure_nightly' \
+	HTML5_TOKENIZER_RAWTEXT_FUZZ_SMOKE_SEED=3266489917 \
+	HTML5_TOKENIZER_RAWTEXT_FUZZ_SMOKE_RUNS=20000 \
+	HTML5_TOKENIZER_RAWTEXT_FUZZ_SMOKE_INPUT_TIMEOUT_SEC=10 \
+	HTML5_TOKENIZER_RAWTEXT_FUZZ_SMOKE_WALL_TIMEOUT_SEC=600 \
+	bash ./tools/ci/html5_tokenizer_rawtext_fuzz_smoke.sh
+
+# Replay the committed HTML5 tokenizer RCDATA fuzz corpus deterministically outside libFuzzer
+test-html5-tokenizer-rcdata-fuzz-corpus:
+	cargo test -p html --features html5 --lib --locked \
+		html5::tokenizer::fuzz::tests::corpus::replay_committed_html5_rcdata_corpus_deterministically
+
+# Run a short deterministic RCDATA tokenizer fuzz smoke against the actual fuzz target
+test-html5-tokenizer-rcdata-fuzz-smoke:
+	bash ./tools/ci/html5_tokenizer_rcdata_fuzz_smoke.sh
+
+# Run a longer deterministic RCDATA tokenizer fuzz lane for nightly/manual use
+test-html5-tokenizer-rcdata-fuzz-long:
+	HTML5_TOKENIZER_RCDATA_FUZZ_LABEL='html5 tokenizer rcdata fuzz nightly' \
+	HTML5_TOKENIZER_RCDATA_FUZZ_ARTIFACT_BASENAME='html5_tokenizer_rcdata_fuzz_failure_nightly' \
+	HTML5_TOKENIZER_RCDATA_FUZZ_SMOKE_SEED=610839777 \
+	HTML5_TOKENIZER_RCDATA_FUZZ_SMOKE_RUNS=20000 \
+	HTML5_TOKENIZER_RCDATA_FUZZ_SMOKE_INPUT_TIMEOUT_SEC=10 \
+	HTML5_TOKENIZER_RCDATA_FUZZ_SMOKE_WALL_TIMEOUT_SEC=600 \
+	bash ./tools/ci/html5_tokenizer_rcdata_fuzz_smoke.sh
 
 # Replay the committed HTML5 tree-builder synthetic-token fuzz corpus deterministically outside libFuzzer
 test-html5-tree-builder-token-fuzz-corpus:
@@ -201,6 +239,8 @@ ci:
 	@$(MAKE) test-html5-smoke-real-pages
 	@$(MAKE) test-html5-tokenizer-fuzz-smoke
 	@$(MAKE) test-html5-tokenizer-script-data-fuzz-smoke
+	@$(MAKE) test-html5-tokenizer-rawtext-fuzz-smoke
+	@$(MAKE) test-html5-tokenizer-rcdata-fuzz-smoke
 	@$(MAKE) test-html5-tree-builder-token-fuzz-smoke
 	@$(MAKE) test-html5-pipeline-regressions
 	@$(MAKE) test-html5-pipeline-fuzz-smoke

@@ -155,6 +155,45 @@ pub fn run_seeded_byte_fuzz_case(
 }
 
 /// Run a deterministic byte-stream fuzz case with the tokenizer entered
+/// directly into RAWTEXT mode for a `<style>`-family element.
+pub fn run_seeded_rawtext_fuzz_case(
+    bytes: &[u8],
+    config: TokenizerFuzzConfig,
+) -> Result<TokenizerFuzzSummary, TokenizerFuzzError> {
+    run_seeded_controlled_text_mode_fuzz_case(
+        bytes,
+        config,
+        TargetedTextModeHarnessKind::RawTextStyle,
+    )
+}
+
+/// Run a deterministic byte-stream fuzz case with the tokenizer entered
+/// directly into RCDATA mode for a `<title>`-family element.
+pub fn run_seeded_title_rcdata_fuzz_case(
+    bytes: &[u8],
+    config: TokenizerFuzzConfig,
+) -> Result<TokenizerFuzzSummary, TokenizerFuzzError> {
+    run_seeded_controlled_text_mode_fuzz_case(
+        bytes,
+        config,
+        TargetedTextModeHarnessKind::RcdataTitle,
+    )
+}
+
+/// Run a deterministic byte-stream fuzz case with the tokenizer entered
+/// directly into RCDATA mode for a `<textarea>`-family element.
+pub fn run_seeded_textarea_rcdata_fuzz_case(
+    bytes: &[u8],
+    config: TokenizerFuzzConfig,
+) -> Result<TokenizerFuzzSummary, TokenizerFuzzError> {
+    run_seeded_controlled_text_mode_fuzz_case(
+        bytes,
+        config,
+        TargetedTextModeHarnessKind::RcdataTextarea,
+    )
+}
+
+/// Run a deterministic byte-stream fuzz case with the tokenizer entered
 /// directly into script-data text mode.
 ///
 /// This bypasses unrelated tree-builder/parsing setup and exercises the script
@@ -171,6 +210,18 @@ pub fn run_seeded_script_data_fuzz_case(
     bytes: &[u8],
     config: TokenizerFuzzConfig,
 ) -> Result<TokenizerFuzzSummary, TokenizerFuzzError> {
+    run_seeded_controlled_text_mode_fuzz_case(
+        bytes,
+        config,
+        TargetedTextModeHarnessKind::ScriptData,
+    )
+}
+
+fn run_seeded_controlled_text_mode_fuzz_case(
+    bytes: &[u8],
+    config: TokenizerFuzzConfig,
+    mode: TargetedTextModeHarnessKind,
+) -> Result<TokenizerFuzzSummary, TokenizerFuzzError> {
     if bytes.len() > config.max_input_bytes {
         return Ok(TokenizerFuzzSummary {
             seed: config.seed,
@@ -186,12 +237,12 @@ pub fn run_seeded_script_data_fuzz_case(
     }
 
     let mut ctx = DocumentParseContext::new();
-    let script_name = ctx
+    let tag_name = ctx
         .atoms
-        .intern_ascii_folded("script")
-        .expect("script atom interning must succeed");
+        .intern_ascii_folded(mode.end_tag_name_literal())
+        .expect("text-mode atom interning must succeed");
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
-    let mut controller = ScriptDataModeController::new(script_name);
+    let mut controller = TextModeFuzzController::new(mode.spec(tag_name));
     controller.enter_initial(&mut tokenizer);
     let mut decoder = ByteStreamDecoder::new();
     let mut input = Input::new();
@@ -219,7 +270,7 @@ pub fn run_seeded_script_data_fuzz_case(
                 TokenizerFuzzTermination::RejectedMaxDecodedBytes,
             ));
         }
-        if let Some(termination) = pump_script_data_until_blocked(
+        if let Some(termination) = pump_text_mode_until_blocked(
             &mut tokenizer,
             &mut input,
             &mut ctx,
@@ -252,7 +303,7 @@ pub fn run_seeded_script_data_fuzz_case(
                 TokenizerFuzzTermination::RejectedMaxDecodedBytes,
             ));
         }
-        if let Some(termination) = pump_script_data_until_blocked(
+        if let Some(termination) = pump_text_mode_until_blocked(
             &mut tokenizer,
             &mut input,
             &mut ctx,
@@ -361,12 +412,12 @@ fn pump_until_blocked(
     })
 }
 
-fn pump_script_data_until_blocked(
+fn pump_text_mode_until_blocked(
     tokenizer: &mut Html5Tokenizer,
     input: &mut Input,
     ctx: &mut DocumentParseContext,
     observer: &mut TokenObserver,
-    controller: &mut ScriptDataModeController,
+    controller: &mut TextModeFuzzController,
     phase: &'static str,
 ) -> Result<Option<TokenizerFuzzTermination>, TokenizerFuzzError> {
     if let Err(source) = tokenizer.check_invariants(input) {
@@ -380,7 +431,7 @@ fn pump_script_data_until_blocked(
     for pump_index in 0..budget {
         let before = tokenizer.capture_invariant_snapshot();
         let result = tokenizer.push_input_until_token(input, ctx);
-        let drain = drain_queued_tokens_with_script_mode_control(
+        let drain = drain_queued_tokens_with_text_mode_control(
             tokenizer, input, &ctx.atoms, observer, controller, phase, pump_index,
         )?;
         if let Some(termination) = drain.termination {
@@ -507,12 +558,12 @@ fn drain_queued_tokens(
     })
 }
 
-fn drain_queued_tokens_with_script_mode_control(
+fn drain_queued_tokens_with_text_mode_control(
     tokenizer: &mut Html5Tokenizer,
     input: &mut Input,
     atoms: &AtomTable,
     observer: &mut TokenObserver,
-    controller: &mut ScriptDataModeController,
+    controller: &mut TextModeFuzzController,
     phase: &'static str,
     pump_index: usize,
 ) -> Result<DrainResult, TokenizerFuzzError> {
@@ -605,43 +656,67 @@ struct DrainResult {
     termination: Option<TokenizerFuzzTermination>,
 }
 
-struct ScriptDataModeController {
-    script_name: crate::html5::shared::AtomId,
-    script_mode_active: bool,
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum TargetedTextModeHarnessKind {
+    RawTextStyle,
+    RcdataTitle,
+    RcdataTextarea,
+    ScriptData,
 }
 
-impl ScriptDataModeController {
-    fn new(script_name: crate::html5::shared::AtomId) -> Self {
+impl TargetedTextModeHarnessKind {
+    fn end_tag_name_literal(self) -> &'static str {
+        match self {
+            Self::RawTextStyle => "style",
+            Self::RcdataTitle => "title",
+            Self::RcdataTextarea => "textarea",
+            Self::ScriptData => "script",
+        }
+    }
+
+    fn spec(self, tag_name: crate::html5::shared::AtomId) -> TextModeSpec {
+        match self {
+            Self::RawTextStyle => TextModeSpec::rawtext_style(tag_name),
+            Self::RcdataTitle => TextModeSpec::rcdata_title(tag_name),
+            Self::RcdataTextarea => TextModeSpec::rcdata_textarea(tag_name),
+            Self::ScriptData => TextModeSpec::script_data(tag_name),
+        }
+    }
+}
+
+struct TextModeFuzzController {
+    spec: TextModeSpec,
+    text_mode_active: bool,
+}
+
+impl TextModeFuzzController {
+    fn new(spec: TextModeSpec) -> Self {
         Self {
-            script_name,
-            script_mode_active: false,
+            spec,
+            text_mode_active: false,
         }
     }
 
     fn enter_initial(&mut self, tokenizer: &mut Html5Tokenizer) {
         assert!(
-            !self.script_mode_active,
-            "script-data fuzz controller cannot enter initial mode twice"
+            !self.text_mode_active,
+            "text-mode fuzz controller cannot enter initial mode twice"
         );
-        tokenizer.apply_control(TokenizerControl::EnterTextMode(TextModeSpec::script_data(
-            self.script_name,
-        )));
-        self.script_mode_active = true;
+        tokenizer.apply_control(TokenizerControl::EnterTextMode(self.spec));
+        self.text_mode_active = true;
         self.assert_consistent(tokenizer);
     }
 
     fn note_token(&mut self, token: &Token) -> Option<TokenizerControl> {
         match token {
             Token::StartTag { name, .. }
-                if *name == self.script_name && !self.script_mode_active =>
+                if *name == self.spec.end_tag_name && !self.text_mode_active =>
             {
-                self.script_mode_active = true;
-                Some(TokenizerControl::EnterTextMode(TextModeSpec::script_data(
-                    self.script_name,
-                )))
+                self.text_mode_active = true;
+                Some(TokenizerControl::EnterTextMode(self.spec))
             }
-            Token::EndTag { name } if *name == self.script_name && self.script_mode_active => {
-                self.script_mode_active = false;
+            Token::EndTag { name } if *name == self.spec.end_tag_name && self.text_mode_active => {
+                self.text_mode_active = false;
                 Some(TokenizerControl::ExitTextMode)
             }
             _ => None,
@@ -649,12 +724,10 @@ impl ScriptDataModeController {
     }
 
     fn assert_consistent(&self, tokenizer: &Html5Tokenizer) {
-        let tokenizer_in_script_mode = tokenizer
-            .active_text_mode
-            .is_some_and(|mode| mode.kind == super::super::TextModeKind::ScriptData);
+        let tokenizer_in_expected_text_mode = tokenizer.active_text_mode == Some(self.spec);
         assert_eq!(
-            tokenizer_in_script_mode, self.script_mode_active,
-            "script-data fuzz controller drifted from tokenizer text-mode state"
+            tokenizer_in_expected_text_mode, self.text_mode_active,
+            "text-mode fuzz controller drifted from tokenizer text-mode state"
         );
     }
 }

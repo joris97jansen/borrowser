@@ -29,6 +29,20 @@ doc = false
 bench = false
 
 [[bin]]
+name = "html5_tokenizer_rawtext"
+path = "fuzz_targets/html5_tokenizer_rawtext.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "html5_tokenizer_rcdata"
+path = "fuzz_targets/html5_tokenizer_rcdata.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
 name = "html5_tree_builder_tokens"
 path = "fuzz_targets/html5_tree_builder_tokens.rs"
 test = false

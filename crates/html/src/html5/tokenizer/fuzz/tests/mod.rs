@@ -3,3 +3,4 @@ mod corpus;
 mod limits;
 mod progress;
 mod script_data;
+mod text_modes;

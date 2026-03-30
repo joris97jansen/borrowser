@@ -1,0 +1,12 @@
+# HTML5 Tokenizer RAWTEXT Regression Inputs
+
+Store minimized crashing or hanging RAWTEXT fuzz inputs here after triage.
+
+Workflow:
+- download the failure artifact from CI,
+- reproduce it locally with the logged direct-binary or `cargo fuzz run` command,
+- minimize and rename it descriptively, and
+- commit it into this directory.
+
+Committed regression entries are replayed by the deterministic RAWTEXT
+tokenizer fuzz replay tests alongside the seed corpus.

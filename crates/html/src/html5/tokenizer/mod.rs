@@ -70,7 +70,9 @@ pub(crate) use fuzz::{
 #[cfg(any(test, feature = "html5-fuzzing"))]
 pub use fuzz::{
     TokenizerFuzzConfig, TokenizerFuzzError, TokenizerFuzzSummary, TokenizerFuzzTermination,
-    derive_fuzz_seed, run_seeded_byte_fuzz_case, run_seeded_script_data_fuzz_case,
+    derive_fuzz_seed, run_seeded_byte_fuzz_case, run_seeded_rawtext_fuzz_case,
+    run_seeded_script_data_fuzz_case, run_seeded_textarea_rcdata_fuzz_case,
+    run_seeded_title_rcdata_fuzz_case,
 };
 #[cfg(any(test, feature = "html5-fuzzing"))]
 pub(crate) use invariants::TokenizerInvariantSnapshot;
