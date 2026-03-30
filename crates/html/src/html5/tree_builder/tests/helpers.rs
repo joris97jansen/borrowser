@@ -15,6 +15,7 @@ pub(super) fn run_tree_builder_chunks(chunks: &[&str]) -> Vec<crate::dom_patch::
     use crate::html5::tree_builder::{
         DomInvariantState, check_dom_invariants, check_patch_invariants,
     };
+    use crate::test_harness::PatchValidationArena;
 
     let mut ctx = DocumentParseContext::new();
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
@@ -66,6 +67,10 @@ pub(super) fn run_tree_builder_chunks(chunks: &[&str]) -> Vec<crate::dom_patch::
     let patches = builder.drain_patches();
     let checked_state = check_patch_invariants(&patches, &DomInvariantState::default())
         .expect("tree builder patch output must satisfy patch invariants");
+    let mut patch_arena = PatchValidationArena::default();
+    patch_arena
+        .apply_batch(&patches)
+        .expect("tree builder patch output must apply without patch-contract violations");
     let live_state = builder.dom_invariant_state();
     check_dom_invariants(&live_state).expect("tree builder live DOM must satisfy DOM invariants");
     assert_eq!(

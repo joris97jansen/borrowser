@@ -94,6 +94,10 @@ pub enum Html5PipelineFuzzError {
         token_index: usize,
         detail: String,
     },
+    PatchApplicationViolation {
+        token_index: usize,
+        detail: String,
+    },
     DomInvariantViolation {
         token_index: usize,
         detail: String,
@@ -141,6 +145,13 @@ impl std::fmt::Display for Html5PipelineFuzzError {
             } => write!(
                 f,
                 "patch invariant violation after streamed token #{token_index}: {detail}"
+            ),
+            Self::PatchApplicationViolation {
+                token_index,
+                detail,
+            } => write!(
+                f,
+                "patch application failure after streamed token #{token_index}: {detail}"
             ),
             Self::DomInvariantViolation {
                 token_index,

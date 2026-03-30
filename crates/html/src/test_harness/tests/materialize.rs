@@ -491,6 +491,61 @@ fn materialize_patch_batches_rejects_moves_of_removed_subtree_descendants() {
 }
 
 #[test]
+fn materialize_patch_batches_rejects_detached_non_root_nodes() {
+    let error = materialize_patch_batches(&[vec![
+        DomPatch::CreateDocument {
+            key: PatchKey(1),
+            doctype: None,
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(2),
+            name: Arc::from("html"),
+            attributes: Vec::new(),
+        },
+    ]])
+    .expect_err("detached non-root nodes must be rejected before materialization");
+
+    assert!(
+        error.contains("detached non-root node PatchKey(2)"),
+        "unexpected detached-node materialization error: {error}"
+    );
+}
+
+#[test]
+fn materialize_patch_batches_rejects_key_reuse_across_clear() {
+    let error = materialize_patch_batches(&[
+        vec![
+            DomPatch::CreateDocument {
+                key: PatchKey(1),
+                doctype: None,
+            },
+            DomPatch::CreateElement {
+                key: PatchKey(2),
+                name: Arc::from("html"),
+                attributes: Vec::new(),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(1),
+                child: PatchKey(2),
+            },
+        ],
+        vec![
+            DomPatch::Clear,
+            DomPatch::CreateDocument {
+                key: PatchKey(1),
+                doctype: None,
+            },
+        ],
+    ])
+    .expect_err("Clear must not permit patch-key reuse across the same session");
+
+    assert!(
+        error.contains("duplicate patch key PatchKey(1)"),
+        "unexpected key-reuse error after Clear: {error}"
+    );
+}
+
+#[test]
 fn materialize_patch_batches_rejects_document_and_root_element_moves() {
     let patches = vec![
         DomPatch::CreateDocument {
