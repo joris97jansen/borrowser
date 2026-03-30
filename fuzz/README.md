@@ -8,6 +8,14 @@ tokenizer fuzz harness. Triaged crashing inputs belong in
 for the targeted HTML5 tokenizer script-data fuzz harness. Triaged crashing
 inputs belong in `fuzz/regressions/html5_tokenizer_script_data/`.
 
+`fuzz/corpus/html5_tokenizer_rawtext/` contains the committed seed corpus for
+the targeted HTML5 tokenizer RAWTEXT fuzz harness. Triaged crashing inputs
+belong in `fuzz/regressions/html5_tokenizer_rawtext/`.
+
+`fuzz/corpus/html5_tokenizer_rcdata/` contains the committed seed corpus for the
+targeted HTML5 tokenizer RCDATA fuzz harness. Triaged crashing inputs belong in
+`fuzz/regressions/html5_tokenizer_rcdata/`.
+
 `fuzz/corpus/html5_tree_builder_tokens/` contains the committed seed corpus for
 the synthetic token-stream HTML5 tree-builder fuzz harness. Triaged crashing
 inputs belong in `fuzz/regressions/html5_tree_builder_tokens/`.
@@ -39,6 +47,8 @@ Seed categories currently covered:
 - broken comments and malformed doctypes
 - dense `<` runs and script/rawtext lookalikes
 - direct script-data close-tag storms, near-miss `</script>` tails, and escaped-script families
+- direct RAWTEXT near-miss `</style>` tails and whitespace/partial close candidates
+- direct RCDATA near-miss `</title>` and `</textarea>` tails plus entity-bearing payloads
 - long attribute sequences
 - invalid UTF-8 and NUL-heavy byte streams
 - synthetic malformed token orderings and weird structural nesting
@@ -93,6 +103,46 @@ Replay a specific script-data seed through the actual fuzz target with:
 
 ```sh
 cargo fuzz run html5_tokenizer_script_data fuzz/corpus/html5_tokenizer_script_data/<seed-name>
+```
+
+Deterministic committed-input replay for the targeted RAWTEXT tokenizer
+harness:
+
+```sh
+cargo test -p html --features html5 --lib \
+  html5::tokenizer::fuzz::tests::corpus::replay_committed_html5_rawtext_corpus_deterministically
+```
+
+Equivalent Make target:
+
+```sh
+make test-html5-tokenizer-rawtext-fuzz-corpus
+```
+
+Replay a specific RAWTEXT seed through the actual fuzz target with:
+
+```sh
+cargo fuzz run html5_tokenizer_rawtext fuzz/corpus/html5_tokenizer_rawtext/<seed-name>
+```
+
+Deterministic committed-input replay for the targeted RCDATA tokenizer
+harness:
+
+```sh
+cargo test -p html --features html5 --lib \
+  html5::tokenizer::fuzz::tests::corpus::replay_committed_html5_rcdata_corpus_deterministically
+```
+
+Equivalent Make target:
+
+```sh
+make test-html5-tokenizer-rcdata-fuzz-corpus
+```
+
+Replay a specific RCDATA seed through the actual fuzz target with:
+
+```sh
+cargo fuzz run html5_tokenizer_rcdata fuzz/corpus/html5_tokenizer_rcdata/<seed-name>
 ```
 
 Deterministic replay for the synthetic token-stream tree-builder harness:
@@ -174,6 +224,32 @@ Current script-data smoke budget:
 - libFuzzer per-input timeout: `5s`
 - outer wall timeout: `90s`
 
+PR CI also runs a short deterministic smoke lane around the targeted RAWTEXT
+tokenizer fuzz target via:
+
+```sh
+make test-html5-tokenizer-rawtext-fuzz-smoke
+```
+
+Current RAWTEXT smoke budget:
+- fixed seed: `2654435761`
+- fixed runs: `128`
+- libFuzzer per-input timeout: `5s`
+- outer wall timeout: `90s`
+
+PR CI also runs a short deterministic smoke lane around the targeted RCDATA
+tokenizer fuzz target via:
+
+```sh
+make test-html5-tokenizer-rcdata-fuzz-smoke
+```
+
+Current RCDATA smoke budget:
+- fixed seed: `2246822519`
+- fixed runs: `128`
+- libFuzzer per-input timeout: `5s`
+- outer wall timeout: `90s`
+
 PR CI also runs a short deterministic smoke lane around the synthetic token
 tree-builder fuzz target via:
 
@@ -224,6 +300,18 @@ The equivalent long-run targeted script-data lane is:
 make test-html5-tokenizer-script-data-fuzz-long
 ```
 
+The equivalent long-run targeted RAWTEXT lane is:
+
+```sh
+make test-html5-tokenizer-rawtext-fuzz-long
+```
+
+The equivalent long-run targeted RCDATA lane is:
+
+```sh
+make test-html5-tokenizer-rcdata-fuzz-long
+```
+
 The equivalent long-run tree-builder lane is:
 
 ```sh
@@ -243,6 +331,10 @@ make test-html5-pipeline-fuzz-long
 - Minimize the input and commit it to the matching regression directory:
   `fuzz/regressions/html5_tokenizer/` for tokenizer crashes and
   `fuzz/regressions/html5_tokenizer_script_data/` for targeted script-data tokenizer
+  crashes,
+  `fuzz/regressions/html5_tokenizer_rawtext/` for targeted RAWTEXT tokenizer
+  crashes,
+  `fuzz/regressions/html5_tokenizer_rcdata/` for targeted RCDATA tokenizer
   crashes,
   `fuzz/regressions/html5_tree_builder_tokens/` for synthetic tree-builder
   crashes, and `fuzz/regressions/html5_pipeline/` for end-to-end pipeline
@@ -280,6 +372,20 @@ cargo test -p html --features html5 --lib \
   html5::tokenizer::fuzz::tests::corpus::replay_committed_html5_script_data_corpus_deterministically
 ```
 
+Targeted RAWTEXT tokenizer replay:
+
+```sh
+cargo test -p html --features html5 --lib \
+  html5::tokenizer::fuzz::tests::corpus::replay_committed_html5_rawtext_corpus_deterministically
+```
+
+Targeted RCDATA tokenizer replay:
+
+```sh
+cargo test -p html --features html5 --lib \
+  html5::tokenizer::fuzz::tests::corpus::replay_committed_html5_rcdata_corpus_deterministically
+```
+
 Synthetic tree-builder replay:
 
 ```sh
@@ -300,6 +406,8 @@ cargo test -p html --features html5 --lib \
   improve steady-state coverage:
   `fuzz/corpus/html5_tokenizer/` for raw-byte tokenizer cases and
   `fuzz/corpus/html5_tokenizer_script_data/` for direct script-data tokenizer cases and
+  `fuzz/corpus/html5_tokenizer_rawtext/` for direct RAWTEXT tokenizer cases and
+  `fuzz/corpus/html5_tokenizer_rcdata/` for direct RCDATA tokenizer cases and
   `fuzz/corpus/html5_tree_builder_tokens/` for synthetic token-stream tree-builder
   cases, and `fuzz/corpus/html5_pipeline/` for end-to-end byte-stream pipeline
   cases.
