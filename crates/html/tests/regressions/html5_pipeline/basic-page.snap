@@ -1,0 +1,27 @@
+html5-pipeline-regression-v1
+name: basic-page
+seed: 12727349193051158917
+termination: Completed
+input_bytes: 101
+decoded_bytes: 101
+chunk_count: 11
+saw_one_byte_chunk: true
+tokens_streamed: 19
+span_resolve_count: 5
+patches_emitted: 23
+tokenizer_controls_applied: 2
+digest: 8008734896362174182
+
+dom:
+#document doctype="html"
+  <html>
+    <head>
+      <title>
+        "basic"
+    <body>
+      <p>
+        "Hello "
+        <b>
+          "world"
+        "."
+  "\n"

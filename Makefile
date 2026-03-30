@@ -3,7 +3,7 @@ HTML_ENTITIES_JSON := crates/html/data/entities.json
 HTML_ENTITIES_GEN := crates/html/src/entities_html5.rs
 HTML_ENTITIES_TOOL := crates/html/tools/generate_entities_html5.py
 
-.PHONY: format fmt-check lint lint-html5 lint-html5-hardening test test-html5-legacy test-html5-toggle test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-html5-tokenizer-fuzz-corpus test-html5-tokenizer-fuzz-smoke test-html5-tokenizer-fuzz-long test-html5-tree-builder-token-fuzz-corpus test-html5-tree-builder-token-fuzz-smoke test-html5-tree-builder-token-fuzz-long test-html5-pipeline-fuzz-corpus test-html5-pipeline-fuzz-smoke test-html5-pipeline-fuzz-long test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
+.PHONY: format fmt-check lint lint-html5 lint-html5-hardening test test-html5-legacy test-html5-toggle test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-html5-tokenizer-fuzz-corpus test-html5-tokenizer-fuzz-smoke test-html5-tokenizer-fuzz-long test-html5-tree-builder-token-fuzz-corpus test-html5-tree-builder-token-fuzz-smoke test-html5-tree-builder-token-fuzz-long test-html5-pipeline-fuzz-corpus test-html5-pipeline-regressions test-html5-pipeline-fuzz-smoke test-html5-pipeline-fuzz-long print-html5-pipeline-regression-snapshot test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
 
 # Format all crates in place
 format:
@@ -92,6 +92,10 @@ test-html5-pipeline-fuzz-corpus:
 	cargo test -p html --features html5 --lib --locked \
 		html5::fuzz::tests::corpus::replay_committed_html5_pipeline_corpus_deterministically
 
+# Replay committed HTML5 pipeline regression snapshots against their matching inputs
+test-html5-pipeline-regressions:
+	cargo test -p html --test html5_pipeline_regressions --features "html5 html5-fuzzing dom-snapshot parser_invariants" --locked
+
 # Run a short deterministic HTML5 end-to-end pipeline fuzz smoke against the actual fuzz target
 test-html5-pipeline-fuzz-smoke:
 	bash ./tools/ci/html5_pipeline_fuzz_smoke.sh
@@ -105,6 +109,11 @@ test-html5-pipeline-fuzz-long:
 	HTML5_PIPELINE_FUZZ_SMOKE_INPUT_TIMEOUT_SEC=10 \
 	HTML5_PIPELINE_FUZZ_SMOKE_WALL_TIMEOUT_SEC=600 \
 	bash ./tools/ci/html5_pipeline_fuzz_smoke.sh
+
+# Render a stable HTML5 pipeline regression snapshot from a corpus/regression input
+print-html5-pipeline-regression-snapshot:
+	@test -n "$(INPUT)" || (echo "usage: make $@ INPUT=fuzz/corpus/html5_pipeline/<name> [NAME=<snapshot-label>]" && exit 1)
+	cargo run -p html --features "html5 html5-fuzzing dom-snapshot parser_invariants" --bin html5_pipeline_regression_snapshot --locked -- "$(INPUT)" $(if $(NAME),$(NAME),)
 
 # Run WPT tree-construction slice (tokenizer + tree builder -> DOM snapshot)
 test-wpt-tree-builder:
@@ -173,6 +182,7 @@ ci:
 	@$(MAKE) test-html5-smoke-real-pages
 	@$(MAKE) test-html5-tokenizer-fuzz-smoke
 	@$(MAKE) test-html5-tree-builder-token-fuzz-smoke
+	@$(MAKE) test-html5-pipeline-regressions
 	@$(MAKE) test-html5-pipeline-fuzz-smoke
 	@$(MAKE) test-wpt-tree-builder
 	@$(MAKE) build
