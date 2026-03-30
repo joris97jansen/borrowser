@@ -1,5 +1,5 @@
 use super::super::config::{TokenizerFuzzConfig, TokenizerFuzzTermination, derive_fuzz_seed};
-use super::super::driver::run_seeded_byte_fuzz_case;
+use super::super::driver::{run_seeded_byte_fuzz_case, run_seeded_script_data_fuzz_case};
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -71,6 +71,74 @@ fn replay_single_committed_seed_deterministically() {
     assert_eq!(first.termination, TokenizerFuzzTermination::Completed);
 }
 
+#[test]
+fn replay_committed_html5_script_data_corpus_deterministically() {
+    let corpus = committed_script_data_entries();
+    assert!(
+        !corpus.is_empty(),
+        "expected committed script-data tokenizer fuzz corpus entries"
+    );
+
+    for entry in corpus {
+        let bytes = fs::read(&entry)
+            .unwrap_or_else(|err| panic!("failed to read corpus entry {}: {err}", entry.display()));
+        let config = TokenizerFuzzConfig {
+            seed: derive_fuzz_seed(&bytes),
+            ..TokenizerFuzzConfig::default()
+        };
+        let first = run_seeded_script_data_fuzz_case(&bytes, config).unwrap_or_else(|err| {
+            panic!(
+                "committed script-data corpus entry {} should replay without invariant failure: {err}",
+                entry.display()
+            )
+        });
+        let second = run_seeded_script_data_fuzz_case(&bytes, config).unwrap_or_else(|err| {
+            panic!(
+                "committed script-data corpus entry {} should replay without invariant failure on second run: {err}",
+                entry.display()
+            )
+        });
+
+        assert_eq!(
+            first,
+            second,
+            "committed script-data corpus entry {} should replay deterministically",
+            entry.display()
+        );
+        assert_eq!(
+            first.termination,
+            TokenizerFuzzTermination::Completed,
+            "committed script-data corpus entry {} should complete rather than hitting harness limits",
+            entry.display()
+        );
+    }
+}
+
+#[test]
+fn replay_single_committed_script_data_seed_deterministically() {
+    let entry = script_data_corpus_entry("close-tag-near-miss-storm");
+    let bytes = fs::read(&entry)
+        .unwrap_or_else(|err| panic!("failed to read corpus entry {}: {err}", entry.display()));
+    let config = TokenizerFuzzConfig {
+        seed: derive_fuzz_seed(&bytes),
+        ..TokenizerFuzzConfig::default()
+    };
+    let first = run_seeded_script_data_fuzz_case(&bytes, config).unwrap_or_else(|err| {
+        panic!(
+            "single committed script-data seed {} should replay without invariant failure: {err}",
+            entry.display()
+        )
+    });
+    let second = run_seeded_script_data_fuzz_case(&bytes, config).unwrap_or_else(|err| {
+        panic!(
+            "single committed script-data seed {} should replay deterministically: {err}",
+            entry.display()
+        )
+    });
+    assert_eq!(first, second);
+    assert_eq!(first.termination, TokenizerFuzzTermination::Completed);
+}
+
 fn corpus_entries() -> Vec<PathBuf> {
     entries_in_dir(corpus_dir())
 }
@@ -86,8 +154,27 @@ fn committed_input_entries() -> Vec<PathBuf> {
     entries
 }
 
+fn script_data_corpus_entries() -> Vec<PathBuf> {
+    entries_in_dir(script_data_corpus_dir())
+}
+
+fn script_data_regression_entries() -> Vec<PathBuf> {
+    entries_in_dir(script_data_regressions_dir())
+}
+
+fn committed_script_data_entries() -> Vec<PathBuf> {
+    let mut entries = script_data_corpus_entries();
+    entries.extend(script_data_regression_entries());
+    entries.sort();
+    entries
+}
+
 fn corpus_entry(name: &str) -> PathBuf {
     corpus_dir().join(name)
+}
+
+fn script_data_corpus_entry(name: &str) -> PathBuf {
+    script_data_corpus_dir().join(name)
 }
 
 fn corpus_dir() -> PathBuf {
@@ -96,6 +183,14 @@ fn corpus_dir() -> PathBuf {
 
 fn regressions_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fuzz/regressions/html5_tokenizer")
+}
+
+fn script_data_corpus_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fuzz/corpus/html5_tokenizer_script_data")
+}
+
+fn script_data_regressions_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../fuzz/regressions/html5_tokenizer_script_data")
 }
 
 fn entries_in_dir(dir: PathBuf) -> Vec<PathBuf> {

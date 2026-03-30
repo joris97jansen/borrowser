@@ -1,6 +1,8 @@
 use super::helpers::{assert_push_ok, drain_all_fmt};
 use crate::html5::shared::{DocumentParseContext, Input};
-use crate::html5::tokenizer::{Html5Tokenizer, TokenizeResult, TokenizerConfig};
+use crate::html5::tokenizer::{
+    Html5Tokenizer, TextModeSpec, TokenizeResult, TokenizerConfig, TokenizerControl,
+};
 
 #[test]
 fn tokenizer_api_compiles() {
@@ -100,4 +102,77 @@ fn tokenizer_rejects_foreign_atom_table_context() {
     let mut input = Input::new();
     input.push_str("<div>");
     let _ = tokenizer.push_input(&mut input, &mut foreign_ctx);
+}
+
+#[test]
+fn push_input_until_token_yields_single_token_batches_when_queue_is_drained() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<div>Hello</div><span>world</span>");
+
+    loop {
+        let result = tokenizer.push_input_until_token(&mut input, &mut ctx);
+        let batch = tokenizer.next_batch(&mut input);
+        assert!(
+            batch.tokens().len() <= 1,
+            "token-granular pump must not queue multiple newly emitted tokens"
+        );
+        drop(batch);
+
+        if matches!(result, TokenizeResult::NeedMoreInput) {
+            break;
+        }
+    }
+}
+
+#[test]
+fn push_input_until_token_stays_single_token_in_script_mode_with_controls() {
+    let mut ctx = DocumentParseContext::new();
+    let script = ctx
+        .atoms
+        .intern_ascii_folded("script")
+        .expect("script atom interning");
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<script>a</script><script>b</script>");
+
+    let mut script_mode_active = false;
+    loop {
+        let result = tokenizer.push_input_until_token(&mut input, &mut ctx);
+        let mut pending_control = None;
+        {
+            let batch = tokenizer.next_batch(&mut input);
+            assert!(
+                batch.tokens().len() <= 1,
+                "script-mode token-granular pump must not cross control boundaries in one batch"
+            );
+            if let Some(token) = batch.iter().next() {
+                match token {
+                    crate::html5::shared::Token::StartTag { name, .. }
+                        if *name == script && !script_mode_active =>
+                    {
+                        script_mode_active = true;
+                        pending_control = Some(TokenizerControl::EnterTextMode(
+                            TextModeSpec::script_data(script),
+                        ));
+                    }
+                    crate::html5::shared::Token::EndTag { name }
+                        if *name == script && script_mode_active =>
+                    {
+                        script_mode_active = false;
+                        pending_control = Some(TokenizerControl::ExitTextMode);
+                    }
+                    _ => {}
+                }
+            }
+        }
+        if let Some(control) = pending_control {
+            tokenizer.apply_control(control);
+        }
+
+        if matches!(result, TokenizeResult::NeedMoreInput) {
+            break;
+        }
+    }
 }

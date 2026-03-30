@@ -1,0 +1,6 @@
+<!--
+if (window.x < window.y) {
+  document.write("<script>nested</script>");
+}
+//-->
+</script>
