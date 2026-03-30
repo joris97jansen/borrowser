@@ -1,74 +1,9 @@
-use crate::Node;
-use crate::dom_patch::{DomPatch, PatchKey};
-use crate::types::Id;
-use std::collections::{HashMap, HashSet};
-use std::fmt;
 use std::sync::Arc;
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct PatchValidationError {
-    context: &'static str,
-    detail: String,
-}
+use crate::dom_patch::{DomPatch, PatchKey};
 
-impl PatchValidationError {
-    fn new(context: &'static str, detail: impl Into<String>) -> Self {
-        Self {
-            context,
-            detail: detail.into(),
-        }
-    }
-}
-
-impl fmt::Display for PatchValidationError {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}: {}", self.context, self.detail)
-    }
-}
-
-impl std::error::Error for PatchValidationError {}
-
-type ArenaResult<T> = Result<T, PatchValidationError>;
-
-#[derive(Clone, Debug)]
-enum PatchKind {
-    Document {
-        doctype: Option<String>,
-    },
-    Element {
-        name: Arc<str>,
-        attributes: Vec<(Arc<str>, Option<String>)>,
-    },
-    Text {
-        text: String,
-    },
-    Comment {
-        text: String,
-    },
-}
-
-#[derive(Clone, Debug)]
-struct PatchNode {
-    kind: PatchKind,
-    parent: Option<PatchKey>,
-    children: Vec<PatchKey>,
-}
-
-/// Minimal patch-applier/validator for fuzzing and test lanes.
-///
-/// The arena applies batches atomically, validates the resulting structure after
-/// every batch, and can materialize the final simplified DOM when needed.
-///
-/// Allocation policy:
-/// - `Clear` resets the live tree state
-/// - `Clear` does not release historically allocated patch keys
-/// - recreated content must therefore use fresh keys across the whole session
-#[derive(Clone, Default)]
-pub struct PatchValidationArena {
-    nodes: HashMap<PatchKey, PatchNode>,
-    allocated: HashSet<PatchKey>,
-    root: Option<PatchKey>,
-}
+use super::error::{ArenaResult, PatchValidationError};
+use super::model::{PatchKind, PatchNode, PatchValidationArena};
 
 impl PatchValidationArena {
     pub fn apply_batch(&mut self, patches: &[DomPatch]) -> Result<(), PatchValidationError> {
@@ -77,13 +12,6 @@ impl PatchValidationArena {
         staged.assert_invariants()?;
         *self = staged;
         Ok(())
-    }
-
-    pub fn materialize(&self) -> Result<Node, PatchValidationError> {
-        let root = self.root.ok_or_else(|| {
-            PatchValidationError::new("materialize", "missing document root after patch apply")
-        })?;
-        self.materialize_node(root)
     }
 
     fn clear(&mut self) {
@@ -130,6 +58,7 @@ impl PatchValidationArena {
         let node = self.nodes.get(&key).ok_or_else(|| {
             PatchValidationError::new(context, format!("missing node {key:?} after lookup"))
         })?;
+
         match node.kind {
             PatchKind::Document { .. } | PatchKind::Element { .. } => Ok(()),
             PatchKind::Text { .. } | PatchKind::Comment { .. } => Err(PatchValidationError::new(
@@ -184,15 +113,18 @@ impl PatchValidationArena {
             .get(&child)
             .ok_or_else(|| PatchValidationError::new("detach", format!("missing child {child:?}")))?
             .parent;
+
         if let Some(parent) = parent
             && let Some(parent_node) = self.nodes.get_mut(&parent)
         {
             parent_node.children.retain(|existing| *existing != child);
         }
+
         self.nodes
             .get_mut(&child)
             .ok_or_else(|| PatchValidationError::new("detach", format!("missing child {child:?}")))?
             .parent = None;
+
         Ok(())
     }
 
@@ -203,26 +135,31 @@ impl PatchValidationArena {
                 "cannot attach a node to itself",
             ));
         }
+
         self.ensure_container(parent, "AppendChild parent")?;
         self.ensure_node(child, "AppendChild child")?;
+
         if self.is_document_node(child)? {
             return Err(PatchValidationError::new(
                 "AppendChild child",
                 "cannot move a document node",
             ));
         }
+
         if self.is_document_root_element(child)? {
             return Err(PatchValidationError::new(
                 "AppendChild child",
                 "cannot move the document root element",
             ));
         }
+
         if self.would_create_cycle(parent, child)? {
             return Err(PatchValidationError::new(
                 "AppendChild",
                 "cannot create an ancestor cycle",
             ));
         }
+
         let already_last = self.node_parent(child)? == Some(parent)
             && self
                 .nodes
@@ -231,16 +168,20 @@ impl PatchValidationArena {
         if already_last {
             return Ok(());
         }
+
         self.detach_child(child)?;
+
         self.nodes
             .get_mut(&parent)
             .ok_or_else(|| PatchValidationError::new("AppendChild parent", "missing parent"))?
             .children
             .push(child);
+
         self.nodes
             .get_mut(&child)
             .ok_or_else(|| PatchValidationError::new("AppendChild child", "missing child"))?
             .parent = Some(parent);
+
         Ok(())
     }
 
@@ -262,21 +203,25 @@ impl PatchValidationArena {
                 "cannot insert a node before itself",
             ));
         }
+
         self.ensure_container(parent, "InsertBefore parent")?;
         self.ensure_node(child, "InsertBefore child")?;
         self.ensure_node(before, "InsertBefore before")?;
+
         if self.is_document_node(child)? {
             return Err(PatchValidationError::new(
                 "InsertBefore child",
                 "cannot move a document node",
             ));
         }
+
         if self.is_document_root_element(child)? {
             return Err(PatchValidationError::new(
                 "InsertBefore child",
                 "cannot move the document root element",
             ));
         }
+
         let before_parent = self.node_parent(before)?;
         if before_parent != Some(parent) {
             return Err(PatchValidationError::new(
@@ -284,12 +229,14 @@ impl PatchValidationArena {
                 format!("{before:?} is not attached under {parent:?}"),
             ));
         }
+
         if self.would_create_cycle(parent, child)? {
             return Err(PatchValidationError::new(
                 "InsertBefore",
                 "cannot create an ancestor cycle",
             ));
         }
+
         let already_in_place = if self.node_parent(child)? == Some(parent) {
             let siblings = &self
                 .nodes
@@ -298,14 +245,20 @@ impl PatchValidationArena {
                 .children;
             let child_index = siblings.iter().position(|key| *key == child);
             let before_index = siblings.iter().position(|key| *key == before);
-            matches!((child_index, before_index), (Some(child_index), Some(before_index)) if child_index + 1 == before_index)
+            matches!(
+                (child_index, before_index),
+                (Some(child_index), Some(before_index)) if child_index + 1 == before_index
+            )
         } else {
             false
         };
+
         if already_in_place {
             return Ok(());
         }
+
         self.detach_child(child)?;
+
         let before_index = self
             .nodes
             .get(&parent)
@@ -316,15 +269,18 @@ impl PatchValidationArena {
             .ok_or_else(|| {
                 PatchValidationError::new("InsertBefore before", "before child not found in parent")
             })?;
+
         self.nodes
             .get_mut(&parent)
             .ok_or_else(|| PatchValidationError::new("InsertBefore parent", "missing parent"))?
             .children
             .insert(before_index, child);
+
         self.nodes
             .get_mut(&child)
             .ok_or_else(|| PatchValidationError::new("InsertBefore child", "missing child"))?
             .parent = Some(parent);
+
         Ok(())
     }
 
@@ -335,18 +291,22 @@ impl PatchValidationArena {
             })?;
             node.children.clone()
         };
+
         if let Some(parent) = self.nodes.get(&key).and_then(|node| node.parent)
             && let Some(parent_node) = self.nodes.get_mut(&parent)
         {
             parent_node.children.retain(|child| *child != key);
         }
+
         for child in children {
             self.remove_subtree(child)?;
         }
+
         self.nodes.remove(&key);
         if self.root == Some(key) {
             self.root = None;
         }
+
         Ok(())
     }
 
@@ -382,6 +342,7 @@ impl PatchValidationArena {
                             "document root already exists",
                         ));
                     }
+
                     self.insert(
                         *key,
                         PatchNode {
@@ -504,327 +465,5 @@ impl PatchValidationArena {
         }
 
         Ok(())
-    }
-
-    fn assert_invariants(&self) -> ArenaResult<()> {
-        if self.nodes.is_empty() {
-            if self.root.is_some() {
-                return Err(PatchValidationError::new(
-                    "post-apply invariants",
-                    "root must be absent when no nodes remain",
-                ));
-            }
-            return Ok(());
-        }
-
-        let root = self.root.ok_or_else(|| {
-            PatchValidationError::new(
-                "post-apply invariants",
-                "non-empty patch arena must declare a document root",
-            )
-        })?;
-        let root_node = self.nodes.get(&root).ok_or_else(|| {
-            PatchValidationError::new("post-apply invariants", "declared root node is missing")
-        })?;
-        if !matches!(root_node.kind, PatchKind::Document { .. }) {
-            return Err(PatchValidationError::new(
-                "post-apply invariants",
-                format!("root {root:?} must be a document node"),
-            ));
-        }
-        if root_node.parent.is_some() {
-            return Err(PatchValidationError::new(
-                "post-apply invariants",
-                "root node must not have a parent",
-            ));
-        }
-
-        for (key, node) in &self.nodes {
-            if matches!(node.kind, PatchKind::Document { .. }) && *key != root {
-                return Err(PatchValidationError::new(
-                    "post-apply invariants",
-                    format!("document node {key:?} must be the declared root {root:?}"),
-                ));
-            }
-
-            if let Some(parent) = node.parent {
-                let parent_node = self.nodes.get(&parent).ok_or_else(|| {
-                    PatchValidationError::new(
-                        "post-apply invariants",
-                        format!("dangling parent reference for {key:?}"),
-                    )
-                })?;
-                let matches = parent_node
-                    .children
-                    .iter()
-                    .filter(|child| **child == *key)
-                    .count();
-                if matches != 1 {
-                    return Err(PatchValidationError::new(
-                        "post-apply invariants",
-                        format!(
-                            "parent/child mismatch for {key:?}: expected exactly one reference from {parent:?}, found {matches}"
-                        ),
-                    ));
-                }
-            } else if *key != root {
-                return Err(PatchValidationError::new(
-                    "post-apply invariants",
-                    format!("detached non-root node {key:?}"),
-                ));
-            }
-
-            let mut unique_children = HashSet::new();
-            for child in &node.children {
-                if !self.nodes.contains_key(child) {
-                    return Err(PatchValidationError::new(
-                        "post-apply invariants",
-                        format!("dangling child reference {child:?} under {key:?}"),
-                    ));
-                }
-                if !unique_children.insert(*child) {
-                    return Err(PatchValidationError::new(
-                        "post-apply invariants",
-                        format!("duplicate child reference {child:?} under {key:?}"),
-                    ));
-                }
-                let child_parent = self
-                    .nodes
-                    .get(child)
-                    .and_then(|child_node| child_node.parent)
-                    .ok_or_else(|| {
-                        PatchValidationError::new(
-                            "post-apply invariants",
-                            format!("child {child:?} missing parent back-reference"),
-                        )
-                    })?;
-                if child_parent != *key {
-                    return Err(PatchValidationError::new(
-                        "post-apply invariants",
-                        format!(
-                            "child {child:?} parent mismatch: expected {key:?}, found {child_parent:?}"
-                        ),
-                    ));
-                }
-            }
-        }
-
-        let mut visited = HashSet::new();
-        let mut visiting = HashSet::new();
-        for key in self.nodes.keys().copied() {
-            self.assert_acyclic_from(key, &mut visited, &mut visiting)?;
-        }
-
-        Ok(())
-    }
-
-    fn assert_acyclic_from(
-        &self,
-        key: PatchKey,
-        visited: &mut HashSet<PatchKey>,
-        visiting: &mut HashSet<PatchKey>,
-    ) -> ArenaResult<()> {
-        if visited.contains(&key) {
-            return Ok(());
-        }
-        if !visiting.insert(key) {
-            return Err(PatchValidationError::new(
-                "post-apply invariants",
-                format!("cycle detected at {key:?}"),
-            ));
-        }
-        let node = self.nodes.get(&key).ok_or_else(|| {
-            PatchValidationError::new(
-                "post-apply invariants",
-                format!("missing node during cycle check: {key:?}"),
-            )
-        })?;
-        for child in &node.children {
-            self.assert_acyclic_from(*child, visited, visiting)?;
-        }
-        visiting.remove(&key);
-        visited.insert(key);
-        Ok(())
-    }
-
-    fn materialize_node(&self, key: PatchKey) -> ArenaResult<Node> {
-        let node = self.nodes.get(&key).ok_or_else(|| {
-            PatchValidationError::new("materialize", format!("missing node {key:?}"))
-        })?;
-        let children = node
-            .children
-            .iter()
-            .map(|child| self.materialize_node(*child))
-            .collect::<Result<Vec<_>, _>>()?;
-        Ok(match &node.kind {
-            PatchKind::Document { doctype } => Node::Document {
-                id: Id::INVALID,
-                doctype: doctype.clone(),
-                children,
-            },
-            PatchKind::Element { name, attributes } => Node::Element {
-                id: Id::INVALID,
-                name: Arc::clone(name),
-                attributes: attributes.clone(),
-                style: Vec::new(),
-                children,
-            },
-            PatchKind::Text { text } => Node::Text {
-                id: Id::INVALID,
-                text: text.clone(),
-            },
-            PatchKind::Comment { text } => Node::Comment {
-                id: Id::INVALID,
-                text: text.clone(),
-            },
-        })
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::PatchValidationArena;
-    use crate::DomPatch;
-    use crate::dom_patch::PatchKey;
-
-    #[test]
-    fn patch_validation_arena_accepts_valid_batches_and_materializes() {
-        let mut arena = PatchValidationArena::default();
-        arena
-            .apply_batch(&[
-                DomPatch::CreateDocument {
-                    key: PatchKey(1),
-                    doctype: Some("html".to_string()),
-                },
-                DomPatch::CreateElement {
-                    key: PatchKey(2),
-                    name: "html".into(),
-                    attributes: Vec::new(),
-                },
-                DomPatch::AppendChild {
-                    parent: PatchKey(1),
-                    child: PatchKey(2),
-                },
-                DomPatch::CreateText {
-                    key: PatchKey(3),
-                    text: "ok".to_string(),
-                },
-                DomPatch::AppendChild {
-                    parent: PatchKey(2),
-                    child: PatchKey(3),
-                },
-            ])
-            .expect("valid batch should apply");
-
-        let dom = arena.materialize().expect("valid arena should materialize");
-        match dom {
-            crate::Node::Document { children, .. } => assert_eq!(children.len(), 1),
-            other => panic!("expected document root, got {other:?}"),
-        }
-    }
-
-    #[test]
-    fn patch_validation_arena_reports_clear_ordering_actionably() {
-        let mut arena = PatchValidationArena::default();
-        let err = arena
-            .apply_batch(&[
-                DomPatch::CreateDocument {
-                    key: PatchKey(1),
-                    doctype: None,
-                },
-                DomPatch::Clear,
-            ])
-            .expect_err("Clear after the first patch must fail");
-
-        assert!(
-            err.to_string()
-                .contains("batch order: Clear may only appear as the first patch in a batch"),
-            "unexpected clear-ordering error: {err}"
-        );
-    }
-
-    #[test]
-    fn patch_validation_arena_reports_missing_child_actionably() {
-        let mut arena = PatchValidationArena::default();
-        let err = arena
-            .apply_batch(&[
-                DomPatch::CreateDocument {
-                    key: PatchKey(1),
-                    doctype: None,
-                },
-                DomPatch::AppendChild {
-                    parent: PatchKey(1),
-                    child: PatchKey(9),
-                },
-            ])
-            .expect_err("missing child reference must fail");
-
-        assert!(
-            err.to_string()
-                .contains("AppendChild child: missing node PatchKey(9)"),
-            "unexpected append-child error: {err}"
-        );
-    }
-
-    #[test]
-    fn patch_validation_arena_rejects_detached_non_root_nodes() {
-        let mut arena = PatchValidationArena::default();
-        let err = arena
-            .apply_batch(&[
-                DomPatch::CreateDocument {
-                    key: PatchKey(1),
-                    doctype: None,
-                },
-                DomPatch::CreateElement {
-                    key: PatchKey(2),
-                    name: "html".into(),
-                    attributes: Vec::new(),
-                },
-            ])
-            .expect_err("detached non-root nodes must fail validation");
-
-        assert!(
-            err.to_string()
-                .contains("post-apply invariants: detached non-root node PatchKey(2)"),
-            "unexpected detached-node error: {err}"
-        );
-    }
-
-    #[test]
-    fn patch_validation_arena_preserves_key_freshness_across_clear() {
-        let mut arena = PatchValidationArena::default();
-        arena
-            .apply_batch(&[
-                DomPatch::CreateDocument {
-                    key: PatchKey(1),
-                    doctype: None,
-                },
-                DomPatch::CreateElement {
-                    key: PatchKey(2),
-                    name: "html".into(),
-                    attributes: Vec::new(),
-                },
-                DomPatch::AppendChild {
-                    parent: PatchKey(1),
-                    child: PatchKey(2),
-                },
-            ])
-            .expect("seed batch should apply");
-
-        let err = arena
-            .apply_batch(&[
-                DomPatch::Clear,
-                DomPatch::CreateDocument {
-                    key: PatchKey(1),
-                    doctype: None,
-                },
-            ])
-            .expect_err("Clear must not allow patch-key reuse");
-
-        assert!(
-            err.to_string()
-                .contains("create: duplicate patch key PatchKey(1)"),
-            "unexpected duplicate-key error after Clear: {err}"
-        );
     }
 }
