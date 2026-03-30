@@ -140,3 +140,79 @@ jobs:
           path: |
             ci_artifacts/html5_tokenizer_fuzz_smoke.log
             ci_artifacts/html5_tokenizer_fuzz_failure
+
+  html5_tree_builder_token_fuzz_smoke:
+    name: HTML5 tree-builder token fuzz smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      RUST_BACKTRACE: 1
+      HTML5_TREE_BUILDER_TOKEN_FUZZ_SMOKE_SEED: "3141592653"
+      HTML5_TREE_BUILDER_TOKEN_FUZZ_SMOKE_RUNS: "128"
+      HTML5_TREE_BUILDER_TOKEN_FUZZ_SMOKE_INPUT_TIMEOUT_SEC: "5"
+      HTML5_TREE_BUILDER_TOKEN_FUZZ_SMOKE_WALL_TIMEOUT_SEC: "90"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run deterministic tree-builder fuzz smoke
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci_artifacts
+          bash ./tools/ci/html5_tree_builder_tokens_fuzz_smoke.sh 2>&1 | tee ci_artifacts/html5_tree_builder_tokens_fuzz_smoke.log
+
+      - name: Upload tree-builder fuzz smoke artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: html5-tree-builder-token-fuzz-smoke-${{ github.sha }}
+          path: |
+            ci_artifacts/html5_tree_builder_tokens_fuzz_smoke.log
+            ci_artifacts/html5_tree_builder_token_fuzz_failure
+
+  html5_pipeline_fuzz_smoke:
+    name: HTML5 pipeline fuzz smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      RUST_BACKTRACE: 1
+      HTML5_PIPELINE_FUZZ_SMOKE_SEED: "1414213562"
+      HTML5_PIPELINE_FUZZ_SMOKE_RUNS: "128"
+      HTML5_PIPELINE_FUZZ_SMOKE_INPUT_TIMEOUT_SEC: "5"
+      HTML5_PIPELINE_FUZZ_SMOKE_WALL_TIMEOUT_SEC: "90"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run deterministic pipeline fuzz smoke
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci_artifacts
+          bash ./tools/ci/html5_pipeline_fuzz_smoke.sh 2>&1 | tee ci_artifacts/html5_pipeline_fuzz_smoke.log
+
+      - name: Upload pipeline fuzz smoke artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: html5-pipeline-fuzz-smoke-${{ github.sha }}
+          path: |
+            ci_artifacts/html5_pipeline_fuzz_smoke.log
+            ci_artifacts/html5_pipeline_fuzz_failure
