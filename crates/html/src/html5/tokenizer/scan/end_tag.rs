@@ -1,52 +1,6 @@
-use super::input::MatchResult;
-
-pub(crate) fn is_tag_name_stop(ch: char) -> bool {
-    ch == '>' || ch == '/' || ch.is_ascii_whitespace()
-}
-
-pub(crate) fn is_attribute_name_stop(ch: char) -> bool {
-    // Core v0 attribute-name policy: consume bytes until one of
-    // whitespace, '/', '>', or '='. Other bytes are preserved as-is.
-    ch.is_ascii_whitespace() || ch == '/' || ch == '>' || ch == '='
-}
-
-pub(crate) fn is_unquoted_attr_value_stop(ch: char) -> bool {
-    ch.is_ascii_whitespace()
-        || ch == '>'
-        || ch == '/'
-        || ch == '"'
-        || ch == '\''
-        || ch == '<'
-        || ch == '='
-        || ch == '`'
-        || ch == '?'
-}
-
-pub(crate) fn is_html_space(ch: char) -> bool {
-    matches!(ch, '\u{0009}' | '\u{000A}' | '\u{000C}' | '\u{000D}' | ' ')
-}
-
-pub(crate) fn is_html_space_byte(b: u8) -> bool {
-    matches!(b, b'\t' | b'\n' | b'\x0C' | b'\r' | b' ')
-}
-
-pub(crate) fn match_ascii_prefix_ci_at(bytes: &[u8], at: usize, pattern: &[u8]) -> MatchResult {
-    if at + pattern.len() > bytes.len() {
-        let available = bytes.len().saturating_sub(at);
-        if bytes
-            .get(at..)
-            .is_some_and(|tail| pattern[..available].eq_ignore_ascii_case(tail))
-        {
-            return MatchResult::NeedMoreInput;
-        }
-        return MatchResult::NoMatch;
-    }
-    if bytes[at..at + pattern.len()].eq_ignore_ascii_case(pattern) {
-        MatchResult::Matched
-    } else {
-        MatchResult::NoMatch
-    }
-}
+use super::classify::{
+    is_attribute_name_stop_byte, is_html_space_byte, is_unquoted_attr_value_stop_byte,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum IncrementalEndTagMatch {
@@ -57,13 +11,6 @@ pub(crate) enum IncrementalEndTagMatch {
     },
     LimitExceeded,
     NeedMoreInput(IncrementalEndTagMatcher),
-    NoMatch,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum ScriptTagBoundaryMatch {
-    Matched { cursor_after: usize },
-    NeedMoreInput,
     NoMatch,
 }
 
@@ -531,81 +478,4 @@ impl IncrementalEndTagMatcher {
             }
         }
     }
-}
-
-fn is_attribute_name_stop_byte(byte: u8) -> bool {
-    is_html_space_byte(byte) || byte == b'/' || byte == b'>' || byte == b'='
-}
-
-fn is_unquoted_attr_value_stop_byte(byte: u8) -> bool {
-    is_html_space_byte(byte)
-        || byte == b'>'
-        || byte == b'/'
-        || byte == b'"'
-        || byte == b'\''
-        || byte == b'<'
-        || byte == b'='
-        || byte == b'`'
-        || byte == b'?'
-}
-
-pub(crate) fn match_script_tag_boundary_at(
-    bytes: &[u8],
-    start: usize,
-    closing: bool,
-) -> ScriptTagBoundaryMatch {
-    let mut cursor = start;
-    let Some(&byte) = bytes.get(cursor) else {
-        return ScriptTagBoundaryMatch::NeedMoreInput;
-    };
-    if byte != b'<' {
-        return ScriptTagBoundaryMatch::NoMatch;
-    }
-    cursor += 1;
-
-    if closing {
-        let Some(&byte) = bytes.get(cursor) else {
-            return ScriptTagBoundaryMatch::NeedMoreInput;
-        };
-        if byte != b'/' {
-            return ScriptTagBoundaryMatch::NoMatch;
-        }
-        cursor += 1;
-    }
-
-    const SCRIPT: &[u8] = b"script";
-    for expected in SCRIPT {
-        let Some(&byte) = bytes.get(cursor) else {
-            return ScriptTagBoundaryMatch::NeedMoreInput;
-        };
-        if !byte.eq_ignore_ascii_case(expected) {
-            return ScriptTagBoundaryMatch::NoMatch;
-        }
-        cursor += 1;
-    }
-
-    let Some(&delimiter) = bytes.get(cursor) else {
-        return ScriptTagBoundaryMatch::NeedMoreInput;
-    };
-    if delimiter == b'>' || delimiter == b'/' || is_html_space_byte(delimiter) {
-        ScriptTagBoundaryMatch::Matched {
-            cursor_after: cursor + 1,
-        }
-    } else {
-        ScriptTagBoundaryMatch::NoMatch
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum DoctypeKeywordKind {
-    Public,
-    System,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) enum QuotedParse<'a> {
-    Complete((&'a str, usize)),
-    LimitExceeded,
-    NeedMoreInput,
-    Malformed,
 }
