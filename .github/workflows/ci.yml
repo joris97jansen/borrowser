@@ -97,6 +97,9 @@ jobs:
           BORROWSER_HTML_PARSER: html5
         run: cargo test --workspace --all-targets --features html5 --locked
 
+      - name: Run promoted rawtext/script regressions
+        run: cargo test -p html --test html5_rawtext_script_regressions --features "html5 dom-snapshot parser_invariants" --locked
+
       - name: Build (release)
         run: cargo build --workspace --release --locked
 

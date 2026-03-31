@@ -1,0 +1,8 @@
+# format: html5-rawtext-script-regression-v1
+# tool: html5_tokenizer_script_data
+# seed: close-tag-near-miss-storm
+# date: 2026-03-31
+# issue: Milestone-L/L5
+# mode: script-data
+# source: fuzz/corpus/html5_tokenizer_script_data/close-tag-near-miss-storm
+# guard: Near-miss script close candidates must stay literal until the exact mixed-case </script > terminator, and parsing must resume cleanly for following markup.

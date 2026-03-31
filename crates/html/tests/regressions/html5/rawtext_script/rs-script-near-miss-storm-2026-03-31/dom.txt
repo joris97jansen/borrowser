@@ -1,0 +1,10 @@
+# format: html5-dom-v1
+#document
+  <html>
+    <head>
+    <body>
+      <script>
+        "</scriX></scrip></scriptx><<<</scr!pt>"
+      <section>
+        <p>
+          "ok"
