@@ -28,10 +28,14 @@ pub mod traverse;
 
 #[cfg(feature = "html5")]
 pub mod html5;
+#[cfg(feature = "html5")]
+mod parser;
 
 mod dom_builder;
 mod dom_patch;
 mod entities;
+#[cfg(any(test, feature = "test-harness", feature = "html5"))]
+mod patch_validation;
 mod tokenizer;
 mod types;
 
@@ -86,7 +90,15 @@ fn contains_ignore_ascii_case(haystack: &str, needle: &[u8]) -> bool {
     false
 }
 
+#[deprecated(
+    since = "0.1.0",
+    note = "use html::parse_document or html::HtmlParser; this legacy token-stream DOM builder API will be removed after the HTML5 cutover"
+)]
 pub use crate::dom_builder::build_owned_dom;
+#[deprecated(
+    since = "0.1.0",
+    note = "use html::parse_document or html::HtmlParser; this legacy tree builder API will be removed after the HTML5 cutover"
+)]
 pub use crate::dom_builder::{
     TokenTextResolver, TreeBuilder, TreeBuilderConfig, TreeBuilderError, TreeBuilderResult,
 };
@@ -94,7 +106,21 @@ pub use crate::dom_diff::{
     DomDiffState, diff_dom, diff_dom_stateless, diff_dom_with_state, diff_from_empty,
 };
 pub use crate::dom_patch::{DomPatch, DomPatchBatch, PatchKey};
+#[cfg(feature = "html5")]
+pub use crate::parser::{
+    HtmlErrorPolicy, HtmlParseCounters, HtmlParseError, HtmlParseEvent, HtmlParseOptions,
+    HtmlParser, HtmlTokenizerLimits, HtmlTokenizerOptions, HtmlTreeBuilderLimits,
+    HtmlTreeBuilderOptions, ParseOutput, parse_document,
+};
+#[deprecated(
+    since = "0.1.0",
+    note = "use html::parse_document or html::HtmlParser; this legacy tokenizer API will be removed after the HTML5 cutover"
+)]
 pub use crate::tokenizer::Tokenizer;
+#[deprecated(
+    since = "0.1.0",
+    note = "use html::parse_document or html::HtmlParser; this legacy tokenize() API will be removed after the HTML5 cutover"
+)]
 pub use crate::tokenizer::tokenize;
 pub use crate::types::{AtomId, AtomTable, AttributeValue, Node, TextPayload, Token, TokenStream};
 

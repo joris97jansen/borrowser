@@ -6,7 +6,7 @@ use super::error::{ArenaResult, PatchValidationError};
 use super::model::{PatchKind, PatchValidationArena};
 
 impl PatchValidationArena {
-    pub(super) fn assert_invariants(&self) -> ArenaResult<()> {
+    pub(crate) fn assert_invariants(&self) -> ArenaResult<()> {
         if self.nodes.is_empty() {
             if self.root.is_some() {
                 return Err(PatchValidationError::new(

@@ -64,3 +64,14 @@ pub enum Html5SessionError {
     /// Engine invariant violation (bug/corruption).
     Invariant,
 }
+
+impl std::fmt::Display for Html5SessionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Html5SessionError::Decode => write!(f, "html5 decode error"),
+            Html5SessionError::Invariant => write!(f, "html5 engine invariant violation"),
+        }
+    }
+}
+
+impl std::error::Error for Html5SessionError {}

@@ -29,7 +29,6 @@ impl Html5ParseSession {
     ) -> Result<DrainOutcome, Html5SessionError> {
         match mode {
             DrainMode::TokenGranular => self.drain_token_granular_batch(),
-            #[cfg(test)]
             DrainMode::ExhaustQueuedBatches => self.drain_all_queued_batches(),
         }
     }
@@ -64,7 +63,6 @@ impl Html5ParseSession {
         Ok(self.apply_tree_builder_step(step))
     }
 
-    #[cfg(test)]
     pub(super) fn drain_all_queued_batches(&mut self) -> Result<DrainOutcome, Html5SessionError> {
         let steps = {
             let batch = self.tokenizer.next_batch(&mut self.input);
@@ -96,8 +94,7 @@ impl Html5ParseSession {
         Ok(DrainOutcome::Continue)
     }
 
-    #[cfg(test)]
-    pub(super) fn drain_post_finish_batches_for_test(
+    pub(super) fn drain_post_finish_batches(
         &mut self,
         budget: usize,
     ) -> Result<(), Html5SessionError> {

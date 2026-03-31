@@ -3,7 +3,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 #[derive(Clone, Debug)]
-pub(super) enum PatchKind {
+pub(crate) enum PatchKind {
     Document {
         doctype: Option<String>,
     },
@@ -20,16 +20,17 @@ pub(super) enum PatchKind {
 }
 
 #[derive(Clone, Debug)]
-pub(super) struct PatchNode {
-    pub(super) kind: PatchKind,
-    pub(super) parent: Option<PatchKey>,
-    pub(super) children: Vec<PatchKey>,
+pub(crate) struct PatchNode {
+    pub(crate) kind: PatchKind,
+    pub(crate) parent: Option<PatchKey>,
+    pub(crate) children: Vec<PatchKey>,
 }
 
-/// Minimal patch-applier/validator for fuzzing and test lanes.
+/// Minimal patch-applier/validator shared by runtime-facing parser APIs and
+/// test/fuzz harnesses.
 ///
 /// The arena applies batches atomically, validates the resulting structure after
-/// every batch, and can materialize the final simplified DOM when needed.
+/// every batch, and can materialize the final DOM when needed.
 ///
 /// Allocation policy:
 /// - `Clear` resets the live tree state
@@ -37,7 +38,7 @@ pub(super) struct PatchNode {
 /// - recreated content must therefore use fresh keys across the whole session
 #[derive(Clone, Default)]
 pub struct PatchValidationArena {
-    pub(super) nodes: HashMap<PatchKey, PatchNode>,
-    pub(super) allocated: HashSet<PatchKey>,
-    pub(super) root: Option<PatchKey>,
+    pub(crate) nodes: HashMap<PatchKey, PatchNode>,
+    pub(crate) allocated: HashSet<PatchKey>,
+    pub(crate) root: Option<PatchKey>,
 }

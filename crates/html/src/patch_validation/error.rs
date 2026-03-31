@@ -7,7 +7,7 @@ pub struct PatchValidationError {
 }
 
 impl PatchValidationError {
-    pub(super) fn new(context: &'static str, detail: impl Into<String>) -> Self {
+    pub(crate) fn new(context: &'static str, detail: impl Into<String>) -> Self {
         Self {
             context,
             detail: detail.into(),
@@ -23,4 +23,4 @@ impl fmt::Display for PatchValidationError {
 
 impl std::error::Error for PatchValidationError {}
 
-pub(super) type ArenaResult<T> = Result<T, PatchValidationError>;
+pub(crate) type ArenaResult<T> = Result<T, PatchValidationError>;

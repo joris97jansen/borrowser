@@ -1,5 +1,5 @@
-use super::patch_validate::PatchValidationArena;
 use crate::Node;
+use crate::patch_validation::PatchValidationArena;
 
 /// Materialize a DOM tree from patch batches.
 ///

@@ -3,37 +3,39 @@ use std::time::Instant;
 
 use bus::CoreEvent;
 use core_types::{RequestId, TabId};
-use html::html5::Html5SessionError;
+use html::HtmlParseError;
 use log::error;
 
 use crate::patching::{emit_patch_update, estimate_patch_bytes_slice};
 use crate::policy::{PreviewPolicy, maybe_log_large_buffer};
 use crate::state::Html5State;
 
-pub(crate) fn log_html5_session_error(
-    tab_id: TabId,
-    request_id: RequestId,
-    err: Html5SessionError,
-) {
+pub(crate) fn log_html5_session_error(tab_id: TabId, request_id: RequestId, err: &HtmlParseError) {
     match err {
-        Html5SessionError::Decode => {
+        HtmlParseError::Decode => {
             error!(
                 target: "runtime_parse",
                 "html5 decode error tab={tab_id:?} request={request_id:?}"
             );
         }
-        Html5SessionError::Invariant => {
+        HtmlParseError::Invariant => {
             error!(
                 target: "runtime_parse",
                 "html5 invariant error tab={tab_id:?} request={request_id:?}"
+            );
+        }
+        HtmlParseError::PatchValidation(detail) => {
+            error!(
+                target: "runtime_parse",
+                "html5 patch validation error tab={tab_id:?} request={request_id:?}: {detail}"
             );
         }
     }
 }
 
 impl Html5State {
-    pub(crate) fn drain_patches(&mut self) {
-        let new_patches = self.session.take_patches();
+    pub(crate) fn drain_patches(&mut self) -> Result<(), HtmlParseError> {
+        let new_patches = self.parser.take_patches()?;
         if !new_patches.is_empty() {
             self.pending_patch_bytes = self
                 .pending_patch_bytes
@@ -41,6 +43,7 @@ impl Html5State {
             self.patch_buffer.extend(new_patches);
             self.update_patch_buffer_max();
         }
+        Ok(())
     }
 
     pub(crate) fn flush_patch_buffer(
@@ -92,7 +95,7 @@ impl Html5State {
     }
 
     pub(crate) fn update_pending_tokens(&mut self) {
-        let total = self.session.tokens_processed();
+        let total = self.parser.tokens_processed();
         let delta = total.saturating_sub(self.last_tokens_processed);
         self.last_tokens_processed = total;
         self.pending_tokens = self.pending_tokens.saturating_add(delta as usize);
@@ -114,17 +117,20 @@ pub(crate) fn handle_html5_chunk(
 
     st.total_bytes = st.total_bytes.saturating_add(bytes.len());
     st.pending_bytes = st.pending_bytes.saturating_add(bytes.len());
-    if let Err(err) = st.session.push_bytes(bytes) {
-        log_html5_session_error(tab_id, request_id, err);
+    if let Err(err) = st.parser.push_bytes(bytes) {
+        log_html5_session_error(tab_id, request_id, &err);
         st.failed = true;
         st.reset_pending();
-    } else if let Err(err) = st.session.pump() {
-        log_html5_session_error(tab_id, request_id, err);
+    } else if let Err(err) = st.parser.pump() {
+        log_html5_session_error(tab_id, request_id, &err);
+        st.failed = true;
+        st.reset_pending();
+    } else if let Err(err) = st.drain_patches() {
+        log_html5_session_error(tab_id, request_id, &err);
         st.failed = true;
         st.reset_pending();
     } else {
         st.update_pending_tokens();
-        st.drain_patches();
     }
 
     if policy.should_flush(
@@ -155,11 +161,11 @@ pub(crate) fn handle_html5_done(
         st.flush_patch_buffer(evt_tx, tab_id, request_id);
         return;
     }
-    if let Err(err) = st.session.pump() {
-        log_html5_session_error(tab_id, request_id, err);
-        if matches!(err, Html5SessionError::Decode) {
+    if let Err(err) = st.parser.finish() {
+        log_html5_session_error(tab_id, request_id, &err);
+        if matches!(err, HtmlParseError::Decode) {
             st.update_pending_tokens();
-            st.drain_patches();
+            let _ = st.drain_patches();
             st.flush_patch_buffer(evt_tx, tab_id, request_id);
         }
         st.failed = true;
@@ -167,6 +173,11 @@ pub(crate) fn handle_html5_done(
         return;
     }
     st.update_pending_tokens();
-    st.drain_patches();
+    if let Err(err) = st.drain_patches() {
+        log_html5_session_error(tab_id, request_id, &err);
+        st.failed = true;
+        st.reset_pending();
+        return;
+    }
     st.flush_patch_buffer(evt_tx, tab_id, request_id);
 }
