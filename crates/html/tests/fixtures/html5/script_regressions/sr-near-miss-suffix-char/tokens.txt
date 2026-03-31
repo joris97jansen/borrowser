@@ -1,0 +1,6 @@
+# format: html5-token-v1
+# guard: A longer tag name that only starts with `script` must remain literal text and must not terminate script data early.
+START name=script attrs=[] self_closing=false
+CHAR text="a</scriptX>b"
+END name=script
+EOF

@@ -3,6 +3,14 @@
 This folder catalogs the dedicated Core-v0 RAWTEXT / RCDATA / script golden
 fixtures that live in the existing tokenizer, DOM, and patch harness roots.
 
+The script close-tag regression suite also lives alongside those roots under:
+
+- `tests/fixtures/html5/script_regressions/`
+
+Unlike this catalog directory, that regression suite is an active fixture root
+with its own dedicated integration test because it runs a stricter script-only
+whole-input plus every-boundary chunking policy.
+
 Purpose:
 
 - keep tricky text-mode regression coverage easy to find,

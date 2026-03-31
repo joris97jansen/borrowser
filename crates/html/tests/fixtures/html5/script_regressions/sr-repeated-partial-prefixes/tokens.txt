@@ -1,0 +1,6 @@
+# format: html5-token-v1
+# guard: Repeated partial `</s...</scr...` prefixes must remain literal across deterministic boundary chunking until a complete `</script>` finally arrives.
+START name=script attrs=[] self_closing=false
+CHAR text="a</s</sc</scr</scri</scrip"
+END name=script
+EOF

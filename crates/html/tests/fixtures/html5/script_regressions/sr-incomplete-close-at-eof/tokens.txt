@@ -1,0 +1,5 @@
+# format: html5-token-v1
+# guard: An exact `</script` prefix without the final delimiter at EOF must recover as literal text rather than terminating.
+START name=script attrs=[] self_closing=false
+CHAR text="a</script"
+EOF
