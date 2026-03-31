@@ -115,17 +115,12 @@ fn handle_parse_start(
         ParserMode::Html5 => {
             #[cfg(feature = "html5")]
             {
-                let ctx = html::html5::DocumentParseContext::new();
-                let session = match html::html5::Html5ParseSession::new(
-                    html::html5::TokenizerConfig::default(),
-                    html::html5::TreeBuilderConfig::default(),
-                    ctx,
-                ) {
-                    Ok(session) => session,
+                let parser = match html::HtmlParser::new(html::HtmlParseOptions::default()) {
+                    Ok(parser) => parser,
                     Err(err) => {
                         error!(
                             target: "runtime_parse",
-                            "failed to initialize html5 parse session: {err:?}"
+                            "failed to initialize html5 parser: {err}"
                         );
                         return;
                     }
@@ -134,7 +129,7 @@ fn handle_parse_start(
                     now,
                     patch_buffer_retain,
                     dom_handle,
-                    session,
+                    parser,
                 )))
             }
             #[cfg(not(feature = "html5"))]

@@ -1,5 +1,38 @@
 # html crate: performance harness
 
+## Parser API
+
+The stable engine-facing API is the HTML5-backed parser facade:
+
+```rust
+let output = html::parse_document("<!doctype html><p>Hello</p>", html::HtmlParseOptions::default())?;
+```
+
+For streaming/chunked parsing:
+
+```rust
+let mut parser = html::HtmlParser::new(html::HtmlParseOptions::default())?;
+parser.push_bytes(chunk)?;
+parser.pump()?;
+let batch = parser.take_patch_batch()?;
+```
+
+Notes:
+
+- `html::parse_document` and `html::HtmlParser` are backed only by the HTML5
+  tokenizer/tree-builder/session pipeline.
+- The public facade exposes its own stable types (`HtmlParseOptions`,
+  `HtmlParseError`, `HtmlParseCounters`, `HtmlParseEvent`) rather than raw
+  `html::html5::*` backend types.
+- Legacy `tokenize`, `Tokenizer`, `TreeBuilder`, and `build_owned_dom` entry
+  points remain available during rollout but are deprecated.
+- `ParseOutput.patches` contains the patches drained by `into_output()`. For
+  one-shot `parse_document(...)` calls, that is the full patch history. For
+  streaming sessions that already drained patches earlier, it is only the
+  undrained remainder; `contains_full_patch_history` makes that explicit.
+- Low-level `html::html5::*` exports remain available for tests, fuzzing, and
+  specialized tooling; they are not the preferred engine contract.
+
 ## Benchmarks
 
 This crate uses Criterion for statistically robust micro-benchmarks that are

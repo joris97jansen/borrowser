@@ -61,7 +61,7 @@ pub(crate) struct Html5State {
     pub(crate) last_emit: Instant,
     pub(crate) logged_large_buffer: bool,
     pub(crate) failed: bool,
-    pub(crate) session: html::html5::Html5ParseSession,
+    pub(crate) parser: html::HtmlParser,
     pub(crate) patch_buffer: Vec<DomPatch>,
     pub(crate) patch_buffer_retain: usize,
     pub(crate) max_patch_buffer_len: usize,
@@ -76,7 +76,7 @@ impl Html5State {
         now: Instant,
         patch_buffer_retain: usize,
         dom_handle: DomHandle,
-        session: html::html5::Html5ParseSession,
+        parser: html::HtmlParser,
     ) -> Self {
         Self {
             total_bytes: 0,
@@ -87,7 +87,7 @@ impl Html5State {
             last_emit: now,
             logged_large_buffer: false,
             failed: false,
-            session,
+            parser,
             patch_buffer: Vec::new(),
             patch_buffer_retain,
             max_patch_buffer_len: 0,

@@ -1,6 +1,8 @@
 use crate::dom_patch::{DomPatch, DomPatchBatch};
 use crate::html5::bridge::PatchEmitterAdapter;
-use crate::html5::shared::{ByteStreamDecoder, DocumentParseContext, Html5SessionError, Input};
+use crate::html5::shared::{
+    ByteStreamDecoder, Counters, DocumentParseContext, Html5SessionError, Input, ParseError,
+};
 use crate::html5::tokenizer::{Html5Tokenizer, TokenizerConfig};
 #[cfg(test)]
 use crate::html5::tree_builder::PatchSink;
@@ -17,7 +19,6 @@ pub struct Html5ParseSession {
     pub(super) next_patch_batch_version: u64,
 }
 
-#[cfg(test)]
 // Post-finish draining should converge in a handful of iterations because
 // tokenizer lexing is frozen and only already-emitted queued batches remain.
 // Keep this comfortably above any legitimate terminal queue fanout so test
@@ -29,7 +30,6 @@ pub(super) enum DrainMode {
     /// Live incremental pumping: drain exactly one token boundary so tree-builder
     /// controls can affect subsequent tokenizer work.
     TokenGranular,
-    #[cfg(test)]
     /// Post-finish draining: tokenizer lexing is frozen, so the already-emitted
     /// queued batch may be drained without interleaving more lexing.
     ExhaustQueuedBatches,
@@ -67,8 +67,24 @@ impl Html5ParseSession {
         Ok(())
     }
 
+    pub fn push_str(&mut self, text: &str) -> Result<(), Html5SessionError> {
+        self.input.push_str(text);
+        Ok(())
+    }
+
     pub fn pump(&mut self) -> Result<(), Html5SessionError> {
         self.pump_live_input()?;
+        self.sync_debug_counters();
+        Ok(())
+    }
+
+    pub fn finish(&mut self) -> Result<(), Html5SessionError> {
+        self.pump_live_input()?;
+        let _ = self.decoder.finish(&mut self.input);
+        self.pump_live_input()?;
+        let _ = self.tokenizer.finish(&self.input);
+        self.drain_post_finish_batches(POST_FINISH_DRAIN_BUDGET)?;
+        self.finalize_adapter_invariants()?;
         self.sync_debug_counters();
         Ok(())
     }
@@ -104,6 +120,14 @@ impl Html5ParseSession {
         self.ctx.counters.tokens_processed
     }
 
+    pub fn counters(&self) -> Counters {
+        self.ctx.counters.clone()
+    }
+
+    pub fn parse_errors(&self) -> Vec<ParseError> {
+        self.ctx.errors()
+    }
+
     #[cfg(test)]
     pub(crate) fn inject_patch_for_test(&mut self, patch: DomPatch) {
         self.patch_emitter.push(patch);
@@ -111,16 +135,13 @@ impl Html5ParseSession {
 
     #[cfg(test)]
     pub(crate) fn push_str_for_test(&mut self, text: &str) {
-        self.input.push_str(text);
+        self.push_str(text)
+            .expect("push_str_for_test should not fail");
     }
 
     #[cfg(test)]
     pub(crate) fn finish_for_test(&mut self) -> Result<(), Html5SessionError> {
-        let _ = self.tokenizer.finish(&self.input);
-        self.drain_post_finish_batches_for_test(POST_FINISH_DRAIN_BUDGET)?;
-        self.finalize_adapter_invariants()?;
-        self.sync_debug_counters();
-        Ok(())
+        self.finish()
     }
 
     #[cfg(test)]
@@ -139,6 +160,6 @@ impl Html5ParseSession {
 
     #[cfg(any(test, feature = "debug-stats"))]
     pub fn debug_counters(&self) -> crate::html5::shared::Counters {
-        self.ctx.counters.clone()
+        self.counters()
     }
 }

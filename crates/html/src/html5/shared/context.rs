@@ -22,10 +22,14 @@ impl Default for DocumentParseContext {
 
 impl DocumentParseContext {
     pub fn new() -> Self {
+        Self::with_error_policy(ErrorPolicy::default())
+    }
+
+    pub fn with_error_policy(error_policy: ErrorPolicy) -> Self {
         let mut ctx = Self {
             atoms: AtomTable::default(),
             counters: Counters::default(),
-            error_policy: ErrorPolicy::default(),
+            error_policy,
             errors: None,
         };
         if ctx.error_policy.track
@@ -57,5 +61,12 @@ impl DocumentParseContext {
             self.counters.errors_dropped = self.counters.errors_dropped.saturating_add(1);
         }
         errors.push_back(error);
+    }
+
+    pub fn errors(&self) -> Vec<ParseError> {
+        self.errors
+            .as_ref()
+            .map(|errors| errors.iter().cloned().collect())
+            .unwrap_or_default()
     }
 }

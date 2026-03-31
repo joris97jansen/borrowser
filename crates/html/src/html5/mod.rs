@@ -1,8 +1,9 @@
-//! HTML5 parsing path (feature-gated).
+//! HTML5 parsing internals (feature-gated).
 //!
-//! Note: `Html5ParseSession` is the intended runtime entrypoint. The tokenizer,
-//! tree builder, and shared input types are re-exported for testing and tooling
-//! and should be considered advanced APIs.
+//! Production callers should prefer the stable crate-level parser facade
+//! (`html::parse_document`, `html::HtmlParser`). This module re-exports the
+//! lower-level tokenizer, tree builder, and session APIs for testing, tooling,
+//! and engine bring-up work.
 
 mod bridge;
 #[cfg(any(test, feature = "html5-fuzzing"))]
