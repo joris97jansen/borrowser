@@ -7,6 +7,10 @@ expected local workflow for reproducing and triaging fuzz findings.
 The tokenizer implementation discussed here lives under
 `crates/html/src/html5/tokenizer/`.
 
+For RAWTEXT / RCDATA / script-specific termination rules, limits, fuzz lanes,
+and promoted regression surfaces, see
+[`docs/html5/rawtext-script-stability.md`](../html5/rawtext-script-stability.md).
+
 ## Threat Model
 
 The HTML5 tokenizer must treat document input as untrusted.
