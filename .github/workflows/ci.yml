@@ -85,17 +85,17 @@ jobs:
       - name: Run tests
         env:
           BORROWSER_HTML_PARSER: legacy
-        run: cargo test --workspace --all-targets --locked
+        run: cargo test --workspace --lib --bins --tests --examples --locked
 
       - name: Run tests (html5, default legacy)
         env:
           BORROWSER_HTML_PARSER: legacy
-        run: cargo test --workspace --all-targets --features html5 --locked
+        run: cargo test --workspace --lib --bins --tests --examples --features html5 --locked
 
       - name: Run tests (html5, env toggle)
         env:
           BORROWSER_HTML_PARSER: html5
-        run: cargo test --workspace --all-targets --features html5 --locked
+        run: cargo test --workspace --lib --bins --tests --examples --features html5 --locked
 
       - name: Run promoted rawtext/script regressions
         run: cargo test -p html --test html5_rawtext_script_regressions --features "html5 dom-snapshot parser_invariants" --locked
@@ -105,6 +105,9 @@ jobs:
 
       - name: Build (release, html5)
         run: cargo build --workspace --release --features html5 --locked
+
+      - name: Compile HTML5 Criterion benches
+        run: cargo bench -p html --bench html_bench --features html5 --no-run --locked
 
   html5_tokenizer_fuzz_smoke:
     name: HTML5 tokenizer fuzz smoke
