@@ -63,14 +63,14 @@ This document defines how node identity maps across:
 
 ## Integration Guarantees
 
-For the feature-gated HTML5 runtime path (`runtime_parse/html5`):
+For the HTML5 runtime path:
 
 - Emitted patch updates MUST satisfy handle/version continuity.
 - Emitted patch batches MUST be materializable without unknown-node references.
 - Contract enforcement is test-backed in:
-  - `runtime_html5_mode_updates_are_well_formed_and_materializable_if_any`
-  - `runtime_html5_mode_emits_updates_for_simple_document_when_strict_enabled`
-    (gated by `runtime_parse/html5-strict-integration-tests`)
+  - `runtime_updates_are_well_formed_and_materializable_if_any`
+  - `runtime_emits_updates_for_simple_document_when_strict_enabled`
+    (gated by the `runtime_parse` `html5-strict-integration-tests` feature)
   - HTML5 patch golden harness materialization checks (including per-batch incremental checks).
 
 ## Non-Goals (Current Milestone)

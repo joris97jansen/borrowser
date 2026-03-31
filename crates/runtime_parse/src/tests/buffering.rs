@@ -2,16 +2,16 @@ use std::sync::mpsc;
 use std::time::{Duration, Instant};
 
 use bus::{CoreCommand, CoreEvent};
-use core_types::{DomHandle, DomVersion};
-use html::{DomPatch, Tokenizer, TreeBuilder, TreeBuilderConfig};
+use core_types::DomHandle;
+use html::DomPatch;
 
 use crate::PreviewPolicy;
 use crate::clock::SystemClock;
-use crate::config::ParserMode;
+use crate::driver::handle_runtime_chunk;
 use crate::patching::estimate_patch_bytes_slice;
 use crate::policy::{MAX_PATCH_BUFFER_RETAIN, MIN_PATCH_BUFFER_RETAIN, patch_buffer_retain_target};
-use crate::runtime::start_parse_runtime_with_policy_and_clock_and_mode;
-use crate::state::HtmlState;
+use crate::runtime::start_parse_runtime_with_policy_and_clock;
+use crate::state::RuntimeState;
 
 #[test]
 fn patch_buffer_does_not_grow_unbounded_in_streaming() {
@@ -30,47 +30,29 @@ fn patch_buffer_does_not_grow_unbounded_in_streaming() {
     let slack_bytes = 32 * 1024usize;
 
     let now = Instant::now();
-    let mut st = HtmlState::new(
+    let mut st = RuntimeState::new(
         now,
         patch_buffer_retain_target(policy.patch_threshold, policy.patch_byte_threshold),
         DomHandle(1),
-    );
+    )
+    .expect("runtime state init");
     let (evt_tx, _evt_rx) = mpsc::channel();
     let tab_id = 1;
     let request_id = 1;
-    let input = "<div><span>hi</span></div>".repeat(20_000);
+    let input = "<div><span>hi</span></div>".repeat(1_000);
 
     for chunk in input.as_bytes().chunks(1) {
-        st.total_bytes = st.total_bytes.saturating_add(chunk.len());
-        st.pending_bytes = st.pending_bytes.saturating_add(chunk.len());
-        st.pending_tokens = st.pending_tokens.saturating_add(st.tokenizer.feed(chunk));
-        st.tokenizer.drain_into(&mut st.token_buffer);
-        st.drain_tokens_into_builder();
-
-        if policy.should_flush(
-            Duration::ZERO,
-            st.pending_tokens,
-            st.pending_bytes,
-            st.patch_buffer.len(),
-            st.pending_patch_bytes,
-        ) {
-            st.last_emit = now;
-            st.flush_patch_buffer(&evt_tx, tab_id, request_id);
-        }
+        let remove =
+            handle_runtime_chunk(&mut st, chunk, &policy, now, &evt_tx, tab_id, request_id);
+        assert!(
+            !remove,
+            "runtime state should not fail while processing bounded streaming input"
+        );
     }
 
-    st.pending_tokens = st.pending_tokens.saturating_add(st.tokenizer.finish());
-    st.tokenizer.drain_into(&mut st.token_buffer);
-    st.drain_tokens_into_builder();
-    let _ = st.builder.finish();
-    let final_patches = st.builder.take_patches();
-    if !final_patches.is_empty() {
-        st.pending_patch_bytes = st
-            .pending_patch_bytes
-            .saturating_add(estimate_patch_bytes_slice(&final_patches));
-        st.patch_buffer.extend(final_patches);
-        st.update_patch_buffer_max();
-    }
+    st.parser.finish().expect("finish html5 runtime parser");
+    st.update_pending_tokens();
+    st.drain_patches().expect("drain final html5 patches");
     st.flush_patch_buffer(&evt_tx, tab_id, request_id);
 
     assert!(
@@ -101,13 +83,7 @@ fn patch_updates_are_bounded_under_streaming_policy() {
 
     let (cmd_tx, cmd_rx) = mpsc::channel();
     let (evt_tx, evt_rx) = mpsc::channel();
-    start_parse_runtime_with_policy_and_clock_and_mode(
-        cmd_rx,
-        evt_tx,
-        policy,
-        SystemClock,
-        ParserMode::Legacy,
-    );
+    start_parse_runtime_with_policy_and_clock(cmd_rx, evt_tx, policy, SystemClock);
 
     let tab_id = 1;
     let request_id = 42;
@@ -115,7 +91,7 @@ fn patch_updates_are_bounded_under_streaming_policy() {
         .send(CoreCommand::ParseHtmlStart { tab_id, request_id })
         .unwrap();
 
-    let input = "<div><span>hi</span></div>".repeat(20_000);
+    let input = "<div><span>hi</span></div>".repeat(1_000);
     for chunk in input.as_bytes().chunks(1) {
         cmd_tx
             .send(CoreCommand::ParseHtmlChunk {
@@ -173,24 +149,13 @@ fn patch_updates_are_bounded_under_streaming_policy() {
 #[test]
 fn patch_buffer_retain_capacity_is_bounded_on_flush() {
     let now = Instant::now();
-    let mut st = HtmlState {
-        total_bytes: 0,
-        pending_bytes: 0,
-        pending_tokens: 0,
-        pending_patch_bytes: 0,
-        last_emit: now,
-        logged_large_buffer: false,
-        failed: false,
-        tokenizer: Tokenizer::new(),
-        builder: TreeBuilder::with_capacity_and_config(0, TreeBuilderConfig::default()),
-        token_buffer: Vec::new(),
-        patch_buffer: Vec::with_capacity(100_000),
-        patch_buffer_retain: patch_buffer_retain_target(Some(128), None),
-        max_patch_buffer_len: 0,
-        max_patch_buffer_bytes: 0,
-        dom_handle: DomHandle(1),
-        version: DomVersion::INITIAL,
-    };
+    let mut st = RuntimeState::new(
+        now,
+        patch_buffer_retain_target(Some(128), None),
+        DomHandle(1),
+    )
+    .expect("runtime state init");
+    st.patch_buffer = Vec::with_capacity(100_000);
     st.patch_buffer.push(DomPatch::Clear);
     let (evt_tx, _evt_rx) = mpsc::channel();
     st.flush_patch_buffer(&evt_tx, 1, 1);

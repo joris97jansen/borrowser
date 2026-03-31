@@ -2,47 +2,37 @@ use std::sync::{Arc, Mutex, mpsc};
 use std::time::{Duration, Instant};
 
 use bus::{CoreCommand, CoreEvent};
-#[cfg(feature = "html5")]
 use core_types::{DomHandle, DomVersion};
-#[cfg(feature = "html5")]
 use html::DomPatch;
+use html::html5::serialize_dom_for_test;
 
 use crate::PreviewPolicy;
-use crate::clock::PreviewClock;
-#[cfg(feature = "html5")]
-use crate::clock::SystemClock;
-use crate::config::ParserMode;
-use crate::runtime::start_parse_runtime_with_policy_and_clock_and_mode;
+use crate::clock::{PreviewClock, SystemClock};
+use crate::runtime::start_parse_runtime_with_policy_and_clock;
 
-#[cfg(feature = "html5")]
-type Html5Update = (DomHandle, DomVersion, DomVersion, Vec<DomPatch>);
+type RuntimeUpdate = (DomHandle, DomVersion, DomVersion, Vec<DomPatch>);
 
-#[cfg(feature = "html5")]
-fn collect_html5_updates(input: &[u8]) -> Vec<Html5Update> {
+fn collect_runtime_updates(chunks: &[&[u8]]) -> Vec<RuntimeUpdate> {
     let (cmd_tx, cmd_rx) = mpsc::channel();
     let (evt_tx, evt_rx) = mpsc::channel();
     let policy = PreviewPolicy::default();
 
-    start_parse_runtime_with_policy_and_clock_and_mode(
-        cmd_rx,
-        evt_tx,
-        policy,
-        SystemClock,
-        ParserMode::Html5,
-    );
+    start_parse_runtime_with_policy_and_clock(cmd_rx, evt_tx, policy, SystemClock);
 
     let tab_id = 7;
     let request_id = 99;
     cmd_tx
         .send(CoreCommand::ParseHtmlStart { tab_id, request_id })
         .unwrap();
-    cmd_tx
-        .send(CoreCommand::ParseHtmlChunk {
-            tab_id,
-            request_id,
-            bytes: input.to_vec(),
-        })
-        .unwrap();
+    for chunk in chunks {
+        cmd_tx
+            .send(CoreCommand::ParseHtmlChunk {
+                tab_id,
+                request_id,
+                bytes: chunk.to_vec(),
+            })
+            .unwrap();
+    }
     cmd_tx
         .send(CoreCommand::ParseHtmlDone { tab_id, request_id })
         .unwrap();
@@ -76,18 +66,17 @@ fn collect_html5_updates(input: &[u8]) -> Vec<Html5Update> {
     updates
 }
 
-#[cfg(feature = "html5")]
-fn assert_html5_updates_are_well_formed(
-    updates: Vec<Html5Update>,
+fn assert_runtime_updates_are_well_formed(
+    updates: Vec<RuntimeUpdate>,
     require_non_empty: bool,
     context: &str,
-) {
+) -> Vec<Vec<DomPatch>> {
     if updates.is_empty() {
         assert!(
             !require_non_empty,
-            "expected html5 runtime to emit at least one update for {context}"
+            "expected runtime to emit at least one update for {context}"
         );
-        return;
+        return Vec::new();
     }
 
     let expected_handle = updates[0].0;
@@ -108,21 +97,44 @@ fn assert_html5_updates_are_well_formed(
     }
 
     html::test_harness::materialize_patch_batches(&batches)
-        .expect("html5 patch updates must materialize without unknown-node references");
+        .expect("runtime patch updates must materialize without unknown-node references");
+    batches
 }
 
-#[cfg(feature = "html5")]
 #[test]
-fn runtime_html5_mode_updates_are_well_formed_and_materializable_if_any() {
-    let updates = collect_html5_updates(b"<div>ok</div>");
-    assert_html5_updates_are_well_formed(updates, false, "<div>ok</div>");
+fn runtime_updates_are_well_formed_and_materializable_if_any() {
+    let updates = collect_runtime_updates(&[b"<div>ok</div>"]);
+    assert_runtime_updates_are_well_formed(updates, false, "<div>ok</div>");
 }
 
-#[cfg(all(feature = "html5", feature = "html5-strict-integration-tests"))]
+#[cfg(feature = "html5-strict-integration-tests")]
 #[test]
-fn runtime_html5_mode_emits_updates_for_simple_document_when_strict_enabled() {
-    let updates = collect_html5_updates(b"<div>ok</div>");
-    assert_html5_updates_are_well_formed(updates, true, "<div>ok</div>");
+fn runtime_emits_updates_for_simple_document_when_strict_enabled() {
+    let updates = collect_runtime_updates(&[b"<div>ok</div>"]);
+    assert_runtime_updates_are_well_formed(updates, true, "<div>ok</div>");
+}
+
+#[test]
+fn runtime_chunked_parsing_matches_single_chunk_materialization() {
+    let input = b"<div><span>ok</span><p>after</p></div>";
+    let whole_batches =
+        assert_runtime_updates_are_well_formed(collect_runtime_updates(&[input]), true, "whole");
+    let chunked_batches = assert_runtime_updates_are_well_formed(
+        collect_runtime_updates(&[b"<div><span>", b"ok</span><p>", b"after</p></div>"]),
+        true,
+        "chunked",
+    );
+
+    let whole_dom =
+        html::test_harness::materialize_patch_batches(&whole_batches).expect("materialize whole");
+    let chunked_dom = html::test_harness::materialize_patch_batches(&chunked_batches)
+        .expect("materialize chunked");
+
+    assert_eq!(
+        serialize_dom_for_test(&whole_dom),
+        serialize_dom_for_test(&chunked_dom),
+        "chunked runtime materialization must match single-chunk materialization"
+    );
 }
 
 #[test]
@@ -153,13 +165,7 @@ fn runtime_flushes_on_tick_without_sleeping() {
         patch_byte_threshold: None,
     };
 
-    start_parse_runtime_with_policy_and_clock_and_mode(
-        cmd_rx,
-        evt_tx,
-        policy,
-        clock,
-        ParserMode::Legacy,
-    );
+    start_parse_runtime_with_policy_and_clock(cmd_rx, evt_tx, policy, clock);
 
     let tab_id = 1;
     let request_id = 1;
