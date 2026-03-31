@@ -1,0 +1,6 @@
+# format: html5-token-v1
+# guard: Extra characters inserted inside `script` must not be normalized into a real closing tag.
+START name=script attrs=[] self_closing=false
+CHAR text="a</scriXpt>b"
+END name=script
+EOF

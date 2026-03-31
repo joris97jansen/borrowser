@@ -1,0 +1,8 @@
+# format: html5-token-v1
+# guard: An exact `</script>` inside a longer source string must terminate immediately while surrounding source text remains in the correct tokens.
+START name=script attrs=[] self_closing=false
+CHAR text="pre"
+END name=script
+CHAR text="post"
+END name=script
+EOF

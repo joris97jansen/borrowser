@@ -1,0 +1,6 @@
+# format: html5-token-v1
+# guard: A space inside the tag name candidate must prevent termination and keep the whole near miss literal until a real `</script>` arrives.
+START name=script attrs=[] self_closing=false
+CHAR text="a</scri pt>b"
+END name=script
+EOF

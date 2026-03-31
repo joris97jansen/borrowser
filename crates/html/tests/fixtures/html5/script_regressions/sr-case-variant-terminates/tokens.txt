@@ -1,0 +1,6 @@
+# format: html5-token-v1
+# guard: Mixed-case ASCII `</script>` variants must terminate script data rather than remaining literal text.
+START name=script attrs=[] self_closing=false
+CHAR text="ok"
+END name=script
+EOF

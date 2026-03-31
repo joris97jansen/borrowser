@@ -1,0 +1,6 @@
+# format: html5-token-v1
+# guard: Mixed-case script end tags with trailing HTML space must still terminate under whole and boundary-chunked execution.
+START name=script attrs=[] self_closing=false
+CHAR text="x"
+END name=script
+EOF
