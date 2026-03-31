@@ -10,12 +10,12 @@ pub use fuzz::{
     shrink_chunk_plan_with_stats,
 };
 pub use patch_materialize::{materialize_patch_batches, materialize_patches};
-pub use runner::{run_chunked, run_chunked_with_tokens, run_full};
+pub use runner::{run_chunked, run_chunked_with_output, run_full};
 
 pub(crate) use chunk_plan::filter_boundaries_by_policy;
 
 #[cfg(test)]
-pub use runner::run_chunked_bytes_with_tokens;
+pub use runner::run_chunked_bytes_with_output;
 
 #[cfg(test)]
 mod tests;

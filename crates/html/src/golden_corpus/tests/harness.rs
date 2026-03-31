@@ -2,7 +2,7 @@ use super::super::{GoldenFixture, Invariant};
 use super::invariants::{InvariantCtx, allowed_failure_reason, check_invariant};
 use crate::Node;
 use crate::test_harness::{
-    ChunkPlan, FuzzMode, ShrinkStats, run_chunked_with_tokens, run_full,
+    ChunkPlan, FuzzMode, ShrinkStats, run_chunked_with_output, run_full,
     shrink_chunk_plan_with_stats,
 };
 
@@ -24,8 +24,8 @@ pub(super) fn run_golden_fixture(fixture: &GoldenFixture, plans: &[ChunkPlan]) -
     let tags_label = format!("[{}]", fixture.tags.join(","));
 
     for plan in plans {
-        let (chunked_dom, chunked_tokens) = run_chunked_with_tokens(fixture.input, plan);
-        let ctx = InvariantCtx::new(fixture, &full_dom, &chunked_dom, &chunked_tokens);
+        let chunked = run_chunked_with_output(fixture.input, plan);
+        let ctx = InvariantCtx::new(fixture, &full_dom, &chunked.document);
         for &invariant in fixture.invariants {
             match check_invariant(&ctx, invariant) {
                 Ok(()) => {
@@ -74,8 +74,8 @@ pub(super) fn minimize_plan_for_failure(
     plan: &ChunkPlan,
 ) -> (ChunkPlan, ShrinkStats) {
     shrink_chunk_plan_with_stats(input, plan, |candidate| {
-        let (chunked_dom, chunked_tokens) = run_chunked_with_tokens(input, candidate);
-        let ctx = InvariantCtx::new(fixture, full_dom, &chunked_dom, &chunked_tokens);
+        let chunked = run_chunked_with_output(input, candidate);
+        let ctx = InvariantCtx::new(fixture, full_dom, &chunked.document);
         check_invariant(&ctx, invariant).is_err()
     })
 }

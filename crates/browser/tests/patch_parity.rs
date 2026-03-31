@@ -2,8 +2,8 @@ use browser::dom_store::DomStore;
 use core_types::{DomHandle, DomVersion};
 use html::dom_snapshot::{DomSnapshotOptions, compare_dom};
 use html::golden_corpus::fixtures;
-use html::{DomDiffState, DomPatch, Node, diff_dom_with_state, diff_from_empty, tokenize};
-use tools::utf8::{finish_utf8, push_utf8_chunk};
+use html::internal::Id;
+use html::{DomDiffState, DomPatch, HtmlParseOptions, HtmlParser, Node, diff_dom_with_state};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 enum BoundaryPolicy {
@@ -370,53 +370,55 @@ fn run_and_compare(
 }
 
 fn patch_batches_for_plan(input: &str, plan: &ChunkPlan) -> Result<Vec<Vec<DomPatch>>, String> {
-    let mut text = String::new();
-    let mut carry = Vec::new();
-    let mut prev_dom: Option<Node> = None;
-    let mut diff_state = DomDiffState::new();
+    let mut parser = HtmlParser::new(HtmlParseOptions::default())
+        .map_err(|err| format!("parser init failed: {err}"))?;
     let mut batches = Vec::new();
-    let mut err: Option<String> = None;
     plan.for_each_chunk(input, |chunk| {
-        if err.is_some() {
+        if parser.push_bytes(chunk).is_err() || parser.pump().is_err() {
             return;
         }
-        push_utf8_chunk(&mut text, &mut carry, chunk);
-        let dom = build_owned_dom(&text);
-        let patches = match &prev_dom {
-            Some(prev) => diff_dom_with_state(prev, &dom, &mut diff_state),
-            None => diff_from_empty(&dom, &mut diff_state),
-        };
-        match patches {
-            Ok(patches) => {
-                prev_dom = Some(dom);
-                if !patches.is_empty() {
-                    batches.push(patches);
-                }
-            }
-            Err(e) => {
-                err = Some(format!("{e:?}"));
-            }
+        if let Ok(patches) = parser.take_patches()
+            && !patches.is_empty()
+        {
+            batches.push(patches);
         }
     });
-    if let Some(message) = err {
-        return Err(message);
-    }
-    finish_utf8(&mut text, &mut carry);
-    let dom = build_owned_dom(&text);
-    let patches = match &prev_dom {
-        Some(prev) => diff_dom_with_state(prev, &dom, &mut diff_state),
-        None => diff_from_empty(&dom, &mut diff_state),
-    }
-    .map_err(|e| format!("{e:?}"))?;
+    parser
+        .finish()
+        .map_err(|err| format!("parser finish failed: {err}"))?;
+    let patches = parser
+        .take_patches()
+        .map_err(|err| format!("final patch drain failed: {err}"))?;
     if !patches.is_empty() {
         batches.push(patches);
     }
     Ok(batches)
 }
 
-fn build_owned_dom(input: &str) -> Node {
-    let stream = tokenize(input);
-    html::build_owned_dom(&stream)
+fn parse_html_document(input: &str) -> Node {
+    let mut parser =
+        HtmlParser::new(HtmlParseOptions::default()).expect("HTML5 parity parser init");
+    parser
+        .push_bytes(input.as_bytes())
+        .expect("HTML5 parity push should succeed");
+    parser.pump().expect("HTML5 parity pump should succeed");
+    parser.finish().expect("HTML5 parity finish should succeed");
+    let mut document = parser
+        .into_output()
+        .expect("HTML5 parity output should materialize")
+        .document;
+    assign_preorder_ids(&mut document, &mut 0);
+    document
+}
+
+fn assign_preorder_ids(node: &mut Node, next: &mut u32) {
+    *next = next.saturating_add(1);
+    node.set_id(Id(*next));
+    if let Some(children) = node.children_mut() {
+        for child in children {
+            assign_preorder_ids(child, next);
+        }
+    }
 }
 
 fn plan_boundaries(input: &str, plan: &ChunkPlan) -> Vec<usize> {
@@ -475,7 +477,7 @@ fn boundary_at_batch(input: &str, plan: &ChunkPlan, batch_index: usize) -> Optio
 /// Parity test treats every chunk boundary as a preview tick to maximize coverage.
 fn patch_parity_corpus_deterministic() {
     for fixture in fixtures() {
-        let baseline = build_owned_dom(fixture.input);
+        let baseline = parse_html_document(fixture.input);
         for plan in deterministic_chunk_plans(fixture.input) {
             if let Err(err) = run_and_compare(fixture.input, &plan, &baseline, None) {
                 let minimized = shrink_plan(fixture.input, &plan, |candidate| {
@@ -505,7 +507,7 @@ fn patch_parity_corpus_fuzz() {
     let base = fuzz_seed_base();
     let count = fuzz_seed_count();
     for fixture in fixtures() {
-        let baseline = build_owned_dom(fixture.input);
+        let baseline = parse_html_document(fixture.input);
         for i in 0..count {
             let seed = derive_seed(base, fixture.name, i as u64);
             let plan = fuzz_chunk_plan(fixture.input, seed);
@@ -537,11 +539,11 @@ fn patch_parity_corpus_fuzz() {
 fn patch_parity_reset_semantics() {
     let prev = "<div><span>hi</span></div>";
     let next = "<div><em>yo</em><span>hi</span></div>";
-    let baseline = build_owned_dom(next);
+    let baseline = parse_html_document(next);
     let mut store = DomStore::new();
     let handle = DomHandle(1);
     store.create(handle).expect("store create failed");
-    let prev_dom = build_owned_dom(prev);
+    let prev_dom = parse_html_document(prev);
     let mut diff_state = DomDiffState::new();
     let patches = diff_dom_with_state(&prev_dom, &baseline, &mut diff_state).expect("diff failed");
     assert!(

@@ -1,34 +1,22 @@
 use crate::wpt_manifest::{DiffKind, FixtureStatus, WptCase, load_manifest};
-use html::dom_snapshot::{DomSnapshotOptions, compare_dom};
-use html::{build_owned_dom, tokenize};
+use html::dom_snapshot::DomSnapshotOptions;
+use html::test_harness::shrink_chunk_plan_with_stats;
 use html_test_support::diff_lines;
 use html_test_support::wpt_tokenizer::{
-    TokenizerSkipStatus, applied_skip_override, load_tokenizer_skip_overrides,
-    validate_skip_override_ids,
+    TokenizerSkipStatus, applied_skip_override as applied_tokenizer_skip_override,
+    ensure_utf8_plan as ensure_utf8_tokenizer_plan, load_tokenizer_skip_overrides, parse_u64,
+    run_tokenizer_chunked, run_tokenizer_whole,
+    validate_skip_override_ids as validate_tokenizer_skip_ids,
+};
+use html_test_support::wpt_tree_builder::{
+    TreeBuilderSkipStatus, applied_skip_override as applied_tree_builder_skip_override,
+    ensure_utf8_plan as ensure_utf8_tree_builder_plan, load_tree_builder_skip_overrides,
+    run_tree_builder_chunked, run_tree_builder_whole,
+    validate_skip_override_ids as validate_tree_builder_skip_ids,
 };
 use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
-
-mod dom_diff_support;
-mod token_diff_support;
-
-use dom_diff_support::Html5DomDriver;
-use token_diff_support::{
-    Html5TokenDiffDriver, format_norm_tokens, html5_only_eof, normalize_simplified_tokens,
-};
-
-#[derive(Clone, Copy)]
-pub(super) struct CaseContext<'a> {
-    pub(super) id: &'a str,
-    pub(super) path: &'a Path,
-}
-
-impl<'a> CaseContext<'a> {
-    fn new(id: &'a str, path: &'a Path) -> Self {
-        Self { id, path }
-    }
-}
 
 #[derive(Clone, Debug)]
 struct DiffFailure {
@@ -44,16 +32,27 @@ struct DiffSummary {
     skipped: usize,
 }
 
+#[derive(Clone, Debug)]
+struct RunConfig {
+    filter: Option<String>,
+    ids: Vec<String>,
+    limit: Option<usize>,
+    fuzz_runs: usize,
+    fuzz_seed: u64,
+}
+
 #[test]
 fn diff_html5() {
     let manifest_path = wpt_root().join("manifest.txt");
     let mut cases = load_manifest(&manifest_path);
     assert!(!cases.is_empty(), "no WPT cases found in {manifest_path:?}");
     apply_tokenizer_skip_overrides(&mut cases, &manifest_path);
+    apply_tree_builder_skip_overrides(&mut cases, &manifest_path);
+    normalize_statuses_for_parity(&mut cases);
 
     let mode = diff_mode();
-    let strict = diff_strict();
-    let cases = select_cases(cases);
+    let run_config = load_run_config();
+    let cases = select_cases(cases, &run_config);
     let mut summary = DiffSummary {
         total: cases.len(),
         passed: 0,
@@ -74,13 +73,9 @@ fn diff_html5() {
         }
         let input = fs::read_to_string(&case.path)
             .unwrap_or_else(|err| panic!("failed to read WPT input {:?}: {err}", case.path));
-        match run_diff_case(&case, &input, case_mode, strict) {
+        match run_diff_case(&case, &input, case_mode, &run_config) {
             Ok(()) => summary.passed += 1,
             Err(message) => {
-                if message.starts_with("SKIP:") {
-                    summary.skipped += 1;
-                    continue;
-                }
                 summary.failed += 1;
                 failures.push(DiffFailure {
                     id: case.id,
@@ -95,7 +90,7 @@ fn diff_html5() {
         use std::fmt::Write;
         let _ = writeln!(
             &mut report,
-            "HTML diff summary: total={} passed={} failed={} skipped={}",
+            "HTML5 parity summary: total={} passed={} failed={} skipped={}",
             summary.total, summary.passed, summary.failed, summary.skipped
         );
         let mut failing_ids = failures
@@ -113,105 +108,137 @@ fn diff_html5() {
     }
 }
 
-fn run_diff_case(case: &WptCase, input: &str, mode: DiffKind, strict: bool) -> Result<(), String> {
+fn run_diff_case(
+    case: &WptCase,
+    input: &str,
+    mode: DiffKind,
+    run_config: &RunConfig,
+) -> Result<(), String> {
     match mode {
-        DiffKind::Tokens => diff_tokens(case, input, strict),
-        DiffKind::Dom => diff_dom(case, input, strict),
+        DiffKind::Tokens => diff_tokens(case, input, run_config),
+        DiffKind::Dom => diff_dom(case, input, run_config),
         DiffKind::Both => {
-            diff_tokens(case, input, strict)?;
-            diff_dom(case, input, strict)?;
+            diff_tokens(case, input, run_config)?;
+            diff_dom(case, input, run_config)?;
             Ok(())
         }
         DiffKind::Skip => Ok(()),
     }
 }
 
-fn diff_tokens(case: &WptCase, input: &str, strict: bool) -> Result<(), String> {
-    let case_ctx = CaseContext::new(&case.id, &case.path);
-    let token_driver = Html5TokenDiffDriver::new(case_ctx, strict);
-    let simplified = normalize_simplified_tokens(&tokenize(input));
-    let html5 = token_driver.collect_normalized_html5_tokens(input)?;
-    if html5_only_eof(&html5) && !html5_only_eof(&simplified) {
-        return Err(format!(
-            "SKIP: html5 tokenizer produced only EOF (unimplemented) for '{}' ({})",
-            case.id,
-            case.path.display()
-        ));
-    }
-    if simplified != html5 {
-        let simplified_lines = format_norm_tokens(&simplified);
-        let html5_lines = format_norm_tokens(&html5);
-        return Err(format!(
-            "token diff for '{}' ({})\nmode: tokens\n{}\nsource: simplified vs html5",
-            case.id,
-            case.path.display(),
-            diff_lines(&simplified_lines, &html5_lines)
-        ));
-    }
-    Ok(())
-}
-
-fn diff_dom(case: &WptCase, input: &str, strict: bool) -> Result<(), String> {
-    let case_ctx = CaseContext::new(&case.id, &case.path);
-    let token_driver = Html5TokenDiffDriver::new(case_ctx, strict);
-    let html5_tokens = token_driver.collect_normalized_html5_tokens(input)?;
-    if html5_only_eof(&html5_tokens) && !input.is_empty() {
-        return Err(format!(
-            "SKIP: html5 tokenizer produced only EOF (unimplemented) for '{}' ({})",
-            case.id,
-            case.path.display()
-        ));
-    }
-
-    let simplified_stream = tokenize(input);
-    let simplified_dom = build_owned_dom(&simplified_stream);
-    let html5_dom = Html5DomDriver::new(case_ctx).materialize_html5_dom_via_patches(input)?;
-    compare_dom(&simplified_dom, &html5_dom, DomSnapshotOptions::default()).map_err(|err| {
+fn diff_tokens(case: &WptCase, input: &str, run_config: &RunConfig) -> Result<(), String> {
+    let whole = run_tokenizer_whole(input, &case.id).map_err(|err| {
         format!(
-            "dom diff for '{}' ({})\nmode: dom\n{}\nsource: simplified vs html5",
+            "token parity baseline failed for '{}' ({}) error: {err}",
             case.id,
-            case.path.display(),
-            err
+            case.path.display()
         )
     })?;
+    let plans =
+        html::chunker::build_chunk_plans_utf8(input, run_config.fuzz_runs, run_config.fuzz_seed);
+    if plans.is_empty() {
+        return Err(format!(
+            "token parity generated no chunk plans for '{}' ({})",
+            case.id,
+            case.path.display()
+        ));
+    }
+
+    for plan in &plans {
+        ensure_utf8_tokenizer_plan(&case.id, &plan.plan, &plan.label)?;
+        let chunked =
+            run_tokenizer_chunked(input, &case.id, &plan.plan, &plan.label).map_err(|err| {
+                format!(
+                    "token parity chunked run failed for '{}' ({}) [chunked: {}] error: {err}",
+                    case.id,
+                    case.path.display(),
+                    plan.label
+                )
+            })?;
+        if chunked != whole {
+            let diff = diff_lines(&whole, &chunked);
+            let shrink_predicate =
+                |candidate: &html::test_harness::ChunkPlan| match run_tokenizer_chunked(
+                    input,
+                    &case.id,
+                    candidate,
+                    "shrinking",
+                ) {
+                    Ok(candidate_lines) => candidate_lines != whole,
+                    Err(_) => true,
+                };
+            let (shrunk, stats) = shrink_chunk_plan_with_stats(input, &plan.plan, shrink_predicate);
+            return Err(format!(
+                "token parity diff for '{}' ({}) [chunked: {}]\nshrunk: {}\nshrink stats: {:?}\n{}",
+                case.id,
+                case.path.display(),
+                plan.label,
+                shrunk,
+                stats,
+                diff
+            ));
+        }
+    }
+
     Ok(())
 }
 
-pub(super) fn validate_tokenize_result(
-    result: html::html5::TokenizeResult,
-    stage: &str,
-) -> Result<(), String> {
-    match (stage, result) {
-        ("push_input", html::html5::TokenizeResult::EmittedEof) => {
-            Err("unexpected EOF while pushing input".to_string())
-        }
-        ("finish", html::html5::TokenizeResult::EmittedEof) => Ok(()),
-        ("finish", other) => Err(format!("finish must emit EOF, got {other:?}")),
-        (
-            "push_input",
-            html::html5::TokenizeResult::NeedMoreInput | html::html5::TokenizeResult::Progress,
-        ) => Ok(()),
-        _ => Err(format!(
-            "unexpected tokenizer state stage={stage} result={result:?}"
-        )),
-    }
-}
-
-pub(super) fn ensure_need_more_input_only_at_buffer_end(
-    case: CaseContext<'_>,
-    result: html::html5::TokenizeResult,
-    consumed_before: u64,
-    consumed_after: u64,
-    buffered_len: usize,
-) -> Result<(), String> {
-    if matches!(result, html::html5::TokenizeResult::NeedMoreInput)
-        && consumed_after < buffered_len as u64
-    {
+fn diff_dom(case: &WptCase, input: &str, run_config: &RunConfig) -> Result<(), String> {
+    let options = DomSnapshotOptions::default();
+    let whole = run_tree_builder_whole(input, &case.id, options).map_err(|err| {
+        format!(
+            "DOM parity baseline failed for '{}' ({}) error: {err}",
+            case.id,
+            case.path.display()
+        )
+    })?;
+    let plans =
+        html::chunker::build_chunk_plans_utf8(input, run_config.fuzz_runs, run_config.fuzz_seed);
+    if plans.is_empty() {
         return Err(format!(
-            "harness assumption violated: tokenizer returned NeedMoreInput despite buffered data in '{}' at {:?} (result={result:?}, consumed={} buffered={} before={}); either tokenizer stalled or input abstraction changed (repro: set DIFF_IDS={})",
-            case.id, case.path, consumed_after, buffered_len, consumed_before, case.id
+            "DOM parity generated no chunk plans for '{}' ({})",
+            case.id,
+            case.path.display()
         ));
     }
+
+    for plan in &plans {
+        ensure_utf8_tree_builder_plan(&case.id, &plan.plan, &plan.label)?;
+        let chunked = run_tree_builder_chunked(input, &case.id, &plan.plan, &plan.label, options)
+            .map_err(|err| {
+            format!(
+                "DOM parity chunked run failed for '{}' ({}) [chunked: {}] error: {err}",
+                case.id,
+                case.path.display(),
+                plan.label
+            )
+        })?;
+        if chunked != whole {
+            let diff = diff_lines(&whole, &chunked);
+            let shrink_predicate =
+                |candidate: &html::test_harness::ChunkPlan| match run_tree_builder_chunked(
+                    input,
+                    &case.id,
+                    candidate,
+                    "shrinking",
+                    options,
+                ) {
+                    Ok(candidate_lines) => candidate_lines != whole,
+                    Err(_) => true,
+                };
+            let (shrunk, stats) = shrink_chunk_plan_with_stats(input, &plan.plan, shrink_predicate);
+            return Err(format!(
+                "DOM parity diff for '{}' ({}) [chunked: {}]\nshrunk: {}\nshrink stats: {:?}\n{}",
+                case.id,
+                case.path.display(),
+                plan.label,
+                shrunk,
+                stats,
+                diff
+            ));
+        }
+    }
+
     Ok(())
 }
 
@@ -230,20 +257,53 @@ fn apply_tokenizer_skip_overrides(cases: &mut [WptCase], manifest_path: &Path) {
         .filter(|case| case.kind == crate::wpt_manifest::CaseKind::Tokens)
         .map(|case| case.id.clone())
         .collect::<std::collections::BTreeSet<_>>();
-    validate_skip_override_ids(&overrides, &token_case_ids, manifest_path);
+    validate_tokenizer_skip_ids(&overrides, &token_case_ids, manifest_path);
 
     for case in cases
         .iter_mut()
         .filter(|case| case.kind == crate::wpt_manifest::CaseKind::Tokens)
     {
         if let Some((override_status, override_reason)) =
-            applied_skip_override(&case.id, &overrides)
+            applied_tokenizer_skip_override(&case.id, &overrides)
         {
             case.status = match override_status {
                 TokenizerSkipStatus::Skip => FixtureStatus::Skip,
                 TokenizerSkipStatus::Xfail => FixtureStatus::Xfail,
             };
             case.reason = Some(override_reason);
+        }
+    }
+}
+
+fn apply_tree_builder_skip_overrides(cases: &mut [WptCase], manifest_path: &Path) {
+    let overrides = load_tree_builder_skip_overrides(&wpt_root());
+    let dom_case_ids = cases
+        .iter()
+        .filter(|case| case.kind == crate::wpt_manifest::CaseKind::Dom)
+        .map(|case| case.id.clone())
+        .collect::<std::collections::BTreeSet<_>>();
+    validate_tree_builder_skip_ids(&overrides, &dom_case_ids, manifest_path);
+
+    for case in cases
+        .iter_mut()
+        .filter(|case| case.kind == crate::wpt_manifest::CaseKind::Dom)
+    {
+        if let Some((override_status, override_reason)) =
+            applied_tree_builder_skip_override(&case.id, &overrides)
+        {
+            case.status = match override_status {
+                TreeBuilderSkipStatus::Skip => FixtureStatus::Skip,
+                TreeBuilderSkipStatus::Xfail => FixtureStatus::Xfail,
+            };
+            case.reason = Some(override_reason);
+        }
+    }
+}
+
+fn normalize_statuses_for_parity(cases: &mut [WptCase]) {
+    for case in cases {
+        if case.status == FixtureStatus::Xfail {
+            case.status = FixtureStatus::Active;
         }
     }
 }
@@ -257,15 +317,7 @@ fn diff_mode() -> DiffKind {
     }
 }
 
-fn diff_strict() -> bool {
-    match env::var("DIFF_STRICT").ok().as_deref() {
-        Some("1") | Some("true") | Some("yes") | Some("on") => true,
-        Some("0") | Some("false") | Some("no") | Some("off") | Some("") | None => false,
-        Some(other) => panic!("unsupported DIFF_STRICT value '{other}'; use 1/0 or true/false"),
-    }
-}
-
-fn select_cases(cases: Vec<WptCase>) -> Vec<WptCase> {
+fn load_run_config() -> RunConfig {
     let filter = env::var("DIFF_FILTER").ok().and_then(|value| {
         let trimmed = value.trim();
         if trimmed.is_empty() {
@@ -288,11 +340,29 @@ fn select_cases(cases: Vec<WptCase>) -> Vec<WptCase> {
     let limit = env::var("DIFF_LIMIT")
         .ok()
         .and_then(|value| value.trim().parse::<usize>().ok());
+    let fuzz_runs = env::var("DIFF_FUZZ_RUNS")
+        .ok()
+        .and_then(|value| value.trim().parse::<usize>().ok())
+        .unwrap_or(0);
+    let fuzz_seed = env::var("DIFF_FUZZ_SEED")
+        .ok()
+        .and_then(|value| parse_u64(&value))
+        .unwrap_or(0xD1FF_5EED);
 
-    let filter_lower = filter.as_ref().map(|value| value.to_lowercase());
+    RunConfig {
+        filter,
+        ids,
+        limit,
+        fuzz_runs,
+        fuzz_seed,
+    }
+}
+
+fn select_cases(cases: Vec<WptCase>, run_config: &RunConfig) -> Vec<WptCase> {
+    let filter_lower = run_config.filter.as_ref().map(|value| value.to_lowercase());
     let mut selected = Vec::new();
     for case in cases {
-        if !ids.is_empty() && !ids.iter().any(|id| id == &case.id) {
+        if !run_config.ids.is_empty() && !run_config.ids.iter().any(|id| id == &case.id) {
             continue;
         }
         if let Some(filter) = filter_lower.as_deref() {
@@ -303,18 +373,18 @@ fn select_cases(cases: Vec<WptCase>) -> Vec<WptCase> {
             }
         }
         selected.push(case);
-        if let Some(limit) = limit
+        if let Some(limit) = run_config.limit
             && selected.len() >= limit
         {
             break;
         }
     }
 
-    let has_filters = filter_lower.is_some() || !ids.is_empty();
+    let has_filters = filter_lower.is_some() || !run_config.ids.is_empty();
     if has_filters && selected.is_empty() {
         panic!(
             "no diff cases matched filters (DIFF_FILTER={:?}, DIFF_IDS={:?})",
-            filter, ids
+            run_config.filter, run_config.ids
         );
     }
     selected

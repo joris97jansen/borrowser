@@ -2,7 +2,7 @@ use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use html::internal::Id;
-use html::{DomPatch, Node, PatchKey, build_owned_dom, tokenize};
+use html::{DomPatch, HtmlParseOptions, HtmlParser, Node, PatchKey};
 
 #[derive(Debug)]
 struct PatchState {
@@ -427,20 +427,53 @@ fn full_create_patches(dom: &Node) -> Vec<DomPatch> {
     patches
 }
 
+fn parse_html_document(input: &str) -> Node {
+    let mut parser =
+        HtmlParser::new(HtmlParseOptions::default()).expect("runtime diff HTML5 parser init");
+    parser
+        .push_bytes(input.as_bytes())
+        .expect("runtime diff HTML5 push should succeed");
+    parser
+        .pump()
+        .expect("runtime diff HTML5 pump should succeed");
+    parser
+        .finish()
+        .expect("runtime diff HTML5 finish should succeed");
+    let mut document = parser
+        .into_output()
+        .expect("runtime diff HTML5 output should materialize")
+        .document;
+    assign_preorder_ids(&mut document, &mut 0);
+    document
+}
+
+fn assign_preorder_ids(node: &mut Node, next: &mut u32) {
+    *next = next.saturating_add(1);
+    node.set_id(Id(*next));
+    if let Some(children) = node.children_mut() {
+        for child in children {
+            assign_preorder_ids(child, next);
+        }
+    }
+}
+
+fn wrap_html_document(body_fragment: &str) -> String {
+    format!("<!doctype html><html><head></head><body>{body_fragment}</body></html>")
+}
+
 #[test]
 fn patch_updates_do_not_resend_full_tree_each_tick() {
     let inputs = [
-        "<div>",
-        "<div><span>",
-        "<div><span>hi</span>",
-        "<div><span>hi</span><em>ok</em>",
+        wrap_html_document("<div>"),
+        wrap_html_document("<div><span>"),
+        wrap_html_document("<div><span>hi</span>"),
+        wrap_html_document("<div><span>hi</span><em>ok</em>"),
     ];
     let mut patch_state = PatchState::new();
     let mut prev_dom: Option<Box<Node>> = None;
 
     for (tick, input) in inputs.iter().enumerate() {
-        let stream = tokenize(input);
-        let dom = build_owned_dom(&stream);
+        let dom = parse_html_document(input);
         let full_patches = full_create_patches(&dom);
         let full_bytes = crate::patching::estimate_patch_bytes_slice(&full_patches);
         let patches = match prev_dom.as_deref() {
@@ -529,11 +562,11 @@ fn patch_updates_do_not_resend_full_tree_each_tick() {
 fn patch_updates_do_not_rebuild_medium_tree_each_tick() {
     let mut inputs = Vec::new();
     let mut buf = String::from("<div>");
-    inputs.push(buf.clone());
+    inputs.push(wrap_html_document(&buf));
     for i in 0..200 {
         buf.push_str("<span>item</span>");
         if i == 49 || i == 119 || i == 199 {
-            inputs.push(buf.clone());
+            inputs.push(wrap_html_document(&buf));
         }
     }
 
@@ -541,8 +574,7 @@ fn patch_updates_do_not_rebuild_medium_tree_each_tick() {
     let mut prev_dom: Option<Box<Node>> = None;
 
     for (tick, input) in inputs.iter().enumerate() {
-        let stream = tokenize(input);
-        let dom = build_owned_dom(&stream);
+        let dom = parse_html_document(input);
         let full_patches = full_create_patches(&dom);
         let full_bytes = crate::patching::estimate_patch_bytes_slice(&full_patches);
         let patches = match prev_dom.as_deref() {
