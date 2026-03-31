@@ -421,3 +421,21 @@ cargo test -p html --features html5 --lib \
 - For pipeline regressions, keep the input bytes in `fuzz/regressions/html5_pipeline/`
   and the snapshot in `crates/html/tests/regressions/html5_pipeline/` with the
   same base name so the regression test can pair them deterministically.
+- For targeted RAWTEXT/script findings that should become stable parser
+  regressions, promote the minimized input into
+  `crates/html/tests/regressions/html5/rawtext_script/` with:
+  - `meta.txt` carrying `tool`, `seed`, `date`, `issue`, `mode`, and `guard`,
+    where `issue` must be either a URL or a stable issue id such as
+    `#1234`, `BOR-123`, or `Milestone-L/L5`,
+  - `input.html` as the minimized stable HTML wrapper,
+  - `tokens.txt` and/or `dom.txt` as the locked oracle.
+
+Verify promoted RAWTEXT/script regressions with:
+
+```sh
+cargo test -p html --test html5_rawtext_script_regressions \
+  --features "html5 dom-snapshot parser_invariants"
+```
+
+That harness checks both whole-input and deterministic every-boundary chunked
+execution before the regression lands.

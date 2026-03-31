@@ -1,0 +1,16 @@
+# format: html5-token-v1
+START name=html attrs=[] self_closing=false
+START name=head attrs=[] self_closing=false
+END name=head
+START name=body attrs=[] self_closing=false
+START name=script attrs=[] self_closing=false
+CHAR text="</scriX></scrip></scriptx><<<</scr!pt>"
+END name=script
+START name=section attrs=[] self_closing=false
+START name=p attrs=[] self_closing=false
+CHAR text="ok"
+END name=p
+END name=section
+END name=body
+END name=html
+EOF

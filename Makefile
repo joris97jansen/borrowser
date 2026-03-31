@@ -3,7 +3,7 @@ HTML_ENTITIES_JSON := crates/html/data/entities.json
 HTML_ENTITIES_GEN := crates/html/src/entities_html5.rs
 HTML_ENTITIES_TOOL := crates/html/tools/generate_entities_html5.py
 
-.PHONY: format fmt-check lint lint-html5 lint-html5-hardening test test-html5-legacy test-html5-toggle test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-html5-tokenizer-fuzz-corpus test-html5-tokenizer-fuzz-smoke test-html5-tokenizer-fuzz-long test-html5-tokenizer-script-data-fuzz-corpus test-html5-tokenizer-script-data-fuzz-smoke test-html5-tokenizer-script-data-fuzz-long test-html5-tokenizer-rawtext-fuzz-corpus test-html5-tokenizer-rawtext-fuzz-smoke test-html5-tokenizer-rawtext-fuzz-long test-html5-tokenizer-rcdata-fuzz-corpus test-html5-tokenizer-rcdata-fuzz-smoke test-html5-tokenizer-rcdata-fuzz-long test-html5-tree-builder-token-fuzz-corpus test-html5-tree-builder-token-fuzz-smoke test-html5-tree-builder-token-fuzz-long test-html5-pipeline-fuzz-corpus test-html5-pipeline-regressions test-html5-pipeline-fuzz-smoke test-html5-pipeline-fuzz-long print-html5-pipeline-regression-snapshot test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
+.PHONY: format fmt-check lint lint-html5 lint-html5-hardening test test-html5-legacy test-html5-toggle test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-html5-rawtext-script-regressions test-html5-tokenizer-fuzz-corpus test-html5-tokenizer-fuzz-smoke test-html5-tokenizer-fuzz-long test-html5-tokenizer-script-data-fuzz-corpus test-html5-tokenizer-script-data-fuzz-smoke test-html5-tokenizer-script-data-fuzz-long test-html5-tokenizer-rawtext-fuzz-corpus test-html5-tokenizer-rawtext-fuzz-smoke test-html5-tokenizer-rawtext-fuzz-long test-html5-tokenizer-rcdata-fuzz-corpus test-html5-tokenizer-rcdata-fuzz-smoke test-html5-tokenizer-rcdata-fuzz-long test-html5-tree-builder-token-fuzz-corpus test-html5-tree-builder-token-fuzz-smoke test-html5-tree-builder-token-fuzz-long test-html5-pipeline-fuzz-corpus test-html5-pipeline-regressions test-html5-pipeline-fuzz-smoke test-html5-pipeline-fuzz-long print-html5-pipeline-regression-snapshot test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
 
 # Format all crates in place
 format:
@@ -48,6 +48,10 @@ test-html5-patch-golden:
 # Run HTML5 smoke corpus with real-world-style pages/snippets
 test-html5-smoke-real-pages:
 	cargo test -p html --test html5_smoke_real_pages --features "html5 dom-snapshot" --locked
+
+# Run promoted RAWTEXT/script stable regressions (tokens + DOM, whole + boundary-chunked)
+test-html5-rawtext-script-regressions:
+	cargo test -p html --test html5_rawtext_script_regressions --features "html5 dom-snapshot parser_invariants" --locked
 
 # Replay the committed HTML5 tokenizer fuzz corpus deterministically outside libFuzzer
 test-html5-tokenizer-fuzz-corpus:
@@ -237,6 +241,7 @@ ci:
 	@$(MAKE) test-html5-dom-golden
 	@$(MAKE) test-html5-patch-golden
 	@$(MAKE) test-html5-smoke-real-pages
+	@$(MAKE) test-html5-rawtext-script-regressions
 	@$(MAKE) test-html5-tokenizer-fuzz-smoke
 	@$(MAKE) test-html5-tokenizer-script-data-fuzz-smoke
 	@$(MAKE) test-html5-tokenizer-rawtext-fuzz-smoke
