@@ -276,6 +276,8 @@ pub struct HtmlParseOptions {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HtmlParseError {
     Decode,
+    /// Terminal parser-state violation, including use after a poisoned
+    /// patch-mirror failure.
     Invariant,
     PatchValidation(String),
 }
@@ -320,10 +322,16 @@ pub struct ParseOutput {
 }
 
 /// Stable engine-level HTML parser API backed exclusively by the HTML5 pipeline.
+///
+/// If internal patch-mirror validation fails while draining emitted patches, the
+/// parser transitions into a terminal poisoned state. Subsequent mutating or
+/// draining operations return `HtmlParseError::Invariant` deterministically
+/// rather than continuing with a partially updated mirror.
 pub struct HtmlParser {
     session: Html5ParseSession,
     arena: PatchValidationArena,
     patches_drained_before_output: bool,
+    poisoned: bool,
 }
 
 impl HtmlParser {
@@ -335,25 +343,30 @@ impl HtmlParser {
             session,
             arena: PatchValidationArena::default(),
             patches_drained_before_output: false,
+            poisoned: false,
         })
     }
 
     pub fn push_bytes(&mut self, bytes: &[u8]) -> Result<(), HtmlParseError> {
+        self.ensure_not_poisoned()?;
         self.session.push_bytes(bytes)?;
         Ok(())
     }
 
     pub fn push_str(&mut self, text: &str) -> Result<(), HtmlParseError> {
+        self.ensure_not_poisoned()?;
         self.session.push_str(text)?;
         Ok(())
     }
 
     pub fn pump(&mut self) -> Result<(), HtmlParseError> {
+        self.ensure_not_poisoned()?;
         self.session.pump()?;
         Ok(())
     }
 
     pub fn finish(&mut self) -> Result<(), HtmlParseError> {
+        self.ensure_not_poisoned()?;
         self.session.finish()?;
         Ok(())
     }
@@ -364,6 +377,7 @@ impl HtmlParser {
     /// patches are drained before `into_output()`, the final `ParseOutput`
     /// exposes only the undrained remainder in `patches`.
     pub fn take_patches(&mut self) -> Result<Vec<DomPatch>, HtmlParseError> {
+        self.ensure_not_poisoned()?;
         let patches = self.session.take_patches();
         self.apply_patches(&patches)?;
         if !patches.is_empty() {
@@ -418,15 +432,18 @@ impl HtmlParser {
         if patches.is_empty() {
             return Ok(());
         }
-        self.arena
-            .apply_batch(patches)
-            .map_err(|err| HtmlParseError::PatchValidation(err.to_string()))
+        if let Err(err) = self.arena.apply_batch_trusted(patches) {
+            self.poisoned = true;
+            return Err(HtmlParseError::PatchValidation(err.to_string()));
+        }
+        Ok(())
     }
 
     fn take_patch_batch_internal(
         &mut self,
         record_user_drain: bool,
     ) -> Result<Option<DomPatchBatch>, HtmlParseError> {
+        self.ensure_not_poisoned()?;
         let Some(batch) = self.session.take_patch_batch() else {
             return Ok(None);
         };
@@ -435,6 +452,13 @@ impl HtmlParser {
             self.patches_drained_before_output = true;
         }
         Ok(Some(batch))
+    }
+
+    fn ensure_not_poisoned(&self) -> Result<(), HtmlParseError> {
+        if self.poisoned {
+            return Err(HtmlParseError::Invariant);
+        }
+        Ok(())
     }
 }
 
@@ -454,6 +478,7 @@ mod tests {
         HtmlErrorPolicy, HtmlParseEventCode, HtmlParseEventOrigin, HtmlParseOptions, HtmlParser,
         parse_document,
     };
+    use crate::{DomPatch, PatchKey};
 
     fn summarize(node: &crate::Node, out: &mut Vec<String>) {
         match node {
@@ -654,6 +679,44 @@ mod tests {
             HtmlParseEventCode::ResourceLimit
         );
         assert_eq!(output.parse_errors[0].detail, Some("tag-name-truncated"));
+    }
+
+    #[test]
+    fn patch_validation_failure_poisons_parser_for_future_mutation_and_drains() {
+        let mut parser = HtmlParser::new(HtmlParseOptions::default()).expect("session init");
+
+        let err = parser
+            .apply_patches(&[DomPatch::AppendChild {
+                parent: PatchKey(1),
+                child: PatchKey(2),
+            }])
+            .expect_err("invalid patch batch should fail");
+        assert!(
+            matches!(err, crate::HtmlParseError::PatchValidation(_)),
+            "expected patch validation failure, got {err:?}"
+        );
+
+        assert_eq!(
+            parser.push_bytes(b"<div>").unwrap_err(),
+            crate::HtmlParseError::Invariant
+        );
+        assert_eq!(
+            parser.push_str("<span>").unwrap_err(),
+            crate::HtmlParseError::Invariant
+        );
+        assert_eq!(parser.pump().unwrap_err(), crate::HtmlParseError::Invariant);
+        assert_eq!(
+            parser.finish().unwrap_err(),
+            crate::HtmlParseError::Invariant
+        );
+        assert_eq!(
+            parser.take_patches().unwrap_err(),
+            crate::HtmlParseError::Invariant
+        );
+        assert_eq!(
+            parser.take_patch_batch().unwrap_err(),
+            crate::HtmlParseError::Invariant
+        );
     }
 
     #[test]

@@ -41,31 +41,31 @@ repeatable locally with stable methodology.
 Run all HTML benches:
 
 ```sh
-cargo bench -p html --features test-harness
+cargo bench -p html --features html5
 ```
 
 Run only the HTML bench harness:
 
 ```sh
-cargo bench -p html --bench html_bench --features test-harness
+cargo bench -p html --bench html_bench --features html5
 ```
 
 ## Perf regression guards (CI)
 
-Deterministic regression guards run under `cargo test` and validate token
-counts, node counts, and token/byte ratios. The heavier cases are gated behind
-the `perf-tests` feature.
+Deterministic regression guards run under `cargo test` and validate HTML5 parse
+counters, patch counts, node counts, and chunk-size stability. The heavier
+cases are gated behind the `perf-tests` feature.
 
 Run locally:
 
 ```sh
-cargo test -p html --all-targets
+cargo test -p html --all-targets --features html5
 ```
 
 Run the heavier perf guards (intended for CI):
 
 ```sh
-cargo test -p html --all-targets --features perf-tests
+cargo test -p html --all-targets --features "html5 perf-tests"
 ```
 
 Note: `perf-tests` includes timing-based regression checks. Prefer running these
@@ -78,5 +78,5 @@ Allocation-count tests live in a dedicated integration test binary to keep
 allocator overrides scoped. Enable explicitly:
 
 ```sh
-cargo test -p html --test alloc_guards --features count-alloc
+cargo test -p html --test alloc_guards --features "html5 count-alloc"
 ```

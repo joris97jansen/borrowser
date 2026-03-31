@@ -1,21 +1,11 @@
-use criterion::{BatchSize, Criterion, black_box, criterion_group, criterion_main};
+use criterion::{
+    BatchSize, BenchmarkId, Criterion, Throughput, black_box, criterion_group, criterion_main,
+};
 use html::perf_fixtures::make_blocks;
-use html::{Tokenizer, TreeBuilder, build_owned_dom, tokenize};
+use html::{HtmlParseOptions, HtmlParser, parse_document};
 
 const SMALL_BLOCKS: usize = 64;
 const LARGE_BLOCKS: usize = 20_000;
-
-fn expected_tokens_per_block() -> usize {
-    // For "<div class=box><span>hello</span><img src=x></div>":
-    // StartTag(div), StartTag(span), Text, EndTag(span), StartTag(img), EndTag(div).
-    6
-}
-
-fn estimate_token_capacity(blocks: usize) -> usize {
-    blocks
-        .saturating_mul(expected_tokens_per_block())
-        .saturating_add(1)
-}
 
 fn make_rawtext_adversarial(bytes: usize) -> String {
     let mut body = String::with_capacity(bytes + 32);
@@ -29,44 +19,35 @@ fn make_rawtext_adversarial(bytes: usize) -> String {
     body
 }
 
-fn bench_tokenize_small(c: &mut Criterion) {
+fn bench_parse_small(c: &mut Criterion) {
     let input = make_blocks(SMALL_BLOCKS);
-    c.bench_function("bench_tokenize_small", |b| {
+    c.bench_function("bench_parse_small", |b| {
         b.iter(|| {
-            let stream = tokenize(black_box(&input));
-            black_box(stream.tokens().len());
+            let output = parse_document(black_box(&input), HtmlParseOptions::default())
+                .expect("small html5 parse should succeed");
+            black_box(output.counters.tokens_processed);
         });
     });
 }
 
-fn bench_tokenize_large(c: &mut Criterion) {
+fn bench_parse_large(c: &mut Criterion) {
     let input = make_blocks(LARGE_BLOCKS);
-    c.bench_function("bench_tokenize_large", |b| {
+    c.bench_function("bench_parse_large", |b| {
         b.iter(|| {
-            let stream = tokenize(black_box(&input));
-            black_box(stream.tokens().len());
+            let output = parse_document(black_box(&input), HtmlParseOptions::default())
+                .expect("large html5 parse should succeed");
+            black_box((output.counters.tokens_processed, output.patches.len()));
         });
     });
 }
 
-fn bench_tree_build_large(c: &mut Criterion) {
-    let input = make_blocks(LARGE_BLOCKS);
-    let stream = tokenize(&input);
-    c.bench_function("bench_tree_build_large", |b| {
+fn bench_parse_rawtext_adversarial(c: &mut Criterion) {
+    let input = make_rawtext_adversarial(512 * 1024);
+    c.bench_function("bench_parse_rawtext_adversarial", |b| {
         b.iter(|| {
-            let dom = build_owned_dom(black_box(&stream));
-            black_box(dom);
-        });
-    });
-}
-
-fn bench_parse_large_end_to_end(c: &mut Criterion) {
-    let input = make_blocks(LARGE_BLOCKS);
-    c.bench_function("bench_parse_large_end_to_end", |b| {
-        b.iter(|| {
-            let stream = tokenize(black_box(&input));
-            let dom = build_owned_dom(black_box(&stream));
-            black_box(dom);
+            let output = parse_document(black_box(&input), HtmlParseOptions::default())
+                .expect("rawtext html5 parse should succeed");
+            black_box((output.counters.tokens_processed, output.patches.len()));
         });
     });
 }
@@ -74,69 +55,54 @@ fn bench_parse_large_end_to_end(c: &mut Criterion) {
 fn bench_streaming_chunked(c: &mut Criterion) {
     let input = make_blocks(LARGE_BLOCKS);
     let bytes = input.as_bytes();
-    let chunk_sizes = [1usize, 2, 3, 7, 64, 128, 256, 1024];
-    c.bench_function("bench_streaming_chunked", |b| {
-        b.iter_batched(
-            || {
-                (
-                    Tokenizer::new(),
-                    TreeBuilder::with_capacity(estimate_token_capacity(LARGE_BLOCKS)),
-                )
-            },
-            |(mut tokenizer, mut builder)| {
-                let mut tokens = Vec::new();
-                let mut offset = 0usize;
-                let mut size_idx = 0usize;
-                while offset < bytes.len() {
-                    let size = chunk_sizes[size_idx % chunk_sizes.len()];
-                    let end = (offset + size).min(bytes.len());
-                    tokenizer.feed(&bytes[offset..end]);
-                    tokenizer.drain_into(&mut tokens);
-                    for token in tokens.drain(..) {
-                        builder
-                            .push_token(&token, tokenizer.atoms(), &tokenizer)
-                            .expect("streaming tree builder should accept tokens");
-                    }
-                    offset = end;
-                    size_idx += 1;
-                }
-                tokenizer.finish();
-                tokenizer.drain_into(&mut tokens);
-                for token in tokens.drain(..) {
-                    builder
-                        .push_token(&token, tokenizer.atoms(), &tokenizer)
-                        .expect("streaming tree builder should accept tokens");
-                }
-                builder
-                    .finish()
-                    .expect("streaming tree builder should finish");
-                let dom = builder
-                    .materialize()
-                    .expect("streaming tree builder should build");
-                black_box(dom);
-            },
-            BatchSize::LargeInput,
-        );
-    });
-}
+    let mut group = c.benchmark_group("bench_streaming_chunked");
+    group.throughput(Throughput::Bytes(bytes.len() as u64));
 
-fn bench_tokenize_rawtext_adversarial(c: &mut Criterion) {
-    let input = make_rawtext_adversarial(512 * 1024);
-    c.bench_function("bench_tokenize_rawtext_adversarial", |b| {
-        b.iter(|| {
-            let stream = tokenize(black_box(&input));
-            black_box(stream.tokens().len());
-        });
-    });
+    for chunk_size in [1usize, 2, 3, 7, 64, 128, 256, 1024] {
+        group.bench_with_input(
+            BenchmarkId::from_parameter(chunk_size),
+            &chunk_size,
+            |b, &size| {
+                b.iter_batched(
+                    || HtmlParser::new(HtmlParseOptions::default()).expect("html5 parser init"),
+                    |mut parser| {
+                        let mut total_patches = 0usize;
+                        for chunk in bytes.chunks(size) {
+                            parser.push_bytes(chunk).expect("chunk push should succeed");
+                            parser.pump().expect("chunk pump should succeed");
+                            total_patches = total_patches.saturating_add(
+                                parser
+                                    .take_patches()
+                                    .expect("chunk patch drain should succeed")
+                                    .len(),
+                            );
+                        }
+                        parser.finish().expect("streaming finish should succeed");
+                        total_patches = total_patches.saturating_add(
+                            parser
+                                .take_patches()
+                                .expect("final patch drain should succeed")
+                                .len(),
+                        );
+                        let output = parser.into_output().expect("output should materialize");
+                        black_box((
+                            output.counters.tokens_processed,
+                            total_patches + output.patches.len(),
+                        ));
+                    },
+                    BatchSize::LargeInput,
+                );
+            },
+        );
+    }
+    group.finish();
 }
 
 criterion_group!(
     benches,
-    bench_tokenize_small,
-    bench_tokenize_large,
-    bench_tree_build_large,
-    bench_parse_large_end_to_end,
-    bench_streaming_chunked,
-    bench_tokenize_rawtext_adversarial
+    bench_parse_small,
+    bench_parse_large,
+    bench_parse_rawtext_adversarial,
+    bench_streaming_chunked
 );
 criterion_main!(benches);
