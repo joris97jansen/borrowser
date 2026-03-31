@@ -1,5 +1,6 @@
 mod api;
 mod chunking;
+mod close_tag_boundaries;
 mod comments;
 mod doctype;
 mod end_tag_matcher;
