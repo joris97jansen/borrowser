@@ -14,6 +14,19 @@ impl PatchValidationArena {
         Ok(())
     }
 
+    /// Apply a trusted batch in place.
+    ///
+    /// This is intended for internal engine paths that already treat any patch
+    /// validation failure as a terminal invariant violation for the session.
+    /// Unlike `apply_batch`, a failure may leave the arena partially updated.
+    pub(crate) fn apply_batch_trusted(
+        &mut self,
+        patches: &[DomPatch],
+    ) -> Result<(), PatchValidationError> {
+        self.apply_batch_in_place(patches)?;
+        self.assert_invariants()
+    }
+
     fn clear(&mut self) {
         self.nodes.clear();
         self.root = None;
@@ -422,7 +435,7 @@ impl PatchValidationArena {
                     match &mut node.kind {
                         PatchKind::Element {
                             attributes: slot, ..
-                        } => *slot = attributes.clone(),
+                        } => slot.clone_from(attributes),
                         _ => {
                             return Err(PatchValidationError::new(
                                 "SetAttributes target",
@@ -437,7 +450,10 @@ impl PatchValidationArena {
                         PatchValidationError::new("SetText target", "missing node")
                     })?;
                     match &mut node.kind {
-                        PatchKind::Text { text: slot } => *slot = text.clone(),
+                        PatchKind::Text { text: slot } => {
+                            slot.clear();
+                            slot.push_str(text);
+                        }
                         _ => {
                             return Err(PatchValidationError::new(
                                 "SetText target",

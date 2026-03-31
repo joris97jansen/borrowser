@@ -31,6 +31,12 @@ parser_invariants = []
 [[bench]]
 name = "html_bench"
 harness = false
+required-features = ["html5"]
+
+[[test]]
+name = "alloc_guards"
+path = "tests/alloc_guards.rs"
+required-features = ["html5", "count-alloc"]
 
 [[test]]
 name = "wpt_html5"

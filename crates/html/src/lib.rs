@@ -12,9 +12,9 @@ pub mod head;
 pub mod parse_guards;
 #[cfg(any(test, feature = "test-harness", feature = "html5"))]
 pub mod perf_fixtures;
-#[cfg(all(test, feature = "perf-tests"))]
+#[cfg(all(test, feature = "perf-tests", feature = "html5"))]
 mod perf_guards_heavy;
-#[cfg(test)]
+#[cfg(all(test, feature = "html5"))]
 mod perf_guards_smoke;
 #[cfg(test)]
 mod streaming_parity;
