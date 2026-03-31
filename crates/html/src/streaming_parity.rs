@@ -5,8 +5,7 @@
 //! `BORROWSER_STREAMING_PARITY_BUDGET` to increase coverage.
 
 use crate::dom_snapshot::{DomSnapshotOptions, compare_dom};
-use crate::test_harness::run_chunked_bytes_with_tokens;
-use crate::{build_owned_dom, tokenize};
+use crate::{HtmlParseOptions, HtmlParser, parse_document};
 use tools::utf8::{finish_utf8, push_utf8_chunk};
 
 const DEFAULT_BUDGET_CI: usize = 300;
@@ -111,10 +110,10 @@ fn streaming_parity_handles_invalid_utf8_lossily() {
 
 fn assert_parity(case_idx: usize, seed: Option<u64>, bytes: &[u8], boundaries: &[usize]) {
     let assembled = assemble_utf8_from_bytes(bytes, boundaries);
-    let runtime_stream = tokenize(&assembled);
-    let runtime_dom = build_owned_dom(&runtime_stream);
-    let (harness_dom, harness_stream) = run_chunked_bytes_with_tokens(bytes, boundaries);
-    compare_dom(&runtime_dom, &harness_dom, DomSnapshotOptions::default()).unwrap_or_else(|err| {
+    let full = parse_document(&assembled, HtmlParseOptions::default())
+        .expect("full HTML5 streaming parity parse should succeed");
+    let chunked = run_chunked_bytes_output(bytes, boundaries);
+    compare_dom(&full.document, &chunked.document, DomSnapshotOptions::default()).unwrap_or_else(|err| {
         let payload = if assembled.len() <= 128 {
             format!("assembled={assembled:?}")
         } else {
@@ -124,9 +123,11 @@ fn assert_parity(case_idx: usize, seed: Option<u64>, bytes: &[u8], boundaries: &
             .map(|seed| format!("seed=0x{seed:016x}"))
             .unwrap_or_else(|| "seed=explicit".to_string());
         panic!(
-            "streaming parity mismatch for case={case_idx} {seed_label} boundaries={boundaries:?}: {err}\n{payload}\nruntime_tokens: {}\nharness_tokens: {}",
-            snapshot_preview(&runtime_stream),
-            snapshot_preview(&harness_stream)
+            "streaming parity mismatch for case={case_idx} {seed_label} boundaries={boundaries:?}: {err}\n{payload}\nfull_counters={:?}\nchunked_counters={:?}\nfull_parse_errors={:?}\nchunked_parse_errors={:?}",
+            full.counters,
+            chunked.counters,
+            full.parse_errors,
+            chunked.parse_errors
         )
     });
 }
@@ -147,10 +148,34 @@ fn assemble_utf8_from_bytes(bytes: &[u8], boundaries: &[usize]) -> String {
     text
 }
 
-fn snapshot_preview(stream: &crate::TokenStream) -> String {
-    let snapshot = crate::test_utils::token_snapshot(stream);
-    let head = snapshot.iter().take(20).cloned().collect::<Vec<_>>();
-    format!("len={} head=[{}]", snapshot.len(), head.join(", "))
+fn run_chunked_bytes_output(bytes: &[u8], boundaries: &[usize]) -> crate::ParseOutput {
+    let mut parser =
+        HtmlParser::new(HtmlParseOptions::default()).expect("chunked HTML5 parity parser init");
+    let mut last = 0usize;
+    for &idx in boundaries {
+        assert!(idx > last && idx <= bytes.len(), "invalid boundary {idx}");
+        parser
+            .push_bytes(&bytes[last..idx])
+            .expect("chunked HTML5 parity push should succeed");
+        parser
+            .pump()
+            .expect("chunked HTML5 parity pump should succeed");
+        last = idx;
+    }
+    if last < bytes.len() {
+        parser
+            .push_bytes(&bytes[last..])
+            .expect("chunked HTML5 parity final push should succeed");
+        parser
+            .pump()
+            .expect("chunked HTML5 parity final pump should succeed");
+    }
+    parser
+        .finish()
+        .expect("chunked HTML5 parity finish should succeed");
+    parser
+        .into_output()
+        .expect("chunked HTML5 parity output should materialize")
 }
 
 fn seed_count() -> usize {

@@ -1,13 +1,12 @@
 use super::super::{Expectation, GoldenFixture, Invariant};
+use crate::Node;
 use crate::dom_snapshot::{DomSnapshotOptions, compare_dom};
-use crate::{Node, Token, TokenStream};
 use std::collections::BTreeMap;
 
 pub(super) struct InvariantCtx<'a> {
     fixture: &'a GoldenFixture,
     full_dom: &'a Node,
     chunked_dom: &'a Node,
-    chunked_tokens: &'a TokenStream,
 }
 
 impl<'a> InvariantCtx<'a> {
@@ -15,13 +14,11 @@ impl<'a> InvariantCtx<'a> {
         fixture: &'a GoldenFixture,
         full_dom: &'a Node,
         chunked_dom: &'a Node,
-        chunked_tokens: &'a TokenStream,
     ) -> Self {
         Self {
             fixture,
             full_dom,
             chunked_dom,
-            chunked_tokens,
         }
     }
 }
@@ -41,9 +38,7 @@ pub(super) fn check_invariant(ctx: &InvariantCtx<'_>, invariant: Invariant) -> R
         Invariant::AcceptsMixedAttributeSyntax
         | Invariant::AttributesParsedWithSpacing
         | Invariant::BooleanAttributePresent
-        | Invariant::EmptyAttributeValuePreserved => {
-            check_token_attributes(ctx.fixture.name, ctx.chunked_tokens)
-        }
+        | Invariant::EmptyAttributeValuePreserved => check_attribute_parsing(ctx),
         Invariant::TagBoundariesStable => check_tag_boundaries(ctx),
         Invariant::CustomTagRecognized => check_tag_presence(ctx, "my-component", "custom tag"),
         Invariant::NamespacedTagRecognized => check_tag_presence(ctx, "svg:rect", "namespaced tag"),
@@ -270,12 +265,16 @@ fn has_comment(node: &Node) -> bool {
 
 fn find_element<'a>(node: &'a Node, name: &str) -> Option<&'a Node> {
     match node {
-        Node::Element { name: tag, .. } => {
+        Node::Element {
+            name: tag,
+            children,
+            ..
+        } => {
             crate::types::debug_assert_lowercase_atom(tag, "golden find_element tag");
             if tag.as_ref() == name {
                 Some(node)
             } else {
-                None
+                children.iter().find_map(|child| find_element(child, name))
             }
         }
         Node::Document { children, .. } => {
@@ -331,116 +330,130 @@ fn collect_element_names(node: &Node, out: &mut BTreeMap<String, usize>) {
     }
 }
 
-fn check_token_attributes(fixture_name: &str, stream: &TokenStream) -> Result<(), String> {
-    type StartTagAttrs<'a> = (
-        &'a str,
-        &'a [(crate::AtomId, Option<crate::AttributeValue>)],
-    );
-
-    let atoms = stream.atoms();
-    let start_tags: Vec<StartTagAttrs<'_>> = stream
-        .tokens()
-        .iter()
-        .filter_map(|token| match token {
-            Token::StartTag {
-                name, attributes, ..
-            } => Some((atoms.resolve(*name), attributes.as_slice())),
-            _ => None,
-        })
-        .collect();
-
-    match fixture_name {
+fn check_attribute_parsing(ctx: &InvariantCtx<'_>) -> Result<(), String> {
+    match ctx.fixture.name {
         "attr_quoted_unquoted" => {
-            let (_, attrs) = start_tags
-                .iter()
-                .find(|(tag, _)| *tag == "div")
-                .ok_or_else(|| "expected <div> start tag".to_string())?;
-            let class = find_attr(stream, atoms, attrs, "class");
-            let data_x = find_attr(stream, atoms, attrs, "data-x");
-            if class == Some("a b") && data_x == Some("1") {
+            let full_attrs = element_attributes(ctx.full_dom, "div")
+                .ok_or_else(|| "expected <div> element in full DOM".to_string())?;
+            let chunked_attrs = element_attributes(ctx.chunked_dom, "div")
+                .ok_or_else(|| "expected <div> element in chunked DOM".to_string())?;
+            let full_class = find_attr(full_attrs, "class");
+            let full_data_x = find_attr(full_attrs, "data-x");
+            let chunked_class = find_attr(chunked_attrs, "class");
+            let chunked_data_x = find_attr(chunked_attrs, "data-x");
+            if full_class == Some("a b")
+                && full_data_x == Some("1")
+                && chunked_class == Some("a b")
+                && chunked_data_x == Some("1")
+            {
                 Ok(())
             } else {
                 Err(format!(
-                    "expected class=\"a b\" and data-x=\"1\", got class={class:?} data-x={data_x:?}"
+                    "expected class=\"a b\" and data-x=\"1\", got full_class={full_class:?} full_data_x={full_data_x:?} chunked_class={chunked_class:?} chunked_data_x={chunked_data_x:?}"
                 ))
             }
         }
         "attr_quote_variants" => {
-            let (_, attrs) = start_tags
-                .iter()
-                .find(|(tag, _)| *tag == "input")
-                .ok_or_else(|| "expected <input> start tag".to_string())?;
-            let value = find_attr(stream, atoms, attrs, "value");
-            let title = find_attr(stream, atoms, attrs, "title");
-            if value == Some("a b") && title == Some("c d") {
+            let full_attrs = element_attributes(ctx.full_dom, "input")
+                .ok_or_else(|| "expected <input> element in full DOM".to_string())?;
+            let chunked_attrs = element_attributes(ctx.chunked_dom, "input")
+                .ok_or_else(|| "expected <input> element in chunked DOM".to_string())?;
+            let full_value = find_attr(full_attrs, "value");
+            let full_title = find_attr(full_attrs, "title");
+            let chunked_value = find_attr(chunked_attrs, "value");
+            let chunked_title = find_attr(chunked_attrs, "title");
+            if full_value == Some("a b")
+                && full_title == Some("c d")
+                && chunked_value == Some("a b")
+                && chunked_title == Some("c d")
+            {
                 Ok(())
             } else {
-                Err("expected value=\"a b\" and title=\"c d\"".to_string())
+                Err(format!(
+                    "expected value=\"a b\" and title=\"c d\", got full_value={full_value:?} full_title={full_title:?} chunked_value={chunked_value:?} chunked_title={chunked_title:?}"
+                ))
             }
         }
         "attr_whitespace_variations" => {
-            let (_, attrs) = start_tags
-                .iter()
-                .find(|(tag, _)| *tag == "div")
-                .ok_or_else(|| "expected <div> start tag".to_string())?;
-            let id = find_attr(stream, atoms, attrs, "id");
-            let class = find_attr(stream, atoms, attrs, "class");
-            if id == Some("a") && class == Some("foo") {
+            let full_attrs = element_attributes(ctx.full_dom, "div")
+                .ok_or_else(|| "expected <div> element in full DOM".to_string())?;
+            let chunked_attrs = element_attributes(ctx.chunked_dom, "div")
+                .ok_or_else(|| "expected <div> element in chunked DOM".to_string())?;
+            let full_id = find_attr(full_attrs, "id");
+            let full_class = find_attr(full_attrs, "class");
+            let chunked_id = find_attr(chunked_attrs, "id");
+            let chunked_class = find_attr(chunked_attrs, "class");
+            if full_id == Some("a")
+                && full_class == Some("foo")
+                && chunked_id == Some("a")
+                && chunked_class == Some("foo")
+            {
                 Ok(())
             } else {
-                Err("expected id=\"a\" and class=\"foo\"".to_string())
+                Err(format!(
+                    "expected id=\"a\" and class=\"foo\", got full_id={full_id:?} full_class={full_class:?} chunked_id={chunked_id:?} chunked_class={chunked_class:?}"
+                ))
             }
         }
         "attr_boolean_empty" => {
-            let (_, attrs) = start_tags
-                .iter()
-                .find(|(tag, _)| *tag == "input")
-                .ok_or_else(|| "expected <input> start tag".to_string())?;
-            let disabled_present = has_attr(atoms, attrs, "disabled");
-            let required_present = has_attr(atoms, attrs, "required");
-            let data_empty = find_attr(stream, atoms, attrs, "data-empty");
-            if disabled_present && required_present && data_empty == Some("") {
+            let full_attrs = element_attributes(ctx.full_dom, "input")
+                .ok_or_else(|| "expected <input> element in full DOM".to_string())?;
+            let chunked_attrs = element_attributes(ctx.chunked_dom, "input")
+                .ok_or_else(|| "expected <input> element in chunked DOM".to_string())?;
+            let full_disabled = has_attr(full_attrs, "disabled");
+            let full_required = has_attr(full_attrs, "required");
+            let full_data_empty = find_attr(full_attrs, "data-empty");
+            let chunked_disabled = has_attr(chunked_attrs, "disabled");
+            let chunked_required = has_attr(chunked_attrs, "required");
+            let chunked_data_empty = find_attr(chunked_attrs, "data-empty");
+            if full_disabled
+                && full_required
+                && full_data_empty == Some("")
+                && chunked_disabled
+                && chunked_required
+                && chunked_data_empty == Some("")
+            {
                 Ok(())
             } else {
-                Err("expected disabled+required boolean attrs and data-empty=\"\"".to_string())
+                Err(format!(
+                    "expected disabled+required boolean attrs and data-empty=\"\", got full_disabled={full_disabled} full_required={full_required} full_data_empty={full_data_empty:?} chunked_disabled={chunked_disabled} chunked_required={chunked_required} chunked_data_empty={chunked_data_empty:?}"
+                ))
             }
         }
         _ => Err(format!(
-            "attribute expectations not defined for fixture: {fixture_name}"
+            "attribute expectations not defined for fixture: {}",
+            ctx.fixture.name
         )),
     }
 }
 
+fn element_attributes<'a>(
+    node: &'a Node,
+    tag_name: &str,
+) -> Option<&'a [(std::sync::Arc<str>, Option<String>)]> {
+    match find_element(node, tag_name)? {
+        Node::Element { attributes, .. } => Some(attributes.as_slice()),
+        Node::Document { .. } | Node::Text { .. } | Node::Comment { .. } => None,
+    }
+}
+
 fn find_attr<'a>(
-    stream: &'a TokenStream,
-    atoms: &'a crate::AtomTable,
-    attrs: &'a [(crate::AtomId, Option<crate::AttributeValue>)],
+    attrs: &'a [(std::sync::Arc<str>, Option<String>)],
     name: &str,
 ) -> Option<&'a str> {
     attrs.iter().find_map(|(key, value)| {
-        let key_name = atoms.resolve(*key);
-        crate::types::debug_assert_lowercase_atom(key_name, "golden attribute name");
-        if key_name == name {
-            Some(
-                value
-                    .as_ref()
-                    .map(|value| stream.attr_value(value))
-                    .unwrap_or(""),
-            )
+        crate::types::debug_assert_lowercase_atom(key, "golden attribute name");
+        if key.as_ref() == name {
+            Some(value.as_deref().unwrap_or(""))
         } else {
             None
         }
     })
 }
 
-fn has_attr(
-    atoms: &crate::AtomTable,
-    attrs: &[(crate::AtomId, Option<crate::AttributeValue>)],
-    name: &str,
-) -> bool {
+fn has_attr(attrs: &[(std::sync::Arc<str>, Option<String>)], name: &str) -> bool {
     attrs.iter().any(|(key, _)| {
-        let key_name = atoms.resolve(*key);
-        crate::types::debug_assert_lowercase_atom(key_name, "golden attribute name");
-        key_name == name
+        crate::types::debug_assert_lowercase_atom(key, "golden attribute name");
+        key.as_ref() == name
     })
 }

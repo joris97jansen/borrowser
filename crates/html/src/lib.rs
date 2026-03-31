@@ -1,4 +1,4 @@
-#[cfg(any(test, feature = "test-harness", feature = "html5"))]
+#[cfg(feature = "html5")]
 pub mod chunker;
 pub mod collect;
 pub mod debug;
@@ -16,9 +16,9 @@ pub mod perf_fixtures;
 mod perf_guards_heavy;
 #[cfg(all(test, feature = "html5"))]
 mod perf_guards_smoke;
-#[cfg(test)]
+#[cfg(all(test, feature = "html5"))]
 mod streaming_parity;
-#[cfg(any(test, feature = "test-harness", feature = "html5"))]
+#[cfg(feature = "html5")]
 pub mod test_harness;
 #[cfg(test)]
 pub(crate) mod test_support;

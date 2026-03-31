@@ -1,6 +1,6 @@
 use super::{FixtureKind, Invariant, fixtures};
 use crate::test_harness::{
-    deterministic_chunk_plans, random_chunk_plan, run_chunked_with_tokens, run_full,
+    deterministic_chunk_plans, random_chunk_plan, run_chunked_with_output, run_full,
 };
 use std::collections::{HashMap, HashSet};
 
@@ -80,9 +80,8 @@ fn golden_corpus_v1_runs_across_random_chunk_plans() {
         for offset in 0..seeds_per_fixture {
             let seed = fixture_seed.wrapping_add(offset as u64);
             let fuzz_plan = random_chunk_plan(fixture.input, seed, fuzz_mode);
-            let (chunked_dom, chunked_tokens) =
-                run_chunked_with_tokens(fixture.input, &fuzz_plan.plan);
-            let ctx = InvariantCtx::new(fixture, &full_dom, &chunked_dom, &chunked_tokens);
+            let chunked = run_chunked_with_output(fixture.input, &fuzz_plan.plan);
+            let ctx = InvariantCtx::new(fixture, &full_dom, &chunked.document);
 
             for &invariant in fixture.invariants {
                 match check_invariant(&ctx, invariant) {

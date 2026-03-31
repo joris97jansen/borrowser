@@ -5,7 +5,7 @@ use html::golden_corpus::{Expectation, fixtures};
 use html::test_harness::{
     ChunkPlan, FuzzMode, deterministic_chunk_plans, random_chunk_plan, shrink_chunk_plan_with_stats,
 };
-use html::{DomPatch, Tokenizer, TreeBuilder, TreeBuilderConfig, build_owned_dom, tokenize};
+use html::{DomPatch, HtmlParseOptions, HtmlParser};
 
 const DEFAULT_BUDGET_CI: usize = 150;
 const DEFAULT_BUDGET_LOCAL: usize = 600;
@@ -30,7 +30,7 @@ fn patch_stream_parity_golden_corpus() {
             continue;
         }
         let input = fixture.input;
-        let full_dom = build_owned_dom(&tokenize(input));
+        let full_dom = parse_html_document(input);
 
         for plan in deterministic_chunk_plans(input) {
             run_parity_case(fixture.name, input, &full_dom, &plan, None, None);
@@ -67,8 +67,14 @@ fn run_parity_case(
 ) {
     match run_incremental_pipeline(input, plan) {
         Ok(actual_dom) => {
-            if let Err(err) = compare_dom(full_dom, &actual_dom.dom, DomSnapshotOptions::default())
-            {
+            if let Err(err) = compare_dom(
+                full_dom,
+                &actual_dom.dom,
+                DomSnapshotOptions {
+                    ignore_ids: true,
+                    ignore_empty_style: false,
+                },
+            ) {
                 let err = err.to_string();
                 let (min_plan, stats, minimized_failure, minimized_dom_error) =
                     shrink_on_dom_mismatch(input, full_dom, plan);
@@ -131,13 +137,17 @@ struct RunResult {
 }
 
 fn run_incremental_pipeline(input: &str, plan: &ChunkPlan) -> Result<RunResult, FailureInfo> {
-    let mut tokenizer = Tokenizer::new();
-    let mut builder = TreeBuilder::with_capacity_and_config(0, TreeBuilderConfig::default());
-    let mut token_buffer = Vec::new();
+    let mut parser = HtmlParser::new(HtmlParseOptions::default()).map_err(|err| FailureInfo {
+        message: "parser init error".to_string(),
+        details: err.to_string(),
+        patch_summary: String::new(),
+        patch_preview: None,
+    })?;
     let mut patch_batches: Vec<Vec<DomPatch>> = Vec::new();
     let mut pending_patches: Vec<DomPatch> = Vec::new();
     let mut pending_tokens: usize = 0;
     let mut pending_bytes: usize = 0;
+    let mut last_tokens_processed: u64 = 0;
     let mut chunks_since_flush: usize = 0;
     let batch_policy = BatchPolicy::from_env();
     let mut error: Option<FailureInfo> = None;
@@ -148,18 +158,44 @@ fn run_incremental_pipeline(input: &str, plan: &ChunkPlan) -> Result<RunResult, 
         }
         chunks_since_flush = chunks_since_flush.saturating_add(1);
         pending_bytes = pending_bytes.saturating_add(chunk.len());
-        pending_tokens = pending_tokens.saturating_add(tokenizer.feed(chunk));
-        tokenizer.drain_into(&mut token_buffer);
-        if let Err(err) = feed_tokens_into_builder(&mut builder, &tokenizer, &mut token_buffer) {
+        if let Err(err) = parser.push_bytes(chunk) {
             error = Some(FailureInfo {
-                message: err.message,
-                details: err.details,
+                message: "parser push error".to_string(),
+                details: err.to_string(),
                 patch_summary: patch_summary(&patch_batches),
-                patch_preview: None,
+                patch_preview: patch_preview(&patch_batches, &pending_patches),
             });
             return;
         }
-        collect_patches(&mut builder, &mut pending_patches);
+        if let Err(err) = parser.pump() {
+            error = Some(FailureInfo {
+                message: "parser pump error".to_string(),
+                details: err.to_string(),
+                patch_summary: patch_summary(&patch_batches),
+                patch_preview: patch_preview(&patch_batches, &pending_patches),
+            });
+            return;
+        }
+        let total_tokens = parser.tokens_processed();
+        pending_tokens = pending_tokens
+            .saturating_add(total_tokens.saturating_sub(last_tokens_processed) as usize);
+        last_tokens_processed = total_tokens;
+        match parser.take_patches() {
+            Ok(patches) => {
+                if !patches.is_empty() {
+                    pending_patches.extend(patches);
+                }
+            }
+            Err(err) => {
+                error = Some(FailureInfo {
+                    message: "patch drain error".to_string(),
+                    details: err.to_string(),
+                    patch_summary: patch_summary(&patch_batches),
+                    patch_preview: patch_preview(&patch_batches, &pending_patches),
+                });
+                return;
+            }
+        }
         if batch_policy.should_flush(
             pending_tokens,
             pending_bytes,
@@ -177,30 +213,47 @@ fn run_incremental_pipeline(input: &str, plan: &ChunkPlan) -> Result<RunResult, 
         return Err(err);
     }
 
-    tokenizer.finish();
-    tokenizer.drain_into(&mut token_buffer);
-    if let Err(mut err) = feed_tokens_into_builder(&mut builder, &tokenizer, &mut token_buffer) {
-        err.patch_summary = patch_summary(&patch_batches);
-        err.patch_preview = patch_preview(&patch_batches, &pending_patches);
-        return Err(err);
-    }
-    builder.finish().map_err(|err| FailureInfo {
-        message: "tree builder finish error".to_string(),
+    parser.finish().map_err(|err| FailureInfo {
+        message: "parser finish error".to_string(),
         details: err.to_string(),
         patch_summary: patch_summary(&patch_batches),
         patch_preview: patch_preview(&patch_batches, &pending_patches),
     })?;
-    collect_patches(&mut builder, &mut pending_patches);
+    let final_patches = parser.take_patches().map_err(|err| FailureInfo {
+        message: "final patch drain error".to_string(),
+        details: err.to_string(),
+        patch_summary: patch_summary(&patch_batches),
+        patch_preview: patch_preview(&patch_batches, &pending_patches),
+    })?;
+    if !final_patches.is_empty() {
+        pending_patches.extend(final_patches);
+    }
     flush_pending(&mut pending_patches, &mut patch_batches);
 
     let summary = patch_summary(&patch_batches);
     let preview = patch_preview(&patch_batches, &[]);
+    let output = parser.into_output().map_err(|err| FailureInfo {
+        message: "parser output error".to_string(),
+        details: err.to_string(),
+        patch_summary: summary.clone(),
+        patch_preview: preview.clone(),
+    })?;
     match apply_patches_to_store(&patch_batches) {
-        Ok(dom) => Ok(RunResult {
-            dom,
-            patch_summary: summary,
-            patch_preview: preview,
-        }),
+        Ok(dom) => {
+            if let Err(err) = compare_dom(&output.document, &dom, DomSnapshotOptions::default()) {
+                return Err(FailureInfo {
+                    message: "patch application DOM mismatch".to_string(),
+                    details: err.to_string(),
+                    patch_summary: summary,
+                    patch_preview: preview,
+                });
+            }
+            Ok(RunResult {
+                dom,
+                patch_summary: summary,
+                patch_preview: preview,
+            })
+        }
         Err(err) => Err(FailureInfo {
             message: "patch application failed".to_string(),
             details: err,
@@ -210,30 +263,22 @@ fn run_incremental_pipeline(input: &str, plan: &ChunkPlan) -> Result<RunResult, 
     }
 }
 
-fn feed_tokens_into_builder(
-    builder: &mut TreeBuilder,
-    tokenizer: &Tokenizer,
-    token_buffer: &mut Vec<html::Token>,
-) -> Result<(), FailureInfo> {
-    let atoms = tokenizer.atoms();
-    for token in token_buffer.drain(..) {
-        if let Err(err) = builder.push_token(&token, atoms, tokenizer) {
-            return Err(FailureInfo {
-                message: "tree builder token error".to_string(),
-                details: err.to_string(),
-                patch_summary: String::new(),
-                patch_preview: None,
-            });
-        }
-    }
-    Ok(())
-}
-
-fn collect_patches(builder: &mut TreeBuilder, out: &mut Vec<DomPatch>) {
-    let patches = builder.take_patches();
-    if !patches.is_empty() {
-        out.extend(patches);
-    }
+fn parse_html_document(input: &str) -> html::Node {
+    let mut parser =
+        HtmlParser::new(HtmlParseOptions::default()).expect("full HTML5 parity parser init");
+    parser
+        .push_bytes(input.as_bytes())
+        .expect("full HTML5 parity push should succeed");
+    parser
+        .pump()
+        .expect("full HTML5 parity pump should succeed");
+    parser
+        .finish()
+        .expect("full HTML5 parity finish should succeed");
+    parser
+        .into_output()
+        .expect("full HTML5 parity output should materialize")
+        .document
 }
 
 fn apply_patches_to_store(batches: &[Vec<DomPatch>]) -> Result<Box<html::Node>, String> {
@@ -504,7 +549,15 @@ fn shrink_on_dom_mismatch(
 ) {
     let (min_plan, stats) = shrink_chunk_plan_with_stats(input, plan, |candidate| {
         match run_incremental_pipeline(input, candidate) {
-            Ok(run) => compare_dom(full_dom, &run.dom, DomSnapshotOptions::default()).is_err(),
+            Ok(run) => compare_dom(
+                full_dom,
+                &run.dom,
+                DomSnapshotOptions {
+                    ignore_ids: true,
+                    ignore_empty_style: false,
+                },
+            )
+            .is_err(),
             Err(_) => true,
         }
     });
@@ -513,9 +566,16 @@ fn shrink_on_dom_mismatch(
     } else {
         match run_incremental_pipeline(input, &min_plan) {
             Ok(run) => {
-                let dom_error = compare_dom(full_dom, &run.dom, DomSnapshotOptions::default())
-                    .err()
-                    .map(|err| err.to_string());
+                let dom_error = compare_dom(
+                    full_dom,
+                    &run.dom,
+                    DomSnapshotOptions {
+                        ignore_ids: true,
+                        ignore_empty_style: false,
+                    },
+                )
+                .err()
+                .map(|err| err.to_string());
                 (None, dom_error)
             }
             Err(err) => (Some(err), None),
