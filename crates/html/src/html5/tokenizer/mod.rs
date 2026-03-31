@@ -22,6 +22,9 @@
 //! - Text-mode close-tag matching is incremental and resumable across chunk
 //!   growth; pending RAWTEXT/RCDATA/script candidates do not restart scanning
 //!   from the candidate `<` on every pump.
+//! - Text-mode close-tag scanning is additionally bounded per candidate by
+//!   `TokenizerLimits::max_end_tag_match_scan_bytes`; oversized candidates are
+//!   recovered as literal text rather than scanning unbounded tails.
 //! - Resource-limit posture: once a configured tokenizer limit is exceeded, the
 //!   tokenizer prioritizes boundedness and state integrity over exact token
 //!   fidelity. Recovery remains deterministic and may truncate data, drop
