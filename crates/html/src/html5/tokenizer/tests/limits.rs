@@ -1,7 +1,7 @@
 use super::helpers::{
     run_chunks, run_chunks_with_config_and_errors, run_text_mode_chunks_with_config_and_errors,
 };
-use crate::html5::shared::ParseErrorCode;
+use crate::html5::shared::{ErrorOrigin, ParseError, ParseErrorCode};
 use crate::html5::tokenizer::{TextModeSpec, TokenizerConfig, TokenizerLimits};
 
 fn limit_config(limits: TokenizerLimits) -> TokenizerConfig {
@@ -25,6 +25,74 @@ fn assert_single_limit_error(
     assert_eq!(error.code, ParseErrorCode::ResourceLimit);
     assert_eq!(error.detail, Some(detail));
     assert_eq!(error.aux, Some(limit as u32));
+}
+
+fn utf8_boundary_chunks(input: &str) -> Vec<&str> {
+    let mut chunks = Vec::new();
+    let mut start = 0usize;
+    for (idx, _) in input.char_indices().skip(1) {
+        chunks.push(&input[start..idx]);
+        start = idx;
+    }
+    if start < input.len() {
+        chunks.push(&input[start..]);
+    } else if chunks.is_empty() {
+        chunks.push(input);
+    }
+    chunks
+}
+
+fn assert_text_mode_limit_chunk_invariant<F>(
+    run: F,
+    input: &str,
+    expected_tokens: &[&str],
+    expected_errors: &[ParseError],
+    label: &str,
+) where
+    F: Fn(
+        &[&str],
+    ) -> (
+        Vec<String>,
+        crate::html5::tokenizer::TokenizerStats,
+        Vec<ParseError>,
+    ),
+{
+    let expected_tokens = expected_tokens
+        .iter()
+        .map(|line| (*line).to_string())
+        .collect::<Vec<_>>();
+    let (whole_tokens, _, whole_errors) = run(&[input]);
+    assert_eq!(
+        whole_tokens, expected_tokens,
+        "whole-input limit recovery token mismatch for {label}"
+    );
+    assert_eq!(
+        whole_errors, expected_errors,
+        "whole-input limit recovery error mismatch for {label}"
+    );
+
+    for split in 1..input.len() {
+        let (chunked_tokens, _, chunked_errors) = run(&[&input[..split], &input[split..]]);
+        assert_eq!(
+            chunked_tokens, whole_tokens,
+            "split limit recovery token mismatch for {label} at split={split}"
+        );
+        assert_eq!(
+            chunked_errors, whole_errors,
+            "split limit recovery error mismatch for {label} at split={split}"
+        );
+    }
+
+    let boundary_chunks = utf8_boundary_chunks(input);
+    let (bytewise_tokens, _, bytewise_errors) = run(&boundary_chunks);
+    assert_eq!(
+        bytewise_tokens, whole_tokens,
+        "bytewise limit recovery token mismatch for {label}"
+    );
+    assert_eq!(
+        bytewise_errors, whole_errors,
+        "bytewise limit recovery error mismatch for {label}"
+    );
 }
 
 #[test]
@@ -227,4 +295,76 @@ fn end_tag_matcher_limit_treats_oversized_candidate_as_text_then_recovers() {
         ]
     );
     assert_single_limit_error(&errors, "end-tag-matcher-limit", 8);
+}
+
+#[test]
+fn end_tag_matcher_limit_recovery_is_chunk_stable_for_rawtext_style() {
+    let limits = TokenizerLimits {
+        max_end_tag_match_scan_bytes: 8,
+        ..TokenizerLimits::default()
+    };
+    let input = "<style>hello</style class=x></style>";
+    let expected_errors = vec![ParseError {
+        origin: ErrorOrigin::Tokenizer,
+        code: ParseErrorCode::ResourceLimit,
+        position: 12,
+        detail: Some("end-tag-matcher-limit"),
+        aux: Some(8),
+    }];
+
+    assert_text_mode_limit_chunk_invariant(
+        |chunks| {
+            run_text_mode_chunks_with_config_and_errors(
+                limit_config(limits),
+                chunks,
+                "style",
+                TextModeSpec::rawtext_style,
+            )
+        },
+        input,
+        &[
+            "START name=style attrs=[] self_closing=false",
+            "CHAR text=\"hello</style class=x>\"",
+            "END name=style",
+            "EOF",
+        ],
+        &expected_errors,
+        "rawtext-style-end-tag-matcher-limit",
+    );
+}
+
+#[test]
+fn end_tag_matcher_limit_recovery_is_chunk_stable_for_script_data() {
+    let limits = TokenizerLimits {
+        max_end_tag_match_scan_bytes: 9,
+        ..TokenizerLimits::default()
+    };
+    let input = "<script>hello</script type=text/plain></script>";
+    let expected_errors = vec![ParseError {
+        origin: ErrorOrigin::Tokenizer,
+        code: ParseErrorCode::ResourceLimit,
+        position: 13,
+        detail: Some("end-tag-matcher-limit"),
+        aux: Some(9),
+    }];
+
+    assert_text_mode_limit_chunk_invariant(
+        |chunks| {
+            run_text_mode_chunks_with_config_and_errors(
+                limit_config(limits),
+                chunks,
+                "script",
+                TextModeSpec::script_data,
+            )
+        },
+        input,
+        &[
+            "START name=script attrs=[] self_closing=false",
+            "CHAR text=\"hello</script type=text/plain>\"",
+            "END name=script",
+            "EOF",
+        ],
+        &expected_errors,
+        "script-data-end-tag-matcher-limit",
+    );
 }

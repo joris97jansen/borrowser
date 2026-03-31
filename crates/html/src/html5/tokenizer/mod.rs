@@ -25,6 +25,9 @@
 //! - Text-mode close-tag scanning is additionally bounded per candidate by
 //!   `TokenizerLimits::max_end_tag_match_scan_bytes`; oversized candidates are
 //!   recovered as literal text rather than scanning unbounded tails.
+//! - Text-mode matching does not allocate a separate copied close-tag-prefix or
+//!   copied RAWTEXT/script text buffer; pending matcher state is fixed-size and
+//!   pending text remains span-based against the shared decoded `Input`.
 //! - Resource-limit posture: once a configured tokenizer limit is exceeded, the
 //!   tokenizer prioritizes boundedness and state integrity over exact token
 //!   fidelity. Recovery remains deterministic and may truncate data, drop
