@@ -8,6 +8,9 @@ Normative matrix sources:
 - `docs/html5/dompatch-contract.md`
 - `docs/html5/node-identity-contract.md`
 
+Related text-mode hardening note:
+- `docs/html5/rawtext-script-stability.md`
+
 ## Purpose
 
 This document defines the normative supported subset for `HTML5 Core v0`.
