@@ -3,6 +3,7 @@ use crate::html5::tokenizer::{
     Html5Tokenizer, TextModeSpec, TokenFmt, TokenizeResult, TokenizerConfig, TokenizerControl,
     TokenizerStats,
 };
+use html_test_support::diff_lines;
 
 pub(super) fn drain_all_fmt(
     tokenizer: &mut Html5Tokenizer,
@@ -185,14 +186,14 @@ where
                     assert_eq!(
                         batch.tokens().len(),
                         1,
-                        "rawtext tokenizer test driver must observe exactly one token per pump"
+                        "text-mode tokenizer test driver must observe exactly one token per pump"
                     );
                     let resolver = batch.resolver();
                     let fmt = TokenFmt::new(&ctx.atoms, &resolver);
                     let token = batch
                         .iter()
                         .next()
-                        .expect("non-empty rawtext batch must contain one token");
+                        .expect("non-empty text-mode batch must contain one token");
                     out.push(
                         fmt.format_token(token)
                             .expect("token formatting in tests must be deterministic"),
@@ -316,6 +317,102 @@ pub(super) fn assert_script_data_chunk_invariant(input: &str) {
     }
 }
 
+fn assert_token_lines_eq(actual: &[String], expected: &[String], context: &str) {
+    assert!(
+        actual == expected,
+        "{context}\n{}",
+        diff_lines(expected, actual)
+    );
+}
+
+fn nth_match_start(haystack: &str, needle: &str, occurrence: usize, label: &str) -> usize {
+    haystack
+        .match_indices(needle)
+        .nth(occurrence)
+        .map(|(start, _)| start)
+        .unwrap_or_else(|| {
+            panic!(
+                "close-tag boundary helper could not find occurrence {occurrence} of '{needle}' in {label}"
+            )
+        })
+}
+
+/// Assert a close-tag boundary contract against:
+/// - whole-input execution,
+/// - every two-chunk split boundary inside the exact close-tag bytes, and
+/// - one bytewise multi-pump feed across that full close tag.
+pub(super) fn assert_text_mode_close_tag_boundary_exhaustive<F>(
+    run: F,
+    input: &str,
+    close_tag: &str,
+    expected: &[&str],
+    label: &str,
+) where
+    F: Fn(&[&str]) -> (Vec<String>, TokenizerStats),
+{
+    assert_text_mode_close_tag_boundary_exhaustive_at_occurrence(
+        run, input, close_tag, 0, expected, label,
+    );
+}
+
+/// Same as `assert_text_mode_close_tag_boundary_exhaustive`, but targets a
+/// specific occurrence when the same close-tag bytes appear multiple times in
+/// the input and the intended boundary under test should be explicit.
+pub(super) fn assert_text_mode_close_tag_boundary_exhaustive_at_occurrence<F>(
+    run: F,
+    input: &str,
+    close_tag: &str,
+    occurrence: usize,
+    expected: &[&str],
+    label: &str,
+) where
+    F: Fn(&[&str]) -> (Vec<String>, TokenizerStats),
+{
+    assert!(
+        close_tag.is_ascii(),
+        "close-tag boundary helper expects ASCII close tags for bytewise chunking ({label})"
+    );
+    let split_start = nth_match_start(input, close_tag, occurrence, label);
+    let split_end = split_start + close_tag.len();
+    let expected = expected
+        .iter()
+        .map(|line| (*line).to_string())
+        .collect::<Vec<_>>();
+    let (whole, _) = run(&[input]);
+    assert_token_lines_eq(
+        &whole,
+        &expected,
+        &format!("whole-input close-tag boundary baseline mismatch for {label}"),
+    );
+
+    for offset in 1..close_tag.len() {
+        let split = split_start + offset;
+        let (chunked, _) = run(&[&input[..split], &input[split..]]);
+        assert_token_lines_eq(
+            &chunked,
+            &whole,
+            &format!("close-tag boundary mismatch for {label} at split offset={offset}"),
+        );
+    }
+
+    let mut bytewise_chunks = Vec::<&str>::with_capacity(close_tag.len() + 2);
+    if split_start > 0 {
+        bytewise_chunks.push(&input[..split_start]);
+    }
+    for idx in split_start..split_end {
+        bytewise_chunks.push(&input[idx..idx + 1]);
+    }
+    if split_end < input.len() {
+        bytewise_chunks.push(&input[split_end..]);
+    }
+    let (bytewise, _) = run(&bytewise_chunks);
+    assert_token_lines_eq(
+        &bytewise,
+        &whole,
+        &format!("bytewise close-tag boundary mismatch for {label}"),
+    );
+}
+
 /// Assert a known split-close-tag regression against:
 /// - whole-input execution,
 /// - every two-chunk split boundary inside the selected candidate, and
@@ -330,45 +427,12 @@ pub(super) fn assert_text_mode_split_close_tag_regression<F>(
 ) where
     F: Fn(&[&str]) -> (Vec<String>, TokenizerStats),
 {
-    assert!(
-        split_target.is_ascii(),
-        "regression helper expects ASCII split targets for bytewise chunking ({label})"
-    );
-    let split_start = input.find(split_target).unwrap_or_else(|| {
-        panic!("regression helper could not find split target '{split_target}' in {label}")
-    });
-    let split_end = split_start + split_target.len();
-    let expected = expected
-        .iter()
-        .map(|line| (*line).to_string())
-        .collect::<Vec<_>>();
-    let (whole, _) = run(&[input]);
-    assert_eq!(
-        whole, expected,
-        "{issue_id} whole-input regression baseline mismatch for {label}"
-    );
-    for offset in 1..split_target.len() {
-        let split = split_start + offset;
-        let (chunked, _) = run(&[&input[..split], &input[split..]]);
-        assert_eq!(
-            chunked, whole,
-            "{issue_id} chunked regression mismatch for {label} at split offset={offset}"
-        );
-    }
-
-    let mut bytewise_chunks = Vec::<&str>::with_capacity(split_target.len() + 2);
-    if split_start > 0 {
-        bytewise_chunks.push(&input[..split_start]);
-    }
-    for idx in split_start..split_end {
-        bytewise_chunks.push(&input[idx..idx + 1]);
-    }
-    if split_end < input.len() {
-        bytewise_chunks.push(&input[split_end..]);
-    }
-    let (bytewise, _) = run(&bytewise_chunks);
-    assert_eq!(
-        bytewise, whole,
-        "{issue_id} bytewise multi-chunk regression mismatch for {label}"
+    let regression_label = format!("{issue_id} {label}");
+    assert_text_mode_close_tag_boundary_exhaustive(
+        run,
+        input,
+        split_target,
+        expected,
+        &regression_label,
     );
 }
