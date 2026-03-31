@@ -43,6 +43,12 @@ pub struct TokenizerLimits {
     /// Maximum number of bytes the resumable RAWTEXT/RCDATA/script end-tag
     /// matcher may scan from the candidate `<` before it abandons the candidate
     /// and treats it as literal text.
+    ///
+    /// This is the dedicated text-mode scanning bound today. The tokenizer does
+    /// not maintain a separately copied partial close-tag buffer or a copied
+    /// RAWTEXT/script text accumulation buffer: pending text-mode state is
+    /// fixed-size matcher metadata plus span/index bookkeeping into the shared
+    /// decoded `Input`.
     pub max_end_tag_match_scan_bytes: usize,
 }
 
