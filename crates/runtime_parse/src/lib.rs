@@ -1,8 +1,5 @@
 mod clock;
-mod config;
-#[cfg(feature = "html5")]
-mod html5;
-mod legacy;
+mod driver;
 mod patching;
 mod policy;
 mod runtime;
