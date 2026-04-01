@@ -1,9 +1,13 @@
 # HTML Parser Parity Matrix
 
-This document defines the parser parity contract for the HTML5 cutover.
+This document defines the parser parity contract after the HTML5 cutover.
 
-Legacy parity is no longer "match everything the old parser did." The contract
-is split into:
+The legacy parser implementation has been removed. This matrix records the
+compatibility policy against the retired parser and the intentional HTML5
+behavior differences that remain part of the product contract. It is not a
+live backend-selection matrix.
+
+The contract is split into:
 
 - must-match guarantees that protect engine behavior
 - may-differ cases where HTML5 spec correctness intentionally replaces legacy
@@ -119,15 +123,17 @@ Justification:
 ## Policy
 
 `LegacyParity::MustMatch` means a fixture is part of the engine's compatibility
-contract and must remain stable across whole-input and chunked HTML5 parsing.
+contract with the retired parser and must remain stable across whole-input and
+chunked HTML5 parsing.
 
 If a `MustMatch` fixture is still temporarily marked `AllowedToFail`, that is
 tracked as rollout debt rather than a stable exception. Those fixtures must be
 tagged `parity-debt` until the gap is closed.
 
-`LegacyParity::MayDiffer` means the fixture is an intentional difference from
-legacy behavior. These cases still require deterministic HTML5 behavior, but
-they do not block the cutover on legacy equivalence.
+`LegacyParity::MayDiffer` means the fixture records an intentional difference
+from the retired parser's behavior. These cases still require deterministic
+HTML5 behavior, but they do not impose compatibility requirements on the
+current runtime beyond the documented justification.
 
 When a new parity-sensitive fixture is added, it must declare:
 

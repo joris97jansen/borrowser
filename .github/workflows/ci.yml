@@ -82,19 +82,10 @@ jobs:
       - name: Build (debug, all targets)
         run: cargo build --workspace --all-targets --locked
 
-      - name: Run tests
-        env:
-          BORROWSER_HTML_PARSER: legacy
+      - name: Run tests (default HTML5 build)
         run: cargo test --workspace --lib --bins --tests --examples --locked
 
-      - name: Run tests (html5, default legacy)
-        env:
-          BORROWSER_HTML_PARSER: legacy
-        run: cargo test --workspace --lib --bins --tests --examples --features html5 --locked
-
-      - name: Run tests (html5, env toggle)
-        env:
-          BORROWSER_HTML_PARSER: html5
+      - name: Run tests (explicit html5 feature lane)
         run: cargo test --workspace --lib --bins --tests --examples --features html5 --locked
 
       - name: Run promoted rawtext/script regressions

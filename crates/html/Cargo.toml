@@ -22,7 +22,6 @@ count-alloc = []
 html5-entities = []
 html5 = []
 html5-fuzzing = []
-legacy-html-parser = []
 perf-tests = []
 internal-api = []
 dom-snapshot = []
@@ -34,11 +33,6 @@ parser_invariants = []
 name = "html_bench"
 harness = false
 required-features = ["html5"]
-
-[[bin]]
-name = "legacy_html_parser_feature"
-path = "src/bin/legacy_html_parser_feature.rs"
-required-features = ["legacy-html-parser"]
 
 [[test]]
 name = "alloc_guards"

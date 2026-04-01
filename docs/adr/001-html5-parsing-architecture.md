@@ -1,10 +1,14 @@
 # ADR 001: HTML5 Parsing Architecture (Tokenizer → Tree Builder → DomPatch)
 
 Date: 2026-01-29
-Status: Accepted (architecture locked; implementation staged under feature gate)
+Status: Accepted (implemented; legacy parser removed in M7)
+
+Historical note: this ADR was written during the staged HTML5 cutover. Any
+references below to feature-gated rollout, bridge layers, or the legacy parser
+describe migration-era architecture, not the current runtime.
 
 ## Context
-Borrowser needs an HTML5-compliant parsing architecture that supports streaming input and incremental rendering without building a full DOM and then diffing it. The current runtime pipeline consumes `Tokenizer` tokens and feeds a `TreeBuilder` that emits `DomPatch` updates; this ADR formalizes the future HTML5 parser architecture (tokenizer + tree builder), its module boundaries, ownership rules, error strategy, and integration plan with `runtime_parse`.
+Borrowser needs an HTML5-compliant parsing architecture that supports streaming input and incremental rendering without building a full DOM and then diffing it. This ADR formalizes the HTML5 parser architecture (tokenizer + tree builder), its module boundaries, ownership rules, error strategy, and the integration plan that was used to migrate `runtime_parse`.
 
 Goals:
 - Spec-aligned tokenizer state machine and tree builder insertion modes.
@@ -169,9 +173,9 @@ Encoding invariants:
    - Cons: defeats streaming goals, higher memory usage, slower first paint; introduces O(n) diff cost per update.
 
 ## Consequences
-- The `html` crate will expose a feature-gated HTML5 parser path while keeping the existing tokenizer/tree builder stable for now.
-- Integration with `runtime_parse` will be opt-in to avoid behavior changes.
-- Additional tests (spec corpus + streaming parity) are required before the new parser becomes default.
+- The `html` crate exposes the HTML5 parser as its only parser backend.
+- `runtime_parse` consumes the HTML5-backed façade by default.
+- The staged rollout described below is retained as historical migration context.
 
 ## Module boundaries & crate layout (html5 path)
 
@@ -289,23 +293,24 @@ The bridge layer exists to let `runtime_parse` select the html5 path without bre
 - Provides a feature-gated “parity mode” that can emit both patch stream and owned DOM for test comparison.
 
 ## Integration plan (runtime_parse)
-- Add a feature flag `html5` (and `runtime-parse-html5` if needed) to select the new parser.
-- Default path remains unchanged; feature-gated path wires:
-  - `Html5Tokenizer` → `Html5TreeBuilder` → `DomPatch` emission.
-- No behavior change without explicit feature enablement.
+- Completed during the cutover: `runtime_parse` now wires the HTML5 parser
+  path unconditionally through the stable parser facade.
+- The historical staged steps below are retained to document the migration
+  sequence and acceptance thresholds that were used for the cutover.
 
-## Compatibility + rollout plan (HTML5 vs legacy)
+## Historical compatibility + rollout plan (HTML5 vs retired legacy parser)
 
-Goal: keep the current simplified tokenizer/tree builder stable while the HTML5 path matures, with zero behavior change unless explicitly enabled.
+Migration goal at the time: keep the simplified tokenizer/tree builder stable
+while the HTML5 path matured, with zero behavior change unless explicitly
+enabled.
 
-### Toggle design
-- **Compile-time:** `html5` feature gates the new HTML5 modules.
-- **Runtime:** a startup config flag selects the parser mode (global per process), e.g. `ParserMode::Legacy | ParserMode::Html5`.
-  - Location: runtime_parse configuration (CLI flag or env var) is the single source of truth.
-  - If Html5 is requested but the feature is not compiled: **fail fast** in dev builds (return explicit startup error and refuse to run); **optional fallback to Legacy with a warning** in release builds only if enabled (see `runtime_parse.allow_legacy_fallback`, default: false).
-    - Warning is emitted to stderr/log and increments a runtime counter/metric.
-  - Mode is global per process (not per document) to avoid mixed-mode cache semantics (DomStore, key allocation) and nondeterministic CI parity diffs.
-- **Default:** Legacy remains the default until parity thresholds are met.
+### Historical toggle design
+- **Compile-time:** the `html5` feature originally gated the new HTML5 modules.
+- **Runtime:** the migration plan evaluated a process-wide parser-mode switch so
+  CI and local debugging could compare HTML5 against the then-active legacy
+  path without mixed-mode execution.
+- This design is no longer active. The legacy parser has been removed, and the
+  runtime no longer exposes a parser-mode selector or fallback path.
 
 ### Expected behavioral differences (initial)
 - HTML5 tokenizer state machine will handle more edge cases (e.g., comments, DOCTYPE, rawtext).
@@ -327,7 +332,7 @@ Goal: keep the current simplified tokenizer/tree builder stable while the HTML5 
 - Phase 1: HTML5 path behind feature flag; optional runtime switch in dev builds.
 - Phase 2: enable parity mode (emit HTML5 patches to a shadow DomStore and compare) in CI.
 - Phase 3: flip default to HTML5 when parity targets are met (defined below).
-- Phase 4: deprecate legacy path after stability window.
+- Phase 4: deprecate and then remove the legacy path after the stability window.
 
 ### Parity definition (for default flip)
 - Patch protocol invariants are identical (ordering, key stability, Clear semantics).
@@ -337,8 +342,10 @@ Goal: keep the current simplified tokenizer/tree builder stable while the HTML5 
   - DOM equivalence ignores internal ids/keys; compares tree shape, canonical tag names, attribute sets (and order if preserved), and normalized text content (normalize line endings to `\n`; do not collapse whitespace).
   - Parity does not require preserving legacy duplicate attributes; HTML5 semantics may intentionally change output.
 
-### Optional rollout levels (dev/CI)
-- Runtime config selects `ParserMode::{Legacy, Html5Compare, Html5Apply, Html5Default}` (names bikesheddable), where Compare/Apply control shadow-store behavior and whether patches are applied.
+### Historical rollout levels (dev/CI)
+- During design, runtime config levels such as `Legacy`, `Html5Compare`,
+  `Html5Apply`, and `Html5Default` were considered for staging.
+- The shipped end-state is simpler: HTML5 is the only runtime parser path.
 
 ## Failure modes & handling
 - **Tree builder invariant violation**: log error, mark parser failed, stop emitting patches for that document; runtime emits a reset on next full rebuild.

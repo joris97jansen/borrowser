@@ -24,18 +24,8 @@ Notes:
 - The public facade exposes its own stable types (`HtmlParseOptions`,
   `HtmlParseError`, `HtmlParseCounters`, `HtmlParseEvent`) rather than raw
   `html::html5::*` backend types.
-- Legacy `tokenize`, `Tokenizer`, `TreeBuilder`, and `build_owned_dom` entry
-  points are deprecated and only compiled when the non-default
-  `legacy-html-parser` feature is enabled.
-- `html5` and `legacy-html-parser` are mutually exclusive build modes. Normal
-  consumers should use the default build, which enables HTML5.
-- Temporary legacy fallback/debugging must opt out of defaults and enable only
-  the legacy feature, for example:
-
-```toml
-html = { path = "../html", default-features = false, features = ["legacy-html-parser"] }
-```
-
+- The legacy tokenizer/tree-builder implementation has been removed. The HTML5
+  facade is the only parser entrypoint and runtime backend.
 - `ParseOutput.patches` contains the patches drained by `into_output()`. For
   one-shot `parse_document(...)` calls, that is the full patch history. For
   streaming sessions that already drained patches earlier, it is only the
