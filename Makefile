@@ -3,7 +3,7 @@ HTML_ENTITIES_JSON := crates/html/data/entities.json
 HTML_ENTITIES_GEN := crates/html/src/entities_html5.rs
 HTML_ENTITIES_TOOL := crates/html/tools/generate_entities_html5.py
 
-.PHONY: format fmt-check lint lint-html5 lint-html5-hardening test test-html5-runtime test-html5-toggle test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-html5-rawtext-script-regressions test-html5-tokenizer-fuzz-corpus test-html5-tokenizer-fuzz-smoke test-html5-tokenizer-fuzz-long test-html5-tokenizer-script-data-fuzz-corpus test-html5-tokenizer-script-data-fuzz-smoke test-html5-tokenizer-script-data-fuzz-long test-html5-tokenizer-rawtext-fuzz-corpus test-html5-tokenizer-rawtext-fuzz-smoke test-html5-tokenizer-rawtext-fuzz-long test-html5-tokenizer-rcdata-fuzz-corpus test-html5-tokenizer-rcdata-fuzz-smoke test-html5-tokenizer-rcdata-fuzz-long test-html5-tree-builder-token-fuzz-corpus test-html5-tree-builder-token-fuzz-smoke test-html5-tree-builder-token-fuzz-long test-html5-pipeline-fuzz-corpus test-html5-pipeline-regressions test-html5-pipeline-fuzz-smoke test-html5-pipeline-fuzz-long print-html5-pipeline-regression-snapshot test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
+.PHONY: format fmt-check lint lint-html5 lint-html5-hardening test test-html5-runtime test-html5-toggle compile-html5-benches test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-html5-rawtext-script-regressions test-html5-tokenizer-fuzz-corpus test-html5-tokenizer-fuzz-smoke test-html5-tokenizer-fuzz-long test-html5-tokenizer-script-data-fuzz-corpus test-html5-tokenizer-script-data-fuzz-smoke test-html5-tokenizer-script-data-fuzz-long test-html5-tokenizer-rawtext-fuzz-corpus test-html5-tokenizer-rawtext-fuzz-smoke test-html5-tokenizer-rawtext-fuzz-long test-html5-tokenizer-rcdata-fuzz-corpus test-html5-tokenizer-rcdata-fuzz-smoke test-html5-tokenizer-rcdata-fuzz-long test-html5-tree-builder-token-fuzz-corpus test-html5-tree-builder-token-fuzz-smoke test-html5-tree-builder-token-fuzz-long test-html5-pipeline-fuzz-corpus test-html5-pipeline-regressions test-html5-pipeline-fuzz-smoke test-html5-pipeline-fuzz-long print-html5-pipeline-regression-snapshot test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
 
 # Format all crates in place
 format:
@@ -27,14 +27,18 @@ lint-html5-hardening:
 
 # Run all tests
 test:
-	cargo test --workspace --all-targets --locked
+	cargo test --workspace --lib --bins --tests --examples --locked
 
-# Run tests with html5 feature enabled
+# Run tests with the default HTML5 build mode
 test-html5-runtime:
-	cargo test --workspace --all-targets --features html5 --locked
+	cargo test --workspace --lib --bins --tests --examples --features html5 --locked
 
 # Backward-compatible alias while callers migrate off the old toggle name
 test-html5-toggle: test-html5-runtime
+
+# Compile HTML5 Criterion benches without executing them
+compile-html5-benches:
+	cargo bench -p html --bench html_bench --features html5 --no-run --locked
 
 # Run HTML5 semantic DOM golden fixtures (whole/chunked/fuzz)
 test-html5-dom-golden:
@@ -252,6 +256,7 @@ ci:
 	@$(MAKE) build-html5
 	@$(MAKE) build-release
 	@$(MAKE) build-release-html5
+	@$(MAKE) compile-html5-benches
 	@$(MAKE) html-entities-check
 
 loc:
