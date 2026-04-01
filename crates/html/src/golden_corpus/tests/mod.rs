@@ -1,4 +1,4 @@
-use super::{FixtureKind, Invariant, fixtures};
+use super::{FixtureKind, Invariant, LegacyParity, ParityCategory, fixtures};
 use crate::test_harness::{
     deterministic_chunk_plans, random_chunk_plan, run_chunked_with_output, run_full,
 };
@@ -24,6 +24,42 @@ fn golden_corpus_has_metadata() {
     for fixture in corpus {
         assert_fixture_metadata_is_valid(fixture, &mut names, &mut kind_invariants);
     }
+}
+
+#[test]
+fn golden_corpus_parity_matrix_is_explicit() {
+    let mut saw_must_match = false;
+    let mut saw_may_differ = false;
+    let mut categories = HashSet::new();
+
+    for fixture in fixtures() {
+        categories.insert(fixture.parity_category);
+        match fixture.legacy_parity {
+            LegacyParity::MustMatch => saw_must_match = true,
+            LegacyParity::MayDiffer { .. } => saw_may_differ = true,
+        }
+    }
+
+    assert!(
+        saw_must_match,
+        "expected at least one must-match parity fixture"
+    );
+    assert!(
+        saw_may_differ,
+        "expected at least one may-differ parity fixture"
+    );
+    assert!(
+        categories.contains(&ParityCategory::SupportedSubsetDom),
+        "expected supported-subset parity coverage"
+    );
+    assert!(
+        categories.contains(&ParityCategory::MalformedMarkupRecovery),
+        "expected malformed-recovery parity coverage"
+    );
+    assert!(
+        categories.contains(&ParityCategory::SpecCorrectQuirksBehavior),
+        "expected quirks-behavior parity coverage"
+    );
 }
 
 #[test]

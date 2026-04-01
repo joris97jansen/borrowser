@@ -1,4 +1,6 @@
-use super::super::{AllowedFailure, Expectation, FixtureKind, GoldenFixture, Invariant};
+use super::super::{
+    AllowedFailure, Expectation, FixtureKind, GoldenFixture, Invariant, LegacyParity,
+};
 use std::collections::HashSet;
 
 pub(super) fn assert_fixture_metadata_is_valid(
@@ -61,6 +63,7 @@ pub(super) fn assert_fixture_metadata_is_valid(
         fixture.name
     );
     validate_allowed(fixture.expectation, fixture.invariants, fixture.name);
+    validate_legacy_parity(fixture);
 }
 
 fn unique_kind_invariants(
@@ -90,6 +93,32 @@ fn validate_allowed(expectation: Expectation, invariants: &[Invariant], name: &s
             assert!(
                 invariants.contains(invariant),
                 "allowed invariant must be listed on fixture: {name}"
+            );
+        }
+    }
+}
+
+fn validate_legacy_parity(fixture: &GoldenFixture) {
+    match fixture.legacy_parity {
+        LegacyParity::MustMatch => {
+            if matches!(fixture.expectation, Expectation::AllowedToFail { .. }) {
+                assert!(
+                    fixture.tags.contains(&"parity-debt"),
+                    "must-match fixture with AllowedToFail expectation must carry the parity-debt tag: {}",
+                    fixture.name
+                );
+            }
+        }
+        LegacyParity::MayDiffer { reason } => {
+            assert!(
+                !reason.trim().is_empty(),
+                "may-differ fixture must provide a justification: {}",
+                fixture.name
+            );
+            assert!(
+                fixture.tags.contains(&"parity-may-differ"),
+                "may-differ fixture must carry the parity-may-differ tag: {}",
+                fixture.name
             );
         }
     }

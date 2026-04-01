@@ -42,6 +42,8 @@ html = { path = "../html", default-features = false, features = ["legacy-html-pa
   undrained remainder; `contains_full_patch_history` makes that explicit.
 - Low-level `html::html5::*` exports remain available for tests, fuzzing, and
   specialized tooling; they are not the preferred engine contract.
+- The legacy-vs-HTML5 parity contract is documented in
+  `docs/html5/parser-parity-matrix.md`.
 
 ## Benchmarks
 

@@ -17,6 +17,9 @@ pub enum Invariant {
     AttributesParsedWithSpacing,
     EmptyAttributeValuePreserved,
     BooleanAttributePresent,
+    StrayEndTagRecovered,
+    QuirksTableKeepsOpenP,
+    NoQuirksTableClosesOpenP,
 }
 
 impl Invariant {
@@ -39,6 +42,9 @@ impl Invariant {
             Self::AttributesParsedWithSpacing => "attributes parsed with spacing",
             Self::EmptyAttributeValuePreserved => "empty attribute value preserved",
             Self::BooleanAttributePresent => "boolean attribute present",
+            Self::StrayEndTagRecovered => "stray end tag recovered",
+            Self::QuirksTableKeepsOpenP => "quirks table keeps open p",
+            Self::NoQuirksTableClosesOpenP => "no-quirks table closes open p",
         }
     }
 }
@@ -70,6 +76,37 @@ pub enum FixtureKind {
     Doctype,
     Rawtext,
     TagName,
+    Recovery,
+    Quirks,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd, Hash)]
+pub enum ParityCategory {
+    SupportedSubsetDom,
+    MalformedMarkupRecovery,
+    SpecCorrectQuirksBehavior,
+}
+
+impl ParityCategory {
+    pub const fn label(self) -> &'static str {
+        match self {
+            Self::SupportedSubsetDom => "supported subset dom structure",
+            Self::MalformedMarkupRecovery => "malformed markup recovery",
+            Self::SpecCorrectQuirksBehavior => "spec-correct quirks behavior",
+        }
+    }
+}
+
+impl std::fmt::Display for ParityCategory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str(self.label())
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum LegacyParity {
+    MustMatch,
+    MayDiffer { reason: &'static str },
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -81,4 +118,6 @@ pub struct GoldenFixture {
     pub invariants: &'static [Invariant],
     pub expectation: Expectation,
     pub kind: FixtureKind,
+    pub parity_category: ParityCategory,
+    pub legacy_parity: LegacyParity,
 }
