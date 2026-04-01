@@ -7,5 +7,9 @@ edition = "2024"
 tools = { path = "../tools" }
 core_types = { path = "../core_types" }
 
-reqwest = { workspace = true }
 ureq = { workspace = true }
+rustls = { version = "0.23.32", default-features = false, features = ["std", "ring", "tls12"] }
+rustls-native-certs = "0.8.1"
+
+[dev-dependencies]
+rustls-pemfile = "2"

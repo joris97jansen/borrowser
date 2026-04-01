@@ -44,3 +44,52 @@ pub enum ResourceKind {
     Css,
     Image,
 }
+
+impl ResourceKind {
+    pub const fn as_str(self) -> &'static str {
+        match self {
+            Self::Html => "html",
+            Self::Css => "css",
+            Self::Image => "image",
+        }
+    }
+
+    pub const fn role_str(self) -> &'static str {
+        match self {
+            Self::Html => "top-level",
+            Self::Css | Self::Image => "subresource",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct NetworkResponseInfo {
+    pub requested_url: String,
+    pub final_url: String,
+    pub status_code: Option<u16>,
+    pub content_type: Option<String>,
+}
+
+impl NetworkResponseInfo {
+    pub fn display_url(&self) -> &str {
+        if self.final_url.is_empty() {
+            &self.requested_url
+        } else {
+            &self.final_url
+        }
+    }
+
+    pub fn was_redirected(&self) -> bool {
+        self.final_url != self.requested_url
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum NetworkErrorKind {
+    Cancelled,
+    Transport,
+    HttpStatus,
+    LocalFile,
+    Read,
+    ResourceLimit,
+}

@@ -58,8 +58,101 @@ pub fn start_css_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent
                         url: url.clone(),
                     });
                 }
+                CoreCommand::CssAbort {
+                    tab_id,
+                    request_id,
+                    url,
+                } => {
+                    map.remove(&(tab_id, request_id, url));
+                }
                 _ => {}
             }
         }
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use super::start_css_runtime;
+    use bus::{CoreCommand, CoreEvent};
+    use std::sync::mpsc;
+    use std::time::Duration;
+
+    #[test]
+    fn css_abort_discards_buffered_stylesheet_without_emitting_events() {
+        let (cmd_tx, cmd_rx) = mpsc::channel();
+        let (evt_tx, evt_rx) = mpsc::channel();
+        start_css_runtime(cmd_rx, evt_tx);
+
+        cmd_tx
+            .send(CoreCommand::CssChunk {
+                tab_id: 1,
+                request_id: 7,
+                url: "https://example.com/site.css".to_string(),
+                bytes: b"body { color: red; }".to_vec(),
+            })
+            .expect("send CssChunk");
+        cmd_tx
+            .send(CoreCommand::CssAbort {
+                tab_id: 1,
+                request_id: 7,
+                url: "https://example.com/site.css".to_string(),
+            })
+            .expect("send CssAbort");
+
+        match evt_rx.recv_timeout(Duration::from_millis(200)) {
+            Err(mpsc::RecvTimeoutError::Timeout) => {}
+            Ok(event) => panic!("unexpected CSS runtime event after abort: {event:?}"),
+            Err(err) => panic!("unexpected receive error: {err}"),
+        }
+    }
+
+    #[test]
+    fn css_done_emits_parsed_block_and_sheet_done() {
+        let (cmd_tx, cmd_rx) = mpsc::channel();
+        let (evt_tx, evt_rx) = mpsc::channel();
+        start_css_runtime(cmd_rx, evt_tx);
+
+        let url = "https://example.com/site.css".to_string();
+        cmd_tx
+            .send(CoreCommand::CssChunk {
+                tab_id: 1,
+                request_id: 7,
+                url: url.clone(),
+                bytes: b"body { color: red; }".to_vec(),
+            })
+            .expect("send CssChunk");
+        cmd_tx
+            .send(CoreCommand::CssDone {
+                tab_id: 1,
+                request_id: 7,
+                url: url.clone(),
+            })
+            .expect("send CssDone");
+
+        let first = evt_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("first CSS runtime event");
+        let second = evt_rx
+            .recv_timeout(Duration::from_secs(1))
+            .expect("second CSS runtime event");
+
+        assert!(matches!(
+            first,
+            CoreEvent::CssParsedBlock {
+                tab_id: 1,
+                request_id: 7,
+                url: ref event_url,
+                ref css_block,
+            } if event_url == &url && css_block.contains("color: red")
+        ));
+        assert!(matches!(
+            second,
+            CoreEvent::CssSheetDone {
+                tab_id: 1,
+                request_id: 7,
+                url: ref event_url,
+            } if event_url == &url
+        ));
+    }
 }

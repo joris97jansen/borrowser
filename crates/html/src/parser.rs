@@ -561,7 +561,40 @@ mod tests {
         HtmlErrorPolicy, HtmlParseEventCode, HtmlParseEventOrigin, HtmlParseOptions, HtmlParser,
         parse_document,
     };
-    use crate::{DomPatch, PatchKey};
+    use crate::{DomPatch, Node, PatchKey};
+
+    fn first_child_element_named<'a>(node: &'a Node, name: &str) -> Option<&'a Node> {
+        let children = match node {
+            Node::Document { children, .. } | Node::Element { children, .. } => children,
+            _ => return None,
+        };
+        children.iter().find(|child| {
+            matches!(
+                child,
+                Node::Element {
+                    name: child_name,
+                    ..
+                } if child_name.eq_ignore_ascii_case(name)
+            )
+        })
+    }
+
+    fn has_descendant_element_named(node: &Node, name: &str) -> bool {
+        match node {
+            Node::Document { children, .. } | Node::Element { children, .. } => {
+                children.iter().any(|child| {
+                    matches!(
+                        child,
+                        Node::Element {
+                            name: child_name,
+                            ..
+                        } if child_name.eq_ignore_ascii_case(name)
+                    ) || has_descendant_element_named(child, name)
+                })
+            }
+            _ => false,
+        }
+    }
 
     fn summarize(node: &crate::Node, out: &mut Vec<String>) {
         match node {
@@ -762,6 +795,44 @@ mod tests {
             HtmlParseEventCode::ResourceLimit
         );
         assert_eq!(output.parse_errors[0].detail, Some("tag-name-truncated"));
+    }
+
+    #[test]
+    fn parse_document_keeps_head_metadata_out_of_body_and_void_elements_do_not_capture_content() {
+        let input = "<!doctype html><html lang=en><head><title>Example Domain</title><meta name=viewport content=\"width=device-width, initial-scale=1\"><style>body{background:#eee}h1{font-size:1.5em}</style></head><body><div><h1>Example Domain</h1><p>Visible body text.</p></div></body></html>";
+
+        let output =
+            parse_document(input, HtmlParseOptions::default()).expect("parse should succeed");
+
+        let html = first_child_element_named(&output.document, "html")
+            .expect("document should contain <html>");
+        let head = first_child_element_named(html, "head").expect("<html> should contain <head>");
+        let body = first_child_element_named(html, "body").expect("<html> should contain <body>");
+
+        assert!(
+            has_descendant_element_named(head, "meta"),
+            "<head> should retain metadata children"
+        );
+        assert!(
+            has_descendant_element_named(head, "style"),
+            "<head> should retain style children"
+        );
+        assert!(
+            !has_descendant_element_named(body, "meta"),
+            "<body> must not contain reprocessed <meta> descendants"
+        );
+        assert!(
+            !has_descendant_element_named(body, "style"),
+            "<body> must not contain reprocessed <style> descendants"
+        );
+        assert!(
+            has_descendant_element_named(body, "div"),
+            "<body> should contain the visible content container"
+        );
+        assert!(
+            has_descendant_element_named(body, "h1"),
+            "visible heading content must remain under <body>"
+        );
     }
 
     #[test]

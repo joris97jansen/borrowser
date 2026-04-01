@@ -1,4 +1,6 @@
-use core_types::{DomHandle, DomVersion, ResourceKind, TabId};
+use core_types::{
+    DomHandle, DomVersion, NetworkErrorKind, NetworkResponseInfo, ResourceKind, TabId,
+};
 use html::{DomPatch, Node};
 use std::sync::mpsc::{Receiver, Sender};
 
@@ -41,6 +43,11 @@ pub enum CoreCommand {
         request_id: u64,
         url: String,
     },
+    CssAbort {
+        tab_id: TabId,
+        request_id: u64,
+        url: String,
+    },
 }
 
 #[derive(Debug)]
@@ -50,8 +57,7 @@ pub enum CoreEvent {
         tab_id: TabId,
         request_id: u64,
         kind: ResourceKind,
-        url: String,
-        content_type: Option<String>,
+        response: NetworkResponseInfo,
     },
     NetworkChunk {
         tab_id: TabId,
@@ -64,13 +70,16 @@ pub enum CoreEvent {
         tab_id: TabId,
         request_id: u64,
         kind: ResourceKind,
-        url: String,
+        response: NetworkResponseInfo,
+        bytes_received: usize,
     },
     NetworkError {
         tab_id: TabId,
         request_id: u64,
         kind: ResourceKind,
         url: String,
+        error_kind: NetworkErrorKind,
+        status_code: Option<u16>,
         error: String,
     },
 

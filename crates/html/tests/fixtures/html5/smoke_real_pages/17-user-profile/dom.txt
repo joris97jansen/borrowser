@@ -13,17 +13,17 @@
           "Joris Jansen"
         "\n"
         <img alt="avatar" src="avatar.png">
-          "\n"
-          <p>
-            "Senior engineer"
-          "\n"
-          <section>
-            <h2>
-              "Recent activity"
-            <ul>
-              <li>
-                "Opened issue #42"
-              <li>
-                "Merged parser patch"
-          "\n"
+        "\n"
+        <p>
+          "Senior engineer"
+        "\n"
+        <section>
+          <h2>
+            "Recent activity"
+          <ul>
+            <li>
+              "Opened issue #42"
+            <li>
+              "Merged parser patch"
+        "\n"
       "\n"

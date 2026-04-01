@@ -14,12 +14,12 @@
         "\n"
         <figure>
           <img alt="beach" src="1.jpg">
-            <figcaption>
-              "Beach"
+          <figcaption>
+            "Beach"
         "\n"
         <figure>
           <img alt="mountain" src="2.jpg">
-            <figcaption>
-              "Mountain"
+          <figcaption>
+            "Mountain"
         "\n"
       "\n"

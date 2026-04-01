@@ -15,15 +15,15 @@
         <form>
           "\n"
           <input name="name" placeholder="Name">
-            "\n"
-            <input name="company" placeholder="Company">
-              "\n"
-              <label>
-                <input name="terms" type="checkbox">
-                  "I agree to terms"
-              "\n"
-              <button>
-                "Create account"
-              "\n"
+          "\n"
+          <input name="company" placeholder="Company">
+          "\n"
+          <label>
+            <input name="terms" type="checkbox">
+            "I agree to terms"
+          "\n"
+          <button>
+            "Create account"
+          "\n"
         "\n"
       "\n"

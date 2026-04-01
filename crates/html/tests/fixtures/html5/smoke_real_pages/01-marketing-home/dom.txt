@@ -3,32 +3,31 @@
 #document doctype="html"
   <html lang="en">
     <head>
-    <body>
       <meta charset="utf-8">
-        <title>
+      <title>
+        "Acme Cloud"
+    <body>
+      "\n"
+      <header>
+        <h1>
           "Acme Cloud"
-        "\n"
-        "\n"
-        <header>
-          <h1>
-            "Acme Cloud"
-          <nav>
-            <a href="/features">
-              "Features"
-            <a href="/pricing">
-              "Pricing"
-        "\n"
-        <main>
-          <section>
-            <h2>
-              "Ship faster"
-            <p>
-              "Deploy globally in minutes."
-            <button>
-              "Start free"
-        "\n"
-        <footer>
-          <small>
-            "\u{A9} 2026 Acme"
-        "\n"
+        <nav>
+          <a href="/features">
+            "Features"
+          <a href="/pricing">
+            "Pricing"
+      "\n"
+      <main>
+        <section>
+          <h2>
+            "Ship faster"
+          <p>
+            "Deploy globally in minutes."
+          <button>
+            "Start free"
+      "\n"
+      <footer>
+        <small>
+          "\u{A9} 2026 Acme"
+      "\n"
     "\n"

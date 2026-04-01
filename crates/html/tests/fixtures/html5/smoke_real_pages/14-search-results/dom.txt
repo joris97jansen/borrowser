@@ -9,8 +9,8 @@
       "\n"
       <form>
         <input type="search" value="html parser">
-          <button>
-            "Search"
+        <button>
+          "Search"
       "\n"
       <ol>
         "\n"

@@ -67,7 +67,8 @@ impl Html5TreeBuilder {
         text: &dyn TextResolver,
     ) -> Result<Option<PatchKey>, TreeBuilderError> {
         self.with_structural_mutation(|this| {
-            if !self_closing && !this.allow_non_self_closing_element(name) {
+            let effective_self_closing = self_closing || this.known_tags.is_void_tag(name);
+            if !effective_self_closing && !this.allow_non_self_closing_element(name) {
                 return Ok(None);
             }
             let _ = this.ensure_document_created()?;
@@ -85,7 +86,7 @@ impl Html5TreeBuilder {
                 inserted,
                 "newly created element insertion must succeed after precheck"
             );
-            if !self_closing {
+            if !effective_self_closing {
                 this.open_elements.push(OpenElement::new(key, name));
             }
             Ok(Some(key))
