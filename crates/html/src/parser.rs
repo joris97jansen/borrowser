@@ -466,9 +466,16 @@ pub fn parse_document(
     input: impl AsRef<[u8]>,
     options: HtmlParseOptions,
 ) -> Result<ParseOutput, HtmlParseError> {
+    #[cfg(feature = "parse-guards")]
+    crate::parse_guards::record_full_parse_entry();
+
     let mut parser = HtmlParser::new(options)?;
     parser.push_bytes(input.as_ref())?;
     parser.finish()?;
+
+    #[cfg(feature = "parse-guards")]
+    crate::parse_guards::record_full_parse_output();
+
     parser.into_output()
 }
 
@@ -717,19 +724,5 @@ mod tests {
             parser.take_patch_batch().unwrap_err(),
             crate::HtmlParseError::Invariant
         );
-    }
-
-    #[cfg(feature = "legacy-html-parser")]
-    #[test]
-    fn legacy_parser_apis_remain_available_during_rollout() {
-        #[allow(deprecated)]
-        {
-            let stream = crate::tokenize("<p>ok</p>");
-            let dom = crate::build_owned_dom(&stream);
-            let mut summary = Vec::new();
-            summarize(&dom, &mut summary);
-            assert!(summary.iter().any(|line| line == "element:p:0"));
-            assert!(summary.iter().any(|line| line == "text:ok"));
-        }
     }
 }
