@@ -2,13 +2,17 @@ use super::{DomPatch, diff_dom_stateless};
 use crate::dom_snapshot::{DomSnapshotOptions, assert_dom_eq};
 use crate::golden_corpus::fixtures;
 use crate::test_support::patch_apply::TestPatchArena;
+use crate::traverse::assign_missing_ids_allow_collisions;
 use crate::types::{Id, Node};
-use crate::{build_owned_dom, tokenize};
+use crate::{HtmlParseOptions, parse_document};
 use std::sync::Arc;
 
 fn build(input: &str) -> Node {
-    let stream = tokenize(input);
-    build_owned_dom(&stream)
+    let mut dom = parse_document(input, HtmlParseOptions::default())
+        .expect("html5 parse should succeed")
+        .document;
+    assign_missing_ids_allow_collisions(&mut dom);
+    dom
 }
 
 #[test]

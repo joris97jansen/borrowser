@@ -5,6 +5,7 @@
 
 use std::borrow::Cow;
 use std::collections::HashMap;
+#[cfg(feature = "legacy-html-parser")]
 use std::ops::Range;
 use std::sync::Arc;
 
@@ -160,6 +161,7 @@ pub(crate) fn debug_assert_lowercase_atom(value: &str, what: &'static str) {
     );
 }
 
+#[cfg(feature = "legacy-html-parser")]
 #[derive(Debug)]
 pub enum Token {
     Doctype(TextPayload),
@@ -180,6 +182,7 @@ pub enum Token {
     },
 }
 
+#[cfg(feature = "legacy-html-parser")]
 #[derive(Debug, Clone)]
 pub enum AttributeValue {
     /// Byte range into the tokenizer source for values that are unchanged.
@@ -188,6 +191,7 @@ pub enum AttributeValue {
     Owned(String),
 }
 
+#[cfg(feature = "legacy-html-parser")]
 impl AttributeValue {
     pub fn as_str<'a>(&'a self, source: &'a str) -> &'a str {
         match self {
@@ -210,6 +214,7 @@ impl AttributeValue {
     }
 }
 
+#[cfg(feature = "legacy-html-parser")]
 #[derive(Debug, Clone)]
 pub enum TextPayload {
     /// Byte range into the tokenizer source for values that are unchanged.
@@ -218,6 +223,7 @@ pub enum TextPayload {
     Owned(String),
 }
 
+#[cfg(feature = "legacy-html-parser")]
 impl TextPayload {
     pub fn as_str<'a>(&'a self, source: &'a str) -> &'a str {
         match self {
@@ -240,12 +246,14 @@ impl TextPayload {
     }
 }
 
+#[cfg(feature = "legacy-html-parser")]
 #[derive(Debug)]
 enum TokenStreamSource {
     Shared(Arc<str>),
     Owned(String),
 }
 
+#[cfg(feature = "legacy-html-parser")]
 impl TokenStreamSource {
     fn as_str(&self) -> &str {
         match self {
@@ -255,6 +263,7 @@ impl TokenStreamSource {
     }
 }
 
+#[cfg(feature = "legacy-html-parser")]
 #[derive(Debug)]
 pub struct TokenStream {
     tokens: Vec<Token>,
@@ -263,6 +272,7 @@ pub struct TokenStream {
     text_pool: Vec<String>,
 }
 
+#[cfg(feature = "legacy-html-parser")]
 impl TokenStream {
     pub fn new(
         tokens: Vec<Token>,
