@@ -9,6 +9,7 @@ use crate::html5::tree_builder::{TreeBuilderConfig, TreeBuilderLimits};
 use crate::html5::{Html5ParseSession, Html5SessionError};
 use crate::patch_validation::PatchValidationArena;
 
+/// Stable origin classification for surfaced parse events.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HtmlParseEventOrigin {
     Tokenizer,
@@ -24,6 +25,7 @@ impl From<ErrorOrigin> for HtmlParseEventOrigin {
     }
 }
 
+/// Stable event code classification for surfaced parse events.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HtmlParseEventCode {
     UnexpectedNullCharacter,
@@ -47,6 +49,10 @@ impl From<ParseErrorCode> for HtmlParseEventCode {
     }
 }
 
+/// Stable engine-facing parse event record.
+///
+/// `detail` is diagnostic metadata and is not intended to be a hard stability
+/// boundary for downstream decision logic.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct HtmlParseEvent {
     pub origin: HtmlParseEventOrigin,
@@ -68,6 +74,7 @@ impl From<Html5ParseError> for HtmlParseEvent {
     }
 }
 
+/// Controls parse-error tracking on the stable parser facade.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HtmlErrorPolicy {
     pub track: bool,
@@ -99,6 +106,7 @@ impl From<HtmlErrorPolicy> for ErrorPolicy {
     }
 }
 
+/// Stable parser counters surfaced by the HTML5-backed facade.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct HtmlParseCounters {
     pub tokens_processed: u64,
@@ -145,6 +153,7 @@ impl From<Html5Counters> for HtmlParseCounters {
     }
 }
 
+/// Tokenizer resource limits for the stable parser facade.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HtmlTokenizerLimits {
     pub max_tokens_per_batch: usize,
@@ -188,6 +197,7 @@ impl From<HtmlTokenizerLimits> for TokenizerLimits {
     }
 }
 
+/// Tokenizer configuration for the stable parser facade.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HtmlTokenizerOptions {
     pub emit_eof: bool,
@@ -213,6 +223,7 @@ impl From<HtmlTokenizerOptions> for TokenizerConfig {
     }
 }
 
+/// Tree-builder resource limits for the stable parser facade.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HtmlTreeBuilderLimits {
     pub max_open_elements_depth: usize,
@@ -241,6 +252,7 @@ impl From<HtmlTreeBuilderLimits> for TreeBuilderLimits {
     }
 }
 
+/// Tree-builder configuration for the stable parser facade.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct HtmlTreeBuilderOptions {
     pub coalesce_text: bool,
@@ -266,6 +278,7 @@ impl From<HtmlTreeBuilderOptions> for TreeBuilderConfig {
     }
 }
 
+/// Stable options for one-shot and streaming HTML parsing.
 #[derive(Clone, Debug, Default)]
 pub struct HtmlParseOptions {
     pub tokenizer: HtmlTokenizerOptions,
@@ -273,6 +286,7 @@ pub struct HtmlParseOptions {
     pub error_policy: HtmlErrorPolicy,
 }
 
+/// Stable error surface for the engine-facing parser facade.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum HtmlParseError {
     Decode,
@@ -305,6 +319,7 @@ impl From<Html5SessionError> for HtmlParseError {
     }
 }
 
+/// Final parse result returned by [`parse_document`] or [`HtmlParser::into_output`].
 #[derive(Debug)]
 pub struct ParseOutput {
     pub document: Node,
@@ -327,6 +342,26 @@ pub struct ParseOutput {
 /// parser transitions into a terminal poisoned state. Subsequent mutating or
 /// draining operations return `HtmlParseError::Invariant` deterministically
 /// rather than continuing with a partially updated mirror.
+///
+/// # Examples
+///
+/// ```no_run
+/// use html::{HtmlParseOptions, HtmlParser};
+///
+/// fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     let mut parser = HtmlParser::new(HtmlParseOptions::default())?;
+///     parser.push_bytes(b"<div><span>hel")?;
+///     parser.pump()?;
+///     let _first_batch = parser.take_patch_batch()?;
+///
+///     parser.push_bytes(b"lo</span></div>")?;
+///     parser.finish()?;
+///     let output = parser.into_output()?;
+///
+///     assert!(!output.patches.is_empty());
+///     Ok(())
+/// }
+/// ```
 pub struct HtmlParser {
     session: Html5ParseSession,
     arena: PatchValidationArena,
@@ -335,6 +370,7 @@ pub struct HtmlParser {
 }
 
 impl HtmlParser {
+    /// Create a new streaming HTML parser backed by the HTML5 pipeline.
     pub fn new(options: HtmlParseOptions) -> Result<Self, HtmlParseError> {
         let ctx = DocumentParseContext::with_error_policy(options.error_policy.into());
         let session =
@@ -347,24 +383,33 @@ impl HtmlParser {
         })
     }
 
+    /// Append raw bytes to the session decoder/input buffer.
     pub fn push_bytes(&mut self, bytes: &[u8]) -> Result<(), HtmlParseError> {
         self.ensure_not_poisoned()?;
         self.session.push_bytes(bytes)?;
         Ok(())
     }
 
+    /// Append already-decoded UTF-8 text to the parser input.
     pub fn push_str(&mut self, text: &str) -> Result<(), HtmlParseError> {
         self.ensure_not_poisoned()?;
         self.session.push_str(text)?;
         Ok(())
     }
 
+    /// Advance tokenization/tree building until the session needs more input or
+    /// reaches a stable stop point.
     pub fn pump(&mut self) -> Result<(), HtmlParseError> {
         self.ensure_not_poisoned()?;
         self.session.pump()?;
         Ok(())
     }
 
+    /// Signal end-of-input and run EOF-sensitive parser work exactly once.
+    ///
+    /// Callers using the streaming API must invoke this when no more input will
+    /// arrive. Text-mode containers such as `<style>` and `<textarea>` may keep
+    /// buffered content until `finish()` or an explicit closing tag is seen.
     pub fn finish(&mut self) -> Result<(), HtmlParseError> {
         self.ensure_not_poisoned()?;
         self.session.finish()?;
@@ -394,10 +439,13 @@ impl HtmlParser {
         self.take_patch_batch_internal(true)
     }
 
+    /// Return the current parser counters without mutating parser state.
     pub fn counters(&self) -> HtmlParseCounters {
         self.session.counters().into()
     }
 
+    /// Return the currently retained parse events without exposing backend
+    /// `html5::*` types.
     pub fn parse_errors(&self) -> Vec<HtmlParseEvent> {
         self.session
             .parse_errors()
@@ -406,10 +454,17 @@ impl HtmlParser {
             .collect()
     }
 
+    /// Convenience accessor for `counters().tokens_processed`.
     pub fn tokens_processed(&self) -> u64 {
         self.counters().tokens_processed
     }
 
+    /// Materialize the parser's current DOM mirror and return the undrained
+    /// patch remainder.
+    ///
+    /// This consumes the parser. If earlier calls already drained non-empty
+    /// patch batches, `ParseOutput::patches` contains only the remaining
+    /// undrained patches and `contains_full_patch_history` is `false`.
     pub fn into_output(mut self) -> Result<ParseOutput, HtmlParseError> {
         let mut patches = Vec::new();
         while let Some(batch) = self.take_patch_batch_internal(false)? {
@@ -462,6 +517,27 @@ impl HtmlParser {
     }
 }
 
+/// Parse a complete HTML document in one shot through the HTML5-backed facade.
+///
+/// This is the preferred engine-level entrypoint when the full input is already
+/// available. The returned [`ParseOutput`] always contains the full patch
+/// history for the parse.
+///
+/// # Examples
+///
+/// ```no_run
+/// use html::{HtmlParseOptions, parse_document};
+///
+/// fn main() -> Result<(), Box<dyn std::error::Error>> {
+///     let output = parse_document(
+///         "<!doctype html><p>Hello</p>",
+///         HtmlParseOptions::default(),
+///     )?;
+///
+///     assert!(output.contains_full_patch_history);
+///     Ok(())
+/// }
+/// ```
 pub fn parse_document(
     input: impl AsRef<[u8]>,
     options: HtmlParseOptions,

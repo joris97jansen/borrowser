@@ -21,6 +21,8 @@ Notes:
 
 - `html::parse_document` and `html::HtmlParser` are backed only by the HTML5
   tokenizer/tree-builder/session pipeline.
+- The full cutover and migration guide lives in
+  `docs/html5-parser-cutover.md`.
 - The public facade exposes its own stable types (`HtmlParseOptions`,
   `HtmlParseError`, `HtmlParseCounters`, `HtmlParseEvent`) rather than raw
   `html::html5::*` backend types.
