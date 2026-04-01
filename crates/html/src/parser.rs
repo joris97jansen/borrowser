@@ -719,6 +719,7 @@ mod tests {
         );
     }
 
+    #[cfg(feature = "legacy-html-parser")]
     #[test]
     fn legacy_parser_apis_remain_available_during_rollout() {
         #[allow(deprecated)]

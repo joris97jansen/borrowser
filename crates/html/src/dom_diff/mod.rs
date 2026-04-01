@@ -58,5 +58,5 @@ pub fn diff_from_empty(
     algorithm::diff_from_empty_impl(next, state)
 }
 
-#[cfg(test)]
+#[cfg(all(test, feature = "html5"))]
 mod tests;
