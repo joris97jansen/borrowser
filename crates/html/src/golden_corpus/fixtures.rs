@@ -1,4 +1,7 @@
-use super::model::{AllowedFailure, Expectation, FixtureKind, GoldenFixture, Invariant};
+use super::model::{
+    AllowedFailure, Expectation, FixtureKind, GoldenFixture, Invariant, LegacyParity,
+    ParityCategory,
+};
 
 const GOLDEN_CORPUS_V1: &[GoldenFixture] = &[
     GoldenFixture {
@@ -9,6 +12,8 @@ const GOLDEN_CORPUS_V1: &[GoldenFixture] = &[
         invariants: &[Invariant::PreservesUtf8Text, Invariant::TagBoundariesStable],
         expectation: Expectation::MustPass,
         kind: FixtureKind::Utf8,
+        parity_category: ParityCategory::SupportedSubsetDom,
+        legacy_parity: LegacyParity::MustMatch,
     },
     GoldenFixture {
         name: "utf8_literal_gt_after_element",
@@ -18,6 +23,8 @@ const GOLDEN_CORPUS_V1: &[GoldenFixture] = &[
         invariants: &[Invariant::PreservesUtf8Text, Invariant::TagBoundariesStable],
         expectation: Expectation::MustPass,
         kind: FixtureKind::Utf8,
+        parity_category: ParityCategory::SupportedSubsetDom,
+        legacy_parity: LegacyParity::MustMatch,
     },
     GoldenFixture {
         name: "entity_named_amp",
@@ -30,6 +37,8 @@ const GOLDEN_CORPUS_V1: &[GoldenFixture] = &[
         ],
         expectation: Expectation::MustPass,
         kind: FixtureKind::Entity,
+        parity_category: ParityCategory::SupportedSubsetDom,
+        legacy_parity: LegacyParity::MustMatch,
     },
     GoldenFixture {
         name: "entity_numeric",
@@ -42,6 +51,8 @@ const GOLDEN_CORPUS_V1: &[GoldenFixture] = &[
         ],
         expectation: Expectation::MustPass,
         kind: FixtureKind::Entity,
+        parity_category: ParityCategory::SupportedSubsetDom,
+        legacy_parity: LegacyParity::MustMatch,
     },
     GoldenFixture {
         name: "entity_partial",
@@ -54,6 +65,8 @@ const GOLDEN_CORPUS_V1: &[GoldenFixture] = &[
         ],
         expectation: Expectation::MustPass,
         kind: FixtureKind::Entity,
+        parity_category: ParityCategory::SupportedSubsetDom,
+        legacy_parity: LegacyParity::MustMatch,
     },
     GoldenFixture {
         name: "entity_mixed_with_tags",
@@ -67,6 +80,8 @@ const GOLDEN_CORPUS_V1: &[GoldenFixture] = &[
         ],
         expectation: Expectation::MustPass,
         kind: FixtureKind::Entity,
+        parity_category: ParityCategory::SupportedSubsetDom,
+        legacy_parity: LegacyParity::MustMatch,
     },
     GoldenFixture {
         name: "attr_quoted_unquoted",
@@ -79,6 +94,8 @@ const GOLDEN_CORPUS_V1: &[GoldenFixture] = &[
         ],
         expectation: Expectation::MustPass,
         kind: FixtureKind::Attribute,
+        parity_category: ParityCategory::SupportedSubsetDom,
+        legacy_parity: LegacyParity::MustMatch,
     },
     GoldenFixture {
         name: "attr_quote_variants",
@@ -91,6 +108,8 @@ const GOLDEN_CORPUS_V1: &[GoldenFixture] = &[
         ],
         expectation: Expectation::MustPass,
         kind: FixtureKind::Attribute,
+        parity_category: ParityCategory::SupportedSubsetDom,
+        legacy_parity: LegacyParity::MustMatch,
     },
     GoldenFixture {
         name: "attr_whitespace_variations",
@@ -103,6 +122,8 @@ const GOLDEN_CORPUS_V1: &[GoldenFixture] = &[
         ],
         expectation: Expectation::MustPass,
         kind: FixtureKind::Attribute,
+        parity_category: ParityCategory::SupportedSubsetDom,
+        legacy_parity: LegacyParity::MustMatch,
     },
     GoldenFixture {
         name: "attr_boolean_empty",
@@ -115,6 +136,8 @@ const GOLDEN_CORPUS_V1: &[GoldenFixture] = &[
         ],
         expectation: Expectation::MustPass,
         kind: FixtureKind::Attribute,
+        parity_category: ParityCategory::SupportedSubsetDom,
+        legacy_parity: LegacyParity::MustMatch,
     },
     GoldenFixture {
         name: "comment_basic",
@@ -124,6 +147,8 @@ const GOLDEN_CORPUS_V1: &[GoldenFixture] = &[
         invariants: &[Invariant::HasCommentToken, Invariant::FullEqualsChunkedDom],
         expectation: Expectation::MustPass,
         kind: FixtureKind::Comment,
+        parity_category: ParityCategory::SupportedSubsetDom,
+        legacy_parity: LegacyParity::MustMatch,
     },
     GoldenFixture {
         name: "comment_terminator_edge",
@@ -133,6 +158,8 @@ const GOLDEN_CORPUS_V1: &[GoldenFixture] = &[
         invariants: &[Invariant::HasCommentToken, Invariant::FullEqualsChunkedDom],
         expectation: Expectation::MustPass,
         kind: FixtureKind::Comment,
+        parity_category: ParityCategory::SupportedSubsetDom,
+        legacy_parity: LegacyParity::MustMatch,
     },
     GoldenFixture {
         name: "doctype_mixed_case",
@@ -142,12 +169,14 @@ const GOLDEN_CORPUS_V1: &[GoldenFixture] = &[
         invariants: &[Invariant::HasDoctypeToken, Invariant::FullEqualsChunkedDom],
         expectation: Expectation::MustPass,
         kind: FixtureKind::Doctype,
+        parity_category: ParityCategory::SupportedSubsetDom,
+        legacy_parity: LegacyParity::MustMatch,
     },
     GoldenFixture {
         name: "rawtext_script_many_lt",
         input: "<script>if (a < b && c << 1) {}</script>",
         covers: "Rawtext containing many < characters.",
-        tags: &["rawtext", "script", "lt"],
+        tags: &["rawtext", "script", "lt", "parity-debt"],
         invariants: &[
             Invariant::ScriptRawtextVerbatim,
             Invariant::FullEqualsChunkedDom,
@@ -159,12 +188,14 @@ const GOLDEN_CORPUS_V1: &[GoldenFixture] = &[
             }],
         },
         kind: FixtureKind::Rawtext,
+        parity_category: ParityCategory::SupportedSubsetDom,
+        legacy_parity: LegacyParity::MustMatch,
     },
     GoldenFixture {
         name: "rawtext_close_tag",
         input: "<script>hi</script>",
         covers: "Rawtext close tag present for split tests.",
-        tags: &["rawtext", "script", "close-tag"],
+        tags: &["rawtext", "script", "close-tag", "parity-debt"],
         invariants: &[
             Invariant::RawtextCloseTagRecognized,
             Invariant::FullEqualsChunkedDom,
@@ -176,12 +207,14 @@ const GOLDEN_CORPUS_V1: &[GoldenFixture] = &[
             }],
         },
         kind: FixtureKind::Rawtext,
+        parity_category: ParityCategory::SupportedSubsetDom,
+        legacy_parity: LegacyParity::MustMatch,
     },
     GoldenFixture {
         name: "rawtext_near_match",
         input: "<script>var s = \"</scriptx>\";</script>",
         covers: "Near-match rawtext end tag inside body.",
-        tags: &["rawtext", "script", "near-match"],
+        tags: &["rawtext", "script", "near-match", "parity-debt"],
         invariants: &[
             Invariant::RawtextNearMatchStaysText,
             Invariant::FullEqualsChunkedDom,
@@ -193,6 +226,8 @@ const GOLDEN_CORPUS_V1: &[GoldenFixture] = &[
             }],
         },
         kind: FixtureKind::Rawtext,
+        parity_category: ParityCategory::SupportedSubsetDom,
+        legacy_parity: LegacyParity::MustMatch,
     },
     GoldenFixture {
         name: "tag_custom_element",
@@ -205,12 +240,14 @@ const GOLDEN_CORPUS_V1: &[GoldenFixture] = &[
         ],
         expectation: Expectation::MustPass,
         kind: FixtureKind::TagName,
+        parity_category: ParityCategory::SupportedSubsetDom,
+        legacy_parity: LegacyParity::MustMatch,
     },
     GoldenFixture {
         name: "tag_namespace",
         input: "<svg:rect width=\"1\" height=\"1\"></svg:rect>",
         covers: "Namespaced tag name with colon.",
-        tags: &["tag-name", "namespace", "colon"],
+        tags: &["tag-name", "namespace", "colon", "parity-debt"],
         invariants: &[
             Invariant::NamespacedTagRecognized,
             Invariant::FullEqualsChunkedDom,
@@ -222,6 +259,56 @@ const GOLDEN_CORPUS_V1: &[GoldenFixture] = &[
             }],
         },
         kind: FixtureKind::TagName,
+        parity_category: ParityCategory::SupportedSubsetDom,
+        legacy_parity: LegacyParity::MustMatch,
+    },
+    GoldenFixture {
+        name: "recovery_stray_end_tag",
+        input: "</div><p>ok</p>",
+        covers: "Stray end tag recovery before normal body content.",
+        tags: &["recovery", "malformed", "parity-may-differ"],
+        invariants: &[
+            Invariant::FullEqualsChunkedDom,
+            Invariant::StrayEndTagRecovered,
+        ],
+        expectation: Expectation::MustPass,
+        kind: FixtureKind::Recovery,
+        parity_category: ParityCategory::MalformedMarkupRecovery,
+        legacy_parity: LegacyParity::MayDiffer {
+            reason: "HTML5 parse-error recovery is spec-driven and may intentionally differ from the simplified legacy parser on malformed end-tag sequences.",
+        },
+    },
+    GoldenFixture {
+        name: "quirks_table_keeps_open_p",
+        input: "<!doctype foo><p><table>",
+        covers: "Quirks-mode table insertion keeps the open paragraph active.",
+        tags: &["quirks", "table", "parity-may-differ"],
+        invariants: &[
+            Invariant::FullEqualsChunkedDom,
+            Invariant::QuirksTableKeepsOpenP,
+        ],
+        expectation: Expectation::MustPass,
+        kind: FixtureKind::Quirks,
+        parity_category: ParityCategory::SpecCorrectQuirksBehavior,
+        legacy_parity: LegacyParity::MayDiffer {
+            reason: "HTML5 document-mode handling is spec-correct and may intentionally differ from legacy table insertion behavior when quirks mode is active.",
+        },
+    },
+    GoldenFixture {
+        name: "no_quirks_table_closes_open_p",
+        input: "<!doctype html><p><table>",
+        covers: "No-quirks table insertion closes the open paragraph before the table.",
+        tags: &["quirks", "table", "parity-may-differ"],
+        invariants: &[
+            Invariant::FullEqualsChunkedDom,
+            Invariant::NoQuirksTableClosesOpenP,
+        ],
+        expectation: Expectation::MustPass,
+        kind: FixtureKind::Quirks,
+        parity_category: ParityCategory::SpecCorrectQuirksBehavior,
+        legacy_parity: LegacyParity::MayDiffer {
+            reason: "HTML5 no-quirks table insertion follows the spec's paragraph-closing rules and may intentionally differ from legacy quirks handling.",
+        },
     },
 ];
 

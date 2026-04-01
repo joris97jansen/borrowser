@@ -45,6 +45,9 @@ pub(super) fn check_invariant(ctx: &InvariantCtx<'_>, invariant: Invariant) -> R
         Invariant::ScriptRawtextVerbatim => check_script_rawtext_verbatim(ctx),
         Invariant::RawtextCloseTagRecognized => check_rawtext_close_tag(ctx),
         Invariant::RawtextNearMatchStaysText => check_rawtext_near_match(ctx),
+        Invariant::StrayEndTagRecovered => check_stray_end_tag_recovery(ctx),
+        Invariant::QuirksTableKeepsOpenP => check_quirks_table_keeps_open_p(ctx),
+        Invariant::NoQuirksTableClosesOpenP => check_no_quirks_table_closes_open_p(ctx),
     }
 }
 
@@ -65,11 +68,11 @@ fn check_doctype_token(ctx: &InvariantCtx<'_>) -> Result<(), String> {
     let full_has = matches!(ctx.full_dom, Node::Document { doctype, .. } if doctype.is_some());
     let chunked_has =
         matches!(ctx.chunked_dom, Node::Document { doctype, .. } if doctype.is_some());
-    if full_has == chunked_has {
+    if full_has && chunked_has {
         Ok(())
     } else {
         Err(format!(
-            "doctype parity mismatch: full={full_has} chunked={chunked_has}"
+            "doctype invariant failed: full={full_has} chunked={chunked_has}"
         ))
     }
 }
@@ -77,11 +80,11 @@ fn check_doctype_token(ctx: &InvariantCtx<'_>) -> Result<(), String> {
 fn check_comment_token(ctx: &InvariantCtx<'_>) -> Result<(), String> {
     let full_has = has_comment(ctx.full_dom);
     let chunked_has = has_comment(ctx.chunked_dom);
-    if full_has == chunked_has {
+    if full_has && chunked_has {
         Ok(())
     } else {
         Err(format!(
-            "comment parity mismatch: full={full_has} chunked={chunked_has}"
+            "comment invariant failed: full={full_has} chunked={chunked_has}"
         ))
     }
 }
@@ -101,9 +104,9 @@ fn check_utf8_text(ctx: &InvariantCtx<'_>) -> Result<(), String> {
     for ch in expected_chars {
         let full_has = full_text.contains(ch);
         let chunked_has = chunked_text.contains(ch);
-        if full_has != chunked_has {
+        if !full_has || !chunked_has {
             return Err(format!(
-                "UTF-8 text parity mismatch for {ch}: full={full_has} chunked={chunked_has}"
+                "UTF-8 text invariant failed for {ch}: full={full_has} chunked={chunked_has}"
             ));
         }
     }
@@ -118,11 +121,11 @@ fn check_named_entities(ctx: &InvariantCtx<'_>) -> Result<(), String> {
     let chunked_text = collect_text(ctx.chunked_dom);
     let full_ok = full_text.contains('&') && !full_text.contains("&amp;");
     let chunked_ok = chunked_text.contains('&') && !chunked_text.contains("&amp;");
-    if full_ok == chunked_ok {
+    if full_ok && chunked_ok {
         Ok(())
     } else {
         Err(format!(
-            "named entity parity mismatch: full={full_ok} chunked={chunked_ok}"
+            "named entity invariant failed: full={full_ok} chunked={chunked_ok}"
         ))
     }
 }
@@ -140,9 +143,9 @@ fn check_numeric_entities(ctx: &InvariantCtx<'_>) -> Result<(), String> {
         }
         let full_ok = full_text.contains(expected_char);
         let chunked_ok = chunked_text.contains(expected_char);
-        if full_ok != chunked_ok {
+        if !full_ok || !chunked_ok {
             return Err(format!(
-                "numeric entity parity mismatch for {label}: full={full_ok} chunked={chunked_ok}"
+                "numeric entity invariant failed for {label}: full={full_ok} chunked={chunked_ok}"
             ));
         }
     }
@@ -152,11 +155,11 @@ fn check_numeric_entities(ctx: &InvariantCtx<'_>) -> Result<(), String> {
 fn check_partial_entity_literal(ctx: &InvariantCtx<'_>) -> Result<(), String> {
     let full_ok = collect_text(ctx.full_dom).contains("&am");
     let chunked_ok = collect_text(ctx.chunked_dom).contains("&am");
-    if full_ok == chunked_ok {
+    if full_ok && chunked_ok {
         Ok(())
     } else {
         Err(format!(
-            "partial entity parity mismatch: full={full_ok} chunked={chunked_ok}"
+            "partial entity invariant failed: full={full_ok} chunked={chunked_ok}"
         ))
     }
 }
@@ -176,11 +179,11 @@ fn check_tag_boundaries(ctx: &InvariantCtx<'_>) -> Result<(), String> {
 fn check_tag_presence(ctx: &InvariantCtx<'_>, tag_name: &str, label: &str) -> Result<(), String> {
     let full_has = find_element(ctx.full_dom, tag_name).is_some();
     let chunked_has = find_element(ctx.chunked_dom, tag_name).is_some();
-    if full_has == chunked_has {
+    if full_has && chunked_has {
         Ok(())
     } else {
         Err(format!(
-            "{label} parity mismatch: full={full_has} chunked={chunked_has}"
+            "{label} invariant failed: full={full_has} chunked={chunked_has}"
         ))
     }
 }
@@ -194,11 +197,11 @@ fn check_script_rawtext_verbatim(ctx: &InvariantCtx<'_>) -> Result<(), String> {
         .ok_or_else(|| "expected <script> element in chunked DOM".to_string())?;
     let full_ok = full_actual == expected;
     let chunked_ok = chunked_actual == expected;
-    if full_ok == chunked_ok {
+    if full_ok && chunked_ok {
         Ok(())
     } else {
         Err(format!(
-            "rawtext parity mismatch: full={full_ok} chunked={chunked_ok}"
+            "rawtext invariant failed: full={full_ok} chunked={chunked_ok}"
         ))
     }
 }
@@ -210,11 +213,11 @@ fn check_rawtext_close_tag(ctx: &InvariantCtx<'_>) -> Result<(), String> {
         .ok_or_else(|| "expected <script> element in chunked DOM".to_string())?;
     let full_ok = full_text == "hi";
     let chunked_ok = chunked_text == "hi";
-    if full_ok == chunked_ok {
+    if full_ok && chunked_ok {
         Ok(())
     } else {
         Err(format!(
-            "rawtext close-tag parity mismatch: full={full_ok} chunked={chunked_ok}"
+            "rawtext close-tag invariant failed: full={full_ok} chunked={chunked_ok}"
         ))
     }
 }
@@ -226,11 +229,61 @@ fn check_rawtext_near_match(ctx: &InvariantCtx<'_>) -> Result<(), String> {
         .ok_or_else(|| "expected <script> element in chunked DOM".to_string())?;
     let full_ok = full_text.contains("</scriptx>");
     let chunked_ok = chunked_text.contains("</scriptx>");
-    if full_ok == chunked_ok {
+    if full_ok && chunked_ok {
         Ok(())
     } else {
         Err(format!(
-            "rawtext near-match parity mismatch: full={full_ok} chunked={chunked_ok}"
+            "rawtext near-match invariant failed: full={full_ok} chunked={chunked_ok}"
+        ))
+    }
+}
+
+fn check_stray_end_tag_recovery(ctx: &InvariantCtx<'_>) -> Result<(), String> {
+    let full_p = find_element(ctx.full_dom, "p").is_some();
+    let chunked_p = find_element(ctx.chunked_dom, "p").is_some();
+    let full_ok = full_p && collect_text(ctx.full_dom).contains("ok");
+    let chunked_ok = chunked_p && collect_text(ctx.chunked_dom).contains("ok");
+    if full_ok && chunked_ok {
+        Ok(())
+    } else {
+        Err(format!(
+            "stray end-tag recovery mismatch: full_ok={full_ok} chunked_ok={chunked_ok}"
+        ))
+    }
+}
+
+fn check_quirks_table_keeps_open_p(ctx: &InvariantCtx<'_>) -> Result<(), String> {
+    let full_p = find_element(ctx.full_dom, "p")
+        .ok_or_else(|| "expected <p> element in full DOM".to_string())?;
+    let chunked_p = find_element(ctx.chunked_dom, "p")
+        .ok_or_else(|| "expected <p> element in chunked DOM".to_string())?;
+    let full_table = find_element(ctx.full_dom, "table").is_some();
+    let chunked_table = find_element(ctx.chunked_dom, "table").is_some();
+    let full_nested = element_contains_tag(full_p, "table");
+    let chunked_nested = element_contains_tag(chunked_p, "table");
+    if full_table && chunked_table && full_nested && chunked_nested {
+        Ok(())
+    } else {
+        Err(format!(
+            "quirks table nesting mismatch: full_table={full_table} chunked_table={chunked_table} full_nested={full_nested} chunked_nested={chunked_nested}"
+        ))
+    }
+}
+
+fn check_no_quirks_table_closes_open_p(ctx: &InvariantCtx<'_>) -> Result<(), String> {
+    let full_p = find_element(ctx.full_dom, "p")
+        .ok_or_else(|| "expected <p> element in full DOM".to_string())?;
+    let chunked_p = find_element(ctx.chunked_dom, "p")
+        .ok_or_else(|| "expected <p> element in chunked DOM".to_string())?;
+    let full_table = find_element(ctx.full_dom, "table").is_some();
+    let chunked_table = find_element(ctx.chunked_dom, "table").is_some();
+    let full_nested = element_contains_tag(full_p, "table");
+    let chunked_nested = element_contains_tag(chunked_p, "table");
+    if full_table && chunked_table && !full_nested && !chunked_nested {
+        Ok(())
+    } else {
+        Err(format!(
+            "no-quirks table closure mismatch: full_table={full_table} chunked_table={chunked_table} full_nested={full_nested} chunked_nested={chunked_nested}"
         ))
     }
 }
@@ -281,6 +334,26 @@ fn find_element<'a>(node: &'a Node, name: &str) -> Option<&'a Node> {
             children.iter().find_map(|child| find_element(child, name))
         }
         Node::Text { .. } | Node::Comment { .. } => None,
+    }
+}
+
+fn element_contains_tag(node: &Node, name: &str) -> bool {
+    match node {
+        Node::Element {
+            name: tag,
+            children,
+            ..
+        } => {
+            crate::types::debug_assert_lowercase_atom(tag, "golden contains-tag element");
+            tag.as_ref() == name
+                || children
+                    .iter()
+                    .any(|child| element_contains_tag(child, name))
+        }
+        Node::Document { children, .. } => children
+            .iter()
+            .any(|child| element_contains_tag(child, name)),
+        Node::Text { .. } | Node::Comment { .. } => false,
     }
 }
 

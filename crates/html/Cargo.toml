@@ -61,6 +61,11 @@ path = "tests/diff_html5.rs"
 required-features = ["html5", "dom-snapshot"]
 
 [[test]]
+name = "parity_contract"
+path = "tests/parity_contract.rs"
+required-features = ["html5", "dom-snapshot"]
+
+[[test]]
 name = "wpt_html5_formatting"
 path = "tests/wpt_html5_formatting.rs"
 required-features = ["html5", "dom-snapshot"]
