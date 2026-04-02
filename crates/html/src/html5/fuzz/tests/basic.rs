@@ -2,7 +2,10 @@ use super::super::config::{
     Html5PipelineFuzzConfig, Html5PipelineFuzzTermination, derive_html5_pipeline_fuzz_seed,
 };
 use super::super::driver::run_seeded_html5_pipeline_fuzz_case;
-use super::super::regression::render_html5_pipeline_regression_snapshot;
+use super::super::regression::{
+    render_html5_pipeline_regression_snapshot, render_html5_pipeline_regression_stable_snapshot,
+    stable_regression_snapshot_digest,
+};
 
 #[test]
 fn html5_pipeline_fuzz_seed_is_stable_for_same_bytes() {
@@ -106,10 +109,10 @@ fn pipeline_regression_snapshot_digest_fingerprints_stable_snapshot_body() {
     let bytes = b"<!doctype html><html><head><title>basic</title></head><body><p>Hello <b>world</b>.</p></body></html>\n";
     let snapshot = render_html5_pipeline_regression_snapshot(bytes, "basic-page")
         .expect("snapshot render should succeed");
+    let stable_snapshot = render_html5_pipeline_regression_stable_snapshot(bytes, "basic-page")
+        .expect("stable snapshot render should succeed");
 
     let mut digest_line = None;
-    let mut stable_body = String::new();
-    let mut skip_post_digest_separator = false;
     for line in snapshot.lines() {
         if let Some(value) = line.strip_prefix("digest: ") {
             digest_line = Some(
@@ -117,23 +120,11 @@ fn pipeline_regression_snapshot_digest_fingerprints_stable_snapshot_body() {
                     .parse::<u64>()
                     .expect("digest line should contain a u64"),
             );
-            skip_post_digest_separator = true;
-            continue;
+            break;
         }
-        if skip_post_digest_separator && line.is_empty() {
-            skip_post_digest_separator = false;
-            continue;
-        }
-        skip_post_digest_separator = false;
-        stable_body.push_str(line);
-        stable_body.push('\n');
     }
 
-    let mut expected = 0xcbf29ce484222325u64;
-    for &byte in stable_body.as_bytes() {
-        expected ^= u64::from(byte);
-        expected = expected.wrapping_mul(0x100000001b3);
-    }
+    let expected = stable_regression_snapshot_digest(&stable_snapshot);
 
     assert_eq!(digest_line, Some(expected));
 }

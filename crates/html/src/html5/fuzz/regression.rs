@@ -40,6 +40,33 @@ pub fn render_html5_pipeline_regression_snapshot(
     bytes: &[u8],
     label: &str,
 ) -> Result<String, Html5PipelineRegressionError> {
+    let stable_snapshot = render_html5_pipeline_regression_stable_snapshot(bytes, label)?;
+    let digest = stable_regression_snapshot_digest(&stable_snapshot);
+
+    let has_dom_section = stable_snapshot.contains("\n\ndom:\n");
+    let mut snapshot = String::new();
+    if has_dom_section {
+        let insertion = "\n\ndom:\n";
+        let split_at = stable_snapshot
+            .find(insertion)
+            .expect("completed snapshot should contain dom section");
+        let prefix = &stable_snapshot[..split_at];
+        let dom_section = &stable_snapshot[split_at + 2..];
+        write!(&mut snapshot, "{prefix}").expect("write to String");
+        writeln!(&mut snapshot, "\ndigest: {digest}\n").expect("write to String");
+        write!(&mut snapshot, "{dom_section}").expect("write to String");
+    } else {
+        write!(&mut snapshot, "{}", stable_snapshot.trim_end()).expect("write to String");
+        writeln!(&mut snapshot, "\ndigest: {digest}").expect("write to String");
+    }
+
+    Ok(snapshot)
+}
+
+pub(crate) fn render_html5_pipeline_regression_stable_snapshot(
+    bytes: &[u8],
+    label: &str,
+) -> Result<String, Html5PipelineRegressionError> {
     let config = Html5PipelineFuzzConfig {
         seed: derive_html5_pipeline_fuzz_seed(bytes),
         ..Html5PipelineFuzzConfig::default()
@@ -113,28 +140,10 @@ pub fn render_html5_pipeline_regression_snapshot(
         }
     }
 
-    let digest = stable_regression_snapshot_digest(&stable_snapshot);
-
-    let mut snapshot = String::new();
-    if dom_lines.is_some() {
-        let insertion = "\n\ndom:\n";
-        let split_at = stable_snapshot
-            .find(insertion)
-            .expect("completed snapshot should contain dom section");
-        let prefix = &stable_snapshot[..split_at];
-        let dom_section = &stable_snapshot[split_at + 2..];
-        write!(&mut snapshot, "{prefix}").expect("write to String");
-        writeln!(&mut snapshot, "\ndigest: {digest}\n").expect("write to String");
-        write!(&mut snapshot, "{dom_section}").expect("write to String");
-    } else {
-        write!(&mut snapshot, "{}", stable_snapshot.trim_end()).expect("write to String");
-        writeln!(&mut snapshot, "\ndigest: {digest}").expect("write to String");
-    }
-
-    Ok(snapshot)
+    Ok(stable_snapshot)
 }
 
-fn stable_regression_snapshot_digest(snapshot: &str) -> u64 {
+pub(crate) fn stable_regression_snapshot_digest(snapshot: &str) -> u64 {
     let mut digest = 0xcbf29ce484222325u64;
     for &byte in snapshot.as_bytes() {
         digest ^= u64::from(byte);
