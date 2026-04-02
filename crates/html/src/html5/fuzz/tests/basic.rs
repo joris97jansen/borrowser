@@ -2,6 +2,7 @@ use super::super::config::{
     Html5PipelineFuzzConfig, Html5PipelineFuzzTermination, derive_html5_pipeline_fuzz_seed,
 };
 use super::super::driver::run_seeded_html5_pipeline_fuzz_case;
+use super::super::regression::render_html5_pipeline_regression_snapshot;
 
 #[test]
 fn html5_pipeline_fuzz_seed_is_stable_for_same_bytes() {
@@ -98,4 +99,41 @@ fn seeded_html5_pipeline_fuzz_harness_handles_partial_rawtext_close_tail_at_eof(
     assert_eq!(first.termination, Html5PipelineFuzzTermination::Completed);
     assert!(first.tokenizer_controls_applied > 0);
     assert!(first.tokens_streamed >= 2);
+}
+
+#[test]
+fn pipeline_regression_snapshot_digest_fingerprints_stable_snapshot_body() {
+    let bytes = b"<!doctype html><html><head><title>basic</title></head><body><p>Hello <b>world</b>.</p></body></html>\n";
+    let snapshot = render_html5_pipeline_regression_snapshot(bytes, "basic-page")
+        .expect("snapshot render should succeed");
+
+    let mut digest_line = None;
+    let mut stable_body = String::new();
+    let mut skip_post_digest_separator = false;
+    for line in snapshot.lines() {
+        if let Some(value) = line.strip_prefix("digest: ") {
+            digest_line = Some(
+                value
+                    .parse::<u64>()
+                    .expect("digest line should contain a u64"),
+            );
+            skip_post_digest_separator = true;
+            continue;
+        }
+        if skip_post_digest_separator && line.is_empty() {
+            skip_post_digest_separator = false;
+            continue;
+        }
+        skip_post_digest_separator = false;
+        stable_body.push_str(line);
+        stable_body.push('\n');
+    }
+
+    let mut expected = 0xcbf29ce484222325u64;
+    for &byte in stable_body.as_bytes() {
+        expected ^= u64::from(byte);
+        expected = expected.wrapping_mul(0x100000001b3);
+    }
+
+    assert_eq!(digest_line, Some(expected));
 }

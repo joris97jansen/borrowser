@@ -46,58 +46,101 @@ pub fn render_html5_pipeline_regression_snapshot(
     };
     let summary = run_seeded_html5_pipeline_fuzz_case(bytes, config)?;
 
-    let mut snapshot = String::new();
-    writeln!(&mut snapshot, "html5-pipeline-regression-v1").expect("write to String");
-    writeln!(&mut snapshot, "name: {label}").expect("write to String");
-    writeln!(&mut snapshot, "seed: {}", summary.seed).expect("write to String");
-    writeln!(&mut snapshot, "termination: {:?}", summary.termination).expect("write to String");
-    writeln!(&mut snapshot, "input_bytes: {}", summary.input_bytes).expect("write to String");
-    writeln!(&mut snapshot, "decoded_bytes: {}", summary.decoded_bytes).expect("write to String");
-    writeln!(&mut snapshot, "chunk_count: {}", summary.chunk_count).expect("write to String");
+    let dom_lines = if matches!(
+        summary.termination,
+        super::config::Html5PipelineFuzzTermination::Completed
+    ) {
+        Some(collect_pipeline_dom_lines(bytes, config.seed)?)
+    } else {
+        None
+    };
+
+    let mut stable_snapshot = String::new();
+    writeln!(&mut stable_snapshot, "html5-pipeline-regression-v1").expect("write to String");
+    writeln!(&mut stable_snapshot, "name: {label}").expect("write to String");
+    writeln!(&mut stable_snapshot, "seed: {}", summary.seed).expect("write to String");
     writeln!(
-        &mut snapshot,
+        &mut stable_snapshot,
+        "termination: {:?}",
+        summary.termination
+    )
+    .expect("write to String");
+    writeln!(&mut stable_snapshot, "input_bytes: {}", summary.input_bytes)
+        .expect("write to String");
+    writeln!(
+        &mut stable_snapshot,
+        "decoded_bytes: {}",
+        summary.decoded_bytes
+    )
+    .expect("write to String");
+    writeln!(&mut stable_snapshot, "chunk_count: {}", summary.chunk_count)
+        .expect("write to String");
+    writeln!(
+        &mut stable_snapshot,
         "saw_one_byte_chunk: {}",
         summary.saw_one_byte_chunk
     )
     .expect("write to String");
     writeln!(
-        &mut snapshot,
+        &mut stable_snapshot,
         "tokens_streamed: {}",
         summary.tokens_streamed
     )
     .expect("write to String");
     writeln!(
-        &mut snapshot,
+        &mut stable_snapshot,
         "span_resolve_count: {}",
         summary.span_resolve_count
     )
     .expect("write to String");
     writeln!(
-        &mut snapshot,
+        &mut stable_snapshot,
         "patches_emitted: {}",
         summary.patches_emitted
     )
     .expect("write to String");
     writeln!(
-        &mut snapshot,
+        &mut stable_snapshot,
         "tokenizer_controls_applied: {}",
         summary.tokenizer_controls_applied
     )
     .expect("write to String");
-    writeln!(&mut snapshot, "digest: {}", summary.digest).expect("write to String");
-
-    if matches!(
-        summary.termination,
-        super::config::Html5PipelineFuzzTermination::Completed
-    ) {
-        writeln!(&mut snapshot).expect("write to String");
-        writeln!(&mut snapshot, "dom:").expect("write to String");
-        for line in collect_pipeline_dom_lines(bytes, config.seed)? {
-            writeln!(&mut snapshot, "{line}").expect("write to String");
+    if let Some(dom_lines) = &dom_lines {
+        writeln!(&mut stable_snapshot).expect("write to String");
+        writeln!(&mut stable_snapshot, "dom:").expect("write to String");
+        for line in dom_lines {
+            writeln!(&mut stable_snapshot, "{line}").expect("write to String");
         }
     }
 
+    let digest = stable_regression_snapshot_digest(&stable_snapshot);
+
+    let mut snapshot = String::new();
+    if dom_lines.is_some() {
+        let insertion = "\n\ndom:\n";
+        let split_at = stable_snapshot
+            .find(insertion)
+            .expect("completed snapshot should contain dom section");
+        let prefix = &stable_snapshot[..split_at];
+        let dom_section = &stable_snapshot[split_at + 2..];
+        write!(&mut snapshot, "{prefix}").expect("write to String");
+        writeln!(&mut snapshot, "\ndigest: {digest}\n").expect("write to String");
+        write!(&mut snapshot, "{dom_section}").expect("write to String");
+    } else {
+        write!(&mut snapshot, "{}", stable_snapshot.trim_end()).expect("write to String");
+        writeln!(&mut snapshot, "\ndigest: {digest}").expect("write to String");
+    }
+
     Ok(snapshot)
+}
+
+fn stable_regression_snapshot_digest(snapshot: &str) -> u64 {
+    let mut digest = 0xcbf29ce484222325u64;
+    for &byte in snapshot.as_bytes() {
+        digest ^= u64::from(byte);
+        digest = digest.wrapping_mul(0x100000001b3);
+    }
+    digest
 }
 
 fn collect_pipeline_dom_lines(
