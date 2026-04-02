@@ -48,6 +48,41 @@ fn unterminated_start_tag_at_eof_is_stable() {
 }
 
 #[test]
+fn lonely_lt_at_eof_is_stable() {
+    let whole = run_chunks(&["<"]);
+    let split = run_chunks(&["<", ""]);
+    assert_eq!(whole, split);
+    assert_eq!(whole, vec!["EOF".to_string()]);
+}
+
+#[test]
+fn lonely_lt_at_eof_keeps_stats_aligned() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<");
+
+    assert!(matches!(
+        tokenizer.push_input(&mut input, &mut ctx),
+        TokenizeResult::Progress | TokenizeResult::NeedMoreInput
+    ));
+    assert_eq!(
+        tokenizer.push_input(&mut input, &mut ctx),
+        TokenizeResult::NeedMoreInput
+    );
+
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    assert_eq!(tokenizer.cursor, input.as_str().len());
+    assert_eq!(
+        tokenizer.stats().bytes_consumed,
+        input.as_str().len() as u64
+    );
+
+    let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    assert_eq!(tokens, vec!["EOF".to_string()]);
+}
+
+#[test]
 fn delimiter_paths_are_chunk_invariant_and_lossless() {
     fn run(chunks: &[&str]) -> (Vec<String>, usize, usize, TokenizeResult) {
         let mut ctx = DocumentParseContext::new();

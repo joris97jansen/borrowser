@@ -81,13 +81,20 @@ jobs:
         run: |
           set -o pipefail
           mkdir -p ci_artifacts
-          bash ./tools/ci/html5_tokenizer_fuzz_smoke.sh 2>&1 | tee ci_artifacts/html5_tokenizer_fuzz_nightly.log
+          make test-html5-tokenizer-fuzz-long 2>&1 | tee ci_artifacts/html5_tokenizer_fuzz_nightly.log
 
-      - name: Upload tokenizer fuzz nightly artifacts on failure
+      - name: Upload tokenizer fuzz nightly log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: html5-tokenizer-fuzz-nightly-log-${{ github.sha }}
+          path: ci_artifacts/html5_tokenizer_fuzz_nightly.log
+          if-no-files-found: warn
+
+      - name: Upload tokenizer fuzz nightly failure artifact
         if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: html5-tokenizer-fuzz-nightly-${{ github.sha }}
-          path: |
-            ci_artifacts/html5_tokenizer_fuzz_nightly.log
-            ci_artifacts/html5_tokenizer_fuzz_failure_nightly
+          name: html5-tokenizer-fuzz-nightly-failure-${{ github.sha }}
+          path: ci_artifacts/html5_tokenizer_fuzz_failure_nightly
+          if-no-files-found: warn

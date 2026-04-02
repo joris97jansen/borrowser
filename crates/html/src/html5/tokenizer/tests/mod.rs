@@ -5,6 +5,7 @@ mod comments;
 mod doctype;
 mod end_tag_matcher;
 mod entities;
+mod eof_recovery;
 mod formatting;
 mod helpers;
 mod limits;

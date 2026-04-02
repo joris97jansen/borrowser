@@ -96,6 +96,13 @@ pub enum TokenizeResult {
     EmittedEof,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum EofTailRecovery {
+    DoctypeTail,
+    TextModeLiteralTail,
+    LonelyTagOpen,
+}
+
 /// HTML5 tokenizer.
 pub struct Html5Tokenizer {
     pub(in crate::html5::tokenizer) config: TokenizerConfig,
@@ -269,6 +276,11 @@ impl Html5Tokenizer {
     /// - Core-v0 text-mode subset exception: if close-tag recognition is
     ///   pinned on an incomplete RAWTEXT/RCDATA/script tail, `finish()`
     ///   consumes the remaining buffered tail as literal text.
+    /// - Core-v0 tag-open exception: if a previously pumped trailing lone `<`
+    ///   is parked in `TagOpen` awaiting one more byte, `finish()` drops that
+    ///   incomplete opener at EOF instead of treating it as API misuse.
+    /// - EOF recovery policy is classified through explicit state-family
+    ///   helpers so malformed-input finalization remains narrow and auditable.
     /// - After `finish()`, no further input may be pushed.
     pub fn finish(&mut self, input: &Input) -> TokenizeResult {
         if let Some(id) = self.input_id {
@@ -282,23 +294,8 @@ impl Html5Tokenizer {
         }
         let buffered_len = input.as_str().len();
         if self.cursor != buffered_len {
-            if self.in_doctype_family_state() {
-                // Core v0 EOF policy: unfinished doctype tails are finalized as
-                // quirks doctype at EOF. We intentionally skip parsing the
-                // remaining doctype tail bytes and consume the buffered tail.
-                self.set_cursor(buffered_len);
-                self.stats_set_bytes_consumed();
-            } else if self.active_text_mode.is_some_and(|mode| {
-                matches!(
-                    mode.kind,
-                    TextModeKind::RawText | TextModeKind::Rcdata | TextModeKind::ScriptData
-                )
-            }) {
-                if self.pending_text_start.is_none() {
-                    self.pending_text_start = Some(self.cursor);
-                }
-                self.set_cursor(buffered_len);
-                self.stats_set_bytes_consumed();
+            if let Some(recovery) = self.classify_eof_tail_recovery(input) {
+                self.apply_eof_tail_recovery(recovery, input);
             } else {
                 panic!(
                     "Html5Tokenizer::finish called with non-final cursor (cursor={}, buffered={}); call push_input() until NeedMoreInput before finish()",
@@ -328,6 +325,66 @@ impl Html5Tokenizer {
         #[cfg(any(debug_assertions, feature = "parser_invariants", test))]
         self.debug_assert_invariants(input);
         TokenizeResult::EmittedEof
+    }
+
+    // Classification is intentionally conservative: `Some(...)` means the
+    // remaining tail is a documented malformed-document EOF recovery case,
+    // while `None` means the caller violated the `finish()` contract.
+    fn classify_eof_tail_recovery(&self, input: &Input) -> Option<EofTailRecovery> {
+        if self.in_doctype_family_state() {
+            return Some(EofTailRecovery::DoctypeTail);
+        }
+        if self.active_text_mode.is_some_and(|mode| {
+            matches!(
+                mode.kind,
+                TextModeKind::RawText | TextModeKind::Rcdata | TextModeKind::ScriptData
+            )
+        }) {
+            return Some(EofTailRecovery::TextModeLiteralTail);
+        }
+        if self.can_finish_lonely_tag_open_tail(input) {
+            return Some(EofTailRecovery::LonelyTagOpen);
+        }
+        None
+    }
+
+    fn apply_eof_tail_recovery(&mut self, recovery: EofTailRecovery, input: &Input) {
+        match recovery {
+            EofTailRecovery::DoctypeTail => {
+                // Core v0 EOF policy: unfinished doctype tails are finalized as
+                // quirks doctype at EOF. We intentionally skip parsing the
+                // remaining doctype tail bytes and consume the buffered tail.
+                self.consume_buffered_tail_at_eof(input);
+            }
+            EofTailRecovery::TextModeLiteralTail => {
+                if self.pending_text_start.is_none() {
+                    self.pending_text_start = Some(self.cursor);
+                }
+                self.consume_buffered_tail_at_eof(input);
+            }
+            EofTailRecovery::LonelyTagOpen => {
+                // A pumped trailing `<` leaves the tokenizer parked in TagOpen
+                // with the cursor still pointing at that delimiter. At EOF we
+                // drop the incomplete opener to match existing core-v0
+                // malformed-tag recovery instead of panicking the caller.
+                self.consume_buffered_tail_at_eof(input);
+            }
+        }
+    }
+
+    fn consume_buffered_tail_at_eof(&mut self, input: &Input) {
+        self.set_cursor(input.as_str().len());
+        self.stats_set_bytes_consumed();
+    }
+
+    fn can_finish_lonely_tag_open_tail(&self, input: &Input) -> bool {
+        if self.state != TokenizerState::TagOpen {
+            return false;
+        }
+        let Some(remaining) = input.as_str().get(self.cursor..) else {
+            return false;
+        };
+        remaining == "<"
     }
 
     /// Drain the current batch of tokens and return a resolver bound to this epoch.

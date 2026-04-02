@@ -62,3 +62,22 @@ fn seeded_byte_fuzz_harness_handles_invalid_utf8() {
     assert!(summary.decoded_bytes >= 3);
     assert!(summary.tokens_observed >= 1);
 }
+
+#[test]
+fn seeded_byte_fuzz_harness_reaches_finish_boundary_for_lonely_lt() {
+    let summary = run_seeded_byte_fuzz_case(
+        b"<",
+        TokenizerFuzzConfig {
+            seed: 0x2718,
+            max_chunk_len: 1,
+            ..TokenizerFuzzConfig::default()
+        },
+    )
+    .expect("lonely lt case should reach EOF without violating harness invariants");
+    assert_eq!(summary.termination, TokenizerFuzzTermination::Completed);
+    assert_eq!(summary.input_bytes, 1);
+    assert_eq!(summary.decoded_bytes, 1);
+    assert!(summary.saw_one_byte_chunk);
+    assert_eq!(summary.tokens_observed, 1);
+    assert_eq!(summary.span_resolve_count, 0);
+}
