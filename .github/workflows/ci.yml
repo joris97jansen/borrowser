@@ -88,8 +88,26 @@ jobs:
       - name: Run tests (explicit html5 feature lane)
         run: cargo test --workspace --lib --bins --tests --examples --features html5 --locked
 
+      - name: Run HTML5 semantic DOM golden fixtures
+        run: cargo test -p html --test html5_golden_tree_builder --features "html5 dom-snapshot" --locked
+
+      - name: Run HTML5 patch-log golden fixtures
+        run: cargo test -p html --test html5_golden_tree_builder_patches --features html5 --locked
+
+      - name: Run HTML5 smoke corpus
+        run: cargo test -p html --test html5_smoke_real_pages --features "html5 dom-snapshot" --locked
+
       - name: Run promoted rawtext/script regressions
         run: cargo test -p html --test html5_rawtext_script_regressions --features "html5 dom-snapshot parser_invariants" --locked
+
+      - name: Run HTML5 pipeline regression snapshots
+        run: cargo test -p html --test html5_pipeline_regressions --features "html5 html5-fuzzing dom-snapshot parser_invariants" --locked
+
+      - name: Run WPT tree-builder slice
+        run: cargo test -p html --test wpt_html5_tree_builder --features "html5 dom-snapshot" --locked
+
+      - name: Build (debug, all targets, html5)
+        run: cargo build --workspace --all-targets --features html5 --locked
 
       - name: Build (release)
         run: cargo build --workspace --release --locked
@@ -99,6 +117,9 @@ jobs:
 
       - name: Compile HTML5 Criterion benches
         run: cargo bench -p html --bench html_bench --features html5 --no-run --locked
+
+      - name: Check generated HTML entities
+        run: make html-entities-check
 
   html5_tokenizer_fuzz_smoke:
     name: HTML5 tokenizer fuzz smoke
