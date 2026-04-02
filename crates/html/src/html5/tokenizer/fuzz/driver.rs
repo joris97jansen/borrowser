@@ -118,6 +118,23 @@ pub fn run_seeded_byte_fuzz_case(
             ));
         }
     }
+    if let Some(termination) = pump_until_blocked(
+        &mut tokenizer,
+        &mut input,
+        &mut ctx,
+        &mut observer,
+        "pre-finish",
+    )? {
+        return Ok(rejected_summary(
+            &input,
+            &observer,
+            config.seed,
+            bytes.len(),
+            chunk_count,
+            saw_one_byte_chunk,
+            termination,
+        ));
+    }
 
     if let Some(termination) = finish_and_drain(
         &mut tokenizer,
@@ -321,6 +338,24 @@ fn run_seeded_controlled_text_mode_fuzz_case(
                 termination,
             ));
         }
+    }
+    if let Some(termination) = pump_text_mode_until_blocked(
+        &mut tokenizer,
+        &mut input,
+        &mut ctx,
+        &mut observer,
+        &mut controller,
+        "pre-finish",
+    )? {
+        return Ok(rejected_summary(
+            &input,
+            &observer,
+            config.seed,
+            bytes.len(),
+            chunk_count,
+            saw_one_byte_chunk,
+            termination,
+        ));
     }
 
     if let Some(termination) = finish_and_drain(
