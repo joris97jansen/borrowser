@@ -14,11 +14,11 @@
         "\n"
         <label>
           <input checked type="checkbox">
-            " Email notifications"
+          " Email notifications"
         "\n"
         <label>
           <input type="checkbox">
-            " Product updates"
+          " Product updates"
         "\n"
         <label>
           "Language"

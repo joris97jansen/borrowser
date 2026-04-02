@@ -12,6 +12,18 @@ pub(in crate::html5::tree_builder) struct KnownTagIds {
     pub(in crate::html5::tree_builder) html: AtomId,
     pub(in crate::html5::tree_builder) head: AtomId,
     pub(in crate::html5::tree_builder) body: AtomId,
+    pub(in crate::html5::tree_builder) base: AtomId,
+    pub(in crate::html5::tree_builder) br: AtomId,
+    pub(in crate::html5::tree_builder) embed: AtomId,
+    pub(in crate::html5::tree_builder) hr: AtomId,
+    pub(in crate::html5::tree_builder) img: AtomId,
+    pub(in crate::html5::tree_builder) input: AtomId,
+    pub(in crate::html5::tree_builder) link: AtomId,
+    pub(in crate::html5::tree_builder) meta: AtomId,
+    pub(in crate::html5::tree_builder) param: AtomId,
+    pub(in crate::html5::tree_builder) source: AtomId,
+    pub(in crate::html5::tree_builder) track: AtomId,
+    pub(in crate::html5::tree_builder) wbr: AtomId,
     pub(in crate::html5::tree_builder) p: AtomId,
     pub(in crate::html5::tree_builder) i: AtomId,
     pub(in crate::html5::tree_builder) nobr: AtomId,
@@ -65,6 +77,18 @@ impl KnownTagIds {
             html: atoms.intern_ascii_folded("html")?,
             head: atoms.intern_ascii_folded("head")?,
             body: atoms.intern_ascii_folded("body")?,
+            base: atoms.intern_ascii_folded("base")?,
+            br: atoms.intern_ascii_folded("br")?,
+            embed: atoms.intern_ascii_folded("embed")?,
+            hr: atoms.intern_ascii_folded("hr")?,
+            img: atoms.intern_ascii_folded("img")?,
+            input: atoms.intern_ascii_folded("input")?,
+            link: atoms.intern_ascii_folded("link")?,
+            meta: atoms.intern_ascii_folded("meta")?,
+            param: atoms.intern_ascii_folded("param")?,
+            source: atoms.intern_ascii_folded("source")?,
+            track: atoms.intern_ascii_folded("track")?,
+            wbr: atoms.intern_ascii_folded("wbr")?,
             p: atoms.intern_ascii_folded("p")?,
             i: atoms.intern_ascii_folded("i")?,
             nobr: atoms.intern_ascii_folded("nobr")?,
@@ -120,6 +144,23 @@ impl KnownTagIds {
     #[inline]
     pub(in crate::html5::tree_builder) fn is_marker_tag(&self, name: AtomId) -> bool {
         name == self.applet || name == self.marquee || name == self.object
+    }
+
+    #[inline]
+    pub(in crate::html5::tree_builder) fn is_void_tag(&self, name: AtomId) -> bool {
+        name == self.base
+            || name == self.br
+            || name == self.col
+            || name == self.embed
+            || name == self.hr
+            || name == self.img
+            || name == self.input
+            || name == self.link
+            || name == self.meta
+            || name == self.param
+            || name == self.source
+            || name == self.track
+            || name == self.wbr
     }
 
     #[inline]

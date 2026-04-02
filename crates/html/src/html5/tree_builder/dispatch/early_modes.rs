@@ -221,6 +221,17 @@ impl Html5TreeBuilder {
                 }
                 Ok(DispatchOutcome::Done)
             }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } if *name == self.known_tags.base
+                || *name == self.known_tags.link
+                || *name == self.known_tags.meta =>
+            {
+                let _ = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
+                Ok(DispatchOutcome::Done)
+            }
             Token::EndTag { name } if *name == self.known_tags.head => {
                 let _ = self.close_element_in_scope(*name, ScopeKind::InScope);
                 self.insertion_mode = InsertionMode::AfterHead;

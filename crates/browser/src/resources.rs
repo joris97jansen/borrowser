@@ -4,8 +4,8 @@ use std::sync::mpsc;
 use app_api::RepaintHandle;
 use egui::{ColorImage, TextureHandle, TextureId, TextureOptions};
 use gfx::paint::ImageProvider;
+use tools::common::MAX_IMAGE_BYTES;
 
-const MAX_IMAGE_BYTES: usize = 20 * 1024 * 1024;
 const MAX_IMAGE_PIXELS: usize = 16_777_216; // 4096 * 4096
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -319,5 +319,67 @@ impl ImageProvider for ResourceManager {
 
     fn image_intrinsic_size_px(&self, url: &str) -> Option<(u32, u32)> {
         ResourceManager::image_intrinsic_size_px(self, url)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{EntryState, ImageState, ResourceManager};
+    use tools::common::MAX_IMAGE_BYTES;
+
+    #[test]
+    fn resource_limit_error_discards_buffered_image_bytes_and_blocks_decode() {
+        let mut resources = ResourceManager::new();
+        let url = "https://example.com/large.png".to_string();
+        let image_id = resources.request_image(url.clone(), |_| {});
+
+        resources.on_network_chunk(&url, &[1, 2, 3, 4]);
+        let entry = resources.images.get(&image_id).expect("image entry");
+        assert_eq!(entry.bytes.len(), 4);
+        assert!(matches!(entry.state, EntryState::Loading));
+
+        resources.on_network_error(
+            &url,
+            format!(
+                "image response exceeded byte limit of {} bytes",
+                MAX_IMAGE_BYTES
+            ),
+        );
+
+        let entry = resources
+            .images
+            .get(&image_id)
+            .expect("image entry after error");
+        assert!(entry.bytes.is_empty(), "buffered bytes should be discarded");
+        assert!(matches!(
+            resources.image_state(image_id),
+            ImageState::Error { ref error, .. } if error.contains("exceeded byte limit")
+        ));
+
+        resources.on_network_done(&url, None);
+        assert!(matches!(
+            resources.image_state(image_id),
+            ImageState::Error { ref error, .. } if error.contains("exceeded byte limit")
+        ));
+    }
+
+    #[test]
+    fn on_network_chunk_over_local_limit_transitions_to_error_and_clears_buffer() {
+        let mut resources = ResourceManager::new();
+        let url = "https://example.com/too-large.png".to_string();
+        let image_id = resources.request_image(url.clone(), |_| {});
+
+        resources.on_network_chunk(&url, &vec![0_u8; MAX_IMAGE_BYTES]);
+        resources.on_network_chunk(&url, &[1]);
+
+        let entry = resources.images.get(&image_id).expect("image entry");
+        assert!(
+            entry.bytes.is_empty(),
+            "oversized image buffer should be cleared"
+        );
+        assert!(matches!(
+            resources.image_state(image_id),
+            ImageState::Error { ref error, .. } if error.contains("image too large")
+        ));
     }
 }

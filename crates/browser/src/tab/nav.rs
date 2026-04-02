@@ -72,6 +72,8 @@ impl Tab {
         let request_id = self.nav_gen;
 
         self.loading = true;
+        self.document_load = Default::default();
+        self.stylesheet_loads.clear();
         self.last_status = Some(format!("Fetching {url} …"));
         self.page.start_nav(&url);
 

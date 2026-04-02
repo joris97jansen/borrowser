@@ -67,7 +67,9 @@ fn router_thread(
                 }
 
                 // CSS streaming→parsing goes to css runtime
-                CoreCommand::CssChunk { .. } | CoreCommand::CssDone { .. } => {
+                CoreCommand::CssChunk { .. }
+                | CoreCommand::CssDone { .. }
+                | CoreCommand::CssAbort { .. } => {
                     let _ = css_tx.send(cmd);
                 }
             }

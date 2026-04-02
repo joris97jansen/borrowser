@@ -36,19 +36,18 @@ pub fn start_net_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent
                     fetch_stream(
                         request_id,
                         url.clone(),
+                        kind,
                         cancel.clone(),
                         Arc::new(move |e: NetEvent| match e {
                             NetEvent::Start {
                                 request_id,
-                                url,
-                                content_type,
+                                response,
                             } => {
                                 let _ = evt_tx.send(CoreEvent::NetworkStart {
                                     tab_id,
                                     request_id,
                                     kind,
-                                    url,
-                                    content_type,
+                                    response,
                                 });
                             }
                             NetEvent::Chunk {
@@ -64,17 +63,24 @@ pub fn start_net_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent
                                     bytes: chunk,
                                 });
                             }
-                            NetEvent::Done { request_id, url } => {
+                            NetEvent::Done {
+                                request_id,
+                                response,
+                                bytes_received,
+                            } => {
                                 let _ = evt_tx.send(CoreEvent::NetworkDone {
                                     tab_id,
                                     request_id,
                                     kind,
-                                    url,
+                                    response,
+                                    bytes_received,
                                 });
                             }
                             NetEvent::Error {
                                 request_id,
                                 url,
+                                error_kind,
+                                status_code,
                                 error,
                             } => {
                                 let _ = evt_tx.send(CoreEvent::NetworkError {
@@ -82,6 +88,8 @@ pub fn start_net_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent
                                     request_id,
                                     kind,
                                     url,
+                                    error_kind,
+                                    status_code,
                                     error,
                                 });
                             }

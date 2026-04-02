@@ -2,7 +2,10 @@ use crate::input_state::DocumentInputState;
 use crate::page::PageState;
 use crate::resources::ResourceManager;
 use css::{StyledNode, build_style_tree};
-use egui::{CentralPanel, Color32, Context, Frame};
+use egui::{
+    Align2, Area, CentralPanel, Color32, Context, CornerRadius, Frame, Id, Margin, Order, RichText,
+    Stroke, vec2,
+};
 pub use gfx::input::PageAction;
 use gfx::viewport::{ViewportCtx, page_viewport};
 use html::Node;
@@ -43,7 +46,7 @@ pub fn content(
         }
     };
 
-    CentralPanel::default()
+    let action = CentralPanel::default()
         .frame(Frame::default().fill(base_fill))
         .show(ctx, |ui| {
             // Rebuild style_root inside closure (needed anyway for layout/paint).
@@ -56,7 +59,7 @@ pub fn content(
             let form_controls = &page.form_controls;
             let interaction = &mut input_state.interaction;
 
-            let action = page_viewport(ViewportCtx::new(
+            page_viewport(ViewportCtx::new(
                 ui,
                 &style_root,
                 base_url,
@@ -64,18 +67,53 @@ pub fn content(
                 input_values,
                 form_controls,
                 interaction,
-            ));
-
-            if loading {
-                ui.label("⏳ Loading…");
-            }
-            if let Some(s) = status {
-                ui.label(s);
-            }
-
-            action
+            ))
         })
-        .inner
+        .inner;
+
+    show_status_overlay(ctx, loading, status.map(|status| status.as_str()));
+    action
+}
+
+fn show_status_overlay(ctx: &Context, loading: bool, status: Option<&str>) {
+    let lines = overlay_lines(loading, status);
+    if lines.is_empty() {
+        return;
+    }
+
+    Area::new(Id::new("page_status_overlay"))
+        .order(Order::Foreground)
+        .anchor(Align2::RIGHT_TOP, vec2(-16.0, 16.0))
+        .interactable(false)
+        .show(ctx, |ui| {
+            Frame::new()
+                .fill(Color32::from_black_alpha(208))
+                .stroke(Stroke::new(1.0, Color32::from_white_alpha(40)))
+                .corner_radius(CornerRadius::same(8))
+                .inner_margin(Margin::same(8))
+                .show(ui, |ui| {
+                    ui.set_max_width(420.0);
+                    for (idx, line) in lines.iter().enumerate() {
+                        let text = if idx == 0 && loading {
+                            RichText::new(line).strong().color(Color32::WHITE)
+                        } else {
+                            RichText::new(line).color(Color32::WHITE)
+                        };
+                        ui.label(text);
+                    }
+                });
+        });
+}
+
+fn overlay_lines(loading: bool, status: Option<&str>) -> Vec<String> {
+    let mut lines = Vec::new();
+    if loading {
+        lines.push("Loading…".to_string());
+    }
+    if let Some(status) = status {
+        lines.push(status.to_string());
+    }
+    lines
 }
 
 fn find_page_background_color(root: &StyledNode<'_>) -> Option<(u8, u8, u8, u8)> {
@@ -119,4 +157,20 @@ fn find_page_background_color(root: &StyledNode<'_>) -> Option<(u8, u8, u8, u8)>
     }
 
     body_bg.or(html_bg)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::overlay_lines;
+
+    #[test]
+    fn overlay_lines_include_loading_and_status() {
+        let lines = overlay_lines(true, Some("Document parsed • HTTP 200"));
+        assert_eq!(lines, vec!["Loading…", "Document parsed • HTTP 200"]);
+    }
+
+    #[test]
+    fn overlay_lines_are_empty_without_loading_or_status() {
+        assert!(overlay_lines(false, None).is_empty());
+    }
 }

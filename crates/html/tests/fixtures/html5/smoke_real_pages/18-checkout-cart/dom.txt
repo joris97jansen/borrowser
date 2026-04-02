@@ -21,6 +21,6 @@
       "\n"
       <form>
         <input name="card" placeholder="Card number">
-          <button>
-            "Pay now"
+        <button>
+          "Pay now"
       "\n"
