@@ -1,7 +1,8 @@
-# CSS Syntax Parser Contract (Milestone N1)
+# CSS Syntax Layer Contract (Milestone N)
 
 Last updated: 2026-04-03  
 Scope: `crates/css/src/syntax/mod.rs`, `crates/css/src/syntax/compat.rs`,
+`crates/css/src/syntax/input.rs`, `crates/css/src/syntax/token.rs`,
 `crates/runtime_css/src/lib.rs`, and the
 current browser integration path in `crates/browser/src/page.rs`
 
@@ -13,6 +14,8 @@ replaced, and what downstream milestones may assume.
 Related code:
 - `crates/css/src/syntax/mod.rs`
 - `crates/css/src/syntax/compat.rs`
+- `crates/css/src/syntax/input.rs`
+- `crates/css/src/syntax/token.rs`
 - `crates/css/src/cascade.rs`
 - `crates/browser/src/page.rs`
 - `crates/runtime_css/src/lib.rs`
@@ -56,11 +59,15 @@ Milestone N keeps the current crate and runtime topology:
    - remains the high-level integration point that merges stylesheet results
      into the page state
 
-## Implementation Status In N1
+## Implementation Status
 
 N1 establishes the syntax-layer contract and public API surface.
 
 Current repository status:
+- syntax-layer input abstraction exists in code
+- explicit token definitions exist in code
+- source spans are bound to their owning decoded input identity
+- source positions use CSS-aware line-boundary handling
 - tokenizer responsibilities are defined, but no standalone tokenizer
   implementation exists yet
 - parser entry points and parse-result types exist now
@@ -113,6 +120,7 @@ It MUST NOT:
 
 Implementation note:
 - tokenizer ownership is part of the N1 contract
+- N2 introduces the input model, spans, and token definitions
 - the actual tokenizer implementation is deferred to later Milestone N issues
 
 ## Parser Responsibilities
@@ -189,8 +197,12 @@ The syntax layer must remain bounded under malformed or hostile input.
 
 Milestone N invariants:
 - parser input is already decoded text
-- N1 diagnostics expose byte offsets only; explicit token spans are deferred
-  until tokenizer implementation lands
+- token spans now exist as syntax-layer types
+- token spans are bound to one owning `CssInputId`
+- span-backed token payloads must not resolve against a different input
+- source positions treat `\n`, `\r`, `\r\n`, and `\u{000C}` as line breaks
+- parse diagnostics still expose byte offsets only; richer diagnostic span usage
+  remains deferred until tokenizer/parser integration lands
 - parser entry points are pure with respect to one input string and one options
   struct
 - equivalent input and limit configuration must produce equivalent output,
@@ -214,6 +226,7 @@ Rust's derived `Debug` is not the contract.
 The syntax layer must provide stable, explicit serializers for regression tests:
 - `serialize_stylesheet_for_snapshot`
 - `serialize_declarations_for_snapshot`
+- `serialize_tokens_for_snapshot`
 - `StylesheetParse::to_debug_snapshot`
 - `DeclarationListParse::to_debug_snapshot`
 
@@ -229,6 +242,7 @@ Milestone N test coverage should expand from here to include:
 - tokenizer golden coverage
 - stylesheet snapshot goldens
 - inline declaration-list snapshot goldens
+- token snapshot goldens
 - malformed-input recovery cases
 - hostile-input and limit-enforcement cases
 
@@ -246,8 +260,13 @@ Downstream milestones must not assume:
 - current compatibility structs are the permanent syntax AST
 - syntax parsing performs cascade or computed-style work
 
-## Tracked Follow-Up
+## Related Next Steps And References
 
 The next queued syntax-layer follow-up for this contract is:
 
 - [`docs/css/n2a-decouple-structured-parse-results.md`](n2a-decouple-structured-parse-results.md)
+- [`docs/css/n2b-incremental-line-record-maintenance.md`](n2b-incremental-line-record-maintenance.md)
+
+Related reference for the N2 source/token layer:
+
+- [`docs/css/input-token-model.md`](input-token-model.md)
