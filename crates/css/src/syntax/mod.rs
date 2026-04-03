@@ -1,8 +1,9 @@
-//! Stable CSS syntax contract surface for Milestone N.
+//! Stable CSS syntax contract surface.
 //!
-//! N1 establishes the public API boundary, parser options, diagnostics, and
-//! snapshot contract that later CSS milestones will implement against.
-//! Tokenizer and token-span machinery are intentionally not implemented yet.
+//! This module owns parser-facing options, diagnostics, decoded-input
+//! primitives, source-bound spans, and explicit token definitions for the CSS
+//! syntax layer. The tokenizer algorithm itself remains intentionally
+//! unimplemented here.
 //!
 //! The current split-based parsing behavior remains available only through the
 //! private `compat` adapter module below. That adapter preserves the existing
@@ -10,10 +11,17 @@
 //! tokenizer/parser architecture.
 
 mod compat;
+mod input;
+mod token;
 
 use std::fmt::Write;
 
 pub use compat::{CompatRule, CompatSelector, CompatStylesheet};
+pub use input::{CssInput, CssInputId, CssPosition, CssSpan};
+pub use token::{
+    CssDimension, CssHashKind, CssNumber, CssNumericKind, CssToken, CssTokenKind, CssTokenText,
+    CssUnicodeRange, serialize_tokens_for_snapshot,
+};
 
 /// A single CSS property: `color: red`.
 #[derive(Clone, Debug, PartialEq, Eq)]
