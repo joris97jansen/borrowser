@@ -1,5 +1,5 @@
 use crate::form_controls::{FormControlIndex, seed_input_state_from_dom};
-use css::{Stylesheet, attach_styles, parse_stylesheet};
+use css::{CompatStylesheet, attach_styles, parse_stylesheet};
 use gfx::input::InputValueStore;
 use html::{
     Node,
@@ -17,7 +17,7 @@ pub struct PageState {
     pub form_controls: FormControlIndex,
 
     css_pending: HashSet<String>,
-    css_sheet: Stylesheet,
+    css_sheet: CompatStylesheet,
 }
 
 impl PageState {
@@ -29,7 +29,7 @@ impl PageState {
             visible_text_cache: String::new(),
             form_controls: FormControlIndex::default(),
             css_pending: HashSet::new(),
-            css_sheet: Stylesheet { rules: Vec::new() },
+            css_sheet: CompatStylesheet { rules: Vec::new() },
         }
     }
 

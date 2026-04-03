@@ -1,3 +1,10 @@
+//! Stylesheet transport/assembly runtime.
+//!
+//! This runtime owns byte buffering and incremental UTF-8 assembly for external
+//! stylesheets. It does not own CSS tokenization or syntax parsing; it forwards
+//! fully decoded stylesheet text to the main integration path, where the
+//! `css::syntax` entry points are invoked.
+
 use bus::{CoreCommand, CoreEvent};
 use core_types::{RequestId, TabId};
 use std::collections::HashMap;
@@ -43,8 +50,9 @@ pub fn start_css_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent
                     let key = (tab_id, request_id, url.clone());
                     if let Some(mut st) = map.remove(&key) {
                         finish_utf8(&mut st.text, &mut st.carry);
-                        // Send the full stylesheet as a single block
-                        let _ = evt_tx.send(CoreEvent::CssParsedBlock {
+                        // Forward one decoded stylesheet text block. Syntax
+                        // parsing happens outside this runtime.
+                        let _ = evt_tx.send(CoreEvent::CssDecodedBlock {
                             tab_id,
                             request_id,
                             url: url.clone(),
@@ -108,7 +116,7 @@ mod tests {
     }
 
     #[test]
-    fn css_done_emits_parsed_block_and_sheet_done() {
+    fn css_done_emits_decoded_block_and_sheet_done() {
         let (cmd_tx, cmd_rx) = mpsc::channel();
         let (evt_tx, evt_rx) = mpsc::channel();
         start_css_runtime(cmd_rx, evt_tx);
@@ -139,7 +147,7 @@ mod tests {
 
         assert!(matches!(
             first,
-            CoreEvent::CssParsedBlock {
+            CoreEvent::CssDecodedBlock {
                 tab_id: 1,
                 request_id: 7,
                 url: ref event_url,

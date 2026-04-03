@@ -1,4 +1,4 @@
-use crate::syntax::{Selector, Stylesheet, parse_declarations};
+use crate::syntax::{CompatSelector, CompatStylesheet, parse_declarations};
 use html::Node;
 use std::cmp::Ordering::Equal;
 use std::sync::Arc;
@@ -13,12 +13,12 @@ struct Candidate {
     order: u32,
 }
 
-fn specificity_of(selector: &Selector) -> Specificity {
+fn specificity_of(selector: &CompatSelector) -> Specificity {
     match selector {
-        Selector::Universal => Specificity(0, 0, 0),
-        Selector::Type(_) => Specificity(0, 0, 1),
-        Selector::Class(_) => Specificity(0, 1, 0),
-        Selector::Id(_) => Specificity(1, 0, 0),
+        CompatSelector::Universal => Specificity(0, 0, 0),
+        CompatSelector::Type(_) => Specificity(0, 0, 1),
+        CompatSelector::Class(_) => Specificity(0, 1, 0),
+        CompatSelector::Id(_) => Specificity(1, 0, 0),
     }
 }
 
@@ -34,15 +34,15 @@ fn get_attributes<'a>(attributes: &'a [(Arc<str>, Option<String>)], key: &str) -
 fn matches_selector(
     name: &str,
     attributes: &[(Arc<str>, Option<String>)],
-    selector: &Selector,
+    selector: &CompatSelector,
 ) -> bool {
     match selector {
-        Selector::Universal => true,
-        Selector::Type(t) => name.eq_ignore_ascii_case(t),
-        Selector::Id(want) => get_attributes(attributes, "id")
+        CompatSelector::Universal => true,
+        CompatSelector::Type(t) => name.eq_ignore_ascii_case(t),
+        CompatSelector::Id(want) => get_attributes(attributes, "id")
             .map(|v| v == want)
             .unwrap_or(false),
-        Selector::Class(want) => {
+        CompatSelector::Class(want) => {
             if let Some(classlist) = get_attributes(attributes, "class") {
                 classlist.split_whitespace().any(|c| c == want)
             } else {
@@ -67,8 +67,8 @@ pub fn get_inline_style(attributes: &[(Arc<str>, Option<String>)]) -> Option<&st
 }
 
 // Walk the DOM tree, and for each element, apply styles from the stylesheet and inline styles
-pub fn attach_styles(dom: &mut Node, sheet: &Stylesheet) {
-    fn walk(node: &mut Node, sheet: &Stylesheet) {
+pub fn attach_styles(dom: &mut Node, sheet: &CompatStylesheet) {
+    fn walk(node: &mut Node, sheet: &CompatStylesheet) {
         match node {
             Node::Element {
                 id: _,
