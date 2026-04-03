@@ -244,13 +244,13 @@ impl Tab {
             }
 
             // CSS runtime → apply styles
-            CoreEvent::CssParsedBlock {
+            CoreEvent::CssDecodedBlock {
                 tab_id,
                 request_id,
                 css_block,
                 ..
             } if self.is_current(tab_id, request_id) => {
-                self.on_css_parsed_block(css_block);
+                self.on_css_decoded_block(css_block);
             }
             CoreEvent::CssSheetDone {
                 tab_id,
@@ -455,7 +455,7 @@ impl Tab {
         self.resources.on_network_error(&url, error);
     }
 
-    fn on_css_parsed_block(&mut self, css_block: String) {
+    fn on_css_decoded_block(&mut self, css_block: String) {
         self.page.apply_css_block(&css_block);
         self.poke_redraw();
     }

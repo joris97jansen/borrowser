@@ -31,7 +31,7 @@ pub enum CoreCommand {
         tab_id: TabId,
         request_id: u64,
     },
-    // CSS Parser
+    // CSS stylesheet runtime
     CssChunk {
         tab_id: TabId,
         request_id: u64,
@@ -99,8 +99,9 @@ pub enum CoreEvent {
         patches: Vec<DomPatch>,
     },
 
-    // CSS Parser -> UI
-    CssParsedBlock {
+    // CSS stylesheet runtime -> UI
+    // Carries fully decoded stylesheet text for downstream css::syntax parsing.
+    CssDecodedBlock {
         tab_id: TabId,
         request_id: u64,
         url: String,

@@ -24,7 +24,7 @@ Work is split across dedicated threads:
 - **Main thread:** UI, layout, rendering
 - **Networking runtime:** Streaming HTML/CSS over HTTP
 - **HTML parsing runtime:** Incremental DOM construction
-- **CSS parsing runtime:** Stylesheet parsing + cascade updates
+- **CSS stylesheet runtime:** Stylesheet transport/assembly + parse job execution
 
 Communication happens through a **session-aware message bus**, allowing each tab to behave like an independent browser instance.
 
@@ -50,7 +50,7 @@ crates/
 ├── net             # HTTP streaming client
 ├── runtime_net     # Network runtime thread
 ├── runtime_parse   # HTML parsing runtime thread
-├── runtime_css     # CSS parsing runtime thread
+├── runtime_css     # CSS stylesheet runtime thread
 │
 ├── bus             # Message bus for CoreCommand/CoreEvent
 ├── browser         # Tabs, navigation, page state
@@ -82,7 +82,7 @@ Each runtime operates independently:
 
 - The **network runtime** streams raw bytes.
 - The **HTML parser** builds DOM fragments incrementally.
-- The **CSS parser** parses stylesheets in parallel.
+- The **CSS stylesheet runtime** assembles and dispatches stylesheet parse jobs in parallel.
 - Events are routed back to the main thread through winit’s event loop (`UserEvent::Core`).
 
 This design guarantees:
@@ -138,11 +138,19 @@ CSS is processed in three phases:
 
 ### 1. **Parse Stylesheets**
 
-`runtime_css` parses CSS blocks into:
+`runtime_css` currently assembles decoded stylesheet text and hands it to the
+`css::syntax` layer.
 
-* selectors (`div`, `#id`, `.class`)
-* declarations (`color: red;`)
-* rules with specificity and document order
+The syntax contract for Milestone N lives in:
+
+* `docs/css/syntax-parser-contract.md`
+
+The syntax layer owns:
+
+* tokenizer and parser entry points
+* deterministic malformed-input recovery
+* parser diagnostics and limit enforcement
+* stable debug/snapshot output for regression tests
 
 ### 2. **Cascade**
 
@@ -323,7 +331,7 @@ Borrowser strictly isolates responsibilities:
 | **Main thread**  | UI, layout, rendering         |
 | `runtime_net`    | HTTP streaming                |
 | `runtime_parse`  | DOM building                  |
-| `runtime_css`    | CSS parsing                   |
+| `runtime_css`    | CSS stylesheet assembly + parse job execution |
 | winit event loop | Dispatches CoreEvents to tabs |
 
 All communication is message-driven, no shared state.
@@ -337,7 +345,7 @@ Each tab maintains:
 ```rust
 struct PageState {
     dom: Option<Node>,
-    css_sheet: Stylesheet,
+    css_sheet: CompatStylesheet,
     head: HeadMetadata,
     visible_text_cache: String,
 
