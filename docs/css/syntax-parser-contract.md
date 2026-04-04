@@ -1,8 +1,9 @@
 # CSS Syntax Layer Contract (Milestone N)
 
-Last updated: 2026-04-03  
+Last updated: 2026-04-04  
 Scope: `crates/css/src/syntax/mod.rs`, `crates/css/src/syntax/compat.rs`,
 `crates/css/src/syntax/input.rs`, `crates/css/src/syntax/token.rs`,
+`crates/css/src/syntax/tokenizer.rs`,
 `crates/runtime_css/src/lib.rs`, and the
 current browser integration path in `crates/browser/src/page.rs`
 
@@ -16,6 +17,7 @@ Related code:
 - `crates/css/src/syntax/compat.rs`
 - `crates/css/src/syntax/input.rs`
 - `crates/css/src/syntax/token.rs`
+- `crates/css/src/syntax/tokenizer.rs`
 - `crates/css/src/cascade.rs`
 - `crates/browser/src/page.rs`
 - `crates/runtime_css/src/lib.rs`
@@ -68,13 +70,15 @@ Current repository status:
 - explicit token definitions exist in code
 - source spans are bound to their owning decoded input identity
 - source positions use CSS-aware line-boundary handling
-- tokenizer responsibilities are defined, but no standalone tokenizer
-  implementation exists yet
+- a standalone tokenizer implementation exists in code
+- tokenizer diagnostics are typed and deterministic
 - parser entry points and parse-result types exist now
 - current parsing internals are intentionally transitional and live in
   `crates/css/src/syntax/compat.rs`
-- those compatibility internals preserve the pre-N cascade path and are not the
-  normative tokenizer/parser design for later milestones
+- those compatibility internals now consume tokenizer output instead of raw
+  lexical string splitting
+- the compatibility outputs still preserve the pre-N cascade path and are not
+  the normative long-term syntax tree for later milestones
 
 ## Current Components: Retained Vs Replaced
 
@@ -86,6 +90,7 @@ Retained in Milestone N:
 
 Replaced in Milestone N:
 - naive `split('}')`, `split('{')`, and `split(';')` parsing as the real parser
+- naive lexical boundary detection based on raw string splitting
 - implicit malformed-input skipping without diagnostics or fixed rules
 - syntax logic coupled directly to selector matching assumptions
 - unstable, incidental Rust `Debug` output as the test surface
@@ -121,7 +126,7 @@ It MUST NOT:
 Implementation note:
 - tokenizer ownership is part of the N1 contract
 - N2 introduces the input model, spans, and token definitions
-- the actual tokenizer implementation is deferred to later Milestone N issues
+- N3 implements the tokenizer and stable tokenization entry points
 
 ## Parser Responsibilities
 
@@ -227,6 +232,7 @@ The syntax layer must provide stable, explicit serializers for regression tests:
 - `serialize_stylesheet_for_snapshot`
 - `serialize_declarations_for_snapshot`
 - `serialize_tokens_for_snapshot`
+- `CssTokenization::to_debug_snapshot`
 - `StylesheetParse::to_debug_snapshot`
 - `DeclarationListParse::to_debug_snapshot`
 
@@ -239,7 +245,6 @@ Snapshot guarantees:
 - output does not depend on allocator layout or Rust debug formatting details
 
 Milestone N test coverage should expand from here to include:
-- tokenizer golden coverage
 - stylesheet snapshot goldens
 - inline declaration-list snapshot goldens
 - token snapshot goldens
@@ -262,11 +267,20 @@ Downstream milestones must not assume:
 
 ## Related Next Steps And References
 
-The next queued syntax-layer follow-up for this contract is:
+The next queued syntax-layer follow-ups for this contract are:
+
+- [`docs/css/n4-structured-syntax-ast.md`](n4-structured-syntax-ast.md)
+- [`docs/css/n2b-incremental-line-record-maintenance.md`](n2b-incremental-line-record-maintenance.md)
+
+Historical reference:
 
 - [`docs/css/n2a-decouple-structured-parse-results.md`](n2a-decouple-structured-parse-results.md)
-- [`docs/css/n2b-incremental-line-record-maintenance.md`](n2b-incremental-line-record-maintenance.md)
+  is now subsumed by `n4-structured-syntax-ast.md`
 
 Related reference for the N2 source/token layer:
 
 - [`docs/css/input-token-model.md`](input-token-model.md)
+
+Related reference for the N3 tokenizer layer:
+
+- [`docs/css/tokenizer-behavior.md`](tokenizer-behavior.md)

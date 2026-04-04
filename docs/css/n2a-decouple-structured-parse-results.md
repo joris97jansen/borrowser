@@ -1,7 +1,7 @@
 # N2a: Decouple Structured Parse Results From Compatibility Stylesheet Outputs
 
-Last updated: 2026-04-03  
-Status: queued after N1
+Last updated: 2026-04-04  
+Status: subsumed by `docs/css/n4-structured-syntax-ast.md`
 
 ## Issue
 
@@ -10,6 +10,12 @@ Introduce a real syntax-layer stylesheet representation for
 `CompatStylesheet` directly. Preserve the current cascade path by adding an
 explicit compatibility projection from the syntax-layer representation into
 `CompatStylesheet`.
+
+Tracker note:
+- this narrower follow-up is now covered by
+  `docs/css/n4-structured-syntax-ast.md`
+- keep this document as historical rationale for the original decoupling need
+- treat N4 as the active implementation tracker
 
 ## Why This Exists
 

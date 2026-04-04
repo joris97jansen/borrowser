@@ -1,18 +1,18 @@
 //! Stable CSS syntax contract surface.
 //!
 //! This module owns parser-facing options, diagnostics, decoded-input
-//! primitives, source-bound spans, and explicit token definitions for the CSS
-//! syntax layer. The tokenizer algorithm itself remains intentionally
-//! unimplemented here.
+//! primitives, source-bound spans, explicit token definitions, and the CSS
+//! tokenizer/parser entry points for the syntax layer.
 //!
-//! The current split-based parsing behavior remains available only through the
-//! private `compat` adapter module below. That adapter preserves the existing
-//! cascade path during rollout, but it is not normative for the long-term
-//! tokenizer/parser architecture.
+//! The current compatibility-scoped parsing behavior remains available only
+//! through the private `compat` adapter module below. That adapter now consumes
+//! token streams while preserving the existing cascade path during rollout, but
+//! it is not normative for the long-term tokenizer/parser architecture.
 
 mod compat;
 mod input;
 mod token;
+mod tokenizer;
 
 use std::fmt::Write;
 
@@ -21,6 +21,9 @@ pub use input::{CssInput, CssInputId, CssPosition, CssSpan};
 pub use token::{
     CssDimension, CssHashKind, CssNumber, CssNumericKind, CssToken, CssTokenKind, CssTokenText,
     CssUnicodeRange, serialize_tokens_for_snapshot,
+};
+pub use tokenizer::{
+    CssTokenization, CssTokenizationStats, tokenize_str, tokenize_str_with_options,
 };
 
 /// A single CSS property: `color: red`.
@@ -109,7 +112,7 @@ pub enum DiagnosticSeverity {
 }
 
 impl DiagnosticSeverity {
-    fn snapshot_label(self) -> &'static str {
+    pub(crate) fn snapshot_label(self) -> &'static str {
         match self {
             Self::Warning => "warning",
             Self::Error => "error",
@@ -124,17 +127,23 @@ pub enum DiagnosticKind {
     EmptySelectorList,
     InvalidSelector,
     InvalidDeclaration,
+    UnterminatedComment,
+    UnterminatedString,
+    BadUrl,
     LimitExceeded,
 }
 
 impl DiagnosticKind {
-    fn stable_code(self) -> &'static str {
+    pub(crate) fn stable_code(self) -> &'static str {
         match self {
             Self::UnexpectedEof => "unexpected-eof",
             Self::UnexpectedToken => "unexpected-token",
             Self::EmptySelectorList => "empty-selector-list",
             Self::InvalidSelector => "invalid-selector",
             Self::InvalidDeclaration => "invalid-declaration",
+            Self::UnterminatedComment => "unterminated-comment",
+            Self::UnterminatedString => "unterminated-string",
+            Self::BadUrl => "bad-url",
             Self::LimitExceeded => "limit-exceeded",
         }
     }
@@ -142,8 +151,8 @@ impl DiagnosticKind {
 
 /// Structured parse diagnostic.
 ///
-/// N1 diagnostics expose a byte offset only. Token spans will arrive with the
-/// tokenizer implementation in later milestones.
+/// Diagnostics expose a stable byte offset suitable for tokenizer and parser
+/// recovery reporting.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SyntaxDiagnostic {
     pub severity: DiagnosticSeverity,
@@ -209,9 +218,9 @@ pub fn parse_stylesheet(input: &str) -> CompatStylesheet {
 
 /// Contract entry point for whole-stylesheet parsing.
 ///
-/// N1 freezes the input/output contract only. The current implementation is a
-/// transitional compatibility adapter and may be replaced in N2/N3 without
-/// semantic commitment beyond this documented contract.
+/// The current implementation is token-driven but still projects into
+/// compatibility-scoped rule and selector outputs for the existing cascade
+/// path.
 pub fn parse_stylesheet_with_options(input: &str, options: &ParseOptions) -> StylesheetParse {
     compat::parse_stylesheet_compat(input, options)
 }
@@ -224,8 +233,8 @@ pub fn parse_declarations(input: &str) -> Vec<Declaration> {
 
 /// Contract entry point for inline declaration lists.
 ///
-/// As with stylesheet parsing, the implementation remains transitional until
-/// tokenizer-driven parsing lands in later milestones.
+/// As with stylesheet parsing, declaration parsing is now token-driven while
+/// still returning compatibility-friendly declaration values.
 pub fn parse_declarations_with_options(
     input: &str,
     options: &ParseOptions,
@@ -402,6 +411,35 @@ mod tests {
             parse.diagnostics[1].kind,
             DiagnosticKind::InvalidDeclaration
         );
+    }
+
+    #[test]
+    fn declaration_lists_do_not_split_on_semicolons_inside_strings() {
+        let parse = parse_declarations_with_options(
+            "content: \";\"; color: red;",
+            &ParseOptions::style_attribute(),
+        );
+
+        assert_eq!(parse.declarations.len(), 2);
+        assert_eq!(parse.declarations[0].name, "content");
+        assert_eq!(parse.declarations[0].value, "\";\"");
+        assert_eq!(parse.declarations[1].name, "color");
+        assert_eq!(parse.declarations[1].value, "red");
+    }
+
+    #[test]
+    fn stylesheet_parsing_does_not_split_on_braces_inside_strings() {
+        let parse = parse_stylesheet_with_options(
+            "div { content: \"}\"; color: red; }",
+            &ParseOptions::stylesheet(),
+        );
+
+        assert_eq!(parse.stylesheet.rules.len(), 1);
+        assert_eq!(parse.stylesheet.rules[0].declarations.len(), 2);
+        assert_eq!(parse.stylesheet.rules[0].declarations[0].name, "content");
+        assert_eq!(parse.stylesheet.rules[0].declarations[0].value, "\"}\"");
+        assert_eq!(parse.stylesheet.rules[0].declarations[1].name, "color");
+        assert_eq!(parse.stylesheet.rules[0].declarations[1].value, "red");
     }
 
     #[test]
