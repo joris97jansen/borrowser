@@ -1,0 +1,11 @@
+version: 1
+tokens
+token[0] comment("") @0..2
+token[1] eof @2..2
+diagnostics
+  - warning unterminated-comment @0
+stats
+  input_bytes: 2
+  tokens_emitted: 2
+  diagnostics_emitted: 1
+  hit_limit: false

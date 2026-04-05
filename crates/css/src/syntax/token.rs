@@ -6,7 +6,6 @@
 
 use super::input::{CssInput, CssSpan};
 use std::borrow::Cow;
-use std::fmt::Write;
 
 /// Token text payload that may refer back to source input or store owned text.
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -137,107 +136,13 @@ impl CssToken {
     }
 }
 
-pub fn serialize_tokens_for_snapshot(input: &CssInput, tokens: &[CssToken]) -> String {
-    let mut out = String::new();
-    writeln!(&mut out, "tokens").expect("write tokens header");
-    for (index, token) in tokens.iter().enumerate() {
-        writeln!(
-            &mut out,
-            "token[{index}] {} @{}..{}",
-            token_kind_snapshot(input, &token.kind),
-            token.span.start,
-            token.span.end,
-        )
-        .expect("write token snapshot");
-    }
-    out
-}
-
-fn token_kind_snapshot(input: &CssInput, kind: &CssTokenKind) -> String {
-    match kind {
-        CssTokenKind::Whitespace => "whitespace".to_string(),
-        CssTokenKind::Comment(text) => format!("comment({})", quoted_text(input, text)),
-        CssTokenKind::Ident(text) => format!("ident({})", quoted_text(input, text)),
-        CssTokenKind::Function(text) => format!("function({})", quoted_text(input, text)),
-        CssTokenKind::AtKeyword(text) => format!("at-keyword({})", quoted_text(input, text)),
-        CssTokenKind::Hash { value, kind } => format!(
-            "hash(kind={}, value={})",
-            match kind {
-                CssHashKind::Id => "id",
-                CssHashKind::Unrestricted => "unrestricted",
-            },
-            quoted_text(input, value)
-        ),
-        CssTokenKind::String(text) => format!("string({})", quoted_text(input, text)),
-        CssTokenKind::BadString => "bad-string".to_string(),
-        CssTokenKind::Url(text) => format!("url({})", quoted_text(input, text)),
-        CssTokenKind::BadUrl => "bad-url".to_string(),
-        CssTokenKind::Delim(ch) => format!("delim({})", quoted_char(*ch)),
-        CssTokenKind::Number(number) => format!(
-            "number(kind={}, value={})",
-            numeric_kind_label(number.kind),
-            quoted_text(input, &number.repr)
-        ),
-        CssTokenKind::Percentage(number) => format!(
-            "percentage(kind={}, value={})",
-            numeric_kind_label(number.kind),
-            quoted_text(input, &number.repr)
-        ),
-        CssTokenKind::Dimension(dimension) => format!(
-            "dimension(kind={}, value={}, unit={})",
-            numeric_kind_label(dimension.number.kind),
-            quoted_text(input, &dimension.number.repr),
-            quoted_text(input, &dimension.unit)
-        ),
-        CssTokenKind::UnicodeRange(range) => {
-            format!("unicode-range(U+{:X}-U+{:X})", range.start(), range.end())
-        }
-        CssTokenKind::Colon => "colon".to_string(),
-        CssTokenKind::Semicolon => "semicolon".to_string(),
-        CssTokenKind::Comma => "comma".to_string(),
-        CssTokenKind::LeftSquareBracket => "left-square-bracket".to_string(),
-        CssTokenKind::RightSquareBracket => "right-square-bracket".to_string(),
-        CssTokenKind::LeftParenthesis => "left-parenthesis".to_string(),
-        CssTokenKind::RightParenthesis => "right-parenthesis".to_string(),
-        CssTokenKind::LeftCurlyBracket => "left-curly-bracket".to_string(),
-        CssTokenKind::RightCurlyBracket => "right-curly-bracket".to_string(),
-        CssTokenKind::IncludeMatch => "include-match".to_string(),
-        CssTokenKind::DashMatch => "dash-match".to_string(),
-        CssTokenKind::PrefixMatch => "prefix-match".to_string(),
-        CssTokenKind::SuffixMatch => "suffix-match".to_string(),
-        CssTokenKind::SubstringMatch => "substring-match".to_string(),
-        CssTokenKind::Column => "column".to_string(),
-        CssTokenKind::Cdo => "cdo".to_string(),
-        CssTokenKind::Cdc => "cdc".to_string(),
-        CssTokenKind::Eof => "eof".to_string(),
-    }
-}
-
-fn numeric_kind_label(kind: CssNumericKind) -> &'static str {
-    match kind {
-        CssNumericKind::Integer => "integer",
-        CssNumericKind::Number => "number",
-    }
-}
-
-fn quoted_text(input: &CssInput, text: &CssTokenText) -> String {
-    match text.resolve(input) {
-        Some(text) => format!("{:?}", text),
-        None => "<invalid-span>".to_string(),
-    }
-}
-
-fn quoted_char(ch: char) -> String {
-    format!("{ch:?}")
-}
-
 #[cfg(test)]
 mod tests {
     use super::{
         CssDimension, CssHashKind, CssNumber, CssNumericKind, CssToken, CssTokenKind, CssTokenText,
-        CssUnicodeRange, serialize_tokens_for_snapshot,
+        CssUnicodeRange,
     };
-    use crate::syntax::input::CssInput;
+    use crate::syntax::{input::CssInput, serialize_tokens_for_snapshot};
 
     #[test]
     fn token_text_resolves_owned_and_spanned_payloads() {
@@ -290,6 +195,7 @@ mod tests {
         assert_eq!(
             serialize_tokens_for_snapshot(&input, &tokens),
             concat!(
+                "version: 1\n",
                 "tokens\n",
                 "token[0] at-keyword(\"media\") @0..6\n",
                 "token[1] whitespace @6..7\n",

@@ -3,6 +3,7 @@
 Last updated: 2026-04-05  
 Scope: `crates/css/src/syntax/mod.rs`, `crates/css/src/syntax/compat.rs`,
 `crates/css/src/syntax/input.rs`, `crates/css/src/syntax/token.rs`,
+`crates/css/src/syntax/serialize.rs`,
 `crates/css/src/syntax/tokenizer.rs`, `crates/css/src/syntax/parser.rs`,
 `crates/runtime_css/src/lib.rs`, and the
 current browser integration path in `crates/browser/src/page.rs`
@@ -17,6 +18,7 @@ Related code:
 - `crates/css/src/syntax/compat.rs`
 - `crates/css/src/syntax/input.rs`
 - `crates/css/src/syntax/token.rs`
+- `crates/css/src/syntax/serialize.rs`
 - `crates/css/src/syntax/tokenizer.rs`
 - `crates/css/src/syntax/parser.rs`
 - `crates/css/src/cascade.rs`
@@ -80,6 +82,10 @@ Current repository status:
   declarations
 - deterministic parse recovery points are implemented for malformed stylesheet
   and declaration input
+- stable syntax-layer serializer functions exist for tokenizer and parser result
+  types
+- file-backed golden fixtures exist for representative tokenizer and parser
+  cases
 - compatibility projection now lives in `crates/css/src/syntax/compat.rs`
   rather than defining the primary parse result
 - compatibility outputs still preserve the pre-N cascade path and are not the
@@ -256,27 +262,40 @@ Rust's derived `Debug` is not the contract.
 
 The syntax layer must provide stable, explicit serializers for regression tests:
 - `serialize_stylesheet_for_snapshot`
+- `serialize_stylesheet_parse_for_snapshot`
 - `serialize_compat_stylesheet_for_snapshot`
 - `serialize_declarations_for_snapshot`
+- `serialize_declaration_list_parse_for_snapshot`
 - `serialize_tokens_for_snapshot`
+- `serialize_tokenization_for_snapshot`
 - `CssTokenization::to_debug_snapshot`
 - `StylesheetParse::to_debug_snapshot`
 - `DeclarationListParse::to_debug_snapshot`
 
 Snapshot guarantees:
+- snapshot output begins with an explicit format version header (`version: 1`)
 - field order is explicit
-- rule/declaration order is preserved
-- diagnostics and stats are serialized in a stable order
+- token streams serialize in tokenizer emission order
+- rules serialize in source order
+- declarations serialize in source order
+- diagnostics serialize in encounter order
+- stats use a fixed field order
 - stable snapshots are based on severity, diagnostic kind, and byte offset;
   free-form human messages are intentionally excluded from the golden contract
+- output uses syntax-layer-owned escaping rules rather than Rust derived
+  `Debug` formatting
 - output does not depend on allocator layout or Rust debug formatting details
 
-Milestone N test coverage should expand from here to include:
+Current golden coverage includes:
+- token snapshot goldens
 - stylesheet snapshot goldens
 - inline declaration-list snapshot goldens
-- token snapshot goldens
 - malformed-input recovery cases
+
+Milestone N test coverage should expand from here to include:
 - hostile-input and limit-enforcement cases
+- broader at-rule and nested-block syntax coverage
+- additional malformed selector/prelude recovery cases
 
 ## Downstream Contract
 
@@ -296,7 +315,7 @@ Downstream milestones must not assume:
 
 The next queued syntax-layer follow-ups for this contract are:
 
-- [`docs/css/n6-selector-structure-expansion.md`](n6-selector-structure-expansion.md)
+- [`docs/css/n7-selector-structure-expansion.md`](n7-selector-structure-expansion.md)
 - [`docs/css/n2b-incremental-line-record-maintenance.md`](n2b-incremental-line-record-maintenance.md)
 
 Historical reference:
@@ -304,8 +323,11 @@ Historical reference:
 - [`docs/css/n2a-decouple-structured-parse-results.md`](n2a-decouple-structured-parse-results.md)
   is now subsumed by `n4-structured-syntax-ast.md`
 - selector-structure expansion was initially queued in-repo under `N5` and was
-  renumbered to [`docs/css/n6-selector-structure-expansion.md`](n6-selector-structure-expansion.md)
-  once deterministic parse recovery became the implemented `N5`
+  renumbered to `N6` once deterministic parse recovery became the implemented
+  `N5`
+- selector-structure expansion was then renumbered to
+  [`docs/css/n7-selector-structure-expansion.md`](n7-selector-structure-expansion.md)
+  once stable debug/serialization output became the implemented `N6`
 
 Related reference for the N2 source/token layer:
 
@@ -323,6 +345,10 @@ Related reference for the N5 recovery work:
 
 - [`docs/css/n5-deterministic-parse-recovery.md`](n5-deterministic-parse-recovery.md)
 
+Related reference for the N6 stable snapshot work:
+
+- [`docs/css/n6-stable-debug-serialization.md`](n6-stable-debug-serialization.md)
+
 Related reference for the next selector-structure expansion work:
 
-- [`docs/css/n6-selector-structure-expansion.md`](n6-selector-structure-expansion.md)
+- [`docs/css/n7-selector-structure-expansion.md`](n7-selector-structure-expansion.md)

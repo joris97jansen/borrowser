@@ -1,0 +1,23 @@
+version: 1
+tokens
+token[0] ident("div") @0..3
+token[1] comma @3..4
+token[2] whitespace @4..5
+token[3] hash(kind=id, value="hero") @5..10
+token[4] whitespace @10..11
+token[5] left-curly-bracket @11..12
+token[6] whitespace @12..13
+token[7] ident("color") @13..18
+token[8] colon @18..19
+token[9] whitespace @19..20
+token[10] dimension(kind=integer, value="10", unit="px") @20..24
+token[11] semicolon @24..25
+token[12] whitespace @25..26
+token[13] right-curly-bracket @26..27
+token[14] eof @27..27
+diagnostics
+stats
+  input_bytes: 27
+  tokens_emitted: 15
+  diagnostics_emitted: 0
+  hit_limit: false

@@ -7,13 +7,12 @@
 use super::input::{CssInput, CssSpan};
 use super::token::{
     CssDimension, CssHashKind, CssNumber, CssNumericKind, CssToken, CssTokenKind, CssTokenText,
-    CssUnicodeRange, serialize_tokens_for_snapshot,
+    CssUnicodeRange,
 };
 use super::{
     CssParseOrigin, DiagnosticKind, DiagnosticSeverity, ParseOptions, SyntaxDiagnostic,
     append_diagnostics, push_diagnostic, truncate_to_limit,
 };
-use std::fmt::Write;
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct CssTokenizationStats {
@@ -33,30 +32,7 @@ pub struct CssTokenization {
 
 impl CssTokenization {
     pub fn to_debug_snapshot(&self) -> String {
-        let mut out = serialize_tokens_for_snapshot(&self.input, &self.tokens);
-        writeln!(&mut out, "diagnostics").expect("write diagnostics header");
-        for diagnostic in &self.diagnostics {
-            writeln!(
-                &mut out,
-                "  - {} {} @{}",
-                diagnostic.severity.snapshot_label(),
-                diagnostic.kind.stable_code(),
-                diagnostic.byte_offset,
-            )
-            .expect("write diagnostic snapshot");
-        }
-        writeln!(&mut out, "stats").expect("write stats header");
-        writeln!(&mut out, "  input_bytes: {}", self.stats.input_bytes).expect("write input_bytes");
-        writeln!(&mut out, "  tokens_emitted: {}", self.stats.tokens_emitted)
-            .expect("write tokens_emitted");
-        writeln!(
-            &mut out,
-            "  diagnostics_emitted: {}",
-            self.stats.diagnostics_emitted
-        )
-        .expect("write diagnostics_emitted");
-        writeln!(&mut out, "  hit_limit: {}", self.stats.hit_limit).expect("write hit_limit");
-        out
+        super::serialize_tokenization_for_snapshot(self)
     }
 }
 
@@ -979,6 +955,7 @@ mod tests {
         assert_eq!(
             first.to_debug_snapshot(),
             concat!(
+                "version: 1\n",
                 "tokens\n",
                 "token[0] ident(\"div\") @0..3\n",
                 "token[1] comma @3..4\n",
