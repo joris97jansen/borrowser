@@ -82,6 +82,14 @@ Tokenizer input limits are origin-sensitive:
 
 - stylesheet tokenization uses `max_stylesheet_input_bytes`
 - declaration-list tokenization uses `max_declaration_list_input_bytes`
+- lexical token growth is bounded by `max_lexical_tokens` before the trailing
+  EOF sentinel
+
+Tokenizer invariants consumed by the structured parser:
+
+- emitted token spans stay bound to the owning `CssInput`
+- token spans are monotonic in source order
+- tokenization always ends with one trailing EOF token
 
 Stable regression surfaces:
 

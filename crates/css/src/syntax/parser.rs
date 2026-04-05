@@ -99,6 +99,15 @@ pub(super) fn parse_stylesheet_structured(input: &str, options: &ParseOptions) -
 
     let input = tokenization.input;
     let tokens = tokenization.tokens;
+    if !validate_token_stream_invariants(options, &input, &tokens, 0, &mut diagnostics, &mut stats)
+    {
+        return StylesheetParse {
+            input,
+            stylesheet: CssStylesheet::default(),
+            diagnostics,
+            stats,
+        };
+    }
     let mut parser = StylesheetParser {
         input: &input,
         tokens: &tokens,
@@ -140,6 +149,21 @@ pub(super) fn parse_declaration_list_structured(
 
     let input = tokenization.input;
     let tokens = tokenization.tokens;
+    if !validate_token_stream_invariants(
+        options,
+        &input,
+        &tokens,
+        base_offset,
+        &mut diagnostics,
+        &mut stats,
+    ) {
+        return StructuredDeclarationListParse {
+            input,
+            declarations: Vec::new(),
+            diagnostics,
+            stats,
+        };
+    }
     let mut parser = StylesheetParser {
         input: &input,
         tokens: &tokens,
@@ -278,7 +302,7 @@ impl<'a> StylesheetParser<'a> {
                     );
                 }
                 CssTokenKind::LeftCurlyBracket => {
-                    let consumed = self.consume_simple_block(cursor);
+                    let consumed = self.consume_simple_block(cursor, 0);
                     let span = self
                         .input
                         .span(start_token.span.start, consumed.block.span.end)
@@ -344,7 +368,7 @@ impl<'a> StylesheetParser<'a> {
                     );
                 }
                 _ => {
-                    let (value, next) = self.consume_component_value(cursor);
+                    let (value, next) = self.consume_component_value(cursor, 0);
                     prelude.push(value);
                     cursor = next;
                 }
@@ -431,7 +455,7 @@ impl<'a> StylesheetParser<'a> {
                     return RuleParseResult::End;
                 }
                 _ => {
-                    let (value, next) = self.consume_component_value(cursor);
+                    let (value, next) = self.consume_component_value(cursor, 0);
                     prelude.push(value);
                     cursor = next;
                 }
@@ -487,7 +511,11 @@ impl<'a> StylesheetParser<'a> {
                     cursor = next_index;
                 }
                 DeclarationResult::Skipped(next_index) => {
-                    cursor = next_index;
+                    cursor = if next_index <= cursor {
+                        cursor.saturating_add(1)
+                    } else {
+                        next_index
+                    };
                 }
                 DeclarationResult::End => break,
             }
@@ -557,9 +585,13 @@ impl<'a> StylesheetParser<'a> {
         let mut value = Vec::new();
         let mut value_cursor = cursor;
         while value_cursor < value_end_index {
-            let (component_value, next) = self.consume_component_value(value_cursor);
+            let (component_value, next) = self.consume_component_value(value_cursor, 0);
             value.push(component_value);
-            value_cursor = next;
+            value_cursor = if next <= value_cursor {
+                value_cursor.saturating_add(1)
+            } else {
+                next
+            };
         }
 
         let end_offset = self
@@ -623,31 +655,35 @@ impl<'a> StylesheetParser<'a> {
         }
     }
 
-    fn consume_component_value(&mut self, start: usize) -> (CssComponentValue, usize) {
+    fn consume_component_value(
+        &mut self,
+        start: usize,
+        nesting_depth: usize,
+    ) -> (CssComponentValue, usize) {
         match self.tokens.get(start).map(|token| &token.kind) {
             Some(CssTokenKind::LeftCurlyBracket) => {
-                let consumed = self.consume_simple_block(start);
+                let consumed = self.consume_simple_block(start, nesting_depth);
                 (
                     CssComponentValue::SimpleBlock(consumed.block),
                     consumed.next_index,
                 )
             }
             Some(CssTokenKind::LeftSquareBracket) => {
-                let consumed = self.consume_simple_block(start);
+                let consumed = self.consume_simple_block(start, nesting_depth);
                 (
                     CssComponentValue::SimpleBlock(consumed.block),
                     consumed.next_index,
                 )
             }
             Some(CssTokenKind::LeftParenthesis) => {
-                let consumed = self.consume_simple_block(start);
+                let consumed = self.consume_simple_block(start, nesting_depth);
                 (
                     CssComponentValue::SimpleBlock(consumed.block),
                     consumed.next_index,
                 )
             }
             Some(CssTokenKind::Function(_)) => {
-                let consumed = self.consume_function(start);
+                let consumed = self.consume_function(start, nesting_depth);
                 (
                     CssComponentValue::Function(consumed.function),
                     consumed.next_index,
@@ -669,9 +705,22 @@ impl<'a> StylesheetParser<'a> {
         }
     }
 
-    fn consume_simple_block(&mut self, start: usize) -> ConsumedSimpleBlock {
+    fn consume_simple_block(&mut self, start: usize, nesting_depth: usize) -> ConsumedSimpleBlock {
         let start_token = self.tokens[start].clone();
         let kind = block_kind_for_opener(&start_token.kind).expect("simple block opener");
+        if nesting_depth >= self.options.limits.max_component_nesting_depth {
+            self.stats.hit_limit = true;
+            self.push_diagnostic(
+                DiagnosticSeverity::Error,
+                DiagnosticKind::LimitExceeded,
+                start_token.span.start,
+                format!(
+                    "component nesting depth exceeded limit {}",
+                    self.options.limits.max_component_nesting_depth
+                ),
+            );
+            return self.recover_overdeep_simple_block(start, kind);
+        }
         let mut cursor = start + 1;
         let mut value = Vec::new();
 
@@ -700,9 +749,13 @@ impl<'a> StylesheetParser<'a> {
                 };
             }
 
-            let (component_value, next) = self.consume_component_value(cursor);
+            let (component_value, next) = self.consume_component_value(cursor, nesting_depth + 1);
             value.push(component_value);
-            cursor = next;
+            cursor = if next <= cursor {
+                cursor.saturating_add(1)
+            } else {
+                next
+            };
         }
 
         let span = self
@@ -716,12 +769,25 @@ impl<'a> StylesheetParser<'a> {
         }
     }
 
-    fn consume_function(&mut self, start: usize) -> ConsumedFunction {
+    fn consume_function(&mut self, start: usize, nesting_depth: usize) -> ConsumedFunction {
         let start_token = self.tokens[start].clone();
         let name = match &start_token.kind {
             CssTokenKind::Function(name) => name.clone(),
             _ => unreachable!("consume_function requires function token"),
         };
+        if nesting_depth >= self.options.limits.max_component_nesting_depth {
+            self.stats.hit_limit = true;
+            self.push_diagnostic(
+                DiagnosticSeverity::Error,
+                DiagnosticKind::LimitExceeded,
+                start_token.span.start,
+                format!(
+                    "component nesting depth exceeded limit {}",
+                    self.options.limits.max_component_nesting_depth
+                ),
+            );
+            return self.recover_overdeep_function(start, name);
+        }
 
         let mut cursor = start + 1;
         let mut value = Vec::new();
@@ -749,9 +815,14 @@ impl<'a> StylesheetParser<'a> {
                     };
                 }
                 _ => {
-                    let (component_value, next) = self.consume_component_value(cursor);
+                    let (component_value, next) =
+                        self.consume_component_value(cursor, nesting_depth + 1);
                     value.push(component_value);
-                    cursor = next;
+                    cursor = if next <= cursor {
+                        cursor.saturating_add(1)
+                    } else {
+                        next
+                    };
                 }
             }
         }
@@ -867,6 +938,66 @@ impl<'a> StylesheetParser<'a> {
             message,
         );
     }
+
+    fn recover_overdeep_simple_block(
+        &self,
+        start: usize,
+        kind: CssBlockKind,
+    ) -> ConsumedSimpleBlock {
+        let start_token = self.tokens[start].clone();
+        let end_index = self.find_matching_closer(start, kind);
+        let (end_offset, closed, next_index) = match end_index {
+            Some(index) => (self.tokens[index].span.end, true, index + 1),
+            None => {
+                let eof_index = self.find_eof_index(start + 1);
+                let end_offset = self
+                    .tokens
+                    .get(eof_index)
+                    .map(|token| token.span.start)
+                    .unwrap_or_else(|| self.input.len_bytes());
+                (end_offset, false, eof_index)
+            }
+        };
+        let span = self
+            .input
+            .span(start_token.span.start, end_offset)
+            .expect("overdeep simple block span");
+
+        ConsumedSimpleBlock {
+            block: CssSimpleBlock {
+                span,
+                kind,
+                value: Vec::new(),
+            },
+            next_index,
+            closed,
+        }
+    }
+
+    fn recover_overdeep_function(&self, start: usize, name: CssTokenText) -> ConsumedFunction {
+        let start_token = self.tokens[start].clone();
+        let end_index = find_function_closer(self.tokens, start);
+        let (end_offset, next_index) = match end_index {
+            Some(index) if matches!(self.tokens[index].kind, CssTokenKind::RightParenthesis) => {
+                (self.tokens[index].span.end, index + 1)
+            }
+            Some(index) => (self.tokens[index].span.start, index),
+            None => (self.input.len_bytes(), self.tokens.len()),
+        };
+        let span = self
+            .input
+            .span(start_token.span.start, end_offset)
+            .expect("overdeep function span");
+
+        ConsumedFunction {
+            function: CssFunction {
+                span,
+                name,
+                value: Vec::new(),
+            },
+            next_index,
+        }
+    }
 }
 
 enum RuleParseResult {
@@ -896,6 +1027,90 @@ struct ConsumedSimpleBlock {
 struct ConsumedFunction {
     function: CssFunction,
     next_index: usize,
+}
+
+/// Canonical tokenizer-to-parser boundary validator.
+///
+/// All structured parser entry points must use this function before consuming a
+/// token stream. Future tokenizer modes or stitched token streams must reuse
+/// this validator rather than introducing separate, slightly different
+/// boundary checks.
+fn validate_token_stream_invariants(
+    options: &ParseOptions,
+    input: &CssInput,
+    tokens: &[CssToken],
+    base_offset: usize,
+    diagnostics: &mut Vec<SyntaxDiagnostic>,
+    stats: &mut ParseStats,
+) -> bool {
+    let emit = |byte_offset: usize,
+                message: &str,
+                diagnostics: &mut Vec<SyntaxDiagnostic>,
+                stats: &mut ParseStats| {
+        push_diagnostic(
+            options,
+            diagnostics,
+            stats,
+            DiagnosticSeverity::Error,
+            DiagnosticKind::InvariantViolation,
+            base_offset.saturating_add(byte_offset),
+            message,
+        );
+    };
+
+    let Some(last) = tokens.last() else {
+        emit(
+            0,
+            "token stream invariant violated: empty token stream",
+            diagnostics,
+            stats,
+        );
+        return false;
+    };
+
+    if !matches!(last.kind, CssTokenKind::Eof) {
+        emit(
+            input.len_bytes(),
+            "token stream invariant violated: missing trailing EOF token",
+            diagnostics,
+            stats,
+        );
+        return false;
+    }
+
+    let mut previous_end = 0usize;
+    for (index, token) in tokens.iter().enumerate() {
+        if token.span.input_id != input.id() {
+            emit(
+                token.span.start,
+                "token stream invariant violated: token span belongs to a different input",
+                diagnostics,
+                stats,
+            );
+            return false;
+        }
+        if token.span.end > input.len_bytes() || token.span.start < previous_end {
+            emit(
+                token.span.start,
+                "token stream invariant violated: token spans are not monotonic within the owning input",
+                diagnostics,
+                stats,
+            );
+            return false;
+        }
+        if index + 1 != tokens.len() && matches!(token.kind, CssTokenKind::Eof) {
+            emit(
+                token.span.start,
+                "token stream invariant violated: EOF token must be the last token",
+                diagnostics,
+                stats,
+            );
+            return false;
+        }
+        previous_end = token.span.end;
+    }
+
+    true
 }
 
 fn append_offset_diagnostics(
@@ -1084,4 +1299,124 @@ fn block_kind_matches_closer(kind: CssBlockKind, token_kind: &CssTokenKind) -> b
             | (CssBlockKind::Square, CssTokenKind::RightSquareBracket)
             | (CssBlockKind::Parenthesis, CssTokenKind::RightParenthesis)
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::validate_token_stream_invariants;
+    use crate::syntax::{
+        CssInput, CssToken, CssTokenKind, CssTokenText, DiagnosticKind, ParseOptions, ParseStats,
+        SyntaxDiagnostic,
+    };
+
+    #[test]
+    fn token_stream_invariant_validation_rejects_non_trailing_eof() {
+        let input = CssInput::from("a");
+        let tokens = vec![
+            CssToken::new(CssTokenKind::Eof, input.span(0, 0).expect("eof span")),
+            CssToken::new(
+                CssTokenKind::Ident(CssTokenText::Owned("a".to_string())),
+                input.span(0, 1).expect("ident span"),
+            ),
+            CssToken::new(CssTokenKind::Eof, input.span(1, 1).expect("final eof span")),
+        ];
+        let mut diagnostics: Vec<SyntaxDiagnostic> = Vec::new();
+        let mut stats = ParseStats::default();
+
+        let valid = validate_token_stream_invariants(
+            &ParseOptions::stylesheet(),
+            &input,
+            &tokens,
+            0,
+            &mut diagnostics,
+            &mut stats,
+        );
+
+        assert!(!valid);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].kind, DiagnosticKind::InvariantViolation);
+    }
+
+    #[test]
+    fn token_stream_invariant_validation_rejects_missing_trailing_eof() {
+        let input = CssInput::from("a");
+        let tokens = vec![CssToken::new(
+            CssTokenKind::Ident(CssTokenText::Owned("a".to_string())),
+            input.span(0, 1).expect("ident span"),
+        )];
+        let mut diagnostics: Vec<SyntaxDiagnostic> = Vec::new();
+        let mut stats = ParseStats::default();
+
+        let valid = validate_token_stream_invariants(
+            &ParseOptions::stylesheet(),
+            &input,
+            &tokens,
+            0,
+            &mut diagnostics,
+            &mut stats,
+        );
+
+        assert!(!valid);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].kind, DiagnosticKind::InvariantViolation);
+    }
+
+    #[test]
+    fn token_stream_invariant_validation_rejects_spans_from_other_inputs() {
+        let input = CssInput::from("a");
+        let other = CssInput::from("a");
+        let tokens = vec![
+            CssToken::new(
+                CssTokenKind::Ident(CssTokenText::Owned("a".to_string())),
+                other.span(0, 1).expect("foreign ident span"),
+            ),
+            CssToken::new(CssTokenKind::Eof, input.span(1, 1).expect("final eof span")),
+        ];
+        let mut diagnostics: Vec<SyntaxDiagnostic> = Vec::new();
+        let mut stats = ParseStats::default();
+
+        let valid = validate_token_stream_invariants(
+            &ParseOptions::stylesheet(),
+            &input,
+            &tokens,
+            0,
+            &mut diagnostics,
+            &mut stats,
+        );
+
+        assert!(!valid);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].kind, DiagnosticKind::InvariantViolation);
+    }
+
+    #[test]
+    fn token_stream_invariant_validation_rejects_non_monotonic_spans() {
+        let input = CssInput::from("ab");
+        let tokens = vec![
+            CssToken::new(
+                CssTokenKind::Ident(CssTokenText::Owned("b".to_string())),
+                input.span(1, 2).expect("later ident span"),
+            ),
+            CssToken::new(
+                CssTokenKind::Ident(CssTokenText::Owned("a".to_string())),
+                input.span(0, 1).expect("earlier ident span"),
+            ),
+            CssToken::new(CssTokenKind::Eof, input.span(2, 2).expect("final eof span")),
+        ];
+        let mut diagnostics: Vec<SyntaxDiagnostic> = Vec::new();
+        let mut stats = ParseStats::default();
+
+        let valid = validate_token_stream_invariants(
+            &ParseOptions::stylesheet(),
+            &input,
+            &tokens,
+            0,
+            &mut diagnostics,
+            &mut stats,
+        );
+
+        assert!(!valid);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].kind, DiagnosticKind::InvariantViolation);
+    }
 }
