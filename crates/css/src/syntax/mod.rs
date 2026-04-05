@@ -677,4 +677,93 @@ mod tests {
                 .any(|diagnostic| diagnostic.kind == DiagnosticKind::LimitExceeded)
         );
     }
+
+    #[test]
+    fn malformed_qualified_rule_recovers_at_semicolon_and_preserves_later_rule() {
+        let parse = parse_stylesheet_with_options(
+            "div; span { color: blue; }",
+            &ParseOptions::stylesheet(),
+        );
+        let compat = parse.to_compat_stylesheet();
+
+        assert_eq!(parse.stylesheet.rules.len(), 1);
+        assert_eq!(compat.rules.len(), 1);
+        assert_eq!(
+            compat.rules[0].selectors,
+            vec![CompatSelector::Type("span".to_string())]
+        );
+        assert!(
+            parse
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.kind == DiagnosticKind::UnexpectedToken)
+        );
+    }
+
+    #[test]
+    fn malformed_at_rule_recovers_at_right_brace_and_preserves_later_rule() {
+        let parse = parse_stylesheet_with_options(
+            "@media screen } span { color: blue; }",
+            &ParseOptions::stylesheet(),
+        );
+        let compat = parse.to_compat_stylesheet();
+
+        assert_eq!(parse.stylesheet.rules.len(), 2);
+        assert!(matches!(parse.stylesheet.rules[0], CssRule::At(_)));
+        assert_eq!(compat.rules.len(), 1);
+        assert_eq!(
+            compat.rules[0].selectors,
+            vec![CompatSelector::Type("span".to_string())]
+        );
+        assert!(
+            parse
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.kind == DiagnosticKind::UnexpectedToken)
+        );
+    }
+
+    #[test]
+    fn declaration_recovery_resyncs_at_next_declaration_start_without_semicolon() {
+        let parse = parse_stylesheet_with_options(
+            "div { color red width: 10px; height: 20px; }",
+            &ParseOptions::stylesheet(),
+        );
+        let compat = parse.to_compat_stylesheet();
+
+        assert_eq!(compat.rules.len(), 1);
+        assert_eq!(compat.rules[0].declarations.len(), 2);
+        assert_eq!(compat.rules[0].declarations[0].name, "width");
+        assert_eq!(compat.rules[0].declarations[0].value, "10px");
+        assert_eq!(compat.rules[0].declarations[1].name, "height");
+        assert_eq!(compat.rules[0].declarations[1].value, "20px");
+        assert!(
+            parse
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.kind == DiagnosticKind::InvalidDeclaration)
+        );
+    }
+
+    #[test]
+    fn declaration_recovery_preserves_progress_after_invalid_at_rule_like_input() {
+        let parse = parse_stylesheet_with_options(
+            "div { @media x { } width: 1px; height: 2px; }",
+            &ParseOptions::stylesheet(),
+        );
+        let compat = parse.to_compat_stylesheet();
+
+        assert_eq!(compat.rules.len(), 1);
+        assert_eq!(compat.rules[0].declarations.len(), 2);
+        assert_eq!(compat.rules[0].declarations[0].name, "width");
+        assert_eq!(compat.rules[0].declarations[0].value, "1px");
+        assert_eq!(compat.rules[0].declarations[1].name, "height");
+        assert_eq!(compat.rules[0].declarations[1].value, "2px");
+        assert!(
+            parse
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.kind == DiagnosticKind::InvalidDeclaration)
+        );
+    }
 }

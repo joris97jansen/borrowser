@@ -78,6 +78,8 @@ Current repository status:
   compatibility-scoped
 - declaration-block parsing is token-driven and produces structured syntax
   declarations
+- deterministic parse recovery points are implemented for malformed stylesheet
+  and declaration input
 - compatibility projection now lives in `crates/css/src/syntax/compat.rs`
   rather than defining the primary parse result
 - compatibility outputs still preserve the pre-N cascade path and are not the
@@ -206,9 +208,19 @@ Recovery rules for this milestone:
   way
 
 Recovery boundaries for this stage:
-- declaration-level recovery uses `;` and block end `}`
-- rule-level recovery uses block end `}`
+- unexpected top-level `;` recovers by skipping one token
+- unexpected top-level `}` recovers by skipping one token
+- malformed qualified rules recover at top-level `;`, top-level `}`, or EOF
+- malformed at-rules recover at `;`, `{`, unexpected `}`, or EOF
+- declaration-level recovery uses `;`, block end `}`, EOF, and deterministic
+  next-declaration-start resynchronization (`ident ... :`) when available
 - EOF recovery is explicit and deterministic
+
+Progress guarantees:
+- each recovery path either advances the token cursor or terminates parsing
+- malformed input must not cause retry loops on the same token
+- recovery must preserve later valid sibling rules/declarations when a defined
+  recovery boundary exists
 
 ## Resource Limits And Invariants
 
@@ -284,13 +296,16 @@ Downstream milestones must not assume:
 
 The next queued syntax-layer follow-ups for this contract are:
 
-- [`docs/css/n5-selector-structure-expansion.md`](n5-selector-structure-expansion.md)
+- [`docs/css/n6-selector-structure-expansion.md`](n6-selector-structure-expansion.md)
 - [`docs/css/n2b-incremental-line-record-maintenance.md`](n2b-incremental-line-record-maintenance.md)
 
 Historical reference:
 
 - [`docs/css/n2a-decouple-structured-parse-results.md`](n2a-decouple-structured-parse-results.md)
   is now subsumed by `n4-structured-syntax-ast.md`
+- selector-structure expansion was initially queued in-repo under `N5` and was
+  renumbered to [`docs/css/n6-selector-structure-expansion.md`](n6-selector-structure-expansion.md)
+  once deterministic parse recovery became the implemented `N5`
 
 Related reference for the N2 source/token layer:
 
@@ -304,6 +319,10 @@ Related reference for the N4 structured parser work:
 
 - [`docs/css/n4-structured-syntax-ast.md`](n4-structured-syntax-ast.md)
 
+Related reference for the N5 recovery work:
+
+- [`docs/css/n5-deterministic-parse-recovery.md`](n5-deterministic-parse-recovery.md)
+
 Related reference for the next selector-structure expansion work:
 
-- [`docs/css/n5-selector-structure-expansion.md`](n5-selector-structure-expansion.md)
+- [`docs/css/n6-selector-structure-expansion.md`](n6-selector-structure-expansion.md)
