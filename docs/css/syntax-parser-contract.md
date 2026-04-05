@@ -1,9 +1,9 @@
 # CSS Syntax Layer Contract (Milestone N)
 
-Last updated: 2026-04-04  
+Last updated: 2026-04-05  
 Scope: `crates/css/src/syntax/mod.rs`, `crates/css/src/syntax/compat.rs`,
 `crates/css/src/syntax/input.rs`, `crates/css/src/syntax/token.rs`,
-`crates/css/src/syntax/tokenizer.rs`,
+`crates/css/src/syntax/tokenizer.rs`, `crates/css/src/syntax/parser.rs`,
 `crates/runtime_css/src/lib.rs`, and the
 current browser integration path in `crates/browser/src/page.rs`
 
@@ -18,6 +18,7 @@ Related code:
 - `crates/css/src/syntax/input.rs`
 - `crates/css/src/syntax/token.rs`
 - `crates/css/src/syntax/tokenizer.rs`
+- `crates/css/src/syntax/parser.rs`
 - `crates/css/src/cascade.rs`
 - `crates/browser/src/page.rs`
 - `crates/runtime_css/src/lib.rs`
@@ -72,13 +73,15 @@ Current repository status:
 - source positions use CSS-aware line-boundary handling
 - a standalone tokenizer implementation exists in code
 - tokenizer diagnostics are typed and deterministic
-- parser entry points and parse-result types exist now
-- current parsing internals are intentionally transitional and live in
-  `crates/css/src/syntax/compat.rs`
-- those compatibility internals now consume tokenizer output instead of raw
-  lexical string splitting
-- the compatibility outputs still preserve the pre-N cascade path and are not
-  the normative long-term syntax tree for later milestones
+- a structured stylesheet parser exists in code
+- stylesheet parse results are syntax-layer oriented rather than
+  compatibility-scoped
+- declaration-block parsing is token-driven and produces structured syntax
+  declarations
+- compatibility projection now lives in `crates/css/src/syntax/compat.rs`
+  rather than defining the primary parse result
+- compatibility outputs still preserve the pre-N cascade path and are not the
+  normative long-term syntax tree for later milestones
 
 ## Current Components: Retained Vs Replaced
 
@@ -159,7 +162,7 @@ Milestone N defines two syntax entry points:
 The parser result contract is:
 
 - parsed output
-  - stylesheet rules or declaration list in source order
+  - syntax-layer stylesheet rules or declaration list in source order
 - diagnostics
   - ordered, typed, bounded, deterministic
 - stats
@@ -175,6 +178,17 @@ Compatibility wrappers remain available:
 
 Downstream code may keep using these wrappers during the migration, but new
 Milestone N work should target the structured parse-result entry points.
+
+Current stylesheet parse shape:
+
+- `StylesheetParse` owns:
+  - bounded decoded `CssInput`
+  - `CssStylesheet`
+  - diagnostics
+  - parse stats
+- compatibility projection is explicit:
+  - `StylesheetParse::to_compat_stylesheet()`
+  - `parse_stylesheet(input)` remains the migration convenience wrapper
 
 ## Recovery Philosophy
 
@@ -230,6 +244,7 @@ Rust's derived `Debug` is not the contract.
 
 The syntax layer must provide stable, explicit serializers for regression tests:
 - `serialize_stylesheet_for_snapshot`
+- `serialize_compat_stylesheet_for_snapshot`
 - `serialize_declarations_for_snapshot`
 - `serialize_tokens_for_snapshot`
 - `CssTokenization::to_debug_snapshot`
@@ -269,7 +284,7 @@ Downstream milestones must not assume:
 
 The next queued syntax-layer follow-ups for this contract are:
 
-- [`docs/css/n4-structured-syntax-ast.md`](n4-structured-syntax-ast.md)
+- [`docs/css/n5-selector-structure-expansion.md`](n5-selector-structure-expansion.md)
 - [`docs/css/n2b-incremental-line-record-maintenance.md`](n2b-incremental-line-record-maintenance.md)
 
 Historical reference:
@@ -284,3 +299,11 @@ Related reference for the N2 source/token layer:
 Related reference for the N3 tokenizer layer:
 
 - [`docs/css/tokenizer-behavior.md`](tokenizer-behavior.md)
+
+Related reference for the N4 structured parser work:
+
+- [`docs/css/n4-structured-syntax-ast.md`](n4-structured-syntax-ast.md)
+
+Related reference for the next selector-structure expansion work:
+
+- [`docs/css/n5-selector-structure-expansion.md`](n5-selector-structure-expansion.md)
