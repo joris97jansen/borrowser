@@ -58,9 +58,11 @@ pub enum RecoveryPolicy {
 pub struct SyntaxLimits {
     pub max_stylesheet_input_bytes: usize,
     pub max_declaration_list_input_bytes: usize,
+    pub max_lexical_tokens: usize,
     pub max_rules: usize,
     pub max_selectors_per_rule: usize,
     pub max_declarations_per_rule: usize,
+    pub max_component_nesting_depth: usize,
     pub max_diagnostics: usize,
 }
 
@@ -69,9 +71,11 @@ impl Default for SyntaxLimits {
         Self {
             max_stylesheet_input_bytes: 4 * 1024 * 1024,
             max_declaration_list_input_bytes: 64 * 1024,
+            max_lexical_tokens: 262_144,
             max_rules: 16_384,
             max_selectors_per_rule: 256,
             max_declarations_per_rule: 1_024,
+            max_component_nesting_depth: 256,
             max_diagnostics: 128,
         }
     }
@@ -129,6 +133,7 @@ impl DiagnosticSeverity {
 pub enum DiagnosticKind {
     UnexpectedEof,
     UnexpectedToken,
+    InvariantViolation,
     EmptySelectorList,
     InvalidSelector,
     InvalidDeclaration,
@@ -143,6 +148,7 @@ impl DiagnosticKind {
         match self {
             Self::UnexpectedEof => "unexpected-eof",
             Self::UnexpectedToken => "unexpected-token",
+            Self::InvariantViolation => "invariant-violation",
             Self::EmptySelectorList => "empty-selector-list",
             Self::InvalidSelector => "invalid-selector",
             Self::InvalidDeclaration => "invalid-declaration",
@@ -298,7 +304,7 @@ pub(crate) fn truncate_to_limit(input: &str, max_bytes: usize) -> &str {
 mod tests {
     use super::{
         CompatSelector, CssRule, DiagnosticKind, ParseOptions, SyntaxLimits,
-        parse_declarations_with_options, parse_stylesheet_with_options,
+        parse_declarations_with_options, parse_stylesheet_with_options, tokenize_str_with_options,
     };
 
     #[test]
@@ -439,6 +445,58 @@ mod tests {
 
         assert_eq!(parse.stylesheet.rules.len(), 1);
         assert!(parse.stats.hit_limit);
+        assert!(
+            parse
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.kind == DiagnosticKind::LimitExceeded)
+        );
+    }
+
+    #[test]
+    fn tokenizer_token_limit_is_enforced() {
+        let options = ParseOptions {
+            limits: SyntaxLimits {
+                max_lexical_tokens: 4,
+                ..SyntaxLimits::default()
+            },
+            ..ParseOptions::stylesheet()
+        };
+        let tokenization = tokenize_str_with_options("a,b,c,d,e", &options);
+
+        assert!(tokenization.stats.hit_limit);
+        assert!(tokenization.tokens.len() <= 5);
+        assert!(matches!(
+            tokenization.tokens.last().map(|token| &token.kind),
+            Some(super::CssTokenKind::Eof)
+        ));
+        assert!(
+            tokenization
+                .diagnostics
+                .iter()
+                .any(|diagnostic| diagnostic.kind == DiagnosticKind::LimitExceeded)
+        );
+    }
+
+    #[test]
+    fn parser_component_nesting_limit_is_enforced() {
+        let options = ParseOptions {
+            limits: SyntaxLimits {
+                max_component_nesting_depth: 1,
+                ..SyntaxLimits::default()
+            },
+            ..ParseOptions::stylesheet()
+        };
+        let parse = parse_stylesheet_with_options(
+            "div { color: calc(calc(calc(1px))); width: 10px; }",
+            &options,
+        );
+        let compat = parse.to_compat_stylesheet();
+
+        assert!(parse.stats.hit_limit);
+        assert_eq!(parse.stylesheet.rules.len(), 1);
+        assert_eq!(compat.rules.len(), 1);
+        assert_eq!(compat.rules[0].declarations.len(), 2);
         assert!(
             parse
                 .diagnostics

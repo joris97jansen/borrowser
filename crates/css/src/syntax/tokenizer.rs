@@ -115,6 +115,9 @@ impl<'a> CssTokenizer<'a> {
 
     fn tokenize_all(&mut self) {
         while self.pos < self.input.len_bytes() {
+            if self.reached_lexical_token_limit() {
+                break;
+            }
             let start = self.pos;
 
             if self.starts_with("<!--") {
@@ -756,6 +759,25 @@ impl<'a> CssTokenizer<'a> {
     fn push_token_with_kind(&mut self, kind: CssTokenKind, start: usize, end: usize) {
         let span = self.input.span(start, end).expect("token span");
         self.tokens.push(CssToken::new(kind, span));
+    }
+
+    fn reached_lexical_token_limit(&mut self) -> bool {
+        if self.tokens.len() < self.options.limits.max_lexical_tokens {
+            return false;
+        }
+
+        self.stats.hit_limit = true;
+        self.pos = self.input.len_bytes();
+        self.push_diagnostic(
+            DiagnosticSeverity::Error,
+            DiagnosticKind::LimitExceeded,
+            self.pos,
+            format!(
+                "token count exceeded limit {} (excluding trailing EOF sentinel)",
+                self.options.limits.max_lexical_tokens
+            ),
+        );
+        true
     }
 
     fn push_diagnostic(

@@ -82,6 +82,9 @@ Current repository status:
   declarations
 - deterministic parse recovery points are implemented for malformed stylesheet
   and declaration input
+- syntax-layer resource ceilings are enforced for lexical token count and
+  component nesting depth
+- tokenizer/parser transition invariants are validated before structured parsing
 - stable syntax-layer serializer functions exist for tokenizer and parser result
   types
 - file-backed golden fixtures exist for representative tokenizer and parser
@@ -247,13 +250,20 @@ Milestone N invariants:
 - output order is source order
 - diagnostics are emitted in encounter order
 - hitting a limit must set an explicit flag and emit a typed diagnostic
+- tokenizer output consumed by the parser must be monotonic, source-bound, and
+  terminated by one trailing EOF token
+- tokenizer-to-parser token stream validation is centralized in one canonical
+  boundary validator shared by structured parser entry points
+- parser recovery must either advance the cursor or terminate parsing
 
 Milestone N limit categories:
 - maximum stylesheet input bytes
 - maximum declaration-list input bytes
+- maximum lexical tokens emitted before the trailing EOF sentinel
 - maximum emitted rules
 - maximum selectors per compatibility rule
 - maximum declarations per rule/declaration list
+- maximum nested block/function component depth
 - maximum stored diagnostics
 
 ## Testing And Debug Contract
@@ -315,7 +325,7 @@ Downstream milestones must not assume:
 
 The next queued syntax-layer follow-ups for this contract are:
 
-- [`docs/css/n7-selector-structure-expansion.md`](n7-selector-structure-expansion.md)
+- [`docs/css/n8-selector-structure-expansion.md`](n8-selector-structure-expansion.md)
 - [`docs/css/n2b-incremental-line-record-maintenance.md`](n2b-incremental-line-record-maintenance.md)
 
 Historical reference:
@@ -325,9 +335,11 @@ Historical reference:
 - selector-structure expansion was initially queued in-repo under `N5` and was
   renumbered to `N6` once deterministic parse recovery became the implemented
   `N5`
-- selector-structure expansion was then renumbered to
-  [`docs/css/n7-selector-structure-expansion.md`](n7-selector-structure-expansion.md)
-  once stable debug/serialization output became the implemented `N6`
+- selector-structure expansion was then renumbered to `N7` once stable
+  debug/serialization output became the implemented `N6`
+- selector-structure expansion was then renumbered again to
+  [`docs/css/n8-selector-structure-expansion.md`](n8-selector-structure-expansion.md)
+  once resource limits and parser invariants became the implemented `N7`
 
 Related reference for the N2 source/token layer:
 
@@ -349,6 +361,10 @@ Related reference for the N6 stable snapshot work:
 
 - [`docs/css/n6-stable-debug-serialization.md`](n6-stable-debug-serialization.md)
 
+Related reference for the N7 hardening work:
+
+- [`docs/css/n7-resource-limits-parser-invariants.md`](n7-resource-limits-parser-invariants.md)
+
 Related reference for the next selector-structure expansion work:
 
-- [`docs/css/n7-selector-structure-expansion.md`](n7-selector-structure-expansion.md)
+- [`docs/css/n8-selector-structure-expansion.md`](n8-selector-structure-expansion.md)
