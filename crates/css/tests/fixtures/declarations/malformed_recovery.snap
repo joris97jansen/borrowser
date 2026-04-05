@@ -1,0 +1,12 @@
+version: 1
+declarations
+  - width: 10px
+  - height: 20px
+diagnostics
+  - warning invalid-declaration @0
+stats
+  input_bytes: 36
+  rules_emitted: 0
+  declarations_emitted: 2
+  diagnostics_emitted: 1
+  hit_limit: false

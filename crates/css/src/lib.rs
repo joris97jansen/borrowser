@@ -15,7 +15,9 @@ pub use syntax::{
     DiagnosticSeverity, ParseOptions, ParseStats, RecoveryPolicy, StylesheetParse,
     SyntaxDiagnostic, SyntaxLimits, parse_declarations, parse_declarations_with_options,
     parse_stylesheet, parse_stylesheet_with_options, serialize_compat_stylesheet_for_snapshot,
-    serialize_declarations_for_snapshot, serialize_stylesheet_for_snapshot,
-    serialize_tokens_for_snapshot, tokenize_str, tokenize_str_with_options,
+    serialize_declaration_list_parse_for_snapshot, serialize_declarations_for_snapshot,
+    serialize_stylesheet_for_snapshot, serialize_stylesheet_parse_for_snapshot,
+    serialize_tokenization_for_snapshot, serialize_tokens_for_snapshot, tokenize_str,
+    tokenize_str_with_options,
 };
 pub use values::{Display, Length, parse_color, parse_length};

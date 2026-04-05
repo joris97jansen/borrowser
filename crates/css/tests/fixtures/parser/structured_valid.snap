@@ -1,0 +1,23 @@
+version: 1
+stylesheet
+rule[0] qualified @0..43
+  prelude
+    - token(ident("div")) @0..3
+    - token(comma) @3..4
+    - token(whitespace) @4..5
+    - token(hash(kind=id, value="hero")) @5..10
+    - token(whitespace) @10..11
+  block @11..43
+    declaration[0] "color" @13..24
+      - token(whitespace) @19..20
+      - token(ident("red")) @20..23
+    declaration[1] "font-size" @25..41
+      - token(whitespace) @35..36
+      - token(dimension(kind=integer, value="12", unit="px")) @36..40
+diagnostics
+stats
+  input_bytes: 43
+  rules_emitted: 1
+  declarations_emitted: 2
+  diagnostics_emitted: 0
+  hit_limit: false

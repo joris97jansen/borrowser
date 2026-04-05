@@ -1,0 +1,18 @@
+version: 1
+stylesheet
+rule[0] qualified @5..26
+  prelude
+    - token(ident("span")) @5..9
+    - token(whitespace) @9..10
+  block @10..26
+    declaration[0] "color" @12..24
+      - token(whitespace) @18..19
+      - token(ident("blue")) @19..23
+diagnostics
+  - warning unexpected-token @3
+stats
+  input_bytes: 26
+  rules_emitted: 1
+  declarations_emitted: 1
+  diagnostics_emitted: 1
+  hit_limit: false
