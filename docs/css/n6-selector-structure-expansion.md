@@ -1,7 +1,13 @@
-# N5: Expand Selector Syntax Structure Beyond Compatibility Projection
+# N6: Expand Selector Syntax Structure Beyond Compatibility Projection
 
 Last updated: 2026-04-05  
-Status: queued after N4
+Status: queued after N5
+
+Tracker note:
+- this issue was originally queued as the next parser-side follow-up while N5
+  still referred to selector structure expansion
+- it was renumbered to `N6` once deterministic parse recovery was formalized
+  and implemented as the canonical `N5`
 
 ## Issue
 

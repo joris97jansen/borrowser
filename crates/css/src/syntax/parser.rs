@@ -181,6 +181,16 @@ impl<'a> StylesheetParser<'a> {
 
             match token.kind {
                 CssTokenKind::Eof => break,
+                CssTokenKind::Semicolon => {
+                    self.push_diagnostic(
+                        DiagnosticSeverity::Warning,
+                        DiagnosticKind::UnexpectedToken,
+                        token.span.start,
+                        "ignored unexpected top-level `;` token",
+                    );
+                    cursor += 1;
+                    continue;
+                }
                 CssTokenKind::RightCurlyBracket => {
                     self.push_diagnostic(
                         DiagnosticSeverity::Warning,
@@ -209,27 +219,34 @@ impl<'a> StylesheetParser<'a> {
             }
 
             match self.consume_rule(cursor) {
-                Some((rule, next_cursor)) => {
+                RuleParseResult::Parsed(rule, next_cursor) => {
                     rules.push(rule);
                     cursor = next_cursor;
                 }
-                None => break,
+                RuleParseResult::Skipped(next_cursor) => {
+                    if next_cursor <= cursor {
+                        cursor += 1;
+                    } else {
+                        cursor = next_cursor;
+                    }
+                }
+                RuleParseResult::End => break,
             }
         }
 
         CssStylesheet { rules }
     }
 
-    fn consume_rule(&mut self, start: usize) -> Option<(CssRule, usize)> {
-        let token = self.tokens.get(start)?;
+    fn consume_rule(&mut self, start: usize) -> RuleParseResult {
+        let Some(token) = self.tokens.get(start) else {
+            return RuleParseResult::End;
+        };
         match token.kind {
             CssTokenKind::AtKeyword(_) => {
                 let (rule, next) = self.consume_at_rule(start);
-                Some((CssRule::At(rule), next))
+                RuleParseResult::Parsed(CssRule::At(rule), next)
             }
-            _ => self
-                .consume_qualified_rule(start)
-                .map(|(rule, next)| (CssRule::Qualified(rule), next)),
+            _ => self.consume_qualified_rule(start),
         }
     }
 
@@ -285,6 +302,12 @@ impl<'a> StylesheetParser<'a> {
                     );
                 }
                 CssTokenKind::Eof => {
+                    self.push_diagnostic(
+                        DiagnosticSeverity::Warning,
+                        DiagnosticKind::UnexpectedEof,
+                        token.span.start,
+                        "reached EOF before terminating at-rule; recovered at EOF",
+                    );
                     let span = self
                         .input
                         .span(start_token.span.start, token.span.start)
@@ -297,6 +320,27 @@ impl<'a> StylesheetParser<'a> {
                             block: None,
                         },
                         cursor,
+                    );
+                }
+                CssTokenKind::RightCurlyBracket => {
+                    self.push_diagnostic(
+                        DiagnosticSeverity::Warning,
+                        DiagnosticKind::UnexpectedToken,
+                        token.span.start,
+                        "terminated malformed at-rule at `}` recovery point",
+                    );
+                    let span = self
+                        .input
+                        .span(start_token.span.start, token.span.start)
+                        .expect("at-rule recovery span");
+                    return (
+                        CssAtRule {
+                            span,
+                            name,
+                            prelude,
+                            block: None,
+                        },
+                        cursor + 1,
                     );
                 }
                 _ => {
@@ -318,7 +362,7 @@ impl<'a> StylesheetParser<'a> {
         )
     }
 
-    fn consume_qualified_rule(&mut self, start: usize) -> Option<(CssQualifiedRule, usize)> {
+    fn consume_qualified_rule(&mut self, start: usize) -> RuleParseResult {
         let mut cursor = start;
         let mut prelude = Vec::new();
 
@@ -331,16 +375,9 @@ impl<'a> StylesheetParser<'a> {
                             DiagnosticSeverity::Warning,
                             DiagnosticKind::UnexpectedToken,
                             token.span.start,
-                            "ignored qualified rule with empty prelude",
+                            "ignored qualified rule with empty prelude and recovered at block end",
                         );
-                        return Some((
-                            CssQualifiedRule {
-                                span: consumed.block.span,
-                                prelude,
-                                block: consumed.block,
-                            },
-                            consumed.next_index,
-                        ));
+                        return RuleParseResult::Skipped(consumed.next_index);
                     }
 
                     let consumed = self.consume_declaration_block(cursor);
@@ -357,14 +394,32 @@ impl<'a> StylesheetParser<'a> {
                             "reached EOF before closing `}`; trailing block recovered at EOF",
                         );
                     }
-                    return Some((
-                        CssQualifiedRule {
+                    return RuleParseResult::Parsed(
+                        CssRule::Qualified(CssQualifiedRule {
                             span,
                             prelude,
                             block: consumed.block,
-                        },
+                        }),
                         consumed.next_index,
-                    ));
+                    );
+                }
+                CssTokenKind::Semicolon => {
+                    self.push_diagnostic(
+                        DiagnosticSeverity::Warning,
+                        DiagnosticKind::UnexpectedToken,
+                        token.span.start,
+                        "terminated malformed qualified rule at `;` recovery point",
+                    );
+                    return RuleParseResult::Skipped(cursor + 1);
+                }
+                CssTokenKind::RightCurlyBracket => {
+                    self.push_diagnostic(
+                        DiagnosticSeverity::Warning,
+                        DiagnosticKind::UnexpectedToken,
+                        token.span.start,
+                        "terminated malformed qualified rule at `}` recovery point",
+                    );
+                    return RuleParseResult::Skipped(cursor + 1);
                 }
                 CssTokenKind::Eof => {
                     self.push_diagnostic(
@@ -373,7 +428,7 @@ impl<'a> StylesheetParser<'a> {
                         token.span.start,
                         "reached EOF before opening declaration block for qualified rule",
                     );
-                    return None;
+                    return RuleParseResult::End;
                 }
                 _ => {
                     let (value, next) = self.consume_component_value(cursor);
@@ -383,7 +438,7 @@ impl<'a> StylesheetParser<'a> {
             }
         }
 
-        None
+        RuleParseResult::End
     }
 
     fn parse_declaration_list(
@@ -734,12 +789,38 @@ impl<'a> StylesheetParser<'a> {
     }
 
     fn recover_after_invalid_declaration(&self, start: usize, end_index: Option<usize>) -> usize {
-        let boundary = self.find_declaration_boundary(start, end_index);
+        let boundary = self.find_declaration_recovery_boundary(start, end_index);
         match self.tokens.get(boundary).map(|token| &token.kind) {
             Some(CssTokenKind::Semicolon) => boundary + 1,
             Some(CssTokenKind::RightCurlyBracket) | Some(CssTokenKind::Eof) | None => boundary,
+            _ if is_declaration_start(self.tokens, boundary, end_index) => boundary,
             _ => boundary,
         }
+    }
+
+    fn find_declaration_recovery_boundary(&self, start: usize, end_index: Option<usize>) -> usize {
+        let mut cursor = start;
+        while let Some(token) = self.tokens.get(cursor) {
+            if Some(cursor) == end_index {
+                return cursor;
+            }
+            if cursor > start && is_declaration_start(self.tokens, cursor, end_index) {
+                return cursor;
+            }
+            match token.kind {
+                CssTokenKind::Semicolon | CssTokenKind::RightCurlyBracket | CssTokenKind::Eof => {
+                    return cursor;
+                }
+                _ => {
+                    let next = next_component_value_index(self.tokens, cursor);
+                    if next <= cursor {
+                        return cursor;
+                    }
+                    cursor = next;
+                }
+            }
+        }
+        self.tokens.len()
     }
 
     fn find_matching_closer(&self, start: usize, kind: CssBlockKind) -> Option<usize> {
@@ -786,6 +867,12 @@ impl<'a> StylesheetParser<'a> {
             message,
         );
     }
+}
+
+enum RuleParseResult {
+    Parsed(CssRule, usize),
+    Skipped(usize),
+    End,
 }
 
 enum DeclarationResult {
@@ -911,6 +998,29 @@ fn next_component_value_index(tokens: &[CssToken], start: usize) -> usize {
         Some(_) => start + 1,
         None => start,
     }
+}
+
+fn is_declaration_start(tokens: &[CssToken], start: usize, end_index: Option<usize>) -> bool {
+    if !matches!(
+        tokens.get(start).map(|token| &token.kind),
+        Some(CssTokenKind::Ident(_))
+    ) {
+        return false;
+    }
+
+    let mut cursor = start + 1;
+    while let Some(token) = tokens.get(cursor) {
+        if Some(cursor) == end_index {
+            return false;
+        }
+        match token.kind {
+            CssTokenKind::Whitespace | CssTokenKind::Comment(_) => cursor += 1,
+            CssTokenKind::Colon => return true,
+            _ => return false,
+        }
+    }
+
+    false
 }
 
 fn find_component_closer(tokens: &[CssToken], start: usize, kind: CssBlockKind) -> Option<usize> {
