@@ -148,6 +148,8 @@ The syntax contract for Milestone N lives in:
 The syntax layer owns:
 
 * tokenizer and parser entry points
+* structured stylesheet parsing on top of tokens
+* syntax-layer AST output plus explicit compatibility projection
 * deterministic malformed-input recovery
 * parser diagnostics and limit enforcement
 * stable debug/snapshot output for regression tests

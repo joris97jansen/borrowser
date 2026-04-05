@@ -1,16 +1,19 @@
 //! Stable CSS syntax contract surface.
 //!
 //! This module owns parser-facing options, diagnostics, decoded-input
-//! primitives, source-bound spans, explicit token definitions, and the CSS
-//! tokenizer/parser entry points for the syntax layer.
+//! primitives, source-bound spans, explicit token definitions, the structured
+//! stylesheet parser, and the CSS tokenizer/parser entry points for the syntax
+//! layer.
 //!
-//! The current compatibility-scoped parsing behavior remains available only
-//! through the private `compat` adapter module below. That adapter now consumes
-//! token streams while preserving the existing cascade path during rollout, but
-//! it is not normative for the long-term tokenizer/parser architecture.
+//! The current compatibility-scoped stylesheet shape remains available only
+//! through the private `compat` adapter module below. That adapter now projects
+//! structured syntax-layer output into the existing cascade-facing
+//! representation during rollout, but it is not normative for the long-term
+//! tokenizer/parser architecture.
 
 mod compat;
 mod input;
+mod parser;
 mod token;
 mod tokenizer;
 
@@ -18,6 +21,10 @@ use std::fmt::Write;
 
 pub use compat::{CompatRule, CompatSelector, CompatStylesheet};
 pub use input::{CssInput, CssInputId, CssPosition, CssSpan};
+pub use parser::{
+    CssAtRule, CssBlockKind, CssComponentValue, CssDeclaration, CssDeclarationBlock, CssFunction,
+    CssQualifiedRule, CssRule, CssSimpleBlock, CssStylesheet,
+};
 pub use token::{
     CssDimension, CssHashKind, CssNumber, CssNumericKind, CssToken, CssTokenKind, CssTokenText,
     CssUnicodeRange, serialize_tokens_for_snapshot,
@@ -25,13 +32,6 @@ pub use token::{
 pub use tokenizer::{
     CssTokenization, CssTokenizationStats, tokenize_str, tokenize_str_with_options,
 };
-
-/// A single CSS property: `color: red`.
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct Declaration {
-    pub name: String,
-    pub value: String,
-}
 
 /// Parsing origin for diagnostics and entry-point-specific limit handling.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -171,23 +171,31 @@ pub struct ParseStats {
     pub hit_limit: bool,
 }
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
+/// Compatibility-scoped declaration used by the current cascade path.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Declaration {
+    pub name: String,
+    pub value: String,
+}
+
+#[derive(Clone, Debug, Default)]
 pub struct StylesheetParse {
-    /// Transitional adapter output for the current cascade path.
-    ///
-    /// This remains compatibility-coupled in N1 and is intentionally tracked
-    /// for decoupling in the next syntax-layer follow-up issue.
-    pub stylesheet: CompatStylesheet,
+    pub input: CssInput,
+    pub stylesheet: CssStylesheet,
     pub diagnostics: Vec<SyntaxDiagnostic>,
     pub stats: ParseStats,
 }
 
 impl StylesheetParse {
     pub fn to_debug_snapshot(&self) -> String {
-        let mut out = serialize_stylesheet_for_snapshot(&self.stylesheet);
+        let mut out = serialize_stylesheet_for_snapshot(&self.input, &self.stylesheet);
         serialize_diagnostics_for_snapshot(&mut out, &self.diagnostics);
         serialize_stats_for_snapshot(&mut out, &self.stats);
         out
+    }
+
+    pub fn to_compat_stylesheet(&self) -> CompatStylesheet {
+        compat::project_stylesheet_to_compat(&self.input, &self.stylesheet)
     }
 }
 
@@ -213,16 +221,16 @@ impl DeclarationListParse {
 /// the existing selector/rule representation is an adapter for today's cascade
 /// path, not the long-term CSS syntax tree.
 pub fn parse_stylesheet(input: &str) -> CompatStylesheet {
-    parse_stylesheet_with_options(input, &ParseOptions::stylesheet()).stylesheet
+    parse_stylesheet_with_options(input, &ParseOptions::stylesheet()).to_compat_stylesheet()
 }
 
 /// Contract entry point for whole-stylesheet parsing.
 ///
-/// The current implementation is token-driven but still projects into
-/// compatibility-scoped rule and selector outputs for the existing cascade
-/// path.
+/// The primary parse result is syntax-layer structured output built on top of
+/// tokenizer tokens. Compatibility projection for the current cascade path is
+/// available separately.
 pub fn parse_stylesheet_with_options(input: &str, options: &ParseOptions) -> StylesheetParse {
-    compat::parse_stylesheet_compat(input, options)
+    parser::parse_stylesheet_structured(input, options)
 }
 
 /// Compatibility entry point used by the current cascade layer for `style=""`
@@ -242,7 +250,83 @@ pub fn parse_declarations_with_options(
     compat::parse_declarations_compat(input, 0, options)
 }
 
-pub fn serialize_stylesheet_for_snapshot(sheet: &CompatStylesheet) -> String {
+pub fn serialize_stylesheet_for_snapshot(input: &CssInput, sheet: &CssStylesheet) -> String {
+    let mut out = String::new();
+    writeln!(&mut out, "stylesheet").expect("write stylesheet header");
+    for (rule_index, rule) in sheet.rules.iter().enumerate() {
+        match rule {
+            CssRule::Qualified(rule) => {
+                writeln!(
+                    &mut out,
+                    "rule[{rule_index}] qualified @{}..{}",
+                    rule.span.start, rule.span.end
+                )
+                .expect("write qualified rule header");
+                writeln!(&mut out, "  prelude").expect("write prelude header");
+                for value in &rule.prelude {
+                    writeln!(&mut out, "    - {}", component_value_snapshot(input, value))
+                        .expect("write prelude snapshot");
+                }
+                writeln!(
+                    &mut out,
+                    "  block @{}..{}",
+                    rule.block.span.start, rule.block.span.end
+                )
+                .expect("write block header");
+                for (declaration_index, declaration) in rule.block.declarations.iter().enumerate() {
+                    writeln!(
+                        &mut out,
+                        "    declaration[{declaration_index}] {} @{}..{}",
+                        quoted_text(input, &declaration.name),
+                        declaration.span.start,
+                        declaration.span.end
+                    )
+                    .expect("write declaration header");
+                    for value in &declaration.value {
+                        writeln!(
+                            &mut out,
+                            "      - {}",
+                            component_value_snapshot(input, value)
+                        )
+                        .expect("write declaration value snapshot");
+                    }
+                }
+            }
+            CssRule::At(rule) => {
+                writeln!(
+                    &mut out,
+                    "rule[{rule_index}] at({}) @{}..{}",
+                    quoted_text(input, &rule.name),
+                    rule.span.start,
+                    rule.span.end
+                )
+                .expect("write at-rule header");
+                writeln!(&mut out, "  prelude").expect("write at-rule prelude header");
+                for value in &rule.prelude {
+                    writeln!(&mut out, "    - {}", component_value_snapshot(input, value))
+                        .expect("write at-rule prelude snapshot");
+                }
+                if let Some(block) = &rule.block {
+                    writeln!(
+                        &mut out,
+                        "  block(kind={}) @{}..{}",
+                        block_kind_label(block.kind),
+                        block.span.start,
+                        block.span.end
+                    )
+                    .expect("write at-rule block header");
+                    for value in &block.value {
+                        writeln!(&mut out, "    - {}", component_value_snapshot(input, value))
+                            .expect("write at-rule block snapshot");
+                    }
+                }
+            }
+        }
+    }
+    out
+}
+
+pub fn serialize_compat_stylesheet_for_snapshot(sheet: &CompatStylesheet) -> String {
     let mut out = String::new();
     writeln!(&mut out, "stylesheet").expect("write stylesheet header");
     for (rule_index, rule) in sheet.rules.iter().enumerate() {
@@ -334,6 +418,99 @@ fn serialize_diagnostics_for_snapshot(out: &mut String, diagnostics: &[SyntaxDia
     }
 }
 
+fn component_value_snapshot(input: &CssInput, value: &CssComponentValue) -> String {
+    match value {
+        CssComponentValue::PreservedToken(token) => format!(
+            "token({}) @{}..{}",
+            token_kind_snapshot(input, &token.kind),
+            token.span.start,
+            token.span.end
+        ),
+        CssComponentValue::SimpleBlock(block) => format!(
+            "simple-block(kind={}, text={:?}) @{}..{}",
+            block_kind_label(block.kind),
+            input.slice(block.span).unwrap_or(""),
+            block.span.start,
+            block.span.end
+        ),
+        CssComponentValue::Function(function) => format!(
+            "function(name={}, text={:?}) @{}..{}",
+            quoted_text(input, &function.name),
+            input.slice(function.span).unwrap_or(""),
+            function.span.start,
+            function.span.end
+        ),
+    }
+}
+
+fn block_kind_label(kind: CssBlockKind) -> &'static str {
+    match kind {
+        CssBlockKind::Curly => "curly",
+        CssBlockKind::Square => "square",
+        CssBlockKind::Parenthesis => "parenthesis",
+    }
+}
+
+fn quoted_text(input: &CssInput, text: &CssTokenText) -> String {
+    match text.resolve(input) {
+        Some(text) => format!("{text:?}"),
+        None => "<invalid-span>".to_string(),
+    }
+}
+
+fn token_kind_snapshot(input: &CssInput, kind: &CssTokenKind) -> String {
+    match kind {
+        CssTokenKind::Whitespace => "whitespace".to_string(),
+        CssTokenKind::Comment(text) => format!("comment({})", quoted_text(input, text)),
+        CssTokenKind::Ident(text) => format!("ident({})", quoted_text(input, text)),
+        CssTokenKind::Function(text) => format!("function({})", quoted_text(input, text)),
+        CssTokenKind::AtKeyword(text) => format!("at-keyword({})", quoted_text(input, text)),
+        CssTokenKind::Hash { value, kind } => format!(
+            "hash(kind={}, value={})",
+            match kind {
+                CssHashKind::Id => "id",
+                CssHashKind::Unrestricted => "unrestricted",
+            },
+            quoted_text(input, value)
+        ),
+        CssTokenKind::String(text) => format!("string({})", quoted_text(input, text)),
+        CssTokenKind::BadString => "bad-string".to_string(),
+        CssTokenKind::Url(text) => format!("url({})", quoted_text(input, text)),
+        CssTokenKind::BadUrl => "bad-url".to_string(),
+        CssTokenKind::Delim(ch) => format!("delim({ch:?})"),
+        CssTokenKind::Number(number) => format!("number({})", quoted_text(input, &number.repr)),
+        CssTokenKind::Percentage(number) => {
+            format!("percentage({})", quoted_text(input, &number.repr))
+        }
+        CssTokenKind::Dimension(dimension) => format!(
+            "dimension(value={}, unit={})",
+            quoted_text(input, &dimension.number.repr),
+            quoted_text(input, &dimension.unit)
+        ),
+        CssTokenKind::UnicodeRange(range) => {
+            format!("unicode-range(U+{:X}-U+{:X})", range.start(), range.end())
+        }
+        CssTokenKind::Colon => "colon".to_string(),
+        CssTokenKind::Semicolon => "semicolon".to_string(),
+        CssTokenKind::Comma => "comma".to_string(),
+        CssTokenKind::LeftSquareBracket => "left-square-bracket".to_string(),
+        CssTokenKind::RightSquareBracket => "right-square-bracket".to_string(),
+        CssTokenKind::LeftParenthesis => "left-parenthesis".to_string(),
+        CssTokenKind::RightParenthesis => "right-parenthesis".to_string(),
+        CssTokenKind::LeftCurlyBracket => "left-curly-bracket".to_string(),
+        CssTokenKind::RightCurlyBracket => "right-curly-bracket".to_string(),
+        CssTokenKind::IncludeMatch => "include-match".to_string(),
+        CssTokenKind::DashMatch => "dash-match".to_string(),
+        CssTokenKind::PrefixMatch => "prefix-match".to_string(),
+        CssTokenKind::SuffixMatch => "suffix-match".to_string(),
+        CssTokenKind::SubstringMatch => "substring-match".to_string(),
+        CssTokenKind::Column => "column".to_string(),
+        CssTokenKind::Cdo => "cdo".to_string(),
+        CssTokenKind::Cdc => "cdc".to_string(),
+        CssTokenKind::Eof => "eof".to_string(),
+    }
+}
+
 fn serialize_stats_for_snapshot(out: &mut String, stats: &ParseStats) {
     writeln!(out, "stats").expect("write stats header");
     writeln!(out, "  input_bytes: {}", stats.input_bytes).expect("write input_bytes");
@@ -352,7 +529,7 @@ fn serialize_stats_for_snapshot(out: &mut String, stats: &ParseStats) {
 #[cfg(test)]
 mod tests {
     use super::{
-        CompatSelector, DiagnosticKind, ParseOptions, SyntaxLimits,
+        CompatSelector, CssRule, DiagnosticKind, ParseOptions, SyntaxLimits,
         parse_declarations_with_options, parse_stylesheet_with_options,
     };
 
@@ -367,13 +544,20 @@ mod tests {
             parse.to_debug_snapshot(),
             concat!(
                 "stylesheet\n",
-                "rule[0]\n",
-                "  selectors\n",
-                "    - type(div)\n",
-                "    - id(hero)\n",
-                "  declarations\n",
-                "    - color: red\n",
-                "    - font-size: 12px\n",
+                "rule[0] qualified @0..43\n",
+                "  prelude\n",
+                "    - token(ident(\"div\")) @0..3\n",
+                "    - token(comma) @3..4\n",
+                "    - token(whitespace) @4..5\n",
+                "    - token(hash(kind=id, value=\"hero\")) @5..10\n",
+                "    - token(whitespace) @10..11\n",
+                "  block @11..43\n",
+                "    declaration[0] \"color\" @13..24\n",
+                "      - token(whitespace) @19..20\n",
+                "      - token(ident(\"red\")) @20..23\n",
+                "    declaration[1] \"font-size\" @25..41\n",
+                "      - token(whitespace) @35..36\n",
+                "      - token(dimension(value=\"12\", unit=\"px\")) @36..40\n",
                 "diagnostics\n",
                 "stats\n",
                 "  input_bytes: 43\n",
@@ -433,13 +617,15 @@ mod tests {
             "div { content: \"}\"; color: red; }",
             &ParseOptions::stylesheet(),
         );
+        let compat = parse.to_compat_stylesheet();
 
         assert_eq!(parse.stylesheet.rules.len(), 1);
-        assert_eq!(parse.stylesheet.rules[0].declarations.len(), 2);
-        assert_eq!(parse.stylesheet.rules[0].declarations[0].name, "content");
-        assert_eq!(parse.stylesheet.rules[0].declarations[0].value, "\"}\"");
-        assert_eq!(parse.stylesheet.rules[0].declarations[1].name, "color");
-        assert_eq!(parse.stylesheet.rules[0].declarations[1].value, "red");
+        assert_eq!(compat.rules.len(), 1);
+        assert_eq!(compat.rules[0].declarations.len(), 2);
+        assert_eq!(compat.rules[0].declarations[0].name, "content");
+        assert_eq!(compat.rules[0].declarations[0].value, "\"}\"");
+        assert_eq!(compat.rules[0].declarations[1].name, "color");
+        assert_eq!(compat.rules[0].declarations[1].value, "red");
     }
 
     #[test]
@@ -448,18 +634,26 @@ mod tests {
             "# { color: red; } . { color: blue; } div { color: green; }",
             &ParseOptions::stylesheet(),
         );
+        let compat = parse.to_compat_stylesheet();
 
-        assert_eq!(parse.stylesheet.rules.len(), 1);
+        assert_eq!(parse.stylesheet.rules.len(), 3);
+        assert_eq!(compat.rules.len(), 1);
         assert_eq!(
-            parse.stylesheet.rules[0].selectors,
+            compat.rules[0].selectors,
             vec![CompatSelector::Type("div".to_string())]
         );
-        assert!(
-            parse
-                .diagnostics
-                .iter()
-                .any(|diagnostic| diagnostic.kind == DiagnosticKind::InvalidSelector)
+    }
+
+    #[test]
+    fn structured_stylesheet_represents_at_rules_and_qualified_rules() {
+        let parse = parse_stylesheet_with_options(
+            "@media screen { color: red; } div { color: blue; }",
+            &ParseOptions::stylesheet(),
         );
+
+        assert_eq!(parse.stylesheet.rules.len(), 2);
+        assert!(matches!(parse.stylesheet.rules[0], CssRule::At(_)));
+        assert!(matches!(parse.stylesheet.rules[1], CssRule::Qualified(_)));
     }
 
     #[test]
