@@ -220,11 +220,12 @@ impl DeclarationListParse {
     }
 }
 
-/// Compatibility entry point used by the current engine.
+/// Compatibility wrapper for callers that still need `CompatStylesheet`.
 ///
-/// The return type is intentionally named `CompatStylesheet` to make clear that
-/// the existing selector/rule representation is an adapter for today's cascade
-/// path, not the long-term CSS syntax tree.
+/// New parser work must prefer `parse_stylesheet_with_options(...)` and operate
+/// on `StylesheetParse`. This wrapper exists only as a migration bridge for
+/// compatibility-scoped consumers that have not yet moved off
+/// `CompatStylesheet`.
 pub fn parse_stylesheet(input: &str) -> CompatStylesheet {
     parse_stylesheet_with_options(input, &ParseOptions::stylesheet()).to_compat_stylesheet()
 }
@@ -238,8 +239,11 @@ pub fn parse_stylesheet_with_options(input: &str, options: &ParseOptions) -> Sty
     parser::parse_stylesheet_structured(input, options)
 }
 
-/// Compatibility entry point used by the current cascade layer for `style=""`
-/// attributes.
+/// Compatibility wrapper for callers that still need `Vec<Declaration>`.
+///
+/// New parser work must prefer `parse_declarations_with_options(...)` and
+/// consume `DeclarationListParse`. This wrapper exists only as a migration
+/// bridge for compatibility-scoped consumers.
 pub fn parse_declarations(input: &str) -> Vec<Declaration> {
     parse_declarations_with_options(input, &ParseOptions::style_attribute()).declarations
 }
@@ -303,8 +307,9 @@ pub(crate) fn truncate_to_limit(input: &str, max_bytes: usize) -> &str {
 #[cfg(test)]
 mod tests {
     use super::{
-        CompatSelector, CssRule, DiagnosticKind, ParseOptions, SyntaxLimits,
-        parse_declarations_with_options, parse_stylesheet_with_options, tokenize_str_with_options,
+        CompatSelector, CssRule, DiagnosticKind, ParseOptions, SyntaxLimits, parse_declarations,
+        parse_declarations_with_options, parse_stylesheet, parse_stylesheet_with_options,
+        tokenize_str_with_options,
     };
 
     #[test]
@@ -592,5 +597,21 @@ mod tests {
                 .iter()
                 .any(|diagnostic| diagnostic.kind == DiagnosticKind::InvalidDeclaration)
         );
+    }
+
+    #[test]
+    fn compatibility_stylesheet_wrapper_is_only_a_projection_of_structured_parse_output() {
+        let input = "div { color: red; }";
+        let structured = parse_stylesheet_with_options(input, &ParseOptions::stylesheet());
+
+        assert_eq!(parse_stylesheet(input), structured.to_compat_stylesheet());
+    }
+
+    #[test]
+    fn compatibility_declaration_wrapper_is_only_a_projection_of_structured_parse_output() {
+        let input = "color: red; width: 10px;";
+        let structured = parse_declarations_with_options(input, &ParseOptions::style_attribute());
+
+        assert_eq!(parse_declarations(input), structured.declarations);
     }
 }

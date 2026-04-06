@@ -154,6 +154,10 @@ The syntax layer owns:
 * parser diagnostics and limit enforcement
 * stable debug/snapshot output for regression tests
 
+The shipped browser path parses stylesheet text through the structured
+syntax-layer entrypoints and only projects into compatibility stylesheet forms
+at the current cascade boundary.
+
 ### 2. **Cascade**
 
 `attach_styles(dom, sheet)` walks the DOM and selects the winning declarations for each property using:
@@ -347,7 +351,7 @@ Each tab maintains:
 ```rust
 struct PageState {
     dom: Option<Node>,
-    css_sheet: CompatStylesheet,
+    css_sheet: CompatStylesheet, // current cascade bridge storage after syntax-layer parsing
     head: HeadMetadata,
     visible_text_cache: String,
 
