@@ -1,7 +1,7 @@
-# N8: Expand Selector Syntax Structure Beyond Compatibility Projection
+# N9: Expand Selector Syntax Structure Beyond Compatibility Projection
 
 Last updated: 2026-04-05  
-Status: queued after N7
+Status: queued after N8
 
 Tracker note:
 - this issue was originally queued in-repo under `N5`
@@ -11,6 +11,8 @@ Tracker note:
   output became the implemented `N6`
 - it was then renumbered to `N8` once resource limits and parser invariants
   became the implemented `N7`
+- it was then renumbered to `N9` once parser contract cutover/documentation
+  became the implemented `N8`
 
 ## Issue
 

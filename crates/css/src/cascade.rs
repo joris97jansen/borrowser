@@ -1,4 +1,6 @@
-use crate::syntax::{CompatSelector, CompatStylesheet, parse_declarations};
+use crate::syntax::{
+    CompatSelector, CompatStylesheet, ParseOptions, parse_declarations_with_options,
+};
 use html::Node;
 use std::cmp::Ordering::Equal;
 use std::sync::Arc;
@@ -81,7 +83,9 @@ pub fn attach_styles(dom: &mut Node, sheet: &CompatStylesheet) {
                 let mut candidates: Vec<Candidate> = Vec::new();
 
                 if let Some(inline) = get_inline_style(attributes) {
-                    let declarations = parse_declarations(inline);
+                    let declarations =
+                        parse_declarations_with_options(inline, &ParseOptions::style_attribute())
+                            .declarations;
                     let inline_spec = Specificity(2, 0, 0);
                     let inline_order = u32::MAX;
                     candidates.extend(declarations.into_iter().map(|d| Candidate {

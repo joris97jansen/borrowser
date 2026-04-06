@@ -1,6 +1,6 @@
 # CSS Syntax Layer Contract (Milestone N)
 
-Last updated: 2026-04-05  
+Last updated: 2026-04-06  
 Scope: `crates/css/src/syntax/mod.rs`, `crates/css/src/syntax/compat.rs`,
 `crates/css/src/syntax/input.rs`, `crates/css/src/syntax/token.rs`,
 `crates/css/src/syntax/serialize.rs`,
@@ -66,7 +66,7 @@ Milestone N keeps the current crate and runtime topology:
 
 ## Implementation Status
 
-N1 establishes the syntax-layer contract and public API surface.
+Milestone N is complete.
 
 Current repository status:
 - syntax-layer input abstraction exists in code
@@ -89,10 +89,14 @@ Current repository status:
   types
 - file-backed golden fixtures exist for representative tokenizer and parser
   cases
+- browser stylesheet integration now parses through the structured syntax
+  entrypoint and only projects to compatibility forms at the cascade boundary
 - compatibility projection now lives in `crates/css/src/syntax/compat.rs`
   rather than defining the primary parse result
 - compatibility outputs still preserve the pre-N cascade path and are not the
   normative long-term syntax tree for later milestones
+- the old split-based stylesheet parser path is retired as a product/runtime
+  parsing foundation
 
 ## Current Components: Retained Vs Replaced
 
@@ -187,8 +191,9 @@ Compatibility wrappers remain available:
 - `parse_stylesheet(input) -> CompatStylesheet`
 - `parse_declarations(input) -> Vec<Declaration>`
 
-Downstream code may keep using these wrappers during the migration, but new
-Milestone N work should target the structured parse-result entry points.
+Downstream code may keep using these wrappers during migration, but they are
+compatibility bridges only. New parser work must target the structured
+parse-result entry points.
 
 Current stylesheet parse shape:
 
@@ -199,7 +204,22 @@ Current stylesheet parse shape:
   - parse stats
 - compatibility projection is explicit:
   - `StylesheetParse::to_compat_stylesheet()`
-  - `parse_stylesheet(input)` remains the migration convenience wrapper
+  - `parse_stylesheet(input)` remains a migration convenience wrapper
+
+## Known Deferred Limitations
+
+The Milestone N parser foundation is intentionally incomplete in the following
+areas:
+
+- selector syntax is not yet fully represented as a dedicated syntax-layer AST
+- compatibility selector projection still exists for the current cascade layer
+- at-rule parsing is structural rather than semantics-complete
+- declaration values are preserved as generic syntax component values rather
+  than property-specific semantic value trees
+- tokenizer input is still one-shot per parse operation rather than incremental
+  across stylesheet chunk boundaries
+
+These are deferred follow-up areas, not reasons to bypass the syntax layer.
 
 ## Recovery Philosophy
 
@@ -323,9 +343,9 @@ Downstream milestones must not assume:
 
 ## Related Next Steps And References
 
-The next queued syntax-layer follow-ups for this contract are:
+The next queued syntax-layer follow-ups after Milestone N are:
 
-- [`docs/css/n8-selector-structure-expansion.md`](n8-selector-structure-expansion.md)
+- [`docs/css/n9-selector-structure-expansion.md`](n9-selector-structure-expansion.md)
 - [`docs/css/n2b-incremental-line-record-maintenance.md`](n2b-incremental-line-record-maintenance.md)
 
 Historical reference:
@@ -337,9 +357,11 @@ Historical reference:
   `N5`
 - selector-structure expansion was then renumbered to `N7` once stable
   debug/serialization output became the implemented `N6`
+- selector-structure expansion was then renumbered again to `N8` once resource
+  limits and parser invariants became the implemented `N7`
 - selector-structure expansion was then renumbered again to
-  [`docs/css/n8-selector-structure-expansion.md`](n8-selector-structure-expansion.md)
-  once resource limits and parser invariants became the implemented `N7`
+  [`docs/css/n9-selector-structure-expansion.md`](n9-selector-structure-expansion.md)
+  once parser contract cutover/documentation became the implemented `N8`
 
 Related reference for the N2 source/token layer:
 
@@ -365,6 +387,10 @@ Related reference for the N7 hardening work:
 
 - [`docs/css/n7-resource-limits-parser-invariants.md`](n7-resource-limits-parser-invariants.md)
 
+Related reference for the N8 cutover/completion work:
+
+- [`docs/css/n8-parser-contract-cutover.md`](n8-parser-contract-cutover.md)
+
 Related reference for the next selector-structure expansion work:
 
-- [`docs/css/n8-selector-structure-expansion.md`](n8-selector-structure-expansion.md)
+- [`docs/css/n9-selector-structure-expansion.md`](n9-selector-structure-expansion.md)

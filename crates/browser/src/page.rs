@@ -1,5 +1,5 @@
 use crate::form_controls::{FormControlIndex, seed_input_state_from_dom};
-use css::{CompatStylesheet, attach_styles, parse_stylesheet};
+use css::{CompatStylesheet, ParseOptions, attach_styles, parse_stylesheet_with_options};
 use gfx::input::InputValueStore;
 use html::{
     Node,
@@ -58,7 +58,8 @@ impl PageState {
     }
 
     pub fn apply_css_block(&mut self, block: &str) {
-        let parsed = parse_stylesheet(block);
+        let parsed = parse_stylesheet_with_options(block, &ParseOptions::stylesheet())
+            .to_compat_stylesheet();
         self.css_sheet.rules.extend(parsed.rules);
         if let Some(dom_mut) = self.dom.as_deref_mut() {
             attach_styles(dom_mut, &self.css_sheet);
@@ -94,7 +95,8 @@ impl PageState {
             collect_style_texts(dom_mut, &mut css_text);
 
             if !css_text.trim().is_empty() {
-                let parsed = parse_stylesheet(&css_text);
+                let parsed = parse_stylesheet_with_options(&css_text, &ParseOptions::stylesheet())
+                    .to_compat_stylesheet();
                 self.css_sheet.rules.extend(parsed.rules);
             }
 
