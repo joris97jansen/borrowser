@@ -5,8 +5,19 @@ use crate::Rectangle;
 use super::super::breaker::break_word_prefix_end;
 use super::super::metrics::compute_text_metrics;
 use super::super::tokens::InlineContext;
-use super::super::types::{AdvanceRect, InlineFragment, LineFragment, PaintRect};
+use super::super::types::{AdvanceRect, InlineAction, InlineFragment, LineFragment, PaintRect};
 use super::state::{InlineLayoutEngine, measure_nonzero};
+
+struct TextFragmentSpec<'a> {
+    text: String,
+    style: &'a ComputedStyle,
+    action: Option<InlineAction>,
+    source_range: Option<(usize, usize)>,
+    width: f32,
+    height: f32,
+    ascent: f32,
+    descent: f32,
+}
 
 impl<'m, 'a> InlineLayoutEngine<'m, 'a> {
     pub(super) fn layout_space_token(
@@ -36,16 +47,16 @@ impl<'m, 'a> InlineLayoutEngine<'m, 'a> {
         let metrics = compute_text_metrics(self.measurer, style);
         let action = ctx.to_action();
 
-        self.push_text_fragment(
-            " ".to_string(),
+        self.push_text_fragment(TextFragmentSpec {
+            text: " ".to_string(),
             style,
             action,
             source_range,
-            space_width,
-            metrics.height(),
-            metrics.ascent,
-            metrics.descent,
-        );
+            width: space_width,
+            height: metrics.height(),
+            ascent: metrics.ascent,
+            descent: metrics.descent,
+        });
     }
 
     pub(super) fn layout_word_token(
@@ -82,16 +93,16 @@ impl<'m, 'a> InlineLayoutEngine<'m, 'a> {
                     remaining_source_end,
                     remaining_text.len(),
                 );
-                self.push_text_fragment(
-                    remaining_text,
+                self.push_text_fragment(TextFragmentSpec {
+                    text: remaining_text,
                     style,
-                    action.clone(),
-                    source,
-                    word_width,
+                    action: action.clone(),
+                    source_range: source,
+                    width: word_width,
                     height,
                     ascent,
                     descent,
-                );
+                });
                 break;
             }
 
@@ -106,16 +117,16 @@ impl<'m, 'a> InlineLayoutEngine<'m, 'a> {
                     remaining_source_end,
                     remaining_text.len(),
                 );
-                self.push_text_fragment(
-                    remaining_text,
+                self.push_text_fragment(TextFragmentSpec {
+                    text: remaining_text,
                     style,
-                    action.clone(),
-                    source,
-                    word_width,
+                    action: action.clone(),
+                    source_range: source,
+                    width: word_width,
                     height,
                     ascent,
                     descent,
-                );
+                });
                 break;
             }
 
@@ -130,16 +141,16 @@ impl<'m, 'a> InlineLayoutEngine<'m, 'a> {
                 prefix_text.len(),
             );
 
-            self.push_text_fragment(
-                prefix_text,
+            self.push_text_fragment(TextFragmentSpec {
+                text: prefix_text,
                 style,
-                action.clone(),
-                prefix_source,
-                prefix_width,
+                action: action.clone(),
+                source_range: prefix_source,
+                width: prefix_width,
                 height,
                 ascent,
                 descent,
-            );
+            });
 
             if let Some((_, end)) = prefix_source {
                 remaining_source_start = Some(end);
@@ -151,43 +162,33 @@ impl<'m, 'a> InlineLayoutEngine<'m, 'a> {
         }
     }
 
-    fn push_text_fragment(
-        &mut self,
-        text: String,
-        style: &'a ComputedStyle,
-        action: Option<super::super::types::InlineAction>,
-        source_range: Option<(usize, usize)>,
-        width: f32,
-        height: f32,
-        ascent: f32,
-        descent: f32,
-    ) {
+    fn push_text_fragment(&mut self, spec: TextFragmentSpec<'a>) {
         let rect = Rectangle {
             x: self.cursor_x,
             y: self.cursor_y,
-            width,
-            height,
+            width: spec.width,
+            height: spec.height,
         };
 
         self.line_fragments.push(LineFragment {
             kind: InlineFragment::Text {
-                text,
-                style,
-                action,
+                text: spec.text,
+                style: spec.style,
+                action: spec.action,
             },
             advance_rect: AdvanceRect::new(rect),
             paint_rect: PaintRect::new(rect),
-            source_range,
-            ascent,
-            descent,
+            source_range: spec.source_range,
+            ascent: spec.ascent,
+            descent: spec.descent,
             baseline_shift: 0.0,
         });
 
-        self.cursor_x += width;
-        self.line_ascent = self.line_ascent.max(ascent);
-        self.line_descent = self.line_descent.max(descent);
+        self.cursor_x += spec.width;
+        self.line_ascent = self.line_ascent.max(spec.ascent);
+        self.line_descent = self.line_descent.max(spec.descent);
         self.is_first_in_line = false;
-        self.note_source_range(source_range);
+        self.note_source_range(spec.source_range);
     }
 }
 
