@@ -134,9 +134,9 @@ parse runs if the tree shape changes.
 
 # 🎨 CSS Engine
 
-CSS is processed in three phases:
+CSS is processed in four phases:
 
-### 1. **Parse Stylesheets**
+### 1. **Syntax Parsing**
 
 `runtime_css` currently assembles decoded stylesheet text and hands it to the
 `css::syntax` layer.
@@ -144,6 +144,10 @@ CSS is processed in three phases:
 The syntax contract for Milestone N lives in:
 
 * `docs/css/syntax-parser-contract.md`
+
+The engine-facing CSS rule/value model contract for Milestone O lives in:
+
+* `docs/css/o1-rule-value-model-architecture.md`
 
 The syntax layer owns:
 
@@ -156,9 +160,27 @@ The syntax layer owns:
 
 The shipped browser path parses stylesheet text through the structured
 syntax-layer entrypoints and only projects into compatibility stylesheet forms
-at the current cascade boundary.
+at the current cascade boundary. Milestone O formalizes the next layer after
+syntax parsing: an engine-owned stylesheet/rule/declaration/value model that is
+separate from both parser internals and selector/cascade semantics.
 
-### 2. **Cascade**
+### 2. **Engine Rule/Value Model**
+
+Milestone O introduces a distinct engine-owned stylesheet/rule/declaration/
+value layer between syntax parsing and cascade.
+
+That layer:
+
+* is built from structured `css::syntax` output
+* owns long-lived stylesheet/rule/declaration/value storage
+* replaces raw declaration-string handling as the permanent engine direction
+* preserves canonical names plus source/debug metadata where needed
+* remains separate from selector matching and cascade winner resolution
+
+Compatibility adapters still exist during migration, but they are not the
+intended permanent handoff into cascade.
+
+### 3. **Cascade**
 
 `attach_styles(dom, sheet)` walks the DOM and selects the winning declarations for each property using:
 
@@ -167,7 +189,7 @@ at the current cascade boundary.
 * cascading order
 * inline styles (highest priority)
 
-### 3. **Computed Styles**
+### 4. **Computed Styles**
 
 Each element receives a final `ComputedStyle`:
 

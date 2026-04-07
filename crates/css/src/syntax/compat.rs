@@ -7,8 +7,9 @@ use super::{CssInput, Declaration, DeclarationListParse, ParseOptions};
 
 /// Transitional selector representation used by the existing cascade layer.
 ///
-/// This type is intentionally compatibility-scoped. It is not the final
-/// selector syntax tree for Milestone N and later CSS milestones.
+/// This type is intentionally compatibility-scoped and migration-only. It is
+/// not the final selector syntax tree, and new engine-facing CSS work must not
+/// treat it as the permanent selector contract.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CompatSelector {
     Universal,
@@ -18,6 +19,9 @@ pub enum CompatSelector {
 }
 
 /// Transitional rule representation used by the existing cascade layer.
+///
+/// This type is migration-only and exists to keep the pre-O cascade path
+/// working while the engine-facing stylesheet/rule/value model is introduced.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CompatRule {
     pub selectors: Vec<CompatSelector>,
@@ -25,6 +29,10 @@ pub struct CompatRule {
 }
 
 /// Transitional stylesheet representation used by the existing cascade layer.
+///
+/// This type is not the long-term engine stylesheet contract. New
+/// stylesheet/rule/value work must build from structured syntax output rather
+/// than extending this compatibility shape.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct CompatStylesheet {
     pub rules: Vec<CompatRule>,
