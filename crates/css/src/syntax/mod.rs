@@ -10,6 +10,15 @@
 //! structured syntax-layer output into the existing cascade-facing
 //! representation during rollout, but it is not normative for the long-term
 //! tokenizer/parser architecture.
+//!
+//! The downstream engine-facing CSS rule/value model is defined separately by
+//! the Milestone O contract in `docs/css/o1-rule-value-model-architecture.md`.
+//! This module remains purely syntax-layer: it must not absorb selector
+//! matching, cascade semantics, or long-lived stylesheet ownership concerns.
+//!
+//! `Compat*` re-exports remain public only as migration bridges for the
+//! current cascade path. New engine-facing CSS work must not treat them as the
+//! permanent rule/value contract.
 
 mod compat;
 mod diagnostics;
@@ -26,6 +35,9 @@ mod util;
 #[cfg(test)]
 mod tests;
 
+/// Migration-only compatibility re-exports for the current cascade path.
+///
+/// These are not the permanent engine-facing stylesheet/rule/selector model.
 pub use compat::{CompatRule, CompatSelector, CompatStylesheet};
 pub use diagnostics::{DiagnosticKind, DiagnosticSeverity, SyntaxDiagnostic};
 pub use entry::{

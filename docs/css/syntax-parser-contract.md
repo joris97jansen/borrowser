@@ -1,10 +1,11 @@
 # CSS Syntax Layer Contract (Milestone N)
 
-Last updated: 2026-04-06  
+Last updated: 2026-04-07  
 Scope: `crates/css/src/syntax/mod.rs`, `crates/css/src/syntax/compat.rs`,
 `crates/css/src/syntax/input.rs`, `crates/css/src/syntax/token.rs`,
 `crates/css/src/syntax/serialize.rs`,
-`crates/css/src/syntax/tokenizer.rs`, `crates/css/src/syntax/parser.rs`,
+`crates/css/src/syntax/tokenizer/mod.rs`,
+`crates/css/src/syntax/parser/mod.rs`,
 `crates/runtime_css/src/lib.rs`, and the
 current browser integration path in `crates/browser/src/page.rs`
 
@@ -13,14 +14,17 @@ layer. It defines what the tokenizer and parser own, what malformed-input
 recovery means in this engine, which parts of the current CSS stack are being
 replaced, and what downstream milestones may assume.
 
+Related downstream contract:
+- `docs/css/o1-rule-value-model-architecture.md`
+
 Related code:
 - `crates/css/src/syntax/mod.rs`
 - `crates/css/src/syntax/compat.rs`
 - `crates/css/src/syntax/input.rs`
 - `crates/css/src/syntax/token.rs`
 - `crates/css/src/syntax/serialize.rs`
-- `crates/css/src/syntax/tokenizer.rs`
-- `crates/css/src/syntax/parser.rs`
+- `crates/css/src/syntax/tokenizer/mod.rs`
+- `crates/css/src/syntax/parser/mod.rs`
 - `crates/css/src/cascade.rs`
 - `crates/browser/src/page.rs`
 - `crates/runtime_css/src/lib.rs`
@@ -114,7 +118,8 @@ Replaced in Milestone N:
 - unstable, incidental Rust `Debug` output as the test surface
 
 Compatibility note:
-- `Declaration` remains part of the syntax-layer contract
+- `Declaration` remains available as a migration compatibility surface for the
+  current cascade path
 - `CompatSelector`, `CompatRule`, and `CompatStylesheet` remain available as
   adapter outputs for the existing cascade path during the Milestone N rollout
 - those `Compat*` types are not the long-term selector/rule AST and must not be
@@ -205,6 +210,35 @@ Current stylesheet parse shape:
 - compatibility projection is explicit:
   - `StylesheetParse::to_compat_stylesheet()`
   - `parse_stylesheet(input)` remains a migration convenience wrapper
+
+## Handoff To Milestone O
+
+Milestone N ends at syntax-layer structure. The next stable handoff is the
+engine-facing CSS rule/value model defined in:
+
+- `docs/css/o1-rule-value-model-architecture.md`
+
+That downstream model consumes syntax-layer output and may canonicalize names or
+normalize value structure where appropriate, but those responsibilities do not
+move back into `css::syntax`.
+
+The syntax layer remains responsible for:
+
+- source-preserving rule and declaration parsing
+- component-value structure
+- diagnostics, recovery, invariants, and limits
+
+The syntax layer is not the long-term CSSOM/cascade contract. Later rule/value
+work must build on syntax output rather than bypassing it or extending
+compatibility wrappers into the permanent model.
+
+Authoritative handoff rule:
+
+- the engine-facing rule/value model must be derived from structured
+  `css::syntax` output
+- it must not be reconstructed by reparsing raw stylesheet text
+- it must not be derived through `CompatStylesheet` or raw-string declaration
+  adapters as its normative transformation path
 
 ## Known Deferred Limitations
 

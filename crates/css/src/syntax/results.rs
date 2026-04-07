@@ -17,6 +17,9 @@ pub struct ParseStats {
 }
 
 /// Compatibility-scoped declaration used by the current cascade path.
+///
+/// This raw-string form is migration-only and is not the permanent
+/// engine-facing declaration/value contract.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Declaration {
     pub name: String,
