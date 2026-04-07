@@ -1,108 +1,32 @@
-//! CSS tokenizer.
-//!
-//! This is the lexical source of truth for the CSS syntax layer. It converts
-//! decoded source text into explicit `CssToken` values with stable spans and
-//! deterministic malformed-input handling.
-
-use super::input::{CssInput, CssSpan};
-use super::token::{
+use super::super::input::{CssInput, CssSpan};
+use super::super::token::{
     CssDimension, CssHashKind, CssNumber, CssNumericKind, CssToken, CssTokenKind, CssTokenText,
     CssUnicodeRange,
 };
-use super::{
-    CssParseOrigin, DiagnosticKind, DiagnosticSeverity, ParseOptions, SyntaxDiagnostic,
-    append_diagnostics, push_diagnostic, truncate_to_limit,
+use super::super::{DiagnosticKind, DiagnosticSeverity, ParseOptions, SyntaxDiagnostic};
+use super::scan::{
+    advance_css_line_break_in_str, is_css_line_break_start, is_css_whitespace, is_name,
+    is_non_printable, peek_char_at, peek_char_at_after, peek_char_at_after_after, starts_name,
+    starts_with, would_start_exponent, would_start_identifier, would_start_number,
 };
 
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct CssTokenizationStats {
-    pub input_bytes: usize,
-    pub tokens_emitted: usize,
-    pub diagnostics_emitted: usize,
-    pub hit_limit: bool,
-}
-
-#[derive(Clone, Debug, Default)]
-pub struct CssTokenization {
-    pub input: CssInput,
-    pub tokens: Vec<CssToken>,
-    pub diagnostics: Vec<SyntaxDiagnostic>,
-    pub stats: CssTokenizationStats,
-}
-
-impl CssTokenization {
-    pub fn to_debug_snapshot(&self) -> String {
-        super::serialize_tokenization_for_snapshot(self)
-    }
-}
-
-pub fn tokenize_str(input: &str) -> CssTokenization {
-    tokenize_str_with_options(input, &ParseOptions::stylesheet())
-}
-
-pub fn tokenize_str_with_options(input: &str, options: &ParseOptions) -> CssTokenization {
-    let max_input_bytes = match options.origin {
-        CssParseOrigin::Stylesheet => options.limits.max_stylesheet_input_bytes,
-        CssParseOrigin::StyleAttribute => options.limits.max_declaration_list_input_bytes,
-    };
-    let bounded_input = truncate_to_limit(input, max_input_bytes);
-    let mut tokenization = CssTokenization {
-        input: CssInput::from(bounded_input),
-        diagnostics: Vec::new(),
-        stats: CssTokenizationStats {
-            input_bytes: bounded_input.len(),
-            ..CssTokenizationStats::default()
-        },
-        ..CssTokenization::default()
-    };
-
-    if bounded_input.len() != input.len() {
-        tokenization.stats.hit_limit = true;
-        push_tokenizer_diagnostic(
-            options,
-            &mut tokenization,
-            DiagnosticSeverity::Error,
-            DiagnosticKind::LimitExceeded,
-            bounded_input.len(),
-            format!(
-                "tokenizer input truncated at {} bytes (limit {})",
-                bounded_input.len(),
-                max_input_bytes
-            ),
-        );
-    }
-
-    let mut tokenizer = CssTokenizer::new(&tokenization.input, options);
-    tokenizer.tokenize_all();
-    tokenization.tokens = tokenizer.tokens;
-    tokenization.stats.tokens_emitted = tokenization.tokens.len();
-    tokenization.stats.diagnostics_emitted += tokenizer.stats.diagnostics_emitted;
-    tokenization.stats.hit_limit |= tokenizer.stats.hit_limit;
-    append_diagnostics(
-        options,
-        &mut tokenization.diagnostics,
-        tokenizer.diagnostics,
-    );
-    tokenization
-}
-
 #[derive(Default)]
-struct TokenizerStats {
-    diagnostics_emitted: usize,
-    hit_limit: bool,
+pub(super) struct TokenizerStats {
+    pub(super) diagnostics_emitted: usize,
+    pub(super) hit_limit: bool,
 }
 
-struct CssTokenizer<'a> {
+pub(super) struct CssTokenizer<'a> {
     input: &'a CssInput,
     options: &'a ParseOptions,
     pos: usize,
-    tokens: Vec<CssToken>,
-    diagnostics: Vec<SyntaxDiagnostic>,
-    stats: TokenizerStats,
+    pub(super) tokens: Vec<CssToken>,
+    pub(super) diagnostics: Vec<SyntaxDiagnostic>,
+    pub(super) stats: TokenizerStats,
 }
 
 impl<'a> CssTokenizer<'a> {
-    fn new(input: &'a CssInput, options: &'a ParseOptions) -> Self {
+    pub(super) fn new(input: &'a CssInput, options: &'a ParseOptions) -> Self {
         Self {
             input,
             options,
@@ -113,24 +37,24 @@ impl<'a> CssTokenizer<'a> {
         }
     }
 
-    fn tokenize_all(&mut self) {
+    pub(super) fn tokenize_all(&mut self) {
         while self.pos < self.input.len_bytes() {
             if self.reached_lexical_token_limit() {
                 break;
             }
             let start = self.pos;
 
-            if self.starts_with("<!--") {
+            if starts_with(self.input.as_str(), self.pos, "<!--") {
                 self.pos += 4;
                 self.push_token(CssTokenKind::Cdo, start, self.pos);
                 continue;
             }
-            if self.starts_with("-->") {
+            if starts_with(self.input.as_str(), self.pos, "-->") {
                 self.pos += 3;
                 self.push_token(CssTokenKind::Cdc, start, self.pos);
                 continue;
             }
-            if self.starts_with("/*") {
+            if starts_with(self.input.as_str(), self.pos, "/*") {
                 self.consume_comment(start);
                 continue;
             }
@@ -202,7 +126,7 @@ impl<'a> CssTokenizer<'a> {
     fn consume_comment(&mut self, start: usize) {
         self.pos += 2;
         while self.pos < self.input.len_bytes() {
-            if self.starts_with("*/") {
+            if starts_with(self.input.as_str(), self.pos, "*/") {
                 let end = self.pos;
                 self.pos += 2;
                 let payload = self
@@ -651,22 +575,22 @@ impl<'a> CssTokenizer<'a> {
     }
 
     fn consume_fixed_token(&mut self, start: usize) -> Option<CssTokenKind> {
-        let kind = if self.starts_with("~=") {
+        let kind = if starts_with(self.input.as_str(), self.pos, "~=") {
             self.pos += 2;
             CssTokenKind::IncludeMatch
-        } else if self.starts_with("|=") {
+        } else if starts_with(self.input.as_str(), self.pos, "|=") {
             self.pos += 2;
             CssTokenKind::DashMatch
-        } else if self.starts_with("^=") {
+        } else if starts_with(self.input.as_str(), self.pos, "^=") {
             self.pos += 2;
             CssTokenKind::PrefixMatch
-        } else if self.starts_with("$=") {
+        } else if starts_with(self.input.as_str(), self.pos, "$=") {
             self.pos += 2;
             CssTokenKind::SuffixMatch
-        } else if self.starts_with("*=") {
+        } else if starts_with(self.input.as_str(), self.pos, "*=") {
             self.pos += 2;
             CssTokenKind::SubstringMatch
-        } else if self.starts_with("||") {
+        } else if starts_with(self.input.as_str(), self.pos, "||") {
             self.pos += 2;
             CssTokenKind::Column
         } else {
@@ -801,14 +725,6 @@ impl<'a> CssTokenizer<'a> {
         });
     }
 
-    fn starts_with(&self, pattern: &str) -> bool {
-        self.input
-            .as_str()
-            .get(self.pos..)
-            .map(|tail| tail.starts_with(pattern))
-            .unwrap_or(false)
-    }
-
     fn peek_char(&self) -> Option<char> {
         self.peek_char_at(self.pos)
     }
@@ -825,18 +741,15 @@ impl<'a> CssTokenizer<'a> {
     }
 
     fn peek_char_at(&self, byte_offset: usize) -> Option<char> {
-        self.input.as_str().get(byte_offset..)?.chars().next()
+        peek_char_at(self.input.as_str(), byte_offset)
     }
 
     fn peek_char_at_after(&self, byte_offset: usize) -> Option<char> {
-        let first = self.peek_char_at(byte_offset)?;
-        self.peek_char_at(byte_offset + first.len_utf8())
+        peek_char_at_after(self.input.as_str(), byte_offset)
     }
 
     fn peek_char_at_after_after(&self, byte_offset: usize) -> Option<char> {
-        let first = self.peek_char_at(byte_offset)?;
-        let second = self.peek_char_at(byte_offset + first.len_utf8())?;
-        self.peek_char_at(byte_offset + first.len_utf8() + second.len_utf8())
+        peek_char_at_after_after(self.input.as_str(), byte_offset)
     }
 
     fn take_char(&mut self) -> Option<char> {
@@ -854,189 +767,5 @@ impl<'a> CssTokenizer<'a> {
             Some(ch) => !is_css_line_break_start(ch),
             None => false,
         }
-    }
-}
-
-fn push_tokenizer_diagnostic(
-    options: &ParseOptions,
-    tokenization: &mut CssTokenization,
-    severity: DiagnosticSeverity,
-    kind: DiagnosticKind,
-    byte_offset: usize,
-    message: impl Into<String>,
-) {
-    let mut parse_stats = super::ParseStats::default();
-    push_diagnostic(
-        options,
-        &mut tokenization.diagnostics,
-        &mut parse_stats,
-        severity,
-        kind,
-        byte_offset,
-        message,
-    );
-    tokenization.stats.diagnostics_emitted += parse_stats.diagnostics_emitted;
-}
-
-fn is_css_whitespace(ch: char) -> bool {
-    matches!(ch, ' ' | '\t' | '\n' | '\r' | '\u{000C}')
-}
-
-fn is_css_line_break_start(ch: char) -> bool {
-    matches!(ch, '\n' | '\r' | '\u{000C}')
-}
-
-fn is_name_start(ch: char) -> bool {
-    ch == '_' || ch.is_ascii_alphabetic() || !ch.is_ascii()
-}
-
-fn is_name(ch: char) -> bool {
-    is_name_start(ch) || ch.is_ascii_digit() || ch == '-'
-}
-
-fn starts_name(first: Option<char>, second: Option<char>) -> bool {
-    match first {
-        Some(ch) if is_name(ch) => true,
-        Some('\\') => second
-            .map(|ch| !is_css_line_break_start(ch))
-            .unwrap_or(false),
-        _ => false,
-    }
-}
-
-fn would_start_identifier(first: Option<char>, second: Option<char>, third: Option<char>) -> bool {
-    match first {
-        Some('-') => match second {
-            Some(ch) if is_name_start(ch) || ch == '-' => true,
-            Some('\\') => third
-                .map(|ch| !is_css_line_break_start(ch))
-                .unwrap_or(false),
-            _ => false,
-        },
-        Some(ch) if is_name_start(ch) => true,
-        Some('\\') => second
-            .map(|ch| !is_css_line_break_start(ch))
-            .unwrap_or(false),
-        _ => false,
-    }
-}
-
-fn would_start_number(first: Option<char>, second: Option<char>, third: Option<char>) -> bool {
-    match first {
-        Some('+') | Some('-') => match second {
-            Some(ch) if ch.is_ascii_digit() => true,
-            Some('.') => third.map(|ch| ch.is_ascii_digit()).unwrap_or(false),
-            _ => false,
-        },
-        Some('.') => second.map(|ch| ch.is_ascii_digit()).unwrap_or(false),
-        Some(ch) => ch.is_ascii_digit(),
-        None => false,
-    }
-}
-
-fn would_start_exponent(first: Option<char>, second: Option<char>) -> bool {
-    match first {
-        Some('+') | Some('-') => second.map(|ch| ch.is_ascii_digit()).unwrap_or(false),
-        Some(ch) => ch.is_ascii_digit(),
-        None => false,
-    }
-}
-
-fn is_non_printable(ch: char) -> bool {
-    matches!(ch, '\u{0000}'..='\u{0008}' | '\u{000B}' | '\u{000E}'..='\u{001F}' | '\u{007F}')
-}
-
-fn advance_css_line_break_in_str(input: &str, byte_offset: usize) -> Option<usize> {
-    let ch = input.get(byte_offset..)?.chars().next()?;
-    match ch {
-        '\r' => {
-            let next = byte_offset + ch.len_utf8();
-            if input.get(next..)?.starts_with('\n') {
-                Some(next + '\n'.len_utf8())
-            } else {
-                Some(next)
-            }
-        }
-        '\n' | '\u{000C}' => Some(byte_offset + ch.len_utf8()),
-        _ => None,
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{tokenize_str, tokenize_str_with_options};
-    use crate::syntax::{DiagnosticKind, ParseOptions};
-
-    #[test]
-    fn tokenizer_emits_core_stylesheet_tokens_deterministically() {
-        let first = tokenize_str("div, #hero { color: 10px; }");
-        let second = tokenize_str("div, #hero { color: 10px; }");
-
-        assert_eq!(first.diagnostics, second.diagnostics);
-        assert_eq!(first.to_debug_snapshot(), second.to_debug_snapshot());
-        assert_eq!(
-            first.to_debug_snapshot(),
-            concat!(
-                "version: 1\n",
-                "tokens\n",
-                "token[0] ident(\"div\") @0..3\n",
-                "token[1] comma @3..4\n",
-                "token[2] whitespace @4..5\n",
-                "token[3] hash(kind=id, value=\"hero\") @5..10\n",
-                "token[4] whitespace @10..11\n",
-                "token[5] left-curly-bracket @11..12\n",
-                "token[6] whitespace @12..13\n",
-                "token[7] ident(\"color\") @13..18\n",
-                "token[8] colon @18..19\n",
-                "token[9] whitespace @19..20\n",
-                "token[10] dimension(kind=integer, value=\"10\", unit=\"px\") @20..24\n",
-                "token[11] semicolon @24..25\n",
-                "token[12] whitespace @25..26\n",
-                "token[13] right-curly-bracket @26..27\n",
-                "token[14] eof @27..27\n",
-                "diagnostics\n",
-                "stats\n",
-                "  input_bytes: 27\n",
-                "  tokens_emitted: 15\n",
-                "  diagnostics_emitted: 0\n",
-                "  hit_limit: false\n",
-            )
-        );
-    }
-
-    #[test]
-    fn tokenizer_handles_comments_strings_and_url_tokens() {
-        let tokenization = tokenize_str("/*x*/ a { background: url(icon.svg); content: \"hi\"; }");
-        let snapshot = tokenization.to_debug_snapshot();
-
-        assert!(snapshot.contains("comment(\"x\") @0..5"));
-        assert!(snapshot.contains("url(\"icon.svg\")"));
-        assert!(snapshot.contains("string(\"hi\")"));
-    }
-
-    #[test]
-    fn tokenizer_reports_malformed_lexical_input_deterministically() {
-        let tokenization = tokenize_str("a { content: \"unterminated\n url(bad\"x) } /*");
-        let snapshot = tokenization.to_debug_snapshot();
-
-        assert!(snapshot.contains("bad-string"));
-        assert!(snapshot.contains("bad-url"));
-        assert!(snapshot.contains("warning unterminated-string"));
-        assert!(snapshot.contains("warning bad-url"));
-        assert!(snapshot.contains("warning unterminated-comment"));
-    }
-
-    #[test]
-    fn tokenizer_uses_origin_specific_input_limits() {
-        let options = ParseOptions::style_attribute();
-        let tokenization = tokenize_str_with_options(&"x".repeat(70_000), &options);
-
-        assert!(tokenization.stats.hit_limit);
-        assert!(
-            tokenization
-                .diagnostics
-                .iter()
-                .any(|diagnostic| diagnostic.kind == DiagnosticKind::LimitExceeded)
-        );
     }
 }
