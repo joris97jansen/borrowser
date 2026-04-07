@@ -1,189 +1,19 @@
-//! Structured CSS stylesheet parser.
-//!
-//! This module consumes tokenizer output and builds the syntax-layer stylesheet
-//! representation used by later CSS milestones.
-
-use super::input::{CssInput, CssSpan};
-use super::token::{CssToken, CssTokenKind, CssTokenText};
-use super::{
-    DiagnosticKind, DiagnosticSeverity, ParseOptions, ParseStats, StylesheetParse,
-    SyntaxDiagnostic, append_diagnostics, push_diagnostic, tokenize_str_with_options,
+use super::super::input::CssInput;
+use super::super::token::{CssToken, CssTokenKind, CssTokenText};
+use super::super::{
+    DiagnosticKind, DiagnosticSeverity, ParseOptions, ParseStats, SyntaxDiagnostic, push_diagnostic,
+};
+use super::model::{
+    CssAtRule, CssBlockKind, CssComponentValue, CssDeclaration, CssDeclarationBlock, CssFunction,
+    CssQualifiedRule, CssRule, CssSimpleBlock, CssStylesheet,
+};
+use super::support::{
+    block_kind_for_opener, block_kind_matches_closer, block_kind_matches_opener,
+    find_function_closer, is_declaration_start, next_component_value_index, prelude_start_offset,
+    skip_trivia, skip_trivia_and_semicolons_until, skip_trivia_until,
 };
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum CssBlockKind {
-    Curly,
-    Square,
-    Parenthesis,
-}
-
-#[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct CssStylesheet {
-    pub rules: Vec<CssRule>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum CssRule {
-    Qualified(CssQualifiedRule),
-    At(CssAtRule),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CssQualifiedRule {
-    pub span: CssSpan,
-    pub prelude: Vec<CssComponentValue>,
-    pub block: CssDeclarationBlock,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CssAtRule {
-    pub span: CssSpan,
-    pub name: CssTokenText,
-    pub prelude: Vec<CssComponentValue>,
-    pub block: Option<CssSimpleBlock>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CssDeclarationBlock {
-    pub span: CssSpan,
-    pub declarations: Vec<CssDeclaration>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CssDeclaration {
-    pub span: CssSpan,
-    pub name: CssTokenText,
-    pub value: Vec<CssComponentValue>,
-    pub value_span: CssSpan,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum CssComponentValue {
-    PreservedToken(CssToken),
-    SimpleBlock(CssSimpleBlock),
-    Function(CssFunction),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CssSimpleBlock {
-    pub span: CssSpan,
-    pub kind: CssBlockKind,
-    pub value: Vec<CssComponentValue>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct CssFunction {
-    pub span: CssSpan,
-    pub name: CssTokenText,
-    pub value: Vec<CssComponentValue>,
-}
-
-#[derive(Clone, Debug, Default)]
-pub(super) struct StructuredDeclarationListParse {
-    pub input: CssInput,
-    pub declarations: Vec<CssDeclaration>,
-    pub diagnostics: Vec<SyntaxDiagnostic>,
-    pub stats: ParseStats,
-}
-
-pub(super) fn parse_stylesheet_structured(input: &str, options: &ParseOptions) -> StylesheetParse {
-    let tokenization = tokenize_str_with_options(input, options);
-    let mut diagnostics = Vec::new();
-    let mut stats = ParseStats {
-        input_bytes: tokenization.stats.input_bytes,
-        diagnostics_emitted: tokenization.stats.diagnostics_emitted,
-        hit_limit: tokenization.stats.hit_limit,
-        ..ParseStats::default()
-    };
-    append_diagnostics(options, &mut diagnostics, tokenization.diagnostics);
-
-    let input = tokenization.input;
-    let tokens = tokenization.tokens;
-    if !validate_token_stream_invariants(options, &input, &tokens, 0, &mut diagnostics, &mut stats)
-    {
-        return StylesheetParse {
-            input,
-            stylesheet: CssStylesheet::default(),
-            diagnostics,
-            stats,
-        };
-    }
-    let mut parser = StylesheetParser {
-        input: &input,
-        tokens: &tokens,
-        options,
-        base_offset: 0,
-        diagnostics: &mut diagnostics,
-        stats: &mut stats,
-    };
-    let stylesheet = parser.parse_stylesheet();
-    parser.stats.rules_emitted = stylesheet.rules.len();
-
-    StylesheetParse {
-        input,
-        stylesheet,
-        diagnostics,
-        stats,
-    }
-}
-
-pub(super) fn parse_declaration_list_structured(
-    input: &str,
-    base_offset: usize,
-    options: &ParseOptions,
-) -> StructuredDeclarationListParse {
-    let tokenization = tokenize_str_with_options(input, options);
-    let mut diagnostics = Vec::new();
-    let mut stats = ParseStats {
-        input_bytes: tokenization.stats.input_bytes,
-        diagnostics_emitted: tokenization.stats.diagnostics_emitted,
-        hit_limit: tokenization.stats.hit_limit,
-        ..ParseStats::default()
-    };
-    append_offset_diagnostics(
-        options,
-        &mut diagnostics,
-        tokenization.diagnostics,
-        base_offset,
-    );
-
-    let input = tokenization.input;
-    let tokens = tokenization.tokens;
-    if !validate_token_stream_invariants(
-        options,
-        &input,
-        &tokens,
-        base_offset,
-        &mut diagnostics,
-        &mut stats,
-    ) {
-        return StructuredDeclarationListParse {
-            input,
-            declarations: Vec::new(),
-            diagnostics,
-            stats,
-        };
-    }
-    let mut parser = StylesheetParser {
-        input: &input,
-        tokens: &tokens,
-        options,
-        base_offset,
-        diagnostics: &mut diagnostics,
-        stats: &mut stats,
-    };
-    let declarations = parser.parse_declaration_list(0, None);
-    parser.stats.declarations_emitted = declarations.len();
-
-    StructuredDeclarationListParse {
-        input,
-        declarations,
-        diagnostics,
-        stats,
-    }
-}
-
-struct StylesheetParser<'a> {
+pub(super) struct StylesheetParser<'a> {
     input: &'a CssInput,
     tokens: &'a [CssToken],
     options: &'a ParseOptions,
@@ -193,7 +23,29 @@ struct StylesheetParser<'a> {
 }
 
 impl<'a> StylesheetParser<'a> {
-    fn parse_stylesheet(&mut self) -> CssStylesheet {
+    pub(super) fn new(
+        input: &'a CssInput,
+        tokens: &'a [CssToken],
+        options: &'a ParseOptions,
+        base_offset: usize,
+        diagnostics: &'a mut Vec<SyntaxDiagnostic>,
+        stats: &'a mut ParseStats,
+    ) -> Self {
+        Self {
+            input,
+            tokens,
+            options,
+            base_offset,
+            diagnostics,
+            stats,
+        }
+    }
+
+    pub(super) fn stats_mut(&mut self) -> &mut ParseStats {
+        self.stats
+    }
+
+    pub(super) fn parse_stylesheet(&mut self) -> CssStylesheet {
         let mut rules = Vec::new();
         let mut cursor = 0usize;
 
@@ -259,6 +111,65 @@ impl<'a> StylesheetParser<'a> {
         }
 
         CssStylesheet { rules }
+    }
+
+    pub(super) fn parse_declaration_list(
+        &mut self,
+        start: usize,
+        end_index: Option<usize>,
+    ) -> Vec<CssDeclaration> {
+        let mut declarations = Vec::new();
+        let mut cursor = start;
+
+        loop {
+            let Some(next) = skip_trivia_and_semicolons_until(self.tokens, cursor, end_index)
+            else {
+                break;
+            };
+            cursor = next;
+
+            let Some(token) = self.tokens.get(cursor) else {
+                break;
+            };
+
+            if matches!(token.kind, CssTokenKind::Eof)
+                || Some(cursor) == end_index
+                || matches!(token.kind, CssTokenKind::RightCurlyBracket)
+            {
+                break;
+            }
+
+            if declarations.len() >= self.options.limits.max_declarations_per_rule {
+                self.stats.hit_limit = true;
+                self.push_diagnostic(
+                    DiagnosticSeverity::Error,
+                    DiagnosticKind::LimitExceeded,
+                    token.span.start,
+                    format!(
+                        "declaration count exceeded limit {}",
+                        self.options.limits.max_declarations_per_rule
+                    ),
+                );
+                break;
+            }
+
+            match self.consume_declaration(cursor, end_index) {
+                DeclarationResult::Parsed(declaration, next_index) => {
+                    declarations.push(declaration);
+                    cursor = next_index;
+                }
+                DeclarationResult::Skipped(next_index) => {
+                    cursor = if next_index <= cursor {
+                        cursor.saturating_add(1)
+                    } else {
+                        next_index
+                    };
+                }
+                DeclarationResult::End => break,
+            }
+        }
+
+        declarations
     }
 
     fn consume_rule(&mut self, start: usize) -> RuleParseResult {
@@ -463,65 +374,6 @@ impl<'a> StylesheetParser<'a> {
         }
 
         RuleParseResult::End
-    }
-
-    fn parse_declaration_list(
-        &mut self,
-        start: usize,
-        end_index: Option<usize>,
-    ) -> Vec<CssDeclaration> {
-        let mut declarations = Vec::new();
-        let mut cursor = start;
-
-        loop {
-            let Some(next) = skip_trivia_and_semicolons_until(self.tokens, cursor, end_index)
-            else {
-                break;
-            };
-            cursor = next;
-
-            let Some(token) = self.tokens.get(cursor) else {
-                break;
-            };
-
-            if matches!(token.kind, CssTokenKind::Eof)
-                || Some(cursor) == end_index
-                || matches!(token.kind, CssTokenKind::RightCurlyBracket)
-            {
-                break;
-            }
-
-            if declarations.len() >= self.options.limits.max_declarations_per_rule {
-                self.stats.hit_limit = true;
-                self.push_diagnostic(
-                    DiagnosticSeverity::Error,
-                    DiagnosticKind::LimitExceeded,
-                    token.span.start,
-                    format!(
-                        "declaration count exceeded limit {}",
-                        self.options.limits.max_declarations_per_rule
-                    ),
-                );
-                break;
-            }
-
-            match self.consume_declaration(cursor, end_index) {
-                DeclarationResult::Parsed(declaration, next_index) => {
-                    declarations.push(declaration);
-                    cursor = next_index;
-                }
-                DeclarationResult::Skipped(next_index) => {
-                    cursor = if next_index <= cursor {
-                        cursor.saturating_add(1)
-                    } else {
-                        next_index
-                    };
-                }
-                DeclarationResult::End => break,
-            }
-        }
-
-        declarations
     }
 
     fn consume_declaration(&mut self, start: usize, end_index: Option<usize>) -> DeclarationResult {
@@ -1027,396 +879,4 @@ struct ConsumedSimpleBlock {
 struct ConsumedFunction {
     function: CssFunction,
     next_index: usize,
-}
-
-/// Canonical tokenizer-to-parser boundary validator.
-///
-/// All structured parser entry points must use this function before consuming a
-/// token stream. Future tokenizer modes or stitched token streams must reuse
-/// this validator rather than introducing separate, slightly different
-/// boundary checks.
-fn validate_token_stream_invariants(
-    options: &ParseOptions,
-    input: &CssInput,
-    tokens: &[CssToken],
-    base_offset: usize,
-    diagnostics: &mut Vec<SyntaxDiagnostic>,
-    stats: &mut ParseStats,
-) -> bool {
-    let emit = |byte_offset: usize,
-                message: &str,
-                diagnostics: &mut Vec<SyntaxDiagnostic>,
-                stats: &mut ParseStats| {
-        push_diagnostic(
-            options,
-            diagnostics,
-            stats,
-            DiagnosticSeverity::Error,
-            DiagnosticKind::InvariantViolation,
-            base_offset.saturating_add(byte_offset),
-            message,
-        );
-    };
-
-    let Some(last) = tokens.last() else {
-        emit(
-            0,
-            "token stream invariant violated: empty token stream",
-            diagnostics,
-            stats,
-        );
-        return false;
-    };
-
-    if !matches!(last.kind, CssTokenKind::Eof) {
-        emit(
-            input.len_bytes(),
-            "token stream invariant violated: missing trailing EOF token",
-            diagnostics,
-            stats,
-        );
-        return false;
-    }
-
-    let mut previous_end = 0usize;
-    for (index, token) in tokens.iter().enumerate() {
-        if token.span.input_id != input.id() {
-            emit(
-                token.span.start,
-                "token stream invariant violated: token span belongs to a different input",
-                diagnostics,
-                stats,
-            );
-            return false;
-        }
-        if token.span.end > input.len_bytes() || token.span.start < previous_end {
-            emit(
-                token.span.start,
-                "token stream invariant violated: token spans are not monotonic within the owning input",
-                diagnostics,
-                stats,
-            );
-            return false;
-        }
-        if index + 1 != tokens.len() && matches!(token.kind, CssTokenKind::Eof) {
-            emit(
-                token.span.start,
-                "token stream invariant violated: EOF token must be the last token",
-                diagnostics,
-                stats,
-            );
-            return false;
-        }
-        previous_end = token.span.end;
-    }
-
-    true
-}
-
-fn append_offset_diagnostics(
-    options: &ParseOptions,
-    diagnostics: &mut Vec<SyntaxDiagnostic>,
-    incoming: Vec<SyntaxDiagnostic>,
-    base_offset: usize,
-) {
-    if base_offset == 0 {
-        append_diagnostics(options, diagnostics, incoming);
-        return;
-    }
-
-    let adjusted = incoming
-        .into_iter()
-        .map(|mut diagnostic| {
-            diagnostic.byte_offset = diagnostic.byte_offset.saturating_add(base_offset);
-            diagnostic
-        })
-        .collect();
-    append_diagnostics(options, diagnostics, adjusted);
-}
-
-fn skip_trivia(tokens: &[CssToken], mut cursor: usize) -> Option<usize> {
-    while let Some(token) = tokens.get(cursor) {
-        if !is_trivia(&token.kind) {
-            return Some(cursor);
-        }
-        cursor += 1;
-    }
-    None
-}
-
-fn skip_trivia_until(
-    tokens: &[CssToken],
-    mut cursor: usize,
-    end_index: Option<usize>,
-) -> Option<usize> {
-    while let Some(token) = tokens.get(cursor) {
-        if Some(cursor) == end_index {
-            return Some(cursor);
-        }
-        if !is_trivia(&token.kind) {
-            return Some(cursor);
-        }
-        cursor += 1;
-    }
-    None
-}
-
-fn skip_trivia_and_semicolons_until(
-    tokens: &[CssToken],
-    mut cursor: usize,
-    end_index: Option<usize>,
-) -> Option<usize> {
-    while let Some(token) = tokens.get(cursor) {
-        if Some(cursor) == end_index {
-            return Some(cursor);
-        }
-        if !is_trivia(&token.kind) && !matches!(token.kind, CssTokenKind::Semicolon) {
-            return Some(cursor);
-        }
-        cursor += 1;
-    }
-    None
-}
-
-fn is_trivia(kind: &CssTokenKind) -> bool {
-    matches!(kind, CssTokenKind::Whitespace | CssTokenKind::Comment(_))
-}
-
-fn prelude_start_offset(prelude: &[CssComponentValue]) -> Option<usize> {
-    prelude.first().map(component_value_start)
-}
-
-fn component_value_start(value: &CssComponentValue) -> usize {
-    match value {
-        CssComponentValue::PreservedToken(token) => token.span.start,
-        CssComponentValue::SimpleBlock(block) => block.span.start,
-        CssComponentValue::Function(function) => function.span.start,
-    }
-}
-
-fn next_component_value_index(tokens: &[CssToken], start: usize) -> usize {
-    match tokens.get(start).map(|token| &token.kind) {
-        Some(CssTokenKind::LeftCurlyBracket) => {
-            find_component_closer(tokens, start, CssBlockKind::Curly)
-                .map_or(tokens.len().saturating_sub(1), |index| index + 1)
-        }
-        Some(CssTokenKind::LeftSquareBracket) => {
-            find_component_closer(tokens, start, CssBlockKind::Square)
-                .map_or(tokens.len().saturating_sub(1), |index| index + 1)
-        }
-        Some(CssTokenKind::LeftParenthesis) => {
-            find_component_closer(tokens, start, CssBlockKind::Parenthesis)
-                .map_or(tokens.len().saturating_sub(1), |index| index + 1)
-        }
-        Some(CssTokenKind::Function(_)) => find_function_closer(tokens, start)
-            .map_or(tokens.len().saturating_sub(1), |index| index + 1),
-        Some(_) => start + 1,
-        None => start,
-    }
-}
-
-fn is_declaration_start(tokens: &[CssToken], start: usize, end_index: Option<usize>) -> bool {
-    if !matches!(
-        tokens.get(start).map(|token| &token.kind),
-        Some(CssTokenKind::Ident(_))
-    ) {
-        return false;
-    }
-
-    let mut cursor = start + 1;
-    while let Some(token) = tokens.get(cursor) {
-        if Some(cursor) == end_index {
-            return false;
-        }
-        match token.kind {
-            CssTokenKind::Whitespace | CssTokenKind::Comment(_) => cursor += 1,
-            CssTokenKind::Colon => return true,
-            _ => return false,
-        }
-    }
-
-    false
-}
-
-fn find_component_closer(tokens: &[CssToken], start: usize, kind: CssBlockKind) -> Option<usize> {
-    let mut depth = 0usize;
-    for (index, token) in tokens.iter().enumerate().skip(start + 1) {
-        match &token.kind {
-            kind_token if block_kind_matches_opener(kind, kind_token) => depth += 1,
-            kind_token if block_kind_matches_closer(kind, kind_token) => {
-                if depth == 0 {
-                    return Some(index);
-                }
-                depth -= 1;
-            }
-            CssTokenKind::Eof => return Some(index),
-            _ => {}
-        }
-    }
-    None
-}
-
-fn find_function_closer(tokens: &[CssToken], start: usize) -> Option<usize> {
-    let mut depth = 0usize;
-    for (index, token) in tokens.iter().enumerate().skip(start + 1) {
-        match token.kind {
-            CssTokenKind::Function(_) | CssTokenKind::LeftParenthesis => depth += 1,
-            CssTokenKind::RightParenthesis => {
-                if depth == 0 {
-                    return Some(index);
-                }
-                depth -= 1;
-            }
-            CssTokenKind::Eof => return Some(index),
-            _ => {}
-        }
-    }
-    None
-}
-
-fn block_kind_for_opener(kind: &CssTokenKind) -> Option<CssBlockKind> {
-    match kind {
-        CssTokenKind::LeftCurlyBracket => Some(CssBlockKind::Curly),
-        CssTokenKind::LeftSquareBracket => Some(CssBlockKind::Square),
-        CssTokenKind::LeftParenthesis => Some(CssBlockKind::Parenthesis),
-        _ => None,
-    }
-}
-
-fn block_kind_matches_opener(kind: CssBlockKind, token_kind: &CssTokenKind) -> bool {
-    matches!(
-        (kind, token_kind),
-        (CssBlockKind::Curly, CssTokenKind::LeftCurlyBracket)
-            | (CssBlockKind::Square, CssTokenKind::LeftSquareBracket)
-            | (CssBlockKind::Parenthesis, CssTokenKind::LeftParenthesis)
-    )
-}
-
-fn block_kind_matches_closer(kind: CssBlockKind, token_kind: &CssTokenKind) -> bool {
-    matches!(
-        (kind, token_kind),
-        (CssBlockKind::Curly, CssTokenKind::RightCurlyBracket)
-            | (CssBlockKind::Square, CssTokenKind::RightSquareBracket)
-            | (CssBlockKind::Parenthesis, CssTokenKind::RightParenthesis)
-    )
-}
-
-#[cfg(test)]
-mod tests {
-    use super::validate_token_stream_invariants;
-    use crate::syntax::{
-        CssInput, CssToken, CssTokenKind, CssTokenText, DiagnosticKind, ParseOptions, ParseStats,
-        SyntaxDiagnostic,
-    };
-
-    #[test]
-    fn token_stream_invariant_validation_rejects_non_trailing_eof() {
-        let input = CssInput::from("a");
-        let tokens = vec![
-            CssToken::new(CssTokenKind::Eof, input.span(0, 0).expect("eof span")),
-            CssToken::new(
-                CssTokenKind::Ident(CssTokenText::Owned("a".to_string())),
-                input.span(0, 1).expect("ident span"),
-            ),
-            CssToken::new(CssTokenKind::Eof, input.span(1, 1).expect("final eof span")),
-        ];
-        let mut diagnostics: Vec<SyntaxDiagnostic> = Vec::new();
-        let mut stats = ParseStats::default();
-
-        let valid = validate_token_stream_invariants(
-            &ParseOptions::stylesheet(),
-            &input,
-            &tokens,
-            0,
-            &mut diagnostics,
-            &mut stats,
-        );
-
-        assert!(!valid);
-        assert_eq!(diagnostics.len(), 1);
-        assert_eq!(diagnostics[0].kind, DiagnosticKind::InvariantViolation);
-    }
-
-    #[test]
-    fn token_stream_invariant_validation_rejects_missing_trailing_eof() {
-        let input = CssInput::from("a");
-        let tokens = vec![CssToken::new(
-            CssTokenKind::Ident(CssTokenText::Owned("a".to_string())),
-            input.span(0, 1).expect("ident span"),
-        )];
-        let mut diagnostics: Vec<SyntaxDiagnostic> = Vec::new();
-        let mut stats = ParseStats::default();
-
-        let valid = validate_token_stream_invariants(
-            &ParseOptions::stylesheet(),
-            &input,
-            &tokens,
-            0,
-            &mut diagnostics,
-            &mut stats,
-        );
-
-        assert!(!valid);
-        assert_eq!(diagnostics.len(), 1);
-        assert_eq!(diagnostics[0].kind, DiagnosticKind::InvariantViolation);
-    }
-
-    #[test]
-    fn token_stream_invariant_validation_rejects_spans_from_other_inputs() {
-        let input = CssInput::from("a");
-        let other = CssInput::from("a");
-        let tokens = vec![
-            CssToken::new(
-                CssTokenKind::Ident(CssTokenText::Owned("a".to_string())),
-                other.span(0, 1).expect("foreign ident span"),
-            ),
-            CssToken::new(CssTokenKind::Eof, input.span(1, 1).expect("final eof span")),
-        ];
-        let mut diagnostics: Vec<SyntaxDiagnostic> = Vec::new();
-        let mut stats = ParseStats::default();
-
-        let valid = validate_token_stream_invariants(
-            &ParseOptions::stylesheet(),
-            &input,
-            &tokens,
-            0,
-            &mut diagnostics,
-            &mut stats,
-        );
-
-        assert!(!valid);
-        assert_eq!(diagnostics.len(), 1);
-        assert_eq!(diagnostics[0].kind, DiagnosticKind::InvariantViolation);
-    }
-
-    #[test]
-    fn token_stream_invariant_validation_rejects_non_monotonic_spans() {
-        let input = CssInput::from("ab");
-        let tokens = vec![
-            CssToken::new(
-                CssTokenKind::Ident(CssTokenText::Owned("b".to_string())),
-                input.span(1, 2).expect("later ident span"),
-            ),
-            CssToken::new(
-                CssTokenKind::Ident(CssTokenText::Owned("a".to_string())),
-                input.span(0, 1).expect("earlier ident span"),
-            ),
-            CssToken::new(CssTokenKind::Eof, input.span(2, 2).expect("final eof span")),
-        ];
-        let mut diagnostics: Vec<SyntaxDiagnostic> = Vec::new();
-        let mut stats = ParseStats::default();
-
-        let valid = validate_token_stream_invariants(
-            &ParseOptions::stylesheet(),
-            &input,
-            &tokens,
-            0,
-            &mut diagnostics,
-            &mut stats,
-        );
-
-        assert!(!valid);
-        assert_eq!(diagnostics.len(), 1);
-        assert_eq!(diagnostics[0].kind, DiagnosticKind::InvariantViolation);
-    }
 }
