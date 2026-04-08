@@ -5,6 +5,16 @@
 //! containers. Selector/prelude/block payloads remain structurally preserved,
 //! while declarations now use model-layer containers with explicit property
 //! names, value attachment, and importance metadata.
+//!
+//! Span policy:
+//! - structural parsed nodes carry source spans directly (`Rule`,
+//!   `Declaration`, `DeclarationValue`, `ValueComponent`, etc.)
+//! - text-like helper payloads carry optional debug spans when they resolve
+//!   back to source (`PropertyName`, `ValueText`, `PreservedComponentList`)
+//! - `Stylesheet` carries an optional debug span covering the whole parsed
+//!   stylesheet input, including leading/trailing trivia
+//! - synthesized or unresolved helper payloads may legitimately report no
+//!   debug span
 
 mod entry;
 mod serialize;
@@ -30,6 +40,7 @@ pub use self::serialize::{
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Stylesheet {
     pub origin: CssParseOrigin,
+    pub span: Option<CssSpan>,
     pub rules: Vec<Rule>,
 }
 
@@ -37,8 +48,15 @@ impl Default for Stylesheet {
     fn default() -> Self {
         Self {
             origin: CssParseOrigin::Stylesheet,
+            span: None,
             rules: Vec::new(),
         }
+    }
+}
+
+impl Stylesheet {
+    pub fn debug_span(&self) -> Option<CssSpan> {
+        self.span
     }
 }
 
@@ -49,6 +67,15 @@ pub enum Rule {
     At(AtRule),
 }
 
+impl Rule {
+    pub fn span(&self) -> CssSpan {
+        match self {
+            Self::Style(rule) => rule.span,
+            Self::At(rule) => rule.span,
+        }
+    }
+}
+
 /// Preserved component-value slice kept for later selector or at-rule work.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct PreservedComponentList {
@@ -56,11 +83,23 @@ pub struct PreservedComponentList {
     pub values: Vec<CssComponentValue>,
 }
 
+impl PreservedComponentList {
+    pub fn debug_span(&self) -> Option<CssSpan> {
+        self.span
+    }
+}
+
 /// Declaration block attached to a style rule.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeclarationBlock {
     pub span: CssSpan,
     pub declarations: Vec<Declaration>,
+}
+
+impl DeclarationBlock {
+    pub fn span(&self) -> CssSpan {
+        self.span
+    }
 }
 
 /// Structured stylesheet declaration in source order.
@@ -72,12 +111,24 @@ pub struct Declaration {
     pub important: Option<ImportantAnnotation>,
 }
 
+impl Declaration {
+    pub fn span(&self) -> CssSpan {
+        self.span
+    }
+}
+
 /// Explicit property-name representation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PropertyName {
     pub span: Option<CssSpan>,
     pub kind: PropertyNameKind,
     pub text: Option<String>,
+}
+
+impl PropertyName {
+    pub fn debug_span(&self) -> Option<CssSpan> {
+        self.span
+    }
 }
 
 /// Property-name classification at the declaration layer.
@@ -99,10 +150,22 @@ pub struct DeclarationValue {
     pub components: Vec<ValueComponent>,
 }
 
+impl DeclarationValue {
+    pub fn span(&self) -> CssSpan {
+        self.span
+    }
+}
+
 /// `!important` annotation attached to a declaration.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ImportantAnnotation {
     pub span: CssSpan,
+}
+
+impl ImportantAnnotation {
+    pub fn span(&self) -> CssSpan {
+        self.span
+    }
 }
 
 /// Semi-typed declaration value component.
@@ -111,6 +174,16 @@ pub enum ValueComponent {
     Token(ValueToken),
     SimpleBlock(ValueBlock),
     Function(ValueFunction),
+}
+
+impl ValueComponent {
+    pub fn span(&self) -> CssSpan {
+        match self {
+            Self::Token(token) => token.span(),
+            Self::SimpleBlock(block) => block.span,
+            Self::Function(function) => function.span,
+        }
+    }
 }
 
 /// Semi-typed preserved token inside a declaration value.
@@ -180,6 +253,28 @@ pub enum ValueToken {
     },
 }
 
+impl ValueToken {
+    pub fn span(&self) -> CssSpan {
+        match self {
+            Self::Whitespace { span }
+            | Self::BadString { span }
+            | Self::BadUrl { span }
+            | Self::Delim { span, .. }
+            | Self::UnicodeRange { span, .. }
+            | Self::Symbol { span, .. } => *span,
+            Self::Comment { span, .. }
+            | Self::Ident { span, .. }
+            | Self::AtKeyword { span, .. }
+            | Self::Hash { span, .. }
+            | Self::String { span, .. }
+            | Self::Url { span, .. }
+            | Self::Number { span, .. }
+            | Self::Percentage { span, .. }
+            | Self::Dimension { span, .. } => *span,
+        }
+    }
+}
+
 /// Resolved text payload preserved for model-layer values.
 ///
 /// `text` is authored source text when it resolves successfully against the
@@ -192,6 +287,12 @@ pub struct ValueText {
     pub text: Option<String>,
 }
 
+impl ValueText {
+    pub fn debug_span(&self) -> Option<CssSpan> {
+        self.span
+    }
+}
+
 /// Structural block inside a declaration value.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ValueBlock {
@@ -200,12 +301,24 @@ pub struct ValueBlock {
     pub components: Vec<ValueComponent>,
 }
 
+impl ValueBlock {
+    pub fn span(&self) -> CssSpan {
+        self.span
+    }
+}
+
 /// Structural function inside a declaration value.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ValueFunction {
     pub span: CssSpan,
     pub name: ValueText,
     pub components: Vec<ValueComponent>,
+}
+
+impl ValueFunction {
+    pub fn span(&self) -> CssSpan {
+        self.span
+    }
 }
 
 /// Non-text symbolic token kinds preserved in the value model.
@@ -238,6 +351,12 @@ pub struct StyleRule {
     pub declarations: DeclarationBlock,
 }
 
+impl StyleRule {
+    pub fn span(&self) -> CssSpan {
+        self.span
+    }
+}
+
 /// Engine-facing at-rule.
 ///
 /// The name is canonicalized to ASCII lowercase when it resolves successfully
@@ -251,6 +370,12 @@ pub struct AtRule {
     pub block: Option<AtRuleBlock>,
 }
 
+impl AtRule {
+    pub fn span(&self) -> CssSpan {
+        self.span
+    }
+}
+
 /// Extensible at-rule block surface.
 ///
 /// Only preserved blocks are supported in O2. Future milestones can extend
@@ -260,12 +385,26 @@ pub enum AtRuleBlock {
     Preserved(PreservedBlock),
 }
 
+impl AtRuleBlock {
+    pub fn span(&self) -> CssSpan {
+        match self {
+            Self::Preserved(block) => block.span,
+        }
+    }
+}
+
 /// Structurally preserved at-rule block.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PreservedBlock {
     pub span: CssSpan,
     pub kind: CssBlockKind,
     pub values: Vec<CssComponentValue>,
+}
+
+impl PreservedBlock {
+    pub fn span(&self) -> CssSpan {
+        self.span
+    }
 }
 
 /// Parsed stylesheet result for the engine-facing rule model.
