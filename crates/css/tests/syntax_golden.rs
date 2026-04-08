@@ -1,6 +1,9 @@
+use css::syntax::{
+    parse_stylesheet_with_options as parse_syntax_stylesheet_with_options,
+    serialize_stylesheet_parse_for_snapshot as serialize_syntax_stylesheet_parse_for_snapshot,
+};
 use css::{
-    ParseOptions, parse_declarations_with_options, parse_stylesheet_with_options,
-    serialize_declaration_list_parse_for_snapshot, serialize_stylesheet_parse_for_snapshot,
+    ParseOptions, parse_declarations_with_options, serialize_declaration_list_parse_for_snapshot,
     serialize_tokenization_for_snapshot, tokenize_str,
 };
 
@@ -34,24 +37,24 @@ fn tokenizer_snapshot_golden_malformed_comment() {
 
 #[test]
 fn stylesheet_snapshot_golden_structured_valid() {
-    let parse = parse_stylesheet_with_options(
+    let parse = parse_syntax_stylesheet_with_options(
         fixture_input(include_str!("fixtures/parser/structured_valid.css")),
         &ParseOptions::stylesheet(),
     );
     assert_eq!(
-        serialize_stylesheet_parse_for_snapshot(&parse),
+        serialize_syntax_stylesheet_parse_for_snapshot(&parse),
         include_str!("fixtures/parser/structured_valid.snap"),
     );
 }
 
 #[test]
 fn stylesheet_snapshot_golden_malformed_recovery() {
-    let parse = parse_stylesheet_with_options(
+    let parse = parse_syntax_stylesheet_with_options(
         fixture_input(include_str!("fixtures/parser/malformed_recovery.css")),
         &ParseOptions::stylesheet(),
     );
     assert_eq!(
-        serialize_stylesheet_parse_for_snapshot(&parse),
+        serialize_syntax_stylesheet_parse_for_snapshot(&parse),
         include_str!("fixtures/parser/malformed_recovery.snap"),
     );
 }

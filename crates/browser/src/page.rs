@@ -1,5 +1,5 @@
 use crate::form_controls::{FormControlIndex, seed_input_state_from_dom};
-use css::{CompatStylesheet, ParseOptions, attach_styles, parse_stylesheet_with_options};
+use css::{ParseOptions, StylesheetParse, attach_styles, parse_stylesheet_with_options};
 use gfx::input::InputValueStore;
 use html::{
     Node,
@@ -17,7 +17,7 @@ pub struct PageState {
     pub form_controls: FormControlIndex,
 
     css_pending: HashSet<String>,
-    css_sheet: CompatStylesheet,
+    css_stylesheets: Vec<StylesheetParse>,
 }
 
 impl PageState {
@@ -29,7 +29,7 @@ impl PageState {
             visible_text_cache: String::new(),
             form_controls: FormControlIndex::default(),
             css_pending: HashSet::new(),
-            css_sheet: CompatStylesheet { rules: Vec::new() },
+            css_stylesheets: Vec::new(),
         }
     }
 
@@ -41,7 +41,7 @@ impl PageState {
         self.visible_text_cache.clear();
         self.form_controls = FormControlIndex::default();
         self.css_pending.clear();
-        self.css_sheet.rules.clear();
+        self.css_stylesheets.clear();
     }
 
     pub fn update_head_metadata(&mut self) {
@@ -58,11 +58,10 @@ impl PageState {
     }
 
     pub fn apply_css_block(&mut self, block: &str) {
-        let parsed = parse_stylesheet_with_options(block, &ParseOptions::stylesheet())
-            .to_compat_stylesheet();
-        self.css_sheet.rules.extend(parsed.rules);
+        let parsed = parse_stylesheet_with_options(block, &ParseOptions::stylesheet());
+        self.css_stylesheets.push(parsed);
         if let Some(dom_mut) = self.dom.as_deref_mut() {
-            attach_styles(dom_mut, &self.css_sheet);
+            attach_styles(dom_mut, &self.css_stylesheets);
         }
     }
 
@@ -95,13 +94,12 @@ impl PageState {
             collect_style_texts(dom_mut, &mut css_text);
 
             if !css_text.trim().is_empty() {
-                let parsed = parse_stylesheet_with_options(&css_text, &ParseOptions::stylesheet())
-                    .to_compat_stylesheet();
-                self.css_sheet.rules.extend(parsed.rules);
+                let parsed = parse_stylesheet_with_options(&css_text, &ParseOptions::stylesheet());
+                self.css_stylesheets.push(parsed);
             }
 
             // Apply all known stylesheets + inline style="" attrs
-            attach_styles(dom_mut, &self.css_sheet);
+            attach_styles(dom_mut, &self.css_stylesheets);
         }
     }
 
