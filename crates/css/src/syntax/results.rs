@@ -39,6 +39,11 @@ impl StylesheetParse {
         serialize_stylesheet_parse_for_snapshot(self)
     }
 
+    /// Migration-only compatibility projection for consumers that still need
+    /// the legacy cascade bridge shape.
+    ///
+    /// New engine-facing stylesheet work must prefer `css::model` as the
+    /// default downstream contract rather than building on this projection.
     pub fn to_compat_stylesheet(&self) -> CompatStylesheet {
         compat::project_stylesheet_to_compat(&self.input, &self.stylesheet)
     }

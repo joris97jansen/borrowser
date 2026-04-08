@@ -13,6 +13,10 @@ Related code:
 - `crates/browser/src/page.rs`
 - `crates/css/tests/model_cutover.rs`
 
+Related documents:
+- `docs/css/o6-canonical-model-serialization.md`
+- `docs/css/o8-cssom-contract-and-legacy-retirement.md`
+
 ## Implemented Result
 
 The stylesheet parser pipeline is now model-first:

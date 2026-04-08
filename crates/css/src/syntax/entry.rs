@@ -4,10 +4,11 @@ use super::{CompatStylesheet, Declaration, DeclarationListParse, ParseOptions, S
 
 /// Compatibility wrapper for callers that still need `CompatStylesheet`.
 ///
-/// New parser work must prefer `parse_stylesheet_with_options(...)` and operate
-/// on `StylesheetParse`. This wrapper exists only as a migration bridge for
-/// compatibility-scoped consumers that have not yet moved off
-/// `CompatStylesheet`.
+/// Within `css::syntax`, new parser work must prefer
+/// `parse_stylesheet_with_options(...)` and operate on `StylesheetParse`. At
+/// the crate root, whole-stylesheet parsing is now model-first through
+/// `css::parse_stylesheet_with_options(...)`; this wrapper remains only for
+/// explicit syntax-layer migration support.
 pub fn parse_stylesheet(input: &str) -> CompatStylesheet {
     parse_stylesheet_with_options(input, &ParseOptions::stylesheet()).to_compat_stylesheet()
 }

@@ -1,6 +1,6 @@
 # O1: Define CSS Rule/Value Model Architecture And Ownership Strategy
 
-Last updated: 2026-04-07  
+Last updated: 2026-04-08  
 Status: architecture contract implemented
 
 This document is the source-of-truth contract for Milestone O's first issue:
@@ -30,6 +30,7 @@ Related documents:
 - `docs/css/syntax-parser-contract.md`
 - `docs/css/n8-parser-contract-cutover.md`
 - `docs/css/n9-selector-structure-expansion.md`
+- `docs/css/o8-cssom-contract-and-legacy-retirement.md`
 
 ## Implemented Result
 

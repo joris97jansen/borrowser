@@ -1,6 +1,6 @@
 # N8: Document The CSS Parser Contract And Retire Prototype Parsing Path
 
-Last updated: 2026-04-06  
+Last updated: 2026-04-08  
 Status: implemented
 
 ## Implemented Result
@@ -12,13 +12,16 @@ parser stack is the defined basis for future CSS work, and the product browser
 path no longer treats the compatibility wrappers as the primary stylesheet
 parser interface.
 
-The shipped cutover state is:
+The shipped syntax-layer cutover state is:
 
 - `css::syntax` owns the tokenizer, structured parser, recovery behavior,
   invariants, limits, and stable snapshot surface
-- `parse_stylesheet_with_options(...)` and
-  `parse_declarations_with_options(...)` are the stable structured syntax
-  entrypoints
+- `css::syntax::parse_stylesheet_with_options(...)` and
+  `css::syntax::parse_declarations_with_options(...)` are the stable
+  structured syntax entrypoints
+- crate-root whole-stylesheet parsing is now model-first after Milestone O;
+  explicit syntax access remains available through `css::syntax::...` and root
+  aliases such as `css::parse_syntax_stylesheet_with_options(...)`
 - browser/runtime integration uses the structured parser path and only projects
   into compatibility forms at the cascade boundary
 - compatibility wrappers remain available only as migration bridges for code
@@ -50,10 +53,10 @@ This final issue exists to make the new architecture explicit and durable:
 
 ## Stable API After Cutover
 
-Preferred structured entrypoints:
+Preferred structured syntax entrypoints:
 
-- `parse_stylesheet_with_options(input, options) -> StylesheetParse`
-- `parse_declarations_with_options(input, options) -> DeclarationListParse`
+- `css::syntax::parse_stylesheet_with_options(input, options) -> StylesheetParse`
+- `css::syntax::parse_declarations_with_options(input, options) -> DeclarationListParse`
 - `tokenize_str_with_options(input, options) -> CssTokenization`
 
 Structured stylesheet contract:
@@ -65,8 +68,8 @@ Structured stylesheet contract:
 
 Compatibility bridges that remain intentionally secondary:
 
-- `parse_stylesheet(input) -> CompatStylesheet`
-- `parse_declarations(input) -> Vec<Declaration>`
+- `css::syntax::parse_stylesheet(input) -> CompatStylesheet`
+- `css::syntax::parse_declarations(input) -> Vec<Declaration>`
 - `CompatSelector`, `CompatRule`, `CompatStylesheet`
 
 These compatibility shapes are not the syntax-layer contract and must not be
@@ -87,9 +90,9 @@ Retired from the runtime browser path:
 - direct stylesheet parsing through the compatibility convenience wrapper as the
   default basis for page stylesheet handling
 
-The browser now parses stylesheet text through the structured syntax entrypoint
-and projects to compatibility forms only where the current cascade layer still
-requires them.
+The browser now parses stylesheet text through the structured syntax entrypoint,
+converts it into the engine-facing model, and projects to compatibility forms
+only where the current cascade layer still requires them.
 
 ## Known Deferred Limitations
 
