@@ -1,5 +1,6 @@
 pub mod cascade;
 pub mod computed;
+pub mod model;
 pub mod syntax;
 pub mod values;
 
