@@ -1,5 +1,6 @@
 use super::{
-    AtRuleBlock, PreservedBlock, PreservedComponentList, Rule, Stylesheet, StylesheetParse,
+    AtRuleBlock, PreservedBlock, PreservedComponentList, PropertyNameKind, Rule, Stylesheet,
+    StylesheetParse,
 };
 use crate::syntax::{
     CssBlockKind, CssComponentValue, CssInput, CssNumericKind, CssParseOrigin, CssTokenKind,
@@ -36,16 +37,46 @@ pub fn serialize_stylesheet_for_snapshot(input: &CssInput, sheet: &Stylesheet) -
                 {
                     writeln!(
                         out,
-                        "    declaration[{declaration_index}] {} @{}..{}",
-                        quoted_text(input, &declaration.name),
-                        declaration.span.start,
-                        declaration.span.end
+                        "    declaration[{declaration_index}] @{}..{}",
+                        declaration.span.start, declaration.span.end
                     )
                     .expect("write declaration header");
-                    for value in &declaration.value {
-                        writeln!(out, "      - {}", component_value_snapshot(input, value))
+                    writeln!(
+                        out,
+                        "      name(kind={}, text={}) {}",
+                        property_name_kind_label(declaration.name.kind),
+                        declaration
+                            .name
+                            .text
+                            .as_deref()
+                            .map(quoted_raw)
+                            .unwrap_or_else(|| "<invalid-name>".to_string()),
+                        span_label(declaration.name.span),
+                    )
+                    .expect("write property name");
+                    writeln!(
+                        out,
+                        "      value @{}..{}",
+                        declaration.value.span.start, declaration.value.span.end
+                    )
+                    .expect("write declaration value span");
+                    for value in &declaration.value.values {
+                        writeln!(out, "        - {}", component_value_snapshot(input, value))
                             .expect("write declaration value");
                     }
+                    writeln!(
+                        out,
+                        "      important {}",
+                        declaration
+                            .important
+                            .as_ref()
+                            .map(|important| format!(
+                                "@{}..{}",
+                                important.span.start, important.span.end
+                            ))
+                            .unwrap_or_else(|| "@<none>".to_string())
+                    )
+                    .expect("write important annotation");
                 }
             }
             Rule::At(rule) => {
@@ -207,6 +238,14 @@ fn origin_label(origin: CssParseOrigin) -> &'static str {
     match origin {
         CssParseOrigin::Stylesheet => "stylesheet",
         CssParseOrigin::StyleAttribute => "style-attribute",
+    }
+}
+
+fn property_name_kind_label(kind: PropertyNameKind) -> &'static str {
+    match kind {
+        PropertyNameKind::Standard => "standard",
+        PropertyNameKind::Custom => "custom",
+        PropertyNameKind::Invalid => "invalid",
     }
 }
 

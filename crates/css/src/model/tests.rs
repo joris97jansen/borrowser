@@ -1,5 +1,5 @@
-use super::{AtRuleBlock, Rule, parse_stylesheet, parse_stylesheet_with_options};
-use crate::syntax::ParseOptions;
+use super::{AtRuleBlock, PropertyNameKind, Rule, parse_stylesheet, parse_stylesheet_with_options};
+use crate::syntax::{CssComponentValue, CssTokenKind, ParseOptions};
 
 #[test]
 fn model_stylesheet_preserves_rule_order_and_supported_rule_kinds() {
@@ -63,6 +63,77 @@ fn model_stylesheet_keeps_style_rules_in_source_order_after_syntax_recovery() {
 }
 
 #[test]
+fn model_declarations_are_structured_and_preserve_order() {
+    let parse = parse_stylesheet_with_options(
+        "div { --Brand: red; COLOR: blue !important; font-size: 16px; }",
+        &ParseOptions::stylesheet(),
+    );
+
+    let Rule::Style(rule) = &parse.stylesheet.rules[0] else {
+        panic!("expected first rule to be a style rule");
+    };
+    let declarations = &rule.declarations.declarations;
+
+    assert_eq!(declarations.len(), 3);
+    assert_eq!(
+        declarations
+            .iter()
+            .map(|declaration| declaration.name.text.as_deref())
+            .collect::<Vec<_>>(),
+        vec![Some("--Brand"), Some("color"), Some("font-size")]
+    );
+
+    assert_eq!(declarations[0].name.kind, PropertyNameKind::Custom);
+    assert_eq!(declarations[1].name.kind, PropertyNameKind::Standard);
+    assert_eq!(declarations[2].name.kind, PropertyNameKind::Standard);
+
+    let important = declarations[1]
+        .important
+        .as_ref()
+        .expect("important annotation");
+    assert_eq!(
+        parse
+            .input
+            .slice(important.span)
+            .expect("important annotation slice"),
+        "!important"
+    );
+    assert_eq!(
+        parse
+            .input
+            .slice(declarations[1].value.span)
+            .expect("value slice"),
+        " blue "
+    );
+    assert!(!declaration_value_contains_important(
+        &parse,
+        &declarations[1].value.values
+    ));
+}
+
+#[test]
+fn empty_value_after_important_extraction_uses_zero_length_value_span() {
+    let parse =
+        parse_stylesheet_with_options("div { color:!important; }", &ParseOptions::stylesheet());
+
+    let Rule::Style(rule) = &parse.stylesheet.rules[0] else {
+        panic!("expected first rule to be a style rule");
+    };
+    let declaration = &rule.declarations.declarations[0];
+
+    assert!(declaration.value.values.is_empty());
+    assert_eq!(declaration.value.span.start, declaration.value.span.end);
+    assert_eq!(
+        declaration
+            .important
+            .as_ref()
+            .expect("important annotation")
+            .span,
+        parse.input.span(12, 22).expect("important span")
+    );
+}
+
+#[test]
 fn model_stylesheet_snapshot_is_stable() {
     let parse = parse_stylesheet_with_options(
         "@MEDIA screen { div { color: red; } } div { color: blue; }",
@@ -91,9 +162,12 @@ fn model_stylesheet_snapshot_is_stable() {
             "    - token(ident(\"div\")) @38..41\n",
             "    - token(whitespace) @41..42\n",
             "  declarations @42..58\n",
-            "    declaration[0] \"color\" @44..56\n",
-            "      - token(whitespace) @50..51\n",
-            "      - token(ident(\"blue\")) @51..55\n",
+            "    declaration[0] @44..56\n",
+            "      name(kind=standard, text=\"color\") @44..49\n",
+            "      value @50..55\n",
+            "        - token(whitespace) @50..51\n",
+            "        - token(ident(\"blue\")) @51..55\n",
+            "      important @<none>\n",
             "diagnostics\n",
             "stats\n",
             "  input_bytes: 58\n",
@@ -103,4 +177,21 @@ fn model_stylesheet_snapshot_is_stable() {
             "  hit_limit: false\n",
         )
     );
+}
+
+fn declaration_value_contains_important(
+    parse: &super::StylesheetParse,
+    values: &[CssComponentValue],
+) -> bool {
+    values.iter().any(|value| match value {
+        CssComponentValue::PreservedToken(token) => match &token.kind {
+            CssTokenKind::Delim('!') => true,
+            CssTokenKind::Ident(text) => text
+                .resolve(&parse.input)
+                .map(|text| text.eq_ignore_ascii_case("important"))
+                .unwrap_or(false),
+            _ => false,
+        },
+        _ => false,
+    })
 }
