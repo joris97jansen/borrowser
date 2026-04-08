@@ -1,13 +1,13 @@
 # CSS Syntax Layer Contract (Milestone N)
 
-Last updated: 2026-04-07  
+Last updated: 2026-04-08  
 Scope: `crates/css/src/syntax/mod.rs`, `crates/css/src/syntax/compat.rs`,
 `crates/css/src/syntax/input.rs`, `crates/css/src/syntax/token.rs`,
 `crates/css/src/syntax/serialize.rs`,
 `crates/css/src/syntax/tokenizer/mod.rs`,
 `crates/css/src/syntax/parser/mod.rs`,
-`crates/runtime_css/src/lib.rs`, and the
-current browser integration path in `crates/browser/src/page.rs`
+`crates/runtime_css/src/lib.rs`, and the explicit syntax-layer access paths
+used by tests and migration code
 
 This document is the source-of-truth contract for Milestone N's CSS syntax
 layer. It defines what the tokenizer and parser own, what malformed-input
@@ -16,6 +16,7 @@ replaced, and what downstream milestones may assume.
 
 Related downstream contract:
 - `docs/css/o1-rule-value-model-architecture.md`
+- `docs/css/o8-cssom-contract-and-legacy-retirement.md`
 
 Related code:
 - `crates/css/src/syntax/mod.rs`
@@ -174,10 +175,20 @@ It MUST NOT:
 
 ## Entry Points And Expected Outputs
 
-Milestone N defines two syntax entry points:
+Milestone N's syntax entry points are now explicit syntax-layer APIs:
 
-- `parse_stylesheet_with_options(input, options) -> StylesheetParse`
-- `parse_declarations_with_options(input, options) -> DeclarationListParse`
+- `css::syntax::parse_stylesheet_with_options(input, options) -> StylesheetParse`
+- `css::syntax::parse_declarations_with_options(input, options) -> DeclarationListParse`
+
+After Milestone O's parser/model cutover, crate-root whole-stylesheet parsing
+is no longer the syntax-layer default. The root stylesheet entrypoints now
+produce the engine-facing model parse result. Explicit syntax-layer access
+remains available through:
+
+- `css::syntax::parse_stylesheet_with_options(...)`
+- `css::parse_syntax_stylesheet_with_options(...)`
+- `css::syntax::parse_stylesheet(...)`
+- `css::parse_syntax_stylesheet(...)`
 
 The parser result contract is:
 
@@ -191,10 +202,10 @@ The parser result contract is:
   - total diagnostics emitted
   - whether a configured limit was hit
 
-Compatibility wrappers remain available:
+Compatibility wrappers remain available within the syntax layer:
 
-- `parse_stylesheet(input) -> CompatStylesheet`
-- `parse_declarations(input) -> Vec<Declaration>`
+- `css::syntax::parse_stylesheet(input) -> CompatStylesheet`
+- `css::syntax::parse_declarations(input) -> Vec<Declaration>`
 
 Downstream code may keep using these wrappers during migration, but they are
 compatibility bridges only. New parser work must target the structured
@@ -209,7 +220,8 @@ Current stylesheet parse shape:
   - parse stats
 - compatibility projection is explicit:
   - `StylesheetParse::to_compat_stylesheet()`
-  - `parse_stylesheet(input)` remains a migration convenience wrapper
+  - `css::syntax::parse_stylesheet(input)` remains a migration convenience
+    wrapper
 
 ## Handoff To Milestone O
 
@@ -217,6 +229,8 @@ Milestone N ends at syntax-layer structure. The next stable handoff is the
 engine-facing CSS rule/value model defined in:
 
 - `docs/css/o1-rule-value-model-architecture.md`
+- `docs/css/o7-parser-model-cutover.md`
+- `docs/css/o8-cssom-contract-and-legacy-retirement.md`
 
 That downstream model consumes syntax-layer output and may canonicalize names or
 normalize value structure where appropriate, but those responsibilities do not
