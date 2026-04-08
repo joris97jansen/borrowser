@@ -1,0 +1,35 @@
+version: 1
+model-stylesheet
+origin: stylesheet
+span: @0..75
+rule[0] style @5..61
+  selector @5..10
+    - token(ident("span")) @5..9
+    - token(whitespace) @9..10
+  declarations @10..61
+    declaration[0] @12..35
+      name(kind=standard, text="color") @12..17
+      value @18..24
+        - whitespace @18..19
+        - ident("blue") @19..23
+        - whitespace @23..24
+      important @24..34
+    declaration[1] @36..59
+      name(kind=standard, text="width") @36..41
+      value @42..58
+        - whitespace @42..43
+        - function(name="calc", components=[dimension(kind=integer, number="1", unit="px") @48..51, whitespace @51..52, delim("+") @52..53, whitespace @53..54, dimension(kind=integer, number="2", unit="px") @54..57]) @43..58
+      important @<none>
+rule[1] at(name="unknown") @62..75
+  prelude @70..74
+    - token(whitespace) @70..71
+    - token(ident("foo")) @71..74
+  block @<none>
+diagnostics
+  - warning unexpected-token @3
+stats
+  input_bytes: 75
+  rules_emitted: 2
+  declarations_emitted: 2
+  diagnostics_emitted: 1
+  hit_limit: false

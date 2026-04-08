@@ -1,0 +1,1 @@
+@MEDIA screen { div { color: red; } } div, span { --Brand: url(foo) calc(1px + 2px) [x]; COLOR: #abc !important; }

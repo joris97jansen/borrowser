@@ -1,6 +1,13 @@
+//! Stable snapshot serializer for the engine-facing CSS model.
+//!
+//! The snapshot surface is intentionally aligned with the model layer rather
+//! than authored CSS text. It is deterministic, versioned, and suitable for
+//! regression fixtures.
+
 use super::{
-    AtRuleBlock, PreservedBlock, PreservedComponentList, PropertyNameKind, Rule, Stylesheet,
-    StylesheetParse, ValueBlock, ValueComponent, ValueFunction, ValueSymbol, ValueText, ValueToken,
+    AtRuleBlock, Declaration, DeclarationValue, PreservedBlock, PreservedComponentList,
+    PropertyNameKind, Rule, Stylesheet, StylesheetParse, ValueBlock, ValueComponent, ValueFunction,
+    ValueSymbol, ValueText, ValueToken,
 };
 use crate::syntax::{
     CssBlockKind, CssComponentValue, CssInput, CssNumericKind, CssParseOrigin, CssTokenKind,
@@ -9,100 +16,40 @@ use crate::syntax::{
 use std::fmt::Write;
 
 const SNAPSHOT_VERSION: u32 = 1;
+const SNAPSHOT_KIND_STYLESHEET: &str = "model-stylesheet";
 
 pub fn serialize_stylesheet_for_snapshot(input: &CssInput, sheet: &Stylesheet) -> String {
     let mut out = String::new();
     writeln!(out, "version: {SNAPSHOT_VERSION}").expect("write snapshot version");
-    writeln!(out, "model-stylesheet").expect("write snapshot kind");
+    writeln!(out, "{SNAPSHOT_KIND_STYLESHEET}").expect("write snapshot kind");
     writeln!(out, "origin: {}", origin_label(sheet.origin)).expect("write origin");
     writeln!(out, "span: {}", span_label(sheet.debug_span())).expect("write stylesheet span");
 
     for (rule_index, rule) in sheet.rules.iter().enumerate() {
-        match rule {
-            Rule::Style(rule) => {
-                writeln!(
-                    out,
-                    "rule[{rule_index}] style @{}..{}",
-                    rule.span.start, rule.span.end
-                )
-                .expect("write style rule header");
-                write_component_list(&mut out, input, "selector", &rule.selector_source, 2);
-                writeln!(
-                    out,
-                    "  declarations @{}..{}",
-                    rule.declarations.span.start, rule.declarations.span.end
-                )
-                .expect("write declaration block header");
-                for (declaration_index, declaration) in
-                    rule.declarations.declarations.iter().enumerate()
-                {
-                    writeln!(
-                        out,
-                        "    declaration[{declaration_index}] @{}..{}",
-                        declaration.span.start, declaration.span.end
-                    )
-                    .expect("write declaration header");
-                    writeln!(
-                        out,
-                        "      name(kind={}, text={}) {}",
-                        property_name_kind_label(declaration.name.kind),
-                        declaration
-                            .name
-                            .text
-                            .as_deref()
-                            .map(quoted_raw)
-                            .unwrap_or_else(|| "<invalid-name>".to_string()),
-                        span_label(declaration.name.span),
-                    )
-                    .expect("write property name");
-                    writeln!(
-                        out,
-                        "      value @{}..{}",
-                        declaration.value.span.start, declaration.value.span.end
-                    )
-                    .expect("write declaration value span");
-                    for value in &declaration.value.components {
-                        writeln!(out, "        - {}", value_component_snapshot(input, value))
-                            .expect("write declaration value");
-                    }
-                    writeln!(
-                        out,
-                        "      important {}",
-                        declaration
-                            .important
-                            .as_ref()
-                            .map(|important| format!(
-                                "@{}..{}",
-                                important.span.start, important.span.end
-                            ))
-                            .unwrap_or_else(|| "@<none>".to_string())
-                    )
-                    .expect("write important annotation");
-                }
-            }
-            Rule::At(rule) => {
-                writeln!(
-                    out,
-                    "rule[{rule_index}] at(name={}) @{}..{}",
-                    rule.name
-                        .as_deref()
-                        .map(quoted_raw)
-                        .unwrap_or_else(|| "<invalid-name>".to_string()),
-                    rule.span.start,
-                    rule.span.end
-                )
-                .expect("write at-rule header");
-                write_component_list(&mut out, input, "prelude", &rule.prelude, 2);
-                match &rule.block {
-                    Some(AtRuleBlock::Preserved(block)) => {
-                        write_preserved_block(&mut out, input, block)
-                    }
-                    None => writeln!(out, "  block @<none>").expect("write absent block"),
-                }
-            }
-        }
+        write_rule(&mut out, input, rule, Some(rule_index), 0);
     }
 
+    out
+}
+
+/// Serialize one engine-facing rule using the stable model snapshot grammar.
+pub fn serialize_rule_for_snapshot(input: &CssInput, rule: &Rule) -> String {
+    let mut out = String::new();
+    write_rule(&mut out, input, rule, None, 0);
+    out
+}
+
+/// Serialize one engine-facing declaration using the stable model snapshot grammar.
+pub fn serialize_declaration_for_snapshot(input: &CssInput, declaration: &Declaration) -> String {
+    let mut out = String::new();
+    write_declaration(&mut out, input, declaration, None, 0);
+    out
+}
+
+/// Serialize one engine-facing declaration value using the stable model snapshot grammar.
+pub fn serialize_value_for_snapshot(input: &CssInput, value: &DeclarationValue) -> String {
+    let mut out = String::new();
+    write_declaration_value(&mut out, input, value, 0);
     out
 }
 
@@ -111,6 +58,132 @@ pub fn serialize_stylesheet_parse_for_snapshot(parse: &StylesheetParse) -> Strin
     serialize_diagnostics_for_snapshot(&mut out, &parse.diagnostics);
     serialize_stats_for_snapshot(&mut out, &parse.stats);
     out
+}
+
+fn write_rule(
+    out: &mut String,
+    input: &CssInput,
+    rule: &Rule,
+    index: Option<usize>,
+    indent: usize,
+) {
+    let indent_str = " ".repeat(indent);
+
+    match rule {
+        Rule::Style(rule) => {
+            writeln!(
+                out,
+                "{indent_str}{}style @{}..{}",
+                indexed_label("rule", index),
+                rule.span.start,
+                rule.span.end
+            )
+            .expect("write style rule header");
+            write_component_list(out, input, "selector", &rule.selector_source, indent + 2);
+            writeln!(
+                out,
+                "{}  declarations @{}..{}",
+                indent_str, rule.declarations.span.start, rule.declarations.span.end
+            )
+            .expect("write declaration block header");
+            for (declaration_index, declaration) in
+                rule.declarations.declarations.iter().enumerate()
+            {
+                write_declaration(out, input, declaration, Some(declaration_index), indent + 4);
+            }
+        }
+        Rule::At(rule) => {
+            writeln!(
+                out,
+                "{indent_str}{}at(name={}) @{}..{}",
+                indexed_label("rule", index),
+                rule.name
+                    .as_deref()
+                    .map(quoted_raw)
+                    .unwrap_or_else(|| "<invalid-name>".to_string()),
+                rule.span.start,
+                rule.span.end
+            )
+            .expect("write at-rule header");
+            write_component_list(out, input, "prelude", &rule.prelude, indent + 2);
+            match &rule.block {
+                Some(AtRuleBlock::Preserved(block)) => {
+                    write_preserved_block(out, input, block, indent + 2)
+                }
+                None => writeln!(out, "{}  block @<none>", indent_str).expect("write absent block"),
+            }
+        }
+    }
+}
+
+fn write_declaration(
+    out: &mut String,
+    input: &CssInput,
+    declaration: &Declaration,
+    index: Option<usize>,
+    indent: usize,
+) {
+    let indent_str = " ".repeat(indent);
+
+    writeln!(
+        out,
+        "{indent_str}{}@{}..{}",
+        indexed_label("declaration", index),
+        declaration.span.start,
+        declaration.span.end
+    )
+    .expect("write declaration header");
+    writeln!(
+        out,
+        "{}  name(kind={}, text={}) {}",
+        indent_str,
+        property_name_kind_label(declaration.name.kind),
+        declaration
+            .name
+            .text
+            .as_deref()
+            .map(quoted_raw)
+            .unwrap_or_else(|| "<invalid-name>".to_string()),
+        span_label(declaration.name.span),
+    )
+    .expect("write property name");
+    write_declaration_value(out, input, &declaration.value, indent + 2);
+    writeln!(
+        out,
+        "{}  important {}",
+        indent_str,
+        declaration
+            .important
+            .as_ref()
+            .map(|important| format!("@{}..{}", important.span.start, important.span.end))
+            .unwrap_or_else(|| "@<none>".to_string())
+    )
+    .expect("write important annotation");
+}
+
+fn write_declaration_value(
+    out: &mut String,
+    input: &CssInput,
+    value: &DeclarationValue,
+    indent: usize,
+) {
+    let indent_str = " ".repeat(indent);
+
+    writeln!(
+        out,
+        "{indent_str}value @{}..{}",
+        value.span.start, value.span.end
+    )
+    .expect("write declaration value span");
+    for component in &value.components {
+        writeln!(
+            out,
+            "{}  - {}",
+            indent_str,
+            value_component_snapshot(input, component)
+        )
+        .expect("write declaration value");
+    }
 }
 
 fn write_component_list(
@@ -133,18 +206,35 @@ fn write_component_list(
     }
 }
 
-fn write_preserved_block(out: &mut String, input: &CssInput, block: &PreservedBlock) {
+fn indexed_label(label: &str, index: Option<usize>) -> String {
+    match index {
+        Some(index) => format!("{label}[{index}] "),
+        None => format!("{label} "),
+    }
+}
+
+fn write_preserved_block(
+    out: &mut String,
+    input: &CssInput,
+    block: &PreservedBlock,
+    indent: usize,
+) {
+    let indent_str = " ".repeat(indent);
     writeln!(
         out,
-        "  block(kind=preserved:{}) @{}..{}",
+        "{indent_str}block(kind=preserved:{}) @{}..{}",
         block_kind_label(block.kind),
         block.span.start,
         block.span.end
     )
     .expect("write preserved block header");
     for value in &block.values {
-        writeln!(out, "    - {}", component_value_snapshot(input, value))
-            .expect("write preserved block value");
+        writeln!(
+            out,
+            "{indent_str}  - {}",
+            component_value_snapshot(input, value)
+        )
+        .expect("write preserved block value");
     }
 }
 

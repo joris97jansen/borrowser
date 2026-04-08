@@ -1,0 +1,47 @@
+version: 1
+model-stylesheet
+origin: stylesheet
+span: @0..114
+rule[0] at(name="media") @0..37
+  prelude @6..14
+    - token(whitespace) @6..7
+    - token(ident("screen")) @7..13
+    - token(whitespace) @13..14
+  block(kind=preserved:curly) @14..37
+    - token(whitespace) @15..16
+    - token(ident("div")) @16..19
+    - token(whitespace) @19..20
+    - simple-block(kind=curly, text="{ color: red; }") @20..35
+    - token(whitespace) @35..36
+rule[1] style @38..114
+  selector @38..48
+    - token(ident("div")) @38..41
+    - token(comma) @41..42
+    - token(whitespace) @42..43
+    - token(ident("span")) @43..47
+    - token(whitespace) @47..48
+  declarations @48..114
+    declaration[0] @50..88
+      name(kind=custom, text="--Brand") @50..57
+      value @58..87
+        - whitespace @58..59
+        - url("foo") @59..67
+        - whitespace @67..68
+        - function(name="calc", components=[dimension(kind=integer, number="1", unit="px") @73..76, whitespace @76..77, delim("+") @77..78, whitespace @78..79, dimension(kind=integer, number="2", unit="px") @79..82]) @68..83
+        - whitespace @83..84
+        - simple-block(kind=square, components=[ident("x") @85..86]) @84..87
+      important @<none>
+    declaration[1] @89..112
+      name(kind=standard, text="color") @89..94
+      value @95..101
+        - whitespace @95..96
+        - hash(kind=id, text="abc") @96..100
+        - whitespace @100..101
+      important @101..111
+diagnostics
+stats
+  input_bytes: 114
+  rules_emitted: 2
+  declarations_emitted: 2
+  diagnostics_emitted: 0
+  hit_limit: false

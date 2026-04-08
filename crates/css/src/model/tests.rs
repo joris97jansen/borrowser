@@ -1,6 +1,7 @@
 use super::{
     AtRuleBlock, PropertyNameKind, Rule, ValueComponent, ValueToken, parse_stylesheet,
-    parse_stylesheet_with_options,
+    parse_stylesheet_with_options, serialize_declaration_for_snapshot, serialize_rule_for_snapshot,
+    serialize_value_for_snapshot,
 };
 use crate::syntax::{CssBlockKind, CssNumericKind, ParseOptions};
 
@@ -291,48 +292,69 @@ fn model_value_components_cover_representative_forms() {
 }
 
 #[test]
-fn model_stylesheet_snapshot_is_stable() {
+fn model_rule_declaration_and_value_serializers_are_stable() {
     let parse = parse_stylesheet_with_options(
-        "@MEDIA screen { div { color: red; } } div { color: blue; }",
+        "div { color: blue !important; } @unknown foo;",
         &ParseOptions::stylesheet(),
     );
 
+    let Rule::Style(style_rule) = &parse.stylesheet.rules[0] else {
+        panic!("expected first rule to be a style rule");
+    };
+    let declaration = &style_rule.declarations.declarations[0];
+    let Rule::At(at_rule) = &parse.stylesheet.rules[1] else {
+        panic!("expected second rule to be an at-rule");
+    };
+
     assert_eq!(
-        parse.to_debug_snapshot(),
+        serialize_rule_for_snapshot(&parse.input, &Rule::Style(style_rule.clone())),
         concat!(
-            "version: 1\n",
-            "model-stylesheet\n",
-            "origin: stylesheet\n",
-            "span: @0..58\n",
-            "rule[0] at(name=\"media\") @0..37\n",
-            "  prelude @6..14\n",
-            "    - token(whitespace) @6..7\n",
-            "    - token(ident(\"screen\")) @7..13\n",
-            "    - token(whitespace) @13..14\n",
-            "  block(kind=preserved:curly) @14..37\n",
-            "    - token(whitespace) @15..16\n",
-            "    - token(ident(\"div\")) @16..19\n",
-            "    - token(whitespace) @19..20\n",
-            "    - simple-block(kind=curly, text=\"{ color: red; }\") @20..35\n",
-            "    - token(whitespace) @35..36\n",
-            "rule[1] style @38..58\n",
-            "  selector @38..42\n",
-            "    - token(ident(\"div\")) @38..41\n",
-            "    - token(whitespace) @41..42\n",
-            "  declarations @42..58\n",
-            "    declaration[0] @44..56\n",
-            "      name(kind=standard, text=\"color\") @44..49\n",
-            "      value @50..55\n",
-            "        - whitespace @50..51\n",
-            "        - ident(\"blue\") @51..55\n",
-            "      important @<none>\n",
-            "diagnostics\n",
-            "stats\n",
-            "  input_bytes: 58\n",
-            "  rules_emitted: 2\n",
-            "  declarations_emitted: 1\n",
-            "  diagnostics_emitted: 0\n",
-            "  hit_limit: false\n",
+            "rule style @0..31\n",
+            "  selector @0..4\n",
+            "    - token(ident(\"div\")) @0..3\n",
+            "    - token(whitespace) @3..4\n",
+            "  declarations @4..31\n",
+            "    declaration[0] @6..29\n",
+            "      name(kind=standard, text=\"color\") @6..11\n",
+            "      value @12..18\n",
+            "        - whitespace @12..13\n",
+            "        - ident(\"blue\") @13..17\n",
+            "        - whitespace @17..18\n",
+            "      important @18..28\n",
+        )
+    );
+
+    assert_eq!(
+        serialize_rule_for_snapshot(&parse.input, &Rule::At(at_rule.clone())),
+        concat!(
+            "rule at(name=\"unknown\") @32..45\n",
+            "  prelude @40..44\n",
+            "    - token(whitespace) @40..41\n",
+            "    - token(ident(\"foo\")) @41..44\n",
+            "  block @<none>\n",
+        )
+    );
+
+    assert_eq!(
+        serialize_declaration_for_snapshot(&parse.input, declaration),
+        concat!(
+            "declaration @6..29\n",
+            "  name(kind=standard, text=\"color\") @6..11\n",
+            "  value @12..18\n",
+            "    - whitespace @12..13\n",
+            "    - ident(\"blue\") @13..17\n",
+            "    - whitespace @17..18\n",
+            "  important @18..28\n",
+        )
+    );
+
+    assert_eq!(
+        serialize_value_for_snapshot(&parse.input, &declaration.value),
+        concat!(
+            "value @12..18\n",
+            "  - whitespace @12..13\n",
+            "  - ident(\"blue\") @13..17\n",
+            "  - whitespace @17..18\n",
         )
     );
 }
