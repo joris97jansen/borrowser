@@ -2,9 +2,9 @@
 //!
 //! This module is the first concrete implementation step of Milestone O. It
 //! sits downstream of `css::syntax` and owns long-lived stylesheet/rule
-//! containers while deliberately preserving syntax-layer component values for
-//! selector/prelude/block payloads until later declaration/value milestones
-//! replace those inner payloads with richer model-layer types.
+//! containers. Selector/prelude/block payloads remain structurally preserved,
+//! while declarations now use model-layer containers with explicit property
+//! names, value attachment, and importance metadata.
 
 mod entry;
 mod serialize;
@@ -13,7 +13,7 @@ mod serialize;
 mod tests;
 
 use crate::syntax::{
-    CssBlockKind, CssComponentValue, CssDeclaration, CssInput, CssParseOrigin, CssSpan, ParseStats,
+    CssBlockKind, CssComponentValue, CssInput, CssParseOrigin, CssSpan, ParseStats,
     SyntaxDiagnostic,
 };
 
@@ -57,13 +57,52 @@ pub struct PreservedComponentList {
 }
 
 /// Declaration block attached to a style rule.
-///
-/// Declarations remain syntax-backed at this stage; later O-milestone work will
-/// replace the declaration/value payloads with dedicated model-layer forms.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeclarationBlock {
     pub span: CssSpan,
-    pub declarations: Vec<CssDeclaration>,
+    pub declarations: Vec<Declaration>,
+}
+
+/// Structured stylesheet declaration in source order.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Declaration {
+    pub span: CssSpan,
+    pub name: PropertyName,
+    pub value: DeclarationValue,
+    pub important: Option<ImportantAnnotation>,
+}
+
+/// Explicit property-name representation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct PropertyName {
+    pub span: Option<CssSpan>,
+    pub kind: PropertyNameKind,
+    pub text: Option<String>,
+}
+
+/// Property-name classification at the declaration layer.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PropertyNameKind {
+    Standard,
+    Custom,
+    Invalid,
+}
+
+/// Structurally preserved declaration value.
+///
+/// If the value becomes empty after structural extraction such as removing a
+/// trailing `!important` annotation, `span` is represented as a zero-length
+/// span at the original declaration value start.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct DeclarationValue {
+    pub span: CssSpan,
+    pub values: Vec<CssComponentValue>,
+}
+
+/// `!important` annotation attached to a declaration.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ImportantAnnotation {
+    pub span: CssSpan,
 }
 
 /// Engine-facing style rule.
