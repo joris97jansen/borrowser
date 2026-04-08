@@ -29,7 +29,9 @@ use crate::syntax::{
 
 pub use self::entry::{parse_stylesheet, parse_stylesheet_with_options};
 pub use self::serialize::{
+    serialize_declaration_for_snapshot, serialize_rule_for_snapshot,
     serialize_stylesheet_for_snapshot, serialize_stylesheet_parse_for_snapshot,
+    serialize_value_for_snapshot,
 };
 
 /// Engine-facing stylesheet model built from structured syntax output.
