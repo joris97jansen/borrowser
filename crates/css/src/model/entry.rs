@@ -1,11 +1,12 @@
 use super::{
     AtRule, AtRuleBlock, Declaration, DeclarationBlock, DeclarationValue, ImportantAnnotation,
     PreservedBlock, PreservedComponentList, PropertyName, PropertyNameKind, Rule, StyleRule,
-    Stylesheet, StylesheetParse,
+    Stylesheet, StylesheetParse, ValueBlock, ValueComponent, ValueFunction, ValueSymbol, ValueText,
+    ValueToken,
 };
 use crate::syntax::{
-    self, CssComponentValue, CssInput, CssParseOrigin, CssRule, CssTokenKind, CssTokenText,
-    ParseOptions,
+    self, CssComponentValue, CssInput, CssParseOrigin, CssRule, CssToken, CssTokenKind,
+    CssTokenText, ParseOptions,
 };
 
 /// Parse a stylesheet directly into the engine-facing rule model using default
@@ -100,7 +101,7 @@ fn build_declaration(input: &CssInput, declaration: &syntax::CssDeclaration) -> 
         name: build_property_name(input, &declaration.name),
         value: DeclarationValue {
             span: declaration_value_span(declaration.value_span, &value_values),
-            values: value_values,
+            components: build_value_components(input, &value_values),
         },
         important,
     }
@@ -185,6 +186,134 @@ fn declaration_value_span(
         )
         .expect("empty declaration value span")
     })
+}
+
+fn build_value_components(input: &CssInput, values: &[CssComponentValue]) -> Vec<ValueComponent> {
+    values
+        .iter()
+        .map(|value| build_value_component(input, value))
+        .collect()
+}
+
+fn build_value_component(input: &CssInput, value: &CssComponentValue) -> ValueComponent {
+    match value {
+        CssComponentValue::PreservedToken(token) => {
+            ValueComponent::Token(build_value_token(input, token))
+        }
+        CssComponentValue::SimpleBlock(block) => ValueComponent::SimpleBlock(ValueBlock {
+            span: block.span,
+            kind: block.kind,
+            components: build_value_components(input, &block.value),
+        }),
+        CssComponentValue::Function(function) => ValueComponent::Function(ValueFunction {
+            span: function.span,
+            name: build_value_text(input, &function.name),
+            components: build_value_components(input, &function.value),
+        }),
+    }
+}
+
+fn build_value_token(input: &CssInput, token: &CssToken) -> ValueToken {
+    match &token.kind {
+        CssTokenKind::Whitespace => ValueToken::Whitespace { span: token.span },
+        CssTokenKind::Comment(text) => ValueToken::Comment {
+            span: token.span,
+            text: build_value_text(input, text),
+        },
+        CssTokenKind::Ident(text) => ValueToken::Ident {
+            span: token.span,
+            text: build_value_text(input, text),
+        },
+        CssTokenKind::Function(_) => {
+            unreachable!(
+                "unexpected raw function token in declaration value conversion; expected CssComponentValue::Function"
+            )
+        }
+        CssTokenKind::AtKeyword(text) => ValueToken::AtKeyword {
+            span: token.span,
+            text: build_value_text(input, text),
+        },
+        CssTokenKind::Hash { value, kind } => ValueToken::Hash {
+            span: token.span,
+            kind: *kind,
+            text: build_value_text(input, value),
+        },
+        CssTokenKind::String(text) => ValueToken::String {
+            span: token.span,
+            text: build_value_text(input, text),
+        },
+        CssTokenKind::BadString => ValueToken::BadString { span: token.span },
+        CssTokenKind::Url(text) => ValueToken::Url {
+            span: token.span,
+            text: build_value_text(input, text),
+        },
+        CssTokenKind::BadUrl => ValueToken::BadUrl { span: token.span },
+        CssTokenKind::Delim(value) => ValueToken::Delim {
+            span: token.span,
+            value: *value,
+        },
+        CssTokenKind::Number(number) => ValueToken::Number {
+            span: token.span,
+            kind: number.kind,
+            text: build_value_text(input, &number.repr),
+        },
+        CssTokenKind::Percentage(number) => ValueToken::Percentage {
+            span: token.span,
+            kind: number.kind,
+            text: build_value_text(input, &number.repr),
+        },
+        CssTokenKind::Dimension(dimension) => ValueToken::Dimension {
+            span: token.span,
+            kind: dimension.number.kind,
+            number: build_value_text(input, &dimension.number.repr),
+            unit: build_value_text(input, &dimension.unit),
+        },
+        CssTokenKind::UnicodeRange(range) => ValueToken::UnicodeRange {
+            span: token.span,
+            range: *range,
+        },
+        CssTokenKind::Colon => build_symbol_token(token.span, ValueSymbol::Colon),
+        CssTokenKind::Semicolon => build_symbol_token(token.span, ValueSymbol::Semicolon),
+        CssTokenKind::Comma => build_symbol_token(token.span, ValueSymbol::Comma),
+        CssTokenKind::LeftSquareBracket => {
+            build_symbol_token(token.span, ValueSymbol::LeftSquareBracket)
+        }
+        CssTokenKind::RightSquareBracket => {
+            build_symbol_token(token.span, ValueSymbol::RightSquareBracket)
+        }
+        CssTokenKind::LeftParenthesis => {
+            build_symbol_token(token.span, ValueSymbol::LeftParenthesis)
+        }
+        CssTokenKind::RightParenthesis => {
+            build_symbol_token(token.span, ValueSymbol::RightParenthesis)
+        }
+        CssTokenKind::LeftCurlyBracket => {
+            build_symbol_token(token.span, ValueSymbol::LeftCurlyBracket)
+        }
+        CssTokenKind::RightCurlyBracket => {
+            build_symbol_token(token.span, ValueSymbol::RightCurlyBracket)
+        }
+        CssTokenKind::IncludeMatch => build_symbol_token(token.span, ValueSymbol::IncludeMatch),
+        CssTokenKind::DashMatch => build_symbol_token(token.span, ValueSymbol::DashMatch),
+        CssTokenKind::PrefixMatch => build_symbol_token(token.span, ValueSymbol::PrefixMatch),
+        CssTokenKind::SuffixMatch => build_symbol_token(token.span, ValueSymbol::SuffixMatch),
+        CssTokenKind::SubstringMatch => build_symbol_token(token.span, ValueSymbol::SubstringMatch),
+        CssTokenKind::Column => build_symbol_token(token.span, ValueSymbol::Column),
+        CssTokenKind::Cdo => build_symbol_token(token.span, ValueSymbol::Cdo),
+        CssTokenKind::Cdc => build_symbol_token(token.span, ValueSymbol::Cdc),
+        CssTokenKind::Eof => panic!("unexpected EOF token in declaration value component"),
+    }
+}
+
+fn build_symbol_token(span: crate::syntax::CssSpan, kind: ValueSymbol) -> ValueToken {
+    ValueToken::Symbol { span, kind }
+}
+
+fn build_value_text(input: &CssInput, text: &CssTokenText) -> ValueText {
+    ValueText {
+        span: token_text_span(text),
+        text: text.resolve(input).map(|text| text.into_owned()),
+    }
 }
 
 fn component_list_span(values: &[CssComponentValue]) -> Option<crate::syntax::CssSpan> {

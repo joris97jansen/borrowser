@@ -13,8 +13,8 @@ mod serialize;
 mod tests;
 
 use crate::syntax::{
-    CssBlockKind, CssComponentValue, CssInput, CssParseOrigin, CssSpan, ParseStats,
-    SyntaxDiagnostic,
+    CssBlockKind, CssComponentValue, CssHashKind, CssInput, CssNumericKind, CssParseOrigin,
+    CssSpan, CssUnicodeRange, ParseStats, SyntaxDiagnostic,
 };
 
 pub use self::entry::{parse_stylesheet, parse_stylesheet_with_options};
@@ -96,13 +96,138 @@ pub enum PropertyNameKind {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct DeclarationValue {
     pub span: CssSpan,
-    pub values: Vec<CssComponentValue>,
+    pub components: Vec<ValueComponent>,
 }
 
 /// `!important` annotation attached to a declaration.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ImportantAnnotation {
     pub span: CssSpan,
+}
+
+/// Semi-typed declaration value component.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ValueComponent {
+    Token(ValueToken),
+    SimpleBlock(ValueBlock),
+    Function(ValueFunction),
+}
+
+/// Semi-typed preserved token inside a declaration value.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ValueToken {
+    Whitespace {
+        span: CssSpan,
+    },
+    Comment {
+        span: CssSpan,
+        text: ValueText,
+    },
+    Ident {
+        span: CssSpan,
+        text: ValueText,
+    },
+    AtKeyword {
+        span: CssSpan,
+        text: ValueText,
+    },
+    Hash {
+        span: CssSpan,
+        kind: CssHashKind,
+        text: ValueText,
+    },
+    String {
+        span: CssSpan,
+        text: ValueText,
+    },
+    BadString {
+        span: CssSpan,
+    },
+    Url {
+        span: CssSpan,
+        text: ValueText,
+    },
+    BadUrl {
+        span: CssSpan,
+    },
+    Delim {
+        span: CssSpan,
+        value: char,
+    },
+    Number {
+        span: CssSpan,
+        kind: CssNumericKind,
+        text: ValueText,
+    },
+    Percentage {
+        span: CssSpan,
+        kind: CssNumericKind,
+        text: ValueText,
+    },
+    Dimension {
+        span: CssSpan,
+        kind: CssNumericKind,
+        number: ValueText,
+        unit: ValueText,
+    },
+    UnicodeRange {
+        span: CssSpan,
+        range: CssUnicodeRange,
+    },
+    Symbol {
+        span: CssSpan,
+        kind: ValueSymbol,
+    },
+}
+
+/// Resolved text payload preserved for model-layer values.
+///
+/// `text` is authored source text when it resolves successfully against the
+/// owning input. It is preserved source text, not computed normalization.
+/// `None` means the text could not be resolved from the source-backed payload,
+/// not that the authored text was empty.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ValueText {
+    pub span: Option<CssSpan>,
+    pub text: Option<String>,
+}
+
+/// Structural block inside a declaration value.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ValueBlock {
+    pub span: CssSpan,
+    pub kind: CssBlockKind,
+    pub components: Vec<ValueComponent>,
+}
+
+/// Structural function inside a declaration value.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ValueFunction {
+    pub span: CssSpan,
+    pub name: ValueText,
+    pub components: Vec<ValueComponent>,
+}
+
+/// Non-text symbolic token kinds preserved in the value model.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ValueSymbol {
+    Colon,
+    Semicolon,
+    Comma,
+    LeftSquareBracket,
+    RightSquareBracket,
+    LeftParenthesis,
+    RightParenthesis,
+    LeftCurlyBracket,
+    RightCurlyBracket,
+    IncludeMatch,
+    DashMatch,
+    PrefixMatch,
+    SuffixMatch,
+    SubstringMatch,
+    Column,
+    Cdo,
+    Cdc,
 }
 
 /// Engine-facing style rule.

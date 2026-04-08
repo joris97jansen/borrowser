@@ -1,5 +1,8 @@
-use super::{AtRuleBlock, PropertyNameKind, Rule, parse_stylesheet, parse_stylesheet_with_options};
-use crate::syntax::{CssComponentValue, CssTokenKind, ParseOptions};
+use super::{
+    AtRuleBlock, PropertyNameKind, Rule, ValueComponent, ValueToken, parse_stylesheet,
+    parse_stylesheet_with_options,
+};
+use crate::syntax::{CssBlockKind, CssNumericKind, ParseOptions};
 
 #[test]
 fn model_stylesheet_preserves_rule_order_and_supported_rule_kinds() {
@@ -106,8 +109,7 @@ fn model_declarations_are_structured_and_preserve_order() {
         " blue "
     );
     assert!(!declaration_value_contains_important(
-        &parse,
-        &declarations[1].value.values
+        &declarations[1].value.components
     ));
 }
 
@@ -121,7 +123,7 @@ fn empty_value_after_important_extraction_uses_zero_length_value_span() {
     };
     let declaration = &rule.declarations.declarations[0];
 
-    assert!(declaration.value.values.is_empty());
+    assert!(declaration.value.components.is_empty());
     assert_eq!(declaration.value.span.start, declaration.value.span.end);
     assert_eq!(
         declaration
@@ -131,6 +133,83 @@ fn empty_value_after_important_extraction_uses_zero_length_value_span() {
             .span,
         parse.input.span(12, 22).expect("important span")
     );
+}
+
+#[test]
+fn model_value_components_cover_representative_forms() {
+    let parse = parse_stylesheet_with_options(
+        "div { value: 0.5 10px 5% \"hi\" #abc url(foo) calc(1px + 2px) [x]; }",
+        &ParseOptions::stylesheet(),
+    );
+
+    let Rule::Style(rule) = &parse.stylesheet.rules[0] else {
+        panic!("expected first rule to be a style rule");
+    };
+    let declaration = &rule.declarations.declarations[0];
+    let significant = declaration
+        .value
+        .components
+        .iter()
+        .filter(|value| !matches!(value, ValueComponent::Token(ValueToken::Whitespace { .. })))
+        .collect::<Vec<_>>();
+
+    assert!(matches!(
+        significant[0],
+        ValueComponent::Token(ValueToken::Number {
+            kind: CssNumericKind::Number,
+            ..
+        })
+    ));
+    assert!(matches!(
+        significant[1],
+        ValueComponent::Token(ValueToken::Dimension {
+            kind: CssNumericKind::Integer,
+            ..
+        })
+    ));
+    assert!(matches!(
+        significant[2],
+        ValueComponent::Token(ValueToken::Percentage {
+            kind: CssNumericKind::Integer,
+            ..
+        })
+    ));
+    assert!(matches!(
+        significant[3],
+        ValueComponent::Token(ValueToken::String { .. })
+    ));
+    assert!(matches!(
+        significant[4],
+        ValueComponent::Token(ValueToken::Hash { .. })
+    ));
+    assert!(matches!(
+        significant[5],
+        ValueComponent::Token(ValueToken::Url { .. })
+    ));
+
+    let ValueComponent::Function(function) = significant[6] else {
+        panic!("expected function component");
+    };
+    assert_eq!(function.name.text.as_deref(), Some("calc"));
+    assert!(matches!(
+        function.components.as_slice(),
+        [
+            ValueComponent::Token(ValueToken::Dimension { .. }),
+            ValueComponent::Token(ValueToken::Whitespace { .. }),
+            ValueComponent::Token(ValueToken::Delim { value: '+', .. }),
+            ValueComponent::Token(ValueToken::Whitespace { .. }),
+            ValueComponent::Token(ValueToken::Dimension { .. }),
+        ]
+    ));
+
+    let ValueComponent::SimpleBlock(block) = significant[7] else {
+        panic!("expected simple block component");
+    };
+    assert_eq!(block.kind, CssBlockKind::Square);
+    assert!(matches!(
+        block.components.as_slice(),
+        [ValueComponent::Token(ValueToken::Ident { .. })]
+    ));
 }
 
 #[test]
@@ -165,8 +244,8 @@ fn model_stylesheet_snapshot_is_stable() {
             "    declaration[0] @44..56\n",
             "      name(kind=standard, text=\"color\") @44..49\n",
             "      value @50..55\n",
-            "        - token(whitespace) @50..51\n",
-            "        - token(ident(\"blue\")) @51..55\n",
+            "        - whitespace @50..51\n",
+            "        - ident(\"blue\") @51..55\n",
             "      important @<none>\n",
             "diagnostics\n",
             "stats\n",
@@ -179,15 +258,13 @@ fn model_stylesheet_snapshot_is_stable() {
     );
 }
 
-fn declaration_value_contains_important(
-    parse: &super::StylesheetParse,
-    values: &[CssComponentValue],
-) -> bool {
+fn declaration_value_contains_important(values: &[ValueComponent]) -> bool {
     values.iter().any(|value| match value {
-        CssComponentValue::PreservedToken(token) => match &token.kind {
-            CssTokenKind::Delim('!') => true,
-            CssTokenKind::Ident(text) => text
-                .resolve(&parse.input)
+        ValueComponent::Token(token) => match token {
+            ValueToken::Delim { value: '!', .. } => true,
+            ValueToken::Ident { text, .. } => text
+                .text
+                .as_deref()
                 .map(|text| text.eq_ignore_ascii_case("important"))
                 .unwrap_or(false),
             _ => false,
