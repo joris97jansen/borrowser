@@ -15,6 +15,7 @@ pub fn serialize_stylesheet_for_snapshot(input: &CssInput, sheet: &Stylesheet) -
     writeln!(out, "version: {SNAPSHOT_VERSION}").expect("write snapshot version");
     writeln!(out, "model-stylesheet").expect("write snapshot kind");
     writeln!(out, "origin: {}", origin_label(sheet.origin)).expect("write origin");
+    writeln!(out, "span: {}", span_label(sheet.debug_span())).expect("write stylesheet span");
 
     for (rule_index, rule) in sheet.rules.iter().enumerate() {
         match rule {

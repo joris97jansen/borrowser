@@ -66,6 +66,84 @@ fn model_stylesheet_keeps_style_rules_in_source_order_after_syntax_recovery() {
 }
 
 #[test]
+fn model_spans_cover_stylesheet_rules_declarations_and_value_nodes() {
+    let parse = parse_stylesheet_with_options(
+        "  div { color: blue !important; width: calc(1px + 2px); }  ",
+        &ParseOptions::stylesheet(),
+    );
+
+    assert_eq!(
+        parse
+            .input
+            .slice(parse.stylesheet.debug_span().expect("stylesheet span"))
+            .expect("stylesheet slice"),
+        "  div { color: blue !important; width: calc(1px + 2px); }  "
+    );
+
+    let Rule::Style(rule) = &parse.stylesheet.rules[0] else {
+        panic!("expected first rule to be a style rule");
+    };
+    assert_eq!(
+        parse.input.slice(rule.span()).expect("rule slice"),
+        "div { color: blue !important; width: calc(1px + 2px); }"
+    );
+    assert_eq!(
+        parse
+            .input
+            .slice(rule.selector_source.debug_span().expect("selector span"))
+            .expect("selector slice"),
+        "div "
+    );
+
+    let color = &rule.declarations.declarations[0];
+    assert_eq!(
+        parse.input.slice(color.span()).expect("declaration slice"),
+        "color: blue !important;"
+    );
+    assert_eq!(
+        parse
+            .input
+            .slice(color.name.debug_span().expect("property span"))
+            .expect("property slice"),
+        "color"
+    );
+    assert_eq!(
+        parse.input.slice(color.value.span()).expect("value slice"),
+        " blue "
+    );
+    assert_eq!(
+        parse
+            .input
+            .slice(color.important.as_ref().expect("important").span())
+            .expect("important slice"),
+        "!important"
+    );
+    assert_eq!(
+        parse
+            .input
+            .slice(color.value.components[1].span())
+            .expect("value token slice"),
+        "blue"
+    );
+
+    let width = &rule.declarations.declarations[1];
+    let ValueComponent::Function(function) = &width.value.components[1] else {
+        panic!("expected function component");
+    };
+    assert_eq!(
+        parse.input.slice(function.span()).expect("function slice"),
+        "calc(1px + 2px)"
+    );
+    assert_eq!(
+        parse
+            .input
+            .slice(function.name.debug_span().expect("function name span"))
+            .expect("function name slice"),
+        "calc"
+    );
+}
+
+#[test]
 fn model_declarations_are_structured_and_preserve_order() {
     let parse = parse_stylesheet_with_options(
         "div { --Brand: red; COLOR: blue !important; font-size: 16px; }",
@@ -225,6 +303,7 @@ fn model_stylesheet_snapshot_is_stable() {
             "version: 1\n",
             "model-stylesheet\n",
             "origin: stylesheet\n",
+            "span: @0..58\n",
             "rule[0] at(name=\"media\") @0..37\n",
             "  prelude @6..14\n",
             "    - token(whitespace) @6..7\n",

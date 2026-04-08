@@ -38,6 +38,7 @@ fn build_stylesheet(
 ) -> Stylesheet {
     Stylesheet {
         origin,
+        span: input.span(0, input.len_bytes()),
         rules: stylesheet
             .rules
             .iter()
