@@ -158,11 +158,12 @@ The syntax layer owns:
 * parser diagnostics and limit enforcement
 * stable debug/snapshot output for regression tests
 
-The shipped browser path parses stylesheet text through the structured
-syntax-layer entrypoints and only projects into compatibility stylesheet forms
-at the current cascade boundary. Milestone O formalizes the next layer after
-syntax parsing: an engine-owned stylesheet/rule/declaration/value model that is
-separate from both parser internals and selector/cascade semantics.
+The shipped browser path now treats the engine-facing model parse result as the
+default stylesheet product. Stylesheet text is parsed through the structured
+syntax-layer entrypoints, converted into the Milestone O rule/value model, and
+stored that way in page state. Compatibility projection still exists, but only
+inside the current cascade boundary while selector and cascade migration remain
+in progress.
 
 ### 2. **Engine Rule/Value Model**
 
@@ -373,7 +374,7 @@ Each tab maintains:
 ```rust
 struct PageState {
     dom: Option<Node>,
-    css_sheet: CompatStylesheet, // current cascade bridge storage after syntax-layer parsing
+    css_stylesheets: Vec<StylesheetParse>, // engine-facing model parse artifacts in stylesheet insertion order
     head: HeadMetadata,
     visible_text_cache: String,
 
@@ -382,6 +383,9 @@ struct PageState {
     layout_root: Option<LayoutBox>,
 }
 ```
+
+Compatibility projection still exists during migration, but it now happens
+inside the cascade boundary rather than in stored page state.
 
 This will soon enable:
 
