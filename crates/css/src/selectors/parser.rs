@@ -64,6 +64,13 @@ enum SegmentParseResult {
     },
 }
 
+enum SegmentParseError {
+    Invalid {
+        span: Option<CssSpan>,
+        reason: InvalidSelectorReason,
+    },
+}
+
 struct SegmentParser<'a> {
     input: &'a CssInput,
     values: &'a [CssComponentValue],
@@ -107,6 +114,14 @@ enum ExplicitCombinator {
     },
 }
 
+impl From<SegmentParseError> for SegmentParseResult {
+    fn from(error: SegmentParseError) -> Self {
+        match error {
+            SegmentParseError::Invalid { span, reason } => Self::Invalid { span, reason },
+        }
+    }
+}
+
 impl<'a> SegmentParser<'a> {
     fn parse(mut self, fallback_span: Option<CssSpan>) -> SegmentParseResult {
         let segment_span = component_list_span(self.values).or(fallback_span);
@@ -128,7 +143,7 @@ impl<'a> SegmentParser<'a> {
 
         let head = match self.parse_compound() {
             Ok(compound) => compound,
-            Err(result) => return result,
+            Err(error) => return error.into(),
         };
 
         let mut tail = Vec::new();
@@ -178,7 +193,7 @@ impl<'a> SegmentParser<'a> {
 
             let next = match self.parse_compound() {
                 Ok(compound) => compound,
-                Err(SegmentParseResult::Invalid {
+                Err(SegmentParseError::Invalid {
                     span,
                     reason: InvalidSelectorReason::EmptyCompoundSelector,
                 }) => {
@@ -187,24 +202,24 @@ impl<'a> SegmentParser<'a> {
                         reason: InvalidSelectorReason::TrailingCombinator,
                     };
                 }
-                Err(result) => return result,
+                Err(error) => return error.into(),
             };
 
-            if self.unsupported.is_empty() {
-                if let (Some(combinator), Some(selector)) = (combinator, next.supported) {
-                    let combined_span = span_from_bounds(
-                        combinator_start.expect("combined selector start span"),
-                        selector.span(),
-                    )
-                    .expect("combined selector span");
-                    match CombinedSelector::new(combined_span, combinator, selector) {
-                        Ok(combined) => tail.push(combined),
-                        Err(error) => {
-                            return SegmentParseResult::Invalid {
-                                span: Some(combined_span),
-                                reason: map_structure_error(error),
-                            };
-                        }
+            if self.unsupported.is_empty()
+                && let (Some(combinator), Some(selector)) = (combinator, next.supported)
+            {
+                let combined_span = span_from_bounds(
+                    combinator_start.expect("combined selector start span"),
+                    selector.span(),
+                )
+                .expect("combined selector span");
+                match CombinedSelector::new(combined_span, combinator, selector) {
+                    Ok(combined) => tail.push(combined),
+                    Err(error) => {
+                        return SegmentParseResult::Invalid {
+                            span: Some(combined_span),
+                            reason: map_structure_error(error),
+                        };
                     }
                 }
             }
@@ -230,7 +245,7 @@ impl<'a> SegmentParser<'a> {
         }
     }
 
-    fn parse_compound(&mut self) -> Result<ParsedCompound, SegmentParseResult> {
+    fn parse_compound(&mut self) -> Result<ParsedCompound, SegmentParseError> {
         let mut type_selector = None;
         let mut subclasses = Vec::new();
         let mut saw_simple = false;
@@ -248,10 +263,7 @@ impl<'a> SegmentParser<'a> {
                 break;
             }
 
-            let parsed = match self.parse_simple_selector() {
-                Ok(parsed) => parsed,
-                Err(result) => return Err(result),
-            };
+            let parsed = self.parse_simple_selector()?;
 
             let parsed_span = parsed.span();
             if compound_start.is_none() {
@@ -263,7 +275,7 @@ impl<'a> SegmentParser<'a> {
             match parsed {
                 ParsedSimpleSelector::Type { selector, .. } => {
                     if type_selector.is_some() || !subclasses.is_empty() {
-                        return Err(SegmentParseResult::Invalid {
+                        return Err(SegmentParseError::Invalid {
                             span: Some(parsed_span),
                             reason: InvalidSelectorReason::MultipleTypeSelectors,
                         });
@@ -281,7 +293,7 @@ impl<'a> SegmentParser<'a> {
         }
 
         if !saw_simple {
-            return Err(SegmentParseResult::Invalid {
+            return Err(SegmentParseError::Invalid {
                 span: self.current_span(),
                 reason: InvalidSelectorReason::EmptyCompoundSelector,
             });
@@ -305,14 +317,14 @@ impl<'a> SegmentParser<'a> {
                 span,
                 supported: Some(selector),
             }),
-            Err(error) => Err(SegmentParseResult::Invalid {
+            Err(error) => Err(SegmentParseError::Invalid {
                 span: Some(span),
                 reason: map_structure_error(error),
             }),
         }
     }
 
-    fn parse_simple_selector(&mut self) -> Result<ParsedSimpleSelector, SegmentParseResult> {
+    fn parse_simple_selector(&mut self) -> Result<ParsedSimpleSelector, SegmentParseError> {
         let current = self
             .current_value()
             .expect("simple selector parse requires a current component");
@@ -323,11 +335,11 @@ impl<'a> SegmentParser<'a> {
                 self.index += 1;
                 self.parse_attribute_selector(block.span, &block.value)
             }
-            CssComponentValue::SimpleBlock(block) => Err(SegmentParseResult::Invalid {
+            CssComponentValue::SimpleBlock(block) => Err(SegmentParseError::Invalid {
                 span: Some(block.span),
                 reason: InvalidSelectorReason::UnexpectedComponentValue,
             }),
-            CssComponentValue::Function(function) => Err(SegmentParseResult::Invalid {
+            CssComponentValue::Function(function) => Err(SegmentParseError::Invalid {
                 span: Some(function.span),
                 reason: InvalidSelectorReason::UnexpectedComponentValue,
             }),
@@ -337,7 +349,7 @@ impl<'a> SegmentParser<'a> {
     fn parse_token_selector(
         &mut self,
         token: &CssToken,
-    ) -> Result<ParsedSimpleSelector, SegmentParseResult> {
+    ) -> Result<ParsedSimpleSelector, SegmentParseError> {
         match &token.kind {
             CssTokenKind::Ident(text) => {
                 if self.next_non_comment_is_namespace_delim() {
@@ -351,7 +363,7 @@ impl<'a> SegmentParser<'a> {
                 self.index += 1;
                 let name = selector_ident_from_text(self.input, text)?;
                 let selector = TypeSelector::named(token.span, name).map_err(|error| {
-                    SegmentParseResult::Invalid {
+                    SegmentParseError::Invalid {
                         span: Some(token.span),
                         reason: map_structure_error(error),
                     }
@@ -383,7 +395,7 @@ impl<'a> SegmentParser<'a> {
                 self.index += 1;
                 let name = selector_ident_from_text(self.input, value)?;
                 let selector = IdSelector::new(token.span, name).map_err(|error| {
-                    SegmentParseResult::Invalid {
+                    SegmentParseError::Invalid {
                         span: Some(token.span),
                         reason: map_structure_error(error),
                     }
@@ -393,7 +405,7 @@ impl<'a> SegmentParser<'a> {
                     selector: SubclassSelector::Id(selector),
                 })
             }
-            CssTokenKind::Hash { .. } => Err(SegmentParseResult::Invalid {
+            CssTokenKind::Hash { .. } => Err(SegmentParseError::Invalid {
                 span: Some(token.span),
                 reason: InvalidSelectorReason::UnexpectedComponentValue,
             }),
@@ -413,7 +425,7 @@ impl<'a> SegmentParser<'a> {
                     features: vec![UnsupportedSelectorFeature::Namespace],
                 })
             }
-            _ => Err(SegmentParseResult::Invalid {
+            _ => Err(SegmentParseError::Invalid {
                 span: Some(token.span),
                 reason: InvalidSelectorReason::UnexpectedComponentValue,
             }),
@@ -423,19 +435,19 @@ impl<'a> SegmentParser<'a> {
     fn parse_class_selector(
         &mut self,
         dot_span: CssSpan,
-    ) -> Result<ParsedSimpleSelector, SegmentParseResult> {
+    ) -> Result<ParsedSimpleSelector, SegmentParseError> {
         self.index += 1;
         self.skip_comments();
 
         let Some(CssComponentValue::PreservedToken(token)) = self.current_value() else {
-            return Err(SegmentParseResult::Invalid {
+            return Err(SegmentParseError::Invalid {
                 span: Some(dot_span),
                 reason: InvalidSelectorReason::UnexpectedComponentValue,
             });
         };
 
         let CssTokenKind::Ident(text) = &token.kind else {
-            return Err(SegmentParseResult::Invalid {
+            return Err(SegmentParseError::Invalid {
                 span: Some(token.span),
                 reason: InvalidSelectorReason::UnexpectedComponentValue,
             });
@@ -444,7 +456,7 @@ impl<'a> SegmentParser<'a> {
         let selector_span = span_from_bounds(dot_span, token.span).expect("class selector span");
         let name = selector_ident_from_text(self.input, text)?;
         let selector = ClassSelector::new(selector_span, name).map_err(|error| {
-            SegmentParseResult::Invalid {
+            SegmentParseError::Invalid {
                 span: Some(selector_span),
                 reason: map_structure_error(error),
             }
@@ -460,7 +472,7 @@ impl<'a> SegmentParser<'a> {
     fn parse_pseudo_selector(
         &mut self,
         first_colon_span: CssSpan,
-    ) -> Result<ParsedSimpleSelector, SegmentParseResult> {
+    ) -> Result<ParsedSimpleSelector, SegmentParseError> {
         self.index += 1;
         self.skip_comments();
 
@@ -503,7 +515,7 @@ impl<'a> SegmentParser<'a> {
                 function.span
             }
             _ => {
-                return Err(SegmentParseResult::Invalid {
+                return Err(SegmentParseError::Invalid {
                     span: Some(first_colon_span),
                     reason: InvalidSelectorReason::UnexpectedComponentValue,
                 });
@@ -520,12 +532,12 @@ impl<'a> SegmentParser<'a> {
         &mut self,
         block_span: CssSpan,
         values: &[CssComponentValue],
-    ) -> Result<ParsedSimpleSelector, SegmentParseResult> {
+    ) -> Result<ParsedSimpleSelector, SegmentParseError> {
         let mut index = 0usize;
         skip_attribute_trivia(values, &mut index);
 
         if index >= values.len() {
-            return Err(SegmentParseResult::Invalid {
+            return Err(SegmentParseError::Invalid {
                 span: Some(block_span),
                 reason: InvalidSelectorReason::MissingAttributeName,
             });
@@ -544,7 +556,7 @@ impl<'a> SegmentParser<'a> {
 
         if index >= values.len() {
             let selector = AttributeExistsSelector::new(block_span, name).map_err(|error| {
-                SegmentParseResult::Invalid {
+                SegmentParseError::Invalid {
                     span: Some(block_span),
                     reason: map_structure_error(error),
                 }
@@ -559,7 +571,7 @@ impl<'a> SegmentParser<'a> {
         skip_attribute_trivia(values, &mut index);
 
         if index >= values.len() {
-            return Err(SegmentParseResult::Invalid {
+            return Err(SegmentParseError::Invalid {
                 span: Some(block_span),
                 reason: InvalidSelectorReason::MissingAttributeValue,
             });
@@ -579,7 +591,7 @@ impl<'a> SegmentParser<'a> {
                 }
             }
 
-            return Err(SegmentParseResult::Invalid {
+            return Err(SegmentParseError::Invalid {
                 span: Some(name_span),
                 reason: InvalidSelectorReason::UnexpectedComponentValue,
             });
@@ -587,7 +599,7 @@ impl<'a> SegmentParser<'a> {
 
         let selector =
             AttributeMatchSelector::new(block_span, name, matcher, value).map_err(|error| {
-                SegmentParseResult::Invalid {
+                SegmentParseError::Invalid {
                     span: Some(block_span),
                     reason: map_structure_error(error),
                 }
@@ -848,16 +860,16 @@ fn span_from_bounds(start: CssSpan, end: CssSpan) -> Option<CssSpan> {
 fn selector_ident_from_text(
     input: &CssInput,
     text: &CssTokenText,
-) -> Result<SelectorIdent, SegmentParseResult> {
+) -> Result<SelectorIdent, SegmentParseError> {
     let value = text
         .resolve(input)
-        .ok_or_else(|| SegmentParseResult::Invalid {
+        .ok_or_else(|| SegmentParseError::Invalid {
             span: token_text_span(text),
             reason: InvalidSelectorReason::UnexpectedComponentValue,
         })?;
 
     SelectorIdent::new(value.into_owned(), token_text_span(text)).map_err(|error| {
-        SegmentParseResult::Invalid {
+        SegmentParseError::Invalid {
             span: token_text_span(text),
             reason: map_structure_error(error),
         }
@@ -867,10 +879,10 @@ fn selector_ident_from_text(
 fn selector_string_from_text(
     input: &CssInput,
     text: &CssTokenText,
-) -> Result<SelectorString, SegmentParseResult> {
+) -> Result<SelectorString, SegmentParseError> {
     let value = text
         .resolve(input)
-        .ok_or_else(|| SegmentParseResult::Invalid {
+        .ok_or_else(|| SegmentParseError::Invalid {
             span: token_text_span(text),
             reason: InvalidSelectorReason::UnexpectedComponentValue,
         })?;
@@ -921,9 +933,9 @@ fn parse_attribute_name(
     input: &CssInput,
     values: &[CssComponentValue],
     index: &mut usize,
-) -> Result<(SelectorIdent, CssSpan, bool), SegmentParseResult> {
+) -> Result<(SelectorIdent, CssSpan, bool), SegmentParseError> {
     let Some(value) = values.get(*index) else {
-        return Err(SegmentParseResult::Invalid {
+        return Err(SegmentParseError::Invalid {
             span: None,
             reason: InvalidSelectorReason::MissingAttributeName,
         });
@@ -953,7 +965,7 @@ fn parse_attribute_name(
             *index = consume_attribute_namespace_sequence(values, *index);
             Ok((placeholder, *span, true))
         }
-        _ => Err(SegmentParseResult::Invalid {
+        _ => Err(SegmentParseError::Invalid {
             span: Some(component_value_span(value)),
             reason: InvalidSelectorReason::MissingAttributeName,
         }),
@@ -1019,9 +1031,9 @@ fn consume_attribute_namespace_sequence(values: &[CssComponentValue], mut index:
 fn parse_attribute_matcher(
     values: &[CssComponentValue],
     index: &mut usize,
-) -> Result<AttributeMatcher, SegmentParseResult> {
+) -> Result<AttributeMatcher, SegmentParseError> {
     let Some(value) = values.get(*index) else {
-        return Err(SegmentParseResult::Invalid {
+        return Err(SegmentParseError::Invalid {
             span: None,
             reason: InvalidSelectorReason::UnexpectedComponentValue,
         });
@@ -1053,7 +1065,7 @@ fn parse_attribute_matcher(
             ..
         }) => AttributeMatcher::Substring,
         _ => {
-            return Err(SegmentParseResult::Invalid {
+            return Err(SegmentParseError::Invalid {
                 span: Some(component_value_span(value)),
                 reason: InvalidSelectorReason::UnexpectedComponentValue,
             });
@@ -1068,9 +1080,9 @@ fn parse_attribute_value(
     input: &CssInput,
     values: &[CssComponentValue],
     index: &mut usize,
-) -> Result<AttributeValue, SegmentParseResult> {
+) -> Result<AttributeValue, SegmentParseError> {
     let Some(value) = values.get(*index) else {
-        return Err(SegmentParseResult::Invalid {
+        return Err(SegmentParseError::Invalid {
             span: None,
             reason: InvalidSelectorReason::MissingAttributeValue,
         });
@@ -1086,7 +1098,7 @@ fn parse_attribute_value(
             ..
         }) => AttributeValue::string(selector_string_from_text(input, text)?),
         _ => {
-            return Err(SegmentParseResult::Invalid {
+            return Err(SegmentParseError::Invalid {
                 span: Some(component_value_span(value)),
                 reason: InvalidSelectorReason::MissingAttributeValue,
             });
