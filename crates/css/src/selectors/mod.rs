@@ -34,11 +34,45 @@ use std::ops::{Add, AddAssign};
 /// [`SelectorListParseResult`].
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SelectorList {
-    pub span: Option<CssSpan>,
-    pub selectors: Vec<ComplexSelector>,
+    span: Option<CssSpan>,
+    selectors: Vec<ComplexSelector>,
 }
 
 impl SelectorList {
+    pub fn new(
+        span: Option<CssSpan>,
+        selectors: Vec<ComplexSelector>,
+    ) -> Result<Self, SelectorStructureError> {
+        if selectors.is_empty() {
+            return Err(SelectorStructureError::EmptySelectorList);
+        }
+
+        ensure_monotonic_same_input(selectors.iter().map(ComplexSelector::span))?;
+        if let Some(span) = span {
+            for selector in &selectors {
+                ensure_span_contains(span, selector.span())?;
+            }
+        }
+
+        Ok(Self { span, selectors })
+    }
+
+    pub fn span(&self) -> Option<CssSpan> {
+        self.span
+    }
+
+    pub fn selectors(&self) -> &[ComplexSelector] {
+        &self.selectors
+    }
+
+    pub fn len(&self) -> usize {
+        self.selectors.len()
+    }
+
+    pub fn iter(&self) -> impl ExactSizeIterator<Item = &ComplexSelector> {
+        self.selectors.iter()
+    }
+
     pub fn is_empty(&self) -> bool {
         self.selectors.is_empty()
     }
@@ -122,8 +156,22 @@ impl UnsupportedSelectorList {
 /// Malformed selector list rejected by the selector parser.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct InvalidSelectorList {
-    pub span: Option<CssSpan>,
-    pub reason: InvalidSelectorReason,
+    span: Option<CssSpan>,
+    reason: InvalidSelectorReason,
+}
+
+impl InvalidSelectorList {
+    pub fn new(span: Option<CssSpan>, reason: InvalidSelectorReason) -> Self {
+        Self { span, reason }
+    }
+
+    pub fn span(&self) -> Option<CssSpan> {
+        self.span
+    }
+
+    pub fn reason(&self) -> InvalidSelectorReason {
+        self.reason
+    }
 }
 
 /// One parsed selector in a comma-separated selector list.
@@ -132,12 +180,44 @@ pub struct InvalidSelectorList {
 /// matching traversal deterministic.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ComplexSelector {
-    pub span: CssSpan,
-    pub head: CompoundSelector,
-    pub tail: Vec<CombinedSelector>,
+    span: CssSpan,
+    head: CompoundSelector,
+    tail: Vec<CombinedSelector>,
 }
 
 impl ComplexSelector {
+    pub fn new(
+        span: CssSpan,
+        head: CompoundSelector,
+        tail: Vec<CombinedSelector>,
+    ) -> Result<Self, SelectorStructureError> {
+        ensure_span_contains(span, head.span())?;
+        ensure_same_input(span, head.span())?;
+
+        let mut parts = Vec::with_capacity(tail.len() + 1);
+        parts.push(head.span());
+        for combined in &tail {
+            ensure_span_contains(span, combined.span())?;
+            ensure_same_input(span, combined.span())?;
+            parts.push(combined.span());
+        }
+        ensure_monotonic_same_input(parts.into_iter())?;
+
+        Ok(Self { span, head, tail })
+    }
+
+    pub fn span(&self) -> CssSpan {
+        self.span
+    }
+
+    pub fn head(&self) -> &CompoundSelector {
+        &self.head
+    }
+
+    pub fn tail(&self) -> &[CombinedSelector] {
+        &self.tail
+    }
+
     pub fn specificity(&self) -> Specificity {
         self.tail
             .iter()
@@ -150,9 +230,38 @@ impl ComplexSelector {
 /// One combinator edge plus the compound selector on its right-hand side.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CombinedSelector {
-    pub span: CssSpan,
-    pub combinator: Combinator,
-    pub selector: CompoundSelector,
+    span: CssSpan,
+    combinator: Combinator,
+    selector: CompoundSelector,
+}
+
+impl CombinedSelector {
+    pub fn new(
+        span: CssSpan,
+        combinator: Combinator,
+        selector: CompoundSelector,
+    ) -> Result<Self, SelectorStructureError> {
+        ensure_same_input(span, selector.span())?;
+        ensure_span_contains(span, selector.span())?;
+
+        Ok(Self {
+            span,
+            combinator,
+            selector,
+        })
+    }
+
+    pub fn span(&self) -> CssSpan {
+        self.span
+    }
+
+    pub fn combinator(&self) -> Combinator {
+        self.combinator
+    }
+
+    pub fn selector(&self) -> &CompoundSelector {
+        &self.selector
+    }
 }
 
 /// One compound selector.
@@ -161,12 +270,56 @@ pub struct CombinedSelector {
 /// selector, followed by zero or more subclass selectors in source order.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CompoundSelector {
-    pub span: CssSpan,
-    pub type_selector: Option<TypeSelector>,
-    pub subclasses: Vec<SubclassSelector>,
+    span: CssSpan,
+    type_selector: Option<TypeSelector>,
+    subclasses: Vec<SubclassSelector>,
 }
 
 impl CompoundSelector {
+    pub fn new(
+        span: CssSpan,
+        type_selector: Option<TypeSelector>,
+        subclasses: Vec<SubclassSelector>,
+    ) -> Result<Self, SelectorStructureError> {
+        if type_selector.is_none() && subclasses.is_empty() {
+            return Err(SelectorStructureError::EmptyCompoundSelector);
+        }
+
+        let mut parts = Vec::with_capacity(subclasses.len() + usize::from(type_selector.is_some()));
+
+        if let Some(type_selector) = &type_selector {
+            ensure_same_input(span, type_selector.span())?;
+            ensure_span_contains(span, type_selector.span())?;
+            parts.push(type_selector.span());
+        }
+
+        for subclass in &subclasses {
+            ensure_same_input(span, subclass.span())?;
+            ensure_span_contains(span, subclass.span())?;
+            parts.push(subclass.span());
+        }
+
+        ensure_monotonic_same_input(parts.into_iter())?;
+
+        Ok(Self {
+            span,
+            type_selector,
+            subclasses,
+        })
+    }
+
+    pub fn span(&self) -> CssSpan {
+        self.span
+    }
+
+    pub fn type_selector(&self) -> Option<&TypeSelector> {
+        self.type_selector.as_ref()
+    }
+
+    pub fn subclasses(&self) -> &[SubclassSelector] {
+        &self.subclasses
+    }
+
     pub fn specificity(&self) -> Specificity {
         let type_specificity = self
             .type_selector
@@ -198,6 +351,21 @@ pub enum TypeSelector {
 }
 
 impl TypeSelector {
+    pub fn universal(span: CssSpan) -> Self {
+        Self::Universal(UniversalSelector::new(span))
+    }
+
+    pub fn named(span: CssSpan, name: SelectorIdent) -> Result<Self, SelectorStructureError> {
+        Ok(Self::Named(NamedTypeSelector::new(span, name)?))
+    }
+
+    pub fn span(&self) -> CssSpan {
+        match self {
+            Self::Universal(selector) => selector.span(),
+            Self::Named(selector) => selector.span(),
+        }
+    }
+
     fn specificity(&self) -> Specificity {
         match self {
             Self::Universal(_) => Specificity::ZERO,
@@ -209,14 +377,39 @@ impl TypeSelector {
 /// `*`
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct UniversalSelector {
-    pub span: CssSpan,
+    span: CssSpan,
+}
+
+impl UniversalSelector {
+    pub fn new(span: CssSpan) -> Self {
+        Self { span }
+    }
+
+    pub fn span(&self) -> CssSpan {
+        self.span
+    }
 }
 
 /// `div`
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct NamedTypeSelector {
-    pub span: CssSpan,
-    pub name: SelectorIdent,
+    span: CssSpan,
+    name: SelectorIdent,
+}
+
+impl NamedTypeSelector {
+    pub fn new(span: CssSpan, name: SelectorIdent) -> Result<Self, SelectorStructureError> {
+        ensure_payload_span_within_node(span, name.span())?;
+        Ok(Self { span, name })
+    }
+
+    pub fn span(&self) -> CssSpan {
+        self.span
+    }
+
+    pub fn name(&self) -> &SelectorIdent {
+        &self.name
+    }
 }
 
 /// Supported subclass selectors for Milestone P.
@@ -228,6 +421,14 @@ pub enum SubclassSelector {
 }
 
 impl SubclassSelector {
+    pub fn span(&self) -> CssSpan {
+        match self {
+            Self::Id(selector) => selector.span(),
+            Self::Class(selector) => selector.span(),
+            Self::Attribute(selector) => selector.span(),
+        }
+    }
+
     fn specificity(&self) -> Specificity {
         match self {
             Self::Id(_) => Specificity::ID,
@@ -239,15 +440,45 @@ impl SubclassSelector {
 /// `#hero`
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IdSelector {
-    pub span: CssSpan,
-    pub name: SelectorIdent,
+    span: CssSpan,
+    name: SelectorIdent,
+}
+
+impl IdSelector {
+    pub fn new(span: CssSpan, name: SelectorIdent) -> Result<Self, SelectorStructureError> {
+        ensure_payload_span_within_node(span, name.span())?;
+        Ok(Self { span, name })
+    }
+
+    pub fn span(&self) -> CssSpan {
+        self.span
+    }
+
+    pub fn name(&self) -> &SelectorIdent {
+        &self.name
+    }
 }
 
 /// `.card`
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ClassSelector {
-    pub span: CssSpan,
-    pub name: SelectorIdent,
+    span: CssSpan,
+    name: SelectorIdent,
+}
+
+impl ClassSelector {
+    pub fn new(span: CssSpan, name: SelectorIdent) -> Result<Self, SelectorStructureError> {
+        ensure_payload_span_within_node(span, name.span())?;
+        Ok(Self { span, name })
+    }
+
+    pub fn span(&self) -> CssSpan {
+        self.span
+    }
+
+    pub fn name(&self) -> &SelectorIdent {
+        &self.name
+    }
 }
 
 /// Supported attribute selector subset.
@@ -257,20 +488,81 @@ pub enum AttributeSelector {
     Match(AttributeMatchSelector),
 }
 
+impl AttributeSelector {
+    pub fn span(&self) -> CssSpan {
+        match self {
+            Self::Exists(selector) => selector.span(),
+            Self::Match(selector) => selector.span(),
+        }
+    }
+}
+
 /// `[data-kind]`
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AttributeExistsSelector {
-    pub span: CssSpan,
-    pub name: SelectorIdent,
+    span: CssSpan,
+    name: SelectorIdent,
+}
+
+impl AttributeExistsSelector {
+    pub fn new(span: CssSpan, name: SelectorIdent) -> Result<Self, SelectorStructureError> {
+        ensure_payload_span_within_node(span, name.span())?;
+        Ok(Self { span, name })
+    }
+
+    pub fn span(&self) -> CssSpan {
+        self.span
+    }
+
+    pub fn name(&self) -> &SelectorIdent {
+        &self.name
+    }
 }
 
 /// `[data-kind="promo"]`
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct AttributeMatchSelector {
-    pub span: CssSpan,
-    pub name: SelectorIdent,
-    pub matcher: AttributeMatcher,
-    pub value: AttributeValue,
+    span: CssSpan,
+    name: SelectorIdent,
+    matcher: AttributeMatcher,
+    value: AttributeValue,
+}
+
+impl AttributeMatchSelector {
+    pub fn new(
+        span: CssSpan,
+        name: SelectorIdent,
+        matcher: AttributeMatcher,
+        value: AttributeValue,
+    ) -> Result<Self, SelectorStructureError> {
+        ensure_payload_span_within_node(span, name.span())?;
+        if let Some(value_span) = value.span() {
+            ensure_payload_span_within_node(span, Some(value_span))?;
+        }
+
+        Ok(Self {
+            span,
+            name,
+            matcher,
+            value,
+        })
+    }
+
+    pub fn span(&self) -> CssSpan {
+        self.span
+    }
+
+    pub fn name(&self) -> &SelectorIdent {
+        &self.name
+    }
+
+    pub fn matcher(&self) -> AttributeMatcher {
+        self.matcher
+    }
+
+    pub fn value(&self) -> &AttributeValue {
+        &self.value
+    }
 }
 
 /// Supported attribute selector operators.
@@ -291,18 +583,73 @@ pub enum AttributeValue {
     String(SelectorString),
 }
 
+impl AttributeValue {
+    pub fn ident(value: SelectorIdent) -> Self {
+        Self::Ident(value)
+    }
+
+    pub fn string(value: SelectorString) -> Self {
+        Self::String(value)
+    }
+
+    pub fn span(&self) -> Option<CssSpan> {
+        match self {
+            Self::Ident(value) => value.span(),
+            Self::String(value) => value.span(),
+        }
+    }
+}
+
 /// Source-backed selector identifier payload.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SelectorIdent {
-    pub span: Option<CssSpan>,
-    pub text: String,
+    span: Option<CssSpan>,
+    text: String,
+}
+
+impl SelectorIdent {
+    pub fn new(
+        text: impl Into<String>,
+        span: Option<CssSpan>,
+    ) -> Result<Self, SelectorStructureError> {
+        let text = text.into();
+        if text.is_empty() {
+            return Err(SelectorStructureError::EmptyIdentifier);
+        }
+        Ok(Self { span, text })
+    }
+
+    pub fn span(&self) -> Option<CssSpan> {
+        self.span
+    }
+
+    pub fn text(&self) -> &str {
+        &self.text
+    }
 }
 
 /// Source-backed selector string payload.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SelectorString {
-    pub span: Option<CssSpan>,
-    pub value: String,
+    span: Option<CssSpan>,
+    value: String,
+}
+
+impl SelectorString {
+    pub fn new(value: impl Into<String>, span: Option<CssSpan>) -> Self {
+        Self {
+            span,
+            value: value.into(),
+        }
+    }
+
+    pub fn span(&self) -> Option<CssSpan> {
+        self.span
+    }
+
+    pub fn value(&self) -> &str {
+        &self.value
+    }
 }
 
 /// CSS selector specificity tuple `(a, b, c)`.
@@ -315,9 +662,9 @@ pub struct SelectorString {
 /// accounting.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Ord, PartialOrd)]
 pub struct Specificity {
-    pub ids: u16,
-    pub classes: u16,
-    pub types: u16,
+    ids: u16,
+    classes: u16,
+    types: u16,
 }
 
 impl Specificity {
@@ -341,6 +688,26 @@ impl Specificity {
         classes: 0,
         types: 1,
     };
+
+    pub const fn new(ids: u16, classes: u16, types: u16) -> Self {
+        Self {
+            ids,
+            classes,
+            types,
+        }
+    }
+
+    pub fn ids(self) -> u16 {
+        self.ids
+    }
+
+    pub fn classes(self) -> u16 {
+        self.classes
+    }
+
+    pub fn types(self) -> u16 {
+        self.types
+    }
 
     pub fn saturating_add(self, other: Self) -> Self {
         Self {
@@ -392,4 +759,61 @@ pub enum InvalidSelectorReason {
     MissingAttributeName,
     MissingAttributeValue,
     UnexpectedComponentValue,
+}
+
+/// Structural construction error for selector IR nodes.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SelectorStructureError {
+    EmptySelectorList,
+    EmptyCompoundSelector,
+    EmptyIdentifier,
+    MixedInputIds,
+    NonMonotonicSpans,
+    PayloadSpanOutsideNode,
+}
+
+fn ensure_same_input(a: CssSpan, b: CssSpan) -> Result<(), SelectorStructureError> {
+    if a.input_id == b.input_id {
+        Ok(())
+    } else {
+        Err(SelectorStructureError::MixedInputIds)
+    }
+}
+
+fn ensure_span_contains(outer: CssSpan, inner: CssSpan) -> Result<(), SelectorStructureError> {
+    ensure_same_input(outer, inner)?;
+    if outer.start <= inner.start && inner.end <= outer.end {
+        Ok(())
+    } else {
+        Err(SelectorStructureError::PayloadSpanOutsideNode)
+    }
+}
+
+fn ensure_payload_span_within_node(
+    node_span: CssSpan,
+    payload_span: Option<CssSpan>,
+) -> Result<(), SelectorStructureError> {
+    if let Some(payload_span) = payload_span {
+        ensure_span_contains(node_span, payload_span)?;
+    }
+    Ok(())
+}
+
+fn ensure_monotonic_same_input(
+    spans: impl IntoIterator<Item = CssSpan>,
+) -> Result<(), SelectorStructureError> {
+    let mut iter = spans.into_iter();
+    let Some(mut previous) = iter.next() else {
+        return Ok(());
+    };
+
+    for span in iter {
+        ensure_same_input(previous, span)?;
+        if span.start < previous.end {
+            return Err(SelectorStructureError::NonMonotonicSpans);
+        }
+        previous = span;
+    }
+
+    Ok(())
 }
