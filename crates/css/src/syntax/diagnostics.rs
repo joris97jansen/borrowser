@@ -18,8 +18,12 @@ pub enum DiagnosticKind {
     UnexpectedEof,
     UnexpectedToken,
     InvariantViolation,
+    // Selector-specific kinds are part of the shared diagnostic transport used
+    // during stylesheet parsing. The `css::selectors` subsystem remains the
+    // owner of selector invalid-vs-unsupported classification semantics.
     EmptySelectorList,
     InvalidSelector,
+    UnsupportedSelector,
     InvalidDeclaration,
     UnterminatedComment,
     UnterminatedString,
@@ -35,6 +39,7 @@ impl DiagnosticKind {
             Self::InvariantViolation => "invariant-violation",
             Self::EmptySelectorList => "empty-selector-list",
             Self::InvalidSelector => "invalid-selector",
+            Self::UnsupportedSelector => "unsupported-selector",
             Self::InvalidDeclaration => "invalid-declaration",
             Self::UnterminatedComment => "unterminated-comment",
             Self::UnterminatedString => "unterminated-string",

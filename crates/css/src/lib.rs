@@ -11,6 +11,7 @@
 pub mod cascade;
 pub mod computed;
 pub mod model;
+pub mod selectors;
 pub mod syntax;
 pub mod values;
 
@@ -25,6 +26,14 @@ pub use model::{
     serialize_declaration_for_snapshot, serialize_rule_for_snapshot,
     serialize_stylesheet_for_snapshot, serialize_stylesheet_parse_for_snapshot,
     serialize_value_for_snapshot,
+};
+pub use selectors::{
+    AttributeExistsSelector, AttributeMatchSelector, AttributeMatcher, AttributeSelector,
+    AttributeValue, ClassSelector, Combinator, CombinedSelector, ComplexSelector, CompoundSelector,
+    IdSelector, InvalidSelectorList, InvalidSelectorReason, NamedTypeSelector, SelectorIdent,
+    SelectorList, SelectorListParseResult, SelectorString, Specificity, SubclassSelector,
+    TypeSelector, UniversalSelector, UnsupportedSelectorFeature, UnsupportedSelectorList,
+    serialize_selector_list_for_snapshot, serialize_selector_parse_result_for_snapshot,
 };
 
 // Explicit syntax-layer surface for parser/tokenizer work and syntax tests.
