@@ -3,9 +3,9 @@ use super::{
     AttributeValue, ClassSelector, Combinator, CombinedSelector, ComplexSelector, CompoundSelector,
     IdSelector, InvalidSelectorList, InvalidSelectorReason, SelectorIdent, SelectorList,
     SelectorListParseResult, SelectorString, SelectorStructureError, Specificity, SubclassSelector,
-    TypeSelector, UnsupportedSelectorFeature, UnsupportedSelectorList,
+    TypeSelector, UnsupportedSelectorFeature, UnsupportedSelectorList, parse_selector_list,
 };
-use crate::syntax::{CssInput, CssSpan};
+use crate::syntax::{CssInput, CssRule, CssSpan, ParseOptions, parse_stylesheet_with_options};
 
 fn span(input: &CssInput, start: usize, end: usize) -> CssSpan {
     input.span(start, end).expect("valid span")
@@ -64,7 +64,7 @@ fn sample_selector_list(input: &CssInput) -> SelectorList {
                 span(input, 0, 41),
                 head,
                 vec![
-                    CombinedSelector::new(span(input, 12, 41), Combinator::Child, tail_compound)
+                    CombinedSelector::new(span(input, 13, 41), Combinator::Child, tail_compound)
                         .expect("combined selector"),
                 ],
             )
@@ -72,6 +72,16 @@ fn sample_selector_list(input: &CssInput) -> SelectorList {
         ],
     )
     .expect("selector list")
+}
+
+fn parse_selector_result(source: &str) -> SelectorListParseResult {
+    let stylesheet = format!("{source} {{ color: red; }}");
+    let parse = parse_stylesheet_with_options(&stylesheet, &ParseOptions::stylesheet());
+    let rule = parse.stylesheet.rules.first().expect("style rule");
+    let CssRule::Qualified(rule) = rule else {
+        panic!("expected qualified rule");
+    };
+    parse_selector_list(&parse.input, &rule.prelude)
 }
 
 #[test]
@@ -89,7 +99,7 @@ fn selector_list_snapshot_is_stable() {
             "  compound[0] @0..12 specificity=(0,1,1)\n",
             "    - type(\"article\") node=@0..7 name=@0..7\n",
             "    - class(\"card\") node=@7..12 name=@8..12\n",
-            "  combined[0] child @12..41\n",
+            "  combined[0] child @13..41\n",
             "    compound @15..41 specificity=(1,1,1)\n",
             "      - type(\"h1\") node=@15..17 name=@15..17\n",
             "      - id(\"hero\") node=@17..22 name=@18..22\n",
@@ -117,7 +127,7 @@ fn selector_ir_construction_exposes_structure_accessors() {
 
     let combined = &selector.tail()[0];
     assert_eq!(combined.combinator(), Combinator::Child);
-    assert_eq!(combined.span(), span(&input, 12, 41));
+    assert_eq!(combined.span(), span(&input, 13, 41));
     assert_eq!(combined.selector().span(), span(&input, 15, 41));
 }
 
@@ -419,4 +429,197 @@ fn attribute_selectors_cover_exists_and_match_forms() {
 
     assert_eq!(exists.span(), span(&input, 0, 11));
     assert_eq!(matcher.span(), span(&input, 11, 23));
+}
+
+#[test]
+fn parser_builds_ir_for_supported_selector_lists() {
+    let result = parse_selector_result("article.card > h1#hero[data-kind=\"promo\"], aside");
+
+    assert_eq!(
+        result.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "selector-parse\n",
+            "result: parsed\n",
+            "span: @0..49\n",
+            "selector[0] @0..41 specificity=(1,2,2)\n",
+            "  compound[0] @0..12 specificity=(0,1,1)\n",
+            "    - type(\"article\") node=@0..7 name=@0..7\n",
+            "    - class(\"card\") node=@7..12 name=@8..12\n",
+            "  combined[0] child @13..41\n",
+            "    compound @15..41 specificity=(1,1,1)\n",
+            "      - type(\"h1\") node=@15..17 name=@15..17\n",
+            "      - id(\"hero\") node=@17..22 name=@18..22\n",
+            "      - attribute-match(name=\"data-kind\", name_span=@23..32, matcher=exact, value=string(\"promo\", span=@34..39)) node=@22..41\n",
+            "selector[1] @43..48 specificity=(0,0,1)\n",
+            "  compound[0] @43..48 specificity=(0,0,1)\n",
+            "    - type(\"aside\") node=@43..48 name=@43..48\n",
+        )
+    );
+}
+
+#[test]
+fn parser_distinguishes_comments_from_descendant_whitespace() {
+    let compact = parse_selector_result("div/**/.card");
+    let descendant = parse_selector_result("div /* gap */ .card");
+
+    let SelectorListParseResult::Parsed(compact) = compact else {
+        panic!("expected compact selector to parse");
+    };
+    let compact_selector = compact.iter().next().expect("compact selector");
+    assert!(compact_selector.tail().is_empty());
+    assert_eq!(compact_selector.head().subclasses().len(), 1);
+
+    let SelectorListParseResult::Parsed(descendant) = descendant else {
+        panic!("expected descendant selector to parse");
+    };
+    let descendant_selector = descendant.iter().next().expect("descendant selector");
+    assert_eq!(descendant_selector.tail().len(), 1);
+    assert_eq!(
+        descendant_selector.tail()[0].combinator(),
+        Combinator::Descendant
+    );
+}
+
+#[test]
+fn parser_reports_invalid_selector_shapes_deterministically() {
+    let leading = parse_selector_result("> div");
+    let trailing = parse_selector_result("div >");
+    let repeated = parse_selector_result("div > + span");
+
+    assert_eq!(
+        leading.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "selector-parse\n",
+            "result: invalid\n",
+            "span: @0..1\n",
+            "reason: leading-combinator\n",
+        )
+    );
+    assert_eq!(
+        trailing.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "selector-parse\n",
+            "result: invalid\n",
+            "span: @4..5\n",
+            "reason: trailing-combinator\n",
+        )
+    );
+    assert_eq!(
+        repeated.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "selector-parse\n",
+            "result: invalid\n",
+            "span: @6..7\n",
+            "reason: repeated-combinator\n",
+        )
+    );
+}
+
+#[test]
+fn parser_reports_unsupported_selector_features_without_string_splitting() {
+    let pseudo = parse_selector_result("a:is(.x, .y)");
+    let namespace = parse_selector_result("svg|a");
+    let case_modifier = parse_selector_result("[lang=\"en\" i]");
+
+    assert_eq!(
+        pseudo.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "selector-parse\n",
+            "result: unsupported\n",
+            "span: @0..13\n",
+            "feature[0]: functional-pseudo-class\n",
+            "feature[1]: forgiving-selector-list\n",
+        )
+    );
+    assert_eq!(
+        namespace.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "selector-parse\n",
+            "result: unsupported\n",
+            "span: @0..6\n",
+            "feature[0]: namespace\n",
+        )
+    );
+    assert_eq!(
+        case_modifier.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "selector-parse\n",
+            "result: unsupported\n",
+            "span: @0..14\n",
+            "feature[0]: attribute-case-modifier\n",
+        )
+    );
+}
+
+#[test]
+fn parser_applies_selector_list_failure_policy_deterministically() {
+    let unsupported = parse_selector_result("div, a:is(.x)");
+    let invalid = parse_selector_result("a:is(.x), > span");
+
+    assert_eq!(
+        unsupported.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "selector-parse\n",
+            "result: unsupported\n",
+            "span: @0..14\n",
+            "feature[0]: functional-pseudo-class\n",
+            "feature[1]: forgiving-selector-list\n",
+        )
+    );
+    assert_eq!(
+        invalid.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "selector-parse\n",
+            "result: invalid\n",
+            "span: @10..11\n",
+            "reason: leading-combinator\n",
+        )
+    );
+}
+
+#[test]
+fn parser_rejects_empty_selector_list_segments() {
+    let trailing = parse_selector_result("div,");
+    let leading = parse_selector_result(",div");
+    let repeated = parse_selector_result("div,,span");
+
+    assert_eq!(
+        trailing.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "selector-parse\n",
+            "result: invalid\n",
+            "span: @4..5\n",
+            "reason: empty-compound-selector\n",
+        )
+    );
+    assert_eq!(
+        leading.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "selector-parse\n",
+            "result: invalid\n",
+            "span: @0..5\n",
+            "reason: empty-compound-selector\n",
+        )
+    );
+    assert_eq!(
+        repeated.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "selector-parse\n",
+            "result: invalid\n",
+            "span: @0..10\n",
+            "reason: empty-compound-selector\n",
+        )
+    );
 }
