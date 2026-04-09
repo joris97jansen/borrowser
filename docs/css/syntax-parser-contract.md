@@ -1,6 +1,6 @@
 # CSS Syntax Layer Contract (Milestone N)
 
-Last updated: 2026-04-08  
+Last updated: 2026-04-09  
 Scope: `crates/css/src/syntax/mod.rs`, `crates/css/src/syntax/compat.rs`,
 `crates/css/src/syntax/input.rs`, `crates/css/src/syntax/token.rs`,
 `crates/css/src/syntax/serialize.rs`,
@@ -16,6 +16,7 @@ replaced, and what downstream milestones may assume.
 
 Related downstream contract:
 - `docs/css/o1-rule-value-model-architecture.md`
+- `docs/css/p1-selector-architecture.md`
 - `docs/css/o8-cssom-contract-and-legacy-retirement.md`
 
 Related code:
@@ -172,6 +173,14 @@ It MUST NOT:
   compatibility bridge still requires
 - evaluate cascade precedence
 - parse computed values or value semantics beyond syntax boundaries
+
+Selector-boundary note:
+- selector-related diagnostic kinds may exist in the shared syntax diagnostic
+  envelope
+- selector invalid-vs-unsupported classification remains owned by
+  `css::selectors`
+- `css::syntax` must not absorb selector-semantic parsing policy merely because
+  the transport can carry selector diagnostics
 
 ## Entry Points And Expected Outputs
 
@@ -442,3 +451,7 @@ Related reference for the N8 cutover/completion work:
 Related reference for the next selector-structure expansion work:
 
 - [`docs/css/n9-selector-structure-expansion.md`](n9-selector-structure-expansion.md)
+
+Related reference for the selector subsystem contract introduced by Milestone P:
+
+- [`docs/css/p1-selector-architecture.md`](p1-selector-architecture.md)
