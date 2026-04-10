@@ -33,8 +33,8 @@ pub use selectors::{
     IdSelector, InvalidSelectorList, InvalidSelectorReason, NamedTypeSelector, SelectorIdent,
     SelectorList, SelectorListParseResult, SelectorString, SelectorStructureError, Specificity,
     SubclassSelector, TypeSelector, UniversalSelector, UnsupportedSelectorFeature,
-    UnsupportedSelectorList, parse_selector_list, serialize_selector_list_for_snapshot,
-    serialize_selector_parse_result_for_snapshot,
+    UnsupportedSelectorHandling, UnsupportedSelectorList, parse_selector_list,
+    serialize_selector_list_for_snapshot, serialize_selector_parse_result_for_snapshot,
 };
 
 // Explicit syntax-layer surface for parser/tokenizer work and syntax tests.
