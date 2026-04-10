@@ -4,6 +4,7 @@ use super::{
     Stylesheet, StylesheetParse, ValueBlock, ValueComponent, ValueFunction, ValueSymbol, ValueText,
     ValueToken,
 };
+use crate::selectors::parse_selector_list;
 use crate::syntax::{
     self, CssComponentValue, CssInput, CssParseOrigin, CssRule, CssToken, CssTokenKind,
     CssTokenText, ParseOptions,
@@ -51,10 +52,7 @@ fn build_rule(input: &CssInput, rule: &CssRule) -> Rule {
     match rule {
         CssRule::Qualified(rule) => Rule::Style(StyleRule {
             span: rule.span,
-            selector_source: PreservedComponentList {
-                span: component_list_span(&rule.prelude),
-                values: rule.prelude.clone(),
-            },
+            selectors: parse_selector_list(input, &rule.prelude),
             declarations: build_declaration_block(input, &rule.block),
         }),
         CssRule::At(rule) => Rule::At(AtRule {

@@ -9,6 +9,7 @@ use super::{
     PropertyNameKind, Rule, Stylesheet, StylesheetParse, ValueBlock, ValueComponent, ValueFunction,
     ValueSymbol, ValueText, ValueToken,
 };
+use crate::selectors::write_selector_parse_result_snapshot_body;
 use crate::syntax::{
     CssBlockKind, CssComponentValue, CssInput, CssNumericKind, CssParseOrigin, CssTokenKind,
     CssTokenText, ParseStats, SyntaxDiagnostic,
@@ -79,7 +80,8 @@ fn write_rule(
                 rule.span.end
             )
             .expect("write style rule header");
-            write_component_list(out, input, "selector", &rule.selector_source, indent + 2);
+            writeln!(out, "{}  selectors", indent_str).expect("write selectors header");
+            write_selector_parse_result_snapshot_body(out, &rule.selectors, indent + 4);
             writeln!(
                 out,
                 "{}  declarations @{}..{}",

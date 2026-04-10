@@ -14,12 +14,15 @@ rule[0] at(name="media") @0..37
     - simple-block(kind=curly, text="{ color: red; }") @20..35
     - token(whitespace) @35..36
 rule[1] style @38..114
-  selector @38..48
-    - token(ident("div")) @38..41
-    - token(comma) @41..42
-    - token(whitespace) @42..43
-    - token(ident("span")) @43..47
-    - token(whitespace) @47..48
+  selectors
+    result: parsed
+    span: @38..48
+    selector[0] @38..41 specificity=(0,0,1)
+      compound[0] @38..41 specificity=(0,0,1)
+        - type("div") node=@38..41 name=@38..41
+    selector[1] @43..47 specificity=(0,0,1)
+      compound[0] @43..47 specificity=(0,0,1)
+        - type("span") node=@43..47 name=@43..47
   declarations @48..114
     declaration[0] @50..88
       name(kind=custom, text="--Brand") @50..57

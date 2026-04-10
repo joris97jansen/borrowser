@@ -1,8 +1,6 @@
 use crate::model::{self, PropertyNameKind, ValueComponent, ValueSymbol, ValueText, ValueToken};
-use crate::syntax::{
-    CompatSelector, CssComponentValue, CssInput, CssTokenKind, CssTokenText, ParseOptions,
-    parse_declarations_with_options,
-};
+use crate::selectors::{ComplexSelector, SelectorList, SubclassSelector, TypeSelector};
+use crate::syntax::{CompatSelector, ParseOptions, parse_declarations_with_options};
 use html::Node;
 use std::cmp::Ordering::Equal;
 use std::sync::Arc;
@@ -178,8 +176,7 @@ fn build_cascade_rules(sheets: &[model::StylesheetParse]) -> Vec<CascadeRule> {
                 continue;
             };
 
-            let selectors =
-                compat_selectors_from_values(&sheet.input, &rule.selector_source.values);
+            let selectors = compat_selectors_from_selector_result(&rule.selectors);
             if selectors.is_empty() {
                 continue;
             }
@@ -202,6 +199,42 @@ fn build_cascade_rules(sheets: &[model::StylesheetParse]) -> Vec<CascadeRule> {
     }
 
     rules
+}
+
+fn compat_selectors_from_selector_result(
+    result: &crate::selectors::SelectorListParseResult,
+) -> Vec<CompatSelector> {
+    let Some(list) = result.parsed() else {
+        return Vec::new();
+    };
+    compat_selectors_from_parsed_list(list)
+}
+
+fn compat_selectors_from_parsed_list(list: &SelectorList) -> Vec<CompatSelector> {
+    list.iter()
+        .filter_map(compat_selector_from_complex)
+        .collect::<Vec<_>>()
+}
+
+fn compat_selector_from_complex(selector: &ComplexSelector) -> Option<CompatSelector> {
+    if !selector.tail().is_empty() {
+        return None;
+    }
+
+    let compound = selector.head();
+    match (compound.type_selector(), compound.subclasses()) {
+        (Some(TypeSelector::Universal(_)), []) => Some(CompatSelector::Universal),
+        (Some(TypeSelector::Named(named)), []) => Some(CompatSelector::Type(
+            named.name().text().to_ascii_lowercase(),
+        )),
+        (None, [SubclassSelector::Id(id)]) => {
+            Some(CompatSelector::Id(id.name().text().to_string()))
+        }
+        (None, [SubclassSelector::Class(class)]) => {
+            Some(CompatSelector::Class(class.name().text().to_string()))
+        }
+        _ => None,
+    }
 }
 
 fn cascade_declaration_from_model(declaration: &model::Declaration) -> Option<CascadeDeclaration> {
@@ -350,99 +383,6 @@ fn append_quoted_text(out: &mut String, text: &ValueText) -> Option<()> {
 fn push_ascii_space(out: &mut String) {
     if !out.chars().last().is_some_and(char::is_whitespace) {
         out.push(' ');
-    }
-}
-
-fn compat_selectors_from_values(
-    input: &CssInput,
-    values: &[CssComponentValue],
-) -> Vec<CompatSelector> {
-    let mut selectors = Vec::new();
-    let mut segment_start = 0usize;
-
-    for comma_index in values
-        .iter()
-        .enumerate()
-        .filter_map(|(index, value)| {
-            matches!(value, CssComponentValue::PreservedToken(token) if matches!(token.kind, CssTokenKind::Comma))
-                .then_some(index)
-        })
-        .chain(std::iter::once(values.len()))
-    {
-        let segment = &values[segment_start..comma_index];
-        if let Some(selector) = parse_selector_one_compat(input, segment) {
-            selectors.push(selector);
-        }
-        segment_start = comma_index.saturating_add(1);
-    }
-
-    selectors
-}
-
-fn parse_selector_one_compat(
-    input: &CssInput,
-    values: &[CssComponentValue],
-) -> Option<CompatSelector> {
-    let significant = significant_tokens(values);
-    if significant.is_empty() {
-        return None;
-    }
-
-    if matches!(significant.as_slice(), [CssTokenKind::Delim('*')]) {
-        return Some(CompatSelector::Universal);
-    }
-
-    if let [CssTokenKind::Hash { value, .. }] = significant.as_slice() {
-        let id = resolve_token_text(input, value)?;
-        return compat_identifier(id).map(|id| CompatSelector::Id(id.to_string()));
-    }
-
-    if let [CssTokenKind::Delim('.'), CssTokenKind::Ident(text)] = significant.as_slice() {
-        let class = resolve_token_text(input, text)?;
-        return compat_identifier(class).map(|class| CompatSelector::Class(class.to_string()));
-    }
-
-    if let [CssTokenKind::Ident(text)] = significant.as_slice() {
-        let name = resolve_token_text(input, text)?;
-        return compat_identifier(name).map(|name| CompatSelector::Type(name.to_ascii_lowercase()));
-    }
-
-    None
-}
-
-fn compat_identifier(s: &str) -> Option<&str> {
-    if s.is_empty() {
-        return None;
-    }
-    if s.chars()
-        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
-    {
-        return Some(s);
-    }
-    None
-}
-
-fn significant_tokens(values: &[CssComponentValue]) -> Vec<CssTokenKind> {
-    values
-        .iter()
-        .filter_map(|value| match value {
-            CssComponentValue::PreservedToken(token) if !is_trivia(&token.kind) => {
-                Some(token.kind.clone())
-            }
-            CssComponentValue::PreservedToken(_) => None,
-            CssComponentValue::SimpleBlock(_) | CssComponentValue::Function(_) => None,
-        })
-        .collect()
-}
-
-fn is_trivia(kind: &CssTokenKind) -> bool {
-    matches!(kind, CssTokenKind::Whitespace | CssTokenKind::Comment(_))
-}
-
-fn resolve_token_text<'a>(input: &'a CssInput, text: &'a CssTokenText) -> Option<&'a str> {
-    match text {
-        CssTokenText::Span(span) => input.slice(*span),
-        CssTokenText::Owned(text) => Some(text.as_str()),
     }
 }
 

@@ -1,6 +1,6 @@
 # CSS Syntax Layer Contract (Milestone N)
 
-Last updated: 2026-04-09  
+Last updated: 2026-04-10  
 Scope: `crates/css/src/syntax/mod.rs`, `crates/css/src/syntax/compat.rs`,
 `crates/css/src/syntax/input.rs`, `crates/css/src/syntax/token.rs`,
 `crates/css/src/syntax/serialize.rs`,
@@ -17,6 +17,7 @@ replaced, and what downstream milestones may assume.
 Related downstream contract:
 - `docs/css/o1-rule-value-model-architecture.md`
 - `docs/css/p1-selector-architecture.md`
+- `docs/css/p8-selector-model-integration.md`
 - `docs/css/o8-cssom-contract-and-legacy-retirement.md`
 
 Related code:

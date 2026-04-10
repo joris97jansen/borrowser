@@ -2,9 +2,10 @@
 //!
 //! This module is the first concrete implementation step of Milestone O. It
 //! sits downstream of `css::syntax` and owns long-lived stylesheet/rule
-//! containers. Selector/prelude/block payloads remain structurally preserved,
-//! while declarations now use model-layer containers with explicit property
-//! names, value attachment, and importance metadata.
+//! containers. Style rules now own structured selector parse results, while
+//! at-rule preludes and preserved blocks remain structurally preserved.
+//! Declarations use model-layer containers with explicit property names, value
+//! attachment, and importance metadata.
 //!
 //! Span policy:
 //! - structural parsed nodes carry source spans directly (`Rule`,
@@ -22,6 +23,7 @@ mod serialize;
 #[cfg(test)]
 mod tests;
 
+use crate::selectors::SelectorListParseResult;
 use crate::syntax::{
     CssBlockKind, CssComponentValue, CssHashKind, CssInput, CssNumericKind, CssParseOrigin,
     CssSpan, CssUnicodeRange, ParseStats, SyntaxDiagnostic,
@@ -37,8 +39,9 @@ pub use self::serialize::{
 /// Engine-facing stylesheet model built from structured syntax output.
 ///
 /// Rules are stored in deterministic source order. The model is deliberately
-/// structural: it preserves selector/prelude/block payloads without introducing
-/// selector matching or at-rule semantics yet.
+/// structural: style rules preserve structured selector parse results, while
+/// at-rule preludes and blocks remain preserved without introducing selector
+/// matching or at-rule semantics yet.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Stylesheet {
     pub origin: CssParseOrigin,
@@ -349,7 +352,7 @@ pub enum ValueSymbol {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct StyleRule {
     pub span: CssSpan,
-    pub selector_source: PreservedComponentList,
+    pub selectors: SelectorListParseResult,
     pub declarations: DeclarationBlock,
 }
 
