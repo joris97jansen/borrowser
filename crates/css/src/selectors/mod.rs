@@ -15,6 +15,7 @@
 //! This module is intentionally independent from DOM matching and cascade
 //! winner resolution.
 
+mod parser;
 mod serialize;
 
 #[cfg(test)]
@@ -23,6 +24,7 @@ mod tests;
 pub use self::serialize::{
     serialize_selector_list_for_snapshot, serialize_selector_parse_result_for_snapshot,
 };
+pub use parser::parse_selector_list;
 
 use crate::syntax::CssSpan;
 use std::ops::{Add, AddAssign};
