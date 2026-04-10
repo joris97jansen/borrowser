@@ -111,6 +111,20 @@ impl SelectorListParseResult {
         }
     }
 
+    pub fn unsupported(&self) -> Option<&UnsupportedSelectorList> {
+        match self {
+            Self::Unsupported(list) => Some(list),
+            Self::Parsed(_) | Self::Invalid(_) => None,
+        }
+    }
+
+    pub fn invalid(&self) -> Option<&InvalidSelectorList> {
+        match self {
+            Self::Invalid(list) => Some(list),
+            Self::Parsed(_) | Self::Unsupported(_) => None,
+        }
+    }
+
     pub fn to_debug_snapshot(&self) -> String {
         serialize_selector_parse_result_for_snapshot(self)
     }
