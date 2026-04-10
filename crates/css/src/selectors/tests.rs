@@ -84,6 +84,14 @@ fn parse_selector_result(source: &str) -> SelectorListParseResult {
     parse_selector_list(&parse.input, &rule.prelude)
 }
 
+fn invalid_selector(source: &str) -> InvalidSelectorList {
+    let result = parse_selector_result(source);
+    let Some(list) = result.invalid() else {
+        panic!("expected invalid selector parse result for {source:?}");
+    };
+    list.clone()
+}
+
 #[test]
 fn selector_list_snapshot_is_stable() {
     let input = CssInput::from("article.card > h1#hero[data-kind=\"promo\"]");
@@ -242,6 +250,8 @@ fn parse_result_states_are_explicit_and_snapshot_stable() {
         ],
     ));
     assert!(unsupported.parsed().is_none());
+    assert!(unsupported.unsupported().is_some());
+    assert!(unsupported.invalid().is_none());
     assert_eq!(
         unsupported.to_debug_snapshot(),
         concat!(
@@ -260,6 +270,8 @@ fn parse_result_states_are_explicit_and_snapshot_stable() {
         InvalidSelectorReason::LeadingCombinator,
     ));
     assert!(invalid.parsed().is_none());
+    assert!(invalid.unsupported().is_none());
+    assert!(invalid.invalid().is_some());
     assert_eq!(
         invalid.to_debug_snapshot(),
         concat!(
@@ -602,6 +614,80 @@ fn parser_reports_invalid_selector_shapes_deterministically() {
 }
 
 #[test]
+fn parser_rejects_representative_invalid_selector_categories() {
+    let empty_input = CssInput::from("");
+    let empty_result = parse_selector_list(&empty_input, &[]);
+    let Some(empty) = empty_result.invalid() else {
+        panic!("expected empty selector list to be invalid");
+    };
+    let multiple_types = invalid_selector("div*");
+    let missing_attribute_name = invalid_selector("[]");
+    let missing_attribute_value = invalid_selector("[lang=]");
+    let malformed_class = invalid_selector("div.");
+    let malformed_pseudo = invalid_selector(":");
+
+    assert_eq!(empty.reason(), InvalidSelectorReason::EmptySelectorList);
+    assert_eq!(
+        multiple_types.reason(),
+        InvalidSelectorReason::MultipleTypeSelectors
+    );
+    assert_eq!(
+        missing_attribute_name.reason(),
+        InvalidSelectorReason::MissingAttributeName
+    );
+    assert_eq!(
+        missing_attribute_value.reason(),
+        InvalidSelectorReason::MissingAttributeValue
+    );
+    assert_eq!(
+        malformed_class.reason(),
+        InvalidSelectorReason::UnexpectedComponentValue
+    );
+    assert_eq!(
+        malformed_pseudo.reason(),
+        InvalidSelectorReason::UnexpectedComponentValue
+    );
+}
+
+#[test]
+fn invalid_selector_snapshots_are_stable_for_representative_malformed_inputs() {
+    let multiple_types = parse_selector_result("div*");
+    let missing_attribute_name = parse_selector_result("[]");
+    let missing_attribute_value = parse_selector_result("[lang=]");
+
+    assert_eq!(
+        multiple_types.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "selector-parse\n",
+            "result: invalid\n",
+            "span: @3..4\n",
+            "reason: multiple-type-selectors\n",
+        )
+    );
+    assert_eq!(
+        missing_attribute_name.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "selector-parse\n",
+            "result: invalid\n",
+            "span: @0..2\n",
+            "reason: missing-attribute-name\n",
+        )
+    );
+    assert_eq!(
+        missing_attribute_value.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "selector-parse\n",
+            "result: invalid\n",
+            "span: @0..7\n",
+            "reason: missing-attribute-value\n",
+        )
+    );
+}
+
+#[test]
 fn parser_reports_unsupported_selector_features_without_string_splitting() {
     let pseudo = parse_selector_result("a:is(.x, .y)");
     let namespace = parse_selector_result("svg|a");
@@ -702,6 +788,22 @@ fn parser_rejects_empty_selector_list_segments() {
             "result: invalid\n",
             "span: @0..10\n",
             "reason: empty-compound-selector\n",
+        )
+    );
+}
+
+#[test]
+fn invalid_selector_lists_do_not_partially_recover() {
+    let mixed = parse_selector_result("div, [lang=], span");
+
+    assert_eq!(
+        mixed.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "selector-parse\n",
+            "result: invalid\n",
+            "span: @5..12\n",
+            "reason: missing-attribute-value\n",
         )
     );
 }
