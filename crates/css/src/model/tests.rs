@@ -3,6 +3,7 @@ use super::{
     parse_stylesheet_with_options, serialize_declaration_for_snapshot, serialize_rule_for_snapshot,
     serialize_value_for_snapshot,
 };
+use crate::selectors::SelectorListParseResult;
 use crate::syntax::{CssBlockKind, CssNumericKind, ParseOptions};
 
 #[test]
@@ -23,8 +24,11 @@ fn model_stylesheet_preserves_rule_order_and_supported_rule_kinds() {
         panic!("expected second rule to be a style rule");
     };
     assert_eq!(second.declarations.declarations.len(), 1);
-    assert!(second.selector_source.span.is_some());
-    assert!(!second.selector_source.values.is_empty());
+    let SelectorListParseResult::Parsed(selectors) = &second.selectors else {
+        panic!("expected structured selectors on style rule");
+    };
+    assert_eq!(selectors.len(), 2);
+    assert!(selectors.span().is_some());
 
     let Rule::At(third) = &stylesheet.rules[2] else {
         panic!("expected third rule to be an at-rule");
@@ -50,18 +54,14 @@ fn model_stylesheet_keeps_style_rules_in_source_order_after_syntax_recovery() {
         panic!("expected recovered second surviving rule to be a style rule");
     };
 
+    let first_span = first.selectors.span().expect("selector span");
     assert_eq!(
-        parse
-            .input
-            .slice(first.selector_source.span.expect("selector span"))
-            .expect("selector source"),
+        parse.input.slice(first_span).expect("selector source"),
         "span "
     );
+    let second_span = second.selectors.span().expect("selector span");
     assert_eq!(
-        parse
-            .input
-            .slice(second.selector_source.span.expect("selector span"))
-            .expect("selector source"),
+        parse.input.slice(second_span).expect("selector source"),
         "a "
     );
 }
@@ -88,11 +88,9 @@ fn model_spans_cover_stylesheet_rules_declarations_and_value_nodes() {
         parse.input.slice(rule.span()).expect("rule slice"),
         "div { color: blue !important; width: calc(1px + 2px); }"
     );
+    let selector_span = rule.selectors.span().expect("selector span");
     assert_eq!(
-        parse
-            .input
-            .slice(rule.selector_source.debug_span().expect("selector span"))
-            .expect("selector slice"),
+        parse.input.slice(selector_span).expect("selector slice"),
         "div "
     );
 
@@ -310,9 +308,12 @@ fn model_rule_declaration_and_value_serializers_are_stable() {
         serialize_rule_for_snapshot(&parse.input, &Rule::Style(style_rule.clone())),
         concat!(
             "rule style @0..31\n",
-            "  selector @0..4\n",
-            "    - token(ident(\"div\")) @0..3\n",
-            "    - token(whitespace) @3..4\n",
+            "  selectors\n",
+            "    result: parsed\n",
+            "    span: @0..4\n",
+            "    selector[0] @0..3 specificity=(0,0,1)\n",
+            "      compound[0] @0..3 specificity=(0,0,1)\n",
+            "        - type(\"div\") node=@0..3 name=@0..3\n",
             "  declarations @4..31\n",
             "    declaration[0] @6..29\n",
             "      name(kind=standard, text=\"color\") @6..11\n",
@@ -357,6 +358,37 @@ fn model_rule_declaration_and_value_serializers_are_stable() {
             "  - whitespace @17..18\n",
         )
     );
+}
+
+#[test]
+fn model_style_rules_carry_structured_selector_results() {
+    let parse = parse_stylesheet_with_options(
+        "div, span { color: blue; } a:is(.hero) { color: red; } [lang=] { color: green; }",
+        &ParseOptions::stylesheet(),
+    );
+
+    let Rule::Style(parsed) = &parse.stylesheet.rules[0] else {
+        panic!("expected first rule to be a style rule");
+    };
+    let Rule::Style(unsupported) = &parse.stylesheet.rules[1] else {
+        panic!("expected second rule to be a style rule");
+    };
+    let Rule::Style(invalid) = &parse.stylesheet.rules[2] else {
+        panic!("expected third rule to be a style rule");
+    };
+
+    assert!(matches!(
+        parsed.selectors,
+        SelectorListParseResult::Parsed(_)
+    ));
+    assert!(matches!(
+        unsupported.selectors,
+        SelectorListParseResult::Unsupported(_)
+    ));
+    assert!(matches!(
+        invalid.selectors,
+        SelectorListParseResult::Invalid(_)
+    ));
 }
 
 fn declaration_value_contains_important(values: &[ValueComponent]) -> bool {

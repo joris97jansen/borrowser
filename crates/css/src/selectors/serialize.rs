@@ -11,48 +11,65 @@ const SNAPSHOT_VERSION: u32 = 1;
 pub fn serialize_selector_list_for_snapshot(list: &SelectorList) -> String {
     let mut out = String::new();
     write_snapshot_header(&mut out, "selector-list");
-    writeln!(out, "span: {}", span_label(list.span)).expect("write selector list span");
-
-    for (selector_index, selector) in list.selectors.iter().enumerate() {
-        write_selector(&mut out, selector, selector_index, 0);
-    }
-
+    write_selector_list_snapshot_body(&mut out, list, 0);
     out
 }
 
 pub fn serialize_selector_parse_result_for_snapshot(result: &SelectorListParseResult) -> String {
     let mut out = String::new();
     write_snapshot_header(&mut out, "selector-parse");
+    write_selector_parse_result_snapshot_body(&mut out, result, 0);
+    out
+}
 
+pub(crate) fn write_selector_list_snapshot_body(
+    out: &mut String,
+    list: &SelectorList,
+    indent: usize,
+) {
+    let indent_str = " ".repeat(indent);
+    writeln!(out, "{indent_str}span: {}", span_label(list.span)).expect("write selector list span");
+    for (selector_index, selector) in list.selectors.iter().enumerate() {
+        write_selector(out, selector, selector_index, indent);
+    }
+}
+
+pub(crate) fn write_selector_parse_result_snapshot_body(
+    out: &mut String,
+    result: &SelectorListParseResult,
+    indent: usize,
+) {
+    let indent_str = " ".repeat(indent);
     match result {
         SelectorListParseResult::Parsed(list) => {
-            writeln!(out, "result: parsed").expect("write parsed result");
-            writeln!(out, "span: {}", span_label(list.span)).expect("write parsed span");
-            for (selector_index, selector) in list.selectors.iter().enumerate() {
-                write_selector(&mut out, selector, selector_index, 0);
-            }
+            writeln!(out, "{indent_str}result: parsed").expect("write parsed result");
+            write_selector_list_snapshot_body(out, list, indent);
         }
         SelectorListParseResult::Unsupported(list) => {
-            writeln!(out, "result: unsupported").expect("write unsupported result");
-            writeln!(out, "span: {}", span_label(list.span())).expect("write unsupported span");
+            writeln!(out, "{indent_str}result: unsupported").expect("write unsupported result");
+            writeln!(out, "{indent_str}span: {}", span_label(list.span()))
+                .expect("write unsupported span");
             for (feature_index, feature) in list.features().iter().enumerate() {
                 writeln!(
                     out,
-                    "feature[{feature_index}]: {}",
+                    "{indent_str}feature[{feature_index}]: {}",
                     unsupported_feature_label(*feature)
                 )
                 .expect("write unsupported feature");
             }
         }
         SelectorListParseResult::Invalid(list) => {
-            writeln!(out, "result: invalid").expect("write invalid result");
-            writeln!(out, "span: {}", span_label(list.span)).expect("write invalid span");
-            writeln!(out, "reason: {}", invalid_reason_label(list.reason))
-                .expect("write invalid reason");
+            writeln!(out, "{indent_str}result: invalid").expect("write invalid result");
+            writeln!(out, "{indent_str}span: {}", span_label(list.span))
+                .expect("write invalid span");
+            writeln!(
+                out,
+                "{indent_str}reason: {}",
+                invalid_reason_label(list.reason)
+            )
+            .expect("write invalid reason");
         }
     }
-
-    out
 }
 
 fn write_snapshot_header(out: &mut String, kind: &str) {

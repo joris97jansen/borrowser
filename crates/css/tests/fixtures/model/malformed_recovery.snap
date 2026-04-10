@@ -3,9 +3,12 @@ model-stylesheet
 origin: stylesheet
 span: @0..75
 rule[0] style @5..61
-  selector @5..10
-    - token(ident("span")) @5..9
-    - token(whitespace) @9..10
+  selectors
+    result: parsed
+    span: @5..10
+    selector[0] @5..9 specificity=(0,0,1)
+      compound[0] @5..9 specificity=(0,0,1)
+        - type("span") node=@5..9 name=@5..9
   declarations @10..61
     declaration[0] @12..35
       name(kind=standard, text="color") @12..17

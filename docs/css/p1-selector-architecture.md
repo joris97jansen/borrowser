@@ -1,6 +1,6 @@
 # P1: Define Selector Architecture, IR, And Parsing Contract
 
-Last updated: 2026-04-09  
+Last updated: 2026-04-10  
 Status: complete
 
 This document is the source-of-truth contract for Milestone P issue P1:
@@ -8,10 +8,11 @@ selector subsystem ownership, selector IR shape, specificity accounting,
 invalid/unsupported selector handling, and stable selector debug output.
 
 Milestones N and O established the syntax layer and the engine-facing
-stylesheet/rule/value model, but style-rule selectors are still preserved as
-generic prelude component values and reparsed ad hoc by transitional code.
-That is no longer an acceptable foundation for later selector matching or
-cascade work.
+stylesheet/rule/value model. Before Milestone P, style-rule selectors were
+still preserved as generic prelude component values and reparsed ad hoc by
+transitional code. Milestone P replaces that with structured selector parse
+results stored directly on `StyleRule`, which is the required foundation for
+later selector matching and cascade work.
 
 P1 does not finish selector parsing or selector matching. It defines the
 selector subsystem contract that later Milestone P issues must implement.
@@ -45,9 +46,9 @@ Milestone P now has an explicit in-repository selector contract for:
   `Debug`
 - a defined supported subset for Milestone P
 
-The code contract currently lives in `css::selectors`. Current style rules
-still preserve raw selector source in the model until the follow-up parser
-implementation wires this contract into the stylesheet pipeline.
+The code contract now lives in `css::selectors` and is integrated into the
+engine-facing stylesheet model through structured style-rule selector parse
+results rather than preserved raw selector source.
 
 ## Why This Exists
 
@@ -335,8 +336,9 @@ Normative rule:
 
 ## Integration Status
 
-P1 defines the architecture and code contract, but does not yet finish parser
-integration.
+P1 defined the architecture and code contract; later Milestone P issues
+completed selector parsing, specificity, invalid/unsupported handling,
+serialization, and model integration.
 
 Current repository state after P1:
 
@@ -344,9 +346,11 @@ Current repository state after P1:
 - selector specificity logic exists independently from `css::cascade`
 - selector invalid/unsupported behavior is explicit in code and docs
 - stable selector snapshots exist for regression tests
-- `StyleRule` still temporarily stores preserved selector source until a later
-  Milestone P issue wires selector parsing into the stylesheet model path
+- `StyleRule` now stores structured selector parse results rather than
+  preserved selector source
 - `CompatSelector` remains migration-only and is not the selector-system target
+- Milestone P is complete and provides the selector/model foundation for
+  Milestone Q matching work
 
 ## Exit Criteria
 
@@ -362,6 +366,6 @@ P1 is complete when:
 Repository status:
 
 - the P1 selector architecture issue is complete and may be treated as closed
-- the next Milestone P work should begin with real selector parser
-  implementation and model integration, not by reopening the architecture
-  contract
+- Milestone P is complete; the next work should begin with Milestone Q
+  selector matching over the structured selector/model pipeline, not by
+  reopening the architecture contract
