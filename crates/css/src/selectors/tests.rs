@@ -3,7 +3,8 @@ use super::{
     AttributeValue, ClassSelector, Combinator, CombinedSelector, ComplexSelector, CompoundSelector,
     IdSelector, InvalidSelectorList, InvalidSelectorReason, SelectorIdent, SelectorList,
     SelectorListParseResult, SelectorString, SelectorStructureError, Specificity, SubclassSelector,
-    TypeSelector, UnsupportedSelectorFeature, UnsupportedSelectorList, parse_selector_list,
+    TypeSelector, UnsupportedSelectorFeature, UnsupportedSelectorHandling, UnsupportedSelectorList,
+    parse_selector_list,
 };
 use crate::syntax::{CssInput, CssRule, CssSpan, ParseOptions, parse_stylesheet_with_options};
 
@@ -88,6 +89,14 @@ fn invalid_selector(source: &str) -> InvalidSelectorList {
     let result = parse_selector_result(source);
     let Some(list) = result.invalid() else {
         panic!("expected invalid selector parse result for {source:?}");
+    };
+    list.clone()
+}
+
+fn unsupported_selector(source: &str) -> UnsupportedSelectorList {
+    let result = parse_selector_result(source);
+    let Some(list) = result.unsupported() else {
+        panic!("expected unsupported selector parse result for {source:?}");
     };
     list.clone()
 }
@@ -253,6 +262,13 @@ fn parse_result_states_are_explicit_and_snapshot_stable() {
     assert!(unsupported.unsupported().is_some());
     assert!(unsupported.invalid().is_none());
     assert_eq!(
+        unsupported
+            .unsupported()
+            .expect("unsupported result")
+            .handling(),
+        UnsupportedSelectorHandling::PreserveAsUnsupported
+    );
+    assert_eq!(
         unsupported.to_debug_snapshot(),
         concat!(
             "version: 1\n",
@@ -305,6 +321,16 @@ fn unsupported_feature_lists_are_deduplicated_in_first_encounter_order() {
             UnsupportedSelectorFeature::FunctionalPseudoClass,
             UnsupportedSelectorFeature::PseudoElement,
         ]
+    );
+}
+
+#[test]
+fn unsupported_selector_lists_expose_explicit_handling_strategy() {
+    let list = unsupported_selector("a:is(.x)");
+
+    assert_eq!(
+        list.handling(),
+        UnsupportedSelectorHandling::PreserveAsUnsupported
     );
 }
 
@@ -722,6 +748,50 @@ fn parser_reports_unsupported_selector_features_without_string_splitting() {
             "result: unsupported\n",
             "span: @0..14\n",
             "feature[0]: attribute-case-modifier\n",
+        )
+    );
+}
+
+#[test]
+fn unsupported_selectors_do_not_corrupt_surrounding_selector_parsing() {
+    let pseudo_tail = unsupported_selector("div:hover.class > span");
+    let column = unsupported_selector("div || span");
+    let nesting = unsupported_selector("& > main.card");
+
+    assert_eq!(
+        pseudo_tail.features(),
+        &[UnsupportedSelectorFeature::PseudoClass]
+    );
+    assert_eq!(
+        column.features(),
+        &[UnsupportedSelectorFeature::ColumnCombinator]
+    );
+    assert_eq!(
+        nesting.features(),
+        &[UnsupportedSelectorFeature::NestingSelector]
+    );
+}
+
+#[test]
+fn unsupported_feature_aggregation_is_stable_across_selector_lists() {
+    let result = parse_selector_result(
+        "a:is(.x), svg|a, [lang=\"en\" i], div::before, & > span, div || span",
+    );
+
+    assert_eq!(
+        result.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "selector-parse\n",
+            "result: unsupported\n",
+            "span: @0..67\n",
+            "feature[0]: functional-pseudo-class\n",
+            "feature[1]: forgiving-selector-list\n",
+            "feature[2]: namespace\n",
+            "feature[3]: attribute-case-modifier\n",
+            "feature[4]: pseudo-element\n",
+            "feature[5]: nesting-selector\n",
+            "feature[6]: column-combinator\n",
         )
     );
 }

@@ -158,6 +158,10 @@ impl UnsupportedSelectorList {
         self.span
     }
 
+    pub fn handling(&self) -> UnsupportedSelectorHandling {
+        UnsupportedSelectorHandling::PreserveAsUnsupported
+    }
+
     pub fn features(&self) -> &[UnsupportedSelectorFeature] {
         &self.features
     }
@@ -167,6 +171,15 @@ impl UnsupportedSelectorList {
             self.features.push(feature);
         }
     }
+}
+
+/// Handling strategy for syntactically valid but unsupported selector input.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum UnsupportedSelectorHandling {
+    /// Preserve the selector list as unsupported and non-matchable, while
+    /// keeping the source eligible for future support without reparsing raw
+    /// stylesheet text.
+    PreserveAsUnsupported,
 }
 
 /// Malformed selector list rejected by the selector parser.
