@@ -1,0 +1,5 @@
+version: 1
+selector-parse
+result: invalid
+span: @5..12
+reason: missing-attribute-value

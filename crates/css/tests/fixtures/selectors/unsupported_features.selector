@@ -1,0 +1,1 @@
+a:is(.x), svg|a, [lang="en" i], div::before, & > span, div || span
