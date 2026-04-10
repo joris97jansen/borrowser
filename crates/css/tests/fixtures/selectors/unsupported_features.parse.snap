@@ -1,0 +1,11 @@
+version: 1
+selector-parse
+result: unsupported
+span: @0..67
+feature[0]: functional-pseudo-class
+feature[1]: forgiving-selector-list
+feature[2]: namespace
+feature[3]: attribute-case-modifier
+feature[4]: pseudo-element
+feature[5]: nesting-selector
+feature[6]: column-combinator

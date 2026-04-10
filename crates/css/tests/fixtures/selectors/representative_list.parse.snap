@@ -1,0 +1,16 @@
+version: 1
+selector-parse
+result: parsed
+span: @0..49
+selector[0] @0..41 specificity=(1,2,2)
+  compound[0] @0..12 specificity=(0,1,1)
+    - type("article") node=@0..7 name=@0..7
+    - class("card") node=@7..12 name=@8..12
+  combined[0] child @13..41
+    compound @15..41 specificity=(1,1,1)
+      - type("h1") node=@15..17 name=@15..17
+      - id("hero") node=@17..22 name=@18..22
+      - attribute-match(name="data-kind", name_span=@23..32, matcher=exact, value=string("promo", span=@34..39)) node=@22..41
+selector[1] @43..48 specificity=(0,0,1)
+  compound[0] @43..48 specificity=(0,0,1)
+    - type("aside") node=@43..48 name=@43..48
