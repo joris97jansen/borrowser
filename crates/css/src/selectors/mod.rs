@@ -368,10 +368,10 @@ impl TypeSelector {
         }
     }
 
-    fn specificity(&self) -> Specificity {
+    pub fn specificity(&self) -> Specificity {
         match self {
-            Self::Universal(_) => Specificity::ZERO,
-            Self::Named(_) => Specificity::TYPE,
+            Self::Universal(selector) => selector.specificity(),
+            Self::Named(selector) => selector.specificity(),
         }
     }
 }
@@ -389,6 +389,10 @@ impl UniversalSelector {
 
     pub fn span(&self) -> CssSpan {
         self.span
+    }
+
+    pub fn specificity(&self) -> Specificity {
+        Specificity::ZERO
     }
 }
 
@@ -412,6 +416,10 @@ impl NamedTypeSelector {
     pub fn name(&self) -> &SelectorIdent {
         &self.name
     }
+
+    pub fn specificity(&self) -> Specificity {
+        Specificity::TYPE
+    }
 }
 
 /// Supported subclass selectors for Milestone P.
@@ -431,10 +439,11 @@ impl SubclassSelector {
         }
     }
 
-    fn specificity(&self) -> Specificity {
+    pub fn specificity(&self) -> Specificity {
         match self {
-            Self::Id(_) => Specificity::ID,
-            Self::Class(_) | Self::Attribute(_) => Specificity::CLASS,
+            Self::Id(selector) => selector.specificity(),
+            Self::Class(selector) => selector.specificity(),
+            Self::Attribute(selector) => selector.specificity(),
         }
     }
 }
@@ -459,6 +468,10 @@ impl IdSelector {
     pub fn name(&self) -> &SelectorIdent {
         &self.name
     }
+
+    pub fn specificity(&self) -> Specificity {
+        Specificity::ID
+    }
 }
 
 /// `.card`
@@ -481,6 +494,10 @@ impl ClassSelector {
     pub fn name(&self) -> &SelectorIdent {
         &self.name
     }
+
+    pub fn specificity(&self) -> Specificity {
+        Specificity::CLASS
+    }
 }
 
 /// Supported attribute selector subset.
@@ -495,6 +512,13 @@ impl AttributeSelector {
         match self {
             Self::Exists(selector) => selector.span(),
             Self::Match(selector) => selector.span(),
+        }
+    }
+
+    pub fn specificity(&self) -> Specificity {
+        match self {
+            Self::Exists(selector) => selector.specificity(),
+            Self::Match(selector) => selector.specificity(),
         }
     }
 }
@@ -518,6 +542,10 @@ impl AttributeExistsSelector {
 
     pub fn name(&self) -> &SelectorIdent {
         &self.name
+    }
+
+    pub fn specificity(&self) -> Specificity {
+        Specificity::CLASS
     }
 }
 
@@ -564,6 +592,10 @@ impl AttributeMatchSelector {
 
     pub fn value(&self) -> &AttributeValue {
         &self.value
+    }
+
+    pub fn specificity(&self) -> Specificity {
+        Specificity::CLASS
     }
 }
 
