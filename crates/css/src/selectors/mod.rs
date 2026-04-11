@@ -1,20 +1,23 @@
 //! Engine-facing CSS selector subsystem.
 //!
 //! This module defines the selector intermediate representation (IR),
-//! specificity model, invalid/unsupported selector result contract, and stable
-//! snapshot serializers for Milestone P.
+//! specificity model, invalid/unsupported selector result contract, stable
+//! snapshot serializers from Milestone P, and the selector-matching contract
+//! introduced by Milestone Q.
 //!
 //! Architectural boundary:
 //! - `css::syntax` owns tokenization, generic component-value parsing, and
 //!   malformed stylesheet recovery
-//! - `css::selectors` owns selector-specific structure, specificity, and the
-//!   distinction between parsed, invalid, and unsupported selector results
+//! - `css::selectors` owns selector-specific structure, specificity, the
+//!   distinction between parsed/invalid/unsupported selector results, and the
+//!   DOM-facing contract used by selector matching
 //! - `css::cascade` and later matching code consume selector IR; they do not
 //!   reparse selector source text
 //!
-//! This module is intentionally independent from DOM matching and cascade
-//! winner resolution.
+//! Selector IR remains separate from cascade winner resolution and computed
+//! style generation.
 
+pub mod matching;
 mod parser;
 mod serialize;
 
@@ -24,6 +27,10 @@ mod tests;
 pub(crate) use self::serialize::write_selector_parse_result_snapshot_body;
 pub use self::serialize::{
     serialize_selector_list_for_snapshot, serialize_selector_parse_result_for_snapshot,
+};
+pub use matching::{
+    MatchedSelector, SelectorDomElementId, SelectorDomElementIter, SelectorDomIndex,
+    SelectorListMatchBuilder, SelectorListMatchOutcome, SelectorMatchDom, SelectorMatchability,
 };
 pub use parser::parse_selector_list;
 
