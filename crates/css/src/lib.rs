@@ -30,11 +30,13 @@ pub use model::{
 pub use selectors::{
     AttributeExistsSelector, AttributeMatchSelector, AttributeMatcher, AttributeSelector,
     AttributeValue, ClassSelector, Combinator, CombinedSelector, ComplexSelector, CompoundSelector,
-    IdSelector, InvalidSelectorList, InvalidSelectorReason, NamedTypeSelector, SelectorIdent,
-    SelectorList, SelectorListParseResult, SelectorString, SelectorStructureError, Specificity,
-    SubclassSelector, TypeSelector, UniversalSelector, UnsupportedSelectorFeature,
-    UnsupportedSelectorHandling, UnsupportedSelectorList, parse_selector_list,
-    serialize_selector_list_for_snapshot, serialize_selector_parse_result_for_snapshot,
+    IdSelector, InvalidSelectorList, InvalidSelectorReason, MatchedSelector, NamedTypeSelector,
+    SelectorDomElementId, SelectorDomElementIter, SelectorDomIndex, SelectorIdent, SelectorList,
+    SelectorListMatchBuilder, SelectorListMatchOutcome, SelectorListParseResult, SelectorMatchDom,
+    SelectorMatchability, SelectorString, SelectorStructureError, Specificity, SubclassSelector,
+    TypeSelector, UniversalSelector, UnsupportedSelectorFeature, UnsupportedSelectorHandling,
+    UnsupportedSelectorList, parse_selector_list, serialize_selector_list_for_snapshot,
+    serialize_selector_parse_result_for_snapshot,
 };
 
 // Explicit syntax-layer surface for parser/tokenizer work and syntax tests.
