@@ -7,19 +7,21 @@
 //! - an owned-tree DOM adapter built from `html::Node` for regression tests and
 //!   the legacy snapshot integration path
 //!
-//! This module intentionally stops short of full selector evaluation. Q1 and Q2
-//! establish the matching architecture, context/query contract, and
-//! debug/regression surfaces before the matcher itself lands.
+//! This module intentionally stops short of full complex-selector evaluation.
+//! Q1 through Q3 establish the matching architecture, context/query contract,
+//! element-local selector evaluation, and debug/regression surfaces before
+//! combinator traversal lands.
 //!
 //! File-organization note:
-//! Q1 and Q2 keep these tightly related contracts in one module deliberately to
-//! avoid churn before evaluator boundaries are real. When full complex-selector
-//! evaluation lands, split this module along the now-stable seams instead of
-//! letting evaluator logic accumulate here.
+//! Q1 through Q3 keep these tightly related contracts in one module
+//! deliberately to avoid churn before evaluator boundaries are real. When full
+//! complex-selector evaluation lands, split this module along the now-stable
+//! seams instead of letting evaluator logic accumulate here.
 
 use super::{
     AttributeMatchSelector, AttributeMatcher, AttributeSelector, AttributeValue, ClassSelector,
-    IdSelector, SelectorListParseResult, Specificity, SubclassSelector, TypeSelector,
+    ComplexSelector, CompoundSelector, IdSelector, SelectorList, SelectorListParseResult,
+    Specificity, SubclassSelector, TypeSelector,
 };
 use html::Node;
 use std::collections::BTreeMap;
@@ -100,7 +102,15 @@ pub trait SelectorMatchDom {
     }
 }
 
-/// Matchability state derived from `SelectorListParseResult`.
+/// Matchability state shared by selector parsing and matching surfaces.
+///
+/// Parsing derives this state from selector validity/support. Matching reuses it
+/// for the current evaluator subset, which may conservatively return
+/// `Unsupported` for parsed selectors that require selector classes or traversal
+/// semantics not yet implemented by the active matcher.
+///
+/// The matcher-side `Unsupported` category is intentionally temporary and
+/// should shrink as later Milestone Q evaluator support expands.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SelectorMatchability {
     Parsed,
@@ -122,8 +132,9 @@ impl SelectorListParseResult {
     /// Returns whether a selector parse result is matchable by the selector
     /// engine.
     ///
-    /// Only parsed selector lists are matchable. Unsupported and invalid lists
-    /// remain explicit non-matchable states.
+    /// This is the parser-owned matchability state. Matching code may apply
+    /// stricter subset rules while still preserving explicit
+    /// parsed/unsupported/invalid distinctions in its own outcome surface.
     pub fn matchability(&self) -> SelectorMatchability {
         match self {
             Self::Parsed(_) => SelectorMatchability::Parsed,
@@ -232,6 +243,12 @@ impl SelectorListMatchBuilder {
 /// `selector_index`. `selector_index` is the authoritative source-order
 /// identity, not insertion/discovery order. Duplicate selector indices with
 /// differing specificity are invalid internal state.
+///
+/// `Unsupported` may originate either from parser-level unsupported selector
+/// input or from the active matcher declining to partially reinterpret parsed
+/// selectors outside its implemented evaluation subset. The latter is a
+/// temporary staging rule for the current matcher and should shrink away as
+/// complex-selector support lands.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SelectorListMatchOutcome {
     matchability: SelectorMatchability,
@@ -374,6 +391,26 @@ impl<'a, D: SelectorMatchDom> SelectorMatchingContext<'a, D> {
         self.dom
     }
 
+    /// Matches one selector list against one target element using the current
+    /// evaluator subset.
+    ///
+    /// Q3 supports element-local selector evaluation only. Parsed selector
+    /// lists that require combinator traversal are preserved as `Unsupported`
+    /// rather than being partially reinterpreted. This conservative
+    /// matcher-level `Unsupported` path is temporary and should be replaced by
+    /// real complex-selector traversal in later Milestone Q work.
+    pub fn match_selector_list(
+        &self,
+        element: D::ElementId,
+        selectors: &SelectorListParseResult,
+    ) -> SelectorListMatchOutcome {
+        match selectors {
+            SelectorListParseResult::Parsed(list) => self.match_parsed_selector_list(element, list),
+            SelectorListParseResult::Unsupported(_) => SelectorListMatchOutcome::unsupported(),
+            SelectorListParseResult::Invalid(_) => SelectorListMatchOutcome::invalid(),
+        }
+    }
+
     pub fn same_element(&self, left: D::ElementId, right: D::ElementId) -> bool {
         left == right
     }
@@ -442,6 +479,22 @@ impl<'a, D: SelectorMatchDom> SelectorMatchingContext<'a, D> {
 
     pub fn element_has_class(&self, element: D::ElementId, want: &str) -> bool {
         self.dom.element_has_class(element, want)
+    }
+
+    /// Matches one compound selector against one element without any combinator
+    /// traversal.
+    pub fn matches_compound_selector(
+        &self,
+        element: D::ElementId,
+        selector: &CompoundSelector,
+    ) -> bool {
+        selector
+            .type_selector()
+            .is_none_or(|selector| self.matches_type_selector(element, selector))
+            && selector
+                .subclasses()
+                .iter()
+                .all(|selector| self.matches_subclass_selector(element, selector))
     }
 
     pub fn matches_type_selector(&self, element: D::ElementId, selector: &TypeSelector) -> bool {
@@ -518,6 +571,27 @@ impl<'a, D: SelectorMatchDom> SelectorMatchingContext<'a, D> {
             AttributeMatcher::Suffix => !expected.is_empty() && actual.ends_with(expected),
             AttributeMatcher::Substring => !expected.is_empty() && actual.contains(expected),
         }
+    }
+
+    fn match_parsed_selector_list(
+        &self,
+        element: D::ElementId,
+        selectors: &SelectorList,
+    ) -> SelectorListMatchOutcome {
+        if selectors
+            .iter()
+            .any(|selector| !supports_element_local_matching(selector))
+        {
+            return SelectorListMatchOutcome::unsupported();
+        }
+
+        let mut builder = SelectorListMatchOutcome::builder();
+        for (selector_index, selector) in selectors.iter().enumerate() {
+            if self.matches_compound_selector(element, selector.head()) {
+                builder.record_match(selector_index, selector.specificity());
+            }
+        }
+        builder.build()
     }
 }
 
@@ -829,6 +903,13 @@ fn normalized_document_children_frame<'a>(
 
 // Internal helper functions shared by the DOM contract and matcher context.
 
+// Q3 capability gate for the active evaluator subset. Keep this explicit and
+// shrink it away as later matcher milestones add real complex-selector
+// traversal instead of layering special cases on top.
+fn supports_element_local_matching(selector: &ComplexSelector) -> bool {
+    selector.tail().is_empty()
+}
+
 fn class_list_contains(class_list: &str, want: &str) -> bool {
     split_selector_whitespace_separated_tokens(class_list).any(|token| token == want)
 }
@@ -897,7 +978,7 @@ mod tests {
         InvalidSelectorReason, SelectorIdent, SelectorList, SelectorListParseResult,
         SelectorString, Specificity, SubclassSelector, TypeSelector, UnsupportedSelectorFeature,
     };
-    use crate::syntax::CssInput;
+    use crate::syntax::{CssInput, CssRule, ParseOptions, parse_stylesheet_with_options};
     use html::Node;
     use std::sync::Arc;
 
@@ -941,6 +1022,16 @@ mod tests {
         let complex = ComplexSelector::new(span, compound, Vec::new()).expect("complex selector");
         let list = SelectorList::new(Some(span), vec![complex]).expect("selector list");
         SelectorListParseResult::Parsed(list)
+    }
+
+    fn parse_selector_result(source: &str) -> SelectorListParseResult {
+        let stylesheet = format!("{source} {{ color: red; }}");
+        let parse = parse_stylesheet_with_options(&stylesheet, &ParseOptions::stylesheet());
+        let rule = parse.stylesheet.rules.first().expect("style rule");
+        let CssRule::Qualified(rule) = rule else {
+            panic!("expected qualified rule");
+        };
+        crate::selectors::parse_selector_list(&parse.input, &rule.prelude)
     }
 
     fn dummy_span(marker: &str) -> crate::syntax::CssSpan {
@@ -1232,6 +1323,54 @@ mod tests {
     }
 
     #[test]
+    fn matching_context_matches_compound_selectors_element_locally() {
+        let dom = Node::Document {
+            id: html::internal::Id::INVALID,
+            doctype: None,
+            children: vec![element(
+                "div",
+                vec![
+                    ("id", Some("hero")),
+                    ("class", Some("card featured")),
+                    ("data-kind", Some("promo")),
+                ],
+                Vec::new(),
+            )],
+        };
+
+        let index = SelectorDomIndex::from_root(&dom);
+        let context = SelectorMatchingContext::new(&index);
+        let element = index.elements().next().expect("indexed element");
+
+        let parsed = parse_selector_result("div#hero.card[data-kind=\"promo\"]");
+        let selector = parsed
+            .parsed()
+            .expect("parsed selector list")
+            .selectors()
+            .first()
+            .expect("selector entry");
+        assert!(context.matches_compound_selector(element, selector.head()));
+
+        let parsed = parse_selector_result("span.card");
+        let selector = parsed
+            .parsed()
+            .expect("parsed selector list")
+            .selectors()
+            .first()
+            .expect("selector entry");
+        assert!(!context.matches_compound_selector(element, selector.head()));
+
+        let parsed = parse_selector_result("div.missing");
+        let selector = parsed
+            .parsed()
+            .expect("parsed selector list")
+            .selectors()
+            .first()
+            .expect("selector entry");
+        assert!(!context.matches_compound_selector(element, selector.head()));
+    }
+
+    #[test]
     fn matching_context_attribute_match_queries_cover_supported_matchers_and_edges() {
         let dom = Node::Document {
             id: html::internal::Id::INVALID,
@@ -1301,6 +1440,155 @@ mod tests {
             element,
             &attribute_match_selector("data-sub", AttributeMatcher::Substring, string_value("")),
         ));
+    }
+
+    #[test]
+    fn matching_context_match_selector_list_matches_element_local_parsed_selectors() {
+        let dom = Node::Document {
+            id: html::internal::Id::INVALID,
+            doctype: None,
+            children: vec![element(
+                "div",
+                vec![
+                    ("id", Some("hero")),
+                    ("class", Some("card featured")),
+                    ("data-kind", Some("promo")),
+                ],
+                Vec::new(),
+            )],
+        };
+
+        let index = SelectorDomIndex::from_root(&dom);
+        let context = SelectorMatchingContext::new(&index);
+        let element = index.elements().next().expect("indexed element");
+        let selectors = parse_selector_result("span, .featured, #hero, div.card, *");
+        let outcome = context.match_selector_list(element, &selectors);
+
+        assert_eq!(outcome.matchability(), SelectorMatchability::Parsed);
+        assert_eq!(
+            outcome.matched_selectors(),
+            &[
+                MatchedSelector::new(1, Specificity::new(0, 1, 0)),
+                MatchedSelector::new(2, Specificity::new(1, 0, 0)),
+                MatchedSelector::new(3, Specificity::new(0, 1, 1)),
+                MatchedSelector::new(4, Specificity::new(0, 0, 0)),
+            ]
+        );
+        assert_eq!(
+            outcome.highest_specificity(),
+            Some(Specificity::new(1, 0, 0))
+        );
+        assert_eq!(
+            outcome.to_debug_snapshot(),
+            concat!(
+                "version: 1\n",
+                "selector-match\n",
+                "matchability: parsed\n",
+                "matched: yes\n",
+                "highest-specificity: (1,0,0)\n",
+                "match[0]: selector=1 specificity=(0,1,0)\n",
+                "match[1]: selector=2 specificity=(1,0,0)\n",
+                "match[2]: selector=3 specificity=(0,1,1)\n",
+                "match[3]: selector=4 specificity=(0,0,0)\n",
+            )
+        );
+    }
+
+    #[test]
+    fn matching_context_match_selector_list_reports_not_matched_for_supported_inputs() {
+        let dom = Node::Document {
+            id: html::internal::Id::INVALID,
+            doctype: None,
+            children: vec![element(
+                "div",
+                vec![
+                    ("id", Some("hero")),
+                    ("class", Some("card featured")),
+                    ("data-kind", Some("promo")),
+                ],
+                Vec::new(),
+            )],
+        };
+
+        let index = SelectorDomIndex::from_root(&dom);
+        let context = SelectorMatchingContext::new(&index);
+        let element = index.elements().next().expect("indexed element");
+        let selectors = parse_selector_result("span, #missing, .other");
+        let outcome = context.match_selector_list(element, &selectors);
+
+        assert_eq!(outcome.matchability(), SelectorMatchability::Parsed);
+        assert!(!outcome.matched_any());
+        assert!(outcome.matched_selectors().is_empty());
+        assert_eq!(outcome.highest_specificity(), None);
+    }
+
+    #[test]
+    fn matching_context_match_selector_list_preserves_non_matchable_parse_states() {
+        let dom = Node::Document {
+            id: html::internal::Id::INVALID,
+            doctype: None,
+            children: vec![element("div", Vec::new(), Vec::new())],
+        };
+
+        let index = SelectorDomIndex::from_root(&dom);
+        let context = SelectorMatchingContext::new(&index);
+        let element = index.elements().next().expect("indexed element");
+        let unsupported = crate::selectors::SelectorListParseResult::Unsupported(
+            crate::selectors::UnsupportedSelectorList::from_features(
+                None,
+                [UnsupportedSelectorFeature::PseudoClass],
+            ),
+        );
+        let invalid = crate::selectors::SelectorListParseResult::Invalid(
+            crate::selectors::InvalidSelectorList::new(
+                None,
+                InvalidSelectorReason::EmptySelectorList,
+            ),
+        );
+
+        let unsupported_outcome = context.match_selector_list(element, &unsupported);
+        let invalid_outcome = context.match_selector_list(element, &invalid);
+
+        assert_eq!(
+            unsupported_outcome.matchability(),
+            SelectorMatchability::Unsupported
+        );
+        assert!(!unsupported_outcome.matched_any());
+        assert_eq!(
+            invalid_outcome.matchability(),
+            SelectorMatchability::Invalid
+        );
+        assert!(!invalid_outcome.matched_any());
+    }
+
+    #[test]
+    fn matching_context_match_selector_list_rejects_partial_interpretation_of_combinators() {
+        let dom = Node::Document {
+            id: html::internal::Id::INVALID,
+            doctype: None,
+            children: vec![element("div", Vec::new(), Vec::new())],
+        };
+
+        let index = SelectorDomIndex::from_root(&dom);
+        let context = SelectorMatchingContext::new(&index);
+        let element = index.elements().next().expect("indexed element");
+
+        let descendant = parse_selector_result("div span");
+        let mixed = parse_selector_result("div, span + a");
+
+        let descendant_outcome = context.match_selector_list(element, &descendant);
+        let mixed_outcome = context.match_selector_list(element, &mixed);
+
+        assert_eq!(
+            descendant_outcome.matchability(),
+            SelectorMatchability::Unsupported
+        );
+        assert!(!descendant_outcome.matched_any());
+        assert_eq!(
+            mixed_outcome.matchability(),
+            SelectorMatchability::Unsupported
+        );
+        assert!(!mixed_outcome.matched_any());
     }
 
     #[test]
