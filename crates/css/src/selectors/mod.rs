@@ -29,8 +29,9 @@ pub use self::serialize::{
     serialize_selector_list_for_snapshot, serialize_selector_parse_result_for_snapshot,
 };
 pub use matching::{
-    MatchedSelector, SelectorDomElementId, SelectorDomElementIter, SelectorDomIndex,
-    SelectorListMatchBuilder, SelectorListMatchOutcome, SelectorMatchDom, SelectorMatchability,
+    AncestorElements, MatchedSelector, PreviousSiblingElements, SelectorDomElementId,
+    SelectorDomElementIter, SelectorDomIndex, SelectorListMatchBuilder, SelectorListMatchOutcome,
+    SelectorMatchDom, SelectorMatchability, SelectorMatchingContext,
 };
 pub use parser::parse_selector_list;
 
