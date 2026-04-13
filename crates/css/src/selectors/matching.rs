@@ -2,20 +2,32 @@
 //!
 //! This module defines:
 //! - the DOM-facing contract the selector engine is allowed to depend on
+//! - the matcher-facing context and DOM query helpers
 //! - the deterministic match-result surface later cascade work will consume
 //! - an owned-tree DOM adapter built from `html::Node` for regression tests and
 //!   the legacy snapshot integration path
 //!
-//! This module intentionally does not implement selector evaluation yet. Q1
-//! establishes the matching architecture, DOM contract, and debug/regression
-//! surfaces before the matcher itself lands.
+//! This module intentionally stops short of full selector evaluation. Q1 and Q2
+//! establish the matching architecture, context/query contract, and
+//! debug/regression surfaces before the matcher itself lands.
+//!
+//! File-organization note:
+//! Q1 and Q2 keep these tightly related contracts in one module deliberately to
+//! avoid churn before evaluator boundaries are real. When full complex-selector
+//! evaluation lands, split this module along the now-stable seams instead of
+//! letting evaluator logic accumulate here.
 
-use super::{SelectorListParseResult, Specificity};
+use super::{
+    AttributeMatchSelector, AttributeMatcher, AttributeSelector, AttributeValue, ClassSelector,
+    IdSelector, SelectorListParseResult, Specificity, SubclassSelector, TypeSelector,
+};
 use html::Node;
 use std::collections::BTreeMap;
 use std::fmt::{Debug, Write};
 use std::hash::Hash;
 use std::sync::Arc;
+
+// Matchability and result surfaces.
 
 /// DOM contract for selector matching over elements.
 ///
@@ -340,6 +352,217 @@ impl SelectorListMatchOutcome {
     }
 }
 
+// Matcher-facing context and query helpers.
+
+/// Matcher-facing DOM/query context for selector evaluation.
+///
+/// This context centralizes the DOM relationships and simple-selector query
+/// semantics the matcher is allowed to depend on. Future selector evaluation
+/// code should use this surface instead of issuing ad hoc DOM traversals
+/// directly against `SelectorMatchDom`.
+#[derive(Clone, Copy, Debug)]
+pub struct SelectorMatchingContext<'a, D: SelectorMatchDom> {
+    dom: &'a D,
+}
+
+impl<'a, D: SelectorMatchDom> SelectorMatchingContext<'a, D> {
+    pub fn new(dom: &'a D) -> Self {
+        Self { dom }
+    }
+
+    pub fn dom(&self) -> &'a D {
+        self.dom
+    }
+
+    pub fn same_element(&self, left: D::ElementId, right: D::ElementId) -> bool {
+        left == right
+    }
+
+    pub fn parent_element(&self, element: D::ElementId) -> Option<D::ElementId> {
+        self.dom.parent_element(element)
+    }
+
+    pub fn previous_sibling_element(&self, element: D::ElementId) -> Option<D::ElementId> {
+        self.dom.previous_sibling_element(element)
+    }
+
+    /// Returns nearest-first ancestor elements, excluding `element` itself.
+    pub fn ancestor_elements(&self, element: D::ElementId) -> AncestorElements<'a, D> {
+        AncestorElements {
+            dom: self.dom,
+            next: self.parent_element(element),
+        }
+    }
+
+    /// Returns nearest-first previous element siblings, excluding `element`
+    /// itself.
+    pub fn previous_sibling_elements(
+        &self,
+        element: D::ElementId,
+    ) -> PreviousSiblingElements<'a, D> {
+        PreviousSiblingElements {
+            dom: self.dom,
+            next: self.previous_sibling_element(element),
+        }
+    }
+
+    pub fn is_child_of(&self, element: D::ElementId, parent: D::ElementId) -> bool {
+        self.parent_element(element) == Some(parent)
+    }
+
+    pub fn is_descendant_of(&self, element: D::ElementId, ancestor: D::ElementId) -> bool {
+        self.ancestor_elements(element)
+            .any(|candidate| self.same_element(candidate, ancestor))
+    }
+
+    pub fn is_next_sibling_of(&self, element: D::ElementId, sibling: D::ElementId) -> bool {
+        self.previous_sibling_element(element) == Some(sibling)
+    }
+
+    pub fn is_subsequent_sibling_of(&self, element: D::ElementId, sibling: D::ElementId) -> bool {
+        self.previous_sibling_elements(element)
+            .any(|candidate| self.same_element(candidate, sibling))
+    }
+
+    pub fn element_name(&self, element: D::ElementId) -> &str {
+        self.dom.element_name(element)
+    }
+
+    pub fn has_attribute(&self, element: D::ElementId, name: &str) -> bool {
+        self.dom.has_attribute(element, name)
+    }
+
+    pub fn attribute_value(&self, element: D::ElementId, name: &str) -> Option<&str> {
+        self.dom.attribute_value(element, name)
+    }
+
+    pub fn element_has_id(&self, element: D::ElementId, want: &str) -> bool {
+        self.dom.element_has_id(element, want)
+    }
+
+    pub fn element_has_class(&self, element: D::ElementId, want: &str) -> bool {
+        self.dom.element_has_class(element, want)
+    }
+
+    pub fn matches_type_selector(&self, element: D::ElementId, selector: &TypeSelector) -> bool {
+        match selector {
+            TypeSelector::Universal(_) => true,
+            TypeSelector::Named(selector) => self
+                .element_name(element)
+                .eq_ignore_ascii_case(selector.name().text()),
+        }
+    }
+
+    pub fn matches_id_selector(&self, element: D::ElementId, selector: &IdSelector) -> bool {
+        self.element_has_id(element, selector.name().text())
+    }
+
+    pub fn matches_class_selector(&self, element: D::ElementId, selector: &ClassSelector) -> bool {
+        self.element_has_class(element, selector.name().text())
+    }
+
+    pub fn matches_attribute_selector(
+        &self,
+        element: D::ElementId,
+        selector: &AttributeSelector,
+    ) -> bool {
+        match selector {
+            AttributeSelector::Exists(selector) => {
+                self.has_attribute(element, selector.name().text())
+            }
+            AttributeSelector::Match(selector) => {
+                self.matches_attribute_match_selector(element, selector)
+            }
+        }
+    }
+
+    pub fn matches_subclass_selector(
+        &self,
+        element: D::ElementId,
+        selector: &SubclassSelector,
+    ) -> bool {
+        match selector {
+            SubclassSelector::Id(selector) => self.matches_id_selector(element, selector),
+            SubclassSelector::Class(selector) => self.matches_class_selector(element, selector),
+            SubclassSelector::Attribute(selector) => {
+                self.matches_attribute_selector(element, selector)
+            }
+        }
+    }
+
+    pub fn matches_attribute_match_selector(
+        &self,
+        element: D::ElementId,
+        selector: &AttributeMatchSelector,
+    ) -> bool {
+        let Some(actual) = self.attribute_value(element, selector.name().text()) else {
+            return false;
+        };
+        let expected = attribute_value_text(selector.value());
+
+        match selector.matcher() {
+            AttributeMatcher::Exact => actual == expected,
+            AttributeMatcher::Includes => {
+                !expected.is_empty()
+                    && !contains_selector_whitespace(expected)
+                    && split_selector_whitespace_separated_tokens(actual)
+                        .any(|token| token == expected)
+            }
+            AttributeMatcher::DashMatch => {
+                actual == expected
+                    || actual
+                        .strip_prefix(expected)
+                        .is_some_and(|rest| rest.starts_with('-'))
+            }
+            AttributeMatcher::Prefix => !expected.is_empty() && actual.starts_with(expected),
+            AttributeMatcher::Suffix => !expected.is_empty() && actual.ends_with(expected),
+            AttributeMatcher::Substring => !expected.is_empty() && actual.contains(expected),
+        }
+    }
+}
+
+/// Nearest-first ancestor iterator for selector matching.
+pub struct AncestorElements<'a, D: SelectorMatchDom> {
+    dom: &'a D,
+    next: Option<D::ElementId>,
+}
+
+impl<D: SelectorMatchDom> Iterator for AncestorElements<'_, D> {
+    type Item = D::ElementId;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let current = self.next?;
+        self.next = self.dom.parent_element(current);
+        Some(current)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, None)
+    }
+}
+
+/// Nearest-first previous-sibling iterator for selector matching.
+pub struct PreviousSiblingElements<'a, D: SelectorMatchDom> {
+    dom: &'a D,
+    next: Option<D::ElementId>,
+}
+
+impl<D: SelectorMatchDom> Iterator for PreviousSiblingElements<'_, D> {
+    type Item = D::ElementId;
+
+    fn next(&mut self) -> Option<Self::Item> {
+        let current = self.next?;
+        self.next = self.dom.previous_sibling_element(current);
+        Some(current)
+    }
+
+    fn size_hint(&self) -> (usize, Option<usize>) {
+        (0, None)
+    }
+}
+
+// Deterministic owned-tree DOM adapter for regression tests and snapshot paths.
+
 /// Element identifier used by [`SelectorDomIndex`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
 pub struct SelectorDomElementId(u32);
@@ -604,10 +827,34 @@ fn normalized_document_children_frame<'a>(
     }
 }
 
+// Internal helper functions shared by the DOM contract and matcher context.
+
 fn class_list_contains(class_list: &str, want: &str) -> bool {
-    class_list
-        .split_ascii_whitespace()
-        .any(|token| token == want)
+    split_selector_whitespace_separated_tokens(class_list).any(|token| token == want)
+}
+
+fn attribute_value_text(value: &AttributeValue) -> &str {
+    match value {
+        AttributeValue::Ident(value) => value.text(),
+        AttributeValue::String(value) => value.value(),
+    }
+}
+
+fn split_selector_whitespace_separated_tokens(value: &str) -> impl Iterator<Item = &str> {
+    value
+        .split(is_selector_whitespace)
+        .filter(|token| !token.is_empty())
+}
+
+fn contains_selector_whitespace(value: &str) -> bool {
+    value.chars().any(is_selector_whitespace)
+}
+
+fn is_selector_whitespace(ch: char) -> bool {
+    matches!(
+        ch,
+        '\u{0009}' | '\u{000A}' | '\u{000C}' | '\u{000D}' | '\u{0020}'
+    )
 }
 
 fn debug_assert_duplicate_match_specificity_consistency(matches: &[MatchedSelector]) {
@@ -642,11 +889,13 @@ fn debug_assert_canonical_html_element_name(name: &str) {
 mod tests {
     use super::{
         MatchedSelector, SelectorDomIndex, SelectorListMatchBuilder, SelectorListMatchOutcome,
-        SelectorMatchDom, SelectorMatchability,
+        SelectorMatchDom, SelectorMatchability, SelectorMatchingContext,
     };
     use crate::selectors::{
-        ComplexSelector, CompoundSelector, InvalidSelectorReason, SelectorIdent, SelectorList,
-        SelectorListParseResult, Specificity, TypeSelector, UnsupportedSelectorFeature,
+        AttributeExistsSelector, AttributeMatchSelector, AttributeMatcher, AttributeSelector,
+        AttributeValue, ClassSelector, ComplexSelector, CompoundSelector, IdSelector,
+        InvalidSelectorReason, SelectorIdent, SelectorList, SelectorListParseResult,
+        SelectorString, Specificity, SubclassSelector, TypeSelector, UnsupportedSelectorFeature,
     };
     use crate::syntax::CssInput;
     use html::Node;
@@ -692,6 +941,61 @@ mod tests {
         let complex = ComplexSelector::new(span, compound, Vec::new()).expect("complex selector");
         let list = SelectorList::new(Some(span), vec![complex]).expect("selector list");
         SelectorListParseResult::Parsed(list)
+    }
+
+    fn dummy_span(marker: &str) -> crate::syntax::CssSpan {
+        let input = CssInput::from(marker);
+        input.span(0, marker.len()).expect("dummy span")
+    }
+
+    fn selector_ident(text: &str) -> SelectorIdent {
+        SelectorIdent::new(text, None).expect("selector ident")
+    }
+
+    fn selector_string(value: &str) -> SelectorString {
+        SelectorString::new(value, None)
+    }
+
+    fn universal_type_selector() -> TypeSelector {
+        TypeSelector::universal(dummy_span("*"))
+    }
+
+    fn named_type_selector(name: &str) -> TypeSelector {
+        TypeSelector::named(dummy_span("t"), selector_ident(name)).expect("named type selector")
+    }
+
+    fn id_selector(name: &str) -> IdSelector {
+        IdSelector::new(dummy_span("#"), selector_ident(name)).expect("id selector")
+    }
+
+    fn class_selector(name: &str) -> ClassSelector {
+        ClassSelector::new(dummy_span("."), selector_ident(name)).expect("class selector")
+    }
+
+    fn attribute_exists_selector(name: &str) -> AttributeSelector {
+        AttributeSelector::Exists(
+            AttributeExistsSelector::new(dummy_span("[]"), selector_ident(name))
+                .expect("attribute exists selector"),
+        )
+    }
+
+    fn attribute_match_selector(
+        name: &str,
+        matcher: AttributeMatcher,
+        value: AttributeValue,
+    ) -> AttributeSelector {
+        AttributeSelector::Match(
+            AttributeMatchSelector::new(dummy_span("[]"), selector_ident(name), matcher, value)
+                .expect("attribute match selector"),
+        )
+    }
+
+    fn ident_value(value: &str) -> AttributeValue {
+        AttributeValue::ident(selector_ident(value))
+    }
+
+    fn string_value(value: &str) -> AttributeValue {
+        AttributeValue::string(selector_string(value))
     }
 
     #[test]
@@ -801,6 +1105,202 @@ mod tests {
             outcome.matched_selectors(),
             &[MatchedSelector::new(4, Specificity::new(0, 2, 0))]
         );
+    }
+
+    #[test]
+    fn matching_context_exposes_nearest_first_traversal_sequences() {
+        let dom = Node::Document {
+            id: html::internal::Id::INVALID,
+            doctype: None,
+            children: vec![element(
+                "body",
+                Vec::new(),
+                vec![
+                    element(
+                        "main",
+                        Vec::new(),
+                        vec![
+                            element("div", Vec::new(), Vec::new()),
+                            text("gap"),
+                            element("span", Vec::new(), Vec::new()),
+                            comment("ignored"),
+                            element("p", Vec::new(), Vec::new()),
+                        ],
+                    ),
+                    element("footer", Vec::new(), Vec::new()),
+                ],
+            )],
+        };
+
+        let index = SelectorDomIndex::from_root(&dom);
+        let context = SelectorMatchingContext::new(&index);
+        let ids = index.elements().collect::<Vec<_>>();
+
+        assert_eq!(
+            context.ancestor_elements(ids[4]).collect::<Vec<_>>(),
+            vec![ids[1], ids[0]]
+        );
+        assert_eq!(
+            context
+                .previous_sibling_elements(ids[4])
+                .collect::<Vec<_>>(),
+            vec![ids[3], ids[2]]
+        );
+        assert!(context.ancestor_elements(ids[0]).next().is_none());
+        assert!(context.previous_sibling_elements(ids[0]).next().is_none());
+    }
+
+    #[test]
+    fn matching_context_relationship_queries_are_centralized_and_testable() {
+        let dom = Node::Document {
+            id: html::internal::Id::INVALID,
+            doctype: None,
+            children: vec![element(
+                "body",
+                Vec::new(),
+                vec![element(
+                    "main",
+                    Vec::new(),
+                    vec![
+                        element("div", Vec::new(), Vec::new()),
+                        element("span", Vec::new(), Vec::new()),
+                        element("p", Vec::new(), Vec::new()),
+                    ],
+                )],
+            )],
+        };
+
+        let index = SelectorDomIndex::from_root(&dom);
+        let context = SelectorMatchingContext::new(&index);
+        let ids = index.elements().collect::<Vec<_>>();
+        let body = ids[0];
+        let main = ids[1];
+        let div = ids[2];
+        let span = ids[3];
+        let paragraph = ids[4];
+
+        assert!(context.same_element(main, main));
+        assert!(context.is_child_of(main, body));
+        assert!(context.is_child_of(div, main));
+        assert!(context.is_descendant_of(paragraph, body));
+        assert!(!context.is_descendant_of(body, paragraph));
+        assert!(context.is_next_sibling_of(span, div));
+        assert!(!context.is_next_sibling_of(paragraph, div));
+        assert!(context.is_subsequent_sibling_of(paragraph, div));
+        assert!(!context.is_subsequent_sibling_of(div, paragraph));
+    }
+
+    #[test]
+    fn matching_context_matches_supported_simple_selector_inputs() {
+        let dom = Node::Document {
+            id: html::internal::Id::INVALID,
+            doctype: None,
+            children: vec![element(
+                "div",
+                vec![
+                    ("id", Some("hero")),
+                    ("class", Some("card featured")),
+                    ("data-kind", Some("promo")),
+                ],
+                Vec::new(),
+            )],
+        };
+
+        let index = SelectorDomIndex::from_root(&dom);
+        let context = SelectorMatchingContext::new(&index);
+        let element = index.elements().next().expect("indexed element");
+
+        assert!(context.matches_type_selector(element, &universal_type_selector()));
+        assert!(context.matches_type_selector(element, &named_type_selector("DIV")));
+        assert!(!context.matches_type_selector(element, &named_type_selector("span")));
+        assert!(context.matches_id_selector(element, &id_selector("hero")));
+        assert!(!context.matches_id_selector(element, &id_selector("HERO")));
+        assert!(context.matches_class_selector(element, &class_selector("card")));
+        assert!(!context.matches_class_selector(element, &class_selector("missing")));
+
+        assert!(
+            context.matches_subclass_selector(element, &SubclassSelector::Id(id_selector("hero")),)
+        );
+        assert!(context.matches_subclass_selector(
+            element,
+            &SubclassSelector::Class(class_selector("featured")),
+        ));
+        assert!(context.matches_subclass_selector(
+            element,
+            &SubclassSelector::Attribute(attribute_exists_selector("data-kind")),
+        ));
+    }
+
+    #[test]
+    fn matching_context_attribute_match_queries_cover_supported_matchers_and_edges() {
+        let dom = Node::Document {
+            id: html::internal::Id::INVALID,
+            doctype: None,
+            children: vec![element(
+                "div",
+                vec![
+                    ("data-tags", Some("alpha beta")),
+                    ("lang", Some("en-US")),
+                    ("data-prefix", Some("foobar")),
+                    ("data-suffix", Some("foobar")),
+                    ("data-sub", Some("xxfooyy")),
+                    ("data-empty", Some("")),
+                ],
+                Vec::new(),
+            )],
+        };
+
+        let index = SelectorDomIndex::from_root(&dom);
+        let context = SelectorMatchingContext::new(&index);
+        let element = index.elements().next().expect("indexed element");
+
+        assert!(
+            context.matches_attribute_selector(element, &attribute_exists_selector("data-tags"),)
+        );
+        assert!(context.matches_attribute_selector(
+            element,
+            &attribute_match_selector("data-empty", AttributeMatcher::Exact, string_value("")),
+        ));
+        assert!(context.matches_attribute_selector(
+            element,
+            &attribute_match_selector("data-tags", AttributeMatcher::Includes, ident_value("beta")),
+        ));
+        assert!(!context.matches_attribute_selector(
+            element,
+            &attribute_match_selector("data-tags", AttributeMatcher::Includes, string_value("")),
+        ));
+        assert!(!context.matches_attribute_selector(
+            element,
+            &attribute_match_selector(
+                "data-tags",
+                AttributeMatcher::Includes,
+                string_value("alpha beta"),
+            ),
+        ));
+        assert!(context.matches_attribute_selector(
+            element,
+            &attribute_match_selector("lang", AttributeMatcher::DashMatch, ident_value("en")),
+        ));
+        assert!(context.matches_attribute_selector(
+            element,
+            &attribute_match_selector("data-prefix", AttributeMatcher::Prefix, ident_value("foo")),
+        ));
+        assert!(!context.matches_attribute_selector(
+            element,
+            &attribute_match_selector("data-prefix", AttributeMatcher::Prefix, string_value("")),
+        ));
+        assert!(context.matches_attribute_selector(
+            element,
+            &attribute_match_selector("data-suffix", AttributeMatcher::Suffix, ident_value("bar")),
+        ));
+        assert!(context.matches_attribute_selector(
+            element,
+            &attribute_match_selector("data-sub", AttributeMatcher::Substring, ident_value("foo")),
+        ));
+        assert!(!context.matches_attribute_selector(
+            element,
+            &attribute_match_selector("data-sub", AttributeMatcher::Substring, string_value("")),
+        ));
     }
 
     #[test]

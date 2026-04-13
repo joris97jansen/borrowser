@@ -28,15 +28,16 @@ pub use model::{
     serialize_value_for_snapshot,
 };
 pub use selectors::{
-    AttributeExistsSelector, AttributeMatchSelector, AttributeMatcher, AttributeSelector,
-    AttributeValue, ClassSelector, Combinator, CombinedSelector, ComplexSelector, CompoundSelector,
-    IdSelector, InvalidSelectorList, InvalidSelectorReason, MatchedSelector, NamedTypeSelector,
-    SelectorDomElementId, SelectorDomElementIter, SelectorDomIndex, SelectorIdent, SelectorList,
+    AncestorElements, AttributeExistsSelector, AttributeMatchSelector, AttributeMatcher,
+    AttributeSelector, AttributeValue, ClassSelector, Combinator, CombinedSelector,
+    ComplexSelector, CompoundSelector, IdSelector, InvalidSelectorList, InvalidSelectorReason,
+    MatchedSelector, NamedTypeSelector, PreviousSiblingElements, SelectorDomElementId,
+    SelectorDomElementIter, SelectorDomIndex, SelectorIdent, SelectorList,
     SelectorListMatchBuilder, SelectorListMatchOutcome, SelectorListParseResult, SelectorMatchDom,
-    SelectorMatchability, SelectorString, SelectorStructureError, Specificity, SubclassSelector,
-    TypeSelector, UniversalSelector, UnsupportedSelectorFeature, UnsupportedSelectorHandling,
-    UnsupportedSelectorList, parse_selector_list, serialize_selector_list_for_snapshot,
-    serialize_selector_parse_result_for_snapshot,
+    SelectorMatchability, SelectorMatchingContext, SelectorString, SelectorStructureError,
+    Specificity, SubclassSelector, TypeSelector, UniversalSelector, UnsupportedSelectorFeature,
+    UnsupportedSelectorHandling, UnsupportedSelectorList, parse_selector_list,
+    serialize_selector_list_for_snapshot, serialize_selector_parse_result_for_snapshot,
 };
 
 // Explicit syntax-layer surface for parser/tokenizer work and syntax tests.
