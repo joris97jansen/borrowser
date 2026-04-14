@@ -231,45 +231,7 @@ impl SelectorListMatchOutcome {
         let mut out = String::new();
         writeln!(&mut out, "version: 1").expect("write snapshot");
         writeln!(&mut out, "selector-match").expect("write snapshot");
-        writeln!(
-            &mut out,
-            "matchability: {}",
-            self.matchability.as_snapshot_label()
-        )
-        .expect("write snapshot");
-        writeln!(
-            &mut out,
-            "matched: {}",
-            if self.matched_any() { "yes" } else { "no" }
-        )
-        .expect("write snapshot");
-
-        match self.highest_specificity() {
-            Some(specificity) => {
-                writeln!(
-                    &mut out,
-                    "highest-specificity: ({},{},{})",
-                    specificity.ids(),
-                    specificity.classes(),
-                    specificity.types()
-                )
-                .expect("write snapshot");
-            }
-            None => writeln!(&mut out, "highest-specificity: none").expect("write snapshot"),
-        }
-
-        for (index, matched) in self.matches.iter().enumerate() {
-            writeln!(
-                &mut out,
-                "match[{index}]: selector={} specificity=({},{},{})",
-                matched.selector_index(),
-                matched.specificity().ids(),
-                matched.specificity().classes(),
-                matched.specificity().types()
-            )
-            .expect("write snapshot");
-        }
-
+        write_selector_match_outcome_snapshot_body(&mut out, self, 0);
         out
     }
 
@@ -300,5 +262,51 @@ fn debug_assert_duplicate_match_specificity_consistency(matches: &[MatchedSelect
                 );
             }
         }
+    }
+}
+
+pub(crate) fn write_selector_match_outcome_snapshot_body(
+    out: &mut String,
+    outcome: &SelectorListMatchOutcome,
+    indent: usize,
+) {
+    let indent_str = " ".repeat(indent);
+    writeln!(
+        out,
+        "{indent_str}matchability: {}",
+        outcome.matchability.as_snapshot_label()
+    )
+    .expect("write snapshot");
+    writeln!(
+        out,
+        "{indent_str}matched: {}",
+        if outcome.matched_any() { "yes" } else { "no" }
+    )
+    .expect("write snapshot");
+
+    match outcome.highest_specificity() {
+        Some(specificity) => {
+            writeln!(
+                out,
+                "{indent_str}highest-specificity: ({},{},{})",
+                specificity.ids(),
+                specificity.classes(),
+                specificity.types()
+            )
+            .expect("write snapshot");
+        }
+        None => writeln!(out, "{indent_str}highest-specificity: none").expect("write snapshot"),
+    }
+
+    for (index, matched) in outcome.matches.iter().enumerate() {
+        writeln!(
+            out,
+            "{indent_str}match[{index}]: selector={} specificity=({},{},{})",
+            matched.selector_index(),
+            matched.specificity().ids(),
+            matched.specificity().classes(),
+            matched.specificity().types()
+        )
+        .expect("write snapshot");
     }
 }

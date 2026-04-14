@@ -150,29 +150,7 @@ impl<'a> SelectorDomIndex<'a> {
         let mut out = String::new();
         writeln!(&mut out, "version: 1").expect("write snapshot");
         writeln!(&mut out, "selector-dom").expect("write snapshot");
-        writeln!(&mut out, "elements: {}", self.len()).expect("write snapshot");
-
-        for (index, element_id) in self.elements().enumerate() {
-            let record = self.record(element_id);
-            write!(
-                &mut out,
-                "element[{index}]: id={} name=\"{}\" parent=",
-                element_id.get(),
-                record.name
-            )
-            .expect("write snapshot");
-            match record.parent {
-                Some(parent) => write!(&mut out, "{}", parent.get()).expect("write snapshot"),
-                None => write!(&mut out, "none").expect("write snapshot"),
-            }
-            write!(&mut out, " prev-sibling=").expect("write snapshot");
-            match record.previous_sibling {
-                Some(previous) => write!(&mut out, "{}", previous.get()).expect("write snapshot"),
-                None => write!(&mut out, "none").expect("write snapshot"),
-            }
-            writeln!(&mut out).expect("write snapshot");
-        }
-
+        write_selector_dom_snapshot_body(&mut out, self, 0);
         out
     }
 
@@ -243,6 +221,36 @@ impl Iterator for SelectorDomElementIter {
 impl ExactSizeIterator for SelectorDomElementIter {
     fn len(&self) -> usize {
         self.end_exclusive.saturating_sub(self.next) as usize
+    }
+}
+
+pub(crate) fn write_selector_dom_snapshot_body(
+    out: &mut String,
+    index: &SelectorDomIndex<'_>,
+    indent: usize,
+) {
+    let indent_str = " ".repeat(indent);
+    writeln!(out, "{indent_str}elements: {}", index.len()).expect("write snapshot");
+
+    for (element_index, element_id) in index.elements().enumerate() {
+        let record = index.record(element_id);
+        write!(
+            out,
+            "{indent_str}element[{element_index}]: id={} name=\"{}\" parent=",
+            element_id.get(),
+            record.name
+        )
+        .expect("write snapshot");
+        match record.parent {
+            Some(parent) => write!(out, "{}", parent.get()).expect("write snapshot"),
+            None => write!(out, "none").expect("write snapshot"),
+        }
+        write!(out, " prev-sibling=").expect("write snapshot");
+        match record.previous_sibling {
+            Some(previous) => write!(out, "{}", previous.get()).expect("write snapshot"),
+            None => write!(out, "none").expect("write snapshot"),
+        }
+        writeln!(out).expect("write snapshot");
     }
 }
 
