@@ -7,14 +7,22 @@ This document is the source-of-truth contract for Milestone Q issue 2:
 introducing the selector matching context abstraction and the centralized DOM
 query helpers future selector evaluation will use.
 
+Historical scope note:
+
+- this document records the Q2 landing boundary for the matcher-facing
+  context/query layer
+- later Q issues extended the matcher built on top of that boundary
+- current matcher behavior is therefore broader than the original Q2 landing
+  scope, but the context contract documented here remains the same
+
 Milestone Q issue 1 established the DOM-facing selector matching contract in
 `SelectorMatchDom`, explicit matchability handling, deterministic match-result
 surfaces, and a deterministic owned-tree DOM adapter. Q2 builds on that by
 introducing the matcher-facing context/query layer that sits between raw DOM
 access and future selector evaluation logic.
 
-This issue still does not implement full selector matching. It defines and
-ships the query/context surface the later matcher must use.
+At Q2 landing time, this issue did not yet implement full selector matching.
+It defined and shipped the query/context surface the later matcher must use.
 
 Related code:
 - `crates/css/src/selectors/matching.rs`
@@ -96,7 +104,7 @@ The selector matching stack is now:
 2. `SelectorMatchingContext`
    - matcher-facing query layer
    - owns traversal helpers and simple-selector query semantics
-   - does not yet evaluate complex selectors
+   - at Q2 landing time, did not yet evaluate complex selectors directly
 3. later matcher implementation
    - combines selector IR plus context queries into full selector evaluation
 4. later cascade work

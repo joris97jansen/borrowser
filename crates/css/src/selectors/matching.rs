@@ -8,10 +8,10 @@
 //! - an owned-tree DOM adapter built from `html::Node` for regression tests and
 //!   the legacy snapshot integration path
 //!
-//! Q1 through Q7 establish the selector matching architecture, context/query
+//! Q1 through Q8 establish the selector matching architecture, context/query
 //! contract, element-local and structural evaluation, validity/specificity
-//! result integration, and deterministic debug/regression surfaces for
-//! Borrowser's supported selector IR.
+//! result integration, deterministic debug/regression surfaces, and the
+//! documented extension boundaries for Borrowser's supported selector IR.
 //!
 //! File-organization note:
 //! Full complex-selector evaluation for the current supported IR now exists, so

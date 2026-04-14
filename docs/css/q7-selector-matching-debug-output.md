@@ -69,6 +69,7 @@ Q7 adds exact-snapshot regression tests for representative cases:
 - compound selector matching on one element
 - complex selector matching with combinator traversal
 - invalid selector input propagated through the integrated debug surface
+- unsupported selector input propagated through the integrated debug surface
 
 These tests are intentionally exact string snapshots so future matcher work
 cannot silently change debug behavior or output ordering.
