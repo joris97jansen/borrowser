@@ -15,6 +15,18 @@ pub enum SelectorMatchability {
 }
 
 impl SelectorMatchability {
+    pub fn is_parsed(self) -> bool {
+        self == Self::Parsed
+    }
+
+    pub fn is_unsupported(self) -> bool {
+        self == Self::Unsupported
+    }
+
+    pub fn is_invalid(self) -> bool {
+        self == Self::Invalid
+    }
+
     pub(super) fn as_snapshot_label(self) -> &'static str {
         match self {
             Self::Parsed => "parsed",
@@ -138,6 +150,11 @@ impl SelectorListMatchBuilder {
 /// `selector_index`. `selector_index` is the authoritative source-order
 /// identity, not insertion/discovery order. Duplicate selector indices with
 /// differing specificity are invalid internal state.
+///
+/// This is the selector engine's cascade-facing result boundary. It reports
+/// explicit selector-list matchability alongside only those selector entries
+/// that actually matched the target element, with specificity values taken
+/// directly from selector IR.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SelectorListMatchOutcome {
     matchability: SelectorMatchability,
@@ -183,12 +200,20 @@ impl SelectorListMatchOutcome {
         self.matchability
     }
 
+    pub fn is_invalid(&self) -> bool {
+        self.matchability.is_invalid()
+    }
+
+    pub fn is_unsupported(&self) -> bool {
+        self.matchability.is_unsupported()
+    }
+
     pub fn matched_selectors(&self) -> &[MatchedSelector] {
         &self.matches
     }
 
     pub fn is_matchable(&self) -> bool {
-        self.matchability == SelectorMatchability::Parsed
+        self.matchability.is_parsed()
     }
 
     pub fn matched_any(&self) -> bool {
@@ -219,15 +244,18 @@ impl SelectorListMatchOutcome {
         )
         .expect("write snapshot");
 
-        if let Some(specificity) = self.highest_specificity() {
-            writeln!(
-                &mut out,
-                "highest-specificity: ({},{},{})",
-                specificity.ids(),
-                specificity.classes(),
-                specificity.types()
-            )
-            .expect("write snapshot");
+        match self.highest_specificity() {
+            Some(specificity) => {
+                writeln!(
+                    &mut out,
+                    "highest-specificity: ({},{},{})",
+                    specificity.ids(),
+                    specificity.classes(),
+                    specificity.types()
+                )
+                .expect("write snapshot");
+            }
+            None => writeln!(&mut out, "highest-specificity: none").expect("write snapshot"),
         }
 
         for (index, matched) in self.matches.iter().enumerate() {

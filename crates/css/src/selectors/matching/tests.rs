@@ -150,6 +150,21 @@ fn parse_results_expose_matchability_without_collapsing_invalidity() {
 }
 
 #[test]
+fn selector_matchability_helpers_expose_explicit_states() {
+    assert!(SelectorMatchability::Parsed.is_parsed());
+    assert!(!SelectorMatchability::Parsed.is_unsupported());
+    assert!(!SelectorMatchability::Parsed.is_invalid());
+
+    assert!(SelectorMatchability::Unsupported.is_unsupported());
+    assert!(!SelectorMatchability::Unsupported.is_parsed());
+    assert!(!SelectorMatchability::Unsupported.is_invalid());
+
+    assert!(SelectorMatchability::Invalid.is_invalid());
+    assert!(!SelectorMatchability::Invalid.is_parsed());
+    assert!(!SelectorMatchability::Invalid.is_unsupported());
+}
+
+#[test]
 fn match_builder_coalesces_duplicates_and_builds_stable_outcome() {
     let mut builder = SelectorListMatchBuilder::new();
     assert!(builder.record_match(3, Specificity::new(0, 1, 2)));
@@ -215,11 +230,49 @@ fn non_matchable_outcomes_never_report_matches() {
     let invalid = SelectorListMatchOutcome::invalid();
 
     assert!(!unsupported.is_matchable());
+    assert!(unsupported.is_unsupported());
+    assert!(!unsupported.is_invalid());
     assert!(!unsupported.matched_any());
     assert_eq!(unsupported.highest_specificity(), None);
     assert!(!invalid.is_matchable());
+    assert!(invalid.is_invalid());
+    assert!(!invalid.is_unsupported());
     assert!(!invalid.matched_any());
     assert_eq!(invalid.highest_specificity(), None);
+}
+
+#[test]
+fn match_outcome_snapshots_keep_validity_and_specificity_state_explicit() {
+    assert_eq!(
+        SelectorListMatchOutcome::not_matched().to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "selector-match\n",
+            "matchability: parsed\n",
+            "matched: no\n",
+            "highest-specificity: none\n",
+        )
+    );
+    assert_eq!(
+        SelectorListMatchOutcome::unsupported().to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "selector-match\n",
+            "matchability: unsupported\n",
+            "matched: no\n",
+            "highest-specificity: none\n",
+        )
+    );
+    assert_eq!(
+        SelectorListMatchOutcome::invalid().to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "selector-match\n",
+            "matchability: invalid\n",
+            "matched: no\n",
+            "highest-specificity: none\n",
+        )
+    );
 }
 
 #[test]
@@ -231,6 +284,34 @@ fn match_outcome_exposes_builder_for_matcher_construction() {
     assert_eq!(
         outcome.matched_selectors(),
         &[MatchedSelector::new(4, Specificity::new(0, 2, 0))]
+    );
+}
+
+#[test]
+fn matching_context_highest_specificity_comes_from_actual_matches_only() {
+    let dom = Node::Document {
+        id: html::internal::Id::INVALID,
+        doctype: None,
+        children: vec![element("div", vec![("class", Some("card"))], Vec::new())],
+    };
+
+    let index = SelectorDomIndex::from_root(&dom);
+    let context = SelectorMatchingContext::new(&index);
+    let element = index.elements().next().expect("indexed element");
+    let selectors = parse_selector_result("#hero, div.card, div");
+    let outcome = context.match_selector_list(element, &selectors);
+
+    assert_eq!(outcome.matchability(), SelectorMatchability::Parsed);
+    assert_eq!(
+        outcome.matched_selectors(),
+        &[
+            MatchedSelector::new(1, Specificity::new(0, 1, 1)),
+            MatchedSelector::new(2, Specificity::new(0, 0, 1)),
+        ]
+    );
+    assert_eq!(
+        outcome.highest_specificity(),
+        Some(Specificity::new(0, 1, 1))
     );
 }
 
