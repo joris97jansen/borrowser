@@ -1,6 +1,6 @@
 # Q2: Introduce Selector Matching Context And DOM Query Abstraction
 
-Last updated: 2026-04-13  
+Last updated: 2026-04-14  
 Status: implemented
 
 This document is the source-of-truth contract for Milestone Q issue 2:
@@ -18,6 +18,9 @@ ships the query/context surface the later matcher must use.
 
 Related code:
 - `crates/css/src/selectors/matching.rs`
+- `crates/css/src/selectors/matching/context.rs`
+- `crates/css/src/selectors/matching/result.rs`
+- `crates/css/src/selectors/matching/dom_index.rs`
 - `crates/css/src/selectors/mod.rs`
 - `crates/css/src/lib.rs`
 
@@ -54,29 +57,19 @@ multiple matcher branches.
 
 ## Implementation Organization
 
-Q2 intentionally keeps the matching contract, result types, matcher-facing
-context, owned-tree DOM adapter, and query-layer tests in
-`crates/css/src/selectors/matching.rs`.
+Q2 originally landed as one cohesive `matching.rs` module. That was deliberate
+for the architecture stage where the stable seams were still being defined.
 
-This is deliberate for the current stage:
+After Q5 delivered full complex-selector evaluation for the supported selector
+IR, the matcher was split along those now-stable seams:
 
-- Q1 and Q2 establish one cohesive matching boundary before evaluator logic
-  exists
-- keeping the contract in one place avoids premature module churn while the
-  stable seams are still contract/result/context/dom-adapter oriented
-
-Normative maintenance rule:
-
-- once full complex-selector evaluation lands, split `matching.rs` along the
-  now-stable boundaries instead of allowing evaluator logic to accumulate in
-  the contract module
-
-Expected future split direction:
-
-- `matching/context.rs`
 - `matching/result.rs`
+- `matching/context.rs`
 - `matching/dom_index.rs`
-- `matching/eval.rs`
+- `matching/tests.rs`
+
+This means the Q2 contract remains intact, but it no longer lives in a single
+file.
 
 ## Why This Exists
 

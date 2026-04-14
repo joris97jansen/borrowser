@@ -1,11 +1,17 @@
 # Q3: Implement Simple Selector Matching
 
-Last updated: 2026-04-13  
+Last updated: 2026-04-14  
 Status: implemented
 
 This document is the source-of-truth contract for Milestone Q issue 3:
 implementing the first real selector-to-DOM evaluation layer for the currently
 supported element-local selector subset.
+
+Historical note:
+
+- this document records the Q3 landing scope
+- Q5 later extended the same matcher entrypoint to full complex-selector
+  traversal for the supported selector IR
 
 Related code:
 - `crates/css/src/selectors/matching.rs`
@@ -55,13 +61,13 @@ This is deliberate. It preserves deterministic behavior and avoids introducing
 temporary partial-matching semantics that later full selector evaluation would
 have to undo.
 
-Important staging note:
+Historical staging note:
 
-- Q3 therefore has two `Unsupported` origins at match time:
+- at Q3 landing time there were two `Unsupported` origins at match time:
   - parser-level unsupported selector input
   - parsed selector input outside the active evaluator subset
-- the second category is temporary and should shrink away as later Milestone Q
-  issues add real complex-selector traversal
+- Q5 later removed the second category by implementing real complex-selector
+  traversal for the supported selector IR
 
 ## Matching Semantics
 
@@ -83,8 +89,8 @@ element:
 - supported parsed selector lists produce `Parsed` outcomes with matched
   selectors recorded in source order and with IR-derived specificity
 
-This means the current match outcome surface is already stable enough for
-engine integration, while still allowing later matcher milestones to reduce the
+This meant the Q3 match outcome surface was already stable enough for engine
+integration, while still allowing later matcher milestones to reduce the
 conservative fallback without changing the entry point or result structure.
 
 ## Determinism Requirements

@@ -6,6 +6,12 @@ Status: implemented via Q3
 This document records the status of Milestone Q issue 4:
 implementing compound selector matching on a single element.
 
+Historical note:
+
+- Q4 was closed based on the Q3 implementation
+- Q5 later extended the matcher from element-local compound matching to full
+  complex-selector traversal
+
 Related code:
 - `crates/css/src/selectors/matching.rs`
 
@@ -52,15 +58,16 @@ element-local evaluator surface rather than existing as an isolated helper.
 
 Q4 does not require separate validity plumbing beyond what Q3 already added.
 
-The existing matcher surface already preserves:
+At Q4 closure time, the matcher surface preserved:
 
 - `Invalid` parse results as `Invalid` match outcomes
 - parser-level `Unsupported` selector input as `Unsupported` match outcomes
 - the current temporary matcher-level `Unsupported` fallback for parsed
   selectors outside the active evaluator subset
 
-So Q4’s validity-handling requirement is already satisfied by the current
-selector matching contract.
+That was sufficient to satisfy Q4’s validity-handling requirement. Q5 later
+removed the temporary matcher-level fallback by implementing structural
+selector traversal for the supported IR.
 
 ## Regression Coverage
 
@@ -82,5 +89,6 @@ The correct milestone bookkeeping is:
 - Q4 was subsumed by that implementation
 - Q4 may be treated as closed without further runtime work
 
-The next meaningful implementation step is complex-selector traversal, not more
-compound-selector code.
+The next meaningful implementation step after Q4 was complex-selector
+traversal, not more compound-selector code. That traversal work later landed as
+Q5.
