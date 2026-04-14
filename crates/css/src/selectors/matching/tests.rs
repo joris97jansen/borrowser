@@ -1077,6 +1077,36 @@ fn selector_matching_debug_snapshot_is_stable_for_invalid_selector_cases() {
 }
 
 #[test]
+fn selector_matching_debug_snapshot_is_stable_for_unsupported_selector_cases() {
+    let dom = Node::Document {
+        id: html::internal::Id::INVALID,
+        doctype: None,
+        children: vec![element("div", Vec::new(), Vec::new())],
+    };
+
+    assert_matching_debug_snapshot(
+        dom,
+        ":hover",
+        concat!(
+            "version: 1\n",
+            "selector-matching\n",
+            "selectors:\n",
+            "  result: unsupported\n",
+            "  span: @0..7\n",
+            "  feature[0]: pseudo-class\n",
+            "dom:\n",
+            "  elements: 1\n",
+            "  element[0]: id=1 name=\"div\" parent=none prev-sibling=none\n",
+            "matches:\n",
+            "  target[0]: element=1 name=\"div\"\n",
+            "    matchability: unsupported\n",
+            "    matched: no\n",
+            "    highest-specificity: none\n",
+        ),
+    );
+}
+
+#[test]
 fn selector_dom_index_is_document_ordered_and_element_only() {
     let dom = Node::Document {
         id: html::internal::Id::INVALID,
