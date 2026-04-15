@@ -122,6 +122,9 @@ enum Node {
 ````
 
 Inline style attributes are stored in the node but do not affect layout until the CSS cascade applies.
+The current shipped path still writes a compatibility declaration vector into
+`Node::style`; Milestone R is defining the long-term structured resolved-style
+contract that replaces that DOM-attached bridge.
 
 ### Node IDs
 
@@ -148,6 +151,10 @@ The syntax contract for Milestone N lives in:
 The engine-facing CSS rule/value model contract for Milestone O lives in:
 
 * `docs/css/o1-rule-value-model-architecture.md`
+
+The cascade architecture contract for Milestone R lives in:
+
+* `docs/css/r1-cascade-architecture-style-resolution-contract.md`
 
 The syntax layer owns:
 
@@ -183,12 +190,21 @@ intended permanent handoff into cascade.
 
 ### 3. **Cascade**
 
-`attach_styles(dom, sheet)` walks the DOM and selects the winning declarations for each property using:
+The current shipped browser path still uses `attach_styles(dom, sheet)` as a
+compatibility bridge that walks the DOM and selects the winning declarations
+for each property using:
 
 * selector matching
 * specificity comparison
 * cascading order
 * inline styles (highest priority)
+
+Milestone R replaces that bridge with a structured resolved-style object that:
+
+* consumes selector match outcomes rather than reparsing selector text
+* resolves winners with explicit precedence keys
+* owns inheritance/default fill for the supported property subset
+* produces deterministic style-resolution outputs independent of DOM mutation
 
 ### 4. **Computed Styles**
 
@@ -204,6 +220,9 @@ struct ComputedStyle {
 ```
 
 Computed styles are inherited appropriately (e.g., color, font-size).
+During the current bridge phase, computed-style construction still reads the
+DOM-attached compatibility declarations. After the Milestone R cutover it will
+consume the resolved-style contract instead.
 
 ---
 
@@ -386,6 +405,9 @@ struct PageState {
 
 Compatibility projection still exists during migration, but it now happens
 inside the cascade boundary rather than in stored page state.
+
+The remaining `Node::style` declaration vector is likewise a migration-only
+cascade bridge and is not the intended long-term style-resolution contract.
 
 This will soon enable:
 
