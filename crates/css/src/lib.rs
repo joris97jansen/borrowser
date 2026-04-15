@@ -16,7 +16,14 @@ pub mod syntax;
 pub mod values;
 
 // Model-first crate-root surface for engine-facing stylesheet work.
-pub use cascade::{attach_styles, get_inline_style, is_css};
+pub use cascade::{
+    CascadeDeclarationSource, CascadeImportance, CascadeInheritance, CascadeOrigin,
+    CascadeOriginBand, CascadePriority, CascadePropertyId, CascadePropertyMetadata,
+    CascadeRuleMatch, CascadeSpecificity, CascadeSpecifiedValue, CascadeWinner, InitialStyleValue,
+    InlineStyleDeclarationRef, ResolvedStyle, ResolvedStyleBuildError, ResolvedStyleBuilder,
+    ResolvedStyleEntry, ResolvedValueSource, StylesheetDeclarationRef, attach_styles,
+    get_inline_style, is_css,
+};
 pub use computed::{ComputedStyle, StyledNode, build_style_tree, compute_style};
 pub use model::{
     AtRule, AtRuleBlock, Declaration, DeclarationBlock, DeclarationValue, ImportantAnnotation,

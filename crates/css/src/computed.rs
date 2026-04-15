@@ -47,8 +47,10 @@ pub struct ComputedStyle {
     pub box_metrics: BoxMetrics,
 
     /// CSS `display` value.
-    /// Not inherited in CSS. For now we default to Block; later we’ll
-    /// override this with per-element defaults.
+    ///
+    /// The CSS initial value is `inline`. During the current bridge phase,
+    /// `build_style_tree()` may still override that with HTML/UA-ish
+    /// per-element defaults when no authored `display` declaration exists.
     pub display: Display,
 
     /// Optional width property. Not inherited. For now we treat this
@@ -56,7 +58,9 @@ pub struct ComputedStyle {
     pub width: Option<Length>,
     pub height: Option<Length>,
 
+    /// `None` represents the current `auto` contract for `min-width`.
     pub min_width: Option<Length>,
+    /// `None` represents the current `none` contract for `max-width`.
     pub max_width: Option<Length>,
 }
 
@@ -67,10 +71,10 @@ impl ComputedStyle {
             background_color: (0, 0, 0, 0),  // transparent
             font_size: Length::Px(16.0),     // "16px" default
             box_metrics: BoxMetrics::zero(), // zero margins/padding
-            display: Display::Block,         // default to Block for now
+            display: Display::Inline,        // CSS initial value
             width: None,                     // auto
             height: None,                    // auto
-            min_width: None,                 // none
+            min_width: None,                 // auto
             max_width: None,                 // none
         }
     }
@@ -90,12 +94,17 @@ pub struct StyledNode<'a> {
 }
 
 /// Compute the final, inherited style for an element, given:
-/// - its specified declarations (Node.style)
+/// - its specified declarations (currently the legacy `Node.style` bridge)
 /// - an optional parent computed style.
 ///
 /// Assumptions:
 /// - `specified` already reflects cascade (author + inline etc.)
 /// - property names are already lowercase (from `parse_declarations`).
+///
+/// This remains a compatibility step while Milestone R replaces the
+/// DOM-attached string vector with `css::cascade::ResolvedStyle`. Bridge-phase
+/// HTML/UA default display behavior is still applied later in
+/// `build_style_tree()` when no authored `display` declaration exists.
 pub fn compute_style(
     tag_name: Option<&str>,
     specified: &[(String, String)],
@@ -224,7 +233,7 @@ pub fn compute_style(
 
             "max-width" => {
                 let v = value.trim().to_ascii_lowercase();
-                if v == "auto" {
+                if v == "none" {
                     result.max_width = None;
                 } else if let Some(px) = parse_px(&v).filter(|px| *px >= 0.0) {
                     result.max_width = Some(Length::Px(px));
@@ -259,8 +268,9 @@ pub fn compute_style(
 }
 
 fn default_display_for(tag: &str) -> Display {
-    // Very small subset for now. We can extend over time.
-    // Roughly follows HTML default display types.
+    // Bridge-phase HTML/UA-ish element defaults applied only when no authored
+    // `display` declaration exists. This is not the CSS initial value of
+    // `display`; the cascade contract keeps that at `inline`.
     if tag.eq_ignore_ascii_case("span")
         || tag.eq_ignore_ascii_case("a")
         || tag.eq_ignore_ascii_case("em")
@@ -344,7 +354,8 @@ pub fn build_style_tree<'a>(
             // 2) Compute the base style (inherits, applies declarations, etc.)
             let mut computed = compute_style(Some(name), style, parent_style);
 
-            // 3) If no explicit `display:` was specified, apply a per-element default
+            // 3) If no explicit `display:` was specified, apply the temporary
+            //    HTML/UA default-display bridge for this element type.
             if !has_display_decl {
                 computed.display = default_display_for(name);
             }
@@ -374,5 +385,62 @@ pub fn build_style_tree<'a>(
                 children: Vec::new(),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ComputedStyle, compute_style};
+    use crate::values::{Display, Length};
+
+    #[test]
+    fn initial_display_matches_css_initial_value_while_bridge_applies_element_defaults_later() {
+        assert!(matches!(ComputedStyle::initial().display, Display::Inline));
+    }
+
+    #[test]
+    fn min_width_auto_clears_previous_length_but_none_is_not_accepted() {
+        let style = compute_style(
+            Some("div"),
+            &[
+                ("min-width".to_string(), "10px".to_string()),
+                ("min-width".to_string(), "auto".to_string()),
+            ],
+            None,
+        );
+        assert!(style.min_width.is_none());
+
+        let style = compute_style(
+            Some("div"),
+            &[
+                ("min-width".to_string(), "10px".to_string()),
+                ("min-width".to_string(), "none".to_string()),
+            ],
+            None,
+        );
+        assert!(matches!(style.min_width, Some(Length::Px(px)) if px == 10.0));
+    }
+
+    #[test]
+    fn max_width_none_clears_previous_length_but_auto_is_not_accepted() {
+        let style = compute_style(
+            Some("div"),
+            &[
+                ("max-width".to_string(), "10px".to_string()),
+                ("max-width".to_string(), "none".to_string()),
+            ],
+            None,
+        );
+        assert!(style.max_width.is_none());
+
+        let style = compute_style(
+            Some("div"),
+            &[
+                ("max-width".to_string(), "10px".to_string()),
+                ("max-width".to_string(), "auto".to_string()),
+            ],
+            None,
+        );
+        assert!(matches!(style.max_width, Some(Length::Px(px)) if px == 10.0));
     }
 }
