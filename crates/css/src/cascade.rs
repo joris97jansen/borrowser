@@ -18,17 +18,21 @@ use std::cmp::Ordering::Equal;
 use std::sync::Arc;
 
 pub use contract::{
-    CascadeDeclarationSource, CascadeImportance, CascadeInheritance, CascadeOrigin,
-    CascadeOriginBand, CascadePriority, CascadePropertyId, CascadePropertyMetadata,
-    CascadeRuleMatch, CascadeSpecificity, CascadeSpecifiedValue, CascadeWinner, InitialStyleValue,
-    InlineStyleDeclarationRef, ResolvedStyle, ResolvedStyleBuildError, ResolvedStyleBuilder,
-    ResolvedStyleEntry, ResolvedValueSource, StylesheetDeclarationRef,
+    CascadeDeclarationApplicability, CascadeDeclarationCandidate, CascadeDeclarationCandidateKey,
+    CascadeDeclarationInput, CascadeDeclarationProperty, CascadeDeclarationSource,
+    CascadeImportance, CascadeInheritance, CascadeOrigin, CascadeOriginBand, CascadePriority,
+    CascadePropertyId, CascadePropertyMetadata, CascadeRuleContext, CascadeRuleInput,
+    CascadeRuleInputBuildError, CascadeRuleMatch, CascadeRuleSource, CascadeSpecificity,
+    CascadeSpecifiedValue, CascadeWinner, InitialStyleValue, InlineStyleDeclarationRef,
+    InlineStyleRuleRef, ResolvedStyle, ResolvedStyleBuildError, ResolvedStyleBuilder,
+    ResolvedStyleEntry, ResolvedValueSource, StylesheetDeclarationRef, StylesheetRuleRef,
+    sort_candidates_by_cascade_order,
 };
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]
 struct Specificity(u16, u16, u16); // (id, class, type)
 
-struct Candidate {
+struct LegacyCandidate {
     property: String,
     value: String,
     specificity: Specificity,
@@ -117,7 +121,7 @@ pub fn attach_styles(dom: &mut Node, sheets: &[model::StylesheetParse]) {
                 style,
             } => {
                 // collect candidates (inline + matched rules)
-                let mut candidates: Vec<Candidate> = Vec::new();
+                let mut candidates: Vec<LegacyCandidate> = Vec::new();
 
                 if let Some(inline) = get_inline_style(attributes) {
                     let declarations =
@@ -125,7 +129,7 @@ pub fn attach_styles(dom: &mut Node, sheets: &[model::StylesheetParse]) {
                             .declarations;
                     let inline_spec = Specificity(2, 0, 0);
                     let inline_order = u32::MAX;
-                    candidates.extend(declarations.into_iter().map(|d| Candidate {
+                    candidates.extend(declarations.into_iter().map(|d| LegacyCandidate {
                         property: d.name,
                         value: d.value,
                         specificity: inline_spec,
@@ -145,11 +149,13 @@ pub fn attach_styles(dom: &mut Node, sheets: &[model::StylesheetParse]) {
                         }
                     }
                     if let Some(specificity) = matched_specificity {
-                        candidates.extend(rule.declarations.iter().map(|declaration| Candidate {
-                            property: declaration.property.clone(),
-                            value: declaration.value.clone(),
-                            specificity,
-                            order,
+                        candidates.extend(rule.declarations.iter().map(|declaration| {
+                            LegacyCandidate {
+                                property: declaration.property.clone(),
+                                value: declaration.value.clone(),
+                                specificity,
+                                order,
+                            }
                         }));
                     }
                 }
