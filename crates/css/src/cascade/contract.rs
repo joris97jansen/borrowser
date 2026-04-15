@@ -304,6 +304,143 @@ impl CascadeRuleMatch {
     pub fn contributes_candidates(&self) -> bool {
         self.outcome.is_matchable() && self.outcome.matched_any()
     }
+
+    pub fn rule_ref(&self) -> StylesheetRuleRef {
+        StylesheetRuleRef {
+            stylesheet_index: self.stylesheet_index,
+            rule_index: self.rule_index,
+        }
+    }
+}
+
+/// Stable source identity for one matched stylesheet rule entering cascade.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct StylesheetRuleRef {
+    pub stylesheet_index: u32,
+    pub rule_index: u32,
+}
+
+impl StylesheetRuleRef {
+    pub const fn new(stylesheet_index: u32, rule_index: u32) -> Self {
+        Self {
+            stylesheet_index,
+            rule_index,
+        }
+    }
+
+    pub fn from_rule_match(rule_match: &CascadeRuleMatch) -> Self {
+        rule_match.rule_ref()
+    }
+}
+
+/// Stable rule-level source identity for one inline style attribute entering
+/// cascade.
+///
+/// The caller assigns a stable per-element scope id within the current style
+/// resolution pass so inline styles remain distinguishable in debug surfaces
+/// and invariant checks.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct InlineStyleRuleRef {
+    pub scope_id: u32,
+}
+
+impl InlineStyleRuleRef {
+    pub const fn new(scope_id: u32) -> Self {
+        Self { scope_id }
+    }
+}
+
+/// Stable rule-level source identity for cascade inputs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CascadeRuleSource {
+    Stylesheet(StylesheetRuleRef),
+    InlineStyle(InlineStyleRuleRef),
+}
+
+impl CascadeRuleSource {
+    pub fn from_rule_match(rule_match: &CascadeRuleMatch) -> Self {
+        Self::Stylesheet(rule_match.rule_ref())
+    }
+
+    fn owns_declaration_source(self, source: CascadeDeclarationSource) -> bool {
+        match (self, source) {
+            (Self::Stylesheet(rule), CascadeDeclarationSource::Stylesheet(declaration_source)) => {
+                rule.stylesheet_index == declaration_source.stylesheet_index
+                    && rule.rule_index == declaration_source.rule_index
+            }
+            (
+                Self::InlineStyle(rule),
+                CascadeDeclarationSource::InlineStyle(declaration_source),
+            ) => rule == declaration_source.inline_style,
+            (Self::Stylesheet(_), CascadeDeclarationSource::InlineStyle(_))
+            | (Self::InlineStyle(_), CascadeDeclarationSource::Stylesheet(_)) => false,
+        }
+    }
+}
+
+/// Rule-level cascade ordering metadata carried forward from selector matching
+/// into declaration-candidate generation.
+///
+/// The rule context keeps rule-level origin and specificity separate from
+/// declaration-level importance. `CascadePriority` and its final
+/// `CascadeOriginBand` are synthesized only when a declaration becomes a
+/// comparable candidate.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CascadeRuleContext {
+    pub origin: CascadeOrigin,
+    pub specificity: CascadeSpecificity,
+    pub rule_order: u32,
+}
+
+impl CascadeRuleContext {
+    pub const fn new(
+        origin: CascadeOrigin,
+        specificity: CascadeSpecificity,
+        rule_order: u32,
+    ) -> Self {
+        Self {
+            origin,
+            specificity,
+            rule_order,
+        }
+    }
+
+    pub fn from_stylesheet_match(
+        origin: CascadeOrigin,
+        rule_order: u32,
+        rule_match: &CascadeRuleMatch,
+    ) -> Option<Self> {
+        if !rule_match.contributes_candidates() {
+            return None;
+        }
+
+        Some(Self::new(
+            origin,
+            CascadeSpecificity::Selector(rule_match.effective_specificity()?),
+            rule_order,
+        ))
+    }
+
+    pub const fn for_inline_style(rule_order: u32) -> Self {
+        Self::new(
+            CascadeOrigin::Author,
+            CascadeSpecificity::InlineStyle,
+            rule_order,
+        )
+    }
+
+    pub fn priority_for_declaration(
+        self,
+        importance: CascadeImportance,
+        declaration_order: u32,
+    ) -> CascadePriority {
+        CascadePriority::new(
+            CascadeOriginBand::from_origin_and_importance(self.origin, importance),
+            self.specificity,
+            self.rule_order,
+            declaration_order,
+        )
+    }
 }
 
 /// Stable source identity for one stylesheet declaration.
@@ -317,6 +454,7 @@ pub struct StylesheetDeclarationRef {
 /// Stable source identity for one inline style declaration.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub struct InlineStyleDeclarationRef {
+    pub inline_style: InlineStyleRuleRef,
     pub declaration_index: u32,
 }
 
@@ -326,6 +464,69 @@ pub struct InlineStyleDeclarationRef {
 pub enum CascadeDeclarationSource {
     Stylesheet(StylesheetDeclarationRef),
     InlineStyle(InlineStyleDeclarationRef),
+}
+
+/// Structured property surface preserved on one declaration entering cascade.
+///
+/// This carries the authored property-name category without overloading a loose
+/// `Option<String>` into multiple meanings.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CascadeDeclarationProperty {
+    Supported(CascadePropertyId),
+    Unsupported(String),
+    Custom(String),
+    Invalid,
+}
+
+impl CascadeDeclarationProperty {
+    pub fn applicability(&self) -> CascadeDeclarationApplicability {
+        match self {
+            Self::Supported(property) => CascadeDeclarationApplicability::Supported(*property),
+            Self::Unsupported(_) => CascadeDeclarationApplicability::UnsupportedProperty,
+            Self::Custom(_) => CascadeDeclarationApplicability::CustomProperty,
+            Self::Invalid => CascadeDeclarationApplicability::InvalidPropertyName,
+        }
+    }
+
+    pub fn name(&self) -> Option<&str> {
+        match self {
+            Self::Supported(property) => Some(property.name()),
+            Self::Unsupported(name) | Self::Custom(name) => Some(name.as_str()),
+            Self::Invalid => None,
+        }
+    }
+
+    pub fn supported_property(&self) -> Option<CascadePropertyId> {
+        match self {
+            Self::Supported(property) => Some(*property),
+            Self::Unsupported(_) | Self::Custom(_) | Self::Invalid => None,
+        }
+    }
+}
+
+/// Applicability state for one declaration after it has crossed into cascade.
+///
+/// Only `Supported` declarations generate winner-resolution candidates. The
+/// other states remain explicit so filtering stays testable and deterministic.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CascadeDeclarationApplicability {
+    Supported(CascadePropertyId),
+    UnsupportedProperty,
+    CustomProperty,
+    InvalidPropertyName,
+}
+
+impl CascadeDeclarationApplicability {
+    pub fn supported_property(self) -> Option<CascadePropertyId> {
+        match self {
+            Self::Supported(property) => Some(property),
+            Self::UnsupportedProperty | Self::CustomProperty | Self::InvalidPropertyName => None,
+        }
+    }
+
+    pub fn is_supported(self) -> bool {
+        self.supported_property().is_some()
+    }
 }
 
 /// Engine-owned specified-value surface carried by authored cascade winners.
@@ -351,6 +552,310 @@ impl CascadeSpecifiedValue {
 
     pub fn to_css_text(&self) -> Option<String> {
         serialize_declaration_value_for_css(&self.value).map(|value| value.trim().to_string())
+    }
+}
+
+/// One declaration attached to a matched cascade rule input.
+///
+/// This preserves source order, declaration-level importance, applicability
+/// state, the structured property-name surface, and the authored value without
+/// yet collapsing into a winner.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CascadeDeclarationInput {
+    source: CascadeDeclarationSource,
+    declaration_order: u32,
+    importance: CascadeImportance,
+    property: CascadeDeclarationProperty,
+    value: CascadeSpecifiedValue,
+}
+
+impl CascadeDeclarationInput {
+    pub fn supported(
+        source: CascadeDeclarationSource,
+        declaration_order: u32,
+        importance: CascadeImportance,
+        property: CascadePropertyId,
+        value: CascadeSpecifiedValue,
+    ) -> Self {
+        Self {
+            source,
+            declaration_order,
+            importance,
+            property: CascadeDeclarationProperty::Supported(property),
+            value,
+        }
+    }
+
+    pub fn unsupported_property(
+        source: CascadeDeclarationSource,
+        declaration_order: u32,
+        importance: CascadeImportance,
+        property_name: impl Into<String>,
+        value: CascadeSpecifiedValue,
+    ) -> Self {
+        Self {
+            source,
+            declaration_order,
+            importance,
+            property: CascadeDeclarationProperty::Unsupported(property_name.into()),
+            value,
+        }
+    }
+
+    pub fn custom_property(
+        source: CascadeDeclarationSource,
+        declaration_order: u32,
+        importance: CascadeImportance,
+        property_name: impl Into<String>,
+        value: CascadeSpecifiedValue,
+    ) -> Self {
+        Self {
+            source,
+            declaration_order,
+            importance,
+            property: CascadeDeclarationProperty::Custom(property_name.into()),
+            value,
+        }
+    }
+
+    pub fn invalid_property_name(
+        source: CascadeDeclarationSource,
+        declaration_order: u32,
+        importance: CascadeImportance,
+        value: CascadeSpecifiedValue,
+    ) -> Self {
+        Self {
+            source,
+            declaration_order,
+            importance,
+            property: CascadeDeclarationProperty::Invalid,
+            value,
+        }
+    }
+
+    pub fn source(&self) -> CascadeDeclarationSource {
+        self.source
+    }
+
+    pub fn declaration_order(&self) -> u32 {
+        self.declaration_order
+    }
+
+    pub fn importance(&self) -> CascadeImportance {
+        self.importance
+    }
+
+    pub fn property(&self) -> &CascadeDeclarationProperty {
+        &self.property
+    }
+
+    pub fn property_name(&self) -> Option<&str> {
+        self.property.name()
+    }
+
+    pub fn applicability(&self) -> CascadeDeclarationApplicability {
+        self.property.applicability()
+    }
+
+    pub fn value(&self) -> &CascadeSpecifiedValue {
+        &self.value
+    }
+
+    pub fn candidate(&self, context: CascadeRuleContext) -> Option<CascadeDeclarationCandidate> {
+        let property = self.property.supported_property()?;
+
+        Some(CascadeDeclarationCandidate {
+            property,
+            source: self.source,
+            priority: context.priority_for_declaration(self.importance, self.declaration_order),
+            value: self.value.clone(),
+        })
+    }
+}
+
+/// One matched rule entering cascade with explicit rule-level metadata and
+/// ordered declaration inputs.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CascadeRuleInput {
+    source: CascadeRuleSource,
+    context: CascadeRuleContext,
+    declarations: Vec<CascadeDeclarationInput>,
+}
+
+/// Error returned when a rule input is built with declarations that do not
+/// belong to the claimed rule source.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CascadeRuleInputBuildError {
+    rule_source: CascadeRuleSource,
+    declaration_source: CascadeDeclarationSource,
+    declaration_position: usize,
+}
+
+impl CascadeRuleInputBuildError {
+    pub fn rule_source(&self) -> CascadeRuleSource {
+        self.rule_source
+    }
+
+    pub fn declaration_source(&self) -> CascadeDeclarationSource {
+        self.declaration_source
+    }
+
+    pub fn declaration_position(&self) -> usize {
+        self.declaration_position
+    }
+}
+
+impl std::fmt::Display for CascadeRuleInputBuildError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "cascade rule input declaration at position {} does not belong to source {:?}: {:?}",
+            self.declaration_position, self.rule_source, self.declaration_source
+        )
+    }
+}
+
+impl std::error::Error for CascadeRuleInputBuildError {}
+
+impl CascadeRuleInput {
+    pub fn new(
+        source: CascadeRuleSource,
+        context: CascadeRuleContext,
+        declarations: Vec<CascadeDeclarationInput>,
+    ) -> Result<Self, CascadeRuleInputBuildError> {
+        if let Some((declaration_position, declaration)) = declarations
+            .iter()
+            .enumerate()
+            .find(|(_, declaration)| !source.owns_declaration_source(declaration.source()))
+        {
+            return Err(CascadeRuleInputBuildError {
+                rule_source: source,
+                declaration_source: declaration.source(),
+                declaration_position,
+            });
+        }
+
+        Ok(Self {
+            source,
+            context,
+            declarations,
+        })
+    }
+
+    pub fn from_stylesheet_match(
+        rule_match: &CascadeRuleMatch,
+        origin: CascadeOrigin,
+        rule_order: u32,
+        declarations: Vec<CascadeDeclarationInput>,
+    ) -> Result<Option<Self>, CascadeRuleInputBuildError> {
+        let Some(context) =
+            CascadeRuleContext::from_stylesheet_match(origin, rule_order, rule_match)
+        else {
+            return Ok(None);
+        };
+
+        Self::new(
+            CascadeRuleSource::from_rule_match(rule_match),
+            context,
+            declarations,
+        )
+        .map(Some)
+    }
+
+    pub fn from_inline_style(
+        inline_style: InlineStyleRuleRef,
+        rule_order: u32,
+        declarations: Vec<CascadeDeclarationInput>,
+    ) -> Result<Self, CascadeRuleInputBuildError> {
+        Self::new(
+            CascadeRuleSource::InlineStyle(inline_style),
+            CascadeRuleContext::for_inline_style(rule_order),
+            declarations,
+        )
+    }
+
+    pub fn source(&self) -> CascadeRuleSource {
+        self.source
+    }
+
+    pub fn context(&self) -> CascadeRuleContext {
+        self.context
+    }
+
+    pub fn declarations(&self) -> &[CascadeDeclarationInput] {
+        &self.declarations
+    }
+
+    /// Materializes winner-resolution candidates in declaration source order.
+    ///
+    /// Unsupported, custom-property, and invalid-name declarations remain
+    /// present on the rule input but do not emit candidates.
+    pub fn candidates(&self) -> Vec<CascadeDeclarationCandidate> {
+        self.declarations
+            .iter()
+            .filter_map(|declaration| declaration.candidate(self.context))
+            .collect()
+    }
+}
+
+/// Sorts declaration candidates into deterministic cascade order.
+///
+/// The sort is stable by contract, so equal candidate keys preserve their
+/// incoming order. That gives later winner-resolution work an explicit,
+/// testable behavior for degenerate equal-key cases.
+pub fn sort_candidates_by_cascade_order(candidates: &mut [CascadeDeclarationCandidate]) {
+    candidates.sort_by_key(|candidate| candidate.sort_key());
+}
+
+/// Deterministic ordering key for cascade declaration candidates.
+///
+/// Sorting by this key groups candidates by property and then orders them by
+/// the lexicographic cascade precedence defined by `CascadePriority`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd)]
+pub struct CascadeDeclarationCandidateKey {
+    pub property: CascadePropertyId,
+    pub priority: CascadePriority,
+}
+
+/// One supported declaration ready for cascade winner comparison.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CascadeDeclarationCandidate {
+    property: CascadePropertyId,
+    source: CascadeDeclarationSource,
+    priority: CascadePriority,
+    value: CascadeSpecifiedValue,
+}
+
+impl CascadeDeclarationCandidate {
+    pub fn property(&self) -> CascadePropertyId {
+        self.property
+    }
+
+    pub fn source(&self) -> CascadeDeclarationSource {
+        self.source
+    }
+
+    pub fn priority(&self) -> CascadePriority {
+        self.priority
+    }
+
+    pub fn value(&self) -> &CascadeSpecifiedValue {
+        &self.value
+    }
+
+    pub fn sort_key(&self) -> CascadeDeclarationCandidateKey {
+        CascadeDeclarationCandidateKey {
+            property: self.property,
+            priority: self.priority,
+        }
+    }
+
+    pub fn into_winner(self) -> CascadeWinner {
+        CascadeWinner {
+            source: self.source,
+            priority: self.priority,
+            value: self.value,
+        }
     }
 }
 
@@ -567,9 +1072,10 @@ fn winner_source_label(source: CascadeDeclarationSource) -> String {
             "stylesheet[{}/{}]/declaration[{}]",
             source.stylesheet_index, source.rule_index, source.declaration_index
         ),
-        CascadeDeclarationSource::InlineStyle(source) => {
-            format!("inline-style/declaration[{}]", source.declaration_index)
-        }
+        CascadeDeclarationSource::InlineStyle(source) => format!(
+            "inline-style[{}]/declaration[{}]",
+            source.inline_style.scope_id, source.declaration_index
+        ),
     }
 }
 
@@ -729,11 +1235,13 @@ fn push_ascii_space(out: &mut String) {
 #[cfg(test)]
 mod tests {
     use super::{
+        CascadeDeclarationApplicability, CascadeDeclarationInput, CascadeDeclarationProperty,
         CascadeDeclarationSource, CascadeImportance, CascadeOrigin, CascadeOriginBand,
-        CascadePriority, CascadePropertyId, CascadeRuleMatch, CascadeSpecificity,
-        CascadeSpecifiedValue, InitialStyleValue, InlineStyleDeclarationRef,
+        CascadePriority, CascadePropertyId, CascadeRuleContext, CascadeRuleInput,
+        CascadeRuleInputBuildError, CascadeRuleMatch, CascadeRuleSource, CascadeSpecificity,
+        CascadeSpecifiedValue, InitialStyleValue, InlineStyleDeclarationRef, InlineStyleRuleRef,
         ResolvedStyleBuildError, ResolvedStyleBuilder, ResolvedValueSource,
-        StylesheetDeclarationRef,
+        StylesheetDeclarationRef, StylesheetRuleRef, sort_candidates_by_cascade_order,
     };
     use crate::selectors::{SelectorListMatchOutcome, Specificity};
     use crate::{ParseOptions, Rule, parse_stylesheet_with_options};
@@ -793,6 +1301,275 @@ mod tests {
         assert!(CascadeOriginBand::Animation > CascadeOriginBand::AuthorNormal);
         assert!(CascadeOriginBand::UserImportant > CascadeOriginBand::AuthorImportant);
         assert!(CascadeOriginBand::Transition > CascadeOriginBand::UserAgentImportant);
+    }
+
+    #[test]
+    fn cascade_rule_input_materializes_supported_candidates_with_explicit_priority() {
+        let rule_match = matched_rule(2, 5, &[Specificity::TYPE, Specificity::CLASS]);
+        let source = CascadeRuleSource::Stylesheet(StylesheetRuleRef::from_rule_match(&rule_match));
+        let rule = CascadeRuleInput::from_stylesheet_match(
+            &rule_match,
+            CascadeOrigin::Author,
+            11,
+            vec![
+                CascadeDeclarationInput::supported(
+                    stylesheet_declaration_source(2, 5, 0),
+                    0,
+                    CascadeImportance::Normal,
+                    CascadePropertyId::Color,
+                    parsed_value("color: red"),
+                ),
+                CascadeDeclarationInput::supported(
+                    stylesheet_declaration_source(2, 5, 1),
+                    1,
+                    CascadeImportance::Important,
+                    CascadePropertyId::Color,
+                    parsed_value("color: blue"),
+                ),
+            ],
+        )
+        .expect("valid matched stylesheet rule")
+        .expect("matched rule contributes");
+
+        let candidates = rule.candidates();
+        let context = rule.context();
+        assert_eq!(rule.source(), source);
+        assert_eq!(rule.context(), context);
+        assert_eq!(rule.declarations().len(), 2);
+        assert_eq!(candidates.len(), 2);
+        assert_eq!(candidates[0].property(), CascadePropertyId::Color);
+        assert_eq!(
+            candidates[0].source(),
+            stylesheet_declaration_source(2, 5, 0)
+        );
+        assert_eq!(
+            candidates[0].priority(),
+            context.priority_for_declaration(CascadeImportance::Normal, 0)
+        );
+        assert_eq!(
+            candidates[1].priority(),
+            context.priority_for_declaration(CascadeImportance::Important, 1)
+        );
+        assert_eq!(candidates[1].value().to_css_text().as_deref(), Some("blue"));
+
+        let winner = candidates[1].clone().into_winner();
+        assert_eq!(winner.source, stylesheet_declaration_source(2, 5, 1));
+        assert_eq!(
+            winner.priority,
+            context.priority_for_declaration(CascadeImportance::Important, 1)
+        );
+        assert_eq!(winner.value.to_css_text().as_deref(), Some("blue"));
+    }
+
+    #[test]
+    fn cascade_rule_input_keeps_declaration_filter_state_explicit() {
+        let inline_style = InlineStyleRuleRef::new(7);
+        let rule = CascadeRuleInput::from_inline_style(
+            inline_style,
+            0,
+            vec![
+                CascadeDeclarationInput::supported(
+                    inline_declaration_source(inline_style, 0),
+                    0,
+                    CascadeImportance::Normal,
+                    CascadePropertyId::Color,
+                    parsed_value("color: red"),
+                ),
+                CascadeDeclarationInput::unsupported_property(
+                    inline_declaration_source(inline_style, 1),
+                    1,
+                    CascadeImportance::Normal,
+                    "zoom",
+                    parsed_value("zoom: 2"),
+                ),
+                CascadeDeclarationInput::custom_property(
+                    inline_declaration_source(inline_style, 2),
+                    2,
+                    CascadeImportance::Normal,
+                    "--brand",
+                    parsed_value("--brand: teal"),
+                ),
+                CascadeDeclarationInput::invalid_property_name(
+                    inline_declaration_source(inline_style, 3),
+                    3,
+                    CascadeImportance::Normal,
+                    parsed_value("color: green"),
+                ),
+            ],
+        )
+        .expect("valid inline style rule");
+        let context = rule.context();
+
+        assert_eq!(
+            rule.declarations()[0].applicability(),
+            CascadeDeclarationApplicability::Supported(CascadePropertyId::Color)
+        );
+        assert_eq!(
+            rule.declarations()[0].property(),
+            &CascadeDeclarationProperty::Supported(CascadePropertyId::Color)
+        );
+        assert_eq!(rule.declarations()[1].property_name(), Some("zoom"));
+        assert_eq!(
+            rule.declarations()[1].applicability(),
+            CascadeDeclarationApplicability::UnsupportedProperty
+        );
+        assert_eq!(
+            rule.declarations()[1].property(),
+            &CascadeDeclarationProperty::Unsupported("zoom".to_string())
+        );
+        assert_eq!(rule.declarations()[2].property_name(), Some("--brand"));
+        assert_eq!(
+            rule.declarations()[2].applicability(),
+            CascadeDeclarationApplicability::CustomProperty
+        );
+        assert_eq!(
+            rule.declarations()[2].property(),
+            &CascadeDeclarationProperty::Custom("--brand".to_string())
+        );
+        assert_eq!(rule.declarations()[3].property_name(), None);
+        assert_eq!(
+            rule.declarations()[3].applicability(),
+            CascadeDeclarationApplicability::InvalidPropertyName
+        );
+        assert_eq!(
+            rule.declarations()[3].property(),
+            &CascadeDeclarationProperty::Invalid
+        );
+
+        let candidates = rule.candidates();
+        assert_eq!(candidates.len(), 1);
+        assert_eq!(
+            candidates[0].source(),
+            inline_declaration_source(inline_style, 0)
+        );
+        assert_eq!(
+            candidates[0].priority(),
+            context.priority_for_declaration(CascadeImportance::Normal, 0)
+        );
+    }
+
+    #[test]
+    fn cascade_rule_input_rejects_declarations_from_a_different_inline_style_source() {
+        let inline_style = InlineStyleRuleRef::new(1);
+        let other_inline_style = InlineStyleRuleRef::new(2);
+        let error = CascadeRuleInput::from_inline_style(
+            inline_style,
+            0,
+            vec![CascadeDeclarationInput::supported(
+                inline_declaration_source(other_inline_style, 0),
+                0,
+                CascadeImportance::Normal,
+                CascadePropertyId::Color,
+                parsed_value("color: red"),
+            )],
+        )
+        .expect_err("mismatched inline source");
+
+        assert_eq!(
+            error,
+            CascadeRuleInputBuildError {
+                rule_source: CascadeRuleSource::InlineStyle(inline_style),
+                declaration_source: inline_declaration_source(other_inline_style, 0),
+                declaration_position: 0,
+            }
+        );
+    }
+
+    #[test]
+    fn cascade_candidate_sort_key_is_property_first_then_priority() {
+        let author_rule = CascadeRuleContext::new(
+            CascadeOrigin::Author,
+            CascadeSpecificity::Selector(Specificity::TYPE),
+            4,
+        );
+        let inline_style = InlineStyleRuleRef::new(3);
+        let inline_rule = CascadeRuleContext::for_inline_style(0);
+
+        let mut candidates = vec![
+            CascadeDeclarationInput::supported(
+                stylesheet_declaration_source(0, 0, 0),
+                0,
+                CascadeImportance::Normal,
+                CascadePropertyId::Width,
+                parsed_value("width: 10px"),
+            )
+            .candidate(author_rule)
+            .expect("supported candidate"),
+            CascadeDeclarationInput::supported(
+                stylesheet_declaration_source(0, 0, 1),
+                1,
+                CascadeImportance::Normal,
+                CascadePropertyId::Color,
+                parsed_value("color: red"),
+            )
+            .candidate(author_rule)
+            .expect("supported candidate"),
+            CascadeDeclarationInput::supported(
+                inline_declaration_source(inline_style, 0),
+                0,
+                CascadeImportance::Normal,
+                CascadePropertyId::Color,
+                parsed_value("color: blue"),
+            )
+            .candidate(inline_rule)
+            .expect("supported candidate"),
+            CascadeDeclarationInput::supported(
+                stylesheet_declaration_source(0, 1, 0),
+                0,
+                CascadeImportance::Important,
+                CascadePropertyId::Color,
+                parsed_value("color: green"),
+            )
+            .candidate(author_rule)
+            .expect("supported candidate"),
+        ];
+
+        sort_candidates_by_cascade_order(&mut candidates);
+
+        assert_eq!(candidates[0].property(), CascadePropertyId::Color);
+        assert_eq!(candidates[0].value().to_css_text().as_deref(), Some("red"));
+        assert_eq!(candidates[1].property(), CascadePropertyId::Color);
+        assert_eq!(candidates[1].value().to_css_text().as_deref(), Some("blue"));
+        assert_eq!(candidates[2].property(), CascadePropertyId::Color);
+        assert_eq!(
+            candidates[2].value().to_css_text().as_deref(),
+            Some("green")
+        );
+        assert_eq!(candidates[3].property(), CascadePropertyId::Width);
+    }
+
+    #[test]
+    fn cascade_candidate_sorting_preserves_incoming_order_for_equal_keys() {
+        let context = CascadeRuleContext::new(
+            CascadeOrigin::Author,
+            CascadeSpecificity::Selector(Specificity::CLASS),
+            4,
+        );
+        let mut candidates = vec![
+            CascadeDeclarationInput::supported(
+                stylesheet_declaration_source(0, 0, 0),
+                0,
+                CascadeImportance::Normal,
+                CascadePropertyId::Color,
+                parsed_value("color: red"),
+            )
+            .candidate(context)
+            .expect("supported candidate"),
+            CascadeDeclarationInput::supported(
+                stylesheet_declaration_source(0, 1, 0),
+                0,
+                CascadeImportance::Normal,
+                CascadePropertyId::Color,
+                parsed_value("color: blue"),
+            )
+            .candidate(context)
+            .expect("supported candidate"),
+        ];
+
+        sort_candidates_by_cascade_order(&mut candidates);
+
+        assert_eq!(candidates[0].value().to_css_text().as_deref(), Some("red"));
+        assert_eq!(candidates[1].value().to_css_text().as_deref(), Some("blue"));
     }
 
     #[test]
@@ -875,6 +1652,7 @@ mod tests {
             CascadePropertyId::Color,
             super::CascadeWinner {
                 source: CascadeDeclarationSource::InlineStyle(InlineStyleDeclarationRef {
+                    inline_style: InlineStyleRuleRef::new(9),
                     declaration_index: 2,
                 }),
                 priority: CascadePriority::new(
@@ -889,8 +1667,24 @@ mod tests {
 
         let snapshot = builder.build().expect("total style").to_debug_snapshot();
         assert!(snapshot.contains(
-            "winner(source=inline-style/declaration[2], band=author-normal, specificity=inline-style, rule-order=0, declaration-order=2, value=\"red\")"
+            "winner(source=inline-style[9]/declaration[2], band=author-normal, specificity=inline-style, rule-order=0, declaration-order=2, value=\"red\")"
         ));
+    }
+
+    fn matched_rule(
+        stylesheet_index: u32,
+        rule_index: u32,
+        specificities: &[Specificity],
+    ) -> CascadeRuleMatch {
+        let mut builder = SelectorListMatchOutcome::builder();
+        for (selector_index, specificity) in specificities.iter().copied().enumerate() {
+            builder.record_match(selector_index, specificity);
+        }
+        CascadeRuleMatch {
+            stylesheet_index,
+            rule_index,
+            outcome: builder.build(),
+        }
     }
 
     fn builder_with_initials_except(skip: &[CascadePropertyId]) -> ResolvedStyleBuilder {
@@ -913,5 +1707,27 @@ mod tests {
             panic!("expected style rule");
         };
         CascadeSpecifiedValue::from_declaration_value(&rule.declarations.declarations[0].value)
+    }
+
+    fn stylesheet_declaration_source(
+        stylesheet_index: u32,
+        rule_index: u32,
+        declaration_index: u32,
+    ) -> CascadeDeclarationSource {
+        CascadeDeclarationSource::Stylesheet(StylesheetDeclarationRef {
+            stylesheet_index,
+            rule_index,
+            declaration_index,
+        })
+    }
+
+    fn inline_declaration_source(
+        inline_style: InlineStyleRuleRef,
+        declaration_index: u32,
+    ) -> CascadeDeclarationSource {
+        CascadeDeclarationSource::InlineStyle(InlineStyleDeclarationRef {
+            inline_style,
+            declaration_index,
+        })
     }
 }

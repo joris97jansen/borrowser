@@ -17,12 +17,15 @@ pub mod values;
 
 // Model-first crate-root surface for engine-facing stylesheet work.
 pub use cascade::{
-    CascadeDeclarationSource, CascadeImportance, CascadeInheritance, CascadeOrigin,
-    CascadeOriginBand, CascadePriority, CascadePropertyId, CascadePropertyMetadata,
-    CascadeRuleMatch, CascadeSpecificity, CascadeSpecifiedValue, CascadeWinner, InitialStyleValue,
-    InlineStyleDeclarationRef, ResolvedStyle, ResolvedStyleBuildError, ResolvedStyleBuilder,
-    ResolvedStyleEntry, ResolvedValueSource, StylesheetDeclarationRef, attach_styles,
-    get_inline_style, is_css,
+    CascadeDeclarationApplicability, CascadeDeclarationCandidate, CascadeDeclarationCandidateKey,
+    CascadeDeclarationInput, CascadeDeclarationProperty, CascadeDeclarationSource,
+    CascadeImportance, CascadeInheritance, CascadeOrigin, CascadeOriginBand, CascadePriority,
+    CascadePropertyId, CascadePropertyMetadata, CascadeRuleContext, CascadeRuleInput,
+    CascadeRuleInputBuildError, CascadeRuleMatch, CascadeRuleSource, CascadeSpecificity,
+    CascadeSpecifiedValue, CascadeWinner, InitialStyleValue, InlineStyleDeclarationRef,
+    InlineStyleRuleRef, ResolvedStyle, ResolvedStyleBuildError, ResolvedStyleBuilder,
+    ResolvedStyleEntry, ResolvedValueSource, StylesheetDeclarationRef, StylesheetRuleRef,
+    attach_styles, get_inline_style, is_css, sort_candidates_by_cascade_order,
 };
 pub use computed::{ComputedStyle, StyledNode, build_style_tree, compute_style};
 pub use model::{
