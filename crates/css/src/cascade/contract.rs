@@ -804,7 +804,14 @@ impl CascadeRuleInput {
 /// incoming order. That gives later winner-resolution work an explicit,
 /// testable behavior for degenerate equal-key cases.
 pub fn sort_candidates_by_cascade_order(candidates: &mut [CascadeDeclarationCandidate]) {
-    candidates.sort_by_key(|candidate| candidate.sort_key());
+    sort_by_candidate_key(candidates, CascadeDeclarationCandidate::sort_key);
+}
+
+fn sort_by_candidate_key<T>(
+    candidates: &mut [T],
+    mut sort_key: impl FnMut(&T) -> CascadeDeclarationCandidateKey,
+) {
+    candidates.sort_by_key(|candidate| sort_key(candidate));
 }
 
 /// Deterministic ordering key for cascade declaration candidates.
@@ -850,6 +857,14 @@ impl CascadeDeclarationCandidate {
         }
     }
 
+    pub fn to_winner(&self) -> CascadeWinner {
+        CascadeWinner {
+            source: self.source,
+            priority: self.priority,
+            value: self.value.clone(),
+        }
+    }
+
     pub fn into_winner(self) -> CascadeWinner {
         CascadeWinner {
             source: self.source,
@@ -865,6 +880,110 @@ pub struct CascadeWinner {
     pub source: CascadeDeclarationSource,
     pub priority: CascadePriority,
     pub value: CascadeSpecifiedValue,
+}
+
+/// One resolved winning declaration for a supported property.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct CascadeWinnerEntry {
+    property: CascadePropertyId,
+    winner: CascadeWinner,
+}
+
+impl CascadeWinnerEntry {
+    pub fn property(&self) -> CascadePropertyId {
+        self.property
+    }
+
+    pub fn winner(&self) -> &CascadeWinner {
+        &self.winner
+    }
+}
+
+/// Sparse, deterministic winner-resolution output produced before
+/// inheritance/default fill.
+///
+/// `CascadeWinnerSet` contains only properties with authored winning
+/// declarations. Entries are stored in canonical property order, not discovery
+/// order, so snapshots and downstream transformations stay stable.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct CascadeWinnerSet {
+    entries: Vec<CascadeWinnerEntry>,
+}
+
+impl CascadeWinnerSet {
+    pub fn entries(&self) -> &[CascadeWinnerEntry] {
+        &self.entries
+    }
+
+    pub fn get(&self, property: CascadePropertyId) -> Option<&CascadeWinner> {
+        self.entries
+            .iter()
+            .find(|entry| entry.property() == property)
+            .map(|entry| entry.winner())
+    }
+
+    pub fn to_debug_snapshot(&self) -> String {
+        let mut out = String::new();
+        writeln!(&mut out, "version: 1").expect("write snapshot");
+        writeln!(&mut out, "cascade-winners").expect("write snapshot");
+        for entry in &self.entries {
+            writeln!(
+                &mut out,
+                "  {}: {}",
+                entry.property.name(),
+                winner_snapshot_label(entry.winner())
+            )
+            .expect("write snapshot");
+        }
+        out
+    }
+}
+
+/// Resolves one winning authored declaration per supported property from an
+/// arbitrary candidate set.
+///
+/// Candidates are compared by the lexicographic cascade precedence encoded in
+/// `CascadeDeclarationCandidateKey`. Equal keys use a deterministic degenerate
+/// tie rule: because candidate ordering is stable, the later candidate in the
+/// input slice wins.
+pub fn resolve_cascade_winners(candidates: &[CascadeDeclarationCandidate]) -> CascadeWinnerSet {
+    let mut ordered_candidates = candidates.iter().collect::<Vec<_>>();
+    sort_by_candidate_key(&mut ordered_candidates, |candidate| candidate.sort_key());
+
+    let mut entries = Vec::new();
+    let mut index = 0;
+    while index < ordered_candidates.len() {
+        let property = ordered_candidates[index].property();
+        let mut winner_index = index;
+        while winner_index + 1 < ordered_candidates.len()
+            && ordered_candidates[winner_index + 1].property() == property
+        {
+            winner_index += 1;
+        }
+
+        entries.push(CascadeWinnerEntry {
+            property,
+            winner: ordered_candidates[winner_index].to_winner(),
+        });
+        index = winner_index + 1;
+    }
+
+    CascadeWinnerSet { entries }
+}
+
+/// Resolves authored winners directly from matched rule inputs.
+///
+/// This keeps the rule-input -> candidate -> winner staircase explicit while
+/// avoiding any re-derivation of applicability or selector-match semantics.
+pub fn resolve_cascade_winners_from_rule_inputs(
+    rule_inputs: &[CascadeRuleInput],
+) -> CascadeWinnerSet {
+    let candidates = rule_inputs
+        .iter()
+        .flat_map(|rule_input| rule_input.candidates())
+        .collect::<Vec<_>>();
+
+    resolve_cascade_winners(&candidates)
 }
 
 /// How one supported property obtained its final resolved value.
@@ -982,14 +1101,14 @@ impl ResolvedStyleBuilder {
         let previous = self
             .entries
             .insert(property, ResolvedValueSource::Winner(winner));
-        debug_assert!(
+        assert!(
             previous.is_none(),
             "resolved style must not record the same property twice"
         );
     }
 
     pub fn record_inherited(&mut self, property: CascadePropertyId) {
-        debug_assert_eq!(
+        assert_eq!(
             property.metadata().inheritance,
             CascadeInheritance::Inherited,
             "only inherited properties may resolve through inheritance"
@@ -997,7 +1116,7 @@ impl ResolvedStyleBuilder {
         let previous = self
             .entries
             .insert(property, ResolvedValueSource::Inherited);
-        debug_assert!(
+        assert!(
             previous.is_none(),
             "resolved style must not record the same property twice"
         );
@@ -1008,7 +1127,7 @@ impl ResolvedStyleBuilder {
             property,
             ResolvedValueSource::Initial(property.metadata().initial),
         );
-        debug_assert!(
+        assert!(
             previous.is_none(),
             "resolved style must not record the same property twice"
         );
@@ -1044,26 +1163,28 @@ pub(crate) fn serialize_declaration_value_for_css(value: &DeclarationValue) -> O
 
 fn source_snapshot_label(source: &ResolvedValueSource) -> String {
     match source {
-        ResolvedValueSource::Winner(winner) => {
-            let value = winner
-                .value
-                .to_css_text()
-                .unwrap_or_else(|| "<unresolved-value>".to_string());
-            format!(
-                "winner(source={}, band={}, specificity={}, rule-order={}, declaration-order={}, value={})",
-                winner_source_label(winner.source),
-                winner.priority.band.as_debug_label(),
-                specificity_label(winner.priority.specificity),
-                winner.priority.rule_order,
-                winner.priority.declaration_order,
-                quoted_snapshot_text(&value),
-            )
-        }
+        ResolvedValueSource::Winner(winner) => winner_snapshot_label(winner),
         ResolvedValueSource::Inherited => "inherited".to_string(),
         ResolvedValueSource::Initial(initial) => {
             format!("initial({})", initial.as_debug_label())
         }
     }
+}
+
+fn winner_snapshot_label(winner: &CascadeWinner) -> String {
+    let value = winner
+        .value
+        .to_css_text()
+        .unwrap_or_else(|| "<unresolved-value>".to_string());
+    format!(
+        "winner(source={}, band={}, specificity={}, rule-order={}, declaration-order={}, value={})",
+        winner_source_label(winner.source),
+        winner.priority.band.as_debug_label(),
+        specificity_label(winner.priority.specificity),
+        winner.priority.rule_order,
+        winner.priority.declaration_order,
+        quoted_snapshot_text(&value),
+    )
 }
 
 fn winner_source_label(source: CascadeDeclarationSource) -> String {
@@ -1241,7 +1362,8 @@ mod tests {
         CascadeRuleInputBuildError, CascadeRuleMatch, CascadeRuleSource, CascadeSpecificity,
         CascadeSpecifiedValue, InitialStyleValue, InlineStyleDeclarationRef, InlineStyleRuleRef,
         ResolvedStyleBuildError, ResolvedStyleBuilder, ResolvedValueSource,
-        StylesheetDeclarationRef, StylesheetRuleRef, sort_candidates_by_cascade_order,
+        StylesheetDeclarationRef, StylesheetRuleRef, resolve_cascade_winners,
+        resolve_cascade_winners_from_rule_inputs, sort_candidates_by_cascade_order,
     };
     use crate::selectors::{SelectorListMatchOutcome, Specificity};
     use crate::{ParseOptions, Rule, parse_stylesheet_with_options};
@@ -1352,7 +1474,7 @@ mod tests {
         );
         assert_eq!(candidates[1].value().to_css_text().as_deref(), Some("blue"));
 
-        let winner = candidates[1].clone().into_winner();
+        let winner = candidates[1].to_winner();
         assert_eq!(winner.source, stylesheet_declaration_source(2, 5, 1));
         assert_eq!(
             winner.priority,
@@ -1573,6 +1695,241 @@ mod tests {
     }
 
     #[test]
+    fn cascade_winner_resolution_prefers_higher_specificity_over_later_rule_order() {
+        let high_specificity = CascadeDeclarationInput::supported(
+            stylesheet_declaration_source(0, 0, 0),
+            0,
+            CascadeImportance::Normal,
+            CascadePropertyId::Color,
+            parsed_value("color: red"),
+        )
+        .candidate(CascadeRuleContext::new(
+            CascadeOrigin::Author,
+            CascadeSpecificity::Selector(Specificity::CLASS),
+            0,
+        ))
+        .expect("supported candidate");
+        let later_lower_specificity = CascadeDeclarationInput::supported(
+            stylesheet_declaration_source(0, 1, 0),
+            0,
+            CascadeImportance::Normal,
+            CascadePropertyId::Color,
+            parsed_value("color: blue"),
+        )
+        .candidate(CascadeRuleContext::new(
+            CascadeOrigin::Author,
+            CascadeSpecificity::Selector(Specificity::TYPE),
+            10,
+        ))
+        .expect("supported candidate");
+
+        let winners = resolve_cascade_winners(&[later_lower_specificity, high_specificity]);
+        let winner = winners.get(CascadePropertyId::Color).expect("color winner");
+
+        assert_eq!(winner.value.to_css_text().as_deref(), Some("red"));
+        assert_eq!(
+            winner.priority.specificity,
+            CascadeSpecificity::Selector(Specificity::CLASS)
+        );
+        assert_eq!(winner.priority.rule_order, 0);
+    }
+
+    #[test]
+    fn cascade_winner_resolution_prefers_later_rule_order_when_specificity_ties() {
+        let earlier_rule = CascadeRuleInput::from_stylesheet_match(
+            &matched_rule(0, 0, &[Specificity::CLASS]),
+            CascadeOrigin::Author,
+            0,
+            vec![CascadeDeclarationInput::supported(
+                stylesheet_declaration_source(0, 0, 0),
+                0,
+                CascadeImportance::Normal,
+                CascadePropertyId::Color,
+                parsed_value("color: red"),
+            )],
+        )
+        .expect("valid rule")
+        .expect("matching rule");
+        let later_rule = CascadeRuleInput::from_stylesheet_match(
+            &matched_rule(0, 1, &[Specificity::CLASS]),
+            CascadeOrigin::Author,
+            1,
+            vec![CascadeDeclarationInput::supported(
+                stylesheet_declaration_source(0, 1, 0),
+                0,
+                CascadeImportance::Normal,
+                CascadePropertyId::Color,
+                parsed_value("color: blue"),
+            )],
+        )
+        .expect("valid rule")
+        .expect("matching rule");
+
+        let winners = resolve_cascade_winners_from_rule_inputs(&[later_rule, earlier_rule]);
+        let winner = winners.get(CascadePropertyId::Color).expect("color winner");
+
+        assert_eq!(winner.value.to_css_text().as_deref(), Some("blue"));
+        assert_eq!(winner.priority.rule_order, 1);
+    }
+
+    #[test]
+    fn cascade_winner_resolution_prefers_later_declaration_order_within_one_rule() {
+        let rule = CascadeRuleInput::from_stylesheet_match(
+            &matched_rule(0, 0, &[Specificity::TYPE]),
+            CascadeOrigin::Author,
+            0,
+            vec![
+                CascadeDeclarationInput::supported(
+                    stylesheet_declaration_source(0, 0, 0),
+                    0,
+                    CascadeImportance::Normal,
+                    CascadePropertyId::Color,
+                    parsed_value("color: red"),
+                ),
+                CascadeDeclarationInput::supported(
+                    stylesheet_declaration_source(0, 0, 1),
+                    1,
+                    CascadeImportance::Normal,
+                    CascadePropertyId::Color,
+                    parsed_value("color: blue"),
+                ),
+            ],
+        )
+        .expect("valid rule")
+        .expect("matching rule");
+
+        let winners = resolve_cascade_winners_from_rule_inputs(&[rule]);
+        let winner = winners.get(CascadePropertyId::Color).expect("color winner");
+
+        assert_eq!(winner.value.to_css_text().as_deref(), Some("blue"));
+        assert_eq!(winner.priority.declaration_order, 1);
+    }
+
+    #[test]
+    fn cascade_winner_resolution_ignores_unsupported_custom_and_invalid_declarations() {
+        let inline_style = InlineStyleRuleRef::new(12);
+        let rule = CascadeRuleInput::from_inline_style(
+            inline_style,
+            0,
+            vec![
+                CascadeDeclarationInput::unsupported_property(
+                    inline_declaration_source(inline_style, 0),
+                    0,
+                    CascadeImportance::Normal,
+                    "zoom",
+                    parsed_value("zoom: 2"),
+                ),
+                CascadeDeclarationInput::custom_property(
+                    inline_declaration_source(inline_style, 1),
+                    1,
+                    CascadeImportance::Normal,
+                    "--brand",
+                    parsed_value("--brand: teal"),
+                ),
+                CascadeDeclarationInput::invalid_property_name(
+                    inline_declaration_source(inline_style, 2),
+                    2,
+                    CascadeImportance::Normal,
+                    parsed_value("color: green"),
+                ),
+                CascadeDeclarationInput::supported(
+                    inline_declaration_source(inline_style, 3),
+                    3,
+                    CascadeImportance::Normal,
+                    CascadePropertyId::Color,
+                    parsed_value("color: red"),
+                ),
+            ],
+        )
+        .expect("valid inline rule");
+
+        let winners = resolve_cascade_winners_from_rule_inputs(&[rule]);
+
+        assert_eq!(winners.entries().len(), 1);
+        assert_eq!(winners.entries()[0].property(), CascadePropertyId::Color);
+        assert_eq!(
+            winners.entries()[0].winner().value.to_css_text().as_deref(),
+            Some("red")
+        );
+    }
+
+    #[test]
+    fn cascade_winner_resolution_uses_later_input_for_equal_candidate_keys() {
+        let context = CascadeRuleContext::new(
+            CascadeOrigin::Author,
+            CascadeSpecificity::Selector(Specificity::CLASS),
+            4,
+        );
+        let first = CascadeDeclarationInput::supported(
+            stylesheet_declaration_source(0, 0, 0),
+            0,
+            CascadeImportance::Normal,
+            CascadePropertyId::Color,
+            parsed_value("color: red"),
+        )
+        .candidate(context)
+        .expect("supported candidate");
+        let second = CascadeDeclarationInput::supported(
+            stylesheet_declaration_source(0, 1, 0),
+            0,
+            CascadeImportance::Normal,
+            CascadePropertyId::Color,
+            parsed_value("color: blue"),
+        )
+        .candidate(context)
+        .expect("supported candidate");
+
+        let winners = resolve_cascade_winners(&[first, second]);
+        let winner = winners.get(CascadePropertyId::Color).expect("color winner");
+
+        assert_eq!(winner.value.to_css_text().as_deref(), Some("blue"));
+        assert_eq!(
+            winner.priority,
+            context.priority_for_declaration(CascadeImportance::Normal, 0)
+        );
+    }
+
+    #[test]
+    fn cascade_winner_set_is_property_sorted_and_snapshot_stable() {
+        let winners = resolve_cascade_winners(&[
+            CascadeDeclarationInput::supported(
+                stylesheet_declaration_source(0, 0, 0),
+                0,
+                CascadeImportance::Normal,
+                CascadePropertyId::Width,
+                parsed_value("width: 10px"),
+            )
+            .candidate(CascadeRuleContext::new(
+                CascadeOrigin::Author,
+                CascadeSpecificity::Selector(Specificity::TYPE),
+                0,
+            ))
+            .expect("supported candidate"),
+            CascadeDeclarationInput::supported(
+                inline_declaration_source(InlineStyleRuleRef::new(15), 0),
+                0,
+                CascadeImportance::Normal,
+                CascadePropertyId::Color,
+                parsed_value("color: blue"),
+            )
+            .candidate(CascadeRuleContext::for_inline_style(0))
+            .expect("supported candidate"),
+        ]);
+
+        assert_eq!(winners.entries()[0].property(), CascadePropertyId::Color);
+        assert_eq!(winners.entries()[1].property(), CascadePropertyId::Width);
+        assert_eq!(
+            winners.to_debug_snapshot(),
+            concat!(
+                "version: 1\n",
+                "cascade-winners\n",
+                "  color: winner(source=inline-style[15]/declaration[0], band=author-normal, specificity=inline-style, rule-order=0, declaration-order=0, value=\"blue\")\n",
+                "  width: winner(source=stylesheet[0/0]/declaration[0], band=author-normal, specificity=selector(0,0,1), rule-order=0, declaration-order=0, value=\"10px\")\n",
+            )
+        );
+    }
+
+    #[test]
     fn resolved_style_builder_rejects_missing_supported_properties() {
         let error = ResolvedStyleBuilder::new()
             .build()
@@ -1583,6 +1940,14 @@ mod tests {
                 missing_properties: CascadePropertyId::ALL.to_vec(),
             }
         );
+    }
+
+    #[test]
+    #[should_panic(expected = "resolved style must not record the same property twice")]
+    fn resolved_style_builder_rejects_duplicate_property_insertion_in_all_builds() {
+        let mut builder = ResolvedStyleBuilder::new();
+        builder.record_initial(CascadePropertyId::Color);
+        builder.record_initial(CascadePropertyId::Color);
     }
 
     #[test]
