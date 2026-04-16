@@ -1071,6 +1071,11 @@ pub fn resolve_cascade_winners_from_rule_inputs(
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ResolvedValueSource {
     Winner(CascadeWinner),
+    /// Inherit the value from the parent resolved style.
+    ///
+    /// This source is emitted only when the property inherits and a parent
+    /// resolved style is available for the current element. Root-level fallback
+    /// for inherited properties resolves through `Initial(...)` instead.
     Inherited,
     Initial(InitialStyleValue),
 }
@@ -1137,6 +1142,54 @@ impl ResolvedStyle {
         }
         out
     }
+}
+
+/// Resolves a total `ResolvedStyle` from authored winners plus optional parent
+/// resolved style.
+///
+/// This is the explicit inheritance/default-fill step in Borrowser's cascade
+/// pipeline. Local winning authored declarations take precedence. If no local
+/// winner exists, inherited properties record `Inherited` when a parent
+/// resolved style is present and otherwise fall back to their initial value.
+/// Non-inherited properties always fall back to their initial value when no
+/// local winner exists.
+pub fn resolve_cascade_style(
+    winners: &CascadeWinnerSet,
+    parent_style: Option<&ResolvedStyle>,
+) -> ResolvedStyle {
+    let mut builder = ResolvedStyleBuilder::new();
+
+    for property in CascadePropertyId::ALL {
+        if let Some(winner) = winners.get(property) {
+            builder.record_winner(property, winner.clone());
+            continue;
+        }
+
+        match (property.metadata().inheritance, parent_style) {
+            (CascadeInheritance::Inherited, Some(_)) => builder.record_inherited(property),
+            (CascadeInheritance::Inherited, None)
+            | (CascadeInheritance::NotInherited, Some(_))
+            | (CascadeInheritance::NotInherited, None) => builder.record_initial(property),
+        }
+    }
+
+    builder
+        .build()
+        .expect("cascade style resolution must produce a total supported-property output")
+}
+
+/// Resolves a total `ResolvedStyle` directly from matched rule inputs plus
+/// optional parent resolved style.
+///
+/// This keeps the rule-input -> winner-set -> resolved-style staircase
+/// explicit while offering one current-scope convenience entrypoint for the
+/// full Milestone R cascade path.
+pub fn resolve_cascade_style_from_rule_inputs(
+    rule_inputs: &[CascadeRuleInput],
+    parent_style: Option<&ResolvedStyle>,
+) -> ResolvedStyle {
+    let winners = resolve_cascade_winners_from_rule_inputs(rule_inputs);
+    resolve_cascade_style(&winners, parent_style)
 }
 
 /// Error returned when a final `ResolvedStyle` is missing supported
@@ -1441,11 +1494,11 @@ mod tests {
         CascadeDeclarationSource, CascadeImportance, CascadeOrigin, CascadeOriginBand,
         CascadePriority, CascadePropertyId, CascadeRuleContext, CascadeRuleInput,
         CascadeRuleInputBuildError, CascadeRuleMatch, CascadeRuleSource, CascadeSpecificity,
-        CascadeSpecifiedValue, CurrentScopeCascadePriorityBand, InitialStyleValue,
-        InlineStyleDeclarationRef, InlineStyleRuleRef, ResolvedStyleBuildError,
+        CascadeSpecifiedValue, CascadeWinnerSet, CurrentScopeCascadePriorityBand,
+        InitialStyleValue, InlineStyleDeclarationRef, InlineStyleRuleRef, ResolvedStyleBuildError,
         ResolvedStyleBuilder, ResolvedValueSource, StylesheetDeclarationRef, StylesheetRuleRef,
-        resolve_cascade_winners, resolve_cascade_winners_from_rule_inputs,
-        sort_candidates_by_cascade_order,
+        resolve_cascade_style, resolve_cascade_style_from_rule_inputs, resolve_cascade_winners,
+        resolve_cascade_winners_from_rule_inputs, sort_candidates_by_cascade_order,
     };
     use crate::selectors::{SelectorListMatchOutcome, Specificity};
     use crate::{ParseOptions, Rule, parse_stylesheet_with_options};
@@ -2233,6 +2286,206 @@ mod tests {
     }
 
     #[test]
+    fn resolve_cascade_style_marks_inherited_properties_only_when_parent_is_present() {
+        let mut parent_builder = builder_with_initials_except(&[CascadePropertyId::Color]);
+        parent_builder.record_winner(
+            CascadePropertyId::Color,
+            super::CascadeWinner {
+                source: stylesheet_declaration_source(0, 0, 0),
+                priority: CascadePriority::new(
+                    CascadeOriginBand::AuthorNormal,
+                    CascadeSpecificity::Selector(Specificity::TYPE),
+                    0,
+                    0,
+                ),
+                value: parsed_value("color: red"),
+            },
+        );
+        let parent_style = parent_builder.build().expect("total parent style");
+
+        let child = resolve_cascade_style(&CascadeWinnerSet::default(), Some(&parent_style));
+
+        assert_eq!(
+            child.get(CascadePropertyId::Color).expect("color").source(),
+            &ResolvedValueSource::Inherited
+        );
+        assert_eq!(
+            child
+                .get(CascadePropertyId::FontSize)
+                .expect("font-size")
+                .source(),
+            &ResolvedValueSource::Inherited
+        );
+        assert_eq!(
+            child
+                .get(CascadePropertyId::Display)
+                .expect("display")
+                .source(),
+            &ResolvedValueSource::Initial(InitialStyleValue::DisplayInline)
+        );
+        assert_eq!(
+            child.to_debug_snapshot(),
+            concat!(
+                "version: 1\n",
+                "resolved-style\n",
+                "  background-color: initial(transparent)\n",
+                "  color: inherited\n",
+                "  display: initial(inline)\n",
+                "  font-size: inherited\n",
+                "  height: initial(auto)\n",
+                "  margin-bottom: initial(0px)\n",
+                "  margin-left: initial(0px)\n",
+                "  margin-right: initial(0px)\n",
+                "  margin-top: initial(0px)\n",
+                "  max-width: initial(none)\n",
+                "  min-width: initial(auto)\n",
+                "  padding-bottom: initial(0px)\n",
+                "  padding-left: initial(0px)\n",
+                "  padding-right: initial(0px)\n",
+                "  padding-top: initial(0px)\n",
+                "  width: initial(auto)\n",
+            )
+        );
+    }
+
+    #[test]
+    fn resolve_cascade_style_uses_initial_for_inherited_properties_at_the_root() {
+        let root_style = resolve_cascade_style(&CascadeWinnerSet::default(), None);
+
+        assert_eq!(
+            root_style
+                .get(CascadePropertyId::Color)
+                .expect("color")
+                .source(),
+            &ResolvedValueSource::Initial(InitialStyleValue::ColorBlack)
+        );
+        assert_eq!(
+            root_style
+                .get(CascadePropertyId::FontSize)
+                .expect("font-size")
+                .source(),
+            &ResolvedValueSource::Initial(InitialStyleValue::FontSizePx16)
+        );
+    }
+
+    #[test]
+    fn resolve_cascade_style_explicit_winner_overrides_parent_inheritance_and_defaults() {
+        let mut parent_builder =
+            builder_with_initials_except(&[CascadePropertyId::Color, CascadePropertyId::Display]);
+        parent_builder.record_winner(
+            CascadePropertyId::Color,
+            super::CascadeWinner {
+                source: stylesheet_declaration_source(0, 0, 0),
+                priority: CascadePriority::new(
+                    CascadeOriginBand::AuthorNormal,
+                    CascadeSpecificity::Selector(Specificity::TYPE),
+                    0,
+                    0,
+                ),
+                value: parsed_value("color: red"),
+            },
+        );
+        parent_builder.record_winner(
+            CascadePropertyId::Display,
+            super::CascadeWinner {
+                source: stylesheet_declaration_source(0, 0, 1),
+                priority: CascadePriority::new(
+                    CascadeOriginBand::AuthorNormal,
+                    CascadeSpecificity::Selector(Specificity::TYPE),
+                    0,
+                    1,
+                ),
+                value: parsed_value("display: block"),
+            },
+        );
+        let parent_style = parent_builder.build().expect("total parent style");
+
+        let child_winners = resolve_cascade_winners(&[CascadeDeclarationInput::supported(
+            stylesheet_declaration_source(0, 1, 0),
+            0,
+            CascadeImportance::Normal,
+            CascadePropertyId::Color,
+            parsed_value("color: blue"),
+        )
+        .candidate(CascadeRuleContext::new(
+            CascadeOrigin::Author,
+            CascadeSpecificity::Selector(Specificity::CLASS),
+            1,
+        ))
+        .expect("supported candidate")]);
+
+        let child = resolve_cascade_style(&child_winners, Some(&parent_style));
+
+        assert_eq!(
+            child
+                .get(CascadePropertyId::Color)
+                .and_then(|entry| entry.winner())
+                .and_then(|winner| winner.value.to_css_text())
+                .as_deref(),
+            Some("blue")
+        );
+        assert_eq!(
+            child
+                .get(CascadePropertyId::FontSize)
+                .expect("font-size")
+                .source(),
+            &ResolvedValueSource::Inherited
+        );
+        assert_eq!(
+            child
+                .get(CascadePropertyId::Display)
+                .expect("display")
+                .source(),
+            &ResolvedValueSource::Initial(InitialStyleValue::DisplayInline)
+        );
+    }
+
+    #[test]
+    fn resolve_cascade_style_from_rule_inputs_applies_inheritance_without_rederiving_priority() {
+        let parent_style = resolve_cascade_style(&CascadeWinnerSet::default(), None);
+        let child_rule = CascadeRuleInput::from_stylesheet_match(
+            &matched_rule(0, 0, &[Specificity::CLASS]),
+            CascadeOrigin::Author,
+            0,
+            vec![CascadeDeclarationInput::supported(
+                stylesheet_declaration_source(0, 0, 0),
+                0,
+                CascadeImportance::Normal,
+                CascadePropertyId::Color,
+                parsed_value("color: blue"),
+            )],
+        )
+        .expect("valid rule")
+        .expect("matching rule");
+
+        let child_style =
+            resolve_cascade_style_from_rule_inputs(&[child_rule], Some(&parent_style));
+
+        assert_eq!(
+            child_style
+                .get(CascadePropertyId::Color)
+                .and_then(|entry| entry.winner())
+                .and_then(|winner| winner.value.to_css_text())
+                .as_deref(),
+            Some("blue")
+        );
+        assert_eq!(
+            child_style
+                .get(CascadePropertyId::FontSize)
+                .expect("font-size")
+                .source(),
+            &ResolvedValueSource::Inherited
+        );
+        assert_eq!(
+            child_style
+                .get(CascadePropertyId::BackgroundColor)
+                .expect("background-color")
+                .source(),
+            &ResolvedValueSource::Initial(InitialStyleValue::TransparentColor)
+        );
+    }
+
+    #[test]
     fn resolved_style_builder_rejects_missing_supported_properties() {
         let error = ResolvedStyleBuilder::new()
             .build()
@@ -2251,6 +2504,13 @@ mod tests {
         let mut builder = ResolvedStyleBuilder::new();
         builder.record_initial(CascadePropertyId::Color);
         builder.record_initial(CascadePropertyId::Color);
+    }
+
+    #[test]
+    #[should_panic(expected = "only inherited properties may resolve through inheritance")]
+    fn resolved_style_builder_rejects_inherited_source_for_non_inherited_property_in_all_builds() {
+        let mut builder = ResolvedStyleBuilder::new();
+        builder.record_inherited(CascadePropertyId::Display);
     }
 
     #[test]
