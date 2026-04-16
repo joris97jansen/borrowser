@@ -199,11 +199,73 @@ pub enum CascadeImportance {
     Important,
 }
 
+/// Explicit origin/priority model emitted by Borrowser's current CSS scope.
+///
+/// This is the currently supported cross-product of rule origin and
+/// declaration-level importance. Future cascade levels such as animations and
+/// transitions remain outside this hot-path type and are integrated through the
+/// broader `CascadeOriginBand` ordering model.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd)]
+pub enum CurrentScopeCascadePriorityBand {
+    UserAgentNormal,
+    UserNormal,
+    AuthorNormal,
+    AuthorImportant,
+    UserImportant,
+    UserAgentImportant,
+}
+
+impl CurrentScopeCascadePriorityBand {
+    pub const fn from_origin_and_importance(
+        origin: CascadeOrigin,
+        importance: CascadeImportance,
+    ) -> Self {
+        match (origin, importance) {
+            (CascadeOrigin::UserAgent, CascadeImportance::Normal) => Self::UserAgentNormal,
+            (CascadeOrigin::User, CascadeImportance::Normal) => Self::UserNormal,
+            (CascadeOrigin::Author, CascadeImportance::Normal) => Self::AuthorNormal,
+            (CascadeOrigin::Author, CascadeImportance::Important) => Self::AuthorImportant,
+            (CascadeOrigin::User, CascadeImportance::Important) => Self::UserImportant,
+            (CascadeOrigin::UserAgent, CascadeImportance::Important) => Self::UserAgentImportant,
+        }
+    }
+
+    pub const fn as_origin_band(self) -> CascadeOriginBand {
+        match self {
+            Self::UserAgentNormal => CascadeOriginBand::UserAgentNormal,
+            Self::UserNormal => CascadeOriginBand::UserNormal,
+            Self::AuthorNormal => CascadeOriginBand::AuthorNormal,
+            Self::AuthorImportant => CascadeOriginBand::AuthorImportant,
+            Self::UserImportant => CascadeOriginBand::UserImportant,
+            Self::UserAgentImportant => CascadeOriginBand::UserAgentImportant,
+        }
+    }
+
+    /// Debug label for the current emitted priority model.
+    ///
+    /// The label intentionally matches the corresponding current-scope
+    /// `CascadeOriginBand` label. Debug surfaces that need to distinguish the
+    /// emitted current-scope model from the broader future precedence space
+    /// should do so by carrying the type context explicitly rather than by
+    /// expecting different string payloads here.
+    pub fn as_debug_label(self) -> &'static str {
+        match self {
+            Self::UserAgentNormal => "user-agent-normal",
+            Self::UserNormal => "user-normal",
+            Self::AuthorNormal => "author-normal",
+            Self::AuthorImportant => "author-important",
+            Self::UserImportant => "user-important",
+            Self::UserAgentImportant => "user-agent-important",
+        }
+    }
+}
+
 /// Ordered origin/importance band used by winner resolution.
 ///
 /// This ordering preserves the long-term CSS cascade hierarchy Borrowser is
-/// growing toward, including reserved bands for animations and transitions that
-/// are not emitted by the current Milestone R implementation.
+/// growing toward. The current engine scope emits only the bands reachable
+/// through `CurrentScopeCascadePriorityBand`; animation and transition remain
+/// reserved for later milestones.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Ord, PartialOrd)]
 pub enum CascadeOriginBand {
     UserAgentNormal,
@@ -217,17 +279,25 @@ pub enum CascadeOriginBand {
 }
 
 impl CascadeOriginBand {
-    pub const fn from_origin_and_importance(
-        origin: CascadeOrigin,
-        importance: CascadeImportance,
-    ) -> Self {
-        match (origin, importance) {
-            (CascadeOrigin::UserAgent, CascadeImportance::Normal) => Self::UserAgentNormal,
-            (CascadeOrigin::User, CascadeImportance::Normal) => Self::UserNormal,
-            (CascadeOrigin::Author, CascadeImportance::Normal) => Self::AuthorNormal,
-            (CascadeOrigin::Author, CascadeImportance::Important) => Self::AuthorImportant,
-            (CascadeOrigin::User, CascadeImportance::Important) => Self::UserImportant,
-            (CascadeOrigin::UserAgent, CascadeImportance::Important) => Self::UserAgentImportant,
+    pub const fn from_current_scope_band(band: CurrentScopeCascadePriorityBand) -> Self {
+        band.as_origin_band()
+    }
+
+    /// Returns the matching current-scope priority band when this precedence
+    /// level is emitted by today's engine path.
+    ///
+    /// This is an inspection helper, not a total conversion: reserved future
+    /// precedence levels such as `Animation` and `Transition` intentionally
+    /// return `None`.
+    pub const fn current_scope_band(self) -> Option<CurrentScopeCascadePriorityBand> {
+        match self {
+            Self::UserAgentNormal => Some(CurrentScopeCascadePriorityBand::UserAgentNormal),
+            Self::UserNormal => Some(CurrentScopeCascadePriorityBand::UserNormal),
+            Self::AuthorNormal => Some(CurrentScopeCascadePriorityBand::AuthorNormal),
+            Self::AuthorImportant => Some(CurrentScopeCascadePriorityBand::AuthorImportant),
+            Self::UserImportant => Some(CurrentScopeCascadePriorityBand::UserImportant),
+            Self::UserAgentImportant => Some(CurrentScopeCascadePriorityBand::UserAgentImportant),
+            Self::Animation | Self::Transition => None,
         }
     }
 
@@ -284,6 +354,15 @@ impl CascadePriority {
             rule_order,
             declaration_order,
         }
+    }
+
+    /// Returns the matching current-scope band when this priority was produced
+    /// by Borrowser's current emitted origin/priority model.
+    ///
+    /// This remains an inspection helper only. Priorities built from reserved
+    /// future precedence bands are expected to return `None`.
+    pub const fn current_scope_band(self) -> Option<CurrentScopeCascadePriorityBand> {
+        self.band.current_scope_band()
     }
 }
 
@@ -434,8 +513,10 @@ impl CascadeRuleContext {
         importance: CascadeImportance,
         declaration_order: u32,
     ) -> CascadePriority {
+        let current_scope_band =
+            CurrentScopeCascadePriorityBand::from_origin_and_importance(self.origin, importance);
         CascadePriority::new(
-            CascadeOriginBand::from_origin_and_importance(self.origin, importance),
+            CascadeOriginBand::from_current_scope_band(current_scope_band),
             self.specificity,
             self.rule_order,
             declaration_order,
@@ -1360,10 +1441,11 @@ mod tests {
         CascadeDeclarationSource, CascadeImportance, CascadeOrigin, CascadeOriginBand,
         CascadePriority, CascadePropertyId, CascadeRuleContext, CascadeRuleInput,
         CascadeRuleInputBuildError, CascadeRuleMatch, CascadeRuleSource, CascadeSpecificity,
-        CascadeSpecifiedValue, InitialStyleValue, InlineStyleDeclarationRef, InlineStyleRuleRef,
-        ResolvedStyleBuildError, ResolvedStyleBuilder, ResolvedValueSource,
-        StylesheetDeclarationRef, StylesheetRuleRef, resolve_cascade_winners,
-        resolve_cascade_winners_from_rule_inputs, sort_candidates_by_cascade_order,
+        CascadeSpecifiedValue, CurrentScopeCascadePriorityBand, InitialStyleValue,
+        InlineStyleDeclarationRef, InlineStyleRuleRef, ResolvedStyleBuildError,
+        ResolvedStyleBuilder, ResolvedValueSource, StylesheetDeclarationRef, StylesheetRuleRef,
+        resolve_cascade_winners, resolve_cascade_winners_from_rule_inputs,
+        sort_candidates_by_cascade_order,
     };
     use crate::selectors::{SelectorListMatchOutcome, Specificity};
     use crate::{ParseOptions, Rule, parse_stylesheet_with_options};
@@ -1401,10 +1483,7 @@ mod tests {
 
     #[test]
     fn cascade_priority_orders_inline_style_above_selector_specificity() {
-        let author_normal = CascadeOriginBand::from_origin_and_importance(
-            CascadeOrigin::Author,
-            CascadeImportance::Normal,
-        );
+        let author_normal = CurrentScopeCascadePriorityBand::AuthorNormal.as_origin_band();
         let selector_priority = CascadePriority::new(
             author_normal,
             CascadeSpecificity::Selector(Specificity::new(1, 0, 0)),
@@ -1415,6 +1494,98 @@ mod tests {
             CascadePriority::new(author_normal, CascadeSpecificity::InlineStyle, 0, 0);
 
         assert!(inline_priority > selector_priority);
+    }
+
+    #[test]
+    fn current_scope_priority_bands_map_origin_and_importance_explicitly() {
+        assert_eq!(
+            CurrentScopeCascadePriorityBand::from_origin_and_importance(
+                CascadeOrigin::UserAgent,
+                CascadeImportance::Normal
+            ),
+            CurrentScopeCascadePriorityBand::UserAgentNormal
+        );
+        assert_eq!(
+            CurrentScopeCascadePriorityBand::from_origin_and_importance(
+                CascadeOrigin::User,
+                CascadeImportance::Normal
+            ),
+            CurrentScopeCascadePriorityBand::UserNormal
+        );
+        assert_eq!(
+            CurrentScopeCascadePriorityBand::from_origin_and_importance(
+                CascadeOrigin::Author,
+                CascadeImportance::Normal
+            ),
+            CurrentScopeCascadePriorityBand::AuthorNormal
+        );
+        assert_eq!(
+            CurrentScopeCascadePriorityBand::from_origin_and_importance(
+                CascadeOrigin::Author,
+                CascadeImportance::Important
+            ),
+            CurrentScopeCascadePriorityBand::AuthorImportant
+        );
+        assert_eq!(
+            CurrentScopeCascadePriorityBand::from_origin_and_importance(
+                CascadeOrigin::User,
+                CascadeImportance::Important
+            ),
+            CurrentScopeCascadePriorityBand::UserImportant
+        );
+        assert_eq!(
+            CurrentScopeCascadePriorityBand::from_origin_and_importance(
+                CascadeOrigin::UserAgent,
+                CascadeImportance::Important
+            ),
+            CurrentScopeCascadePriorityBand::UserAgentImportant
+        );
+        assert_eq!(
+            CurrentScopeCascadePriorityBand::AuthorImportant.as_origin_band(),
+            CascadeOriginBand::AuthorImportant
+        );
+        assert_eq!(
+            CascadeOriginBand::UserImportant.current_scope_band(),
+            Some(CurrentScopeCascadePriorityBand::UserImportant)
+        );
+        assert_eq!(CascadeOriginBand::Animation.current_scope_band(), None);
+        assert!(
+            CurrentScopeCascadePriorityBand::AuthorNormal
+                > CurrentScopeCascadePriorityBand::UserNormal
+        );
+        assert!(
+            CurrentScopeCascadePriorityBand::UserImportant
+                > CurrentScopeCascadePriorityBand::AuthorImportant
+        );
+    }
+
+    #[test]
+    fn cascade_priority_current_scope_band_is_an_inspection_helper_for_future_bands() {
+        let current_scope_priority = CascadePriority::new(
+            CascadeOriginBand::AuthorNormal,
+            CascadeSpecificity::Selector(Specificity::TYPE),
+            0,
+            0,
+        );
+        let animation_priority = CascadePriority::new(
+            CascadeOriginBand::Animation,
+            CascadeSpecificity::Selector(Specificity::TYPE),
+            0,
+            0,
+        );
+        let transition_priority = CascadePriority::new(
+            CascadeOriginBand::Transition,
+            CascadeSpecificity::InlineStyle,
+            0,
+            0,
+        );
+
+        assert_eq!(
+            current_scope_priority.current_scope_band(),
+            Some(CurrentScopeCascadePriorityBand::AuthorNormal)
+        );
+        assert_eq!(animation_priority.current_scope_band(), None);
+        assert_eq!(transition_priority.current_scope_band(), None);
     }
 
     #[test]
@@ -1732,6 +1903,138 @@ mod tests {
             CascadeSpecificity::Selector(Specificity::CLASS)
         );
         assert_eq!(winner.priority.rule_order, 0);
+    }
+
+    #[test]
+    fn cascade_winner_resolution_prefers_author_over_user_over_user_agent_in_current_normal_scope()
+    {
+        let user_agent = CascadeDeclarationInput::supported(
+            stylesheet_declaration_source(0, 0, 0),
+            0,
+            CascadeImportance::Normal,
+            CascadePropertyId::Color,
+            parsed_value("color: gray"),
+        )
+        .candidate(CascadeRuleContext::new(
+            CascadeOrigin::UserAgent,
+            CascadeSpecificity::Selector(Specificity::TYPE),
+            0,
+        ))
+        .expect("supported candidate");
+        let user = CascadeDeclarationInput::supported(
+            stylesheet_declaration_source(0, 1, 0),
+            0,
+            CascadeImportance::Normal,
+            CascadePropertyId::Color,
+            parsed_value("color: green"),
+        )
+        .candidate(CascadeRuleContext::new(
+            CascadeOrigin::User,
+            CascadeSpecificity::Selector(Specificity::TYPE),
+            0,
+        ))
+        .expect("supported candidate");
+        let author = CascadeDeclarationInput::supported(
+            stylesheet_declaration_source(0, 2, 0),
+            0,
+            CascadeImportance::Normal,
+            CascadePropertyId::Color,
+            parsed_value("color: red"),
+        )
+        .candidate(CascadeRuleContext::new(
+            CascadeOrigin::Author,
+            CascadeSpecificity::Selector(Specificity::TYPE),
+            0,
+        ))
+        .expect("supported candidate");
+
+        let winners = resolve_cascade_winners(&[user, author, user_agent]);
+        let winner = winners.get(CascadePropertyId::Color).expect("color winner");
+
+        assert_eq!(winner.value.to_css_text().as_deref(), Some("red"));
+        assert_eq!(
+            winner.priority.current_scope_band(),
+            Some(CurrentScopeCascadePriorityBand::AuthorNormal)
+        );
+    }
+
+    #[test]
+    fn cascade_winner_resolution_prefers_important_band_over_higher_specificity_normal_band() {
+        let high_specificity_normal = CascadeDeclarationInput::supported(
+            stylesheet_declaration_source(0, 0, 0),
+            0,
+            CascadeImportance::Normal,
+            CascadePropertyId::Color,
+            parsed_value("color: red"),
+        )
+        .candidate(CascadeRuleContext::new(
+            CascadeOrigin::Author,
+            CascadeSpecificity::Selector(Specificity::new(1, 0, 0)),
+            10,
+        ))
+        .expect("supported candidate");
+        let low_specificity_important = CascadeDeclarationInput::supported(
+            stylesheet_declaration_source(0, 1, 0),
+            0,
+            CascadeImportance::Important,
+            CascadePropertyId::Color,
+            parsed_value("color: blue"),
+        )
+        .candidate(CascadeRuleContext::new(
+            CascadeOrigin::Author,
+            CascadeSpecificity::Selector(Specificity::TYPE),
+            0,
+        ))
+        .expect("supported candidate");
+
+        let winners =
+            resolve_cascade_winners(&[high_specificity_normal, low_specificity_important]);
+        let winner = winners.get(CascadePropertyId::Color).expect("color winner");
+
+        assert_eq!(winner.value.to_css_text().as_deref(), Some("blue"));
+        assert_eq!(
+            winner.priority.current_scope_band(),
+            Some(CurrentScopeCascadePriorityBand::AuthorImportant)
+        );
+    }
+
+    #[test]
+    fn cascade_winner_resolution_prefers_user_important_over_author_important_in_current_scope() {
+        let author_important = CascadeDeclarationInput::supported(
+            stylesheet_declaration_source(0, 0, 0),
+            0,
+            CascadeImportance::Important,
+            CascadePropertyId::Color,
+            parsed_value("color: red"),
+        )
+        .candidate(CascadeRuleContext::new(
+            CascadeOrigin::Author,
+            CascadeSpecificity::Selector(Specificity::new(1, 0, 0)),
+            10,
+        ))
+        .expect("supported candidate");
+        let user_important = CascadeDeclarationInput::supported(
+            stylesheet_declaration_source(0, 1, 0),
+            0,
+            CascadeImportance::Important,
+            CascadePropertyId::Color,
+            parsed_value("color: blue"),
+        )
+        .candidate(CascadeRuleContext::new(
+            CascadeOrigin::User,
+            CascadeSpecificity::Selector(Specificity::TYPE),
+            0,
+        ))
+        .expect("supported candidate");
+
+        let winners = resolve_cascade_winners(&[author_important, user_important]);
+        let winner = winners.get(CascadePropertyId::Color).expect("color winner");
+
+        assert_eq!(winner.value.to_css_text().as_deref(), Some("blue"));
+        assert_eq!(
+            winner.priority.current_scope_band(),
+            Some(CurrentScopeCascadePriorityBand::UserImportant)
+        );
     }
 
     #[test]
