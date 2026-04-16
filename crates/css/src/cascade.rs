@@ -23,9 +23,10 @@ pub use contract::{
     CascadeImportance, CascadeInheritance, CascadeOrigin, CascadeOriginBand, CascadePriority,
     CascadePropertyId, CascadePropertyMetadata, CascadeRuleContext, CascadeRuleInput,
     CascadeRuleInputBuildError, CascadeRuleMatch, CascadeRuleSource, CascadeSpecificity,
-    CascadeSpecifiedValue, CascadeWinner, InitialStyleValue, InlineStyleDeclarationRef,
-    InlineStyleRuleRef, ResolvedStyle, ResolvedStyleBuildError, ResolvedStyleBuilder,
-    ResolvedStyleEntry, ResolvedValueSource, StylesheetDeclarationRef, StylesheetRuleRef,
+    CascadeSpecifiedValue, CascadeWinner, CascadeWinnerEntry, CascadeWinnerSet, InitialStyleValue,
+    InlineStyleDeclarationRef, InlineStyleRuleRef, ResolvedStyle, ResolvedStyleBuildError,
+    ResolvedStyleBuilder, ResolvedStyleEntry, ResolvedValueSource, StylesheetDeclarationRef,
+    StylesheetRuleRef, resolve_cascade_winners, resolve_cascade_winners_from_rule_inputs,
     sort_candidates_by_cascade_order,
 };
 
