@@ -27,8 +27,8 @@ pub use contract::{
     CurrentScopeCascadePriorityBand, InitialStyleValue, InlineStyleDeclarationRef,
     InlineStyleRuleRef, ResolvedStyle, ResolvedStyleBuildError, ResolvedStyleBuilder,
     ResolvedStyleEntry, ResolvedValueSource, StylesheetDeclarationRef, StylesheetRuleRef,
-    resolve_cascade_winners, resolve_cascade_winners_from_rule_inputs,
-    sort_candidates_by_cascade_order,
+    resolve_cascade_style, resolve_cascade_style_from_rule_inputs, resolve_cascade_winners,
+    resolve_cascade_winners_from_rule_inputs, sort_candidates_by_cascade_order,
 };
 
 #[derive(Copy, Clone, Debug, Default, Eq, PartialEq, Ord, PartialOrd)]

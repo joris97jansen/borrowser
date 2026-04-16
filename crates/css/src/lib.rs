@@ -26,7 +26,8 @@ pub use cascade::{
     CurrentScopeCascadePriorityBand, InitialStyleValue, InlineStyleDeclarationRef,
     InlineStyleRuleRef, ResolvedStyle, ResolvedStyleBuildError, ResolvedStyleBuilder,
     ResolvedStyleEntry, ResolvedValueSource, StylesheetDeclarationRef, StylesheetRuleRef,
-    attach_styles, get_inline_style, is_css, resolve_cascade_winners,
+    attach_styles, get_inline_style, is_css, resolve_cascade_style,
+    resolve_cascade_style_from_rule_inputs, resolve_cascade_winners,
     resolve_cascade_winners_from_rule_inputs, sort_candidates_by_cascade_order,
 };
 pub use computed::{ComputedStyle, StyledNode, build_style_tree, compute_style};

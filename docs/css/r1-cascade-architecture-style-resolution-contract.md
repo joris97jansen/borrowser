@@ -217,8 +217,11 @@ That means:
 
 - if a supported property has a winning authored declaration, resolved style
   records that winner
-- if no authored declaration wins and the property inherits, resolved style
-  records `Inherited`
+- if no authored declaration wins, the property inherits, and a parent resolved
+  style exists, resolved style records `Inherited`
+- if no authored declaration wins, the property inherits, and no parent
+  resolved style exists, resolved style records the property's initial/default
+  value
 - if no authored declaration wins and the property does not inherit, resolved
   style records the property's initial/default value
 
