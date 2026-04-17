@@ -207,6 +207,10 @@ Milestone R replaces that bridge with a structured resolved-style object that:
   supported property subset
 * produces deterministic style-resolution outputs independent of DOM mutation
 
+The current structured DOM-level cascade output is `ResolvedDocumentStyle`.
+`attach_styles(dom, sheets)` remains only as a compatibility projection from
+that output into `Node::style` for the pre-cutover computed-style path.
+
 ### 4. **Computed Styles**
 
 Each element receives a final `ComputedStyle`:
@@ -405,7 +409,8 @@ struct PageState {
 ```
 
 Compatibility projection still exists during migration, but it now happens
-inside the cascade boundary rather than in stored page state.
+from structured `ResolvedDocumentStyle` output inside the cascade boundary
+rather than as the core style-resolution result.
 
 The remaining `Node::style` declaration vector is likewise a migration-only
 cascade bridge and is not the intended long-term style-resolution contract.

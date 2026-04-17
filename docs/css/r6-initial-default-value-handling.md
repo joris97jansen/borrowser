@@ -16,6 +16,7 @@ Related documents:
 - `docs/css/r1-cascade-architecture-style-resolution-contract.md`
 - `docs/css/r3-core-cascade-winner-resolution.md`
 - `docs/css/r5-inheritance-behavior-supported-properties.md`
+- `docs/css/r7-structured-resolved-style-output.md`
 
 ## Implemented Result
 
