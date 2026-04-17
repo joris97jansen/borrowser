@@ -203,7 +203,8 @@ Milestone R replaces that bridge with a structured resolved-style object that:
 
 * consumes selector match outcomes rather than reparsing selector text
 * resolves winners with explicit precedence keys
-* owns inheritance/default fill for the supported property subset
+* owns the initial/default value table plus inheritance/default fill for the
+  supported property subset
 * produces deterministic style-resolution outputs independent of DOM mutation
 
 ### 4. **Computed Styles**

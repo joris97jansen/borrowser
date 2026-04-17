@@ -16,6 +16,7 @@ Related documents:
 - `docs/css/r1-cascade-architecture-style-resolution-contract.md`
 - `docs/css/r3-core-cascade-winner-resolution.md`
 - `docs/css/r4-rule-origin-priority-model-current-scope.md`
+- `docs/css/r6-initial-default-value-handling.md`
 
 ## Implemented Result
 

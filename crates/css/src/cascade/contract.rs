@@ -121,6 +121,16 @@ impl CascadePropertyId {
             }
         }
     }
+
+    /// Returns the cascade-owned initial/default value for this supported
+    /// property.
+    ///
+    /// This is the only source of truth for default fill in the cascade layer.
+    /// Computed-style code may later interpret the value in a property-specific
+    /// way, but it must not invent missing-property defaults independently.
+    pub fn initial_value(self) -> InitialStyleValue {
+        self.metadata().initial
+    }
 }
 
 /// Per-property inheritance/default metadata owned by the cascade layer.
@@ -1144,6 +1154,26 @@ impl ResolvedStyle {
     }
 }
 
+/// Materializes the total initial/default resolved style for the supported
+/// cascade subset.
+///
+/// This is the canonical default style surface for cases where no authored
+/// declarations win and no parent resolved style contributes inheritance. It is
+/// intentionally still a `ResolvedStyle`, not a computed style: values remain
+/// cascade-owned initial/default tokens until the computed-value layer consumes
+/// them.
+pub fn resolve_initial_style() -> ResolvedStyle {
+    let mut builder = ResolvedStyleBuilder::new();
+
+    for property in CascadePropertyId::ALL {
+        builder.record_initial(property);
+    }
+
+    builder
+        .build()
+        .expect("initial style resolution must produce a total supported-property output")
+}
+
 /// Resolves a total `ResolvedStyle` from authored winners plus optional parent
 /// resolved style.
 ///
@@ -1259,7 +1289,7 @@ impl ResolvedStyleBuilder {
     pub fn record_initial(&mut self, property: CascadePropertyId) {
         let previous = self.entries.insert(
             property,
-            ResolvedValueSource::Initial(property.metadata().initial),
+            ResolvedValueSource::Initial(property.initial_value()),
         );
         assert!(
             previous.is_none(),
@@ -1491,31 +1521,119 @@ fn push_ascii_space(out: &mut String) {
 mod tests {
     use super::{
         CascadeDeclarationApplicability, CascadeDeclarationInput, CascadeDeclarationProperty,
-        CascadeDeclarationSource, CascadeImportance, CascadeOrigin, CascadeOriginBand,
-        CascadePriority, CascadePropertyId, CascadeRuleContext, CascadeRuleInput,
-        CascadeRuleInputBuildError, CascadeRuleMatch, CascadeRuleSource, CascadeSpecificity,
-        CascadeSpecifiedValue, CascadeWinnerSet, CurrentScopeCascadePriorityBand,
-        InitialStyleValue, InlineStyleDeclarationRef, InlineStyleRuleRef, ResolvedStyleBuildError,
-        ResolvedStyleBuilder, ResolvedValueSource, StylesheetDeclarationRef, StylesheetRuleRef,
-        resolve_cascade_style, resolve_cascade_style_from_rule_inputs, resolve_cascade_winners,
-        resolve_cascade_winners_from_rule_inputs, sort_candidates_by_cascade_order,
+        CascadeDeclarationSource, CascadeImportance, CascadeInheritance, CascadeOrigin,
+        CascadeOriginBand, CascadePriority, CascadePropertyId, CascadeRuleContext,
+        CascadeRuleInput, CascadeRuleInputBuildError, CascadeRuleMatch, CascadeRuleSource,
+        CascadeSpecificity, CascadeSpecifiedValue, CascadeWinnerSet,
+        CurrentScopeCascadePriorityBand, InitialStyleValue, InlineStyleDeclarationRef,
+        InlineStyleRuleRef, ResolvedStyleBuildError, ResolvedStyleBuilder, ResolvedValueSource,
+        StylesheetDeclarationRef, StylesheetRuleRef, resolve_cascade_style,
+        resolve_cascade_style_from_rule_inputs, resolve_cascade_winners,
+        resolve_cascade_winners_from_rule_inputs, resolve_initial_style,
+        sort_candidates_by_cascade_order,
     };
     use crate::selectors::{SelectorListMatchOutcome, Specificity};
     use crate::{ParseOptions, Rule, parse_stylesheet_with_options};
 
     #[test]
     fn supported_property_metadata_matches_current_subset_contract() {
-        let color = CascadePropertyId::from_name("color").expect("supported property");
-        assert_eq!(color, CascadePropertyId::Color);
-        assert_eq!(
-            color.metadata().inheritance,
-            super::CascadeInheritance::Inherited
-        );
-        assert_eq!(color.metadata().initial, InitialStyleValue::ColorBlack);
+        let expected = [
+            (
+                CascadePropertyId::BackgroundColor,
+                CascadeInheritance::NotInherited,
+                InitialStyleValue::TransparentColor,
+            ),
+            (
+                CascadePropertyId::Color,
+                CascadeInheritance::Inherited,
+                InitialStyleValue::ColorBlack,
+            ),
+            (
+                CascadePropertyId::Display,
+                CascadeInheritance::NotInherited,
+                InitialStyleValue::DisplayInline,
+            ),
+            (
+                CascadePropertyId::FontSize,
+                CascadeInheritance::Inherited,
+                InitialStyleValue::FontSizePx16,
+            ),
+            (
+                CascadePropertyId::Height,
+                CascadeInheritance::NotInherited,
+                InitialStyleValue::AutoKeyword,
+            ),
+            (
+                CascadePropertyId::MarginBottom,
+                CascadeInheritance::NotInherited,
+                InitialStyleValue::ZeroPx,
+            ),
+            (
+                CascadePropertyId::MarginLeft,
+                CascadeInheritance::NotInherited,
+                InitialStyleValue::ZeroPx,
+            ),
+            (
+                CascadePropertyId::MarginRight,
+                CascadeInheritance::NotInherited,
+                InitialStyleValue::ZeroPx,
+            ),
+            (
+                CascadePropertyId::MarginTop,
+                CascadeInheritance::NotInherited,
+                InitialStyleValue::ZeroPx,
+            ),
+            (
+                CascadePropertyId::MaxWidth,
+                CascadeInheritance::NotInherited,
+                InitialStyleValue::NoneKeyword,
+            ),
+            (
+                CascadePropertyId::MinWidth,
+                CascadeInheritance::NotInherited,
+                InitialStyleValue::AutoKeyword,
+            ),
+            (
+                CascadePropertyId::PaddingBottom,
+                CascadeInheritance::NotInherited,
+                InitialStyleValue::ZeroPx,
+            ),
+            (
+                CascadePropertyId::PaddingLeft,
+                CascadeInheritance::NotInherited,
+                InitialStyleValue::ZeroPx,
+            ),
+            (
+                CascadePropertyId::PaddingRight,
+                CascadeInheritance::NotInherited,
+                InitialStyleValue::ZeroPx,
+            ),
+            (
+                CascadePropertyId::PaddingTop,
+                CascadeInheritance::NotInherited,
+                InitialStyleValue::ZeroPx,
+            ),
+            (
+                CascadePropertyId::Width,
+                CascadeInheritance::NotInherited,
+                InitialStyleValue::AutoKeyword,
+            ),
+        ];
 
-        let display = CascadePropertyId::Display.metadata();
-        assert_eq!(display.inheritance, super::CascadeInheritance::NotInherited);
-        assert_eq!(display.initial, InitialStyleValue::DisplayInline);
+        assert_eq!(CascadePropertyId::ALL.len(), expected.len());
+        for (index, (property, inheritance, initial)) in expected.into_iter().enumerate() {
+            assert_eq!(CascadePropertyId::ALL[index], property);
+            assert_eq!(
+                CascadePropertyId::from_name(property.name()),
+                Some(property)
+            );
+
+            let metadata = property.metadata();
+            assert_eq!(metadata.inheritance, inheritance, "{}", property.name());
+            assert_eq!(metadata.initial, initial, "{}", property.name());
+            assert_eq!(property.initial_value(), initial, "{}", property.name());
+        }
+        assert_eq!(CascadePropertyId::from_name("zoom"), None);
     }
 
     #[test]
@@ -2352,6 +2470,7 @@ mod tests {
     fn resolve_cascade_style_uses_initial_for_inherited_properties_at_the_root() {
         let root_style = resolve_cascade_style(&CascadeWinnerSet::default(), None);
 
+        assert_eq!(root_style, resolve_initial_style());
         assert_eq!(
             root_style
                 .get(CascadePropertyId::Color)
@@ -2365,6 +2484,90 @@ mod tests {
                 .expect("font-size")
                 .source(),
             &ResolvedValueSource::Initial(InitialStyleValue::FontSizePx16)
+        );
+    }
+
+    #[test]
+    fn resolve_initial_style_materializes_total_canonical_initial_style() {
+        let initial_style = resolve_initial_style();
+
+        assert_eq!(initial_style.entries().len(), CascadePropertyId::ALL.len());
+        for entry in initial_style.entries() {
+            assert_eq!(
+                entry.source(),
+                &ResolvedValueSource::Initial(entry.property().initial_value()),
+                "{}",
+                entry.property().name()
+            );
+        }
+        assert_eq!(
+            initial_style.to_debug_snapshot(),
+            concat!(
+                "version: 1\n",
+                "resolved-style\n",
+                "  background-color: initial(transparent)\n",
+                "  color: initial(black)\n",
+                "  display: initial(inline)\n",
+                "  font-size: initial(16px)\n",
+                "  height: initial(auto)\n",
+                "  margin-bottom: initial(0px)\n",
+                "  margin-left: initial(0px)\n",
+                "  margin-right: initial(0px)\n",
+                "  margin-top: initial(0px)\n",
+                "  max-width: initial(none)\n",
+                "  min-width: initial(auto)\n",
+                "  padding-bottom: initial(0px)\n",
+                "  padding-left: initial(0px)\n",
+                "  padding-right: initial(0px)\n",
+                "  padding-top: initial(0px)\n",
+                "  width: initial(auto)\n",
+            )
+        );
+    }
+
+    #[test]
+    fn resolve_cascade_style_defaults_missing_properties_to_the_initial_contract() {
+        let winners = resolve_cascade_winners(&[CascadeDeclarationInput::supported(
+            stylesheet_declaration_source(0, 0, 0),
+            0,
+            CascadeImportance::Normal,
+            CascadePropertyId::Width,
+            parsed_value("width: 40px"),
+        )
+        .candidate(CascadeRuleContext::new(
+            CascadeOrigin::Author,
+            CascadeSpecificity::Selector(Specificity::TYPE),
+            0,
+        ))
+        .expect("supported candidate")]);
+
+        let style = resolve_cascade_style(&winners, None);
+
+        assert_eq!(
+            style
+                .get(CascadePropertyId::Width)
+                .and_then(|entry| entry.winner())
+                .and_then(|winner| winner.value.to_css_text())
+                .as_deref(),
+            Some("40px")
+        );
+        assert_eq!(
+            style
+                .get(CascadePropertyId::BackgroundColor)
+                .expect("background-color")
+                .source(),
+            &ResolvedValueSource::Initial(InitialStyleValue::TransparentColor)
+        );
+        assert_eq!(
+            style.get(CascadePropertyId::Color).expect("color").source(),
+            &ResolvedValueSource::Initial(InitialStyleValue::ColorBlack)
+        );
+        assert_eq!(
+            style
+                .get(CascadePropertyId::MaxWidth)
+                .expect("max-width")
+                .source(),
+            &ResolvedValueSource::Initial(InitialStyleValue::NoneKeyword)
         );
     }
 
@@ -2511,6 +2714,28 @@ mod tests {
     fn resolved_style_builder_rejects_inherited_source_for_non_inherited_property_in_all_builds() {
         let mut builder = ResolvedStyleBuilder::new();
         builder.record_inherited(CascadePropertyId::Display);
+    }
+
+    #[test]
+    fn resolved_style_builder_record_initial_uses_property_initial_value_contract() {
+        let mut builder = ResolvedStyleBuilder::new();
+        for property in CascadePropertyId::ALL {
+            builder.record_initial(property);
+        }
+
+        let style = builder.build().expect("total style");
+
+        for property in CascadePropertyId::ALL {
+            assert_eq!(
+                style
+                    .get(property)
+                    .unwrap_or_else(|| panic!("{}", property.name()))
+                    .source(),
+                &ResolvedValueSource::Initial(property.initial_value()),
+                "{}",
+                property.name()
+            );
+        }
     }
 
     #[test]

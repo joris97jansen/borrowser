@@ -25,6 +25,8 @@ Related documents:
 - `docs/css/o1-rule-value-model-architecture.md`
 - `docs/css/q6-validity-specificity-match-results.md`
 - `docs/css/q8-selector-matching-invariants-extension-hooks.md`
+- `docs/css/r5-inheritance-behavior-supported-properties.md`
+- `docs/css/r6-initial-default-value-handling.md`
 - `docs/architecture/ARCHITECTURE.md`
 
 ## Implemented Result
@@ -232,6 +234,13 @@ Important boundary:
 
 - cascade decides whether the source is authored, inherited, or initial
 - computed-style code later interprets the chosen value into typed runtime data
+
+The code-level defaulting contract lives in:
+
+- `CascadePropertyId::initial_value()`
+- `InitialStyleValue`
+- `resolve_initial_style()`
+- `resolve_cascade_style(...)`
 
 Examples:
 
