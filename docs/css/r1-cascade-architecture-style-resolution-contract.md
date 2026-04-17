@@ -27,6 +27,7 @@ Related documents:
 - `docs/css/q8-selector-matching-invariants-extension-hooks.md`
 - `docs/css/r5-inheritance-behavior-supported-properties.md`
 - `docs/css/r6-initial-default-value-handling.md`
+- `docs/css/r7-structured-resolved-style-output.md`
 - `docs/architecture/ARCHITECTURE.md`
 
 ## Implemented Result
@@ -143,11 +144,12 @@ Current origin/priority scope:
 
 - author stylesheet declarations
 - author inline style declarations
-- normal importance ordering only in the shipped path
+- declaration-level normal and `!important` ordering within the current
+  structured author-origin model
 
 The contract already reserves explicit origin and importance slots so later
-issues can add user-agent, user, animation, transition, and `!important`
-behavior without redesigning the winner-resolution model.
+issues can add user-agent, user, animation, transition, cascade layers, and
+other priority levels without redesigning the winner-resolution model.
 
 ## Selector Matching Handoff
 
@@ -241,6 +243,7 @@ The code-level defaulting contract lives in:
 - `InitialStyleValue`
 - `resolve_initial_style()`
 - `resolve_cascade_style(...)`
+- `resolve_document_styles(...)`
 
 Examples:
 
@@ -314,14 +317,17 @@ Debug/regression requirement:
 The current `attach_styles` path is now explicitly legacy.
 
 It remains in place only so the existing browser path can keep running while
-Milestone R migrates:
+computed-style consumption migrates. It is now a projection from structured
+document-level resolved styles into:
 
 - `html::Node::style`
 - `css::computed::compute_style`
 - any browser/layout consumers that still assume a DOM-attached declaration
   vector
 
-This bridge is not the normative architecture for style resolution anymore.
+This bridge is not the normative architecture for style resolution anymore;
+`ResolvedDocumentStyle` is the structured cascade output for DOM-level style
+resolution.
 
 ## Deferred Work And Non-Goals
 
