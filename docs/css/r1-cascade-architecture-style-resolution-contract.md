@@ -28,6 +28,7 @@ Related documents:
 - `docs/css/r5-inheritance-behavior-supported-properties.md`
 - `docs/css/r6-initial-default-value-handling.md`
 - `docs/css/r7-structured-resolved-style-output.md`
+- `docs/css/r8-cascade-style-resolution-debug-output.md`
 - `docs/architecture/ARCHITECTURE.md`
 
 ## Implemented Result
@@ -310,7 +311,13 @@ Debug/regression requirement:
 - cascade-facing contract types must expose stable, deterministic debug output
   suitable for regression tests
 
-`ResolvedStyle::to_debug_snapshot()` is the first concrete surface for that.
+The maintained Milestone R debug surfaces include:
+
+- `cascade_evaluation_debug_snapshot(...)`
+- `CascadeWinnerSet::to_debug_snapshot()`
+- `ResolvedStyle::to_debug_snapshot()`
+- `ResolvedDocumentStyle::to_debug_snapshot()`
+- `resolve_document_styles_debug_snapshot(...)`
 
 ## Legacy Bridge Status
 
