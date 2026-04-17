@@ -17,6 +17,7 @@ Related documents:
 - `docs/css/r3-core-cascade-winner-resolution.md`
 - `docs/css/r5-inheritance-behavior-supported-properties.md`
 - `docs/css/r6-initial-default-value-handling.md`
+- `docs/css/r8-cascade-style-resolution-debug-output.md`
 
 ## Implemented Result
 
@@ -135,6 +136,8 @@ The test surface covers:
 - parent-to-child inheritance through resolved styles
 - inline style attributes entering structured cascade resolution
 - deterministic `ResolvedDocumentStyle` debug snapshots
+- integrated `resolve_document_styles_debug_snapshot(...)` traces for
+  candidate ordering, authored overrides, inheritance, and defaulting
 - legacy `attach_styles(...)` projecting structured winners back into
   `Node::style`
 

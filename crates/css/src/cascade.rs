@@ -31,7 +31,8 @@ pub use contract::{
     CurrentScopeCascadePriorityBand, InitialStyleValue, InlineStyleDeclarationRef,
     InlineStyleRuleRef, ResolvedStyle, ResolvedStyleBuildError, ResolvedStyleBuilder,
     ResolvedStyleEntry, ResolvedValueSource, StylesheetDeclarationRef, StylesheetRuleRef,
-    resolve_cascade_style, resolve_cascade_style_from_rule_inputs, resolve_cascade_winners,
+    cascade_evaluation_debug_snapshot, resolve_cascade_style,
+    resolve_cascade_style_from_rule_inputs, resolve_cascade_winners,
     resolve_cascade_winners_from_rule_inputs, resolve_initial_style,
     sort_candidates_by_cascade_order,
 };
@@ -146,6 +147,56 @@ pub fn resolve_document_styles(
     }
 
     ResolvedDocumentStyle { entries }
+}
+
+/// Stable debug snapshot for document-level cascade style resolution.
+///
+/// This trace composes the per-element candidate evaluation snapshot with the
+/// final resolved style for each element. It is intended for regression tests
+/// and triage of cascade ordering, inheritance, and defaulting behavior.
+pub fn resolve_document_styles_debug_snapshot(
+    root: &Node,
+    sheets: &[model::StylesheetParse],
+) -> String {
+    let index = SelectorDomIndex::from_root(root);
+    let context = SelectorMatchingContext::new(&index);
+    let mut styles_by_element = BTreeMap::new();
+    let mut out = String::new();
+
+    writeln!(&mut out, "version: 1").expect("write snapshot");
+    writeln!(&mut out, "document-style-resolution").expect("write snapshot");
+
+    for (element_index, element) in index.elements().enumerate() {
+        let parent_style = context
+            .parent_element(element)
+            .and_then(|parent| styles_by_element.get(&parent));
+        let rule_inputs = rule_inputs_for_element(&context, element, sheets);
+        let mut cascade_debug = String::new();
+        let winners = contract::append_cascade_evaluation_debug_snapshot(
+            &mut cascade_debug,
+            &rule_inputs,
+            false,
+        );
+        let style = resolve_cascade_style(&winners, parent_style);
+
+        writeln!(
+            &mut out,
+            "element[{element_index}]: selector-id={} name=\"{}\"",
+            element.get(),
+            context.element_name(element)
+        )
+        .expect("write snapshot");
+        for line in cascade_debug.lines() {
+            writeln!(&mut out, "  {line}").expect("write snapshot");
+        }
+        for line in style.to_debug_snapshot().lines().skip(1) {
+            writeln!(&mut out, "  {line}").expect("write snapshot");
+        }
+
+        styles_by_element.insert(element, style);
+    }
+
+    out
 }
 
 /// Legacy DOM-attached style bridge.
@@ -414,7 +465,7 @@ fn u32_index(index: usize, label: &str) -> u32 {
 
 #[cfg(test)]
 mod tests {
-    use super::{attach_styles, resolve_document_styles};
+    use super::{attach_styles, resolve_document_styles, resolve_document_styles_debug_snapshot};
     use crate::{
         CascadePropertyId, CascadeSpecificity, ParseOptions, ResolvedValueSource,
         parse_stylesheet_with_options,
@@ -607,6 +658,95 @@ mod tests {
                 "    color: winner(source=stylesheet[0/0]/declaration[0], band=author-normal, specificity=selector(0,0,1), rule-order=0, declaration-order=0, value=\"red\")\n",
                 "    display: initial(inline)\n",
                 "    font-size: initial(16px)\n",
+                "    height: initial(auto)\n",
+                "    margin-bottom: initial(0px)\n",
+                "    margin-left: initial(0px)\n",
+                "    margin-right: initial(0px)\n",
+                "    margin-top: initial(0px)\n",
+                "    max-width: initial(none)\n",
+                "    min-width: initial(auto)\n",
+                "    padding-bottom: initial(0px)\n",
+                "    padding-left: initial(0px)\n",
+                "    padding-right: initial(0px)\n",
+                "    padding-top: initial(0px)\n",
+                "    width: initial(auto)\n",
+            )
+        );
+    }
+
+    #[test]
+    fn document_style_resolution_debug_snapshot_covers_override_inheritance_and_defaults() {
+        let stylesheets = vec![parse_stylesheet_with_options(
+            "section { color: red; } div { color: green; } .hero { color: blue !important; }",
+            &ParseOptions::stylesheet(),
+        )];
+        let dom = Node::Element {
+            id: Id::INVALID,
+            name: Arc::from("section"),
+            attributes: Vec::new(),
+            style: Vec::new(),
+            children: vec![Node::Element {
+                id: Id::INVALID,
+                name: Arc::from("div"),
+                attributes: vec![(Arc::from("class"), Some("hero".to_string()))],
+                style: Vec::new(),
+                children: Vec::new(),
+            }],
+        };
+
+        assert_eq!(
+            resolve_document_styles_debug_snapshot(&dom, &stylesheets),
+            concat!(
+                "version: 1\n",
+                "document-style-resolution\n",
+                "element[0]: selector-id=1 name=\"section\"\n",
+                "  cascade-evaluation\n",
+                "  rule-inputs: 1\n",
+                "    rule-input[0]: source=stylesheet[0/0] origin=author specificity=selector(0,0,1) rule-order=0 declarations=1\n",
+                "      declaration[0]: source=stylesheet[0/0]/declaration[0] declaration-order=0 importance=normal property=supported(color) applicability=supported(color) value=\"red\"\n",
+                "  candidates-source-order: 1\n",
+                "    candidate[0]: property=color source=stylesheet[0/0]/declaration[0] band=author-normal specificity=selector(0,0,1) rule-order=0 declaration-order=0 value=\"red\"\n",
+                "  candidates-cascade-order: 1\n",
+                "    candidate[0]: property=color source=stylesheet[0/0]/declaration[0] band=author-normal specificity=selector(0,0,1) rule-order=0 declaration-order=0 value=\"red\"\n",
+                "  winners: 1\n",
+                "    color: winner(source=stylesheet[0/0]/declaration[0], band=author-normal, specificity=selector(0,0,1), rule-order=0, declaration-order=0, value=\"red\")\n",
+                "  resolved-style\n",
+                "    background-color: initial(transparent)\n",
+                "    color: winner(source=stylesheet[0/0]/declaration[0], band=author-normal, specificity=selector(0,0,1), rule-order=0, declaration-order=0, value=\"red\")\n",
+                "    display: initial(inline)\n",
+                "    font-size: initial(16px)\n",
+                "    height: initial(auto)\n",
+                "    margin-bottom: initial(0px)\n",
+                "    margin-left: initial(0px)\n",
+                "    margin-right: initial(0px)\n",
+                "    margin-top: initial(0px)\n",
+                "    max-width: initial(none)\n",
+                "    min-width: initial(auto)\n",
+                "    padding-bottom: initial(0px)\n",
+                "    padding-left: initial(0px)\n",
+                "    padding-right: initial(0px)\n",
+                "    padding-top: initial(0px)\n",
+                "    width: initial(auto)\n",
+                "element[1]: selector-id=2 name=\"div\"\n",
+                "  cascade-evaluation\n",
+                "  rule-inputs: 2\n",
+                "    rule-input[0]: source=stylesheet[0/1] origin=author specificity=selector(0,0,1) rule-order=1 declarations=1\n",
+                "      declaration[0]: source=stylesheet[0/1]/declaration[0] declaration-order=0 importance=normal property=supported(color) applicability=supported(color) value=\"green\"\n",
+                "    rule-input[1]: source=stylesheet[0/2] origin=author specificity=selector(0,1,0) rule-order=2 declarations=1\n",
+                "      declaration[0]: source=stylesheet[0/2]/declaration[0] declaration-order=0 importance=important property=supported(color) applicability=supported(color) value=\"blue\"\n",
+                "  candidates-source-order: 2\n",
+                "    candidate[0]: property=color source=stylesheet[0/1]/declaration[0] band=author-normal specificity=selector(0,0,1) rule-order=1 declaration-order=0 value=\"green\"\n",
+                "    candidate[1]: property=color source=stylesheet[0/2]/declaration[0] band=author-important specificity=selector(0,1,0) rule-order=2 declaration-order=0 value=\"blue\"\n",
+                "  candidates-cascade-order: 2\n",
+                "    candidate[0]: property=color source=stylesheet[0/1]/declaration[0] band=author-normal specificity=selector(0,0,1) rule-order=1 declaration-order=0 value=\"green\"\n",
+                "    candidate[1]: property=color source=stylesheet[0/2]/declaration[0] band=author-important specificity=selector(0,1,0) rule-order=2 declaration-order=0 value=\"blue\"\n",
+                "  winners: 1\n",
+                "    color: winner(source=stylesheet[0/2]/declaration[0], band=author-important, specificity=selector(0,1,0), rule-order=2, declaration-order=0, value=\"blue\")\n",
+                "  resolved-style\n",
+                "    background-color: initial(transparent)\n",
+                "    color: winner(source=stylesheet[0/2]/declaration[0], band=author-important, specificity=selector(0,1,0), rule-order=2, declaration-order=0, value=\"blue\")\n",
+                "    display: initial(inline)\n",
+                "    font-size: inherited\n",
                 "    height: initial(auto)\n",
                 "    margin-bottom: initial(0px)\n",
                 "    margin-left: initial(0px)\n",

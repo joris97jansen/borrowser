@@ -898,6 +898,102 @@ pub fn sort_candidates_by_cascade_order(candidates: &mut [CascadeDeclarationCand
     sort_by_candidate_key(candidates, CascadeDeclarationCandidate::sort_key);
 }
 
+/// Stable debug snapshot for cascade candidate evaluation.
+///
+/// This is the maintenance-facing trace for the rule-input -> candidate ->
+/// winner portion of cascade. It intentionally mirrors internal cascade
+/// structures rather than presentation CSS so regressions can be triaged at
+/// the same boundaries the engine uses.
+pub fn cascade_evaluation_debug_snapshot(rule_inputs: &[CascadeRuleInput]) -> String {
+    let mut out = String::new();
+    append_cascade_evaluation_debug_snapshot(&mut out, rule_inputs, true);
+    out
+}
+
+pub(crate) fn append_cascade_evaluation_debug_snapshot(
+    out: &mut String,
+    rule_inputs: &[CascadeRuleInput],
+    include_version: bool,
+) -> CascadeWinnerSet {
+    let candidates = rule_inputs
+        .iter()
+        .flat_map(|rule_input| rule_input.candidates())
+        .collect::<Vec<_>>();
+    let mut ordered_candidates = candidates.clone();
+    sort_candidates_by_cascade_order(&mut ordered_candidates);
+    let winners = resolve_cascade_winners(&candidates);
+
+    if include_version {
+        writeln!(out, "version: 1").expect("write snapshot");
+    }
+    writeln!(out, "cascade-evaluation").expect("write snapshot");
+    writeln!(out, "rule-inputs: {}", rule_inputs.len()).expect("write snapshot");
+    for (rule_index, rule_input) in rule_inputs.iter().enumerate() {
+        let context = rule_input.context();
+        writeln!(
+            out,
+            "  rule-input[{rule_index}]: source={} origin={} specificity={} rule-order={} declarations={}",
+            rule_source_label(rule_input.source()),
+            origin_label(context.origin),
+            specificity_label(context.specificity),
+            context.rule_order,
+            rule_input.declarations().len(),
+        )
+        .expect("write snapshot");
+        for (declaration_index, declaration) in rule_input.declarations().iter().enumerate() {
+            writeln!(
+                out,
+                "    declaration[{declaration_index}]: source={} declaration-order={} importance={} property={} applicability={} value={}",
+                declaration_source_label(declaration.source()),
+                declaration.declaration_order(),
+                importance_label(declaration.importance()),
+                declaration_property_label(declaration.property()),
+                applicability_label(declaration.applicability()),
+                specified_value_label(declaration.value()),
+            )
+            .expect("write snapshot");
+        }
+    }
+
+    writeln!(out, "candidates-source-order: {}", candidates.len()).expect("write snapshot");
+    for (candidate_index, candidate) in candidates.iter().enumerate() {
+        writeln!(
+            out,
+            "  candidate[{candidate_index}]: {}",
+            candidate_snapshot_label(candidate),
+        )
+        .expect("write snapshot");
+    }
+
+    writeln!(
+        out,
+        "candidates-cascade-order: {}",
+        ordered_candidates.len()
+    )
+    .expect("write snapshot");
+    for (candidate_index, candidate) in ordered_candidates.iter().enumerate() {
+        writeln!(
+            out,
+            "  candidate[{candidate_index}]: {}",
+            candidate_snapshot_label(candidate),
+        )
+        .expect("write snapshot");
+    }
+
+    writeln!(out, "winners: {}", winners.entries().len()).expect("write snapshot");
+    for entry in winners.entries() {
+        writeln!(
+            out,
+            "  {}: {}",
+            entry.property().name(),
+            winner_snapshot_label(entry.winner()),
+        )
+        .expect("write snapshot");
+    }
+
+    winners
+}
+
 fn sort_by_candidate_key<T>(
     candidates: &mut [T],
     mut sort_key: impl FnMut(&T) -> CascadeDeclarationCandidateKey,
@@ -1335,23 +1431,85 @@ fn source_snapshot_label(source: &ResolvedValueSource) -> String {
     }
 }
 
+fn rule_source_label(source: CascadeRuleSource) -> String {
+    match source {
+        CascadeRuleSource::Stylesheet(source) => {
+            format!(
+                "stylesheet[{}/{}]",
+                source.stylesheet_index, source.rule_index
+            )
+        }
+        CascadeRuleSource::InlineStyle(source) => format!("inline-style[{}]", source.scope_id),
+    }
+}
+
+fn origin_label(origin: CascadeOrigin) -> &'static str {
+    match origin {
+        CascadeOrigin::UserAgent => "user-agent",
+        CascadeOrigin::User => "user",
+        CascadeOrigin::Author => "author",
+    }
+}
+
+fn importance_label(importance: CascadeImportance) -> &'static str {
+    match importance {
+        CascadeImportance::Normal => "normal",
+        CascadeImportance::Important => "important",
+    }
+}
+
+fn declaration_property_label(property: &CascadeDeclarationProperty) -> String {
+    match property {
+        CascadeDeclarationProperty::Supported(property) => {
+            format!("supported({})", property.name())
+        }
+        CascadeDeclarationProperty::Unsupported(name) => {
+            format!("unsupported({})", quoted_snapshot_text(name))
+        }
+        CascadeDeclarationProperty::Custom(name) => {
+            format!("custom({})", quoted_snapshot_text(name))
+        }
+        CascadeDeclarationProperty::Invalid => "invalid".to_string(),
+    }
+}
+
+fn applicability_label(applicability: CascadeDeclarationApplicability) -> String {
+    match applicability {
+        CascadeDeclarationApplicability::Supported(property) => {
+            format!("supported({})", property.name())
+        }
+        CascadeDeclarationApplicability::UnsupportedProperty => "unsupported-property".to_string(),
+        CascadeDeclarationApplicability::CustomProperty => "custom-property".to_string(),
+        CascadeDeclarationApplicability::InvalidPropertyName => "invalid-property-name".to_string(),
+    }
+}
+
+fn candidate_snapshot_label(candidate: &CascadeDeclarationCandidate) -> String {
+    format!(
+        "property={} source={} band={} specificity={} rule-order={} declaration-order={} value={}",
+        candidate.property().name(),
+        declaration_source_label(candidate.source()),
+        candidate.priority().band.as_debug_label(),
+        specificity_label(candidate.priority().specificity),
+        candidate.priority().rule_order,
+        candidate.priority().declaration_order,
+        specified_value_label(candidate.value()),
+    )
+}
+
 fn winner_snapshot_label(winner: &CascadeWinner) -> String {
-    let value = winner
-        .value
-        .to_css_text()
-        .unwrap_or_else(|| "<unresolved-value>".to_string());
     format!(
         "winner(source={}, band={}, specificity={}, rule-order={}, declaration-order={}, value={})",
-        winner_source_label(winner.source),
+        declaration_source_label(winner.source),
         winner.priority.band.as_debug_label(),
         specificity_label(winner.priority.specificity),
         winner.priority.rule_order,
         winner.priority.declaration_order,
-        quoted_snapshot_text(&value),
+        specified_value_label(&winner.value),
     )
 }
 
-fn winner_source_label(source: CascadeDeclarationSource) -> String {
+fn declaration_source_label(source: CascadeDeclarationSource) -> String {
     match source {
         CascadeDeclarationSource::Stylesheet(source) => format!(
             "stylesheet[{}/{}]/declaration[{}]",
@@ -1362,6 +1520,13 @@ fn winner_source_label(source: CascadeDeclarationSource) -> String {
             source.inline_style.scope_id, source.declaration_index
         ),
     }
+}
+
+fn specified_value_label(value: &CascadeSpecifiedValue) -> String {
+    let value = value
+        .to_css_text()
+        .unwrap_or_else(|| "<unresolved-value>".to_string());
+    quoted_snapshot_text(&value)
 }
 
 fn specificity_label(specificity: CascadeSpecificity) -> String {
@@ -1527,8 +1692,8 @@ mod tests {
         CascadeSpecificity, CascadeSpecifiedValue, CascadeWinnerSet,
         CurrentScopeCascadePriorityBand, InitialStyleValue, InlineStyleDeclarationRef,
         InlineStyleRuleRef, ResolvedStyleBuildError, ResolvedStyleBuilder, ResolvedValueSource,
-        StylesheetDeclarationRef, StylesheetRuleRef, resolve_cascade_style,
-        resolve_cascade_style_from_rule_inputs, resolve_cascade_winners,
+        StylesheetDeclarationRef, StylesheetRuleRef, cascade_evaluation_debug_snapshot,
+        resolve_cascade_style, resolve_cascade_style_from_rule_inputs, resolve_cascade_winners,
         resolve_cascade_winners_from_rule_inputs, resolve_initial_style,
         sort_candidates_by_cascade_order,
     };
@@ -2034,6 +2199,79 @@ mod tests {
 
         assert_eq!(candidates[0].value().to_css_text().as_deref(), Some("red"));
         assert_eq!(candidates[1].value().to_css_text().as_deref(), Some("blue"));
+    }
+
+    #[test]
+    fn cascade_evaluation_debug_snapshot_covers_filtering_ordering_and_winners() {
+        let stylesheet_rule = CascadeRuleInput::from_stylesheet_match(
+            &matched_rule(0, 0, &[Specificity::TYPE]),
+            CascadeOrigin::Author,
+            0,
+            vec![
+                CascadeDeclarationInput::supported(
+                    stylesheet_declaration_source(0, 0, 0),
+                    0,
+                    CascadeImportance::Normal,
+                    CascadePropertyId::Color,
+                    parsed_value("color: red"),
+                ),
+                CascadeDeclarationInput::unsupported_property(
+                    stylesheet_declaration_source(0, 0, 1),
+                    1,
+                    CascadeImportance::Normal,
+                    "zoom",
+                    parsed_value("zoom: 2"),
+                ),
+                CascadeDeclarationInput::supported(
+                    stylesheet_declaration_source(0, 0, 2),
+                    2,
+                    CascadeImportance::Important,
+                    CascadePropertyId::Color,
+                    parsed_value("color: blue"),
+                ),
+            ],
+        )
+        .expect("valid stylesheet rule")
+        .expect("matched rule");
+        let inline_style = InlineStyleRuleRef::new(3);
+        let inline_rule = CascadeRuleInput::from_inline_style(
+            inline_style,
+            1,
+            vec![CascadeDeclarationInput::supported(
+                inline_declaration_source(inline_style, 0),
+                0,
+                CascadeImportance::Normal,
+                CascadePropertyId::Width,
+                parsed_value("width: 20px"),
+            )],
+        )
+        .expect("valid inline rule");
+
+        assert_eq!(
+            cascade_evaluation_debug_snapshot(&[stylesheet_rule, inline_rule]),
+            concat!(
+                "version: 1\n",
+                "cascade-evaluation\n",
+                "rule-inputs: 2\n",
+                "  rule-input[0]: source=stylesheet[0/0] origin=author specificity=selector(0,0,1) rule-order=0 declarations=3\n",
+                "    declaration[0]: source=stylesheet[0/0]/declaration[0] declaration-order=0 importance=normal property=supported(color) applicability=supported(color) value=\"red\"\n",
+                "    declaration[1]: source=stylesheet[0/0]/declaration[1] declaration-order=1 importance=normal property=unsupported(\"zoom\") applicability=unsupported-property value=\"2\"\n",
+                "    declaration[2]: source=stylesheet[0/0]/declaration[2] declaration-order=2 importance=important property=supported(color) applicability=supported(color) value=\"blue\"\n",
+                "  rule-input[1]: source=inline-style[3] origin=author specificity=inline-style rule-order=1 declarations=1\n",
+                "    declaration[0]: source=inline-style[3]/declaration[0] declaration-order=0 importance=normal property=supported(width) applicability=supported(width) value=\"20px\"\n",
+                "candidates-source-order: 3\n",
+                "  candidate[0]: property=color source=stylesheet[0/0]/declaration[0] band=author-normal specificity=selector(0,0,1) rule-order=0 declaration-order=0 value=\"red\"\n",
+                "  candidate[1]: property=color source=stylesheet[0/0]/declaration[2] band=author-important specificity=selector(0,0,1) rule-order=0 declaration-order=2 value=\"blue\"\n",
+                "  candidate[2]: property=width source=inline-style[3]/declaration[0] band=author-normal specificity=inline-style rule-order=1 declaration-order=0 value=\"20px\"\n",
+                "candidates-cascade-order: 3\n",
+                "  candidate[0]: property=color source=stylesheet[0/0]/declaration[0] band=author-normal specificity=selector(0,0,1) rule-order=0 declaration-order=0 value=\"red\"\n",
+                "  candidate[1]: property=color source=stylesheet[0/0]/declaration[2] band=author-important specificity=selector(0,0,1) rule-order=0 declaration-order=2 value=\"blue\"\n",
+                "  candidate[2]: property=width source=inline-style[3]/declaration[0] band=author-normal specificity=inline-style rule-order=1 declaration-order=0 value=\"20px\"\n",
+                "winners: 2\n",
+                "  color: winner(source=stylesheet[0/0]/declaration[2], band=author-important, specificity=selector(0,0,1), rule-order=0, declaration-order=2, value=\"blue\")\n",
+                "  width: winner(source=inline-style[3]/declaration[0], band=author-normal, specificity=inline-style, rule-order=1, declaration-order=0, value=\"20px\")\n",
+            )
+        );
     }
 
     #[test]

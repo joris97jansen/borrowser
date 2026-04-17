@@ -156,6 +156,11 @@ The cascade architecture contract for Milestone R lives in:
 
 * `docs/css/r1-cascade-architecture-style-resolution-contract.md`
 
+The stable cascade/style-resolution debug-output contract for Milestone R lives
+in:
+
+* `docs/css/r8-cascade-style-resolution-debug-output.md`
+
 The syntax layer owns:
 
 * tokenizer and parser entry points
@@ -190,26 +195,31 @@ intended permanent handoff into cascade.
 
 ### 3. **Cascade**
 
-The current shipped browser path still uses `attach_styles(dom, sheet)` as a
-compatibility bridge that walks the DOM and selects the winning declarations
-for each property using:
+The current shipped browser path still calls `attach_styles(dom, sheets)` as a
+compatibility entrypoint, but cascade resolution no longer happens by mutating
+DOM-attached declaration vectors directly. The entrypoint delegates to the
+structured cascade pipeline, then projects authored winners back into
+`Node::style` for runtime code that has not yet moved to the resolved-style
+contract.
 
-* selector matching
-* specificity comparison
-* cascading order
-* inline styles (highest priority)
-
-Milestone R replaces that bridge with a structured resolved-style object that:
+Milestone R's structured cascade path:
 
 * consumes selector match outcomes rather than reparsing selector text
 * resolves winners with explicit precedence keys
+* models author stylesheet declarations, author inline declarations, and
+  declaration-level `!important` ordering in the current scope
 * owns the initial/default value table plus inheritance/default fill for the
   supported property subset
 * produces deterministic style-resolution outputs independent of DOM mutation
+* exposes stable cascade and resolved-style snapshots for regression triage
 
 The current structured DOM-level cascade output is `ResolvedDocumentStyle`.
 `attach_styles(dom, sheets)` remains only as a compatibility projection from
 that output into `Node::style` for the pre-cutover computed-style path.
+The primary debug surfaces are `cascade_evaluation_debug_snapshot(...)`,
+`ResolvedStyle::to_debug_snapshot()`,
+`ResolvedDocumentStyle::to_debug_snapshot()`, and
+`resolve_document_styles_debug_snapshot(...)`.
 
 ### 4. **Computed Styles**
 
