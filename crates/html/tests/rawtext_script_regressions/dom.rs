@@ -9,7 +9,6 @@ use html_test_support::wpt_tree_builder::{run_tree_builder_chunked, run_tree_bui
 
 /// Tree-builder regression harness for DOM snapshot verification under the
 /// rawtext/script regression corpus.
-
 #[cfg(feature = "dom-snapshot")]
 pub(crate) fn run_dom_fixture_whole(fixture: &Fixture) -> Vec<String> {
     let options = dom_options(fixture);

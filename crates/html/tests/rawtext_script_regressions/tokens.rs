@@ -8,7 +8,6 @@ const MAX_PUMP_ITERATIONS_BASE: usize = 1024;
 
 /// Tokenization regression harness for whole-input and every-boundary chunked
 /// execution.
-
 pub(crate) fn run_token_fixture_whole(fixture: &Fixture) -> Vec<String> {
     run_token_fixture_with_chunks(fixture, std::iter::once(fixture.input.as_str()), false)
 }

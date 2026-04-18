@@ -6,7 +6,6 @@ use std::path::Path;
 const META_FORMAT_V1: &str = "html5-rawtext-script-regression-v1";
 
 /// Metadata parsing and validation for rawtext/script regression fixtures.
-
 pub(super) fn parse_meta_file(path: &Path) -> FixtureMeta {
     let content = fs::read_to_string(path).unwrap_or_else(|err| {
         panic!(

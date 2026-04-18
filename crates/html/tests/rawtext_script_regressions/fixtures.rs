@@ -9,7 +9,6 @@ use std::path::{Path, PathBuf};
 
 /// Fixture discovery and in-memory representation for rawtext/script HTML5
 /// regression cases.
-
 pub(crate) struct Fixture {
     pub(crate) name: String,
     pub(crate) dir: PathBuf,
