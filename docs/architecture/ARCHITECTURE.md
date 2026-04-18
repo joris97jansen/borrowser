@@ -161,6 +161,10 @@ in:
 
 * `docs/css/r8-cascade-style-resolution-debug-output.md`
 
+The Milestone R close-out and computed-style handoff contract lives in:
+
+* `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`
+
 The syntax layer owns:
 
 * tokenizer and parser entry points
@@ -220,6 +224,10 @@ The primary debug surfaces are `cascade_evaluation_debug_snapshot(...)`,
 `ResolvedStyle::to_debug_snapshot()`,
 `ResolvedDocumentStyle::to_debug_snapshot()`, and
 `resolve_document_styles_debug_snapshot(...)`.
+The current document-level integration remains function-oriented; later
+runtime cutover work may introduce a dedicated internal style-resolution
+session object and a first-class inline declaration-list parse entrypoint once
+computed-style consumption moves onto structured resolved styles directly.
 
 ### 4. **Computed Styles**
 

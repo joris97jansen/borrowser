@@ -18,6 +18,7 @@ Related documents:
 - `docs/css/r5-inheritance-behavior-supported-properties.md`
 - `docs/css/r6-initial-default-value-handling.md`
 - `docs/css/r8-cascade-style-resolution-debug-output.md`
+- `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`
 
 ## Implemented Result
 
