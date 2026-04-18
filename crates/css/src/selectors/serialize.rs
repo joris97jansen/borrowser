@@ -1,7 +1,7 @@
 use super::{
     AttributeMatcher, AttributeSelector, AttributeValue, Combinator, ComplexSelector,
-    InvalidSelectorReason, SelectorList, SelectorListParseResult, Specificity, SubclassSelector,
-    TypeSelector, UnsupportedSelectorFeature,
+    CompoundSelector, InvalidSelectorReason, SelectorList, SelectorListParseResult, Specificity,
+    SubclassSelector, TypeSelector, UnsupportedSelectorFeature,
 };
 use crate::syntax::CssSpan;
 use std::fmt::Write;
@@ -28,8 +28,9 @@ pub(crate) fn write_selector_list_snapshot_body(
     indent: usize,
 ) {
     let indent_str = " ".repeat(indent);
-    writeln!(out, "{indent_str}span: {}", span_label(list.span)).expect("write selector list span");
-    for (selector_index, selector) in list.selectors.iter().enumerate() {
+    writeln!(out, "{indent_str}span: {}", span_label(list.span()))
+        .expect("write selector list span");
+    for (selector_index, selector) in list.selectors().iter().enumerate() {
         write_selector(out, selector, selector_index, indent);
     }
 }
@@ -60,12 +61,12 @@ pub(crate) fn write_selector_parse_result_snapshot_body(
         }
         SelectorListParseResult::Invalid(list) => {
             writeln!(out, "{indent_str}result: invalid").expect("write invalid result");
-            writeln!(out, "{indent_str}span: {}", span_label(list.span))
+            writeln!(out, "{indent_str}span: {}", span_label(list.span()))
                 .expect("write invalid span");
             writeln!(
                 out,
                 "{indent_str}reason: {}",
-                invalid_reason_label(list.reason)
+                invalid_reason_label(list.reason())
             )
             .expect("write invalid reason");
         }
@@ -79,57 +80,60 @@ fn write_snapshot_header(out: &mut String, kind: &str) {
 
 fn write_selector(out: &mut String, selector: &ComplexSelector, index: usize, indent: usize) {
     let indent_str = " ".repeat(indent);
+    let selector_span = selector.span();
     writeln!(
         out,
         "{indent_str}selector[{index}] @{}..{} specificity={}",
-        selector.span.start,
-        selector.span.end,
+        selector_span.start,
+        selector_span.end,
         specificity_label(selector.specificity())
     )
     .expect("write selector");
 
-    write_compound(out, &selector.head, Some(0), indent + 2);
+    write_compound(out, selector.head(), Some(0), indent + 2);
 
-    for (combined_index, combined) in selector.tail.iter().enumerate() {
+    for (combined_index, combined) in selector.tail().iter().enumerate() {
+        let combined_span = combined.span();
         writeln!(
             out,
             "{}  combined[{combined_index}] {} @{}..{}",
             indent_str,
-            combinator_label(combined.combinator),
-            combined.span.start,
-            combined.span.end
+            combinator_label(combined.combinator()),
+            combined_span.start,
+            combined_span.end
         )
         .expect("write combined selector");
-        write_compound(out, &combined.selector, None, indent + 4);
+        write_compound(out, combined.selector(), None, indent + 4);
     }
 }
 
 fn write_compound(
     out: &mut String,
-    selector: &super::CompoundSelector,
+    selector: &CompoundSelector,
     index: Option<usize>,
     indent: usize,
 ) {
     let indent_str = " ".repeat(indent);
+    let selector_span = selector.span();
     match index {
         Some(index) => writeln!(
             out,
             "{indent_str}compound[{index}] @{}..{} specificity={}",
-            selector.span.start,
-            selector.span.end,
+            selector_span.start,
+            selector_span.end,
             specificity_label(selector.specificity())
         ),
         None => writeln!(
             out,
             "{indent_str}compound @{}..{} specificity={}",
-            selector.span.start,
-            selector.span.end,
+            selector_span.start,
+            selector_span.end,
             specificity_label(selector.specificity())
         ),
     }
     .expect("write compound selector");
 
-    if let Some(type_selector) = &selector.type_selector {
+    if let Some(type_selector) = selector.type_selector() {
         writeln!(
             out,
             "{}  - {}",
@@ -139,7 +143,7 @@ fn write_compound(
         .expect("write type selector");
     }
 
-    for subclass in &selector.subclasses {
+    for subclass in selector.subclasses() {
         writeln!(
             out,
             "{}  - {}",
@@ -153,13 +157,13 @@ fn write_compound(
 fn type_selector_snapshot(selector: &TypeSelector) -> String {
     match selector {
         TypeSelector::Universal(selector) => {
-            format!("universal(*) node={}", span_label(Some(selector.span)))
+            format!("universal(*) node={}", span_label(Some(selector.span())))
         }
         TypeSelector::Named(selector) => format!(
             "type({}) node={} name={}",
-            quoted(&selector.name.text),
-            span_label(Some(selector.span)),
-            span_label(selector.name.span),
+            quoted(selector.name().text()),
+            span_label(Some(selector.span())),
+            span_label(selector.name().span()),
         ),
     }
 }
@@ -168,15 +172,15 @@ fn subclass_selector_snapshot(selector: &SubclassSelector) -> String {
     match selector {
         SubclassSelector::Id(selector) => format!(
             "id({}) node={} name={}",
-            quoted(&selector.name.text),
-            span_label(Some(selector.span)),
-            span_label(selector.name.span),
+            quoted(selector.name().text()),
+            span_label(Some(selector.span())),
+            span_label(selector.name().span()),
         ),
         SubclassSelector::Class(selector) => format!(
             "class({}) node={} name={}",
-            quoted(&selector.name.text),
-            span_label(Some(selector.span)),
-            span_label(selector.name.span),
+            quoted(selector.name().text()),
+            span_label(Some(selector.span())),
+            span_label(selector.name().span()),
         ),
         SubclassSelector::Attribute(selector) => attribute_selector_snapshot(selector),
     }
@@ -186,17 +190,17 @@ fn attribute_selector_snapshot(selector: &AttributeSelector) -> String {
     match selector {
         AttributeSelector::Exists(selector) => format!(
             "attribute-exists(name={}, name_span={}) node={}",
-            quoted(&selector.name.text),
-            span_label(selector.name.span),
-            span_label(Some(selector.span))
+            quoted(selector.name().text()),
+            span_label(selector.name().span()),
+            span_label(Some(selector.span()))
         ),
         AttributeSelector::Match(selector) => format!(
             "attribute-match(name={}, name_span={}, matcher={}, value={}) node={}",
-            quoted(&selector.name.text),
-            span_label(selector.name.span),
-            attribute_matcher_label(selector.matcher),
-            attribute_value_snapshot(&selector.value),
-            span_label(Some(selector.span))
+            quoted(selector.name().text()),
+            span_label(selector.name().span()),
+            attribute_matcher_label(selector.matcher()),
+            attribute_value_snapshot(selector.value()),
+            span_label(Some(selector.span()))
         ),
     }
 }
@@ -206,15 +210,15 @@ fn attribute_value_snapshot(value: &AttributeValue) -> String {
         AttributeValue::Ident(value) => {
             format!(
                 "ident({}, span={})",
-                quoted(&value.text),
-                span_label(value.span)
+                quoted(value.text()),
+                span_label(value.span())
             )
         }
         AttributeValue::String(value) => {
             format!(
                 "string({}, span={})",
-                quoted(&value.value),
-                span_label(value.span)
+                quoted(value.value()),
+                span_label(value.span())
             )
         }
     }
@@ -223,7 +227,9 @@ fn attribute_value_snapshot(value: &AttributeValue) -> String {
 fn specificity_label(specificity: Specificity) -> String {
     format!(
         "({},{},{})",
-        specificity.ids, specificity.classes, specificity.types
+        specificity.ids(),
+        specificity.classes(),
+        specificity.types()
     )
 }
 
