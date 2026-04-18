@@ -1,0 +1,116 @@
+use super::super::{resolve_document_styles, resolve_document_styles_debug_snapshot};
+use super::support::{element, stylesheet};
+
+#[test]
+fn resolved_document_style_debug_snapshot_is_stable() {
+    let stylesheets = vec![stylesheet("div { color: red; }")];
+    let dom = element("div", Vec::new(), Vec::new());
+
+    let resolved = resolve_document_styles(&dom, &stylesheets);
+
+    assert_eq!(
+        resolved.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "resolved-document-style\n",
+            "element[0]: selector-id=1 name=\"div\"\n",
+            "  resolved-style\n",
+            "    background-color: initial(transparent)\n",
+            "    color: winner(source=stylesheet[0/0]/declaration[0], band=author-normal, specificity=selector(0,0,1), rule-order=0, declaration-order=0, value=\"red\")\n",
+            "    display: initial(inline)\n",
+            "    font-size: initial(16px)\n",
+            "    height: initial(auto)\n",
+            "    margin-bottom: initial(0px)\n",
+            "    margin-left: initial(0px)\n",
+            "    margin-right: initial(0px)\n",
+            "    margin-top: initial(0px)\n",
+            "    max-width: initial(none)\n",
+            "    min-width: initial(auto)\n",
+            "    padding-bottom: initial(0px)\n",
+            "    padding-left: initial(0px)\n",
+            "    padding-right: initial(0px)\n",
+            "    padding-top: initial(0px)\n",
+            "    width: initial(auto)\n",
+        )
+    );
+}
+
+#[test]
+fn document_style_resolution_debug_snapshot_covers_override_inheritance_and_defaults() {
+    let stylesheets = vec![stylesheet(
+        "section { color: red; } div { color: green; } .hero { color: blue !important; }",
+    )];
+    let dom = element(
+        "section",
+        Vec::new(),
+        vec![element("div", vec![("class", Some("hero"))], Vec::new())],
+    );
+
+    assert_eq!(
+        resolve_document_styles_debug_snapshot(&dom, &stylesheets),
+        concat!(
+            "version: 1\n",
+            "document-style-resolution\n",
+            "element[0]: selector-id=1 name=\"section\"\n",
+            "  cascade-evaluation\n",
+            "  rule-inputs: 1\n",
+            "    rule-input[0]: source=stylesheet[0/0] origin=author specificity=selector(0,0,1) rule-order=0 declarations=1\n",
+            "      declaration[0]: source=stylesheet[0/0]/declaration[0] declaration-order=0 importance=normal property=supported(color) applicability=supported(color) value=\"red\"\n",
+            "  candidates-source-order: 1\n",
+            "    candidate[0]: property=color source=stylesheet[0/0]/declaration[0] band=author-normal specificity=selector(0,0,1) rule-order=0 declaration-order=0 value=\"red\"\n",
+            "  candidates-cascade-order: 1\n",
+            "    candidate[0]: property=color source=stylesheet[0/0]/declaration[0] band=author-normal specificity=selector(0,0,1) rule-order=0 declaration-order=0 value=\"red\"\n",
+            "  winners: 1\n",
+            "    color: winner(source=stylesheet[0/0]/declaration[0], band=author-normal, specificity=selector(0,0,1), rule-order=0, declaration-order=0, value=\"red\")\n",
+            "  resolved-style\n",
+            "    background-color: initial(transparent)\n",
+            "    color: winner(source=stylesheet[0/0]/declaration[0], band=author-normal, specificity=selector(0,0,1), rule-order=0, declaration-order=0, value=\"red\")\n",
+            "    display: initial(inline)\n",
+            "    font-size: initial(16px)\n",
+            "    height: initial(auto)\n",
+            "    margin-bottom: initial(0px)\n",
+            "    margin-left: initial(0px)\n",
+            "    margin-right: initial(0px)\n",
+            "    margin-top: initial(0px)\n",
+            "    max-width: initial(none)\n",
+            "    min-width: initial(auto)\n",
+            "    padding-bottom: initial(0px)\n",
+            "    padding-left: initial(0px)\n",
+            "    padding-right: initial(0px)\n",
+            "    padding-top: initial(0px)\n",
+            "    width: initial(auto)\n",
+            "element[1]: selector-id=2 name=\"div\"\n",
+            "  cascade-evaluation\n",
+            "  rule-inputs: 2\n",
+            "    rule-input[0]: source=stylesheet[0/1] origin=author specificity=selector(0,0,1) rule-order=1 declarations=1\n",
+            "      declaration[0]: source=stylesheet[0/1]/declaration[0] declaration-order=0 importance=normal property=supported(color) applicability=supported(color) value=\"green\"\n",
+            "    rule-input[1]: source=stylesheet[0/2] origin=author specificity=selector(0,1,0) rule-order=2 declarations=1\n",
+            "      declaration[0]: source=stylesheet[0/2]/declaration[0] declaration-order=0 importance=important property=supported(color) applicability=supported(color) value=\"blue\"\n",
+            "  candidates-source-order: 2\n",
+            "    candidate[0]: property=color source=stylesheet[0/1]/declaration[0] band=author-normal specificity=selector(0,0,1) rule-order=1 declaration-order=0 value=\"green\"\n",
+            "    candidate[1]: property=color source=stylesheet[0/2]/declaration[0] band=author-important specificity=selector(0,1,0) rule-order=2 declaration-order=0 value=\"blue\"\n",
+            "  candidates-cascade-order: 2\n",
+            "    candidate[0]: property=color source=stylesheet[0/1]/declaration[0] band=author-normal specificity=selector(0,0,1) rule-order=1 declaration-order=0 value=\"green\"\n",
+            "    candidate[1]: property=color source=stylesheet[0/2]/declaration[0] band=author-important specificity=selector(0,1,0) rule-order=2 declaration-order=0 value=\"blue\"\n",
+            "  winners: 1\n",
+            "    color: winner(source=stylesheet[0/2]/declaration[0], band=author-important, specificity=selector(0,1,0), rule-order=2, declaration-order=0, value=\"blue\")\n",
+            "  resolved-style\n",
+            "    background-color: initial(transparent)\n",
+            "    color: winner(source=stylesheet[0/2]/declaration[0], band=author-important, specificity=selector(0,1,0), rule-order=2, declaration-order=0, value=\"blue\")\n",
+            "    display: initial(inline)\n",
+            "    font-size: inherited\n",
+            "    height: initial(auto)\n",
+            "    margin-bottom: initial(0px)\n",
+            "    margin-left: initial(0px)\n",
+            "    margin-right: initial(0px)\n",
+            "    margin-top: initial(0px)\n",
+            "    max-width: initial(none)\n",
+            "    min-width: initial(auto)\n",
+            "    padding-bottom: initial(0px)\n",
+            "    padding-left: initial(0px)\n",
+            "    padding-right: initial(0px)\n",
+            "    padding-top: initial(0px)\n",
+            "    width: initial(auto)\n",
+        )
+    );
+}
