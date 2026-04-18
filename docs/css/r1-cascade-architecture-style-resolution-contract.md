@@ -25,6 +25,7 @@ Related documents:
 - `docs/css/o1-rule-value-model-architecture.md`
 - `docs/css/q6-validity-specificity-match-results.md`
 - `docs/css/q8-selector-matching-invariants-extension-hooks.md`
+- `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`
 - `docs/css/r5-inheritance-behavior-supported-properties.md`
 - `docs/css/r6-initial-default-value-handling.md`
 - `docs/css/r7-structured-resolved-style-output.md`
