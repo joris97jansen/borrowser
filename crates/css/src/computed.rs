@@ -1010,7 +1010,12 @@ mod tests {
 
         let mut builder = builder_with_initials_except(PropertyId::ALL.as_slice());
         for (property, value) in expected {
-            builder.record(property, value).expect(property.name());
+            builder.record(property, value).unwrap_or_else(|error| {
+                panic!(
+                    "failed to record test value for '{}': {error}",
+                    property.name()
+                )
+            });
         }
         let style = builder.build().expect("computed style");
 
