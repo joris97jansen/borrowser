@@ -11,6 +11,7 @@
 pub mod cascade;
 pub mod computed;
 pub mod model;
+pub mod properties;
 pub mod selectors;
 pub mod syntax;
 pub mod values;
@@ -32,6 +33,10 @@ pub use cascade::{
     resolve_document_styles_debug_snapshot, resolve_initial_style,
     sort_candidates_by_cascade_order,
 };
+pub use computed::{
+    BoxMetrics, ComputedStyleBuildError, ComputedStyleBuilder, ComputedStyleEntry, ComputedValue,
+    ComputedValueDiscriminant,
+};
 pub use computed::{ComputedStyle, StyledNode, build_style_tree, compute_style};
 pub use model::{
     AtRule, AtRuleBlock, Declaration, DeclarationBlock, DeclarationValue, ImportantAnnotation,
@@ -41,6 +46,10 @@ pub use model::{
     serialize_declaration_for_snapshot, serialize_rule_for_snapshot,
     serialize_stylesheet_for_snapshot, serialize_stylesheet_parse_for_snapshot,
     serialize_value_for_snapshot,
+};
+pub use properties::{
+    PropertyComputedValueKind, PropertyId, PropertyInheritance, PropertyInvalidValuePolicy,
+    PropertyMetadata, PropertySpecifiedValueKind,
 };
 pub use selectors::{
     AncestorElements, AttributeExistsSelector, AttributeMatchSelector, AttributeMatcher,

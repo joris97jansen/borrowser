@@ -1,8 +1,35 @@
-use crate::values::{Display, Length, parse_color, parse_display, parse_length};
+//! Typed computed-style contract plus the current legacy bridge implementation.
+//!
+//! `ResolvedStyle` from Milestone R is the normative cascade handoff into this
+//! layer. The long-term property pipeline is:
+//! - `css::model::DeclarationValue` and `CascadeSpecifiedValue` hold authored,
+//!   parsed-but-not-computed values
+//! - property parsing converts those authored values into typed specified
+//!   values defined by `PropertySpecifiedValueKind`
+//! - computed-style assembly resolves those specified values, inheritance, and
+//!   initial/default values into typed, normalized `ComputedStyle`
+//!
+//! During the current bridge phase, `compute_style(...)` still consumes the
+//! legacy DOM-attached `(String, String)` declaration vector. The
+//! `ComputedStyleBuilder`, `ComputedValue`, and deterministic entry iteration
+//! below define the production contract the later `ResolvedStyle`-driven
+//! implementation must satisfy.
+
+use std::{collections::BTreeMap, fmt::Write};
+
+use crate::{
+    InitialStyleValue, PropertyComputedValueKind, PropertyId,
+    values::{Display, Length, parse_color, parse_display, parse_length},
+};
 
 use html::{Node, internal::Id};
 
-#[derive(Clone, Copy, Debug)]
+/// Runtime grouping for the current box-side computed lengths.
+///
+/// This grouping is allowed for downstream ergonomics, but it must remain a
+/// lossless materialization of the supported per-property computed values in
+/// `PropertyId::ALL`.
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
 pub struct BoxMetrics {
     // Margins in CSS px
     pub margin_top: f32,
@@ -19,20 +46,16 @@ pub struct BoxMetrics {
 
 impl BoxMetrics {
     pub fn zero() -> Self {
-        BoxMetrics {
-            margin_top: 0.0,
-            margin_right: 0.0,
-            margin_bottom: 0.0,
-            margin_left: 0.0,
-            padding_top: 0.0,
-            padding_right: 0.0,
-            padding_bottom: 0.0,
-            padding_left: 0.0,
-        }
+        Self::default()
     }
 }
 
-#[derive(Clone, Debug, Copy)]
+/// Total computed style for the current supported property subset.
+///
+/// Some runtime fields are grouped for consumer ergonomics, such as
+/// `box_metrics`, but the grouped representation must remain lossless over the
+/// one-value-per-property contract enforced by `ComputedStyleBuilder`.
+#[derive(Clone, Debug, Copy, PartialEq)]
 pub struct ComputedStyle {
     /// Inherited by default. Initial: black.
     pub color: (u8, u8, u8, u8),
@@ -44,6 +67,10 @@ pub struct ComputedStyle {
     /// Initial: 16px.
     pub font_size: Length,
 
+    /// Grouped runtime projection of margin/padding properties.
+    ///
+    /// This is an ergonomic view over individual property entries, not a
+    /// second source of truth.
     pub box_metrics: BoxMetrics,
 
     /// CSS `display` value.
@@ -66,17 +93,373 @@ pub struct ComputedStyle {
 
 impl ComputedStyle {
     pub fn initial() -> Self {
-        ComputedStyle {
-            color: (0, 0, 0, 255),           // black
-            background_color: (0, 0, 0, 0),  // transparent
-            font_size: Length::Px(16.0),     // "16px" default
-            box_metrics: BoxMetrics::zero(), // zero margins/padding
-            display: Display::Inline,        // CSS initial value
-            width: None,                     // auto
-            height: None,                    // auto
-            min_width: None,                 // auto
-            max_width: None,                 // none
+        let mut builder = ComputedStyleBuilder::new();
+        for property in PropertyId::ALL {
+            builder
+                .record(property, ComputedValue::from_initial(property))
+                .expect("initial computed-style assembly must satisfy property value contracts");
         }
+        builder
+            .build()
+            .expect("initial computed-style assembly must be total over the supported property set")
+    }
+
+    /// Returns the computed entry for one supported property.
+    ///
+    /// `ComputedStyle` is total by contract, so every `PropertyId` always
+    /// resolves to exactly one typed computed value.
+    pub fn get(&self, property: PropertyId) -> ComputedStyleEntry {
+        let value = match property {
+            PropertyId::BackgroundColor => ComputedValue::Color(self.background_color),
+            PropertyId::Color => ComputedValue::Color(self.color),
+            PropertyId::Display => ComputedValue::Display(self.display),
+            PropertyId::FontSize => ComputedValue::Length(self.font_size),
+            PropertyId::Height => ComputedValue::LengthOrAuto(self.height),
+            PropertyId::MarginBottom => {
+                ComputedValue::Length(Length::Px(self.box_metrics.margin_bottom))
+            }
+            PropertyId::MarginLeft => {
+                ComputedValue::Length(Length::Px(self.box_metrics.margin_left))
+            }
+            PropertyId::MarginRight => {
+                ComputedValue::Length(Length::Px(self.box_metrics.margin_right))
+            }
+            PropertyId::MarginTop => ComputedValue::Length(Length::Px(self.box_metrics.margin_top)),
+            PropertyId::MaxWidth => ComputedValue::LengthOrNone(self.max_width),
+            PropertyId::MinWidth => ComputedValue::LengthOrAuto(self.min_width),
+            PropertyId::PaddingBottom => {
+                ComputedValue::Length(Length::Px(self.box_metrics.padding_bottom))
+            }
+            PropertyId::PaddingLeft => {
+                ComputedValue::Length(Length::Px(self.box_metrics.padding_left))
+            }
+            PropertyId::PaddingRight => {
+                ComputedValue::Length(Length::Px(self.box_metrics.padding_right))
+            }
+            PropertyId::PaddingTop => {
+                ComputedValue::Length(Length::Px(self.box_metrics.padding_top))
+            }
+            PropertyId::Width => ComputedValue::LengthOrAuto(self.width),
+        };
+
+        ComputedStyleEntry { property, value }
+    }
+
+    /// Iterates computed entries in canonical property order.
+    pub fn entries(&self) -> impl Iterator<Item = ComputedStyleEntry> + '_ {
+        PropertyId::ALL
+            .into_iter()
+            .map(|property| self.get(property))
+    }
+
+    /// Stable debug snapshot for computed-style regression tests.
+    pub fn to_debug_snapshot(&self) -> String {
+        let mut out = String::from("version: 1\ncomputed-style\n");
+        for entry in self.entries() {
+            writeln!(
+                out,
+                "  {}: {}",
+                entry.property().name(),
+                entry.value().to_debug_label()
+            )
+            .expect("write to string");
+        }
+        out
+    }
+}
+
+/// One computed entry in a total `ComputedStyle`.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ComputedStyleEntry {
+    property: PropertyId,
+    value: ComputedValue,
+}
+
+impl ComputedStyleEntry {
+    pub fn property(&self) -> PropertyId {
+        self.property
+    }
+
+    pub fn value(&self) -> ComputedValue {
+        self.value
+    }
+}
+
+/// Typed computed-value surface for the current supported property subset.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum ComputedValue {
+    Color((u8, u8, u8, u8)),
+    Display(Display),
+    Length(Length),
+    LengthOrAuto(Option<Length>),
+    LengthOrNone(Option<Length>),
+}
+
+impl ComputedValue {
+    pub fn discriminant(self) -> ComputedValueDiscriminant {
+        match self {
+            Self::Color(_) => ComputedValueDiscriminant::Color,
+            Self::Display(_) => ComputedValueDiscriminant::Display,
+            Self::Length(_) => ComputedValueDiscriminant::Length,
+            Self::LengthOrAuto(_) => ComputedValueDiscriminant::LengthOrAuto,
+            Self::LengthOrNone(_) => ComputedValueDiscriminant::LengthOrNone,
+        }
+    }
+
+    pub fn from_initial(property: PropertyId) -> Self {
+        match property.initial_value() {
+            InitialStyleValue::ColorBlack => Self::Color((0, 0, 0, 255)),
+            InitialStyleValue::TransparentColor => Self::Color((0, 0, 0, 0)),
+            InitialStyleValue::DisplayInline => Self::Display(Display::Inline),
+            InitialStyleValue::FontSizePx16 => Self::Length(Length::Px(16.0)),
+            InitialStyleValue::ZeroPx => Self::Length(Length::Px(0.0)),
+            InitialStyleValue::AutoKeyword => Self::LengthOrAuto(None),
+            InitialStyleValue::NoneKeyword => Self::LengthOrNone(None),
+        }
+    }
+
+    fn to_debug_label(self) -> String {
+        match self {
+            Self::Color((r, g, b, a)) => format!("rgba({r}, {g}, {b}, {a})"),
+            Self::Display(display) => display_keyword(display).to_string(),
+            Self::Length(length) => format_length(length),
+            Self::LengthOrAuto(Some(length)) => format_length(length),
+            Self::LengthOrAuto(None) => "auto".to_string(),
+            Self::LengthOrNone(Some(length)) => format_length(length),
+            Self::LengthOrNone(None) => "none".to_string(),
+        }
+    }
+}
+
+/// Runtime-discriminant for `ComputedValue`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ComputedValueDiscriminant {
+    Color,
+    Display,
+    Length,
+    LengthOrAuto,
+    LengthOrNone,
+}
+
+/// Error returned when a `ComputedStyle` cannot be assembled into a total,
+/// property-type-correct result.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ComputedStyleBuildError {
+    DuplicateProperty {
+        property: PropertyId,
+    },
+    MissingProperties {
+        missing_properties: Vec<PropertyId>,
+    },
+    ValueKindMismatch {
+        property: PropertyId,
+        expected: PropertyComputedValueKind,
+        actual: ComputedValueDiscriminant,
+    },
+}
+
+impl std::fmt::Display for ComputedStyleBuildError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::DuplicateProperty { property } => {
+                write!(
+                    f,
+                    "computed style records property '{}' more than once",
+                    property.name()
+                )
+            }
+            Self::MissingProperties { missing_properties } => {
+                write!(f, "computed style is missing supported properties: ")?;
+                for (index, property) in missing_properties.iter().enumerate() {
+                    if index > 0 {
+                        write!(f, ", ")?;
+                    }
+                    write!(f, "{}", property.name())?;
+                }
+                Ok(())
+            }
+            Self::ValueKindMismatch {
+                property,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "computed style property '{}' expected {:?}, got {:?}",
+                property.name(),
+                expected,
+                actual
+            ),
+        }
+    }
+}
+
+impl std::error::Error for ComputedStyleBuildError {}
+
+/// Deterministic builder for total computed-style assembly.
+///
+/// This is the invariant gate that keeps grouped runtime fields lossless over
+/// the supported property table.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ComputedStyleBuilder {
+    entries: BTreeMap<PropertyId, ComputedValue>,
+}
+
+impl ComputedStyleBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn record(
+        &mut self,
+        property: PropertyId,
+        value: ComputedValue,
+    ) -> Result<(), ComputedStyleBuildError> {
+        let actual = value.discriminant();
+        let expected = property.metadata().computed_value;
+        if actual != computed_value_discriminant(expected) {
+            return Err(ComputedStyleBuildError::ValueKindMismatch {
+                property,
+                expected,
+                actual,
+            });
+        }
+
+        if self.entries.insert(property, value).is_some() {
+            return Err(ComputedStyleBuildError::DuplicateProperty { property });
+        }
+
+        Ok(())
+    }
+
+    pub fn build(self) -> Result<ComputedStyle, ComputedStyleBuildError> {
+        let missing_properties = PropertyId::ALL
+            .into_iter()
+            .filter(|property| !self.entries.contains_key(property))
+            .collect::<Vec<_>>();
+        if !missing_properties.is_empty() {
+            return Err(ComputedStyleBuildError::MissingProperties { missing_properties });
+        }
+
+        Ok(ComputedStyle {
+            color: expect_color(&self.entries, PropertyId::Color),
+            background_color: expect_color(&self.entries, PropertyId::BackgroundColor),
+            font_size: expect_length(&self.entries, PropertyId::FontSize),
+            box_metrics: BoxMetrics {
+                margin_top: expect_px(&self.entries, PropertyId::MarginTop),
+                margin_right: expect_px(&self.entries, PropertyId::MarginRight),
+                margin_bottom: expect_px(&self.entries, PropertyId::MarginBottom),
+                margin_left: expect_px(&self.entries, PropertyId::MarginLeft),
+                padding_top: expect_px(&self.entries, PropertyId::PaddingTop),
+                padding_right: expect_px(&self.entries, PropertyId::PaddingRight),
+                padding_bottom: expect_px(&self.entries, PropertyId::PaddingBottom),
+                padding_left: expect_px(&self.entries, PropertyId::PaddingLeft),
+            },
+            display: expect_display(&self.entries, PropertyId::Display),
+            width: expect_length_or_auto(&self.entries, PropertyId::Width),
+            height: expect_length_or_auto(&self.entries, PropertyId::Height),
+            min_width: expect_length_or_auto(&self.entries, PropertyId::MinWidth),
+            max_width: expect_length_or_none(&self.entries, PropertyId::MaxWidth),
+        })
+    }
+}
+
+fn computed_value_discriminant(kind: PropertyComputedValueKind) -> ComputedValueDiscriminant {
+    match kind {
+        PropertyComputedValueKind::AbsoluteColor => ComputedValueDiscriminant::Color,
+        PropertyComputedValueKind::DisplayKeyword => ComputedValueDiscriminant::Display,
+        PropertyComputedValueKind::AbsoluteLength => ComputedValueDiscriminant::Length,
+        PropertyComputedValueKind::AbsoluteLengthOrAuto => ComputedValueDiscriminant::LengthOrAuto,
+        PropertyComputedValueKind::AbsoluteLengthOrNone => ComputedValueDiscriminant::LengthOrNone,
+    }
+}
+
+fn expect_color(
+    entries: &BTreeMap<PropertyId, ComputedValue>,
+    property: PropertyId,
+) -> (u8, u8, u8, u8) {
+    match entries.get(&property).copied() {
+        Some(ComputedValue::Color(color)) => color,
+        Some(other) => unreachable!(
+            "property '{}' expected color computed value, got {:?}",
+            property.name(),
+            other.discriminant()
+        ),
+        None => unreachable!(
+            "property '{}' missing after completeness check",
+            property.name()
+        ),
+    }
+}
+
+fn expect_display(entries: &BTreeMap<PropertyId, ComputedValue>, property: PropertyId) -> Display {
+    match entries.get(&property).copied() {
+        Some(ComputedValue::Display(display)) => display,
+        Some(other) => unreachable!(
+            "property '{}' expected display computed value, got {:?}",
+            property.name(),
+            other.discriminant()
+        ),
+        None => unreachable!(
+            "property '{}' missing after completeness check",
+            property.name()
+        ),
+    }
+}
+
+fn expect_length(entries: &BTreeMap<PropertyId, ComputedValue>, property: PropertyId) -> Length {
+    match entries.get(&property).copied() {
+        Some(ComputedValue::Length(length)) => length,
+        Some(other) => unreachable!(
+            "property '{}' expected length computed value, got {:?}",
+            property.name(),
+            other.discriminant()
+        ),
+        None => unreachable!(
+            "property '{}' missing after completeness check",
+            property.name()
+        ),
+    }
+}
+
+fn expect_px(entries: &BTreeMap<PropertyId, ComputedValue>, property: PropertyId) -> f32 {
+    match expect_length(entries, property) {
+        Length::Px(px) => px,
+    }
+}
+
+fn expect_length_or_auto(
+    entries: &BTreeMap<PropertyId, ComputedValue>,
+    property: PropertyId,
+) -> Option<Length> {
+    match entries.get(&property).copied() {
+        Some(ComputedValue::LengthOrAuto(length)) => length,
+        Some(other) => unreachable!(
+            "property '{}' expected length-or-auto computed value, got {:?}",
+            property.name(),
+            other.discriminant()
+        ),
+        None => unreachable!(
+            "property '{}' missing after completeness check",
+            property.name()
+        ),
+    }
+}
+
+fn expect_length_or_none(
+    entries: &BTreeMap<PropertyId, ComputedValue>,
+    property: PropertyId,
+) -> Option<Length> {
+    match entries.get(&property).copied() {
+        Some(ComputedValue::LengthOrNone(length)) => length,
+        Some(other) => unreachable!(
+            "property '{}' expected length-or-none computed value, got {:?}",
+            property.name(),
+            other.discriminant()
+        ),
+        None => unreachable!(
+            "property '{}' missing after completeness check",
+            property.name()
+        ),
     }
 }
 
@@ -311,6 +694,39 @@ fn parse_px(value: &str) -> Option<f32> {
     }
 }
 
+fn display_keyword(display: Display) -> &'static str {
+    match display {
+        Display::Block => "block",
+        Display::Inline => "inline",
+        Display::InlineBlock => "inline-block",
+        Display::ListItem => "list-item",
+        Display::None => "none",
+    }
+}
+
+fn format_length(length: Length) -> String {
+    match length {
+        Length::Px(px) => format!("{}px", format_css_number(px)),
+    }
+}
+
+fn format_css_number(value: f32) -> String {
+    if value == 0.0 {
+        return "0".to_string();
+    }
+
+    let mut text = value.to_string();
+    if text.contains('.') {
+        while text.ends_with('0') {
+            text.pop();
+        }
+        if text.ends_with('.') {
+            text.pop();
+        }
+    }
+    text
+}
+
 /// Build a style tree from a DOM root.
 /// - `root` is the DOM node (usually the document root)
 /// - `parent_style` is the inherited style, if any
@@ -390,8 +806,27 @@ pub fn build_style_tree<'a>(
 
 #[cfg(test)]
 mod tests {
-    use super::{ComputedStyle, compute_style};
-    use crate::values::{Display, Length};
+    use super::{
+        ComputedStyle, ComputedStyleBuildError, ComputedStyleBuilder, ComputedValue,
+        ComputedValueDiscriminant, compute_style,
+    };
+    use crate::{
+        PropertyId,
+        values::{Display, Length},
+    };
+
+    fn builder_with_initials_except(skip: &[PropertyId]) -> ComputedStyleBuilder {
+        let mut builder = ComputedStyleBuilder::new();
+        for property in PropertyId::ALL {
+            if skip.contains(&property) {
+                continue;
+            }
+            builder
+                .record(property, ComputedValue::from_initial(property))
+                .expect("initial computed value");
+        }
+        builder
+    }
 
     #[test]
     fn initial_display_matches_css_initial_value_while_bridge_applies_element_defaults_later() {
@@ -442,5 +877,207 @@ mod tests {
             None,
         );
         assert!(matches!(style.max_width, Some(Length::Px(px)) if px == 10.0));
+    }
+
+    #[test]
+    fn computed_style_initial_snapshot_is_total_and_canonical() {
+        let style = ComputedStyle::initial();
+
+        let entries = style.entries().collect::<Vec<_>>();
+        assert_eq!(entries.len(), PropertyId::ALL.len());
+        for (index, entry) in entries.iter().enumerate() {
+            assert_eq!(entry.property(), PropertyId::ALL[index]);
+        }
+
+        assert_eq!(
+            style.to_debug_snapshot(),
+            concat!(
+                "version: 1\n",
+                "computed-style\n",
+                "  background-color: rgba(0, 0, 0, 0)\n",
+                "  color: rgba(0, 0, 0, 255)\n",
+                "  display: inline\n",
+                "  font-size: 16px\n",
+                "  height: auto\n",
+                "  margin-bottom: 0px\n",
+                "  margin-left: 0px\n",
+                "  margin-right: 0px\n",
+                "  margin-top: 0px\n",
+                "  max-width: none\n",
+                "  min-width: auto\n",
+                "  padding-bottom: 0px\n",
+                "  padding-left: 0px\n",
+                "  padding-right: 0px\n",
+                "  padding-top: 0px\n",
+                "  width: auto\n",
+            )
+        );
+    }
+
+    #[test]
+    fn computed_style_builder_materializes_structured_fields_from_property_entries() {
+        let mut builder = builder_with_initials_except(&[
+            PropertyId::Color,
+            PropertyId::MarginTop,
+            PropertyId::Width,
+        ]);
+        builder
+            .record(PropertyId::Color, ComputedValue::Color((12, 34, 56, 255)))
+            .expect("color");
+        builder
+            .record(
+                PropertyId::MarginTop,
+                ComputedValue::Length(Length::Px(18.0)),
+            )
+            .expect("margin-top");
+        builder
+            .record(
+                PropertyId::Width,
+                ComputedValue::LengthOrAuto(Some(Length::Px(320.0))),
+            )
+            .expect("width");
+
+        let style = builder.build().expect("computed style");
+
+        assert_eq!(style.color, (12, 34, 56, 255));
+        assert_eq!(style.box_metrics.margin_top, 18.0);
+        assert_eq!(style.width, Some(Length::Px(320.0)));
+        assert_eq!(
+            style.get(PropertyId::Width).value(),
+            ComputedValue::LengthOrAuto(Some(Length::Px(320.0)))
+        );
+    }
+
+    #[test]
+    fn computed_style_get_round_trips_all_builder_supported_properties_losslessly() {
+        let expected = [
+            (
+                PropertyId::BackgroundColor,
+                ComputedValue::Color((1, 2, 3, 4)),
+            ),
+            (PropertyId::Color, ComputedValue::Color((5, 6, 7, 8))),
+            (PropertyId::Display, ComputedValue::Display(Display::Block)),
+            (PropertyId::FontSize, ComputedValue::Length(Length::Px(9.0))),
+            (
+                PropertyId::Height,
+                ComputedValue::LengthOrAuto(Some(Length::Px(10.0))),
+            ),
+            (
+                PropertyId::MarginBottom,
+                ComputedValue::Length(Length::Px(11.0)),
+            ),
+            (
+                PropertyId::MarginLeft,
+                ComputedValue::Length(Length::Px(12.0)),
+            ),
+            (
+                PropertyId::MarginRight,
+                ComputedValue::Length(Length::Px(13.0)),
+            ),
+            (
+                PropertyId::MarginTop,
+                ComputedValue::Length(Length::Px(14.0)),
+            ),
+            (
+                PropertyId::MaxWidth,
+                ComputedValue::LengthOrNone(Some(Length::Px(15.0))),
+            ),
+            (
+                PropertyId::MinWidth,
+                ComputedValue::LengthOrAuto(Some(Length::Px(16.0))),
+            ),
+            (
+                PropertyId::PaddingBottom,
+                ComputedValue::Length(Length::Px(17.0)),
+            ),
+            (
+                PropertyId::PaddingLeft,
+                ComputedValue::Length(Length::Px(18.0)),
+            ),
+            (
+                PropertyId::PaddingRight,
+                ComputedValue::Length(Length::Px(19.0)),
+            ),
+            (
+                PropertyId::PaddingTop,
+                ComputedValue::Length(Length::Px(20.0)),
+            ),
+            (
+                PropertyId::Width,
+                ComputedValue::LengthOrAuto(Some(Length::Px(21.0))),
+            ),
+        ];
+
+        let mut builder = builder_with_initials_except(PropertyId::ALL.as_slice());
+        for (property, value) in expected {
+            builder.record(property, value).unwrap_or_else(|error| {
+                panic!(
+                    "failed to record test value for '{}': {error}",
+                    property.name()
+                )
+            });
+        }
+        let style = builder.build().expect("computed style");
+
+        for (property, value) in expected {
+            assert_eq!(style.get(property).property(), property);
+            assert_eq!(style.get(property).value(), value, "{}", property.name());
+        }
+    }
+
+    #[test]
+    fn computed_style_builder_rejects_duplicate_property_records() {
+        let mut builder = builder_with_initials_except(&[PropertyId::Color]);
+        builder
+            .record(PropertyId::Color, ComputedValue::Color((0, 0, 0, 255)))
+            .expect("first color");
+
+        let error = builder
+            .record(PropertyId::Color, ComputedValue::Color((255, 0, 0, 255)))
+            .expect_err("duplicate property must be rejected");
+
+        assert_eq!(
+            error,
+            ComputedStyleBuildError::DuplicateProperty {
+                property: PropertyId::Color,
+            }
+        );
+    }
+
+    #[test]
+    fn computed_style_builder_rejects_value_kind_mismatches() {
+        let mut builder = builder_with_initials_except(&[PropertyId::Display]);
+
+        let error = builder
+            .record(PropertyId::Display, ComputedValue::Color((0, 0, 0, 255)))
+            .expect_err("value kind mismatch must be rejected");
+
+        assert_eq!(
+            error,
+            ComputedStyleBuildError::ValueKindMismatch {
+                property: PropertyId::Display,
+                expected: crate::PropertyComputedValueKind::DisplayKeyword,
+                actual: ComputedValueDiscriminant::Color,
+            }
+        );
+    }
+
+    #[test]
+    fn computed_style_builder_requires_total_property_fill() {
+        let mut builder = builder_with_initials_except(PropertyId::ALL.as_slice());
+        builder
+            .record(PropertyId::Color, ComputedValue::Color((0, 0, 0, 255)))
+            .expect("color");
+
+        let error = builder
+            .build()
+            .expect_err("missing properties must be rejected");
+        let ComputedStyleBuildError::MissingProperties { missing_properties } = error else {
+            panic!("expected missing-properties error");
+        };
+
+        assert_eq!(missing_properties.len(), PropertyId::ALL.len() - 1);
+        assert!(!missing_properties.contains(&PropertyId::Color));
+        assert!(missing_properties.contains(&PropertyId::Display));
     }
 }
