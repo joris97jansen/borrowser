@@ -1,6 +1,6 @@
 /// CSS Length value, currently only supports `px`,
 /// but keep this extensible for `em`, `%`, etc.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Length {
     Px(f32),
 }
