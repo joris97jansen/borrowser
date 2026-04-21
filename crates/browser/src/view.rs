@@ -131,7 +131,7 @@ fn find_page_background_color(root: &StyledNode<'_>) -> Option<(u8, u8, u8, u8)>
     fn from_elem(node: &StyledNode<'_>, want: &str) -> Option<(u8, u8, u8, u8)> {
         match node.node {
             Node::Element { name, .. } if name.eq_ignore_ascii_case(want) => {
-                let rgba = node.style.background_color;
+                let rgba = node.style.background_color();
                 if is_non_transparent_rgba(rgba) {
                     Some(rgba)
                 } else {

@@ -180,18 +180,18 @@ pub(super) fn paint_replaced_fragment<'a>(
 }
 
 fn font_id_from_style(style: &ComputedStyle) -> FontId {
-    match style.font_size {
+    match style.font_size() {
         Length::Px(px) => FontId::proportional(px),
     }
 }
 
 fn text_color_from_style(style: &ComputedStyle) -> Color32 {
-    let (r, g, b, a) = style.color;
+    let (r, g, b, a) = style.color();
     Color32::from_rgba_unmultiplied(r, g, b, a)
 }
 
 fn background_color_from_style(style: &ComputedStyle) -> Color32 {
-    let (r, g, b, a) = style.background_color;
+    let (r, g, b, a) = style.background_color();
     if a > 0 {
         Color32::from_rgba_unmultiplied(r, g, b, a)
     } else {

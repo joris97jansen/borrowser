@@ -18,7 +18,7 @@ pub(crate) fn resolve_replaced_width_px(
 
     // CSS width wins (px-only in Phase 1)
     if let Some(Length::Px(px)) = style
-        .width
+        .width()
         .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
     {
         w = px;
@@ -26,13 +26,13 @@ pub(crate) fn resolve_replaced_width_px(
 
     // Clamp with min/max-width (px-only)
     if let Some(Length::Px(min_px)) = style
-        .min_width
+        .min_width()
         .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
     {
         w = w.max(min_px);
     }
     if let Some(Length::Px(max_px)) = style
-        .max_width
+        .max_width()
         .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
     {
         w = w.min(max_px);
@@ -55,7 +55,7 @@ pub(crate) fn size_replaced_inline_children<'a>(
         match child.kind {
             BoxKind::ReplacedInline => {
                 // Position relative to THIS blocks content box.
-                let cbm = child.style.box_metrics;
+                let cbm = child.style.box_metrics();
                 let child_x = content_x + cbm.margin_left;
                 let child_y = content_top + cbm.margin_top;
 
@@ -94,7 +94,7 @@ pub(crate) fn size_replaced_inline_children<'a>(
                         let w = resolve_replaced_width_px(child.style, content_width, intrinsic_w);
 
                         // Height from line-height + padding (sane minimum)
-                        let bm = child.style.box_metrics;
+                        let bm = child.style.box_metrics();
                         let line_h = measurer.line_height(child.style);
                         let pad_y = (bm.padding_top + bm.padding_bottom).max(4.0);
 
@@ -102,7 +102,7 @@ pub(crate) fn size_replaced_inline_children<'a>(
 
                         if let Some(Length::Px(px)) = child
                             .style
-                            .height
+                            .height()
                             .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
                         {
                             h = px;
@@ -129,7 +129,7 @@ pub(crate) fn size_replaced_inline_children<'a>(
 
                         let w = resolve_replaced_width_px(child.style, content_width, intrinsic_w);
 
-                        let bm = child.style.box_metrics;
+                        let bm = child.style.box_metrics();
                         let line_h = measurer.line_height(child.style);
                         let pad_y = (bm.padding_top + bm.padding_bottom).max(8.0);
 
@@ -138,7 +138,7 @@ pub(crate) fn size_replaced_inline_children<'a>(
                         let mut h = intrinsic_h;
                         if let Some(Length::Px(px)) = child
                             .style
-                            .height
+                            .height()
                             .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
                         {
                             h = px;
@@ -150,14 +150,14 @@ pub(crate) fn size_replaced_inline_children<'a>(
 
                     ReplacedKind::InputCheckbox | ReplacedKind::InputRadio => {
                         // UA-ish intrinsic size that tracks the current font size.
-                        let Length::Px(font_px) = child.style.font_size;
+                        let Length::Px(font_px) = child.style.font_size();
                         let intrinsic = font_px.max(12.0);
 
-                        let width_px = child.style.width.and_then(|len| match len {
+                        let width_px = child.style.width().and_then(|len| match len {
                             Length::Px(px) if px >= 0.0 => Some(px),
                             _ => None,
                         });
-                        let height_px = child.style.height.and_then(|len| match len {
+                        let height_px = child.style.height().and_then(|len| match len {
                             Length::Px(px) if px >= 0.0 => Some(px),
                             _ => None,
                         });
@@ -177,7 +177,7 @@ pub(crate) fn size_replaced_inline_children<'a>(
                         let label = button_label_from_layout(child);
                         let text_w = measurer.measure(&label, child.style);
 
-                        let bm = child.style.box_metrics;
+                        let bm = child.style.box_metrics();
 
                         // UA-ish defaults. (Your CSS padding still applies; these are just floors.)
                         let pad_l = bm.padding_left.max(8.0);
@@ -196,7 +196,7 @@ pub(crate) fn size_replaced_inline_children<'a>(
                         let mut w = intrinsic_w;
                         if let Some(Length::Px(px)) = child
                             .style
-                            .width
+                            .width()
                             .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
                         {
                             w = px;
@@ -204,14 +204,14 @@ pub(crate) fn size_replaced_inline_children<'a>(
 
                         if let Some(Length::Px(min_px)) = child
                             .style
-                            .min_width
+                            .min_width()
                             .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
                         {
                             w = w.max(min_px);
                         }
                         if let Some(Length::Px(max_px)) = child
                             .style
-                            .max_width
+                            .max_width()
                             .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
                         {
                             w = w.min(max_px);
@@ -223,7 +223,7 @@ pub(crate) fn size_replaced_inline_children<'a>(
                         let mut h = intrinsic_h;
                         if let Some(Length::Px(px)) = child
                             .style
-                            .height
+                            .height()
                             .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
                         {
                             h = px;

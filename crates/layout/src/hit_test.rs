@@ -86,7 +86,7 @@ fn hit_test_inline_fragments<'a>(
 ) -> Option<HitResult> {
     match layout.node.node {
         Node::Element { .. } => {
-            if matches!(layout.style.display, Display::Inline) {
+            if matches!(layout.style.display(), Display::Inline) {
                 return None;
             }
         }

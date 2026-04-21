@@ -41,7 +41,7 @@ fn recompute_block_heights<'a>(
         let parent_width = used_width;
 
         for child in &mut node.children {
-            let bm = child.style.box_metrics;
+            let bm = child.style.box_metrics();
 
             // Space before child
             cursor_y += bm.margin_top;
@@ -68,7 +68,7 @@ fn recompute_block_heights<'a>(
             let parent_width = used_width;
 
             for child in &mut node.children {
-                let bm = child.style.box_metrics;
+                let bm = child.style.box_metrics();
 
                 cursor_y += bm.margin_top;
 
@@ -93,7 +93,7 @@ fn recompute_block_heights<'a>(
                 let parent_width = used_width;
 
                 // Inline elements: height is 0 at block level.
-                if matches!(node.style.display, Display::Inline) {
+                if matches!(node.style.display(), Display::Inline) {
                     let (content_x, content_width) = content_x_and_width(node.style, x, used_width);
                     let content_top = content_y(node.style, y);
 
@@ -110,7 +110,7 @@ fn recompute_block_heights<'a>(
                 }
 
                 for child in &mut node.children {
-                    let bm = child.style.box_metrics;
+                    let bm = child.style.box_metrics();
 
                     cursor_y += bm.margin_top;
 
@@ -129,7 +129,7 @@ fn recompute_block_heights<'a>(
 
             // --- Block-level element: inline content + block children + padding ---
 
-            let bm = node.style.box_metrics;
+            let bm = node.style.box_metrics();
 
             // Content box horizontally: inside padding-left/right
             let (content_x, content_width) = content_x_and_width(node.style, x, used_width);
@@ -143,7 +143,7 @@ fn recompute_block_heights<'a>(
             {
                 for child in &mut node.children {
                     if matches!(child.kind, BoxKind::InlineBlock) {
-                        let cbm = child.style.box_metrics;
+                        let cbm = child.style.box_metrics();
 
                         // Horizontal position as if it lived in the content box.
                         let child_x = content_x + cbm.margin_left;
@@ -210,7 +210,7 @@ fn recompute_block_heights<'a>(
                     continue;
                 }
 
-                let cbm = child.style.box_metrics;
+                let cbm = child.style.box_metrics();
 
                 // Child's margin-top
                 cursor_y += cbm.margin_top;
@@ -253,9 +253,9 @@ fn resolve_used_width_for_block(
     // 2) Apply explicit width for non-inline elements.
     if let html::Node::Element { .. } = node {
         if let (false, Some(Length::Px(px))) = (
-            matches!(style.display, Display::Inline),
+            matches!(style.display(), Display::Inline),
             style
-                .width
+                .width()
                 .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0)),
         ) {
             w = px;
@@ -273,14 +273,14 @@ fn resolve_used_width_for_block(
 
     // 3) Apply min-width / max-width (px-only).
     if let Some(Length::Px(min_px)) = style
-        .min_width
+        .min_width()
         .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
     {
         w = w.max(min_px);
     }
 
     if let Some(Length::Px(max_px)) = style
-        .max_width
+        .max_width()
         .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
     {
         w = w.min(max_px);

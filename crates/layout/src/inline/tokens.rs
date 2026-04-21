@@ -316,7 +316,7 @@ fn collect_inline_tokens_from_layout_box<'a>(
                     flush_pending_space(tokens, pending_space, *has_emitted_content);
 
                     let style = layout.style;
-                    let cbm = layout.style.box_metrics;
+                    let cbm = layout.style.box_metrics();
 
                     let margin_box_width =
                         (layout.rect.width + cbm.margin_left + cbm.margin_right).max(0.0);
@@ -356,7 +356,7 @@ fn collect_inline_tokens_from_layout_box<'a>(
                     flush_pending_space(tokens, pending_space, *has_emitted_content);
 
                     let style = layout.style;
-                    let cbm = style.box_metrics;
+                    let cbm = style.box_metrics();
 
                     let margin_box_width =
                         (layout.rect.width + cbm.margin_left + cbm.margin_right).max(0.0);

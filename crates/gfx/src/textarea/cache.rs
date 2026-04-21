@@ -60,9 +60,9 @@ pub(crate) fn build_textarea_fragment_hit_map(
 
     let text_for_layout = slice.to_owned();
 
-    let (r, g, b, a) = style.color;
+    let (r, g, b, a) = style.color();
     let color = Color32::from_rgba_unmultiplied(r, g, b, a);
-    let Length::Px(font_px) = style.font_size;
+    let Length::Px(font_px) = style.font_size();
     let font_id = FontId::proportional(font_px);
 
     let galley = measurer

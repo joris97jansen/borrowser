@@ -26,7 +26,7 @@ impl EguiTextMeasurer {
 
 impl TextMeasurer for EguiTextMeasurer {
     fn measure(&self, text: &str, style: &ComputedStyle) -> f32 {
-        let Length::Px(font_px) = style.font_size;
+        let Length::Px(font_px) = style.font_size();
         let font_id = FontId::proportional(font_px);
 
         if text == " " {
@@ -36,7 +36,7 @@ impl TextMeasurer for EguiTextMeasurer {
                 return w;
             }
 
-            let (r, g, b, a) = style.color;
+            let (r, g, b, a) = style.color();
             let color = Color32::from_rgba_unmultiplied(r, g, b, a);
 
             // 1) NBSP is the most stable in egui
@@ -75,7 +75,7 @@ impl TextMeasurer for EguiTextMeasurer {
             return w;
         }
 
-        let (r, g, b, a) = style.color;
+        let (r, g, b, a) = style.color();
         let color = Color32::from_rgba_unmultiplied(r, g, b, a);
 
         self.ctx.fonts(|f| {
@@ -86,7 +86,7 @@ impl TextMeasurer for EguiTextMeasurer {
     }
 
     fn line_height(&self, style: &ComputedStyle) -> f32 {
-        let Length::Px(px) = style.font_size;
+        let Length::Px(px) = style.font_size();
         px * 1.2
     }
 }

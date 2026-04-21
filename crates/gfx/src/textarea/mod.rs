@@ -64,7 +64,7 @@ impl TextareaState {
         let core_id = to_input_id(input_id);
         let available_text_w = available_text_w.max(0.0);
         let value_rev = input_values.value_revision(core_id);
-        let Length::Px(font_px) = style.font_size;
+        let Length::Px(font_px) = style.font_size();
 
         let cache_valid = self.layout_cache.as_ref().is_some_and(|c| {
             c.input_id == input_id

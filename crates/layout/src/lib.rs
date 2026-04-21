@@ -144,7 +144,7 @@ impl<'a> LayoutBox<'a> {
 /// We expose it via small helpers so that all code computes content
 /// geometry in a single, consistent way.
 pub fn content_x_and_width(style: &ComputedStyle, border_x: f32, border_width: f32) -> (f32, f32) {
-    let bm = style.box_metrics;
+    let bm = style.box_metrics();
 
     let content_x = border_x + bm.padding_left;
     let content_width = (border_width - bm.padding_left - bm.padding_right).max(0.0);
@@ -161,13 +161,13 @@ pub fn content_x_and_width(style: &ComputedStyle, border_x: f32, border_width: f
 
 /// Vertical position of the content box top (border box top + padding-top).
 pub fn content_y(style: &ComputedStyle, border_y: f32) -> f32 {
-    let bm = style.box_metrics;
+    let bm = style.box_metrics();
     border_y + bm.padding_top
 }
 
 /// Height of the content box (border box height minus vertical padding).
 pub fn content_height(style: &ComputedStyle, border_height: f32) -> f32 {
-    let bm = style.box_metrics;
+    let bm = style.box_metrics();
     let content_height = (border_height - bm.padding_top - bm.padding_bottom).max(0.0);
 
     debug_assert!(
@@ -269,7 +269,7 @@ fn layout_block_subtree<'a>(
             // If this is a list container (<ul>/<ol>) and the child is a list-item,
             // assign a marker.
             if matches!(child.node, Node::Element { .. })
-                && child_box.style.display == Display::ListItem
+                && child_box.style.display() == Display::ListItem
             {
                 if is_ul {
                     child_box.list_marker = Some(ListMarker::Unordered);
@@ -296,11 +296,11 @@ fn layout_block_subtree<'a>(
         _ => {
             // If it's a replaced element and it's inline-level, treat it as a replaced inline atom.
             if replaced_kind.is_some()
-                && matches!(style.display, Display::Inline | Display::InlineBlock)
+                && matches!(style.display(), Display::Inline | Display::InlineBlock)
             {
                 BoxKind::ReplacedInline
             } else {
-                match style.display {
+                match style.display() {
                     Display::Inline => BoxKind::Inline,
                     Display::InlineBlock => BoxKind::InlineBlock,
                     _ => BoxKind::Block,

@@ -1,5 +1,5 @@
 use crate::util::{ellipsize_to_width, get_attr, resolve_relative_url, wrap_text_to_width};
-use css::{ComputedStyle, Length};
+use css::{ComputedStyle, ComputedValue, Length, PropertyId};
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, StrokeKind, Vec2};
 use layout::{LayoutBox, TextMeasurer};
 
@@ -104,7 +104,7 @@ fn paint_img_fallback_placeholder(
     alt: Option<&str>,
 ) {
     // Placeholder box
-    let (r, g, b, a) = style.background_color;
+    let (r, g, b, a) = style.background_color();
     let fill = if a > 0 {
         Color32::from_rgba_unmultiplied(r, g, b, a)
     } else {
@@ -143,7 +143,7 @@ fn paint_img_fallback_placeholder(
 
     let clip_painter = painter.with_clip_rect(rect);
 
-    let (cr, cg, cb, ca) = style.color;
+    let (cr, cg, cb, ca) = style.color();
     let base_text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
 
     let status = match state {
@@ -165,12 +165,16 @@ fn paint_img_fallback_placeholder(
     let mut remaining_h = inner.height();
 
     if let Some(status) = status {
-        let mut status_style = *style;
-        let Length::Px(font_px) = style.font_size;
-        status_style.font_size = Length::Px((font_px * 0.85).clamp(10.0, 12.0));
+        let Length::Px(font_px) = style.font_size();
+        let status_style = (*style)
+            .with_property(
+                PropertyId::FontSize,
+                ComputedValue::Length(Length::Px((font_px * 0.85).clamp(10.0, 12.0))),
+            )
+            .unwrap_or_else(|error| panic!("failed to build image status text style: {error}"));
 
         let status_color = base_text_color.gamma_multiply(0.65);
-        let font_id = match status_style.font_size {
+        let font_id = match status_style.font_size() {
             Length::Px(px) => FontId::proportional(px),
         };
         clip_painter.text(
@@ -238,7 +242,7 @@ fn paint_wrapped_text(
         }
     }
 
-    let font_id = match style.font_size {
+    let font_id = match style.font_size() {
         Length::Px(px) => FontId::proportional(px),
     };
 
