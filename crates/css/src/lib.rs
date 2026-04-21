@@ -37,9 +37,10 @@ pub use cascade::{
     sort_candidates_by_cascade_order,
 };
 pub use computed::{
-    BoxMetrics, ComputedStyleBuildError, ComputedStyleBuilder, ComputedStyleEntry, ComputedValue,
-    ComputedValueDiscriminant, ComputedValueNormalizationError,
-    ComputedValueNormalizationErrorKind, normalize_specified_value,
+    BoxMetrics, ComputedStyleBuildError, ComputedStyleBuilder, ComputedStyleEntry,
+    ComputedStyleResolutionError, ComputedValue, ComputedValueDiscriminant,
+    ComputedValueNormalizationError, ComputedValueNormalizationErrorKind,
+    compute_style_from_resolved_style, normalize_specified_value,
 };
 pub use computed::{ComputedStyle, StyledNode, build_style_tree, compute_style};
 pub use model::{
