@@ -1,7 +1,7 @@
 use crate::input_state::DocumentInputState;
 use crate::page::PageState;
 use crate::resources::ResourceManager;
-use css::{StyledNode, build_style_tree};
+use css::{StyledNode, build_style_tree_with_stylesheets};
 use egui::{
     Align2, Area, CentralPanel, Color32, Context, CornerRadius, Frame, Id, Margin, Order, RichText,
     Stroke, vec2,
@@ -33,26 +33,30 @@ pub fn content(
         return None;
     }
 
-    // IMPORTANT: borrow of page.dom is contained in this block and ends here.
-    let base_fill = {
-        let dom = page.dom.as_deref().unwrap();
-        let style_root = build_style_tree(dom, None);
-        let page_bg = find_page_background_color(&style_root);
-
-        if let Some((r, g, b, a)) = page_bg {
-            Color32::from_rgba_unmultiplied(r, g, b, a)
-        } else {
-            Color32::WHITE
+    let dom = page.dom.as_deref().unwrap();
+    let style_root = match build_style_tree_with_stylesheets(dom, page.css_stylesheets()) {
+        Ok(style_root) => style_root,
+        Err(error) => {
+            let visuals = ctx.style().visuals.clone();
+            CentralPanel::default()
+                .frame(Frame::default().fill(visuals.panel_fill))
+                .show(ctx, |ui| {
+                    ui.label(format!("Style computation failed: {error}"));
+                });
+            show_status_overlay(ctx, loading, status.map(|status| status.as_str()));
+            return None;
         }
+    };
+    let page_bg = find_page_background_color(&style_root);
+    let base_fill = if let Some((r, g, b, a)) = page_bg {
+        Color32::from_rgba_unmultiplied(r, g, b, a)
+    } else {
+        Color32::WHITE
     };
 
     let action = CentralPanel::default()
         .frame(Frame::default().fill(base_fill))
         .show(ctx, |ui| {
-            // Rebuild style_root inside closure (needed anyway for layout/paint).
-            let dom = page.dom.as_deref().unwrap();
-            let style_root = build_style_tree(dom, None);
-
             // disjoint borrow: OK (dom is immutably borrowed, input_values mutably borrowed)
             let base_url = page.base_url.as_deref();
             let input_values = &mut input_state.input_values;

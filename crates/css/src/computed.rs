@@ -9,17 +9,19 @@
 //! - computed-style assembly resolves those specified values, inheritance, and
 //!   initial/default values into typed, normalized `ComputedStyle`
 //!
-//! `compute_style_from_resolved_style(...)` is the production typed assembly
-//! path. During the current bridge phase, `compute_style(...)` still consumes
-//! the legacy DOM-attached `(String, String)` declaration vector for runtime
-//! consumers that have not moved to structured cascade output yet.
+//! `compute_document_styles(...)` and
+//! `compute_style_from_resolved_style(...)` are the production typed assembly
+//! paths. During the current bridge phase, `compute_style(...)` still consumes
+//! the legacy DOM-attached `(String, String)` declaration vector for
+//! compatibility consumers that have not moved to structured cascade output yet.
 
 use std::{collections::BTreeMap, fmt::Write};
 
 use crate::{
     InitialStyleValue, PropertyComputedValueKind, PropertyId, PropertyInheritance,
-    cascade::{ResolvedStyle, ResolvedValueSource},
-    property_registry,
+    cascade::{ResolvedDocumentStyle, ResolvedStyle, ResolvedValueSource, resolve_document_styles},
+    model, property_registry,
+    selectors::{SelectorDomElementId, SelectorDomIndex, SelectorMatchingContext},
     specified::{
         SpecifiedColor, SpecifiedColorKeyword, SpecifiedColorSyntax, SpecifiedDisplayKeyword,
         SpecifiedLength, SpecifiedLengthOrAuto, SpecifiedLengthOrNone, SpecifiedPropertyValue,
@@ -505,6 +507,35 @@ impl std::error::Error for ComputedStyleBuildError {}
 /// total computed style.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ComputedStyleResolutionError {
+    MissingResolvedElement {
+        element: SelectorDomElementId,
+    },
+    ResolvedElementNameMismatch {
+        element: SelectorDomElementId,
+        expected: String,
+        actual: String,
+    },
+    MissingComputedParent {
+        element: SelectorDomElementId,
+        parent: SelectorDomElementId,
+    },
+    MissingComputedElementStyle {
+        element_index: usize,
+        element_name: String,
+    },
+    ComputedElementNameMismatch {
+        element_index: usize,
+        expected: String,
+        actual: String,
+    },
+    ComputedElementIdentityMismatch {
+        element_index: usize,
+        expected: SelectorDomElementId,
+        actual: SelectorDomElementId,
+    },
+    ExtraComputedElementStyle {
+        element: SelectorDomElementId,
+    },
     MissingResolvedProperty {
         property: PropertyId,
     },
@@ -533,6 +564,59 @@ pub enum ComputedStyleResolutionError {
 impl std::fmt::Display for ComputedStyleResolutionError {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match self {
+            Self::MissingResolvedElement { element } => write!(
+                f,
+                "resolved document style is missing element selector-id={}",
+                element.get()
+            ),
+            Self::ResolvedElementNameMismatch {
+                element,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "resolved document style element selector-id={} expected name \"{}\", got \"{}\"",
+                element.get(),
+                expected,
+                actual
+            ),
+            Self::MissingComputedParent { element, parent } => write!(
+                f,
+                "computed document style element selector-id={} is missing computed parent selector-id={}",
+                element.get(),
+                parent.get()
+            ),
+            Self::MissingComputedElementStyle {
+                element_index,
+                element_name,
+            } => write!(
+                f,
+                "computed document style is missing element[{element_index}] name \"{element_name}\""
+            ),
+            Self::ComputedElementNameMismatch {
+                element_index,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "computed document style element[{element_index}] expected name \"{}\", got \"{}\"",
+                expected, actual
+            ),
+            Self::ComputedElementIdentityMismatch {
+                element_index,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "computed document style element[{element_index}] expected selector-id={}, got selector-id={}",
+                expected.get(),
+                actual.get()
+            ),
+            Self::ExtraComputedElementStyle { element } => write!(
+                f,
+                "computed document style has extra element selector-id={}",
+                element.get()
+            ),
             Self::MissingResolvedProperty { property } => write!(
                 f,
                 "resolved style is missing property '{}'",
@@ -584,13 +668,97 @@ impl std::error::Error for ComputedStyleResolutionError {
         match self {
             Self::Normalization(error) => Some(error),
             Self::Build(error) => Some(error),
-            Self::MissingResolvedProperty { .. }
+            Self::MissingResolvedElement { .. }
+            | Self::ResolvedElementNameMismatch { .. }
+            | Self::MissingComputedParent { .. }
+            | Self::MissingComputedElementStyle { .. }
+            | Self::ComputedElementNameMismatch { .. }
+            | Self::ComputedElementIdentityMismatch { .. }
+            | Self::ExtraComputedElementStyle { .. }
+            | Self::MissingResolvedProperty { .. }
             | Self::MissingInheritedParent { .. }
             | Self::NonInheritedPropertyMarkedInherited { .. }
             | Self::InitialValueMismatch { .. }
             | Self::WinnerMissingSpecifiedValue { .. }
             | Self::WinnerPropertyMismatch { .. } => None,
         }
+    }
+}
+
+/// Computed style for one DOM element in a document style pass.
+#[derive(Clone, Debug, PartialEq)]
+pub struct ComputedElementStyle {
+    selector_element_id: SelectorDomElementId,
+    element_name: String,
+    style: ComputedStyle,
+}
+
+impl ComputedElementStyle {
+    fn new(
+        selector_element_id: SelectorDomElementId,
+        element_name: String,
+        style: ComputedStyle,
+    ) -> Self {
+        Self {
+            selector_element_id,
+            element_name,
+            style,
+        }
+    }
+
+    pub fn selector_element_id(&self) -> SelectorDomElementId {
+        self.selector_element_id
+    }
+
+    pub fn element_name(&self) -> &str {
+        &self.element_name
+    }
+
+    pub fn style(&self) -> &ComputedStyle {
+        &self.style
+    }
+}
+
+/// Document-order computed-style output for the element set selector matching
+/// can address.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ComputedDocumentStyle {
+    entries: Vec<ComputedElementStyle>,
+}
+
+impl ComputedDocumentStyle {
+    fn new(entries: Vec<ComputedElementStyle>) -> Self {
+        Self { entries }
+    }
+
+    pub fn entries(&self) -> &[ComputedElementStyle] {
+        &self.entries
+    }
+
+    pub fn get(&self, element: SelectorDomElementId) -> Option<&ComputedElementStyle> {
+        self.entries
+            .iter()
+            .find(|entry| entry.selector_element_id == element)
+    }
+
+    pub fn to_debug_snapshot(&self) -> String {
+        let mut out = String::new();
+        writeln!(&mut out, "version: 1").expect("write snapshot");
+        writeln!(&mut out, "computed-document-style").expect("write snapshot");
+        for (index, entry) in self.entries.iter().enumerate() {
+            writeln!(
+                &mut out,
+                "element[{index}]: selector-id={} name=\"{}\"",
+                entry.selector_element_id.get(),
+                entry.element_name
+            )
+            .expect("write snapshot");
+            for line in entry.style.to_debug_snapshot().lines().skip(2) {
+                let line = line.strip_prefix("  ").unwrap_or(line);
+                writeln!(&mut out, "  {line}").expect("write snapshot");
+            }
+        }
+        out
     }
 }
 
@@ -663,6 +831,59 @@ fn computed_value_from_resolved_source(
             Ok(ComputedValue::from_initial(property))
         }
     }
+}
+
+/// Resolves and computes document-level styles without mutating the DOM.
+pub fn compute_document_styles(
+    root: &Node,
+    sheets: &[model::StylesheetParse],
+) -> Result<ComputedDocumentStyle, ComputedStyleResolutionError> {
+    let resolved = resolve_document_styles(root, sheets);
+    compute_document_styles_from_resolved_styles(root, &resolved)
+}
+
+/// Computes document-level styles from an already materialized structured
+/// cascade result.
+pub fn compute_document_styles_from_resolved_styles(
+    root: &Node,
+    resolved_styles: &ResolvedDocumentStyle,
+) -> Result<ComputedDocumentStyle, ComputedStyleResolutionError> {
+    let index = SelectorDomIndex::from_root(root);
+    let context = SelectorMatchingContext::new(&index);
+    let mut computed_by_element = BTreeMap::new();
+    let mut entries = Vec::with_capacity(index.len());
+
+    for element in index.elements() {
+        let resolved = resolved_styles
+            .get(element)
+            .ok_or(ComputedStyleResolutionError::MissingResolvedElement { element })?;
+        let expected_name = context.element_name(element);
+        if resolved.element_name() != expected_name {
+            return Err(ComputedStyleResolutionError::ResolvedElementNameMismatch {
+                element,
+                expected: expected_name.to_string(),
+                actual: resolved.element_name().to_string(),
+            });
+        }
+
+        let parent_style =
+            match context.parent_element(element) {
+                Some(parent) => Some(computed_by_element.get(&parent).ok_or(
+                    ComputedStyleResolutionError::MissingComputedParent { element, parent },
+                )?),
+                None => None,
+            };
+        let style = compute_style_from_resolved_style(resolved.style(), parent_style)?;
+
+        computed_by_element.insert(element, style);
+        entries.push(ComputedElementStyle::new(
+            element,
+            expected_name.to_string(),
+            style,
+        ));
+    }
+
+    Ok(ComputedDocumentStyle::new(entries))
 }
 
 /// Deterministic builder for total computed-style assembly.
@@ -846,6 +1067,167 @@ pub struct StyledNode<'a> {
     pub children: Vec<StyledNode<'a>>,
 }
 
+/// Builds a styled tree from stylesheets through the structured
+/// cascade-to-computed pipeline without mutating `Node::style`.
+pub fn build_style_tree_with_stylesheets<'a>(
+    root: &'a html::Node,
+    sheets: &[model::StylesheetParse],
+) -> Result<StyledNode<'a>, ComputedStyleResolutionError> {
+    let computed_styles = compute_document_styles(root, sheets)?;
+    build_style_tree_from_computed_styles(root, &computed_styles)
+}
+
+/// Builds a styled tree from a precomputed document-style result.
+pub fn build_style_tree_from_computed_styles<'a>(
+    root: &'a html::Node,
+    computed_styles: &ComputedDocumentStyle,
+) -> Result<StyledNode<'a>, ComputedStyleResolutionError> {
+    let index = SelectorDomIndex::from_root(root);
+    let context = SelectorMatchingContext::new(&index);
+    let mut element_ids = index.elements();
+    let mut entries = ComputedElementStyleCursor::new(computed_styles.entries());
+    let styled = build_style_tree_from_computed_entries(
+        root,
+        None,
+        &context,
+        &mut element_ids,
+        &mut entries,
+    )?;
+    if let Some(missing_element) = element_ids.next() {
+        return Err(ComputedStyleResolutionError::MissingComputedElementStyle {
+            element_index: entries.next_index(),
+            element_name: context.element_name(missing_element).to_string(),
+        });
+    }
+    if let Some(extra) = entries.next_entry() {
+        return Err(ComputedStyleResolutionError::ExtraComputedElementStyle {
+            element: extra.selector_element_id(),
+        });
+    }
+
+    Ok(styled)
+}
+
+fn build_style_tree_from_computed_entries<'a, 'b>(
+    node: &'a Node,
+    parent_style: Option<&ComputedStyle>,
+    context: &SelectorMatchingContext<'_, SelectorDomIndex<'_>>,
+    element_ids: &mut crate::selectors::SelectorDomElementIter,
+    entries: &mut ComputedElementStyleCursor<'b>,
+) -> Result<StyledNode<'a>, ComputedStyleResolutionError> {
+    match node {
+        Node::Document { children, .. } => {
+            let base = parent_style.copied().unwrap_or_else(ComputedStyle::initial);
+
+            let mut styled_children = Vec::new();
+            for child in children {
+                styled_children.push(build_style_tree_from_computed_entries(
+                    child,
+                    Some(&base),
+                    context,
+                    element_ids,
+                    entries,
+                )?);
+            }
+
+            Ok(StyledNode {
+                node,
+                node_id: node.id(),
+                style: base,
+                children: styled_children,
+            })
+        }
+
+        Node::Element { name, children, .. } => {
+            let element_index = entries.next_index();
+            let expected_selector_id = element_ids.next().ok_or_else(|| {
+                ComputedStyleResolutionError::MissingComputedElementStyle {
+                    element_index,
+                    element_name: name.to_string(),
+                }
+            })?;
+            let entry = entries.next_entry().ok_or_else(|| {
+                ComputedStyleResolutionError::MissingComputedElementStyle {
+                    element_index,
+                    element_name: name.to_string(),
+                }
+            })?;
+            if entry.selector_element_id() != expected_selector_id {
+                return Err(
+                    ComputedStyleResolutionError::ComputedElementIdentityMismatch {
+                        element_index,
+                        expected: expected_selector_id,
+                        actual: entry.selector_element_id(),
+                    },
+                );
+            }
+
+            let expected_name = context.element_name(expected_selector_id);
+            if expected_name != name.as_ref() || entry.element_name() != expected_name {
+                return Err(ComputedStyleResolutionError::ComputedElementNameMismatch {
+                    element_index,
+                    expected: expected_name.to_string(),
+                    actual: entry.element_name().to_string(),
+                });
+            }
+
+            let computed = *entry.style();
+            let mut styled_children = Vec::new();
+            for child in children {
+                styled_children.push(build_style_tree_from_computed_entries(
+                    child,
+                    Some(&computed),
+                    context,
+                    element_ids,
+                    entries,
+                )?);
+            }
+
+            Ok(StyledNode {
+                node,
+                node_id: node.id(),
+                style: computed,
+                children: styled_children,
+            })
+        }
+
+        Node::Text { .. } | Node::Comment { .. } => {
+            let inherited = parent_style.copied().unwrap_or_else(ComputedStyle::initial);
+
+            Ok(StyledNode {
+                node,
+                node_id: node.id(),
+                style: inherited,
+                children: Vec::new(),
+            })
+        }
+    }
+}
+
+struct ComputedElementStyleCursor<'a> {
+    entries: &'a [ComputedElementStyle],
+    next_index: usize,
+}
+
+impl<'a> ComputedElementStyleCursor<'a> {
+    fn new(entries: &'a [ComputedElementStyle]) -> Self {
+        Self {
+            entries,
+            next_index: 0,
+        }
+    }
+
+    fn next_index(&self) -> usize {
+        self.next_index
+    }
+
+    fn next_entry(&mut self) -> Option<&'a ComputedElementStyle> {
+        let entry = self.entries.get(self.next_index)?;
+        self.next_index += 1;
+        Some(entry)
+    }
+}
+
 /// Compute the final, inherited style for an element, given:
 /// - its specified declarations (currently the legacy `Node.style` bridge)
 /// - an optional parent computed style.
@@ -854,9 +1236,10 @@ pub struct StyledNode<'a> {
 /// - `specified` already reflects cascade (author + inline etc.)
 /// - property names are already lowercase (from `parse_declarations`).
 ///
-/// This remains a compatibility step while Milestone R replaces the
-/// DOM-attached string vector with `css::cascade::ResolvedStyle`. Bridge-phase
-/// HTML/UA default display behavior is still applied later in
+/// This remains a compatibility step for callers that still provide the
+/// DOM-attached string vector. New document-level style work should use
+/// `compute_document_styles(...)` or `build_style_tree_with_stylesheets(...)`.
+/// Bridge-phase HTML/UA default display behavior is still applied later in
 /// `build_style_tree()` when no authored `display` declaration exists.
 pub fn compute_style(
     tag_name: Option<&str>,
@@ -1179,7 +1562,9 @@ mod tests {
     use super::{
         ComputedStyle, ComputedStyleBuildError, ComputedStyleBuilder, ComputedStyleResolutionError,
         ComputedValue, ComputedValueDiscriminant, ComputedValueNormalizationErrorKind,
-        compute_style, compute_style_from_resolved_style, normalize_specified_value,
+        build_style_tree_from_computed_styles, build_style_tree_with_stylesheets,
+        compute_document_styles, compute_document_styles_from_resolved_styles, compute_style,
+        compute_style_from_resolved_style, normalize_specified_value,
     };
     use crate::{
         InitialStyleValue, ParseOptions, PropertyComputedValueKind, PropertyId, Rule,
@@ -1490,6 +1875,193 @@ mod tests {
         assert_eq!(child.width, None);
         assert_eq!(child.box_metrics.padding_left, 0.0);
         assert_eq!(child.display, Display::Block);
+    }
+
+    #[test]
+    fn compute_document_styles_integrates_cascade_inheritance_defaults_and_computation() {
+        let stylesheets = vec![stylesheet(concat!(
+            "section { color: red; font-size: 20px; width: 40px; }",
+            "span { color: nonsense; background-color: #0f0; padding-left: 3px; display: inline-block; }",
+        ))];
+        let dom = element(
+            "section",
+            Vec::new(),
+            vec![element("span", Vec::new(), Vec::new())],
+        );
+
+        let computed = compute_document_styles(&dom, &stylesheets).expect("computed document");
+        assert_eq!(computed.entries().len(), 2);
+        assert_eq!(computed.entries()[0].selector_element_id().get(), 1);
+        assert_eq!(computed.entries()[0].element_name(), "section");
+        assert_eq!(computed.entries()[1].selector_element_id().get(), 2);
+        assert_eq!(computed.entries()[1].element_name(), "span");
+
+        let section = computed.entries()[0].style();
+        assert_eq!(section.color, (255, 0, 0, 255));
+        assert_eq!(section.font_size, Length::Px(20.0));
+        assert_eq!(section.width, Some(Length::Px(40.0)));
+        assert_eq!(section.background_color, (0, 0, 0, 0));
+
+        let span = computed.entries()[1].style();
+        assert_eq!(span.color, section.color);
+        assert_eq!(span.font_size, section.font_size);
+        assert_eq!(span.width, None);
+        assert_eq!(span.background_color, (0, 255, 0, 255));
+        assert_eq!(span.box_metrics.padding_left, 3.0);
+        assert_eq!(span.display, Display::InlineBlock);
+    }
+
+    #[test]
+    fn computed_document_style_snapshot_is_deterministic() {
+        let stylesheets = vec![stylesheet(
+            "div { color: blue; width: 12px; } span { margin-left: -2px; }",
+        )];
+        let dom = element(
+            "div",
+            Vec::new(),
+            vec![element("span", Vec::new(), Vec::new())],
+        );
+
+        let computed = compute_document_styles(&dom, &stylesheets).expect("computed document");
+
+        assert_eq!(
+            computed.to_debug_snapshot(),
+            concat!(
+                "version: 1\n",
+                "computed-document-style\n",
+                "element[0]: selector-id=1 name=\"div\"\n",
+                "  background-color: rgba(0, 0, 0, 0)\n",
+                "  color: rgba(0, 0, 255, 255)\n",
+                "  display: inline\n",
+                "  font-size: 16px\n",
+                "  height: auto\n",
+                "  margin-bottom: 0px\n",
+                "  margin-left: 0px\n",
+                "  margin-right: 0px\n",
+                "  margin-top: 0px\n",
+                "  max-width: none\n",
+                "  min-width: auto\n",
+                "  padding-bottom: 0px\n",
+                "  padding-left: 0px\n",
+                "  padding-right: 0px\n",
+                "  padding-top: 0px\n",
+                "  width: 12px\n",
+                "element[1]: selector-id=2 name=\"span\"\n",
+                "  background-color: rgba(0, 0, 0, 0)\n",
+                "  color: rgba(0, 0, 255, 255)\n",
+                "  display: inline\n",
+                "  font-size: 16px\n",
+                "  height: auto\n",
+                "  margin-bottom: 0px\n",
+                "  margin-left: -2px\n",
+                "  margin-right: 0px\n",
+                "  margin-top: 0px\n",
+                "  max-width: none\n",
+                "  min-width: auto\n",
+                "  padding-bottom: 0px\n",
+                "  padding-left: 0px\n",
+                "  padding-right: 0px\n",
+                "  padding-top: 0px\n",
+                "  width: auto\n",
+            )
+        );
+    }
+
+    #[test]
+    fn compute_document_styles_from_resolved_styles_uses_existing_cascade_output() {
+        let stylesheets = vec![stylesheet("main { color: teal; } p { font-size: 18px; }")];
+        let dom = element(
+            "main",
+            Vec::new(),
+            vec![element("p", Vec::new(), Vec::new())],
+        );
+        let resolved = resolve_document_styles(&dom, &stylesheets);
+
+        let computed =
+            compute_document_styles_from_resolved_styles(&dom, &resolved).expect("computed");
+
+        assert_eq!(computed.entries()[0].style().color, (0, 128, 128, 255));
+        assert_eq!(computed.entries()[1].style().color, (0, 128, 128, 255));
+        assert_eq!(computed.entries()[1].style().font_size, Length::Px(18.0));
+    }
+
+    #[test]
+    fn build_style_tree_with_stylesheets_uses_structured_pipeline_without_mutating_dom() {
+        let stylesheets = vec![stylesheet("div { color: blue; } span { width: 5px; }")];
+        let dom = element(
+            "div",
+            Vec::new(),
+            vec![element("span", Vec::new(), Vec::new())],
+        );
+
+        let styled =
+            build_style_tree_with_stylesheets(&dom, &stylesheets).expect("styled document");
+
+        assert_eq!(styled.style.color, (0, 0, 255, 255));
+        assert_eq!(styled.children[0].style.color, (0, 0, 255, 255));
+        assert_eq!(styled.children[0].style.width, Some(Length::Px(5.0)));
+        let Node::Element {
+            style, children, ..
+        } = &dom
+        else {
+            panic!("expected element");
+        };
+        assert!(style.is_empty());
+        let Node::Element {
+            style: child_style, ..
+        } = &children[0]
+        else {
+            panic!("expected child element");
+        };
+        assert!(child_style.is_empty());
+    }
+
+    #[test]
+    fn build_style_tree_from_computed_styles_rejects_mismatched_document_style() {
+        let source_dom = element("main", Vec::new(), Vec::new());
+        let target_dom = element("section", Vec::new(), Vec::new());
+        let computed = compute_document_styles(&source_dom, &[]).expect("computed document");
+
+        let error = match build_style_tree_from_computed_styles(&target_dom, &computed) {
+            Ok(_) => panic!("mismatched computed document style must be rejected"),
+            Err(error) => error,
+        };
+
+        assert_eq!(
+            error,
+            ComputedStyleResolutionError::ComputedElementNameMismatch {
+                element_index: 0,
+                expected: "section".to_string(),
+                actual: "main".to_string(),
+            }
+        );
+    }
+
+    #[test]
+    fn build_style_tree_from_computed_styles_rejects_selector_identity_mismatch() {
+        let dom = element(
+            "div",
+            Vec::new(),
+            vec![element("span", Vec::new(), Vec::new())],
+        );
+        let mut computed = compute_document_styles(&dom, &[]).expect("computed document");
+        let expected = computed.entries[1].selector_element_id;
+        let actual = computed.entries[0].selector_element_id;
+        computed.entries[1].selector_element_id = actual;
+
+        let error = match build_style_tree_from_computed_styles(&dom, &computed) {
+            Ok(_) => panic!("selector identity mismatch must be rejected"),
+            Err(error) => error,
+        };
+
+        assert_eq!(
+            error,
+            ComputedStyleResolutionError::ComputedElementIdentityMismatch {
+                element_index: 1,
+                expected,
+                actual,
+            }
+        );
     }
 
     #[test]

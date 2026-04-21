@@ -84,7 +84,7 @@ This keeps fallback deterministic and inspectable.
 
 ## Computed Style Assembly
 
-S5 introduces the typed assembly entrypoint:
+S5 introduced the typed per-element assembly entrypoint:
 
 - `compute_style_from_resolved_style(...)`
 - `ComputedStyle::from_resolved_style(...)`
@@ -106,6 +106,10 @@ If an impossible malformed handoff is encountered, assembly returns
 
 S4 normalization failures, such as values outside the current runtime scalar
 range, also return errors. They do not enter `ComputedStyle`.
+
+S6 builds on this by adding document-level `ResolvedDocumentStyle` to
+`ComputedDocumentStyle` assembly and a structured styled-tree construction
+path.
 
 ## Determinism
 
@@ -130,7 +134,7 @@ S5 does not implement:
   selection
 - shorthands, custom property substitution, relative units, percentages, or
   function values
-- retirement of the legacy `compute_style(...)` bridge
+- full retirement of the legacy `compute_style(...)` compatibility bridge
 
 ## Test Surface
 
