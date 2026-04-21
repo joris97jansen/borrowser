@@ -5,7 +5,7 @@ use layout::TextMeasurer;
 pub(crate) use input_core::clamp_to_char_boundary;
 
 pub(crate) fn input_text_padding(style: &ComputedStyle) -> (f32, f32, f32, f32) {
-    let bm = style.box_metrics;
+    let bm = style.box_metrics();
     let pad_l = bm.padding_left.max(4.0);
     let pad_r = bm.padding_right.max(4.0);
     let pad_t = bm.padding_top.max(2.0);

@@ -38,12 +38,12 @@ pub fn compute_replaced_size(
         };
 
     // CSS specified sizes (px-only)
-    let w_spec = px_opt(style.width);
-    let h_spec = px_opt(style.height);
+    let w_spec = px_opt(style.width());
+    let h_spec = px_opt(style.height());
 
     // width constraints (px-only)
-    let min_w = px_opt(style.min_width);
-    let max_w = px_opt(style.max_width);
+    let min_w = px_opt(style.min_width());
+    let max_w = px_opt(style.max_width());
 
     // Ratio: intrinsic ratio if present else fallback 2:1
     let ratio = intrinsic.ratio.unwrap_or(2.0).max(0.0001);
@@ -89,7 +89,13 @@ pub fn compute_replaced_size(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use css::Length;
+    use css::{ComputedValue, Length, PropertyId};
+
+    fn style_with(property: PropertyId, value: ComputedValue) -> ComputedStyle {
+        ComputedStyle::initial()
+            .with_property(property, value)
+            .unwrap_or_else(|error| panic!("failed to build test style: {error}"))
+    }
 
     fn assert_close(a: f32, b: f32) {
         let eps = 0.001;
@@ -108,8 +114,10 @@ mod tests {
 
     #[test]
     fn width_only_computes_height_from_ratio() {
-        let mut style = ComputedStyle::initial();
-        style.width = Some(Length::Px(120.0));
+        let style = style_with(
+            PropertyId::Width,
+            ComputedValue::LengthOrAuto(Some(Length::Px(120.0))),
+        );
 
         let intrinsic = IntrinsicSize::from_w_h(Some(200.0), Some(100.0)); // 2:1
         let (w, h) = compute_replaced_size(&style, intrinsic, None);
@@ -120,8 +128,10 @@ mod tests {
 
     #[test]
     fn height_only_computes_width_from_ratio() {
-        let mut style = ComputedStyle::initial();
-        style.height = Some(Length::Px(25.0));
+        let style = style_with(
+            PropertyId::Height,
+            ComputedValue::LengthOrAuto(Some(Length::Px(25.0))),
+        );
 
         let intrinsic = IntrinsicSize::from_w_h(Some(200.0), Some(100.0)); // 2:1
         let (w, h) = compute_replaced_size(&style, intrinsic, None);
@@ -132,8 +142,10 @@ mod tests {
 
     #[test]
     fn max_width_clamps_and_scales_auto_height() {
-        let mut style = ComputedStyle::initial();
-        style.max_width = Some(Length::Px(80.0));
+        let style = style_with(
+            PropertyId::MaxWidth,
+            ComputedValue::LengthOrNone(Some(Length::Px(80.0))),
+        );
 
         let intrinsic = IntrinsicSize::from_w_h(Some(200.0), Some(100.0)); // 2:1
         let (w, h) = compute_replaced_size(&style, intrinsic, None);

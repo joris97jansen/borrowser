@@ -56,11 +56,11 @@ pub(super) fn paint_input_text<'a>(
     let extra_y = (inner_h - caret_h).max(0.0) * 0.5;
     let text_y = rect.min.y + pad_t + extra_y;
 
-    let (cr, cg, cb, ca) = style.color;
+    let (cr, cg, cb, ca) = style.color();
     let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
     let value_color = text_color;
     let placeholder_color = text_color.gamma_multiply(0.6);
-    let Length::Px(font_px) = style.font_size;
+    let Length::Px(font_px) = style.font_size();
     let font_id = FontId::proportional(font_px);
 
     let is_placeholder = value.is_empty();
@@ -243,11 +243,11 @@ pub(super) fn paint_textarea<'a>(
     let available_text_w = inner_rect.width().max(0.0);
     let available_text_h = inner_rect.height().max(0.0);
 
-    let (cr, cg, cb, ca) = style.color;
+    let (cr, cg, cb, ca) = style.color();
     let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
     let value_color = text_color;
     let placeholder_color = text_color.gamma_multiply(0.6);
-    let Length::Px(font_px) = style.font_size;
+    let Length::Px(font_px) = style.font_size();
     let font_id = FontId::proportional(font_px);
 
     let is_placeholder = value.is_empty();
@@ -386,7 +386,7 @@ fn paint_text_control_container(
     is_focused: bool,
     focus_stroke: Stroke,
 ) {
-    let (r, g, b, a) = style.background_color;
+    let (r, g, b, a) = style.background_color();
     let fill = if a > 0 {
         Color32::from_rgba_unmultiplied(r, g, b, a)
     } else {

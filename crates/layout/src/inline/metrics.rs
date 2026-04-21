@@ -1,4 +1,4 @@
-use css::{ComputedStyle, Length};
+use css::{ComputedStyle, ComputedValue, Length, PropertyId};
 
 use crate::TextMeasurer;
 
@@ -52,7 +52,7 @@ pub(super) fn compute_text_metrics(
     style: &ComputedStyle,
 ) -> FragmentMetrics {
     let line_height = measurer.line_height(style);
-    let font_px = resolve_font_size_px(style.font_size);
+    let font_px = resolve_font_size_px(style.font_size());
     compute_font_metrics_from(font_px, line_height)
 }
 
@@ -64,16 +64,18 @@ pub(super) fn compute_strut_metrics(
     // Each line box has a minimum height derived from the block's font metrics,
     // even if the line contains only replaced content. This matches how browser
     // engines use a "strut" for line box construction.
-    let mut strut_font_px = resolve_font_size_px(block_style.font_size);
+    let mut strut_font_px = resolve_font_size_px(block_style.font_size());
     let mut base_line_height = measurer.line_height(block_style);
 
     // Clamp for extreme cases: keep at least one line visible.
     if base_line_height > available_height && available_height > 0.0 {
         strut_font_px = (available_height / 1.2).max(8.0);
-        let fake_style = ComputedStyle {
-            font_size: Length::Px(strut_font_px),
-            ..*block_style
-        };
+        let fake_style = (*block_style)
+            .with_property(
+                PropertyId::FontSize,
+                ComputedValue::Length(Length::Px(strut_font_px)),
+            )
+            .unwrap_or_else(|error| panic!("failed to build strut style: {error}"));
         base_line_height = measurer.line_height(&fake_style);
     }
 

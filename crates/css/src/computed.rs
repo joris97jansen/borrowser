@@ -13,7 +13,9 @@
 //! `compute_style_from_resolved_style(...)` are the production typed assembly
 //! paths. During the current bridge phase, `compute_style(...)` still consumes
 //! the legacy DOM-attached `(String, String)` declaration vector for
-//! compatibility consumers that have not moved to structured cascade output yet.
+//! compatibility consumers that have not moved to structured cascade output yet,
+//! but supported values still pass through the property-aware specified and
+//! computed-value layers.
 
 use std::{collections::BTreeMap, fmt::Write};
 
@@ -25,9 +27,10 @@ use crate::{
     specified::{
         SpecifiedColor, SpecifiedColorKeyword, SpecifiedColorSyntax, SpecifiedDisplayKeyword,
         SpecifiedLength, SpecifiedLengthOrAuto, SpecifiedLengthOrNone, SpecifiedPropertyValue,
-        SpecifiedValue,
+        SpecifiedValue, parse_specified_value,
     },
-    values::{Display, Length, parse_color, parse_display, parse_length},
+    syntax::ParseOptions,
+    values::{Display, Length},
 };
 
 use html::{Node, internal::Id};
@@ -66,37 +69,37 @@ impl BoxMetrics {
 #[derive(Clone, Debug, Copy, PartialEq)]
 pub struct ComputedStyle {
     /// Inherited by default. Initial: black.
-    pub color: (u8, u8, u8, u8),
+    color: (u8, u8, u8, u8),
 
     /// Not inherited. Initial: transparent.
-    pub background_color: (u8, u8, u8, u8),
+    background_color: (u8, u8, u8, u8),
 
     /// Inherited. We'll treat this as `px` only for now.
     /// Initial: 16px.
-    pub font_size: Length,
+    font_size: Length,
 
     /// Grouped runtime projection of margin/padding properties.
     ///
     /// This is an ergonomic view over individual property entries, not a
     /// second source of truth.
-    pub box_metrics: BoxMetrics,
+    box_metrics: BoxMetrics,
 
     /// CSS `display` value.
     ///
     /// The CSS initial value is `inline`. During the current bridge phase,
     /// `build_style_tree()` may still override that with HTML/UA-ish
     /// per-element defaults when no authored `display` declaration exists.
-    pub display: Display,
+    display: Display,
 
     /// Optional width property. Not inherited. For now we treat this
     /// as `px` only when specified.
-    pub width: Option<Length>,
-    pub height: Option<Length>,
+    width: Option<Length>,
+    height: Option<Length>,
 
     /// `None` represents the current `auto` contract for `min-width`.
-    pub min_width: Option<Length>,
+    min_width: Option<Length>,
     /// `None` represents the current `none` contract for `max-width`.
-    pub max_width: Option<Length>,
+    max_width: Option<Length>,
 }
 
 impl ComputedStyle {
@@ -123,6 +126,78 @@ impl ComputedStyle {
         parent_style: Option<&ComputedStyle>,
     ) -> Result<Self, ComputedStyleResolutionError> {
         compute_style_from_resolved_style(resolved_style, parent_style)
+    }
+
+    /// Returns the computed text color as canonical RGBA channels.
+    pub fn color(&self) -> (u8, u8, u8, u8) {
+        self.color
+    }
+
+    /// Returns the computed background color as canonical RGBA channels.
+    pub fn background_color(&self) -> (u8, u8, u8, u8) {
+        self.background_color
+    }
+
+    /// Returns the computed font size in canonical CSS px.
+    pub fn font_size(&self) -> Length {
+        self.font_size
+    }
+
+    /// Returns grouped box metrics for layout and paint consumers.
+    ///
+    /// The returned grouping is a lossless runtime projection over supported
+    /// margin and padding properties.
+    pub fn box_metrics(&self) -> BoxMetrics {
+        self.box_metrics
+    }
+
+    /// Returns the computed display keyword.
+    pub fn display(&self) -> Display {
+        self.display
+    }
+
+    /// Returns the computed `width`; `None` represents `auto`.
+    pub fn width(&self) -> Option<Length> {
+        self.width
+    }
+
+    /// Returns the computed `height`; `None` represents `auto`.
+    pub fn height(&self) -> Option<Length> {
+        self.height
+    }
+
+    /// Returns the computed `min-width`; `None` represents `auto`.
+    pub fn min_width(&self) -> Option<Length> {
+        self.min_width
+    }
+
+    /// Returns the computed `max-width`; `None` represents `none`.
+    pub fn max_width(&self) -> Option<Length> {
+        self.max_width
+    }
+
+    /// Returns a copy of this style with one computed property replaced.
+    ///
+    /// This keeps ad hoc updates behind the same property-kind and totality
+    /// checks as normal assembly. Runtime code should prefer constructing
+    /// styles through `ComputedStyleBuilder`; this helper exists for focused
+    /// tests and bridge code that need to tweak a single property without
+    /// exposing public field mutation.
+    pub fn with_property(
+        self,
+        property: PropertyId,
+        value: ComputedValue,
+    ) -> Result<Self, ComputedStyleBuildError> {
+        let mut builder = ComputedStyleBuilder::new();
+        for entry in self.entries() {
+            let value = if entry.property() == property {
+                value
+            } else {
+                entry.value()
+            };
+            builder.record(entry.property(), value)?;
+        }
+        builder.build()
     }
 
     /// Returns the computed entry for one supported property.
@@ -1234,10 +1309,11 @@ impl<'a> ComputedElementStyleCursor<'a> {
 ///
 /// Assumptions:
 /// - `specified` already reflects cascade (author + inline etc.)
-/// - property names are already lowercase (from `parse_declarations`).
 ///
 /// This remains a compatibility step for callers that still provide the
-/// DOM-attached string vector. New document-level style work should use
+/// DOM-attached string vector. Supported declarations are still resolved through
+/// the property registry, specified-value parser, computed-value normalizer, and
+/// `ComputedStyle` invariant gate. New document-level style work should use
 /// `compute_document_styles(...)` or `build_style_tree_with_stylesheets(...)`.
 /// Bridge-phase HTML/UA default display behavior is still applied later in
 /// `build_style_tree()` when no authored `display` declaration exists.
@@ -1246,161 +1322,129 @@ pub fn compute_style(
     specified: &[(String, String)],
     parent: Option<&ComputedStyle>,
 ) -> ComputedStyle {
-    // 1. Start from initial values
-    let mut result = ComputedStyle::initial();
+    let mut result = legacy_base_computed_style(parent);
+    let mut has_valid_color_decl = false;
 
-    // 2. Apply inheritance (per property)
-    if let Some(p) = parent {
-        // inherited:
-        result.color = p.color;
-        result.font_size = p.font_size;
-
-        // NOT inherited:
-        // result.background_color stays as initial (transparent)
-    }
-
-    let mut has_color_decl = false;
-
-    // 3. Apply specified declarations (override inherited/initial)
     for (name, value) in specified {
-        let name = name.as_str();
-        let value = value.as_str();
+        let Some((property, value)) = legacy_computed_declaration(name, value) else {
+            continue;
+        };
 
-        match name {
-            "color" => {
-                has_color_decl = true;
-                if let Some(rgba) = parse_color(value) {
-                    result.color = rgba;
-                }
-            }
-            "background-color" => {
-                if let Some(rgba) = parse_color(value) {
-                    result.background_color = rgba;
-                }
-            }
-            "font-size" => {
-                if let Some(len) = parse_length(value) {
-                    result.font_size = len;
-                }
-            }
-
-            // --- Margins (non-inherited, px only) ---
-            "margin-top" => {
-                if let Some(len) = parse_length(value) {
-                    let Length::Px(px) = len;
-                    result.box_metrics.margin_top = px;
-                }
-            }
-            "margin-right" => {
-                if let Some(len) = parse_length(value) {
-                    let Length::Px(px) = len;
-                    result.box_metrics.margin_right = px;
-                }
-            }
-            "margin-bottom" => {
-                if let Some(len) = parse_length(value) {
-                    let Length::Px(px) = len;
-                    result.box_metrics.margin_bottom = px;
-                }
-            }
-            "margin-left" => {
-                if let Some(len) = parse_length(value) {
-                    let Length::Px(px) = len;
-                    result.box_metrics.margin_left = px;
-                }
-            }
-
-            // --- Padding (non-inherited, px only) ---
-            "padding-top" => {
-                if let Some(len) = parse_length(value) {
-                    let Length::Px(px) = len;
-                    result.box_metrics.padding_top = px;
-                }
-            }
-            "padding-right" => {
-                if let Some(len) = parse_length(value) {
-                    let Length::Px(px) = len;
-                    result.box_metrics.padding_right = px;
-                }
-            }
-            "padding-bottom" => {
-                if let Some(len) = parse_length(value) {
-                    let Length::Px(px) = len;
-                    result.box_metrics.padding_bottom = px;
-                }
-            }
-            "padding-left" => {
-                if let Some(len) = parse_length(value) {
-                    let Length::Px(px) = len;
-                    result.box_metrics.padding_left = px;
-                }
-            }
-
-            "display" => {
-                if let Some(d) = parse_display(value) {
-                    result.display = d;
-                }
-                // unknown values: parse_display returns None → silently ignored
-            }
-            "width" => {
-                let v = value.trim().to_ascii_lowercase();
-                if v == "auto" {
-                    result.width = None;
-                } else if let Some(px) = parse_px(&v).filter(|px| *px >= 0.0) {
-                    result.width = Some(Length::Px(px));
-                }
-            }
-            "height" => {
-                let v = value.trim().to_ascii_lowercase();
-                if v == "auto" {
-                    result.height = None;
-                } else if let Some(px) = parse_px(&v).filter(|px| *px >= 0.0) {
-                    result.height = Some(Length::Px(px));
-                }
-            }
-            "min-width" => {
-                let v = value.trim().to_ascii_lowercase();
-                if v == "auto" {
-                    result.min_width = None;
-                } else if let Some(px) = parse_px(&v).filter(|px| *px >= 0.0) {
-                    result.min_width = Some(Length::Px(px));
-                }
-            }
-
-            "max-width" => {
-                let v = value.trim().to_ascii_lowercase();
-                if v == "none" {
-                    result.max_width = None;
-                } else if let Some(px) = parse_px(&v).filter(|px| *px >= 0.0) {
-                    result.max_width = Some(Length::Px(px));
-                }
-            }
-            _ => {
-                // unsupported property → ignored (CSS spec: unknown declarations are ignored)
-            }
+        if property == PropertyId::Color {
+            has_valid_color_decl = true;
         }
+        result = replace_computed_property(result, property, value);
     }
 
-    if let Some(tag) = tag_name {
-        if tag.eq_ignore_ascii_case("a") && !has_color_decl {
-            // UA-ish default link blue
-            result.color = (0, 0, 238, 255);
-        }
-        if tag.eq_ignore_ascii_case("button") {
-            // UA-ish paint defaults (safe even if author doesn't style it)
-            if result.background_color.3 == 0 {
-                result.background_color = (233, 233, 233, 255);
-            }
+    apply_legacy_ua_defaults(tag_name, result, has_valid_color_decl)
+}
 
-            // UA-ish padding floors (author padding still wins because we only raise minimums)
-            result.box_metrics.padding_left = result.box_metrics.padding_left.max(8.0);
-            result.box_metrics.padding_right = result.box_metrics.padding_right.max(8.0);
-            result.box_metrics.padding_top = result.box_metrics.padding_top.max(4.0);
-            result.box_metrics.padding_bottom = result.box_metrics.padding_bottom.max(4.0);
-        }
+fn legacy_base_computed_style(parent: Option<&ComputedStyle>) -> ComputedStyle {
+    let mut builder = ComputedStyleBuilder::new();
+
+    for property in property_registry().ids() {
+        let value = match (property.metadata().inheritance, parent) {
+            (PropertyInheritance::Inherited, Some(parent)) => parent.get(property).value(),
+            _ => ComputedValue::from_initial(property),
+        };
+        builder.record(property, value).unwrap_or_else(|error| {
+            panic!(
+                "legacy base computed-style assembly failed for '{}': {error}",
+                property.name()
+            )
+        });
+    }
+
+    builder
+        .build()
+        .expect("legacy base computed-style assembly must be total over supported properties")
+}
+
+fn legacy_computed_declaration(name: &str, value: &str) -> Option<(PropertyId, ComputedValue)> {
+    let name = name.trim().to_ascii_lowercase();
+    let property = property_registry().lookup_id(&name)?;
+    let declaration_value = legacy_declaration_value(property, value)?;
+    let specified = parse_specified_value(property, &declaration_value).ok()?;
+    let computed = normalize_specified_value(&specified).ok()?;
+    Some((property, computed))
+}
+
+fn legacy_declaration_value(property: PropertyId, value: &str) -> Option<model::DeclarationValue> {
+    // Bridge-only parser adapter: this routes DOM-attached `(property, value)`
+    // pairs through the real model parser so the legacy path does not grow a
+    // second CSS value parser. It is intentionally heavier than the final
+    // resolved-style pipeline and should disappear with the compatibility
+    // bridge, not become the long-term declaration-value entrypoint.
+    let source = format!("div {{ {}: {}; }}", property.name(), value);
+    let parse = model::parse_stylesheet_with_options(&source, &ParseOptions::stylesheet());
+    let model::Rule::Style(rule) = parse.stylesheet.rules.into_iter().next()? else {
+        return None;
+    };
+    let declaration = rule.declarations.declarations.into_iter().next()?;
+    if declaration.name.text.as_deref()? != property.name() {
+        return None;
+    }
+    Some(declaration.value)
+}
+
+fn replace_computed_property(
+    style: ComputedStyle,
+    property: PropertyId,
+    value: ComputedValue,
+) -> ComputedStyle {
+    style
+        .with_property(property, value)
+        .unwrap_or_else(|error| {
+            panic!(
+                "computed-style replacement failed for '{}': {error}",
+                property.name()
+            )
+        })
+}
+
+fn apply_legacy_ua_defaults(
+    tag_name: Option<&str>,
+    style: ComputedStyle,
+    has_valid_color_decl: bool,
+) -> ComputedStyle {
+    let Some(tag) = tag_name else {
+        return style;
     };
 
-    result
+    let mut style = style;
+    if tag.eq_ignore_ascii_case("a") && !has_valid_color_decl {
+        style = replace_computed_property(
+            style,
+            PropertyId::Color,
+            ComputedValue::Color((0, 0, 238, 255)),
+        );
+    }
+
+    if tag.eq_ignore_ascii_case("button") {
+        if style.background_color().3 == 0 {
+            style = replace_computed_property(
+                style,
+                PropertyId::BackgroundColor,
+                ComputedValue::Color((233, 233, 233, 255)),
+            );
+        }
+
+        let box_metrics = style.box_metrics();
+        for (property, px) in [
+            (PropertyId::PaddingLeft, box_metrics.padding_left.max(8.0)),
+            (PropertyId::PaddingRight, box_metrics.padding_right.max(8.0)),
+            (PropertyId::PaddingTop, box_metrics.padding_top.max(4.0)),
+            (
+                PropertyId::PaddingBottom,
+                box_metrics.padding_bottom.max(4.0),
+            ),
+        ] {
+            style =
+                replace_computed_property(style, property, ComputedValue::Length(Length::Px(px)));
+        }
+    }
+
+    style
 }
 
 fn default_display_for(tag: &str) -> Display {
@@ -1436,15 +1480,6 @@ fn default_display_for(tag: &str) -> Display {
     }
     // Everything else we treat as block for now
     Display::Block
-}
-
-fn parse_px(value: &str) -> Option<f32> {
-    let v = value.trim();
-    if let Some(stripped) = v.strip_suffix("px") {
-        stripped.trim().parse::<f32>().ok()
-    } else {
-        None
-    }
 }
 
 fn display_keyword(display: Display) -> &'static str {
@@ -1515,10 +1550,15 @@ pub fn build_style_tree<'a>(
             children,
             ..
         } => {
-            // 1) Check if there is an explicit `display:` declaration
-            let has_display_decl = style
-                .iter()
-                .any(|(prop, _)| prop.eq_ignore_ascii_case("display"));
+            // 1) Check if there is a valid explicit `display:` declaration.
+            // Invalid declarations are ignored, so they must not suppress the
+            // temporary HTML/UA default-display bridge.
+            let has_display_decl = style.iter().any(|(name, value)| {
+                matches!(
+                    legacy_computed_declaration(name, value),
+                    Some((PropertyId::Display, _))
+                )
+            });
 
             // 2) Compute the base style (inherits, applies declarations, etc.)
             let mut computed = compute_style(Some(name), style, parent_style);
@@ -1526,7 +1566,11 @@ pub fn build_style_tree<'a>(
             // 3) If no explicit `display:` was specified, apply the temporary
             //    HTML/UA default-display bridge for this element type.
             if !has_display_decl {
-                computed.display = default_display_for(name);
+                computed = replace_computed_property(
+                    computed,
+                    PropertyId::Display,
+                    ComputedValue::Display(default_display_for(name)),
+                );
             }
 
             // 4) Recurse into children with this as the parent computed style
@@ -1562,7 +1606,7 @@ mod tests {
     use super::{
         ComputedStyle, ComputedStyleBuildError, ComputedStyleBuilder, ComputedStyleResolutionError,
         ComputedValue, ComputedValueDiscriminant, ComputedValueNormalizationErrorKind,
-        build_style_tree_from_computed_styles, build_style_tree_with_stylesheets,
+        build_style_tree, build_style_tree_from_computed_styles, build_style_tree_with_stylesheets,
         compute_document_styles, compute_document_styles_from_resolved_styles, compute_style,
         compute_style_from_resolved_style, normalize_specified_value,
     };
@@ -1626,7 +1670,10 @@ mod tests {
 
     #[test]
     fn initial_display_matches_css_initial_value_while_bridge_applies_element_defaults_later() {
-        assert!(matches!(ComputedStyle::initial().display, Display::Inline));
+        assert!(matches!(
+            ComputedStyle::initial().display(),
+            Display::Inline
+        ));
     }
 
     #[test]
@@ -1639,7 +1686,7 @@ mod tests {
             ],
             None,
         );
-        assert!(style.min_width.is_none());
+        assert!(style.min_width().is_none());
 
         let style = compute_style(
             Some("div"),
@@ -1649,7 +1696,7 @@ mod tests {
             ],
             None,
         );
-        assert!(matches!(style.min_width, Some(Length::Px(px)) if px == 10.0));
+        assert!(matches!(style.min_width(), Some(Length::Px(px)) if px == 10.0));
     }
 
     #[test]
@@ -1662,7 +1709,7 @@ mod tests {
             ],
             None,
         );
-        assert!(style.max_width.is_none());
+        assert!(style.max_width().is_none());
 
         let style = compute_style(
             Some("div"),
@@ -1672,7 +1719,38 @@ mod tests {
             ],
             None,
         );
-        assert!(matches!(style.max_width, Some(Length::Px(px)) if px == 10.0));
+        assert!(matches!(style.max_width(), Some(Length::Px(px)) if px == 10.0));
+    }
+
+    #[test]
+    fn legacy_compute_style_uses_property_pipeline_for_invalid_values() {
+        let style = compute_style(
+            Some("div"),
+            &[
+                ("padding-left".to_string(), "8px".to_string()),
+                ("padding-left".to_string(), "-4px".to_string()),
+                ("margin-left".to_string(), "-3px".to_string()),
+                ("width".to_string(), "-1px".to_string()),
+            ],
+            None,
+        );
+
+        assert_eq!(style.box_metrics().padding_left, 8.0);
+        assert_eq!(style.box_metrics().margin_left, -3.0);
+        assert_eq!(style.width(), None);
+    }
+
+    #[test]
+    fn legacy_compute_style_ignores_invalid_link_color_for_ua_fallback() {
+        let invalid = compute_style(
+            Some("a"),
+            &[("color".to_string(), "nonsense".to_string())],
+            None,
+        );
+        assert_eq!(invalid.color(), (0, 0, 238, 255));
+
+        let valid = compute_style(Some("a"), &[("color".to_string(), "red".to_string())], None);
+        assert_eq!(valid.color(), (255, 0, 0, 255));
     }
 
     #[test]
@@ -1869,12 +1947,12 @@ mod tests {
         let child = compute_style_from_resolved_style(resolved.entries()[1].style(), Some(&parent))
             .expect("child computed style");
 
-        assert_eq!(parent.color, (0, 255, 0, 255));
-        assert_eq!(parent.width, Some(Length::Px(40.0)));
-        assert_eq!(child.color, parent.color);
-        assert_eq!(child.width, None);
-        assert_eq!(child.box_metrics.padding_left, 0.0);
-        assert_eq!(child.display, Display::Block);
+        assert_eq!(parent.color(), (0, 255, 0, 255));
+        assert_eq!(parent.width(), Some(Length::Px(40.0)));
+        assert_eq!(child.color(), parent.color());
+        assert_eq!(child.width(), None);
+        assert_eq!(child.box_metrics().padding_left, 0.0);
+        assert_eq!(child.display(), Display::Block);
     }
 
     #[test]
@@ -1897,18 +1975,18 @@ mod tests {
         assert_eq!(computed.entries()[1].element_name(), "span");
 
         let section = computed.entries()[0].style();
-        assert_eq!(section.color, (255, 0, 0, 255));
-        assert_eq!(section.font_size, Length::Px(20.0));
-        assert_eq!(section.width, Some(Length::Px(40.0)));
-        assert_eq!(section.background_color, (0, 0, 0, 0));
+        assert_eq!(section.color(), (255, 0, 0, 255));
+        assert_eq!(section.font_size(), Length::Px(20.0));
+        assert_eq!(section.width(), Some(Length::Px(40.0)));
+        assert_eq!(section.background_color(), (0, 0, 0, 0));
 
         let span = computed.entries()[1].style();
-        assert_eq!(span.color, section.color);
-        assert_eq!(span.font_size, section.font_size);
-        assert_eq!(span.width, None);
-        assert_eq!(span.background_color, (0, 255, 0, 255));
-        assert_eq!(span.box_metrics.padding_left, 3.0);
-        assert_eq!(span.display, Display::InlineBlock);
+        assert_eq!(span.color(), section.color());
+        assert_eq!(span.font_size(), section.font_size());
+        assert_eq!(span.width(), None);
+        assert_eq!(span.background_color(), (0, 255, 0, 255));
+        assert_eq!(span.box_metrics().padding_left, 3.0);
+        assert_eq!(span.display(), Display::InlineBlock);
     }
 
     #[test]
@@ -1980,9 +2058,9 @@ mod tests {
         let computed =
             compute_document_styles_from_resolved_styles(&dom, &resolved).expect("computed");
 
-        assert_eq!(computed.entries()[0].style().color, (0, 128, 128, 255));
-        assert_eq!(computed.entries()[1].style().color, (0, 128, 128, 255));
-        assert_eq!(computed.entries()[1].style().font_size, Length::Px(18.0));
+        assert_eq!(computed.entries()[0].style().color(), (0, 128, 128, 255));
+        assert_eq!(computed.entries()[1].style().color(), (0, 128, 128, 255));
+        assert_eq!(computed.entries()[1].style().font_size(), Length::Px(18.0));
     }
 
     #[test]
@@ -1997,9 +2075,9 @@ mod tests {
         let styled =
             build_style_tree_with_stylesheets(&dom, &stylesheets).expect("styled document");
 
-        assert_eq!(styled.style.color, (0, 0, 255, 255));
-        assert_eq!(styled.children[0].style.color, (0, 0, 255, 255));
-        assert_eq!(styled.children[0].style.width, Some(Length::Px(5.0)));
+        assert_eq!(styled.style.color(), (0, 0, 255, 255));
+        assert_eq!(styled.children[0].style.color(), (0, 0, 255, 255));
+        assert_eq!(styled.children[0].style.width(), Some(Length::Px(5.0)));
         let Node::Element {
             style, children, ..
         } = &dom
@@ -2014,6 +2092,21 @@ mod tests {
             panic!("expected child element");
         };
         assert!(child_style.is_empty());
+    }
+
+    #[test]
+    fn legacy_build_style_tree_ignores_invalid_display_for_default_bridge() {
+        let dom = Node::Element {
+            id: Id::INVALID,
+            name: Arc::from("div"),
+            attributes: Vec::new(),
+            style: vec![("display".to_string(), "nonsense".to_string())],
+            children: Vec::new(),
+        };
+
+        let styled = build_style_tree(&dom, None);
+
+        assert_eq!(styled.style.display(), Display::Block);
     }
 
     #[test]
@@ -2167,12 +2260,152 @@ mod tests {
 
         let style = builder.build().expect("computed style");
 
-        assert_eq!(style.color, (12, 34, 56, 255));
-        assert_eq!(style.box_metrics.margin_top, 18.0);
-        assert_eq!(style.width, Some(Length::Px(320.0)));
+        assert_eq!(style.color(), (12, 34, 56, 255));
+        assert_eq!(style.box_metrics().margin_top, 18.0);
+        assert_eq!(style.width(), Some(Length::Px(320.0)));
         assert_eq!(
             style.get(PropertyId::Width).value(),
             ComputedValue::LengthOrAuto(Some(Length::Px(320.0)))
+        );
+    }
+
+    #[test]
+    fn computed_style_accessors_match_property_entries() {
+        let mut builder = builder_with_initials_except(&[
+            PropertyId::BackgroundColor,
+            PropertyId::Color,
+            PropertyId::Display,
+            PropertyId::FontSize,
+            PropertyId::Height,
+            PropertyId::MarginTop,
+            PropertyId::MaxWidth,
+            PropertyId::MinWidth,
+            PropertyId::PaddingLeft,
+            PropertyId::Width,
+        ]);
+        builder
+            .record(
+                PropertyId::BackgroundColor,
+                ComputedValue::Color((3, 4, 5, 6)),
+            )
+            .expect("background-color");
+        builder
+            .record(PropertyId::Color, ComputedValue::Color((7, 8, 9, 255)))
+            .expect("color");
+        builder
+            .record(PropertyId::Display, ComputedValue::Display(Display::Block))
+            .expect("display");
+        builder
+            .record(
+                PropertyId::FontSize,
+                ComputedValue::Length(Length::Px(22.0)),
+            )
+            .expect("font-size");
+        builder
+            .record(
+                PropertyId::Height,
+                ComputedValue::LengthOrAuto(Some(Length::Px(30.0))),
+            )
+            .expect("height");
+        builder
+            .record(
+                PropertyId::MarginTop,
+                ComputedValue::Length(Length::Px(4.0)),
+            )
+            .expect("margin-top");
+        builder
+            .record(
+                PropertyId::MaxWidth,
+                ComputedValue::LengthOrNone(Some(Length::Px(500.0))),
+            )
+            .expect("max-width");
+        builder
+            .record(PropertyId::MinWidth, ComputedValue::LengthOrAuto(None))
+            .expect("min-width");
+        builder
+            .record(
+                PropertyId::PaddingLeft,
+                ComputedValue::Length(Length::Px(6.0)),
+            )
+            .expect("padding-left");
+        builder
+            .record(
+                PropertyId::Width,
+                ComputedValue::LengthOrAuto(Some(Length::Px(300.0))),
+            )
+            .expect("width");
+
+        let style = builder.build().expect("computed style");
+
+        assert_eq!(
+            style.get(PropertyId::BackgroundColor).value(),
+            ComputedValue::Color(style.background_color())
+        );
+        assert_eq!(
+            style.get(PropertyId::Color).value(),
+            ComputedValue::Color(style.color())
+        );
+        assert_eq!(
+            style.get(PropertyId::Display).value(),
+            ComputedValue::Display(style.display())
+        );
+        assert_eq!(
+            style.get(PropertyId::FontSize).value(),
+            ComputedValue::Length(style.font_size())
+        );
+        assert_eq!(
+            style.get(PropertyId::Height).value(),
+            ComputedValue::LengthOrAuto(style.height())
+        );
+        assert_eq!(
+            style.get(PropertyId::MarginTop).value(),
+            ComputedValue::Length(Length::Px(style.box_metrics().margin_top))
+        );
+        assert_eq!(
+            style.get(PropertyId::MaxWidth).value(),
+            ComputedValue::LengthOrNone(style.max_width())
+        );
+        assert_eq!(
+            style.get(PropertyId::MinWidth).value(),
+            ComputedValue::LengthOrAuto(style.min_width())
+        );
+        assert_eq!(
+            style.get(PropertyId::PaddingLeft).value(),
+            ComputedValue::Length(Length::Px(style.box_metrics().padding_left))
+        );
+        assert_eq!(
+            style.get(PropertyId::Width).value(),
+            ComputedValue::LengthOrAuto(style.width())
+        );
+    }
+
+    #[test]
+    fn computed_style_with_property_preserves_builder_invariants() {
+        let style = ComputedStyle::initial()
+            .with_property(
+                PropertyId::Color,
+                ComputedValue::Color((120, 130, 140, 255)),
+            )
+            .expect("style update");
+
+        assert_eq!(style.color(), (120, 130, 140, 255));
+        assert_eq!(
+            style.background_color(),
+            ComputedStyle::initial().background_color()
+        );
+        assert_eq!(style.entries().count(), property_registry().ids().count());
+
+        let error = ComputedStyle::initial()
+            .with_property(PropertyId::FontSize, ComputedValue::Color((0, 0, 0, 255)))
+            .expect_err("value-kind mismatch must still be rejected");
+
+        assert_eq!(
+            error,
+            ComputedStyleBuildError::ValueKindMismatch {
+                property: PropertyId::FontSize,
+                expected: PropertyComputedValueKind::AbsoluteLength,
+                actual: ComputedValueDiscriminant::Color,
+            }
         );
     }
 

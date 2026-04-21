@@ -27,7 +27,7 @@ impl<'m, 'a> InlineLayoutEngine<'m, 'a> {
         }
 
         let metrics = inline_block_baseline_metrics_placeholder_bottom_edge(height);
-        let bm = style.box_metrics;
+        let bm = style.box_metrics();
         let (advance_rect, paint_rect) = split_margin_and_paint_rect(
             Pos {
                 x: self.cursor_x,
@@ -81,7 +81,7 @@ impl<'m, 'a> InlineLayoutEngine<'m, 'a> {
         }
 
         let metrics = replaced_baseline_metrics_bottom_edge(height);
-        let bm = style.box_metrics;
+        let bm = style.box_metrics();
         let (advance_rect, paint_rect) = split_margin_and_paint_rect(
             Pos {
                 x: self.cursor_x,

@@ -60,14 +60,14 @@ fn paint_layout_box<'a>(
     );
 
     // background
-    let (r, g, b, a) = layout.style.background_color;
+    let (r, g, b, a) = layout.style.background_color();
     if a > 0 {
         painter.rect_filled(rect, 0.0, Color32::from_rgba_unmultiplied(r, g, b, a));
     }
 
     // 1) List marker (for display:list-item), if any.
     //    This does not affect layout; it's purely visual.
-    if matches!(layout.style.display, Display::ListItem) {
+    if matches!(layout.style.display(), Display::ListItem) {
         paint_list_marker(layout, painter, origin, measurer);
     }
 
@@ -106,15 +106,15 @@ fn paint_list_marker<'a>(
 
     // Use the list item's text style for the marker.
     let style = layout.style;
-    let (cr, cg, cb, ca) = style.color;
+    let (cr, cg, cb, ca) = style.color();
     let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
 
-    let Length::Px(font_px) = style.font_size;
+    let Length::Px(font_px) = style.font_size();
     let font_id = FontId::proportional(font_px);
 
     // Position: slightly to the left of the content box (padding-left),
     // aligned with the top of the content. This doesn't change layout height.
-    let bm = layout.style.box_metrics;
+    let bm = layout.style.box_metrics();
 
     // Content box x/y in layout coordinates (same as inline content start).
     let content_x = layout.rect.x + bm.padding_left;

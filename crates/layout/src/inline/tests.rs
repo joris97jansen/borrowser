@@ -3,7 +3,7 @@ use super::options::INLINE_PADDING;
 use super::tokens::{InlineContext, InlineToken};
 use super::types::InlineFragment;
 use crate::{Rectangle, ReplacedKind, TextMeasurer};
-use css::{ComputedStyle, Length};
+use css::{ComputedStyle, ComputedValue, Length, PropertyId};
 use html::{Node, internal::Id};
 use std::sync::Arc;
 
@@ -15,7 +15,7 @@ impl TextMeasurer for TestMeasurer {
     }
 
     fn line_height(&self, style: &ComputedStyle) -> f32 {
-        let Length::Px(px) = style.font_size;
+        let Length::Px(px) = style.font_size();
         px * 1.2
     }
 }
@@ -32,7 +32,7 @@ impl TextMeasurer for SpaceWidthMeasurer {
     }
 
     fn line_height(&self, style: &ComputedStyle) -> f32 {
-        let Length::Px(px) = style.font_size;
+        let Length::Px(px) = style.font_size();
         px * 1.2
     }
 }
@@ -45,13 +45,19 @@ fn assert_approx_eq(got: f32, want: f32) {
     );
 }
 
+fn style_with(property: PropertyId, value: ComputedValue) -> ComputedStyle {
+    ComputedStyle::initial()
+        .with_property(property, value)
+        .unwrap_or_else(|error| panic!("failed to build test style: {error}"))
+}
+
 #[test]
 fn baseline_aligns_replaced_bottom_to_line_baseline() {
     let measurer = TestMeasurer;
-    let style = ComputedStyle {
-        font_size: Length::Px(10.0),
-        ..ComputedStyle::initial()
-    };
+    let style = style_with(
+        PropertyId::FontSize,
+        ComputedValue::Length(Length::Px(10.0)),
+    );
 
     let rect = Rectangle {
         x: 0.0,
@@ -137,10 +143,10 @@ fn baseline_aligns_replaced_bottom_to_line_baseline() {
 #[test]
 fn line_descent_includes_text_descent_with_tall_replaced() {
     let measurer = TestMeasurer;
-    let style = ComputedStyle {
-        font_size: Length::Px(10.0),
-        ..ComputedStyle::initial()
-    };
+    let style = style_with(
+        PropertyId::FontSize,
+        ComputedValue::Length(Length::Px(10.0)),
+    );
 
     let rect = Rectangle {
         x: 0.0,
@@ -180,10 +186,10 @@ fn line_descent_includes_text_descent_with_tall_replaced() {
 #[test]
 fn textarea_breaks_long_unbroken_runs_with_source_ranges() {
     let measurer = TestMeasurer;
-    let style = ComputedStyle {
-        font_size: Length::Px(10.0),
-        ..ComputedStyle::initial()
-    };
+    let style = style_with(
+        PropertyId::FontSize,
+        ComputedValue::Length(Length::Px(10.0)),
+    );
 
     // Each char is 10px wide; width=25px -> 2 chars per line.
     let rect = Rectangle {
@@ -221,10 +227,10 @@ fn textarea_breaks_long_unbroken_runs_with_source_ranges() {
 #[test]
 fn baseline_for_text_only_line_matches_strut() {
     let measurer = TestMeasurer;
-    let style = ComputedStyle {
-        font_size: Length::Px(10.0),
-        ..ComputedStyle::initial()
-    };
+    let style = style_with(
+        PropertyId::FontSize,
+        ComputedValue::Length(Length::Px(10.0)),
+    );
 
     let rect = Rectangle {
         x: 0.0,
@@ -266,10 +272,10 @@ fn baseline_for_text_only_line_matches_strut() {
 #[test]
 fn space_measurement_matches_rendered_space() {
     let measurer = SpaceWidthMeasurer;
-    let style = ComputedStyle {
-        font_size: Length::Px(10.0),
-        ..ComputedStyle::initial()
-    };
+    let style = style_with(
+        PropertyId::FontSize,
+        ComputedValue::Length(Length::Px(10.0)),
+    );
 
     let rect = Rectangle {
         x: 0.0,

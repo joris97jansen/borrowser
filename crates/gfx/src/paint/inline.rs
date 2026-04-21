@@ -23,7 +23,7 @@ pub(super) fn paint_inline_content<'a>(layout: &LayoutBox<'a>, ctx: PaintCtx<'_>
             // Inline elements do NOT establish their own block-level
             // inline formatting context; their text is handled by the
             // nearest block ancestor.
-            if matches!(layout.style.display, Display::Inline) {
+            if matches!(layout.style.display(), Display::Inline) {
                 return;
             }
         }
@@ -68,10 +68,10 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
         for frag in &line.fragments {
             match &frag.kind {
                 InlineFragment::Text { text, style, .. } => {
-                    let (cr, cg, cb, ca) = style.color;
+                    let (cr, cg, cb, ca) = style.color();
                     let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
 
-                    let Length::Px(font_px) = style.font_size;
+                    let Length::Px(font_px) = style.font_size();
                     let font_id = FontId::proportional(font_px);
 
                     let paint_rect = frag.paint_rect.rect();
@@ -120,7 +120,7 @@ fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
                         );
                     } else {
                         // Fallback: simple placeholder rectangle using the box style.
-                        let (r, g, b, a) = style.background_color;
+                        let (r, g, b, a) = style.background_color();
                         let color = if a > 0 {
                             Color32::from_rgba_unmultiplied(r, g, b, a)
                         } else {
