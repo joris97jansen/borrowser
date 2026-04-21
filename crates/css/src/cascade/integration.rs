@@ -255,7 +255,6 @@ fn declaration_input_from_model(
     } else {
         CascadeImportance::Normal
     };
-    let value = CascadeSpecifiedValue::from_declaration_value(&declaration.value);
 
     match declaration.name.kind {
         PropertyNameKind::Standard => {
@@ -264,24 +263,34 @@ fn declaration_input_from_model(
                     source,
                     declaration_order,
                     importance,
-                    value,
+                    CascadeSpecifiedValue::preserved(&declaration.value),
                 );
             };
             if let Some(property) = property_registry().lookup_id(property_name) {
-                CascadeDeclarationInput::supported(
-                    source,
-                    declaration_order,
-                    importance,
-                    property,
-                    value,
-                )
+                match CascadeSpecifiedValue::parse(property, &declaration.value) {
+                    Ok(value) => CascadeDeclarationInput::supported(
+                        source,
+                        declaration_order,
+                        importance,
+                        property,
+                        value,
+                    ),
+                    Err(error) => CascadeDeclarationInput::invalid_value(
+                        source,
+                        declaration_order,
+                        importance,
+                        property,
+                        error,
+                        CascadeSpecifiedValue::preserved(&declaration.value),
+                    ),
+                }
             } else {
                 CascadeDeclarationInput::unsupported_property(
                     source,
                     declaration_order,
                     importance,
                     property_name,
-                    value,
+                    CascadeSpecifiedValue::preserved(&declaration.value),
                 )
             }
         }
@@ -291,7 +300,7 @@ fn declaration_input_from_model(
                     source,
                     declaration_order,
                     importance,
-                    value,
+                    CascadeSpecifiedValue::preserved(&declaration.value),
                 );
             };
             CascadeDeclarationInput::custom_property(
@@ -299,14 +308,14 @@ fn declaration_input_from_model(
                 declaration_order,
                 importance,
                 property_name,
-                value,
+                CascadeSpecifiedValue::preserved(&declaration.value),
             )
         }
         PropertyNameKind::Invalid => CascadeDeclarationInput::invalid_property_name(
             source,
             declaration_order,
             importance,
-            value,
+            CascadeSpecifiedValue::preserved(&declaration.value),
         ),
     }
 }

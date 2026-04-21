@@ -52,6 +52,10 @@ Each registration owns:
 `PropertyId::metadata()` now delegate into the registry rather than owning
 separate lookup logic.
 
+`PropertyMetadata` is also the owner for value-range facts needed by
+property-aware parsers, such as the length sign policy for properties with
+length branches.
+
 ## Lookup Contract
 
 Name lookup is:
@@ -104,11 +108,13 @@ S2 adds and relies on these tests:
 These tests are part of the product contract for supported-property mapping and
 registry behavior.
 
-## Out Of Scope
+## S2 Out Of Scope
 
-S2 does not yet implement:
+S2 itself did not implement:
 
 - typed specified-value parsers
 - `ResolvedStyle` to typed specified-value conversion
 - full replacement of the legacy string-driven computed-style bridge
 - broader property coverage beyond the current supported subset
+
+Typed specified-value parsing is introduced by S3.

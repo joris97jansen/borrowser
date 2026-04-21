@@ -102,7 +102,7 @@ Normative rules:
   subset is explicit through `PropertyId::from_name(...)`
 - `PropertyId` is the stable property identity and `PropertyId::metadata()` is
   the normative source for inheritance, initial/default, specified-value-kind,
-  computed-value-kind, and invalid-value facts
+  computed-value-kind, invalid-value, and length-range facts
 - downstream code must not re-encode those facts in separate match tables
 - the cascade contract keeps its established `CascadePropertyId` surface as an
   alias over the shared property table; it is not a second property universe
@@ -133,13 +133,12 @@ Current supported properties:
 Borrowser now has an explicit staged contract:
 
 1. authored parsed value
-   - represented today by `DeclarationValue` and `CascadeSpecifiedValue`
+   - represented by model-layer `DeclarationValue`
    - retains authored structure and token ordering
    - is not normalized into runtime value form
 2. typed specified value
-   - defined architecturally by `PropertySpecifiedValueKind`
-   - this is the property-parser output shape the later S-issue
-     implementation work must produce
+   - represented by `SpecifiedPropertyValue` and `SpecifiedValue`
+   - selected and validated through `PropertySpecifiedValueKind`
    - remains property-typed, but not yet the final runtime-normalized value
 3. typed computed value
    - represented by `ComputedValue` and stored in total `ComputedStyle`

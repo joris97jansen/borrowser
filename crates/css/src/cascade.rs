@@ -21,8 +21,9 @@ mod tests;
 
 // Property metadata and defaults
 pub use contract::{
-    CascadeInheritance, CascadePropertyId, CascadePropertyMetadata, CascadePropertyRegistration,
-    CascadePropertyRegistry, InitialStyleValue, cascade_property_registry,
+    CascadeInheritance, CascadePropertyId, CascadePropertyLengthSignPolicy,
+    CascadePropertyMetadata, CascadePropertyRegistration, CascadePropertyRegistry,
+    InitialStyleValue, cascade_property_registry,
 };
 
 // Origin and precedence

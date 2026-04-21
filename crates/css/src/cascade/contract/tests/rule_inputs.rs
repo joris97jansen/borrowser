@@ -4,8 +4,10 @@ use super::super::{
     InlineStyleRuleRef, StylesheetRuleRef,
 };
 use super::support::{
-    inline_declaration_source, matched_rule, parsed_value, stylesheet_declaration_source,
+    inline_declaration_source, matched_rule, parse_error, parsed_value, preserved_value,
+    stylesheet_declaration_source,
 };
+use crate::SpecifiedValueParseErrorKind;
 use crate::selectors::Specificity;
 
 #[test]
@@ -114,7 +116,15 @@ fn cascade_rule_input_keeps_declaration_filter_state_explicit() {
                 inline_declaration_source(inline_style, 3),
                 3,
                 CascadeImportance::Normal,
-                parsed_value("color: green"),
+                preserved_value("color: green"),
+            ),
+            CascadeDeclarationInput::invalid_value(
+                inline_declaration_source(inline_style, 4),
+                4,
+                CascadeImportance::Normal,
+                CascadePropertyId::Display,
+                parse_error(CascadePropertyId::Display, "display: grid"),
+                preserved_value("display: grid"),
             ),
         ],
     )
@@ -155,6 +165,22 @@ fn cascade_rule_input_keeps_declaration_filter_state_explicit() {
     assert_eq!(
         rule.declarations()[3].property(),
         &CascadeDeclarationProperty::Invalid
+    );
+    assert_eq!(rule.declarations()[4].property_name(), Some("display"));
+    assert_eq!(
+        rule.declarations()[4].applicability(),
+        CascadeDeclarationApplicability::InvalidValue(CascadePropertyId::Display)
+    );
+    assert_eq!(
+        rule.declarations()[4].property(),
+        &CascadeDeclarationProperty::InvalidValue(CascadePropertyId::Display)
+    );
+    assert_eq!(
+        rule.declarations()[4]
+            .invalid_value_error()
+            .expect("invalid value error")
+            .kind(),
+        SpecifiedValueParseErrorKind::UnsupportedDisplayKeyword
     );
 
     let candidates = rule.candidates();

@@ -184,6 +184,9 @@ fn declaration_property_label(property: &CascadeDeclarationProperty) -> String {
         CascadeDeclarationProperty::Supported(property) => {
             format!("supported({})", property.name())
         }
+        CascadeDeclarationProperty::InvalidValue(property) => {
+            format!("invalid-value({})", property.name())
+        }
         CascadeDeclarationProperty::Unsupported(name) => {
             format!("unsupported({})", quoted_snapshot_text(name))
         }
@@ -198,6 +201,9 @@ fn applicability_label(applicability: CascadeDeclarationApplicability) -> String
     match applicability {
         CascadeDeclarationApplicability::Supported(property) => {
             format!("supported({})", property.name())
+        }
+        CascadeDeclarationApplicability::InvalidValue(property) => {
+            format!("invalid-value({})", property.name())
         }
         CascadeDeclarationApplicability::UnsupportedProperty => "unsupported-property".to_string(),
         CascadeDeclarationApplicability::CustomProperty => "custom-property".to_string(),

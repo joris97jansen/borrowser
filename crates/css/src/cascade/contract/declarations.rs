@@ -1,4 +1,5 @@
 use crate::model::DeclarationValue;
+use crate::specified::{SpecifiedPropertyValue, SpecifiedValueParseError};
 
 use super::priority::CascadeImportance;
 use super::properties::CascadePropertyId;
@@ -14,6 +15,7 @@ use super::winners::CascadeDeclarationCandidate;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum CascadeDeclarationProperty {
     Supported(CascadePropertyId),
+    InvalidValue(CascadePropertyId),
     Unsupported(String),
     Custom(String),
     Invalid,
@@ -23,6 +25,9 @@ impl CascadeDeclarationProperty {
     pub fn applicability(&self) -> CascadeDeclarationApplicability {
         match self {
             Self::Supported(property) => CascadeDeclarationApplicability::Supported(*property),
+            Self::InvalidValue(property) => {
+                CascadeDeclarationApplicability::InvalidValue(*property)
+            }
             Self::Unsupported(_) => CascadeDeclarationApplicability::UnsupportedProperty,
             Self::Custom(_) => CascadeDeclarationApplicability::CustomProperty,
             Self::Invalid => CascadeDeclarationApplicability::InvalidPropertyName,
@@ -31,7 +36,7 @@ impl CascadeDeclarationProperty {
 
     pub fn name(&self) -> Option<&str> {
         match self {
-            Self::Supported(property) => Some(property.name()),
+            Self::Supported(property) | Self::InvalidValue(property) => Some(property.name()),
             Self::Unsupported(name) | Self::Custom(name) => Some(name.as_str()),
             Self::Invalid => None,
         }
@@ -40,7 +45,7 @@ impl CascadeDeclarationProperty {
     pub fn supported_property(&self) -> Option<CascadePropertyId> {
         match self {
             Self::Supported(property) => Some(*property),
-            Self::Unsupported(_) | Self::Custom(_) | Self::Invalid => None,
+            Self::InvalidValue(_) | Self::Unsupported(_) | Self::Custom(_) | Self::Invalid => None,
         }
     }
 }
@@ -52,6 +57,7 @@ impl CascadeDeclarationProperty {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum CascadeDeclarationApplicability {
     Supported(CascadePropertyId),
+    InvalidValue(CascadePropertyId),
     UnsupportedProperty,
     CustomProperty,
     InvalidPropertyName,
@@ -61,7 +67,10 @@ impl CascadeDeclarationApplicability {
     pub fn supported_property(self) -> Option<CascadePropertyId> {
         match self {
             Self::Supported(property) => Some(property),
-            Self::UnsupportedProperty | Self::CustomProperty | Self::InvalidPropertyName => None,
+            Self::InvalidValue(_)
+            | Self::UnsupportedProperty
+            | Self::CustomProperty
+            | Self::InvalidPropertyName => None,
         }
     }
 
@@ -70,30 +79,67 @@ impl CascadeDeclarationApplicability {
     }
 }
 
-/// Engine-owned specified-value surface carried by authored cascade winners.
+/// Engine-owned specified-value surface carried by cascade declarations.
 ///
-/// This wraps the structured model-layer declaration value, so downstream
-/// computed-style work can consume the winning authored value directly from
-/// `ResolvedStyle` without re-looking it up through stylesheet storage.
+/// Supported cascade candidates carry `SpecifiedPropertyValue`, not generic
+/// model value blobs. Filtered declarations retain only preserved CSS text for
+/// debug output and legacy diagnostics; they cannot become cascade candidates.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct CascadeSpecifiedValue {
-    value: DeclarationValue,
+    value: CascadeSpecifiedValueRepr,
 }
 
 impl CascadeSpecifiedValue {
-    pub fn from_declaration_value(value: &DeclarationValue) -> Self {
+    pub fn parse(
+        property: CascadePropertyId,
+        value: &DeclarationValue,
+    ) -> Result<Self, SpecifiedValueParseError> {
+        Ok(Self {
+            value: CascadeSpecifiedValueRepr::Parsed(SpecifiedPropertyValue::parse(
+                property, value,
+            )?),
+        })
+    }
+
+    /// Preserves declaration value text for declarations that are not eligible
+    /// to become supported cascade candidates.
+    pub fn preserved(value: &DeclarationValue) -> Self {
         Self {
-            value: value.clone(),
+            value: CascadeSpecifiedValueRepr::Preserved(PreservedCascadeSpecifiedValue {
+                css_text: serialize_declaration_value_for_css(value)
+                    .map(|value| value.trim().to_string()),
+            }),
         }
     }
 
-    pub fn declaration_value(&self) -> &DeclarationValue {
-        &self.value
+    pub fn parsed(&self) -> Option<&SpecifiedPropertyValue> {
+        match &self.value {
+            CascadeSpecifiedValueRepr::Parsed(value) => Some(value),
+            CascadeSpecifiedValueRepr::Preserved(_) => None,
+        }
+    }
+
+    pub fn property(&self) -> Option<CascadePropertyId> {
+        self.parsed().map(SpecifiedPropertyValue::property)
     }
 
     pub fn to_css_text(&self) -> Option<String> {
-        serialize_declaration_value_for_css(&self.value).map(|value| value.trim().to_string())
+        match &self.value {
+            CascadeSpecifiedValueRepr::Parsed(value) => Some(value.to_css_text()),
+            CascadeSpecifiedValueRepr::Preserved(value) => value.css_text.clone(),
+        }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum CascadeSpecifiedValueRepr {
+    Parsed(SpecifiedPropertyValue),
+    Preserved(PreservedCascadeSpecifiedValue),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PreservedCascadeSpecifiedValue {
+    css_text: Option<String>,
 }
 
 /// One declaration attached to a matched cascade rule input.
@@ -108,6 +154,7 @@ pub struct CascadeDeclarationInput {
     importance: CascadeImportance,
     property: CascadeDeclarationProperty,
     value: CascadeSpecifiedValue,
+    invalid_value_error: Option<SpecifiedValueParseError>,
 }
 
 impl CascadeDeclarationInput {
@@ -118,12 +165,47 @@ impl CascadeDeclarationInput {
         property: CascadePropertyId,
         value: CascadeSpecifiedValue,
     ) -> Self {
+        assert_eq!(
+            value.property(),
+            Some(property),
+            "supported cascade declaration '{}' must carry a parsed specified value for the same property",
+            property.name()
+        );
         Self {
             source,
             declaration_order,
             importance,
             property: CascadeDeclarationProperty::Supported(property),
             value,
+            invalid_value_error: None,
+        }
+    }
+
+    pub fn invalid_value(
+        source: CascadeDeclarationSource,
+        declaration_order: u32,
+        importance: CascadeImportance,
+        property: CascadePropertyId,
+        error: SpecifiedValueParseError,
+        value: CascadeSpecifiedValue,
+    ) -> Self {
+        assert_eq!(
+            error.property(),
+            property,
+            "invalid-value cascade declaration error must describe the same property"
+        );
+        assert!(
+            value.parsed().is_none(),
+            "invalid-value cascade declaration '{}' must preserve rejected text, not carry a parsed specified value",
+            property.name()
+        );
+        Self {
+            source,
+            declaration_order,
+            importance,
+            property: CascadeDeclarationProperty::InvalidValue(property),
+            value,
+            invalid_value_error: Some(error),
         }
     }
 
@@ -134,12 +216,14 @@ impl CascadeDeclarationInput {
         property_name: impl Into<String>,
         value: CascadeSpecifiedValue,
     ) -> Self {
+        assert_preserved_filtered_value("unsupported-property", &value);
         Self {
             source,
             declaration_order,
             importance,
             property: CascadeDeclarationProperty::Unsupported(property_name.into()),
             value,
+            invalid_value_error: None,
         }
     }
 
@@ -150,12 +234,14 @@ impl CascadeDeclarationInput {
         property_name: impl Into<String>,
         value: CascadeSpecifiedValue,
     ) -> Self {
+        assert_preserved_filtered_value("custom-property", &value);
         Self {
             source,
             declaration_order,
             importance,
             property: CascadeDeclarationProperty::Custom(property_name.into()),
             value,
+            invalid_value_error: None,
         }
     }
 
@@ -165,12 +251,14 @@ impl CascadeDeclarationInput {
         importance: CascadeImportance,
         value: CascadeSpecifiedValue,
     ) -> Self {
+        assert_preserved_filtered_value("invalid-property-name", &value);
         Self {
             source,
             declaration_order,
             importance,
             property: CascadeDeclarationProperty::Invalid,
             value,
+            invalid_value_error: None,
         }
     }
 
@@ -202,6 +290,10 @@ impl CascadeDeclarationInput {
         &self.value
     }
 
+    pub fn invalid_value_error(&self) -> Option<&SpecifiedValueParseError> {
+        self.invalid_value_error.as_ref()
+    }
+
     pub fn candidate(&self, context: CascadeRuleContext) -> Option<CascadeDeclarationCandidate> {
         let property = self.property.supported_property()?;
 
@@ -212,4 +304,11 @@ impl CascadeDeclarationInput {
             self.value.clone(),
         ))
     }
+}
+
+fn assert_preserved_filtered_value(label: &str, value: &CascadeSpecifiedValue) {
+    assert!(
+        value.parsed().is_none(),
+        "{label} cascade declarations must preserve debug text, not carry parsed specified values"
+    );
 }
