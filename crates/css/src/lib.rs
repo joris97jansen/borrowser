@@ -38,7 +38,8 @@ pub use cascade::{
 };
 pub use computed::{
     BoxMetrics, ComputedStyleBuildError, ComputedStyleBuilder, ComputedStyleEntry, ComputedValue,
-    ComputedValueDiscriminant,
+    ComputedValueDiscriminant, ComputedValueNormalizationError,
+    ComputedValueNormalizationErrorKind, normalize_specified_value,
 };
 pub use computed::{ComputedStyle, StyledNode, build_style_tree, compute_style};
 pub use model::{

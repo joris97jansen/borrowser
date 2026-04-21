@@ -21,6 +21,11 @@ pub struct SpecifiedPropertyValue {
 }
 
 impl SpecifiedPropertyValue {
+    #[cfg(test)]
+    pub(crate) fn from_parts_for_test(property: PropertyId, value: SpecifiedValue) -> Self {
+        Self { property, value }
+    }
+
     pub fn parse(
         property: PropertyId,
         value: &DeclarationValue,
@@ -166,11 +171,16 @@ impl SpecifiedColorKeyword {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SpecifiedHexColor {
     digits: String,
+    rgba: (u8, u8, u8, u8),
 }
 
 impl SpecifiedHexColor {
     pub fn digits(&self) -> &str {
         &self.digits
+    }
+
+    pub fn rgba(&self) -> (u8, u8, u8, u8) {
+        self.rgba
     }
 }
 
@@ -219,8 +229,30 @@ impl SpecifiedDisplayKeyword {
 pub struct SpecifiedLength {
     span: CssSpan,
     number: String,
+    numeric_value: SpecifiedLengthNumber,
     unit: SpecifiedLengthUnit,
 }
+
+#[derive(Clone, Copy, Debug)]
+struct SpecifiedLengthNumber(f64);
+
+impl SpecifiedLengthNumber {
+    fn new(value: f64) -> Self {
+        Self(value)
+    }
+
+    fn get(self) -> f64 {
+        self.0
+    }
+}
+
+impl PartialEq for SpecifiedLengthNumber {
+    fn eq(&self, other: &Self) -> bool {
+        self.0.to_bits() == other.0.to_bits()
+    }
+}
+
+impl Eq for SpecifiedLengthNumber {}
 
 impl SpecifiedLength {
     pub fn span(&self) -> CssSpan {
@@ -229,6 +261,10 @@ impl SpecifiedLength {
 
     pub fn number(&self) -> &str {
         &self.number
+    }
+
+    pub fn numeric_value(&self) -> f64 {
+        self.numeric_value.get()
     }
 
     pub fn unit(&self) -> SpecifiedLengthUnit {
@@ -454,13 +490,8 @@ fn parse_color(
         }
         ValueToken::Hash { text, .. } => {
             let digits = resolve_text(property, text)?.to_ascii_lowercase();
-            if !is_hex_color_digits(&digits) {
-                return Err(error(
-                    property,
-                    SpecifiedValueParseErrorKind::InvalidHexColor,
-                ));
-            }
-            SpecifiedColorSyntax::Hex(SpecifiedHexColor { digits })
+            let rgba = parse_hex_color_digits(property, &digits)?;
+            SpecifiedColorSyntax::Hex(SpecifiedHexColor { digits, rgba })
         }
         _ => {
             return Err(error(
@@ -498,8 +529,41 @@ fn parse_color_keyword(keyword: &str) -> Option<SpecifiedColorKeyword> {
     }
 }
 
-fn is_hex_color_digits(digits: &str) -> bool {
-    matches!(digits.len(), 3 | 6) && digits.chars().all(|ch| ch.is_ascii_hexdigit())
+fn parse_hex_color_digits(
+    property: PropertyId,
+    digits: &str,
+) -> Result<(u8, u8, u8, u8), SpecifiedValueParseError> {
+    if !matches!(digits.len(), 3 | 6) || !digits.chars().all(|ch| ch.is_ascii_hexdigit()) {
+        return Err(error(
+            property,
+            SpecifiedValueParseErrorKind::InvalidHexColor,
+        ));
+    }
+
+    let expanded = match digits.len() {
+        3 => {
+            let mut expanded = String::with_capacity(6);
+            for ch in digits.chars() {
+                expanded.push(ch);
+                expanded.push(ch);
+            }
+            expanded
+        }
+        6 => digits.to_string(),
+        _ => unreachable!("hex color digit length is validated above"),
+    };
+
+    let parse_channel = |range: std::ops::Range<usize>| {
+        u8::from_str_radix(&expanded[range], 16)
+            .map_err(|_| error(property, SpecifiedValueParseErrorKind::InvalidHexColor))
+    };
+
+    Ok((
+        parse_channel(0..2)?,
+        parse_channel(2..4)?,
+        parse_channel(4..6)?,
+        255,
+    ))
 }
 
 fn parse_display(
@@ -595,6 +659,7 @@ fn parse_length(
             Ok(SpecifiedLength {
                 span: *span,
                 number,
+                numeric_value: SpecifiedLengthNumber::new(numeric_value),
                 unit: SpecifiedLengthUnit::Px,
             })
         }
@@ -611,6 +676,7 @@ fn parse_length(
             Ok(SpecifiedLength {
                 span: *span,
                 number,
+                numeric_value: SpecifiedLengthNumber::new(numeric_value),
                 unit: SpecifiedLengthUnit::UnitlessZero,
             })
         }
@@ -730,6 +796,14 @@ mod tests {
 
         let background = parse(PropertyId::BackgroundColor, "background-color: #Aa00FF");
         assert_eq!(background.to_css_text(), "#aa00ff");
+        let SpecifiedValue::Color(background) = background.value() else {
+            panic!("expected background color");
+        };
+        let SpecifiedColorSyntax::Hex(hex) = background.syntax() else {
+            panic!("expected hex color");
+        };
+        assert_eq!(hex.digits(), "aa00ff");
+        assert_eq!(hex.rgba(), (170, 0, 255, 255));
 
         let display = parse(PropertyId::Display, "display: inline-block");
         let SpecifiedValue::Display(display) = display.value() else {
@@ -743,6 +817,7 @@ mod tests {
             panic!("expected length");
         };
         assert_eq!(length.number(), "-4.5");
+        assert_eq!(length.numeric_value(), -4.5);
         assert_eq!(length.unit(), SpecifiedLengthUnit::Px);
         assert_eq!(margin.to_css_text(), "-4.5px");
 
@@ -763,6 +838,7 @@ mod tests {
         };
 
         assert_eq!(length.number(), "0");
+        assert_eq!(length.numeric_value(), 0.0);
         assert_eq!(length.unit(), SpecifiedLengthUnit::UnitlessZero);
         assert_eq!(width.to_css_text(), "0");
     }
