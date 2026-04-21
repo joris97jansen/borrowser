@@ -5,7 +5,8 @@ use super::super::{
     sort_candidates_by_cascade_order,
 };
 use super::support::{
-    inline_declaration_source, matched_rule, parsed_value, stylesheet_declaration_source,
+    inline_declaration_source, matched_rule, parse_error, parsed_value, preserved_value,
+    stylesheet_declaration_source,
 };
 use crate::selectors::Specificity;
 
@@ -372,11 +373,19 @@ fn cascade_winner_resolution_ignores_unsupported_custom_and_invalid_declarations
                 inline_declaration_source(inline_style, 2),
                 2,
                 CascadeImportance::Normal,
-                parsed_value("color: green"),
+                preserved_value("color: green"),
             ),
-            CascadeDeclarationInput::supported(
+            CascadeDeclarationInput::invalid_value(
                 inline_declaration_source(inline_style, 3),
                 3,
+                CascadeImportance::Normal,
+                CascadePropertyId::Display,
+                parse_error(CascadePropertyId::Display, "display: grid"),
+                preserved_value("display: grid"),
+            ),
+            CascadeDeclarationInput::supported(
+                inline_declaration_source(inline_style, 4),
+                4,
                 CascadeImportance::Normal,
                 CascadePropertyId::Color,
                 parsed_value("color: red"),

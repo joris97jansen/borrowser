@@ -2,10 +2,10 @@
 //!
 //! `ResolvedStyle` from Milestone R is the normative cascade handoff into this
 //! layer. The long-term property pipeline is:
-//! - `css::model::DeclarationValue` and `CascadeSpecifiedValue` hold authored,
-//!   parsed-but-not-computed values
-//! - property parsing converts those authored values into typed specified
-//!   values defined by `PropertySpecifiedValueKind`
+//! - `css::model::DeclarationValue` holds authored parsed syntax
+//! - property parsing converts authored syntax into `SpecifiedPropertyValue`
+//!   values selected by `PropertySpecifiedValueKind`; `CascadeSpecifiedValue`
+//!   carries those values for supported winners
 //! - computed-style assembly resolves those specified values, inheritance, and
 //!   initial/default values into typed, normalized `ComputedStyle`
 //!

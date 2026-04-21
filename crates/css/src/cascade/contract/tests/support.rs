@@ -3,7 +3,10 @@ use super::super::{
     InlineStyleDeclarationRef, InlineStyleRuleRef, ResolvedStyleBuilder, StylesheetDeclarationRef,
 };
 use crate::selectors::{SelectorListMatchOutcome, Specificity};
-use crate::{ParseOptions, Rule, parse_stylesheet_with_options};
+use crate::specified::SpecifiedValueParseError;
+use crate::{
+    ParseOptions, PropertyNameKind, Rule, parse_stylesheet_with_options, property_registry,
+};
 
 pub(super) fn matched_rule(
     stylesheet_index: u32,
@@ -33,6 +36,34 @@ pub(super) fn builder_with_initials_except(skip: &[CascadePropertyId]) -> Resolv
 }
 
 pub(super) fn parsed_value(declaration: &str) -> CascadeSpecifiedValue {
+    let declaration = test_declaration(declaration);
+    if declaration.name.kind == PropertyNameKind::Standard
+        && let Some(property_name) = declaration.name.text.as_deref()
+        && let Some(property) = property_registry().lookup_id(property_name)
+    {
+        return CascadeSpecifiedValue::parse(property, &declaration.value).unwrap_or_else(
+            |error| panic!("failed to parse test declaration {declaration:?}: {error}"),
+        );
+    }
+
+    CascadeSpecifiedValue::preserved(&declaration.value)
+}
+
+pub(super) fn preserved_value(declaration: &str) -> CascadeSpecifiedValue {
+    let declaration = test_declaration(declaration);
+    CascadeSpecifiedValue::preserved(&declaration.value)
+}
+
+pub(super) fn parse_error(
+    property: CascadePropertyId,
+    declaration: &str,
+) -> SpecifiedValueParseError {
+    let declaration = test_declaration(declaration);
+    CascadeSpecifiedValue::parse(property, &declaration.value)
+        .expect_err("test declaration must be invalid for property")
+}
+
+fn test_declaration(declaration: &str) -> crate::Declaration {
     let parse = parse_stylesheet_with_options(
         &format!("div {{ {declaration}; }}"),
         &ParseOptions::stylesheet(),
@@ -40,7 +71,8 @@ pub(super) fn parsed_value(declaration: &str) -> CascadeSpecifiedValue {
     let Rule::Style(rule) = &parse.stylesheet.rules[0] else {
         panic!("expected style rule");
     };
-    CascadeSpecifiedValue::from_declaration_value(&rule.declarations.declarations[0].value)
+
+    rule.declarations.declarations[0].clone()
 }
 
 pub(super) fn stylesheet_declaration_source(

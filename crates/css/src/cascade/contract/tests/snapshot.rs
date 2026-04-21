@@ -3,7 +3,8 @@ use super::super::{
     InlineStyleRuleRef, cascade_evaluation_debug_snapshot,
 };
 use super::support::{
-    inline_declaration_source, matched_rule, parsed_value, stylesheet_declaration_source,
+    inline_declaration_source, matched_rule, parse_error, parsed_value, preserved_value,
+    stylesheet_declaration_source,
 };
 use crate::selectors::Specificity;
 
@@ -35,6 +36,14 @@ fn cascade_evaluation_debug_snapshot_covers_filtering_ordering_and_winners() {
                 CascadePropertyId::Color,
                 parsed_value("color: blue"),
             ),
+            CascadeDeclarationInput::invalid_value(
+                stylesheet_declaration_source(0, 0, 3),
+                3,
+                CascadeImportance::Normal,
+                CascadePropertyId::Display,
+                parse_error(CascadePropertyId::Display, "display: grid"),
+                preserved_value("display: grid"),
+            ),
         ],
     )
     .expect("valid stylesheet rule")
@@ -59,10 +68,11 @@ fn cascade_evaluation_debug_snapshot_covers_filtering_ordering_and_winners() {
             "version: 1\n",
             "cascade-evaluation\n",
             "rule-inputs: 2\n",
-            "  rule-input[0]: source=stylesheet[0/0] origin=author specificity=selector(0,0,1) rule-order=0 declarations=3\n",
+            "  rule-input[0]: source=stylesheet[0/0] origin=author specificity=selector(0,0,1) rule-order=0 declarations=4\n",
             "    declaration[0]: source=stylesheet[0/0]/declaration[0] declaration-order=0 importance=normal property=supported(color) applicability=supported(color) value=\"red\"\n",
             "    declaration[1]: source=stylesheet[0/0]/declaration[1] declaration-order=1 importance=normal property=unsupported(\"zoom\") applicability=unsupported-property value=\"2\"\n",
             "    declaration[2]: source=stylesheet[0/0]/declaration[2] declaration-order=2 importance=important property=supported(color) applicability=supported(color) value=\"blue\"\n",
+            "    declaration[3]: source=stylesheet[0/0]/declaration[3] declaration-order=3 importance=normal property=invalid-value(display) applicability=invalid-value(display) value=\"grid\"\n",
             "  rule-input[1]: source=inline-style[3] origin=author specificity=inline-style rule-order=1 declarations=1\n",
             "    declaration[0]: source=inline-style[3]/declaration[0] declaration-order=0 importance=normal property=supported(width) applicability=supported(width) value=\"20px\"\n",
             "candidates-source-order: 3\n",

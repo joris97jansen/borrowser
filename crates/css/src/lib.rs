@@ -13,6 +13,7 @@ pub mod computed;
 pub mod model;
 pub mod properties;
 pub mod selectors;
+pub mod specified;
 pub mod syntax;
 pub mod values;
 
@@ -21,15 +22,16 @@ pub use cascade::{
     CascadeDeclarationApplicability, CascadeDeclarationCandidate, CascadeDeclarationCandidateKey,
     CascadeDeclarationInput, CascadeDeclarationProperty, CascadeDeclarationSource,
     CascadeImportance, CascadeInheritance, CascadeOrigin, CascadeOriginBand, CascadePriority,
-    CascadePropertyId, CascadePropertyMetadata, CascadePropertyRegistration,
-    CascadePropertyRegistry, CascadeRuleContext, CascadeRuleInput, CascadeRuleInputBuildError,
-    CascadeRuleMatch, CascadeRuleSource, CascadeSpecificity, CascadeSpecifiedValue, CascadeWinner,
-    CascadeWinnerEntry, CascadeWinnerSet, CurrentScopeCascadePriorityBand, InitialStyleValue,
-    InlineStyleDeclarationRef, InlineStyleRuleRef, ResolvedDocumentStyle, ResolvedElementStyle,
-    ResolvedStyle, ResolvedStyleBuildError, ResolvedStyleBuilder, ResolvedStyleEntry,
-    ResolvedValueSource, StylesheetDeclarationRef, StylesheetRuleRef, attach_styles,
-    cascade_evaluation_debug_snapshot, cascade_property_registry, get_inline_style, is_css,
-    resolve_cascade_style, resolve_cascade_style_from_rule_inputs, resolve_cascade_winners,
+    CascadePropertyId, CascadePropertyLengthSignPolicy, CascadePropertyMetadata,
+    CascadePropertyRegistration, CascadePropertyRegistry, CascadeRuleContext, CascadeRuleInput,
+    CascadeRuleInputBuildError, CascadeRuleMatch, CascadeRuleSource, CascadeSpecificity,
+    CascadeSpecifiedValue, CascadeWinner, CascadeWinnerEntry, CascadeWinnerSet,
+    CurrentScopeCascadePriorityBand, InitialStyleValue, InlineStyleDeclarationRef,
+    InlineStyleRuleRef, ResolvedDocumentStyle, ResolvedElementStyle, ResolvedStyle,
+    ResolvedStyleBuildError, ResolvedStyleBuilder, ResolvedStyleEntry, ResolvedValueSource,
+    StylesheetDeclarationRef, StylesheetRuleRef, attach_styles, cascade_evaluation_debug_snapshot,
+    cascade_property_registry, get_inline_style, is_css, resolve_cascade_style,
+    resolve_cascade_style_from_rule_inputs, resolve_cascade_winners,
     resolve_cascade_winners_from_rule_inputs, resolve_document_styles,
     resolve_document_styles_debug_snapshot, resolve_initial_style,
     sort_candidates_by_cascade_order,
@@ -50,8 +52,8 @@ pub use model::{
 };
 pub use properties::{
     PropertyComputedValueKind, PropertyId, PropertyInheritance, PropertyInvalidValuePolicy,
-    PropertyMetadata, PropertyRegistration, PropertyRegistry, PropertySpecifiedValueKind,
-    property_registry,
+    PropertyLengthSignPolicy, PropertyMetadata, PropertyRegistration, PropertyRegistry,
+    PropertySpecifiedValueKind, property_registry,
 };
 pub use selectors::{
     AncestorElements, AttributeExistsSelector, AttributeMatchSelector, AttributeMatcher,
@@ -64,6 +66,12 @@ pub use selectors::{
     Specificity, SubclassSelector, TypeSelector, UniversalSelector, UnsupportedSelectorFeature,
     UnsupportedSelectorHandling, UnsupportedSelectorList, parse_selector_list,
     serialize_selector_list_for_snapshot, serialize_selector_parse_result_for_snapshot,
+};
+pub use specified::{
+    SpecifiedColor, SpecifiedColorKeyword, SpecifiedColorSyntax, SpecifiedDisplay,
+    SpecifiedDisplayKeyword, SpecifiedHexColor, SpecifiedLength, SpecifiedLengthOrAuto,
+    SpecifiedLengthOrNone, SpecifiedLengthUnit, SpecifiedPropertyValue, SpecifiedValue,
+    SpecifiedValueParseError, SpecifiedValueParseErrorKind, parse_specified_value,
 };
 
 // Explicit syntax-layer surface for parser/tokenizer work and syntax tests.

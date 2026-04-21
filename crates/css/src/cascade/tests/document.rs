@@ -131,3 +131,31 @@ fn resolve_document_styles_integrates_inline_style_as_structured_author_output()
     );
     assert_eq!(color_winner.priority.rule_order, 1);
 }
+
+#[test]
+fn resolve_document_styles_rejects_invalid_supported_values_before_winner_resolution() {
+    let stylesheets = vec![stylesheet(
+        "div { color: red; color: nonsense; display: block; display: grid; }",
+    )];
+    let dom = element("div", Vec::new(), Vec::new());
+
+    let resolved = resolve_document_styles(&dom, &stylesheets);
+    let style = resolved.entries()[0].style();
+
+    assert_eq!(
+        style
+            .get(CascadePropertyId::Color)
+            .and_then(|entry| entry.winner())
+            .and_then(|winner| winner.value.to_css_text())
+            .as_deref(),
+        Some("red")
+    );
+    assert_eq!(
+        style
+            .get(CascadePropertyId::Display)
+            .and_then(|entry| entry.winner())
+            .and_then(|winner| winner.value.to_css_text())
+            .as_deref(),
+        Some("block")
+    );
+}

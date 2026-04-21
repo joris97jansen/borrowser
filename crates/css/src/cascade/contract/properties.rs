@@ -6,6 +6,7 @@
 
 pub use crate::properties::{
     InitialStyleValue, PropertyId as CascadePropertyId, PropertyInheritance as CascadeInheritance,
+    PropertyLengthSignPolicy as CascadePropertyLengthSignPolicy,
     PropertyMetadata as CascadePropertyMetadata,
     PropertyRegistration as CascadePropertyRegistration,
     PropertyRegistry as CascadePropertyRegistry, property_registry as cascade_property_registry,

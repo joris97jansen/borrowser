@@ -7,13 +7,14 @@
 //! - inheritance and initial/default metadata
 //! - the boundary between typed specified-value parsing and typed computed
 //!   values
+//! - property-owned value-range metadata for specified-value validation
 //! - the current-scope invalid-value handling rule
 //!
 //! `PropertyId` is the stable identity for one supported property.
 //! `PropertyId::metadata()` is the normative source for inheritance,
 //! initial/default, specified-value-shape, computed-value-shape, and
-//! invalid-value facts. Downstream code must not re-encode those facts in
-//! separate match tables.
+//! invalid-value and value-range facts. Downstream code must not re-encode
+//! those facts in separate match tables.
 //!
 //! This module deliberately does not own cascade precedence, selector
 //! matching, property-specific parsers, or layout-facing interpretation.
@@ -275,7 +276,8 @@ const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 16] = [
             InitialStyleValue::ZeroPx,
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
-        ),
+        )
+        .with_length_sign(PropertyLengthSignPolicy::AllowNegative),
     ),
     PropertyRegistration::new(
         PropertyId::MarginLeft,
@@ -284,7 +286,8 @@ const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 16] = [
             InitialStyleValue::ZeroPx,
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
-        ),
+        )
+        .with_length_sign(PropertyLengthSignPolicy::AllowNegative),
     ),
     PropertyRegistration::new(
         PropertyId::MarginRight,
@@ -293,7 +296,8 @@ const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 16] = [
             InitialStyleValue::ZeroPx,
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
-        ),
+        )
+        .with_length_sign(PropertyLengthSignPolicy::AllowNegative),
     ),
     PropertyRegistration::new(
         PropertyId::MarginTop,
@@ -302,7 +306,8 @@ const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 16] = [
             InitialStyleValue::ZeroPx,
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
-        ),
+        )
+        .with_length_sign(PropertyLengthSignPolicy::AllowNegative),
     ),
     PropertyRegistration::new(
         PropertyId::MaxWidth,
@@ -399,6 +404,7 @@ pub struct PropertyMetadata {
     pub specified_value: PropertySpecifiedValueKind,
     pub computed_value: PropertyComputedValueKind,
     pub invalid_value_policy: PropertyInvalidValuePolicy,
+    pub length_sign: PropertyLengthSignPolicy,
 }
 
 impl PropertyMetadata {
@@ -413,6 +419,7 @@ impl PropertyMetadata {
             specified_value,
             computed_value,
             invalid_value_policy: PropertyInvalidValuePolicy::RejectDeclaration,
+            length_sign: default_length_sign_policy(specified_value),
         }
     }
 
@@ -427,7 +434,26 @@ impl PropertyMetadata {
             specified_value,
             computed_value,
             invalid_value_policy: PropertyInvalidValuePolicy::RejectDeclaration,
+            length_sign: default_length_sign_policy(specified_value),
         }
+    }
+
+    pub const fn with_length_sign(mut self, length_sign: PropertyLengthSignPolicy) -> Self {
+        self.length_sign = length_sign;
+        self
+    }
+}
+
+const fn default_length_sign_policy(
+    specified_value: PropertySpecifiedValueKind,
+) -> PropertyLengthSignPolicy {
+    match specified_value {
+        PropertySpecifiedValueKind::Color | PropertySpecifiedValueKind::DisplayKeyword => {
+            PropertyLengthSignPolicy::NotLength
+        }
+        PropertySpecifiedValueKind::AbsoluteLength
+        | PropertySpecifiedValueKind::AbsoluteLengthOrAuto
+        | PropertySpecifiedValueKind::AbsoluteLengthOrNone => PropertyLengthSignPolicy::NonNegative,
     }
 }
 
@@ -479,6 +505,17 @@ pub enum PropertyInvalidValuePolicy {
     RejectDeclaration,
 }
 
+/// Sign policy for length branches accepted by a supported property.
+///
+/// This lives in property metadata so specified-value parsers do not keep a
+/// second property rule table for value-range behavior.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PropertyLengthSignPolicy {
+    NotLength,
+    AllowNegative,
+    NonNegative,
+}
+
 /// Cascade-owned initial/default values for the current property subset.
 ///
 /// These are not typed computed values. The computed-value layer remains
@@ -512,8 +549,8 @@ impl InitialStyleValue {
 mod tests {
     use super::{
         InitialStyleValue, PROPERTY_LOOKUP_BY_NAME, PropertyComputedValueKind, PropertyId,
-        PropertyInheritance, PropertyInvalidValuePolicy, PropertySpecifiedValueKind,
-        property_registry,
+        PropertyInheritance, PropertyInvalidValuePolicy, PropertyLengthSignPolicy,
+        PropertySpecifiedValueKind, property_registry,
     };
 
     #[test]
@@ -525,6 +562,7 @@ mod tests {
                 InitialStyleValue::TransparentColor,
                 PropertySpecifiedValueKind::Color,
                 PropertyComputedValueKind::AbsoluteColor,
+                PropertyLengthSignPolicy::NotLength,
             ),
             (
                 PropertyId::Color,
@@ -532,6 +570,7 @@ mod tests {
                 InitialStyleValue::ColorBlack,
                 PropertySpecifiedValueKind::Color,
                 PropertyComputedValueKind::AbsoluteColor,
+                PropertyLengthSignPolicy::NotLength,
             ),
             (
                 PropertyId::Display,
@@ -539,6 +578,7 @@ mod tests {
                 InitialStyleValue::DisplayInline,
                 PropertySpecifiedValueKind::DisplayKeyword,
                 PropertyComputedValueKind::DisplayKeyword,
+                PropertyLengthSignPolicy::NotLength,
             ),
             (
                 PropertyId::FontSize,
@@ -546,6 +586,7 @@ mod tests {
                 InitialStyleValue::FontSizePx16,
                 PropertySpecifiedValueKind::AbsoluteLength,
                 PropertyComputedValueKind::AbsoluteLength,
+                PropertyLengthSignPolicy::NonNegative,
             ),
             (
                 PropertyId::Height,
@@ -553,6 +594,7 @@ mod tests {
                 InitialStyleValue::AutoKeyword,
                 PropertySpecifiedValueKind::AbsoluteLengthOrAuto,
                 PropertyComputedValueKind::AbsoluteLengthOrAuto,
+                PropertyLengthSignPolicy::NonNegative,
             ),
             (
                 PropertyId::MarginBottom,
@@ -560,6 +602,7 @@ mod tests {
                 InitialStyleValue::ZeroPx,
                 PropertySpecifiedValueKind::AbsoluteLength,
                 PropertyComputedValueKind::AbsoluteLength,
+                PropertyLengthSignPolicy::AllowNegative,
             ),
             (
                 PropertyId::MarginLeft,
@@ -567,6 +610,7 @@ mod tests {
                 InitialStyleValue::ZeroPx,
                 PropertySpecifiedValueKind::AbsoluteLength,
                 PropertyComputedValueKind::AbsoluteLength,
+                PropertyLengthSignPolicy::AllowNegative,
             ),
             (
                 PropertyId::MarginRight,
@@ -574,6 +618,7 @@ mod tests {
                 InitialStyleValue::ZeroPx,
                 PropertySpecifiedValueKind::AbsoluteLength,
                 PropertyComputedValueKind::AbsoluteLength,
+                PropertyLengthSignPolicy::AllowNegative,
             ),
             (
                 PropertyId::MarginTop,
@@ -581,6 +626,7 @@ mod tests {
                 InitialStyleValue::ZeroPx,
                 PropertySpecifiedValueKind::AbsoluteLength,
                 PropertyComputedValueKind::AbsoluteLength,
+                PropertyLengthSignPolicy::AllowNegative,
             ),
             (
                 PropertyId::MaxWidth,
@@ -588,6 +634,7 @@ mod tests {
                 InitialStyleValue::NoneKeyword,
                 PropertySpecifiedValueKind::AbsoluteLengthOrNone,
                 PropertyComputedValueKind::AbsoluteLengthOrNone,
+                PropertyLengthSignPolicy::NonNegative,
             ),
             (
                 PropertyId::MinWidth,
@@ -595,6 +642,7 @@ mod tests {
                 InitialStyleValue::AutoKeyword,
                 PropertySpecifiedValueKind::AbsoluteLengthOrAuto,
                 PropertyComputedValueKind::AbsoluteLengthOrAuto,
+                PropertyLengthSignPolicy::NonNegative,
             ),
             (
                 PropertyId::PaddingBottom,
@@ -602,6 +650,7 @@ mod tests {
                 InitialStyleValue::ZeroPx,
                 PropertySpecifiedValueKind::AbsoluteLength,
                 PropertyComputedValueKind::AbsoluteLength,
+                PropertyLengthSignPolicy::NonNegative,
             ),
             (
                 PropertyId::PaddingLeft,
@@ -609,6 +658,7 @@ mod tests {
                 InitialStyleValue::ZeroPx,
                 PropertySpecifiedValueKind::AbsoluteLength,
                 PropertyComputedValueKind::AbsoluteLength,
+                PropertyLengthSignPolicy::NonNegative,
             ),
             (
                 PropertyId::PaddingRight,
@@ -616,6 +666,7 @@ mod tests {
                 InitialStyleValue::ZeroPx,
                 PropertySpecifiedValueKind::AbsoluteLength,
                 PropertyComputedValueKind::AbsoluteLength,
+                PropertyLengthSignPolicy::NonNegative,
             ),
             (
                 PropertyId::PaddingTop,
@@ -623,6 +674,7 @@ mod tests {
                 InitialStyleValue::ZeroPx,
                 PropertySpecifiedValueKind::AbsoluteLength,
                 PropertyComputedValueKind::AbsoluteLength,
+                PropertyLengthSignPolicy::NonNegative,
             ),
             (
                 PropertyId::Width,
@@ -630,6 +682,7 @@ mod tests {
                 InitialStyleValue::AutoKeyword,
                 PropertySpecifiedValueKind::AbsoluteLengthOrAuto,
                 PropertyComputedValueKind::AbsoluteLengthOrAuto,
+                PropertyLengthSignPolicy::NonNegative,
             ),
         ];
 
@@ -637,8 +690,10 @@ mod tests {
         assert_eq!(registry.entries().len(), expected.len());
         assert_eq!(PropertyId::ALL.len(), expected.len());
 
-        for (index, (property, inheritance, initial, specified_value, computed_value)) in
-            expected.into_iter().enumerate()
+        for (
+            index,
+            (property, inheritance, initial, specified_value, computed_value, length_sign),
+        ) in expected.into_iter().enumerate()
         {
             assert_eq!(PropertyId::ALL[index], property);
 
@@ -669,6 +724,7 @@ mod tests {
                 "{}",
                 property.name()
             );
+            assert_eq!(metadata.length_sign, length_sign, "{}", property.name());
             assert_eq!(property.initial_value(), initial, "{}", property.name());
         }
     }
