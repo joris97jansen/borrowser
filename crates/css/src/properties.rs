@@ -3,6 +3,7 @@
 //! This module is the shared property table for the cascade and computed-style
 //! layers. It owns:
 //! - the supported property identifier universe
+//! - the registry of supported properties and their canonical CSS names
 //! - inheritance and initial/default metadata
 //! - the boundary between typed specified-value parsing and typed computed
 //!   values
@@ -61,105 +62,43 @@ impl PropertyId {
         Self::Width,
     ];
 
-    pub fn name(self) -> &'static str {
+    pub const fn as_index(self) -> usize {
         match self {
-            Self::BackgroundColor => "background-color",
-            Self::Color => "color",
-            Self::Display => "display",
-            Self::FontSize => "font-size",
-            Self::Height => "height",
-            Self::MarginBottom => "margin-bottom",
-            Self::MarginLeft => "margin-left",
-            Self::MarginRight => "margin-right",
-            Self::MarginTop => "margin-top",
-            Self::MaxWidth => "max-width",
-            Self::MinWidth => "min-width",
-            Self::PaddingBottom => "padding-bottom",
-            Self::PaddingLeft => "padding-left",
-            Self::PaddingRight => "padding-right",
-            Self::PaddingTop => "padding-top",
-            Self::Width => "width",
+            Self::BackgroundColor => 0,
+            Self::Color => 1,
+            Self::Display => 2,
+            Self::FontSize => 3,
+            Self::Height => 4,
+            Self::MarginBottom => 5,
+            Self::MarginLeft => 6,
+            Self::MarginRight => 7,
+            Self::MarginTop => 8,
+            Self::MaxWidth => 9,
+            Self::MinWidth => 10,
+            Self::PaddingBottom => 11,
+            Self::PaddingLeft => 12,
+            Self::PaddingRight => 13,
+            Self::PaddingTop => 14,
+            Self::Width => 15,
         }
+    }
+
+    pub fn name(self) -> &'static str {
+        property_registry().get(self).name()
     }
 
     /// Maps a canonical property name from the model layer into the supported
     /// property subset.
     pub fn from_name(name: &str) -> Option<Self> {
-        match name {
-            "background-color" => Some(Self::BackgroundColor),
-            "color" => Some(Self::Color),
-            "display" => Some(Self::Display),
-            "font-size" => Some(Self::FontSize),
-            "height" => Some(Self::Height),
-            "margin-bottom" => Some(Self::MarginBottom),
-            "margin-left" => Some(Self::MarginLeft),
-            "margin-right" => Some(Self::MarginRight),
-            "margin-top" => Some(Self::MarginTop),
-            "max-width" => Some(Self::MaxWidth),
-            "min-width" => Some(Self::MinWidth),
-            "padding-bottom" => Some(Self::PaddingBottom),
-            "padding-left" => Some(Self::PaddingLeft),
-            "padding-right" => Some(Self::PaddingRight),
-            "padding-top" => Some(Self::PaddingTop),
-            "width" => Some(Self::Width),
-            _ => None,
-        }
+        property_registry().lookup_id(name)
     }
 
     /// Returns the normative shared metadata for this property.
     ///
-    /// Contributors should extend this table rather than restating
+    /// Contributors should extend the registry rather than restating
     /// inheritance/default/value-kind facts in downstream subsystems.
     pub fn metadata(self) -> PropertyMetadata {
-        match self {
-            Self::BackgroundColor => PropertyMetadata::not_inherited(
-                InitialStyleValue::TransparentColor,
-                PropertySpecifiedValueKind::Color,
-                PropertyComputedValueKind::AbsoluteColor,
-            ),
-            Self::Color => PropertyMetadata::inherited(
-                InitialStyleValue::ColorBlack,
-                PropertySpecifiedValueKind::Color,
-                PropertyComputedValueKind::AbsoluteColor,
-            ),
-            Self::Display => PropertyMetadata::not_inherited(
-                InitialStyleValue::DisplayInline,
-                PropertySpecifiedValueKind::DisplayKeyword,
-                PropertyComputedValueKind::DisplayKeyword,
-            ),
-            Self::FontSize => PropertyMetadata::inherited(
-                InitialStyleValue::FontSizePx16,
-                PropertySpecifiedValueKind::AbsoluteLength,
-                PropertyComputedValueKind::AbsoluteLength,
-            ),
-            Self::Height => PropertyMetadata::not_inherited(
-                InitialStyleValue::AutoKeyword,
-                PropertySpecifiedValueKind::AbsoluteLengthOrAuto,
-                PropertyComputedValueKind::AbsoluteLengthOrAuto,
-            ),
-            Self::MarginBottom
-            | Self::MarginLeft
-            | Self::MarginRight
-            | Self::MarginTop
-            | Self::PaddingBottom
-            | Self::PaddingLeft
-            | Self::PaddingRight
-            | Self::PaddingTop => PropertyMetadata::not_inherited(
-                InitialStyleValue::ZeroPx,
-                PropertySpecifiedValueKind::AbsoluteLength,
-                PropertyComputedValueKind::AbsoluteLength,
-            ),
-            Self::MaxWidth => PropertyMetadata::not_inherited(
-                InitialStyleValue::NoneKeyword,
-                PropertySpecifiedValueKind::AbsoluteLengthOrNone,
-                PropertyComputedValueKind::AbsoluteLengthOrNone,
-            ),
-            Self::MinWidth | Self::Width => PropertyMetadata::not_inherited(
-                InitialStyleValue::AutoKeyword,
-                PropertySpecifiedValueKind::AbsoluteLengthOrAuto,
-                PropertyComputedValueKind::AbsoluteLengthOrAuto,
-            ),
-        }
+        property_registry().get(self).metadata()
     }
 
     /// Returns the cascade-owned initial/default value for this property.
@@ -172,6 +111,282 @@ impl PropertyId {
         self.metadata().initial
     }
 }
+
+/// One registry entry describing a supported property.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PropertyRegistration {
+    id: PropertyId,
+    name: &'static str,
+    metadata: PropertyMetadata,
+}
+
+impl PropertyRegistration {
+    pub const fn new(id: PropertyId, name: &'static str, metadata: PropertyMetadata) -> Self {
+        Self { id, name, metadata }
+    }
+
+    pub fn id(&self) -> PropertyId {
+        self.id
+    }
+
+    pub fn name(&self) -> &'static str {
+        self.name
+    }
+
+    pub fn metadata(&self) -> PropertyMetadata {
+        self.metadata
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct PropertyNameLookupEntry {
+    name: &'static str,
+    id: PropertyId,
+}
+
+impl PropertyNameLookupEntry {
+    const fn new(name: &'static str, id: PropertyId) -> Self {
+        Self { name, id }
+    }
+}
+
+/// Deterministic registry for Borrowser's supported property subset.
+///
+/// Entries are stored in canonical property order. Identifier lookup
+/// intentionally depends on `PropertyId::as_index()` matching the registry
+/// entry order. Name lookup uses a separately indexed canonical-name table, so
+/// binary-search behavior does not depend on the canonical entry sequence.
+#[derive(Clone, Copy, Debug)]
+pub struct PropertyRegistry {
+    entries: &'static [PropertyRegistration],
+    lookup_by_name: &'static [PropertyNameLookupEntry],
+}
+
+impl PropertyRegistry {
+    const fn new(
+        entries: &'static [PropertyRegistration],
+        lookup_by_name: &'static [PropertyNameLookupEntry],
+    ) -> Self {
+        Self {
+            entries,
+            lookup_by_name,
+        }
+    }
+
+    /// Returns supported properties in canonical property order.
+    pub fn entries(&self) -> &'static [PropertyRegistration] {
+        self.entries
+    }
+
+    /// Iterates property identifiers in canonical property order.
+    pub fn ids(&self) -> impl Iterator<Item = PropertyId> + '_ {
+        self.entries.iter().map(PropertyRegistration::id)
+    }
+
+    /// Returns the registry entry for one supported property identifier.
+    pub fn get(&self, id: PropertyId) -> &'static PropertyRegistration {
+        let registration = &self.entries[id.as_index()];
+        debug_assert_eq!(
+            registration.id(),
+            id,
+            "property registry entry order must align with PropertyId::as_index()"
+        );
+        registration
+    }
+
+    /// Resolves a canonical parsed property name into a supported registry
+    /// entry.
+    ///
+    /// Lookup is deterministic and exact over canonical lowercase CSS property
+    /// names. Case folding belongs upstream in the model layer.
+    pub fn lookup(&self, name: &str) -> Option<&'static PropertyRegistration> {
+        let lookup_index = self
+            .lookup_by_name
+            .binary_search_by_key(&name, |entry| entry.name)
+            .ok()?;
+
+        Some(self.get(self.lookup_by_name[lookup_index].id))
+    }
+
+    /// Resolves a canonical parsed property name directly to its property id.
+    pub fn lookup_id(&self, name: &str) -> Option<PropertyId> {
+        self.lookup(name).map(|entry| entry.id())
+    }
+}
+
+/// Returns the shared supported-property registry.
+pub fn property_registry() -> &'static PropertyRegistry {
+    &PROPERTY_REGISTRY
+}
+
+static PROPERTY_REGISTRY: PropertyRegistry =
+    PropertyRegistry::new(&PROPERTY_REGISTRATION_DATA, &PROPERTY_LOOKUP_BY_NAME);
+
+const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 16] = [
+    PropertyRegistration::new(
+        PropertyId::BackgroundColor,
+        "background-color",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::TransparentColor,
+            PropertySpecifiedValueKind::Color,
+            PropertyComputedValueKind::AbsoluteColor,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::Color,
+        "color",
+        PropertyMetadata::inherited(
+            InitialStyleValue::ColorBlack,
+            PropertySpecifiedValueKind::Color,
+            PropertyComputedValueKind::AbsoluteColor,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::Display,
+        "display",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::DisplayInline,
+            PropertySpecifiedValueKind::DisplayKeyword,
+            PropertyComputedValueKind::DisplayKeyword,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::FontSize,
+        "font-size",
+        PropertyMetadata::inherited(
+            InitialStyleValue::FontSizePx16,
+            PropertySpecifiedValueKind::AbsoluteLength,
+            PropertyComputedValueKind::AbsoluteLength,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::Height,
+        "height",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::AutoKeyword,
+            PropertySpecifiedValueKind::AbsoluteLengthOrAuto,
+            PropertyComputedValueKind::AbsoluteLengthOrAuto,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::MarginBottom,
+        "margin-bottom",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::ZeroPx,
+            PropertySpecifiedValueKind::AbsoluteLength,
+            PropertyComputedValueKind::AbsoluteLength,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::MarginLeft,
+        "margin-left",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::ZeroPx,
+            PropertySpecifiedValueKind::AbsoluteLength,
+            PropertyComputedValueKind::AbsoluteLength,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::MarginRight,
+        "margin-right",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::ZeroPx,
+            PropertySpecifiedValueKind::AbsoluteLength,
+            PropertyComputedValueKind::AbsoluteLength,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::MarginTop,
+        "margin-top",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::ZeroPx,
+            PropertySpecifiedValueKind::AbsoluteLength,
+            PropertyComputedValueKind::AbsoluteLength,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::MaxWidth,
+        "max-width",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::NoneKeyword,
+            PropertySpecifiedValueKind::AbsoluteLengthOrNone,
+            PropertyComputedValueKind::AbsoluteLengthOrNone,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::MinWidth,
+        "min-width",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::AutoKeyword,
+            PropertySpecifiedValueKind::AbsoluteLengthOrAuto,
+            PropertyComputedValueKind::AbsoluteLengthOrAuto,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::PaddingBottom,
+        "padding-bottom",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::ZeroPx,
+            PropertySpecifiedValueKind::AbsoluteLength,
+            PropertyComputedValueKind::AbsoluteLength,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::PaddingLeft,
+        "padding-left",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::ZeroPx,
+            PropertySpecifiedValueKind::AbsoluteLength,
+            PropertyComputedValueKind::AbsoluteLength,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::PaddingRight,
+        "padding-right",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::ZeroPx,
+            PropertySpecifiedValueKind::AbsoluteLength,
+            PropertyComputedValueKind::AbsoluteLength,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::PaddingTop,
+        "padding-top",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::ZeroPx,
+            PropertySpecifiedValueKind::AbsoluteLength,
+            PropertyComputedValueKind::AbsoluteLength,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::Width,
+        "width",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::AutoKeyword,
+            PropertySpecifiedValueKind::AbsoluteLengthOrAuto,
+            PropertyComputedValueKind::AbsoluteLengthOrAuto,
+        ),
+    ),
+];
+
+const PROPERTY_LOOKUP_BY_NAME: [PropertyNameLookupEntry; 16] = [
+    PropertyNameLookupEntry::new("background-color", PropertyId::BackgroundColor),
+    PropertyNameLookupEntry::new("color", PropertyId::Color),
+    PropertyNameLookupEntry::new("display", PropertyId::Display),
+    PropertyNameLookupEntry::new("font-size", PropertyId::FontSize),
+    PropertyNameLookupEntry::new("height", PropertyId::Height),
+    PropertyNameLookupEntry::new("margin-bottom", PropertyId::MarginBottom),
+    PropertyNameLookupEntry::new("margin-left", PropertyId::MarginLeft),
+    PropertyNameLookupEntry::new("margin-right", PropertyId::MarginRight),
+    PropertyNameLookupEntry::new("margin-top", PropertyId::MarginTop),
+    PropertyNameLookupEntry::new("max-width", PropertyId::MaxWidth),
+    PropertyNameLookupEntry::new("min-width", PropertyId::MinWidth),
+    PropertyNameLookupEntry::new("padding-bottom", PropertyId::PaddingBottom),
+    PropertyNameLookupEntry::new("padding-left", PropertyId::PaddingLeft),
+    PropertyNameLookupEntry::new("padding-right", PropertyId::PaddingRight),
+    PropertyNameLookupEntry::new("padding-top", PropertyId::PaddingTop),
+    PropertyNameLookupEntry::new("width", PropertyId::Width),
+];
 
 /// Shared property metadata consumed by cascade and computed-style code.
 ///
@@ -296,12 +511,13 @@ impl InitialStyleValue {
 #[cfg(test)]
 mod tests {
     use super::{
-        InitialStyleValue, PropertyComputedValueKind, PropertyId, PropertyInheritance,
-        PropertyInvalidValuePolicy, PropertySpecifiedValueKind,
+        InitialStyleValue, PROPERTY_LOOKUP_BY_NAME, PropertyComputedValueKind, PropertyId,
+        PropertyInheritance, PropertyInvalidValuePolicy, PropertySpecifiedValueKind,
+        property_registry,
     };
 
     #[test]
-    fn property_metadata_matches_the_supported_property_contract() {
+    fn property_registry_entries_are_total_canonical_and_metadata_backed() {
         let expected = [
             (
                 PropertyId::BackgroundColor,
@@ -417,14 +633,22 @@ mod tests {
             ),
         ];
 
+        let registry = property_registry();
+        assert_eq!(registry.entries().len(), expected.len());
         assert_eq!(PropertyId::ALL.len(), expected.len());
+
         for (index, (property, inheritance, initial, specified_value, computed_value)) in
             expected.into_iter().enumerate()
         {
             assert_eq!(PropertyId::ALL[index], property);
-            assert_eq!(PropertyId::from_name(property.name()), Some(property));
 
-            let metadata = property.metadata();
+            let registration = &registry.entries()[index];
+            assert_eq!(registration.id(), property);
+            assert_eq!(registration.name(), property.name());
+            assert_eq!(PropertyId::from_name(property.name()), Some(property));
+            assert_eq!(registry.lookup_id(property.name()), Some(property));
+
+            let metadata = registration.metadata();
             assert_eq!(metadata.inheritance, inheritance, "{}", property.name());
             assert_eq!(metadata.initial, initial, "{}", property.name());
             assert_eq!(
@@ -447,6 +671,54 @@ mod tests {
             );
             assert_eq!(property.initial_value(), initial, "{}", property.name());
         }
-        assert_eq!(PropertyId::from_name("zoom"), None);
+    }
+
+    #[test]
+    fn property_registry_lookup_is_deterministic_for_representative_property_names() {
+        let registry = property_registry();
+
+        assert_eq!(
+            registry.lookup("background-color").map(|entry| entry.id()),
+            Some(PropertyId::BackgroundColor)
+        );
+        assert_eq!(
+            registry.lookup("font-size").map(|entry| entry.id()),
+            Some(PropertyId::FontSize)
+        );
+        assert_eq!(
+            registry.lookup("padding-left").map(|entry| entry.id()),
+            Some(PropertyId::PaddingLeft)
+        );
+        assert_eq!(
+            registry.lookup("width").map(|entry| entry.id()),
+            Some(PropertyId::Width)
+        );
+        assert_eq!(registry.lookup("zoom"), None);
+        assert_eq!(registry.lookup("COLOR"), None);
+    }
+
+    #[test]
+    fn property_lookup_table_is_sorted_for_binary_search() {
+        let names = PROPERTY_LOOKUP_BY_NAME
+            .iter()
+            .map(|entry| entry.name)
+            .collect::<Vec<_>>();
+
+        let mut sorted = names.clone();
+        sorted.sort_unstable();
+
+        assert_eq!(names, sorted);
+    }
+
+    #[test]
+    fn property_registry_get_returns_registration_for_every_supported_id() {
+        let registry = property_registry();
+
+        for property in PropertyId::ALL {
+            let registration = registry.get(property);
+            assert_eq!(registration.id(), property);
+            assert_eq!(registration.name(), property.name());
+            assert_eq!(registration.metadata(), property.metadata());
+        }
     }
 }

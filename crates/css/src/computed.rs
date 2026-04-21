@@ -18,7 +18,7 @@
 use std::{collections::BTreeMap, fmt::Write};
 
 use crate::{
-    InitialStyleValue, PropertyComputedValueKind, PropertyId,
+    InitialStyleValue, PropertyComputedValueKind, PropertyId, property_registry,
     values::{Display, Length, parse_color, parse_display, parse_length},
 };
 
@@ -94,7 +94,7 @@ pub struct ComputedStyle {
 impl ComputedStyle {
     pub fn initial() -> Self {
         let mut builder = ComputedStyleBuilder::new();
-        for property in PropertyId::ALL {
+        for property in property_registry().ids() {
             builder
                 .record(property, ComputedValue::from_initial(property))
                 .expect("initial computed-style assembly must satisfy property value contracts");
@@ -147,9 +147,7 @@ impl ComputedStyle {
 
     /// Iterates computed entries in canonical property order.
     pub fn entries(&self) -> impl Iterator<Item = ComputedStyleEntry> + '_ {
-        PropertyId::ALL
-            .into_iter()
-            .map(|property| self.get(property))
+        property_registry().ids().map(|property| self.get(property))
     }
 
     /// Stable debug snapshot for computed-style regression tests.
@@ -332,8 +330,8 @@ impl ComputedStyleBuilder {
     }
 
     pub fn build(self) -> Result<ComputedStyle, ComputedStyleBuildError> {
-        let missing_properties = PropertyId::ALL
-            .into_iter()
+        let missing_properties = property_registry()
+            .ids()
             .filter(|property| !self.entries.contains_key(property))
             .collect::<Vec<_>>();
         if !missing_properties.is_empty() {
@@ -811,13 +809,13 @@ mod tests {
         ComputedValueDiscriminant, compute_style,
     };
     use crate::{
-        PropertyId,
+        PropertyId, property_registry,
         values::{Display, Length},
     };
 
     fn builder_with_initials_except(skip: &[PropertyId]) -> ComputedStyleBuilder {
         let mut builder = ComputedStyleBuilder::new();
-        for property in PropertyId::ALL {
+        for property in property_registry().ids() {
             if skip.contains(&property) {
                 continue;
             }

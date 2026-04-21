@@ -1,5 +1,7 @@
 use std::collections::BTreeMap;
 
+use crate::property_registry;
+
 use super::properties::{CascadeInheritance, CascadePropertyId, InitialStyleValue};
 use super::rules::CascadeRuleInput;
 use super::winners::{CascadeWinner, CascadeWinnerSet, resolve_cascade_winners_from_rule_inputs};
@@ -80,7 +82,7 @@ impl ResolvedStyle {
 pub fn resolve_initial_style() -> ResolvedStyle {
     let mut builder = ResolvedStyleBuilder::new();
 
-    for property in CascadePropertyId::ALL {
+    for property in property_registry().ids() {
         builder.record_initial(property);
     }
 
@@ -104,7 +106,7 @@ pub fn resolve_cascade_style(
 ) -> ResolvedStyle {
     let mut builder = ResolvedStyleBuilder::new();
 
-    for property in CascadePropertyId::ALL {
+    for property in property_registry().ids() {
         if let Some(winner) = winners.get(property) {
             builder.record_winner(property, winner.clone());
             continue;
@@ -213,8 +215,8 @@ impl ResolvedStyleBuilder {
     }
 
     pub fn build(self) -> Result<ResolvedStyle, ResolvedStyleBuildError> {
-        let missing_properties = CascadePropertyId::ALL
-            .into_iter()
+        let missing_properties = property_registry()
+            .ids()
             .filter(|property| !self.entries.contains_key(property))
             .collect::<Vec<_>>();
 
