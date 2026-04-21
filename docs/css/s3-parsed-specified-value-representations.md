@@ -35,6 +35,11 @@ property id. Unsupported, custom, invalid-name, and invalid-value declarations
 may retain preserved CSS text for debug output, but they cannot become cascade
 candidates.
 
+Specified values preserve authored/canonical syntax needed for debug output and
+also carry validated machine-usable data needed by computed-value
+normalization. For example, hex colors carry parsed channels and lengths carry
+validated numeric scalars.
+
 ## Parsing Boundary
 
 The S3 parser consumes the model-layer `DeclarationValue` component tree. It
@@ -104,7 +109,7 @@ surface, not computed CSS serialization.
 
 ## Out Of Scope
 
-S3 does not implement:
+S3 itself did not implement:
 
 - computed-value conversion from `ResolvedStyle`
 - inheritance/default application beyond the existing cascade contract
@@ -113,9 +118,9 @@ S3 does not implement:
   substitution, or function values
 - moving the legacy `compute_style(...)` string bridge to the typed pipeline
 
-The next S issues should consume `ResolvedStyle` winners through
-`SpecifiedPropertyValue` and assemble `ComputedStyle` through
-`ComputedStyleBuilder`.
+S4 introduces specified-to-computed value normalization. Later S issues should
+still consume `ResolvedStyle` winners through `SpecifiedPropertyValue` and
+assemble `ComputedStyle` through `ComputedStyleBuilder`.
 
 ## Test Surface
 

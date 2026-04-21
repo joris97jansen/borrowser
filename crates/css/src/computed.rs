@@ -19,6 +19,11 @@ use std::{collections::BTreeMap, fmt::Write};
 
 use crate::{
     InitialStyleValue, PropertyComputedValueKind, PropertyId, property_registry,
+    specified::{
+        SpecifiedColor, SpecifiedColorKeyword, SpecifiedColorSyntax, SpecifiedDisplayKeyword,
+        SpecifiedLength, SpecifiedLengthOrAuto, SpecifiedLengthOrNone, SpecifiedPropertyValue,
+        SpecifiedValue,
+    },
     values::{Display, Length, parse_color, parse_display, parse_length},
 };
 
@@ -216,6 +221,40 @@ impl ComputedValue {
         }
     }
 
+    /// Normalizes a property-aware specified value into its runtime computed
+    /// value representation.
+    ///
+    /// This performs canonical value conversion only. It does not apply
+    /// inheritance, initial/default fallback, layout-dependent resolution, or
+    /// UA/HTML bridge defaults.
+    pub fn from_specified(
+        specified: &SpecifiedPropertyValue,
+    ) -> Result<Self, ComputedValueNormalizationError> {
+        let property = specified.property();
+        let value = match specified.value() {
+            SpecifiedValue::Color(color) => Self::Color(normalize_color(color)),
+            SpecifiedValue::Display(display) => Self::Display(normalize_display(display.keyword())),
+            SpecifiedValue::Length(length) => Self::Length(normalize_length(property, length)?),
+            SpecifiedValue::LengthOrAuto(value) => {
+                Self::LengthOrAuto(normalize_length_or_auto(property, value)?)
+            }
+            SpecifiedValue::LengthOrNone(value) => {
+                Self::LengthOrNone(normalize_length_or_none(property, value)?)
+            }
+        };
+
+        let expected = property.metadata().computed_value;
+        let actual = value.discriminant();
+        if actual != computed_value_discriminant(expected) {
+            return Err(ComputedValueNormalizationError::new(
+                property,
+                ComputedValueNormalizationErrorKind::ValueKindMismatch { expected, actual },
+            ));
+        }
+
+        Ok(value)
+    }
+
     fn to_debug_label(self) -> String {
         match self {
             Self::Color((r, g, b, a)) => format!("rgba({r}, {g}, {b}, {a})"),
@@ -229,6 +268,59 @@ impl ComputedValue {
     }
 }
 
+/// Error returned when a parsed specified value cannot be normalized into the
+/// computed-value contract for its property.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ComputedValueNormalizationError {
+    property: PropertyId,
+    kind: ComputedValueNormalizationErrorKind,
+}
+
+impl ComputedValueNormalizationError {
+    fn new(property: PropertyId, kind: ComputedValueNormalizationErrorKind) -> Self {
+        Self { property, kind }
+    }
+
+    pub fn property(&self) -> PropertyId {
+        self.property
+    }
+
+    pub fn kind(&self) -> ComputedValueNormalizationErrorKind {
+        self.kind
+    }
+}
+
+impl std::fmt::Display for ComputedValueNormalizationError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "property '{}' specified value could not be normalized: {}",
+            self.property.name(),
+            self.kind.as_debug_label()
+        )
+    }
+}
+
+impl std::error::Error for ComputedValueNormalizationError {}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ComputedValueNormalizationErrorKind {
+    LengthOutOfRange,
+    ValueKindMismatch {
+        expected: PropertyComputedValueKind,
+        actual: ComputedValueDiscriminant,
+    },
+}
+
+impl ComputedValueNormalizationErrorKind {
+    pub fn as_debug_label(self) -> &'static str {
+        match self {
+            Self::LengthOutOfRange => "length-out-of-range",
+            Self::ValueKindMismatch { .. } => "value-kind-mismatch",
+        }
+    }
+}
+
 /// Runtime-discriminant for `ComputedValue`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ComputedValueDiscriminant {
@@ -237,6 +329,108 @@ pub enum ComputedValueDiscriminant {
     Length,
     LengthOrAuto,
     LengthOrNone,
+}
+
+pub fn normalize_specified_value(
+    specified: &SpecifiedPropertyValue,
+) -> Result<ComputedValue, ComputedValueNormalizationError> {
+    ComputedValue::from_specified(specified)
+}
+
+fn normalize_color(color: &SpecifiedColor) -> (u8, u8, u8, u8) {
+    match color.syntax() {
+        SpecifiedColorSyntax::Keyword(keyword) => normalize_color_keyword(*keyword),
+        SpecifiedColorSyntax::Hex(hex) => hex.rgba(),
+    }
+}
+
+fn normalize_color_keyword(keyword: SpecifiedColorKeyword) -> (u8, u8, u8, u8) {
+    match keyword {
+        SpecifiedColorKeyword::Black => (0, 0, 0, 255),
+        SpecifiedColorKeyword::Blue => (0, 0, 255, 255),
+        SpecifiedColorKeyword::Cyan => (0, 255, 255, 255),
+        SpecifiedColorKeyword::Gray => (128, 128, 128, 255),
+        SpecifiedColorKeyword::Green => (0, 128, 0, 255),
+        SpecifiedColorKeyword::Magenta => (255, 0, 255, 255),
+        SpecifiedColorKeyword::Maroon => (128, 0, 0, 255),
+        SpecifiedColorKeyword::Navy => (0, 0, 128, 255),
+        SpecifiedColorKeyword::Olive => (128, 128, 0, 255),
+        SpecifiedColorKeyword::Purple => (128, 0, 128, 255),
+        SpecifiedColorKeyword::Red => (255, 0, 0, 255),
+        SpecifiedColorKeyword::Silver => (192, 192, 192, 255),
+        SpecifiedColorKeyword::Teal => (0, 128, 128, 255),
+        SpecifiedColorKeyword::Transparent => (0, 0, 0, 0),
+        SpecifiedColorKeyword::White => (255, 255, 255, 255),
+        SpecifiedColorKeyword::Yellow => (255, 255, 0, 255),
+    }
+}
+
+fn normalize_display(display: SpecifiedDisplayKeyword) -> Display {
+    match display {
+        SpecifiedDisplayKeyword::Block => Display::Block,
+        SpecifiedDisplayKeyword::Inline => Display::Inline,
+        SpecifiedDisplayKeyword::InlineBlock => Display::InlineBlock,
+        SpecifiedDisplayKeyword::ListItem => Display::ListItem,
+        SpecifiedDisplayKeyword::None => Display::None,
+    }
+}
+
+fn normalize_length(
+    property: PropertyId,
+    length: &SpecifiedLength,
+) -> Result<Length, ComputedValueNormalizationError> {
+    let value = normalize_px_scalar(property, length.numeric_value())?;
+
+    Ok(Length::Px(value))
+}
+
+fn normalize_length_or_auto(
+    property: PropertyId,
+    value: &SpecifiedLengthOrAuto,
+) -> Result<Option<Length>, ComputedValueNormalizationError> {
+    match value {
+        SpecifiedLengthOrAuto::Length(length) => normalize_length(property, length).map(Some),
+        SpecifiedLengthOrAuto::Auto { .. } => Ok(None),
+    }
+}
+
+fn normalize_length_or_none(
+    property: PropertyId,
+    value: &SpecifiedLengthOrNone,
+) -> Result<Option<Length>, ComputedValueNormalizationError> {
+    match value {
+        SpecifiedLengthOrNone::Length(length) => normalize_length(property, length).map(Some),
+        SpecifiedLengthOrNone::None { .. } => Ok(None),
+    }
+}
+
+fn normalize_px_scalar(
+    property: PropertyId,
+    value: f64,
+) -> Result<f32, ComputedValueNormalizationError> {
+    debug_assert!(
+        value.is_finite(),
+        "specified length values must carry a finite validated scalar"
+    );
+    if !value.is_finite() {
+        return Err(ComputedValueNormalizationError::new(
+            property,
+            ComputedValueNormalizationErrorKind::LengthOutOfRange,
+        ));
+    }
+    if value == 0.0 {
+        return Ok(0.0);
+    }
+
+    let value = value as f32;
+    if !value.is_finite() {
+        return Err(ComputedValueNormalizationError::new(
+            property,
+            ComputedValueNormalizationErrorKind::LengthOutOfRange,
+        ));
+    }
+
+    Ok(value)
 }
 
 /// Error returned when a `ComputedStyle` cannot be assembled into a total,
@@ -806,10 +1000,12 @@ pub fn build_style_tree<'a>(
 mod tests {
     use super::{
         ComputedStyle, ComputedStyleBuildError, ComputedStyleBuilder, ComputedValue,
-        ComputedValueDiscriminant, compute_style,
+        ComputedValueDiscriminant, ComputedValueNormalizationErrorKind, compute_style,
+        normalize_specified_value,
     };
     use crate::{
-        PropertyId, property_registry,
+        ParseOptions, PropertyComputedValueKind, PropertyId, Rule, SpecifiedPropertyValue,
+        parse_specified_value, parse_stylesheet_with_options, property_registry,
         values::{Display, Length},
     };
 
@@ -824,6 +1020,27 @@ mod tests {
                 .expect("initial computed value");
         }
         builder
+    }
+
+    fn specified_value(
+        property: PropertyId,
+        css_declaration: &str,
+    ) -> crate::SpecifiedPropertyValue {
+        let parse = parse_stylesheet_with_options(
+            &format!("div {{ {css_declaration}; }}"),
+            &ParseOptions::stylesheet(),
+        );
+        let Rule::Style(rule) = &parse.stylesheet.rules[0] else {
+            panic!("expected style rule");
+        };
+
+        parse_specified_value(property, &rule.declarations.declarations[0].value)
+            .unwrap_or_else(|error| panic!("failed to parse {css_declaration:?}: {error}"))
+    }
+
+    fn normalized_value(property: PropertyId, css_declaration: &str) -> ComputedValue {
+        normalize_specified_value(&specified_value(property, css_declaration))
+            .unwrap_or_else(|error| panic!("failed to normalize {css_declaration:?}: {error}"))
     }
 
     #[test]
@@ -909,6 +1126,147 @@ mod tests {
                 "  padding-top: 0px\n",
                 "  width: auto\n",
             )
+        );
+    }
+
+    #[test]
+    fn computed_value_normalizes_specified_colors_to_rgba() {
+        assert_eq!(
+            normalized_value(PropertyId::Color, "color: RED"),
+            ComputedValue::Color((255, 0, 0, 255))
+        );
+        assert_eq!(
+            normalized_value(PropertyId::BackgroundColor, "background-color: transparent"),
+            ComputedValue::Color((0, 0, 0, 0))
+        );
+        assert_eq!(
+            normalized_value(PropertyId::Color, "color: #0fA"),
+            ComputedValue::Color((0, 255, 170, 255))
+        );
+        assert_eq!(
+            normalized_value(PropertyId::Color, "color: #1122cc"),
+            ComputedValue::Color((17, 34, 204, 255))
+        );
+    }
+
+    #[test]
+    fn computed_value_normalizes_display_keywords_to_runtime_enum() {
+        assert_eq!(
+            normalized_value(PropertyId::Display, "display: inline-block"),
+            ComputedValue::Display(Display::InlineBlock)
+        );
+        assert_eq!(
+            normalized_value(PropertyId::Display, "display: none"),
+            ComputedValue::Display(Display::None)
+        );
+    }
+
+    #[test]
+    fn computed_value_normalizes_lengths_to_css_px() {
+        assert_eq!(
+            normalized_value(PropertyId::FontSize, "font-size: 16px"),
+            ComputedValue::Length(Length::Px(16.0))
+        );
+        assert_eq!(
+            normalized_value(PropertyId::MarginLeft, "margin-left: -4.5px"),
+            ComputedValue::Length(Length::Px(-4.5))
+        );
+        assert_eq!(
+            normalized_value(PropertyId::Width, "width: 0"),
+            ComputedValue::LengthOrAuto(Some(Length::Px(0.0)))
+        );
+        assert_eq!(
+            normalized_value(PropertyId::MarginTop, "margin-top: -0px"),
+            ComputedValue::Length(Length::Px(0.0))
+        );
+    }
+
+    #[test]
+    fn computed_value_preserves_auto_and_none_branches() {
+        assert_eq!(
+            normalized_value(PropertyId::Width, "width: auto"),
+            ComputedValue::LengthOrAuto(None)
+        );
+        assert_eq!(
+            normalized_value(PropertyId::Height, "height: 25px"),
+            ComputedValue::LengthOrAuto(Some(Length::Px(25.0)))
+        );
+        assert_eq!(
+            normalized_value(PropertyId::MaxWidth, "max-width: none"),
+            ComputedValue::LengthOrNone(None)
+        );
+        assert_eq!(
+            normalized_value(PropertyId::MaxWidth, "max-width: 40px"),
+            ComputedValue::LengthOrNone(Some(Length::Px(40.0)))
+        );
+    }
+
+    #[test]
+    fn computed_value_normalization_matches_property_metadata_for_supported_subset() {
+        let representative = [
+            (PropertyId::BackgroundColor, "background-color: transparent"),
+            (PropertyId::Color, "color: black"),
+            (PropertyId::Display, "display: block"),
+            (PropertyId::FontSize, "font-size: 16px"),
+            (PropertyId::Height, "height: auto"),
+            (PropertyId::MarginBottom, "margin-bottom: 1px"),
+            (PropertyId::MarginLeft, "margin-left: 1px"),
+            (PropertyId::MarginRight, "margin-right: 1px"),
+            (PropertyId::MarginTop, "margin-top: 1px"),
+            (PropertyId::MaxWidth, "max-width: none"),
+            (PropertyId::MinWidth, "min-width: auto"),
+            (PropertyId::PaddingBottom, "padding-bottom: 1px"),
+            (PropertyId::PaddingLeft, "padding-left: 1px"),
+            (PropertyId::PaddingRight, "padding-right: 1px"),
+            (PropertyId::PaddingTop, "padding-top: 1px"),
+            (PropertyId::Width, "width: auto"),
+        ];
+
+        for property in property_registry().ids() {
+            let (_, declaration) = representative
+                .iter()
+                .copied()
+                .find(|(candidate, _)| *candidate == property)
+                .unwrap_or_else(|| panic!("missing representative for {}", property.name()));
+            assert_eq!(
+                normalized_value(property, declaration).discriminant(),
+                super::computed_value_discriminant(property.metadata().computed_value),
+                "{}",
+                property.name()
+            );
+        }
+    }
+
+    #[test]
+    fn computed_value_normalization_reports_length_out_of_runtime_range() {
+        let error = normalize_specified_value(&specified_value(PropertyId::Width, "width: 1e39px"))
+            .expect_err("length too large for current runtime scalar must be rejected");
+
+        assert_eq!(error.property(), PropertyId::Width);
+        assert_eq!(
+            error.kind(),
+            ComputedValueNormalizationErrorKind::LengthOutOfRange
+        );
+    }
+
+    #[test]
+    fn computed_value_normalization_reports_metadata_value_kind_mismatch() {
+        let color_value = specified_value(PropertyId::Color, "color: red")
+            .value()
+            .clone();
+        let mismatched =
+            SpecifiedPropertyValue::from_parts_for_test(PropertyId::Display, color_value);
+
+        let error = normalize_specified_value(&mismatched)
+            .expect_err("metadata/value mismatch must be rejected");
+
+        assert_eq!(error.property(), PropertyId::Display);
+        assert_eq!(
+            error.kind(),
+            ComputedValueNormalizationErrorKind::ValueKindMismatch {
+                expected: PropertyComputedValueKind::DisplayKeyword,
+                actual: ComputedValueDiscriminant::Color,
+            }
         );
     }
 
