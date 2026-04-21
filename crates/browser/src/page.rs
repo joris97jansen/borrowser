@@ -1,5 +1,5 @@
 use crate::form_controls::{FormControlIndex, seed_input_state_from_dom};
-use css::{ParseOptions, StylesheetParse, attach_styles, parse_stylesheet_with_options};
+use css::{ParseOptions, StylesheetParse, parse_stylesheet_with_options};
 use gfx::input::InputValueStore;
 use html::{
     Node,
@@ -60,9 +60,6 @@ impl PageState {
     pub fn apply_css_block(&mut self, block: &str) {
         let parsed = parse_stylesheet_with_options(block, &ParseOptions::stylesheet());
         self.css_stylesheets.push(parsed);
-        if let Some(dom_mut) = self.dom.as_deref_mut() {
-            attach_styles(dom_mut, &self.css_stylesheets);
-        }
     }
 
     pub fn mark_css_done(&mut self, url: &str) {
@@ -71,6 +68,10 @@ impl PageState {
 
     pub fn pending_count(&self) -> usize {
         self.css_pending.len()
+    }
+
+    pub fn css_stylesheets(&self) -> &[StylesheetParse] {
+        &self.css_stylesheets
     }
 
     pub fn outline(&self, cap: usize) -> Vec<String> {
@@ -98,8 +99,9 @@ impl PageState {
                 self.css_stylesheets.push(parsed);
             }
 
-            // Apply all known stylesheets + inline style="" attrs
-            attach_styles(dom_mut, &self.css_stylesheets);
+            // Style computation consumes the structured stylesheet list
+            // directly; DOM-attached style mutation is retained only as a CSS
+            // crate legacy compatibility bridge.
         }
     }
 
