@@ -1,12 +1,12 @@
 use super::contract::{
     CascadeDeclarationInput, CascadeDeclarationSource, CascadeImportance, CascadeOrigin,
-    CascadePropertyId, CascadeRuleInput, CascadeRuleMatch, CascadeSpecifiedValue,
-    InlineStyleDeclarationRef, InlineStyleRuleRef, StylesheetDeclarationRef,
-    append_cascade_evaluation_debug_snapshot, resolve_cascade_style,
-    resolve_cascade_style_from_rule_inputs,
+    CascadeRuleInput, CascadeRuleMatch, CascadeSpecifiedValue, InlineStyleDeclarationRef,
+    InlineStyleRuleRef, StylesheetDeclarationRef, append_cascade_evaluation_debug_snapshot,
+    resolve_cascade_style, resolve_cascade_style_from_rule_inputs,
 };
 use super::document::{ResolvedDocumentStyle, ResolvedElementStyle};
 use crate::model::{self, PropertyNameKind};
+use crate::property_registry;
 use crate::selectors::{SelectorDomElementId, SelectorDomIndex, SelectorMatchingContext};
 use crate::syntax::ParseOptions;
 use html::Node;
@@ -267,7 +267,7 @@ fn declaration_input_from_model(
                     value,
                 );
             };
-            if let Some(property) = CascadePropertyId::from_name(property_name) {
+            if let Some(property) = property_registry().lookup_id(property_name) {
                 CascadeDeclarationInput::supported(
                     source,
                     declaration_order,

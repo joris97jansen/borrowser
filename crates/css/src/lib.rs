@@ -21,15 +21,16 @@ pub use cascade::{
     CascadeDeclarationApplicability, CascadeDeclarationCandidate, CascadeDeclarationCandidateKey,
     CascadeDeclarationInput, CascadeDeclarationProperty, CascadeDeclarationSource,
     CascadeImportance, CascadeInheritance, CascadeOrigin, CascadeOriginBand, CascadePriority,
-    CascadePropertyId, CascadePropertyMetadata, CascadeRuleContext, CascadeRuleInput,
-    CascadeRuleInputBuildError, CascadeRuleMatch, CascadeRuleSource, CascadeSpecificity,
-    CascadeSpecifiedValue, CascadeWinner, CascadeWinnerEntry, CascadeWinnerSet,
-    CurrentScopeCascadePriorityBand, InitialStyleValue, InlineStyleDeclarationRef,
-    InlineStyleRuleRef, ResolvedDocumentStyle, ResolvedElementStyle, ResolvedStyle,
-    ResolvedStyleBuildError, ResolvedStyleBuilder, ResolvedStyleEntry, ResolvedValueSource,
-    StylesheetDeclarationRef, StylesheetRuleRef, attach_styles, cascade_evaluation_debug_snapshot,
-    get_inline_style, is_css, resolve_cascade_style, resolve_cascade_style_from_rule_inputs,
-    resolve_cascade_winners, resolve_cascade_winners_from_rule_inputs, resolve_document_styles,
+    CascadePropertyId, CascadePropertyMetadata, CascadePropertyRegistration,
+    CascadePropertyRegistry, CascadeRuleContext, CascadeRuleInput, CascadeRuleInputBuildError,
+    CascadeRuleMatch, CascadeRuleSource, CascadeSpecificity, CascadeSpecifiedValue, CascadeWinner,
+    CascadeWinnerEntry, CascadeWinnerSet, CurrentScopeCascadePriorityBand, InitialStyleValue,
+    InlineStyleDeclarationRef, InlineStyleRuleRef, ResolvedDocumentStyle, ResolvedElementStyle,
+    ResolvedStyle, ResolvedStyleBuildError, ResolvedStyleBuilder, ResolvedStyleEntry,
+    ResolvedValueSource, StylesheetDeclarationRef, StylesheetRuleRef, attach_styles,
+    cascade_evaluation_debug_snapshot, cascade_property_registry, get_inline_style, is_css,
+    resolve_cascade_style, resolve_cascade_style_from_rule_inputs, resolve_cascade_winners,
+    resolve_cascade_winners_from_rule_inputs, resolve_document_styles,
     resolve_document_styles_debug_snapshot, resolve_initial_style,
     sort_candidates_by_cascade_order,
 };
@@ -49,7 +50,8 @@ pub use model::{
 };
 pub use properties::{
     PropertyComputedValueKind, PropertyId, PropertyInheritance, PropertyInvalidValuePolicy,
-    PropertyMetadata, PropertySpecifiedValueKind,
+    PropertyMetadata, PropertyRegistration, PropertyRegistry, PropertySpecifiedValueKind,
+    property_registry,
 };
 pub use selectors::{
     AncestorElements, AttributeExistsSelector, AttributeMatchSelector, AttributeMatcher,
