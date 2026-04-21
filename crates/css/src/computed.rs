@@ -9,16 +9,17 @@
 //! - computed-style assembly resolves those specified values, inheritance, and
 //!   initial/default values into typed, normalized `ComputedStyle`
 //!
-//! During the current bridge phase, `compute_style(...)` still consumes the
-//! legacy DOM-attached `(String, String)` declaration vector. The
-//! `ComputedStyleBuilder`, `ComputedValue`, and deterministic entry iteration
-//! below define the production contract the later `ResolvedStyle`-driven
-//! implementation must satisfy.
+//! `compute_style_from_resolved_style(...)` is the production typed assembly
+//! path. During the current bridge phase, `compute_style(...)` still consumes
+//! the legacy DOM-attached `(String, String)` declaration vector for runtime
+//! consumers that have not moved to structured cascade output yet.
 
 use std::{collections::BTreeMap, fmt::Write};
 
 use crate::{
-    InitialStyleValue, PropertyComputedValueKind, PropertyId, property_registry,
+    InitialStyleValue, PropertyComputedValueKind, PropertyId, PropertyInheritance,
+    cascade::{ResolvedStyle, ResolvedValueSource},
+    property_registry,
     specified::{
         SpecifiedColor, SpecifiedColorKeyword, SpecifiedColorSyntax, SpecifiedDisplayKeyword,
         SpecifiedLength, SpecifiedLengthOrAuto, SpecifiedLengthOrNone, SpecifiedPropertyValue,
@@ -107,6 +108,19 @@ impl ComputedStyle {
         builder
             .build()
             .expect("initial computed-style assembly must be total over the supported property set")
+    }
+
+    /// Assembles a total computed style from the structured cascade output.
+    ///
+    /// Invalid supported declarations are expected to have been rejected before
+    /// winner resolution according to property metadata. This method consumes
+    /// only parsed winners, inherited values from the parent computed style,
+    /// and property initial/default tokens.
+    pub fn from_resolved_style(
+        resolved_style: &ResolvedStyle,
+        parent_style: Option<&ComputedStyle>,
+    ) -> Result<Self, ComputedStyleResolutionError> {
+        compute_style_from_resolved_style(resolved_style, parent_style)
     }
 
     /// Returns the computed entry for one supported property.
@@ -486,6 +500,170 @@ impl std::fmt::Display for ComputedStyleBuildError {
 }
 
 impl std::error::Error for ComputedStyleBuildError {}
+
+/// Error returned when structured cascade output cannot be materialized into a
+/// total computed style.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ComputedStyleResolutionError {
+    MissingResolvedProperty {
+        property: PropertyId,
+    },
+    MissingInheritedParent {
+        property: PropertyId,
+    },
+    NonInheritedPropertyMarkedInherited {
+        property: PropertyId,
+    },
+    InitialValueMismatch {
+        property: PropertyId,
+        expected: InitialStyleValue,
+        actual: InitialStyleValue,
+    },
+    WinnerMissingSpecifiedValue {
+        property: PropertyId,
+    },
+    WinnerPropertyMismatch {
+        property: PropertyId,
+        value_property: PropertyId,
+    },
+    Normalization(ComputedValueNormalizationError),
+    Build(ComputedStyleBuildError),
+}
+
+impl std::fmt::Display for ComputedStyleResolutionError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::MissingResolvedProperty { property } => write!(
+                f,
+                "resolved style is missing property '{}'",
+                property.name()
+            ),
+            Self::MissingInheritedParent { property } => write!(
+                f,
+                "resolved style marks property '{}' inherited without a parent computed style",
+                property.name()
+            ),
+            Self::NonInheritedPropertyMarkedInherited { property } => write!(
+                f,
+                "resolved style marks non-inherited property '{}' inherited",
+                property.name()
+            ),
+            Self::InitialValueMismatch {
+                property,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "resolved style initial value for '{}' expected {}, got {}",
+                property.name(),
+                expected.as_debug_label(),
+                actual.as_debug_label()
+            ),
+            Self::WinnerMissingSpecifiedValue { property } => write!(
+                f,
+                "resolved style winner for '{}' does not carry a parsed specified value",
+                property.name()
+            ),
+            Self::WinnerPropertyMismatch {
+                property,
+                value_property,
+            } => write!(
+                f,
+                "resolved style winner for '{}' carries specified value for '{}'",
+                property.name(),
+                value_property.name()
+            ),
+            Self::Normalization(error) => write!(f, "{error}"),
+            Self::Build(error) => write!(f, "{error}"),
+        }
+    }
+}
+
+impl std::error::Error for ComputedStyleResolutionError {
+    fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
+        match self {
+            Self::Normalization(error) => Some(error),
+            Self::Build(error) => Some(error),
+            Self::MissingResolvedProperty { .. }
+            | Self::MissingInheritedParent { .. }
+            | Self::NonInheritedPropertyMarkedInherited { .. }
+            | Self::InitialValueMismatch { .. }
+            | Self::WinnerMissingSpecifiedValue { .. }
+            | Self::WinnerPropertyMismatch { .. } => None,
+        }
+    }
+}
+
+/// Materializes the structured cascade handoff into a total computed style.
+///
+/// Rejected invalid declarations do not appear in `ResolvedStyle` winners.
+/// Fallback is therefore applied by the cascade source carried in each entry:
+/// another valid winner, inheritance, or the property's initial/default value.
+pub fn compute_style_from_resolved_style(
+    resolved_style: &ResolvedStyle,
+    parent_style: Option<&ComputedStyle>,
+) -> Result<ComputedStyle, ComputedStyleResolutionError> {
+    let mut builder = ComputedStyleBuilder::new();
+
+    for property in property_registry().ids() {
+        let entry = resolved_style
+            .get(property)
+            .ok_or(ComputedStyleResolutionError::MissingResolvedProperty { property })?;
+        let value = computed_value_from_resolved_source(property, entry.source(), parent_style)?;
+        builder
+            .record(property, value)
+            .map_err(ComputedStyleResolutionError::Build)?;
+    }
+
+    builder.build().map_err(ComputedStyleResolutionError::Build)
+}
+
+fn computed_value_from_resolved_source(
+    property: PropertyId,
+    source: &ResolvedValueSource,
+    parent_style: Option<&ComputedStyle>,
+) -> Result<ComputedValue, ComputedStyleResolutionError> {
+    match source {
+        ResolvedValueSource::Winner(winner) => {
+            let specified = winner
+                .value
+                .parsed()
+                .ok_or(ComputedStyleResolutionError::WinnerMissingSpecifiedValue { property })?;
+            if specified.property() != property {
+                return Err(ComputedStyleResolutionError::WinnerPropertyMismatch {
+                    property,
+                    value_property: specified.property(),
+                });
+            }
+
+            normalize_specified_value(specified)
+                .map_err(ComputedStyleResolutionError::Normalization)
+        }
+        ResolvedValueSource::Inherited => {
+            if property.metadata().inheritance != PropertyInheritance::Inherited {
+                return Err(
+                    ComputedStyleResolutionError::NonInheritedPropertyMarkedInherited { property },
+                );
+            }
+
+            let parent = parent_style
+                .ok_or(ComputedStyleResolutionError::MissingInheritedParent { property })?;
+            Ok(parent.get(property).value())
+        }
+        ResolvedValueSource::Initial(initial) => {
+            let expected = property.initial_value();
+            if *initial != expected {
+                return Err(ComputedStyleResolutionError::InitialValueMismatch {
+                    property,
+                    expected,
+                    actual: *initial,
+                });
+            }
+
+            Ok(ComputedValue::from_initial(property))
+        }
+    }
+}
 
 /// Deterministic builder for total computed-style assembly.
 ///
@@ -999,15 +1177,19 @@ pub fn build_style_tree<'a>(
 #[cfg(test)]
 mod tests {
     use super::{
-        ComputedStyle, ComputedStyleBuildError, ComputedStyleBuilder, ComputedValue,
-        ComputedValueDiscriminant, ComputedValueNormalizationErrorKind, compute_style,
-        normalize_specified_value,
+        ComputedStyle, ComputedStyleBuildError, ComputedStyleBuilder, ComputedStyleResolutionError,
+        ComputedValue, ComputedValueDiscriminant, ComputedValueNormalizationErrorKind,
+        compute_style, compute_style_from_resolved_style, normalize_specified_value,
     };
     use crate::{
-        ParseOptions, PropertyComputedValueKind, PropertyId, Rule, SpecifiedPropertyValue,
-        parse_specified_value, parse_stylesheet_with_options, property_registry,
+        InitialStyleValue, ParseOptions, PropertyComputedValueKind, PropertyId, Rule,
+        SpecifiedPropertyValue, parse_specified_value, parse_stylesheet_with_options,
+        property_registry, resolve_cascade_style_from_rule_inputs, resolve_document_styles,
+        resolve_initial_style,
         values::{Display, Length},
     };
+    use html::{Node, internal::Id};
+    use std::sync::Arc;
 
     fn builder_with_initials_except(skip: &[PropertyId]) -> ComputedStyleBuilder {
         let mut builder = ComputedStyleBuilder::new();
@@ -1026,16 +1208,30 @@ mod tests {
         property: PropertyId,
         css_declaration: &str,
     ) -> crate::SpecifiedPropertyValue {
-        let parse = parse_stylesheet_with_options(
-            &format!("div {{ {css_declaration}; }}"),
-            &ParseOptions::stylesheet(),
-        );
+        let parse = stylesheet(&format!("div {{ {css_declaration}; }}"));
         let Rule::Style(rule) = &parse.stylesheet.rules[0] else {
             panic!("expected style rule");
         };
 
         parse_specified_value(property, &rule.declarations.declarations[0].value)
             .unwrap_or_else(|error| panic!("failed to parse {css_declaration:?}: {error}"))
+    }
+
+    fn stylesheet(source: &str) -> crate::StylesheetParse {
+        parse_stylesheet_with_options(source, &ParseOptions::stylesheet())
+    }
+
+    fn element(name: &str, attributes: Vec<(&str, Option<&str>)>, children: Vec<Node>) -> Node {
+        Node::Element {
+            id: Id::INVALID,
+            name: Arc::from(name),
+            attributes: attributes
+                .into_iter()
+                .map(|(name, value)| (Arc::from(name), value.map(str::to_string)))
+                .collect(),
+            style: Vec::new(),
+            children,
+        }
     }
 
     fn normalized_value(property: PropertyId, css_declaration: &str) -> ComputedValue {
@@ -1267,6 +1463,110 @@ mod tests {
                 expected: PropertyComputedValueKind::DisplayKeyword,
                 actual: ComputedValueDiscriminant::Color,
             }
+        );
+    }
+
+    #[test]
+    fn compute_style_from_resolved_style_materializes_cascade_fallbacks() {
+        let stylesheets = vec![stylesheet(concat!(
+            "section { color: #0f0; width: 40px; }",
+            "span { color: nonsense; width: -1px; display: block; }",
+        ))];
+        let dom = element(
+            "section",
+            Vec::new(),
+            vec![element("span", Vec::new(), Vec::new())],
+        );
+        let resolved = resolve_document_styles(&dom, &stylesheets);
+
+        let parent = compute_style_from_resolved_style(resolved.entries()[0].style(), None)
+            .expect("parent computed style");
+        let child = compute_style_from_resolved_style(resolved.entries()[1].style(), Some(&parent))
+            .expect("child computed style");
+
+        assert_eq!(parent.color, (0, 255, 0, 255));
+        assert_eq!(parent.width, Some(Length::Px(40.0)));
+        assert_eq!(child.color, parent.color);
+        assert_eq!(child.width, None);
+        assert_eq!(child.box_metrics.padding_left, 0.0);
+        assert_eq!(child.display, Display::Block);
+    }
+
+    #[test]
+    fn compute_style_from_resolved_style_rejects_normalization_failures() {
+        let stylesheets = vec![stylesheet("div { width: 1e39px; }")];
+        let dom = element("div", Vec::new(), Vec::new());
+        let resolved = resolve_document_styles(&dom, &stylesheets);
+
+        let error = compute_style_from_resolved_style(resolved.entries()[0].style(), None)
+            .expect_err("normalization failure must not produce computed style");
+
+        let ComputedStyleResolutionError::Normalization(error) = error else {
+            panic!("expected normalization error");
+        };
+        assert_eq!(error.property(), PropertyId::Width);
+        assert_eq!(
+            error.kind(),
+            ComputedValueNormalizationErrorKind::LengthOutOfRange
+        );
+    }
+
+    #[test]
+    fn compute_style_from_resolved_style_requires_parent_for_inherited_entries() {
+        let parent_resolved = resolve_initial_style();
+        let child_resolved = resolve_cascade_style_from_rule_inputs(&[], Some(&parent_resolved));
+
+        let error = compute_style_from_resolved_style(&child_resolved, None)
+            .expect_err("inherited entries require parent computed style");
+
+        assert_eq!(
+            error,
+            ComputedStyleResolutionError::MissingInheritedParent {
+                property: PropertyId::Color,
+            }
+        );
+    }
+
+    #[test]
+    fn computed_style_method_delegates_to_resolved_style_assembly() {
+        let resolved = resolve_initial_style();
+        let via_method =
+            ComputedStyle::from_resolved_style(&resolved, None).expect("computed style");
+        let via_function =
+            compute_style_from_resolved_style(&resolved, None).expect("computed style");
+
+        assert_eq!(via_method, via_function);
+        assert_eq!(
+            via_method.get(PropertyId::Display).value(),
+            ComputedValue::from_initial(PropertyId::Display)
+        );
+        assert_eq!(
+            via_method.get(PropertyId::Width).value(),
+            ComputedValue::from_initial(PropertyId::Width)
+        );
+        assert_eq!(
+            via_method.get(PropertyId::Color).value(),
+            ComputedValue::Color((0, 0, 0, 255))
+        );
+        assert_eq!(
+            via_method.get(PropertyId::BackgroundColor).value(),
+            ComputedValue::Color((0, 0, 0, 0))
+        );
+        assert_eq!(
+            via_method.get(PropertyId::FontSize).value(),
+            ComputedValue::Length(Length::Px(16.0))
+        );
+        assert_eq!(
+            via_method.get(PropertyId::MaxWidth).value(),
+            ComputedValue::from_initial(PropertyId::MaxWidth)
+        );
+        assert_eq!(
+            via_method.get(PropertyId::MinWidth).value(),
+            ComputedValue::from_initial(PropertyId::MinWidth)
+        );
+        assert_eq!(
+            PropertyId::Display.initial_value(),
+            InitialStyleValue::DisplayInline
         );
     }
 

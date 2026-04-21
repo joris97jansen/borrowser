@@ -6,9 +6,9 @@ use super::contract::{
 };
 use super::document::{ResolvedDocumentStyle, ResolvedElementStyle};
 use crate::model::{self, PropertyNameKind};
-use crate::property_registry;
 use crate::selectors::{SelectorDomElementId, SelectorDomIndex, SelectorMatchingContext};
 use crate::syntax::ParseOptions;
+use crate::{PropertyInvalidValuePolicy, property_registry};
 use html::Node;
 use std::collections::BTreeMap;
 use std::fmt::Write;
@@ -275,14 +275,25 @@ fn declaration_input_from_model(
                         property,
                         value,
                     ),
-                    Err(error) => CascadeDeclarationInput::invalid_value(
-                        source,
-                        declaration_order,
-                        importance,
-                        property,
-                        error,
-                        CascadeSpecifiedValue::preserved(&declaration.value),
-                    ),
+                    Err(error) => {
+                        // Current supported properties only define strict
+                        // declaration rejection. Keep policy dispatch here so
+                        // any future invalid-value policy is added at the
+                        // property/cascade boundary, not as computed-style or
+                        // layout recovery.
+                        match property.metadata().invalid_value_policy {
+                            PropertyInvalidValuePolicy::RejectDeclaration => {
+                                CascadeDeclarationInput::invalid_value(
+                                    source,
+                                    declaration_order,
+                                    importance,
+                                    property,
+                                    error,
+                                    CascadeSpecifiedValue::preserved(&declaration.value),
+                                )
+                            }
+                        }
+                    }
                 }
             } else {
                 CascadeDeclarationInput::unsupported_property(

@@ -96,7 +96,6 @@ normalization begins.
 
 S4 does not implement:
 
-- `ResolvedStyle` to complete `ComputedStyle` assembly
 - inheritance/default resolution in the computed layer
 - relative units, percentages, font-relative resolution, or layout-dependent
   values
@@ -104,9 +103,8 @@ S4 does not implement:
   values
 - retirement of the legacy `compute_style(...)` bridge
 
-The next S issue should consume `ResolvedStyle` winners through
-`SpecifiedPropertyValue`, normalize them through this S4 path, and assemble a
-total `ComputedStyle` through `ComputedStyleBuilder`.
+S5 adds the `ResolvedStyle` to `ComputedStyle` assembly path and keeps using
+this S4 normalization boundary for winning specified values.
 
 ## Test Surface
 

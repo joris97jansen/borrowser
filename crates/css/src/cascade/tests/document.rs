@@ -159,3 +159,41 @@ fn resolve_document_styles_rejects_invalid_supported_values_before_winner_resolu
         Some("block")
     );
 }
+
+#[test]
+fn resolve_document_styles_falls_back_after_invalid_supported_values() {
+    let stylesheets = vec![stylesheet(concat!(
+        "section { color: red; }",
+        "span { color: nonsense; width: -1px; padding-left: -2px; }",
+    ))];
+    let dom = element(
+        "section",
+        Vec::new(),
+        vec![element("span", Vec::new(), Vec::new())],
+    );
+
+    let resolved = resolve_document_styles(&dom, &stylesheets);
+    let child_style = resolved.entries()[1].style();
+
+    assert_eq!(
+        child_style
+            .get(CascadePropertyId::Color)
+            .expect("child color")
+            .source(),
+        &ResolvedValueSource::Inherited
+    );
+    assert_eq!(
+        child_style
+            .get(CascadePropertyId::Width)
+            .expect("child width")
+            .source(),
+        &ResolvedValueSource::Initial(crate::InitialStyleValue::AutoKeyword)
+    );
+    assert_eq!(
+        child_style
+            .get(CascadePropertyId::PaddingLeft)
+            .expect("child padding-left")
+            .source(),
+        &ResolvedValueSource::Initial(crate::InitialStyleValue::ZeroPx)
+    );
+}
