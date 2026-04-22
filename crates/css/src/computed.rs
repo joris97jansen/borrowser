@@ -22,7 +22,8 @@ use std::{collections::BTreeMap, fmt::Write};
 use crate::{
     InitialStyleValue, PropertyComputedValueKind, PropertyId, PropertyInheritance,
     cascade::{ResolvedDocumentStyle, ResolvedStyle, ResolvedValueSource, resolve_document_styles},
-    model, property_registry,
+    model::{self, DeclarationValue},
+    property_registry,
     selectors::{SelectorDomElementId, SelectorDomIndex, SelectorMatchingContext},
     specified::{
         SpecifiedColor, SpecifiedColorKeyword, SpecifiedColorSyntax, SpecifiedDisplayKeyword,
@@ -346,7 +347,11 @@ impl ComputedValue {
         Ok(value)
     }
 
-    fn to_debug_label(self) -> String {
+    /// Stable one-line label for computed-value debug output.
+    ///
+    /// This is a public regression/debug contract. Do not replace it with
+    /// derived formatting or parser-facing text.
+    pub fn to_debug_label(self) -> String {
         match self {
             Self::Color((r, g, b, a)) => format!("rgba({r}, {g}, {b}, {a})"),
             Self::Display(display) => display_keyword(display).to_string(),
@@ -422,10 +427,101 @@ pub enum ComputedValueDiscriminant {
     LengthOrNone,
 }
 
+impl ComputedValueDiscriminant {
+    pub fn as_debug_label(self) -> &'static str {
+        match self {
+            Self::Color => "color",
+            Self::Display => "display",
+            Self::Length => "length",
+            Self::LengthOrAuto => "length-or-auto",
+            Self::LengthOrNone => "length-or-none",
+        }
+    }
+}
+
 pub fn normalize_specified_value(
     specified: &SpecifiedPropertyValue,
 ) -> Result<ComputedValue, ComputedValueNormalizationError> {
     ComputedValue::from_specified(specified)
+}
+
+/// Stable debug snapshot for one property-specific authored value as it moves
+/// through specified parsing and computed-value normalization.
+///
+/// This is intentionally aligned with the property/value pipeline rather than
+/// authored CSS text. It is meant for regression tests and maintenance traces.
+/// Changes to this output should be treated as computed-value contract changes.
+pub fn computed_value_debug_snapshot(property: PropertyId, value: &DeclarationValue) -> String {
+    let mut out = String::new();
+    writeln!(&mut out, "version: 1").expect("write snapshot");
+    writeln!(&mut out, "computed-value").expect("write snapshot");
+    write_computed_value_debug_snapshot_body(&mut out, property, value, 0);
+    out
+}
+
+fn write_computed_value_debug_snapshot_body(
+    out: &mut String,
+    property: PropertyId,
+    value: &DeclarationValue,
+    indent: usize,
+) {
+    let indent = " ".repeat(indent);
+    writeln!(out, "{indent}property: {}", property.name()).expect("write snapshot");
+    writeln!(
+        out,
+        "{indent}specified-contract: {}",
+        property.metadata().specified_value.as_debug_label()
+    )
+    .expect("write snapshot");
+    writeln!(
+        out,
+        "{indent}computed-contract: {}",
+        property.metadata().computed_value.as_debug_label()
+    )
+    .expect("write snapshot");
+
+    let specified = match parse_specified_value(property, value) {
+        Ok(specified) => specified,
+        Err(error) => {
+            writeln!(
+                out,
+                "{indent}specified-error: {}",
+                error.kind().as_debug_label()
+            )
+            .expect("write snapshot");
+            writeln!(out, "{indent}computed: not-computed").expect("write snapshot");
+            return;
+        }
+    };
+
+    writeln!(
+        out,
+        "{indent}specified-kind: {}",
+        specified.kind().as_debug_label()
+    )
+    .expect("write snapshot");
+    writeln!(out, "{indent}specified: {}", specified.to_css_text()).expect("write snapshot");
+
+    match normalize_specified_value(&specified) {
+        Ok(computed) => {
+            writeln!(
+                out,
+                "{indent}computed-kind: {}",
+                computed.discriminant().as_debug_label()
+            )
+            .expect("write snapshot");
+            writeln!(out, "{indent}computed: {}", computed.to_debug_label())
+                .expect("write snapshot");
+        }
+        Err(error) => {
+            writeln!(
+                out,
+                "{indent}computed-error: {}",
+                error.kind().as_debug_label()
+            )
+            .expect("write snapshot");
+        }
+    }
 }
 
 fn normalize_color(color: &SpecifiedColor) -> (u8, u8, u8, u8) {
@@ -567,10 +663,10 @@ impl std::fmt::Display for ComputedStyleBuildError {
                 actual,
             } => write!(
                 f,
-                "computed style property '{}' expected {:?}, got {:?}",
+                "computed style property '{}' expected {}, got {}",
                 property.name(),
-                expected,
-                actual
+                expected.as_debug_label(),
+                actual.as_debug_label()
             ),
         }
     }

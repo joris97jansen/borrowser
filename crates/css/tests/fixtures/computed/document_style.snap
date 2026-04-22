@@ -1,0 +1,53 @@
+version: 1
+computed-document-style
+element[0]: selector-id=1 name="main"
+  background-color: rgba(0, 0, 0, 0)
+  color: rgba(0, 128, 128, 255)
+  display: inline
+  font-size: 18px
+  height: auto
+  margin-bottom: 0px
+  margin-left: 0px
+  margin-right: 0px
+  margin-top: 0px
+  max-width: none
+  min-width: auto
+  padding-bottom: 0px
+  padding-left: 0px
+  padding-right: 0px
+  padding-top: 0px
+  width: 320px
+element[1]: selector-id=2 name="span"
+  background-color: rgba(0, 255, 0, 255)
+  color: rgba(0, 128, 128, 255)
+  display: inline-block
+  font-size: 18px
+  height: 12px
+  margin-bottom: 0px
+  margin-left: 0px
+  margin-right: 0px
+  margin-top: 0px
+  max-width: none
+  min-width: auto
+  padding-bottom: 0px
+  padding-left: 3px
+  padding-right: 0px
+  padding-top: 0px
+  width: auto
+element[2]: selector-id=3 name="button"
+  background-color: rgba(0, 0, 0, 0)
+  color: rgba(255, 0, 0, 255)
+  display: inline
+  font-size: 18px
+  height: auto
+  margin-bottom: 0px
+  margin-left: 0px
+  margin-right: 0px
+  margin-top: 0px
+  max-width: none
+  min-width: 80px
+  padding-bottom: 0px
+  padding-left: 0px
+  padding-right: 0px
+  padding-top: 0px
+  width: auto

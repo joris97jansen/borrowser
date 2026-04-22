@@ -1,0 +1,12 @@
+div {
+  color: RED;
+  background-color: #0fA;
+  width: 25px;
+  height: auto;
+  max-width: none;
+  margin-left: -3px;
+  padding-left: -4px;
+  width: -1px;
+  width: 1e39px;
+  display: nonsense;
+}

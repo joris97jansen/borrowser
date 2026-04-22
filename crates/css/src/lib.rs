@@ -43,7 +43,7 @@ pub use computed::{
     ComputedValueNormalizationErrorKind, build_style_tree_from_computed_styles,
     build_style_tree_with_stylesheets, compute_document_styles,
     compute_document_styles_from_resolved_styles, compute_style_from_resolved_style,
-    normalize_specified_value,
+    computed_value_debug_snapshot, normalize_specified_value,
 };
 pub use computed::{ComputedStyle, StyledNode, build_style_tree, compute_style};
 pub use model::{
