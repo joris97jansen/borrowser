@@ -165,6 +165,11 @@ The Milestone R close-out and computed-style handoff contract lives in:
 
 * `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`
 
+The Milestone S property system and computed-style runtime handoff contract
+lives in:
+
+* `docs/css/s9-property-system-computed-style-runtime-contract.md`
+
 The syntax layer owns:
 
 * tokenizer and parser entry points
@@ -178,8 +183,8 @@ The shipped browser path now treats the engine-facing model parse result as the
 default stylesheet product. Stylesheet text is parsed through the structured
 syntax-layer entrypoints, converted into the Milestone O rule/value model, and
 stored that way in page state. Compatibility projection still exists, but only
-inside the current cascade boundary while selector and cascade migration remain
-in progress.
+for legacy callers that have not moved to the structured model, cascade, and
+computed-style contracts.
 
 ### 2. **Engine Rule/Value Model**
 
@@ -194,17 +199,15 @@ That layer:
 * preserves canonical names plus source/debug metadata where needed
 * remains separate from selector matching and cascade winner resolution
 
-Compatibility adapters still exist during migration, but they are not the
+Compatibility adapters still exist for legacy callers, but they are not the
 intended permanent handoff into cascade.
 
 ### 3. **Cascade**
 
-The current shipped browser path still calls `attach_styles(dom, sheets)` as a
-compatibility entrypoint, but cascade resolution no longer happens by mutating
-DOM-attached declaration vectors directly. The entrypoint delegates to the
-structured cascade pipeline, then projects authored winners back into
-`Node::style` for runtime code that has not yet moved to the resolved-style
-contract.
+The structured cascade path produces `ResolvedDocumentStyle` without mutating
+DOM-attached declaration vectors. `attach_styles(dom, sheets)` remains a
+compatibility projection for older callers, but it is not the browser view
+handoff.
 
 Milestone R's structured cascade path:
 
@@ -219,33 +222,40 @@ Milestone R's structured cascade path:
 
 The current structured DOM-level cascade output is `ResolvedDocumentStyle`.
 `attach_styles(dom, sheets)` remains only as a compatibility projection from
-that output into `Node::style` for the pre-cutover computed-style path.
+that output into `Node::style` for legacy consumers.
 The primary debug surfaces are `cascade_evaluation_debug_snapshot(...)`,
 `ResolvedStyle::to_debug_snapshot()`,
 `ResolvedDocumentStyle::to_debug_snapshot()`, and
 `resolve_document_styles_debug_snapshot(...)`.
-The current document-level integration remains function-oriented; later
-runtime cutover work may introduce a dedicated internal style-resolution
-session object and a first-class inline declaration-list parse entrypoint once
-computed-style consumption moves onto structured resolved styles directly.
+The current document-level integration remains function-oriented; later work
+may introduce a dedicated internal style-resolution session object and a
+first-class inline declaration-list parse entrypoint.
 
 ### 4. **Computed Styles**
 
-Each element receives a final `ComputedStyle`:
+Milestone S adds the property-aware computed-style pipeline:
 
-```rust
-struct ComputedStyle {
-    color: rgba,
-    background_color: rgba,
-    font_size: Length,
-    box_metrics: BoxMetrics,  // margin/padding per side
-}
+```
+DOM + StylesheetParse[]
+  -> ResolvedDocumentStyle
+  -> ComputedDocumentStyle
+  -> StyledNode tree
 ```
 
-Computed styles are inherited appropriately (e.g., color, font-size).
-During the current bridge phase, computed-style construction still reads the
-DOM-attached compatibility declarations. After the Milestone R cutover it will
-consume the resolved-style contract instead.
+`ComputedStyle` is the final runtime CSS contract for the supported property
+subset. It stores typed, normalized values; exposes private-field accessors and
+deterministic property iteration; and is assembled through
+`ComputedStyleBuilder` rather than ad hoc field mutation.
+
+The shipped browser view path uses `build_style_tree_with_stylesheets(...)`,
+which consumes structured stylesheet model output, resolves cascade winners,
+normalizes property values, applies inheritance/defaults, validates element
+identity, and returns a `StyledNode` tree without writing to
+`Node::Element::style`.
+
+Downstream systems consume `ComputedStyle` or `StyledNode`. They do not parse
+CSS text, inspect cascade winners, duplicate property metadata, or recover from
+invalid supported declarations after computed-style assembly.
 
 ---
 
