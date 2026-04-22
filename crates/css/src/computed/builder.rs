@@ -1,0 +1,169 @@
+use std::collections::BTreeMap;
+
+use crate::{
+    PropertyId, property_registry,
+    values::{Display, Length},
+};
+
+use super::{
+    style::{BoxMetrics, ComputedStyle, ComputedStyleBuildError},
+    value::{ComputedValue, computed_value_discriminant},
+};
+
+/// Deterministic builder for total computed-style assembly.
+///
+/// This is the invariant gate that keeps grouped runtime fields lossless over
+/// the supported property table.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct ComputedStyleBuilder {
+    entries: BTreeMap<PropertyId, ComputedValue>,
+}
+
+impl ComputedStyleBuilder {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn record(
+        &mut self,
+        property: PropertyId,
+        value: ComputedValue,
+    ) -> Result<(), ComputedStyleBuildError> {
+        let actual = value.discriminant();
+        let expected = property.metadata().computed_value;
+        if actual != computed_value_discriminant(expected) {
+            return Err(ComputedStyleBuildError::ValueKindMismatch {
+                property,
+                expected,
+                actual,
+            });
+        }
+
+        if self.entries.insert(property, value).is_some() {
+            return Err(ComputedStyleBuildError::DuplicateProperty { property });
+        }
+
+        Ok(())
+    }
+
+    pub fn build(self) -> Result<ComputedStyle, ComputedStyleBuildError> {
+        let missing_properties = property_registry()
+            .ids()
+            .filter(|property| !self.entries.contains_key(property))
+            .collect::<Vec<_>>();
+        if !missing_properties.is_empty() {
+            return Err(ComputedStyleBuildError::MissingProperties { missing_properties });
+        }
+
+        Ok(ComputedStyle {
+            color: expect_color(&self.entries, PropertyId::Color),
+            background_color: expect_color(&self.entries, PropertyId::BackgroundColor),
+            font_size: expect_length(&self.entries, PropertyId::FontSize),
+            box_metrics: BoxMetrics {
+                margin_top: expect_px(&self.entries, PropertyId::MarginTop),
+                margin_right: expect_px(&self.entries, PropertyId::MarginRight),
+                margin_bottom: expect_px(&self.entries, PropertyId::MarginBottom),
+                margin_left: expect_px(&self.entries, PropertyId::MarginLeft),
+                padding_top: expect_px(&self.entries, PropertyId::PaddingTop),
+                padding_right: expect_px(&self.entries, PropertyId::PaddingRight),
+                padding_bottom: expect_px(&self.entries, PropertyId::PaddingBottom),
+                padding_left: expect_px(&self.entries, PropertyId::PaddingLeft),
+            },
+            display: expect_display(&self.entries, PropertyId::Display),
+            width: expect_length_or_auto(&self.entries, PropertyId::Width),
+            height: expect_length_or_auto(&self.entries, PropertyId::Height),
+            min_width: expect_length_or_auto(&self.entries, PropertyId::MinWidth),
+            max_width: expect_length_or_none(&self.entries, PropertyId::MaxWidth),
+        })
+    }
+}
+
+fn expect_color(
+    entries: &BTreeMap<PropertyId, ComputedValue>,
+    property: PropertyId,
+) -> (u8, u8, u8, u8) {
+    match entries.get(&property).copied() {
+        Some(ComputedValue::Color(color)) => color,
+        Some(other) => unreachable!(
+            "property '{}' expected color computed value, got {:?}",
+            property.name(),
+            other.discriminant()
+        ),
+        None => unreachable!(
+            "property '{}' missing after completeness check",
+            property.name()
+        ),
+    }
+}
+
+fn expect_display(entries: &BTreeMap<PropertyId, ComputedValue>, property: PropertyId) -> Display {
+    match entries.get(&property).copied() {
+        Some(ComputedValue::Display(display)) => display,
+        Some(other) => unreachable!(
+            "property '{}' expected display computed value, got {:?}",
+            property.name(),
+            other.discriminant()
+        ),
+        None => unreachable!(
+            "property '{}' missing after completeness check",
+            property.name()
+        ),
+    }
+}
+
+fn expect_length(entries: &BTreeMap<PropertyId, ComputedValue>, property: PropertyId) -> Length {
+    match entries.get(&property).copied() {
+        Some(ComputedValue::Length(length)) => length,
+        Some(other) => unreachable!(
+            "property '{}' expected length computed value, got {:?}",
+            property.name(),
+            other.discriminant()
+        ),
+        None => unreachable!(
+            "property '{}' missing after completeness check",
+            property.name()
+        ),
+    }
+}
+
+fn expect_px(entries: &BTreeMap<PropertyId, ComputedValue>, property: PropertyId) -> f32 {
+    match expect_length(entries, property) {
+        Length::Px(px) => px,
+    }
+}
+
+fn expect_length_or_auto(
+    entries: &BTreeMap<PropertyId, ComputedValue>,
+    property: PropertyId,
+) -> Option<Length> {
+    match entries.get(&property).copied() {
+        Some(ComputedValue::LengthOrAuto(length)) => length,
+        Some(other) => unreachable!(
+            "property '{}' expected length-or-auto computed value, got {:?}",
+            property.name(),
+            other.discriminant()
+        ),
+        None => unreachable!(
+            "property '{}' missing after completeness check",
+            property.name()
+        ),
+    }
+}
+
+fn expect_length_or_none(
+    entries: &BTreeMap<PropertyId, ComputedValue>,
+    property: PropertyId,
+) -> Option<Length> {
+    match entries.get(&property).copied() {
+        Some(ComputedValue::LengthOrNone(length)) => length,
+        Some(other) => unreachable!(
+            "property '{}' expected length-or-none computed value, got {:?}",
+            property.name(),
+            other.discriminant()
+        ),
+        None => unreachable!(
+            "property '{}' missing after completeness check",
+            property.name()
+        ),
+    }
+}
