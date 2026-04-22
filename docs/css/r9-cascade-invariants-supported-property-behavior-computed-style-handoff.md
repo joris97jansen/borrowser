@@ -42,7 +42,8 @@ The implemented engine-owned staircase is:
 
 The old DOM-attached `(String, String)` declaration vector on `html::Node` is
 no longer the normative style-resolution result. It remains only as a legacy
-projection for pre-cutover computed-style consumers.
+projection for compatibility callers that still read `Node::style`; the
+Milestone S runtime path consumes structured resolved and computed styles.
 
 ## Final Milestone R Pipeline
 
