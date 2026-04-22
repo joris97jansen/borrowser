@@ -478,6 +478,18 @@ pub enum PropertySpecifiedValueKind {
     AbsoluteLengthOrNone,
 }
 
+impl PropertySpecifiedValueKind {
+    pub fn as_debug_label(self) -> &'static str {
+        match self {
+            Self::Color => "color",
+            Self::DisplayKeyword => "display-keyword",
+            Self::AbsoluteLength => "absolute-length",
+            Self::AbsoluteLengthOrAuto => "absolute-length-or-auto",
+            Self::AbsoluteLengthOrNone => "absolute-length-or-none",
+        }
+    }
+}
+
 /// Typed computed-value shape exposed to runtime consumers through
 /// `ComputedStyle`.
 ///
@@ -490,6 +502,18 @@ pub enum PropertyComputedValueKind {
     AbsoluteLength,
     AbsoluteLengthOrAuto,
     AbsoluteLengthOrNone,
+}
+
+impl PropertyComputedValueKind {
+    pub fn as_debug_label(self) -> &'static str {
+        match self {
+            Self::AbsoluteColor => "absolute-color",
+            Self::DisplayKeyword => "display-keyword",
+            Self::AbsoluteLength => "absolute-length",
+            Self::AbsoluteLengthOrAuto => "absolute-length-or-auto",
+            Self::AbsoluteLengthOrNone => "absolute-length-or-none",
+        }
+    }
 }
 
 /// Invalid-value handling rule for the current supported subset.

@@ -1,0 +1,19 @@
+main {
+  color: teal;
+  font-size: 18px;
+  width: 320px;
+}
+
+span {
+  background-color: #0f0;
+  padding-left: 3px;
+  display: inline-block;
+  width: -4px;
+  height: 12px;
+}
+
+button {
+  color: red;
+  min-width: 80px;
+  max-width: none;
+}

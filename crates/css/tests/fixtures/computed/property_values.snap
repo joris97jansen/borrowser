@@ -1,0 +1,75 @@
+version: 1
+computed-property-values
+case[0]: color
+  property: color
+  specified-contract: color
+  computed-contract: absolute-color
+  specified-kind: color
+  specified: red
+  computed-kind: color
+  computed: rgba(255, 0, 0, 255)
+case[1]: background-color
+  property: background-color
+  specified-contract: color
+  computed-contract: absolute-color
+  specified-kind: color
+  specified: #0fa
+  computed-kind: color
+  computed: rgba(0, 255, 170, 255)
+case[2]: width
+  property: width
+  specified-contract: absolute-length-or-auto
+  computed-contract: absolute-length-or-auto
+  specified-kind: absolute-length-or-auto
+  specified: 25px
+  computed-kind: length-or-auto
+  computed: 25px
+case[3]: height
+  property: height
+  specified-contract: absolute-length-or-auto
+  computed-contract: absolute-length-or-auto
+  specified-kind: absolute-length-or-auto
+  specified: auto
+  computed-kind: length-or-auto
+  computed: auto
+case[4]: max-width
+  property: max-width
+  specified-contract: absolute-length-or-none
+  computed-contract: absolute-length-or-none
+  specified-kind: absolute-length-or-none
+  specified: none
+  computed-kind: length-or-none
+  computed: none
+case[5]: margin-left
+  property: margin-left
+  specified-contract: absolute-length
+  computed-contract: absolute-length
+  specified-kind: absolute-length
+  specified: -3px
+  computed-kind: length
+  computed: -3px
+case[6]: padding-left
+  property: padding-left
+  specified-contract: absolute-length
+  computed-contract: absolute-length
+  specified-error: negative-length-not-allowed
+  computed: not-computed
+case[7]: width
+  property: width
+  specified-contract: absolute-length-or-auto
+  computed-contract: absolute-length-or-auto
+  specified-error: negative-length-not-allowed
+  computed: not-computed
+case[8]: width
+  property: width
+  specified-contract: absolute-length-or-auto
+  computed-contract: absolute-length-or-auto
+  specified-kind: absolute-length-or-auto
+  specified: 1e39px
+  computed-error: length-out-of-range
+case[9]: display
+  property: display
+  specified-contract: display-keyword
+  computed-contract: display-keyword
+  specified-error: unsupported-display-keyword
+  computed: not-computed
