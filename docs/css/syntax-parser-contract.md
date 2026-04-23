@@ -456,3 +456,7 @@ Related reference for the next selector-structure expansion work:
 Related reference for the selector subsystem contract introduced by Milestone P:
 
 - [`docs/css/p1-selector-architecture.md`](p1-selector-architecture.md)
+
+Related reference for the Milestone T CSS hardening threat model:
+
+- [`docs/css/t1-css-hardening-strategy-threat-model.md`](t1-css-hardening-strategy-threat-model.md)

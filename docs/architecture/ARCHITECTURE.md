@@ -170,6 +170,10 @@ lives in:
 
 * `docs/css/s9-property-system-computed-style-runtime-contract.md`
 
+The Milestone T CSS hardening threat model and invariant contract lives in:
+
+* `docs/css/t1-css-hardening-strategy-threat-model.md`
+
 The syntax layer owns:
 
 * tokenizer and parser entry points
@@ -188,8 +192,8 @@ computed-style contracts.
 
 ### 2. **Engine Rule/Value Model**
 
-Milestone O introduces a distinct engine-owned stylesheet/rule/declaration/
-value layer between syntax parsing and cascade.
+Milestone O defines the distinct engine-owned stylesheet/rule/declaration/value
+layer between syntax parsing and cascade.
 
 That layer:
 
@@ -227,13 +231,13 @@ The primary debug surfaces are `cascade_evaluation_debug_snapshot(...)`,
 `ResolvedStyle::to_debug_snapshot()`,
 `ResolvedDocumentStyle::to_debug_snapshot()`, and
 `resolve_document_styles_debug_snapshot(...)`.
-The current document-level integration remains function-oriented; later work
-may introduce a dedicated internal style-resolution session object and a
-first-class inline declaration-list parse entrypoint.
+The current document-level integration remains function-oriented. Any future
+style-resolution session object or first-class inline declaration-list
+entrypoint must preserve the structured cascade boundary.
 
 ### 4. **Computed Styles**
 
-Milestone S adds the property-aware computed-style pipeline:
+Milestone S defines the property-aware computed-style pipeline:
 
 ```
 DOM + StylesheetParse[]
@@ -442,12 +446,9 @@ rather than as the core style-resolution result.
 
 The remaining `Node::style` declaration vector is likewise a migration-only
 cascade bridge and is not the intended long-term style-resolution contract.
-
-This will soon enable:
-
-* persistent style/layout trees
-* recompute only on DOM or CSS changes
-* faster frame rendering
+The page-state shape is the storage boundary for persistent style/layout trees
+and change-scoped recomputation; those caches remain derived state from the DOM,
+stylesheet model, viewport, and runtime style pipeline.
 
 ---
 
