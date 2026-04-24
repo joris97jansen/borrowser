@@ -93,7 +93,12 @@ fn parse_hex_color_digits(
             expanded
         }
         6 => digits.to_string(),
-        _ => unreachable!("hex color digit length is validated above"),
+        _ => {
+            return Err(error(
+                property,
+                SpecifiedValueParseErrorKind::InvariantViolation,
+            ));
+        }
     };
 
     let parse_channel = |range: std::ops::Range<usize>| {

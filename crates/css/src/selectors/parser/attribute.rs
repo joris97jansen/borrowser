@@ -134,7 +134,10 @@ fn parse_attribute_name(
             span,
         }) => {
             let placeholder =
-                SelectorIdent::new("*", Some(*span)).expect("attribute namespace placeholder");
+                SelectorIdent::new("*", Some(*span)).map_err(|_| SegmentParseError::Invalid {
+                    span: Some(*span),
+                    reason: InvalidSelectorReason::InvariantViolation,
+                })?;
             *index = consume_attribute_namespace_sequence(values, *index);
             Ok((placeholder, *span, true))
         }

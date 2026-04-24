@@ -119,9 +119,9 @@ fn reject_negative_if_needed(
             SpecifiedValueParseErrorKind::NegativeLengthNotAllowed,
         )),
         PropertyLengthSignPolicy::NonNegative | PropertyLengthSignPolicy::AllowNegative => Ok(()),
-        PropertyLengthSignPolicy::NotLength => unreachable!(
-            "property '{}' reached length parsing without accepting length specified values",
-            property.name()
-        ),
+        PropertyLengthSignPolicy::NotLength => Err(error(
+            property,
+            SpecifiedValueParseErrorKind::InvariantViolation,
+        )),
     }
 }

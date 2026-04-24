@@ -48,9 +48,11 @@ impl<'a> StylesheetParser<'a> {
             None => (
                 CssComponentValue::PreservedToken(CssToken::new(
                     CssTokenKind::Eof,
-                    self.input
-                        .span(self.input.len_bytes(), self.input.len_bytes())
-                        .expect("eof span"),
+                    self.safe_span(
+                        self.input.len_bytes(),
+                        self.input.len_bytes(),
+                        "invalid synthesized EOF span",
+                    ),
                 )),
                 start,
             ),
@@ -63,7 +65,23 @@ impl<'a> StylesheetParser<'a> {
         nesting_depth: usize,
     ) -> ConsumedSimpleBlock {
         let start_token = self.tokens[start].clone();
-        let kind = block_kind_for_opener(&start_token.kind).expect("simple block opener");
+        let Some(kind) = block_kind_for_opener(&start_token.kind) else {
+            self.push_diagnostic(
+                DiagnosticSeverity::Error,
+                DiagnosticKind::InvariantViolation,
+                start_token.span.start,
+                "parser invariant violated: simple block started from non-opener token",
+            );
+            return ConsumedSimpleBlock {
+                block: CssSimpleBlock {
+                    span: start_token.span,
+                    kind: CssBlockKind::Curly,
+                    value: Vec::new(),
+                },
+                next_index: start.saturating_add(1),
+                closed: false,
+            };
+        };
         if nesting_depth >= self.options.limits.max_component_nesting_depth {
             self.stats.hit_limit = true;
             self.push_diagnostic(
@@ -82,10 +100,11 @@ impl<'a> StylesheetParser<'a> {
 
         while let Some(token) = self.tokens.get(cursor) {
             if block_kind_matches_closer(kind, &token.kind) {
-                let span = self
-                    .input
-                    .span(start_token.span.start, token.span.end)
-                    .expect("simple block span");
+                let span = self.safe_span(
+                    start_token.span.start,
+                    token.span.end,
+                    "invalid simple block span",
+                );
                 return ConsumedSimpleBlock {
                     block: CssSimpleBlock { span, kind, value },
                     next_index: cursor + 1,
@@ -94,10 +113,11 @@ impl<'a> StylesheetParser<'a> {
             }
 
             if matches!(token.kind, CssTokenKind::Eof) {
-                let span = self
-                    .input
-                    .span(start_token.span.start, token.span.start)
-                    .expect("simple block eof span");
+                let span = self.safe_span(
+                    start_token.span.start,
+                    token.span.start,
+                    "invalid simple block EOF span",
+                );
                 return ConsumedSimpleBlock {
                     block: CssSimpleBlock { span, kind, value },
                     next_index: cursor,
@@ -119,10 +139,11 @@ impl<'a> StylesheetParser<'a> {
             };
         }
 
-        let span = self
-            .input
-            .span(start_token.span.start, self.input.len_bytes())
-            .expect("simple block trailing span");
+        let span = self.safe_span(
+            start_token.span.start,
+            self.input.len_bytes(),
+            "invalid trailing simple block span",
+        );
         ConsumedSimpleBlock {
             block: CssSimpleBlock { span, kind, value },
             next_index: self.tokens.len(),
@@ -134,7 +155,22 @@ impl<'a> StylesheetParser<'a> {
         let start_token = self.tokens[start].clone();
         let name = match &start_token.kind {
             CssTokenKind::Function(name) => name.clone(),
-            _ => unreachable!("consume_function requires function token"),
+            _ => {
+                self.push_diagnostic(
+                    DiagnosticSeverity::Error,
+                    DiagnosticKind::InvariantViolation,
+                    start_token.span.start,
+                    "parser invariant violated: function consumption started from non-function token",
+                );
+                return ConsumedFunction {
+                    function: CssFunction {
+                        span: start_token.span,
+                        name: CssTokenText::Owned(String::new()),
+                        value: Vec::new(),
+                    },
+                    next_index: start.saturating_add(1),
+                };
+            }
         };
         if nesting_depth >= self.options.limits.max_component_nesting_depth {
             self.stats.hit_limit = true;
@@ -156,20 +192,22 @@ impl<'a> StylesheetParser<'a> {
         while let Some(token) = self.tokens.get(cursor) {
             match token.kind {
                 CssTokenKind::RightParenthesis => {
-                    let span = self
-                        .input
-                        .span(start_token.span.start, token.span.end)
-                        .expect("function span");
+                    let span = self.safe_span(
+                        start_token.span.start,
+                        token.span.end,
+                        "invalid function span",
+                    );
                     return ConsumedFunction {
                         function: CssFunction { span, name, value },
                         next_index: cursor + 1,
                     };
                 }
                 CssTokenKind::Eof => {
-                    let span = self
-                        .input
-                        .span(start_token.span.start, token.span.start)
-                        .expect("function eof span");
+                    let span = self.safe_span(
+                        start_token.span.start,
+                        token.span.start,
+                        "invalid function EOF span",
+                    );
                     return ConsumedFunction {
                         function: CssFunction { span, name, value },
                         next_index: cursor,
@@ -196,10 +234,11 @@ impl<'a> StylesheetParser<'a> {
             }
         }
 
-        let span = self
-            .input
-            .span(start_token.span.start, self.input.len_bytes())
-            .expect("function trailing span");
+        let span = self.safe_span(
+            start_token.span.start,
+            self.input.len_bytes(),
+            "invalid trailing function span",
+        );
         ConsumedFunction {
             function: CssFunction { span, name, value },
             next_index: self.tokens.len(),
@@ -207,7 +246,7 @@ impl<'a> StylesheetParser<'a> {
     }
 
     fn recover_overfull_simple_block(
-        &self,
+        &mut self,
         start: usize,
         kind: CssBlockKind,
         value: Vec<CssComponentValue>,
@@ -226,10 +265,11 @@ impl<'a> StylesheetParser<'a> {
                 (end_offset, false, eof_index)
             }
         };
-        let span = self
-            .input
-            .span(start_token.span.start, end_offset)
-            .expect("overfull simple block span");
+        let span = self.safe_span(
+            start_token.span.start,
+            end_offset,
+            "invalid overfull simple block span",
+        );
 
         ConsumedSimpleBlock {
             block: CssSimpleBlock { span, kind, value },
@@ -239,7 +279,7 @@ impl<'a> StylesheetParser<'a> {
     }
 
     fn recover_overfull_function(
-        &self,
+        &mut self,
         start: usize,
         name: CssTokenText,
         value: Vec<CssComponentValue>,
@@ -253,10 +293,11 @@ impl<'a> StylesheetParser<'a> {
             Some(index) => (self.tokens[index].span.start, index),
             None => (self.input.len_bytes(), self.tokens.len()),
         };
-        let span = self
-            .input
-            .span(start_token.span.start, end_offset)
-            .expect("overfull function span");
+        let span = self.safe_span(
+            start_token.span.start,
+            end_offset,
+            "invalid overfull function span",
+        );
 
         ConsumedFunction {
             function: CssFunction { span, name, value },

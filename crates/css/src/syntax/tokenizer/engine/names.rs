@@ -18,10 +18,7 @@ impl<'a> CssTokenizer<'a> {
         self.take_char();
         let value_start = self.pos;
         self.consume_name();
-        let value = self
-            .input
-            .span(value_start, self.pos)
-            .expect("hash payload span");
+        let value = self.safe_text_span(value_start, self.pos, "invalid hash payload span");
         let kind = if would_start_identifier(
             self.peek_char_at(value_start),
             self.peek_char_at_after(value_start),
@@ -31,14 +28,7 @@ impl<'a> CssTokenizer<'a> {
         } else {
             CssHashKind::Unrestricted
         };
-        self.push_token_with_kind(
-            CssTokenKind::Hash {
-                value: CssTokenText::Span(value),
-                kind,
-            },
-            start,
-            self.pos,
-        );
+        self.push_token_with_kind(CssTokenKind::Hash { value, kind }, start, self.pos);
         true
     }
 
@@ -55,15 +45,9 @@ impl<'a> CssTokenizer<'a> {
         self.take_char();
         let payload_start = self.pos;
         self.consume_name();
-        let payload = self
-            .input
-            .span(payload_start, self.pos)
-            .expect("at-keyword payload span");
-        self.push_token_with_kind(
-            CssTokenKind::AtKeyword(CssTokenText::Span(payload)),
-            start,
-            self.pos,
-        );
+        let payload =
+            self.safe_text_span(payload_start, self.pos, "invalid at-keyword payload span");
+        self.push_token_with_kind(CssTokenKind::AtKeyword(payload), start, self.pos);
         true
     }
 
@@ -71,36 +55,30 @@ impl<'a> CssTokenizer<'a> {
         let payload_start = self.pos;
         self.consume_name();
         let payload_end = self.pos;
-        let payload = self
-            .input
-            .span(payload_start, payload_end)
-            .expect("ident payload span");
+        let payload = self.safe_text_span(payload_start, payload_end, "invalid ident payload span");
 
         if self.peek_char() == Some('(') {
+            let payload_span = match &payload {
+                CssTokenText::Span(span) => Some(*span),
+                CssTokenText::Owned(_) => None,
+            };
             self.take_char();
-            if self
-                .input
-                .slice(payload)
-                .map(|text| text.eq_ignore_ascii_case("url"))
-                .unwrap_or(false)
-                && self.consume_url(start, payload)
+            if let Some(span) = payload_span
+                && self
+                    .input
+                    .slice(span)
+                    .map(|text| text.eq_ignore_ascii_case("url"))
+                    .unwrap_or(false)
+                && self.consume_url(start, span)
             {
                 return;
             }
 
-            self.push_token_with_kind(
-                CssTokenKind::Function(CssTokenText::Span(payload)),
-                start,
-                self.pos,
-            );
+            self.push_token_with_kind(CssTokenKind::Function(payload), start, self.pos);
             return;
         }
 
-        self.push_token_with_kind(
-            CssTokenKind::Ident(CssTokenText::Span(payload)),
-            start,
-            self.pos,
-        );
+        self.push_token_with_kind(CssTokenKind::Ident(payload), start, self.pos);
     }
 
     fn consume_url(&mut self, start: usize, name_payload: CssSpan) -> bool {
@@ -131,16 +109,15 @@ impl<'a> CssTokenizer<'a> {
         while let Some(ch) = self.peek_char() {
             match ch {
                 ')' => {
-                    let payload = self
-                        .input
-                        .span(payload_start, payload_end)
-                        .expect("url payload span");
+                    let payload =
+                        self.safe_text_span(payload_start, payload_end, "invalid url payload span");
                     self.take_char();
                     self.push_token_with_kind(
-                        CssTokenKind::Url(if payload.is_empty() {
-                            CssTokenText::Owned(String::new())
-                        } else {
-                            CssTokenText::Span(payload)
+                        CssTokenKind::Url(match payload {
+                            CssTokenText::Span(span) if span.is_empty() => {
+                                CssTokenText::Owned(String::new())
+                            }
+                            other => other,
                         }),
                         start,
                         self.pos,
@@ -173,16 +150,18 @@ impl<'a> CssTokenizer<'a> {
                         }
                     }
                     if self.peek_char() == Some(')') {
-                        let payload = self
-                            .input
-                            .span(payload_start, payload_end)
-                            .expect("url payload span");
+                        let payload = self.safe_text_span(
+                            payload_start,
+                            payload_end,
+                            "invalid url payload span",
+                        );
                         self.take_char();
                         self.push_token_with_kind(
-                            CssTokenKind::Url(if payload.is_empty() {
-                                CssTokenText::Owned(String::new())
-                            } else {
-                                CssTokenText::Span(payload)
+                            CssTokenKind::Url(match payload {
+                                CssTokenText::Span(span) if span.is_empty() => {
+                                    CssTokenText::Owned(String::new())
+                                }
+                                other => other,
                             }),
                             start,
                             self.pos,

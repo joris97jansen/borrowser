@@ -49,6 +49,7 @@ pub enum SpecifiedValueParseErrorKind {
     InvalidLengthNumber,
     NonZeroUnitlessLength,
     NegativeLengthNotAllowed,
+    InvariantViolation,
     UnsupportedKeyword,
 }
 
@@ -67,6 +68,7 @@ impl SpecifiedValueParseErrorKind {
             Self::InvalidLengthNumber => "invalid-length-number",
             Self::NonZeroUnitlessLength => "non-zero-unitless-length",
             Self::NegativeLengthNotAllowed => "negative-length-not-allowed",
+            Self::InvariantViolation => "invariant-violation",
             Self::UnsupportedKeyword => "unsupported-keyword",
         }
     }

@@ -51,7 +51,7 @@ pub(super) fn map_structure_error(error: SelectorStructureError) -> InvalidSelec
         | SelectorStructureError::MixedInputIds
         | SelectorStructureError::NonMonotonicSpans
         | SelectorStructureError::PayloadSpanOutsideNode => {
-            InvalidSelectorReason::UnexpectedComponentValue
+            InvalidSelectorReason::InvariantViolation
         }
     }
 }

@@ -1,6 +1,6 @@
 use super::convert::{map_structure_error, selector_ident_from_text};
 use super::segment::{ParsedSimpleSelector, SegmentParseError, SegmentParser};
-use super::spans::span_from_bounds;
+use super::spans::{component_list_span, span_from_bounds};
 use super::{
     ClassSelector, CssBlockKind, CssComponentValue, CssHashKind, CssInput, CssToken, CssTokenKind,
     CssTokenText, IdSelector, InvalidSelectorReason, SubclassSelector, TypeSelector,
@@ -11,9 +11,12 @@ impl<'a> SegmentParser<'a> {
     pub(super) fn parse_simple_selector(
         &mut self,
     ) -> Result<ParsedSimpleSelector, SegmentParseError> {
-        let current = self
-            .current_value()
-            .expect("simple selector parse requires a current component");
+        let Some(current) = self.current_value() else {
+            return Err(SegmentParseError::Invalid {
+                span: component_list_span(self.values),
+                reason: InvalidSelectorReason::InvariantViolation,
+            });
+        };
 
         match current {
             CssComponentValue::PreservedToken(token) => self.parse_token_selector(token),
@@ -139,7 +142,12 @@ impl<'a> SegmentParser<'a> {
             });
         };
 
-        let selector_span = span_from_bounds(dot_span, token.span).expect("class selector span");
+        let Some(selector_span) = span_from_bounds(dot_span, token.span) else {
+            return Err(SegmentParseError::Invalid {
+                span: Some(dot_span),
+                reason: InvalidSelectorReason::InvariantViolation,
+            });
+        };
         let name = selector_ident_from_text(self.input, text)?;
         let selector = ClassSelector::new(selector_span, name).map_err(|error| {
             SegmentParseError::Invalid {
@@ -209,7 +217,7 @@ impl<'a> SegmentParser<'a> {
         };
 
         Ok(ParsedSimpleSelector::Unsupported {
-            span: span_from_bounds(first_colon_span, end_span).expect("pseudo selector span"),
+            span: span_from_bounds(first_colon_span, end_span).unwrap_or(first_colon_span),
             features,
         })
     }
