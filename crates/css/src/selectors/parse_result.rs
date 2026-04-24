@@ -213,4 +213,5 @@ pub enum InvalidSelectorReason {
     MissingAttributeName,
     MissingAttributeValue,
     UnexpectedComponentValue,
+    ResourceLimitExceeded,
 }

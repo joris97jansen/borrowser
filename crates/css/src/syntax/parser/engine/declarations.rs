@@ -127,6 +127,17 @@ impl<'a> StylesheetParser<'a> {
         let mut value = Vec::new();
         let mut value_cursor = cursor;
         while value_cursor < value_end_index {
+            let Some(value_token) = self.tokens.get(value_cursor) else {
+                break;
+            };
+            if self.component_container_limit_reached(
+                value.len(),
+                value_token.span.start,
+                "declaration value",
+            ) {
+                break;
+            }
+
             let (component_value, next) = self.consume_component_value(value_cursor, 0);
             value.push(component_value);
             value_cursor = if next <= value_cursor {

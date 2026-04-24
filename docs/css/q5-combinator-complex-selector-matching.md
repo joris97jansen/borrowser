@@ -25,6 +25,8 @@ Related documents:
 Q5 adds real structural selector evaluation through:
 
 - `SelectorMatchingContext::matches_complex_selector(...)`
+- the conservative compatibility wrapper
+  `SelectorMatchingContext::matches_complex_selector_conservative(...)`
 - the updated `SelectorMatchingContext::match_selector_list(...)`
 
 The matcher now evaluates the full parsed selector subset supported by
@@ -66,11 +68,13 @@ boundary between:
 - compound matching on one element
 - structural traversal across element axes
 
-The current implementation keeps that evaluator in a direct recursive form.
+The current implementation keeps that evaluator in a direct recursive form with
+explicit selector-matching budgets.
 That is deliberate for Milestone Q:
 
 - correctness and contract clarity come before traversal optimization
 - recursive backtracking keeps structural semantics explicit
+- selector-matching limit failures remain explicit on the authoritative API
 - iterative reformulation, pruning, or memoization can be introduced later
   without changing the matcher-facing contract
 

@@ -39,8 +39,12 @@ fn matching_context_complex_selector_matching_is_independent_of_equivalent_dom_c
     let nested_target = nested_index.elements().last().expect("nested target");
     let selectors = parse_selector_result("main > p.note, span + p.note, div ~ p.note");
 
-    let flat_outcome = flat_context.match_selector_list(flat_target, &selectors);
-    let nested_outcome = nested_context.match_selector_list(nested_target, &selectors);
+    let flat_outcome = flat_context
+        .match_selector_list(flat_target, &selectors)
+        .expect("flat selector match outcome");
+    let nested_outcome = nested_context
+        .match_selector_list(nested_target, &selectors)
+        .expect("nested selector match outcome");
 
     assert_eq!(flat_outcome, nested_outcome);
     assert_eq!(
@@ -66,8 +70,12 @@ fn matching_context_complex_selector_matching_is_independent_of_raw_parse_format
     let compact = parse_selector_result("main>span+p.note");
     let formatted = parse_selector_result("main /**/ > /**/ span /**/ + /**/ p.note");
 
-    let compact_outcome = context.match_selector_list(target, &compact);
-    let formatted_outcome = context.match_selector_list(target, &formatted);
+    let compact_outcome = context
+        .match_selector_list(target, &compact)
+        .expect("compact selector match outcome");
+    let formatted_outcome = context
+        .match_selector_list(target, &formatted)
+        .expect("formatted selector match outcome");
 
     assert_eq!(compact_outcome, formatted_outcome);
 }

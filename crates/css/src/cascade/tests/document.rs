@@ -1,4 +1,7 @@
-use super::super::resolve_document_styles;
+use super::super::{
+    StyleResolutionError, StyleResolutionLimit, StyleResolutionLimits, resolve_document_styles,
+    try_resolve_document_styles_with_limits,
+};
 use super::support::{element, stylesheet};
 use crate::{CascadePropertyId, CascadeSpecificity, ResolvedValueSource};
 
@@ -13,7 +16,7 @@ fn resolve_document_styles_produces_structured_output_without_mutating_dom() {
         vec![element("div", vec![("class", Some("hero"))], Vec::new())],
     );
 
-    let resolved = resolve_document_styles(&dom, &stylesheets);
+    let resolved = resolve_document_styles(&dom, &stylesheets).expect("resolved document style");
 
     let html::Node::Element {
         style, children, ..
@@ -61,7 +64,7 @@ fn resolve_document_styles_threads_parent_style_for_inheritance() {
         vec![element("span", Vec::new(), Vec::new())],
     );
 
-    let resolved = resolve_document_styles(&dom, &stylesheets);
+    let resolved = resolve_document_styles(&dom, &stylesheets).expect("resolved document style");
 
     assert_eq!(
         resolved.entries()[0]
@@ -102,7 +105,7 @@ fn resolve_document_styles_integrates_inline_style_as_structured_author_output()
         Vec::new(),
     );
 
-    let resolved = resolve_document_styles(&dom, &stylesheets);
+    let resolved = resolve_document_styles(&dom, &stylesheets).expect("resolved document style");
     let style = resolved.entries()[0].style();
 
     assert_eq!(
@@ -139,7 +142,7 @@ fn resolve_document_styles_rejects_invalid_supported_values_before_winner_resolu
     )];
     let dom = element("div", Vec::new(), Vec::new());
 
-    let resolved = resolve_document_styles(&dom, &stylesheets);
+    let resolved = resolve_document_styles(&dom, &stylesheets).expect("resolved document style");
     let style = resolved.entries()[0].style();
 
     assert_eq!(
@@ -172,7 +175,7 @@ fn resolve_document_styles_falls_back_after_invalid_supported_values() {
         vec![element("span", Vec::new(), Vec::new())],
     );
 
-    let resolved = resolve_document_styles(&dom, &stylesheets);
+    let resolved = resolve_document_styles(&dom, &stylesheets).expect("resolved document style");
     let child_style = resolved.entries()[1].style();
 
     assert_eq!(
@@ -195,5 +198,100 @@ fn resolve_document_styles_falls_back_after_invalid_supported_values() {
             .expect("child padding-left")
             .source(),
         &ResolvedValueSource::Initial(crate::InitialStyleValue::ZeroPx)
+    );
+}
+
+#[test]
+fn try_resolve_document_styles_reports_style_pass_limits() {
+    let stylesheets = vec![stylesheet("div { color: red; }")];
+    let dom = element("div", Vec::new(), Vec::new());
+    let limits = StyleResolutionLimits {
+        max_style_rules_per_document: 0,
+        ..StyleResolutionLimits::default()
+    };
+
+    let error = try_resolve_document_styles_with_limits(&dom, &stylesheets, &limits)
+        .expect_err("style rule limit must fail deterministically");
+
+    assert_eq!(
+        error,
+        StyleResolutionError::LimitExceeded {
+            limit: StyleResolutionLimit::StyleRulesPerDocument,
+            configured: 0,
+        }
+    );
+    assert_eq!(
+        error.to_string(),
+        "style resolution exceeded style-rules-per-document limit 0"
+    );
+}
+
+#[test]
+fn try_resolve_document_styles_reports_styled_element_limits_before_work() {
+    let dom = element("main", Vec::new(), Vec::new());
+    let limits = StyleResolutionLimits {
+        max_styled_elements_per_document: 0,
+        ..StyleResolutionLimits::default()
+    };
+
+    let error = try_resolve_document_styles_with_limits(&dom, &[], &limits)
+        .expect_err("styled element limit must fail deterministically");
+
+    assert_eq!(
+        error,
+        StyleResolutionError::LimitExceeded {
+            limit: StyleResolutionLimit::StyledElementsPerDocument,
+            configured: 0,
+        }
+    );
+}
+
+#[test]
+fn try_resolve_document_styles_reports_inline_style_byte_limits_before_parsing() {
+    let dom = element(
+        "div",
+        vec![("style", Some("color: red; width: 10px;"))],
+        Vec::new(),
+    );
+    let limits = StyleResolutionLimits {
+        max_inline_style_bytes: 4,
+        ..StyleResolutionLimits::default()
+    };
+
+    let error = try_resolve_document_styles_with_limits(&dom, &[], &limits)
+        .expect_err("inline style byte limit must fail before inline parsing");
+
+    assert_eq!(
+        error,
+        StyleResolutionError::LimitExceeded {
+            limit: StyleResolutionLimit::InlineStyleBytes,
+            configured: 4,
+        }
+    );
+}
+
+#[test]
+fn try_resolve_document_styles_rejects_unrepresentable_limit_configuration() {
+    if usize::BITS <= 32 {
+        return;
+    }
+
+    let dom = element("div", Vec::new(), Vec::new());
+    let configured = (u32::MAX as usize).saturating_add(1);
+    let limits = StyleResolutionLimits {
+        max_style_rules_per_document: configured,
+        ..StyleResolutionLimits::default()
+    };
+
+    let error = try_resolve_document_styles_with_limits(&dom, &[], &limits)
+        .expect_err("unrepresentable style-pass configuration must be rejected explicitly");
+
+    assert_eq!(
+        error,
+        StyleResolutionError::UnsupportedConfiguration {
+            limit: StyleResolutionLimit::StyleRulesPerDocument,
+            configured,
+            max_supported: u32::MAX as usize,
+        }
     );
 }

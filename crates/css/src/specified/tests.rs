@@ -1,6 +1,7 @@
 use super::{
     SpecifiedColorKeyword, SpecifiedColorSyntax, SpecifiedDisplayKeyword, SpecifiedLengthUnit,
-    SpecifiedValue, SpecifiedValueParseErrorKind, parse_specified_value,
+    SpecifiedValue, SpecifiedValueLimits, SpecifiedValueParseErrorKind, parse_specified_value,
+    parse_specified_value_with_limits,
 };
 use crate::{
     ParseOptions, PropertyId, PropertySpecifiedValueKind, Rule, parse_stylesheet_with_options,
@@ -125,6 +126,31 @@ fn rejects_values_that_do_not_match_the_property_specified_shape() {
     assert_eq!(
         parse_error(PropertyId::Color, "color: red blue"),
         SpecifiedValueParseErrorKind::UnexpectedComponentCount
+    );
+}
+
+#[test]
+fn specified_value_parser_enforces_component_limits_before_shape_parsing() {
+    let mut value = declaration_value("color: red");
+    let component = value
+        .components
+        .first()
+        .expect("representative value component")
+        .clone();
+    value.components = vec![component; 3];
+
+    let error = parse_specified_value_with_limits(
+        PropertyId::Color,
+        &value,
+        &SpecifiedValueLimits {
+            max_components_per_value: 2,
+        },
+    )
+    .expect_err("specified value parser must reject over-limit component vectors");
+
+    assert_eq!(
+        error.kind(),
+        SpecifiedValueParseErrorKind::ResourceLimitExceeded
     );
 }
 

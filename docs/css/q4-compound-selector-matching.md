@@ -50,6 +50,8 @@ This is exactly the Q4 runtime boundary.
 The surrounding selector-list entrypoint is already in place through:
 
 - `SelectorMatchingContext::match_selector_list(...)`
+- and its conservative compatibility variant
+  `SelectorMatchingContext::match_selector_list_conservative(...)`
 
 That means compound selector matching is already integrated into the current
 element-local evaluator surface rather than existing as an isolated helper.

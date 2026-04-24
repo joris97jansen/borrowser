@@ -29,12 +29,12 @@ pub use cascade::{
     CurrentScopeCascadePriorityBand, InitialStyleValue, InlineStyleDeclarationRef,
     InlineStyleRuleRef, ResolvedDocumentStyle, ResolvedElementStyle, ResolvedStyle,
     ResolvedStyleBuildError, ResolvedStyleBuilder, ResolvedStyleEntry, ResolvedValueSource,
-    StylesheetDeclarationRef, StylesheetRuleRef, attach_styles, cascade_evaluation_debug_snapshot,
-    cascade_property_registry, get_inline_style, is_css, resolve_cascade_style,
-    resolve_cascade_style_from_rule_inputs, resolve_cascade_winners,
-    resolve_cascade_winners_from_rule_inputs, resolve_document_styles,
+    StyleResolutionError, StyleResolutionLimit, StyleResolutionLimits, StylesheetDeclarationRef,
+    StylesheetRuleRef, attach_styles, cascade_evaluation_debug_snapshot, cascade_property_registry,
+    get_inline_style, is_css, resolve_cascade_style, resolve_cascade_style_from_rule_inputs,
+    resolve_cascade_winners, resolve_cascade_winners_from_rule_inputs, resolve_document_styles,
     resolve_document_styles_debug_snapshot, resolve_initial_style,
-    sort_candidates_by_cascade_order,
+    sort_candidates_by_cascade_order, try_resolve_document_styles_with_limits,
 };
 pub use computed::{
     BoxMetrics, ComputedDocumentStyle, ComputedElementStyle, ComputedStyleBuildError,
@@ -42,8 +42,8 @@ pub use computed::{
     ComputedValueDiscriminant, ComputedValueNormalizationError,
     ComputedValueNormalizationErrorKind, build_style_tree_from_computed_styles,
     build_style_tree_with_stylesheets, compute_document_styles,
-    compute_document_styles_from_resolved_styles, compute_style_from_resolved_style,
-    computed_value_debug_snapshot, normalize_specified_value,
+    compute_document_styles_from_resolved_styles, compute_document_styles_with_limits,
+    compute_style_from_resolved_style, computed_value_debug_snapshot, normalize_specified_value,
 };
 pub use computed::{ComputedStyle, StyledNode, build_style_tree, compute_style};
 pub use model::{
@@ -67,16 +67,18 @@ pub use selectors::{
     MatchedSelector, NamedTypeSelector, PreviousSiblingElements, SelectorDomElementId,
     SelectorDomElementIter, SelectorDomIndex, SelectorIdent, SelectorList,
     SelectorListMatchBuilder, SelectorListMatchOutcome, SelectorListParseResult, SelectorMatchDom,
-    SelectorMatchability, SelectorMatchingContext, SelectorString, SelectorStructureError,
-    Specificity, SubclassSelector, TypeSelector, UniversalSelector, UnsupportedSelectorFeature,
-    UnsupportedSelectorHandling, UnsupportedSelectorList, parse_selector_list,
+    SelectorMatchability, SelectorMatchingContext, SelectorMatchingLimitError,
+    SelectorMatchingLimits, SelectorString, SelectorStructureError, Specificity, SubclassSelector,
+    TypeSelector, UniversalSelector, UnsupportedSelectorFeature, UnsupportedSelectorHandling,
+    UnsupportedSelectorList, parse_selector_list, parse_selector_list_with_limits,
     serialize_selector_list_for_snapshot, serialize_selector_parse_result_for_snapshot,
 };
 pub use specified::{
     SpecifiedColor, SpecifiedColorKeyword, SpecifiedColorSyntax, SpecifiedDisplay,
     SpecifiedDisplayKeyword, SpecifiedHexColor, SpecifiedLength, SpecifiedLengthOrAuto,
     SpecifiedLengthOrNone, SpecifiedLengthUnit, SpecifiedPropertyValue, SpecifiedValue,
-    SpecifiedValueParseError, SpecifiedValueParseErrorKind, parse_specified_value,
+    SpecifiedValueLimits, SpecifiedValueParseError, SpecifiedValueParseErrorKind,
+    parse_specified_value, parse_specified_value_with_limits,
 };
 
 // Explicit syntax-layer surface for parser/tokenizer work and syntax tests.

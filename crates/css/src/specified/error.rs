@@ -37,6 +37,7 @@ impl std::error::Error for SpecifiedValueParseError {}
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SpecifiedValueParseErrorKind {
+    ResourceLimitExceeded,
     EmptyValue,
     UnexpectedComponentCount,
     UnsupportedComponent,
@@ -54,6 +55,7 @@ pub enum SpecifiedValueParseErrorKind {
 impl SpecifiedValueParseErrorKind {
     pub fn as_debug_label(self) -> &'static str {
         match self {
+            Self::ResourceLimitExceeded => "resource-limit-exceeded",
             Self::EmptyValue => "empty-value",
             Self::UnexpectedComponentCount => "unexpected-component-count",
             Self::UnsupportedComponent => "unsupported-component",

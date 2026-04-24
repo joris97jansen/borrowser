@@ -23,7 +23,9 @@ fn matching_context_highest_specificity_comes_from_actual_matches_only() {
     let context = SelectorMatchingContext::new(&index);
     let element = index.elements().next().expect("indexed element");
     let selectors = parse_selector_result("#hero, div.card, div");
-    let outcome = context.match_selector_list(element, &selectors);
+    let outcome = context
+        .match_selector_list(element, &selectors)
+        .expect("selector match outcome");
 
     assert_eq!(outcome.matchability(), SelectorMatchability::Parsed);
     assert_eq!(
@@ -184,7 +186,9 @@ fn matching_context_match_selector_list_reports_not_matched_for_supported_inputs
     let context = SelectorMatchingContext::new(&index);
     let element = index.elements().next().expect("indexed element");
     let selectors = parse_selector_result("span, #missing, .other, body > p.note");
-    let outcome = context.match_selector_list(element, &selectors);
+    let outcome = context
+        .match_selector_list(element, &selectors)
+        .expect("selector match outcome");
 
     assert_eq!(outcome.matchability(), SelectorMatchability::Parsed);
     assert!(!outcome.matched_any());
@@ -209,8 +213,12 @@ fn matching_context_match_selector_list_preserves_non_matchable_parse_states() {
         crate::selectors::InvalidSelectorList::new(None, InvalidSelectorReason::EmptySelectorList),
     );
 
-    let unsupported_outcome = context.match_selector_list(element, &unsupported);
-    let invalid_outcome = context.match_selector_list(element, &invalid);
+    let unsupported_outcome = context
+        .match_selector_list(element, &unsupported)
+        .expect("selector match outcome");
+    let invalid_outcome = context
+        .match_selector_list(element, &invalid)
+        .expect("selector match outcome");
 
     assert_eq!(
         unsupported_outcome.matchability(),

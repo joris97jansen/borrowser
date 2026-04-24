@@ -1,6 +1,6 @@
 use super::super::{InvalidSelectorReason, parse_selector_list};
-use super::support::{invalid_selector, parse_selector_result};
-use crate::syntax::CssInput;
+use super::support::{invalid_selector, parse_selector_result, parse_selector_result_with_limits};
+use crate::syntax::{CssInput, SyntaxLimits};
 
 #[test]
 fn parser_reports_invalid_selector_shapes_deterministically() {
@@ -192,6 +192,56 @@ fn invalid_selector_lists_do_not_partially_recover() {
             "result: invalid\n",
             "span: @5..12\n",
             "reason: missing-attribute-value\n",
+        )
+    );
+}
+
+#[test]
+fn parser_reports_resource_limit_selector_list_failures_deterministically() {
+    let too_many_selectors = parse_selector_result_with_limits(
+        "div, span",
+        &SyntaxLimits {
+            max_selectors_per_rule: 1,
+            ..SyntaxLimits::default()
+        },
+    );
+    let too_many_segments = parse_selector_result_with_limits(
+        "main div",
+        &SyntaxLimits {
+            max_selector_segments_per_selector: 1,
+            ..SyntaxLimits::default()
+        },
+    );
+    let too_many_simple_selectors = parse_selector_result_with_limits(
+        "div.card",
+        &SyntaxLimits {
+            max_simple_selectors_per_compound: 1,
+            ..SyntaxLimits::default()
+        },
+    );
+
+    assert_eq!(
+        too_many_selectors.invalid().map(|invalid| invalid.reason()),
+        Some(InvalidSelectorReason::ResourceLimitExceeded)
+    );
+    assert_eq!(
+        too_many_segments.invalid().map(|invalid| invalid.reason()),
+        Some(InvalidSelectorReason::ResourceLimitExceeded)
+    );
+    assert_eq!(
+        too_many_simple_selectors
+            .invalid()
+            .map(|invalid| invalid.reason()),
+        Some(InvalidSelectorReason::ResourceLimitExceeded)
+    );
+    assert_eq!(
+        too_many_selectors.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "selector-parse\n",
+            "result: invalid\n",
+            "span: @0..10\n",
+            "reason: resource-limit-exceeded\n",
         )
     );
 }

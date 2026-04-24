@@ -1,6 +1,6 @@
 use super::contract::ResolvedStyle;
 use super::document::ResolvedElementStyle;
-use super::integration::resolve_document_styles;
+use super::integration::{StyleResolutionLimits, try_resolve_document_styles_with_limits};
 use crate::model;
 use html::Node;
 
@@ -10,8 +10,25 @@ use html::Node;
 /// resolves the structured document style output, then projects authored winner
 /// values back into `Node::Element::style` for the pre-computed-values runtime
 /// path that still consumes string declarations.
+///
+/// This is a compatibility path, not the authoritative resolved-style API. If
+/// document style resolution hits a hardening limit, the bridge clears any
+/// legacy projected style vectors and returns without projecting a partial or
+/// fabricated resolved-style result.
 pub fn attach_styles(dom: &mut Node, sheets: &[model::StylesheetParse]) {
-    let resolved_styles = resolve_document_styles(dom, sheets);
+    let resolved_styles = match try_resolve_document_styles_with_limits(
+        dom,
+        sheets,
+        &StyleResolutionLimits::default(),
+    ) {
+        Ok(resolved_styles) => resolved_styles,
+        Err(error) => {
+            #[cfg(debug_assertions)]
+            eprintln!("legacy attach_styles degraded style resolution failure: {error}");
+            clear_legacy_styles(dom);
+            return;
+        }
+    };
     let mut entries = resolved_styles.entries().iter();
     project_resolved_styles_to_dom(dom, &mut entries);
     debug_assert!(
@@ -39,6 +56,25 @@ fn project_resolved_styles_to_dom<'a>(
             project_resolved_style_to_legacy_vector(resolved.style(), style);
             for child in children {
                 project_resolved_styles_to_dom(child, entries);
+            }
+        }
+        Node::Text { .. } | Node::Comment { .. } => {}
+    }
+}
+
+fn clear_legacy_styles(node: &mut Node) {
+    match node {
+        Node::Document { children, .. } => {
+            for child in children {
+                clear_legacy_styles(child);
+            }
+        }
+        Node::Element {
+            style, children, ..
+        } => {
+            style.clear();
+            for child in children {
+                clear_legacy_styles(child);
             }
         }
         Node::Text { .. } | Node::Comment { .. } => {}

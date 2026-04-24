@@ -2,7 +2,7 @@ use super::super::SelectorDomIndex;
 use crate::selectors::{
     AttributeExistsSelector, AttributeMatchSelector, AttributeMatcher, AttributeSelector,
     AttributeValue, ClassSelector, ComplexSelector, CompoundSelector, IdSelector, SelectorIdent,
-    SelectorList, SelectorListParseResult, SelectorString, TypeSelector,
+    SelectorList, SelectorListParseResult, SelectorMatchingLimits, SelectorString, TypeSelector,
 };
 use crate::syntax::{CssInput, CssRule, CssSpan, ParseOptions, parse_stylesheet_with_options};
 use html::Node;
@@ -76,6 +76,21 @@ pub(super) fn assert_matching_debug_snapshot(dom: Node, selector_source: &str, e
     let selectors = parse_selector_result(selector_source);
 
     assert_eq!(index.to_matching_debug_snapshot(&selectors), expected);
+}
+
+pub(super) fn assert_matching_debug_snapshot_with_limits(
+    dom: Node,
+    selector_source: &str,
+    limits: SelectorMatchingLimits,
+    expected: &str,
+) {
+    let index = SelectorDomIndex::from_root(&dom);
+    let selectors = parse_selector_result(selector_source);
+
+    assert_eq!(
+        index.to_matching_debug_snapshot_with_limits(&selectors, limits),
+        expected
+    );
 }
 
 pub(super) fn parsed_single_selector(source: &str) -> ComplexSelector {

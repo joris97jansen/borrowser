@@ -3,8 +3,11 @@ use super::super::{
     Combinator, CombinedSelector, ComplexSelector, CompoundSelector, IdSelector,
     InvalidSelectorList, SelectorIdent, SelectorList, SelectorListParseResult, SelectorString,
     SubclassSelector, TypeSelector, UnsupportedSelectorList, parse_selector_list,
+    parse_selector_list_with_limits,
 };
-use crate::syntax::{CssInput, CssRule, CssSpan, ParseOptions, parse_stylesheet_with_options};
+use crate::syntax::{
+    CssInput, CssRule, CssSpan, ParseOptions, SyntaxLimits, parse_stylesheet_with_options,
+};
 
 pub(super) fn span(input: &CssInput, start: usize, end: usize) -> CssSpan {
     input.span(start, end).expect("valid span")
@@ -81,6 +84,19 @@ pub(super) fn parse_selector_result(source: &str) -> SelectorListParseResult {
         panic!("expected qualified rule");
     };
     parse_selector_list(&parse.input, &rule.prelude)
+}
+
+pub(super) fn parse_selector_result_with_limits(
+    source: &str,
+    limits: &SyntaxLimits,
+) -> SelectorListParseResult {
+    let stylesheet = format!("{source} {{ color: red; }}");
+    let parse = parse_stylesheet_with_options(&stylesheet, &ParseOptions::stylesheet());
+    let rule = parse.stylesheet.rules.first().expect("style rule");
+    let CssRule::Qualified(rule) = rule else {
+        panic!("expected qualified rule");
+    };
+    parse_selector_list_with_limits(&parse.input, &rule.prelude, limits)
 }
 
 pub(super) fn parsed_selector_list(source: &str) -> SelectorList {

@@ -4,6 +4,7 @@ use super::{
     Combinator, CombinedSelector, ComplexSelector, CompoundSelector, CssComponentValue, CssInput,
     CssSpan, InvalidSelectorReason, SubclassSelector, TypeSelector, UnsupportedSelectorFeature,
 };
+use crate::syntax::SyntaxLimits;
 
 pub(super) enum SegmentParseResult {
     Parsed(ComplexSelector),
@@ -24,6 +25,7 @@ pub(super) enum SegmentParseError {
 pub(super) struct SegmentParser<'a> {
     pub(super) input: &'a CssInput,
     pub(super) values: &'a [CssComponentValue],
+    pub(super) limits: &'a SyntaxLimits,
     pub(super) index: usize,
     pub(super) unsupported: Vec<UnsupportedSelectorFeature>,
 }
@@ -73,10 +75,15 @@ impl From<SegmentParseError> for SegmentParseResult {
 }
 
 impl<'a> SegmentParser<'a> {
-    pub(super) fn new(input: &'a CssInput, values: &'a [CssComponentValue]) -> Self {
+    pub(super) fn new(
+        input: &'a CssInput,
+        values: &'a [CssComponentValue],
+        limits: &'a SyntaxLimits,
+    ) -> Self {
         Self {
             input,
             values,
+            limits,
             index: 0,
             unsupported: Vec::new(),
         }
@@ -97,6 +104,13 @@ impl<'a> SegmentParser<'a> {
             return SegmentParseResult::Invalid {
                 span: self.current_span().or(segment_span),
                 reason: InvalidSelectorReason::LeadingCombinator,
+            };
+        }
+
+        if self.limits.max_selector_segments_per_selector == 0 {
+            return SegmentParseResult::Invalid {
+                span: self.current_span().or(segment_span),
+                reason: InvalidSelectorReason::ResourceLimitExceeded,
             };
         }
 
@@ -147,6 +161,13 @@ impl<'a> SegmentParser<'a> {
                 return SegmentParseResult::Invalid {
                     span: self.current_span().or(segment_span),
                     reason: InvalidSelectorReason::RepeatedCombinator,
+                };
+            }
+
+            if tail.len().saturating_add(1) >= self.limits.max_selector_segments_per_selector {
+                return SegmentParseResult::Invalid {
+                    span: combinator_start,
+                    reason: InvalidSelectorReason::ResourceLimitExceeded,
                 };
             }
 
@@ -211,6 +232,7 @@ impl<'a> SegmentParser<'a> {
         let mut compound_start = None;
         let mut compound_end = None;
         let mut compound_has_unsupported = false;
+        let mut simple_count = 0usize;
 
         loop {
             self.skip_comments();
@@ -222,7 +244,15 @@ impl<'a> SegmentParser<'a> {
                 break;
             }
 
+            if simple_count >= self.limits.max_simple_selectors_per_compound {
+                return Err(SegmentParseError::Invalid {
+                    span: self.current_span(),
+                    reason: InvalidSelectorReason::ResourceLimitExceeded,
+                });
+            }
+
             let parsed = self.parse_simple_selector()?;
+            simple_count = simple_count.saturating_add(1);
 
             let parsed_span = parsed.span();
             if compound_start.is_none() {
