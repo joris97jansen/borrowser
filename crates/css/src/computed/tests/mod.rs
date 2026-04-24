@@ -2,8 +2,9 @@ use super::{
     ComputedStyle, ComputedStyleBuildError, ComputedStyleBuilder, ComputedStyleResolutionError,
     ComputedValue, ComputedValueDiscriminant, ComputedValueNormalizationErrorKind,
     build_style_tree, build_style_tree_from_computed_styles, build_style_tree_with_stylesheets,
-    compute_document_styles, compute_document_styles_from_resolved_styles, compute_style,
-    compute_style_from_resolved_style, normalize_specified_value,
+    compute_document_styles, compute_document_styles_from_resolved_styles,
+    compute_document_styles_with_limits, compute_style, compute_style_from_resolved_style,
+    normalize_specified_value,
 };
 use crate::{
     InitialStyleValue, ParseOptions, PropertyComputedValueKind, PropertyId, Rule,

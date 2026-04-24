@@ -2,7 +2,10 @@ use std::{collections::BTreeMap, fmt::Write};
 
 use crate::{
     InitialStyleValue, PropertyId, PropertyInheritance,
-    cascade::{ResolvedDocumentStyle, ResolvedStyle, ResolvedValueSource, resolve_document_styles},
+    cascade::{
+        ResolvedDocumentStyle, ResolvedStyle, ResolvedValueSource, StyleResolutionError,
+        StyleResolutionLimits, try_resolve_document_styles_with_limits,
+    },
     model, property_registry,
     selectors::{SelectorDomElementId, SelectorDomIndex, SelectorMatchingContext},
 };
@@ -71,6 +74,7 @@ pub enum ComputedStyleResolutionError {
     },
     Normalization(ComputedValueNormalizationError),
     Build(ComputedStyleBuildError),
+    StyleResolution(StyleResolutionError),
 }
 
 impl std::fmt::Display for ComputedStyleResolutionError {
@@ -171,6 +175,7 @@ impl std::fmt::Display for ComputedStyleResolutionError {
             ),
             Self::Normalization(error) => write!(f, "{error}"),
             Self::Build(error) => write!(f, "{error}"),
+            Self::StyleResolution(error) => write!(f, "{error}"),
         }
     }
 }
@@ -180,6 +185,7 @@ impl std::error::Error for ComputedStyleResolutionError {
         match self {
             Self::Normalization(error) => Some(error),
             Self::Build(error) => Some(error),
+            Self::StyleResolution(error) => Some(error),
             Self::MissingResolvedElement { .. }
             | Self::ResolvedElementNameMismatch { .. }
             | Self::MissingComputedParent { .. }
@@ -350,7 +356,16 @@ pub fn compute_document_styles(
     root: &Node,
     sheets: &[model::StylesheetParse],
 ) -> Result<ComputedDocumentStyle, ComputedStyleResolutionError> {
-    let resolved = resolve_document_styles(root, sheets);
+    compute_document_styles_with_limits(root, sheets, &StyleResolutionLimits::default())
+}
+
+pub fn compute_document_styles_with_limits(
+    root: &Node,
+    sheets: &[model::StylesheetParse],
+    limits: &StyleResolutionLimits,
+) -> Result<ComputedDocumentStyle, ComputedStyleResolutionError> {
+    let resolved = try_resolve_document_styles_with_limits(root, sheets, limits)
+        .map_err(ComputedStyleResolutionError::StyleResolution)?;
     compute_document_styles_from_resolved_styles(root, &resolved)
 }
 

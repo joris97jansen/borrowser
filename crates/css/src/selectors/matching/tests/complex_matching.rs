@@ -1,5 +1,6 @@
 use super::super::{
     MatchedSelector, SelectorDomIndex, SelectorMatchability, SelectorMatchingContext,
+    SelectorMatchingLimitError, SelectorMatchingLimits,
 };
 use super::support::{comment, doc, element, parse_selector_result, parsed_single_selector, text};
 use crate::selectors::Specificity;
@@ -40,18 +41,54 @@ fn matching_context_matches_complex_selectors_with_supported_combinators() {
     let paragraph = ids[4];
     let link = ids[6];
 
-    assert!(context.matches_complex_selector(paragraph, &parsed_single_selector("main > p.note")));
-    assert!(context.matches_complex_selector(paragraph, &parsed_single_selector("body p.note")));
-    assert!(context.matches_complex_selector(paragraph, &parsed_single_selector("span + p.note")));
-    assert!(context.matches_complex_selector(paragraph, &parsed_single_selector("div ~ p.note")));
-    assert!(!context.matches_complex_selector(paragraph, &parsed_single_selector("div + p.note")));
-    assert!(!context.matches_complex_selector(paragraph, &parsed_single_selector("body > p.note")));
-    assert!(context.matches_complex_selector(
-        link,
-        &parsed_single_selector("body > main > section > a.link"),
-    ));
-    assert!(context.matches_complex_selector(link, &parsed_single_selector("main a.link")));
-    assert!(!context.matches_complex_selector(link, &parsed_single_selector("footer a.link")));
+    assert!(
+        context
+            .matches_complex_selector(paragraph, &parsed_single_selector("main > p.note"))
+            .expect("complex selector match")
+    );
+    assert!(
+        context
+            .matches_complex_selector(paragraph, &parsed_single_selector("body p.note"))
+            .expect("complex selector match")
+    );
+    assert!(
+        context
+            .matches_complex_selector(paragraph, &parsed_single_selector("span + p.note"))
+            .expect("complex selector match")
+    );
+    assert!(
+        context
+            .matches_complex_selector(paragraph, &parsed_single_selector("div ~ p.note"))
+            .expect("complex selector match")
+    );
+    assert!(
+        !context
+            .matches_complex_selector(paragraph, &parsed_single_selector("div + p.note"))
+            .expect("complex selector match")
+    );
+    assert!(
+        !context
+            .matches_complex_selector(paragraph, &parsed_single_selector("body > p.note"))
+            .expect("complex selector match")
+    );
+    assert!(
+        context
+            .matches_complex_selector(
+                link,
+                &parsed_single_selector("body > main > section > a.link"),
+            )
+            .expect("complex selector match")
+    );
+    assert!(
+        context
+            .matches_complex_selector(link, &parsed_single_selector("main a.link"))
+            .expect("complex selector match")
+    );
+    assert!(
+        !context
+            .matches_complex_selector(link, &parsed_single_selector("footer a.link"))
+            .expect("complex selector match")
+    );
 }
 
 #[test]
@@ -77,10 +114,14 @@ fn matching_context_complex_selector_matching_backtracks_across_structural_candi
         .last()
         .expect("descendant target element");
 
-    assert!(descendant_context.matches_complex_selector(
-        descendant_target,
-        &parsed_single_selector("body > section.hit span.target"),
-    ));
+    assert!(
+        descendant_context
+            .matches_complex_selector(
+                descendant_target,
+                &parsed_single_selector("body > section.hit span.target"),
+            )
+            .expect("descendant complex selector match")
+    );
 
     let sibling_dom = doc(vec![element(
         "main",
@@ -101,10 +142,14 @@ fn matching_context_complex_selector_matching_backtracks_across_structural_candi
         .last()
         .expect("sibling target element");
 
-    assert!(sibling_context.matches_complex_selector(
-        sibling_target,
-        &parsed_single_selector("a + span ~ p.target"),
-    ));
+    assert!(
+        sibling_context
+            .matches_complex_selector(
+                sibling_target,
+                &parsed_single_selector("a + span ~ p.target"),
+            )
+            .expect("sibling complex selector match")
+    );
 }
 
 #[test]
@@ -129,7 +174,9 @@ fn matching_context_match_selector_list_matches_complex_selectors_in_source_orde
     let selectors = parse_selector_result(
         "footer, body > main > p.note, span + p.note, div ~ p.note, div + p.note",
     );
-    let outcome = context.match_selector_list(target, &selectors);
+    let outcome = context
+        .match_selector_list(target, &selectors)
+        .expect("selector list match outcome");
 
     assert_eq!(outcome.matchability(), SelectorMatchability::Parsed);
     assert_eq!(
@@ -144,4 +191,34 @@ fn matching_context_match_selector_list_matches_complex_selectors_in_source_orde
         outcome.highest_specificity(),
         Some(Specificity::new(0, 1, 3))
     );
+}
+
+#[test]
+fn matching_context_reports_axis_step_limit_deterministically() {
+    let dom = doc(vec![element(
+        "body",
+        Vec::new(),
+        vec![element("span", vec![("class", Some("target"))], Vec::new())],
+    )]);
+
+    let index = SelectorDomIndex::from_root(&dom);
+    let context = SelectorMatchingContext::with_limits(
+        &index,
+        SelectorMatchingLimits {
+            max_axis_steps_per_match: 0,
+        },
+    );
+    let target = index.elements().last().expect("target element");
+    let selector = parsed_single_selector("body span");
+
+    let error = context
+        .matches_complex_selector_checked(target, &selector)
+        .expect_err("descendant traversal must hit the configured axis budget");
+
+    assert_eq!(
+        error,
+        SelectorMatchingLimitError::AxisStepLimitExceeded { limit: 0 }
+    );
+    assert!(context.matches_complex_selector(target, &selector).is_err());
+    assert!(!context.matches_complex_selector_conservative(target, &selector));
 }

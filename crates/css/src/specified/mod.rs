@@ -14,7 +14,7 @@ mod parse;
 mod value;
 
 pub use error::{SpecifiedValueParseError, SpecifiedValueParseErrorKind};
-pub use parse::parse_specified_value;
+pub use parse::{SpecifiedValueLimits, parse_specified_value, parse_specified_value_with_limits};
 pub use value::{
     SpecifiedColor, SpecifiedColorKeyword, SpecifiedColorSyntax, SpecifiedDisplay,
     SpecifiedDisplayKeyword, SpecifiedHexColor, SpecifiedLength, SpecifiedLengthOrAuto,

@@ -278,6 +278,7 @@ fn invalid_reason_label(reason: InvalidSelectorReason) -> &'static str {
         InvalidSelectorReason::MissingAttributeName => "missing-attribute-name",
         InvalidSelectorReason::MissingAttributeValue => "missing-attribute-value",
         InvalidSelectorReason::UnexpectedComponentValue => "unexpected-component-value",
+        InvalidSelectorReason::ResourceLimitExceeded => "resource-limit-exceeded",
     }
 }
 

@@ -6,7 +6,7 @@ fn resolved_document_style_debug_snapshot_is_stable() {
     let stylesheets = vec![stylesheet("div { color: red; }")];
     let dom = element("div", Vec::new(), Vec::new());
 
-    let resolved = resolve_document_styles(&dom, &stylesheets);
+    let resolved = resolve_document_styles(&dom, &stylesheets).expect("resolved document style");
 
     assert_eq!(
         resolved.to_debug_snapshot(),

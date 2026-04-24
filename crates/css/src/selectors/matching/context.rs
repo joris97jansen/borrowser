@@ -87,15 +87,27 @@ pub trait SelectorMatchDom {
 #[derive(Clone, Copy, Debug)]
 pub struct SelectorMatchingContext<'a, D: SelectorMatchDom> {
     dom: &'a D,
+    limits: SelectorMatchingLimits,
 }
 
 impl<'a, D: SelectorMatchDom> SelectorMatchingContext<'a, D> {
     pub fn new(dom: &'a D) -> Self {
-        Self { dom }
+        Self {
+            dom,
+            limits: SelectorMatchingLimits::default(),
+        }
+    }
+
+    pub fn with_limits(dom: &'a D, limits: SelectorMatchingLimits) -> Self {
+        Self { dom, limits }
     }
 
     pub fn dom(&self) -> &'a D {
         self.dom
+    }
+
+    pub fn limits(&self) -> SelectorMatchingLimits {
+        self.limits
     }
 
     /// Matches one selector list against one target element using the current
@@ -103,17 +115,44 @@ impl<'a, D: SelectorMatchDom> SelectorMatchingContext<'a, D> {
     ///
     /// Parsed selector lists are evaluated deterministically from the selector
     /// IR. Unsupported and invalid parse results remain explicit non-matchable
-    /// outcomes.
+    /// outcomes, while selector-matching resource-limit failures remain
+    /// explicit errors on this authoritative path.
     pub fn match_selector_list(
         &self,
         element: D::ElementId,
         selectors: &SelectorListParseResult,
-    ) -> SelectorListMatchOutcome {
+    ) -> Result<SelectorListMatchOutcome, SelectorMatchingLimitError> {
         match selectors {
-            SelectorListParseResult::Parsed(list) => self.match_parsed_selector_list(element, list),
-            SelectorListParseResult::Unsupported(_) => SelectorListMatchOutcome::unsupported(),
-            SelectorListParseResult::Invalid(_) => SelectorListMatchOutcome::invalid(),
+            SelectorListParseResult::Parsed(list) => {
+                self.match_parsed_selector_list_checked(element, list)
+            }
+            SelectorListParseResult::Unsupported(_) => Ok(SelectorListMatchOutcome::unsupported()),
+            SelectorListParseResult::Invalid(_) => Ok(SelectorListMatchOutcome::invalid()),
         }
+    }
+
+    /// Compatibility helper for callers that need a conservative fallback
+    /// outcome instead of an explicit selector-matching limit error.
+    ///
+    /// Limit exhaustion is downgraded to an invalid non-matchable outcome here.
+    /// Authoritative engine paths should prefer [`Self::match_selector_list`].
+    pub fn match_selector_list_conservative(
+        &self,
+        element: D::ElementId,
+        selectors: &SelectorListParseResult,
+    ) -> SelectorListMatchOutcome {
+        self.match_selector_list(element, selectors)
+            .unwrap_or_else(|_| SelectorListMatchOutcome::invalid())
+    }
+
+    /// Compatibility alias for existing call sites that already opt into an
+    /// explicitly named checked path.
+    pub fn match_selector_list_checked(
+        &self,
+        element: D::ElementId,
+        selectors: &SelectorListParseResult,
+    ) -> Result<SelectorListMatchOutcome, SelectorMatchingLimitError> {
+        self.match_selector_list(element, selectors)
     }
 
     pub fn same_element(&self, left: D::ElementId, right: D::ElementId) -> bool {
@@ -192,16 +231,46 @@ impl<'a, D: SelectorMatchDom> SelectorMatchingContext<'a, D> {
     /// previous-sibling search explore candidates nearest-first to keep
     /// traversal deterministic across equivalent DOM projections.
     ///
-    /// The current evaluator uses a direct recursive formulation over the DOM
-    /// tree and selector chain. That is deliberate for Milestone Q: correctness
-    /// and explicit semantics take priority over traversal pruning or cache
-    /// integration at this stage.
+    /// Recursive backtracking is bounded by `SelectorMatchingLimits` so hostile
+    /// selector/DOM combinations cannot traverse unbounded ancestor or sibling
+    /// axes during one match attempt. Resource-limit failures remain explicit
+    /// errors on this authoritative path.
     pub fn matches_complex_selector(
         &self,
         element: D::ElementId,
         selector: &ComplexSelector,
+    ) -> Result<bool, SelectorMatchingLimitError> {
+        let mut budget = SelectorMatchBudget::new(self.limits.max_axis_steps_per_match);
+        self.matches_complex_selector_from_checked(
+            element,
+            selector,
+            selector.tail().len(),
+            &mut budget,
+        )
+    }
+
+    /// Compatibility helper for callers that need a conservative `false`
+    /// fallback instead of an explicit selector-matching limit error.
+    ///
+    /// Limit exhaustion is downgraded to `false` here. Authoritative engine
+    /// paths should prefer [`Self::matches_complex_selector`].
+    pub fn matches_complex_selector_conservative(
+        &self,
+        element: D::ElementId,
+        selector: &ComplexSelector,
     ) -> bool {
-        self.matches_complex_selector_from(element, selector, selector.tail().len())
+        self.matches_complex_selector(element, selector)
+            .unwrap_or(false)
+    }
+
+    /// Compatibility alias for existing call sites that already opt into an
+    /// explicitly named checked path.
+    pub fn matches_complex_selector_checked(
+        &self,
+        element: D::ElementId,
+        selector: &ComplexSelector,
+    ) -> Result<bool, SelectorMatchingLimitError> {
+        self.matches_complex_selector(element, selector)
     }
 
     /// Matches one compound selector against one element without any combinator
@@ -296,19 +365,20 @@ impl<'a, D: SelectorMatchDom> SelectorMatchingContext<'a, D> {
         }
     }
 
-    fn matches_complex_selector_from(
+    fn matches_complex_selector_from_checked(
         &self,
         element: D::ElementId,
         selector: &ComplexSelector,
         compound_index: usize,
-    ) -> bool {
+        budget: &mut SelectorMatchBudget,
+    ) -> Result<bool, SelectorMatchingLimitError> {
         let compound = complex_selector_compound(selector, compound_index);
         if !self.matches_compound_selector(element, compound) {
-            return false;
+            return Ok(false);
         }
 
         if compound_index == 0 {
-            return true;
+            return Ok(true);
         }
 
         let combined = &selector.tail()[compound_index - 1];
@@ -316,38 +386,127 @@ impl<'a, D: SelectorMatchDom> SelectorMatchingContext<'a, D> {
             // Structural backtracking remains explicit here: we continue
             // exploring candidates until the remaining left-hand selector chain
             // succeeds or candidates are exhausted.
-            Combinator::Descendant => self.ancestor_elements(element).any(|candidate| {
-                self.matches_complex_selector_from(candidate, selector, compound_index - 1)
-            }),
-            Combinator::Child => self.parent_element(element).is_some_and(|candidate| {
-                self.matches_complex_selector_from(candidate, selector, compound_index - 1)
-            }),
-            Combinator::NextSibling => {
-                self.previous_sibling_element(element)
-                    .is_some_and(|candidate| {
-                        self.matches_complex_selector_from(candidate, selector, compound_index - 1)
-                    })
+            Combinator::Descendant => {
+                for candidate in self.ancestor_elements(element) {
+                    budget.consume_axis_step()?;
+                    if self.matches_complex_selector_from_checked(
+                        candidate,
+                        selector,
+                        compound_index - 1,
+                        budget,
+                    )? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
             }
+            Combinator::Child => match self.parent_element(element) {
+                Some(candidate) => {
+                    budget.consume_axis_step()?;
+                    self.matches_complex_selector_from_checked(
+                        candidate,
+                        selector,
+                        compound_index - 1,
+                        budget,
+                    )
+                }
+                None => Ok(false),
+            },
+            Combinator::NextSibling => match self.previous_sibling_element(element) {
+                Some(candidate) => {
+                    budget.consume_axis_step()?;
+                    self.matches_complex_selector_from_checked(
+                        candidate,
+                        selector,
+                        compound_index - 1,
+                        budget,
+                    )
+                }
+                None => Ok(false),
+            },
             Combinator::SubsequentSibling => {
-                self.previous_sibling_elements(element).any(|candidate| {
-                    self.matches_complex_selector_from(candidate, selector, compound_index - 1)
-                })
+                for candidate in self.previous_sibling_elements(element) {
+                    budget.consume_axis_step()?;
+                    if self.matches_complex_selector_from_checked(
+                        candidate,
+                        selector,
+                        compound_index - 1,
+                        budget,
+                    )? {
+                        return Ok(true);
+                    }
+                }
+                Ok(false)
             }
         }
     }
 
-    fn match_parsed_selector_list(
+    fn match_parsed_selector_list_checked(
         &self,
         element: D::ElementId,
         selectors: &SelectorList,
-    ) -> SelectorListMatchOutcome {
+    ) -> Result<SelectorListMatchOutcome, SelectorMatchingLimitError> {
         let mut builder = SelectorListMatchOutcome::builder();
         for (selector_index, selector) in selectors.iter().enumerate() {
-            if self.matches_complex_selector(element, selector) {
+            if self.matches_complex_selector_checked(element, selector)? {
                 builder.record_match(selector_index, selector.specificity());
             }
         }
-        builder.build()
+        Ok(builder.build())
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SelectorMatchingLimits {
+    pub max_axis_steps_per_match: usize,
+}
+
+impl Default for SelectorMatchingLimits {
+    fn default() -> Self {
+        Self {
+            max_axis_steps_per_match: 65_536,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SelectorMatchingLimitError {
+    AxisStepLimitExceeded { limit: usize },
+}
+
+impl std::fmt::Display for SelectorMatchingLimitError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AxisStepLimitExceeded { limit } => {
+                write!(f, "selector matching exceeded axis step limit {limit}")
+            }
+        }
+    }
+}
+
+impl std::error::Error for SelectorMatchingLimitError {}
+
+struct SelectorMatchBudget {
+    remaining_axis_steps: usize,
+    configured_axis_steps: usize,
+}
+
+impl SelectorMatchBudget {
+    fn new(max_axis_steps: usize) -> Self {
+        Self {
+            remaining_axis_steps: max_axis_steps,
+            configured_axis_steps: max_axis_steps,
+        }
+    }
+
+    fn consume_axis_step(&mut self) -> Result<(), SelectorMatchingLimitError> {
+        if self.remaining_axis_steps == 0 {
+            return Err(SelectorMatchingLimitError::AxisStepLimitExceeded {
+                limit: self.configured_axis_steps,
+            });
+        }
+        self.remaining_axis_steps -= 1;
+        Ok(())
     }
 }
 

@@ -60,7 +60,9 @@ pub use document::{ResolvedDocumentStyle, ResolvedElementStyle};
 
 // Document-resolution integration path
 pub use integration::{
-    get_inline_style, is_css, resolve_document_styles, resolve_document_styles_debug_snapshot,
+    StyleResolutionError, StyleResolutionLimit, StyleResolutionLimits, get_inline_style, is_css,
+    resolve_document_styles, resolve_document_styles_debug_snapshot,
+    try_resolve_document_styles_with_limits,
 };
 
 // Legacy compatibility bridge

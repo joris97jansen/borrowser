@@ -21,7 +21,11 @@ pub struct SyntaxLimits {
     pub max_lexical_tokens: usize,
     pub max_rules: usize,
     pub max_selectors_per_rule: usize,
+    pub max_selector_component_values: usize,
+    pub max_selector_segments_per_selector: usize,
+    pub max_simple_selectors_per_compound: usize,
     pub max_declarations_per_rule: usize,
+    pub max_component_values_per_container: usize,
     pub max_component_nesting_depth: usize,
     pub max_diagnostics: usize,
 }
@@ -34,7 +38,11 @@ impl Default for SyntaxLimits {
             max_lexical_tokens: 262_144,
             max_rules: 16_384,
             max_selectors_per_rule: 256,
+            max_selector_component_values: 4_096,
+            max_selector_segments_per_selector: 128,
+            max_simple_selectors_per_compound: 128,
             max_declarations_per_rule: 1_024,
+            max_component_values_per_container: 4_096,
             max_component_nesting_depth: 256,
             max_diagnostics: 128,
         }

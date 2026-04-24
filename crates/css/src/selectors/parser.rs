@@ -18,4 +18,4 @@ mod simple;
 mod spans;
 mod trivia;
 
-pub use list::parse_selector_list;
+pub use list::{parse_selector_list, parse_selector_list_with_limits};

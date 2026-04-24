@@ -82,4 +82,49 @@ impl<'a> StylesheetParser<'a> {
             message,
         );
     }
+
+    pub(super) fn component_container_limit_reached(
+        &mut self,
+        len: usize,
+        byte_offset: usize,
+        label: &str,
+    ) -> bool {
+        if len < self.options.limits.max_component_values_per_container {
+            return false;
+        }
+
+        self.stats.hit_limit = true;
+        self.push_diagnostic(
+            DiagnosticSeverity::Error,
+            DiagnosticKind::LimitExceeded,
+            byte_offset,
+            format!(
+                "{label} component value count exceeded limit {}",
+                self.options.limits.max_component_values_per_container
+            ),
+        );
+        true
+    }
+
+    pub(super) fn selector_prelude_limit_reached(
+        &mut self,
+        len: usize,
+        byte_offset: usize,
+    ) -> bool {
+        if len < self.options.limits.max_selector_component_values {
+            return false;
+        }
+
+        self.stats.hit_limit = true;
+        self.push_diagnostic(
+            DiagnosticSeverity::Error,
+            DiagnosticKind::LimitExceeded,
+            byte_offset,
+            format!(
+                "selector prelude component value count exceeded limit {}",
+                self.options.limits.max_selector_component_values
+            ),
+        );
+        true
+    }
 }

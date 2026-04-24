@@ -1,5 +1,6 @@
 use super::support::*;
 use super::*;
+use crate::{StyleResolutionError, StyleResolutionLimit, StyleResolutionLimits};
 
 #[test]
 fn compute_style_from_resolved_style_materializes_cascade_fallbacks() {
@@ -12,7 +13,7 @@ fn compute_style_from_resolved_style_materializes_cascade_fallbacks() {
         Vec::new(),
         vec![element("span", Vec::new(), Vec::new())],
     );
-    let resolved = resolve_document_styles(&dom, &stylesheets);
+    let resolved = resolve_document_styles(&dom, &stylesheets).expect("resolved document style");
 
     let parent = compute_style_from_resolved_style(resolved.entries()[0].style(), None)
         .expect("parent computed style");
@@ -59,6 +60,27 @@ fn compute_document_styles_integrates_cascade_inheritance_defaults_and_computati
     assert_eq!(span.background_color(), (0, 255, 0, 255));
     assert_eq!(span.box_metrics().padding_left, 3.0);
     assert_eq!(span.display(), Display::InlineBlock);
+}
+
+#[test]
+fn compute_document_styles_propagates_style_resolution_limits() {
+    let stylesheets = vec![stylesheet("div { color: red; }")];
+    let dom = element("div", Vec::new(), Vec::new());
+    let limits = StyleResolutionLimits {
+        max_style_rules_per_document: 0,
+        ..StyleResolutionLimits::default()
+    };
+
+    let error = compute_document_styles_with_limits(&dom, &stylesheets, &limits)
+        .expect_err("computed style resolution must preserve style-pass limit errors");
+
+    assert_eq!(
+        error,
+        ComputedStyleResolutionError::StyleResolution(StyleResolutionError::LimitExceeded {
+            limit: StyleResolutionLimit::StyleRulesPerDocument,
+            configured: 0,
+        })
+    );
 }
 
 #[test]
@@ -125,7 +147,7 @@ fn compute_document_styles_from_resolved_styles_uses_existing_cascade_output() {
         Vec::new(),
         vec![element("p", Vec::new(), Vec::new())],
     );
-    let resolved = resolve_document_styles(&dom, &stylesheets);
+    let resolved = resolve_document_styles(&dom, &stylesheets).expect("resolved document style");
 
     let computed = compute_document_styles_from_resolved_styles(&dom, &resolved).expect("computed");
 
@@ -138,7 +160,7 @@ fn compute_document_styles_from_resolved_styles_uses_existing_cascade_output() {
 fn compute_style_from_resolved_style_rejects_normalization_failures() {
     let stylesheets = vec![stylesheet("div { width: 1e39px; }")];
     let dom = element("div", Vec::new(), Vec::new());
-    let resolved = resolve_document_styles(&dom, &stylesheets);
+    let resolved = resolve_document_styles(&dom, &stylesheets).expect("resolved document style");
 
     let error = compute_style_from_resolved_style(resolved.entries()[0].style(), None)
         .expect_err("normalization failure must not produce computed style");

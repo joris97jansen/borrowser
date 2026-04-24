@@ -59,8 +59,10 @@ For one element, Borrowser's implemented cascade flow is:
 7. fill inheritance and initial/default values into total `ResolvedStyle`
 
 For one DOM tree, `resolve_document_styles(...)` repeats that flow in
-selector-DOM document order and stores one total `ResolvedStyle` per element in
-`ResolvedDocumentStyle`.
+selector-DOM document order, stores one total `ResolvedStyle` per element in
+`ResolvedDocumentStyle`, and preserves hardening failures as explicit
+`StyleResolutionError` results rather than degrading them into an empty style
+tree.
 
 ## Supported Property Subset
 

@@ -18,7 +18,15 @@ pub fn parse_specified_value(
     property: PropertyId,
     value: &DeclarationValue,
 ) -> Result<SpecifiedPropertyValue, SpecifiedValueParseError> {
-    let component = sole_non_trivia_component(property, value)?;
+    parse_specified_value_with_limits(property, value, &SpecifiedValueLimits::default())
+}
+
+pub fn parse_specified_value_with_limits(
+    property: PropertyId,
+    value: &DeclarationValue,
+    limits: &SpecifiedValueLimits,
+) -> Result<SpecifiedPropertyValue, SpecifiedValueParseError> {
+    let component = sole_non_trivia_component(property, value, limits)?;
     let specified = match property.metadata().specified_value {
         PropertySpecifiedValueKind::Color => {
             SpecifiedValue::Color(parse_color(property, component)?)
@@ -49,13 +57,34 @@ pub fn parse_specified_value(
     })
 }
 
-fn sole_non_trivia_component(
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct SpecifiedValueLimits {
+    pub max_components_per_value: usize,
+}
+
+impl Default for SpecifiedValueLimits {
+    fn default() -> Self {
+        Self {
+            max_components_per_value: 4_096,
+        }
+    }
+}
+
+fn sole_non_trivia_component<'a>(
     property: PropertyId,
-    value: &DeclarationValue,
-) -> Result<&ValueComponent, SpecifiedValueParseError> {
+    value: &'a DeclarationValue,
+    limits: &SpecifiedValueLimits,
+) -> Result<&'a ValueComponent, SpecifiedValueParseError> {
     // Current S3-supported properties all use one non-trivia component.
     // Multi-value shorthands, functions, and property-specific component
     // grammars should replace this gate when those value families are added.
+    if value.components.len() > limits.max_components_per_value {
+        return Err(error(
+            property,
+            SpecifiedValueParseErrorKind::ResourceLimitExceeded,
+        ));
+    }
+
     let mut components = value
         .components
         .iter()

@@ -1,7 +1,9 @@
-use super::super::super::token::{CssToken, CssTokenKind};
+use super::super::super::token::{CssToken, CssTokenKind, CssTokenText};
 use super::super::super::{DiagnosticKind, DiagnosticSeverity};
-use super::super::model::{CssComponentValue, CssFunction, CssSimpleBlock};
-use super::super::support::{block_kind_for_opener, block_kind_matches_closer};
+use super::super::model::{CssBlockKind, CssComponentValue, CssFunction, CssSimpleBlock};
+use super::super::support::{
+    block_kind_for_opener, block_kind_matches_closer, find_function_closer,
+};
 use super::{ConsumedFunction, ConsumedSimpleBlock, StylesheetParser};
 
 impl<'a> StylesheetParser<'a> {
@@ -103,6 +105,11 @@ impl<'a> StylesheetParser<'a> {
                 };
             }
 
+            if self.component_container_limit_reached(value.len(), token.span.start, "simple block")
+            {
+                return self.recover_overfull_simple_block(start, kind, value);
+            }
+
             let (component_value, next) = self.consume_component_value(cursor, nesting_depth + 1);
             value.push(component_value);
             cursor = if next <= cursor {
@@ -169,6 +176,14 @@ impl<'a> StylesheetParser<'a> {
                     };
                 }
                 _ => {
+                    if self.component_container_limit_reached(
+                        value.len(),
+                        token.span.start,
+                        "function",
+                    ) {
+                        return self.recover_overfull_function(start, name, value);
+                    }
+
                     let (component_value, next) =
                         self.consume_component_value(cursor, nesting_depth + 1);
                     value.push(component_value);
@@ -188,6 +203,64 @@ impl<'a> StylesheetParser<'a> {
         ConsumedFunction {
             function: CssFunction { span, name, value },
             next_index: self.tokens.len(),
+        }
+    }
+
+    fn recover_overfull_simple_block(
+        &self,
+        start: usize,
+        kind: CssBlockKind,
+        value: Vec<CssComponentValue>,
+    ) -> ConsumedSimpleBlock {
+        let start_token = self.tokens[start].clone();
+        let end_index = self.find_matching_closer(start, kind);
+        let (end_offset, closed, next_index) = match end_index {
+            Some(index) => (self.tokens[index].span.end, true, index + 1),
+            None => {
+                let eof_index = self.find_eof_index(start + 1);
+                let end_offset = self
+                    .tokens
+                    .get(eof_index)
+                    .map(|token| token.span.start)
+                    .unwrap_or_else(|| self.input.len_bytes());
+                (end_offset, false, eof_index)
+            }
+        };
+        let span = self
+            .input
+            .span(start_token.span.start, end_offset)
+            .expect("overfull simple block span");
+
+        ConsumedSimpleBlock {
+            block: CssSimpleBlock { span, kind, value },
+            next_index,
+            closed,
+        }
+    }
+
+    fn recover_overfull_function(
+        &self,
+        start: usize,
+        name: CssTokenText,
+        value: Vec<CssComponentValue>,
+    ) -> ConsumedFunction {
+        let start_token = self.tokens[start].clone();
+        let end_index = find_function_closer(self.tokens, start);
+        let (end_offset, next_index) = match end_index {
+            Some(index) if matches!(self.tokens[index].kind, CssTokenKind::RightParenthesis) => {
+                (self.tokens[index].span.end, index + 1)
+            }
+            Some(index) => (self.tokens[index].span.start, index),
+            None => (self.input.len_bytes(), self.tokens.len()),
+        };
+        let span = self
+            .input
+            .span(start_token.span.start, end_offset)
+            .expect("overfull function span");
+
+        ConsumedFunction {
+            function: CssFunction { span, name, value },
+            next_index,
         }
     }
 }

@@ -1,7 +1,7 @@
 use super::super::super::token::CssTokenKind;
 use super::super::super::{DiagnosticKind, DiagnosticSeverity};
-use super::super::model::{CssAtRule, CssQualifiedRule, CssRule, CssStylesheet};
-use super::super::support::{prelude_start_offset, skip_trivia};
+use super::super::model::{CssAtRule, CssBlockKind, CssQualifiedRule, CssRule, CssStylesheet};
+use super::super::support::{next_component_value_index, prelude_start_offset, skip_trivia};
 use super::{RuleParseResult, StylesheetParser};
 
 impl<'a> StylesheetParser<'a> {
@@ -180,6 +180,23 @@ impl<'a> StylesheetParser<'a> {
                     );
                 }
                 _ => {
+                    if self.selector_prelude_limit_reached(prelude.len(), token.span.start) {
+                        let next = self.recover_after_rule_prelude_limit(cursor);
+                        let span = self
+                            .input
+                            .span(start_token.span.start, token.span.start)
+                            .expect("limited at-rule span");
+                        return (
+                            CssAtRule {
+                                span,
+                                name,
+                                prelude,
+                                block: None,
+                            },
+                            next,
+                        );
+                    }
+
                     let (value, next) = self.consume_component_value(cursor, 0);
                     prelude.push(value);
                     cursor = next;
@@ -267,6 +284,12 @@ impl<'a> StylesheetParser<'a> {
                     return RuleParseResult::End;
                 }
                 _ => {
+                    if self.selector_prelude_limit_reached(prelude.len(), token.span.start) {
+                        return RuleParseResult::Skipped(
+                            self.recover_after_rule_prelude_limit(cursor),
+                        );
+                    }
+
                     let (value, next) = self.consume_component_value(cursor, 0);
                     prelude.push(value);
                     cursor = next;
@@ -275,5 +298,29 @@ impl<'a> StylesheetParser<'a> {
         }
 
         RuleParseResult::End
+    }
+
+    fn recover_after_rule_prelude_limit(&self, start: usize) -> usize {
+        let mut cursor = start;
+        while let Some(token) = self.tokens.get(cursor) {
+            match token.kind {
+                CssTokenKind::Semicolon | CssTokenKind::RightCurlyBracket => return cursor + 1,
+                CssTokenKind::LeftCurlyBracket => {
+                    return self
+                        .find_matching_closer(cursor, CssBlockKind::Curly)
+                        .map_or_else(|| self.find_eof_index(cursor + 1), |index| index + 1);
+                }
+                CssTokenKind::Eof => return cursor,
+                _ => {
+                    let next = next_component_value_index(self.tokens, cursor);
+                    if next <= cursor {
+                        return cursor.saturating_add(1);
+                    }
+                    cursor = next;
+                }
+            }
+        }
+
+        self.tokens.len()
     }
 }

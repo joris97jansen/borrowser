@@ -27,19 +27,23 @@ R7 introduces the document-level structured cascade output:
 - `ResolvedElementStyle`
 - `ResolvedDocumentStyle`
 - `resolve_document_styles(...)`
+- `try_resolve_document_styles_with_limits(...)`
 
 `resolve_document_styles(...)` is now the core cascade integration path for a
-DOM root and an ordered stylesheet list. It returns resolved styles in
-selector-DOM document order and does not mutate `html::Node`.
+DOM root and an ordered stylesheet list. It returns
+`Result<ResolvedDocumentStyle, StyleResolutionError>`, preserves hardening
+failures explicitly, and does not mutate `html::Node`.
 
 The old `attach_styles(...)` function still exists, but it is now explicitly a
-legacy projection:
+legacy projection and compatibility downgrade path:
 
 1. resolve structured document styles
 2. project authored winner values into `Node::Element::style`
 3. leave inherited and initial/default entries out of the string vector so the
    bridge-phase computed-style path keeps its existing inheritance/default
    behavior
+4. clear legacy projected style vectors instead of fabricating a resolved-style
+   result when document style resolution fails
 
 Cascade winner selection, inheritance, and defaulting no longer depend on that
 mutation path.

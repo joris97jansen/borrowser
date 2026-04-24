@@ -1,4 +1,7 @@
-use super::support::{assert_matching_debug_snapshot, doc, element};
+use super::support::{
+    assert_matching_debug_snapshot, assert_matching_debug_snapshot_with_limits, doc, element,
+};
+use crate::selectors::SelectorMatchingLimits;
 
 #[test]
 fn selector_matching_debug_snapshot_is_stable_for_simple_selector_cases() {
@@ -207,6 +210,47 @@ fn selector_matching_debug_snapshot_is_stable_for_unsupported_selector_cases() {
             "    matchability: unsupported\n",
             "    matched: no\n",
             "    highest-specificity: none\n",
+        ),
+    );
+}
+
+#[test]
+fn selector_matching_debug_snapshot_reports_limit_errors_explicitly() {
+    let dom = doc(vec![element(
+        "body",
+        Vec::new(),
+        vec![element("span", Vec::new(), Vec::new())],
+    )]);
+
+    assert_matching_debug_snapshot_with_limits(
+        dom,
+        "body span",
+        SelectorMatchingLimits {
+            max_axis_steps_per_match: 0,
+        },
+        concat!(
+            "version: 1\n",
+            "selector-matching\n",
+            "selectors:\n",
+            "  result: parsed\n",
+            "  span: @0..10\n",
+            "  selector[0] @0..9 specificity=(0,0,2)\n",
+            "    compound[0] @0..4 specificity=(0,0,1)\n",
+            "      - type(\"body\") node=@0..4 name=@0..4\n",
+            "    combined[0] descendant @4..9\n",
+            "      compound @5..9 specificity=(0,0,1)\n",
+            "        - type(\"span\") node=@5..9 name=@5..9\n",
+            "dom:\n",
+            "  elements: 2\n",
+            "  element[0]: id=1 name=\"body\" parent=none prev-sibling=none\n",
+            "  element[1]: id=2 name=\"span\" parent=1 prev-sibling=none\n",
+            "matches:\n",
+            "  target[0]: element=1 name=\"body\"\n",
+            "    matchability: parsed\n",
+            "    matched: no\n",
+            "    highest-specificity: none\n",
+            "  target[1]: element=2 name=\"span\"\n",
+            "    limit-error: selector matching exceeded axis step limit 0\n",
         ),
     );
 }

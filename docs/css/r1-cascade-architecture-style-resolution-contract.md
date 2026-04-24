@@ -246,6 +246,7 @@ The code-level defaulting contract lives in:
 - `resolve_initial_style()`
 - `resolve_cascade_style(...)`
 - `resolve_document_styles(...)`
+- `try_resolve_document_styles_with_limits(...)`
 
 Examples:
 

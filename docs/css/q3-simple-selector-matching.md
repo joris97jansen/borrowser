@@ -27,6 +27,8 @@ Q3 adds real element-local selector evaluation through:
 
 - `SelectorMatchingContext::matches_compound_selector(...)`
 - `SelectorMatchingContext::match_selector_list(...)`
+- the conservative compatibility wrapper
+  `SelectorMatchingContext::match_selector_list_conservative(...)`
 
 The matcher now evaluates these supported selector classes against individual
 elements:
@@ -80,7 +82,7 @@ Historical staging note:
 This keeps compound matching deterministic and aligned with the selector IR.
 
 `match_selector_list(...)` evaluates one selector list against one target
-element:
+element and returns an explicit result or selector-matching limit error:
 
 - `Invalid` parse results produce `Invalid` match outcomes
 - parser-level `Unsupported` selector lists produce `Unsupported` match outcomes
@@ -89,9 +91,14 @@ element:
 - supported parsed selector lists produce `Parsed` outcomes with matched
   selectors recorded in source order and with IR-derived specificity
 
+`match_selector_list_conservative(...)` is the compatibility downgrade path for
+callers that intentionally collapse selector-matching limit failures into a
+non-matchable outcome.
+
 This meant the Q3 match outcome surface was already stable enough for engine
 integration, while still allowing later matcher milestones to reduce the
-conservative fallback without changing the entry point or result structure.
+conservative fallback without changing the parsed/unsupported/invalid result
+structure.
 
 ## Determinism Requirements
 

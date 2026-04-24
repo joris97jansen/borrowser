@@ -203,6 +203,67 @@ fn parser_component_nesting_limit_is_enforced() {
 }
 
 #[test]
+fn parser_component_container_limit_bounds_declaration_values() {
+    let options = ParseOptions {
+        limits: SyntaxLimits {
+            max_component_values_per_container: 2,
+            ..SyntaxLimits::default()
+        },
+        ..ParseOptions::stylesheet()
+    };
+    let parse =
+        parse_stylesheet_with_options("div { color:red blue green; width:10px; }", &options);
+
+    assert!(parse.stats.hit_limit);
+    assert!(
+        parse
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.kind == DiagnosticKind::LimitExceeded)
+    );
+    let CssRule::Qualified(rule) = &parse.stylesheet.rules[0] else {
+        panic!("expected qualified rule");
+    };
+    assert_eq!(rule.block.declarations.len(), 2);
+    assert!(rule.block.declarations[0].value.len() <= 2);
+    assert_eq!(
+        rule.block.declarations[1]
+            .name
+            .resolve(&parse.input)
+            .as_deref(),
+        Some("width")
+    );
+}
+
+#[test]
+fn parser_selector_prelude_limit_recovers_at_rule_boundary() {
+    let options = ParseOptions {
+        limits: SyntaxLimits {
+            max_selector_component_values: 2,
+            ..SyntaxLimits::default()
+        },
+        ..ParseOptions::stylesheet()
+    };
+    let parse =
+        parse_stylesheet_with_options("div span { color:red; } p { width:10px; }", &options);
+    let compat = parse.to_compat_stylesheet();
+
+    assert!(parse.stats.hit_limit);
+    assert_eq!(parse.stylesheet.rules.len(), 1);
+    assert_eq!(compat.rules.len(), 1);
+    assert_eq!(
+        compat.rules[0].selectors,
+        vec![CompatSelector::Type("p".to_string())]
+    );
+    assert!(
+        parse
+            .diagnostics
+            .iter()
+            .any(|diagnostic| diagnostic.kind == DiagnosticKind::LimitExceeded)
+    );
+}
+
+#[test]
 fn malformed_qualified_rule_recovers_at_semicolon_and_preserves_later_rule() {
     let parse =
         parse_stylesheet_with_options("div; span { color: blue; }", &ParseOptions::stylesheet());

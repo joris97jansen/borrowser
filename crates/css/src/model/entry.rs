@@ -4,7 +4,7 @@ use super::{
     Stylesheet, StylesheetParse, ValueBlock, ValueComponent, ValueFunction, ValueSymbol, ValueText,
     ValueToken,
 };
-use crate::selectors::parse_selector_list;
+use crate::selectors::parse_selector_list_with_limits;
 use crate::syntax::{
     self, CssComponentValue, CssInput, CssParseOrigin, CssRule, CssToken, CssTokenKind,
     CssTokenText, ParseOptions,
@@ -22,7 +22,7 @@ pub fn parse_stylesheet(input: &str) -> Stylesheet {
 /// point does not use compatibility adapters or raw-string reparsing.
 pub fn parse_stylesheet_with_options(input: &str, options: &ParseOptions) -> StylesheetParse {
     let parse = syntax::parse_stylesheet_with_options(input, options);
-    let stylesheet = build_stylesheet(&parse.input, &parse.stylesheet, options.origin);
+    let stylesheet = build_stylesheet(&parse.input, &parse.stylesheet, options.origin, options);
 
     StylesheetParse {
         input: parse.input,
@@ -36,6 +36,7 @@ fn build_stylesheet(
     input: &CssInput,
     stylesheet: &syntax::CssStylesheet,
     origin: CssParseOrigin,
+    options: &ParseOptions,
 ) -> Stylesheet {
     Stylesheet {
         origin,
@@ -43,16 +44,16 @@ fn build_stylesheet(
         rules: stylesheet
             .rules
             .iter()
-            .map(|rule| build_rule(input, rule))
+            .map(|rule| build_rule(input, rule, options))
             .collect(),
     }
 }
 
-fn build_rule(input: &CssInput, rule: &CssRule) -> Rule {
+fn build_rule(input: &CssInput, rule: &CssRule, options: &ParseOptions) -> Rule {
     match rule {
         CssRule::Qualified(rule) => Rule::Style(StyleRule {
             span: rule.span,
-            selectors: parse_selector_list(input, &rule.prelude),
+            selectors: parse_selector_list_with_limits(input, &rule.prelude, &options.limits),
             declarations: build_declaration_block(input, &rule.block),
         }),
         CssRule::At(rule) => Rule::At(AtRule {
