@@ -1,5 +1,5 @@
 use super::segment::{SegmentParser, TriviaRun};
-use super::spans::{component_value_span, span_from_bounds};
+use super::spans::{component_list_span, component_value_span, span_from_bounds};
 use super::{CssComponentValue, CssSpan, CssToken, CssTokenKind};
 
 pub(super) fn is_trivia_component(value: &CssComponentValue) -> bool {
@@ -124,7 +124,11 @@ impl<'a> SegmentParser<'a> {
     }
 
     pub(super) fn consume_namespace_sequence(&mut self) -> CssSpan {
-        let start = self.current_span().expect("namespace sequence start");
+        let start = self
+            .current_span()
+            .or_else(|| component_list_span(self.values))
+            .or_else(|| self.input.span(0, 0))
+            .unwrap_or_else(|| self.input.zero_span());
         self.index += 1;
         self.skip_comments();
 
@@ -135,7 +139,7 @@ impl<'a> SegmentParser<'a> {
                 ..
             }))
         ) {
-            let delim_span = self.current_span().expect("namespace delimiter span");
+            let delim_span = self.current_span().unwrap_or(start);
             self.index += 1;
             self.skip_comments();
 
@@ -146,12 +150,12 @@ impl<'a> SegmentParser<'a> {
                     ..
                 }))
             ) {
-                let end = self.current_span().expect("namespace local name span");
+                let end = self.current_span().unwrap_or(delim_span);
                 self.index += 1;
-                return span_from_bounds(start, end).expect("namespace sequence span");
+                return span_from_bounds(start, end).unwrap_or(start);
             }
 
-            return span_from_bounds(start, delim_span).expect("namespace prefix span");
+            return span_from_bounds(start, delim_span).unwrap_or(start);
         }
 
         start

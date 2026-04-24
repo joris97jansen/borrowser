@@ -46,7 +46,7 @@ impl<'a> StylesheetParser<'a> {
     }
 
     pub(super) fn recover_overdeep_simple_block(
-        &self,
+        &mut self,
         start: usize,
         kind: CssBlockKind,
     ) -> ConsumedSimpleBlock {
@@ -64,10 +64,11 @@ impl<'a> StylesheetParser<'a> {
                 (end_offset, false, eof_index)
             }
         };
-        let span = self
-            .input
-            .span(start_token.span.start, end_offset)
-            .expect("overdeep simple block span");
+        let span = self.safe_span(
+            start_token.span.start,
+            end_offset,
+            "invalid overdeep simple block span",
+        );
 
         ConsumedSimpleBlock {
             block: CssSimpleBlock {
@@ -81,7 +82,7 @@ impl<'a> StylesheetParser<'a> {
     }
 
     pub(super) fn recover_overdeep_function(
-        &self,
+        &mut self,
         start: usize,
         name: CssTokenText,
     ) -> ConsumedFunction {
@@ -94,10 +95,11 @@ impl<'a> StylesheetParser<'a> {
             Some(index) => (self.tokens[index].span.start, index),
             None => (self.input.len_bytes(), self.tokens.len()),
         };
-        let span = self
-            .input
-            .span(start_token.span.start, end_offset)
-            .expect("overdeep function span");
+        let span = self.safe_span(
+            start_token.span.start,
+            end_offset,
+            "invalid overdeep function span",
+        );
 
         ConsumedFunction {
             function: CssFunction {

@@ -1,5 +1,5 @@
 use super::super::super::token::{
-    CssDimension, CssNumber, CssNumericKind, CssTokenKind, CssTokenText, CssUnicodeRange,
+    CssDimension, CssNumber, CssNumericKind, CssTokenKind, CssUnicodeRange,
 };
 use super::super::scan::{starts_name, would_start_exponent};
 use super::CssTokenizer;
@@ -9,14 +9,8 @@ impl<'a> CssTokenizer<'a> {
         let number_start = self.pos;
         let kind = self.consume_number();
         let number_end = self.pos;
-        let repr = self
-            .input
-            .span(number_start, number_end)
-            .expect("number payload span");
-        let number = CssNumber {
-            repr: CssTokenText::Span(repr),
-            kind,
-        };
+        let repr = self.safe_text_span(number_start, number_end, "invalid number payload span");
+        let number = CssNumber { repr, kind };
 
         if self.peek_char() == Some('%') {
             self.take_char();
@@ -27,15 +21,9 @@ impl<'a> CssTokenizer<'a> {
         if starts_name(self.peek_char(), self.peek_next_char()) {
             let unit_start = self.pos;
             self.consume_name();
-            let unit = self
-                .input
-                .span(unit_start, self.pos)
-                .expect("dimension unit span");
+            let unit = self.safe_text_span(unit_start, self.pos, "invalid dimension unit span");
             self.push_token_with_kind(
-                CssTokenKind::Dimension(CssDimension {
-                    number,
-                    unit: CssTokenText::Span(unit),
-                }),
+                CssTokenKind::Dimension(CssDimension { number, unit }),
                 start,
                 self.pos,
             );

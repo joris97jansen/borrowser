@@ -1,5 +1,5 @@
-use super::super::super::input::CssInput;
-use super::super::super::token::{CssToken, CssTokenKind};
+use super::super::super::input::{CssInput, CssSpan};
+use super::super::super::token::{CssToken, CssTokenKind, CssTokenText};
 use super::super::super::{DiagnosticKind, DiagnosticSeverity, ParseOptions, SyntaxDiagnostic};
 use super::super::scan::{
     advance_css_line_break_in_str, is_css_line_break_start, peek_char_at, peek_char_at_after,
@@ -46,8 +46,46 @@ impl<'a> CssTokenizer<'a> {
     }
 
     pub(super) fn push_token_with_kind(&mut self, kind: CssTokenKind, start: usize, end: usize) {
-        let span = self.input.span(start, end).expect("token span");
+        let span = self.safe_span(start, end, "invalid token span");
         self.tokens.push(CssToken::new(kind, span));
+    }
+
+    pub(super) fn safe_text_span(
+        &mut self,
+        start: usize,
+        end: usize,
+        invariant: &'static str,
+    ) -> CssTokenText {
+        if let Some(span) = self.input.span(start, end) {
+            return CssTokenText::Span(span);
+        }
+
+        self.push_diagnostic(
+            DiagnosticSeverity::Error,
+            DiagnosticKind::InvariantViolation,
+            start.min(self.input.len_bytes()),
+            format!("tokenizer invariant violated: {invariant}"),
+        );
+        CssTokenText::Owned(self.fallback_text(start, end))
+    }
+
+    pub(super) fn safe_span(
+        &mut self,
+        start: usize,
+        end: usize,
+        invariant: &'static str,
+    ) -> CssSpan {
+        if let Some(span) = self.input.span(start, end) {
+            return span;
+        }
+
+        self.push_diagnostic(
+            DiagnosticSeverity::Error,
+            DiagnosticKind::InvariantViolation,
+            start.min(self.input.len_bytes()),
+            format!("tokenizer invariant violated: {invariant}"),
+        );
+        self.fallback_span(start, end)
     }
 
     pub(super) fn reached_lexical_token_limit(&mut self) -> bool {
@@ -132,5 +170,25 @@ impl<'a> CssTokenizer<'a> {
             Some(ch) => !is_css_line_break_start(ch),
             None => false,
         }
+    }
+
+    fn fallback_text(&self, start: usize, end: usize) -> String {
+        let fallback = self.fallback_span(start, end);
+        self.input.slice(fallback).unwrap_or("").to_string()
+    }
+
+    fn fallback_span(&self, start: usize, end: usize) -> CssSpan {
+        let clamped_start = self.clamp_char_boundary(start.min(end));
+        let clamped_end = self.clamp_char_boundary(end.max(clamped_start));
+        CssSpan::new(self.input.id(), clamped_start, clamped_end)
+            .unwrap_or_else(|| self.input.zero_span())
+    }
+
+    fn clamp_char_boundary(&self, offset: usize) -> usize {
+        let mut offset = offset.min(self.input.len_bytes());
+        while offset > 0 && !self.input.as_str().is_char_boundary(offset) {
+            offset -= 1;
+        }
+        offset
     }
 }

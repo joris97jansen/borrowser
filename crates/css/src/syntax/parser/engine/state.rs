@@ -1,4 +1,4 @@
-use super::super::super::input::CssInput;
+use super::super::super::input::{CssInput, CssSpan};
 use super::super::super::token::{CssToken, CssTokenKind};
 use super::super::super::{
     DiagnosticKind, DiagnosticSeverity, ParseOptions, ParseStats, SyntaxDiagnostic, push_diagnostic,
@@ -126,5 +126,39 @@ impl<'a> StylesheetParser<'a> {
             ),
         );
         true
+    }
+
+    pub(super) fn safe_span(
+        &mut self,
+        start: usize,
+        end: usize,
+        invariant: &'static str,
+    ) -> CssSpan {
+        if let Some(span) = self.input.span(start, end) {
+            return span;
+        }
+
+        self.push_diagnostic(
+            DiagnosticSeverity::Error,
+            DiagnosticKind::InvariantViolation,
+            start.min(self.input.len_bytes()),
+            format!("parser invariant violated: {invariant}"),
+        );
+        self.fallback_span(start, end)
+    }
+
+    fn fallback_span(&self, start: usize, end: usize) -> CssSpan {
+        let clamped_start = self.clamp_char_boundary(start.min(end));
+        let clamped_end = self.clamp_char_boundary(end.max(clamped_start));
+        CssSpan::new(self.input.id(), clamped_start, clamped_end)
+            .unwrap_or_else(|| self.input.zero_span())
+    }
+
+    fn clamp_char_boundary(&self, offset: usize) -> usize {
+        let mut offset = offset.min(self.input.len_bytes());
+        while offset > 0 && !self.input.as_str().is_char_boundary(offset) {
+            offset -= 1;
+        }
+        offset
     }
 }

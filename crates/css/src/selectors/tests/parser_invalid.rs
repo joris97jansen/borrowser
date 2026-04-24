@@ -1,6 +1,8 @@
 use super::super::{InvalidSelectorReason, parse_selector_list};
 use super::support::{invalid_selector, parse_selector_result, parse_selector_result_with_limits};
-use crate::syntax::{CssInput, SyntaxLimits};
+use crate::syntax::{
+    CssComponentValue, CssInput, CssToken, CssTokenKind, CssTokenText, SyntaxLimits,
+};
 
 #[test]
 fn parser_reports_invalid_selector_shapes_deterministically() {
@@ -242,6 +244,40 @@ fn parser_reports_resource_limit_selector_list_failures_deterministically() {
             "result: invalid\n",
             "span: @0..10\n",
             "reason: resource-limit-exceeded\n",
+        )
+    );
+}
+
+#[test]
+fn parser_reports_invariant_violations_for_non_monotonic_selector_spans() {
+    let input = CssInput::from("foo.");
+    let values = vec![
+        CssComponentValue::PreservedToken(CssToken::new(
+            CssTokenKind::Delim('.'),
+            input.span(3, 4).expect("dot span"),
+        )),
+        CssComponentValue::PreservedToken(CssToken::new(
+            CssTokenKind::Ident(CssTokenText::Span(
+                input.span(0, 3).expect("ident payload span"),
+            )),
+            input.span(0, 3).expect("ident span"),
+        )),
+    ];
+
+    let result = parse_selector_list(&input, &values);
+    let Some(invalid) = result.invalid() else {
+        panic!("expected non-monotonic selector spans to be invalid");
+    };
+
+    assert_eq!(invalid.reason(), InvalidSelectorReason::InvariantViolation);
+    assert_eq!(
+        result.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "selector-parse\n",
+            "result: invalid\n",
+            "span: @3..3\n",
+            "reason: invariant-violation\n",
         )
     );
 }

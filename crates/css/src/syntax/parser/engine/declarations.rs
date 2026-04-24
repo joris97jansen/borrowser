@@ -119,10 +119,7 @@ impl<'a> StylesheetParser<'a> {
             .get(value_end_index)
             .map(|token| token.span.start)
             .unwrap_or_else(|| self.input.len_bytes());
-        let value_span = self
-            .input
-            .span(value_start, value_end)
-            .expect("declaration value span");
+        let value_span = self.safe_span(value_start, value_end, "invalid declaration value span");
 
         let mut value = Vec::new();
         let mut value_cursor = cursor;
@@ -152,10 +149,7 @@ impl<'a> StylesheetParser<'a> {
             .get(value_end_index)
             .map(|token| token.span.end)
             .unwrap_or(value_end);
-        let span = self
-            .input
-            .span(token.span.start, end_offset)
-            .expect("declaration span");
+        let span = self.safe_span(token.span.start, end_offset, "invalid declaration span");
 
         let next_index = match self.tokens.get(value_end_index).map(|token| &token.kind) {
             Some(CssTokenKind::Semicolon) => value_end_index + 1,
@@ -196,10 +190,11 @@ impl<'a> StylesheetParser<'a> {
                 (end_offset, false, eof_index)
             }
         };
-        let span = self
-            .input
-            .span(start_token.span.start, end_offset)
-            .expect("declaration block span");
+        let span = self.safe_span(
+            start_token.span.start,
+            end_offset,
+            "invalid declaration block span",
+        );
 
         ConsumedDeclarationBlock {
             block: CssDeclarationBlock { span, declarations },

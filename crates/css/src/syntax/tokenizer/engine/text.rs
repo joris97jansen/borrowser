@@ -1,4 +1,4 @@
-use super::super::super::token::{CssTokenKind, CssTokenText};
+use super::super::super::token::CssTokenKind;
 use super::super::super::{DiagnosticKind, DiagnosticSeverity};
 use super::super::scan::{is_css_line_break_start, is_css_whitespace, starts_with};
 use super::CssTokenizer;
@@ -23,26 +23,20 @@ impl<'a> CssTokenizer<'a> {
             if starts_with(self.input.as_str(), self.pos, "*/") {
                 let end = self.pos;
                 self.pos += 2;
-                let payload = self
-                    .input
-                    .span(start + 2, end)
-                    .expect("comment payload span");
-                self.push_token_with_kind(
-                    CssTokenKind::Comment(CssTokenText::Span(payload)),
-                    start,
-                    self.pos,
-                );
+                let payload = self.safe_text_span(start + 2, end, "invalid comment payload span");
+                self.push_token_with_kind(CssTokenKind::Comment(payload), start, self.pos);
                 return;
             }
             self.take_char();
         }
 
-        let payload = self
-            .input
-            .span(start + 2, self.input.len_bytes())
-            .expect("unterminated comment payload span");
+        let payload = self.safe_text_span(
+            start + 2,
+            self.input.len_bytes(),
+            "invalid unterminated comment payload span",
+        );
         self.push_token_with_kind(
-            CssTokenKind::Comment(CssTokenText::Span(payload)),
+            CssTokenKind::Comment(payload),
             start,
             self.input.len_bytes(),
         );
@@ -60,16 +54,10 @@ impl<'a> CssTokenizer<'a> {
 
         while let Some(ch) = self.peek_char() {
             if ch == quote {
-                let payload = self
-                    .input
-                    .span(payload_start, self.pos)
-                    .expect("string payload span");
+                let payload =
+                    self.safe_text_span(payload_start, self.pos, "invalid string payload span");
                 self.take_char();
-                self.push_token_with_kind(
-                    CssTokenKind::String(CssTokenText::Span(payload)),
-                    start,
-                    self.pos,
-                );
+                self.push_token_with_kind(CssTokenKind::String(payload), start, self.pos);
                 return true;
             }
 

@@ -134,6 +134,21 @@ impl CssInput {
         self.buffer.is_empty()
     }
 
+    /// Returns the canonical empty span at the start of this input.
+    ///
+    /// This is the only fallback span constructor CSS hardening code should
+    /// use when recovering from impossible internal offset corruption. `0..0`
+    /// is always valid for a `CssInput`: it is in-bounds, `start <= end`, and
+    /// byte offset `0` is always a UTF-8 character boundary, including for an
+    /// empty buffer.
+    pub fn zero_span(&self) -> CssSpan {
+        CssSpan {
+            input_id: self.id,
+            start: 0,
+            end: 0,
+        }
+    }
+
     pub fn span(&self, start: usize, end: usize) -> Option<CssSpan> {
         let span = CssSpan::new(self.id, start, end)?;
         if span.end > self.buffer.len() {

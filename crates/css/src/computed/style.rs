@@ -82,15 +82,29 @@ pub struct ComputedStyle {
 
 impl ComputedStyle {
     pub fn initial() -> Self {
+        Self::try_initial().unwrap_or_else(|_| Self::fallback_initial())
+    }
+
+    pub(crate) fn try_initial() -> Result<Self, ComputedStyleBuildError> {
         let mut builder = ComputedStyleBuilder::new();
         for property in property_registry().ids() {
-            builder
-                .record(property, ComputedValue::from_initial(property))
-                .expect("initial computed-style assembly must satisfy property value contracts");
+            builder.record(property, ComputedValue::from_initial(property))?;
         }
-        builder
-            .build()
-            .expect("initial computed-style assembly must be total over the supported property set")
+        builder.build()
+    }
+
+    pub(crate) fn fallback_initial() -> Self {
+        Self {
+            color: (0, 0, 0, 255),
+            background_color: (0, 0, 0, 0),
+            font_size: Length::Px(16.0),
+            box_metrics: BoxMetrics::zero(),
+            display: Display::Inline,
+            width: None,
+            height: None,
+            min_width: None,
+            max_width: None,
+        }
     }
 
     /// Assembles a total computed style from the structured cascade output.
@@ -228,13 +242,12 @@ impl ComputedStyle {
     pub fn to_debug_snapshot(&self) -> String {
         let mut out = String::from("version: 1\ncomputed-style\n");
         for entry in self.entries() {
-            writeln!(
+            let _ = writeln!(
                 out,
                 "  {}: {}",
                 entry.property().name(),
                 entry.value().to_debug_label()
-            )
-            .expect("write to string");
+            );
         }
         out
     }

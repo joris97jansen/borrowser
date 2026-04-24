@@ -30,7 +30,12 @@ pub fn attach_styles(dom: &mut Node, sheets: &[model::StylesheetParse]) {
         }
     };
     let mut entries = resolved_styles.entries().iter();
-    project_resolved_styles_to_dom(dom, &mut entries);
+    if !project_resolved_styles_to_dom(dom, &mut entries) {
+        #[cfg(debug_assertions)]
+        eprintln!("legacy attach_styles degraded resolved-style projection invariant failure");
+        clear_legacy_styles(dom);
+        return;
+    }
     debug_assert!(
         entries.next().is_none(),
         "resolved document style must contain exactly one entry per element"
@@ -40,25 +45,31 @@ pub fn attach_styles(dom: &mut Node, sheets: &[model::StylesheetParse]) {
 fn project_resolved_styles_to_dom<'a>(
     node: &mut Node,
     entries: &mut std::slice::Iter<'a, ResolvedElementStyle>,
-) {
+) -> bool {
     match node {
         Node::Document { children, .. } => {
             for child in children {
-                project_resolved_styles_to_dom(child, entries);
+                if !project_resolved_styles_to_dom(child, entries) {
+                    return false;
+                }
             }
+            true
         }
         Node::Element {
             style, children, ..
         } => {
-            let resolved = entries
-                .next()
-                .expect("resolved document style missing element entry");
+            let Some(resolved) = entries.next() else {
+                return false;
+            };
             project_resolved_style_to_legacy_vector(resolved.style(), style);
             for child in children {
-                project_resolved_styles_to_dom(child, entries);
+                if !project_resolved_styles_to_dom(child, entries) {
+                    return false;
+                }
             }
+            true
         }
-        Node::Text { .. } | Node::Comment { .. } => {}
+        Node::Text { .. } | Node::Comment { .. } => true,
     }
 }
 

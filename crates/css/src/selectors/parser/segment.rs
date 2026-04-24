@@ -188,11 +188,18 @@ impl<'a> SegmentParser<'a> {
             if self.unsupported.is_empty()
                 && let (Some(combinator), Some(selector)) = (combinator, next.supported)
             {
-                let combined_span = span_from_bounds(
-                    combinator_start.expect("combined selector start span"),
-                    selector.span(),
-                )
-                .expect("combined selector span");
+                let Some(combined_start) = combinator_start else {
+                    return SegmentParseResult::Invalid {
+                        span: segment_span,
+                        reason: InvalidSelectorReason::InvariantViolation,
+                    };
+                };
+                let Some(combined_span) = span_from_bounds(combined_start, selector.span()) else {
+                    return SegmentParseResult::Invalid {
+                        span: Some(combined_start),
+                        reason: InvalidSelectorReason::InvariantViolation,
+                    };
+                };
                 match CombinedSelector::new(combined_span, combinator, selector) {
                     Ok(combined) => tail.push(combined),
                     Err(error) => {
@@ -210,13 +217,20 @@ impl<'a> SegmentParser<'a> {
         }
 
         let selector_end = tail.last().map(CombinedSelector::span).unwrap_or(head.span);
-        let selector_span = span_from_bounds(head.span, selector_end).expect("selector span");
+        let Some(selector_span) = span_from_bounds(head.span, selector_end) else {
+            return SegmentParseResult::Invalid {
+                span: segment_span.or(Some(head.span)),
+                reason: InvalidSelectorReason::InvariantViolation,
+            };
+        };
+        let Some(head_supported) = head.supported else {
+            return SegmentParseResult::Invalid {
+                span: Some(head.span),
+                reason: InvalidSelectorReason::InvariantViolation,
+            };
+        };
 
-        match ComplexSelector::new(
-            selector_span,
-            head.supported.expect("supported head compound"),
-            tail,
-        ) {
+        match ComplexSelector::new(selector_span, head_supported, tail) {
             Ok(selector) => SegmentParseResult::Parsed(selector),
             Err(error) => SegmentParseResult::Invalid {
                 span: segment_span,
@@ -288,11 +302,18 @@ impl<'a> SegmentParser<'a> {
             });
         }
 
-        let span = span_from_bounds(
-            compound_start.expect("compound start"),
-            compound_end.expect("compound end"),
-        )
-        .expect("compound span");
+        let (Some(compound_start), Some(compound_end)) = (compound_start, compound_end) else {
+            return Err(SegmentParseError::Invalid {
+                span: self.current_span().or(component_list_span(self.values)),
+                reason: InvalidSelectorReason::InvariantViolation,
+            });
+        };
+        let Some(span) = span_from_bounds(compound_start, compound_end) else {
+            return Err(SegmentParseError::Invalid {
+                span: Some(compound_start),
+                reason: InvalidSelectorReason::InvariantViolation,
+            });
+        };
 
         if compound_has_unsupported {
             return Ok(ParsedCompound {

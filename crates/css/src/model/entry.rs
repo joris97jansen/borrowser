@@ -156,17 +156,15 @@ fn split_important_annotation(
     }
     let bang_span = component_value_span(&values[bang_index]);
 
-    assert_eq!(
-        bang_span.input_id, important_span.input_id,
-        "important annotation invariant violated: annotation tokens belong to different inputs"
-    );
-    assert!(
-        important_span.end >= bang_span.start,
-        "important annotation invariant violated: annotation tokens are not monotonic"
-    );
+    if bang_span.input_id != important_span.input_id || important_span.end < bang_span.start {
+        return (values.to_vec(), None);
+    }
 
-    let span = crate::syntax::CssSpan::new(bang_span.input_id, bang_span.start, important_span.end)
-        .expect("important annotation span");
+    let Some(span) =
+        crate::syntax::CssSpan::new(bang_span.input_id, bang_span.start, important_span.end)
+    else {
+        return (values.to_vec(), None);
+    };
 
     (
         values[..bang_index].to_vec(),
@@ -184,37 +182,37 @@ fn declaration_value_span(
             original_value_span.start,
             original_value_span.start,
         )
-        .expect("empty declaration value span")
+        .unwrap_or(original_value_span)
     })
 }
 
 fn build_value_components(input: &CssInput, values: &[CssComponentValue]) -> Vec<ValueComponent> {
     values
         .iter()
-        .map(|value| build_value_component(input, value))
+        .filter_map(|value| build_value_component(input, value))
         .collect()
 }
 
-fn build_value_component(input: &CssInput, value: &CssComponentValue) -> ValueComponent {
+fn build_value_component(input: &CssInput, value: &CssComponentValue) -> Option<ValueComponent> {
     match value {
         CssComponentValue::PreservedToken(token) => {
-            ValueComponent::Token(build_value_token(input, token))
+            build_value_token(input, token).map(ValueComponent::Token)
         }
-        CssComponentValue::SimpleBlock(block) => ValueComponent::SimpleBlock(ValueBlock {
+        CssComponentValue::SimpleBlock(block) => Some(ValueComponent::SimpleBlock(ValueBlock {
             span: block.span,
             kind: block.kind,
             components: build_value_components(input, &block.value),
-        }),
-        CssComponentValue::Function(function) => ValueComponent::Function(ValueFunction {
+        })),
+        CssComponentValue::Function(function) => Some(ValueComponent::Function(ValueFunction {
             span: function.span,
             name: build_value_text(input, &function.name),
             components: build_value_components(input, &function.value),
-        }),
+        })),
     }
 }
 
-fn build_value_token(input: &CssInput, token: &CssToken) -> ValueToken {
-    match &token.kind {
+fn build_value_token(input: &CssInput, token: &CssToken) -> Option<ValueToken> {
+    Some(match &token.kind {
         CssTokenKind::Whitespace => ValueToken::Whitespace { span: token.span },
         CssTokenKind::Comment(text) => ValueToken::Comment {
             span: token.span,
@@ -224,11 +222,15 @@ fn build_value_token(input: &CssInput, token: &CssToken) -> ValueToken {
             span: token.span,
             text: build_value_text(input, text),
         },
-        CssTokenKind::Function(_) => {
-            unreachable!(
-                "unexpected raw function token in declaration value conversion; expected CssComponentValue::Function"
-            )
-        }
+        // Structured declaration values should never contain raw function
+        // tokens; the syntax layer is expected to wrap them as
+        // `CssComponentValue::Function`. If invariant recovery still surfaces a
+        // raw function token here, normalize it into a plain ident-shaped token
+        // so model conversion stays deterministic and non-panicking.
+        CssTokenKind::Function(text) => ValueToken::Ident {
+            span: token.span,
+            text: build_value_text(input, text),
+        },
         CssTokenKind::AtKeyword(text) => ValueToken::AtKeyword {
             span: token.span,
             text: build_value_text(input, text),
@@ -301,8 +303,8 @@ fn build_value_token(input: &CssInput, token: &CssToken) -> ValueToken {
         CssTokenKind::Column => build_symbol_token(token.span, ValueSymbol::Column),
         CssTokenKind::Cdo => build_symbol_token(token.span, ValueSymbol::Cdo),
         CssTokenKind::Cdc => build_symbol_token(token.span, ValueSymbol::Cdc),
-        CssTokenKind::Eof => panic!("unexpected EOF token in declaration value component"),
-    }
+        CssTokenKind::Eof => return None,
+    })
 }
 
 fn build_symbol_token(span: crate::syntax::CssSpan, kind: ValueSymbol) -> ValueToken {
@@ -322,14 +324,9 @@ fn component_list_span(values: &[CssComponentValue]) -> Option<crate::syntax::Cs
     let first_span = component_value_span(first);
     let last_span = component_value_span(last);
 
-    assert_eq!(
-        first_span.input_id, last_span.input_id,
-        "component list span invariant violated: component values belong to different inputs"
-    );
-    assert!(
-        last_span.end >= first_span.start,
-        "component list span invariant violated: component values are not monotonic"
-    );
+    if first_span.input_id != last_span.input_id || last_span.end < first_span.start {
+        return None;
+    }
 
     crate::syntax::CssSpan::new(first_span.input_id, first_span.start, last_span.end)
 }
@@ -373,4 +370,43 @@ fn is_bang_delim(value: &CssComponentValue) -> bool {
         CssComponentValue::PreservedToken(token)
             if matches!(token.kind, CssTokenKind::Delim('!'))
     )
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::syntax::{CssInput, CssToken, CssTokenKind, CssTokenText};
+
+    #[test]
+    fn build_value_components_ignores_eof_sentinel_tokens() {
+        let input = CssInput::from("");
+        let values = vec![CssComponentValue::PreservedToken(CssToken::new(
+            CssTokenKind::Eof,
+            input.span(0, 0).expect("eof span"),
+        ))];
+
+        assert!(build_value_components(&input, &values).is_empty());
+    }
+
+    #[test]
+    fn split_important_annotation_ignores_non_monotonic_annotation_spans() {
+        let input = CssInput::from("!important?!");
+        let values = vec![
+            CssComponentValue::PreservedToken(CssToken::new(
+                CssTokenKind::Delim('!'),
+                input.span(11, 12).expect("bang span"),
+            )),
+            CssComponentValue::PreservedToken(CssToken::new(
+                CssTokenKind::Ident(CssTokenText::Span(
+                    input.span(1, 10).expect("important payload span"),
+                )),
+                input.span(1, 10).expect("important token span"),
+            )),
+        ];
+
+        let (preserved, annotation) = split_important_annotation(&input, &values);
+
+        assert!(annotation.is_none());
+        assert_eq!(preserved, values);
+    }
 }

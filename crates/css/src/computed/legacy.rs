@@ -58,17 +58,25 @@ fn legacy_base_computed_style(parent: Option<&ComputedStyle>) -> ComputedStyle {
             (PropertyInheritance::Inherited, Some(parent)) => parent.get(property).value(),
             _ => ComputedValue::from_initial(property),
         };
-        builder.record(property, value).unwrap_or_else(|error| {
-            panic!(
-                "legacy base computed-style assembly failed for '{}': {error}",
+        if builder.record(property, value).is_err() {
+            #[cfg(debug_assertions)]
+            eprintln!(
+                "legacy base computed-style assembly degraded while recording '{}'",
                 property.name()
-            )
-        });
+            );
+            return parent
+                .copied()
+                .unwrap_or_else(ComputedStyle::fallback_initial);
+        }
     }
 
-    builder
-        .build()
-        .expect("legacy base computed-style assembly must be total over supported properties")
+    builder.build().unwrap_or_else(|error| {
+        #[cfg(debug_assertions)]
+        eprintln!("legacy base computed-style assembly degraded: {error}");
+        parent
+            .copied()
+            .unwrap_or_else(ComputedStyle::fallback_initial)
+    })
 }
 
 fn legacy_computed_declaration(name: &str, value: &str) -> Option<(PropertyId, ComputedValue)> {
@@ -106,10 +114,12 @@ fn replace_computed_property(
     style
         .with_property(property, value)
         .unwrap_or_else(|error| {
-            panic!(
-                "computed-style replacement failed for '{}': {error}",
+            #[cfg(debug_assertions)]
+            eprintln!(
+                "legacy computed-style replacement degraded for '{}': {error}",
                 property.name()
-            )
+            );
+            style
         })
 }
 

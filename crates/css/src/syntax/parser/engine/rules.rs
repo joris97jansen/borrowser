@@ -1,4 +1,5 @@
 use super::super::super::token::CssTokenKind;
+use super::super::super::token::CssTokenText;
 use super::super::super::{DiagnosticKind, DiagnosticSeverity};
 use super::super::model::{CssAtRule, CssBlockKind, CssQualifiedRule, CssRule, CssStylesheet};
 use super::super::support::{next_component_value_index, prelude_start_offset, skip_trivia};
@@ -90,7 +91,23 @@ impl<'a> StylesheetParser<'a> {
         let start_token = self.tokens[start].clone();
         let name = match &start_token.kind {
             CssTokenKind::AtKeyword(name) => name.clone(),
-            _ => unreachable!("consume_at_rule requires at-keyword"),
+            _ => {
+                self.push_diagnostic(
+                    DiagnosticSeverity::Error,
+                    DiagnosticKind::InvariantViolation,
+                    start_token.span.start,
+                    "parser invariant violated: at-rule consumption started from non-at-keyword token",
+                );
+                return (
+                    CssAtRule {
+                        span: start_token.span,
+                        name: CssTokenText::Owned(String::new()),
+                        prelude: Vec::new(),
+                        block: None,
+                    },
+                    start.saturating_add(1),
+                );
+            }
         };
 
         let mut cursor = start + 1;
@@ -99,10 +116,11 @@ impl<'a> StylesheetParser<'a> {
         while let Some(token) = self.tokens.get(cursor) {
             match token.kind {
                 CssTokenKind::Semicolon => {
-                    let span = self
-                        .input
-                        .span(start_token.span.start, token.span.end)
-                        .expect("at-rule span");
+                    let span = self.safe_span(
+                        start_token.span.start,
+                        token.span.end,
+                        "invalid at-rule span",
+                    );
                     return (
                         CssAtRule {
                             span,
@@ -115,10 +133,11 @@ impl<'a> StylesheetParser<'a> {
                 }
                 CssTokenKind::LeftCurlyBracket => {
                     let consumed = self.consume_simple_block(cursor, 0);
-                    let span = self
-                        .input
-                        .span(start_token.span.start, consumed.block.span.end)
-                        .expect("at-rule span");
+                    let span = self.safe_span(
+                        start_token.span.start,
+                        consumed.block.span.end,
+                        "invalid at-rule block span",
+                    );
                     if !consumed.closed {
                         self.push_diagnostic(
                             DiagnosticSeverity::Warning,
@@ -144,10 +163,11 @@ impl<'a> StylesheetParser<'a> {
                         token.span.start,
                         "reached EOF before terminating at-rule; recovered at EOF",
                     );
-                    let span = self
-                        .input
-                        .span(start_token.span.start, token.span.start)
-                        .expect("at-rule eof span");
+                    let span = self.safe_span(
+                        start_token.span.start,
+                        token.span.start,
+                        "invalid at-rule EOF span",
+                    );
                     return (
                         CssAtRule {
                             span,
@@ -165,10 +185,11 @@ impl<'a> StylesheetParser<'a> {
                         token.span.start,
                         "terminated malformed at-rule at `}` recovery point",
                     );
-                    let span = self
-                        .input
-                        .span(start_token.span.start, token.span.start)
-                        .expect("at-rule recovery span");
+                    let span = self.safe_span(
+                        start_token.span.start,
+                        token.span.start,
+                        "invalid recovered at-rule span",
+                    );
                     return (
                         CssAtRule {
                             span,
@@ -182,10 +203,11 @@ impl<'a> StylesheetParser<'a> {
                 _ => {
                     if self.selector_prelude_limit_reached(prelude.len(), token.span.start) {
                         let next = self.recover_after_rule_prelude_limit(cursor);
-                        let span = self
-                            .input
-                            .span(start_token.span.start, token.span.start)
-                            .expect("limited at-rule span");
+                        let span = self.safe_span(
+                            start_token.span.start,
+                            token.span.start,
+                            "invalid limited at-rule span",
+                        );
                         return (
                             CssAtRule {
                                 span,
@@ -235,10 +257,11 @@ impl<'a> StylesheetParser<'a> {
 
                     let consumed = self.consume_declaration_block(cursor);
                     let start_offset = prelude_start_offset(&prelude).unwrap_or(token.span.start);
-                    let span = self
-                        .input
-                        .span(start_offset, consumed.block.span.end)
-                        .expect("qualified rule span");
+                    let span = self.safe_span(
+                        start_offset,
+                        consumed.block.span.end,
+                        "invalid qualified rule span",
+                    );
                     if !consumed.closed {
                         self.push_diagnostic(
                             DiagnosticSeverity::Warning,

@@ -231,3 +231,19 @@ fn computed_style_method_delegates_to_resolved_style_assembly() {
         InitialStyleValue::DisplayInline
     );
 }
+
+#[test]
+fn computed_style_method_propagates_authoritative_errors_instead_of_falling_back() {
+    let parent_resolved = resolve_initial_style();
+    let child_resolved = resolve_cascade_style_from_rule_inputs(&[], Some(&parent_resolved));
+
+    let error = ComputedStyle::from_resolved_style(&child_resolved, None)
+        .expect_err("authoritative computed style must preserve typed errors");
+
+    assert_eq!(
+        error,
+        ComputedStyleResolutionError::MissingInheritedParent {
+            property: PropertyId::Color,
+        }
+    );
+}

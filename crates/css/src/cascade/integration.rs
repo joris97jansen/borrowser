@@ -1,8 +1,9 @@
 use super::contract::{
     CascadeDeclarationInput, CascadeDeclarationSource, CascadeImportance, CascadeOrigin,
-    CascadeRuleInput, CascadeRuleMatch, CascadeSpecifiedValue, InlineStyleDeclarationRef,
-    InlineStyleRuleRef, StylesheetDeclarationRef, append_cascade_evaluation_debug_snapshot,
-    resolve_cascade_style, resolve_cascade_style_from_rule_inputs,
+    CascadeRuleInput, CascadeRuleInputBuildError, CascadeRuleMatch, CascadeSpecifiedValue,
+    InlineStyleDeclarationRef, InlineStyleRuleRef, StylesheetDeclarationRef,
+    append_cascade_evaluation_debug_snapshot, resolve_cascade_style,
+    resolve_cascade_style_from_rule_inputs,
 };
 use super::document::{ResolvedDocumentStyle, ResolvedElementStyle};
 use crate::model::{self, PropertyNameKind};
@@ -83,7 +84,7 @@ impl StyleResolutionLimit {
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum StyleResolutionError {
     LimitExceeded {
         limit: StyleResolutionLimit,
@@ -95,6 +96,7 @@ pub enum StyleResolutionError {
         max_supported: usize,
     },
     SelectorMatching(SelectorMatchingLimitError),
+    RuleInputBuild(CascadeRuleInputBuildError),
 }
 
 impl StyleResolutionError {
@@ -136,6 +138,7 @@ impl std::fmt::Display for StyleResolutionError {
                 max_supported
             ),
             Self::SelectorMatching(error) => write!(f, "{error}"),
+            Self::RuleInputBuild(error) => write!(f, "{error}"),
         }
     }
 }
@@ -144,6 +147,7 @@ impl std::error::Error for StyleResolutionError {
     fn source(&self) -> Option<&(dyn std::error::Error + 'static)> {
         match self {
             Self::SelectorMatching(error) => Some(error),
+            Self::RuleInputBuild(error) => Some(error),
             Self::LimitExceeded { .. } | Self::UnsupportedConfiguration { .. } => None,
         }
     }
@@ -328,7 +332,7 @@ fn rule_inputs_for_element_with_limits(
                 current_rule_order,
                 declarations,
             )
-            .expect("stylesheet declarations must belong to their stylesheet rule")
+            .map_err(StyleResolutionError::RuleInputBuild)?
             {
                 rule_inputs.push(rule_input);
             }
@@ -399,7 +403,7 @@ fn inline_style_rule_input(
 
     Ok(Some(
         CascadeRuleInput::from_inline_style(inline_style, rule_order, declarations)
-            .expect("inline declarations must belong to their inline style rule"),
+            .map_err(StyleResolutionError::RuleInputBuild)?,
     ))
 }
 
