@@ -2,6 +2,8 @@ HTML_ENTITIES_URL := https://html.spec.whatwg.org/entities.json
 HTML_ENTITIES_JSON := crates/html/data/entities.json
 HTML_ENTITIES_GEN := crates/html/src/entities_html5.rs
 HTML_ENTITIES_TOOL := crates/html/tools/generate_entities_html5.py
+CLIPPY_JOBS ?= 4
+CLIPPY_JOB_FLAG := $(if $(strip $(CLIPPY_JOBS)),-j $(CLIPPY_JOBS),)
 
 .PHONY: format fmt-check lint lint-html5 lint-html5-hardening test test-html5-runtime test-html5-toggle compile-html5-benches test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-html5-rawtext-script-regressions test-html5-tokenizer-fuzz-corpus test-html5-tokenizer-fuzz-smoke test-html5-tokenizer-fuzz-long test-html5-tokenizer-script-data-fuzz-corpus test-html5-tokenizer-script-data-fuzz-smoke test-html5-tokenizer-script-data-fuzz-long test-html5-tokenizer-rawtext-fuzz-corpus test-html5-tokenizer-rawtext-fuzz-smoke test-html5-tokenizer-rawtext-fuzz-long test-html5-tokenizer-rcdata-fuzz-corpus test-html5-tokenizer-rcdata-fuzz-smoke test-html5-tokenizer-rcdata-fuzz-long test-html5-tree-builder-token-fuzz-corpus test-html5-tree-builder-token-fuzz-smoke test-html5-tree-builder-token-fuzz-long test-html5-pipeline-fuzz-corpus test-html5-pipeline-regressions test-html5-pipeline-fuzz-smoke test-html5-pipeline-fuzz-long print-html5-pipeline-regression-snapshot test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
 
@@ -13,17 +15,22 @@ format:
 fmt-check:
 	cargo fmt --all -- --check
 
-# Lint only (alias for clippy, matches CI)
+# Lint only.
+#
+# These make targets intentionally cap local clippy parallelism by default so
+# `make lint` / `make ci` do not saturate a developer machine. The GitHub CI
+# workflow runs the full clippy commands directly and remains the authoritative
+# uncapped lane.
 lint:
-	cargo clippy --workspace --all-targets --locked -- -D warnings
+	cargo clippy $(CLIPPY_JOB_FLAG) --workspace --all-targets --locked -- -D warnings
 
-# Lint with html5 feature enabled (matches CI)
+# Lint with html5 feature enabled.
 lint-html5:
-	cargo clippy --workspace --all-targets --features html5 --locked -- -D warnings
+	cargo clippy $(CLIPPY_JOB_FLAG) --workspace --all-targets --features html5 --locked -- -D warnings
 
-# Lint the html5 hardening/fuzz feature set (matches CI)
+# Lint the html5 hardening/fuzz feature set.
 lint-html5-hardening:
-	cargo clippy --workspace --all-targets --features "html5 html5-fuzzing parser_invariants" --locked -- -D warnings
+	cargo clippy $(CLIPPY_JOB_FLAG) --workspace --all-targets --features "html5 html5-fuzzing parser_invariants" --locked -- -D warnings
 
 # Run all tests
 test:
