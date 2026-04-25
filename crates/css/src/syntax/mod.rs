@@ -23,6 +23,8 @@
 mod compat;
 mod diagnostics;
 mod entry;
+#[cfg(any(test, feature = "css-fuzzing"))]
+mod fuzz;
 mod input;
 mod options;
 mod parser;
@@ -43,6 +45,12 @@ pub use diagnostics::{DiagnosticKind, DiagnosticSeverity, SyntaxDiagnostic};
 pub use entry::{
     parse_declarations, parse_declarations_with_options, parse_stylesheet,
     parse_stylesheet_with_options,
+};
+#[cfg(any(test, feature = "css-fuzzing"))]
+pub use fuzz::{
+    CssParserFuzzConfig, CssParserFuzzSummary, CssParserFuzzTermination, CssSyntaxFuzzError,
+    CssTokenizerFuzzConfig, CssTokenizerFuzzSummary, CssTokenizerFuzzTermination,
+    derive_css_fuzz_seed, run_seeded_parser_fuzz_case, run_seeded_tokenizer_fuzz_case,
 };
 pub use input::{CssInput, CssInputId, CssPosition, CssSpan};
 pub use options::{CssParseOrigin, ParseOptions, RecoveryPolicy, SyntaxLimits};

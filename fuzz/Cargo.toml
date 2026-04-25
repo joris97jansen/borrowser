@@ -10,6 +10,10 @@ cargo-fuzz = true
 [dependencies]
 libfuzzer-sys = "0.4"
 
+[dependencies.css]
+path = "../crates/css"
+features = ["css-fuzzing"]
+
 [dependencies.html]
 path = "../crates/html"
 features = ["html5", "html5-fuzzing", "parser_invariants"]
@@ -52,6 +56,20 @@ bench = false
 [[bin]]
 name = "html5_pipeline"
 path = "fuzz_targets/html5_pipeline.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "css_tokenizer"
+path = "fuzz_targets/css_tokenizer.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "css_parser"
+path = "fuzz_targets/css_parser.rs"
 test = false
 doc = false
 bench = false

@@ -1,0 +1,1 @@
+a { width: calc(min(100%, var(--slot, 20px)) - 2px); }

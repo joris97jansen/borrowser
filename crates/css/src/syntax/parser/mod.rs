@@ -17,6 +17,8 @@ pub use self::model::{
     CssAtRule, CssBlockKind, CssComponentValue, CssDeclaration, CssDeclarationBlock, CssFunction,
     CssQualifiedRule, CssRule, CssSimpleBlock, CssStylesheet,
 };
+#[cfg(any(test, feature = "css-fuzzing"))]
+pub(crate) use self::support::validate_token_stream_invariants;
 
 pub(super) fn parse_stylesheet_structured(input: &str, options: &ParseOptions) -> StylesheetParse {
     entry::parse_stylesheet_structured(input, options)

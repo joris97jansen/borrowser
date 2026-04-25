@@ -3,6 +3,10 @@ name = "css"
 version = "0.1.0"
 edition = "2024"
 
+[features]
+default = []
+css-fuzzing = []
+
 [dependencies]
 html = { path = "../html", features = ["internal-api"] }
 
