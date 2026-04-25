@@ -11,7 +11,7 @@ use super::model::{CssBlockKind, CssComponentValue};
 /// token stream. Future tokenizer modes or stitched token streams must reuse
 /// this validator rather than introducing separate, slightly different
 /// boundary checks.
-pub(super) fn validate_token_stream_invariants(
+pub(crate) fn validate_token_stream_invariants(
     options: &ParseOptions,
     input: &CssInput,
     tokens: &[CssToken],

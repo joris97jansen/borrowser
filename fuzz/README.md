@@ -1,4 +1,4 @@
-# HTML5 Parser Fuzzing
+# HTML5 and CSS Fuzzing
 
 `fuzz/corpus/html5_tokenizer/` contains the committed seed corpus for the HTML5
 tokenizer fuzz harness. Triaged crashing inputs belong in
@@ -37,6 +37,29 @@ streams emitted tokens into the tree builder one token at a time, applies
 tree-builder tokenizer controls immediately, drains patches incrementally, and
 checks tokenizer + DOM/patch invariants during streaming rather than only at
 EOF.
+
+`fuzz/corpus/css_tokenizer/` contains the committed seed corpus for the CSS
+tokenizer fuzz harness. Triaged crashing inputs belong in
+`fuzz/regressions/css_tokenizer/`.
+
+`fuzz/corpus/css_parser/` contains the committed seed corpus for the CSS
+stylesheet parser fuzz harness. Triaged crashing inputs belong in
+`fuzz/regressions/css_parser/`.
+
+The CSS harnesses are byte-driven like the HTML ones, but the CSS syntax layer
+currently starts from decoded UTF-8 text instead of a streaming byte decoder.
+Arbitrary fuzz bytes are therefore decoded deterministically with
+`String::from_utf8_lossy(...)` before entering the tokenizer/parser. The harness
+still derives a stable seed from the original bytes so failures have consistent
+metadata and replay identity.
+
+Milestone T boundary for CSS:
+- T4 introduces the CSS tokenizer/parser fuzz harnesses, committed corpus
+  replay, regression staging directories, and local deterministic smoke
+  workflows.
+- GitHub Actions job integration for these CSS fuzz lanes is intentionally
+  deferred to the later Milestone T CI hardening issue, so `fuzz/README.md`,
+  `Makefile`, and `tools/ci/` are the authoritative workflow surface for T4.
 
 For the tokenizer threat model, panic-free scope, enforced limits, and the
 expected fuzz triage workflow, see
@@ -183,6 +206,44 @@ Replay a specific seed through the actual pipeline fuzz target with:
 cargo fuzz run html5_pipeline fuzz/corpus/html5_pipeline/<seed-name>
 ```
 
+Deterministic replay for the CSS tokenizer harness:
+
+```sh
+cargo test -p css --features css-fuzzing --lib \
+  syntax::fuzz::tests::corpus::replay_committed_css_tokenizer_corpus_deterministically
+```
+
+Equivalent Make target:
+
+```sh
+make test-css-tokenizer-fuzz-corpus
+```
+
+Replay a specific CSS tokenizer seed through the actual fuzz target with:
+
+```sh
+cargo fuzz run css_tokenizer fuzz/corpus/css_tokenizer/<seed-name>
+```
+
+Deterministic replay for the CSS stylesheet parser harness:
+
+```sh
+cargo test -p css --features css-fuzzing --lib \
+  syntax::fuzz::tests::corpus::replay_committed_css_parser_corpus_deterministically
+```
+
+Equivalent Make target:
+
+```sh
+make test-css-parser-fuzz-corpus
+```
+
+Replay a specific CSS parser seed through the actual fuzz target with:
+
+```sh
+cargo fuzz run css_parser fuzz/corpus/css_parser/<seed-name>
+```
+
 Render a stable pipeline regression snapshot from a committed corpus/regression
 input:
 
@@ -269,6 +330,24 @@ fuzz target via:
 ```sh
 make test-html5-pipeline-fuzz-smoke
 ```
+
+CSS smoke lanes are available in the local development workflow now:
+
+```sh
+make test-css-tokenizer-fuzz-smoke
+make test-css-parser-fuzz-smoke
+```
+
+Current smoke budgets:
+- CSS tokenizer fixed seed: `1873819023`
+- CSS parser fixed seed: `2718281828`
+- fixed runs: `128`
+- libFuzzer per-input timeout: `5s`
+- outer wall timeout: `90s`
+
+On failure, the CSS smoke scripts print the fixed seed, exact corpus and
+regression directories, the failure artifact path if libFuzzer materialized
+one, and direct-binary plus `cargo fuzz run` reproduction commands.
 
 Current pipeline smoke budget:
 - fixed seed: `1414213562`
@@ -414,6 +493,9 @@ cargo test -p html --features html5 --lib \
 - Keep crash or hang reproducers in the matching `fuzz/regressions/...`
   directory even if you also promote a minimized variant into the committed
   seed corpus.
+- Use `fuzz/corpus/css_tokenizer/` and `fuzz/regressions/css_tokenizer/` for
+  CSS tokenizer byte inputs, and `fuzz/corpus/css_parser/` plus
+  `fuzz/regressions/css_parser/` for CSS stylesheet parser byte inputs.
 - Use stable descriptive file names that describe the construct being stressed.
 - Keep entries small and focused; prefer one failure mode per seed.
 - Re-run the matching committed-input replay target before landing new corpus or

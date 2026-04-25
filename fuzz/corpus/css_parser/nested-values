@@ -1,0 +1,1 @@
+a { background: linear-gradient(red, rgba(0, 0, 0, 0.5)); margin: calc(100% - 2rem); }
