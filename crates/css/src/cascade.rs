@@ -13,6 +13,8 @@
 
 mod contract;
 mod document;
+#[cfg(any(test, feature = "css-fuzzing"))]
+pub mod fuzz;
 mod integration;
 mod legacy_bridge;
 

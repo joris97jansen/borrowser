@@ -73,3 +73,31 @@ path = "fuzz_targets/css_parser.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "css_selector_parser"
+path = "fuzz_targets/css_selector_parser.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "css_selector_matching"
+path = "fuzz_targets/css_selector_matching.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "css_cascade"
+path = "fuzz_targets/css_cascade.rs"
+test = false
+doc = false
+bench = false
+
+[[bin]]
+name = "css_values"
+path = "fuzz_targets/css_values.rs"
+test = false
+doc = false
+bench = false

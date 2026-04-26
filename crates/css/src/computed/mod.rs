@@ -20,6 +20,8 @@
 mod builder;
 mod document;
 mod format;
+#[cfg(any(test, feature = "css-fuzzing"))]
+pub mod fuzz;
 mod legacy;
 mod normalize;
 mod style;

@@ -1,0 +1,2 @@
+body { color: #112233; font-size: 16px; }
+[data-kind="promo"] { min-width: auto; width: 1e39px; }

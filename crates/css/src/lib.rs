@@ -8,6 +8,9 @@
 //! parser work, migration support, and golden tests, but they are no longer the
 //! preferred crate-root contract for new engine-facing CSS code.
 
+#[cfg(any(test, feature = "css-fuzzing"))]
+mod fuzz_support;
+
 pub mod cascade;
 pub mod computed;
 pub mod model;

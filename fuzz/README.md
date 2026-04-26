@@ -46,6 +46,22 @@ tokenizer fuzz harness. Triaged crashing inputs belong in
 stylesheet parser fuzz harness. Triaged crashing inputs belong in
 `fuzz/regressions/css_parser/`.
 
+`fuzz/corpus/css_selector_parser/` contains the committed seed corpus for the
+CSS selector-parser fuzz harness. Triaged crashing inputs belong in
+`fuzz/regressions/css_selector_parser/`.
+
+`fuzz/corpus/css_selector_matching/` contains the committed seed corpus for the
+CSS selector-matching fuzz harness. Triaged crashing inputs belong in
+`fuzz/regressions/css_selector_matching/`.
+
+`fuzz/corpus/css_cascade/` contains the committed seed corpus for the CSS
+cascade-resolution fuzz harness. Triaged crashing inputs belong in
+`fuzz/regressions/css_cascade/`.
+
+`fuzz/corpus/css_values/` contains the committed seed corpus for the CSS
+property/value fuzz harness. Triaged crashing inputs belong in
+`fuzz/regressions/css_values/`.
+
 The CSS harnesses are byte-driven like the HTML ones, but the CSS syntax layer
 currently starts from decoded UTF-8 text instead of a streaming byte decoder.
 Arbitrary fuzz bytes are therefore decoded deterministically with
@@ -57,9 +73,15 @@ Milestone T boundary for CSS:
 - T4 introduces the CSS tokenizer/parser fuzz harnesses, committed corpus
   replay, regression staging directories, and local deterministic smoke
   workflows.
+- T5 extends that workflow with dedicated selector parser, selector matching,
+  cascade resolution, and property/value fuzz harnesses so complex downstream
+  CSS pipeline paths are exercised through deterministic, bounded replay.
+- The T5 selector and value harnesses also enforce structured determinism and
+  invariant checks in addition to crash/hang detection, so fuzz targets panic
+  on harness-level invariant failures instead of silently discarding summaries.
 - GitHub Actions job integration for these CSS fuzz lanes is intentionally
   deferred to the later Milestone T CI hardening issue, so `fuzz/README.md`,
-  `Makefile`, and `tools/ci/` are the authoritative workflow surface for T4.
+  `Makefile`, and `tools/ci/` are the authoritative workflow surface for T4/T5.
 
 For the tokenizer threat model, panic-free scope, enforced limits, and the
 expected fuzz triage workflow, see
@@ -244,6 +266,83 @@ Replay a specific CSS parser seed through the actual fuzz target with:
 cargo fuzz run css_parser fuzz/corpus/css_parser/<seed-name>
 ```
 
+Deterministic replay for the CSS selector parser harness:
+
+```sh
+cargo test -p css --features css-fuzzing --lib \
+  selectors::fuzz::tests::replay_committed_selector_parser_corpus_deterministically
+```
+
+Equivalent Make target:
+
+```sh
+make test-css-selector-parser-fuzz-corpus
+```
+
+Replay a specific CSS selector parser seed through the actual fuzz target with:
+
+```sh
+cargo fuzz run css_selector_parser fuzz/corpus/css_selector_parser/<seed-name>
+```
+
+Deterministic replay for the CSS selector matching harness:
+
+```sh
+cargo test -p css --features css-fuzzing --lib \
+  selectors::fuzz::tests::replay_committed_selector_matching_corpus_deterministically
+```
+
+Equivalent Make target:
+
+```sh
+make test-css-selector-matching-fuzz-corpus
+```
+
+Replay a specific CSS selector matching seed through the actual fuzz target
+with:
+
+```sh
+cargo fuzz run css_selector_matching fuzz/corpus/css_selector_matching/<seed-name>
+```
+
+Deterministic replay for the CSS cascade harness:
+
+```sh
+cargo test -p css --features css-fuzzing --lib \
+  cascade::fuzz::tests::replay_committed_css_cascade_corpus_deterministically
+```
+
+Equivalent Make target:
+
+```sh
+make test-css-cascade-fuzz-corpus
+```
+
+Replay a specific CSS cascade seed through the actual fuzz target with:
+
+```sh
+cargo fuzz run css_cascade fuzz/corpus/css_cascade/<seed-name>
+```
+
+Deterministic replay for the CSS property/value harness:
+
+```sh
+cargo test -p css --features css-fuzzing --lib \
+  computed::fuzz::tests::replay_committed_css_values_corpus_deterministically
+```
+
+Equivalent Make target:
+
+```sh
+make test-css-values-fuzz-corpus
+```
+
+Replay a specific CSS values seed through the actual fuzz target with:
+
+```sh
+cargo fuzz run css_values fuzz/corpus/css_values/<seed-name>
+```
+
 Render a stable pipeline regression snapshot from a committed corpus/regression
 input:
 
@@ -336,11 +435,19 @@ CSS smoke lanes are available in the local development workflow now:
 ```sh
 make test-css-tokenizer-fuzz-smoke
 make test-css-parser-fuzz-smoke
+make test-css-selector-parser-fuzz-smoke
+make test-css-selector-matching-fuzz-smoke
+make test-css-cascade-fuzz-smoke
+make test-css-values-fuzz-smoke
 ```
 
 Current smoke budgets:
 - CSS tokenizer fixed seed: `1873819023`
 - CSS parser fixed seed: `2718281828`
+- CSS selector parser fixed seed: `1873819023`
+- CSS selector matching fixed seed: `1873819023`
+- CSS cascade fixed seed: `1873819023`
+- CSS values fixed seed: `1873819023`
 - fixed runs: `128`
 - libFuzzer per-input timeout: `5s`
 - outer wall timeout: `90s`
@@ -496,6 +603,13 @@ cargo test -p html --features html5 --lib \
 - Use `fuzz/corpus/css_tokenizer/` and `fuzz/regressions/css_tokenizer/` for
   CSS tokenizer byte inputs, and `fuzz/corpus/css_parser/` plus
   `fuzz/regressions/css_parser/` for CSS stylesheet parser byte inputs.
+- Use `fuzz/corpus/css_selector_parser/` plus
+  `fuzz/regressions/css_selector_parser/` for selector-parser byte inputs,
+  `fuzz/corpus/css_selector_matching/` plus
+  `fuzz/regressions/css_selector_matching/` for selector-matching byte inputs,
+  `fuzz/corpus/css_cascade/` plus `fuzz/regressions/css_cascade/` for
+  cascade-resolution byte inputs, and `fuzz/corpus/css_values/` plus
+  `fuzz/regressions/css_values/` for property/value byte inputs.
 - Use stable descriptive file names that describe the construct being stressed.
 - Keep entries small and focused; prefer one failure mode per seed.
 - Re-run the matching committed-input replay target before landing new corpus or

@@ -1,0 +1,2 @@
+div#hero.alpha { color: red; width: 12px; }
+section > span.label { background-color: transparent; padding-left: 8px; }
