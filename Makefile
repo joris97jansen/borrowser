@@ -5,7 +5,7 @@ HTML_ENTITIES_TOOL := crates/html/tools/generate_entities_html5.py
 CLIPPY_JOBS ?= 4
 CLIPPY_JOB_FLAG := $(if $(strip $(CLIPPY_JOBS)),-j $(CLIPPY_JOBS),)
 
-.PHONY: format fmt-check lint lint-html5 lint-html5-hardening test test-html5-runtime test-html5-toggle compile-html5-benches test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-html5-rawtext-script-regressions test-html5-tokenizer-fuzz-corpus test-html5-tokenizer-fuzz-smoke test-html5-tokenizer-fuzz-long test-html5-tokenizer-script-data-fuzz-corpus test-html5-tokenizer-script-data-fuzz-smoke test-html5-tokenizer-script-data-fuzz-long test-html5-tokenizer-rawtext-fuzz-corpus test-html5-tokenizer-rawtext-fuzz-smoke test-html5-tokenizer-rawtext-fuzz-long test-html5-tokenizer-rcdata-fuzz-corpus test-html5-tokenizer-rcdata-fuzz-smoke test-html5-tokenizer-rcdata-fuzz-long test-html5-tree-builder-token-fuzz-corpus test-html5-tree-builder-token-fuzz-smoke test-html5-tree-builder-token-fuzz-long test-html5-pipeline-fuzz-corpus test-html5-pipeline-regressions test-html5-pipeline-fuzz-smoke test-html5-pipeline-fuzz-long test-css-tokenizer-fuzz-corpus test-css-tokenizer-fuzz-smoke test-css-tokenizer-fuzz-long test-css-parser-fuzz-corpus test-css-parser-fuzz-smoke test-css-parser-fuzz-long print-html5-pipeline-regression-snapshot test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
+.PHONY: format fmt-check lint lint-html5 lint-html5-hardening test test-html5-runtime test-html5-toggle compile-html5-benches test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-html5-rawtext-script-regressions test-html5-tokenizer-fuzz-corpus test-html5-tokenizer-fuzz-smoke test-html5-tokenizer-fuzz-long test-html5-tokenizer-script-data-fuzz-corpus test-html5-tokenizer-script-data-fuzz-smoke test-html5-tokenizer-script-data-fuzz-long test-html5-tokenizer-rawtext-fuzz-corpus test-html5-tokenizer-rawtext-fuzz-smoke test-html5-tokenizer-rawtext-fuzz-long test-html5-tokenizer-rcdata-fuzz-corpus test-html5-tokenizer-rcdata-fuzz-smoke test-html5-tokenizer-rcdata-fuzz-long test-html5-tree-builder-token-fuzz-corpus test-html5-tree-builder-token-fuzz-smoke test-html5-tree-builder-token-fuzz-long test-html5-pipeline-fuzz-corpus test-html5-pipeline-regressions test-html5-pipeline-fuzz-smoke test-html5-pipeline-fuzz-long test-css-tokenizer-fuzz-corpus test-css-tokenizer-fuzz-smoke test-css-tokenizer-fuzz-long test-css-parser-fuzz-corpus test-css-parser-fuzz-smoke test-css-parser-fuzz-long test-css-selector-parser-fuzz-corpus test-css-selector-parser-fuzz-smoke test-css-selector-parser-fuzz-long test-css-selector-matching-fuzz-corpus test-css-selector-matching-fuzz-smoke test-css-selector-matching-fuzz-long test-css-cascade-fuzz-corpus test-css-cascade-fuzz-smoke test-css-cascade-fuzz-long test-css-values-fuzz-corpus test-css-values-fuzz-smoke test-css-values-fuzz-long print-html5-pipeline-regression-snapshot test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
 
 # Format all crates in place
 format:
@@ -218,6 +218,82 @@ test-css-parser-fuzz-long:
 	CSS_PARSER_FUZZ_SMOKE_INPUT_TIMEOUT_SEC=10 \
 	CSS_PARSER_FUZZ_SMOKE_WALL_TIMEOUT_SEC=600 \
 	bash ./tools/ci/css_parser_fuzz_smoke.sh
+
+# Replay the committed CSS selector parser fuzz corpus deterministically outside libFuzzer
+test-css-selector-parser-fuzz-corpus:
+	cargo test -p css --features css-fuzzing --lib --locked \
+		selectors::fuzz::tests::replay_committed_selector_parser_corpus_deterministically
+
+# Run a short deterministic CSS selector parser fuzz smoke against the actual fuzz target
+test-css-selector-parser-fuzz-smoke:
+	bash ./tools/ci/css_selector_parser_fuzz_smoke.sh
+
+# Run a longer deterministic CSS selector parser fuzz lane for nightly/manual use
+test-css-selector-parser-fuzz-long:
+	CSS_SELECTOR_PARSER_FUZZ_LABEL='css selector parser fuzz nightly' \
+	CSS_SELECTOR_PARSER_FUZZ_ARTIFACT_BASENAME='css_selector_parser_fuzz_failure_nightly' \
+	CSS_SELECTOR_PARSER_FUZZ_SMOKE_SEED=2718281828 \
+	CSS_SELECTOR_PARSER_FUZZ_SMOKE_RUNS=20000 \
+	CSS_SELECTOR_PARSER_FUZZ_SMOKE_INPUT_TIMEOUT_SEC=10 \
+	CSS_SELECTOR_PARSER_FUZZ_SMOKE_WALL_TIMEOUT_SEC=600 \
+	bash ./tools/ci/css_selector_parser_fuzz_smoke.sh
+
+# Replay the committed CSS selector matching fuzz corpus deterministically outside libFuzzer
+test-css-selector-matching-fuzz-corpus:
+	cargo test -p css --features css-fuzzing --lib --locked \
+		selectors::fuzz::tests::replay_committed_selector_matching_corpus_deterministically
+
+# Run a short deterministic CSS selector matching fuzz smoke against the actual fuzz target
+test-css-selector-matching-fuzz-smoke:
+	bash ./tools/ci/css_selector_matching_fuzz_smoke.sh
+
+# Run a longer deterministic CSS selector matching fuzz lane for nightly/manual use
+test-css-selector-matching-fuzz-long:
+	CSS_SELECTOR_MATCHING_FUZZ_LABEL='css selector matching fuzz nightly' \
+	CSS_SELECTOR_MATCHING_FUZZ_ARTIFACT_BASENAME='css_selector_matching_fuzz_failure_nightly' \
+	CSS_SELECTOR_MATCHING_FUZZ_SMOKE_SEED=1618033988 \
+	CSS_SELECTOR_MATCHING_FUZZ_SMOKE_RUNS=20000 \
+	CSS_SELECTOR_MATCHING_FUZZ_SMOKE_INPUT_TIMEOUT_SEC=10 \
+	CSS_SELECTOR_MATCHING_FUZZ_SMOKE_WALL_TIMEOUT_SEC=600 \
+	bash ./tools/ci/css_selector_matching_fuzz_smoke.sh
+
+# Replay the committed CSS cascade fuzz corpus deterministically outside libFuzzer
+test-css-cascade-fuzz-corpus:
+	cargo test -p css --features css-fuzzing --lib --locked \
+		cascade::fuzz::tests::replay_committed_css_cascade_corpus_deterministically
+
+# Run a short deterministic CSS cascade fuzz smoke against the actual fuzz target
+test-css-cascade-fuzz-smoke:
+	bash ./tools/ci/css_cascade_fuzz_smoke.sh
+
+# Run a longer deterministic CSS cascade fuzz lane for nightly/manual use
+test-css-cascade-fuzz-long:
+	CSS_CASCADE_FUZZ_LABEL='css cascade fuzz nightly' \
+	CSS_CASCADE_FUZZ_ARTIFACT_BASENAME='css_cascade_fuzz_failure_nightly' \
+	CSS_CASCADE_FUZZ_SMOKE_SEED=2236067977 \
+	CSS_CASCADE_FUZZ_SMOKE_RUNS=20000 \
+	CSS_CASCADE_FUZZ_SMOKE_INPUT_TIMEOUT_SEC=10 \
+	CSS_CASCADE_FUZZ_SMOKE_WALL_TIMEOUT_SEC=600 \
+	bash ./tools/ci/css_cascade_fuzz_smoke.sh
+
+# Replay the committed CSS values fuzz corpus deterministically outside libFuzzer
+test-css-values-fuzz-corpus:
+	cargo test -p css --features css-fuzzing --lib --locked \
+		computed::fuzz::tests::replay_committed_css_values_corpus_deterministically
+
+# Run a short deterministic CSS values fuzz smoke against the actual fuzz target
+test-css-values-fuzz-smoke:
+	bash ./tools/ci/css_values_fuzz_smoke.sh
+
+# Run a longer deterministic CSS values fuzz lane for nightly/manual use
+test-css-values-fuzz-long:
+	CSS_VALUES_FUZZ_LABEL='css values fuzz nightly' \
+	CSS_VALUES_FUZZ_ARTIFACT_BASENAME='css_values_fuzz_failure_nightly' \
+	CSS_VALUES_FUZZ_SMOKE_SEED=2449489742 \
+	CSS_VALUES_FUZZ_SMOKE_RUNS=20000 \
+	CSS_VALUES_FUZZ_SMOKE_INPUT_TIMEOUT_SEC=10 \
+	CSS_VALUES_FUZZ_SMOKE_WALL_TIMEOUT_SEC=600 \
+	bash ./tools/ci/css_values_fuzz_smoke.sh
 
 # Render a stable HTML5 pipeline regression snapshot from a corpus/regression input
 print-html5-pipeline-regression-snapshot:

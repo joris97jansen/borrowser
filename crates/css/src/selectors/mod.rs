@@ -19,6 +19,8 @@
 
 mod attribute;
 mod complex;
+#[cfg(any(test, feature = "css-fuzzing"))]
+pub mod fuzz;
 pub mod matching;
 mod parse_result;
 mod parser;
