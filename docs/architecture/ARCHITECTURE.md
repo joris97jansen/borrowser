@@ -174,6 +174,11 @@ The Milestone T CSS hardening threat model and invariant contract lives in:
 
 * `docs/css/t1-css-hardening-strategy-threat-model.md`
 
+The implemented CSS hardening limits, fuzzing workflow, regression corpus, and
+CI repro workflow live in:
+
+* `docs/security/css-hardening.md`
+
 The syntax layer owns:
 
 * tokenizer and parser entry points

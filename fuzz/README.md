@@ -83,6 +83,13 @@ Milestone T boundary for CSS:
   deterministic CSS syntax and pipeline smoke lanes with fixed seeds, bounded
   run counts, and failure artifacts that include direct repro commands in the
   job log.
+- T8 closes the milestone by documenting the implemented CSS hardening model,
+  invariants, resource limits, fuzzing workflow, regression preservation flow,
+  CI repro practices, and contributor checklist in
+  `docs/security/css-hardening.md`.
+
+For the implemented CSS hardening limits, invariants, triage workflow, and
+contributor checklist, see `docs/security/css-hardening.md`.
 
 For the tokenizer threat model, panic-free scope, enforced limits, and the
 expected fuzz triage workflow, see
