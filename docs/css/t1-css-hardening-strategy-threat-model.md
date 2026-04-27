@@ -9,6 +9,11 @@ determinism requirements, and resource-bound expectations for Borrowser's CSS
 pipeline before the follow-up Milestone T implementation work adds additional
 guards, fuzz targets, corpus replay, and CI smoke lanes.
 
+Note: this document intentionally preserves the T1 strategy/threat-model
+framing. For the implemented Milestone T limits, commands, regression
+workflow, and CI practice, use `docs/security/css-hardening.md` as the
+operational source.
+
 The CSS pipeline is a hostile-input surface. A stylesheet, inline style
 attribute, selector prelude, declaration value, or DOM shape influenced by
 network content must be treated as attacker-controlled input.
@@ -32,6 +37,7 @@ Related documents:
 - `docs/css/q8-selector-matching-invariants-extension-hooks.md`
 - `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`
 - `docs/css/s9-property-system-computed-style-runtime-contract.md`
+- `docs/security/css-hardening.md`
 - `docs/security/html5-tokenizer-hardening.md`
 
 ## Goals
@@ -51,6 +57,9 @@ HTML5 parser hardening work:
 T1 is a strategy issue. It does not claim every guard already exists. Follow-up
 Milestone T issues must use this document to decide which guards, fuzz targets,
 tests, and CI lanes are required.
+
+For the implemented day-to-day contributor workflow after Milestone T, see
+`docs/security/css-hardening.md`.
 
 ## Alignment With HTML Hardening
 
