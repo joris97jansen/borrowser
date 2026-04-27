@@ -1,0 +1,14 @@
+version: 1
+css-fuzz-regression
+tool: css_selector_parser
+profile: default
+seed: 0
+termination: completed
+input-bytes: 62
+decoded-bytes: 62
+selector-cases-observed: 2
+parsed-cases: 2
+unsupported-cases: 0
+invalid-cases: 0
+resource-limit-invalid-cases: 0
+digest: 6207317670094715148

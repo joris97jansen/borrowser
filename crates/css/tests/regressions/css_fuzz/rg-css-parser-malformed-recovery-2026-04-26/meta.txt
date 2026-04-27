@@ -1,0 +1,8 @@
+# format: css-fuzz-regression-v1
+# tool: css_parser
+# profile: default
+# seed: 0
+# date: 2026-04-26
+# issue: Milestone-T/T6
+# guard: malformed stylesheet recovery remains deterministic through parser output
+# source: fuzz/corpus/css_parser/malformed-recovery

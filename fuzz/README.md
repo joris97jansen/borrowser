@@ -610,6 +610,12 @@ cargo test -p html --features html5 --lib \
   `fuzz/corpus/css_cascade/` plus `fuzz/regressions/css_cascade/` for
   cascade-resolution byte inputs, and `fuzz/corpus/css_values/` plus
   `fuzz/regressions/css_values/` for property/value byte inputs.
+- Promote stabilized CSS findings that should become permanent regression
+  oracles into `crates/css/tests/regressions/css_fuzz/`. Each promoted fixture
+  is a directory with versioned metadata (`meta.txt`), exact replay bytes
+  (`input.bin`), and a committed stable harness summary (`summary.txt`).
+  Summary fields, including `termination`, use explicit lowercase stable labels
+  rather than Rust `Debug` output.
 - Use stable descriptive file names that describe the construct being stressed.
 - Keep entries small and focused; prefer one failure mode per seed.
 - Re-run the matching committed-input replay target before landing new corpus or
@@ -635,3 +641,22 @@ cargo test -p html --test html5_rawtext_script_regressions \
 
 That harness checks both whole-input and deterministic every-boundary chunked
 execution before the regression lands.
+
+Verify promoted CSS fuzz regressions with:
+
+```sh
+cargo test -p css --features css-fuzzing --test css_fuzz_regressions --locked
+```
+
+Render or refresh a promoted CSS regression summary with:
+
+```sh
+cargo run -p css --features css-fuzzing --bin css_fuzz_regression_summary -- \
+  --tool <css_tokenizer|css_parser|css_selector_parser|css_selector_matching|css_cascade|css_values> \
+  --profile <default|selector-limit-zero> \
+  --input crates/css/tests/regressions/css_fuzz/<fixture>/input.bin --seed <u64>
+```
+
+The promoted CSS regression fixtures are intentionally version-controlled and
+checked in normal test runs so fuzz-discovered failures remain reproducible even
+without libFuzzer.

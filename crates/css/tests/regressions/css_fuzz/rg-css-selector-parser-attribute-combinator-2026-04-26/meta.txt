@@ -1,0 +1,8 @@
+# format: css-fuzz-regression-v1
+# tool: css_selector_parser
+# profile: default
+# seed: 0
+# date: 2026-04-26
+# issue: Milestone-T/T6
+# guard: selector parser preserves attribute and combinator structure deterministically
+# source: fuzz/corpus/css_selector_parser/attribute-and-combinator

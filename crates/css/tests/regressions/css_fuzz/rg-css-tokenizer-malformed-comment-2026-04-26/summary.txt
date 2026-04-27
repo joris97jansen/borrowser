@@ -1,0 +1,12 @@
+version: 1
+css-fuzz-regression
+tool: css_tokenizer
+profile: default
+seed: 0
+termination: completed
+input-bytes: 24
+decoded-bytes: 24
+tokens-observed: 2
+diagnostics-observed: 1
+hit-limit: false
+digest: 16698978721194329519

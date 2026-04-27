@@ -1,0 +1,8 @@
+# format: css-fuzz-regression-v1
+# tool: css_selector_matching
+# profile: default
+# seed: 0
+# date: 2026-04-26
+# issue: Milestone-T/T6
+# guard: selector matching over sibling axes remains deterministic and bounded
+# source: fuzz/corpus/css_selector_matching/sibling-axis
