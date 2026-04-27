@@ -7,6 +7,11 @@ edition = "2024"
 default = []
 css-fuzzing = []
 
+[[bin]]
+name = "css_fuzz_regression_summary"
+path = "src/bin/css_fuzz_regression_summary.rs"
+required-features = ["css-fuzzing"]
+
 [dependencies]
 html = { path = "../html", features = ["internal-api"] }
 
