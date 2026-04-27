@@ -5,7 +5,7 @@ HTML_ENTITIES_TOOL := crates/html/tools/generate_entities_html5.py
 CLIPPY_JOBS ?= 4
 CLIPPY_JOB_FLAG := $(if $(strip $(CLIPPY_JOBS)),-j $(CLIPPY_JOBS),)
 
-.PHONY: format fmt-check lint lint-html5 lint-html5-hardening test test-html5-runtime test-html5-toggle compile-html5-benches test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-html5-rawtext-script-regressions test-html5-tokenizer-fuzz-corpus test-html5-tokenizer-fuzz-smoke test-html5-tokenizer-fuzz-long test-html5-tokenizer-script-data-fuzz-corpus test-html5-tokenizer-script-data-fuzz-smoke test-html5-tokenizer-script-data-fuzz-long test-html5-tokenizer-rawtext-fuzz-corpus test-html5-tokenizer-rawtext-fuzz-smoke test-html5-tokenizer-rawtext-fuzz-long test-html5-tokenizer-rcdata-fuzz-corpus test-html5-tokenizer-rcdata-fuzz-smoke test-html5-tokenizer-rcdata-fuzz-long test-html5-tree-builder-token-fuzz-corpus test-html5-tree-builder-token-fuzz-smoke test-html5-tree-builder-token-fuzz-long test-html5-pipeline-fuzz-corpus test-html5-pipeline-regressions test-html5-pipeline-fuzz-smoke test-html5-pipeline-fuzz-long test-css-tokenizer-fuzz-corpus test-css-tokenizer-fuzz-smoke test-css-tokenizer-fuzz-long test-css-parser-fuzz-corpus test-css-parser-fuzz-smoke test-css-parser-fuzz-long test-css-selector-parser-fuzz-corpus test-css-selector-parser-fuzz-smoke test-css-selector-parser-fuzz-long test-css-selector-matching-fuzz-corpus test-css-selector-matching-fuzz-smoke test-css-selector-matching-fuzz-long test-css-cascade-fuzz-corpus test-css-cascade-fuzz-smoke test-css-cascade-fuzz-long test-css-values-fuzz-corpus test-css-values-fuzz-smoke test-css-values-fuzz-long print-html5-pipeline-regression-snapshot test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
+.PHONY: format fmt-check lint lint-html5 lint-html5-hardening test test-html5-runtime test-html5-toggle compile-html5-benches test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-html5-rawtext-script-regressions test-html5-tokenizer-fuzz-corpus test-html5-tokenizer-fuzz-smoke test-html5-tokenizer-fuzz-long test-html5-tokenizer-script-data-fuzz-corpus test-html5-tokenizer-script-data-fuzz-smoke test-html5-tokenizer-script-data-fuzz-long test-html5-tokenizer-rawtext-fuzz-corpus test-html5-tokenizer-rawtext-fuzz-smoke test-html5-tokenizer-rawtext-fuzz-long test-html5-tokenizer-rcdata-fuzz-corpus test-html5-tokenizer-rcdata-fuzz-smoke test-html5-tokenizer-rcdata-fuzz-long test-html5-tree-builder-token-fuzz-corpus test-html5-tree-builder-token-fuzz-smoke test-html5-tree-builder-token-fuzz-long test-html5-pipeline-fuzz-corpus test-html5-pipeline-regressions test-html5-pipeline-fuzz-smoke test-html5-pipeline-fuzz-long test-css-tokenizer-fuzz-corpus test-css-tokenizer-fuzz-smoke test-css-tokenizer-fuzz-long test-css-parser-fuzz-corpus test-css-parser-fuzz-smoke test-css-parser-fuzz-long test-css-selector-parser-fuzz-corpus test-css-selector-parser-fuzz-smoke test-css-selector-parser-fuzz-long test-css-selector-matching-fuzz-corpus test-css-selector-matching-fuzz-smoke test-css-selector-matching-fuzz-long test-css-cascade-fuzz-corpus test-css-cascade-fuzz-smoke test-css-cascade-fuzz-long test-css-values-fuzz-corpus test-css-values-fuzz-smoke test-css-values-fuzz-long test-css-fuzz-regressions print-css-fuzz-regression-summary print-html5-pipeline-regression-snapshot test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
 
 # Format all crates in place
 format:
@@ -294,6 +294,16 @@ test-css-values-fuzz-long:
 	CSS_VALUES_FUZZ_SMOKE_INPUT_TIMEOUT_SEC=10 \
 	CSS_VALUES_FUZZ_SMOKE_WALL_TIMEOUT_SEC=600 \
 	bash ./tools/ci/css_values_fuzz_smoke.sh
+
+# Replay promoted CSS fuzz regression fixtures with committed stable summaries
+test-css-fuzz-regressions:
+	cargo test -p css --features css-fuzzing --test css_fuzz_regressions --locked
+
+# Render a stable CSS fuzz regression summary from a fixture input
+print-css-fuzz-regression-summary:
+	@test -n "$(TOOL)" || (echo "usage: make $@ TOOL=css_values INPUT=crates/css/tests/regressions/css_fuzz/<fixture>/input.bin [PROFILE=default] [SEED=0]" && exit 1)
+	@test -n "$(INPUT)" || (echo "usage: make $@ TOOL=css_values INPUT=crates/css/tests/regressions/css_fuzz/<fixture>/input.bin [PROFILE=default] [SEED=0]" && exit 1)
+	cargo run -p css --features css-fuzzing --bin css_fuzz_regression_summary --locked -- --tool "$(TOOL)" --profile "$(if $(PROFILE),$(PROFILE),default)" --input "$(INPUT)" --seed "$(if $(SEED),$(SEED),0)"
 
 # Render a stable HTML5 pipeline regression snapshot from a corpus/regression input
 print-html5-pipeline-regression-snapshot:

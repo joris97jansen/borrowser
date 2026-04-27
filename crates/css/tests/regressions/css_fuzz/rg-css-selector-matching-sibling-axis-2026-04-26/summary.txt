@@ -1,0 +1,19 @@
+version: 1
+css-fuzz-regression
+tool: css_selector_matching
+profile: default
+seed: 0
+termination: completed
+input-bytes: 21
+decoded-bytes: 21
+selector-cases-observed: 2
+elements-observed: 36
+parsed-cases: 2
+unsupported-cases: 0
+invalid-cases: 0
+matched-targets-observed: 5
+unmatched-targets-observed: 67
+unsupported-targets-observed: 0
+invalid-targets-observed: 0
+limit-errors-observed: 0
+digest: 11910966472764276548

@@ -1,0 +1,12 @@
+version: 1
+css-fuzz-regression
+tool: css_cascade
+profile: selector-limit-zero
+seed: 0
+termination: selector-matching-limit-exceeded
+input-bytes: 31
+decoded-bytes: 31
+stylesheet-cases-observed: 2
+resolved-elements-observed: 0
+computed-elements-observed: 0
+digest: 17278954923724401128

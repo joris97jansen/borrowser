@@ -1,0 +1,8 @@
+# format: css-fuzz-regression-v1
+# tool: css_cascade
+# profile: selector-limit-zero
+# seed: 0
+# date: 2026-04-26
+# issue: Milestone-T/T6
+# guard: cascade fuzzing preserves typed selector matching limit termination
+# source: fuzz/corpus/css_cascade/selector-limit-trigger

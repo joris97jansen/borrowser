@@ -1,0 +1,8 @@
+# format: css-fuzz-regression-v1
+# tool: css_values
+# profile: default
+# seed: 0
+# date: 2026-04-26
+# issue: Milestone-T/T6
+# guard: malformed value functions preserve deterministic specified and computed outcomes
+# source: fuzz/corpus/css_values/malformed-function

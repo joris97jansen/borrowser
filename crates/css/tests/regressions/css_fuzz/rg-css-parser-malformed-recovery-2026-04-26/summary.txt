@@ -1,0 +1,14 @@
+version: 1
+css-fuzz-regression
+tool: css_parser
+profile: default
+seed: 0
+termination: completed
+input-bytes: 56
+decoded-bytes: 56
+rules-observed: 1
+declarations-observed: 1
+component-values-observed: 4
+diagnostics-observed: 2
+hit-limit: false
+digest: 4399099515594142102
