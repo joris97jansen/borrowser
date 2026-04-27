@@ -79,9 +79,10 @@ Milestone T boundary for CSS:
 - The T5 selector and value harnesses also enforce structured determinism and
   invariant checks in addition to crash/hang detection, so fuzz targets panic
   on harness-level invariant failures instead of silently discarding summaries.
-- GitHub Actions job integration for these CSS fuzz lanes is intentionally
-  deferred to the later Milestone T CI hardening issue, so `fuzz/README.md`,
-  `Makefile`, and `tools/ci/` are the authoritative workflow surface for T4/T5.
+- T7 adds GitHub Actions coverage for promoted CSS fuzz regressions plus
+  deterministic CSS syntax and pipeline smoke lanes with fixed seeds, bounded
+  run counts, and failure artifacts that include direct repro commands in the
+  job log.
 
 For the tokenizer threat model, panic-free scope, enforced limits, and the
 expected fuzz triage workflow, see
@@ -441,13 +442,25 @@ make test-css-cascade-fuzz-smoke
 make test-css-values-fuzz-smoke
 ```
 
-Current smoke budgets:
+Local script defaults:
 - CSS tokenizer fixed seed: `1873819023`
 - CSS parser fixed seed: `2718281828`
 - CSS selector parser fixed seed: `1873819023`
 - CSS selector matching fixed seed: `1873819023`
 - CSS cascade fixed seed: `1873819023`
 - CSS values fixed seed: `1873819023`
+- fixed runs: `128`
+- libFuzzer per-input timeout: `5s`
+- outer wall timeout: `90s`
+
+GitHub Actions T7 overrides keep the same bounded budget shape but use explicit
+per-lane seeds for the downstream CSS jobs:
+- CSS tokenizer fixed seed: `1873819023`
+- CSS parser fixed seed: `2718281828`
+- CSS selector parser fixed seed: `3141592653`
+- CSS selector matching fixed seed: `1618033988`
+- CSS cascade fixed seed: `1414213562`
+- CSS values fixed seed: `2449489742`
 - fixed runs: `128`
 - libFuzzer per-input timeout: `5s`
 - outer wall timeout: `90s`

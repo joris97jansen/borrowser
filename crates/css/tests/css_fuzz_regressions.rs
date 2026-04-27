@@ -48,10 +48,9 @@ fn css_fuzz_regression_fixtures_match_committed_summaries() {
         assert_eq!(
             rendered.trim_end(),
             expected.trim_end(),
-            "css fuzz regression fixture {} drifted; regenerate {} from {}",
+            "css fuzz regression fixture {} drifted; refresh with: {}",
             fixture.dir.display(),
-            fixture.summary_path.display(),
-            fixture.input_path.display()
+            fixture_refresh_command(&fixture)
         );
     }
 
@@ -214,6 +213,17 @@ fn fixture_root() -> PathBuf {
         .join("tests")
         .join("regressions")
         .join("css_fuzz")
+}
+
+fn fixture_refresh_command(fixture: &Fixture) -> String {
+    format!(
+        "cargo run -p css --features css-fuzzing --bin css_fuzz_regression_summary -- --tool {} --profile {} --input {} --seed {} > {}",
+        fixture.tool.as_str(),
+        fixture.profile.as_str(),
+        fixture.input_path.display(),
+        fixture.seed,
+        fixture.summary_path.display()
+    )
 }
 
 fn assert_valid_fixture_dir_name(path: &Path) {
