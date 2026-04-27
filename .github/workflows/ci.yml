@@ -348,3 +348,164 @@ jobs:
           path: |
             ci_artifacts/html5_pipeline_fuzz_smoke.log
             ci_artifacts/html5_pipeline_fuzz_failure
+
+  css_fuzz_regressions:
+    name: CSS fuzz regressions
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    env:
+      RUST_BACKTRACE: 1
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Replay promoted CSS fuzz regressions
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci_artifacts
+          cargo test -p css --features css-fuzzing --test css_fuzz_regressions --locked \
+            2>&1 | tee ci_artifacts/css_fuzz_regressions.log
+
+      - name: Upload CSS fuzz regression log on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: css-fuzz-regressions-${{ github.sha }}
+          path: ci_artifacts/css_fuzz_regressions.log
+
+  css_syntax_fuzz_smoke:
+    name: CSS syntax fuzz smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    env:
+      RUST_BACKTRACE: 1
+      CSS_TOKENIZER_FUZZ_SMOKE_SEED: "1873819023"
+      CSS_TOKENIZER_FUZZ_SMOKE_RUNS: "128"
+      CSS_TOKENIZER_FUZZ_SMOKE_INPUT_TIMEOUT_SEC: "5"
+      CSS_TOKENIZER_FUZZ_SMOKE_WALL_TIMEOUT_SEC: "90"
+      CSS_PARSER_FUZZ_SMOKE_SEED: "2718281828"
+      CSS_PARSER_FUZZ_SMOKE_RUNS: "128"
+      CSS_PARSER_FUZZ_SMOKE_INPUT_TIMEOUT_SEC: "5"
+      CSS_PARSER_FUZZ_SMOKE_WALL_TIMEOUT_SEC: "90"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run deterministic CSS tokenizer fuzz smoke
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci_artifacts
+          bash ./tools/ci/css_tokenizer_fuzz_smoke.sh 2>&1 | tee ci_artifacts/css_tokenizer_fuzz_smoke.log
+
+      - name: Run deterministic CSS parser fuzz smoke
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci_artifacts
+          bash ./tools/ci/css_parser_fuzz_smoke.sh 2>&1 | tee ci_artifacts/css_parser_fuzz_smoke.log
+
+      - name: Upload CSS syntax fuzz artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: css-syntax-fuzz-smoke-${{ github.sha }}
+          path: |
+            ci_artifacts/css_tokenizer_fuzz_smoke.log
+            ci_artifacts/css_parser_fuzz_smoke.log
+            ci_artifacts/css_tokenizer_fuzz_failure
+            ci_artifacts/css_parser_fuzz_failure
+
+  css_pipeline_fuzz_smoke:
+    name: CSS pipeline fuzz smoke
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    env:
+      RUST_BACKTRACE: 1
+      CSS_SELECTOR_PARSER_FUZZ_SMOKE_SEED: "3141592653"
+      CSS_SELECTOR_PARSER_FUZZ_SMOKE_RUNS: "128"
+      CSS_SELECTOR_PARSER_FUZZ_SMOKE_INPUT_TIMEOUT_SEC: "5"
+      CSS_SELECTOR_PARSER_FUZZ_SMOKE_WALL_TIMEOUT_SEC: "90"
+      CSS_SELECTOR_MATCHING_FUZZ_SMOKE_SEED: "1618033988"
+      CSS_SELECTOR_MATCHING_FUZZ_SMOKE_RUNS: "128"
+      CSS_SELECTOR_MATCHING_FUZZ_SMOKE_INPUT_TIMEOUT_SEC: "5"
+      CSS_SELECTOR_MATCHING_FUZZ_SMOKE_WALL_TIMEOUT_SEC: "90"
+      CSS_CASCADE_FUZZ_SMOKE_SEED: "1414213562"
+      CSS_CASCADE_FUZZ_SMOKE_RUNS: "128"
+      CSS_CASCADE_FUZZ_SMOKE_INPUT_TIMEOUT_SEC: "5"
+      CSS_CASCADE_FUZZ_SMOKE_WALL_TIMEOUT_SEC: "90"
+      CSS_VALUES_FUZZ_SMOKE_SEED: "2449489742"
+      CSS_VALUES_FUZZ_SMOKE_RUNS: "128"
+      CSS_VALUES_FUZZ_SMOKE_INPUT_TIMEOUT_SEC: "5"
+      CSS_VALUES_FUZZ_SMOKE_WALL_TIMEOUT_SEC: "90"
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache cargo
+        uses: Swatinem/rust-cache@v2
+
+      - name: Run deterministic CSS selector parser fuzz smoke
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci_artifacts
+          bash ./tools/ci/css_selector_parser_fuzz_smoke.sh 2>&1 | tee ci_artifacts/css_selector_parser_fuzz_smoke.log
+
+      - name: Run deterministic CSS selector matching fuzz smoke
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci_artifacts
+          bash ./tools/ci/css_selector_matching_fuzz_smoke.sh 2>&1 | tee ci_artifacts/css_selector_matching_fuzz_smoke.log
+
+      - name: Run deterministic CSS cascade fuzz smoke
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci_artifacts
+          bash ./tools/ci/css_cascade_fuzz_smoke.sh 2>&1 | tee ci_artifacts/css_cascade_fuzz_smoke.log
+
+      - name: Run deterministic CSS values fuzz smoke
+        shell: bash
+        run: |
+          set -o pipefail
+          mkdir -p ci_artifacts
+          bash ./tools/ci/css_values_fuzz_smoke.sh 2>&1 | tee ci_artifacts/css_values_fuzz_smoke.log
+
+      - name: Upload CSS pipeline fuzz artifacts on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: css-pipeline-fuzz-smoke-${{ github.sha }}
+          path: |
+            ci_artifacts/css_selector_parser_fuzz_smoke.log
+            ci_artifacts/css_selector_matching_fuzz_smoke.log
+            ci_artifacts/css_cascade_fuzz_smoke.log
+            ci_artifacts/css_values_fuzz_smoke.log
+            ci_artifacts/css_selector_parser_fuzz_failure
+            ci_artifacts/css_selector_matching_fuzz_failure
+            ci_artifacts/css_cascade_fuzz_failure
+            ci_artifacts/css_values_fuzz_failure
