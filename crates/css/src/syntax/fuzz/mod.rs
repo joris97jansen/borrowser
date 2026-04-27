@@ -1,6 +1,10 @@
 mod config;
 mod digest;
 mod driver;
+mod invariants;
+mod observed_digest;
+mod options;
+mod parser_observer;
 
 #[cfg(test)]
 mod tests;
