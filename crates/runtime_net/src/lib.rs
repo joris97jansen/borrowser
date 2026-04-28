@@ -20,6 +20,7 @@ pub fn start_net_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent
                 CoreCommand::FetchStream {
                     tab_id,
                     request_id,
+                    stylesheet_slot_id,
                     url,
                     kind,
                 } => {
@@ -46,6 +47,7 @@ pub fn start_net_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent
                                 let _ = evt_tx.send(CoreEvent::NetworkStart {
                                     tab_id,
                                     request_id,
+                                    stylesheet_slot_id,
                                     kind,
                                     response,
                                 });
@@ -58,6 +60,7 @@ pub fn start_net_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent
                                 let _ = evt_tx.send(CoreEvent::NetworkChunk {
                                     tab_id,
                                     request_id,
+                                    stylesheet_slot_id,
                                     kind,
                                     url,
                                     bytes: chunk,
@@ -71,6 +74,7 @@ pub fn start_net_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent
                                 let _ = evt_tx.send(CoreEvent::NetworkDone {
                                     tab_id,
                                     request_id,
+                                    stylesheet_slot_id,
                                     kind,
                                     response,
                                     bytes_received,
@@ -86,6 +90,7 @@ pub fn start_net_runtime(cmd_rx: Receiver<CoreCommand>, evt_tx: Sender<CoreEvent
                                 let _ = evt_tx.send(CoreEvent::NetworkError {
                                     tab_id,
                                     request_id,
+                                    stylesheet_slot_id,
                                     kind,
                                     url,
                                     error_kind,

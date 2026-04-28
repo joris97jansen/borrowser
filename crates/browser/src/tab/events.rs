@@ -8,6 +8,7 @@ impl Tab {
             CoreEvent::NetworkStart {
                 tab_id,
                 request_id,
+                stylesheet_slot_id: _,
                 kind: ResourceKind::Html,
                 response,
             } if self.is_current(tab_id, request_id) => {
@@ -17,6 +18,7 @@ impl Tab {
             CoreEvent::NetworkChunk {
                 tab_id,
                 request_id,
+                stylesheet_slot_id: _,
                 kind: ResourceKind::Html,
                 url: _,
                 bytes,
@@ -28,6 +30,7 @@ impl Tab {
             CoreEvent::NetworkDone {
                 tab_id,
                 request_id,
+                stylesheet_slot_id: _,
                 kind: ResourceKind::Html,
                 response,
                 bytes_received,
@@ -38,6 +41,7 @@ impl Tab {
             CoreEvent::NetworkError {
                 tab_id,
                 request_id,
+                stylesheet_slot_id: _,
                 kind: ResourceKind::Html,
                 url,
                 error_kind,
@@ -82,23 +86,26 @@ impl Tab {
             CoreEvent::NetworkStart {
                 tab_id,
                 request_id,
+                stylesheet_slot_id: Some(stylesheet_slot_id),
                 kind: ResourceKind::Css,
                 response,
             } if self.is_current(tab_id, request_id) => {
-                self.on_css_network_start(response);
+                self.on_css_network_start(stylesheet_slot_id, response);
             }
             CoreEvent::NetworkChunk {
                 tab_id,
                 request_id,
+                stylesheet_slot_id: Some(stylesheet_slot_id),
                 kind: ResourceKind::Css,
                 url,
                 bytes,
             } if self.is_current(tab_id, request_id) => {
-                self.on_css_network_chunk(url, bytes, request_id);
+                self.on_css_network_chunk(stylesheet_slot_id, url, bytes, request_id);
             }
             CoreEvent::NetworkChunk {
                 tab_id,
                 request_id,
+                stylesheet_slot_id: _,
                 kind: ResourceKind::Image,
                 url,
                 bytes,
@@ -108,15 +115,17 @@ impl Tab {
             CoreEvent::NetworkDone {
                 tab_id,
                 request_id,
+                stylesheet_slot_id: Some(stylesheet_slot_id),
                 kind: ResourceKind::Css,
                 response,
                 bytes_received,
             } if self.is_current(tab_id, request_id) => {
-                self.on_css_network_done(response, bytes_received, request_id);
+                self.on_css_network_done(stylesheet_slot_id, response, bytes_received, request_id);
             }
             CoreEvent::NetworkDone {
                 tab_id,
                 request_id,
+                stylesheet_slot_id: _,
                 kind: ResourceKind::Image,
                 response,
                 ..
@@ -126,17 +135,26 @@ impl Tab {
             CoreEvent::NetworkError {
                 tab_id,
                 request_id,
+                stylesheet_slot_id: Some(stylesheet_slot_id),
                 kind: ResourceKind::Css,
                 url,
                 error_kind,
                 status_code,
                 error,
             } if self.is_current(tab_id, request_id) => {
-                self.on_css_network_error(url, error_kind, status_code, error, request_id);
+                self.on_css_network_error(
+                    stylesheet_slot_id,
+                    url,
+                    error_kind,
+                    status_code,
+                    error,
+                    request_id,
+                );
             }
             CoreEvent::NetworkError {
                 tab_id,
                 request_id,
+                stylesheet_slot_id: _,
                 kind: ResourceKind::Image,
                 url,
                 error_kind: _,
@@ -149,17 +167,19 @@ impl Tab {
             CoreEvent::CssDecodedBlock {
                 tab_id,
                 request_id,
+                stylesheet_slot_id,
                 css_block,
                 ..
             } if self.is_current(tab_id, request_id) => {
-                self.on_css_decoded_block(css_block);
+                self.on_css_decoded_block(stylesheet_slot_id, css_block);
             }
             CoreEvent::CssSheetDone {
                 tab_id,
                 request_id,
+                stylesheet_slot_id,
                 url,
             } if self.is_current(tab_id, request_id) => {
-                self.on_css_sheet_done(url);
+                self.on_css_sheet_done(stylesheet_slot_id, url);
             }
 
             _ => {}

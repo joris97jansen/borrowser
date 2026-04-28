@@ -1,12 +1,13 @@
+use crate::document_style::{DocumentStyleSet, StylesheetFetch};
 use crate::form_controls::{FormControlIndex, seed_input_state_from_dom};
-use css::{ParseOptions, StylesheetParse, parse_stylesheet_with_options};
+use core_types::StylesheetSlotId;
+use css::StylesheetParse;
 use gfx::input::InputValueStore;
 use html::{
     Node,
-    dom_utils::{collect_style_texts, outline_from_dom},
+    dom_utils::outline_from_dom,
     head::{HeadMetadata, extract_head_metadata},
 };
-use std::collections::HashSet;
 
 pub struct PageState {
     pub base_url: Option<String>,
@@ -16,8 +17,7 @@ pub struct PageState {
     pub visible_text_cache: String,
     pub form_controls: FormControlIndex,
 
-    css_pending: HashSet<String>,
-    css_stylesheets: Vec<StylesheetParse>,
+    document_styles: DocumentStyleSet,
 }
 
 impl PageState {
@@ -28,8 +28,7 @@ impl PageState {
             head: HeadMetadata::default(),
             visible_text_cache: String::new(),
             form_controls: FormControlIndex::default(),
-            css_pending: HashSet::new(),
-            css_stylesheets: Vec::new(),
+            document_styles: DocumentStyleSet::default(),
         }
     }
 
@@ -40,8 +39,7 @@ impl PageState {
         self.head = HeadMetadata::default();
         self.visible_text_cache.clear();
         self.form_controls = FormControlIndex::default();
-        self.css_pending.clear();
-        self.css_stylesheets.clear();
+        self.document_styles.clear();
     }
 
     pub fn update_head_metadata(&mut self) {
@@ -53,25 +51,43 @@ impl PageState {
     }
 
     // --- CSS ---
-    pub fn register_css(&mut self, absolute_url: &str) -> bool {
-        self.css_pending.insert(absolute_url.to_string())
+    pub(crate) fn reconcile_document_stylesheets(&mut self) -> Vec<StylesheetFetch> {
+        let Some(dom) = self.dom.as_deref() else {
+            return Vec::new();
+        };
+        self.document_styles
+            .reconcile_from_dom(dom, self.base_url.as_deref())
     }
 
-    pub fn apply_css_block(&mut self, block: &str) {
-        let parsed = parse_stylesheet_with_options(block, &ParseOptions::stylesheet());
-        self.css_stylesheets.push(parsed);
+    #[cfg(test)]
+    pub(crate) fn register_css(&mut self, absolute_url: &str) -> StylesheetSlotId {
+        self.document_styles
+            .register_external_for_tests(absolute_url)
     }
 
-    pub fn mark_css_done(&mut self, url: &str) {
-        self.css_pending.remove(url);
+    pub(crate) fn apply_css_block(&mut self, slot_id: StylesheetSlotId, block: &str) -> bool {
+        self.document_styles
+            .install_external_stylesheet(slot_id, block)
+    }
+
+    pub(crate) fn mark_css_done(&mut self, slot_id: StylesheetSlotId) {
+        self.document_styles.mark_external_done(slot_id);
+    }
+
+    pub(crate) fn mark_css_failed(&mut self, slot_id: StylesheetSlotId) {
+        self.document_styles.mark_external_failed(slot_id);
+    }
+
+    pub(crate) fn mark_css_aborted(&mut self, slot_id: StylesheetSlotId) {
+        self.document_styles.mark_external_aborted(slot_id);
     }
 
     pub fn pending_count(&self) -> usize {
-        self.css_pending.len()
+        self.document_styles.pending_count()
     }
 
     pub fn css_stylesheets(&self) -> &[StylesheetParse] {
-        &self.css_stylesheets
+        self.document_styles.stylesheets()
     }
 
     pub fn outline(&self, cap: usize) -> Vec<String> {
@@ -86,22 +102,6 @@ impl PageState {
         self.visible_text_cache.clear();
         if let Some(dom) = self.dom.as_deref() {
             html::dom_utils::collect_visible_text(dom, &mut self.visible_text_cache);
-        }
-    }
-
-    pub fn apply_inline_style_blocks(&mut self) {
-        if let Some(dom_mut) = self.dom.as_deref_mut() {
-            let mut css_text = String::new();
-            collect_style_texts(dom_mut, &mut css_text);
-
-            if !css_text.trim().is_empty() {
-                let parsed = parse_stylesheet_with_options(&css_text, &ParseOptions::stylesheet());
-                self.css_stylesheets.push(parsed);
-            }
-
-            // Style computation consumes the structured stylesheet list
-            // directly; DOM-attached style mutation is retained only as a CSS
-            // crate legacy compatibility bridge.
         }
     }
 

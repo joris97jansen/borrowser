@@ -86,7 +86,6 @@ impl Tab {
     pub(super) fn on_dom_update(&mut self, dom: Box<Node>, request_id: RequestId) {
         self.page.dom = Some(dom);
         self.page.update_head_metadata();
-        self.page.apply_inline_style_blocks();
         self.page
             .seed_input_values_from_dom(&mut self.document_input.input_values);
         self.page.update_visible_text_cache();

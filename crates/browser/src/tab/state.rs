@@ -4,7 +4,7 @@ use crate::page::PageState;
 use crate::resources::ResourceManager;
 use app_api::RepaintHandle;
 use bus::CoreCommand;
-use core_types::{DomHandle, NetworkResponseInfo, RequestId, TabId};
+use core_types::{DomHandle, NetworkResponseInfo, RequestId, StylesheetSlotId, TabId};
 use std::collections::HashMap;
 use std::sync::mpsc;
 
@@ -31,7 +31,7 @@ pub struct Tab {
     pub(super) loading: bool,
     pub(super) last_status: Option<String>,
     pub(super) document_load: DocumentLoadState,
-    pub(super) stylesheet_loads: HashMap<String, StylesheetLoadState>,
+    pub(super) stylesheet_loads: HashMap<StylesheetSlotId, StylesheetLoadState>,
 
     pub(super) page: PageState,
     pub(super) resources: ResourceManager,
