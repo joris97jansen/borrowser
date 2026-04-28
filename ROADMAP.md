@@ -14,7 +14,7 @@ Completed features are marked, ongoing tasks use `[ ]`, and future structural im
 Introduce `display` as a first-class computed property.
 
 - [✅] Add `Display` enum to `ComputedStyle` (`Block`, `Inline`, `InlineBlock`, `ListItem`, …)
-- [ ✅] Assign default display per element (span=inline, div=block, etc.)
+- [✅] Assign default display per element (span=inline, div=block, etc.)
 - [✅] Replace `is_inline_element_name` with computed `display`
 - [ ] Add support for:
   - [ ] `display: inline-block`
@@ -76,15 +76,21 @@ Developer-only visualization:
 ### C1. Cache Style & Layout Trees
 Move toward a real browser-style incremental pipeline.
 
-- [ ] Add `style_root: StyledNode` to `PageState`
-- [ ] Add `layout_root: LayoutBox` to `PageState`
+- [ ] Add a page-owned style cache that respects `StyledNode` borrowing boundaries
+- [ ] Add a page-owned layout cache that respects `LayoutBox` borrowing boundaries
 - [ ] Compute style/layout **only when needed**
   - [ ] When DOM changes
   - [ ] When CSS changes
   - [ ] When viewport changes
 - [ ] Otherwise reuse cached trees
 
-This will eliminate 80–90% of current per-frame work.
+This should eliminate most avoidable per-frame style/layout work once measured
+and guarded by benchmarks.
+
+Derived caches must not require self-referential `PageState` storage. If
+`StyledNode` or `LayoutBox` remain borrow-backed views over the DOM, cache owned
+style/layout artifacts or rebuild borrow-backed trees from owned DOM plus cached
+computed-style/layout data.
 
 ---
 
