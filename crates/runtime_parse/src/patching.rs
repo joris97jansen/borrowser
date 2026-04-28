@@ -7,6 +7,9 @@ use log::error;
 #[cfg(feature = "patch-stats")]
 use log::info;
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct CoreEventSendError;
+
 pub(crate) fn emit_patch_update(
     evt_tx: &Sender<CoreEvent>,
     tab_id: TabId,
@@ -14,7 +17,7 @@ pub(crate) fn emit_patch_update(
     dom_handle: DomHandle,
     version: &mut DomVersion,
     patches: Vec<DomPatch>,
-) -> Result<(), std::sync::mpsc::SendError<CoreEvent>> {
+) -> Result<(), CoreEventSendError> {
     let from = *version;
     let to = from.next();
     let send_result = evt_tx.send(CoreEvent::DomPatchUpdate {
@@ -25,12 +28,12 @@ pub(crate) fn emit_patch_update(
         to,
         patches,
     });
-    if let Err(err) = send_result {
+    if send_result.is_err() {
         error!(
             target: "runtime_parse",
             "patch sink dropped; stopping updates for tab={tab_id:?} request={request_id:?}"
         );
-        return Err(err);
+        return Err(CoreEventSendError);
     }
     *version = to;
     Ok(())
