@@ -80,6 +80,7 @@ impl Tab {
         self.send_cmd(CoreCommand::FetchStream {
             tab_id: self.tab_id,
             request_id,
+            stylesheet_slot_id: None,
             url,
             kind: ResourceKind::Html,
         });

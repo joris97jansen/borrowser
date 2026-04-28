@@ -66,7 +66,7 @@ fn router_thread(
                     let _ = parse_tx.send(cmd);
                 }
 
-                // CSS streaming→parsing goes to css runtime
+                // CSS byte streaming/assembly goes to css runtime
                 CoreCommand::CssChunk { .. }
                 | CoreCommand::CssDone { .. }
                 | CoreCommand::CssAbort { .. } => {

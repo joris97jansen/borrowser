@@ -1,7 +1,7 @@
 use super::Tab;
 use bus::CoreCommand;
-use core_types::{RequestId, ResourceKind};
-use html::dom_utils::{collect_img_srcs, collect_stylesheet_hrefs};
+use core_types::{RequestId, ResourceKind, StylesheetSlotId};
+use html::dom_utils::collect_img_srcs;
 use url::Url;
 
 impl Tab {
@@ -11,20 +11,13 @@ impl Tab {
     }
 
     fn discover_stylesheets(&mut self, request_id: RequestId) {
-        let (Some(dom_ref), Some(base)) = (self.page.dom.as_deref(), self.base_url()) else {
-            return;
-        };
-
-        let mut hrefs = Vec::new();
-        collect_stylesheet_hrefs(dom_ref, &mut hrefs);
-
-        for h in hrefs {
-            if let Ok(abs) = base.join(&h) {
-                let href = abs.to_string();
-                if self.page.register_css(&href) {
-                    self.send_fetch(request_id, href, ResourceKind::Css);
-                }
-            }
+        for fetch in self.page.reconcile_document_stylesheets() {
+            self.send_fetch(
+                request_id,
+                Some(fetch.slot_id),
+                fetch.url,
+                ResourceKind::Css,
+            );
         }
     }
 
@@ -51,6 +44,7 @@ impl Tab {
                         let _ = tx.send(CoreCommand::FetchStream {
                             tab_id,
                             request_id,
+                            stylesheet_slot_id: None,
                             url,
                             kind: ResourceKind::Image,
                         });
@@ -65,10 +59,17 @@ impl Tab {
         Url::parse(base).ok()
     }
 
-    fn send_fetch(&self, request_id: RequestId, url: String, kind: ResourceKind) {
+    fn send_fetch(
+        &self,
+        request_id: RequestId,
+        stylesheet_slot_id: Option<StylesheetSlotId>,
+        url: String,
+        kind: ResourceKind,
+    ) {
         self.send_cmd(CoreCommand::FetchStream {
             tab_id: self.tab_id,
             request_id,
+            stylesheet_slot_id,
             url,
             kind,
         });

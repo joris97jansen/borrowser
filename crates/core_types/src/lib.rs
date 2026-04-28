@@ -1,6 +1,13 @@
 pub type TabId = u64;
 pub type RequestId = u64;
 
+/// Page-owned identity for a stylesheet's position in the document style set.
+///
+/// This is deliberately distinct from URL or cache identity: two stylesheet
+/// links with the same URL still occupy two cascade-order slots.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
+pub struct StylesheetSlotId(pub u64);
+
 /// Stable identity for a live document owned by a parse session.
 ///
 /// Handles are created by the owning subsystem; `0` is reserved and must not be used.

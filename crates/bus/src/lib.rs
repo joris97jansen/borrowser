@@ -1,5 +1,6 @@
 use core_types::{
-    DomHandle, DomVersion, NetworkErrorKind, NetworkResponseInfo, ResourceKind, TabId,
+    DomHandle, DomVersion, NetworkErrorKind, NetworkResponseInfo, ResourceKind, StylesheetSlotId,
+    TabId,
 };
 use html::{DomPatch, Node};
 use std::sync::mpsc::{Receiver, Sender};
@@ -10,6 +11,7 @@ pub enum CoreCommand {
     FetchStream {
         tab_id: TabId,
         request_id: u64,
+        stylesheet_slot_id: Option<StylesheetSlotId>,
         url: String,
         kind: ResourceKind,
     },
@@ -35,17 +37,20 @@ pub enum CoreCommand {
     CssChunk {
         tab_id: TabId,
         request_id: u64,
+        stylesheet_slot_id: StylesheetSlotId,
         url: String,
         bytes: Vec<u8>,
     },
     CssDone {
         tab_id: TabId,
         request_id: u64,
+        stylesheet_slot_id: StylesheetSlotId,
         url: String,
     },
     CssAbort {
         tab_id: TabId,
         request_id: u64,
+        stylesheet_slot_id: StylesheetSlotId,
         url: String,
     },
 }
@@ -56,12 +61,14 @@ pub enum CoreEvent {
     NetworkStart {
         tab_id: TabId,
         request_id: u64,
+        stylesheet_slot_id: Option<StylesheetSlotId>,
         kind: ResourceKind,
         response: NetworkResponseInfo,
     },
     NetworkChunk {
         tab_id: TabId,
         request_id: u64,
+        stylesheet_slot_id: Option<StylesheetSlotId>,
         kind: ResourceKind,
         url: String,
         bytes: Vec<u8>,
@@ -69,6 +76,7 @@ pub enum CoreEvent {
     NetworkDone {
         tab_id: TabId,
         request_id: u64,
+        stylesheet_slot_id: Option<StylesheetSlotId>,
         kind: ResourceKind,
         response: NetworkResponseInfo,
         bytes_received: usize,
@@ -76,6 +84,7 @@ pub enum CoreEvent {
     NetworkError {
         tab_id: TabId,
         request_id: u64,
+        stylesheet_slot_id: Option<StylesheetSlotId>,
         kind: ResourceKind,
         url: String,
         error_kind: NetworkErrorKind,
@@ -104,12 +113,14 @@ pub enum CoreEvent {
     CssDecodedBlock {
         tab_id: TabId,
         request_id: u64,
+        stylesheet_slot_id: StylesheetSlotId,
         url: String,
         css_block: String,
     },
     CssSheetDone {
         tab_id: TabId,
         request_id: u64,
+        stylesheet_slot_id: StylesheetSlotId,
         url: String,
     },
 }
