@@ -24,7 +24,7 @@ Work is split across dedicated threads:
 - **Main thread:** UI, layout, rendering
 - **Networking runtime:** Streaming HTML/CSS over HTTP
 - **HTML parsing runtime:** Incremental DOM construction
-- **CSS stylesheet runtime:** Stylesheet transport/assembly + parse job execution
+- **CSS stylesheet runtime:** Stylesheet byte buffering, UTF-8 assembly, abort handling, and decoded stylesheet event emission
 
 Communication happens through a **session-aware message bus**, allowing each tab to behave like an independent browser instance.
 
@@ -82,7 +82,7 @@ Each runtime operates independently:
 
 - The **network runtime** streams raw bytes.
 - The **HTML parser** builds DOM fragments incrementally.
-- The **CSS stylesheet runtime** assembles and dispatches stylesheet parse jobs in parallel.
+- The **CSS stylesheet runtime** buffers stylesheet bytes, assembles UTF-8 text, handles aborts, and emits decoded stylesheet blocks.
 - Events are routed back to the main thread through winit’s event loop (`UserEvent::Core`).
 
 This design guarantees:
@@ -123,8 +123,10 @@ enum Node {
 
 Inline style attributes are stored in the node but do not affect layout until the CSS cascade applies.
 The current shipped path still writes a compatibility declaration vector into
-`Node::style`; Milestone R is defining the long-term structured resolved-style
-contract that replaces that DOM-attached bridge.
+`Node::style`; Milestones R and S define the long-term structured cascade and
+computed-style contracts that replace the DOM-attached style bridge. Milestone
+U integrates those contracts into the runtime path and removes or isolates
+remaining browser-facing dependencies on `Node::style`.
 
 ### Node IDs
 
@@ -141,8 +143,12 @@ CSS is processed in four phases:
 
 ### 1. **Syntax Parsing**
 
-`runtime_css` currently assembles decoded stylesheet text and hands it to the
-`css::syntax` layer.
+`runtime_css` currently assembles decoded stylesheet text and emits it back to
+the browser/page integration path. CSS parsing semantics remain owned by
+`crates/css`; browser/page state owns stylesheet attachment order and lifetime.
+A future parse-worker model may use another runtime thread as an execution host
+for `crates/css`, but it must not move CSS semantic ownership into
+`runtime_css`.
 
 The syntax contract for Milestone N lives in:
 
@@ -178,6 +184,11 @@ The implemented CSS hardening limits, fuzzing workflow, regression corpus, and
 CI repro workflow live in:
 
 * `docs/security/css-hardening.md`
+
+The Milestone U runtime integration architecture and CSS pipeline ownership
+contract lives in:
+
+* `docs/css/u1-runtime-integration-architecture-css-pipeline-ownership.md`
 
 The syntax layer owns:
 
@@ -408,7 +419,9 @@ Each frame follows:
 3. Paint the layout tree inside a scrollable viewport.
 ```
 
-Later, this will be optimized so steps 2 only run on DOM/CSS changes.
+Milestone U moves this from view-requested recomputation toward explicit
+page-owned DOM/style/layout generations so style and layout work only run when
+their inputs change.
 
 ---
 
@@ -421,7 +434,7 @@ Borrowser strictly isolates responsibilities:
 | **Main thread**  | UI, layout, rendering         |
 | `runtime_net`    | HTTP streaming                |
 | `runtime_parse`  | DOM building                  |
-| `runtime_css`    | CSS stylesheet assembly + parse job execution |
+| `runtime_css`    | CSS stylesheet byte buffering, UTF-8 assembly, abort handling, and decoded-block event emission |
 | winit event loop | Dispatches CoreEvents to tabs |
 
 All communication is message-driven, no shared state.
@@ -435,13 +448,13 @@ Each tab maintains:
 ```rust
 struct PageState {
     dom: Option<Node>,
-    css_stylesheets: Vec<StylesheetParse>, // engine-facing model parse artifacts in stylesheet insertion order
+    css_stylesheets: Vec<StylesheetParse>, // loaded stylesheet artifacts exposed in document/source order
     head: HeadMetadata,
     visible_text_cache: String,
 
-    // later:
-    styled_root: Option<StyledNode>,
-    layout_root: Option<LayoutBox>,
+    // later derived caches:
+    style_cache: Option<PageStyleCache>,
+    layout_cache: Option<PageLayoutCache>,
 }
 ```
 
@@ -454,6 +467,13 @@ cascade bridge and is not the intended long-term style-resolution contract.
 The page-state shape is the storage boundary for persistent style/layout trees
 and change-scoped recomputation; those caches remain derived state from the DOM,
 stylesheet model, viewport, and runtime style pipeline.
+
+Derived style/layout caches must respect Rust ownership boundaries. If
+`StyledNode` or `LayoutBox` remain borrow-backed views over the DOM, they must
+not be stored self-referentially inside `PageState`. Long-lived caches should
+either store owned style artifacts keyed by stable node identity, use an arena
+owned outside the borrowed view, or rebuild borrow-backed trees from owned DOM
+and computed-style artifacts when needed.
 
 ---
 
