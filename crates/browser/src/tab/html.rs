@@ -1,6 +1,7 @@
 use super::Tab;
 use super::state::DocumentLoadState;
 use super::status::{format_network_error, response_summary};
+use crate::page::RestyleTrigger;
 use bus::CoreCommand;
 use core_types::{NetworkErrorKind, NetworkResponseInfo, RequestId};
 use html::Node;
@@ -84,7 +85,16 @@ impl Tab {
     }
 
     pub(super) fn on_dom_update(&mut self, dom: Box<Node>, request_id: RequestId) {
-        self.page.dom = Some(dom);
+        self.on_dom_update_with_restyle(dom, request_id, RestyleTrigger::DocumentReplaced);
+    }
+
+    pub(super) fn on_dom_update_with_restyle(
+        &mut self,
+        dom: Box<Node>,
+        request_id: RequestId,
+        restyle_trigger: RestyleTrigger,
+    ) {
+        self.page.replace_dom(dom, restyle_trigger);
         self.page.update_head_metadata();
         self.page
             .seed_input_values_from_dom(&mut self.document_input.input_values);

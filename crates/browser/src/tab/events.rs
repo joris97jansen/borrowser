@@ -1,4 +1,5 @@
 use super::Tab;
+use crate::page::RestyleTrigger;
 use bus::CoreEvent;
 use core_types::ResourceKind;
 
@@ -66,6 +67,7 @@ impl Tab {
                 to,
                 patches,
             } if self.is_current(tab_id, request_id) => {
+                let restyle_trigger = RestyleTrigger::from_patches(&patches);
                 if self.dom_handle != Some(handle) {
                     self.dom_store.clear();
                     let _ = self.dom_store.create(handle);
@@ -73,8 +75,11 @@ impl Tab {
                 }
                 match self.dom_store.apply(handle, from, to, &patches) {
                     Ok(()) => {
+                        let Some(restyle_trigger) = restyle_trigger else {
+                            return;
+                        };
                         if let Ok(dom) = self.dom_store.materialize(handle) {
-                            self.on_dom_update(dom, request_id);
+                            self.on_dom_update_with_restyle(dom, request_id, restyle_trigger);
                         }
                     }
                     Err(err) => {
