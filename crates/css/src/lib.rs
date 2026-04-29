@@ -31,7 +31,8 @@ pub use cascade::{
     CascadePropertyRegistration, CascadePropertyRegistry, CascadeRuleContext, CascadeRuleInput,
     CascadeRuleInputBuildError, CascadeRuleMatch, CascadeRuleSource, CascadeSpecificity,
     CascadeSpecifiedValue, CascadeWinner, CascadeWinnerEntry, CascadeWinnerSet,
-    CurrentScopeCascadePriorityBand, InitialStyleValue, InlineStyleDeclarationRef,
+    CurrentScopeCascadePriorityBand, IncrementalResolvedDocumentStyle,
+    IncrementalStyleResolutionStats, InitialStyleValue, InlineStyleDeclarationRef,
     InlineStyleRuleRef, ResolvedDocumentStyle, ResolvedElementStyle, ResolvedStyle,
     ResolvedStyleBuildError, ResolvedStyleBuilder, ResolvedStyleEntry, ResolvedValueSource,
     StyleResolutionError, StyleResolutionLimit, StyleResolutionLimits, StylesheetDeclarationRef,
@@ -39,15 +40,17 @@ pub use cascade::{
     get_inline_style, is_css, resolve_cascade_style, resolve_cascade_style_from_rule_inputs,
     resolve_cascade_winners, resolve_cascade_winners_from_rule_inputs, resolve_document_styles,
     resolve_document_styles_debug_snapshot, resolve_initial_style,
-    sort_candidates_by_cascade_order, try_resolve_document_styles_with_limits,
+    sort_candidates_by_cascade_order, try_resolve_document_styles_incremental_suffix_with_limits,
+    try_resolve_document_styles_with_limits,
 };
 pub use computed::{
     BoxMetrics, ComputedDocumentStyle, ComputedElementStyle, ComputedStyleBuildError,
     ComputedStyleBuilder, ComputedStyleEntry, ComputedStyleResolutionError, ComputedValue,
     ComputedValueDiscriminant, ComputedValueNormalizationError,
-    ComputedValueNormalizationErrorKind, build_style_tree_from_computed_styles,
-    build_style_tree_with_stylesheets, compute_document_styles,
-    compute_document_styles_from_resolved_styles, compute_document_styles_with_limits,
+    ComputedValueNormalizationErrorKind, IncrementalComputedDocumentStyle,
+    build_style_tree_from_computed_styles, build_style_tree_with_stylesheets,
+    compute_document_styles, compute_document_styles_from_resolved_styles,
+    compute_document_styles_incremental_suffix_with_limits, compute_document_styles_with_limits,
     compute_style_from_resolved_style, computed_value_debug_snapshot, normalize_specified_value,
 };
 pub use computed::{ComputedStyle, StyledNode, build_style_tree, compute_style};

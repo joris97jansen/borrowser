@@ -1,5 +1,5 @@
 use super::context::SelectorMatchDom;
-use html::Node;
+use html::{Node, internal::Id};
 use std::fmt::Write;
 use std::sync::Arc;
 
@@ -14,6 +14,7 @@ impl SelectorDomElementId {
 }
 
 struct IndexedElement<'a> {
+    node_id: Id,
     name: &'a str,
     attributes: &'a [(Arc<str>, Option<String>)],
     parent: Option<SelectorDomElementId>,
@@ -56,6 +57,7 @@ impl<'a> SelectorDomIndex<'a> {
                 debug_assert_canonical_html_element_name(name);
                 let root_id = SelectorDomElementId(1);
                 elements.push(IndexedElement {
+                    node_id: root.id(),
                     name,
                     attributes,
                     parent: None,
@@ -97,6 +99,7 @@ impl<'a> SelectorDomIndex<'a> {
                     let element_id =
                         SelectorDomElementId((elements.len() + 1).try_into().expect("element id"));
                     elements.push(IndexedElement {
+                        node_id: child.id(),
                         name,
                         attributes,
                         parent: frame.parent_element,
@@ -144,6 +147,13 @@ impl<'a> SelectorDomIndex<'a> {
             next: 1,
             end_exclusive: (self.elements.len() as u32).saturating_add(1),
         }
+    }
+
+    pub fn element_for_node_id(&self, node_id: Id) -> Option<SelectorDomElementId> {
+        self.elements
+            .iter()
+            .position(|element| element.node_id == node_id)
+            .map(|index| SelectorDomElementId((index + 1).try_into().expect("element id")))
     }
 
     pub fn to_debug_snapshot(&self) -> String {
