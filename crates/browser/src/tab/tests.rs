@@ -1,5 +1,5 @@
 use super::Tab;
-use crate::page::RestyleTrigger;
+use crate::page::{RestyleTrigger, StyleRecalcKind};
 use bus::{CoreCommand, CoreEvent};
 use core_types::{DomHandle, DomVersion, NetworkResponseInfo, ResourceKind};
 use css::{StyledNode, build_style_tree_with_stylesheets};
@@ -733,6 +733,14 @@ fn dom_patch_attribute_change_triggers_restyle_through_computed_cache() {
     );
     assert_eq!(tab.page.style_generations().dom, after_initial.dom + 1);
     assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
+    assert_eq!(
+        tab.page.last_style_recalc(),
+        Some(StyleRecalcKind::IncrementalSuffix {
+            reused_prefix_len: 4,
+            recomputed_len: 1,
+        }),
+        "attribute mutation on the last element should reuse the computed prefix"
+    );
     assert!(
         !tab.page.style_dirty(),
         "style cache should be clean after recomputation"
@@ -799,6 +807,11 @@ fn dom_patch_node_insertion_triggers_restyle_for_inserted_subtree() {
         current_element_color(&mut tab, "span"),
         (0, 0, 255, 255),
         "inserted element should receive computed style from existing stylesheet"
+    );
+    assert_eq!(
+        tab.page.last_style_recalc(),
+        Some(StyleRecalcKind::Full { elements: 5 }),
+        "structural mutations must not use suffix reuse while selector ids can shift"
     );
 }
 
@@ -890,6 +903,184 @@ fn dom_patch_style_text_change_reconciles_stylesheet_slot_and_restyles() {
         "style text mutation must update the document stylesheet generation"
     );
     assert_eq!(current_element_color(&mut tab, "p"), (0, 0, 255, 255));
+}
+
+#[test]
+fn dom_patch_attribute_change_incrementally_restyles_following_sibling_suffix() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 26;
+    tab.page.start_nav("https://example.com/index.html");
+    let handle = DomHandle(260);
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 26,
+        handle,
+        from: DomVersion::INITIAL,
+        to: DomVersion(1),
+        patches: two_paragraph_patch_document(".hot ~ p { color: blue; } p { color: black; }"),
+    });
+
+    assert_eq!(current_element_color_by_id(&mut tab, Id(9)), (0, 0, 0, 255));
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 26,
+        handle,
+        from: DomVersion(1),
+        to: DomVersion(2),
+        patches: vec![DomPatch::SetAttributes {
+            key: PatchKey(7),
+            attributes: vec![(Arc::from("class"), Some("hot".to_string()))],
+        }],
+    });
+
+    {
+        let styled = tab
+            .page
+            .build_style_tree()
+            .expect("style tree should build")
+            .expect("document should be styled");
+        assert_eq!(
+            find_styled_node_id(&styled, Id(7))
+                .expect("first paragraph")
+                .style
+                .color(),
+            (0, 0, 0, 255)
+        );
+        assert_eq!(
+            find_styled_node_id(&styled, Id(9))
+                .expect("second paragraph")
+                .style
+                .color(),
+            (0, 0, 255, 255),
+            "suffix restyle must include following siblings affected by sibling selectors"
+        );
+    }
+    assert_eq!(
+        tab.page.last_style_recalc(),
+        Some(StyleRecalcKind::IncrementalSuffix {
+            reused_prefix_len: 4,
+            recomputed_len: 2,
+        }),
+        "first paragraph mutation should reuse html/head/style/body and recompute both paragraphs"
+    );
+}
+
+#[test]
+fn queued_attribute_mutations_merge_to_earliest_dirty_suffix() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 27;
+    tab.page.start_nav("https://example.com/index.html");
+    let handle = DomHandle(270);
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 27,
+        handle,
+        from: DomVersion::INITIAL,
+        to: DomVersion(1),
+        patches: two_paragraph_patch_document(
+            ".hot { color: red; } .cool { color: blue; } p { color: black; }",
+        ),
+    });
+
+    assert_eq!(current_element_color_by_id(&mut tab, Id(7)), (0, 0, 0, 255));
+    assert_eq!(current_element_color_by_id(&mut tab, Id(9)), (0, 0, 0, 255));
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 27,
+        handle,
+        from: DomVersion(1),
+        to: DomVersion(2),
+        patches: vec![DomPatch::SetAttributes {
+            key: PatchKey(7),
+            attributes: vec![(Arc::from("class"), Some("hot".to_string()))],
+        }],
+    });
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 27,
+        handle,
+        from: DomVersion(2),
+        to: DomVersion(3),
+        patches: vec![DomPatch::SetAttributes {
+            key: PatchKey(9),
+            attributes: vec![(Arc::from("class"), Some("cool".to_string()))],
+        }],
+    });
+
+    {
+        let styled = tab
+            .page
+            .build_style_tree()
+            .expect("style tree should build")
+            .expect("document should be styled");
+        assert_eq!(
+            find_styled_node_id(&styled, Id(7))
+                .expect("first paragraph")
+                .style
+                .color(),
+            (255, 0, 0, 255),
+            "first queued attribute mutation must not be lost"
+        );
+        assert_eq!(
+            find_styled_node_id(&styled, Id(9))
+                .expect("second paragraph")
+                .style
+                .color(),
+            (0, 0, 255, 255),
+            "second queued attribute mutation must also apply"
+        );
+    }
+    assert_eq!(
+        tab.page.last_style_recalc(),
+        Some(StyleRecalcKind::IncrementalSuffix {
+            reused_prefix_len: 4,
+            recomputed_len: 2,
+        }),
+        "merged pending suffix must start at the earliest queued dirty element"
+    );
+}
+
+#[test]
+fn attribute_mutation_without_existing_style_cache_falls_back_to_full_recompute() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 28;
+    tab.page.start_nav("https://example.com/index.html");
+    let handle = DomHandle(280);
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 28,
+        handle,
+        from: DomVersion::INITIAL,
+        to: DomVersion(1),
+        patches: initial_patch_document(".hot { color: red; } p { color: black; }", Some("p")),
+    });
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 28,
+        handle,
+        from: DomVersion(1),
+        to: DomVersion(2),
+        patches: vec![DomPatch::SetAttributes {
+            key: PatchKey(7),
+            attributes: vec![(Arc::from("class"), Some("hot".to_string()))],
+        }],
+    });
+
+    assert_eq!(
+        current_element_color_by_id(&mut tab, Id(7)),
+        (255, 0, 0, 255)
+    );
+    assert_eq!(
+        tab.page.last_style_recalc(),
+        Some(StyleRecalcKind::Full { elements: 5 }),
+        "partial suffix reuse requires a validated previous style cache"
+    );
 }
 
 #[test]
@@ -1078,6 +1269,27 @@ fn current_element_color_optional(tab: &mut Tab, name: &str) -> Option<(u8, u8, 
     find_styled_element(&styled, name).map(|node| node.style.color())
 }
 
+fn current_element_color_by_id(tab: &mut Tab, id: Id) -> (u8, u8, u8, u8) {
+    let styled = tab
+        .page
+        .build_style_tree()
+        .expect("style tree should build")
+        .expect("document should be styled");
+    find_styled_node_id(&styled, id)
+        .map(|node| node.style.color())
+        .expect("styled node should exist")
+}
+
+fn find_styled_node_id<'a>(node: &'a StyledNode<'a>, want: Id) -> Option<&'a StyledNode<'a>> {
+    if node.node_id == want {
+        return Some(node);
+    }
+
+    node.children
+        .iter()
+        .find_map(|child| find_styled_node_id(child, want))
+}
+
 fn initial_patch_document(style_text: &str, body_element: Option<&str>) -> Vec<DomPatch> {
     let mut patches = vec![
         DomPatch::Clear,
@@ -1153,6 +1365,47 @@ fn initial_patch_document(style_text: &str, body_element: Option<&str>) -> Vec<D
         ]);
     }
 
+    patches
+}
+
+fn two_paragraph_patch_document(style_text: &str) -> Vec<DomPatch> {
+    let mut patches = initial_patch_document(style_text, None);
+    patches.extend([
+        DomPatch::CreateElement {
+            key: PatchKey(7),
+            name: Arc::from("p"),
+            attributes: Vec::new(),
+        },
+        DomPatch::CreateText {
+            key: PatchKey(8),
+            text: "First".to_string(),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(7),
+            child: PatchKey(8),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(6),
+            child: PatchKey(7),
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(9),
+            name: Arc::from("p"),
+            attributes: Vec::new(),
+        },
+        DomPatch::CreateText {
+            key: PatchKey(10),
+            text: "Second".to_string(),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(9),
+            child: PatchKey(10),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(6),
+            child: PatchKey(9),
+        },
+    ]);
     patches
 }
 

@@ -4,13 +4,14 @@ use crate::{
     InitialStyleValue, PropertyId, PropertyInheritance,
     cascade::{
         ResolvedDocumentStyle, ResolvedStyle, ResolvedValueSource, StyleResolutionError,
-        StyleResolutionLimits, try_resolve_document_styles_with_limits,
+        StyleResolutionLimits, try_resolve_document_styles_incremental_suffix_with_limits,
+        try_resolve_document_styles_with_limits,
     },
     model, property_registry,
     selectors::{SelectorDomElementId, SelectorDomIndex, SelectorMatchingContext},
 };
 
-use html::Node;
+use html::{Node, internal::Id};
 
 use super::{
     builder::ComputedStyleBuilder,
@@ -280,6 +281,14 @@ impl ComputedDocumentStyle {
     }
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct IncrementalComputedDocumentStyle {
+    pub resolved: ResolvedDocumentStyle,
+    pub computed: ComputedDocumentStyle,
+    pub reused_prefix_len: usize,
+    pub recomputed_len: usize,
+}
+
 /// Materializes the structured cascade handoff into a total computed style.
 ///
 /// Rejected invalid declarations do not appear in `ResolvedStyle` winners.
@@ -369,6 +378,44 @@ pub fn compute_document_styles_with_limits(
     compute_document_styles_from_resolved_styles(root, &resolved)
 }
 
+pub fn compute_document_styles_incremental_suffix_with_limits(
+    root: &Node,
+    sheets: &[model::StylesheetParse],
+    previous_resolved: &ResolvedDocumentStyle,
+    previous_computed: &ComputedDocumentStyle,
+    dirty_node_ids: &[Id],
+    limits: &StyleResolutionLimits,
+) -> Result<Option<IncrementalComputedDocumentStyle>, ComputedStyleResolutionError> {
+    let Some(resolved) = try_resolve_document_styles_incremental_suffix_with_limits(
+        root,
+        sheets,
+        previous_resolved,
+        dirty_node_ids,
+        limits,
+    )
+    .map_err(ComputedStyleResolutionError::StyleResolution)?
+    else {
+        return Ok(None);
+    };
+
+    let Some(computed) = compute_document_styles_from_resolved_styles_incremental_suffix(
+        root,
+        &resolved.resolved,
+        previous_computed,
+        resolved.stats.reused_prefix_len,
+    )?
+    else {
+        return Ok(None);
+    };
+
+    Ok(Some(IncrementalComputedDocumentStyle {
+        resolved: resolved.resolved,
+        computed,
+        reused_prefix_len: resolved.stats.reused_prefix_len,
+        recomputed_len: resolved.stats.recomputed_len,
+    }))
+}
+
 /// Computes document-level styles from an already materialized structured
 /// cascade result.
 pub fn compute_document_styles_from_resolved_styles(
@@ -411,4 +458,71 @@ pub fn compute_document_styles_from_resolved_styles(
     }
 
     Ok(ComputedDocumentStyle::new(entries))
+}
+
+fn compute_document_styles_from_resolved_styles_incremental_suffix(
+    root: &Node,
+    resolved_styles: &ResolvedDocumentStyle,
+    previous_computed: &ComputedDocumentStyle,
+    reused_prefix_len: usize,
+) -> Result<Option<ComputedDocumentStyle>, ComputedStyleResolutionError> {
+    let index = SelectorDomIndex::from_root(root);
+    let context = SelectorMatchingContext::new(&index);
+
+    if resolved_styles.entries().len() != index.len()
+        || previous_computed.entries().len() != index.len()
+        || reused_prefix_len > index.len()
+    {
+        return Ok(None);
+    }
+
+    let mut computed_by_element = BTreeMap::new();
+    let mut entries = Vec::with_capacity(index.len());
+
+    for (element_index, element) in index.elements().enumerate() {
+        let resolved = resolved_styles
+            .get(element)
+            .ok_or(ComputedStyleResolutionError::MissingResolvedElement { element })?;
+        let expected_name = context.element_name(element);
+        if resolved.element_name() != expected_name {
+            return Err(ComputedStyleResolutionError::ResolvedElementNameMismatch {
+                element,
+                expected: expected_name.to_string(),
+                actual: resolved.element_name().to_string(),
+            });
+        }
+
+        if element_index < reused_prefix_len {
+            let previous = previous_computed
+                .entries()
+                .get(element_index)
+                .expect("validated previous computed length");
+            if previous.selector_element_id() != element || previous.element_name() != expected_name
+            {
+                return Ok(None);
+            }
+
+            computed_by_element.insert(element, *previous.style());
+            entries.push(previous.clone());
+            continue;
+        }
+
+        let parent_style =
+            match context.parent_element(element) {
+                Some(parent) => Some(computed_by_element.get(&parent).ok_or(
+                    ComputedStyleResolutionError::MissingComputedParent { element, parent },
+                )?),
+                None => None,
+            };
+        let style = compute_style_from_resolved_style(resolved.style(), parent_style)?;
+
+        computed_by_element.insert(element, style);
+        entries.push(ComputedElementStyle::new(
+            element,
+            expected_name.to_string(),
+            style,
+        ));
+    }
+
+    Ok(Some(ComputedDocumentStyle::new(entries)))
 }

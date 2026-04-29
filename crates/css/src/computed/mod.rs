@@ -31,8 +31,10 @@ mod value;
 pub use builder::ComputedStyleBuilder;
 pub use document::{
     ComputedDocumentStyle, ComputedElementStyle, ComputedStyleResolutionError,
-    compute_document_styles, compute_document_styles_from_resolved_styles,
-    compute_document_styles_with_limits, compute_style_from_resolved_style,
+    IncrementalComputedDocumentStyle, compute_document_styles,
+    compute_document_styles_from_resolved_styles,
+    compute_document_styles_incremental_suffix_with_limits, compute_document_styles_with_limits,
+    compute_style_from_resolved_style,
 };
 pub use format::computed_value_debug_snapshot;
 pub use legacy::{build_style_tree, compute_style};
