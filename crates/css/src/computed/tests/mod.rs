@@ -1,8 +1,10 @@
 use super::{
     ComputedStyle, ComputedStyleBuildError, ComputedStyleBuilder, ComputedStyleResolutionError,
-    ComputedValue, ComputedValueDiscriminant, ComputedValueNormalizationErrorKind,
-    build_style_tree, build_style_tree_from_computed_styles, build_style_tree_with_stylesheets,
-    compute_document_styles, compute_document_styles_from_resolved_styles,
+    ComputedStyleReuseStats, ComputedValue, ComputedValueDiscriminant,
+    ComputedValueNormalizationErrorKind, build_style_tree, build_style_tree_from_computed_styles,
+    build_style_tree_with_stylesheets, compute_document_styles,
+    compute_document_styles_from_resolved_styles,
+    compute_document_styles_from_resolved_styles_with_reuse_stats,
     compute_document_styles_with_limits, compute_style, compute_style_from_resolved_style,
     normalize_specified_value,
 };

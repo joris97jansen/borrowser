@@ -157,6 +157,79 @@ fn compute_document_styles_from_resolved_styles_uses_existing_cascade_output() {
 }
 
 #[test]
+fn compute_document_styles_reuses_identical_resolved_styles_with_same_parent() {
+    let stylesheets = vec![stylesheet("p { color: red; }")];
+    let dom = element(
+        "div",
+        Vec::new(),
+        vec![
+            element("p", Vec::new(), Vec::new()),
+            element("p", Vec::new(), Vec::new()),
+            element("p", Vec::new(), Vec::new()),
+        ],
+    );
+    let resolved = resolve_document_styles(&dom, &stylesheets).expect("resolved document style");
+
+    let computed = compute_document_styles_from_resolved_styles_with_reuse_stats(&dom, &resolved)
+        .expect("computed document");
+
+    assert_eq!(computed.computed.entries().len(), 4);
+    assert_eq!(
+        computed.reuse_stats,
+        ComputedStyleReuseStats { hits: 2, misses: 2 },
+        "root div and first paragraph are misses; matching paragraph siblings reuse"
+    );
+    assert_eq!(
+        computed.computed.entries()[1].style(),
+        computed.computed.entries()[2].style()
+    );
+    assert_eq!(
+        computed.computed.entries()[2].style(),
+        computed.computed.entries()[3].style()
+    );
+}
+
+#[test]
+fn computed_style_reuse_does_not_cross_different_parent_computed_styles() {
+    let stylesheets = vec![stylesheet(concat!(
+        ".red { color: red; }",
+        ".blue { color: blue; }",
+    ))];
+    let dom = element(
+        "div",
+        Vec::new(),
+        vec![
+            element(
+                "section",
+                vec![("class", Some("red"))],
+                vec![element("p", Vec::new(), Vec::new())],
+            ),
+            element(
+                "section",
+                vec![("class", Some("blue"))],
+                vec![element("p", Vec::new(), Vec::new())],
+            ),
+        ],
+    );
+    let resolved = resolve_document_styles(&dom, &stylesheets).expect("resolved document style");
+
+    let computed = compute_document_styles_from_resolved_styles_with_reuse_stats(&dom, &resolved)
+        .expect("computed document");
+
+    assert_eq!(computed.computed.entries().len(), 5);
+    let first_p = computed.computed.entries()[2].style();
+    let second_p = computed.computed.entries()[4].style();
+
+    assert_eq!(first_p.color(), (255, 0, 0, 255));
+    assert_eq!(second_p.color(), (0, 0, 255, 255));
+    assert_ne!(
+        first_p.color(),
+        second_p.color(),
+        "identical child resolved styles must not reuse across different parent computed styles"
+    );
+}
+
+#[test]
 fn compute_style_from_resolved_style_rejects_normalization_failures() {
     let stylesheets = vec![stylesheet("div { width: 1e39px; }")];
     let dom = element("div", Vec::new(), Vec::new());
