@@ -1,7 +1,7 @@
 use crate::input_state::DocumentInputState;
 use crate::page::PageState;
 use crate::resources::ResourceManager;
-use css::{StyledNode, build_style_tree_with_stylesheets};
+use css::StyledNode;
 use egui::{
     Align2, Area, CentralPanel, Color32, Context, CornerRadius, Frame, Id, Margin, Order, RichText,
     Stroke, vec2,
@@ -33,9 +33,11 @@ pub fn content(
         return None;
     }
 
-    let dom = page.dom.as_deref().unwrap();
-    let style_root = match build_style_tree_with_stylesheets(dom, page.css_stylesheets()) {
-        Ok(style_root) => style_root,
+    let base_url = page.base_url.clone();
+    let form_controls = page.form_controls.clone();
+    let style_root = match page.build_style_tree() {
+        Ok(Some(style_root)) => style_root,
+        Ok(None) => return None,
         Err(error) => {
             let visuals = ctx.style().visuals.clone();
             CentralPanel::default()
@@ -58,9 +60,8 @@ pub fn content(
         .frame(Frame::default().fill(base_fill))
         .show(ctx, |ui| {
             // disjoint borrow: OK (dom is immutably borrowed, input_values mutably borrowed)
-            let base_url = page.base_url.as_deref();
+            let base_url = base_url.as_deref();
             let input_values = &mut input_state.input_values;
-            let form_controls = &page.form_controls;
             let interaction = &mut input_state.interaction;
 
             page_viewport(ViewportCtx::new(
@@ -69,7 +70,7 @@ pub fn content(
                 base_url,
                 resources,
                 input_values,
-                form_controls,
+                &form_controls,
                 interaction,
             ))
         })

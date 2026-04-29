@@ -31,6 +31,12 @@ pub(crate) struct StylesheetFetch {
 }
 
 #[derive(Clone, Debug, Default)]
+pub(crate) struct StylesheetReconcileResult {
+    pub(crate) fetches: Vec<StylesheetFetch>,
+    pub(crate) changed: bool,
+}
+
+#[derive(Clone, Debug, Default)]
 pub(crate) struct DocumentStyleSet {
     next_slot_id: u64,
     slots: Vec<StylesheetSlot>,
@@ -48,11 +54,16 @@ impl DocumentStyleSet {
         &mut self,
         dom: &Node,
         base_url: Option<&str>,
-    ) -> Vec<StylesheetFetch> {
+    ) -> StylesheetReconcileResult {
         let mut discovered = Vec::new();
         collect_stylesheet_inputs(dom, base_url, &mut discovered);
 
         let old_slots = std::mem::take(&mut self.slots);
+        let changed = old_slots.len() != discovered.len()
+            || old_slots
+                .iter()
+                .zip(&discovered)
+                .any(|(slot, key)| &slot.key != key);
         let mut used = vec![false; old_slots.len()];
         let mut fetches = Vec::new();
         let mut new_slots = Vec::with_capacity(discovered.len());
@@ -87,7 +98,7 @@ impl DocumentStyleSet {
 
         self.slots = new_slots;
         self.rebuild_loaded_stylesheets();
-        fetches
+        StylesheetReconcileResult { fetches, changed }
     }
 
     #[cfg(test)]
@@ -126,27 +137,38 @@ impl DocumentStyleSet {
         true
     }
 
-    pub(crate) fn mark_external_done(&mut self, slot_id: StylesheetSlotId) {
+    pub(crate) fn mark_external_done(&mut self, slot_id: StylesheetSlotId) -> bool {
         if let Some(slot) = self.slot_mut(slot_id)
             && matches!(slot.state, StylesheetSlotState::Pending)
         {
             slot.state = StylesheetSlotState::Failed;
+            return false;
         }
-        self.rebuild_loaded_stylesheets();
+        false
     }
 
-    pub(crate) fn mark_external_failed(&mut self, slot_id: StylesheetSlotId) {
+    pub(crate) fn mark_external_failed(&mut self, slot_id: StylesheetSlotId) -> bool {
         if let Some(slot) = self.slot_mut(slot_id) {
+            let had_loaded_style = matches!(slot.state, StylesheetSlotState::Loaded(_));
             slot.state = StylesheetSlotState::Failed;
+            if had_loaded_style {
+                self.rebuild_loaded_stylesheets();
+                return true;
+            }
         }
-        self.rebuild_loaded_stylesheets();
+        false
     }
 
-    pub(crate) fn mark_external_aborted(&mut self, slot_id: StylesheetSlotId) {
+    pub(crate) fn mark_external_aborted(&mut self, slot_id: StylesheetSlotId) -> bool {
         if let Some(slot) = self.slot_mut(slot_id) {
+            let had_loaded_style = matches!(slot.state, StylesheetSlotState::Loaded(_));
             slot.state = StylesheetSlotState::Aborted;
+            if had_loaded_style {
+                self.rebuild_loaded_stylesheets();
+                return true;
+            }
         }
-        self.rebuild_loaded_stylesheets();
+        false
     }
 
     pub(crate) fn pending_count(&self) -> usize {

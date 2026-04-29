@@ -1,8 +1,9 @@
 use super::Tab;
+use crate::page::RestyleTrigger;
 use bus::{CoreCommand, CoreEvent};
-use core_types::{NetworkResponseInfo, ResourceKind};
+use core_types::{DomHandle, DomVersion, NetworkResponseInfo, ResourceKind};
 use css::{StyledNode, build_style_tree_with_stylesheets};
-use html::{HtmlParseOptions, Node, internal::Id, parse_document};
+use html::{DomPatch, HtmlParseOptions, Node, PatchKey, internal::Id, parse_document};
 use std::sync::Arc;
 use std::sync::mpsc;
 
@@ -686,6 +687,373 @@ fn decoded_css_for_aborted_stylesheet_slot_is_ignored() {
     );
 }
 
+#[test]
+fn dom_patch_attribute_change_triggers_restyle_through_computed_cache() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 19;
+    tab.page.start_nav("https://example.com/index.html");
+    let handle = DomHandle(190);
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 19,
+        handle,
+        from: DomVersion::INITIAL,
+        to: DomVersion(1),
+        patches: initial_patch_document(".hot { color: red; } p { color: black; }", Some("p")),
+    });
+
+    assert_eq!(
+        tab.page.last_restyle_trigger(),
+        Some(RestyleTrigger::DocumentReplaced)
+    );
+    assert_eq!(current_element_color(&mut tab, "p"), (0, 0, 0, 255));
+    let after_initial = tab.page.style_generations();
+    assert!(!tab.page.style_dirty());
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 19,
+        handle,
+        from: DomVersion(1),
+        to: DomVersion(2),
+        patches: vec![DomPatch::SetAttributes {
+            key: PatchKey(7),
+            attributes: vec![(Arc::from("class"), Some("hot".to_string()))],
+        }],
+    });
+
+    assert!(
+        tab.page.style_dirty(),
+        "attribute mutation must mark style dirty before restyle"
+    );
+    assert_eq!(
+        tab.page.last_restyle_trigger(),
+        Some(RestyleTrigger::AttributesChanged)
+    );
+    assert_eq!(tab.page.style_generations().dom, after_initial.dom + 1);
+    assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
+    assert!(
+        !tab.page.style_dirty(),
+        "style cache should be clean after recomputation"
+    );
+}
+
+#[test]
+fn dom_patch_node_insertion_triggers_restyle_for_inserted_subtree() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 20;
+    tab.page.start_nav("https://example.com/index.html");
+    let handle = DomHandle(200);
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 20,
+        handle,
+        from: DomVersion::INITIAL,
+        to: DomVersion(1),
+        patches: initial_patch_document("span { color: blue; }", None),
+    });
+
+    assert!(
+        current_element_color_optional(&mut tab, "span").is_none(),
+        "initial document has no span"
+    );
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 20,
+        handle,
+        from: DomVersion(1),
+        to: DomVersion(2),
+        patches: vec![
+            DomPatch::CreateElement {
+                key: PatchKey(9),
+                name: Arc::from("span"),
+                attributes: Vec::new(),
+            },
+            DomPatch::CreateText {
+                key: PatchKey(10),
+                text: "Inserted".to_string(),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(9),
+                child: PatchKey(10),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(6),
+                child: PatchKey(9),
+            },
+        ],
+    });
+
+    assert!(
+        tab.page.style_dirty(),
+        "node insertion must mark style dirty before restyle"
+    );
+    assert_eq!(
+        tab.page.last_restyle_trigger(),
+        Some(RestyleTrigger::TreeMutated)
+    );
+    assert_eq!(
+        current_element_color(&mut tab, "span"),
+        (0, 0, 255, 255),
+        "inserted element should receive computed style from existing stylesheet"
+    );
+}
+
+#[test]
+fn dom_patch_node_removal_triggers_restyle_and_removes_styled_node() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 21;
+    tab.page.start_nav("https://example.com/index.html");
+    let handle = DomHandle(210);
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 21,
+        handle,
+        from: DomVersion::INITIAL,
+        to: DomVersion(1),
+        patches: initial_patch_document("p { color: red; }", Some("p")),
+    });
+
+    assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 21,
+        handle,
+        from: DomVersion(1),
+        to: DomVersion(2),
+        patches: vec![DomPatch::RemoveNode { key: PatchKey(7) }],
+    });
+
+    assert!(
+        tab.page.style_dirty(),
+        "node removal must mark style dirty before restyle"
+    );
+    assert_eq!(
+        tab.page.last_restyle_trigger(),
+        Some(RestyleTrigger::TreeMutated)
+    );
+    assert!(
+        current_element_color_optional(&mut tab, "p").is_none(),
+        "removed element must not remain in the rebuilt styled tree"
+    );
+}
+
+#[test]
+fn dom_patch_style_text_change_reconciles_stylesheet_slot_and_restyles() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 22;
+    tab.page.start_nav("https://example.com/index.html");
+    let handle = DomHandle(220);
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 22,
+        handle,
+        from: DomVersion::INITIAL,
+        to: DomVersion(1),
+        patches: initial_patch_document("p { color: red; }", Some("p")),
+    });
+
+    assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
+    let before = tab.page.style_generations();
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 22,
+        handle,
+        from: DomVersion(1),
+        to: DomVersion(2),
+        patches: vec![DomPatch::SetText {
+            key: PatchKey(5),
+            text: "p { color: blue; }".to_string(),
+        }],
+    });
+
+    let after = tab.page.style_generations();
+    assert_eq!(after.dom, before.dom + 1);
+    assert_eq!(
+        tab.page.last_restyle_trigger(),
+        Some(RestyleTrigger::TextMutated)
+    );
+    assert_eq!(
+        after.style_inputs, before.style_inputs,
+        "style text changes should invalidate through stylesheet generation"
+    );
+    assert_eq!(
+        after.stylesheets,
+        before.stylesheets + 1,
+        "style text mutation must update the document stylesheet generation"
+    );
+    assert_eq!(current_element_color(&mut tab, "p"), (0, 0, 255, 255));
+}
+
+#[test]
+fn dom_patch_normal_text_change_dirties_layout_but_reuses_computed_style() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 23;
+    tab.page.start_nav("https://example.com/index.html");
+    let handle = DomHandle(230);
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 23,
+        handle,
+        from: DomVersion::INITIAL,
+        to: DomVersion(1),
+        patches: initial_patch_document("p { color: red; }", Some("p")),
+    });
+
+    assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
+    assert!(!tab.page.style_dirty());
+    tab.page.clear_layout_dirty_for_tests();
+    let before = tab.page.style_generations();
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 23,
+        handle,
+        from: DomVersion(1),
+        to: DomVersion(2),
+        patches: vec![DomPatch::SetText {
+            key: PatchKey(8),
+            text: "Goodbye".to_string(),
+        }],
+    });
+
+    let after = tab.page.style_generations();
+    assert_eq!(
+        tab.page.last_restyle_trigger(),
+        Some(RestyleTrigger::TextMutated)
+    );
+    assert_eq!(after.dom, before.dom + 1);
+    assert_eq!(
+        after.style_inputs, before.style_inputs,
+        "normal text changes must not invalidate selector/cascade inputs"
+    );
+    assert_eq!(
+        after.stylesheets, before.stylesheets,
+        "normal text changes must not reconcile a new stylesheet set"
+    );
+    assert!(
+        !tab.page.style_dirty(),
+        "normal text changes should reuse cached computed style"
+    );
+    assert!(
+        tab.page.layout_dirty(),
+        "normal text changes still require downstream layout work"
+    );
+    assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
+}
+
+#[test]
+fn empty_dom_patch_batch_does_not_trigger_restyle() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 25;
+    tab.page.start_nav("https://example.com/index.html");
+    let handle = DomHandle(250);
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 25,
+        handle,
+        from: DomVersion::INITIAL,
+        to: DomVersion(1),
+        patches: initial_patch_document("p { color: red; }", Some("p")),
+    });
+
+    assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
+    assert!(!tab.page.style_dirty());
+    let before = tab.page.style_generations();
+    let previous_trigger = tab.page.last_restyle_trigger();
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 25,
+        handle,
+        from: DomVersion(1),
+        to: DomVersion(1),
+        patches: Vec::new(),
+    });
+
+    assert_eq!(
+        tab.page.style_generations(),
+        before,
+        "empty patch batches must not advance DOM or style generations"
+    );
+    assert_eq!(
+        tab.page.last_restyle_trigger(),
+        previous_trigger,
+        "empty patch batches must not record a synthetic restyle trigger"
+    );
+    assert!(
+        !tab.page.style_dirty(),
+        "empty patch batches must not invalidate cached computed style"
+    );
+    assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
+}
+
+#[test]
+fn external_stylesheet_arrival_invalidates_cached_computed_style() {
+    let mut tab = Tab::new(1);
+    let (tx, rx) = mpsc::channel();
+    tab.set_bus_sender(tx);
+    tab.nav_gen = 24;
+    tab.page.start_nav("https://example.com/index.html");
+
+    let output = parse_document(
+        "<!doctype html><html><head>\
+         <link rel=\"stylesheet\" href=\"site.css\">\
+         </head><body><p>Hello</p></body></html>",
+        HtmlParseOptions::default(),
+    )
+    .expect("parse should succeed");
+
+    tab.on_core_event(CoreEvent::DomUpdate {
+        tab_id: tab.tab_id,
+        request_id: 24,
+        dom: Box::new(output.document),
+    });
+
+    let (slot_id, url) = rx
+        .try_iter()
+        .find_map(|cmd| match cmd {
+            CoreCommand::FetchStream {
+                stylesheet_slot_id: Some(slot_id),
+                url,
+                kind: ResourceKind::Css,
+                ..
+            } if url.ends_with("/site.css") => Some((slot_id, url)),
+            _ => None,
+        })
+        .expect("site.css fetch");
+
+    assert_eq!(current_element_color(&mut tab, "p"), (0, 0, 0, 255));
+    let before = tab.page.style_generations();
+    assert!(!tab.page.style_dirty());
+
+    tab.on_core_event(CoreEvent::CssDecodedBlock {
+        tab_id: tab.tab_id,
+        request_id: 24,
+        stylesheet_slot_id: slot_id,
+        url,
+        css_block: "p { color: red; }".to_string(),
+    });
+
+    let after = tab.page.style_generations();
+    assert_eq!(after.stylesheets, before.stylesheets + 1);
+    assert!(
+        tab.page.style_dirty(),
+        "stylesheet arrival must invalidate cached computed style"
+    );
+    assert_eq!(current_element_color(&mut tab, "p"), (255, 0, 0, 255));
+    assert!(!tab.page.style_dirty());
+}
+
 fn find_styled_element<'a>(node: &'a StyledNode<'a>, want: &str) -> Option<&'a StyledNode<'a>> {
     if let Node::Element { name, .. } = node.node
         && name.as_ref() == want
@@ -696,6 +1064,96 @@ fn find_styled_element<'a>(node: &'a StyledNode<'a>, want: &str) -> Option<&'a S
     node.children
         .iter()
         .find_map(|child| find_styled_element(child, want))
+}
+
+fn current_element_color(tab: &mut Tab, name: &str) -> (u8, u8, u8, u8) {
+    current_element_color_optional(tab, name).expect("styled element should exist")
+}
+
+fn current_element_color_optional(tab: &mut Tab, name: &str) -> Option<(u8, u8, u8, u8)> {
+    let styled = tab
+        .page
+        .build_style_tree()
+        .expect("style tree should build")?;
+    find_styled_element(&styled, name).map(|node| node.style.color())
+}
+
+fn initial_patch_document(style_text: &str, body_element: Option<&str>) -> Vec<DomPatch> {
+    let mut patches = vec![
+        DomPatch::Clear,
+        DomPatch::CreateDocument {
+            key: PatchKey(1),
+            doctype: None,
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(2),
+            name: Arc::from("html"),
+            attributes: Vec::new(),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(1),
+            child: PatchKey(2),
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(3),
+            name: Arc::from("head"),
+            attributes: Vec::new(),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(2),
+            child: PatchKey(3),
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(4),
+            name: Arc::from("style"),
+            attributes: Vec::new(),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(3),
+            child: PatchKey(4),
+        },
+        DomPatch::CreateText {
+            key: PatchKey(5),
+            text: style_text.to_string(),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(4),
+            child: PatchKey(5),
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(6),
+            name: Arc::from("body"),
+            attributes: Vec::new(),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(2),
+            child: PatchKey(6),
+        },
+    ];
+
+    if let Some(name) = body_element {
+        patches.extend([
+            DomPatch::CreateElement {
+                key: PatchKey(7),
+                name: Arc::from(name),
+                attributes: Vec::new(),
+            },
+            DomPatch::CreateText {
+                key: PatchKey(8),
+                text: "Hello".to_string(),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(7),
+                child: PatchKey(8),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(6),
+                child: PatchKey(7),
+            },
+        ]);
+    }
+
+    patches
 }
 
 fn find_dom_element<'a>(node: &'a Node, want: &str) -> Option<&'a Node> {
