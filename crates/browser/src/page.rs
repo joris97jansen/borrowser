@@ -2,9 +2,10 @@ use crate::document_style::{DocumentStyleSet, StylesheetFetch};
 use crate::form_controls::{FormControlIndex, seed_input_state_from_dom};
 use core_types::StylesheetSlotId;
 use css::{
-    ComputedDocumentStyle, ComputedStyleResolutionError, ResolvedDocumentStyle,
-    StyleResolutionLimits, StyledNode, StylesheetParse, build_style_tree_from_computed_styles,
-    compute_document_styles_from_resolved_styles,
+    ComputedDocumentStyle, ComputedStyleResolutionError, ComputedStyleReuseStats,
+    ResolvedDocumentStyle, StyleResolutionLimits, StyledNode, StylesheetParse,
+    build_style_tree_from_computed_styles,
+    compute_document_styles_from_resolved_styles_with_reuse_stats,
     compute_document_styles_incremental_suffix_with_limits, resolve_document_styles,
 };
 use gfx::input::InputValueStore;
@@ -149,6 +150,14 @@ pub(crate) enum StyleRecalcKind {
     },
 }
 
+struct StyleRecomputeState<'a> {
+    style_cache: &'a mut Option<PageStyleCache>,
+    pending_style_invalidation: &'a mut Option<StyleInvalidationScope>,
+    style_dirty: &'a mut bool,
+    last_style_recalc: &'a mut Option<StyleRecalcKind>,
+    last_style_reuse: &'a mut Option<ComputedStyleReuseStats>,
+}
+
 pub struct PageState {
     pub base_url: Option<String>,
     pub dom: Option<Box<Node>>,
@@ -165,6 +174,7 @@ pub struct PageState {
     last_restyle_trigger: Option<RestyleTrigger>,
     pending_style_invalidation: Option<StyleInvalidationScope>,
     last_style_recalc: Option<StyleRecalcKind>,
+    last_style_reuse: Option<ComputedStyleReuseStats>,
 }
 
 impl PageState {
@@ -183,6 +193,7 @@ impl PageState {
             last_restyle_trigger: None,
             pending_style_invalidation: Some(StyleInvalidationScope::Full),
             last_style_recalc: None,
+            last_style_reuse: None,
         }
     }
 
@@ -201,6 +212,7 @@ impl PageState {
         self.last_restyle_trigger = None;
         self.pending_style_invalidation = Some(StyleInvalidationScope::Full);
         self.last_style_recalc = None;
+        self.last_style_reuse = None;
     }
 
     pub fn update_head_metadata(&mut self) {
@@ -360,6 +372,7 @@ impl PageState {
             style_dirty,
             pending_style_invalidation,
             last_style_recalc,
+            last_style_reuse,
             ..
         } = self;
         let needs_recompute = *style_dirty
@@ -373,13 +386,17 @@ impl PageState {
                 dom,
                 document_styles.stylesheets(),
                 *generations,
-                style_cache,
-                pending_style_invalidation,
-                style_dirty,
-                last_style_recalc,
+                StyleRecomputeState {
+                    style_cache,
+                    pending_style_invalidation,
+                    style_dirty,
+                    last_style_recalc,
+                    last_style_reuse,
+                },
             )?;
         } else {
             *last_style_recalc = Some(StyleRecalcKind::ReusedCache);
+            *last_style_reuse = Some(ComputedStyleReuseStats::default());
         }
 
         let cache = style_cache
@@ -392,17 +409,15 @@ impl PageState {
         dom: &Node,
         sheets: &[StylesheetParse],
         generations: PageStyleGenerations,
-        style_cache: &mut Option<PageStyleCache>,
-        pending_style_invalidation: &mut Option<StyleInvalidationScope>,
-        style_dirty: &mut bool,
-        last_style_recalc: &mut Option<StyleRecalcKind>,
+        state: StyleRecomputeState<'_>,
     ) -> Result<(), ComputedStyleResolutionError> {
-        let pending = pending_style_invalidation
+        let pending = state
+            .pending_style_invalidation
             .take()
             .unwrap_or(StyleInvalidationScope::Full);
 
         if let StyleInvalidationScope::AttributeSuffix { node_ids } = &pending
-            && let Some(cache) = style_cache.as_ref()
+            && let Some(cache) = state.style_cache.as_ref()
             && cache.stylesheet_generation == generations.stylesheets
         {
             let limits = StyleResolutionLimits::default();
@@ -414,33 +429,36 @@ impl PageState {
                 node_ids,
                 &limits,
             )? {
-                *last_style_recalc = Some(StyleRecalcKind::IncrementalSuffix {
+                *state.last_style_recalc = Some(StyleRecalcKind::IncrementalSuffix {
                     reused_prefix_len: incremental.reused_prefix_len,
                     recomputed_len: incremental.recomputed_len,
                 });
-                *style_cache = Some(PageStyleCache {
+                *state.last_style_reuse = Some(incremental.reuse_stats);
+                *state.style_cache = Some(PageStyleCache {
                     style_input_generation: generations.style_inputs,
                     stylesheet_generation: generations.stylesheets,
                     resolved: incremental.resolved,
                     computed: incremental.computed,
                 });
-                *style_dirty = false;
+                *state.style_dirty = false;
                 return Ok(());
             }
         }
 
         let resolved = resolve_document_styles(dom, sheets)
             .map_err(ComputedStyleResolutionError::StyleResolution)?;
-        let computed = compute_document_styles_from_resolved_styles(dom, &resolved)?;
-        let elements = computed.entries().len();
-        *last_style_recalc = Some(StyleRecalcKind::Full { elements });
-        *style_cache = Some(PageStyleCache {
+        let computed =
+            compute_document_styles_from_resolved_styles_with_reuse_stats(dom, &resolved)?;
+        let elements = computed.computed.entries().len();
+        *state.last_style_recalc = Some(StyleRecalcKind::Full { elements });
+        *state.last_style_reuse = Some(computed.reuse_stats);
+        *state.style_cache = Some(PageStyleCache {
             style_input_generation: generations.style_inputs,
             stylesheet_generation: generations.stylesheets,
             resolved,
-            computed,
+            computed: computed.computed,
         });
-        *style_dirty = false;
+        *state.style_dirty = false;
         Ok(())
     }
 
@@ -472,6 +490,11 @@ impl PageState {
     #[cfg(test)]
     pub(crate) fn last_style_recalc(&self) -> Option<StyleRecalcKind> {
         self.last_style_recalc
+    }
+
+    #[cfg(test)]
+    pub(crate) fn last_style_reuse(&self) -> Option<ComputedStyleReuseStats> {
+        self.last_style_reuse
     }
 
     pub fn outline(&self, cap: usize) -> Vec<String> {

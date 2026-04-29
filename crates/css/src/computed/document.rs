@@ -281,12 +281,25 @@ impl ComputedDocumentStyle {
     }
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ComputedStyleReuseStats {
+    pub hits: usize,
+    pub misses: usize,
+}
+
+#[derive(Clone, Debug, PartialEq)]
+pub struct ComputedDocumentStyleWithStats {
+    pub computed: ComputedDocumentStyle,
+    pub reuse_stats: ComputedStyleReuseStats,
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct IncrementalComputedDocumentStyle {
     pub resolved: ResolvedDocumentStyle,
     pub computed: ComputedDocumentStyle,
     pub reused_prefix_len: usize,
     pub recomputed_len: usize,
+    pub reuse_stats: ComputedStyleReuseStats,
 }
 
 /// Materializes the structured cascade handoff into a total computed style.
@@ -378,6 +391,19 @@ pub fn compute_document_styles_with_limits(
     compute_document_styles_from_resolved_styles(root, &resolved)
 }
 
+pub fn compute_document_styles_from_resolved_styles_with_reuse_stats(
+    root: &Node,
+    resolved_styles: &ResolvedDocumentStyle,
+) -> Result<ComputedDocumentStyleWithStats, ComputedStyleResolutionError> {
+    compute_document_styles_from_resolved_styles_with_optional_prefix(
+        root,
+        resolved_styles,
+        None,
+        0,
+    )
+    .map(|computed| computed.expect("full computed style pass cannot miss prefix validation"))
+}
+
 pub fn compute_document_styles_incremental_suffix_with_limits(
     root: &Node,
     sheets: &[model::StylesheetParse],
@@ -408,11 +434,13 @@ pub fn compute_document_styles_incremental_suffix_with_limits(
         return Ok(None);
     };
 
+    let reuse_stats = computed.reuse_stats;
     Ok(Some(IncrementalComputedDocumentStyle {
         resolved: resolved.resolved,
-        computed,
+        computed: computed.computed,
         reused_prefix_len: resolved.stats.reused_prefix_len,
         recomputed_len: resolved.stats.recomputed_len,
+        reuse_stats,
     }))
 }
 
@@ -422,42 +450,8 @@ pub fn compute_document_styles_from_resolved_styles(
     root: &Node,
     resolved_styles: &ResolvedDocumentStyle,
 ) -> Result<ComputedDocumentStyle, ComputedStyleResolutionError> {
-    let index = SelectorDomIndex::from_root(root);
-    let context = SelectorMatchingContext::new(&index);
-    let mut computed_by_element = BTreeMap::new();
-    let mut entries = Vec::with_capacity(index.len());
-
-    for element in index.elements() {
-        let resolved = resolved_styles
-            .get(element)
-            .ok_or(ComputedStyleResolutionError::MissingResolvedElement { element })?;
-        let expected_name = context.element_name(element);
-        if resolved.element_name() != expected_name {
-            return Err(ComputedStyleResolutionError::ResolvedElementNameMismatch {
-                element,
-                expected: expected_name.to_string(),
-                actual: resolved.element_name().to_string(),
-            });
-        }
-
-        let parent_style =
-            match context.parent_element(element) {
-                Some(parent) => Some(computed_by_element.get(&parent).ok_or(
-                    ComputedStyleResolutionError::MissingComputedParent { element, parent },
-                )?),
-                None => None,
-            };
-        let style = compute_style_from_resolved_style(resolved.style(), parent_style)?;
-
-        computed_by_element.insert(element, style);
-        entries.push(ComputedElementStyle::new(
-            element,
-            expected_name.to_string(),
-            style,
-        ));
-    }
-
-    Ok(ComputedDocumentStyle::new(entries))
+    compute_document_styles_from_resolved_styles_with_reuse_stats(root, resolved_styles)
+        .map(|computed| computed.computed)
 }
 
 fn compute_document_styles_from_resolved_styles_incremental_suffix(
@@ -465,19 +459,35 @@ fn compute_document_styles_from_resolved_styles_incremental_suffix(
     resolved_styles: &ResolvedDocumentStyle,
     previous_computed: &ComputedDocumentStyle,
     reused_prefix_len: usize,
-) -> Result<Option<ComputedDocumentStyle>, ComputedStyleResolutionError> {
+) -> Result<Option<ComputedDocumentStyleWithStats>, ComputedStyleResolutionError> {
+    compute_document_styles_from_resolved_styles_with_optional_prefix(
+        root,
+        resolved_styles,
+        Some(previous_computed),
+        reused_prefix_len,
+    )
+}
+
+fn compute_document_styles_from_resolved_styles_with_optional_prefix(
+    root: &Node,
+    resolved_styles: &ResolvedDocumentStyle,
+    previous_computed: Option<&ComputedDocumentStyle>,
+    reused_prefix_len: usize,
+) -> Result<Option<ComputedDocumentStyleWithStats>, ComputedStyleResolutionError> {
     let index = SelectorDomIndex::from_root(root);
     let context = SelectorMatchingContext::new(&index);
 
-    if resolved_styles.entries().len() != index.len()
-        || previous_computed.entries().len() != index.len()
-        || reused_prefix_len > index.len()
+    if let Some(previous_computed) = previous_computed
+        && (resolved_styles.entries().len() != index.len()
+            || previous_computed.entries().len() != index.len()
+            || reused_prefix_len > index.len())
     {
         return Ok(None);
     }
 
     let mut computed_by_element = BTreeMap::new();
     let mut entries = Vec::with_capacity(index.len());
+    let mut reuse_cache = ComputedStyleReuseCache::default();
 
     for (element_index, element) in index.elements().enumerate() {
         let resolved = resolved_styles
@@ -492,21 +502,6 @@ fn compute_document_styles_from_resolved_styles_incremental_suffix(
             });
         }
 
-        if element_index < reused_prefix_len {
-            let previous = previous_computed
-                .entries()
-                .get(element_index)
-                .expect("validated previous computed length");
-            if previous.selector_element_id() != element || previous.element_name() != expected_name
-            {
-                return Ok(None);
-            }
-
-            computed_by_element.insert(element, *previous.style());
-            entries.push(previous.clone());
-            continue;
-        }
-
         let parent_style =
             match context.parent_element(element) {
                 Some(parent) => Some(computed_by_element.get(&parent).ok_or(
@@ -514,7 +509,23 @@ fn compute_document_styles_from_resolved_styles_incremental_suffix(
                 )?),
                 None => None,
             };
-        let style = compute_style_from_resolved_style(resolved.style(), parent_style)?;
+
+        if element_index < reused_prefix_len {
+            let previous = previous_computed
+                .and_then(|computed| computed.entries().get(element_index))
+                .expect("validated previous computed prefix");
+            if previous.selector_element_id() != element || previous.element_name() != expected_name
+            {
+                return Ok(None);
+            }
+
+            reuse_cache.seed(resolved.style(), parent_style, *previous.style());
+            computed_by_element.insert(element, *previous.style());
+            entries.push(previous.clone());
+            continue;
+        }
+
+        let style = reuse_cache.lookup_or_compute(resolved.style(), parent_style)?;
 
         computed_by_element.insert(element, style);
         entries.push(ComputedElementStyle::new(
@@ -524,5 +535,82 @@ fn compute_document_styles_from_resolved_styles_incremental_suffix(
         ));
     }
 
-    Ok(Some(ComputedDocumentStyle::new(entries)))
+    Ok(Some(ComputedDocumentStyleWithStats {
+        computed: ComputedDocumentStyle::new(entries),
+        reuse_stats: reuse_cache.stats(),
+    }))
+}
+
+// Pass-local cache for computed-style materialization.
+//
+// Reuse is valid only while `compute_style_from_resolved_style(...)` is a pure
+// function of `(ResolvedStyle, Option<ComputedStyle parent>)`. If future
+// computed-value logic depends on additional environment inputs such as
+// viewport units, font metrics, writing mode context, visited-link privacy
+// state, container queries, or media/device state, those inputs must either be
+// added to this cache key or this reuse path must be disabled for affected
+// properties.
+#[derive(Default)]
+struct ComputedStyleReuseCache {
+    entries: Vec<ComputedStyleReuseEntry>,
+    stats: ComputedStyleReuseStats,
+}
+
+impl ComputedStyleReuseCache {
+    fn seed(
+        &mut self,
+        resolved_style: &ResolvedStyle,
+        parent_style: Option<&ComputedStyle>,
+        computed: ComputedStyle,
+    ) {
+        let parent = parent_style.copied();
+        if self
+            .entries
+            .iter()
+            .any(|entry| entry.resolved == *resolved_style && entry.parent == parent)
+        {
+            return;
+        }
+
+        self.entries.push(ComputedStyleReuseEntry {
+            resolved: resolved_style.clone(),
+            parent,
+            computed,
+        });
+    }
+
+    fn lookup_or_compute(
+        &mut self,
+        resolved_style: &ResolvedStyle,
+        parent_style: Option<&ComputedStyle>,
+    ) -> Result<ComputedStyle, ComputedStyleResolutionError> {
+        let parent = parent_style.copied();
+        if let Some(entry) = self
+            .entries
+            .iter()
+            .find(|entry| entry.resolved == *resolved_style && entry.parent == parent)
+        {
+            self.stats.hits = self.stats.hits.saturating_add(1);
+            return Ok(entry.computed);
+        }
+
+        self.stats.misses = self.stats.misses.saturating_add(1);
+        let computed = compute_style_from_resolved_style(resolved_style, parent_style)?;
+        self.entries.push(ComputedStyleReuseEntry {
+            resolved: resolved_style.clone(),
+            parent,
+            computed,
+        });
+        Ok(computed)
+    }
+
+    fn stats(&self) -> ComputedStyleReuseStats {
+        self.stats
+    }
+}
+
+struct ComputedStyleReuseEntry {
+    resolved: ResolvedStyle,
+    parent: Option<ComputedStyle>,
+    computed: ComputedStyle,
 }
