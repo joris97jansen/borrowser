@@ -22,6 +22,14 @@ pub mod specified;
 pub mod syntax;
 pub mod values;
 
+#[cfg(any(test, feature = "count-alloc", feature = "perf-tests"))]
+pub mod perf_fixtures;
+
+#[cfg(all(test, feature = "perf-tests"))]
+mod perf_guards_heavy;
+#[cfg(test)]
+mod perf_guards_smoke;
+
 // Model-first crate-root surface for engine-facing stylesheet work.
 pub use cascade::{
     CascadeDeclarationApplicability, CascadeDeclarationCandidate, CascadeDeclarationCandidateKey,

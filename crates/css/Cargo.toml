@@ -6,11 +6,25 @@ edition = "2024"
 [features]
 default = []
 css-fuzzing = []
+count-alloc = []
+perf-tests = []
+
+[dev-dependencies]
+criterion = "0.5"
 
 [[bin]]
 name = "css_fuzz_regression_summary"
 path = "src/bin/css_fuzz_regression_summary.rs"
 required-features = ["css-fuzzing"]
+
+[[bench]]
+name = "css_bench"
+harness = false
+
+[[test]]
+name = "alloc_guards"
+path = "tests/alloc_guards.rs"
+required-features = ["count-alloc"]
 
 [dependencies]
 html = { path = "../html", features = ["internal-api"] }
