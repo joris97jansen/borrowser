@@ -5,7 +5,7 @@ HTML_ENTITIES_TOOL := crates/html/tools/generate_entities_html5.py
 CLIPPY_JOBS ?= 4
 CLIPPY_JOB_FLAG := $(if $(strip $(CLIPPY_JOBS)),-j $(CLIPPY_JOBS),)
 
-.PHONY: format fmt-check lint lint-html5 lint-html5-hardening test test-html5-runtime test-html5-toggle compile-html5-benches test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-html5-rawtext-script-regressions test-html5-tokenizer-fuzz-corpus test-html5-tokenizer-fuzz-smoke test-html5-tokenizer-fuzz-long test-html5-tokenizer-script-data-fuzz-corpus test-html5-tokenizer-script-data-fuzz-smoke test-html5-tokenizer-script-data-fuzz-long test-html5-tokenizer-rawtext-fuzz-corpus test-html5-tokenizer-rawtext-fuzz-smoke test-html5-tokenizer-rawtext-fuzz-long test-html5-tokenizer-rcdata-fuzz-corpus test-html5-tokenizer-rcdata-fuzz-smoke test-html5-tokenizer-rcdata-fuzz-long test-html5-tree-builder-token-fuzz-corpus test-html5-tree-builder-token-fuzz-smoke test-html5-tree-builder-token-fuzz-long test-html5-pipeline-fuzz-corpus test-html5-pipeline-regressions test-html5-pipeline-fuzz-smoke test-html5-pipeline-fuzz-long test-css-tokenizer-fuzz-corpus test-css-tokenizer-fuzz-smoke test-css-tokenizer-fuzz-long test-css-parser-fuzz-corpus test-css-parser-fuzz-smoke test-css-parser-fuzz-long test-css-selector-parser-fuzz-corpus test-css-selector-parser-fuzz-smoke test-css-selector-parser-fuzz-long test-css-selector-matching-fuzz-corpus test-css-selector-matching-fuzz-smoke test-css-selector-matching-fuzz-long test-css-cascade-fuzz-corpus test-css-cascade-fuzz-smoke test-css-cascade-fuzz-long test-css-values-fuzz-corpus test-css-values-fuzz-smoke test-css-values-fuzz-long test-css-fuzz-regressions print-css-fuzz-regression-summary print-html5-pipeline-regression-snapshot test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
+.PHONY: format fmt-check lint lint-html5 lint-html5-hardening test test-html5-runtime test-html5-toggle compile-html5-benches compile-css-benches test-css-perf-guards test-css-alloc-guards test-html5-dom-golden test-html5-patch-golden test-html5-smoke-real-pages test-html5-rawtext-script-regressions test-html5-tokenizer-fuzz-corpus test-html5-tokenizer-fuzz-smoke test-html5-tokenizer-fuzz-long test-html5-tokenizer-script-data-fuzz-corpus test-html5-tokenizer-script-data-fuzz-smoke test-html5-tokenizer-script-data-fuzz-long test-html5-tokenizer-rawtext-fuzz-corpus test-html5-tokenizer-rawtext-fuzz-smoke test-html5-tokenizer-rawtext-fuzz-long test-html5-tokenizer-rcdata-fuzz-corpus test-html5-tokenizer-rcdata-fuzz-smoke test-html5-tokenizer-rcdata-fuzz-long test-html5-tree-builder-token-fuzz-corpus test-html5-tree-builder-token-fuzz-smoke test-html5-tree-builder-token-fuzz-long test-html5-pipeline-fuzz-corpus test-html5-pipeline-regressions test-html5-pipeline-fuzz-smoke test-html5-pipeline-fuzz-long test-css-tokenizer-fuzz-corpus test-css-tokenizer-fuzz-smoke test-css-tokenizer-fuzz-long test-css-parser-fuzz-corpus test-css-parser-fuzz-smoke test-css-parser-fuzz-long test-css-selector-parser-fuzz-corpus test-css-selector-parser-fuzz-smoke test-css-selector-parser-fuzz-long test-css-selector-matching-fuzz-corpus test-css-selector-matching-fuzz-smoke test-css-selector-matching-fuzz-long test-css-cascade-fuzz-corpus test-css-cascade-fuzz-smoke test-css-cascade-fuzz-long test-css-values-fuzz-corpus test-css-values-fuzz-smoke test-css-values-fuzz-long test-css-fuzz-regressions print-css-fuzz-regression-summary print-html5-pipeline-regression-snapshot test-wpt-tree-builder build build-html5 build-release build-release-html5 run run-workspace run-example ci html-entities-update html-entities-generate html-entities-check cuc cuc-diff
 
 # Format all crates in place
 format:
@@ -46,6 +46,18 @@ test-html5-toggle: test-html5-runtime
 # Compile HTML5 Criterion benches without executing them
 compile-html5-benches:
 	cargo bench -p html --bench html_bench --features html5 --no-run --locked
+
+# Compile CSS Criterion benches without executing them
+compile-css-benches:
+	cargo bench -p css --bench css_bench --no-run --locked
+
+# Run deterministic CSS perf guards
+test-css-perf-guards:
+	cargo test -p css --features perf-tests --locked
+
+# Run opt-in CSS allocation guards
+test-css-alloc-guards:
+	cargo test -p css --test alloc_guards --features count-alloc --locked
 
 # Run HTML5 semantic DOM golden fixtures (whole/chunked/fuzz)
 test-html5-dom-golden:
@@ -388,6 +400,7 @@ ci:
 	@$(MAKE) build-release
 	@$(MAKE) build-release-html5
 	@$(MAKE) compile-html5-benches
+	@$(MAKE) compile-css-benches
 	@$(MAKE) html-entities-check
 
 loc:
