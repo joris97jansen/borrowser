@@ -1,0 +1,2 @@
+# title: Marketing Landing Page
+# guard: Landing-page structure validates descendant, child, sibling, class, id, attribute, and inline-style cascade under realistic marketing markup.

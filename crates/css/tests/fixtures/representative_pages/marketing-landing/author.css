@@ -1,0 +1,14 @@
+body { color: #222; background-color: #fff; font-size: 16px; }
+.site-header { display: block; background-color: #eef; padding-left: 12px; }
+#brand { color: navy; font-size: 20px; }
+.primary-nav a { color: #345; padding-left: 4px; }
+.primary-nav a + a { margin-left: 8px; }
+.primary-nav .active { color: teal; }
+.hero[data-theme="dark"] { color: white; background-color: #123456; padding-left: 20px; }
+.hero > h1 { font-size: 32px; margin-left: 2px; }
+.hero .lede { color: #ddd; font-size: 18px; }
+.hero > .cta { display: inline-block; color: yellow; padding-left: 5px; }
+.cards { display: block; background-color: #f7f7f7; }
+.card { display: block; color: #333; padding-left: 10px; margin-left: 6px; }
+.card.featured { background-color: #ffe; color: maroon; }
+.card h2 { font-size: 21px; }

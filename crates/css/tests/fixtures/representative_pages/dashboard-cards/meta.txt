@@ -1,0 +1,2 @@
+# title: Dashboard Cards
+# guard: Dashboard-card fixture validates repeated card style reuse, status variants, descendant selectors, and sibling spacing in app-like markup.

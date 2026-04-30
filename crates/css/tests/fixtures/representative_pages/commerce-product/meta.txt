@@ -1,0 +1,2 @@
+# title: Commerce Product Page
+# guard: Product-page fixture validates form controls, attribute selectors, same-page repeated components, price styling, and inline promotion overrides.
