@@ -1,0 +1,13 @@
+body { color: #111; background-color: white; font-size: 16px; }
+.docs-shell { display: block; background-color: #f8f8f8; padding-left: 14px; }
+.sidebar { display: block; color: #555; width: 220px; }
+.sidebar nav > a { display: block; color: #456; padding-left: 6px; }
+.sidebar nav > a + a { margin-left: 3px; }
+.sidebar .selected { color: blue; background-color: #eef; }
+#install { color: #222; background-color: #fff; padding-left: 24px; }
+.article > h1 { font-size: 30px; margin-left: 1px; }
+.article .summary { color: #555; font-size: 18px; }
+pre { background-color: #111; color: white; padding-left: 12px; display: block; }
+code { color: cyan; font-size: 14px; }
+.callout[data-state~="warning"] { color: maroon; background-color: #ffe; padding-left: 10px; }
+.callout > h2 { font-size: 20px; }

@@ -1,0 +1,315 @@
+version: 1
+css-representative-page
+fixture: docs-article
+guard: Documentation layout validates nested navigation, id selectors, child combinators, adjacent siblings, and inherited code/article styles.
+elements: 18
+
+version: 1
+computed-document-style
+element[0]: selector-id=1 name="html"
+  background-color: rgba(0, 0, 0, 0)
+  color: rgba(0, 0, 0, 255)
+  display: inline
+  font-size: 16px
+  height: auto
+  margin-bottom: 0px
+  margin-left: 0px
+  margin-right: 0px
+  margin-top: 0px
+  max-width: none
+  min-width: auto
+  padding-bottom: 0px
+  padding-left: 0px
+  padding-right: 0px
+  padding-top: 0px
+  width: auto
+element[1]: selector-id=2 name="head"
+  background-color: rgba(0, 0, 0, 0)
+  color: rgba(0, 0, 0, 255)
+  display: inline
+  font-size: 16px
+  height: auto
+  margin-bottom: 0px
+  margin-left: 0px
+  margin-right: 0px
+  margin-top: 0px
+  max-width: none
+  min-width: auto
+  padding-bottom: 0px
+  padding-left: 0px
+  padding-right: 0px
+  padding-top: 0px
+  width: auto
+element[2]: selector-id=3 name="title"
+  background-color: rgba(0, 0, 0, 0)
+  color: rgba(0, 0, 0, 255)
+  display: inline
+  font-size: 16px
+  height: auto
+  margin-bottom: 0px
+  margin-left: 0px
+  margin-right: 0px
+  margin-top: 0px
+  max-width: none
+  min-width: auto
+  padding-bottom: 0px
+  padding-left: 0px
+  padding-right: 0px
+  padding-top: 0px
+  width: auto
+element[3]: selector-id=4 name="body"
+  background-color: rgba(255, 255, 255, 255)
+  color: rgba(17, 17, 17, 255)
+  display: inline
+  font-size: 16px
+  height: auto
+  margin-bottom: 0px
+  margin-left: 0px
+  margin-right: 0px
+  margin-top: 0px
+  max-width: none
+  min-width: auto
+  padding-bottom: 0px
+  padding-left: 0px
+  padding-right: 0px
+  padding-top: 0px
+  width: auto
+element[4]: selector-id=5 name="div"
+  background-color: rgba(248, 248, 248, 255)
+  color: rgba(17, 17, 17, 255)
+  display: block
+  font-size: 16px
+  height: auto
+  margin-bottom: 0px
+  margin-left: 0px
+  margin-right: 0px
+  margin-top: 0px
+  max-width: none
+  min-width: auto
+  padding-bottom: 0px
+  padding-left: 14px
+  padding-right: 0px
+  padding-top: 0px
+  width: auto
+element[5]: selector-id=6 name="aside"
+  background-color: rgba(0, 0, 0, 0)
+  color: rgba(85, 85, 85, 255)
+  display: block
+  font-size: 16px
+  height: auto
+  margin-bottom: 0px
+  margin-left: 0px
+  margin-right: 0px
+  margin-top: 0px
+  max-width: none
+  min-width: auto
+  padding-bottom: 0px
+  padding-left: 0px
+  padding-right: 0px
+  padding-top: 0px
+  width: 220px
+element[6]: selector-id=7 name="nav"
+  background-color: rgba(0, 0, 0, 0)
+  color: rgba(85, 85, 85, 255)
+  display: inline
+  font-size: 16px
+  height: auto
+  margin-bottom: 0px
+  margin-left: 0px
+  margin-right: 0px
+  margin-top: 0px
+  max-width: none
+  min-width: auto
+  padding-bottom: 0px
+  padding-left: 0px
+  padding-right: 0px
+  padding-top: 0px
+  width: auto
+element[7]: selector-id=8 name="a"
+  background-color: rgba(0, 0, 0, 0)
+  color: rgba(68, 85, 102, 255)
+  display: block
+  font-size: 16px
+  height: auto
+  margin-bottom: 0px
+  margin-left: 0px
+  margin-right: 0px
+  margin-top: 0px
+  max-width: none
+  min-width: auto
+  padding-bottom: 0px
+  padding-left: 6px
+  padding-right: 0px
+  padding-top: 0px
+  width: auto
+element[8]: selector-id=9 name="a"
+  background-color: rgba(238, 238, 255, 255)
+  color: rgba(0, 0, 255, 255)
+  display: block
+  font-size: 16px
+  height: auto
+  margin-bottom: 0px
+  margin-left: 3px
+  margin-right: 0px
+  margin-top: 0px
+  max-width: none
+  min-width: auto
+  padding-bottom: 0px
+  padding-left: 6px
+  padding-right: 0px
+  padding-top: 0px
+  width: auto
+element[9]: selector-id=10 name="a"
+  background-color: rgba(0, 0, 0, 0)
+  color: rgba(68, 85, 102, 255)
+  display: block
+  font-size: 16px
+  height: auto
+  margin-bottom: 0px
+  margin-left: 3px
+  margin-right: 0px
+  margin-top: 0px
+  max-width: none
+  min-width: auto
+  padding-bottom: 0px
+  padding-left: 6px
+  padding-right: 0px
+  padding-top: 0px
+  width: auto
+element[10]: selector-id=11 name="main"
+  background-color: rgba(255, 255, 255, 255)
+  color: rgba(34, 34, 34, 255)
+  display: inline
+  font-size: 16px
+  height: auto
+  margin-bottom: 0px
+  margin-left: 0px
+  margin-right: 0px
+  margin-top: 0px
+  max-width: none
+  min-width: auto
+  padding-bottom: 0px
+  padding-left: 24px
+  padding-right: 0px
+  padding-top: 0px
+  width: auto
+element[11]: selector-id=12 name="h1"
+  background-color: rgba(0, 0, 0, 0)
+  color: rgba(34, 34, 34, 255)
+  display: inline
+  font-size: 30px
+  height: auto
+  margin-bottom: 0px
+  margin-left: 1px
+  margin-right: 0px
+  margin-top: 0px
+  max-width: none
+  min-width: auto
+  padding-bottom: 0px
+  padding-left: 0px
+  padding-right: 0px
+  padding-top: 0px
+  width: auto
+element[12]: selector-id=13 name="p"
+  background-color: rgba(0, 0, 0, 0)
+  color: rgba(85, 85, 85, 255)
+  display: inline
+  font-size: 18px
+  height: auto
+  margin-bottom: 0px
+  margin-left: 0px
+  margin-right: 0px
+  margin-top: 0px
+  max-width: none
+  min-width: auto
+  padding-bottom: 0px
+  padding-left: 0px
+  padding-right: 0px
+  padding-top: 0px
+  width: auto
+element[13]: selector-id=14 name="pre"
+  background-color: rgba(17, 17, 17, 255)
+  color: rgba(255, 255, 255, 255)
+  display: block
+  font-size: 16px
+  height: auto
+  margin-bottom: 0px
+  margin-left: 0px
+  margin-right: 0px
+  margin-top: 0px
+  max-width: none
+  min-width: auto
+  padding-bottom: 0px
+  padding-left: 12px
+  padding-right: 0px
+  padding-top: 0px
+  width: auto
+element[14]: selector-id=15 name="code"
+  background-color: rgba(0, 0, 0, 0)
+  color: rgba(0, 255, 255, 255)
+  display: inline
+  font-size: 14px
+  height: auto
+  margin-bottom: 0px
+  margin-left: 0px
+  margin-right: 0px
+  margin-top: 0px
+  max-width: none
+  min-width: auto
+  padding-bottom: 0px
+  padding-left: 0px
+  padding-right: 0px
+  padding-top: 0px
+  width: auto
+element[15]: selector-id=16 name="section"
+  background-color: rgba(255, 255, 238, 255)
+  color: rgba(128, 0, 0, 255)
+  display: inline
+  font-size: 16px
+  height: auto
+  margin-bottom: 0px
+  margin-left: 0px
+  margin-right: 0px
+  margin-top: 0px
+  max-width: none
+  min-width: auto
+  padding-bottom: 0px
+  padding-left: 10px
+  padding-right: 0px
+  padding-top: 0px
+  width: auto
+element[16]: selector-id=17 name="h2"
+  background-color: rgba(0, 0, 0, 0)
+  color: rgba(128, 0, 0, 255)
+  display: inline
+  font-size: 20px
+  height: auto
+  margin-bottom: 0px
+  margin-left: 0px
+  margin-right: 0px
+  margin-top: 0px
+  max-width: none
+  min-width: auto
+  padding-bottom: 0px
+  padding-left: 0px
+  padding-right: 0px
+  padding-top: 0px
+  width: auto
+element[17]: selector-id=18 name="p"
+  background-color: rgba(0, 0, 0, 0)
+  color: rgba(128, 0, 0, 255)
+  display: inline
+  font-size: 16px
+  height: auto
+  margin-bottom: 0px
+  margin-left: 0px
+  margin-right: 0px
+  margin-top: 0px
+  max-width: none
+  min-width: auto
+  padding-bottom: 0px
+  padding-left: 0px
+  padding-right: 0px
+  padding-top: 0px
+  width: auto
+

@@ -1,0 +1,12 @@
+body { color: #222; background-color: #f5f7fb; font-size: 16px; }
+.dashboard { display: block; padding-left: 16px; background-color: #f5f7fb; }
+.metric { display: inline-block; background-color: white; color: #333; padding-left: 12px; width: 180px; }
+.metric + .metric { margin-left: 10px; }
+.metric h2 { font-size: 18px; color: #555; }
+.metric p { font-size: 24px; color: #111; }
+.metric.ok p { color: green; }
+.metric.warning[data-state="warning"] { background-color: #ffe; color: maroon; }
+.activity { display: block; background-color: white; margin-left: 4px; padding-left: 12px; }
+.activity h2 { font-size: 20px; }
+.event { color: #333; padding-left: 2px; }
+.event.muted { color: gray; }

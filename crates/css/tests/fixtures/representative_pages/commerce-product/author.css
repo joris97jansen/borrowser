@@ -1,0 +1,11 @@
+body { color: #222; background-color: #fafafa; font-size: 16px; }
+.product-page { display: block; background-color: white; padding-left: 18px; }
+.gallery { display: inline-block; width: 320px; background-color: #eee; }
+.gallery img { display: block; width: 300px; }
+.details { display: inline-block; color: #333; padding-left: 22px; }
+.details > h1 { font-size: 28px; color: #111; }
+.price { color: green; font-size: 24px; margin-left: 2px; }
+.promo { color: maroon; background-color: #ffe; padding-left: 5px; }
+.purchase label { display: block; color: #555; padding-left: 3px; }
+.purchase input[type="email"] { display: block; color: navy; background-color: #eef; width: 260px; }
+.purchase .buy { display: inline-block; color: white; background-color: green; padding-left: 12px; }
