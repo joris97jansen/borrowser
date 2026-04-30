@@ -1,13 +1,14 @@
 # U1: Runtime Integration Architecture And CSS Pipeline Ownership
 
-Last updated: 2026-04-28  
-Status: architecture contract implemented
+Last updated: 2026-04-30
+Status: architecture contract implemented; final Milestone U close-out lives in U8
 
 This document is the source-of-truth contract for Milestone U issue 1. It
 defines how Borrowser's rebuilt CSS engine integrates with the browser runtime,
 where style resolution lives, which subsystem owns each phase, how page-load
 and DOM-mutation restyles are triggered, and which integration boundaries are
-in scope for Milestone U.
+in scope for Milestone U. The implemented post-U close-out contract is recorded
+in `docs/css/u8-runtime-integration-contracts-extension-points.md`.
 
 Related code:
 - `crates/browser/src/page.rs`
@@ -23,6 +24,7 @@ Related code:
 - `crates/css/src/computed.rs`
 
 Related documents:
+- `docs/css/u8-runtime-integration-contracts-extension-points.md`
 - `docs/architecture/ARCHITECTURE.md`
 - `docs/html5/dompatch-contract.md`
 - `docs/html5/node-identity-contract.md`
@@ -44,7 +46,7 @@ The runtime integration contract is:
 ```text
 network/html/css events
   -> Tab event routing
-  -> PageState DOM + ordered StylesheetParse[] ownership
+  -> PageState DOM + DocumentStyleSet ownership
   -> structured style resolution
   -> StyledNode tree
   -> layout/paint/view consumption
@@ -57,20 +59,19 @@ normalization, or supported-property metadata.
 
 ## Runtime Entry Points
 
-The runtime integration entry points are intentionally narrow. Some
-responsibilities below already exist in the current code; dirty marking,
-generation tracking, and cache reuse are Milestone U implementation targets
-that must attach at these boundaries rather than being scattered through layout
-or paint code.
+The runtime integration entry points are intentionally narrow. Dirty marking,
+generation tracking, cache reuse, and partial restyle attach at these boundaries
+rather than being scattered through layout or paint code.
 
 | entry point | owning layer | responsibility |
 | --- | --- | --- |
 | `Tab::on_dom_update(...)` | browser runtime | accept parsed DOM snapshots or materialized patch results, update page metadata, discover subresources, and act as the style-affecting DOM dirty boundary |
 | `Tab::on_css_decoded_block(...)` | browser runtime | accept decoded stylesheet text from `runtime_css`, parse it through structured CSS entry points, and act as the stylesheet-set dirty boundary |
 | `Tab::on_css_sheet_done(...)` | browser runtime | retire pending stylesheet load state and request redraw |
-| `PageState::apply_inline_style_blocks(...)` | page state | reconcile document `<style>` blocks into document-order stylesheet slots during DOM updates |
+| `PageState::reconcile_document_stylesheets(...)` | page state | reconcile document `<style>` blocks and stylesheet links into document-order stylesheet slots during DOM updates |
 | `PageState::apply_css_block(...)` | page state | parse an external stylesheet into `StylesheetParse` and install it into the pre-registered document-order stylesheet slot for the current navigation/request |
-| `build_style_tree_with_stylesheets(...)` | CSS engine | resolve cascade, compute styles, and build the runtime `StyledNode` tree |
+| `PageState::build_style_tree(...)` | page state | reuse or recompute page-owned resolved/computed style cache and rebuild the runtime `StyledNode` view |
+| `build_style_tree_from_computed_styles(...)` | CSS engine | validate the current DOM against cached computed styles and build a borrow-backed `StyledNode` tree |
 | `browser::view::content(...)` | browser view | request style tree construction and pass `StyledNode` to viewport/layout/paint code |
 | `DomStore::apply(...)` | browser DOM patch runtime | apply parser patch batches atomically before the style subsystem sees the materialized DOM |
 
@@ -187,7 +188,8 @@ The page-load lifecycle for styles is:
 
 1. Navigation starts.
    `PageState::start_nav(...)` clears DOM, head metadata, visible text,
-   form-control index, pending stylesheet set, and parsed stylesheet list.
+   form-control index, document stylesheet slots, style generations, dirty
+   state, and style cache.
 2. HTML bytes stream into `runtime_parse`.
    Parser events are routed through `Tab::on_core_event(...)` and gated by
    `(tab_id, request_id)`.
@@ -201,18 +203,19 @@ The page-load lifecycle for styles is:
    document base URL, registers a document-order stylesheet slot in
    `PageState`, and sends `FetchStream { kind: Css }`.
 5. CSS bytes stream into `runtime_css`.
-   `runtime_css` buffers bytes per `(tab_id, request_id, url)`, assembles UTF-8,
-   and emits one `CssDecodedBlock` followed by `CssSheetDone`.
+   `runtime_css` buffers bytes per `(tab_id, request_id, stylesheet_slot_id)`,
+   assembles UTF-8, and emits one complete-body `CssDecodedBlock` followed by
+   `CssSheetDone`.
 6. Stylesheets attach to page state.
    `Tab::on_css_decoded_block(...)` calls `PageState::apply_css_block(...)`,
    which parses through the structured CSS model path and installs the result
    into the pre-registered document-order slot.
 7. View construction asks for styles.
-   `browser::view::content(...)` calls
-   `build_style_tree_with_stylesheets(dom, page.css_stylesheets())`.
+   `browser::view::content(...)` calls `PageState::build_style_tree()`.
 8. CSS engine resolves styles.
-   The CSS crate performs selector matching, cascade, computed-style assembly,
-   and `StyledNode` construction without mutating the DOM.
+   `PageState` either reuses a valid `ComputedDocumentStyle` cache, performs
+   an incremental suffix recompute, or runs full selector matching, cascade,
+   and computed-style assembly through the CSS crate without mutating the DOM.
 9. Layout and paint consume the styled tree.
    `gfx::viewport::page_viewport(...)` receives the `StyledNode` tree plus
    resources and input state.
@@ -222,7 +225,7 @@ The default runtime path for new work is the structured path:
 ```text
 DOM + StylesheetParse[]
   -> resolve_document_styles(...)
-  -> compute_document_styles(...)
+  -> compute_document_styles_from_resolved_styles_with_reuse_stats(...)
   -> build_style_tree_from_computed_styles(...)
   -> StyledNode
 ```
@@ -231,35 +234,34 @@ Legacy APIs such as `attach_styles(...)`, `compute_style(...)`, and
 `build_style_tree(...)` are compatibility surfaces only. They must not become
 the browser runtime's normative style path again.
 
-## Current Baseline And Required Direction
+## Implemented Baseline After Milestone U
 
-As of U1, the browser view already uses the structured CSS path by calling
-`build_style_tree_with_stylesheets(...)` from `browser::view::content(...)`.
-That is the correct semantic direction, but it is not yet the final runtime
-architecture because style work is still requested during view construction
-rather than through an explicit dirty/generation pipeline.
+Milestone U moved the browser from view-requested style recomputation toward
+page-owned style lifecycle management. The browser view now calls
+`PageState::build_style_tree()`, and page state decides whether style artifacts
+can be reused, partially recomputed, or fully recomputed.
 
-Milestone U implementation work must move from "compute when the view asks" to
-"compute when page/style generations require it" without changing CSS
-semantics. The first acceptable production-grade step is conservative
-whole-document restyle with explicit generations and cache invalidation. Narrow
-subtree restyle is allowed only when the invalidation proof is clear and a
-whole-document fallback remains available.
+The implemented baseline is:
 
-Known integration gaps after U1:
+- `DocumentStyleSet` owns document-order stylesheet slots so network completion
+  order cannot affect cascade order.
+- Inline `<style>` blocks and external stylesheets share one ordered author
+  stylesheet set.
+- `PageStyleGenerations` separates DOM generation, style-input generation, and
+  stylesheet generation.
+- `PageStyleCache` stores owned `ResolvedDocumentStyle` and
+  `ComputedDocumentStyle` artifacts, never a self-referential `StyledNode`.
+- Attribute mutations may use conservative suffix recomputation when a previous
+  cache proves reusable; all uncertain cases fall back to full recomputation.
+- Text-only DOM mutations dirty layout without invalidating computed style,
+  unless stylesheet reconciliation changes the stylesheet set.
+- Representative page tests, performance smoke guards, Criterion benchmarks,
+  and opt-in allocation guards cover the structured path.
 
-- stylesheet attachment needs document-order slots so network completion order
-  cannot affect cascade order
-- parsed inline style blocks need stable attachment ownership so repeated DOM
-  snapshots or patch materializations do not duplicate equivalent inline
-  stylesheet inputs
-- style dirty and layout dirty state need explicit page-owned generations
-- `StyledNode` construction should become cacheable between redraws when DOM
-  and stylesheet generations are unchanged
-- legacy `Node::style` helpers in browser-facing code need removal or strict
-  isolation from the default rendering path
-- representative runtime tests and performance/allocation guards must verify
-  the structured path under page-load and mutation-like conditions
+The remaining extension work is outside U: layout generation caching, paint
+invalidation, selector-aware invalidation, richer stylesheet-link semantics,
+UA/user origins, media/container query invalidation, and environment-sensitive
+computed values.
 
 ## DOM Mutation And Restyle Triggers
 
@@ -279,11 +281,12 @@ Milestone U defines these trigger classes:
 | text change | `SetText`, `AppendText` | layout dirty; style dirty only when the text belongs to a `<style>` element or future selector support depends on text state |
 | pseudo/input state change | future hover/focus/active/visited hooks | target-dependent style dirty once pseudo-class matching is supported |
 
-The current parser patch path materializes a DOM snapshot after applying a patch
-batch. Until style invalidation can consume stable node identities directly,
-snapshot replacement is allowed to conservatively mark the whole document dirty.
-Future partial restyle work may narrow this by deriving invalidation sets from
-`DomPatch` batches before materialization.
+The current parser patch path applies patch batches through `DomStore` before
+materializing the DOM. Patch batches are classified before materialization;
+empty batches are no-ops, structural mutations conservatively invalidate the
+whole style input set, and attribute mutations can produce an
+`AttributeSuffix` invalidation scope when patch identity maps to materialized
+node identity.
 
 ### Mutation To Style Work Mapping
 
@@ -303,18 +306,16 @@ mutation.
 
 ## Incrementality And Cache Boundaries
 
-Milestone U may introduce basic incremental mechanisms, but correctness comes
-before narrow invalidation.
+Milestone U introduced basic incremental mechanisms with correctness before
+narrow invalidation.
 
-Allowed first-stage mechanisms:
+Implemented first-stage mechanisms:
 
-- a per-page style generation counter that increments on every style-affecting
-  DOM or stylesheet mutation
-- cached style artifacts keyed by DOM generation, stylesheet generation, and
-  any relevant style-environment generation
-- a parsed stylesheet cache keyed by URL plus accepted response identity
-- reuse of unchanged parsed external stylesheets across redraws within a
-  navigation
+- page-owned DOM, style-input, and stylesheet generation counters
+- page-owned resolved/computed style cache keyed by style-input and stylesheet
+  generations
+- pass-local computed-style reuse inside the CSS crate
+- conservative attribute suffix recomputation with full fallback
 - whole-document restyle fallback whenever invalidation precision is uncertain
 
 Required safety rules:
@@ -335,14 +336,13 @@ Required safety rules:
 - partial restyle must have a whole-document fallback for unsupported selector
   features, unknown patch effects, or identity mismatches
 
-U1 does not require implementing these caches. It defines where they may live:
-parsed stylesheet attachment and style-tree reuse are browser/page concerns;
-semantic style computation and any internal memoization of selector/cascade
-algorithms are CSS-engine concerns.
+Parsed stylesheet attachment and page-level style-cache lifetime are
+browser/page concerns. Semantic style computation and pass-local memoization of
+computed style materialization are CSS-engine concerns.
 
 ## Runtime Invariants
 
-The following invariants are mandatory for Milestone U implementation:
+The following invariants remain mandatory for Milestone U implementation:
 
 - A `Tab` owns exactly one active `PageState` for its current navigation
   generation.
@@ -407,8 +407,8 @@ Likely extension points:
 - `DocumentStyleSet`: page-owned ordered author stylesheet collection,
   including inline style blocks and external sheets, with stable
   document-order slots whose states can be pending, loaded, failed, or aborted
-- `StyleInvalidationSet`: conservative description of DOM/style mutations that
-  must be restyled
+- `StyleInvalidationScope` or future `StyleInvalidationSet`: conservative
+  description of DOM/style mutations that must be restyled
 - `StyleResolver` or `StyleContext`: CSS-engine entry point for resolving a DOM
   plus stylesheet set with limits, diagnostics, and optional internal caches
 - `StyleGeneration`: browser-owned generation keys for DOM, stylesheets,

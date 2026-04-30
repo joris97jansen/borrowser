@@ -76,7 +76,7 @@ Every tab has a unique `tab_id`, and commands/events must carry it:
 Tab → (CoreCommand) → runtime_net / runtime_parse / runtime_css
 runtime → (CoreEvent) → Tab
 
-````
+```
 
 Each runtime operates independently:
 
@@ -102,13 +102,15 @@ HTML is parsed incrementally:
 
 1. The tokenizer receives streamed bytes from the network.
 2. The parser builds the tree node-by-node.
-3. After each incremental update, a `DomUpdate` event is emitted.
+3. After incremental work, the parser emits either a legacy `DomUpdate`
+   snapshot or a patch-based `DomPatchUpdate`.
 
 `DomUpdate` is the legacy snapshot path. A patch-based stream also exists:
 `DomPatchUpdate { handle, from, to, patches }` carries incremental DOM mutations
-for a specific document handle and version range. The patch event is defined but
-not applied yet; the snapshot path remains the default until the patch model and
-applier are finalized.
+for a specific document handle and version range. Browser tabs apply patch
+batches atomically through `DomStore`, classify non-empty batches into
+`RestyleHint`s before materialization, and treat empty batches as no-ops for
+style generations.
 
 DOM nodes are simple, ergonomic Rust enums:
 
@@ -119,14 +121,15 @@ enum Node {
     Text { text },
     Comment { text },
 }
-````
+```
 
-Inline style attributes are stored in the node but do not affect layout until the CSS cascade applies.
-The current shipped path still writes a compatibility declaration vector into
-`Node::style`; Milestones R and S define the long-term structured cascade and
-computed-style contracts that replace the DOM-attached style bridge. Milestone
-U integrates those contracts into the runtime path and removes or isolates
-remaining browser-facing dependencies on `Node::style`.
+Inline style attributes are stored in the node but do not affect layout until
+the CSS cascade applies. Legacy compatibility APIs can still write a
+compatibility declaration vector into `Node::style`; Milestones R and S define
+the structured cascade and computed-style contracts that replace that
+DOM-attached style bridge. Milestone U integrates those contracts into the
+runtime path and isolates remaining browser-facing dependencies on
+`Node::style`.
 
 ### Node IDs
 
@@ -189,6 +192,11 @@ The Milestone U runtime integration architecture and CSS pipeline ownership
 contract lives in:
 
 * `docs/css/u1-runtime-integration-architecture-css-pipeline-ownership.md`
+
+The Milestone U close-out runtime integration contract and future extension
+points live in:
+
+* `docs/css/u8-runtime-integration-contracts-extension-points.md`
 
 The syntax layer owns:
 
@@ -267,11 +275,10 @@ subset. It stores typed, normalized values; exposes private-field accessors and
 deterministic property iteration; and is assembled through
 `ComputedStyleBuilder` rather than ad hoc field mutation.
 
-The shipped browser view path uses `build_style_tree_with_stylesheets(...)`,
-which consumes structured stylesheet model output, resolves cascade winners,
-normalizes property values, applies inheritance/defaults, validates element
-identity, and returns a `StyledNode` tree without writing to
-`Node::Element::style`.
+The shipped browser view path calls `PageState::build_style_tree()`. Page state
+reuses or recomputes owned `ResolvedDocumentStyle` and `ComputedDocumentStyle`
+artifacts, then calls `build_style_tree_from_computed_styles(...)` to rebuild a
+borrow-backed `StyledNode` view without writing to `Node::Element::style`.
 
 Downstream systems consume `ComputedStyle` or `StyledNode`. They do not parse
 CSS text, inspect cascade winners, duplicate property metadata, or recover from
@@ -419,9 +426,10 @@ Each frame follows:
 3. Paint the layout tree inside a scrollable viewport.
 ```
 
-Milestone U moves this from view-requested recomputation toward explicit
-page-owned DOM/style/layout generations so style and layout work only run when
-their inputs change.
+Milestone U introduced page-owned DOM/style/stylesheet generations and a
+`PageStyleCache` so clean frames can reuse computed style. Style-affecting
+mutations mark explicit invalidation scopes; layout generation caching remains
+future work.
 
 ---
 
@@ -448,12 +456,16 @@ Each tab maintains:
 ```rust
 struct PageState {
     dom: Option<Node>,
-    css_stylesheets: Vec<StylesheetParse>, // loaded stylesheet artifacts exposed in document/source order
+    document_styles: DocumentStyleSet, // document/source-ordered stylesheet slots
+    generations: PageStyleGenerations,
+    style_cache: Option<PageStyleCache>, // owned ResolvedDocumentStyle + ComputedDocumentStyle
+    style_dirty: bool,
+    layout_dirty: bool,
+    pending_style_invalidation: Option<StyleInvalidationScope>,
     head: HeadMetadata,
     visible_text_cache: String,
 
     // later derived caches:
-    style_cache: Option<PageStyleCache>,
     layout_cache: Option<PageLayoutCache>,
 }
 ```
@@ -464,9 +476,11 @@ rather than as the core style-resolution result.
 
 The remaining `Node::style` declaration vector is likewise a migration-only
 cascade bridge and is not the intended long-term style-resolution contract.
-The page-state shape is the storage boundary for persistent style/layout trees
-and change-scoped recomputation; those caches remain derived state from the DOM,
-stylesheet model, viewport, and runtime style pipeline.
+The page-state shape is the storage boundary for document stylesheet order,
+style generations, persistent owned style artifacts, and change-scoped
+recomputation. `DocumentStyleSet` exposes loaded stylesheet artifacts in
+document/source order; pending, failed, and aborted slots preserve cascade
+position without contributing declarations.
 
 Derived style/layout caches must respect Rust ownership boundaries. If
 `StyledNode` or `LayoutBox` remain borrow-backed views over the DOM, they must
