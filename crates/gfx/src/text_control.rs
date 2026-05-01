@@ -69,10 +69,10 @@ pub(crate) fn consume_focus_nav_keys(i: &mut egui::InputState) {
     i.consume_key(egui::Modifiers::NONE, egui::Key::Escape);
 }
 
-pub(crate) fn find_layout_box_by_id<'a>(
-    root: &'a LayoutBox<'a>,
+pub(crate) fn find_layout_box_by_id<'layout, 'dom>(
+    root: &'layout LayoutBox<'layout, 'dom>,
     id: Id,
-) -> Option<&'a LayoutBox<'a>> {
+) -> Option<&'layout LayoutBox<'layout, 'dom>> {
     if root.node_id() == id {
         return Some(root);
     }

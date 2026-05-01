@@ -34,16 +34,16 @@ fn point_in_rect(p: (f32, f32), r: Rectangle) -> bool {
 }
 
 /// Engine hit-test in *layout coordinates* (same coordinate system as LayoutBox::rect)
-pub fn hit_test<'a>(
-    root: &'a LayoutBox<'a>,
+pub fn hit_test<'style_tree, 'dom>(
+    root: &'style_tree LayoutBox<'style_tree, 'dom>,
     point: (f32, f32),
     measurer: &dyn TextMeasurer,
 ) -> Option<HitResult> {
     hit_test_box(root, point, measurer)
 }
 
-fn hit_test_box<'a>(
-    node: &'a LayoutBox<'a>,
+fn hit_test_box<'style_tree, 'dom>(
+    node: &'style_tree LayoutBox<'style_tree, 'dom>,
     point: (f32, f32),
     measurer: &dyn TextMeasurer,
 ) -> Option<HitResult> {
@@ -79,8 +79,8 @@ fn hit_test_box<'a>(
     })
 }
 
-fn hit_test_inline_fragments<'a>(
-    layout: &'a LayoutBox<'a>,
+fn hit_test_inline_fragments<'style_tree, 'dom>(
+    layout: &'style_tree LayoutBox<'style_tree, 'dom>,
     point: (f32, f32),
     measurer: &dyn TextMeasurer,
 ) -> Option<HitResult> {
@@ -158,9 +158,7 @@ fn hit_test_inline_fragments<'a>(
                         });
                     }
 
-                    let id = frag_layout
-                        .map(|lb| lb.node_id())
-                        .unwrap_or(layout.node_id());
+                    let id = frag_layout.map_or(layout.node_id(), |lb| lb.node_id());
                     return Some(HitResult {
                         node_id: id,
                         kind: HitKind::InlineBlockBox,
@@ -187,9 +185,7 @@ fn hit_test_inline_fragments<'a>(
                         });
                     }
 
-                    let id = frag_layout
-                        .map(|lb| lb.node_id())
-                        .unwrap_or(layout.node_id());
+                    let id = frag_layout.map_or(layout.node_id(), |lb| lb.node_id());
                     let hit_kind = match kind {
                         ReplacedKind::Img => HitKind::Image,
                         ReplacedKind::InputText => HitKind::Input,

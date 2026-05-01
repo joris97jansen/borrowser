@@ -8,11 +8,11 @@ use super::super::types::LineBox;
 use super::state::InlineLayoutEngine;
 
 // Inline layout pipeline facade used by painting and hit-testing.
-pub fn layout_inline_for_paint<'a>(
+pub fn layout_inline_for_paint<'style_tree, 'dom>(
     measurer: &dyn TextMeasurer,
     rect: Rectangle,
-    block: &'a LayoutBox<'a>,
-) -> Vec<LineBox<'a>> {
+    block: &'style_tree LayoutBox<'style_tree, 'dom>,
+) -> Vec<LineBox<'style_tree, 'dom>> {
     let tokens = collect_inline_tokens_for_block_layout_for_paint(block);
 
     if tokens.is_empty() {
@@ -22,12 +22,12 @@ pub fn layout_inline_for_paint<'a>(
     layout_tokens(measurer, rect, block.style, tokens)
 }
 
-pub(crate) fn layout_tokens<'a>(
+pub(crate) fn layout_tokens<'style_tree, 'dom>(
     measurer: &dyn TextMeasurer,
     rect: Rectangle,
-    block_style: &'a ComputedStyle,
-    tokens: Vec<InlineToken<'a>>,
-) -> Vec<LineBox<'a>> {
+    block_style: &'style_tree ComputedStyle,
+    tokens: Vec<InlineToken<'style_tree, 'dom>>,
+) -> Vec<LineBox<'style_tree, 'dom>> {
     layout_tokens_with_options(
         measurer,
         rect,
@@ -37,12 +37,12 @@ pub(crate) fn layout_tokens<'a>(
     )
 }
 
-pub(crate) fn layout_tokens_with_options<'a>(
+pub(crate) fn layout_tokens_with_options<'style_tree, 'dom>(
     measurer: &dyn TextMeasurer,
     rect: Rectangle,
-    block_style: &'a ComputedStyle,
-    tokens: Vec<InlineToken<'a>>,
+    block_style: &'style_tree ComputedStyle,
+    tokens: Vec<InlineToken<'style_tree, 'dom>>,
     options: InlineLayoutOptions,
-) -> Vec<LineBox<'a>> {
+) -> Vec<LineBox<'style_tree, 'dom>> {
     InlineLayoutEngine::new(measurer, rect, block_style, options).layout(tokens)
 }

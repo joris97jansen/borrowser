@@ -8,9 +8,9 @@ use super::super::tokens::InlineContext;
 use super::super::types::{AdvanceRect, InlineAction, InlineFragment, LineFragment, PaintRect};
 use super::state::{InlineLayoutEngine, measure_nonzero};
 
-struct TextFragmentSpec<'a> {
+struct TextFragmentSpec<'style_tree> {
     text: String,
-    style: &'a ComputedStyle,
+    style: &'style_tree ComputedStyle,
     action: Option<InlineAction>,
     source_range: Option<(usize, usize)>,
     width: f32,
@@ -19,10 +19,10 @@ struct TextFragmentSpec<'a> {
     descent: f32,
 }
 
-impl<'m, 'a> InlineLayoutEngine<'m, 'a> {
+impl<'m, 'style_tree, 'dom> InlineLayoutEngine<'m, 'style_tree, 'dom> {
     pub(super) fn layout_space_token(
         &mut self,
-        style: &'a ComputedStyle,
+        style: &'style_tree ComputedStyle,
         ctx: InlineContext,
         source_range: Option<(usize, usize)>,
     ) {
@@ -62,7 +62,7 @@ impl<'m, 'a> InlineLayoutEngine<'m, 'a> {
     pub(super) fn layout_word_token(
         &mut self,
         text: String,
-        style: &'a ComputedStyle,
+        style: &'style_tree ComputedStyle,
         ctx: InlineContext,
         source_range: Option<(usize, usize)>,
     ) {
@@ -162,7 +162,7 @@ impl<'m, 'a> InlineLayoutEngine<'m, 'a> {
         }
     }
 
-    fn push_text_fragment(&mut self, spec: TextFragmentSpec<'a>) {
+    fn push_text_fragment(&mut self, spec: TextFragmentSpec<'style_tree>) {
         let rect = Rectangle {
             x: self.cursor_x,
             y: self.cursor_y,

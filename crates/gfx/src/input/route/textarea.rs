@@ -113,7 +113,7 @@ pub(super) fn drag_selection<S: InputStore + ?Sized>(
 pub(super) fn move_caret_vertically<S: InputStore + ?Sized>(
     input_values: &mut S,
     interaction: &mut InteractionState,
-    layout_root: &layout::LayoutBox<'_>,
+    layout_root: &layout::LayoutBox<'_, '_>,
     focus_id: html::internal::Id,
     delta: i32,
     measurer: &EguiTextMeasurer,

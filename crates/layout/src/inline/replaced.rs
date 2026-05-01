@@ -44,9 +44,9 @@ pub(crate) fn resolve_replaced_width_px(
     w.max(0.0)
 }
 
-pub(crate) fn size_replaced_inline_children<'a>(
+pub(crate) fn size_replaced_inline_children<'style_tree, 'dom>(
     measurer: &dyn TextMeasurer,
-    parent: &mut LayoutBox<'a>,
+    parent: &mut LayoutBox<'style_tree, 'dom>,
     content_x: f32,
     content_top: f32,
     content_width: f32,

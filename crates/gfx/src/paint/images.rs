@@ -27,7 +27,7 @@ pub trait ImageProvider {
 pub(super) fn paint_img_fragment<'a>(
     rect: Rect,
     style: &ComputedStyle,
-    layout: Option<&LayoutBox<'a>>,
+    layout: Option<&LayoutBox<'_, '_>>,
     ctx: PaintCtx<'_>,
 ) {
     let painter = ctx.painter;

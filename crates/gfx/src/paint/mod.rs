@@ -13,10 +13,32 @@ use crate::textarea::TextareaCachedLine;
 use css::{Display, Length};
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, Vec2};
 use html::{dom_utils::is_non_rendering_element, internal::Id};
-use layout::{BoxKind, LayoutBox, ListMarker, Rectangle, TextMeasurer};
+use layout::{BoxKind, LayoutBox, LayoutPhaseOutput, ListMarker, Rectangle, TextMeasurer};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
+/// Structured layout-to-paint handoff.
+#[derive(Clone, Copy)]
+pub struct PaintPhaseInput<'layout, 'style_tree, 'dom> {
+    layout: &'layout LayoutPhaseOutput<'style_tree, 'dom>,
+}
+
+impl<'layout, 'style_tree, 'dom> PaintPhaseInput<'layout, 'style_tree, 'dom> {
+    pub fn new(layout: &'layout LayoutPhaseOutput<'style_tree, 'dom>) -> Self {
+        Self { layout }
+    }
+
+    pub fn layout(&self) -> &'layout LayoutPhaseOutput<'style_tree, 'dom> {
+        self.layout
+    }
+
+    pub fn layout_root(&self) -> &'layout LayoutBox<'style_tree, 'dom> {
+        self.layout.root()
+    }
+}
+
+/// Paint-runtime execution arguments. These are backend/runtime inputs, not the
+/// semantic layout-to-paint handoff itself.
 #[derive(Clone, Copy)]
 pub struct PaintArgs<'a> {
     pub painter: &'a Painter,
@@ -33,8 +55,8 @@ pub struct PaintArgs<'a> {
     pub fragment_rects: Option<&'a RefCell<HashMap<Id, Rectangle>>>,
 }
 
-fn paint_layout_box<'a>(
-    layout: &LayoutBox<'a>,
+fn paint_layout_box(
+    layout: &LayoutBox<'_, '_>,
     ctx: PaintCtx<'_>,
     skip_inline_block_children: bool,
 ) {
@@ -87,8 +109,8 @@ fn paint_layout_box<'a>(
     }
 }
 
-fn paint_list_marker<'a>(
-    layout: &LayoutBox<'a>,
+fn paint_list_marker(
+    layout: &LayoutBox<'_, '_>,
     painter: &Painter,
     origin: Pos2,
     measurer: &dyn TextMeasurer,
@@ -140,7 +162,8 @@ fn paint_list_marker<'a>(
     );
 }
 
-pub fn paint_page<'a>(layout_root: &LayoutBox<'a>, args: PaintArgs<'_>) {
+pub fn paint_page(input: PaintPhaseInput<'_, '_, '_>, args: PaintArgs<'_>) {
+    let layout_root = input.layout_root();
     let ctx = PaintCtx {
         painter: args.painter,
         origin: args.origin,

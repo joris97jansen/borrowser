@@ -22,7 +22,7 @@ use std::collections::HashMap;
 mod tests;
 
 pub(crate) fn route_frame_input<S: InputStore + ?Sized, F: FormControlHandler<S>>(
-    ctx: FrameInputCtx<'_, '_, S, F>,
+    ctx: FrameInputCtx<'_, '_, '_, S, F>,
 ) -> Option<PageAction> {
     let FrameInputCtx {
         ui,
@@ -133,10 +133,10 @@ pub(super) fn refresh_focused_input_rect(
     }
 }
 
-pub(super) fn editable_layout_box<'a>(
-    layout_root: &'a LayoutBox<'a>,
+pub(super) fn editable_layout_box<'layout, 'dom>(
+    layout_root: &'layout LayoutBox<'layout, 'dom>,
     node_id: Id,
-) -> Option<&'a LayoutBox<'a>> {
+) -> Option<&'layout LayoutBox<'layout, 'dom>> {
     crate::text_control::find_layout_box_by_id(layout_root, node_id).filter(|lb| {
         matches!(
             lb.replaced,
@@ -148,7 +148,7 @@ pub(super) fn editable_layout_box<'a>(
 pub(super) fn control_focus_rect(
     content_rect: Rect,
     origin: egui::Pos2,
-    layout_root: &LayoutBox<'_>,
+    layout_root: &LayoutBox<'_, '_>,
     interaction: &InteractionState,
 ) -> Rect {
     if let Some(fr) = interaction.focused_input_rect {

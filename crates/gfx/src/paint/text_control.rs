@@ -10,10 +10,10 @@ use layout::{LayoutBox, TextMeasurer};
 
 use super::context::PaintCtx;
 
-pub(super) fn paint_input_text<'a>(
+pub(super) fn paint_input_text(
     rect: Rect,
     style: &ComputedStyle,
-    layout: Option<&LayoutBox<'a>>,
+    layout: Option<&LayoutBox<'_, '_>>,
     ctx: PaintCtx<'_>,
 ) {
     let painter = ctx.painter;
@@ -186,10 +186,10 @@ pub(super) fn paint_input_text<'a>(
     }
 }
 
-pub(super) fn paint_textarea<'a>(
+pub(super) fn paint_textarea(
     rect: Rect,
     style: &ComputedStyle,
-    layout: Option<&LayoutBox<'a>>,
+    layout: Option<&LayoutBox<'_, '_>>,
     ctx: PaintCtx<'_>,
 ) {
     let painter = ctx.painter;

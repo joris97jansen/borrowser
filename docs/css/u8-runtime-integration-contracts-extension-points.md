@@ -152,12 +152,13 @@ For a navigation:
 9. External stylesheet arrivals call `PageState::apply_css_block(...)`.
    A successful install marks the stylesheet generation dirty. The tab/event
    layer observes the changed page state and requests redraw.
-10. `browser::view::content(...)` calls `PageState::build_style_tree()`.
+10. `browser::view::content(...)` calls `PageState::build_style_phase_output()`.
 11. `PageState` either reuses a valid `ComputedDocumentStyle` cache, performs
     an incremental suffix recompute, or performs full style resolution.
 12. `build_style_tree_from_computed_styles(...)` rebuilds a borrow-backed
     `StyledNode<'_>` view from the current DOM and cached computed styles.
-13. Layout/gfx consume the `StyledNode` tree.
+13. Layout/gfx consume the resulting `StylePhaseOutput` and downstream typed
+    layout/paint handoffs.
 
 The normative runtime style path is:
 
@@ -308,7 +309,7 @@ Style failures are observable:
 
 - CSS parse diagnostics stay in `StylesheetParse`.
 - Style-resolution limit and computed-style errors propagate out of
-  `PageState::build_style_tree()`.
+  `PageState::build_style_phase_output()`.
 - `browser::view::content(...)` renders a visible style-computation failure
   message rather than silently falling back to guessed styles.
 

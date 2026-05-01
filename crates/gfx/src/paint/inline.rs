@@ -8,7 +8,7 @@ use layout::{
 
 use super::context::PaintCtx;
 
-pub(super) fn paint_inline_content<'a>(layout: &LayoutBox<'a>, ctx: PaintCtx<'_>) {
+pub(super) fn paint_inline_content(layout: &LayoutBox<'_, '_>, ctx: PaintCtx<'_>) {
     // ✅ Replaced elements (<textarea>, <input>, <img>, <button>) do NOT paint their DOM children.
     // They are painted by InlineFragment::Replaced in paint_line_boxes.
     if layout.replaced.is_some() {
@@ -58,7 +58,7 @@ pub(super) fn paint_inline_content<'a>(layout: &LayoutBox<'a>, ctx: PaintCtx<'_>
     paint_line_boxes(&lines, ctx);
 }
 
-fn paint_line_boxes<'a>(lines: &[LineBox<'a>], ctx: PaintCtx<'_>) {
+fn paint_line_boxes(lines: &[LineBox<'_, '_>], ctx: PaintCtx<'_>) {
     let painter = ctx.painter;
     let origin = ctx.origin;
 

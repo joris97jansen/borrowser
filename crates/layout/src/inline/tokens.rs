@@ -46,15 +46,15 @@ impl InlineContext {
 // - Pending collapsible whitespace uses the first whitespace segment's style/ctx.
 // - `HardBreak` resets whitespace state (pending space cleared; next content is line-start).
 #[derive(Clone)]
-pub(super) enum InlineToken<'a> {
+pub(super) enum InlineToken<'style_tree, 'dom> {
     Word {
         text: String,
-        style: &'a ComputedStyle,
+        style: &'style_tree ComputedStyle,
         ctx: InlineContext,
         source_range: Option<(usize, usize)>,
     },
     Space {
-        style: &'a ComputedStyle,
+        style: &'style_tree ComputedStyle,
         ctx: InlineContext,
         source_range: Option<(usize, usize)>,
     }, // a single collapsible space
@@ -67,17 +67,17 @@ pub(super) enum InlineToken<'a> {
     Box {
         width: f32,
         height: f32,
-        style: &'a ComputedStyle,
+        style: &'style_tree ComputedStyle,
         ctx: InlineContext,
-        layout: Option<&'a LayoutBox<'a>>,
+        layout: Option<&'style_tree LayoutBox<'style_tree, 'dom>>,
     },
     Replaced {
         width: f32,
         height: f32,
-        style: &'a ComputedStyle,
+        style: &'style_tree ComputedStyle,
         ctx: InlineContext,
         kind: ReplacedKind,
-        layout: Option<&'a LayoutBox<'a>>,
+        layout: Option<&'style_tree LayoutBox<'style_tree, 'dom>>,
     },
 }
 
@@ -88,8 +88,8 @@ pub(super) enum TokenCollectMode {
 }
 
 #[derive(Clone)]
-struct PendingSpace<'a> {
-    style: &'a ComputedStyle,
+struct PendingSpace<'style_tree> {
+    style: &'style_tree ComputedStyle,
     ctx: InlineContext,
     source_range: Option<(usize, usize)>,
 }
@@ -99,11 +99,11 @@ fn is_html_ascii_whitespace(ch: char) -> bool {
     matches!(ch, ' ' | '\n' | '\t' | '\r' | '\u{0C}')
 }
 
-fn push_text_as_tokens<'a>(
+fn push_text_as_tokens<'style_tree, 'dom>(
     text: &str,
-    style: &'a ComputedStyle,
-    tokens: &mut Vec<InlineToken<'a>>,
-    pending_space: &mut Option<PendingSpace<'a>>,
+    style: &'style_tree ComputedStyle,
+    tokens: &mut Vec<InlineToken<'style_tree, 'dom>>,
+    pending_space: &mut Option<PendingSpace<'style_tree>>,
     has_emitted_content: &mut bool,
     ctx: &InlineContext,
 ) {
@@ -149,7 +149,10 @@ fn push_text_as_tokens<'a>(
     }
 }
 
-fn push_space<'a>(tokens: &mut Vec<InlineToken<'a>>, space: PendingSpace<'a>) {
+fn push_space<'style_tree, 'dom>(
+    tokens: &mut Vec<InlineToken<'style_tree, 'dom>>,
+    space: PendingSpace<'style_tree>,
+) {
     if matches!(tokens.last(), Some(InlineToken::Space { .. })) {
         return;
     }
@@ -160,9 +163,9 @@ fn push_space<'a>(tokens: &mut Vec<InlineToken<'a>>, space: PendingSpace<'a>) {
     });
 }
 
-fn flush_pending_space<'a>(
-    tokens: &mut Vec<InlineToken<'a>>,
-    pending_space: &mut Option<PendingSpace<'a>>,
+fn flush_pending_space<'style_tree, 'dom>(
+    tokens: &mut Vec<InlineToken<'style_tree, 'dom>>,
+    pending_space: &mut Option<PendingSpace<'style_tree>>,
     has_emitted_content: bool,
 ) {
     if let Some(space) = pending_space.take() {
@@ -174,28 +177,28 @@ fn flush_pending_space<'a>(
     }
 }
 
-fn reset_pending_space<'a>(pending_space: &mut Option<PendingSpace<'a>>) {
+fn reset_pending_space<'style_tree>(pending_space: &mut Option<PendingSpace<'style_tree>>) {
     *pending_space = None;
 }
 
-pub(super) fn collect_inline_tokens_for_block_layout<'a>(
-    block: &'a LayoutBox<'a>,
-) -> Vec<InlineToken<'a>> {
+pub(super) fn collect_inline_tokens_for_block_layout<'style_tree, 'dom>(
+    block: &'style_tree LayoutBox<'style_tree, 'dom>,
+) -> Vec<InlineToken<'style_tree, 'dom>> {
     collect_inline_tokens_for_block_layout_impl(block, TokenCollectMode::Height)
 }
 
-pub(super) fn collect_inline_tokens_for_block_layout_for_paint<'a>(
-    block: &'a LayoutBox<'a>,
-) -> Vec<InlineToken<'a>> {
+pub(super) fn collect_inline_tokens_for_block_layout_for_paint<'style_tree, 'dom>(
+    block: &'style_tree LayoutBox<'style_tree, 'dom>,
+) -> Vec<InlineToken<'style_tree, 'dom>> {
     collect_inline_tokens_for_block_layout_impl(block, TokenCollectMode::Paint)
 }
 
-fn collect_inline_tokens_for_block_layout_impl<'a>(
-    block: &'a LayoutBox<'a>,
+fn collect_inline_tokens_for_block_layout_impl<'style_tree, 'dom>(
+    block: &'style_tree LayoutBox<'style_tree, 'dom>,
     mode: TokenCollectMode,
-) -> Vec<InlineToken<'a>> {
-    let mut tokens: Vec<InlineToken<'a>> = Vec::new();
-    let mut pending_space: Option<PendingSpace<'a>> = None;
+) -> Vec<InlineToken<'style_tree, 'dom>> {
+    let mut tokens: Vec<InlineToken<'style_tree, 'dom>> = Vec::new();
+    let mut pending_space: Option<PendingSpace<'style_tree>> = None;
     let mut has_emitted_content = false;
 
     let ctx = InlineContext::default();
@@ -255,11 +258,11 @@ fn collect_inline_tokens_for_block_layout_impl<'a>(
     tokens
 }
 
-fn collect_inline_tokens_from_layout_box<'a>(
-    layout: &'a LayoutBox<'a>,
+fn collect_inline_tokens_from_layout_box<'style_tree, 'dom>(
+    layout: &'style_tree LayoutBox<'style_tree, 'dom>,
     mode: TokenCollectMode,
-    tokens: &mut Vec<InlineToken<'a>>,
-    pending_space: &mut Option<PendingSpace<'a>>,
+    tokens: &mut Vec<InlineToken<'style_tree, 'dom>>,
+    pending_space: &mut Option<PendingSpace<'style_tree>>,
     has_emitted_content: &mut bool,
     ctx: InlineContext,
 ) {

@@ -10,7 +10,7 @@ pub(super) fn handle_focused_keyboard_input<
     F: super::FormControlHandler<S>,
 >(
     ui: &mut Ui,
-    layout_root: &LayoutBox<'_>,
+    layout_root: &LayoutBox<'_, '_>,
     measurer: &EguiTextMeasurer,
     input_values: &mut S,
     form_controls: &F,

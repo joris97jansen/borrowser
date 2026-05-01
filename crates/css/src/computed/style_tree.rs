@@ -13,6 +13,29 @@ use super::{
     style::ComputedStyle,
 };
 
+/// Structured style-phase output handed to downstream rendering phases.
+///
+/// The runtime retains owned resolved/computed style artifacts separately;
+/// this output is the borrow-backed styled-tree view rebuilt from those
+/// retained artifacts for one render pipeline execution.
+pub struct StylePhaseOutput<'a> {
+    root: StyledNode<'a>,
+}
+
+impl<'a> StylePhaseOutput<'a> {
+    pub fn new(root: StyledNode<'a>) -> Self {
+        Self { root }
+    }
+
+    pub fn root(&self) -> &StyledNode<'a> {
+        &self.root
+    }
+
+    pub fn into_root(self) -> StyledNode<'a> {
+        self.root
+    }
+}
+
 /// A node in the style tree: pairs a DOM node with its computed style
 /// and the styled children.
 ///

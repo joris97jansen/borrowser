@@ -5,11 +5,11 @@ use layout::{HitKind, LayoutBox, ReplacedKind};
 
 use super::context::PaintCtx;
 
-pub(super) fn paint_replaced_fragment<'a>(
+pub(super) fn paint_replaced_fragment(
     rect: Rect,
     style: &ComputedStyle,
     kind: ReplacedKind,
-    layout: Option<&LayoutBox<'a>>,
+    layout: Option<&LayoutBox<'_, '_>>,
     ctx: PaintCtx<'_>,
 ) {
     let painter = ctx.painter;
@@ -19,7 +19,7 @@ pub(super) fn paint_replaced_fragment<'a>(
             let font_id = font_id_from_style(style);
             let text_color = text_color_from_style(style);
 
-            let id = layout.map(|lb| lb.node_id());
+            let id = layout.map(layout::LayoutBox::node_id);
             let is_pressed = id.is_some_and(|id| {
                 ctx.active
                     .is_some_and(|a| a.id == id && matches!(a.kind, HitKind::Button))
@@ -71,7 +71,7 @@ pub(super) fn paint_replaced_fragment<'a>(
         ReplacedKind::InputCheckbox | ReplacedKind::InputRadio => {
             let text_color = text_color_from_style(style);
 
-            let id = layout.map(|lb| lb.node_id());
+            let id = layout.map(layout::LayoutBox::node_id);
             let is_checked = id.is_some_and(|id| ctx.input_values.is_checked(id));
             let is_focused = id.is_some_and(|id| ctx.focused == Some(id));
 

@@ -8,12 +8,12 @@ use layout::{
     hit_test::{HitResult, hit_test},
 };
 
-pub(super) struct PointerCtx<'a, 'layout> {
+pub(super) struct PointerCtx<'a, 'layout, 'dom> {
     pub(super) ui: &'a mut Ui,
     pub(super) resp: &'a Response,
     pub(super) content_rect: Rect,
     pub(super) origin: Pos2,
-    pub(super) layout_root: &'a LayoutBox<'layout>,
+    pub(super) layout_root: &'a LayoutBox<'layout, 'dom>,
     pub(super) measurer: &'a EguiTextMeasurer,
 }
 
@@ -42,7 +42,7 @@ pub(super) fn hit_at_pointer(
     ui: &Ui,
     content_rect: Rect,
     origin: Pos2,
-    layout_root: &LayoutBox<'_>,
+    layout_root: &LayoutBox<'_, '_>,
     measurer: &EguiTextMeasurer,
     allow_latest_pos: bool,
 ) -> Option<HitResult> {
@@ -56,7 +56,7 @@ pub(super) fn hit_at_pointer(
 }
 
 pub(super) fn handle_pointer_press<S: InputStore + ?Sized>(
-    ctx: PointerCtx<'_, '_>,
+    ctx: PointerCtx<'_, '_, '_>,
     input_values: &mut S,
     interaction: &mut InteractionState,
 ) -> bool {
@@ -107,7 +107,7 @@ pub(super) fn handle_pointer_press<S: InputStore + ?Sized>(
 }
 
 pub(super) fn handle_pointer_drag<S: InputStore + ?Sized>(
-    ctx: PointerCtx<'_, '_>,
+    ctx: PointerCtx<'_, '_, '_>,
     layout_changed: bool,
     fragment_rects: &FragmentRects,
     input_values: &mut S,
@@ -201,7 +201,7 @@ pub(super) fn handle_pointer_drag<S: InputStore + ?Sized>(
 }
 
 pub(super) fn handle_pointer_release<S: InputStore + ?Sized, F: super::FormControlHandler<S>>(
-    ctx: PointerCtx<'_, '_>,
+    ctx: PointerCtx<'_, '_, '_>,
     base_url: Option<&str>,
     input_values: &mut S,
     form_controls: &F,
