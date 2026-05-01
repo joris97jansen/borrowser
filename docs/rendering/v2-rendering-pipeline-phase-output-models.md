@@ -18,6 +18,7 @@ Related code:
 
 Related documents:
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
+- `docs/rendering/v3-retained-state-versus-rebuilt-state-ownership.md`
 - `docs/architecture/ARCHITECTURE.md`
 
 ## Purpose
@@ -206,7 +207,9 @@ Rebuilt on demand or per frame:
 - immediate paint output
 
 The wrappers introduced in V2 are not retention points. They are explicit
-handoff contracts.
+handoff contracts. V3 now makes that storage boundary explicit through the
+page-owned `RetainedRenderState` contract and
+`render_artifact_ownership_contracts()`.
 
 ## Determinism And Invariants
 

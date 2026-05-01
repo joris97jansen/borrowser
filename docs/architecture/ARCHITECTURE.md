@@ -302,6 +302,7 @@ The normative rendering ownership and phase-boundary contract lives in:
 
 * `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 * `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
+* `docs/rendering/v3-retained-state-versus-rebuilt-state-ownership.md`
 
 ---
 
@@ -330,12 +331,12 @@ children placed inside padding box
 Each `LayoutBox` contains:
 
 ```rust
-struct LayoutBox<'a> {
+struct LayoutBox<'style_tree, 'dom> {
     kind: BoxKind,
-    style: &'a ComputedStyle,
-    node: &'a StyledNode<'a>,
+    style: &'style_tree ComputedStyle,
+    node: &'style_tree StyledNode<'dom>,
     rect: Rectangle,
-    children: Vec<LayoutBox<'a>>,
+    children: Vec<LayoutBox<'style_tree, 'dom>>,
 }
 ```
 
@@ -463,17 +464,21 @@ Each tab maintains:
 ```rust
 struct PageState {
     dom: Option<Node>,
+    head: HeadMetadata,
+    visible_text_cache: String,
+    rendering: RetainedRenderState,
+
+    // later derived caches:
+    layout_cache: Option<PageLayoutCache>,
+}
+
+struct RetainedRenderState {
     document_styles: DocumentStyleSet, // document/source-ordered stylesheet slots
     generations: PageStyleGenerations,
     style_cache: Option<PageStyleCache>, // owned ResolvedDocumentStyle + ComputedDocumentStyle
     style_dirty: bool,
     layout_dirty: bool,
     pending_style_invalidation: Option<StyleInvalidationScope>,
-    head: HeadMetadata,
-    visible_text_cache: String,
-
-    // later derived caches:
-    layout_cache: Option<PageLayoutCache>,
 }
 ```
 
@@ -483,11 +488,13 @@ rather than as the core style-resolution result.
 
 The remaining `Node::style` declaration vector is likewise a migration-only
 cascade bridge and is not the intended long-term style-resolution contract.
-The page-state shape is the storage boundary for document stylesheet order,
-style generations, persistent owned style artifacts, and change-scoped
-recomputation. `DocumentStyleSet` exposes loaded stylesheet artifacts in
-document/source order; pending, failed, and aborted slots preserve cascade
-position without contributing declarations.
+`PageState` is still the document lifecycle owner, but retained rendering state
+is now grouped under an explicit `RetainedRenderState` sub-owner. That struct
+is the storage boundary for document stylesheet order, style generations,
+persistent owned style artifacts, and change-scoped recomputation.
+`DocumentStyleSet` exposes loaded stylesheet artifacts in document/source
+order; pending, failed, and aborted slots preserve cascade position without
+contributing declarations.
 
 Derived style/layout caches must respect Rust ownership boundaries. If
 `StyledNode` or `LayoutBox` remain borrow-backed views over the DOM, they must

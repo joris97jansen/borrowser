@@ -20,6 +20,7 @@ Related code:
 Related documents:
 - `docs/architecture/ARCHITECTURE.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
+- `docs/rendering/v3-retained-state-versus-rebuilt-state-ownership.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
 - `docs/css/s9-property-system-computed-style-runtime-contract.md`
 - `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`
@@ -278,10 +279,9 @@ Retained state is owned by `PageState` and survives across frames:
 - head metadata
 - visible text cache
 - form-control index/input state ownership boundary
-- `DocumentStyleSet`
-- `PageStyleGenerations`
-- `PageStyleCache { resolved, computed }`
-- dirty/invalidation metadata
+- explicit `RetainedRenderState` sub-owner containing:
+  `DocumentStyleSet`, `PageStyleGenerations`, `PageStyleCache { resolved, computed }`,
+  and dirty/invalidation metadata
 
 ### Rebuilt Derived State
 
