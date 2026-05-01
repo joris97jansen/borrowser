@@ -1,5 +1,6 @@
 use crate::document_style::{DocumentStyleSet, StylesheetFetch};
 use crate::form_controls::{FormControlIndex, seed_input_state_from_dom};
+use crate::rendering::{RenderArtifactState, RenderPipelineDebugSnapshot, StyleInvalidationState};
 use core_types::StylesheetSlotId;
 use css::{
     ComputedDocumentStyle, ComputedStyleResolutionError, ComputedStyleReuseStats,
@@ -10,7 +11,7 @@ use css::{
 };
 use gfx::input::InputValueStore;
 use html::{
-    DomPatch, Node, PatchKey,
+    DomPatch, Node,
     dom_utils::outline_from_dom,
     head::{HeadMetadata, extract_head_metadata},
     internal::Id,
@@ -58,31 +59,43 @@ impl RestyleTrigger {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct RestyleHint {
     trigger: RestyleTrigger,
-    attribute_dirty_keys: Vec<PatchKey>,
+    attribute_dirty_nodes: Vec<Id>,
 }
 
 impl RestyleHint {
     pub(crate) fn document_replaced() -> Self {
         Self {
             trigger: RestyleTrigger::DocumentReplaced,
-            attribute_dirty_keys: Vec::new(),
+            attribute_dirty_nodes: Vec::new(),
         }
     }
 
-    pub(crate) fn from_patches(patches: &[DomPatch]) -> Option<Self> {
+    pub(crate) fn from_dom_patch_batch(
+        patches: &[DomPatch],
+        attribute_dirty_nodes: Vec<Id>,
+    ) -> Option<Self> {
         let trigger = RestyleTrigger::from_patches(patches)?;
-        let attribute_dirty_keys = patches
-            .iter()
-            .filter_map(|patch| match patch {
-                DomPatch::SetAttributes { key, .. } => Some(*key),
-                _ => None,
-            })
-            .collect();
 
         Some(Self {
             trigger,
-            attribute_dirty_keys,
+            attribute_dirty_nodes,
         })
+    }
+
+    #[cfg(test)]
+    pub(crate) fn attributes_changed(attribute_dirty_nodes: Vec<Id>) -> Self {
+        Self {
+            trigger: RestyleTrigger::AttributesChanged,
+            attribute_dirty_nodes,
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn text_mutated() -> Self {
+        Self {
+            trigger: RestyleTrigger::TextMutated,
+            attribute_dirty_nodes: Vec::new(),
+        }
     }
 }
 
@@ -242,23 +255,16 @@ impl PageState {
                 // Text node content affects layout and paint, but not selector
                 // matching or computed values in the currently supported CSS
                 // model. <style> text changes are handled by stylesheet
-                // reconciliation, which separately invalidates style.
+                // reconciliation, which separately invalidates style. Future
+                // text-sensitive selector or generated-content support must
+                // widen this contract if text content becomes style-relevant.
                 self.layout_dirty = true;
             }
             RestyleTrigger::DocumentReplaced | RestyleTrigger::TreeMutated => {
                 self.mark_style_inputs_changed(StyleInvalidationScope::Full)
             }
             RestyleTrigger::AttributesChanged => {
-                let node_ids = hint
-                    .attribute_dirty_keys
-                    .into_iter()
-                    // DomStore materializes patch-created nodes with
-                    // Node::id() == Id(PatchKey.0). Patch-derived restyle
-                    // hints rely on that identity contract; if it changes,
-                    // dirty keys must be resolved through DomStore before
-                    // reaching PageState.
-                    .map(|key| Id(key.0))
-                    .collect::<Vec<_>>();
+                let node_ids = hint.attribute_dirty_nodes;
                 let scope = if node_ids.is_empty() {
                     StyleInvalidationScope::Full
                 } else {
@@ -358,6 +364,12 @@ impl PageState {
         self.document_styles.stylesheets()
     }
 
+    /// Runtime style-phase boundary for page rendering.
+    ///
+    /// `PageState` owns retained resolved/computed style artifacts and the
+    /// invalidation logic that decides whether they can be reused. This method
+    /// either reuses or recomputes those retained artifacts, then rebuilds the
+    /// borrow-backed `StyledNode` view consumed by downstream layout and paint.
     pub(crate) fn build_style_tree(
         &mut self,
     ) -> Result<Option<StyledNode<'_>>, ComputedStyleResolutionError> {
@@ -403,6 +415,55 @@ impl PageState {
             .as_ref()
             .expect("style cache must exist after successful style computation");
         build_style_tree_from_computed_styles(dom, &cache.computed).map(Some)
+    }
+
+    /// Reports the retained/rebuilt policy for rendering artifacts owned or
+    /// coordinated by the current page state.
+    ///
+    /// For frame-local layout and immediate paint output, this snapshot records
+    /// the rebuild policy used when the viewport renders a frame. It does not
+    /// imply that `PageState` currently retains a live layout tree or paint
+    /// artifact between frames.
+    pub fn render_pipeline_debug_snapshot(&self) -> RenderPipelineDebugSnapshot {
+        let style_cache_state = match (&self.style_cache, self.style_dirty) {
+            (None, _) => RenderArtifactState::Absent,
+            (Some(_), true) => RenderArtifactState::RetainedStale,
+            (Some(_), false) => RenderArtifactState::RetainedFresh,
+        };
+
+        let (styled_tree, layout_tree, paint_output) = if self.dom.is_some() {
+            (
+                RenderArtifactState::BorrowBackedRebuiltOnDemand,
+                RenderArtifactState::FrameLocalRebuiltPerFrame,
+                RenderArtifactState::ImmediateFrameOutput,
+            )
+        } else {
+            (
+                RenderArtifactState::Absent,
+                RenderArtifactState::Absent,
+                RenderArtifactState::Absent,
+            )
+        };
+
+        let style_invalidation = match self.pending_style_invalidation {
+            Some(StyleInvalidationScope::Full) => StyleInvalidationState::Full,
+            Some(StyleInvalidationScope::AttributeSuffix { .. }) => {
+                StyleInvalidationState::AttributeSuffix
+            }
+            None => StyleInvalidationState::None,
+        };
+
+        RenderPipelineDebugSnapshot {
+            has_dom: self.dom.is_some(),
+            resolved_styles: style_cache_state,
+            computed_styles: style_cache_state,
+            styled_tree,
+            layout_tree,
+            paint_output,
+            style_dirty: self.style_dirty,
+            layout_dirty: self.layout_dirty,
+            style_invalidation,
+        }
     }
 
     fn recompute_styles(
@@ -480,6 +541,11 @@ impl PageState {
     #[cfg(test)]
     pub(crate) fn clear_layout_dirty_for_tests(&mut self) {
         self.layout_dirty = false;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn mark_dom_changed_for_tests(&mut self, hint: RestyleHint) {
+        self.mark_dom_changed(hint);
     }
 
     #[cfg(test)]

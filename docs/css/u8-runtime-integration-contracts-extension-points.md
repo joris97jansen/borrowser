@@ -187,13 +187,15 @@ Current trigger behavior:
 | `DocumentReplaced` | navigation snapshot, `Clear`, `CreateDocument` | full style-input invalidation | dirty |
 | `TreeMutated` | create, append, insert, remove, reparent | full style-input invalidation | dirty |
 | `AttributesChanged` | `SetAttributes` | partial suffix invalidation when cache proof exists; full fallback | dirty |
-| `TextMutated` | `SetText`, `AppendText` | no style-input invalidation by itself | dirty |
+| `TextMutated` | `SetText`, `AppendText` | no style-input invalidation by itself in the current supported selector/property model | dirty |
 | stylesheet reconciliation | `<style>` text change, `<link>` add/remove/order change | stylesheet generation invalidation, full style invalidation | dirty |
 | external stylesheet install/fail/abort/state change | `CssDecodedBlock`, load completion, error, abort | stylesheet generation invalidation, full style invalidation when the active stylesheet set/state changes | dirty |
 
 Text-only DOM changes do not invalidate computed style in the current selector
-and property model. If the changed text belongs to a `<style>` element,
-stylesheet reconciliation independently invalidates the stylesheet generation.
+and property model. This contract must widen if future selector or generated
+content support makes text content style-relevant, for example through `:empty`
+or `:has(...)`. If the changed text belongs to a `<style>` element, stylesheet
+reconciliation independently invalidates the stylesheet generation.
 
 Empty DOM patch batches are no-ops for DOM/style generations and dirty state.
 

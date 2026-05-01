@@ -2,6 +2,7 @@ use super::Tab;
 use crate::page::RestyleHint;
 use bus::CoreEvent;
 use core_types::ResourceKind;
+use html::{DomPatch, PatchKey};
 
 impl Tab {
     pub fn on_core_event(&mut self, evt: CoreEvent) {
@@ -67,7 +68,6 @@ impl Tab {
                 to,
                 patches,
             } if self.is_current(tab_id, request_id) => {
-                let restyle_hint = RestyleHint::from_patches(&patches);
                 if self.dom_handle != Some(handle) {
                     self.dom_store.clear();
                     let _ = self.dom_store.create(handle);
@@ -75,6 +75,19 @@ impl Tab {
                 }
                 match self.dom_store.apply(handle, from, to, &patches) {
                     Ok(()) => {
+                        let dirty_attribute_keys = patch_attribute_keys(&patches);
+                        let dirty_attribute_nodes = match self
+                            .dom_store
+                            .resolve_live_node_ids(handle, &dirty_attribute_keys)
+                        {
+                            Ok(node_ids) => node_ids,
+                            Err(err) => {
+                                eprintln!("dom patch dirty-node resolution error: {err:?}");
+                                Vec::new()
+                            }
+                        };
+                        let restyle_hint =
+                            RestyleHint::from_dom_patch_batch(&patches, dirty_attribute_nodes);
                         let Some(restyle_hint) = restyle_hint else {
                             return;
                         };
@@ -190,4 +203,14 @@ impl Tab {
             _ => {}
         }
     }
+}
+
+fn patch_attribute_keys(patches: &[DomPatch]) -> Vec<PatchKey> {
+    patches
+        .iter()
+        .filter_map(|patch| match patch {
+            DomPatch::SetAttributes { key, .. } => Some(*key),
+            _ => None,
+        })
+        .collect()
 }

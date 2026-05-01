@@ -1,7 +1,8 @@
 use super::arena::{DomArena, NodeKind};
 use super::error::DomPatchError;
 use core_types::DomVersion;
-use html::{DomPatch, Node, PatchKey};
+use html::{DomPatch, Node, PatchKey, internal::Id};
+use std::collections::HashSet;
 use std::sync::Arc;
 
 pub(crate) struct DomDoc {
@@ -205,6 +206,21 @@ impl DomDoc {
         };
         // TODO(v5.1): materialization is O(n); render pipeline should consume the arena directly.
         self.arena.materialize(root)
+    }
+
+    pub(crate) fn resolve_live_node_ids(
+        &self,
+        keys: &[PatchKey],
+    ) -> Result<Vec<Id>, DomPatchError> {
+        let mut seen = HashSet::new();
+        let mut node_ids = Vec::with_capacity(keys.len());
+        for key in keys {
+            let node_id = self.arena.materialized_node_id_for_key(*key)?;
+            if seen.insert(node_id) {
+                node_ids.push(node_id);
+            }
+        }
+        Ok(node_ids)
     }
 
     #[inline]
