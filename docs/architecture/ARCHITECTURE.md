@@ -275,10 +275,12 @@ subset. It stores typed, normalized values; exposes private-field accessors and
 deterministic property iteration; and is assembled through
 `ComputedStyleBuilder` rather than ad hoc field mutation.
 
-The shipped browser view path calls `PageState::build_style_tree()`. Page state
-reuses or recomputes owned `ResolvedDocumentStyle` and `ComputedDocumentStyle`
-artifacts, then calls `build_style_tree_from_computed_styles(...)` to rebuild a
-borrow-backed `StyledNode` view without writing to `Node::Element::style`.
+The shipped browser view path calls `PageState::build_style_phase_output()`.
+Page state reuses or recomputes owned `ResolvedDocumentStyle` and
+`ComputedDocumentStyle` artifacts, then calls
+`build_style_tree_from_computed_styles(...)` to rebuild a borrow-backed
+`StyledNode` view wrapped in `StylePhaseOutput` without writing to
+`Node::Element::style`.
 
 Downstream systems consume `ComputedStyle` or `StyledNode`. They do not parse
 CSS text, inspect cascade winners, duplicate property metadata, or recover from
@@ -299,6 +301,7 @@ This tree is what the layout engine consumes.
 The normative rendering ownership and phase-boundary contract lives in:
 
 * `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
+* `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 
 ---
 
@@ -423,10 +426,10 @@ Each frame follows this explicit baseline contract:
 
 ```
 1. Receive CoreEvents from runtimes and update page-owned DOM/style invalidation state.
-2. `PageState::build_style_tree()` reuses or recomputes retained resolved/computed style artifacts.
-3. `build_style_tree_from_computed_styles(...)` rebuilds a borrow-backed `StyledNode` view.
-4. `gfx::viewport::page_viewport(...)` builds a frame-local layout tree for the current viewport.
-5. `gfx::paint::paint_page(...)` emits immediate paint commands for the current frame.
+2. `PageState::build_style_phase_output()` reuses or recomputes retained resolved/computed style artifacts.
+3. `build_style_tree_from_computed_styles(...)` rebuilds a borrow-backed `StyledNode` view wrapped in `css::StylePhaseOutput`.
+4. `layout::layout_document(LayoutPhaseInput::from_style_output(...))` builds a frame-local `LayoutPhaseOutput` for the current viewport.
+5. `gfx::paint::paint_page(PaintPhaseInput::new(...), PaintArgs { ... })` emits immediate paint commands for the current frame.
 ```
 
 Milestone U introduced page-owned DOM/style/stylesheet generations and a

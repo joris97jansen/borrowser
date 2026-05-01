@@ -48,32 +48,32 @@ pub struct InlineAction {
 /// The logical content carried by a line fragment.
 /// - `Text` is inline text
 /// - `Box` is inline-level replaced/box content (e.g., inline-block)
-pub enum InlineFragment<'a> {
+pub enum InlineFragment<'style_tree, 'dom> {
     Text {
         text: String,
-        style: &'a ComputedStyle,
+        style: &'style_tree ComputedStyle,
         action: Option<InlineAction>,
     },
     Box {
         /// Style of the inline box (for color, etc.).
-        style: &'a ComputedStyle,
+        style: &'style_tree ComputedStyle,
         action: Option<InlineAction>,
         /// Layout box for this inline-level box, if we have one.
         /// - `Some(..)` in the painting path
         /// - `None` in the height computation path
-        layout: Option<&'a LayoutBox<'a>>,
+        layout: Option<&'style_tree LayoutBox<'style_tree, 'dom>>,
     },
     Replaced {
-        style: &'a ComputedStyle,
+        style: &'style_tree ComputedStyle,
         kind: ReplacedKind,
         action: Option<InlineAction>,
-        layout: Option<&'a LayoutBox<'a>>, // usually None; future-proof (e.g. <button>)
+        layout: Option<&'style_tree LayoutBox<'style_tree, 'dom>>, // usually None; future-proof (e.g. <button>)
     },
 }
 
 // One fragment of text within a line (later this can be per <span>, <a>, etc.)
-pub struct LineFragment<'a> {
-    pub kind: InlineFragment<'a>,
+pub struct LineFragment<'style_tree, 'dom> {
+    pub kind: InlineFragment<'style_tree, 'dom>,
     /// Rect used for inline layout advance (typically margin-box for inline boxes).
     pub advance_rect: AdvanceRect,
     /// Rect used for painting/hit-testing (typically border-box for inline boxes).
@@ -98,8 +98,8 @@ pub struct LineFragment<'a> {
 }
 
 // One line box: a horizontal slice of inline content.
-pub struct LineBox<'a> {
-    pub fragments: Vec<LineFragment<'a>>,
+pub struct LineBox<'style_tree, 'dom> {
+    pub fragments: Vec<LineFragment<'style_tree, 'dom>>,
     pub rect: Rectangle,
     /// Line baseline in layout coordinates (CSS px).
     pub baseline: f32,

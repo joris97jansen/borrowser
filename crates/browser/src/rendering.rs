@@ -65,17 +65,17 @@ pub struct RenderingPhaseContract {
     pub rebuild_triggers: &'static [RenderRebuildTrigger],
 }
 
-const VIEWPORT_CONSUMES: &[RenderArtifact] = &[
+const FRAME_ORCHESTRATION_CONSUMES: &[RenderArtifact] = &[
     RenderArtifact::StyledTree,
     RenderArtifact::ViewportMetrics,
     RenderArtifact::ResourceState,
     RenderArtifact::InputState,
 ];
-const VIEWPORT_PRODUCES: &[RenderArtifact] =
+const FRAME_ORCHESTRATION_PRODUCES: &[RenderArtifact] =
     &[RenderArtifact::LayoutTree, RenderArtifact::PaintCommands];
-const VIEWPORT_REBUILDS: &[RenderArtifact] =
+const FRAME_ORCHESTRATION_REBUILDS: &[RenderArtifact] =
     &[RenderArtifact::LayoutTree, RenderArtifact::PaintCommands];
-const VIEWPORT_TRIGGERS: &[RenderRebuildTrigger] = &[
+const FRAME_ORCHESTRATION_TRIGGERS: &[RenderRebuildTrigger] = &[
     RenderRebuildTrigger::StyleOutputsChanged,
     RenderRebuildTrigger::DomTextChanged,
     RenderRebuildTrigger::ViewportChanged,
@@ -164,11 +164,11 @@ static RENDER_PHASE_CONTRACTS: [RenderingPhaseContract; 4] = [
         phase: RenderingPhase::FrameOrchestration,
         coordinator: RenderingSubsystem::BrowserView,
         engine_owner: RenderingSubsystem::GfxViewport,
-        consumes: VIEWPORT_CONSUMES,
-        produces: VIEWPORT_PRODUCES,
+        consumes: FRAME_ORCHESTRATION_CONSUMES,
+        produces: FRAME_ORCHESTRATION_PRODUCES,
         retained_outputs: &[],
-        rebuilt_outputs: VIEWPORT_REBUILDS,
-        rebuild_triggers: VIEWPORT_TRIGGERS,
+        rebuilt_outputs: FRAME_ORCHESTRATION_REBUILDS,
+        rebuild_triggers: FRAME_ORCHESTRATION_TRIGGERS,
     },
 ];
 
@@ -219,7 +219,9 @@ mod tests {
         RenderingPhase, RenderingSubsystem, StyleInvalidationState, render_phase_contracts,
     };
     use crate::page::{PageState, RestyleHint};
+    use gfx::paint::PaintPhaseInput;
     use html::{HtmlParseOptions, Node, parse_document};
+    use layout::{LayoutBox, LayoutPhaseInput, TextMeasurer, layout_document};
     use std::sync::Arc;
 
     #[test]
@@ -331,12 +333,12 @@ mod tests {
             "<!doctype html><html><head><style>p { color: red; }</style></head><body><p>Hello</p></body></html>",
         );
 
-        let styled = page
-            .build_style_tree()
-            .expect("style tree should build")
-            .expect("document should be styled");
-        assert_eq!(styled_element_color(&styled, "p"), (255, 0, 0, 255));
-        drop(styled);
+        let style_output = style_output_for_test(&mut page);
+        assert_eq!(
+            styled_element_color(style_output.root(), "p"),
+            (255, 0, 0, 255)
+        );
+        drop(style_output);
 
         let snapshot = page.render_pipeline_debug_snapshot();
         assert_eq!(
@@ -356,15 +358,66 @@ mod tests {
     }
 
     #[test]
+    fn style_to_layout_handoff_uses_explicit_phase_output_models() {
+        let mut page = page_with_dom(
+            "<!doctype html><html><head><style>p { color: red; }</style></head><body><p>Hello</p></body></html>",
+        );
+        let style_output = style_output_for_test(&mut page);
+        let paragraph = find_styled_element(style_output.root(), "p").expect("paragraph");
+        let measurer = FixedTextMeasurer;
+
+        let layout_input =
+            LayoutPhaseInput::from_style_output(&style_output, 320.0, &measurer, None);
+        assert!(std::ptr::eq(layout_input.style_root(), style_output.root()));
+        assert_eq!(layout_input.available_width(), 320.0);
+
+        let layout_output = layout_document(layout_input);
+        let layout_root = layout_output.root();
+        let paragraph_box =
+            find_layout_box_by_id(layout_root, paragraph.node_id).expect("paragraph layout box");
+        assert_eq!(layout_output.document_rect(), layout_root.rect);
+        assert_eq!(layout_output.viewport_width(), 320.0);
+        assert_eq!(layout_root.node_id(), style_output.root().node_id);
+        assert_eq!(paragraph_box.node_id(), paragraph.node_id);
+    }
+
+    #[test]
+    fn layout_to_paint_handoff_wraps_layout_phase_output_without_reinterpretation() {
+        let mut page = page_with_dom(
+            "<!doctype html><html><head><style>p { color: red; }</style></head><body><p>Hello</p></body></html>",
+        );
+        let style_output = style_output_for_test(&mut page);
+        let measurer = FixedTextMeasurer;
+        let layout_output = layout_document(LayoutPhaseInput::from_style_output(
+            &style_output,
+            480.0,
+            &measurer,
+            None,
+        ));
+
+        let paint_input = PaintPhaseInput::new(&layout_output);
+        assert!(std::ptr::eq(paint_input.layout(), &layout_output));
+        assert!(std::ptr::eq(
+            paint_input.layout_root(),
+            layout_output.root()
+        ));
+        assert_eq!(
+            paint_input.layout().document_rect(),
+            layout_output.document_rect()
+        );
+        assert_eq!(
+            paint_input.layout_root().node_id(),
+            layout_output.root().node_id()
+        );
+    }
+
+    #[test]
     fn attribute_mutation_keeps_style_cache_but_marks_it_stale_until_restored() {
         let mut page = page_with_dom(
             "<!doctype html><html><head><style>.hot { color: red; } p { color: black; }</style></head><body><p>Hello</p></body></html>",
         );
-        let initial = page
-            .build_style_tree()
-            .expect("style tree should build")
-            .expect("document should be styled");
-        assert_eq!(styled_element_color(&initial, "p"), (0, 0, 0, 255));
+        let initial = style_output_for_test(&mut page);
+        assert_eq!(styled_element_color(initial.root(), "p"), (0, 0, 0, 255));
         drop(initial);
 
         let p_id = set_first_element_attr(
@@ -388,11 +441,8 @@ mod tests {
         assert!(stale.style_dirty);
         assert!(stale.layout_dirty);
 
-        let restyled = page
-            .build_style_tree()
-            .expect("style tree should build")
-            .expect("document should be styled");
-        assert_eq!(styled_element_color(&restyled, "p"), (255, 0, 0, 255));
+        let restyled = style_output_for_test(&mut page);
+        assert_eq!(styled_element_color(restyled.root(), "p"), (255, 0, 0, 255));
         drop(restyled);
 
         let refreshed = page.render_pipeline_debug_snapshot();
@@ -413,11 +463,8 @@ mod tests {
         let mut page = page_with_dom(
             "<!doctype html><html><head><style>p { color: red; }</style></head><body><p>Hello</p></body></html>",
         );
-        let initial = page
-            .build_style_tree()
-            .expect("style tree should build")
-            .expect("document should be styled");
-        assert_eq!(styled_element_color(&initial, "p"), (255, 0, 0, 255));
+        let initial = style_output_for_test(&mut page);
+        assert_eq!(styled_element_color(initial.root(), "p"), (255, 0, 0, 255));
         drop(initial);
         page.clear_layout_dirty_for_tests();
 
@@ -448,6 +495,12 @@ mod tests {
         page
     }
 
+    fn style_output_for_test(page: &mut PageState) -> css::StylePhaseOutput<'_> {
+        page.build_style_phase_output()
+            .expect("style phase output should build")
+            .expect("document should be styled")
+    }
+
     fn styled_element_color(node: &css::StyledNode<'_>, want_name: &str) -> (u8, u8, u8, u8) {
         find_styled_element(node, want_name)
             .map(|node| node.style.color())
@@ -467,6 +520,20 @@ mod tests {
         node.children
             .iter()
             .find_map(|child| find_styled_element(child, want_name))
+    }
+
+    fn find_layout_box_by_id<'layout, 'dom>(
+        layout: &'layout LayoutBox<'layout, 'dom>,
+        want: html::internal::Id,
+    ) -> Option<&'layout LayoutBox<'layout, 'dom>> {
+        if layout.node_id() == want {
+            return Some(layout);
+        }
+
+        layout
+            .children
+            .iter()
+            .find_map(|child| find_layout_box_by_id(child, want))
     }
 
     fn set_first_element_attr(
@@ -572,6 +639,18 @@ mod tests {
                 Some(*id)
             }
             Node::Text { .. } | Node::Comment { .. } => None,
+        }
+    }
+
+    struct FixedTextMeasurer;
+
+    impl TextMeasurer for FixedTextMeasurer {
+        fn measure(&self, text: &str, _style: &css::ComputedStyle) -> f32 {
+            text.chars().count() as f32 * 8.0
+        }
+
+        fn line_height(&self, _style: &css::ComputedStyle) -> f32 {
+            16.0
         }
     }
 }

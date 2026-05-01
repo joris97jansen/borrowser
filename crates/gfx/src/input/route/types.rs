@@ -15,12 +15,12 @@ pub trait FormControlHandler<S: InputStore + ?Sized> {
     fn on_radio_clicked(&self, store: &mut S, radio_id: InputId) -> bool;
 }
 
-pub(crate) struct FrameInputCtx<'a, 'layout, S: InputStore + ?Sized, F> {
+pub(crate) struct FrameInputCtx<'a, 'layout, 'dom, S: InputStore + ?Sized, F> {
     pub ui: &'a mut Ui,
     pub resp: egui::Response,
     pub content_rect: Rect,
     pub origin: Pos2,
-    pub layout_root: &'a LayoutBox<'layout>,
+    pub layout_root: &'a LayoutBox<'layout, 'dom>,
     pub measurer: &'a EguiTextMeasurer,
     pub layout_changed: bool,
     pub fragment_rects: &'a RefCell<HashMap<Id, Rectangle>>,

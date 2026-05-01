@@ -936,20 +936,20 @@ fn dom_patch_attribute_change_incrementally_restyles_following_sibling_suffix() 
     });
 
     {
-        let styled = tab
+        let style_output = tab
             .page
-            .build_style_tree()
-            .expect("style tree should build")
+            .build_style_phase_output()
+            .expect("style phase output should build")
             .expect("document should be styled");
         assert_eq!(
-            find_styled_node_id(&styled, Id(7))
+            find_styled_node_id(style_output.root(), Id(7))
                 .expect("first paragraph")
                 .style
                 .color(),
             (0, 0, 0, 255)
         );
         assert_eq!(
-            find_styled_node_id(&styled, Id(9))
+            find_styled_node_id(style_output.root(), Id(9))
                 .expect("second paragraph")
                 .style
                 .color(),
@@ -1012,13 +1012,13 @@ fn queued_attribute_mutations_merge_to_earliest_dirty_suffix() {
     });
 
     {
-        let styled = tab
+        let style_output = tab
             .page
-            .build_style_tree()
-            .expect("style tree should build")
+            .build_style_phase_output()
+            .expect("style phase output should build")
             .expect("document should be styled");
         assert_eq!(
-            find_styled_node_id(&styled, Id(7))
+            find_styled_node_id(style_output.root(), Id(7))
                 .expect("first paragraph")
                 .style
                 .color(),
@@ -1026,7 +1026,7 @@ fn queued_attribute_mutations_merge_to_earliest_dirty_suffix() {
             "first queued attribute mutation must not be lost"
         );
         assert_eq!(
-            find_styled_node_id(&styled, Id(9))
+            find_styled_node_id(style_output.root(), Id(9))
                 .expect("second paragraph")
                 .style
                 .color(),
@@ -1100,20 +1100,20 @@ fn clean_style_cache_reuses_computed_document_without_recompute() {
     });
 
     {
-        let styled = tab
+        let style_output = tab
             .page
-            .build_style_tree()
-            .expect("style tree should build")
+            .build_style_phase_output()
+            .expect("style phase output should build")
             .expect("document should be styled");
         assert_eq!(
-            find_styled_node_id(&styled, Id(7))
+            find_styled_node_id(style_output.root(), Id(7))
                 .expect("first paragraph")
                 .style
                 .color(),
             (255, 0, 0, 255)
         );
         assert_eq!(
-            find_styled_node_id(&styled, Id(9))
+            find_styled_node_id(style_output.root(), Id(9))
                 .expect("second paragraph")
                 .style
                 .color(),
@@ -1133,13 +1133,13 @@ fn clean_style_cache_reuses_computed_document_without_recompute() {
     let before = tab.page.style_generations();
 
     {
-        let styled = tab
+        let style_output = tab
             .page
-            .build_style_tree()
-            .expect("style tree should build")
+            .build_style_phase_output()
+            .expect("style phase output should build")
             .expect("document should be styled");
         assert_eq!(
-            find_styled_node_id(&styled, Id(7))
+            find_styled_node_id(style_output.root(), Id(7))
                 .expect("first paragraph")
                 .style
                 .color(),
@@ -1339,20 +1339,20 @@ fn current_element_color(tab: &mut Tab, name: &str) -> (u8, u8, u8, u8) {
 }
 
 fn current_element_color_optional(tab: &mut Tab, name: &str) -> Option<(u8, u8, u8, u8)> {
-    let styled = tab
+    let style_output = tab
         .page
-        .build_style_tree()
-        .expect("style tree should build")?;
-    find_styled_element(&styled, name).map(|node| node.style.color())
+        .build_style_phase_output()
+        .expect("style phase output should build")?;
+    find_styled_element(style_output.root(), name).map(|node| node.style.color())
 }
 
 fn current_element_color_by_id(tab: &mut Tab, id: Id) -> (u8, u8, u8, u8) {
-    let styled = tab
+    let style_output = tab
         .page
-        .build_style_tree()
-        .expect("style tree should build")
+        .build_style_phase_output()
+        .expect("style phase output should build")
         .expect("document should be styled");
-    find_styled_node_id(&styled, id)
+    find_styled_node_id(style_output.root(), id)
         .map(|node| node.style.color())
         .expect("styled node should exist")
 }

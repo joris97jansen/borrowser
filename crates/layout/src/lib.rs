@@ -7,7 +7,7 @@ pub mod hit_test;
 pub use hit_test::{HitKind, hit_test};
 pub mod replaced;
 
-use css::{ComputedStyle, Display, StyledNode};
+use css::{ComputedStyle, Display, StylePhaseOutput, StyledNode};
 use html::{Node, dom_utils::is_non_rendering_element, internal::Id};
 use replaced::intrinsic::IntrinsicSize;
 
@@ -120,23 +120,122 @@ fn classify_replaced_kind(node: &Node) -> Option<ReplacedKind> {
 }
 
 /// A node in the layout tree:
-/// - points to a styled node
+/// - borrows one styled node from the frame-scoped style-phase output
+/// - preserves the DOM identity carried by that styled node
 /// - has a geometry rect
 /// - has child layout boxes
-pub struct LayoutBox<'a> {
+pub struct LayoutBox<'style_tree, 'dom> {
     pub kind: BoxKind,
-    pub style: &'a ComputedStyle,
-    pub node: &'a StyledNode<'a>,
+    pub style: &'style_tree ComputedStyle,
+    pub node: &'style_tree StyledNode<'dom>,
     pub rect: Rectangle,
-    pub children: Vec<LayoutBox<'a>>,
+    pub children: Vec<LayoutBox<'style_tree, 'dom>>,
     pub list_marker: Option<ListMarker>,
     pub replaced: Option<ReplacedKind>,
     pub replaced_intrinsic: Option<IntrinsicSize>,
 }
 
-impl<'a> LayoutBox<'a> {
+impl<'style_tree, 'dom> LayoutBox<'style_tree, 'dom> {
     pub fn node_id(&self) -> Id {
         self.node.node_id
+    }
+}
+
+/// Structured layout-phase input consumed by the layout engine.
+///
+/// `'style_tree` is the borrow of the rebuilt style-phase output for this
+/// pipeline execution. `'dom` is the lifetime of DOM references stored inside
+/// `StyledNode`. Keeping them distinct avoids over-constraining layout to treat
+/// a frame-scoped style-tree borrow as if it were the DOM lifetime itself.
+pub struct LayoutPhaseInput<'style_tree, 'dom, 'runtime> {
+    style_root: &'style_tree StyledNode<'dom>,
+    available_width: f32,
+    measurer: &'runtime dyn TextMeasurer,
+    replaced_info: Option<&'runtime dyn ReplacedElementInfoProvider>,
+}
+
+impl<'style_tree, 'dom, 'runtime> LayoutPhaseInput<'style_tree, 'dom, 'runtime> {
+    pub fn new(
+        style_root: &'style_tree StyledNode<'dom>,
+        available_width: f32,
+        measurer: &'runtime dyn TextMeasurer,
+        replaced_info: Option<&'runtime dyn ReplacedElementInfoProvider>,
+    ) -> Self {
+        Self {
+            style_root,
+            available_width,
+            measurer,
+            replaced_info,
+        }
+    }
+
+    pub fn from_style_output(
+        style_output: &'style_tree StylePhaseOutput<'dom>,
+        available_width: f32,
+        measurer: &'runtime dyn TextMeasurer,
+        replaced_info: Option<&'runtime dyn ReplacedElementInfoProvider>,
+    ) -> Self {
+        Self::new(
+            style_output.root(),
+            available_width,
+            measurer,
+            replaced_info,
+        )
+    }
+
+    pub fn style_root(&self) -> &'style_tree StyledNode<'dom> {
+        self.style_root
+    }
+
+    pub fn available_width(&self) -> f32 {
+        self.available_width
+    }
+
+    pub fn measurer(&self) -> &'runtime dyn TextMeasurer {
+        self.measurer
+    }
+
+    pub fn replaced_info(&self) -> Option<&'runtime dyn ReplacedElementInfoProvider> {
+        self.replaced_info
+    }
+}
+
+/// Structured layout-phase output handed to downstream paint and input phases.
+///
+/// `available_width` is stored explicitly as part of the layout environment for
+/// this pass. It must not be inferred from `root.rect.width`, because future
+/// layout features may allow those values to diverge.
+pub struct LayoutPhaseOutput<'style_tree, 'dom> {
+    root: LayoutBox<'style_tree, 'dom>,
+    available_width: f32,
+}
+
+impl<'style_tree, 'dom> LayoutPhaseOutput<'style_tree, 'dom> {
+    pub fn new(root: LayoutBox<'style_tree, 'dom>, available_width: f32) -> Self {
+        Self {
+            root,
+            available_width,
+        }
+    }
+
+    pub fn root(&self) -> &LayoutBox<'style_tree, 'dom> {
+        &self.root
+    }
+
+    pub fn into_root(self) -> LayoutBox<'style_tree, 'dom> {
+        self.root
+    }
+
+    pub fn document_rect(&self) -> Rectangle {
+        self.root.rect
+    }
+
+    pub fn viewport_width(&self) -> f32 {
+        self.available_width
+    }
+
+    pub fn content_height(&self) -> f32 {
+        self.root.rect.height
     }
 }
 
@@ -184,22 +283,41 @@ pub fn content_height(style: &ComputedStyle, border_height: f32) -> f32 {
 /// - `root` is the style-tree root (usually the document node)
 /// - `page_width` is the available content width in px
 /// - `measurer` is used to measure text during inline layout
-pub fn layout_block_tree<'a>(
-    root: &'a StyledNode<'a>,
+pub fn layout_block_tree<'style_tree, 'dom>(
+    root: &'style_tree StyledNode<'dom>,
     page_width: f32,
     measurer: &dyn TextMeasurer,
     replaced_info: Option<&dyn ReplacedElementInfoProvider>,
-) -> LayoutBox<'a> {
+) -> LayoutBox<'style_tree, 'dom> {
+    layout_document(LayoutPhaseInput::new(
+        root,
+        page_width,
+        measurer,
+        replaced_info,
+    ))
+    .into_root()
+}
+
+/// Run the layout phase using an explicit structured handoff model.
+pub fn layout_document<'style_tree, 'dom>(
+    input: LayoutPhaseInput<'style_tree, 'dom, '_>,
+) -> LayoutPhaseOutput<'style_tree, 'dom> {
     // 1) Build the layout tree structure (no real geometry yet).
-    let mut root_box = layout_block_subtree(root, 0.0, 0.0, page_width, replaced_info);
+    let mut root_box = layout_block_subtree(
+        input.style_root(),
+        0.0,
+        0.0,
+        input.available_width(),
+        input.replaced_info(),
+    );
 
     // 2) Single authoritative geometry pass: inline + block layout.
     //
     //    This computes x/y/width/height for *all* LayoutBoxes,
     //    using the same inline token / LineBox pipeline that painting uses.
-    crate::inline::refine_layout_with_inline(measurer, &mut root_box);
+    crate::inline::refine_layout_with_inline(input.measurer(), &mut root_box);
 
-    root_box
+    LayoutPhaseOutput::new(root_box, input.available_width())
 }
 
 /// Internal recursive function:
@@ -208,13 +326,13 @@ pub fn layout_block_tree<'a>(
 ///
 /// Builds a LayoutBox subtree with correct x/y/width, but height = 0.0.
 /// The unified inline-aware pass will compute final heights.
-fn layout_block_subtree<'a>(
-    styled: &'a StyledNode<'a>,
+fn layout_block_subtree<'style_tree, 'dom>(
+    styled: &'style_tree StyledNode<'dom>,
     x: f32,
     y: f32,
     width: f32,
     replaced_info: Option<&dyn ReplacedElementInfoProvider>,
-) -> LayoutBox<'a> {
+) -> LayoutBox<'style_tree, 'dom> {
     // 0) Non-rendering elements: transparent containers.
     //    They still get a LayoutBox so the tree shape matches the DOM,
     //    but we don't attempt to compute geometry here.

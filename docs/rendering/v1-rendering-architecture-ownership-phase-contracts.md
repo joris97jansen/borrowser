@@ -19,6 +19,7 @@ Related code:
 
 Related documents:
 - `docs/architecture/ARCHITECTURE.md`
+- `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
 - `docs/css/s9-property-system-computed-style-runtime-contract.md`
 - `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`
@@ -58,12 +59,13 @@ The current rendering pipeline is:
 runtime events
   -> browser::Tab event routing
   -> browser::PageState DOM + stylesheet-set ownership
-  -> PageState::build_style_tree()
+  -> PageState::build_style_phase_output()
   -> css::build_style_tree_from_computed_styles(...)
+  -> css::StylePhaseOutput
   -> browser::view::content(...)
   -> gfx::viewport::page_viewport(...)
-  -> layout::layout_block_tree(...)
-  -> gfx::paint::paint_page(...)
+  -> layout::layout_document(LayoutPhaseInput::from_style_output(...))
+  -> gfx::paint::paint_page(PaintPhaseInput::new(...), PaintArgs { ... })
   -> gfx::Renderer egui/wgpu submission
 ```
 

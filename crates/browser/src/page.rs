@@ -4,7 +4,7 @@ use crate::rendering::{RenderArtifactState, RenderPipelineDebugSnapshot, StyleIn
 use core_types::StylesheetSlotId;
 use css::{
     ComputedDocumentStyle, ComputedStyleResolutionError, ComputedStyleReuseStats,
-    ResolvedDocumentStyle, StyleResolutionLimits, StyledNode, StylesheetParse,
+    ResolvedDocumentStyle, StylePhaseOutput, StyleResolutionLimits, StylesheetParse,
     build_style_tree_from_computed_styles,
     compute_document_styles_from_resolved_styles_with_reuse_stats,
     compute_document_styles_incremental_suffix_with_limits, resolve_document_styles,
@@ -369,10 +369,11 @@ impl PageState {
     /// `PageState` owns retained resolved/computed style artifacts and the
     /// invalidation logic that decides whether they can be reused. This method
     /// either reuses or recomputes those retained artifacts, then rebuilds the
-    /// borrow-backed `StyledNode` view consumed by downstream layout and paint.
-    pub(crate) fn build_style_tree(
+    /// borrow-backed `StyledNode` view wrapped in an explicit style-phase
+    /// output contract for downstream layout and paint.
+    pub(crate) fn build_style_phase_output(
         &mut self,
-    ) -> Result<Option<StyledNode<'_>>, ComputedStyleResolutionError> {
+    ) -> Result<Option<StylePhaseOutput<'_>>, ComputedStyleResolutionError> {
         let Some(dom) = self.dom.as_deref() else {
             return Ok(None);
         };
@@ -414,7 +415,9 @@ impl PageState {
         let cache = style_cache
             .as_ref()
             .expect("style cache must exist after successful style computation");
-        build_style_tree_from_computed_styles(dom, &cache.computed).map(Some)
+        build_style_tree_from_computed_styles(dom, &cache.computed)
+            .map(StylePhaseOutput::new)
+            .map(Some)
     }
 
     /// Reports the retained/rebuilt policy for rendering artifacts owned or

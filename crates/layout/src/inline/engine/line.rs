@@ -3,9 +3,9 @@ use crate::Rectangle;
 use super::super::types::{AdvanceRect, LineBox, LineFragment, PaintRect};
 use super::state::{InlineLayoutEngine, LineGeometry};
 
-fn flush_line<'a>(
-    lines: &mut Vec<LineBox<'a>>,
-    line_fragments: &mut Vec<LineFragment<'a>>,
+fn flush_line<'style_tree, 'dom>(
+    lines: &mut Vec<LineBox<'style_tree, 'dom>>,
+    line_fragments: &mut Vec<LineFragment<'style_tree, 'dom>>,
     geom: LineGeometry,
     allow_empty_line: bool,
     source_range: Option<(usize, usize)>,
@@ -43,7 +43,7 @@ fn flush_line<'a>(
     });
 }
 
-impl<'m, 'a> InlineLayoutEngine<'m, 'a> {
+impl<'m, 'style_tree, 'dom> InlineLayoutEngine<'m, 'style_tree, 'dom> {
     pub(super) fn current_line_height(&self) -> f32 {
         self.line_ascent + self.line_descent
     }

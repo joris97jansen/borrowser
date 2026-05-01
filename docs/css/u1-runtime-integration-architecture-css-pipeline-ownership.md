@@ -70,9 +70,9 @@ rather than being scattered through layout or paint code.
 | `Tab::on_css_sheet_done(...)` | browser runtime | retire pending stylesheet load state and request redraw |
 | `PageState::reconcile_document_stylesheets(...)` | page state | reconcile document `<style>` blocks and stylesheet links into document-order stylesheet slots during DOM updates |
 | `PageState::apply_css_block(...)` | page state | parse an external stylesheet into `StylesheetParse` and install it into the pre-registered document-order stylesheet slot for the current navigation/request |
-| `PageState::build_style_tree(...)` | page state | reuse or recompute page-owned resolved/computed style cache and rebuild the runtime `StyledNode` view |
+| `PageState::build_style_phase_output(...)` | page state | reuse or recompute page-owned resolved/computed style cache and rebuild the runtime `StylePhaseOutput` / `StyledNode` view |
 | `build_style_tree_from_computed_styles(...)` | CSS engine | validate the current DOM against cached computed styles and build a borrow-backed `StyledNode` tree |
-| `browser::view::content(...)` | browser view | request style tree construction and pass `StyledNode` to viewport/layout/paint code |
+| `browser::view::content(...)` | browser view | request style-phase output construction and pass `StylePhaseOutput` into viewport/layout/paint orchestration |
 | `DomStore::apply(...)` | browser DOM patch runtime | apply parser patch batches atomically before the style subsystem sees the materialized DOM |
 
 `runtime_css` is not a style-resolution owner. It owns stylesheet byte
@@ -211,14 +211,14 @@ The page-load lifecycle for styles is:
    which parses through the structured CSS model path and installs the result
    into the pre-registered document-order slot.
 7. View construction asks for styles.
-   `browser::view::content(...)` calls `PageState::build_style_tree()`.
+   `browser::view::content(...)` calls `PageState::build_style_phase_output()`.
 8. CSS engine resolves styles.
    `PageState` either reuses a valid `ComputedDocumentStyle` cache, performs
    an incremental suffix recompute, or runs full selector matching, cascade,
    and computed-style assembly through the CSS crate without mutating the DOM.
-9. Layout and paint consume the styled tree.
-   `gfx::viewport::page_viewport(...)` receives the `StyledNode` tree plus
-   resources and input state.
+9. Layout and paint consume the style-phase output.
+   `gfx::viewport::page_viewport(...)` receives `StylePhaseOutput`, builds
+   `LayoutPhaseOutput`, and passes that structured handoff to paint.
 
 The default runtime path for new work is the structured path:
 
@@ -227,7 +227,7 @@ DOM + StylesheetParse[]
   -> resolve_document_styles(...)
   -> compute_document_styles_from_resolved_styles_with_reuse_stats(...)
   -> build_style_tree_from_computed_styles(...)
-  -> StyledNode
+  -> StylePhaseOutput
 ```
 
 Legacy APIs such as `attach_styles(...)`, `compute_style(...)`, and
@@ -238,8 +238,8 @@ the browser runtime's normative style path again.
 
 Milestone U moved the browser from view-requested style recomputation toward
 page-owned style lifecycle management. The browser view now calls
-`PageState::build_style_tree()`, and page state decides whether style artifacts
-can be reused, partially recomputed, or fully recomputed.
+`PageState::build_style_phase_output()`, and page state decides whether style
+artifacts can be reused, partially recomputed, or fully recomputed.
 
 The implemented baseline is:
 

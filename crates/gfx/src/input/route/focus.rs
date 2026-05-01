@@ -7,7 +7,7 @@ use layout::{HitKind, LayoutBox, ReplacedKind};
 
 pub(super) fn handle_focusable_pointer_press<S: InputStore + ?Sized>(
     ui: &mut Ui,
-    layout_root: &LayoutBox<'_>,
+    layout_root: &LayoutBox<'_, '_>,
     measurer: &EguiTextMeasurer,
     input_values: &mut S,
     interaction: &mut InteractionState,
@@ -91,7 +91,7 @@ pub(super) fn maintain_egui_focus_bridge(
     ui: &mut Ui,
     content_rect: Rect,
     origin: egui::Pos2,
-    layout_root: &LayoutBox<'_>,
+    layout_root: &LayoutBox<'_, '_>,
     interaction: &InteractionState,
 ) -> Option<egui::Id> {
     let focus_id = interaction.focused_node_id?;

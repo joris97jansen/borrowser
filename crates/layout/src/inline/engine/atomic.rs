@@ -10,14 +10,14 @@ use super::super::tokens::InlineContext;
 use super::super::types::{InlineFragment, LineFragment};
 use super::state::InlineLayoutEngine;
 
-impl<'m, 'a> InlineLayoutEngine<'m, 'a> {
+impl<'m, 'style_tree, 'dom> InlineLayoutEngine<'m, 'style_tree, 'dom> {
     pub(super) fn layout_box_token(
         &mut self,
         width: f32,
         height: f32,
-        style: &'a ComputedStyle,
+        style: &'style_tree ComputedStyle,
         ctx: InlineContext,
-        layout: Option<&'a LayoutBox<'a>>,
+        layout: Option<&'style_tree LayoutBox<'style_tree, 'dom>>,
     ) {
         if self.cursor_x + width > self.max_x
             && !self.is_first_in_line
@@ -68,10 +68,10 @@ impl<'m, 'a> InlineLayoutEngine<'m, 'a> {
         &mut self,
         width: f32,
         height: f32,
-        style: &'a ComputedStyle,
+        style: &'style_tree ComputedStyle,
         ctx: InlineContext,
         kind: ReplacedKind,
-        layout: Option<&'a LayoutBox<'a>>,
+        layout: Option<&'style_tree LayoutBox<'style_tree, 'dom>>,
     ) {
         if self.cursor_x + width > self.max_x
             && !self.is_first_in_line

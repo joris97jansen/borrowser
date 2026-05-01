@@ -3,18 +3,18 @@ use crate::EguiTextMeasurer;
 use egui::{CursorIcon, Rect, Response, Ui, Vec2};
 use layout::{HitKind, LayoutBox, hit_test::hit_test};
 
-pub(super) struct HoverCtx<'a, 'layout> {
+pub(super) struct HoverCtx<'a, 'layout, 'dom> {
     pub(super) ui: &'a mut Ui,
     pub(super) resp: &'a Response,
     pub(super) content_rect: Rect,
     pub(super) origin: egui::Pos2,
-    pub(super) layout_root: &'a LayoutBox<'layout>,
+    pub(super) layout_root: &'a LayoutBox<'layout, 'dom>,
     pub(super) measurer: &'a EguiTextMeasurer,
     pub(super) layout_changed: bool,
     pub(super) interaction: &'a mut InteractionState,
 }
 
-pub(super) fn update_hover_and_cursor(ctx: HoverCtx<'_, '_>) {
+pub(super) fn update_hover_and_cursor(ctx: HoverCtx<'_, '_, '_>) {
     let HoverCtx {
         ui,
         resp,

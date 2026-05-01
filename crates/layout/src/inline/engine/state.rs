@@ -16,7 +16,7 @@ pub(super) struct LineGeometry {
     pub(super) descent: f32,
 }
 
-pub(super) struct InlineLayoutEngine<'m, 'a> {
+pub(super) struct InlineLayoutEngine<'m, 'style_tree, 'dom> {
     pub(super) measurer: &'m dyn TextMeasurer,
     pub(super) options: InlineLayoutOptions,
     pub(super) line_start_x: f32,
@@ -25,8 +25,8 @@ pub(super) struct InlineLayoutEngine<'m, 'a> {
     pub(super) base_line_height: f32,
     pub(super) base_ascent: f32,
     pub(super) base_descent: f32,
-    pub(super) lines: Vec<LineBox<'a>>,
-    pub(super) line_fragments: Vec<LineFragment<'a>>,
+    pub(super) lines: Vec<LineBox<'style_tree, 'dom>>,
+    pub(super) line_fragments: Vec<LineFragment<'style_tree, 'dom>>,
     pub(super) cursor_x: f32,
     pub(super) cursor_y: f32,
     pub(super) line_ascent: f32,
@@ -52,11 +52,11 @@ pub(super) fn measure_nonzero(
     }
 }
 
-impl<'m, 'a> InlineLayoutEngine<'m, 'a> {
+impl<'m, 'style_tree, 'dom> InlineLayoutEngine<'m, 'style_tree, 'dom> {
     pub(super) fn new(
         measurer: &'m dyn TextMeasurer,
         rect: Rectangle,
-        block_style: &'a ComputedStyle,
+        block_style: &'style_tree ComputedStyle,
         options: InlineLayoutOptions,
     ) -> Self {
         let padding = options.padding;
@@ -88,7 +88,10 @@ impl<'m, 'a> InlineLayoutEngine<'m, 'a> {
         }
     }
 
-    pub(super) fn layout(mut self, tokens: Vec<InlineToken<'a>>) -> Vec<LineBox<'a>> {
+    pub(super) fn layout(
+        mut self,
+        tokens: Vec<InlineToken<'style_tree, 'dom>>,
+    ) -> Vec<LineBox<'style_tree, 'dom>> {
         for token in tokens {
             if self.stopped {
                 break;

@@ -13,12 +13,17 @@ use super::types::LineBox;
 /// - explicit `\n` line breaks (as hard breaks)
 /// - sequences of spaces (no collapsing)
 /// - leading spaces on a line
-pub fn layout_textarea_value_for_paint<'a>(
+///
+/// The returned line boxes are synthetic text-control fragments, not DOM-backed
+/// inline fragments from the document layout tree. They borrow the computed
+/// style used for painting, but carry no borrowed DOM nodes, so the DOM
+/// lifetime parameter on `LineBox` is `\'static` here by construction.
+pub fn layout_textarea_value_for_paint<'style_tree>(
     measurer: &dyn TextMeasurer,
     rect: Rectangle,
-    style: &'a ComputedStyle,
+    style: &'style_tree ComputedStyle,
     value: &str,
-) -> Vec<LineBox<'a>> {
+) -> Vec<LineBox<'style_tree, 'static>> {
     let tokens = tokenize_textarea_value(value, style);
     layout_tokens_with_options(
         measurer,
@@ -34,19 +39,22 @@ pub fn layout_textarea_value_for_paint<'a>(
     )
 }
 
-fn tokenize_textarea_value<'a>(value: &str, style: &'a ComputedStyle) -> Vec<InlineToken<'a>> {
-    let mut tokens: Vec<InlineToken<'a>> = Vec::new();
+fn tokenize_textarea_value<'style_tree>(
+    value: &str,
+    style: &'style_tree ComputedStyle,
+) -> Vec<InlineToken<'style_tree, 'static>> {
+    let mut tokens: Vec<InlineToken<'style_tree, 'static>> = Vec::new();
     let ctx = InlineContext::default();
 
     let mut word = String::new();
     let mut word_start: Option<usize> = None;
 
-    fn flush_pending_word<'a>(
+    fn flush_pending_word<'style_tree>(
         word: &mut String,
         word_start: &mut Option<usize>,
         end: usize,
-        tokens: &mut Vec<InlineToken<'a>>,
-        style: &'a ComputedStyle,
+        tokens: &mut Vec<InlineToken<'style_tree, 'static>>,
+        style: &'style_tree ComputedStyle,
         ctx: &InlineContext,
     ) {
         let Some(start) = word_start.take() else {

@@ -1,7 +1,7 @@
 use crate::input_state::DocumentInputState;
 use crate::page::PageState;
 use crate::resources::ResourceManager;
-use css::StyledNode;
+use css::{StylePhaseOutput, StyledNode};
 use egui::{
     Align2, Area, CentralPanel, Color32, Context, CornerRadius, Frame, Id, Margin, Order, RichText,
     Stroke, vec2,
@@ -35,8 +35,8 @@ pub fn content(
 
     let base_url = page.base_url.clone();
     let form_controls = page.form_controls.clone();
-    let style_root = match page.build_style_tree() {
-        Ok(Some(style_root)) => style_root,
+    let style_output = match page.build_style_phase_output() {
+        Ok(Some(style_output)) => style_output,
         Ok(None) => return None,
         Err(error) => {
             let visuals = ctx.style().visuals.clone();
@@ -49,7 +49,7 @@ pub fn content(
             return None;
         }
     };
-    let page_bg = find_page_background_color(&style_root);
+    let page_bg = find_page_background_color(&style_output);
     let base_fill = if let Some((r, g, b, a)) = page_bg {
         Color32::from_rgba_unmultiplied(r, g, b, a)
     } else {
@@ -66,7 +66,7 @@ pub fn content(
 
             page_viewport(ViewportCtx::new(
                 ui,
-                &style_root,
+                &style_output,
                 base_url,
                 resources,
                 input_values,
@@ -121,7 +121,9 @@ fn overlay_lines(loading: bool, status: Option<&str>) -> Vec<String> {
     lines
 }
 
-fn find_page_background_color(root: &StyledNode<'_>) -> Option<(u8, u8, u8, u8)> {
+fn find_page_background_color(style_output: &StylePhaseOutput<'_>) -> Option<(u8, u8, u8, u8)> {
+    let root = style_output.root();
+
     // We prefer <body> background if present and non-transparent.
     // If not, we fall back to <html>. Otherwise: None.
     fn is_non_transparent_rgba(rgba: (u8, u8, u8, u8)) -> bool {

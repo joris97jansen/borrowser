@@ -9,7 +9,10 @@ use super::options::INLINE_PADDING;
 use super::replaced::size_replaced_inline_children;
 use super::tokens::collect_inline_tokens_for_block_layout;
 
-pub fn refine_layout_with_inline<'a>(measurer: &dyn TextMeasurer, layout_root: &mut LayoutBox<'a>) {
+pub fn refine_layout_with_inline<'style_tree, 'dom>(
+    measurer: &dyn TextMeasurer,
+    layout_root: &mut LayoutBox<'style_tree, 'dom>,
+) {
     let x = layout_root.rect.x;
     let y = layout_root.rect.y;
     let width = layout_root.rect.width;
@@ -18,9 +21,9 @@ pub fn refine_layout_with_inline<'a>(measurer: &dyn TextMeasurer, layout_root: &
     layout_root.rect.height = new_height;
 }
 
-fn recompute_block_heights<'a>(
+fn recompute_block_heights<'style_tree, 'dom>(
     measurer: &dyn TextMeasurer,
-    node: &mut LayoutBox<'a>,
+    node: &mut LayoutBox<'style_tree, 'dom>,
     x: f32,
     y: f32,
     available_width: f32,

@@ -2,7 +2,7 @@ use html::Node;
 
 use crate::LayoutBox;
 
-fn collect_text_content(node: &LayoutBox<'_>, out: &mut String) {
+fn collect_text_content(node: &LayoutBox<'_, '_>, out: &mut String) {
     match node.node.node {
         Node::Text { text, .. } => out.push_str(text),
         Node::Element { .. } | Node::Document { .. } | Node::Comment { .. } => {
@@ -13,7 +13,7 @@ fn collect_text_content(node: &LayoutBox<'_>, out: &mut String) {
     }
 }
 
-pub fn button_label_from_layout(lb: &LayoutBox<'_>) -> String {
+pub fn button_label_from_layout(lb: &LayoutBox<'_, '_>) -> String {
     let mut s = String::new();
     collect_text_content(lb, &mut s);
 

@@ -56,7 +56,7 @@ pub use computed::{
     ComputedStyleBuildError, ComputedStyleBuilder, ComputedStyleEntry,
     ComputedStyleResolutionError, ComputedStyleReuseStats, ComputedValue,
     ComputedValueDiscriminant, ComputedValueNormalizationError,
-    ComputedValueNormalizationErrorKind, IncrementalComputedDocumentStyle,
+    ComputedValueNormalizationErrorKind, IncrementalComputedDocumentStyle, StylePhaseOutput,
     build_style_tree_from_computed_styles, build_style_tree_with_stylesheets,
     compute_document_styles, compute_document_styles_from_resolved_styles,
     compute_document_styles_from_resolved_styles_with_reuse_stats,

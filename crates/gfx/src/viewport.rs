@@ -3,15 +3,17 @@ use crate::input::{
     FormControlHandler, FrameInputCtx, InputValueStore, InteractionState, PageAction,
     route_frame_input,
 };
-use crate::paint::{ImageProvider, PaintArgs, paint_page};
+use crate::paint::{ImageProvider, PaintArgs, PaintPhaseInput, paint_page};
 use crate::text_control::{find_layout_box_by_id, sync_input_scroll_for_caret};
 use crate::textarea::sync_textarea_scroll_for_caret;
 use crate::util::{get_attr, input_text_padding, resolve_relative_url};
-use css::StyledNode;
+use css::StylePhaseOutput;
 use egui::{Color32, ScrollArea, Sense, Stroke, Ui, Vec2};
 use html::{Node, internal::Id};
 use input_core::InputValueStore as CoreInputValueStore;
-use layout::{Rectangle, ReplacedElementInfoProvider, ReplacedKind, layout_block_tree};
+use layout::{
+    LayoutPhaseInput, Rectangle, ReplacedElementInfoProvider, ReplacedKind, layout_document,
+};
 use std::cell::RefCell;
 use std::collections::HashMap;
 
@@ -34,30 +36,30 @@ impl Default for ViewportConfig {
     }
 }
 
-pub struct ViewportCtx<'a, R, F> {
-    pub ui: &'a mut Ui,
-    pub style_root: &'a StyledNode<'a>,
-    pub base_url: Option<&'a str>,
-    pub resources: &'a R,
-    pub input_values: &'a mut InputValueStore,
-    pub form_controls: &'a F,
-    pub interaction: &'a mut InteractionState,
+pub struct ViewportCtx<'ui, 'style, R, F> {
+    pub ui: &'ui mut Ui,
+    pub style: &'ui StylePhaseOutput<'style>,
+    pub base_url: Option<&'ui str>,
+    pub resources: &'ui R,
+    pub input_values: &'ui mut InputValueStore,
+    pub form_controls: &'ui F,
+    pub interaction: &'ui mut InteractionState,
     pub config: ViewportConfig,
 }
 
-impl<'a, R, F> ViewportCtx<'a, R, F> {
+impl<'ui, 'style, R, F> ViewportCtx<'ui, 'style, R, F> {
     pub fn new(
-        ui: &'a mut Ui,
-        style_root: &'a StyledNode<'a>,
-        base_url: Option<&'a str>,
-        resources: &'a R,
-        input_values: &'a mut InputValueStore,
-        form_controls: &'a F,
-        interaction: &'a mut InteractionState,
+        ui: &'ui mut Ui,
+        style: &'ui StylePhaseOutput<'style>,
+        base_url: Option<&'ui str>,
+        resources: &'ui R,
+        input_values: &'ui mut InputValueStore,
+        form_controls: &'ui F,
+        interaction: &'ui mut InteractionState,
     ) -> Self {
         Self {
             ui,
-            style_root,
+            style,
             base_url,
             resources,
             input_values,
@@ -69,11 +71,11 @@ impl<'a, R, F> ViewportCtx<'a, R, F> {
 }
 
 pub fn page_viewport<R: ImageProvider, F: FormControlHandler<CoreInputValueStore>>(
-    ctx: ViewportCtx<'_, R, F>,
+    ctx: ViewportCtx<'_, '_, R, F>,
 ) -> Option<PageAction> {
     let ViewportCtx {
         ui,
-        style_root,
+        style,
         base_url,
         resources,
         input_values,
@@ -95,10 +97,15 @@ pub fn page_viewport<R: ImageProvider, F: FormControlHandler<CoreInputValueStore
                 base_url,
                 resources,
             };
-            let layout_root =
-                layout_block_tree(style_root, available_width, &measurer, Some(&replaced_info));
+            let layout_output = layout_document(LayoutPhaseInput::from_style_output(
+                style,
+                available_width,
+                &measurer,
+                Some(&replaced_info),
+            ));
+            let layout_root = layout_output.root();
 
-            let content_height = layout_root.rect.height.max(min_height);
+            let content_height = layout_output.content_height().max(min_height);
 
             let (content_rect, resp) =
                 ui.allocate_exact_size(Vec2::new(available_width, content_height), Sense::hover());
@@ -131,7 +138,7 @@ pub fn page_viewport<R: ImageProvider, F: FormControlHandler<CoreInputValueStore
             // Keep the focused text control's scroll stable across frames (e.g. resize)
             // and ensure the caret remains visible within the control viewport.
             if let Some(focus_id) = interaction.focused_node_id
-                && let Some(lb) = find_layout_box_by_id(&layout_root, focus_id).filter(|lb| {
+                && let Some(lb) = find_layout_box_by_id(layout_root, focus_id).filter(|lb| {
                     matches!(
                         lb.replaced,
                         Some(ReplacedKind::InputText | ReplacedKind::TextArea)
@@ -204,7 +211,7 @@ pub fn page_viewport<R: ImageProvider, F: FormControlHandler<CoreInputValueStore
                     selection_stroke,
                     fragment_rects: Some(&fragment_rects),
                 };
-                paint_page(&layout_root, paint_args);
+                paint_page(PaintPhaseInput::new(&layout_output), paint_args);
             }
 
             route_frame_input(FrameInputCtx {
@@ -212,7 +219,7 @@ pub fn page_viewport<R: ImageProvider, F: FormControlHandler<CoreInputValueStore
                 resp,
                 content_rect,
                 origin,
-                layout_root: &layout_root,
+                layout_root,
                 measurer: &measurer,
                 layout_changed,
                 fragment_rects: &fragment_rects,
