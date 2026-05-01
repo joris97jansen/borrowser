@@ -227,7 +227,7 @@ generation caching is future work.
 
 ## Style Cache And Incrementality Contract
 
-`PageState` caches:
+`PageState` retains this cache inside its `RetainedRenderState` owner:
 
 ```text
 PageStyleCache {

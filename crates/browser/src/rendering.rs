@@ -65,6 +65,26 @@ pub struct RenderingPhaseContract {
     pub rebuild_triggers: &'static [RenderRebuildTrigger],
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RenderArtifactLifetime {
+    RetainedAcrossUpdates,
+    BorrowBackedRebuiltOnDemand,
+    FrameLocalRebuiltPerFrame,
+    ImmediateFrameOutput,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RenderArtifactOwnershipContract {
+    pub artifact: RenderArtifact,
+    pub semantic_owner: RenderingSubsystem,
+    /// Runtime subsystem that retains this artifact across updates.
+    ///
+    /// `None` means the artifact is intentionally rebuilt or emitted on demand
+    /// and is not retained as a long-lived rendering object.
+    pub retention_owner: Option<RenderingSubsystem>,
+    pub lifetime: RenderArtifactLifetime,
+}
+
 const FRAME_ORCHESTRATION_CONSUMES: &[RenderArtifact] = &[
     RenderArtifact::StyledTree,
     RenderArtifact::ViewportMetrics,
@@ -180,6 +200,92 @@ pub fn render_phase_contracts() -> &'static [RenderingPhaseContract] {
     &RENDER_PHASE_CONTRACTS
 }
 
+static RENDER_ARTIFACT_OWNERSHIP_CONTRACTS: [RenderArtifactOwnershipContract; 12] = [
+    RenderArtifactOwnershipContract {
+        artifact: RenderArtifact::Dom,
+        semantic_owner: RenderingSubsystem::BrowserRuntime,
+        retention_owner: Some(RenderingSubsystem::BrowserRuntime),
+        lifetime: RenderArtifactLifetime::RetainedAcrossUpdates,
+    },
+    RenderArtifactOwnershipContract {
+        artifact: RenderArtifact::StylesheetSet,
+        semantic_owner: RenderingSubsystem::BrowserRuntime,
+        retention_owner: Some(RenderingSubsystem::BrowserRuntime),
+        lifetime: RenderArtifactLifetime::RetainedAcrossUpdates,
+    },
+    RenderArtifactOwnershipContract {
+        artifact: RenderArtifact::ResolvedDocumentStyle,
+        semantic_owner: RenderingSubsystem::CssEngine,
+        retention_owner: Some(RenderingSubsystem::BrowserRuntime),
+        lifetime: RenderArtifactLifetime::RetainedAcrossUpdates,
+    },
+    RenderArtifactOwnershipContract {
+        artifact: RenderArtifact::ComputedDocumentStyle,
+        semantic_owner: RenderingSubsystem::CssEngine,
+        retention_owner: Some(RenderingSubsystem::BrowserRuntime),
+        lifetime: RenderArtifactLifetime::RetainedAcrossUpdates,
+    },
+    RenderArtifactOwnershipContract {
+        artifact: RenderArtifact::StyledTree,
+        semantic_owner: RenderingSubsystem::CssEngine,
+        retention_owner: None,
+        lifetime: RenderArtifactLifetime::BorrowBackedRebuiltOnDemand,
+    },
+    RenderArtifactOwnershipContract {
+        artifact: RenderArtifact::ViewportMetrics,
+        semantic_owner: RenderingSubsystem::BrowserView,
+        retention_owner: None,
+        lifetime: RenderArtifactLifetime::FrameLocalRebuiltPerFrame,
+    },
+    RenderArtifactOwnershipContract {
+        // Layout owns the measurement contract it consumes, even though the
+        // concrete measurer may be provided by the viewport/backend runtime.
+        artifact: RenderArtifact::TextMeasurement,
+        semantic_owner: RenderingSubsystem::LayoutEngine,
+        retention_owner: None,
+        lifetime: RenderArtifactLifetime::FrameLocalRebuiltPerFrame,
+    },
+    RenderArtifactOwnershipContract {
+        artifact: RenderArtifact::ReplacedElementMetadata,
+        semantic_owner: RenderingSubsystem::LayoutEngine,
+        retention_owner: None,
+        lifetime: RenderArtifactLifetime::FrameLocalRebuiltPerFrame,
+    },
+    RenderArtifactOwnershipContract {
+        artifact: RenderArtifact::LayoutTree,
+        semantic_owner: RenderingSubsystem::LayoutEngine,
+        retention_owner: None,
+        lifetime: RenderArtifactLifetime::FrameLocalRebuiltPerFrame,
+    },
+    RenderArtifactOwnershipContract {
+        artifact: RenderArtifact::ResourceState,
+        semantic_owner: RenderingSubsystem::BrowserRuntime,
+        retention_owner: Some(RenderingSubsystem::BrowserRuntime),
+        lifetime: RenderArtifactLifetime::RetainedAcrossUpdates,
+    },
+    RenderArtifactOwnershipContract {
+        artifact: RenderArtifact::InputState,
+        semantic_owner: RenderingSubsystem::BrowserRuntime,
+        retention_owner: Some(RenderingSubsystem::BrowserRuntime),
+        lifetime: RenderArtifactLifetime::RetainedAcrossUpdates,
+    },
+    RenderArtifactOwnershipContract {
+        artifact: RenderArtifact::PaintCommands,
+        semantic_owner: RenderingSubsystem::PaintEngine,
+        retention_owner: None,
+        lifetime: RenderArtifactLifetime::ImmediateFrameOutput,
+    },
+];
+
+/// Stable artifact lifetime and retention-owner table.
+///
+/// This complements `render_phase_contracts()` by recording where each
+/// pipeline artifact lives across updates and which artifacts are intentionally
+/// rebuilt rather than retained.
+pub fn render_artifact_ownership_contracts() -> &'static [RenderArtifactOwnershipContract] {
+    &RENDER_ARTIFACT_OWNERSHIP_CONTRACTS
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RenderArtifactState {
     Absent,
@@ -215,8 +321,9 @@ pub struct RenderPipelineDebugSnapshot {
 #[cfg(test)]
 mod tests {
     use super::{
-        RenderArtifact, RenderArtifactState, RenderPipelineDebugSnapshot, RenderRebuildTrigger,
-        RenderingPhase, RenderingSubsystem, StyleInvalidationState, render_phase_contracts,
+        RenderArtifact, RenderArtifactLifetime, RenderArtifactState, RenderPipelineDebugSnapshot,
+        RenderRebuildTrigger, RenderingPhase, RenderingSubsystem, StyleInvalidationState,
+        render_artifact_ownership_contracts, render_phase_contracts,
     };
     use crate::page::{PageState, RestyleHint};
     use gfx::paint::PaintPhaseInput;
@@ -325,6 +432,128 @@ mod tests {
                 RenderRebuildTrigger::InputStateChanged,
             ]
         );
+    }
+
+    #[test]
+    fn render_artifact_ownership_contracts_pin_retained_vs_rebuilt_lifetimes() {
+        let contracts = render_artifact_ownership_contracts();
+        assert_eq!(contracts.len(), 12);
+
+        let dom = artifact_contract(contracts, RenderArtifact::Dom);
+        assert_eq!(dom.semantic_owner, RenderingSubsystem::BrowserRuntime);
+        assert_eq!(
+            dom.retention_owner,
+            Some(RenderingSubsystem::BrowserRuntime)
+        );
+        assert_eq!(dom.lifetime, RenderArtifactLifetime::RetainedAcrossUpdates);
+
+        let resolved = artifact_contract(contracts, RenderArtifact::ResolvedDocumentStyle);
+        assert_eq!(resolved.semantic_owner, RenderingSubsystem::CssEngine);
+        assert_eq!(
+            resolved.retention_owner,
+            Some(RenderingSubsystem::BrowserRuntime)
+        );
+        assert_eq!(
+            resolved.lifetime,
+            RenderArtifactLifetime::RetainedAcrossUpdates
+        );
+
+        let styled = artifact_contract(contracts, RenderArtifact::StyledTree);
+        assert_eq!(styled.semantic_owner, RenderingSubsystem::CssEngine);
+        assert_eq!(styled.retention_owner, None);
+        assert_eq!(
+            styled.lifetime,
+            RenderArtifactLifetime::BorrowBackedRebuiltOnDemand
+        );
+
+        let layout = artifact_contract(contracts, RenderArtifact::LayoutTree);
+        assert_eq!(layout.semantic_owner, RenderingSubsystem::LayoutEngine);
+        assert_eq!(layout.retention_owner, None);
+        assert_eq!(
+            layout.lifetime,
+            RenderArtifactLifetime::FrameLocalRebuiltPerFrame
+        );
+
+        let paint = artifact_contract(contracts, RenderArtifact::PaintCommands);
+        assert_eq!(paint.semantic_owner, RenderingSubsystem::PaintEngine);
+        assert_eq!(paint.retention_owner, None);
+        assert_eq!(paint.lifetime, RenderArtifactLifetime::ImmediateFrameOutput);
+
+        let input = artifact_contract(contracts, RenderArtifact::InputState);
+        assert_eq!(input.semantic_owner, RenderingSubsystem::BrowserRuntime);
+        assert_eq!(
+            input.retention_owner,
+            Some(RenderingSubsystem::BrowserRuntime)
+        );
+        assert_eq!(
+            input.lifetime,
+            RenderArtifactLifetime::RetainedAcrossUpdates
+        );
+    }
+
+    #[test]
+    fn render_artifact_ownership_contracts_cover_each_artifact_once() {
+        let contracts = render_artifact_ownership_contracts();
+        let expected = [
+            RenderArtifact::Dom,
+            RenderArtifact::StylesheetSet,
+            RenderArtifact::ResolvedDocumentStyle,
+            RenderArtifact::ComputedDocumentStyle,
+            RenderArtifact::StyledTree,
+            RenderArtifact::ViewportMetrics,
+            RenderArtifact::TextMeasurement,
+            RenderArtifact::ReplacedElementMetadata,
+            RenderArtifact::LayoutTree,
+            RenderArtifact::ResourceState,
+            RenderArtifact::InputState,
+            RenderArtifact::PaintCommands,
+        ];
+
+        for artifact in expected {
+            let count = contracts
+                .iter()
+                .filter(|contract| contract.artifact == artifact)
+                .count();
+            assert_eq!(
+                count, 1,
+                "artifact must have exactly one ownership contract: {artifact:?}"
+            );
+        }
+
+        assert_eq!(contracts.len(), expected.len());
+    }
+
+    #[test]
+    fn phase_contract_outputs_align_with_artifact_lifetimes() {
+        let ownership = render_artifact_ownership_contracts();
+
+        for phase in render_phase_contracts() {
+            for artifact in phase.retained_outputs {
+                let contract = artifact_contract(ownership, *artifact);
+                assert_eq!(
+                    contract.lifetime,
+                    RenderArtifactLifetime::RetainedAcrossUpdates,
+                    "phase retained output must have retained artifact lifetime: {artifact:?}"
+                );
+                assert!(
+                    contract.retention_owner.is_some(),
+                    "retained artifact must have a retention owner: {artifact:?}"
+                );
+            }
+
+            for artifact in phase.rebuilt_outputs {
+                let contract = artifact_contract(ownership, *artifact);
+                assert_ne!(
+                    contract.lifetime,
+                    RenderArtifactLifetime::RetainedAcrossUpdates,
+                    "rebuilt phase output must not be retained: {artifact:?}"
+                );
+                assert_eq!(
+                    contract.retention_owner, None,
+                    "rebuilt artifact must not have a retention owner: {artifact:?}"
+                );
+            }
+        }
     }
 
     #[test]
@@ -486,6 +715,36 @@ mod tests {
         assert!(snapshot.layout_dirty);
     }
 
+    #[test]
+    fn navigation_reset_clears_page_owned_retained_render_state() {
+        let mut page = page_with_dom(
+            "<!doctype html><html><head><style>p { color: red; }</style></head><body><p>Hello</p></body></html>",
+        );
+        let style_output = style_output_for_test(&mut page);
+        assert_eq!(
+            styled_element_color(style_output.root(), "p"),
+            (255, 0, 0, 255)
+        );
+        drop(style_output);
+
+        page.start_nav("https://example.com/next.html");
+
+        assert_eq!(
+            page.render_pipeline_debug_snapshot(),
+            RenderPipelineDebugSnapshot {
+                has_dom: false,
+                resolved_styles: RenderArtifactState::Absent,
+                computed_styles: RenderArtifactState::Absent,
+                styled_tree: RenderArtifactState::Absent,
+                layout_tree: RenderArtifactState::Absent,
+                paint_output: RenderArtifactState::Absent,
+                style_dirty: true,
+                layout_dirty: true,
+                style_invalidation: StyleInvalidationState::Full,
+            }
+        );
+    }
+
     fn page_with_dom(input: &str) -> PageState {
         let output = parse_document(input, HtmlParseOptions::default()).expect("parse should work");
         let mut page = PageState::new();
@@ -493,6 +752,16 @@ mod tests {
         page.replace_dom(Box::new(output.document), RestyleHint::document_replaced());
         page.reconcile_document_stylesheets();
         page
+    }
+
+    fn artifact_contract(
+        contracts: &[super::RenderArtifactOwnershipContract],
+        artifact: RenderArtifact,
+    ) -> &super::RenderArtifactOwnershipContract {
+        contracts
+            .iter()
+            .find(|contract| contract.artifact == artifact)
+            .expect("artifact contract should exist")
     }
 
     fn style_output_for_test(page: &mut PageState) -> css::StylePhaseOutput<'_> {

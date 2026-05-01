@@ -114,6 +114,100 @@ struct PageStyleCache {
     computed: ComputedDocumentStyle,
 }
 
+/// Retained rendering state owned by `PageState`.
+///
+/// This groups the page-local rendering artifacts and invalidation metadata
+/// that survive across updates. Borrow-backed style trees, layout trees, and
+/// paint output remain outside this struct by contract.
+#[derive(Clone, Debug)]
+struct RetainedRenderState {
+    document_styles: DocumentStyleSet,
+    generations: PageStyleGenerations,
+    style_cache: Option<PageStyleCache>,
+    style_dirty: bool,
+    layout_dirty: bool,
+    last_restyle_trigger: Option<RestyleTrigger>,
+    pending_style_invalidation: Option<StyleInvalidationScope>,
+    last_style_recalc: Option<StyleRecalcKind>,
+    last_style_reuse: Option<ComputedStyleReuseStats>,
+}
+
+impl RetainedRenderState {
+    fn new() -> Self {
+        Self {
+            document_styles: DocumentStyleSet::default(),
+            generations: PageStyleGenerations::default(),
+            style_cache: None,
+            style_dirty: true,
+            layout_dirty: true,
+            last_restyle_trigger: None,
+            pending_style_invalidation: Some(StyleInvalidationScope::Full),
+            last_style_recalc: None,
+            last_style_reuse: None,
+        }
+    }
+
+    fn reset_for_navigation(&mut self) {
+        self.document_styles.clear();
+        self.generations = PageStyleGenerations::default();
+        self.style_cache = None;
+        self.style_dirty = true;
+        self.layout_dirty = true;
+        self.last_restyle_trigger = None;
+        self.pending_style_invalidation = Some(StyleInvalidationScope::Full);
+        self.last_style_recalc = None;
+        self.last_style_reuse = None;
+    }
+
+    fn debug_snapshot(&self, has_dom: bool) -> RenderPipelineDebugSnapshot {
+        let style_cache_state = match (&self.style_cache, self.style_dirty) {
+            (None, _) => RenderArtifactState::Absent,
+            (Some(_), true) => RenderArtifactState::RetainedStale,
+            (Some(_), false) => RenderArtifactState::RetainedFresh,
+        };
+
+        let (styled_tree, layout_tree, paint_output) = if has_dom {
+            (
+                RenderArtifactState::BorrowBackedRebuiltOnDemand,
+                RenderArtifactState::FrameLocalRebuiltPerFrame,
+                RenderArtifactState::ImmediateFrameOutput,
+            )
+        } else {
+            (
+                RenderArtifactState::Absent,
+                RenderArtifactState::Absent,
+                RenderArtifactState::Absent,
+            )
+        };
+
+        let style_invalidation = match self.pending_style_invalidation {
+            Some(StyleInvalidationScope::Full) => StyleInvalidationState::Full,
+            Some(StyleInvalidationScope::AttributeSuffix { .. }) => {
+                StyleInvalidationState::AttributeSuffix
+            }
+            None => StyleInvalidationState::None,
+        };
+
+        RenderPipelineDebugSnapshot {
+            has_dom,
+            resolved_styles: style_cache_state,
+            computed_styles: style_cache_state,
+            styled_tree,
+            layout_tree,
+            paint_output,
+            style_dirty: self.style_dirty,
+            layout_dirty: self.layout_dirty,
+            style_invalidation,
+        }
+    }
+}
+
+impl Default for RetainedRenderState {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum StyleInvalidationScope {
     /// Conservative full restyle. Used for document replacement, structural
@@ -179,15 +273,7 @@ pub struct PageState {
     pub visible_text_cache: String,
     pub form_controls: FormControlIndex,
 
-    document_styles: DocumentStyleSet,
-    generations: PageStyleGenerations,
-    style_cache: Option<PageStyleCache>,
-    style_dirty: bool,
-    layout_dirty: bool,
-    last_restyle_trigger: Option<RestyleTrigger>,
-    pending_style_invalidation: Option<StyleInvalidationScope>,
-    last_style_recalc: Option<StyleRecalcKind>,
-    last_style_reuse: Option<ComputedStyleReuseStats>,
+    rendering: RetainedRenderState,
 }
 
 impl PageState {
@@ -198,15 +284,7 @@ impl PageState {
             head: HeadMetadata::default(),
             visible_text_cache: String::new(),
             form_controls: FormControlIndex::default(),
-            document_styles: DocumentStyleSet::default(),
-            generations: PageStyleGenerations::default(),
-            style_cache: None,
-            style_dirty: true,
-            layout_dirty: true,
-            last_restyle_trigger: None,
-            pending_style_invalidation: Some(StyleInvalidationScope::Full),
-            last_style_recalc: None,
-            last_style_reuse: None,
+            rendering: RetainedRenderState::new(),
         }
     }
 
@@ -217,15 +295,7 @@ impl PageState {
         self.head = HeadMetadata::default();
         self.visible_text_cache.clear();
         self.form_controls = FormControlIndex::default();
-        self.document_styles.clear();
-        self.generations = PageStyleGenerations::default();
-        self.style_cache = None;
-        self.style_dirty = true;
-        self.layout_dirty = true;
-        self.last_restyle_trigger = None;
-        self.pending_style_invalidation = Some(StyleInvalidationScope::Full);
-        self.last_style_recalc = None;
-        self.last_style_reuse = None;
+        self.rendering.reset_for_navigation();
     }
 
     pub fn update_head_metadata(&mut self) {
@@ -242,9 +312,10 @@ impl PageState {
     }
 
     pub(crate) fn mark_dom_changed(&mut self, hint: RestyleHint) {
+        let retained = &mut self.rendering;
         let trigger = hint.trigger;
-        self.last_restyle_trigger = Some(trigger);
-        self.generations.dom = self
+        retained.last_restyle_trigger = Some(trigger);
+        retained.generations.dom = retained
             .generations
             .dom
             .checked_add(1)
@@ -258,7 +329,7 @@ impl PageState {
                 // reconciliation, which separately invalidates style. Future
                 // text-sensitive selector or generated-content support must
                 // widen this contract if text content becomes style-relevant.
-                self.layout_dirty = true;
+                retained.layout_dirty = true;
             }
             RestyleTrigger::DocumentReplaced | RestyleTrigger::TreeMutated => {
                 self.mark_style_inputs_changed(StyleInvalidationScope::Full)
@@ -276,7 +347,8 @@ impl PageState {
     }
 
     fn mark_style_inputs_changed(&mut self, scope: StyleInvalidationScope) {
-        self.generations.style_inputs = self
+        self.rendering.generations.style_inputs = self
+            .rendering
             .generations
             .style_inputs
             .checked_add(1)
@@ -285,7 +357,8 @@ impl PageState {
     }
 
     fn mark_stylesheets_changed(&mut self) {
-        self.generations.stylesheets = self
+        self.rendering.generations.stylesheets = self
+            .rendering
             .generations
             .stylesheets
             .checked_add(1)
@@ -294,18 +367,19 @@ impl PageState {
     }
 
     fn invalidate_style(&mut self, scope: StyleInvalidationScope) {
-        self.style_dirty = true;
-        self.layout_dirty = true;
+        let retained = &mut self.rendering;
+        retained.style_dirty = true;
+        retained.layout_dirty = true;
 
-        let merged = match self.pending_style_invalidation.take() {
+        let merged = match retained.pending_style_invalidation.take() {
             Some(existing) => existing.merge(scope),
             None => scope,
         };
 
         if matches!(merged, StyleInvalidationScope::Full) {
-            self.style_cache = None;
+            retained.style_cache = None;
         }
-        self.pending_style_invalidation = Some(merged);
+        retained.pending_style_invalidation = Some(merged);
     }
 
     // --- CSS ---
@@ -314,6 +388,7 @@ impl PageState {
             return Vec::new();
         };
         let result = self
+            .rendering
             .document_styles
             .reconcile_from_dom(dom, self.base_url.as_deref());
         if result.changed {
@@ -324,12 +399,14 @@ impl PageState {
 
     #[cfg(test)]
     pub(crate) fn register_css(&mut self, absolute_url: &str) -> StylesheetSlotId {
-        self.document_styles
+        self.rendering
+            .document_styles
             .register_external_for_tests(absolute_url)
     }
 
     pub(crate) fn apply_css_block(&mut self, slot_id: StylesheetSlotId, block: &str) -> bool {
         let changed = self
+            .rendering
             .document_styles
             .install_external_stylesheet(slot_id, block);
         if changed {
@@ -339,29 +416,33 @@ impl PageState {
     }
 
     pub(crate) fn mark_css_done(&mut self, slot_id: StylesheetSlotId) {
-        if self.document_styles.mark_external_done(slot_id) {
+        if self.rendering.document_styles.mark_external_done(slot_id) {
             self.mark_stylesheets_changed();
         }
     }
 
     pub(crate) fn mark_css_failed(&mut self, slot_id: StylesheetSlotId) {
-        if self.document_styles.mark_external_failed(slot_id) {
+        if self.rendering.document_styles.mark_external_failed(slot_id) {
             self.mark_stylesheets_changed();
         }
     }
 
     pub(crate) fn mark_css_aborted(&mut self, slot_id: StylesheetSlotId) {
-        if self.document_styles.mark_external_aborted(slot_id) {
+        if self
+            .rendering
+            .document_styles
+            .mark_external_aborted(slot_id)
+        {
             self.mark_stylesheets_changed();
         }
     }
 
     pub fn pending_count(&self) -> usize {
-        self.document_styles.pending_count()
+        self.rendering.document_styles.pending_count()
     }
 
     pub fn css_stylesheets(&self) -> &[StylesheetParse] {
-        self.document_styles.stylesheets()
+        self.rendering.document_styles.stylesheets()
     }
 
     /// Runtime style-phase boundary for page rendering.
@@ -378,41 +459,33 @@ impl PageState {
             return Ok(None);
         };
 
-        let Self {
-            document_styles,
-            generations,
-            style_cache,
-            style_dirty,
-            pending_style_invalidation,
-            last_style_recalc,
-            last_style_reuse,
-            ..
-        } = self;
-        let needs_recompute = *style_dirty
-            || style_cache.as_ref().is_none_or(|cache| {
-                cache.style_input_generation != generations.style_inputs
-                    || cache.stylesheet_generation != generations.stylesheets
+        let retained = &mut self.rendering;
+        let needs_recompute = retained.style_dirty
+            || retained.style_cache.as_ref().is_none_or(|cache| {
+                cache.style_input_generation != retained.generations.style_inputs
+                    || cache.stylesheet_generation != retained.generations.stylesheets
             });
 
         if needs_recompute {
             Self::recompute_styles(
                 dom,
-                document_styles.stylesheets(),
-                *generations,
+                retained.document_styles.stylesheets(),
+                retained.generations,
                 StyleRecomputeState {
-                    style_cache,
-                    pending_style_invalidation,
-                    style_dirty,
-                    last_style_recalc,
-                    last_style_reuse,
+                    style_cache: &mut retained.style_cache,
+                    pending_style_invalidation: &mut retained.pending_style_invalidation,
+                    style_dirty: &mut retained.style_dirty,
+                    last_style_recalc: &mut retained.last_style_recalc,
+                    last_style_reuse: &mut retained.last_style_reuse,
                 },
             )?;
         } else {
-            *last_style_recalc = Some(StyleRecalcKind::ReusedCache);
-            *last_style_reuse = Some(ComputedStyleReuseStats::default());
+            retained.last_style_recalc = Some(StyleRecalcKind::ReusedCache);
+            retained.last_style_reuse = Some(ComputedStyleReuseStats::default());
         }
 
-        let cache = style_cache
+        let cache = retained
+            .style_cache
             .as_ref()
             .expect("style cache must exist after successful style computation");
         build_style_tree_from_computed_styles(dom, &cache.computed)
@@ -428,45 +501,7 @@ impl PageState {
     /// imply that `PageState` currently retains a live layout tree or paint
     /// artifact between frames.
     pub fn render_pipeline_debug_snapshot(&self) -> RenderPipelineDebugSnapshot {
-        let style_cache_state = match (&self.style_cache, self.style_dirty) {
-            (None, _) => RenderArtifactState::Absent,
-            (Some(_), true) => RenderArtifactState::RetainedStale,
-            (Some(_), false) => RenderArtifactState::RetainedFresh,
-        };
-
-        let (styled_tree, layout_tree, paint_output) = if self.dom.is_some() {
-            (
-                RenderArtifactState::BorrowBackedRebuiltOnDemand,
-                RenderArtifactState::FrameLocalRebuiltPerFrame,
-                RenderArtifactState::ImmediateFrameOutput,
-            )
-        } else {
-            (
-                RenderArtifactState::Absent,
-                RenderArtifactState::Absent,
-                RenderArtifactState::Absent,
-            )
-        };
-
-        let style_invalidation = match self.pending_style_invalidation {
-            Some(StyleInvalidationScope::Full) => StyleInvalidationState::Full,
-            Some(StyleInvalidationScope::AttributeSuffix { .. }) => {
-                StyleInvalidationState::AttributeSuffix
-            }
-            None => StyleInvalidationState::None,
-        };
-
-        RenderPipelineDebugSnapshot {
-            has_dom: self.dom.is_some(),
-            resolved_styles: style_cache_state,
-            computed_styles: style_cache_state,
-            styled_tree,
-            layout_tree,
-            paint_output,
-            style_dirty: self.style_dirty,
-            layout_dirty: self.layout_dirty,
-            style_invalidation,
-        }
+        self.rendering.debug_snapshot(self.dom.is_some())
     }
 
     fn recompute_styles(
@@ -528,22 +563,22 @@ impl PageState {
 
     #[cfg(test)]
     pub(crate) fn style_generations(&self) -> PageStyleGenerations {
-        self.generations
+        self.rendering.generations
     }
 
     #[cfg(test)]
     pub(crate) fn style_dirty(&self) -> bool {
-        self.style_dirty
+        self.rendering.style_dirty
     }
 
     #[cfg(test)]
     pub(crate) fn layout_dirty(&self) -> bool {
-        self.layout_dirty
+        self.rendering.layout_dirty
     }
 
     #[cfg(test)]
     pub(crate) fn clear_layout_dirty_for_tests(&mut self) {
-        self.layout_dirty = false;
+        self.rendering.layout_dirty = false;
     }
 
     #[cfg(test)]
@@ -553,17 +588,17 @@ impl PageState {
 
     #[cfg(test)]
     pub(crate) fn last_restyle_trigger(&self) -> Option<RestyleTrigger> {
-        self.last_restyle_trigger
+        self.rendering.last_restyle_trigger
     }
 
     #[cfg(test)]
     pub(crate) fn last_style_recalc(&self) -> Option<StyleRecalcKind> {
-        self.last_style_recalc
+        self.rendering.last_style_recalc
     }
 
     #[cfg(test)]
     pub(crate) fn last_style_reuse(&self) -> Option<ComputedStyleReuseStats> {
-        self.last_style_reuse
+        self.rendering.last_style_reuse
     }
 
     pub fn outline(&self, cap: usize) -> Vec<String> {
