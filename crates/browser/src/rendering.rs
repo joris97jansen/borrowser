@@ -66,6 +66,46 @@ pub struct RenderingPhaseContract {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RenderInvalidationEntryPoint {
+    DocumentReplaced,
+    DomStructureChanged,
+    DomAttributesChanged,
+    DomTextChanged,
+    StylesheetSetChanged,
+    ViewportChanged,
+    ResourceStateChanged,
+    InputStateChanged,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PhaseRerunSource {
+    None,
+    Direct(RenderRebuildTrigger),
+    CascadedFrom(RenderingPhase),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RenderWorkPlan {
+    pub style: PhaseRerunSource,
+    pub layout: PhaseRerunSource,
+    pub paint: PhaseRerunSource,
+    pub frame_orchestration: PhaseRerunSource,
+}
+
+impl RenderWorkPlan {
+    pub const fn requests_redraw(self) -> bool {
+        !matches!(self.frame_orchestration, PhaseRerunSource::None)
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RenderInvalidationRequest {
+    pub entry_point: RenderInvalidationEntryPoint,
+    pub requested_by: RenderingSubsystem,
+    pub work: RenderWorkPlan,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RenderArtifactLifetime {
     RetainedAcrossUpdates,
     BorrowBackedRebuiltOnDemand,
@@ -200,6 +240,108 @@ pub fn render_phase_contracts() -> &'static [RenderingPhaseContract] {
     &RENDER_PHASE_CONTRACTS
 }
 
+static RENDER_INVALIDATION_REQUEST_CONTRACTS: [RenderInvalidationRequest; 8] = [
+    RenderInvalidationRequest {
+        entry_point: RenderInvalidationEntryPoint::DocumentReplaced,
+        requested_by: RenderingSubsystem::BrowserRuntime,
+        work: RenderWorkPlan {
+            style: PhaseRerunSource::Direct(RenderRebuildTrigger::DomReplaced),
+            layout: PhaseRerunSource::CascadedFrom(RenderingPhase::Style),
+            paint: PhaseRerunSource::CascadedFrom(RenderingPhase::Layout),
+            frame_orchestration: PhaseRerunSource::CascadedFrom(RenderingPhase::Style),
+        },
+    },
+    RenderInvalidationRequest {
+        entry_point: RenderInvalidationEntryPoint::DomStructureChanged,
+        requested_by: RenderingSubsystem::BrowserRuntime,
+        work: RenderWorkPlan {
+            style: PhaseRerunSource::Direct(RenderRebuildTrigger::DomStructureChanged),
+            layout: PhaseRerunSource::CascadedFrom(RenderingPhase::Style),
+            paint: PhaseRerunSource::CascadedFrom(RenderingPhase::Layout),
+            frame_orchestration: PhaseRerunSource::CascadedFrom(RenderingPhase::Style),
+        },
+    },
+    RenderInvalidationRequest {
+        entry_point: RenderInvalidationEntryPoint::DomAttributesChanged,
+        requested_by: RenderingSubsystem::BrowserRuntime,
+        work: RenderWorkPlan {
+            style: PhaseRerunSource::Direct(RenderRebuildTrigger::DomAttributesChanged),
+            layout: PhaseRerunSource::CascadedFrom(RenderingPhase::Style),
+            paint: PhaseRerunSource::CascadedFrom(RenderingPhase::Layout),
+            frame_orchestration: PhaseRerunSource::CascadedFrom(RenderingPhase::Style),
+        },
+    },
+    RenderInvalidationRequest {
+        entry_point: RenderInvalidationEntryPoint::DomTextChanged,
+        requested_by: RenderingSubsystem::BrowserRuntime,
+        work: RenderWorkPlan {
+            style: PhaseRerunSource::None,
+            layout: PhaseRerunSource::Direct(RenderRebuildTrigger::DomTextChanged),
+            paint: PhaseRerunSource::CascadedFrom(RenderingPhase::Layout),
+            frame_orchestration: PhaseRerunSource::Direct(RenderRebuildTrigger::DomTextChanged),
+        },
+    },
+    RenderInvalidationRequest {
+        entry_point: RenderInvalidationEntryPoint::StylesheetSetChanged,
+        requested_by: RenderingSubsystem::BrowserRuntime,
+        work: RenderWorkPlan {
+            style: PhaseRerunSource::Direct(RenderRebuildTrigger::StylesheetSetChanged),
+            layout: PhaseRerunSource::CascadedFrom(RenderingPhase::Style),
+            paint: PhaseRerunSource::CascadedFrom(RenderingPhase::Layout),
+            frame_orchestration: PhaseRerunSource::CascadedFrom(RenderingPhase::Style),
+        },
+    },
+    RenderInvalidationRequest {
+        entry_point: RenderInvalidationEntryPoint::ViewportChanged,
+        requested_by: RenderingSubsystem::BrowserView,
+        work: RenderWorkPlan {
+            style: PhaseRerunSource::None,
+            layout: PhaseRerunSource::Direct(RenderRebuildTrigger::ViewportChanged),
+            paint: PhaseRerunSource::CascadedFrom(RenderingPhase::Layout),
+            frame_orchestration: PhaseRerunSource::Direct(RenderRebuildTrigger::ViewportChanged),
+        },
+    },
+    RenderInvalidationRequest {
+        entry_point: RenderInvalidationEntryPoint::ResourceStateChanged,
+        requested_by: RenderingSubsystem::BrowserRuntime,
+        work: RenderWorkPlan {
+            style: PhaseRerunSource::None,
+            layout: PhaseRerunSource::Direct(RenderRebuildTrigger::ResourceStateChanged),
+            paint: PhaseRerunSource::Direct(RenderRebuildTrigger::ResourceStateChanged),
+            frame_orchestration: PhaseRerunSource::Direct(
+                RenderRebuildTrigger::ResourceStateChanged,
+            ),
+        },
+    },
+    RenderInvalidationRequest {
+        entry_point: RenderInvalidationEntryPoint::InputStateChanged,
+        requested_by: RenderingSubsystem::BrowserView,
+        work: RenderWorkPlan {
+            style: PhaseRerunSource::None,
+            layout: PhaseRerunSource::None,
+            paint: PhaseRerunSource::Direct(RenderRebuildTrigger::InputStateChanged),
+            frame_orchestration: PhaseRerunSource::Direct(RenderRebuildTrigger::InputStateChanged),
+        },
+    },
+];
+
+/// Stable invalidation-entry-point contract table.
+///
+/// Each entry records who may request pipeline work for a runtime trigger and
+/// which phases rerun directly versus as a downstream consequence.
+pub fn render_invalidation_request_contracts() -> &'static [RenderInvalidationRequest] {
+    &RENDER_INVALIDATION_REQUEST_CONTRACTS
+}
+
+pub fn render_invalidation_request(
+    entry_point: RenderInvalidationEntryPoint,
+) -> RenderInvalidationRequest {
+    *render_invalidation_request_contracts()
+        .iter()
+        .find(|contract| contract.entry_point == entry_point)
+        .expect("render invalidation contract must exist for every entry point")
+}
+
 static RENDER_ARTIFACT_OWNERSHIP_CONTRACTS: [RenderArtifactOwnershipContract; 12] = [
     RenderArtifactOwnershipContract {
         artifact: RenderArtifact::Dom,
@@ -321,9 +463,11 @@ pub struct RenderPipelineDebugSnapshot {
 #[cfg(test)]
 mod tests {
     use super::{
-        RenderArtifact, RenderArtifactLifetime, RenderArtifactState, RenderPipelineDebugSnapshot,
-        RenderRebuildTrigger, RenderingPhase, RenderingSubsystem, StyleInvalidationState,
-        render_artifact_ownership_contracts, render_phase_contracts,
+        PhaseRerunSource, RenderArtifact, RenderArtifactLifetime, RenderArtifactState,
+        RenderInvalidationEntryPoint, RenderPipelineDebugSnapshot, RenderRebuildTrigger,
+        RenderingPhase, RenderingSubsystem, StyleInvalidationState,
+        render_artifact_ownership_contracts, render_invalidation_request,
+        render_invalidation_request_contracts, render_phase_contracts,
     };
     use crate::page::{PageState, RestyleHint};
     use gfx::paint::PaintPhaseInput;
@@ -432,6 +576,122 @@ mod tests {
                 RenderRebuildTrigger::InputStateChanged,
             ]
         );
+    }
+
+    #[test]
+    fn render_invalidation_request_contracts_pin_runtime_entry_points() {
+        let contracts = render_invalidation_request_contracts();
+        assert_eq!(contracts.len(), 8);
+
+        let attrs = render_invalidation_request(RenderInvalidationEntryPoint::DomAttributesChanged);
+        assert_eq!(attrs.requested_by, RenderingSubsystem::BrowserRuntime);
+        assert_eq!(
+            attrs.work.style,
+            PhaseRerunSource::Direct(RenderRebuildTrigger::DomAttributesChanged)
+        );
+        assert_eq!(
+            attrs.work.layout,
+            PhaseRerunSource::CascadedFrom(RenderingPhase::Style)
+        );
+        assert_eq!(
+            attrs.work.paint,
+            PhaseRerunSource::CascadedFrom(RenderingPhase::Layout)
+        );
+
+        let text = render_invalidation_request(RenderInvalidationEntryPoint::DomTextChanged);
+        assert_eq!(text.requested_by, RenderingSubsystem::BrowserRuntime);
+        assert_eq!(text.work.style, PhaseRerunSource::None);
+        assert_eq!(
+            text.work.layout,
+            PhaseRerunSource::Direct(RenderRebuildTrigger::DomTextChanged)
+        );
+        assert_eq!(
+            text.work.frame_orchestration,
+            PhaseRerunSource::Direct(RenderRebuildTrigger::DomTextChanged)
+        );
+
+        let input = render_invalidation_request(RenderInvalidationEntryPoint::InputStateChanged);
+        assert_eq!(input.requested_by, RenderingSubsystem::BrowserView);
+        assert_eq!(input.work.style, PhaseRerunSource::None);
+        assert_eq!(input.work.layout, PhaseRerunSource::None);
+        assert_eq!(
+            input.work.paint,
+            PhaseRerunSource::Direct(RenderRebuildTrigger::InputStateChanged)
+        );
+
+        let resource =
+            render_invalidation_request(RenderInvalidationEntryPoint::ResourceStateChanged);
+        assert_eq!(resource.requested_by, RenderingSubsystem::BrowserRuntime);
+        assert_eq!(
+            resource.work.layout,
+            PhaseRerunSource::Direct(RenderRebuildTrigger::ResourceStateChanged)
+        );
+        assert_eq!(
+            resource.work.paint,
+            PhaseRerunSource::Direct(RenderRebuildTrigger::ResourceStateChanged)
+        );
+    }
+
+    #[test]
+    fn render_invalidation_request_contracts_cover_each_entry_point_once() {
+        let contracts = render_invalidation_request_contracts();
+        let expected = [
+            RenderInvalidationEntryPoint::DocumentReplaced,
+            RenderInvalidationEntryPoint::DomStructureChanged,
+            RenderInvalidationEntryPoint::DomAttributesChanged,
+            RenderInvalidationEntryPoint::DomTextChanged,
+            RenderInvalidationEntryPoint::StylesheetSetChanged,
+            RenderInvalidationEntryPoint::ViewportChanged,
+            RenderInvalidationEntryPoint::ResourceStateChanged,
+            RenderInvalidationEntryPoint::InputStateChanged,
+        ];
+
+        for entry_point in expected {
+            let count = contracts
+                .iter()
+                .filter(|contract| contract.entry_point == entry_point)
+                .count();
+            assert_eq!(
+                count, 1,
+                "entry point must have exactly one invalidation contract: {entry_point:?}"
+            );
+        }
+
+        assert_eq!(contracts.len(), expected.len());
+    }
+
+    #[test]
+    fn direct_invalidation_phase_sources_align_with_phase_rebuild_triggers() {
+        let phase_contracts = render_phase_contracts();
+
+        for request in render_invalidation_request_contracts() {
+            assert!(
+                request.work.requests_redraw(),
+                "every shipped invalidation entry point should request a frame: {:?}",
+                request.entry_point
+            );
+
+            for (phase, source) in [
+                (RenderingPhase::Style, request.work.style),
+                (RenderingPhase::Layout, request.work.layout),
+                (RenderingPhase::Paint, request.work.paint),
+                (
+                    RenderingPhase::FrameOrchestration,
+                    request.work.frame_orchestration,
+                ),
+            ] {
+                if let PhaseRerunSource::Direct(trigger) = source {
+                    let contract = phase_contracts
+                        .iter()
+                        .find(|contract| contract.phase == phase)
+                        .expect("phase contract should exist");
+                    assert!(
+                        contract.rebuild_triggers.contains(&trigger),
+                        "direct invalidation trigger {trigger:?} must be listed on {phase:?}"
+                    );
+                }
+            }
+        }
     }
 
     #[test]
@@ -716,6 +976,103 @@ mod tests {
     }
 
     #[test]
+    fn document_replacement_returns_explicit_full_pipeline_work_request() {
+        let output = parse_document(
+            "<!doctype html><html><head><style>p { color: red; }</style></head><body><p>Hello</p></body></html>",
+            HtmlParseOptions::default(),
+        )
+        .expect("parse should work");
+        let mut page = PageState::new();
+        page.start_nav("https://example.com/index.html");
+
+        let request = page.replace_dom(Box::new(output.document), RestyleHint::document_replaced());
+        assert_eq!(
+            request.entry_point,
+            RenderInvalidationEntryPoint::DocumentReplaced
+        );
+        assert_eq!(request.requested_by, RenderingSubsystem::BrowserRuntime);
+        assert_eq!(
+            request.work.style,
+            PhaseRerunSource::Direct(RenderRebuildTrigger::DomReplaced)
+        );
+        assert_eq!(
+            request.work.layout,
+            PhaseRerunSource::CascadedFrom(RenderingPhase::Style)
+        );
+        assert_eq!(
+            request.work.paint,
+            PhaseRerunSource::CascadedFrom(RenderingPhase::Layout)
+        );
+        assert_eq!(
+            request.work.frame_orchestration,
+            PhaseRerunSource::CascadedFrom(RenderingPhase::Style)
+        );
+    }
+
+    #[test]
+    fn dom_text_mutation_returns_explicit_layout_and_paint_work_request() {
+        let mut page = page_with_dom(
+            "<!doctype html><html><head><style>p { color: red; }</style></head><body><p>Hello</p></body></html>",
+        );
+        page.clear_layout_dirty_for_tests();
+
+        let request = page.mark_dom_changed(RestyleHint::text_mutated());
+        assert_eq!(
+            request.entry_point,
+            RenderInvalidationEntryPoint::DomTextChanged
+        );
+        assert_eq!(request.requested_by, RenderingSubsystem::BrowserRuntime);
+        assert_eq!(request.work.style, PhaseRerunSource::None);
+        assert_eq!(
+            request.work.layout,
+            PhaseRerunSource::Direct(RenderRebuildTrigger::DomTextChanged)
+        );
+        assert_eq!(
+            request.work.paint,
+            PhaseRerunSource::CascadedFrom(RenderingPhase::Layout)
+        );
+        assert_eq!(
+            request.work.frame_orchestration,
+            PhaseRerunSource::Direct(RenderRebuildTrigger::DomTextChanged)
+        );
+    }
+
+    #[test]
+    fn stylesheet_reconcile_returns_explicit_style_invalidation_request() {
+        let output = parse_document(
+            "<!doctype html><html><head><link rel=\"stylesheet\" href=\"https://example.com/site.css\"></head><body><p>Hello</p></body></html>",
+            HtmlParseOptions::default(),
+        )
+        .expect("parse should work");
+        let mut page = PageState::new();
+        page.start_nav("https://example.com/index.html");
+        let _ = page.replace_dom(Box::new(output.document), RestyleHint::document_replaced());
+
+        let outcome = page.reconcile_document_stylesheets();
+        let request = outcome
+            .render_invalidation
+            .expect("stylesheet discovery should invalidate style inputs");
+        assert_eq!(
+            request.entry_point,
+            RenderInvalidationEntryPoint::StylesheetSetChanged
+        );
+        assert_eq!(request.requested_by, RenderingSubsystem::BrowserRuntime);
+        assert_eq!(
+            request.work.style,
+            PhaseRerunSource::Direct(RenderRebuildTrigger::StylesheetSetChanged)
+        );
+        assert_eq!(
+            request.work.layout,
+            PhaseRerunSource::CascadedFrom(RenderingPhase::Style)
+        );
+        assert_eq!(
+            request.work.paint,
+            PhaseRerunSource::CascadedFrom(RenderingPhase::Layout)
+        );
+        assert_eq!(outcome.fetches.len(), 1);
+    }
+
+    #[test]
     fn navigation_reset_clears_page_owned_retained_render_state() {
         let mut page = page_with_dom(
             "<!doctype html><html><head><style>p { color: red; }</style></head><body><p>Hello</p></body></html>",
@@ -749,8 +1106,8 @@ mod tests {
         let output = parse_document(input, HtmlParseOptions::default()).expect("parse should work");
         let mut page = PageState::new();
         page.start_nav("https://example.com/index.html");
-        page.replace_dom(Box::new(output.document), RestyleHint::document_replaced());
-        page.reconcile_document_stylesheets();
+        let _ = page.replace_dom(Box::new(output.document), RestyleHint::document_replaced());
+        let _ = page.reconcile_document_stylesheets();
         page
     }
 

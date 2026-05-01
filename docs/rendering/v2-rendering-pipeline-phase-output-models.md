@@ -19,6 +19,7 @@ Related code:
 Related documents:
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v3-retained-state-versus-rebuilt-state-ownership.md`
+- `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
 - `docs/architecture/ARCHITECTURE.md`
 
 ## Purpose

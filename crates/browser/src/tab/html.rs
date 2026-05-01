@@ -94,7 +94,7 @@ impl Tab {
         request_id: RequestId,
         restyle_hint: RestyleHint,
     ) {
-        self.page.replace_dom(dom, restyle_hint);
+        let render_work = self.page.replace_dom(dom, restyle_hint);
         self.page.update_head_metadata();
         self.page
             .seed_input_values_from_dom(&mut self.document_input.input_values);
@@ -117,6 +117,6 @@ impl Tab {
             ),
             None => base,
         });
-        self.poke_redraw();
+        self.request_render_work(render_work);
     }
 }

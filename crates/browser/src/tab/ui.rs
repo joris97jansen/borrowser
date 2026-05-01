@@ -1,4 +1,5 @@
 use super::Tab;
+use crate::rendering::{RenderInvalidationEntryPoint, render_invalidation_request};
 use crate::view::content;
 use egui::Context;
 
@@ -6,7 +7,9 @@ impl Tab {
     pub fn ui_content(&mut self, ctx: &Context) {
         // Drain completed decode jobs and upload textures before painting.
         if self.resources.pump(ctx) {
-            self.poke_redraw();
+            self.request_render_work(render_invalidation_request(
+                RenderInvalidationEntryPoint::ResourceStateChanged,
+            ));
         }
 
         if let Some(action) = content(

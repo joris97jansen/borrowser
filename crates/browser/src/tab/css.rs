@@ -77,7 +77,7 @@ impl Tab {
         request_id: RequestId,
     ) {
         self.stylesheet_loads.remove(&stylesheet_slot_id);
-        self.page.mark_css_aborted(stylesheet_slot_id);
+        let render_work = self.page.mark_css_aborted(stylesheet_slot_id);
         self.send_cmd(CoreCommand::CssAbort {
             tab_id: self.tab_id,
             request_id,
@@ -91,7 +91,9 @@ impl Tab {
             format_network_error("stylesheet", &url, error_kind, status_code, &error),
             remaining
         ));
-        self.poke_redraw();
+        if !self.request_optional_render_work(render_work) {
+            self.poke_redraw();
+        }
     }
 
     pub(super) fn on_css_decoded_block(
@@ -99,17 +101,17 @@ impl Tab {
         stylesheet_slot_id: StylesheetSlotId,
         css_block: String,
     ) {
-        self.page.apply_css_block(stylesheet_slot_id, &css_block);
-        self.poke_redraw();
+        let render_work = self.page.apply_css_block(stylesheet_slot_id, &css_block);
+        let _ = self.request_optional_render_work(render_work);
     }
 
     pub(super) fn on_css_sheet_done(&mut self, stylesheet_slot_id: StylesheetSlotId, _url: String) {
-        self.page.mark_css_done(stylesheet_slot_id);
+        let mut render_work = self.page.mark_css_done(stylesheet_slot_id);
         let remaining = self.page.pending_count();
         self.loading = remaining > 0;
         let stylesheet = self.stylesheet_loads.remove(&stylesheet_slot_id);
         if stylesheet.as_ref().is_some_and(|state| !state.accept_body) {
-            self.page.mark_css_failed(stylesheet_slot_id);
+            render_work = render_work.or(self.page.mark_css_failed(stylesheet_slot_id));
         }
         self.last_status = Some(match stylesheet {
             Some(state) if !state.accept_body => {
@@ -129,7 +131,9 @@ impl Tab {
             _ if remaining > 0 => format!("Stylesheet loaded ({} remaining)", remaining),
             _ => "All stylesheets loaded".to_string(),
         });
-        self.poke_redraw();
+        if !self.request_optional_render_work(render_work) {
+            self.poke_redraw();
+        }
     }
 }
 

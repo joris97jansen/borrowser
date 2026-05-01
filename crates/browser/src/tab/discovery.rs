@@ -6,12 +6,13 @@ use url::Url;
 
 impl Tab {
     pub(crate) fn discover_resources(&mut self, request_id: RequestId) {
-        self.discover_stylesheets(request_id);
+        let _ = self.discover_stylesheets(request_id);
         self.discover_images(request_id);
     }
 
-    fn discover_stylesheets(&mut self, request_id: RequestId) {
-        for fetch in self.page.reconcile_document_stylesheets() {
+    fn discover_stylesheets(&mut self, request_id: RequestId) -> bool {
+        let outcome = self.page.reconcile_document_stylesheets();
+        for fetch in outcome.fetches {
             self.send_fetch(
                 request_id,
                 Some(fetch.slot_id),
@@ -19,6 +20,7 @@ impl Tab {
                 ResourceKind::Css,
             );
         }
+        self.request_optional_render_work(outcome.render_invalidation)
     }
 
     fn discover_images(&mut self, request_id: RequestId) {
