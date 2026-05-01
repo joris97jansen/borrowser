@@ -70,9 +70,15 @@ impl<'ui, 'style, R, F> ViewportCtx<'ui, 'style, R, F> {
     }
 }
 
-pub fn page_viewport<R: ImageProvider, F: FormControlHandler<CoreInputValueStore>>(
+pub struct ViewportFrameOutput {
+    pub action: Option<PageAction>,
+    pub viewport_changed: bool,
+    pub requested_followup_render: bool,
+}
+
+pub fn execute_viewport_frame<R: ImageProvider, F: FormControlHandler<CoreInputValueStore>>(
     ctx: ViewportCtx<'_, '_, R, F>,
-) -> Option<PageAction> {
+) -> ViewportFrameOutput {
     let ViewportCtx {
         ui,
         style,
@@ -214,7 +220,7 @@ pub fn page_viewport<R: ImageProvider, F: FormControlHandler<CoreInputValueStore
                 paint_page(PaintPhaseInput::new(&layout_output), paint_args);
             }
 
-            route_frame_input(FrameInputCtx {
+            let input_result = route_frame_input(FrameInputCtx {
                 ui,
                 resp,
                 content_rect,
@@ -227,7 +233,13 @@ pub fn page_viewport<R: ImageProvider, F: FormControlHandler<CoreInputValueStore
                 input_values: input_values.inner_mut(),
                 form_controls,
                 interaction,
-            })
+            });
+
+            ViewportFrameOutput {
+                action: input_result.action,
+                viewport_changed: viewport_width_changed,
+                requested_followup_render: input_result.requested_followup_render,
+            }
         })
         .inner
 }

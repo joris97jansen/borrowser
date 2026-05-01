@@ -76,6 +76,7 @@ impl Tab {
         self.stylesheet_loads.clear();
         self.last_status = Some(format!("Fetching {url} …"));
         self.page.start_nav(&url);
+        self.clear_render_orchestration_state();
 
         self.send_cmd(CoreCommand::FetchStream {
             tab_id: self.tab_id,

@@ -161,7 +161,7 @@ pub(super) fn run_frame<S: InputStore + ?Sized, F: FormControlHandler<S>>(
             let origin = content_rect.min;
             let fragment_rects: RefCell<HashMap<Id, Rectangle>> = RefCell::new(HashMap::new());
 
-            let action = route_frame_input(FrameInputCtx {
+            let result = route_frame_input(FrameInputCtx {
                 ui,
                 resp,
                 content_rect,
@@ -175,7 +175,7 @@ pub(super) fn run_frame<S: InputStore + ?Sized, F: FormControlHandler<S>>(
                 form_controls,
                 interaction,
             });
-            *action_cell.borrow_mut() = action;
+            *action_cell.borrow_mut() = result.action;
         });
     });
     action_cell.into_inner()

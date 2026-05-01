@@ -21,9 +21,14 @@ use std::collections::HashMap;
 #[cfg(test)]
 mod tests;
 
+pub(crate) struct FrameInputResult {
+    pub(crate) action: Option<PageAction>,
+    pub(crate) requested_followup_render: bool,
+}
+
 pub(crate) fn route_frame_input<S: InputStore + ?Sized, F: FormControlHandler<S>>(
     ctx: FrameInputCtx<'_, '_, '_, S, F>,
-) -> Option<PageAction> {
+) -> FrameInputResult {
     let FrameInputCtx {
         ui,
         resp,
@@ -112,10 +117,10 @@ pub(crate) fn route_frame_input<S: InputStore + ?Sized, F: FormControlHandler<S>
         );
     }
 
-    if request_repaint {
-        ui.ctx().request_repaint();
+    FrameInputResult {
+        action,
+        requested_followup_render: request_repaint,
     }
-    action
 }
 
 pub(super) fn refresh_focused_input_rect(

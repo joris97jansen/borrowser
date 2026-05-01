@@ -23,6 +23,7 @@ Related documents:
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v3-retained-state-versus-rebuilt-state-ownership.md`
+- `docs/rendering/v5-explicit-runtime-render-orchestration-path.md`
 - `docs/architecture/ARCHITECTURE.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
 
@@ -46,8 +47,11 @@ runtime event or viewport/runtime state change
   -> RenderInvalidationRequest { requested_by, work }
   -> PageState retained-state mutation when page-owned state is affected
   -> Tab::request_render_work(...)
+  -> PendingRenderWork
   -> repaint request
   -> browser::view::content(...)
+  -> browser::rendering::prepare_page_frame(...)
+  -> browser::rendering::execute_prepared_page_frame(...)
   -> style/layout/paint rerun according to dirty state and typed handoffs
 ```
 
@@ -148,10 +152,12 @@ that distinction is intentionally out of scope for this milestone.
 
 ### Input State
 
-`InputStateChanged` is part of the contract table even though current browser
-runtime work is still routed through the existing view/viewport/input path.
+`InputStateChanged` is part of the shipped runtime path. Viewport/input routing
+now returns explicit follow-up render intent, and the browser runtime converts
+that into `render_invalidation_request(InputStateChanged)` through
+`Tab::request_render_work(...)`.
 
-The contract is already fixed:
+The contract is:
 
 - input changes do not rerun style
 - input changes do not rerun layout in the current baseline
@@ -186,8 +192,8 @@ This matters because redraw is no longer just:
 For rendering invalidation paths, it is now:
 
 ```text
-"this named invalidation entry point requests these reruns, so request the
-next frame through the explicit render-work boundary"
+"this named invalidation entry point requests these reruns, so queue the work
+and request the next frame through the explicit render-work boundary"
 ```
 
 `poke_redraw()` still exists for non-pipeline UI/status refreshes such as

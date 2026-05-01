@@ -21,6 +21,7 @@ impl Tab {
         self.stylesheet_loads.clear();
         self.url = response.final_url.clone();
         self.page.start_nav(response.display_url());
+        self.clear_render_orchestration_state();
         self.loading = true;
         self.last_status = Some(format!(
             "Loading document • {}",

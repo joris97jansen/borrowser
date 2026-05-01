@@ -29,6 +29,7 @@ Related documents:
 - `docs/css/s9-property-system-computed-style-runtime-contract.md`
 - `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`
 - `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
+- `docs/rendering/v5-explicit-runtime-render-orchestration-path.md`
 - `docs/security/css-hardening.md`
 - `docs/architecture/ARCHITECTURE.md`
 
@@ -51,7 +52,7 @@ Ownership is split as follows:
 - `runtime_css` owns stylesheet byte buffering, UTF-8 assembly, abort handling,
   and complete decoded-block event emission.
 - `browser::Tab` owns event routing, request/navigation filtering, pending
-  stylesheet load state, and runtime render-work requests.
+  stylesheet load state, pending render work, and runtime render-work requests.
 - `browser::PageState` owns the active DOM, document stylesheet set,
   style/layout dirty state, style generations, and page-local style cache.
 - `browser::DocumentStyleSet` owns document-order stylesheet slots and exposes

@@ -5,6 +5,16 @@
 //! boundaries, phase I/O, rebuild triggers, and runtime-visible retained vs.
 //! rebuilt state so later rendering work can evolve against explicit contracts.
 
+use crate::form_controls::FormControlIndex;
+use crate::input_state::DocumentInputState;
+use crate::page::PageState;
+use css::{ComputedStyleResolutionError, StylePhaseOutput, StyledNode};
+use egui::Ui;
+use gfx::input::PageAction;
+use gfx::paint::ImageProvider;
+use gfx::viewport::{ViewportCtx, execute_viewport_frame};
+use html::Node;
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RenderingPhase {
     Style,
@@ -460,12 +470,295 @@ pub struct RenderPipelineDebugSnapshot {
     pub style_invalidation: StyleInvalidationState,
 }
 
+/// Runtime-owned queue of invalidation requests awaiting the next frame.
+///
+/// V4 introduced explicit invalidation entry points and work plans. V5 makes
+/// those requests part of runtime orchestration by retaining them until the
+/// next frame consumes the planned work through the render pipeline.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct PendingRenderWork {
+    requests: Vec<RenderInvalidationRequest>,
+}
+
+impl PendingRenderWork {
+    pub fn push(&mut self, request: RenderInvalidationRequest) {
+        if !self.requests.contains(&request) {
+            self.requests.push(request);
+        }
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.requests.is_empty()
+    }
+
+    pub fn requests(&self) -> &[RenderInvalidationRequest] {
+        &self.requests
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RenderPhaseExecutionKind {
+    Requested,
+    MaterializedFromRetainedArtifacts,
+    RequiredForCurrentFrame,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RenderPhaseExecutionTrace {
+    pub phase: RenderingPhase,
+    pub kind: RenderPhaseExecutionKind,
+    pub direct_triggers: Vec<RenderRebuildTrigger>,
+    pub cascaded_from: Vec<RenderingPhase>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RenderFrameExecutionTrace {
+    /// Invalidation entry points that actively shaped this frame.
+    ///
+    /// This includes queued runtime requests consumed at frame start plus the
+    /// in-frame `ViewportChanged` trigger when viewport metrics differ from the
+    /// previous frame.
+    pub triggered_entry_points: Vec<RenderInvalidationEntryPoint>,
+    pub style: RenderPhaseExecutionTrace,
+    pub layout: RenderPhaseExecutionTrace,
+    pub paint: RenderPhaseExecutionTrace,
+    pub frame_orchestration: RenderPhaseExecutionTrace,
+    pub semantic_phase_order: Vec<RenderingPhase>,
+}
+
+pub(crate) struct OrchestratedFrameOutcome {
+    pub(crate) action: Option<PageAction>,
+    pub(crate) followup_render_request: Option<RenderInvalidationRequest>,
+    pub(crate) trace: RenderFrameExecutionTrace,
+}
+
+pub(crate) struct PreparedPageFrame<'a> {
+    pub(crate) style_output: StylePhaseOutput<'a>,
+    pub(crate) page_background: Option<(u8, u8, u8, u8)>,
+    pending_work: PendingRenderWork,
+    style_dirty_before_frame: bool,
+    base_url: Option<String>,
+    form_controls: FormControlIndex,
+}
+
+#[derive(Default)]
+struct PhaseReasonAccumulator {
+    direct_triggers: Vec<RenderRebuildTrigger>,
+    cascaded_from: Vec<RenderingPhase>,
+}
+
+impl PhaseReasonAccumulator {
+    fn record(&mut self, source: PhaseRerunSource) {
+        match source {
+            PhaseRerunSource::None => {}
+            PhaseRerunSource::Direct(trigger) => push_unique(&mut self.direct_triggers, trigger),
+            PhaseRerunSource::CascadedFrom(phase) => push_unique(&mut self.cascaded_from, phase),
+        }
+    }
+
+    fn has_requested_work(&self) -> bool {
+        !self.direct_triggers.is_empty() || !self.cascaded_from.is_empty()
+    }
+}
+
+pub(crate) fn prepare_page_frame(
+    page: &mut PageState,
+    pending_work: PendingRenderWork,
+) -> Result<Option<PreparedPageFrame<'_>>, ComputedStyleResolutionError> {
+    let style_snapshot = page.render_pipeline_debug_snapshot();
+    let base_url = page.base_url.clone();
+    let form_controls = page.form_controls.clone();
+
+    let style_output = match page.build_style_phase_output()? {
+        Some(style_output) => style_output,
+        None => return Ok(None),
+    };
+    let page_background = find_page_background_color(&style_output);
+
+    Ok(Some(PreparedPageFrame {
+        style_output,
+        page_background,
+        pending_work,
+        style_dirty_before_frame: style_snapshot.style_dirty,
+        base_url,
+        form_controls,
+    }))
+}
+
+pub(crate) fn execute_prepared_page_frame<R: ImageProvider>(
+    ui: &mut Ui,
+    prepared: PreparedPageFrame<'_>,
+    input_state: &mut DocumentInputState,
+    resources: &R,
+) -> OrchestratedFrameOutcome {
+    let PreparedPageFrame {
+        style_output,
+        page_background: _page_background,
+        pending_work,
+        style_dirty_before_frame,
+        base_url,
+        form_controls,
+    } = prepared;
+    let viewport_result = execute_viewport_frame(ViewportCtx::new(
+        ui,
+        &style_output,
+        base_url.as_deref(),
+        resources,
+        &mut input_state.input_values,
+        &form_controls,
+        &mut input_state.interaction,
+    ));
+
+    let trace = build_render_frame_execution_trace(
+        &pending_work,
+        style_dirty_before_frame,
+        viewport_result.viewport_changed,
+    );
+    let followup_render_request = viewport_result
+        .requested_followup_render
+        .then(|| render_invalidation_request(RenderInvalidationEntryPoint::InputStateChanged));
+
+    OrchestratedFrameOutcome {
+        action: viewport_result.action,
+        followup_render_request,
+        trace,
+    }
+}
+
+fn build_render_frame_execution_trace(
+    pending_work: &PendingRenderWork,
+    style_dirty_before_frame: bool,
+    viewport_changed: bool,
+) -> RenderFrameExecutionTrace {
+    let mut triggered_entry_points = pending_work
+        .requests()
+        .iter()
+        .map(|request| request.entry_point)
+        .collect::<Vec<_>>();
+    let mut style = PhaseReasonAccumulator::default();
+    let mut layout = PhaseReasonAccumulator::default();
+    let mut paint = PhaseReasonAccumulator::default();
+    let mut frame_orchestration = PhaseReasonAccumulator::default();
+
+    for request in pending_work.requests() {
+        style.record(request.work.style);
+        layout.record(request.work.layout);
+        paint.record(request.work.paint);
+        frame_orchestration.record(request.work.frame_orchestration);
+    }
+
+    if viewport_changed {
+        let request = render_invalidation_request(RenderInvalidationEntryPoint::ViewportChanged);
+        push_unique(&mut triggered_entry_points, request.entry_point);
+        style.record(request.work.style);
+        layout.record(request.work.layout);
+        paint.record(request.work.paint);
+        frame_orchestration.record(request.work.frame_orchestration);
+    }
+
+    let style_fallback = if style_dirty_before_frame {
+        RenderPhaseExecutionKind::RequiredForCurrentFrame
+    } else {
+        RenderPhaseExecutionKind::MaterializedFromRetainedArtifacts
+    };
+
+    RenderFrameExecutionTrace {
+        triggered_entry_points,
+        style: phase_trace(RenderingPhase::Style, style, style_fallback),
+        layout: phase_trace(
+            RenderingPhase::Layout,
+            layout,
+            RenderPhaseExecutionKind::RequiredForCurrentFrame,
+        ),
+        paint: phase_trace(
+            RenderingPhase::Paint,
+            paint,
+            RenderPhaseExecutionKind::RequiredForCurrentFrame,
+        ),
+        frame_orchestration: phase_trace(
+            RenderingPhase::FrameOrchestration,
+            frame_orchestration,
+            RenderPhaseExecutionKind::RequiredForCurrentFrame,
+        ),
+        semantic_phase_order: vec![
+            RenderingPhase::Style,
+            RenderingPhase::Layout,
+            RenderingPhase::Paint,
+        ],
+    }
+}
+
+fn phase_trace(
+    phase: RenderingPhase,
+    reasons: PhaseReasonAccumulator,
+    fallback_kind: RenderPhaseExecutionKind,
+) -> RenderPhaseExecutionTrace {
+    let kind = if reasons.has_requested_work() {
+        RenderPhaseExecutionKind::Requested
+    } else {
+        fallback_kind
+    };
+    RenderPhaseExecutionTrace {
+        phase,
+        kind,
+        direct_triggers: reasons.direct_triggers,
+        cascaded_from: reasons.cascaded_from,
+    }
+}
+
+fn push_unique<T: Copy + PartialEq>(items: &mut Vec<T>, item: T) {
+    if !items.contains(&item) {
+        items.push(item);
+    }
+}
+
+fn find_page_background_color(style_output: &StylePhaseOutput<'_>) -> Option<(u8, u8, u8, u8)> {
+    let root = style_output.root();
+
+    fn is_non_transparent_rgba(rgba: (u8, u8, u8, u8)) -> bool {
+        let (_r, _g, _b, a) = rgba;
+        a > 0
+    }
+
+    fn from_elem(node: &StyledNode<'_>, want: &str) -> Option<(u8, u8, u8, u8)> {
+        match node.node {
+            Node::Element { name, .. } if name.eq_ignore_ascii_case(want) => {
+                let rgba = node.style.background_color();
+                if is_non_transparent_rgba(rgba) {
+                    Some(rgba)
+                } else {
+                    None
+                }
+            }
+            _ => None,
+        }
+    }
+
+    let mut html_bg = None;
+    let mut body_bg = None;
+
+    for child in &root.children {
+        if html_bg.is_none() {
+            html_bg = from_elem(child, "html");
+        }
+
+        for grandchild in &child.children {
+            if body_bg.is_none() {
+                body_bg = from_elem(grandchild, "body");
+            }
+        }
+    }
+
+    body_bg.or(html_bg)
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
-        PhaseRerunSource, RenderArtifact, RenderArtifactLifetime, RenderArtifactState,
-        RenderInvalidationEntryPoint, RenderPipelineDebugSnapshot, RenderRebuildTrigger,
-        RenderingPhase, RenderingSubsystem, StyleInvalidationState,
+        PendingRenderWork, PhaseRerunSource, RenderArtifact, RenderArtifactLifetime,
+        RenderArtifactState, RenderInvalidationEntryPoint, RenderPhaseExecutionKind,
+        RenderPipelineDebugSnapshot, RenderRebuildTrigger, RenderingPhase, RenderingSubsystem,
+        StyleInvalidationState, build_render_frame_execution_trace,
         render_artifact_ownership_contracts, render_invalidation_request,
         render_invalidation_request_contracts, render_phase_contracts,
     };
@@ -692,6 +985,103 @@ mod tests {
                 }
             }
         }
+    }
+
+    #[test]
+    fn pending_render_work_deduplicates_and_preserves_request_order() {
+        let mut pending = PendingRenderWork::default();
+        pending.push(render_invalidation_request(
+            RenderInvalidationEntryPoint::DocumentReplaced,
+        ));
+        pending.push(render_invalidation_request(
+            RenderInvalidationEntryPoint::ResourceStateChanged,
+        ));
+        pending.push(render_invalidation_request(
+            RenderInvalidationEntryPoint::DocumentReplaced,
+        ));
+
+        assert_eq!(
+            pending
+                .requests()
+                .iter()
+                .map(|request| request.entry_point)
+                .collect::<Vec<_>>(),
+            vec![
+                RenderInvalidationEntryPoint::DocumentReplaced,
+                RenderInvalidationEntryPoint::ResourceStateChanged,
+            ]
+        );
+    }
+
+    #[test]
+    fn frame_execution_trace_distinguishes_requested_work_from_frame_prerequisites() {
+        let mut pending = PendingRenderWork::default();
+        pending.push(render_invalidation_request(
+            RenderInvalidationEntryPoint::InputStateChanged,
+        ));
+
+        let trace = build_render_frame_execution_trace(&pending, false, false);
+        assert_eq!(
+            trace.triggered_entry_points,
+            vec![RenderInvalidationEntryPoint::InputStateChanged]
+        );
+        assert_eq!(
+            trace.style.kind,
+            RenderPhaseExecutionKind::MaterializedFromRetainedArtifacts
+        );
+        assert!(trace.style.direct_triggers.is_empty());
+        assert_eq!(
+            trace.layout.kind,
+            RenderPhaseExecutionKind::RequiredForCurrentFrame
+        );
+        assert!(trace.layout.direct_triggers.is_empty());
+        assert_eq!(trace.paint.kind, RenderPhaseExecutionKind::Requested);
+        assert_eq!(
+            trace.paint.direct_triggers,
+            vec![RenderRebuildTrigger::InputStateChanged]
+        );
+        assert_eq!(
+            trace.frame_orchestration.kind,
+            RenderPhaseExecutionKind::Requested
+        );
+        assert_eq!(
+            trace.semantic_phase_order,
+            vec![
+                RenderingPhase::Style,
+                RenderingPhase::Layout,
+                RenderingPhase::Paint,
+            ]
+        );
+    }
+
+    #[test]
+    fn frame_execution_trace_adds_viewport_change_as_direct_runtime_trigger() {
+        let mut pending = PendingRenderWork::default();
+        pending.push(render_invalidation_request(
+            RenderInvalidationEntryPoint::DocumentReplaced,
+        ));
+
+        let trace = build_render_frame_execution_trace(&pending, true, true);
+        assert_eq!(
+            trace.triggered_entry_points,
+            vec![
+                RenderInvalidationEntryPoint::DocumentReplaced,
+                RenderInvalidationEntryPoint::ViewportChanged,
+            ]
+        );
+        assert_eq!(trace.style.kind, RenderPhaseExecutionKind::Requested);
+        assert_eq!(trace.layout.kind, RenderPhaseExecutionKind::Requested);
+        assert_eq!(
+            trace.layout.direct_triggers,
+            vec![RenderRebuildTrigger::ViewportChanged]
+        );
+        assert_eq!(trace.layout.cascaded_from, vec![RenderingPhase::Style]);
+        assert_eq!(trace.paint.kind, RenderPhaseExecutionKind::Requested);
+        assert_eq!(trace.paint.cascaded_from, vec![RenderingPhase::Layout]);
+        assert_eq!(
+            trace.frame_orchestration.direct_triggers,
+            vec![RenderRebuildTrigger::ViewportChanged]
+        );
     }
 
     #[test]

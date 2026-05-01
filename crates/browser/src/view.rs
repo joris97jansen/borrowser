@@ -1,23 +1,30 @@
 use crate::input_state::DocumentInputState;
 use crate::page::PageState;
+use crate::rendering::{
+    OrchestratedFrameOutcome, PendingRenderWork, execute_prepared_page_frame, prepare_page_frame,
+};
 use crate::resources::ResourceManager;
-use css::{StylePhaseOutput, StyledNode};
 use egui::{
     Align2, Area, CentralPanel, Color32, Context, CornerRadius, Frame, Id, Margin, Order, RichText,
     Stroke, vec2,
 };
 pub use gfx::input::PageAction;
-use gfx::viewport::{ViewportCtx, page_viewport};
-use html::Node;
 
-pub fn content(
+pub(crate) struct ViewContentOutcome {
+    pub(crate) action: Option<PageAction>,
+    pub(crate) followup_render_request: Option<crate::rendering::RenderInvalidationRequest>,
+    pub(crate) trace: Option<crate::rendering::RenderFrameExecutionTrace>,
+}
+
+pub(crate) fn content(
     ctx: &Context,
     page: &mut PageState,
     input_state: &mut DocumentInputState,
     resources: &ResourceManager,
     status: Option<&String>,
     loading: bool,
-) -> Option<PageAction> {
+    pending_work: PendingRenderWork,
+) -> ViewContentOutcome {
     if page.dom.is_none() {
         let visuals = ctx.style().visuals.clone();
         CentralPanel::default()
@@ -30,14 +37,23 @@ pub fn content(
                     ui.label(s);
                 }
             });
-        return None;
+        return ViewContentOutcome {
+            action: None,
+            followup_render_request: None,
+            trace: None,
+        };
     }
 
-    let base_url = page.base_url.clone();
-    let form_controls = page.form_controls.clone();
-    let style_output = match page.build_style_phase_output() {
-        Ok(Some(style_output)) => style_output,
-        Ok(None) => return None,
+    let prepared_frame = match prepare_page_frame(page, pending_work) {
+        Ok(Some(prepared_frame)) => prepared_frame,
+        Ok(None) => {
+            show_status_overlay(ctx, loading, status.map(|status| status.as_str()));
+            return ViewContentOutcome {
+                action: None,
+                followup_render_request: None,
+                trace: None,
+            };
+        }
         Err(error) => {
             let visuals = ctx.style().visuals.clone();
             CentralPanel::default()
@@ -46,38 +62,35 @@ pub fn content(
                     ui.label(format!("Style computation failed: {error}"));
                 });
             show_status_overlay(ctx, loading, status.map(|status| status.as_str()));
-            return None;
+            return ViewContentOutcome {
+                action: None,
+                followup_render_request: None,
+                trace: None,
+            };
         }
     };
-    let page_bg = find_page_background_color(&style_output);
-    let base_fill = if let Some((r, g, b, a)) = page_bg {
+    let base_fill = if let Some((r, g, b, a)) = prepared_frame.page_background {
         Color32::from_rgba_unmultiplied(r, g, b, a)
     } else {
         Color32::WHITE
     };
-
-    let action = CentralPanel::default()
+    let frame_outcome = CentralPanel::default()
         .frame(Frame::default().fill(base_fill))
         .show(ctx, |ui| {
-            // disjoint borrow: OK (dom is immutably borrowed, input_values mutably borrowed)
-            let base_url = base_url.as_deref();
-            let input_values = &mut input_state.input_values;
-            let interaction = &mut input_state.interaction;
-
-            page_viewport(ViewportCtx::new(
-                ui,
-                &style_output,
-                base_url,
-                resources,
-                input_values,
-                &form_controls,
-                interaction,
-            ))
+            execute_prepared_page_frame(ui, prepared_frame, input_state, resources)
         })
         .inner;
-
+    let OrchestratedFrameOutcome {
+        action,
+        followup_render_request,
+        trace,
+    } = frame_outcome;
     show_status_overlay(ctx, loading, status.map(|status| status.as_str()));
-    action
+    ViewContentOutcome {
+        action,
+        followup_render_request,
+        trace: Some(trace),
+    }
 }
 
 fn show_status_overlay(ctx: &Context, loading: bool, status: Option<&str>) {
@@ -119,51 +132,6 @@ fn overlay_lines(loading: bool, status: Option<&str>) -> Vec<String> {
         lines.push(status.to_string());
     }
     lines
-}
-
-fn find_page_background_color(style_output: &StylePhaseOutput<'_>) -> Option<(u8, u8, u8, u8)> {
-    let root = style_output.root();
-
-    // We prefer <body> background if present and non-transparent.
-    // If not, we fall back to <html>. Otherwise: None.
-    fn is_non_transparent_rgba(rgba: (u8, u8, u8, u8)) -> bool {
-        let (_r, _g, _b, a) = rgba;
-        a > 0
-    }
-
-    fn from_elem(node: &StyledNode<'_>, want: &str) -> Option<(u8, u8, u8, u8)> {
-        match node.node {
-            Node::Element { name, .. } if name.eq_ignore_ascii_case(want) => {
-                let rgba = node.style.background_color();
-                if is_non_transparent_rgba(rgba) {
-                    Some(rgba)
-                } else {
-                    None
-                }
-            }
-            _ => None,
-        }
-    }
-
-    // root.node is the Document. We look for <html> first-level children,
-    // then <body> beneath those. This matches the usual structure.
-    // Prefer <body>, fallback to <html>.
-    let mut html_bg = None;
-    let mut body_bg = None;
-
-    for child in &root.children {
-        if html_bg.is_none() {
-            html_bg = from_elem(child, "html");
-        }
-
-        for gc in &child.children {
-            if body_bg.is_none() {
-                body_bg = from_elem(gc, "body");
-            }
-        }
-    }
-
-    body_bg.or(html_bg)
 }
 
 #[cfg(test)]

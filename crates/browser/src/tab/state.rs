@@ -1,7 +1,7 @@
 use crate::dom_store::DomStore;
 use crate::input_state::DocumentInputState;
 use crate::page::PageState;
-use crate::rendering::RenderInvalidationRequest;
+use crate::rendering::{PendingRenderWork, RenderFrameExecutionTrace, RenderInvalidationRequest};
 use crate::resources::ResourceManager;
 use app_api::RepaintHandle;
 use bus::CoreCommand;
@@ -41,6 +41,8 @@ pub struct Tab {
     pub(super) document_input: DocumentInputState,
     pub(super) dom_store: DomStore,
     pub(super) dom_handle: Option<DomHandle>,
+    pub(super) pending_render_work: PendingRenderWork,
+    pub(super) last_render_trace: Option<RenderFrameExecutionTrace>,
 }
 
 impl Tab {
@@ -62,6 +64,8 @@ impl Tab {
             document_input: DocumentInputState::default(),
             dom_store: DomStore::new(),
             dom_handle: None,
+            pending_render_work: PendingRenderWork::default(),
+            last_render_trace: None,
         }
     }
 
@@ -89,19 +93,20 @@ impl Tab {
         }
     }
 
-    pub(super) fn request_render_work(&self, request: RenderInvalidationRequest) {
+    pub(super) fn request_render_work(&mut self, request: RenderInvalidationRequest) {
         debug_assert!(
             request.work.requests_redraw(),
             "render invalidation request must request a frame: {:?}",
             request
         );
+        self.pending_render_work.push(request);
         if request.work.requests_redraw() {
             self.poke_redraw();
         }
     }
 
     pub(super) fn request_optional_render_work(
-        &self,
+        &mut self,
         request: Option<RenderInvalidationRequest>,
     ) -> bool {
         if let Some(request) = request {
@@ -110,5 +115,10 @@ impl Tab {
         } else {
             false
         }
+    }
+
+    pub(super) fn clear_render_orchestration_state(&mut self) {
+        self.pending_render_work = PendingRenderWork::default();
+        self.last_render_trace = None;
     }
 }
