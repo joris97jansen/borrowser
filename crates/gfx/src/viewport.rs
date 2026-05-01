@@ -138,7 +138,7 @@ pub fn page_viewport<R: ImageProvider, F: FormControlHandler<CoreInputValueStore
             // Keep the focused text control's scroll stable across frames (e.g. resize)
             // and ensure the caret remains visible within the control viewport.
             if let Some(focus_id) = interaction.focused_node_id
-                && let Some(lb) = find_layout_box_by_id(&layout_root, focus_id).filter(|lb| {
+                && let Some(lb) = find_layout_box_by_id(layout_root, focus_id).filter(|lb| {
                     matches!(
                         lb.replaced,
                         Some(ReplacedKind::InputText | ReplacedKind::TextArea)

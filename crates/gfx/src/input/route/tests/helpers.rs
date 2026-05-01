@@ -126,10 +126,10 @@ pub(super) fn init_context(ctx: &Context) {
     let _ = ctx.run(raw_input(Vec::new()), |_| {});
 }
 
-pub(super) struct FrameRun<'a, 'layout, S: InputStore + ?Sized, F: FormControlHandler<S>> {
+pub(super) struct FrameRun<'a, 'layout, 'dom, S: InputStore + ?Sized, F: FormControlHandler<S>> {
     pub ctx: &'a Context,
     pub raw_input: RawInput,
-    pub layout_root: &'a LayoutBox<'layout>,
+    pub layout_root: &'a LayoutBox<'layout, 'dom>,
     pub measurer: &'a EguiTextMeasurer,
     pub base_url: Option<&'a str>,
     pub input_values: &'a mut S,
@@ -140,7 +140,7 @@ pub(super) struct FrameRun<'a, 'layout, S: InputStore + ?Sized, F: FormControlHa
 }
 
 pub(super) fn run_frame<S: InputStore + ?Sized, F: FormControlHandler<S>>(
-    args: FrameRun<'_, '_, S, F>,
+    args: FrameRun<'_, '_, '_, S, F>,
 ) -> Option<PageAction> {
     let FrameRun {
         ctx,
@@ -189,8 +189,8 @@ pub(super) fn pos_center(origin: Pos2, rect: Rectangle) -> Pos2 {
     pos_in_rect(origin, rect, rect.width * 0.5, rect.height * 0.5)
 }
 
-pub(super) fn find_link_fragment_rect<'a>(
-    root: &'a LayoutBox<'a>,
+pub(super) fn find_link_fragment_rect<'layout, 'dom>(
+    root: &'layout LayoutBox<'layout, 'dom>,
     measurer: &dyn TextMeasurer,
     link_id: Id,
 ) -> Option<Rectangle> {
@@ -234,8 +234,8 @@ pub(super) fn find_link_fragment_rect<'a>(
     None
 }
 
-pub(super) fn find_fragment_rect_for_node<'a>(
-    root: &'a LayoutBox<'a>,
+pub(super) fn find_fragment_rect_for_node<'layout, 'dom>(
+    root: &'layout LayoutBox<'layout, 'dom>,
     measurer: &dyn TextMeasurer,
     node_id: Id,
 ) -> Option<Rectangle> {

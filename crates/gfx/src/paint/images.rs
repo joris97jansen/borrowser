@@ -24,7 +24,7 @@ pub trait ImageProvider {
     fn image_intrinsic_size_px(&self, url: &str) -> Option<(u32, u32)>;
 }
 
-pub(super) fn paint_img_fragment<'a>(
+pub(super) fn paint_img_fragment(
     rect: Rect,
     style: &ComputedStyle,
     layout: Option<&LayoutBox<'_, '_>>,
