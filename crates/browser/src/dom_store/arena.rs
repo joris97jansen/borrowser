@@ -1,5 +1,6 @@
 use super::error::DomPatchError;
 use html::PatchKey;
+use html::internal::Id;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -91,6 +92,20 @@ impl DomArena {
         self.live.clear();
         self.allocated.clear();
         self.debug_check_invariants();
+    }
+
+    /// Map a live patch-layer node identity to the runtime DOM node identity
+    /// materialization exposes today.
+    ///
+    /// The current bridge is numeric (`PatchKey(n) -> Id(n)`), but that
+    /// coupling is owned by the DOM materialization layer, not by rendering or
+    /// page invalidation code.
+    pub(crate) fn materialized_node_id_for_key(&self, key: PatchKey) -> Result<Id, DomPatchError> {
+        self.debug_check_invariants();
+        if !self.live.contains_key(&key) {
+            return Err(DomPatchError::MissingKey(key));
+        }
+        Ok(Id(key.0))
     }
 
     pub(crate) fn insert_node(

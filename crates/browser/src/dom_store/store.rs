@@ -1,7 +1,7 @@
 use super::document::DomDoc;
 use super::error::DomPatchError;
 use core_types::{DomHandle, DomVersion};
-use html::{DomPatch, Node};
+use html::{DomPatch, Node, PatchKey, internal::Id};
 use std::collections::HashMap;
 
 pub struct DomStore {
@@ -80,6 +80,18 @@ impl DomStore {
             .get(&handle)
             .ok_or(DomPatchError::UnknownHandle(handle))?;
         doc.materialize_owned()
+    }
+
+    pub fn resolve_live_node_ids(
+        &self,
+        handle: DomHandle,
+        keys: &[PatchKey],
+    ) -> Result<Vec<Id>, DomPatchError> {
+        let doc = self
+            .docs
+            .get(&handle)
+            .ok_or(DomPatchError::UnknownHandle(handle))?;
+        doc.resolve_live_node_ids(keys)
     }
 }
 

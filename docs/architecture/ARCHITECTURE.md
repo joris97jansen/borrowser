@@ -296,6 +296,10 @@ From the DOM, we build a parallel **style tree**, where each node is a pair:
 
 This tree is what the layout engine consumes.
 
+The normative rendering ownership and phase-boundary contract lives in:
+
+* `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
+
 ---
 
 # 📐 Layout Engine
@@ -415,21 +419,21 @@ It is not used as the page layout engine — layout comes from the `layout` crat
 
 # 🔄 Frame Pipeline
 
-Each frame follows:
+Each frame follows this explicit baseline contract:
 
 ```
-1. Receive CoreEvents from runtimes.
-2. If DOM/CSS changed:
-    - rebuild style tree
-    - rebuild layout tree
-    - refine layout using inline layout
-3. Paint the layout tree inside a scrollable viewport.
+1. Receive CoreEvents from runtimes and update page-owned DOM/style invalidation state.
+2. `PageState::build_style_tree()` reuses or recomputes retained resolved/computed style artifacts.
+3. `build_style_tree_from_computed_styles(...)` rebuilds a borrow-backed `StyledNode` view.
+4. `gfx::viewport::page_viewport(...)` builds a frame-local layout tree for the current viewport.
+5. `gfx::paint::paint_page(...)` emits immediate paint commands for the current frame.
 ```
 
 Milestone U introduced page-owned DOM/style/stylesheet generations and a
-`PageStyleCache` so clean frames can reuse computed style. Style-affecting
-mutations mark explicit invalidation scopes; layout generation caching remains
-future work.
+`PageStyleCache` so clean frames can reuse computed style. Milestone V makes it
+explicit that style artifacts are retained, while `StyledNode`, layout, and
+paint outputs remain rebuilt derived state until later rendering milestones add
+retained downstream caches.
 
 ---
 

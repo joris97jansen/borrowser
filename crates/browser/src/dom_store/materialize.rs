@@ -1,6 +1,5 @@
 use super::arena::{DomArena, NodeKind};
 use super::error::DomPatchError;
-use html::internal::Id;
 use html::{Node, PatchKey};
 use std::sync::Arc;
 
@@ -13,7 +12,7 @@ impl DomArena {
     }
 
     fn materialize_node(&self, key: PatchKey, index: usize) -> Result<Node, DomPatchError> {
-        let id = Id(key.0);
+        let id = self.materialized_node_id_for_key(key)?;
         let children = self.nodes[index]
             .children
             .iter()
