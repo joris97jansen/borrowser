@@ -1,6 +1,7 @@
 use crate::dom_store::DomStore;
 use crate::input_state::DocumentInputState;
 use crate::page::PageState;
+use crate::rendering::RenderInvalidationRequest;
 use crate::resources::ResourceManager;
 use app_api::RepaintHandle;
 use bus::CoreCommand;
@@ -85,6 +86,29 @@ impl Tab {
     pub(super) fn poke_redraw(&self) {
         if let Some(repaint) = &self.repaint {
             repaint.request_now();
+        }
+    }
+
+    pub(super) fn request_render_work(&self, request: RenderInvalidationRequest) {
+        debug_assert!(
+            request.work.requests_redraw(),
+            "render invalidation request must request a frame: {:?}",
+            request
+        );
+        if request.work.requests_redraw() {
+            self.poke_redraw();
+        }
+    }
+
+    pub(super) fn request_optional_render_work(
+        &self,
+        request: Option<RenderInvalidationRequest>,
+    ) -> bool {
+        if let Some(request) = request {
+            self.request_render_work(request);
+            true
+        } else {
+            false
         }
     }
 }

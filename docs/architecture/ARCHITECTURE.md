@@ -303,6 +303,7 @@ The normative rendering ownership and phase-boundary contract lives in:
 * `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 * `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 * `docs/rendering/v3-retained-state-versus-rebuilt-state-ownership.md`
+* `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
 
 ---
 

@@ -21,6 +21,7 @@ Related documents:
 - `docs/architecture/ARCHITECTURE.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v3-retained-state-versus-rebuilt-state-ownership.md`
+- `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
 - `docs/css/s9-property-system-computed-style-runtime-contract.md`
 - `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`
@@ -365,6 +366,9 @@ Milestone V1 introduces deterministic rendering contract surfaces:
 - `browser::rendering::render_phase_contracts()`
   Records the normative phase ownership, inputs, outputs, retained outputs, and
   rebuild triggers.
+- `browser::rendering::render_invalidation_request_contracts()`
+  Records the normative runtime entry points that request style/layout/paint
+  reruns and how those requests cascade through frame orchestration.
 - `PageState::render_pipeline_debug_snapshot()`
   Reports whether retained style artifacts are absent, fresh, or stale, and
   reports the current rebuilt-state policy for styled-tree, layout, and paint

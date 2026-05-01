@@ -19,6 +19,7 @@ Related code:
 Related documents:
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
+- `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
 - `docs/architecture/ARCHITECTURE.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
 

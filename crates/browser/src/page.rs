@@ -1,6 +1,9 @@
 use crate::document_style::{DocumentStyleSet, StylesheetFetch};
 use crate::form_controls::{FormControlIndex, seed_input_state_from_dom};
-use crate::rendering::{RenderArtifactState, RenderPipelineDebugSnapshot, StyleInvalidationState};
+use crate::rendering::{
+    RenderArtifactState, RenderInvalidationEntryPoint, RenderInvalidationRequest,
+    RenderPipelineDebugSnapshot, StyleInvalidationState, render_invalidation_request,
+};
 use core_types::StylesheetSlotId;
 use css::{
     ComputedDocumentStyle, ComputedStyleResolutionError, ComputedStyleReuseStats,
@@ -53,6 +56,15 @@ impl RestyleTrigger {
             });
         }
         trigger
+    }
+
+    fn render_invalidation_entry_point(self) -> RenderInvalidationEntryPoint {
+        match self {
+            Self::DocumentReplaced => RenderInvalidationEntryPoint::DocumentReplaced,
+            Self::TreeMutated => RenderInvalidationEntryPoint::DomStructureChanged,
+            Self::AttributesChanged => RenderInvalidationEntryPoint::DomAttributesChanged,
+            Self::TextMutated => RenderInvalidationEntryPoint::DomTextChanged,
+        }
     }
 }
 
@@ -265,6 +277,11 @@ struct StyleRecomputeState<'a> {
     last_style_reuse: &'a mut Option<ComputedStyleReuseStats>,
 }
 
+pub(crate) struct PageStylesheetReconcile {
+    pub(crate) fetches: Vec<StylesheetFetch>,
+    pub(crate) render_invalidation: Option<RenderInvalidationRequest>,
+}
+
 pub struct PageState {
     pub base_url: Option<String>,
     pub dom: Option<Box<Node>>,
@@ -306,12 +323,16 @@ impl PageState {
         }
     }
 
-    pub(crate) fn replace_dom(&mut self, dom: Box<Node>, hint: RestyleHint) {
+    pub(crate) fn replace_dom(
+        &mut self,
+        dom: Box<Node>,
+        hint: RestyleHint,
+    ) -> RenderInvalidationRequest {
         self.dom = Some(dom);
-        self.mark_dom_changed(hint);
+        self.mark_dom_changed(hint)
     }
 
-    pub(crate) fn mark_dom_changed(&mut self, hint: RestyleHint) {
+    pub(crate) fn mark_dom_changed(&mut self, hint: RestyleHint) -> RenderInvalidationRequest {
         let retained = &mut self.rendering;
         let trigger = hint.trigger;
         retained.last_restyle_trigger = Some(trigger);
@@ -344,6 +365,8 @@ impl PageState {
                 self.mark_style_inputs_changed(scope);
             }
         }
+
+        render_invalidation_request(trigger.render_invalidation_entry_point())
     }
 
     fn mark_style_inputs_changed(&mut self, scope: StyleInvalidationScope) {
@@ -383,18 +406,27 @@ impl PageState {
     }
 
     // --- CSS ---
-    pub(crate) fn reconcile_document_stylesheets(&mut self) -> Vec<StylesheetFetch> {
+    pub(crate) fn reconcile_document_stylesheets(&mut self) -> PageStylesheetReconcile {
         let Some(dom) = self.dom.as_deref() else {
-            return Vec::new();
+            return PageStylesheetReconcile {
+                fetches: Vec::new(),
+                render_invalidation: None,
+            };
         };
         let result = self
             .rendering
             .document_styles
             .reconcile_from_dom(dom, self.base_url.as_deref());
+        let render_invalidation = result.changed.then(|| {
+            render_invalidation_request(RenderInvalidationEntryPoint::StylesheetSetChanged)
+        });
         if result.changed {
             self.mark_stylesheets_changed();
         }
-        result.fetches
+        PageStylesheetReconcile {
+            fetches: result.fetches,
+            render_invalidation,
+        }
     }
 
     #[cfg(test)]
@@ -404,36 +436,68 @@ impl PageState {
             .register_external_for_tests(absolute_url)
     }
 
-    pub(crate) fn apply_css_block(&mut self, slot_id: StylesheetSlotId, block: &str) -> bool {
+    pub(crate) fn apply_css_block(
+        &mut self,
+        slot_id: StylesheetSlotId,
+        block: &str,
+    ) -> Option<RenderInvalidationRequest> {
         let changed = self
             .rendering
             .document_styles
             .install_external_stylesheet(slot_id, block);
         if changed {
             self.mark_stylesheets_changed();
+            Some(render_invalidation_request(
+                RenderInvalidationEntryPoint::StylesheetSetChanged,
+            ))
+        } else {
+            None
         }
-        changed
     }
 
-    pub(crate) fn mark_css_done(&mut self, slot_id: StylesheetSlotId) {
+    pub(crate) fn mark_css_done(
+        &mut self,
+        slot_id: StylesheetSlotId,
+    ) -> Option<RenderInvalidationRequest> {
         if self.rendering.document_styles.mark_external_done(slot_id) {
             self.mark_stylesheets_changed();
+            Some(render_invalidation_request(
+                RenderInvalidationEntryPoint::StylesheetSetChanged,
+            ))
+        } else {
+            None
         }
     }
 
-    pub(crate) fn mark_css_failed(&mut self, slot_id: StylesheetSlotId) {
+    pub(crate) fn mark_css_failed(
+        &mut self,
+        slot_id: StylesheetSlotId,
+    ) -> Option<RenderInvalidationRequest> {
         if self.rendering.document_styles.mark_external_failed(slot_id) {
             self.mark_stylesheets_changed();
+            Some(render_invalidation_request(
+                RenderInvalidationEntryPoint::StylesheetSetChanged,
+            ))
+        } else {
+            None
         }
     }
 
-    pub(crate) fn mark_css_aborted(&mut self, slot_id: StylesheetSlotId) {
+    pub(crate) fn mark_css_aborted(
+        &mut self,
+        slot_id: StylesheetSlotId,
+    ) -> Option<RenderInvalidationRequest> {
         if self
             .rendering
             .document_styles
             .mark_external_aborted(slot_id)
         {
             self.mark_stylesheets_changed();
+            Some(render_invalidation_request(
+                RenderInvalidationEntryPoint::StylesheetSetChanged,
+            ))
+        } else {
+            None
         }
     }
 
@@ -583,7 +647,7 @@ impl PageState {
 
     #[cfg(test)]
     pub(crate) fn mark_dom_changed_for_tests(&mut self, hint: RestyleHint) {
-        self.mark_dom_changed(hint);
+        let _ = self.mark_dom_changed(hint);
     }
 
     #[cfg(test)]
