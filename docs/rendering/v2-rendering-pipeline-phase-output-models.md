@@ -20,6 +20,7 @@ Related documents:
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v3-retained-state-versus-rebuilt-state-ownership.md`
 - `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
+- `docs/rendering/v5-explicit-runtime-render-orchestration-path.md`
 - `docs/architecture/ARCHITECTURE.md`
 
 ## Purpose
@@ -32,7 +33,7 @@ borrow patterns.
 The normative rendering handoff model is now:
 
 ```text
-PageState::build_style_phase_output()
+browser::rendering::prepare_page_frame(...)
   -> css::StylePhaseOutput
   -> layout::LayoutPhaseInput
   -> layout::LayoutPhaseOutput
@@ -173,10 +174,11 @@ This split is normative:
 The shipped browser path is:
 
 ```text
-PageState::build_style_phase_output()
+browser::rendering::prepare_page_frame(...)
   -> StylePhaseOutput
   -> browser::view::content(...)
-  -> gfx::viewport::page_viewport(...)
+  -> browser::rendering::execute_prepared_page_frame(...)
+  -> gfx::viewport::execute_viewport_frame(...)
   -> layout::layout_document(LayoutPhaseInput::from_style_output(...))
   -> LayoutPhaseOutput
   -> gfx::paint::paint_page(PaintPhaseInput::new(...), PaintArgs { ... })

@@ -1,8 +1,13 @@
 use super::Tab;
 use crate::page::{RestyleTrigger, StyleRecalcKind};
+use crate::rendering::{
+    RenderInvalidationEntryPoint, RenderPhaseExecutionKind, RenderRebuildTrigger, RenderingPhase,
+    render_invalidation_request,
+};
 use bus::{CoreCommand, CoreEvent};
 use core_types::{DomHandle, DomVersion, NetworkResponseInfo, ResourceKind};
 use css::{ComputedStyleReuseStats, StyledNode, build_style_tree_with_stylesheets};
+use egui::Context;
 use html::{DomPatch, HtmlParseOptions, Node, PatchKey, internal::Id, parse_document};
 use std::sync::Arc;
 use std::sync::mpsc;
@@ -273,6 +278,107 @@ fn inline_styles_are_attached_and_computed_during_initial_document_load() {
             .is_some_and(Vec::is_empty),
         "structured runtime style resolution must not write legacy Node::style"
     );
+}
+
+#[test]
+fn ui_content_consumes_pending_render_work_through_explicit_orchestration_path() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 31;
+    tab.page.start_nav("https://example.com/");
+
+    let output = parse_document(
+        "<!doctype html><html><head><style>p { color: red; }</style></head><body><p>Hello</p></body></html>",
+        HtmlParseOptions::default(),
+    )
+    .expect("parse should succeed");
+
+    tab.on_core_event(CoreEvent::DomUpdate {
+        tab_id: tab.tab_id,
+        request_id: 31,
+        dom: Box::new(output.document),
+    });
+
+    assert_eq!(
+        tab.pending_render_work
+            .requests()
+            .iter()
+            .map(|request| request.entry_point)
+            .collect::<Vec<_>>(),
+        vec![
+            RenderInvalidationEntryPoint::StylesheetSetChanged,
+            RenderInvalidationEntryPoint::DocumentReplaced,
+        ]
+    );
+
+    let ctx = Context::default();
+    let _ = ctx.run(egui::RawInput::default(), |ctx| tab.ui_content(ctx));
+
+    assert!(tab.pending_render_work.is_empty());
+    let trace = tab
+        .last_render_trace
+        .as_ref()
+        .expect("ui frame should store an orchestration trace");
+    assert!(
+        trace
+            .triggered_entry_points
+            .contains(&RenderInvalidationEntryPoint::DocumentReplaced)
+    );
+    assert_eq!(trace.style.kind, RenderPhaseExecutionKind::Requested);
+    assert_eq!(
+        trace.style.direct_triggers,
+        vec![
+            RenderRebuildTrigger::StylesheetSetChanged,
+            RenderRebuildTrigger::DomReplaced,
+        ]
+    );
+    assert_eq!(trace.layout.kind, RenderPhaseExecutionKind::Requested);
+    assert!(trace.layout.cascaded_from.contains(&RenderingPhase::Style));
+    assert_eq!(
+        trace.semantic_phase_order,
+        vec![
+            RenderingPhase::Style,
+            RenderingPhase::Layout,
+            RenderingPhase::Paint,
+        ]
+    );
+}
+
+#[test]
+fn starting_new_navigation_clears_pending_render_work_and_last_trace() {
+    let mut tab = Tab::new(1);
+    tab.nav_gen = 32;
+    tab.page.start_nav("https://example.com/");
+
+    let output = parse_document(
+        "<!doctype html><html><head><style>p { color: red; }</style></head><body><p>Hello</p></body></html>",
+        HtmlParseOptions::default(),
+    )
+    .expect("parse should succeed");
+
+    tab.on_core_event(CoreEvent::DomUpdate {
+        tab_id: tab.tab_id,
+        request_id: 32,
+        dom: Box::new(output.document),
+    });
+
+    let ctx = Context::default();
+    let _ = ctx.run(egui::RawInput::default(), |ctx| tab.ui_content(ctx));
+
+    assert!(tab.pending_render_work.is_empty());
+    assert!(
+        tab.last_render_trace.is_some(),
+        "a completed frame should retain the last orchestration trace"
+    );
+
+    tab.request_render_work(render_invalidation_request(
+        RenderInvalidationEntryPoint::ResourceStateChanged,
+    ));
+    assert!(!tab.pending_render_work.is_empty());
+
+    tab.navigate_to_new("next.example.com/page".to_string());
+
+    assert!(tab.pending_render_work.is_empty());
+    assert!(tab.last_render_trace.is_none());
 }
 
 #[test]

@@ -211,14 +211,16 @@ The page-load lifecycle for styles is:
    which parses through the structured CSS model path and installs the result
    into the pre-registered document-order slot.
 7. View construction asks for styles.
-   `browser::view::content(...)` calls `PageState::build_style_phase_output()`.
+   `browser::rendering::prepare_page_frame(...)` asks `PageState` for the
+   current `StylePhaseOutput`.
 8. CSS engine resolves styles.
    `PageState` either reuses a valid `ComputedDocumentStyle` cache, performs
    an incremental suffix recompute, or runs full selector matching, cascade,
    and computed-style assembly through the CSS crate without mutating the DOM.
 9. Layout and paint consume the style-phase output.
-   `gfx::viewport::page_viewport(...)` receives `StylePhaseOutput`, builds
-   `LayoutPhaseOutput`, and passes that structured handoff to paint.
+   `browser::rendering::execute_prepared_page_frame(...)` hands
+   `StylePhaseOutput` to `gfx::viewport::execute_viewport_frame(...)`, which
+   builds `LayoutPhaseOutput` and passes that structured handoff to paint.
 
 The default runtime path for new work is the structured path:
 

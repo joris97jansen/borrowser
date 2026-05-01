@@ -22,6 +22,7 @@ Related documents:
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v3-retained-state-versus-rebuilt-state-ownership.md`
 - `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
+- `docs/rendering/v5-explicit-runtime-render-orchestration-path.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
 - `docs/css/s9-property-system-computed-style-runtime-contract.md`
 - `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`
@@ -60,12 +61,13 @@ The current rendering pipeline is:
 ```text
 runtime events
   -> browser::Tab event routing
+  -> browser::rendering::PendingRenderWork
   -> browser::PageState DOM + stylesheet-set ownership
-  -> PageState::build_style_phase_output()
+  -> browser::rendering::prepare_page_frame(...)
   -> css::build_style_tree_from_computed_styles(...)
   -> css::StylePhaseOutput
-  -> browser::view::content(...)
-  -> gfx::viewport::page_viewport(...)
+  -> browser::rendering::execute_prepared_page_frame(...)
+  -> gfx::viewport::execute_viewport_frame(...)
   -> layout::layout_document(LayoutPhaseInput::from_style_output(...))
   -> gfx::paint::paint_page(PaintPhaseInput::new(...), PaintArgs { ... })
   -> gfx::Renderer egui/wgpu submission
@@ -189,7 +191,8 @@ Style-phase invariants:
 
 ### Layout Phase
 
-Coordinator: `gfx::viewport::page_viewport(...)`  
+Coordinator: `browser::rendering::execute_prepared_page_frame(...)`
+via `gfx::viewport::execute_viewport_frame(...)`  
 Semantic owner: `crates/layout`
 
 Consumes:
@@ -216,7 +219,8 @@ Layout-phase invariants:
 
 ### Paint Phase
 
-Coordinator: `gfx::viewport::page_viewport(...)`  
+Coordinator: `browser::rendering::execute_prepared_page_frame(...)`
+via `gfx::viewport::execute_viewport_frame(...)`  
 Semantic owner: `gfx::paint`
 
 Consumes:

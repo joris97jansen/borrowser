@@ -12,14 +12,21 @@ impl Tab {
             ));
         }
 
-        if let Some(action) = content(
+        let pending_work = std::mem::take(&mut self.pending_render_work);
+        let outcome = content(
             ctx,
             &mut self.page,
             &mut self.document_input,
             &self.resources,
             self.last_status.as_ref(),
             self.loading,
-        ) {
+            pending_work,
+        );
+        self.last_render_trace = outcome.trace;
+        if let Some(request) = outcome.followup_render_request {
+            self.request_render_work(request);
+        }
+        if let Some(action) = outcome.action {
             match action {
                 crate::view::PageAction::Navigate(url) => self.navigate_to_new(url),
             }
