@@ -6,12 +6,15 @@ mod source;
 
 pub use self::debug_snapshot::resolve_document_styles_debug_snapshot;
 pub use self::limits::{StyleResolutionError, StyleResolutionLimit, StyleResolutionLimits};
-pub use self::source::{get_inline_style, is_css};
+pub use self::source::{StylesheetCascadeInput, get_inline_style, is_css};
 
 use self::limits::{
-    count_styled_elements_bounded, enforce_stylesheet_limits, validate_representation_limits,
+    count_styled_elements_bounded, enforce_stylesheet_input_limits, enforce_stylesheet_limits,
+    validate_representation_limits,
 };
-use self::rule_inputs::rule_inputs_for_element_with_limits;
+use self::rule_inputs::{
+    rule_inputs_for_element_from_cascade_inputs_with_limits, rule_inputs_for_element_with_limits,
+};
 use super::contract::resolve_cascade_style_from_rule_inputs;
 use super::document::{ResolvedDocumentStyle, ResolvedElementStyle};
 use crate::model;
@@ -44,6 +47,17 @@ pub fn resolve_document_styles(
     sheets: &[model::StylesheetParse],
 ) -> Result<ResolvedDocumentStyle, StyleResolutionError> {
     try_resolve_document_styles_with_limits(root, sheets, &StyleResolutionLimits::default())
+}
+
+pub fn resolve_document_styles_from_cascade_inputs(
+    root: &Node,
+    sheets: &[StylesheetCascadeInput<'_>],
+) -> Result<ResolvedDocumentStyle, StyleResolutionError> {
+    try_resolve_document_styles_from_cascade_inputs_with_limits(
+        root,
+        sheets,
+        &StyleResolutionLimits::default(),
+    )
 }
 
 pub fn try_resolve_document_styles_with_limits(
@@ -79,6 +93,41 @@ pub fn try_resolve_document_styles_with_limits(
     Ok(ResolvedDocumentStyle::new(entries))
 }
 
+pub fn try_resolve_document_styles_from_cascade_inputs_with_limits(
+    root: &Node,
+    sheets: &[StylesheetCascadeInput<'_>],
+    limits: &StyleResolutionLimits,
+) -> Result<ResolvedDocumentStyle, StyleResolutionError> {
+    validate_representation_limits(limits)?;
+    enforce_stylesheet_input_limits(sheets, limits)?;
+    count_styled_elements_bounded(root, limits.max_styled_elements_per_document)?;
+
+    let index = SelectorDomIndex::from_root(root);
+    let context = SelectorMatchingContext::with_limits(&index, limits.selector_matching);
+    let mut entries = Vec::with_capacity(index.len());
+    let mut styles_by_element = BTreeMap::new();
+
+    for element in index.elements() {
+        let parent_style = context
+            .parent_element(element)
+            .and_then(|parent| styles_by_element.get(&parent));
+
+        let rule_inputs = rule_inputs_for_element_from_cascade_inputs_with_limits(
+            &context, element, sheets, limits,
+        )?;
+        let style = resolve_cascade_style_from_rule_inputs(&rule_inputs, parent_style);
+
+        styles_by_element.insert(element, style.clone());
+        entries.push(ResolvedElementStyle::new(
+            element,
+            context.element_name(element).to_string(),
+            style,
+        ));
+    }
+
+    Ok(ResolvedDocumentStyle::new(entries))
+}
+
 pub fn try_resolve_document_styles_incremental_suffix_with_limits(
     root: &Node,
     sheets: &[model::StylesheetParse],
@@ -86,8 +135,28 @@ pub fn try_resolve_document_styles_incremental_suffix_with_limits(
     dirty_node_ids: &[Id],
     limits: &StyleResolutionLimits,
 ) -> Result<Option<IncrementalResolvedDocumentStyle>, StyleResolutionError> {
+    let inputs = sheets
+        .iter()
+        .map(StylesheetCascadeInput::author)
+        .collect::<Vec<_>>();
+    try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_limits(
+        root,
+        &inputs,
+        previous,
+        dirty_node_ids,
+        limits,
+    )
+}
+
+pub fn try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_limits(
+    root: &Node,
+    sheets: &[StylesheetCascadeInput<'_>],
+    previous: &ResolvedDocumentStyle,
+    dirty_node_ids: &[Id],
+    limits: &StyleResolutionLimits,
+) -> Result<Option<IncrementalResolvedDocumentStyle>, StyleResolutionError> {
     validate_representation_limits(limits)?;
-    enforce_stylesheet_limits(sheets, limits)?;
+    enforce_stylesheet_input_limits(sheets, limits)?;
     count_styled_elements_bounded(root, limits.max_styled_elements_per_document)?;
 
     if dirty_node_ids.is_empty() {
@@ -127,7 +196,9 @@ pub fn try_resolve_document_styles_incremental_suffix_with_limits(
             .parent_element(element)
             .and_then(|parent| styles_by_element.get(&parent));
 
-        let rule_inputs = rule_inputs_for_element_with_limits(&context, element, sheets, limits)?;
+        let rule_inputs = rule_inputs_for_element_from_cascade_inputs_with_limits(
+            &context, element, sheets, limits,
+        )?;
         let style = resolve_cascade_style_from_rule_inputs(&rule_inputs, parent_style);
 
         styles_by_element.insert(element, style.clone());

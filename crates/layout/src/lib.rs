@@ -8,7 +8,7 @@ pub use hit_test::{HitKind, hit_test};
 pub mod replaced;
 
 use css::{ComputedStyle, Display, StylePhaseOutput, StyledNode};
-use html::{Node, dom_utils::is_non_rendering_element, internal::Id};
+use html::{Node, internal::Id};
 use replaced::intrinsic::IntrinsicSize;
 use std::fmt::Write;
 
@@ -386,34 +386,36 @@ fn layout_block_subtree<'style_tree, 'dom>(
     width: f32,
     replaced_info: Option<&dyn ReplacedElementInfoProvider>,
 ) -> LayoutBox<'style_tree, 'dom> {
-    // 0) Non-rendering elements: transparent containers.
-    //    They still get a LayoutBox so the tree shape matches the DOM,
-    //    but we don't attempt to compute geometry here.
-    if is_non_rendering_element(styled.node) {
-        let mut children_boxes = Vec::new();
-
-        for child in &styled.children {
-            let child_box = layout_block_subtree(child, x, y, width, replaced_info);
-            children_boxes.push(child_box);
-        }
-
-        let rect = Rectangle {
-            x,
-            y,
-            width,
-            height: 0.0, // real height will be computed later
-        };
-
-        return LayoutBox {
+    layout_box_for_styled_subtree(styled, x, y, width, replaced_info).unwrap_or_else(|| {
+        // Keep the layout phase total even if a malformed input computes the
+        // document root itself to display:none.
+        LayoutBox {
             kind: BoxKind::Block,
             style: &styled.style,
             node: styled,
-            rect,
-            children: children_boxes,
+            rect: Rectangle {
+                x,
+                y,
+                width,
+                height: 0.0,
+            },
+            children: Vec::new(),
             list_marker: None,
             replaced: None,
             replaced_intrinsic: None,
-        };
+        }
+    })
+}
+
+fn layout_box_for_styled_subtree<'style_tree, 'dom>(
+    styled: &'style_tree StyledNode<'dom>,
+    x: f32,
+    y: f32,
+    width: f32,
+    replaced_info: Option<&dyn ReplacedElementInfoProvider>,
+) -> Option<LayoutBox<'style_tree, 'dom>> {
+    if matches!(styled.node, Node::Element { .. }) && styled.style.display() == Display::None {
+        return None;
     }
 
     // 1) Build children recursively (no vertical layout here).
@@ -435,7 +437,11 @@ fn layout_block_subtree<'style_tree, 'dom>(
         let mut next_ol_index: u32 = 1;
 
         for child in &styled.children {
-            let mut child_box = layout_block_subtree(child, x, y, width, replaced_info);
+            let Some(mut child_box) =
+                layout_box_for_styled_subtree(child, x, y, width, replaced_info)
+            else {
+                continue;
+            };
 
             // If this is a list container (<ul>/<ol>) and the child is a list-item,
             // assign a marker.
@@ -460,6 +466,12 @@ fn layout_block_subtree<'style_tree, 'dom>(
 
     let kind = match styled.node {
         Node::Document { .. } => BoxKind::Block,
+        // Transitional root-element handling.
+        //
+        // This is not a UA display-default shortcut. Ordinary element display
+        // behavior must come from computed style. Until Milestone W introduces
+        // an explicit box-tree/root-box model, the document element is forced
+        // to produce the top-level layout container here.
         Node::Element { name, .. } if name.eq_ignore_ascii_case("html") => BoxKind::Block,
 
         Node::Text { .. } | Node::Comment { .. } => BoxKind::Block,
@@ -502,7 +514,7 @@ fn layout_block_subtree<'style_tree, 'dom>(
         _ => None,
     };
 
-    LayoutBox {
+    Some(LayoutBox {
         kind,
         style,
         node: styled,
@@ -511,7 +523,7 @@ fn layout_block_subtree<'style_tree, 'dom>(
         list_marker: None,
         replaced,
         replaced_intrinsic,
-    }
+    })
 }
 
 fn count_styled_nodes(node: &StyledNode<'_>) -> usize {

@@ -6,9 +6,10 @@ use crate::rendering::{
 };
 use bus::{CoreCommand, CoreEvent};
 use core_types::{DomHandle, DomVersion, NetworkResponseInfo, ResourceKind};
-use css::{ComputedStyleReuseStats, StyledNode, build_style_tree_with_stylesheets};
+use css::{ComputedStyleReuseStats, Display, StyledNode, build_style_tree_with_stylesheets};
 use egui::Context;
 use html::{DomPatch, HtmlParseOptions, Node, PatchKey, internal::Id, parse_document};
+use layout::{LayoutPhaseInput, TextMeasurer, layout_document};
 use std::sync::Arc;
 use std::sync::mpsc;
 
@@ -1009,6 +1010,44 @@ fn dom_patch_style_text_change_reconciles_stylesheet_slot_and_restyles() {
         "style text mutation must update the document stylesheet generation"
     );
     assert_eq!(current_element_color(&mut tab, "p"), (0, 0, 255, 255));
+
+    tab.on_core_event(CoreEvent::DomPatchUpdate {
+        tab_id: tab.tab_id,
+        request_id: 22,
+        handle,
+        from: DomVersion(2),
+        to: DomVersion(3),
+        patches: vec![DomPatch::SetText {
+            key: PatchKey(5),
+            text: "p { display: none; }".to_string(),
+        }],
+    });
+
+    let style_output = tab
+        .page
+        .build_style_phase_output()
+        .expect("style phase output should build")
+        .expect("document should be styled");
+    let paragraph = find_styled_element(style_output.root(), "p").expect("p styled node");
+    assert_eq!(
+        paragraph.style.display(),
+        Display::None,
+        "style text mutation must invalidate style before reuse is allowed"
+    );
+
+    let measurer = FixedTextMeasurer;
+    let layout_output = layout_document(LayoutPhaseInput::from_style_output(
+        &style_output,
+        320.0,
+        &measurer,
+        None,
+    ));
+    assert!(
+        !layout_output
+            .to_debug_snapshot()
+            .contains("node=element(\"p\")"),
+        "style text mutation to display:none must remove the paragraph from layout"
+    );
 }
 
 #[test]
@@ -1438,6 +1477,18 @@ fn find_styled_element<'a>(node: &'a StyledNode<'a>, want: &str) -> Option<&'a S
     node.children
         .iter()
         .find_map(|child| find_styled_element(child, want))
+}
+
+struct FixedTextMeasurer;
+
+impl TextMeasurer for FixedTextMeasurer {
+    fn measure(&self, text: &str, _style: &css::ComputedStyle) -> f32 {
+        text.chars().count() as f32 * 8.0
+    }
+
+    fn line_height(&self, _style: &css::ComputedStyle) -> f32 {
+        16.0
+    }
 }
 
 fn current_element_color(tab: &mut Tab, name: &str) -> (u8, u8, u8, u8) {

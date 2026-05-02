@@ -1,4 +1,5 @@
 use super::super::contract::CascadeRuleInputBuildError;
+use super::source::StylesheetCascadeInput;
 use crate::model;
 use crate::selectors::{SelectorMatchingLimitError, SelectorMatchingLimits};
 use html::Node;
@@ -128,6 +129,17 @@ pub(super) fn enforce_stylesheet_limits(
     sheets: &[model::StylesheetParse],
     limits: &StyleResolutionLimits,
 ) -> Result<(), StyleResolutionError> {
+    let inputs = sheets
+        .iter()
+        .map(StylesheetCascadeInput::author)
+        .collect::<Vec<_>>();
+    enforce_stylesheet_input_limits(&inputs, limits)
+}
+
+pub(super) fn enforce_stylesheet_input_limits(
+    sheets: &[StylesheetCascadeInput<'_>],
+    limits: &StyleResolutionLimits,
+) -> Result<(), StyleResolutionError> {
     if sheets.len() > limits.max_stylesheets_per_style_pass {
         return Err(StyleResolutionError::limit(
             StyleResolutionLimit::StylesheetsPerStylePass,
@@ -139,12 +151,13 @@ pub(super) fn enforce_stylesheet_limits(
 }
 
 fn enforce_style_rule_count(
-    sheets: &[model::StylesheetParse],
+    sheets: &[StylesheetCascadeInput<'_>],
     max_style_rules: usize,
 ) -> Result<(), StyleResolutionError> {
     let mut style_rules_seen = 0usize;
 
-    for sheet in sheets {
+    for input in sheets {
+        let sheet = input.stylesheet();
         for rule in &sheet.stylesheet.rules {
             if !matches!(rule, model::Rule::Style(_)) {
                 continue;

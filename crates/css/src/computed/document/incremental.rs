@@ -2,7 +2,8 @@
 
 use crate::{
     cascade::{
-        ResolvedDocumentStyle, StyleResolutionLimits,
+        ResolvedDocumentStyle, StyleResolutionLimits, StylesheetCascadeInput,
+        try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_limits,
         try_resolve_document_styles_incremental_suffix_with_limits,
     },
     model,
@@ -40,6 +41,47 @@ pub fn compute_document_styles_incremental_suffix_with_limits(
         limits,
     )
     .map_err(ComputedStyleResolutionError::StyleResolution)?
+    else {
+        return Ok(None);
+    };
+
+    let Some(computed) = compute_document_styles_from_resolved_styles_incremental_suffix(
+        root,
+        &resolved.resolved,
+        previous_computed,
+        resolved.stats.reused_prefix_len,
+    )?
+    else {
+        return Ok(None);
+    };
+
+    let reuse_stats = computed.reuse_stats;
+    Ok(Some(IncrementalComputedDocumentStyle {
+        resolved: resolved.resolved,
+        computed: computed.computed,
+        reused_prefix_len: resolved.stats.reused_prefix_len,
+        recomputed_len: resolved.stats.recomputed_len,
+        reuse_stats,
+    }))
+}
+
+pub fn compute_document_styles_incremental_suffix_from_cascade_inputs_with_limits(
+    root: &Node,
+    sheets: &[StylesheetCascadeInput<'_>],
+    previous_resolved: &ResolvedDocumentStyle,
+    previous_computed: &ComputedDocumentStyle,
+    dirty_node_ids: &[Id],
+    limits: &StyleResolutionLimits,
+) -> Result<Option<IncrementalComputedDocumentStyle>, ComputedStyleResolutionError> {
+    let Some(resolved) =
+        try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_limits(
+            root,
+            sheets,
+            previous_resolved,
+            dirty_node_ids,
+            limits,
+        )
+        .map_err(ComputedStyleResolutionError::StyleResolution)?
     else {
         return Ok(None);
     };

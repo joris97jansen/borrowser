@@ -7,10 +7,11 @@ use crate::rendering::{
 use core_types::StylesheetSlotId;
 use css::{
     ComputedDocumentStyle, ComputedStyleResolutionError, ComputedStyleReuseStats,
-    ResolvedDocumentStyle, StylePhaseOutput, StyleResolutionLimits, StylesheetParse,
-    build_style_tree_from_computed_styles,
+    ResolvedDocumentStyle, StylePhaseOutput, StyleResolutionLimits, StylesheetCascadeInput,
+    StylesheetParse, build_style_tree_from_computed_styles,
     compute_document_styles_from_resolved_styles_with_reuse_stats,
-    compute_document_styles_incremental_suffix_with_limits, resolve_document_styles,
+    compute_document_styles_incremental_suffix_from_cascade_inputs_with_limits,
+    resolve_document_styles_from_cascade_inputs,
 };
 use gfx::input::InputValueStore;
 use html::{
@@ -533,7 +534,7 @@ impl PageState {
         if needs_recompute {
             Self::recompute_styles(
                 dom,
-                retained.document_styles.cascade_stylesheets(),
+                &retained.document_styles.cascade_stylesheet_inputs(),
                 retained.generations,
                 StyleRecomputeState {
                     style_cache: &mut retained.style_cache,
@@ -570,7 +571,7 @@ impl PageState {
 
     fn recompute_styles(
         dom: &Node,
-        sheets: &[StylesheetParse],
+        sheets: &[StylesheetCascadeInput<'_>],
         generations: PageStyleGenerations,
         state: StyleRecomputeState<'_>,
     ) -> Result<(), ComputedStyleResolutionError> {
@@ -584,14 +585,16 @@ impl PageState {
             && cache.stylesheet_generation == generations.stylesheets
         {
             let limits = StyleResolutionLimits::default();
-            if let Some(incremental) = compute_document_styles_incremental_suffix_with_limits(
-                dom,
-                sheets,
-                &cache.resolved,
-                &cache.computed,
-                node_ids,
-                &limits,
-            )? {
+            if let Some(incremental) =
+                compute_document_styles_incremental_suffix_from_cascade_inputs_with_limits(
+                    dom,
+                    sheets,
+                    &cache.resolved,
+                    &cache.computed,
+                    node_ids,
+                    &limits,
+                )?
+            {
                 *state.last_style_recalc = Some(StyleRecalcKind::IncrementalSuffix {
                     reused_prefix_len: incremental.reused_prefix_len,
                     recomputed_len: incremental.recomputed_len,
@@ -608,7 +611,7 @@ impl PageState {
             }
         }
 
-        let resolved = resolve_document_styles(dom, sheets)
+        let resolved = resolve_document_styles_from_cascade_inputs(dom, sheets)
             .map_err(ComputedStyleResolutionError::StyleResolution)?;
         let computed =
             compute_document_styles_from_resolved_styles_with_reuse_stats(dom, &resolved)?;
