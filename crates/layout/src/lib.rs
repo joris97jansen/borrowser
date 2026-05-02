@@ -1,3 +1,12 @@
+//! Layout-phase box-tree and geometry primitives.
+//!
+//! The architecture contract for Borrowser's box tree, formatting-context
+//! model, and layout responsibility boundaries is documented in
+//! `docs/rendering/w1-box-tree-layout-model-contract.md`. The current
+//! `LayoutBox` type is both the frame-local generated box-tree node and the
+//! geometry output for that node; later Milestone W work may split generated
+//! boxes from laid-out fragments without changing the typed phase handoffs.
+
 mod text;
 pub use text::TextMeasurer;
 
@@ -37,14 +46,18 @@ impl PartialEq for Rectangle {
     }
 }
 
-/// What kind of layout box this is. For now: only block.
+/// Current supported layout participation category for a generated layout box.
+///
+/// This is not yet the full CSS box-generation model. Milestone W will expand
+/// this toward explicit root, anonymous, marker, and formatting-context-aware
+/// box roles.
 #[derive(Clone, Copy, Debug)]
 pub enum BoxKind {
     Block,
     Inline,
     InlineBlock,
     ReplacedInline,
-    // Future: AnonymousBlock, ListItem, etc.
+    // Future: Root, AnonymousBlock, AnonymousInline, Marker, ListItem, etc.
 }
 
 /// What kind of list marker this block has, if any.

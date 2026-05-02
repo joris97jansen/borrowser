@@ -307,6 +307,7 @@ The normative rendering ownership and phase-boundary contract lives in:
 * `docs/rendering/v5-explicit-runtime-render-orchestration-path.md`
 * `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
 * `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
+* `docs/rendering/w1-box-tree-layout-model-contract.md`
 
 ---
 
@@ -318,6 +319,9 @@ Borrowser has a hybrid layout engine:
 * **Inline layout** for text and inline elements (`span`, `a`, `em`, …)
 
 Layout computes a **LayoutBox tree** containing the geometry of each box.
+Milestone W1 defines this as a distinct layout-owned box-tree model derived
+from DOM and computed style, with explicit boundaries for box generation,
+formatting contexts, containing-block modeling, and later layout expansion.
 
 ---
 
