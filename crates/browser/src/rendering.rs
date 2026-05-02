@@ -1117,6 +1117,7 @@ mod tests {
         render_phase_contracts,
     };
     use crate::page::{PageState, RestyleHint};
+    use css::Display;
     use gfx::paint::PaintPhaseInput;
     use html::{HtmlParseOptions, Node, parse_document};
     use layout::replaced::intrinsic::IntrinsicSize;
@@ -1444,7 +1445,7 @@ mod tests {
     #[test]
     fn render_phase_boundary_debug_snapshot_is_stable_for_simple_text_flow() {
         let mut page = page_with_dom(
-            "<!doctype html><html><head><style>html { background-color: white; } p { color: red; }</style></head><body><p>Hello</p></body></html>",
+            "<!doctype html><html style=\"display: inline;\"><head><style>html { background-color: white; } p { color: red; }</style></head><body style=\"display: inline;\"><p style=\"display: inline;\">Hello</p></body></html>",
         );
         let mut pending = PendingRenderWork::default();
         pending.push(render_invalidation_request(
@@ -1562,7 +1563,7 @@ orchestration:
     #[test]
     fn render_phase_boundary_debug_snapshot_is_stable_for_replaced_element_flow() {
         let mut page = page_with_dom(
-            "<!doctype html><html><head><style>img { display: inline-block; }</style></head><body><img src=\"hero.png\"></body></html>",
+            "<!doctype html><html style=\"display: inline;\"><head><style>img { display: inline-block; }</style></head><body style=\"display: inline;\"><img src=\"hero.png\"></body></html>",
         );
         let warm_style = style_output_for_test(&mut page);
         drop(warm_style);
@@ -2031,6 +2032,52 @@ orchestration:
     }
 
     #[test]
+    fn runtime_style_phase_applies_minimal_ua_display_defaults() {
+        let mut page = page_with_dom(
+            "<!doctype html><html><head></head><body><p>Hello <span>world</span></p><ul><li>One</li></ul><button>Go</button></body></html>",
+        );
+        let style_output = style_output_for_test(&mut page);
+
+        assert_eq!(
+            styled_element_display(style_output.root(), "html"),
+            Display::Block
+        );
+        assert_eq!(
+            styled_element_display(style_output.root(), "body"),
+            Display::Block
+        );
+        assert_eq!(
+            styled_element_display(style_output.root(), "p"),
+            Display::Block
+        );
+        assert_eq!(
+            styled_element_display(style_output.root(), "span"),
+            Display::Inline
+        );
+        assert_eq!(
+            styled_element_display(style_output.root(), "li"),
+            Display::ListItem
+        );
+        assert_eq!(
+            styled_element_display(style_output.root(), "button"),
+            Display::InlineBlock
+        );
+
+        let measurer = FixedTextMeasurer;
+        let layout_output = layout_document(LayoutPhaseInput::from_style_output(
+            &style_output,
+            320.0,
+            &measurer,
+            None,
+        ));
+
+        assert!(
+            layout_output.content_height() > 0.0,
+            "minimal UA display defaults should let ordinary body text produce visible layout"
+        );
+    }
+
+    #[test]
     fn layout_to_paint_handoff_wraps_layout_phase_output_without_reinterpretation() {
         let mut page = page_with_dom(
             "<!doctype html><html><head><style>p { color: red; }</style></head><body><p>Hello</p></body></html>",
@@ -2294,6 +2341,12 @@ orchestration:
     fn styled_element_color(node: &css::StyledNode<'_>, want_name: &str) -> (u8, u8, u8, u8) {
         find_styled_element(node, want_name)
             .map(|node| node.style.color())
+            .expect("styled element should exist")
+    }
+
+    fn styled_element_display(node: &css::StyledNode<'_>, want_name: &str) -> Display {
+        find_styled_element(node, want_name)
+            .map(|node| node.style.display())
             .expect("styled element should exist")
     }
 
