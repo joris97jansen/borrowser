@@ -35,6 +35,34 @@ impl<'layout, 'style_tree, 'dom> PaintPhaseInput<'layout, 'style_tree, 'dom> {
     pub fn layout_root(&self) -> &'layout LayoutBox<'style_tree, 'dom> {
         self.layout.root()
     }
+
+    /// Stable debug snapshot for the semantic layout-to-paint handoff.
+    pub fn to_debug_snapshot(&self) -> String {
+        let mut out = String::new();
+        out.push_str("version: 1\n");
+        out.push_str("paint-phase-input\n");
+        out.push_str(&format!(
+            "layout-root-id: {}\n",
+            self.layout_root().node_id().0
+        ));
+        out.push_str(&format!(
+            "viewport-width: {:.2}\n",
+            self.layout().viewport_width()
+        ));
+        out.push_str(&format!(
+            "document-rect: x={:.2} y={:.2} w={:.2} h={:.2}\n",
+            self.layout().document_rect().x,
+            self.layout().document_rect().y,
+            self.layout().document_rect().width,
+            self.layout().document_rect().height
+        ));
+        for line in self.layout().to_debug_snapshot().lines().skip(4) {
+            out.push_str("  ");
+            out.push_str(line);
+            out.push('\n');
+        }
+        out
+    }
 }
 
 /// Paint-runtime execution arguments. These are backend/runtime inputs, not the

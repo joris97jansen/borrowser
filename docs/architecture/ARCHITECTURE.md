@@ -305,6 +305,7 @@ The normative rendering ownership and phase-boundary contract lives in:
 * `docs/rendering/v3-retained-state-versus-rebuilt-state-ownership.md`
 * `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
 * `docs/rendering/v5-explicit-runtime-render-orchestration-path.md`
+* `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
 
 ---
 
@@ -439,7 +440,10 @@ Milestone U introduced page-owned DOM/style/stylesheet generations and a
 `PageStyleCache` so clean frames can reuse computed style. Milestone V makes it
 explicit that style artifacts are retained, while `StyledNode`, layout, and
 paint outputs remain rebuilt derived state until later rendering milestones add
-retained downstream caches.
+retained downstream caches. Milestone V6 adds deterministic debug snapshots for
+`StylePhaseOutput`, `LayoutPhaseInput`, `LayoutPhaseOutput`,
+`PaintPhaseInput`, and `RenderFrameExecutionTrace` so representative pipeline
+flows can be asserted without pixel-diff tests.
 
 ---
 

@@ -11,9 +11,11 @@ use crate::page::PageState;
 use css::{ComputedStyleResolutionError, StylePhaseOutput, StyledNode};
 use egui::Ui;
 use gfx::input::PageAction;
-use gfx::paint::ImageProvider;
+use gfx::paint::{ImageProvider, PaintPhaseInput};
 use gfx::viewport::{ViewportCtx, execute_viewport_frame};
 use html::Node;
+use layout::{LayoutPhaseInput, ReplacedElementInfoProvider, TextMeasurer, layout_document};
+use std::fmt::Write;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RenderingPhase {
@@ -526,6 +528,63 @@ pub struct RenderFrameExecutionTrace {
     pub semantic_phase_order: Vec<RenderingPhase>,
 }
 
+impl RenderFrameExecutionTrace {
+    /// Stable debug snapshot for runtime orchestration decisions.
+    pub fn to_debug_snapshot(&self) -> String {
+        let mut out = String::new();
+        writeln!(&mut out, "version: 1").expect("write snapshot");
+        writeln!(&mut out, "render-frame-execution-trace").expect("write snapshot");
+        writeln!(
+            &mut out,
+            "triggered-entry-points: {}",
+            self.triggered_entry_points.len()
+        )
+        .expect("write snapshot");
+        for entry_point in &self.triggered_entry_points {
+            writeln!(&mut out, "  - {}", entry_point_debug_label(*entry_point))
+                .expect("write snapshot");
+        }
+        append_phase_trace_snapshot(&mut out, "style", &self.style);
+        append_phase_trace_snapshot(&mut out, "layout", &self.layout);
+        append_phase_trace_snapshot(&mut out, "paint", &self.paint);
+        append_phase_trace_snapshot(&mut out, "frame-orchestration", &self.frame_orchestration);
+        writeln!(
+            &mut out,
+            "semantic-phase-order: {}",
+            self.semantic_phase_order
+                .iter()
+                .map(|phase| rendering_phase_debug_label(*phase))
+                .collect::<Vec<_>>()
+                .join(" -> ")
+        )
+        .expect("write snapshot");
+        out
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RenderPhaseBoundaryDebugSnapshot {
+    pub style_output: String,
+    pub layout_input: String,
+    pub layout_output: String,
+    pub paint_input: String,
+    pub orchestration: String,
+}
+
+impl RenderPhaseBoundaryDebugSnapshot {
+    pub fn to_debug_snapshot(&self) -> String {
+        let mut out = String::new();
+        writeln!(&mut out, "version: 1").expect("write snapshot");
+        writeln!(&mut out, "render-phase-boundaries").expect("write snapshot");
+        append_nested_snapshot(&mut out, "style-output", &self.style_output);
+        append_nested_snapshot(&mut out, "layout-input", &self.layout_input);
+        append_nested_snapshot(&mut out, "layout-output", &self.layout_output);
+        append_nested_snapshot(&mut out, "paint-input", &self.paint_input);
+        append_nested_snapshot(&mut out, "orchestration", &self.orchestration);
+        out
+    }
+}
+
 pub(crate) struct OrchestratedFrameOutcome {
     pub(crate) action: Option<PageAction>,
     pub(crate) followup_render_request: Option<RenderInvalidationRequest>,
@@ -539,6 +598,48 @@ pub(crate) struct PreparedPageFrame<'a> {
     style_dirty_before_frame: bool,
     base_url: Option<String>,
     form_controls: FormControlIndex,
+}
+
+/// Stable debug surface for one deterministic render pipeline handoff flow.
+///
+/// This surface intentionally captures phase-boundary objects and the runtime
+/// orchestration decision trace without depending on egui paint execution.
+pub fn render_phase_boundary_debug_snapshot(
+    page: &mut PageState,
+    pending_work: PendingRenderWork,
+    available_width: f32,
+    measurer: &dyn TextMeasurer,
+    replaced_info: Option<&dyn ReplacedElementInfoProvider>,
+    viewport_changed: bool,
+) -> Result<Option<RenderPhaseBoundaryDebugSnapshot>, ComputedStyleResolutionError> {
+    let style_dirty_before_frame = page.render_pipeline_debug_snapshot().style_dirty;
+    let style_output = match page.build_style_phase_output()? {
+        Some(style_output) => style_output,
+        None => return Ok(None),
+    };
+    let style_output_snapshot = style_output.to_debug_snapshot();
+    let layout_input = LayoutPhaseInput::from_style_output(
+        &style_output,
+        available_width,
+        measurer,
+        replaced_info,
+    );
+    let layout_input_snapshot = layout_input.to_debug_snapshot();
+    let layout_output = layout_document(layout_input);
+    let paint_input = PaintPhaseInput::new(&layout_output);
+    let orchestration = build_render_frame_execution_trace(
+        &pending_work,
+        style_dirty_before_frame,
+        viewport_changed,
+    );
+
+    Ok(Some(RenderPhaseBoundaryDebugSnapshot {
+        style_output: style_output_snapshot,
+        layout_input: layout_input_snapshot,
+        layout_output: layout_output.to_debug_snapshot(),
+        paint_input: paint_input.to_debug_snapshot(),
+        orchestration: orchestration.to_debug_snapshot(),
+    }))
 }
 
 #[derive(Default)]
@@ -688,6 +789,33 @@ fn build_render_frame_execution_trace(
     }
 }
 
+fn append_phase_trace_snapshot(out: &mut String, label: &str, trace: &RenderPhaseExecutionTrace) {
+    writeln!(
+        out,
+        "{label}: phase={} kind={}",
+        rendering_phase_debug_label(trace.phase),
+        execution_kind_debug_label(trace.kind)
+    )
+    .expect("write snapshot");
+
+    writeln!(out, "  direct-triggers: {}", trace.direct_triggers.len()).expect("write snapshot");
+    for trigger in &trace.direct_triggers {
+        writeln!(out, "    - {}", rebuild_trigger_debug_label(*trigger)).expect("write snapshot");
+    }
+
+    writeln!(out, "  cascaded-from: {}", trace.cascaded_from.len()).expect("write snapshot");
+    for phase in &trace.cascaded_from {
+        writeln!(out, "    - {}", rendering_phase_debug_label(*phase)).expect("write snapshot");
+    }
+}
+
+fn append_nested_snapshot(out: &mut String, label: &str, snapshot: &str) {
+    writeln!(out, "{label}:").expect("write snapshot");
+    for line in snapshot.lines() {
+        writeln!(out, "  {line}").expect("write snapshot");
+    }
+}
+
 fn phase_trace(
     phase: RenderingPhase,
     reasons: PhaseReasonAccumulator,
@@ -709,6 +837,53 @@ fn phase_trace(
 fn push_unique<T: Copy + PartialEq>(items: &mut Vec<T>, item: T) {
     if !items.contains(&item) {
         items.push(item);
+    }
+}
+
+fn rendering_phase_debug_label(phase: RenderingPhase) -> &'static str {
+    match phase {
+        RenderingPhase::Style => "style",
+        RenderingPhase::Layout => "layout",
+        RenderingPhase::Paint => "paint",
+        RenderingPhase::FrameOrchestration => "frame-orchestration",
+    }
+}
+
+fn entry_point_debug_label(entry_point: RenderInvalidationEntryPoint) -> &'static str {
+    match entry_point {
+        RenderInvalidationEntryPoint::DocumentReplaced => "document-replaced",
+        RenderInvalidationEntryPoint::DomStructureChanged => "dom-structure-changed",
+        RenderInvalidationEntryPoint::DomAttributesChanged => "dom-attributes-changed",
+        RenderInvalidationEntryPoint::DomTextChanged => "dom-text-changed",
+        RenderInvalidationEntryPoint::StylesheetSetChanged => "stylesheet-set-changed",
+        RenderInvalidationEntryPoint::ViewportChanged => "viewport-changed",
+        RenderInvalidationEntryPoint::ResourceStateChanged => "resource-state-changed",
+        RenderInvalidationEntryPoint::InputStateChanged => "input-state-changed",
+    }
+}
+
+fn execution_kind_debug_label(kind: RenderPhaseExecutionKind) -> &'static str {
+    match kind {
+        RenderPhaseExecutionKind::Requested => "requested",
+        RenderPhaseExecutionKind::MaterializedFromRetainedArtifacts => {
+            "materialized-from-retained-artifacts"
+        }
+        RenderPhaseExecutionKind::RequiredForCurrentFrame => "required-for-current-frame",
+    }
+}
+
+fn rebuild_trigger_debug_label(trigger: RenderRebuildTrigger) -> &'static str {
+    match trigger {
+        RenderRebuildTrigger::DomReplaced => "dom-replaced",
+        RenderRebuildTrigger::DomStructureChanged => "dom-structure-changed",
+        RenderRebuildTrigger::DomAttributesChanged => "dom-attributes-changed",
+        RenderRebuildTrigger::DomTextChanged => "dom-text-changed",
+        RenderRebuildTrigger::StylesheetSetChanged => "stylesheet-set-changed",
+        RenderRebuildTrigger::StyleOutputsChanged => "style-outputs-changed",
+        RenderRebuildTrigger::ViewportChanged => "viewport-changed",
+        RenderRebuildTrigger::ResourceStateChanged => "resource-state-changed",
+        RenderRebuildTrigger::InputStateChanged => "input-state-changed",
+        RenderRebuildTrigger::LayoutOutputsChanged => "layout-outputs-changed",
     }
 }
 
@@ -760,12 +935,16 @@ mod tests {
         RenderPipelineDebugSnapshot, RenderRebuildTrigger, RenderingPhase, RenderingSubsystem,
         StyleInvalidationState, build_render_frame_execution_trace,
         render_artifact_ownership_contracts, render_invalidation_request,
-        render_invalidation_request_contracts, render_phase_contracts,
+        render_invalidation_request_contracts, render_phase_boundary_debug_snapshot,
+        render_phase_contracts,
     };
     use crate::page::{PageState, RestyleHint};
     use gfx::paint::PaintPhaseInput;
     use html::{HtmlParseOptions, Node, parse_document};
-    use layout::{LayoutBox, LayoutPhaseInput, TextMeasurer, layout_document};
+    use layout::replaced::intrinsic::IntrinsicSize;
+    use layout::{
+        LayoutBox, LayoutPhaseInput, ReplacedElementInfoProvider, TextMeasurer, layout_document,
+    };
     use std::sync::Arc;
 
     #[test]
@@ -1082,6 +1261,292 @@ mod tests {
             trace.frame_orchestration.direct_triggers,
             vec![RenderRebuildTrigger::ViewportChanged]
         );
+    }
+
+    #[test]
+    fn render_phase_boundary_debug_snapshot_is_stable_for_simple_text_flow() {
+        let mut page = page_with_dom(
+            "<!doctype html><html><head><style>html { background-color: white; } p { color: red; }</style></head><body><p>Hello</p></body></html>",
+        );
+        let mut pending = PendingRenderWork::default();
+        pending.push(render_invalidation_request(
+            RenderInvalidationEntryPoint::DocumentReplaced,
+        ));
+        pending.push(render_invalidation_request(
+            RenderInvalidationEntryPoint::StylesheetSetChanged,
+        ));
+
+        let snapshot = render_phase_boundary_debug_snapshot(
+            &mut page,
+            pending,
+            320.0,
+            &FixedTextMeasurer,
+            None,
+            false,
+        )
+        .expect("snapshot should build")
+        .expect("document should produce a pipeline snapshot");
+        let first = snapshot.to_debug_snapshot();
+        let second = render_phase_boundary_debug_snapshot(
+            &mut page,
+            pending_for_simple_text_flow(),
+            320.0,
+            &FixedTextMeasurer,
+            None,
+            false,
+        )
+        .expect("snapshot should rebuild deterministically")
+        .expect("document should still produce a pipeline snapshot")
+        .to_debug_snapshot();
+        assert_eq!(first, second);
+        assert_eq!(
+            first,
+            r#"version: 1
+render-phase-boundaries
+style-output:
+  version: 1
+  style-phase-output
+  root-id: 0
+  styled-nodes: 8
+  node[0]: id=0 kind=document children=1 style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+    node[1]: id=0 kind=element name="html" children=2 style=display=inline color=rgba(0,0,0,255) background=rgba(255,255,255,255) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+      node[2]: id=0 kind=element name="head" children=1 style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+        node[3]: id=0 kind=element name="style" children=1 style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+          node[4]: id=0 kind=text text="html { background-color: white; } p { color: red; }" children=0 style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+      node[5]: id=0 kind=element name="body" children=1 style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+        node[6]: id=0 kind=element name="p" children=1 style=display=inline color=rgba(255,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+          node[7]: id=0 kind=text text="Hello" children=0 style=display=inline color=rgba(255,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+layout-input:
+  version: 1
+  layout-phase-input
+  available-width: 320.00
+  style-root-id: 0
+  style-root: document
+  style-nodes: 8
+  has-replaced-info: false
+layout-output:
+  version: 1
+  layout-phase-output
+  viewport-width: 320.00
+  document-rect: x=0.00 y=0.00 w=320.00 h=0.00
+  layout-boxes: 8
+  box[0]: id=0 node=document kind=block rect=x=0.00 y=0.00 w=320.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+    box[1]: id=0 node=element("html") kind=block rect=x=0.00 y=0.00 w=320.00 h=0.00 children=2 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(255,255,255,255) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+      box[2]: id=0 node=element("head") kind=block rect=x=0.00 y=0.00 w=320.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+        box[3]: id=0 node=element("style") kind=block rect=x=0.00 y=0.00 w=320.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+          box[4]: id=0 node=text("html { background-color: white; } p { color: red; }") kind=block rect=x=0.00 y=0.00 w=320.00 h=0.00 children=0 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+      box[5]: id=0 node=element("body") kind=inline rect=x=0.00 y=0.00 w=320.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+        box[6]: id=0 node=element("p") kind=inline rect=x=0.00 y=0.00 w=320.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(255,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+          box[7]: id=0 node=text("Hello") kind=block rect=x=0.00 y=0.00 w=320.00 h=0.00 children=0 marker=none replaced=none intrinsic=none style=display=inline color=rgba(255,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+paint-input:
+  version: 1
+  paint-phase-input
+  layout-root-id: 0
+  viewport-width: 320.00
+  document-rect: x=0.00 y=0.00 w=320.00 h=0.00
+    layout-boxes: 8
+    box[0]: id=0 node=document kind=block rect=x=0.00 y=0.00 w=320.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+      box[1]: id=0 node=element("html") kind=block rect=x=0.00 y=0.00 w=320.00 h=0.00 children=2 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(255,255,255,255) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+        box[2]: id=0 node=element("head") kind=block rect=x=0.00 y=0.00 w=320.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+          box[3]: id=0 node=element("style") kind=block rect=x=0.00 y=0.00 w=320.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+            box[4]: id=0 node=text("html { background-color: white; } p { color: red; }") kind=block rect=x=0.00 y=0.00 w=320.00 h=0.00 children=0 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+        box[5]: id=0 node=element("body") kind=inline rect=x=0.00 y=0.00 w=320.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+          box[6]: id=0 node=element("p") kind=inline rect=x=0.00 y=0.00 w=320.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(255,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+            box[7]: id=0 node=text("Hello") kind=block rect=x=0.00 y=0.00 w=320.00 h=0.00 children=0 marker=none replaced=none intrinsic=none style=display=inline color=rgba(255,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+orchestration:
+  version: 1
+  render-frame-execution-trace
+  triggered-entry-points: 2
+    - document-replaced
+    - stylesheet-set-changed
+  style: phase=style kind=requested
+    direct-triggers: 2
+      - dom-replaced
+      - stylesheet-set-changed
+    cascaded-from: 0
+  layout: phase=layout kind=requested
+    direct-triggers: 0
+    cascaded-from: 1
+      - style
+  paint: phase=paint kind=requested
+    direct-triggers: 0
+    cascaded-from: 1
+      - layout
+  frame-orchestration: phase=frame-orchestration kind=requested
+    direct-triggers: 0
+    cascaded-from: 1
+      - style
+  semantic-phase-order: style -> layout -> paint
+"#
+        );
+    }
+
+    #[test]
+    fn render_phase_boundary_debug_snapshot_is_stable_for_replaced_element_flow() {
+        let mut page = page_with_dom(
+            "<!doctype html><html><head><style>img { display: inline-block; }</style></head><body><img src=\"hero.png\"></body></html>",
+        );
+        let warm_style = style_output_for_test(&mut page);
+        drop(warm_style);
+
+        let mut pending = PendingRenderWork::default();
+        pending.push(render_invalidation_request(
+            RenderInvalidationEntryPoint::ResourceStateChanged,
+        ));
+        pending.push(render_invalidation_request(
+            RenderInvalidationEntryPoint::InputStateChanged,
+        ));
+
+        let snapshot = render_phase_boundary_debug_snapshot(
+            &mut page,
+            pending,
+            240.0,
+            &FixedTextMeasurer,
+            Some(&FixedReplacedInfo),
+            true,
+        )
+        .expect("snapshot should build")
+        .expect("document should produce a pipeline snapshot");
+        let first = snapshot.to_debug_snapshot();
+        let second = render_phase_boundary_debug_snapshot(
+            &mut page,
+            pending_for_replaced_element_flow(),
+            240.0,
+            &FixedTextMeasurer,
+            Some(&FixedReplacedInfo),
+            true,
+        )
+        .expect("snapshot should rebuild deterministically")
+        .expect("document should still produce a pipeline snapshot")
+        .to_debug_snapshot();
+        assert_eq!(first, second);
+        assert_eq!(
+            first,
+            r#"version: 1
+render-phase-boundaries
+style-output:
+  version: 1
+  style-phase-output
+  root-id: 0
+  styled-nodes: 7
+  node[0]: id=0 kind=document children=1 style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+    node[1]: id=0 kind=element name="html" children=2 style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+      node[2]: id=0 kind=element name="head" children=1 style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+        node[3]: id=0 kind=element name="style" children=1 style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+          node[4]: id=0 kind=text text="img { display: inline-block; }" children=0 style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+      node[5]: id=0 kind=element name="body" children=1 style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+        node[6]: id=0 kind=element name="img" children=0 style=display=inline-block color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+layout-input:
+  version: 1
+  layout-phase-input
+  available-width: 240.00
+  style-root-id: 0
+  style-root: document
+  style-nodes: 7
+  has-replaced-info: true
+layout-output:
+  version: 1
+  layout-phase-output
+  viewport-width: 240.00
+  document-rect: x=0.00 y=0.00 w=240.00 h=0.00
+  layout-boxes: 7
+  box[0]: id=0 node=document kind=block rect=x=0.00 y=0.00 w=240.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+    box[1]: id=0 node=element("html") kind=block rect=x=0.00 y=0.00 w=240.00 h=0.00 children=2 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+      box[2]: id=0 node=element("head") kind=block rect=x=0.00 y=0.00 w=240.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+        box[3]: id=0 node=element("style") kind=block rect=x=0.00 y=0.00 w=240.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+          box[4]: id=0 node=text("img { display: inline-block; }") kind=block rect=x=0.00 y=0.00 w=240.00 h=0.00 children=0 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+      box[5]: id=0 node=element("body") kind=inline rect=x=0.00 y=0.00 w=240.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+        box[6]: id=0 node=element("img") kind=replaced-inline rect=x=0.00 y=0.00 w=64.00 h=32.00 children=0 marker=none replaced=img intrinsic=w=64.00px h=32.00px ratio=2.0000 style=display=inline-block color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+paint-input:
+  version: 1
+  paint-phase-input
+  layout-root-id: 0
+  viewport-width: 240.00
+  document-rect: x=0.00 y=0.00 w=240.00 h=0.00
+    layout-boxes: 7
+    box[0]: id=0 node=document kind=block rect=x=0.00 y=0.00 w=240.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+      box[1]: id=0 node=element("html") kind=block rect=x=0.00 y=0.00 w=240.00 h=0.00 children=2 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+        box[2]: id=0 node=element("head") kind=block rect=x=0.00 y=0.00 w=240.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+          box[3]: id=0 node=element("style") kind=block rect=x=0.00 y=0.00 w=240.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+            box[4]: id=0 node=text("img { display: inline-block; }") kind=block rect=x=0.00 y=0.00 w=240.00 h=0.00 children=0 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+        box[5]: id=0 node=element("body") kind=inline rect=x=0.00 y=0.00 w=240.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+          box[6]: id=0 node=element("img") kind=replaced-inline rect=x=0.00 y=0.00 w=64.00 h=32.00 children=0 marker=none replaced=img intrinsic=w=64.00px h=32.00px ratio=2.0000 style=display=inline-block color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+orchestration:
+  version: 1
+  render-frame-execution-trace
+  triggered-entry-points: 3
+    - resource-state-changed
+    - input-state-changed
+    - viewport-changed
+  style: phase=style kind=materialized-from-retained-artifacts
+    direct-triggers: 0
+    cascaded-from: 0
+  layout: phase=layout kind=requested
+    direct-triggers: 2
+      - resource-state-changed
+      - viewport-changed
+    cascaded-from: 0
+  paint: phase=paint kind=requested
+    direct-triggers: 2
+      - resource-state-changed
+      - input-state-changed
+    cascaded-from: 1
+      - layout
+  frame-orchestration: phase=frame-orchestration kind=requested
+    direct-triggers: 3
+      - resource-state-changed
+      - input-state-changed
+      - viewport-changed
+    cascaded-from: 0
+  semantic-phase-order: style -> layout -> paint
+"#
+        );
+    }
+
+    #[test]
+    fn render_phase_boundary_debug_snapshot_preserves_non_zero_dom_identity_across_handoffs() {
+        let mut page = page_with_node(doc_with_explicit_ids());
+
+        let warm_style = style_output_for_test(&mut page);
+        assert_eq!(warm_style.root().node_id, html::internal::Id(1));
+
+        let paragraph = find_styled_node_id(warm_style.root(), html::internal::Id(4))
+            .expect("paragraph styled node");
+        assert!(matches!(paragraph.node, Node::Element { name, .. } if name.as_ref() == "p"));
+        drop(warm_style);
+
+        let style_output = style_output_for_test(&mut page);
+        let layout_input =
+            LayoutPhaseInput::from_style_output(&style_output, 360.0, &FixedTextMeasurer, None);
+        assert_eq!(layout_input.style_root().node_id, html::internal::Id(1));
+
+        let layout_output = layout_document(layout_input);
+        assert_eq!(layout_output.root().node_id(), html::internal::Id(1));
+        let paragraph_box = find_layout_box_by_id(layout_output.root(), html::internal::Id(4))
+            .expect("paragraph layout box");
+        assert_eq!(paragraph_box.node_id(), html::internal::Id(4));
+
+        let paint_input = PaintPhaseInput::new(&layout_output);
+        assert_eq!(paint_input.layout_root().node_id(), html::internal::Id(1));
+        drop(style_output);
+
+        let snapshot = render_phase_boundary_debug_snapshot(
+            &mut page,
+            PendingRenderWork::default(),
+            360.0,
+            &FixedTextMeasurer,
+            None,
+            false,
+        )
+        .expect("snapshot should build")
+        .expect("document should produce a pipeline snapshot")
+        .to_debug_snapshot();
+
+        assert!(snapshot.contains("root-id: 1"));
+        assert!(snapshot.contains("style-root-id: 1"));
+        assert!(snapshot.contains("layout-root-id: 1"));
+        assert!(snapshot.contains("id=4 kind=element name=\"p\""));
+        assert!(snapshot.contains("id=4 node=element(\"p\")"));
     }
 
     #[test]
@@ -1494,9 +1959,13 @@ mod tests {
 
     fn page_with_dom(input: &str) -> PageState {
         let output = parse_document(input, HtmlParseOptions::default()).expect("parse should work");
+        page_with_node(output.document)
+    }
+
+    fn page_with_node(dom: Node) -> PageState {
         let mut page = PageState::new();
         page.start_nav("https://example.com/index.html");
-        let _ = page.replace_dom(Box::new(output.document), RestyleHint::document_replaced());
+        let _ = page.replace_dom(Box::new(dom), RestyleHint::document_replaced());
         let _ = page.reconcile_document_stylesheets();
         page
     }
@@ -1536,6 +2005,19 @@ mod tests {
         node.children
             .iter()
             .find_map(|child| find_styled_element(child, want_name))
+    }
+
+    fn find_styled_node_id<'a>(
+        node: &'a css::StyledNode<'a>,
+        want: html::internal::Id,
+    ) -> Option<&'a css::StyledNode<'a>> {
+        if node.node_id == want {
+            return Some(node);
+        }
+
+        node.children
+            .iter()
+            .find_map(|child| find_styled_node_id(child, want))
     }
 
     fn find_layout_box_by_id<'layout, 'dom>(
@@ -1667,6 +2149,65 @@ mod tests {
 
         fn line_height(&self, _style: &css::ComputedStyle) -> f32 {
             16.0
+        }
+    }
+
+    fn pending_for_simple_text_flow() -> PendingRenderWork {
+        let mut pending = PendingRenderWork::default();
+        pending.push(render_invalidation_request(
+            RenderInvalidationEntryPoint::DocumentReplaced,
+        ));
+        pending.push(render_invalidation_request(
+            RenderInvalidationEntryPoint::StylesheetSetChanged,
+        ));
+        pending
+    }
+
+    fn pending_for_replaced_element_flow() -> PendingRenderWork {
+        let mut pending = PendingRenderWork::default();
+        pending.push(render_invalidation_request(
+            RenderInvalidationEntryPoint::ResourceStateChanged,
+        ));
+        pending.push(render_invalidation_request(
+            RenderInvalidationEntryPoint::InputStateChanged,
+        ));
+        pending
+    }
+
+    struct FixedReplacedInfo;
+
+    impl ReplacedElementInfoProvider for FixedReplacedInfo {
+        fn intrinsic_for_img(&self, _node: &html::Node) -> Option<IntrinsicSize> {
+            Some(IntrinsicSize::from_w_h(Some(64.0), Some(32.0)))
+        }
+    }
+
+    fn doc_with_explicit_ids() -> Node {
+        Node::Document {
+            id: html::internal::Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: html::internal::Id(2),
+                name: Arc::from("html"),
+                attributes: Vec::new(),
+                style: Vec::new(),
+                children: vec![Node::Element {
+                    id: html::internal::Id(3),
+                    name: Arc::from("body"),
+                    attributes: Vec::new(),
+                    style: Vec::new(),
+                    children: vec![Node::Element {
+                        id: html::internal::Id(4),
+                        name: Arc::from("p"),
+                        attributes: Vec::new(),
+                        style: Vec::new(),
+                        children: vec![Node::Text {
+                            id: html::internal::Id(5),
+                            text: "Hello".to_string(),
+                        }],
+                    }],
+                }],
+            }],
         }
     }
 }
