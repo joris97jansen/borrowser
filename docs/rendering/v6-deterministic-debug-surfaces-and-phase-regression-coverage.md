@@ -1,6 +1,6 @@
 # V6: Deterministic Debug Surfaces And Phase Regression Coverage
 
-Last updated: 2026-05-01  
+Last updated: 2026-05-02  
 Status: implemented deterministic phase-boundary debug surfaces for Milestone V issue 6
 
 This document is the source-of-truth contract for Milestone V6. It defines the
@@ -20,6 +20,7 @@ Related documents:
 - `docs/rendering/v3-retained-state-versus-rebuilt-state-ownership.md`
 - `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
 - `docs/rendering/v5-explicit-runtime-render-orchestration-path.md`
+- `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
 - `docs/architecture/ARCHITECTURE.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
 

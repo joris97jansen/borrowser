@@ -1,6 +1,6 @@
 # V2: Rendering Pipeline Phase Output Models
 
-Last updated: 2026-05-01  
+Last updated: 2026-05-02  
 Status: implemented phase-output contract for Milestone V issue 2
 
 This document is the source-of-truth contract for Milestone V2. It defines the
@@ -22,6 +22,7 @@ Related documents:
 - `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
 - `docs/rendering/v5-explicit-runtime-render-orchestration-path.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
+- `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
 - `docs/architecture/ARCHITECTURE.md`
 
 ## Purpose
