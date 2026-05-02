@@ -9,7 +9,7 @@ use super::support::*;
 #[test]
 fn render_phase_boundary_debug_snapshot_is_stable_for_simple_text_flow() {
     let mut page = page_with_dom(
-        "<!doctype html><html style=\"display: inline;\"><head><style>html { background-color: white; } p { color: red; }</style></head><body style=\"display: inline;\"><p style=\"display: inline;\">Hello</p></body></html>",
+        "<!doctype html><html style=\"display: inline;\"><head style=\"display: inline;\"><style style=\"display: inline;\">html { background-color: white; } p { color: red; }</style></head><body style=\"display: inline;\"><p style=\"display: inline;\">Hello</p></body></html>",
     );
     let mut pending = PendingRenderWork::default();
     pending.push(render_invalidation_request(
@@ -75,8 +75,8 @@ layout-output:
   layout-boxes: 8
   box[0]: id=0 node=document kind=block rect=x=0.00 y=0.00 w=320.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
     box[1]: id=0 node=element("html") kind=block rect=x=0.00 y=0.00 w=320.00 h=0.00 children=2 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(255,255,255,255) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
-      box[2]: id=0 node=element("head") kind=block rect=x=0.00 y=0.00 w=320.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
-        box[3]: id=0 node=element("style") kind=block rect=x=0.00 y=0.00 w=320.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+      box[2]: id=0 node=element("head") kind=inline rect=x=0.00 y=0.00 w=320.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+        box[3]: id=0 node=element("style") kind=inline rect=x=0.00 y=0.00 w=320.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
           box[4]: id=0 node=text("html { background-color: white; } p { color: red; }") kind=block rect=x=0.00 y=0.00 w=320.00 h=0.00 children=0 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
       box[5]: id=0 node=element("body") kind=inline rect=x=0.00 y=0.00 w=320.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
         box[6]: id=0 node=element("p") kind=inline rect=x=0.00 y=0.00 w=320.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(255,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
@@ -90,8 +90,8 @@ paint-input:
     layout-boxes: 8
     box[0]: id=0 node=document kind=block rect=x=0.00 y=0.00 w=320.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
       box[1]: id=0 node=element("html") kind=block rect=x=0.00 y=0.00 w=320.00 h=0.00 children=2 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(255,255,255,255) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
-        box[2]: id=0 node=element("head") kind=block rect=x=0.00 y=0.00 w=320.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
-          box[3]: id=0 node=element("style") kind=block rect=x=0.00 y=0.00 w=320.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+        box[2]: id=0 node=element("head") kind=inline rect=x=0.00 y=0.00 w=320.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+          box[3]: id=0 node=element("style") kind=inline rect=x=0.00 y=0.00 w=320.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
             box[4]: id=0 node=text("html { background-color: white; } p { color: red; }") kind=block rect=x=0.00 y=0.00 w=320.00 h=0.00 children=0 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
         box[5]: id=0 node=element("body") kind=inline rect=x=0.00 y=0.00 w=320.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
           box[6]: id=0 node=element("p") kind=inline rect=x=0.00 y=0.00 w=320.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(255,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
@@ -127,7 +127,7 @@ orchestration:
 #[test]
 fn render_phase_boundary_debug_snapshot_is_stable_for_replaced_element_flow() {
     let mut page = page_with_dom(
-        "<!doctype html><html style=\"display: inline;\"><head><style>img { display: inline-block; }</style></head><body style=\"display: inline;\"><img src=\"hero.png\"></body></html>",
+        "<!doctype html><html style=\"display: inline;\"><head style=\"display: inline;\"><style style=\"display: inline;\">img { display: inline-block; }</style></head><body style=\"display: inline;\"><img src=\"hero.png\"></body></html>",
     );
     let warm_style = style_output_for_test(&mut page);
     drop(warm_style);
@@ -195,8 +195,8 @@ layout-output:
   layout-boxes: 7
   box[0]: id=0 node=document kind=block rect=x=0.00 y=0.00 w=240.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
     box[1]: id=0 node=element("html") kind=block rect=x=0.00 y=0.00 w=240.00 h=0.00 children=2 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
-      box[2]: id=0 node=element("head") kind=block rect=x=0.00 y=0.00 w=240.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
-        box[3]: id=0 node=element("style") kind=block rect=x=0.00 y=0.00 w=240.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+      box[2]: id=0 node=element("head") kind=inline rect=x=0.00 y=0.00 w=240.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+        box[3]: id=0 node=element("style") kind=inline rect=x=0.00 y=0.00 w=240.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
           box[4]: id=0 node=text("img { display: inline-block; }") kind=block rect=x=0.00 y=0.00 w=240.00 h=0.00 children=0 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
       box[5]: id=0 node=element("body") kind=inline rect=x=0.00 y=0.00 w=240.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
         box[6]: id=0 node=element("img") kind=replaced-inline rect=x=0.00 y=0.00 w=64.00 h=32.00 children=0 marker=none replaced=img intrinsic=w=64.00px h=32.00px ratio=2.0000 style=display=inline-block color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
@@ -209,8 +209,8 @@ paint-input:
     layout-boxes: 7
     box[0]: id=0 node=document kind=block rect=x=0.00 y=0.00 w=240.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
       box[1]: id=0 node=element("html") kind=block rect=x=0.00 y=0.00 w=240.00 h=0.00 children=2 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
-        box[2]: id=0 node=element("head") kind=block rect=x=0.00 y=0.00 w=240.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
-          box[3]: id=0 node=element("style") kind=block rect=x=0.00 y=0.00 w=240.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+        box[2]: id=0 node=element("head") kind=inline rect=x=0.00 y=0.00 w=240.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
+          box[3]: id=0 node=element("style") kind=inline rect=x=0.00 y=0.00 w=240.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
             box[4]: id=0 node=text("img { display: inline-block; }") kind=block rect=x=0.00 y=0.00 w=240.00 h=0.00 children=0 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
         box[5]: id=0 node=element("body") kind=inline rect=x=0.00 y=0.00 w=240.00 h=0.00 children=1 marker=none replaced=none intrinsic=none style=display=inline color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
           box[6]: id=0 node=element("img") kind=replaced-inline rect=x=0.00 y=0.00 w=64.00 h=32.00 children=0 marker=none replaced=img intrinsic=w=64.00px h=32.00px ratio=2.0000 style=display=inline-block color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00]
@@ -318,7 +318,7 @@ fn style_to_layout_handoff_uses_explicit_phase_output_models() {
 #[test]
 fn runtime_style_phase_applies_minimal_ua_display_defaults() {
     let mut page = page_with_dom(
-        "<!doctype html><html><head></head><body><p>Hello <span>world</span></p><ul><li>One</li></ul><button>Go</button></body></html>",
+        "<!doctype html><html><head><title>Hidden</title><meta name=\"x\" content=\"y\"><link rel=\"stylesheet\" href=\"missing.css\"><style>p { color: red; }</style><script>hidden()</script></head><body><p>Hello <span>world</span></p><ul><li>One</li></ul><input><button>Go</button><textarea>Text</textarea></body></html>",
     );
     let style_output = style_output_for_test(&mut page);
 
@@ -346,6 +346,38 @@ fn runtime_style_phase_applies_minimal_ua_display_defaults() {
         styled_element_display(style_output.root(), "button"),
         Display::InlineBlock
     );
+    assert_eq!(
+        styled_element_display(style_output.root(), "input"),
+        Display::InlineBlock
+    );
+    assert_eq!(
+        styled_element_display(style_output.root(), "textarea"),
+        Display::InlineBlock
+    );
+    assert_eq!(
+        styled_element_display(style_output.root(), "head"),
+        Display::None
+    );
+    assert_eq!(
+        styled_element_display(style_output.root(), "title"),
+        Display::None
+    );
+    assert_eq!(
+        styled_element_display(style_output.root(), "meta"),
+        Display::None
+    );
+    assert_eq!(
+        styled_element_display(style_output.root(), "link"),
+        Display::None
+    );
+    assert_eq!(
+        styled_element_display(style_output.root(), "style"),
+        Display::None
+    );
+    assert_eq!(
+        styled_element_display(style_output.root(), "script"),
+        Display::None
+    );
 
     let measurer = FixedTextMeasurer;
     let layout_output = layout_document(LayoutPhaseInput::from_style_output(
@@ -358,6 +390,67 @@ fn runtime_style_phase_applies_minimal_ua_display_defaults() {
     assert!(
         layout_output.content_height() > 0.0,
         "minimal UA display defaults should let ordinary body text produce visible layout"
+    );
+
+    let layout_snapshot = layout_output.to_debug_snapshot();
+    assert!(!layout_snapshot.contains("node=element(\"head\")"));
+    assert!(!layout_snapshot.contains("node=element(\"title\")"));
+    assert!(!layout_snapshot.contains("node=element(\"meta\")"));
+    assert!(!layout_snapshot.contains("node=element(\"link\")"));
+    assert!(!layout_snapshot.contains("node=element(\"style\")"));
+    assert!(!layout_snapshot.contains("node=element(\"script\")"));
+    assert!(!layout_snapshot.contains("Hidden"));
+    assert!(!layout_snapshot.contains("p { color: red; }"));
+    assert!(!layout_snapshot.contains("hidden()"));
+}
+
+#[test]
+fn runtime_ua_display_defaults_are_author_and_inline_overridable() {
+    let mut page = page_with_dom(
+        "<!doctype html><html><head><style>p { display: inline; } head, title { display: block; }</style><title>Shown title</title></head><body><p id=\"author\">Author</p><div style=\"display: inline-block;\">Inline</div></body></html>",
+    );
+    let style_output = style_output_for_test(&mut page);
+
+    assert_eq!(
+        styled_element_display(style_output.root(), "p"),
+        Display::Inline
+    );
+    assert_eq!(
+        styled_element_display(style_output.root(), "div"),
+        Display::InlineBlock
+    );
+    assert_eq!(
+        styled_element_display(style_output.root(), "head"),
+        Display::Block
+    );
+    assert_eq!(
+        styled_element_display(style_output.root(), "title"),
+        Display::Block
+    );
+
+    let measurer = FixedTextMeasurer;
+    let layout_output = layout_document(LayoutPhaseInput::from_style_output(
+        &style_output,
+        320.0,
+        &measurer,
+        None,
+    ));
+    let layout_snapshot = layout_output.to_debug_snapshot();
+
+    assert!(layout_snapshot.contains("node=element(\"title\")"));
+    assert!(layout_snapshot.contains("text(\"Shown title\")"));
+}
+
+#[test]
+fn authored_stylesheet_reporting_excludes_built_in_ua_styles() {
+    let page = page_with_dom(
+        "<!doctype html><html><head><style>p { display: inline; }</style></head><body><p>Hello</p></body></html>",
+    );
+
+    assert_eq!(
+        page.css_stylesheets().len(),
+        1,
+        "authored stylesheet reporting must not include the built-in UA stylesheet"
     );
 }
 

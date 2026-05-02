@@ -20,7 +20,9 @@ pub use compute::{
 };
 pub use error::ComputedStyleResolutionError;
 pub use incremental::{
-    IncrementalComputedDocumentStyle, compute_document_styles_incremental_suffix_with_limits,
+    IncrementalComputedDocumentStyle,
+    compute_document_styles_incremental_suffix_from_cascade_inputs_with_limits,
+    compute_document_styles_incremental_suffix_with_limits,
 };
 pub use materialize::compute_style_from_resolved_style;
 pub use model::{

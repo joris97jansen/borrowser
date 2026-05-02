@@ -1,6 +1,5 @@
 use css::{ComputedStyle, Display, Length};
 use html::Node;
-use html::dom_utils::is_non_rendering_element;
 
 use crate::{BoxKind, LayoutBox, Rectangle, TextMeasurer, content_x_and_width, content_y};
 
@@ -36,33 +35,6 @@ fn recompute_block_heights<'style_tree, 'dom>(
         resolve_used_width_for_block(node.style, node.node.node, node.kind, available_width);
     node.rect.width = used_width;
 
-    // Non-rendering elements: pure containers (but children still have margins)
-    if is_non_rendering_element(node.node.node) {
-        let mut cursor_y = y;
-
-        let parent_x = x;
-        let parent_width = used_width;
-
-        for child in &mut node.children {
-            let bm = child.style.box_metrics();
-
-            // Space before child
-            cursor_y += bm.margin_top;
-
-            let child_x = parent_x + bm.margin_left;
-            let child_width = (parent_width - bm.margin_left - bm.margin_right).max(0.0);
-
-            let h = recompute_block_heights(measurer, child, child_x, cursor_y, child_width);
-
-            // Move cursor past the child box
-            cursor_y += h + bm.margin_bottom;
-        }
-
-        let height = cursor_y - y;
-        node.rect.height = height;
-        return height;
-    }
-
     match node.node.node {
         Node::Document { .. } => {
             let mut cursor_y = y;
@@ -88,7 +60,12 @@ fn recompute_block_heights<'style_tree, 'dom>(
         }
 
         Node::Element { name, .. } => {
-            // <html> acts as pure container (no own row)
+            // Transitional root-element handling.
+            //
+            // This is not a UA display-default shortcut. Ordinary element
+            // display behavior must come from computed style. Until Milestone W
+            // introduces an explicit box-tree/root-box model, the document
+            // element acts as the top-level layout container here.
             if name.eq_ignore_ascii_case("html") {
                 let mut cursor_y = y;
 

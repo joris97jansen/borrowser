@@ -1,9 +1,10 @@
 use super::super::contract::{
-    CascadeDeclarationInput, CascadeDeclarationSource, CascadeOrigin, CascadeRuleInput,
-    CascadeRuleMatch, InlineStyleDeclarationRef, InlineStyleRuleRef,
+    CascadeDeclarationInput, CascadeDeclarationSource, CascadeRuleInput, CascadeRuleMatch,
+    InlineStyleDeclarationRef, InlineStyleRuleRef,
 };
 use super::declarations::{declaration_input_from_model, stylesheet_declaration_inputs, u32_index};
 use super::limits::{StyleResolutionError, StyleResolutionLimit, StyleResolutionLimits};
+use super::source::StylesheetCascadeInput;
 use crate::model;
 use crate::selectors::{SelectorDomElementId, SelectorDomIndex, SelectorMatchingContext};
 use crate::syntax::ParseOptions;
@@ -14,13 +15,27 @@ pub(super) fn rule_inputs_for_element_with_limits(
     sheets: &[model::StylesheetParse],
     limits: &StyleResolutionLimits,
 ) -> Result<Vec<CascadeRuleInput>, StyleResolutionError> {
+    let inputs = sheets
+        .iter()
+        .map(StylesheetCascadeInput::author)
+        .collect::<Vec<_>>();
+    rule_inputs_for_element_from_cascade_inputs_with_limits(context, element, &inputs, limits)
+}
+
+pub(super) fn rule_inputs_for_element_from_cascade_inputs_with_limits(
+    context: &SelectorMatchingContext<'_, SelectorDomIndex<'_>>,
+    element: SelectorDomElementId,
+    sheets: &[StylesheetCascadeInput<'_>],
+    limits: &StyleResolutionLimits,
+) -> Result<Vec<CascadeRuleInput>, StyleResolutionError> {
     let mut rule_inputs = Vec::new();
     let mut rule_order = 0u32;
     let mut matched_rules = 0usize;
     let mut declaration_inputs = 0usize;
 
-    for (stylesheet_index, sheet) in sheets.iter().enumerate() {
+    for (stylesheet_index, input) in sheets.iter().enumerate() {
         let stylesheet_index = u32_index(stylesheet_index);
+        let sheet = input.stylesheet();
 
         for (rule_index, rule) in sheet.stylesheet.rules.iter().enumerate() {
             let rule_index = u32_index(rule_index);
@@ -73,7 +88,7 @@ pub(super) fn rule_inputs_for_element_with_limits(
 
             if let Some(rule_input) = CascadeRuleInput::from_stylesheet_match(
                 &rule_match,
-                CascadeOrigin::Author,
+                input.origin(),
                 current_rule_order,
                 declarations,
             )

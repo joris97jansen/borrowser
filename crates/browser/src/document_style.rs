@@ -1,6 +1,10 @@
 use core_types::StylesheetSlotId;
-use css::{ParseOptions, StylesheetParse, parse_stylesheet_with_options};
+use css::{
+    CascadeOrigin, ParseOptions, StylesheetCascadeInput, StylesheetParse,
+    parse_stylesheet_with_options,
+};
 use html::Node;
+use std::sync::OnceLock;
 use url::Url;
 
 const MINIMAL_UA_STYLESHEET: &str = r#"
@@ -14,8 +18,12 @@ li {
     display: list-item;
 }
 
-button, textarea {
+input, button, textarea {
     display: inline-block;
+}
+
+head, title, meta, link, style, script {
+    display: none;
 }
 "#;
 
@@ -41,6 +49,12 @@ struct StylesheetSlot {
 }
 
 #[derive(Clone, Debug)]
+struct CascadedStylesheet {
+    origin: CascadeOrigin,
+    stylesheet: StylesheetParse,
+}
+
+#[derive(Clone, Debug)]
 pub(crate) struct StylesheetFetch {
     pub(crate) slot_id: StylesheetSlotId,
     pub(crate) url: String,
@@ -57,7 +71,7 @@ pub(crate) struct DocumentStyleSet {
     next_slot_id: u64,
     slots: Vec<StylesheetSlot>,
     loaded_stylesheets: Vec<StylesheetParse>,
-    cascade_stylesheets: Vec<StylesheetParse>,
+    cascade_stylesheets: Vec<CascadedStylesheet>,
 }
 
 impl DocumentStyleSet {
@@ -200,8 +214,15 @@ impl DocumentStyleSet {
         &self.loaded_stylesheets
     }
 
-    pub(crate) fn cascade_stylesheets(&self) -> &[StylesheetParse] {
-        &self.cascade_stylesheets
+    pub(crate) fn cascade_stylesheet_inputs(&self) -> Vec<StylesheetCascadeInput<'_>> {
+        // Cascade source indexes are indexes into this runtime input list, not
+        // indexes into `PageState::css_stylesheets()`. The runtime list includes
+        // built-in UA stylesheets; authored stylesheet reporting intentionally
+        // does not.
+        self.cascade_stylesheets
+            .iter()
+            .map(|entry| StylesheetCascadeInput::new(entry.origin, &entry.stylesheet))
+            .collect()
     }
 
     fn allocate_slot_id(&mut self) -> StylesheetSlotId {
@@ -230,9 +251,20 @@ impl DocumentStyleSet {
 
     fn rebuild_cascade_stylesheets(&mut self) {
         self.cascade_stylesheets.clear();
-        self.cascade_stylesheets.push(minimal_ua_stylesheet_parse());
+        self.cascade_stylesheets.push(CascadedStylesheet {
+            origin: CascadeOrigin::UserAgent,
+            stylesheet: minimal_ua_stylesheet_parse(),
+        });
         self.cascade_stylesheets
-            .extend(self.loaded_stylesheets.iter().cloned());
+            .extend(
+                self.loaded_stylesheets
+                    .iter()
+                    .cloned()
+                    .map(|stylesheet| CascadedStylesheet {
+                        origin: CascadeOrigin::Author,
+                        stylesheet,
+                    }),
+            );
     }
 }
 
@@ -250,7 +282,13 @@ impl Default for DocumentStyleSet {
 }
 
 fn minimal_ua_stylesheet_parse() -> StylesheetParse {
-    parse_stylesheet_with_options(MINIMAL_UA_STYLESHEET, &ParseOptions::stylesheet())
+    static MINIMAL_UA_STYLESHEET_PARSE: OnceLock<StylesheetParse> = OnceLock::new();
+
+    MINIMAL_UA_STYLESHEET_PARSE
+        .get_or_init(|| {
+            parse_stylesheet_with_options(MINIMAL_UA_STYLESHEET, &ParseOptions::stylesheet())
+        })
+        .clone()
 }
 
 fn collect_stylesheet_inputs(
