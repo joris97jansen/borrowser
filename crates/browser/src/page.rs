@@ -533,7 +533,7 @@ impl PageState {
         if needs_recompute {
             Self::recompute_styles(
                 dom,
-                retained.document_styles.stylesheets(),
+                retained.document_styles.cascade_stylesheets(),
                 retained.generations,
                 StyleRecomputeState {
                     style_cache: &mut retained.style_cache,

@@ -3,6 +3,22 @@ use css::{ParseOptions, StylesheetParse, parse_stylesheet_with_options};
 use html::Node;
 use url::Url;
 
+const MINIMAL_UA_STYLESHEET: &str = r#"
+html, body, div, p, section, article, header, footer, main, nav, aside,
+h1, h2, h3, h4, h5, h6, ul, ol, menu, form, table, thead, tbody, tfoot,
+tr, td, th, blockquote, pre, address, figure, figcaption, dl, dt, dd {
+    display: block;
+}
+
+li {
+    display: list-item;
+}
+
+button, textarea {
+    display: inline-block;
+}
+"#;
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum StylesheetSlotKey {
     Inline(String),
@@ -36,11 +52,12 @@ pub(crate) struct StylesheetReconcileResult {
     pub(crate) changed: bool,
 }
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug)]
 pub(crate) struct DocumentStyleSet {
     next_slot_id: u64,
     slots: Vec<StylesheetSlot>,
     loaded_stylesheets: Vec<StylesheetParse>,
+    cascade_stylesheets: Vec<StylesheetParse>,
 }
 
 impl DocumentStyleSet {
@@ -48,6 +65,7 @@ impl DocumentStyleSet {
         self.next_slot_id = 0;
         self.slots.clear();
         self.loaded_stylesheets.clear();
+        self.rebuild_cascade_stylesheets();
     }
 
     pub(crate) fn reconcile_from_dom(
@@ -182,6 +200,10 @@ impl DocumentStyleSet {
         &self.loaded_stylesheets
     }
 
+    pub(crate) fn cascade_stylesheets(&self) -> &[StylesheetParse] {
+        &self.cascade_stylesheets
+    }
+
     fn allocate_slot_id(&mut self) -> StylesheetSlotId {
         self.next_slot_id = self
             .next_slot_id
@@ -203,7 +225,32 @@ impl DocumentStyleSet {
                 | StylesheetSlotState::Failed
                 | StylesheetSlotState::Aborted => None,
             }));
+        self.rebuild_cascade_stylesheets();
     }
+
+    fn rebuild_cascade_stylesheets(&mut self) {
+        self.cascade_stylesheets.clear();
+        self.cascade_stylesheets.push(minimal_ua_stylesheet_parse());
+        self.cascade_stylesheets
+            .extend(self.loaded_stylesheets.iter().cloned());
+    }
+}
+
+impl Default for DocumentStyleSet {
+    fn default() -> Self {
+        let mut set = Self {
+            next_slot_id: 0,
+            slots: Vec::new(),
+            loaded_stylesheets: Vec::new(),
+            cascade_stylesheets: Vec::new(),
+        };
+        set.rebuild_cascade_stylesheets();
+        set
+    }
+}
+
+fn minimal_ua_stylesheet_parse() -> StylesheetParse {
+    parse_stylesheet_with_options(MINIMAL_UA_STYLESHEET, &ParseOptions::stylesheet())
 }
 
 fn collect_stylesheet_inputs(
