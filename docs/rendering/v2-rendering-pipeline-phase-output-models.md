@@ -21,6 +21,7 @@ Related documents:
 - `docs/rendering/v3-retained-state-versus-rebuilt-state-ownership.md`
 - `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
 - `docs/rendering/v5-explicit-runtime-render-orchestration-path.md`
+- `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
 - `docs/architecture/ARCHITECTURE.md`
 
 ## Purpose
@@ -237,6 +238,8 @@ The repository now has targeted tests for the phase output models:
 - `render_phase_contracts_pin_expected_phase_boundaries()`
 - `style_to_layout_handoff_uses_explicit_phase_output_models()`
 - `layout_to_paint_handoff_wraps_layout_phase_output_without_reinterpretation()`
+- `render_phase_boundary_debug_snapshot_is_stable_for_simple_text_flow()`
+- `render_phase_boundary_debug_snapshot_is_stable_for_replaced_element_flow()`
 - `RenderPipelineDebugSnapshot` tests that continue to pin retained versus
   rebuilt state and invalidation behavior
 

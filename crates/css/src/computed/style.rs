@@ -251,6 +251,69 @@ impl ComputedStyle {
         }
         out
     }
+
+    /// Stable one-line summary for rendering phase-boundary snapshots.
+    ///
+    /// This intentionally focuses on the computed fields that downstream
+    /// layout and paint phases currently consume most directly.
+    pub fn to_boundary_debug_label(&self) -> String {
+        let mut out = String::new();
+        let box_metrics = self.box_metrics();
+        let _ = write!(
+            out,
+            "display={} color={} background={} font-size={} width={} height={} margin={} padding={}",
+            display_debug_label(self.display()),
+            rgba_debug_label(self.color()),
+            rgba_debug_label(self.background_color()),
+            length_debug_label(self.font_size()),
+            optional_length_debug_label(self.width()),
+            optional_length_debug_label(self.height()),
+            box_sides_debug_label(
+                box_metrics.margin_top,
+                box_metrics.margin_right,
+                box_metrics.margin_bottom,
+                box_metrics.margin_left,
+            ),
+            box_sides_debug_label(
+                box_metrics.padding_top,
+                box_metrics.padding_right,
+                box_metrics.padding_bottom,
+                box_metrics.padding_left,
+            ),
+        );
+        out
+    }
+}
+
+fn display_debug_label(display: Display) -> &'static str {
+    match display {
+        Display::Block => "block",
+        Display::Inline => "inline",
+        Display::InlineBlock => "inline-block",
+        Display::ListItem => "list-item",
+        Display::None => "none",
+    }
+}
+
+fn rgba_debug_label((r, g, b, a): (u8, u8, u8, u8)) -> String {
+    format!("rgba({r},{g},{b},{a})")
+}
+
+fn length_debug_label(length: Length) -> String {
+    match length {
+        Length::Px(px) => format!("{px:.2}px"),
+    }
+}
+
+fn optional_length_debug_label(length: Option<Length>) -> String {
+    match length {
+        Some(length) => length_debug_label(length),
+        None => "auto".to_string(),
+    }
+}
+
+fn box_sides_debug_label(top: f32, right: f32, bottom: f32, left: f32) -> String {
+    format!("[{top:.2},{right:.2},{bottom:.2},{left:.2}]")
 }
 
 /// One computed entry in a total `ComputedStyle`.

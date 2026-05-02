@@ -4,6 +4,7 @@ use crate::{
 };
 
 use html::{Node, internal::Id};
+use std::fmt::Write;
 
 use super::{
     document::{
@@ -34,6 +35,22 @@ impl<'a> StylePhaseOutput<'a> {
     pub fn into_root(self) -> StyledNode<'a> {
         self.root
     }
+
+    /// Stable debug snapshot for the style-to-layout phase boundary.
+    pub fn to_debug_snapshot(&self) -> String {
+        let mut out = String::new();
+        writeln!(&mut out, "version: 1").expect("write snapshot");
+        writeln!(&mut out, "style-phase-output").expect("write snapshot");
+        writeln!(&mut out, "root-id: {}", self.root().node_id.0).expect("write snapshot");
+        writeln!(
+            &mut out,
+            "styled-nodes: {}",
+            count_styled_nodes(self.root())
+        )
+        .expect("write snapshot");
+        append_styled_node_snapshot(&mut out, self.root(), 0, 0);
+        out
+    }
 }
 
 /// A node in the style tree: pairs a DOM node with its computed style
@@ -47,6 +64,47 @@ pub struct StyledNode<'a> {
     pub node_id: Id,
     pub style: ComputedStyle,
     pub children: Vec<StyledNode<'a>>,
+}
+
+fn count_styled_nodes(node: &StyledNode<'_>) -> usize {
+    1 + node
+        .children
+        .iter()
+        .map(|child| count_styled_nodes(child))
+        .sum::<usize>()
+}
+
+fn append_styled_node_snapshot(
+    out: &mut String,
+    node: &StyledNode<'_>,
+    index: usize,
+    depth: usize,
+) -> usize {
+    let indent = "  ".repeat(depth);
+    writeln!(
+        out,
+        "{indent}node[{index}]: id={} {} children={} style={}",
+        node.node_id.0,
+        styled_node_kind_debug_label(node.node),
+        node.children.len(),
+        node.style.to_boundary_debug_label(),
+    )
+    .expect("write snapshot");
+
+    let mut next_index = index + 1;
+    for child in &node.children {
+        next_index = append_styled_node_snapshot(out, child, next_index, depth + 1);
+    }
+    next_index
+}
+
+fn styled_node_kind_debug_label(node: &Node) -> String {
+    match node {
+        Node::Document { .. } => "kind=document".to_string(),
+        Node::Element { name, .. } => format!("kind=element name=\"{name}\""),
+        Node::Text { text, .. } => format!("kind=text text=\"{}\"", text.escape_default()),
+        Node::Comment { text, .. } => format!("kind=comment text=\"{}\"", text.escape_default()),
+    }
 }
 
 /// Builds a styled tree from stylesheets through the structured

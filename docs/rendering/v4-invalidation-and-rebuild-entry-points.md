@@ -24,6 +24,7 @@ Related documents:
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v3-retained-state-versus-rebuilt-state-ownership.md`
 - `docs/rendering/v5-explicit-runtime-render-orchestration-path.md`
+- `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
 - `docs/architecture/ARCHITECTURE.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
 

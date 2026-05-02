@@ -1,6 +1,6 @@
 # U8: Runtime Integration Contracts And Future Extension Points
 
-Last updated: 2026-04-30
+Last updated: 2026-05-01
 Status: Milestone U close-out contract
 
 This document records the implemented runtime integration contract for the
@@ -30,6 +30,7 @@ Related documents:
 - `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`
 - `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
 - `docs/rendering/v5-explicit-runtime-render-orchestration-path.md`
+- `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
 - `docs/security/css-hardening.md`
 - `docs/architecture/ARCHITECTURE.md`
 
@@ -336,6 +337,8 @@ Milestone U coverage includes:
 - opt-in allocation guards
 - representative HTML+CSS page snapshots in
   `crates/css/tests/fixtures/representative_pages`
+- deterministic render phase-boundary fixtures through
+  `browser::rendering::render_phase_boundary_debug_snapshot(...)`
 
 Performance smoke and allocation guards are regression tripwires, not final
 browser performance targets. Criterion results are the timing source of truth

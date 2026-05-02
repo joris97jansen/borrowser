@@ -23,6 +23,7 @@ Related documents:
 - `docs/rendering/v3-retained-state-versus-rebuilt-state-ownership.md`
 - `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
 - `docs/rendering/v5-explicit-runtime-render-orchestration-path.md`
+- `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
 - `docs/css/s9-property-system-computed-style-runtime-contract.md`
 - `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`
@@ -379,6 +380,10 @@ Milestone V1 introduces deterministic rendering contract surfaces:
   outputs. For frame-local layout and immediate paint output, this is a policy
   surface, not proof that `PageState` is retaining those artifacts between
   frames.
+- `browser::rendering::render_phase_boundary_debug_snapshot(...)`
+  Records deterministic style, layout, paint-input, and orchestration
+  snapshots for representative pipeline flows without depending on backend
+  paint command output.
 - browser tests covering style-cache reuse, attribute invalidation, and
   text-only downstream invalidation
 
