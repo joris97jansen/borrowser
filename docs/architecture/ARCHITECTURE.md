@@ -306,6 +306,7 @@ The normative rendering ownership and phase-boundary contract lives in:
 * `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
 * `docs/rendering/v5-explicit-runtime-render-orchestration-path.md`
 * `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
+* `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
 
 ---
 
@@ -426,15 +427,27 @@ It is not used as the page layout engine — layout comes from the `layout` crat
 
 # 🔄 Frame Pipeline
 
-Each frame follows this explicit baseline contract:
+Each page-rendering frame now follows this explicit orchestration contract:
 
 ```
-1. Receive CoreEvents from runtimes and update page-owned DOM/style invalidation state.
-2. `PageState::build_style_phase_output()` reuses or recomputes retained resolved/computed style artifacts.
-3. `build_style_tree_from_computed_styles(...)` rebuilds a borrow-backed `StyledNode` view wrapped in `css::StylePhaseOutput`.
-4. `layout::layout_document(LayoutPhaseInput::from_style_output(...))` builds a frame-local `LayoutPhaseOutput` for the current viewport.
-5. `gfx::paint::paint_page(PaintPhaseInput::new(...), PaintArgs { ... })` emits immediate paint commands for the current frame.
+1. Receive `CoreEvent`s and update page-owned DOM/style/resource/input invalidation state.
+2. Runtime invalidation enters as `RenderInvalidationRequest`.
+3. `Tab::request_render_work(...)` queues work in `PendingRenderWork`.
+4. `browser::view::content(...)` starts the next orchestrated frame attempt.
+5. `browser::rendering::prepare_page_frame(...)` asks `PageState` for `StylePhaseOutput`.
+6. `browser::rendering::execute_prepared_page_frame(...)` executes the viewport frame.
+7. `gfx::viewport::execute_viewport_frame(...)` prepares the current layout and paint execution inputs.
+8. `layout::layout_document(LayoutPhaseInput::from_style_output(...))` produces `LayoutPhaseOutput`.
+9. `gfx::paint::paint_page(PaintPhaseInput::new(...), PaintArgs { ... })` emits immediate paint commands for the current frame.
+10. `RenderFrameExecutionTrace` records the orchestration decision for the frame attempt.
 ```
+
+`PageState::build_style_phase_output()` remains the page-owned style
+preparation implementation. It reuses or recomputes retained
+resolved/computed-style artifacts, then rebuilds a borrow-backed
+`StylePhaseOutput` through `build_style_tree_from_computed_styles(...)`.
+Layout and paint remain frame-local rebuilt artifacts until a later retained
+layout or retained-paint hook is implemented explicitly.
 
 Milestone U introduced page-owned DOM/style/stylesheet generations and a
 `PageStyleCache` so clean frames can reuse computed style. Milestone V makes it
@@ -443,7 +456,9 @@ paint outputs remain rebuilt derived state until later rendering milestones add
 retained downstream caches. Milestone V6 adds deterministic debug snapshots for
 `StylePhaseOutput`, `LayoutPhaseInput`, `LayoutPhaseOutput`,
 `PaintPhaseInput`, and `RenderFrameExecutionTrace` so representative pipeline
-flows can be asserted without pixel-diff tests.
+flows can be asserted without pixel-diff tests. Milestone V7 closes the
+milestone by documenting the invariant and extension-hook contract that future
+layout, paint, invalidation, and retained-state work must extend deliberately.
 
 ---
 

@@ -1,6 +1,6 @@
 # U8: Runtime Integration Contracts And Future Extension Points
 
-Last updated: 2026-05-01
+Last updated: 2026-05-02
 Status: Milestone U close-out contract
 
 This document records the implemented runtime integration contract for the
@@ -31,6 +31,7 @@ Related documents:
 - `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
 - `docs/rendering/v5-explicit-runtime-render-orchestration-path.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
+- `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
 - `docs/security/css-hardening.md`
 - `docs/architecture/ARCHITECTURE.md`
 
@@ -348,6 +349,11 @@ for performance-sensitive changes.
 
 Future systems should extend the integration through explicit objects rather
 than ad hoc call-site policy.
+
+Rendering-side follow-on work must now integrate through the named rendering
+hooks recorded in `browser::rendering::render_extension_hook_contracts()`
+rather than bypassing the Milestone V ownership and invalidation contracts from
+layout/paint call sites.
 
 ### Layout Generation
 

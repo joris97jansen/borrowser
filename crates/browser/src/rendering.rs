@@ -4,6 +4,8 @@
 //! retained layout or paint caches. This module records the current ownership
 //! boundaries, phase I/O, rebuild triggers, and runtime-visible retained vs.
 //! rebuilt state so later rendering work can evolve against explicit contracts.
+//! It also pins the deferred extension hooks that later milestones are allowed
+//! to extend without reinterpreting the current ownership model.
 
 use crate::form_controls::FormControlIndex;
 use crate::input_state::DocumentInputState;
@@ -137,6 +139,31 @@ pub struct RenderArtifactOwnershipContract {
     pub lifetime: RenderArtifactLifetime,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RenderExtensionHook {
+    BoxTreeFormalization,
+    ConstraintSizingAndIntrinsicLayout,
+    PaintPrimitiveAndDisplayListExpansion,
+    IncrementalInvalidationAndDependencyTracking,
+    RetainedLayoutState,
+    RetainedPaintSceneState,
+    RuntimeFrameSchedulingIncrementality,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RenderExtensionHookContract {
+    /// The deferred rendering milestone hook being reserved explicitly.
+    pub hook: RenderExtensionHook,
+    /// Subsystem that owns integrating this hook into the current pipeline.
+    pub integration_owner: RenderingSubsystem,
+    /// Rendering phases whose contracts the hook is allowed to extend.
+    pub phases: &'static [RenderingPhase],
+    /// Pipeline artifacts the hook is allowed to reinterpret or replace.
+    pub artifacts: &'static [RenderArtifact],
+    /// Runtime invalidation entry points the hook must preserve or refine.
+    pub invalidation_entry_points: &'static [RenderInvalidationEntryPoint],
+}
+
 const FRAME_ORCHESTRATION_CONSUMES: &[RenderArtifact] = &[
     RenderArtifact::StyledTree,
     RenderArtifact::ViewportMetrics,
@@ -199,6 +226,95 @@ const PAINT_TRIGGERS: &[RenderRebuildTrigger] = &[
     RenderRebuildTrigger::LayoutOutputsChanged,
     RenderRebuildTrigger::ResourceStateChanged,
     RenderRebuildTrigger::InputStateChanged,
+];
+
+const ALL_RENDERING_PHASES: &[RenderingPhase] = &[
+    RenderingPhase::Style,
+    RenderingPhase::Layout,
+    RenderingPhase::Paint,
+    RenderingPhase::FrameOrchestration,
+];
+
+const STYLE_LAYOUT_PHASES: &[RenderingPhase] = &[RenderingPhase::Style, RenderingPhase::Layout];
+const LAYOUT_PAINT_PHASES: &[RenderingPhase] = &[RenderingPhase::Layout, RenderingPhase::Paint];
+const PAINT_ORCHESTRATION_PHASES: &[RenderingPhase] =
+    &[RenderingPhase::Paint, RenderingPhase::FrameOrchestration];
+const LAYOUT_PAINT_ORCHESTRATION_PHASES: &[RenderingPhase] = &[
+    RenderingPhase::Layout,
+    RenderingPhase::Paint,
+    RenderingPhase::FrameOrchestration,
+];
+
+const BOX_TREE_ARTIFACTS: &[RenderArtifact] =
+    &[RenderArtifact::StyledTree, RenderArtifact::LayoutTree];
+const CONSTRAINT_SIZING_ARTIFACTS: &[RenderArtifact] = &[
+    RenderArtifact::StyledTree,
+    RenderArtifact::ViewportMetrics,
+    RenderArtifact::TextMeasurement,
+    RenderArtifact::ReplacedElementMetadata,
+    RenderArtifact::LayoutTree,
+];
+const PAINT_EXPANSION_ARTIFACTS: &[RenderArtifact] = &[
+    RenderArtifact::LayoutTree,
+    RenderArtifact::ResourceState,
+    RenderArtifact::InputState,
+    RenderArtifact::PaintCommands,
+];
+const INCREMENTAL_INVALIDATION_ARTIFACTS: &[RenderArtifact] = &[
+    RenderArtifact::ResolvedDocumentStyle,
+    RenderArtifact::ComputedDocumentStyle,
+    RenderArtifact::StyledTree,
+    RenderArtifact::LayoutTree,
+    RenderArtifact::PaintCommands,
+];
+const RETAINED_LAYOUT_ARTIFACTS: &[RenderArtifact] = &[
+    RenderArtifact::ViewportMetrics,
+    RenderArtifact::TextMeasurement,
+    RenderArtifact::ReplacedElementMetadata,
+    RenderArtifact::LayoutTree,
+];
+const RETAINED_PAINT_ARTIFACTS: &[RenderArtifact] = &[
+    RenderArtifact::LayoutTree,
+    RenderArtifact::ResourceState,
+    RenderArtifact::InputState,
+    RenderArtifact::PaintCommands,
+];
+const RUNTIME_INCREMENTALITY_ARTIFACTS: &[RenderArtifact] = &[
+    RenderArtifact::ViewportMetrics,
+    RenderArtifact::ResourceState,
+    RenderArtifact::InputState,
+    RenderArtifact::LayoutTree,
+    RenderArtifact::PaintCommands,
+];
+
+const ALL_INVALIDATION_ENTRY_POINTS: &[RenderInvalidationEntryPoint] = &[
+    RenderInvalidationEntryPoint::DocumentReplaced,
+    RenderInvalidationEntryPoint::DomStructureChanged,
+    RenderInvalidationEntryPoint::DomAttributesChanged,
+    RenderInvalidationEntryPoint::DomTextChanged,
+    RenderInvalidationEntryPoint::StylesheetSetChanged,
+    RenderInvalidationEntryPoint::ViewportChanged,
+    RenderInvalidationEntryPoint::ResourceStateChanged,
+    RenderInvalidationEntryPoint::InputStateChanged,
+];
+const STYLE_LAYOUT_INVALIDATION_ENTRY_POINTS: &[RenderInvalidationEntryPoint] = &[
+    RenderInvalidationEntryPoint::DocumentReplaced,
+    RenderInvalidationEntryPoint::DomStructureChanged,
+    RenderInvalidationEntryPoint::DomAttributesChanged,
+    RenderInvalidationEntryPoint::DomTextChanged,
+    RenderInvalidationEntryPoint::StylesheetSetChanged,
+    RenderInvalidationEntryPoint::ViewportChanged,
+    RenderInvalidationEntryPoint::ResourceStateChanged,
+];
+const LAYOUT_PAINT_INVALIDATION_ENTRY_POINTS: &[RenderInvalidationEntryPoint] = &[
+    RenderInvalidationEntryPoint::DocumentReplaced,
+    RenderInvalidationEntryPoint::DomStructureChanged,
+    RenderInvalidationEntryPoint::DomAttributesChanged,
+    RenderInvalidationEntryPoint::DomTextChanged,
+    RenderInvalidationEntryPoint::StylesheetSetChanged,
+    RenderInvalidationEntryPoint::ViewportChanged,
+    RenderInvalidationEntryPoint::ResourceStateChanged,
+    RenderInvalidationEntryPoint::InputStateChanged,
 ];
 
 static RENDER_PHASE_CONTRACTS: [RenderingPhaseContract; 4] = [
@@ -438,6 +554,67 @@ static RENDER_ARTIFACT_OWNERSHIP_CONTRACTS: [RenderArtifactOwnershipContract; 12
 /// rebuilt rather than retained.
 pub fn render_artifact_ownership_contracts() -> &'static [RenderArtifactOwnershipContract] {
     &RENDER_ARTIFACT_OWNERSHIP_CONTRACTS
+}
+
+static RENDER_EXTENSION_HOOK_CONTRACTS: [RenderExtensionHookContract; 7] = [
+    RenderExtensionHookContract {
+        hook: RenderExtensionHook::BoxTreeFormalization,
+        integration_owner: RenderingSubsystem::LayoutEngine,
+        phases: LAYOUT_PAINT_PHASES,
+        artifacts: BOX_TREE_ARTIFACTS,
+        invalidation_entry_points: STYLE_LAYOUT_INVALIDATION_ENTRY_POINTS,
+    },
+    RenderExtensionHookContract {
+        hook: RenderExtensionHook::ConstraintSizingAndIntrinsicLayout,
+        integration_owner: RenderingSubsystem::LayoutEngine,
+        phases: STYLE_LAYOUT_PHASES,
+        artifacts: CONSTRAINT_SIZING_ARTIFACTS,
+        invalidation_entry_points: STYLE_LAYOUT_INVALIDATION_ENTRY_POINTS,
+    },
+    RenderExtensionHookContract {
+        hook: RenderExtensionHook::PaintPrimitiveAndDisplayListExpansion,
+        integration_owner: RenderingSubsystem::PaintEngine,
+        phases: PAINT_ORCHESTRATION_PHASES,
+        artifacts: PAINT_EXPANSION_ARTIFACTS,
+        invalidation_entry_points: LAYOUT_PAINT_INVALIDATION_ENTRY_POINTS,
+    },
+    RenderExtensionHookContract {
+        hook: RenderExtensionHook::IncrementalInvalidationAndDependencyTracking,
+        integration_owner: RenderingSubsystem::BrowserRuntime,
+        phases: ALL_RENDERING_PHASES,
+        artifacts: INCREMENTAL_INVALIDATION_ARTIFACTS,
+        invalidation_entry_points: ALL_INVALIDATION_ENTRY_POINTS,
+    },
+    RenderExtensionHookContract {
+        hook: RenderExtensionHook::RetainedLayoutState,
+        integration_owner: RenderingSubsystem::BrowserRuntime,
+        phases: LAYOUT_PAINT_ORCHESTRATION_PHASES,
+        artifacts: RETAINED_LAYOUT_ARTIFACTS,
+        invalidation_entry_points: STYLE_LAYOUT_INVALIDATION_ENTRY_POINTS,
+    },
+    RenderExtensionHookContract {
+        hook: RenderExtensionHook::RetainedPaintSceneState,
+        integration_owner: RenderingSubsystem::BrowserRuntime,
+        phases: PAINT_ORCHESTRATION_PHASES,
+        artifacts: RETAINED_PAINT_ARTIFACTS,
+        invalidation_entry_points: LAYOUT_PAINT_INVALIDATION_ENTRY_POINTS,
+    },
+    RenderExtensionHookContract {
+        hook: RenderExtensionHook::RuntimeFrameSchedulingIncrementality,
+        integration_owner: RenderingSubsystem::BrowserRuntime,
+        phases: LAYOUT_PAINT_ORCHESTRATION_PHASES,
+        artifacts: RUNTIME_INCREMENTALITY_ARTIFACTS,
+        invalidation_entry_points: ALL_INVALIDATION_ENTRY_POINTS,
+    },
+];
+
+/// Stable table of deferred rendering extension hooks.
+///
+/// This is the normative V7 contract surface for future rendering milestones:
+/// later work may extend these named hooks, but must not bypass the current
+/// ownership, handoff, retained-state, invalidation, or debug contracts.
+pub fn render_extension_hook_contracts() -> &'static [RenderExtensionHookContract] {
+    &RENDER_EXTENSION_HOOK_CONTRACTS
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -931,10 +1108,11 @@ fn find_page_background_color(style_output: &StylePhaseOutput<'_>) -> Option<(u8
 mod tests {
     use super::{
         PendingRenderWork, PhaseRerunSource, RenderArtifact, RenderArtifactLifetime,
-        RenderArtifactState, RenderInvalidationEntryPoint, RenderPhaseExecutionKind,
-        RenderPipelineDebugSnapshot, RenderRebuildTrigger, RenderingPhase, RenderingSubsystem,
-        StyleInvalidationState, build_render_frame_execution_trace,
-        render_artifact_ownership_contracts, render_invalidation_request,
+        RenderArtifactState, RenderExtensionHook, RenderInvalidationEntryPoint,
+        RenderPhaseExecutionKind, RenderPipelineDebugSnapshot, RenderRebuildTrigger,
+        RenderingPhase, RenderingSubsystem, StyleInvalidationState,
+        build_render_frame_execution_trace, render_artifact_ownership_contracts,
+        render_extension_hook_contracts, render_invalidation_request,
         render_invalidation_request_contracts, render_phase_boundary_debug_snapshot,
         render_phase_contracts,
     };
@@ -1636,6 +1814,133 @@ orchestration:
         }
 
         assert_eq!(contracts.len(), expected.len());
+    }
+
+    #[test]
+    fn render_extension_hook_contracts_cover_expected_future_work_once() {
+        let contracts = render_extension_hook_contracts();
+        let expected = [
+            RenderExtensionHook::BoxTreeFormalization,
+            RenderExtensionHook::ConstraintSizingAndIntrinsicLayout,
+            RenderExtensionHook::PaintPrimitiveAndDisplayListExpansion,
+            RenderExtensionHook::IncrementalInvalidationAndDependencyTracking,
+            RenderExtensionHook::RetainedLayoutState,
+            RenderExtensionHook::RetainedPaintSceneState,
+            RenderExtensionHook::RuntimeFrameSchedulingIncrementality,
+        ];
+
+        for hook in expected {
+            let count = contracts
+                .iter()
+                .filter(|contract| contract.hook == hook)
+                .count();
+            assert_eq!(
+                count, 1,
+                "extension hook must have exactly one contract: {hook:?}"
+            );
+        }
+
+        assert_eq!(contracts.len(), expected.len());
+    }
+
+    #[test]
+    fn render_extension_hook_contracts_anchor_deferred_work_to_current_pipeline() {
+        let phase_contracts = render_phase_contracts();
+        let artifact_contracts = render_artifact_ownership_contracts();
+        let invalidation_contracts = render_invalidation_request_contracts();
+
+        for hook in render_extension_hook_contracts() {
+            assert!(
+                !hook.phases.is_empty(),
+                "extension hook must anchor to at least one phase: {:?}",
+                hook.hook
+            );
+            assert!(
+                !hook.artifacts.is_empty(),
+                "extension hook must anchor to at least one artifact: {:?}",
+                hook.hook
+            );
+
+            for phase in hook.phases {
+                assert!(
+                    phase_contracts
+                        .iter()
+                        .any(|contract| contract.phase == *phase),
+                    "extension hook references unknown phase: {:?} -> {:?}",
+                    hook.hook,
+                    phase
+                );
+            }
+
+            for artifact in hook.artifacts {
+                assert!(
+                    artifact_contracts
+                        .iter()
+                        .any(|contract| contract.artifact == *artifact),
+                    "extension hook references unknown artifact: {:?} -> {:?}",
+                    hook.hook,
+                    artifact
+                );
+            }
+
+            for entry_point in hook.invalidation_entry_points {
+                assert!(
+                    invalidation_contracts
+                        .iter()
+                        .any(|contract| contract.entry_point == *entry_point),
+                    "extension hook references unknown invalidation entry point: {:?} -> {:?}",
+                    hook.hook,
+                    entry_point
+                );
+            }
+        }
+
+        let retained_layout = render_extension_hook_contracts()
+            .iter()
+            .find(|contract| contract.hook == RenderExtensionHook::RetainedLayoutState)
+            .expect("retained layout hook");
+        assert_eq!(
+            retained_layout.integration_owner,
+            RenderingSubsystem::BrowserRuntime
+        );
+        assert!(
+            retained_layout
+                .artifacts
+                .contains(&RenderArtifact::LayoutTree)
+        );
+
+        let retained_paint = render_extension_hook_contracts()
+            .iter()
+            .find(|contract| contract.hook == RenderExtensionHook::RetainedPaintSceneState)
+            .expect("retained paint hook");
+        assert_eq!(
+            retained_paint.integration_owner,
+            RenderingSubsystem::BrowserRuntime
+        );
+        assert!(
+            retained_paint
+                .artifacts
+                .contains(&RenderArtifact::PaintCommands)
+        );
+
+        let invalidation = render_extension_hook_contracts()
+            .iter()
+            .find(|contract| {
+                contract.hook == RenderExtensionHook::IncrementalInvalidationAndDependencyTracking
+            })
+            .expect("incremental invalidation hook");
+        let expected_entry_points = render_invalidation_request_contracts()
+            .iter()
+            .map(|contract| contract.entry_point)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            invalidation.integration_owner,
+            RenderingSubsystem::BrowserRuntime
+        );
+        assert_eq!(
+            invalidation.invalidation_entry_points,
+            expected_entry_points.as_slice()
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 # V1: Rendering Architecture, Ownership Boundaries, And Phase Contracts
 
-Last updated: 2026-05-01  
+Last updated: 2026-05-02  
 Status: implemented architecture contract for Milestone V issue 1
 
 This document is the source-of-truth contract for Milestone V1. It defines
@@ -24,6 +24,7 @@ Related documents:
 - `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
 - `docs/rendering/v5-explicit-runtime-render-orchestration-path.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
+- `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
 - `docs/css/s9-property-system-computed-style-runtime-contract.md`
 - `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`
