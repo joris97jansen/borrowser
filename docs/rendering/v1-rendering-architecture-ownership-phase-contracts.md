@@ -25,6 +25,7 @@ Related documents:
 - `docs/rendering/v5-explicit-runtime-render-orchestration-path.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
+- `docs/rendering/w1-box-tree-layout-model-contract.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
 - `docs/css/s9-property-system-computed-style-runtime-contract.md`
 - `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`
@@ -125,6 +126,10 @@ The layout engine owns:
 - block and inline geometry
 - text measurement consumption
 - replaced-element intrinsic size consumption
+
+Milestone W1 refines this boundary: the box tree is a distinct layout-owned
+model derived from `StyledNode` and computed style, not the DOM tree and not
+style data itself.
 
 The layout engine must not:
 

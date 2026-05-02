@@ -21,6 +21,7 @@ Related documents:
 - `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
 - `docs/rendering/v5-explicit-runtime-render-orchestration-path.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
+- `docs/rendering/w1-box-tree-layout-model-contract.md`
 - `docs/architecture/ARCHITECTURE.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
 

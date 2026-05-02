@@ -24,6 +24,7 @@ Related documents:
 - `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
 - `docs/rendering/v5-explicit-runtime-render-orchestration-path.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
+- `docs/rendering/w1-box-tree-layout-model-contract.md`
 - `docs/architecture/ARCHITECTURE.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
 
@@ -76,7 +77,8 @@ them.
 - `crates/css` owns style semantics, including parsing handoff consumption,
   selector matching, cascade, computed-style assembly, and styled-tree
   construction.
-- `layout` owns geometry semantics only.
+- `layout` owns box generation, box-tree structure, formatting-context
+  assignment, future containing-block relationships, and geometry semantics.
 - `gfx::paint` owns translating geometry plus runtime paint state into the
   current frame's visual output only.
 - Later phases must not reach backward and re-own earlier-phase semantics.
