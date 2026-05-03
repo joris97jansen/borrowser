@@ -10,6 +10,7 @@ positioning, overflow, and advanced layout modes.
 
 Related code:
 - `crates/layout/src/lib.rs`
+- `crates/layout/src/box_tree.rs`
 - `crates/layout/src/inline/mod.rs`
 - `crates/layout/src/inline/tokens.rs`
 - `crates/layout/src/inline/refine.rs`
@@ -20,6 +21,7 @@ Related code:
 - `crates/gfx/src/paint/mod.rs`
 
 Related documents:
+- `docs/rendering/w2-structured-box-tree-data-structures.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
@@ -117,10 +119,11 @@ A layout box is not:
 - a retained display-list item
 - necessarily one-to-one with a `StyledNode`
 
-The current `LayoutBox` type is Borrowser's frame-local box-tree node and
-geometry output combined in one structure. Later Milestone W work may split
-"generated box tree" from "laid-out fragment tree", but must preserve the
-phase handoffs defined by Milestone V.
+W2 introduces `BoxTree` as Borrowser's frame-local generated box-tree
+structure. `LayoutBox` remains the current geometry projection consumed by
+paint and hit testing. Later Milestone W work may split generated boxes from
+laid-out fragments further, but must preserve the phase handoffs defined by
+Milestone V.
 
 ## Box Generation Responsibilities
 
@@ -151,10 +154,11 @@ Box generation must not:
 
 ### Transitional Root Handling
 
-The current layout code still contains transitional document-element handling
-for `<html>` while Milestone W has not yet introduced first-class root-box and
-document-element roles. This is not a UA display-default shortcut. Ordinary
-element display behavior must continue to come from computed style.
+The current layout code still contains transitional root/document-element
+handling while Milestone W has not yet introduced the full root-box model. This
+is not a UA display-default shortcut. Ordinary element display behavior must
+continue to come from computed style, and document-element classification must
+come from tree context rather than tag name alone.
 
 The intended destination is an explicit role model, for example:
 
@@ -189,7 +193,7 @@ Layout owns:
 
 Layout must not mutate DOM or computed style. Any future retained layout cache
 must be an explicit retained artifact with invalidation rules, not an accidental
-extension of the current frame-local `LayoutBox` lifetime.
+extension of the current frame-local `BoxTree` or `LayoutBox` lifetimes.
 
 ## Formatting Context Model
 
@@ -246,6 +250,7 @@ Required invariants:
 
 - generated boxes appear in deterministic preorder
 - DOM-backed boxes preserve stable DOM node identity
+- comment nodes do not generate layout boxes
 - anonymous boxes must receive deterministic source relationships or IDs when
   introduced
 - `display: none` subtrees are consistently absent from layout output
@@ -288,8 +293,8 @@ tag-name or phase-local shortcuts:
 - `FormattingContextId`
 - `ContainingBlockId`
 - deterministic anonymous-box source metadata
-- a generated box tree separated from laid-out fragments if fragmentation or
-  retained layout makes that split necessary
+- a generated box tree and later fragment structures separated further if
+  fragmentation or retained layout makes that split necessary
 
 The current code does not need all of these types immediately. The contract is
 that later additions use named model concepts and typed handoffs rather than

@@ -24,6 +24,7 @@ Related documents:
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
 - `docs/rendering/w1-box-tree-layout-model-contract.md`
+- `docs/rendering/w2-structured-box-tree-data-structures.md`
 - `docs/architecture/ARCHITECTURE.md`
 
 ## Purpose
@@ -118,8 +119,8 @@ Contract:
 - `LayoutPhaseOutput` is the only normative layout-to-paint handoff
 - `LayoutBox` remains the semantic layout tree, but it crosses the boundary in
   a dedicated output wrapper
-- Milestone W1 defines `LayoutBox` as the current frame-local box-tree node and
-  geometry output, distinct from DOM nodes and computed-style data
+- Milestone W2 introduces `BoxTree` as the current frame-local generated
+  box-tree structure; `LayoutBox` remains the geometry output handed to paint
 - `available_width` is retained explicitly as part of the layout environment
   for this pass
 - geometry accessors such as `document_rect()`, `viewport_width()`, and

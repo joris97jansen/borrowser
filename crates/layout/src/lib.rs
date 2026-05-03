@@ -2,12 +2,14 @@
 //!
 //! The architecture contract for Borrowser's box tree, formatting-context
 //! model, and layout responsibility boundaries is documented in
-//! `docs/rendering/w1-box-tree-layout-model-contract.md`. The current
-//! `LayoutBox` type is both the frame-local generated box-tree node and the
-//! geometry output for that node; later Milestone W work may split generated
-//! boxes from laid-out fragments without changing the typed phase handoffs.
+//! `docs/rendering/w1-box-tree-layout-model-contract.md`; the W2 data model is
+//! documented in `docs/rendering/w2-structured-box-tree-data-structures.md`.
+//! `BoxTree` is the frame-local generated box-tree structure; `LayoutBox` is
+//! the current geometry projection consumed by paint and hit testing.
 
+mod box_tree;
 mod text;
+pub use box_tree::{AnonymousBoxKind, BoxGenerationRole, BoxId, BoxNode, BoxSource, BoxTree};
 pub use text::TextMeasurer;
 
 pub mod inline;
@@ -16,7 +18,7 @@ pub mod hit_test;
 pub use hit_test::{HitKind, hit_test};
 pub mod replaced;
 
-use css::{ComputedStyle, Display, StylePhaseOutput, StyledNode};
+use css::{ComputedStyle, StylePhaseOutput, StyledNode};
 use html::{Node, internal::Id};
 use replaced::intrinsic::IntrinsicSize;
 use std::fmt::Write;
@@ -51,7 +53,7 @@ impl PartialEq for Rectangle {
 /// This is not yet the full CSS box-generation model. Milestone W will expand
 /// this toward explicit root, anonymous, marker, and formatting-context-aware
 /// box roles.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BoxKind {
     Block,
     Inline,
@@ -61,7 +63,7 @@ pub enum BoxKind {
 }
 
 /// What kind of list marker this block has, if any.
-#[derive(Clone, Copy, Debug)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ListMarker {
     /// Bullet for unordered lists (<ul><li>).
     Unordered,
@@ -369,12 +371,13 @@ pub fn layout_document<'style_tree, 'dom>(
     input: LayoutPhaseInput<'style_tree, 'dom, '_>,
 ) -> LayoutPhaseOutput<'style_tree, 'dom> {
     // 1) Build the layout tree structure (no real geometry yet).
-    let mut root_box = layout_block_subtree(
-        input.style_root(),
+    let box_tree = BoxTree::generate(input.style_root(), input.replaced_info());
+    let mut root_box = layout_box_from_generated_tree(
+        &box_tree,
+        box_tree.root_id(),
         0.0,
         0.0,
         input.available_width(),
-        input.replaced_info(),
     );
 
     // 2) Single authoritative geometry pass: inline + block layout.
@@ -390,122 +393,27 @@ pub fn layout_document<'style_tree, 'dom>(
 /// - `x`, `y` = top-left of this box
 /// - `width`  = available width
 ///
-/// Builds a LayoutBox subtree with correct x/y/width, but height = 0.0.
-/// The unified inline-aware pass will compute final heights.
-fn layout_block_subtree<'style_tree, 'dom>(
-    styled: &'style_tree StyledNode<'dom>,
+fn layout_box_from_generated_tree<'style_tree, 'dom>(
+    box_tree: &BoxTree<'style_tree, 'dom>,
+    box_id: BoxId,
     x: f32,
     y: f32,
     width: f32,
-    replaced_info: Option<&dyn ReplacedElementInfoProvider>,
 ) -> LayoutBox<'style_tree, 'dom> {
-    layout_box_for_styled_subtree(styled, x, y, width, replaced_info).unwrap_or_else(|| {
-        // Keep the layout phase total even if a malformed input computes the
-        // document root itself to display:none.
-        LayoutBox {
-            kind: BoxKind::Block,
-            style: &styled.style,
-            node: styled,
-            rect: Rectangle {
-                x,
-                y,
-                width,
-                height: 0.0,
-            },
-            children: Vec::new(),
-            list_marker: None,
-            replaced: None,
-            replaced_intrinsic: None,
-        }
-    })
-}
+    let box_node = box_tree.node(box_id);
+    // W2 only generates DOM-backed boxes. Later anonymous/marker generation
+    // must replace this projection with a LayoutBox source model that can
+    // represent non-DOM-backed boxes without panicking.
+    let styled = box_node.source().direct_styled_node().unwrap_or_else(|| {
+        panic!("LayoutBox geometry projection currently requires a DOM-backed box source")
+    });
+    let children_boxes = box_node
+        .children()
+        .iter()
+        .map(|child| layout_box_from_generated_tree(box_tree, *child, x, y, width))
+        .collect();
 
-fn layout_box_for_styled_subtree<'style_tree, 'dom>(
-    styled: &'style_tree StyledNode<'dom>,
-    x: f32,
-    y: f32,
-    width: f32,
-    replaced_info: Option<&dyn ReplacedElementInfoProvider>,
-) -> Option<LayoutBox<'style_tree, 'dom>> {
-    if matches!(styled.node, Node::Element { .. }) && styled.style.display() == Display::None {
-        return None;
-    }
-
-    // 1) Build children recursively (no vertical layout here).
-    let mut children_boxes = Vec::new();
-
-    if matches!(styled.node, Node::Document { .. } | Node::Element { .. }) {
-        // Detect whether this element is a <ul> or <ol> so we can assign
-        // list markers to its <li> children.
-        let (is_ul, is_ol) = match styled.node {
-            Node::Element { name, .. } => {
-                let is_ul = name.eq_ignore_ascii_case("ul");
-                let is_ol = name.eq_ignore_ascii_case("ol");
-                (is_ul, is_ol)
-            }
-            _ => (false, false),
-        };
-
-        // For <ol>, number <li> children starting at 1.
-        let mut next_ol_index: u32 = 1;
-
-        for child in &styled.children {
-            let Some(mut child_box) =
-                layout_box_for_styled_subtree(child, x, y, width, replaced_info)
-            else {
-                continue;
-            };
-
-            // If this is a list container (<ul>/<ol>) and the child is a list-item,
-            // assign a marker.
-            if matches!(child.node, Node::Element { .. })
-                && child_box.style.display() == Display::ListItem
-            {
-                if is_ul {
-                    child_box.list_marker = Some(ListMarker::Unordered);
-                } else if is_ol {
-                    child_box.list_marker = Some(ListMarker::Ordered(next_ol_index));
-                    next_ol_index += 1;
-                }
-            }
-
-            children_boxes.push(child_box);
-        }
-    }
-
-    // 2) Decide box kind based on node type + computed display.
-    let style = &styled.style;
-    let replaced_kind = classify_replaced_kind(styled.node);
-
-    let kind = match styled.node {
-        Node::Document { .. } => BoxKind::Block,
-        // Transitional root-element handling.
-        //
-        // This is not a UA display-default shortcut. Ordinary element display
-        // behavior must come from computed style. Until Milestone W introduces
-        // an explicit box-tree/root-box model, the document element is forced
-        // to produce the top-level layout container here.
-        Node::Element { name, .. } if name.eq_ignore_ascii_case("html") => BoxKind::Block,
-
-        Node::Text { .. } | Node::Comment { .. } => BoxKind::Block,
-
-        _ => {
-            // If it's a replaced element and it's inline-level, treat it as a replaced inline atom.
-            if replaced_kind.is_some()
-                && matches!(style.display(), Display::Inline | Display::InlineBlock)
-            {
-                BoxKind::ReplacedInline
-            } else {
-                match style.display() {
-                    Display::Inline => BoxKind::Inline,
-                    Display::InlineBlock => BoxKind::InlineBlock,
-                    _ => BoxKind::Block,
-                }
-            }
-        }
-    };
-
-    // 3) Border-box rect: x/y/width are authoritative here.
+    // Border-box rect: x/y/width are authoritative here.
     //    Height is always 0.0 in this phase; it will be computed by
     //    the inline-aware layout pass (recompute_block_heights).
     let rect = Rectangle {
@@ -515,28 +423,16 @@ fn layout_box_for_styled_subtree<'style_tree, 'dom>(
         height: 0.0,
     };
 
-    let replaced = if matches!(kind, BoxKind::ReplacedInline) {
-        debug_assert!(replaced_kind.is_some());
-        replaced_kind
-    } else {
-        None
-    };
-
-    let replaced_intrinsic = match replaced_kind {
-        Some(ReplacedKind::Img) => replaced_info.and_then(|p| p.intrinsic_for_img(styled.node)),
-        _ => None,
-    };
-
-    Some(LayoutBox {
-        kind,
-        style,
+    LayoutBox {
+        kind: box_node.kind(),
+        style: box_node.style(),
         node: styled,
         rect,
         children: children_boxes,
-        list_marker: None,
-        replaced,
-        replaced_intrinsic,
-    })
+        list_marker: box_node.list_marker(),
+        replaced: box_node.replaced(),
+        replaced_intrinsic: box_node.replaced_intrinsic(),
+    }
 }
 
 fn count_styled_nodes(node: &StyledNode<'_>) -> usize {
@@ -584,7 +480,7 @@ fn append_layout_box_snapshot(
     next_index
 }
 
-fn node_debug_label(node: &Node) -> String {
+pub(crate) fn node_debug_label(node: &Node) -> String {
     match node {
         Node::Document { .. } => "document".to_string(),
         Node::Element { name, .. } => format!("element(\"{name}\")"),
@@ -593,7 +489,7 @@ fn node_debug_label(node: &Node) -> String {
     }
 }
 
-fn box_kind_debug_label(kind: BoxKind) -> &'static str {
+pub(crate) fn box_kind_debug_label(kind: BoxKind) -> &'static str {
     match kind {
         BoxKind::Block => "block",
         BoxKind::Inline => "inline",
@@ -602,7 +498,7 @@ fn box_kind_debug_label(kind: BoxKind) -> &'static str {
     }
 }
 
-fn list_marker_debug_label(marker: Option<ListMarker>) -> String {
+pub(crate) fn list_marker_debug_label(marker: Option<ListMarker>) -> String {
     match marker {
         None => "none".to_string(),
         Some(ListMarker::Unordered) => "unordered".to_string(),
@@ -610,7 +506,7 @@ fn list_marker_debug_label(marker: Option<ListMarker>) -> String {
     }
 }
 
-fn replaced_kind_debug_label(replaced: Option<ReplacedKind>) -> String {
+pub(crate) fn replaced_kind_debug_label(replaced: Option<ReplacedKind>) -> String {
     match replaced {
         None => "none".to_string(),
         Some(ReplacedKind::Img) => "img".to_string(),
@@ -622,7 +518,7 @@ fn replaced_kind_debug_label(replaced: Option<ReplacedKind>) -> String {
     }
 }
 
-fn intrinsic_size_debug_label(size: Option<IntrinsicSize>) -> String {
+pub(crate) fn intrinsic_size_debug_label(size: Option<IntrinsicSize>) -> String {
     match size {
         None => "none".to_string(),
         Some(size) => format!(
