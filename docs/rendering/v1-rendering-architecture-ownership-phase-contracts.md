@@ -26,6 +26,7 @@ Related documents:
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
 - `docs/rendering/w1-box-tree-layout-model-contract.md`
+- `docs/rendering/w2-structured-box-tree-data-structures.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
 - `docs/css/s9-property-system-computed-style-runtime-contract.md`
 - `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`
@@ -43,7 +44,8 @@ The contract established here is:
 DOM + document-order stylesheets
   -> retained resolved/computed style artifacts
   -> rebuilt borrow-backed StyledNode tree
-  -> frame-local LayoutBox tree
+  -> frame-local BoxTree generation
+  -> frame-local LayoutBox geometry projection
   -> immediate paint commands
   -> egui/wgpu submission
 ```
@@ -122,14 +124,15 @@ The CSS engine must not:
 
 The layout engine owns:
 
-- `LayoutBox` tree construction
+- `BoxTree` generation
+- `LayoutBox` geometry projection
 - block and inline geometry
 - text measurement consumption
 - replaced-element intrinsic size consumption
 
-Milestone W1 refines this boundary: the box tree is a distinct layout-owned
-model derived from `StyledNode` and computed style, not the DOM tree and not
-style data itself.
+Milestones W1 and W2 refine this boundary: the box tree is a distinct
+layout-owned model derived from `StyledNode` and computed style, not the DOM
+tree and not style data itself.
 
 The layout engine must not:
 
@@ -211,12 +214,13 @@ Consumes:
 
 Produces:
 
-- `LayoutBox` tree
+- `BoxTree`-backed `LayoutBox` geometry tree
 
 Retention contract:
 
 - no retained layout cache exists yet
-- the `LayoutBox` tree is rebuilt frame-locally for the viewport render pass
+- the generated `BoxTree` and `LayoutBox` geometry tree are rebuilt
+  frame-locally for the viewport render pass
 
 Layout-phase invariants:
 
@@ -232,7 +236,7 @@ Semantic owner: `gfx::paint`
 
 Consumes:
 
-- `LayoutBox` tree
+- `LayoutBox` geometry tree
 - image/resource state
 - input/focus/selection state
 
@@ -300,7 +304,8 @@ Retained state is owned by `PageState` and survives across frames:
 Rebuilt state is intentionally not retained across frames today:
 
 - borrow-backed `StyledNode` view
-- `LayoutBox` tree
+- generated `BoxTree`
+- `LayoutBox` geometry tree
 - fragment-rect maps used during paint/input routing
 - immediate paint commands
 
