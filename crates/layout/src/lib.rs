@@ -7,15 +7,18 @@
 //! anonymous generation is documented in
 //! `docs/rendering/w4-anonymous-box-generation-supported-subset.md`;
 //! containing-block relationships are documented in
-//! `docs/rendering/w5-containing-block-relationships.md`.
+//! `docs/rendering/w5-containing-block-relationships.md`; block formatting
+//! context foundations are documented in
+//! `docs/rendering/w6-block-formatting-context-foundations.md`.
 //! `BoxTree` is the frame-local generated box-tree structure; `LayoutBox` is
 //! the current geometry projection consumed by paint and hit testing.
 
 mod box_tree;
 mod text;
 pub use box_tree::{
-    AnonymousBoxKind, BoxGenerationRole, BoxId, BoxNode, BoxSource, BoxSuppressionReason, BoxTree,
-    ContainingBlockId, DisplayBoxBehavior, DisplayBoxGeneration, PrincipalBox,
+    AnonymousBoxKind, BlockFormattingParticipation, BoxGenerationRole, BoxId, BoxNode, BoxSource,
+    BoxSuppressionReason, BoxTree, ContainingBlockId, DisplayBoxBehavior, DisplayBoxGeneration,
+    FormattingContextId, FormattingContextKind, PrincipalBox,
 };
 pub use text::TextMeasurer;
 
@@ -158,6 +161,9 @@ pub struct LayoutBox<'style_tree, 'dom> {
     pub children: Vec<LayoutBox<'style_tree, 'dom>>,
     pub containing_block: Option<ContainingBlockId>,
     pub establishes_containing_block: bool,
+    pub formatting_context: Option<FormattingContextId>,
+    pub establishes_formatting_context: Option<FormattingContextKind>,
+    pub block_formatting_participation: BlockFormattingParticipation,
     pub list_marker: Option<ListMarker>,
     pub replaced: Option<ReplacedKind>,
     pub replaced_intrinsic: Option<IntrinsicSize>,
@@ -188,6 +194,18 @@ impl<'style_tree, 'dom> LayoutBox<'style_tree, 'dom> {
 
     pub fn establishes_containing_block(&self) -> bool {
         self.establishes_containing_block
+    }
+
+    pub fn formatting_context(&self) -> Option<FormattingContextId> {
+        self.formatting_context
+    }
+
+    pub fn establishes_formatting_context(&self) -> Option<FormattingContextKind> {
+        self.establishes_formatting_context
+    }
+
+    pub fn block_formatting_participation(&self) -> BlockFormattingParticipation {
+        self.block_formatting_participation
     }
 
     pub fn is_anonymous(&self) -> bool {
@@ -495,6 +513,9 @@ fn layout_box_from_generated_tree<'style_tree, 'dom>(
         children: children_boxes,
         containing_block: box_node.containing_block(),
         establishes_containing_block: box_node.establishes_containing_block(),
+        formatting_context: box_node.formatting_context(),
+        establishes_formatting_context: box_node.establishes_formatting_context(),
+        block_formatting_participation: box_node.block_formatting_participation(),
         list_marker: box_node.list_marker(),
         replaced: box_node.replaced(),
         replaced_intrinsic: box_node.replaced_intrinsic(),
@@ -526,7 +547,7 @@ fn append_layout_box_snapshot(
     let indent = "  ".repeat(depth);
     writeln!(
         out,
-        "{indent}box[{index}]: box-id={} anchor-id={} source={} node={} kind={} cb={} establishes-cb={} rect={} children={} marker={} replaced={} intrinsic={} style={}",
+        "{indent}box[{index}]: box-id={} anchor-id={} source={} node={} kind={} cb={} establishes-cb={} fc={} establishes-fc={} block-participation={} rect={} children={} marker={} replaced={} intrinsic={} style={}",
         box_id_debug_label(layout.box_id()),
         layout.node_id().0,
         layout_box_source_debug_label(layout.source),
@@ -534,6 +555,9 @@ fn append_layout_box_snapshot(
         box_kind_debug_label(layout.kind),
         optional_containing_block_id_debug_label(layout.containing_block()),
         bool_debug_label(layout.establishes_containing_block()),
+        optional_formatting_context_id_debug_label(layout.formatting_context()),
+        optional_formatting_context_kind_debug_label(layout.establishes_formatting_context()),
+        block_formatting_participation_debug_label(layout.block_formatting_participation()),
         rectangle_debug_label(layout.rect),
         layout.children.len(),
         list_marker_debug_label(layout.list_marker),
@@ -557,6 +581,32 @@ fn box_id_debug_label(id: BoxId) -> String {
 fn optional_containing_block_id_debug_label(id: Option<ContainingBlockId>) -> String {
     id.map(|id| box_id_debug_label(id.box_id()))
         .unwrap_or_else(|| "none".to_string())
+}
+
+fn optional_formatting_context_id_debug_label(id: Option<FormattingContextId>) -> String {
+    id.map(|id| box_id_debug_label(id.box_id()))
+        .unwrap_or_else(|| "none".to_string())
+}
+
+fn optional_formatting_context_kind_debug_label(
+    kind: Option<FormattingContextKind>,
+) -> &'static str {
+    match kind {
+        Some(FormattingContextKind::Block) => "block",
+        None => "none",
+    }
+}
+
+fn block_formatting_participation_debug_label(
+    participation: BlockFormattingParticipation,
+) -> &'static str {
+    match participation {
+        BlockFormattingParticipation::Root => "root",
+        BlockFormattingParticipation::BlockLevel => "block-level",
+        BlockFormattingParticipation::InlineLevel => "inline-level",
+        BlockFormattingParticipation::AtomicInline => "atomic-inline",
+        BlockFormattingParticipation::None => "none",
+    }
 }
 
 fn bool_debug_label(value: bool) -> &'static str {

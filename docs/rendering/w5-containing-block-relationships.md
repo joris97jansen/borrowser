@@ -16,6 +16,7 @@ Related documents:
 - `docs/rendering/w2-structured-box-tree-data-structures.md`
 - `docs/rendering/w3-display-to-box-generation-behavior.md`
 - `docs/rendering/w4-anonymous-box-generation-supported-subset.md`
+- `docs/rendering/w6-block-formatting-context-foundations.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
@@ -106,8 +107,8 @@ This keeps generated structure and containing-block ownership aligned.
 - `establishes-cb=<yes|no>`
 
 This is the deterministic regression surface for W5. Layout-phase snapshots
-continue to expose geometry and source identity; containing-block relationships
-are owned by the generated `BoxTree` contract.
+also expose containing-block identity after `BoxTree` metadata is projected into
+`LayoutBox`.
 
 ## Deferred Work
 
@@ -135,5 +136,6 @@ The layout crate tests cover:
 - inline boxes not establishing containing blocks
 - inline-blocks establishing containing blocks for descendants
 - anonymous block boxes establishing containing blocks for wrapped inline runs
+- `LayoutBox` projection preserving containing-block metadata
 - deterministic `BoxTree::to_debug_snapshot()` output with containing-block
   metadata
