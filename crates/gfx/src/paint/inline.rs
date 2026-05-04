@@ -2,7 +2,7 @@ use css::{Display, Length};
 use egui::{Align2, Color32, FontId, Pos2, Rect, Vec2};
 use html::Node;
 use layout::{
-    LayoutBox, LineBox, Rectangle, content_height, content_x_and_width, content_y,
+    LayoutBox, LineBox, Rectangle,
     inline::{InlineFragment, layout_inline_for_paint},
 };
 
@@ -34,10 +34,9 @@ pub(super) fn paint_inline_content(layout: &LayoutBox<'_, '_>, ctx: PaintCtx<'_>
     }
 
     // Compute the content box consistently with the layout engine.
-    let (content_x, content_width) =
-        content_x_and_width(layout.style, layout.rect.x, layout.rect.width);
-    let content_y = content_y(layout.style, layout.rect.y);
-    let content_height = content_height(layout.style, layout.rect.height);
+    let (content_x, content_width) = layout.content_x_and_width();
+    let content_y = layout.content_y();
+    let content_height = layout.content_height();
 
     let block_rect = Rectangle {
         x: content_x,

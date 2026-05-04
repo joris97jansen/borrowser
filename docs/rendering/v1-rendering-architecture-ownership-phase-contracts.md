@@ -28,6 +28,7 @@ Related documents:
 - `docs/rendering/w1-box-tree-layout-model-contract.md`
 - `docs/rendering/w2-structured-box-tree-data-structures.md`
 - `docs/rendering/w3-display-to-box-generation-behavior.md`
+- `docs/rendering/w4-anonymous-box-generation-supported-subset.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
 - `docs/css/s9-property-system-computed-style-runtime-contract.md`
 - `docs/css/r9-cascade-invariants-supported-property-behavior-computed-style-handoff.md`

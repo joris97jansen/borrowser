@@ -445,13 +445,20 @@ fn pending_space_does_not_cross_block_boundary() {
     let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
     let div = &layout.children[0];
 
-    let tokens = super::tokens::collect_inline_tokens_for_block_layout(div);
-    assert_eq!(tokens.len(), 2);
-    match &tokens[0] {
+    assert_eq!(div.children.len(), 3);
+    assert!(div.children[0].is_anonymous());
+    assert!(div.children[2].is_anonymous());
+
+    let before_tokens = super::tokens::collect_inline_tokens_for_block_layout(&div.children[0]);
+    assert_eq!(before_tokens.len(), 1);
+    match &before_tokens[0] {
         InlineToken::Word { text, .. } => assert_eq!(text, "word"),
         _ => panic!("expected word token"),
     }
-    match &tokens[1] {
+
+    let after_tokens = super::tokens::collect_inline_tokens_for_block_layout(&div.children[2]);
+    assert_eq!(after_tokens.len(), 1);
+    match &after_tokens[0] {
         InlineToken::Word { text, .. } => assert_eq!(text, "after"),
         _ => panic!("expected word token"),
     }

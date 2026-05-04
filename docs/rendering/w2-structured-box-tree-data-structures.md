@@ -16,6 +16,7 @@ Related code:
 Related documents:
 - `docs/rendering/w1-box-tree-layout-model-contract.md`
 - `docs/rendering/w3-display-to-box-generation-behavior.md`
+- `docs/rendering/w4-anonymous-box-generation-supported-subset.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
@@ -61,11 +62,11 @@ DOM node ID and is not retained across independent layout generations.
 `BoxSource` separates box source identity from box-tree ownership:
 
 - `DomNode(...)` for current DOM-backed boxes
-- `Anonymous { ... }` reserved for upcoming anonymous box generation
+- `Anonymous { ... }` for generated anonymous boxes
 - `Marker { ... }` reserved for future marker box generation
 
-This means future non-DOM-backed boxes can be represented without pretending
-that every layout box is a `StyledNode`.
+This means non-DOM-backed boxes can be represented without pretending that
+every layout box is a `StyledNode`.
 
 ## Generation Contract
 
@@ -78,6 +79,8 @@ currently:
 - assigns parent/child links using `BoxId`
 - records document-root and context-based document-element roles
 - maps computed display and replaced-element classification to `BoxKind`
+- inserts anonymous block boxes for the supported mixed block/inline child
+  subset
 - records explicit display-to-box behavior metadata
 - records list marker metadata for supported list containers
 - records replaced-element metadata required by current layout
@@ -109,9 +112,10 @@ The W2 box tree must satisfy these invariants:
 
 ## Non-Goals
 
-W2 does not implement:
+W2/W4 do not implement:
 
-- full anonymous box generation
+- full anonymous box generation beyond the supported W4 block/inline mixing
+  subset
 - marker boxes as independent generated boxes
 - explicit formatting-context IDs
 - containing-block IDs

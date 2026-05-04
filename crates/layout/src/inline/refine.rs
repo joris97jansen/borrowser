@@ -1,7 +1,7 @@
 use css::{ComputedStyle, Display, Length};
 use html::Node;
 
-use crate::{BoxKind, LayoutBox, Rectangle, TextMeasurer, content_x_and_width, content_y};
+use crate::{BoxKind, LayoutBox, Rectangle, TextMeasurer};
 
 use super::engine::layout_tokens;
 use super::options::INLINE_PADDING;
@@ -31,8 +31,7 @@ fn recompute_block_heights<'style_tree, 'dom>(
     node.rect.x = x;
     node.rect.y = y;
 
-    let used_width =
-        resolve_used_width_for_block(node.style, node.node.node, node.kind, available_width);
+    let used_width = resolve_used_width_for_layout_box(node, available_width);
     node.rect.width = used_width;
 
     match node.node.node {
@@ -43,7 +42,7 @@ fn recompute_block_heights<'style_tree, 'dom>(
             let parent_width = used_width;
 
             for child in &mut node.children {
-                let bm = child.style.box_metrics();
+                let bm = child.box_metrics();
 
                 cursor_y += bm.margin_top;
 
@@ -66,7 +65,7 @@ fn recompute_block_heights<'style_tree, 'dom>(
             // display behavior must come from computed style. Until Milestone W
             // introduces an explicit box-tree/root-box model, the document
             // element acts as the top-level layout container here.
-            if name.eq_ignore_ascii_case("html") {
+            if !node.is_anonymous() && name.eq_ignore_ascii_case("html") {
                 let mut cursor_y = y;
 
                 let parent_x = x;
@@ -74,8 +73,9 @@ fn recompute_block_heights<'style_tree, 'dom>(
 
                 // Inline elements: height is 0 at block level.
                 if matches!(node.style.display(), Display::Inline) {
-                    let (content_x, content_width) = content_x_and_width(node.style, x, used_width);
-                    let content_top = content_y(node.style, y);
+                    let (content_x, content_width) =
+                        content_x_and_width_for_box(node, x, used_width);
+                    let content_top = content_y_for_box(node, y);
 
                     size_replaced_inline_children(
                         measurer,
@@ -90,7 +90,7 @@ fn recompute_block_heights<'style_tree, 'dom>(
                 }
 
                 for child in &mut node.children {
-                    let bm = child.style.box_metrics();
+                    let bm = child.box_metrics();
 
                     cursor_y += bm.margin_top;
 
@@ -109,13 +109,13 @@ fn recompute_block_heights<'style_tree, 'dom>(
 
             // --- Block-level element: inline content + block children + padding ---
 
-            let bm = node.style.box_metrics();
+            let bm = node.box_metrics();
 
             // Content box horizontally: inside padding-left/right
-            let (content_x, content_width) = content_x_and_width(node.style, x, used_width);
+            let (content_x, content_width) = content_x_and_width_for_box(node, x, used_width);
 
             // Content box top (used as the baseline for inline layout)
-            let content_top = content_y(node.style, y);
+            let content_top = content_y_for_box(node, y);
 
             // 1) Layout inline-block children so we know their sizes.
             size_replaced_inline_children(measurer, node, content_x, content_top, content_width);
@@ -123,7 +123,7 @@ fn recompute_block_heights<'style_tree, 'dom>(
             {
                 for child in &mut node.children {
                     if matches!(child.kind, BoxKind::InlineBlock) {
-                        let cbm = child.style.box_metrics();
+                        let cbm = child.box_metrics();
 
                         // Horizontal position as if it lived in the content box.
                         let child_x = content_x + cbm.margin_left;
@@ -190,7 +190,7 @@ fn recompute_block_heights<'style_tree, 'dom>(
                     continue;
                 }
 
-                let cbm = child.style.box_metrics();
+                let cbm = child.box_metrics();
 
                 // Child's margin-top
                 cursor_y += cbm.margin_top;
@@ -273,4 +273,27 @@ fn resolve_used_width_for_block(
 
     // Final safety: never negative.
     w.max(0.0)
+}
+
+fn resolve_used_width_for_layout_box(node: &LayoutBox<'_, '_>, available_width: f32) -> f32 {
+    if node.is_anonymous() {
+        return available_width.max(0.0);
+    }
+
+    resolve_used_width_for_block(node.style, node.node.node, node.kind, available_width)
+}
+
+fn content_x_and_width_for_box(
+    node: &LayoutBox<'_, '_>,
+    border_x: f32,
+    border_width: f32,
+) -> (f32, f32) {
+    let bm = node.box_metrics();
+    let content_x = border_x + bm.padding_left;
+    let content_width = (border_width - bm.padding_left - bm.padding_right).max(0.0);
+    (content_x, content_width)
+}
+
+fn content_y_for_box(node: &LayoutBox<'_, '_>, border_y: f32) -> f32 {
+    border_y + node.box_metrics().padding_top
 }
