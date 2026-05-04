@@ -311,6 +311,7 @@ The normative rendering ownership and phase-boundary contract lives in:
 * `docs/rendering/w2-structured-box-tree-data-structures.md`
 * `docs/rendering/w3-display-to-box-generation-behavior.md`
 * `docs/rendering/w4-anonymous-box-generation-supported-subset.md`
+* `docs/rendering/w5-containing-block-relationships.md`
 
 ---
 

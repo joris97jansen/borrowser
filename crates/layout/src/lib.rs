@@ -5,7 +5,9 @@
 //! `docs/rendering/w1-box-tree-layout-model-contract.md`; the W2 data model is
 //! documented in `docs/rendering/w2-structured-box-tree-data-structures.md`;
 //! anonymous generation is documented in
-//! `docs/rendering/w4-anonymous-box-generation-supported-subset.md`.
+//! `docs/rendering/w4-anonymous-box-generation-supported-subset.md`;
+//! containing-block relationships are documented in
+//! `docs/rendering/w5-containing-block-relationships.md`.
 //! `BoxTree` is the frame-local generated box-tree structure; `LayoutBox` is
 //! the current geometry projection consumed by paint and hit testing.
 
@@ -13,7 +15,7 @@ mod box_tree;
 mod text;
 pub use box_tree::{
     AnonymousBoxKind, BoxGenerationRole, BoxId, BoxNode, BoxSource, BoxSuppressionReason, BoxTree,
-    DisplayBoxBehavior, DisplayBoxGeneration, PrincipalBox,
+    ContainingBlockId, DisplayBoxBehavior, DisplayBoxGeneration, PrincipalBox,
 };
 pub use text::TextMeasurer;
 
@@ -147,18 +149,25 @@ fn classify_replaced_kind(node: &Node) -> Option<ReplacedKind> {
 /// so downstream paint/input code can keep using existing DOM-oriented helpers
 /// while anonymous boxes become explicit layout participants.
 pub struct LayoutBox<'style_tree, 'dom> {
+    pub box_id: BoxId,
     pub kind: BoxKind,
     pub style: &'style_tree ComputedStyle,
     pub source: BoxSource<'style_tree, 'dom>,
     pub node: &'style_tree StyledNode<'dom>,
     pub rect: Rectangle,
     pub children: Vec<LayoutBox<'style_tree, 'dom>>,
+    pub containing_block: Option<ContainingBlockId>,
+    pub establishes_containing_block: bool,
     pub list_marker: Option<ListMarker>,
     pub replaced: Option<ReplacedKind>,
     pub replaced_intrinsic: Option<IntrinsicSize>,
 }
 
 impl<'style_tree, 'dom> LayoutBox<'style_tree, 'dom> {
+    pub fn box_id(&self) -> BoxId {
+        self.box_id
+    }
+
     /// Returns the anchor DOM node ID for this layout box.
     ///
     /// For DOM-backed boxes this is the direct source node. For anonymous or
@@ -171,6 +180,14 @@ impl<'style_tree, 'dom> LayoutBox<'style_tree, 'dom> {
 
     pub fn direct_node_id(&self) -> Option<Id> {
         self.source.direct_node_id()
+    }
+
+    pub fn containing_block(&self) -> Option<ContainingBlockId> {
+        self.containing_block
+    }
+
+    pub fn establishes_containing_block(&self) -> bool {
+        self.establishes_containing_block
     }
 
     pub fn is_anonymous(&self) -> bool {
@@ -469,12 +486,15 @@ fn layout_box_from_generated_tree<'style_tree, 'dom>(
     };
 
     LayoutBox {
+        box_id: box_node.id(),
         kind: box_node.kind(),
         style: box_node.style(),
         source,
         node: styled,
         rect,
         children: children_boxes,
+        containing_block: box_node.containing_block(),
+        establishes_containing_block: box_node.establishes_containing_block(),
         list_marker: box_node.list_marker(),
         replaced: box_node.replaced(),
         replaced_intrinsic: box_node.replaced_intrinsic(),
@@ -506,11 +526,14 @@ fn append_layout_box_snapshot(
     let indent = "  ".repeat(depth);
     writeln!(
         out,
-        "{indent}box[{index}]: id={} source={} node={} kind={} rect={} children={} marker={} replaced={} intrinsic={} style={}",
+        "{indent}box[{index}]: box-id={} anchor-id={} source={} node={} kind={} cb={} establishes-cb={} rect={} children={} marker={} replaced={} intrinsic={} style={}",
+        box_id_debug_label(layout.box_id()),
         layout.node_id().0,
         layout_box_source_debug_label(layout.source),
         node_debug_label(layout.node.node),
         box_kind_debug_label(layout.kind),
+        optional_containing_block_id_debug_label(layout.containing_block()),
+        bool_debug_label(layout.establishes_containing_block()),
         rectangle_debug_label(layout.rect),
         layout.children.len(),
         list_marker_debug_label(layout.list_marker),
@@ -525,6 +548,19 @@ fn append_layout_box_snapshot(
         next_index = append_layout_box_snapshot(out, child, next_index, depth + 1);
     }
     next_index
+}
+
+fn box_id_debug_label(id: BoxId) -> String {
+    format!("b{}", id.index())
+}
+
+fn optional_containing_block_id_debug_label(id: Option<ContainingBlockId>) -> String {
+    id.map(|id| box_id_debug_label(id.box_id()))
+        .unwrap_or_else(|| "none".to_string())
+}
+
+fn bool_debug_label(value: bool) -> &'static str {
+    if value { "yes" } else { "no" }
 }
 
 fn layout_box_source_debug_label(source: BoxSource<'_, '_>) -> String {

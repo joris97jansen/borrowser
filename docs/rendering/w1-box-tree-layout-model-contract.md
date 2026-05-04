@@ -24,6 +24,7 @@ Related documents:
 - `docs/rendering/w2-structured-box-tree-data-structures.md`
 - `docs/rendering/w3-display-to-box-generation-behavior.md`
 - `docs/rendering/w4-anonymous-box-generation-supported-subset.md`
+- `docs/rendering/w5-containing-block-relationships.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
@@ -228,17 +229,19 @@ boxes establish or participate in which context.
 
 ## Containing Blocks
 
-W1 does not implement the full containing-block model, but it reserves the
-concept. A containing block is a layout relationship used to resolve sizes and
-positions. It is distinct from DOM parentage and from style inheritance.
+W5 implements the first explicit containing-block model for the supported
+in-flow subset. A containing block is a layout relationship used to resolve
+sizes and positions. It is distinct from DOM parentage and from style
+inheritance.
 
-Current layout mostly uses parent content geometry as the practical containing
-constraint. Later W issues must make this explicit with deterministic
-relationships such as:
+The current model records deterministic relationships for:
 
 - initial containing block
 - root element containing block
 - normal-flow containing block
+
+Later W issues must extend this deliberately for:
+
 - absolute/fixed positioning containing block
 - formatting-context root containing block
 
@@ -277,7 +280,8 @@ W1 is an architecture contract. It intentionally does not ship:
 - a separate retained box-tree data structure
 - full anonymous box generation beyond the supported W4 block/inline mixing
   subset
-- explicit `FormattingContextKind` or `ContainingBlockId` types
+- full formatting-context IDs and containing-block behavior beyond the
+  supported W5 in-flow subset
 - flexbox, grid, floats, positioning, overflow, fragmentation, or transforms
 - a complete table formatting model
 - retained layout caching
@@ -297,7 +301,6 @@ tag-name or phase-local shortcuts:
   boxes
 - `FormattingContextKind`
 - `FormattingContextId`
-- `ContainingBlockId`
 - deterministic anonymous-box source metadata
 - a generated box tree and later fragment structures separated further if
   fragmentation or retained layout makes that split necessary
@@ -314,7 +317,8 @@ W1 is satisfied while these conditions hold:
 - DOM, style, box generation, layout, formatting-context, and paint
   responsibilities are explicit
 - formatting contexts are defined as layout-owned algorithmic scopes
-- containing-block modeling is reserved as structured layout data
+- containing-block modeling exists as structured layout data for the supported
+  W5 in-flow subset
 - current root-element handling is documented as transitional
 - deferred Milestone W work is named as non-goals rather than hidden in
   implementation comments
