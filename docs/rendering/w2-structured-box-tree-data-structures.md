@@ -17,6 +17,7 @@ Related documents:
 - `docs/rendering/w1-box-tree-layout-model-contract.md`
 - `docs/rendering/w3-display-to-box-generation-behavior.md`
 - `docs/rendering/w4-anonymous-box-generation-supported-subset.md`
+- `docs/rendering/w5-containing-block-relationships.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
@@ -56,6 +57,7 @@ DOM node ID and is not retained across independent layout generations.
 - `DisplayBoxBehavior`
 - `BoxSource`
 - computed display and style reference
+- containing-block relationship metadata
 - list marker metadata
 - replaced-element metadata and intrinsic image size metadata
 
@@ -81,6 +83,8 @@ currently:
 - maps computed display and replaced-element classification to `BoxKind`
 - inserts anonymous block boxes for the supported mixed block/inline child
   subset
+- assigns explicit containing-block relationships for the supported in-flow
+  subset
 - records explicit display-to-box behavior metadata
 - records list marker metadata for supported list containers
 - records replaced-element metadata required by current layout
@@ -100,8 +104,8 @@ The W2 box tree must satisfy these invariants:
 - Comment nodes must not generate boxes.
 - The document-element role is assigned from box-tree context, not from an
   element's tag name alone.
-- Non-DOM-backed source variants are part of the model even before anonymous
-  box generation is implemented.
+- Non-DOM-backed source variants are part of the active model for anonymous
+  boxes and remain extensible for future marker and generated-content boxes.
 - `display: none` element subtrees are absent from the generated box tree.
 - Metadata required by current layout is available before geometry projection.
 - Supported computed display values are mapped through an explicit
@@ -118,7 +122,6 @@ W2/W4 do not implement:
   subset
 - marker boxes as independent generated boxes
 - explicit formatting-context IDs
-- containing-block IDs
 - retained layout caches
 - a separate fragment tree
 - paint/display-list changes
