@@ -14,7 +14,7 @@ use css::ComputedStyle;
 use html::{Node, internal::Id};
 use std::sync::Arc;
 
-use crate::{BoxKind, LayoutBox, ReplacedKind};
+use crate::{BoxKind, InlineFormattingParticipation, LayoutBox, ReplacedKind};
 
 use super::get_attr;
 use super::types::{InlineAction, InlineActionKind};
@@ -197,6 +197,10 @@ fn collect_inline_tokens_for_block_layout_impl<'style_tree, 'dom>(
     block: &'style_tree LayoutBox<'style_tree, 'dom>,
     mode: TokenCollectMode,
 ) -> Vec<InlineToken<'style_tree, 'dom>> {
+    if !block.establishes_inline_formatting_context() {
+        return Vec::new();
+    }
+
     let mut tokens: Vec<InlineToken<'style_tree, 'dom>> = Vec::new();
     let mut pending_space: Option<PendingSpace<'style_tree>> = None;
     let mut has_emitted_content = false;
@@ -271,6 +275,10 @@ fn collect_inline_tokens_from_layout_box<'style_tree, 'dom>(
             if text.is_empty() {
                 return;
             }
+            debug_assert_eq!(
+                layout.inline_formatting_participation(),
+                InlineFormattingParticipation::TextRun
+            );
             // Treat the text content as part of the current inline
             // formatting context using the same whitespace behavior
             // as tokenize_runs.
@@ -294,8 +302,8 @@ fn collect_inline_tokens_from_layout_box<'style_tree, 'dom>(
                 next_ctx.link_href = get_attr(layout.node.node, "href").map(Arc::from);
             }
 
-            match layout.kind {
-                BoxKind::Inline => {
+            match layout.inline_formatting_participation() {
+                InlineFormattingParticipation::InlineContainer => {
                     // Inline container: recurse into children, they
                     // participate in the same inline formatting context.
                     for child in &layout.children {
@@ -310,9 +318,9 @@ fn collect_inline_tokens_from_layout_box<'style_tree, 'dom>(
                     }
                 }
 
-                BoxKind::InlineBlock => {
-                    // Inline-block: a single inline box. We do not
-                    // descend into its children here.
+                InlineFormattingParticipation::AtomicInline => {
+                    // Atomic inline-level box: represented as a single inline
+                    // token. We do not descend into its children here.
                     //
                     // If there was pending whitespace, flush it as a
                     // single Space token before the box (like a word).
@@ -332,59 +340,56 @@ fn collect_inline_tokens_from_layout_box<'style_tree, 'dom>(
                         TokenCollectMode::Paint => Some(layout),
                     };
 
-                    tokens.push(InlineToken::Box {
-                        width: margin_box_width,
-                        height: margin_box_height,
-                        style,
-                        ctx: next_ctx.clone(),
-                        layout: layout_ref,
-                    });
+                    match layout.kind {
+                        BoxKind::InlineBlock => {
+                            tokens.push(InlineToken::Box {
+                                width: margin_box_width,
+                                height: margin_box_height,
+                                style,
+                                ctx: next_ctx.clone(),
+                                layout: layout_ref,
+                            });
+                        }
+                        BoxKind::ReplacedInline => {
+                            let kind = layout
+                                .replaced
+                                .expect("ReplacedInline must have replaced kind");
+
+                            tokens.push(InlineToken::Replaced {
+                                width: margin_box_width,
+                                height: margin_box_height,
+                                style,
+                                ctx: next_ctx.clone(),
+                                kind,
+                                layout: layout_ref,
+                            });
+                        }
+                        BoxKind::Block | BoxKind::Inline => {
+                            debug_assert!(
+                                false,
+                                "atomic inline participation requires an atomic box kind"
+                            );
+                        }
+                    }
                     *has_emitted_content = true;
                 }
 
-                BoxKind::Block => {
-                    // Block descendants are separate block formatting
-                    // contexts. They do not contribute to this block's
-                    // inline content. We *do* treat any text nodes as
-                    // inline content (handled above by Node::Text),
-                    // but for Element/Document/Comment with Block kind
-                    // we stop here.
+                InlineFormattingParticipation::None => {
+                    // Non-inline descendants do not contribute to this
+                    // inline formatting context. Reset pending whitespace so
+                    // it cannot bridge across a non-inline boundary.
                     //
-                    // Reset pending whitespace so it cannot bridge across
-                    // block formatting context boundaries.
+                    // Text nodes are handled by the Node::Text branch above;
+                    // element/document boxes with no inline participation stop
+                    // here.
                     reset_pending_space(pending_space);
                 }
 
-                BoxKind::ReplacedInline => {
-                    flush_pending_space(tokens, pending_space, *has_emitted_content);
-
-                    let style = layout.style;
-                    let cbm = style.box_metrics();
-
-                    let margin_box_width =
-                        (layout.rect.width + cbm.margin_left + cbm.margin_right).max(0.0);
-                    let margin_box_height =
-                        (layout.rect.height + cbm.margin_top + cbm.margin_bottom).max(0.0);
-                    debug_assert!(margin_box_width.is_finite() && margin_box_height.is_finite());
-
-                    let kind = layout
-                        .replaced
-                        .expect("ReplacedInline must have replaced kind");
-
-                    let layout_ref = match mode {
-                        TokenCollectMode::Height => None,
-                        TokenCollectMode::Paint => Some(layout),
-                    };
-
-                    tokens.push(InlineToken::Replaced {
-                        width: margin_box_width,
-                        height: margin_box_height,
-                        style,
-                        ctx: next_ctx.clone(),
-                        kind,
-                        layout: layout_ref,
-                    });
-                    *has_emitted_content = true;
+                InlineFormattingParticipation::TextRun => {
+                    debug_assert!(
+                        false,
+                        "text-run inline participation should be handled by text nodes"
+                    );
                 }
             }
         }

@@ -144,7 +144,7 @@ fn recompute_block_heights<'style_tree, 'dom>(
             //    using layout-based inline token enumeration in DOM order.
             let mut inline_height = 0.0;
 
-            {
+            if node.establishes_inline_formatting_context() {
                 // Collect inline tokens directly from the layout tree, in DOM order.
                 let tokens = collect_inline_tokens_for_block_layout(node);
 
@@ -169,11 +169,6 @@ fn recompute_block_heights<'style_tree, 'dom>(
                         inline_height = (last_bottom - content_top) + INLINE_PADDING;
                     }
                 }
-            }
-
-            // Fallback: at least one line-height even if no inline content at all
-            if inline_height <= 0.0 {
-                inline_height = measurer.line_height(node.style);
             }
 
             // 3) Block children start below content_top + inline content

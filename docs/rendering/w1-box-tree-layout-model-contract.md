@@ -26,6 +26,7 @@ Related documents:
 - `docs/rendering/w4-anonymous-box-generation-supported-subset.md`
 - `docs/rendering/w5-containing-block-relationships.md`
 - `docs/rendering/w6-block-formatting-context-foundations.md`
+- `docs/rendering/w7-inline-formatting-context-foundations.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
@@ -282,7 +283,7 @@ W1 is an architecture contract. It intentionally does not ship:
 - full anonymous box generation beyond the supported W4 block/inline mixing
   subset
 - full formatting-context and containing-block behavior beyond the supported
-  W5/W6 in-flow subset
+  W5/W6/W7 in-flow subset
 - flexbox, grid, floats, positioning, overflow, fragmentation, or transforms
 - a complete table formatting model
 - retained layout caching

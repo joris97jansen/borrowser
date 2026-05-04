@@ -9,7 +9,9 @@
 //! containing-block relationships are documented in
 //! `docs/rendering/w5-containing-block-relationships.md`; block formatting
 //! context foundations are documented in
-//! `docs/rendering/w6-block-formatting-context-foundations.md`.
+//! `docs/rendering/w6-block-formatting-context-foundations.md`; inline
+//! formatting context foundations are documented in
+//! `docs/rendering/w7-inline-formatting-context-foundations.md`.
 //! `BoxTree` is the frame-local generated box-tree structure; `LayoutBox` is
 //! the current geometry projection consumed by paint and hit testing.
 
@@ -18,7 +20,8 @@ mod text;
 pub use box_tree::{
     AnonymousBoxKind, BlockFormattingParticipation, BoxGenerationRole, BoxId, BoxNode, BoxSource,
     BoxSuppressionReason, BoxTree, ContainingBlockId, DisplayBoxBehavior, DisplayBoxGeneration,
-    FormattingContextId, FormattingContextKind, PrincipalBox,
+    FormattingContextId, FormattingContextKind, InlineFormattingContextId,
+    InlineFormattingParticipation, PrincipalBox,
 };
 pub use text::TextMeasurer;
 
@@ -164,6 +167,9 @@ pub struct LayoutBox<'style_tree, 'dom> {
     pub formatting_context: Option<FormattingContextId>,
     pub establishes_formatting_context: Option<FormattingContextKind>,
     pub block_formatting_participation: BlockFormattingParticipation,
+    pub inline_formatting_context: Option<InlineFormattingContextId>,
+    pub establishes_inline_formatting_context: bool,
+    pub inline_formatting_participation: InlineFormattingParticipation,
     pub list_marker: Option<ListMarker>,
     pub replaced: Option<ReplacedKind>,
     pub replaced_intrinsic: Option<IntrinsicSize>,
@@ -206,6 +212,18 @@ impl<'style_tree, 'dom> LayoutBox<'style_tree, 'dom> {
 
     pub fn block_formatting_participation(&self) -> BlockFormattingParticipation {
         self.block_formatting_participation
+    }
+
+    pub fn inline_formatting_context(&self) -> Option<InlineFormattingContextId> {
+        self.inline_formatting_context
+    }
+
+    pub fn establishes_inline_formatting_context(&self) -> bool {
+        self.establishes_inline_formatting_context
+    }
+
+    pub fn inline_formatting_participation(&self) -> InlineFormattingParticipation {
+        self.inline_formatting_participation
     }
 
     pub fn is_anonymous(&self) -> bool {
@@ -516,6 +534,9 @@ fn layout_box_from_generated_tree<'style_tree, 'dom>(
         formatting_context: box_node.formatting_context(),
         establishes_formatting_context: box_node.establishes_formatting_context(),
         block_formatting_participation: box_node.block_formatting_participation(),
+        inline_formatting_context: box_node.inline_formatting_context(),
+        establishes_inline_formatting_context: box_node.establishes_inline_formatting_context(),
+        inline_formatting_participation: box_node.inline_formatting_participation(),
         list_marker: box_node.list_marker(),
         replaced: box_node.replaced(),
         replaced_intrinsic: box_node.replaced_intrinsic(),
@@ -547,7 +568,7 @@ fn append_layout_box_snapshot(
     let indent = "  ".repeat(depth);
     writeln!(
         out,
-        "{indent}box[{index}]: box-id={} anchor-id={} source={} node={} kind={} cb={} establishes-cb={} fc={} establishes-fc={} block-participation={} rect={} children={} marker={} replaced={} intrinsic={} style={}",
+        "{indent}box[{index}]: box-id={} anchor-id={} source={} node={} kind={} cb={} establishes-cb={} fc={} establishes-fc={} block-participation={} ifc={} establishes-ifc={} inline-participation={} rect={} children={} marker={} replaced={} intrinsic={} style={}",
         box_id_debug_label(layout.box_id()),
         layout.node_id().0,
         layout_box_source_debug_label(layout.source),
@@ -558,6 +579,9 @@ fn append_layout_box_snapshot(
         optional_formatting_context_id_debug_label(layout.formatting_context()),
         optional_formatting_context_kind_debug_label(layout.establishes_formatting_context()),
         block_formatting_participation_debug_label(layout.block_formatting_participation()),
+        optional_inline_formatting_context_id_debug_label(layout.inline_formatting_context()),
+        bool_debug_label(layout.establishes_inline_formatting_context()),
+        inline_formatting_participation_debug_label(layout.inline_formatting_participation()),
         rectangle_debug_label(layout.rect),
         layout.children.len(),
         list_marker_debug_label(layout.list_marker),
@@ -606,6 +630,24 @@ fn block_formatting_participation_debug_label(
         BlockFormattingParticipation::InlineLevel => "inline-level",
         BlockFormattingParticipation::AtomicInline => "atomic-inline",
         BlockFormattingParticipation::None => "none",
+    }
+}
+
+fn optional_inline_formatting_context_id_debug_label(
+    id: Option<InlineFormattingContextId>,
+) -> String {
+    id.map(|id| box_id_debug_label(id.box_id()))
+        .unwrap_or_else(|| "none".to_string())
+}
+
+fn inline_formatting_participation_debug_label(
+    participation: InlineFormattingParticipation,
+) -> &'static str {
+    match participation {
+        InlineFormattingParticipation::None => "none",
+        InlineFormattingParticipation::InlineContainer => "inline-container",
+        InlineFormattingParticipation::TextRun => "text-run",
+        InlineFormattingParticipation::AtomicInline => "atomic-inline",
     }
 }
 

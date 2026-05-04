@@ -18,6 +18,7 @@ Related documents:
 - `docs/rendering/w3-display-to-box-generation-behavior.md`
 - `docs/rendering/w4-anonymous-box-generation-supported-subset.md`
 - `docs/rendering/w5-containing-block-relationships.md`
+- `docs/rendering/w7-inline-formatting-context-foundations.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
@@ -146,7 +147,7 @@ W6 intentionally does not implement:
 - overflow-created formatting contexts
 - transforms, containment, or flow-root
 - retained formatting-context identity across layout generations
-- independent inline formatting context IDs
+- full inline formatting context behavior beyond the supported W7 foundation
 - flex, grid, table, or fragmentation contexts
 
 Those features must extend `FormattingContextKind`, establishment rules, debug
