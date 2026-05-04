@@ -18,6 +18,7 @@ Related documents:
 - `docs/rendering/w4-anonymous-box-generation-supported-subset.md`
 - `docs/rendering/w6-block-formatting-context-foundations.md`
 - `docs/rendering/w7-inline-formatting-context-foundations.md`
+- `docs/rendering/w8-box-generation-formatting-debug-surfaces.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
