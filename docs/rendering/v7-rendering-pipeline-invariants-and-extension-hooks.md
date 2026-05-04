@@ -26,6 +26,7 @@ Related documents:
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
 - `docs/rendering/w1-box-tree-layout-model-contract.md`
 - `docs/rendering/w2-structured-box-tree-data-structures.md`
+- `docs/rendering/w3-display-to-box-generation-behavior.md`
 - `docs/architecture/ARCHITECTURE.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
 
