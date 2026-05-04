@@ -19,6 +19,7 @@ Related documents:
 - `docs/rendering/w4-anonymous-box-generation-supported-subset.md`
 - `docs/rendering/w5-containing-block-relationships.md`
 - `docs/rendering/w6-block-formatting-context-foundations.md`
+- `docs/rendering/w7-inline-formatting-context-foundations.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
@@ -60,6 +61,7 @@ DOM node ID and is not retained across independent layout generations.
 - computed display and style reference
 - containing-block relationship metadata
 - formatting-context relationship and block-participation metadata
+- inline formatting context relationship and participation metadata
 - list marker metadata
 - replaced-element metadata and intrinsic image size metadata
 
@@ -89,6 +91,8 @@ currently:
   subset
 - assigns explicit block formatting context relationships for the supported
   normal-flow subset
+- assigns explicit inline formatting context relationships for the supported
+  inline-flow subset
 - records explicit display-to-box behavior metadata
 - records list marker metadata for supported list containers
 - records replaced-element metadata required by current layout
@@ -125,7 +129,8 @@ W2/W4 do not implement:
 - full anonymous box generation beyond the supported W4 block/inline mixing
   subset
 - marker boxes as independent generated boxes
-- full formatting-context behavior beyond the supported W6 normal-flow subset
+- full formatting-context behavior beyond the supported W6/W7 normal-flow
+  subset
 - retained layout caches
 - a separate fragment tree
 - paint/display-list changes
