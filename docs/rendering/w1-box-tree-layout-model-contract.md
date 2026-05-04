@@ -22,6 +22,7 @@ Related code:
 
 Related documents:
 - `docs/rendering/w2-structured-box-tree-data-structures.md`
+- `docs/rendering/w3-display-to-box-generation-behavior.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
@@ -143,6 +144,9 @@ Box generation owns:
 - creating future pseudo/generated boxes when those features exist
 - assigning future box-generation roles such as root box, ordinary box,
   anonymous box, marker box, and pseudo box
+
+W3 defines this mapping through explicit `DisplayBoxGeneration`,
+`PrincipalBox`, and `DisplayBoxBehavior` decisions before geometry projection.
 
 Box generation must not:
 

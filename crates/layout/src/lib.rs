@@ -9,7 +9,10 @@
 
 mod box_tree;
 mod text;
-pub use box_tree::{AnonymousBoxKind, BoxGenerationRole, BoxId, BoxNode, BoxSource, BoxTree};
+pub use box_tree::{
+    AnonymousBoxKind, BoxGenerationRole, BoxId, BoxNode, BoxSource, BoxSuppressionReason, BoxTree,
+    DisplayBoxBehavior, DisplayBoxGeneration, PrincipalBox,
+};
 pub use text::TextMeasurer;
 
 pub mod inline;
