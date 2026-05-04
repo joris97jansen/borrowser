@@ -28,6 +28,7 @@ Related documents:
 - `docs/rendering/w3-display-to-box-generation-behavior.md`
 - `docs/rendering/w4-anonymous-box-generation-supported-subset.md`
 - `docs/rendering/w5-containing-block-relationships.md`
+- `docs/rendering/w6-block-formatting-context-foundations.md`
 - `docs/architecture/ARCHITECTURE.md`
 
 ## Purpose

@@ -1,7 +1,7 @@
 use css::{ComputedStyle, Display, Length};
 use html::Node;
 
-use crate::{BoxKind, LayoutBox, Rectangle, TextMeasurer};
+use crate::{BlockFormattingParticipation, BoxKind, LayoutBox, Rectangle, TextMeasurer};
 
 use super::engine::layout_tokens;
 use super::options::INLINE_PADDING;
@@ -181,12 +181,11 @@ fn recompute_block_heights<'style_tree, 'dom>(
             let mut cursor_y = content_start_y;
 
             for child in &mut node.children {
-                // Skip inline, inline-block & replaced-inline children here; we already
-                // accounted for them in the inline formatting context.
-                if matches!(
-                    child.kind,
-                    BoxKind::Inline | BoxKind::InlineBlock | BoxKind::ReplacedInline
-                ) {
+                // Skip inline-flow participants here; they were accounted for
+                // by the inline formatting work above. W6 makes this an
+                // explicit generated-box contract instead of inferring it from
+                // `BoxKind` alone.
+                if participates_in_parent_inline_flow(child) {
                     continue;
                 }
 
@@ -219,6 +218,13 @@ fn recompute_block_heights<'style_tree, 'dom>(
             0.0
         }
     }
+}
+
+fn participates_in_parent_inline_flow(node: &LayoutBox<'_, '_>) -> bool {
+    matches!(
+        node.block_formatting_participation(),
+        BlockFormattingParticipation::InlineLevel | BlockFormattingParticipation::AtomicInline
+    )
 }
 
 fn resolve_used_width_for_block(

@@ -312,6 +312,7 @@ The normative rendering ownership and phase-boundary contract lives in:
 * `docs/rendering/w3-display-to-box-generation-behavior.md`
 * `docs/rendering/w4-anonymous-box-generation-supported-subset.md`
 * `docs/rendering/w5-containing-block-relationships.md`
+* `docs/rendering/w6-block-formatting-context-foundations.md`
 
 ---
 
@@ -324,10 +325,10 @@ Borrowser has a hybrid layout engine:
 
 Layout generates a **BoxTree** from styled content, then projects it into the
 current **LayoutBox** geometry structure consumed by paint and hit testing.
-Milestones W1 through W3 define this as a distinct layout-owned model derived
+Milestones W1 through W6 define this as a distinct layout-owned model derived
 from DOM and computed style, with explicit boundaries for display-to-box
-generation, formatting contexts, containing-block modeling, and later layout
-expansion.
+generation, anonymous boxes, containing-block modeling, block formatting
+contexts, and later layout expansion.
 
 ---
 
@@ -346,11 +347,15 @@ Each `LayoutBox` contains:
 
 ```rust
 struct LayoutBox<'style_tree, 'dom> {
+    box_id: BoxId,
     kind: BoxKind,
     style: &'style_tree ComputedStyle,
+    source: BoxSource<'style_tree, 'dom>,
     node: &'style_tree StyledNode<'dom>,
     rect: Rectangle,
     children: Vec<LayoutBox<'style_tree, 'dom>>,
+    containing_block: Option<ContainingBlockId>,
+    formatting_context: Option<FormattingContextId>,
 }
 ```
 

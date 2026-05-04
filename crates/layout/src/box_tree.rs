@@ -40,6 +40,47 @@ impl ContainingBlockId {
     }
 }
 
+/// Stable frame-local identity of a formatting context root.
+///
+/// W6 models the supported normal-flow block formatting scope as generated-box
+/// identity. This is intentionally separate from DOM parentage and from
+/// containing-block identity so later layout modes can refine context roots
+/// without changing the source tree contract.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct FormattingContextId(BoxId);
+
+impl FormattingContextId {
+    pub fn box_id(self) -> BoxId {
+        self.0
+    }
+
+    pub fn index(self) -> usize {
+        self.0.index()
+    }
+}
+
+/// Formatting-context kinds modeled by the current layout subset.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FormattingContextKind {
+    /// Borrowser's W6 normal-flow block formatting scope.
+    Block,
+}
+
+/// How a generated box participates in the current block-flow model.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BlockFormattingParticipation {
+    /// The document/root generated box that seeds the initial block context.
+    Root,
+    /// A block-level normal-flow participant in an ancestor block context.
+    BlockLevel,
+    /// Inline-level content participating inside a block container's inline flow.
+    InlineLevel,
+    /// Atomic inline-level participant whose descendants use its own block scope.
+    AtomicInline,
+    /// Reserved for generated boxes that are not current block-flow participants.
+    None,
+}
+
 /// High-level reason a box exists in the generated box tree.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BoxGenerationRole {
@@ -184,6 +225,9 @@ pub struct BoxNode<'style_tree, 'dom> {
     display_behavior: DisplayBoxBehavior,
     containing_block: Option<ContainingBlockId>,
     establishes_containing_block: bool,
+    formatting_context: Option<FormattingContextId>,
+    establishes_formatting_context: Option<FormattingContextKind>,
+    block_formatting_participation: BlockFormattingParticipation,
     list_marker: Option<ListMarker>,
     replaced: Option<ReplacedKind>,
     replaced_intrinsic: Option<IntrinsicSize>,
@@ -204,6 +248,15 @@ impl fmt::Debug for BoxNode<'_, '_> {
             .field(
                 "establishes_containing_block",
                 &self.establishes_containing_block,
+            )
+            .field("formatting_context", &self.formatting_context)
+            .field(
+                "establishes_formatting_context",
+                &self.establishes_formatting_context,
+            )
+            .field(
+                "block_formatting_participation",
+                &self.block_formatting_participation,
             )
             .field("list_marker", &self.list_marker)
             .field("replaced", &self.replaced)
@@ -255,6 +308,18 @@ impl<'style_tree, 'dom> BoxNode<'style_tree, 'dom> {
 
     pub fn establishes_containing_block(&self) -> bool {
         self.establishes_containing_block
+    }
+
+    pub fn formatting_context(&self) -> Option<FormattingContextId> {
+        self.formatting_context
+    }
+
+    pub fn establishes_formatting_context(&self) -> Option<FormattingContextKind> {
+        self.establishes_formatting_context
+    }
+
+    pub fn block_formatting_participation(&self) -> BlockFormattingParticipation {
+        self.block_formatting_participation
     }
 
     pub fn list_marker(&self) -> Option<ListMarker> {
@@ -509,6 +574,9 @@ impl<'style_tree, 'dom> BoxTreeBuilder<'style_tree, 'dom> {
             display_behavior: principal.behavior(),
             containing_block: self.containing_block_for_child(parent),
             establishes_containing_block: principal_establishes_containing_block(principal),
+            formatting_context: self.formatting_context_for_child(parent),
+            establishes_formatting_context: principal_establishes_formatting_context(principal),
+            block_formatting_participation: principal_block_formatting_participation(principal),
             list_marker: None,
             replaced,
             replaced_intrinsic,
@@ -537,6 +605,9 @@ impl<'style_tree, 'dom> BoxTreeBuilder<'style_tree, 'dom> {
             display_behavior: DisplayBoxBehavior::Anonymous,
             containing_block: self.containing_block_for_child(Some(parent)),
             establishes_containing_block: true,
+            formatting_context: self.formatting_context_for_child(Some(parent)),
+            establishes_formatting_context: None,
+            block_formatting_participation: BlockFormattingParticipation::BlockLevel,
             list_marker: None,
             replaced: None,
             replaced_intrinsic: None,
@@ -559,6 +630,9 @@ impl<'style_tree, 'dom> BoxTreeBuilder<'style_tree, 'dom> {
             display_behavior: DisplayBoxBehavior::DocumentRoot,
             containing_block: None,
             establishes_containing_block: true,
+            formatting_context: None,
+            establishes_formatting_context: Some(FormattingContextKind::Block),
+            block_formatting_participation: BlockFormattingParticipation::Root,
             list_marker: None,
             replaced: None,
             replaced_intrinsic: None,
@@ -582,6 +656,17 @@ impl<'style_tree, 'dom> BoxTreeBuilder<'style_tree, 'dom> {
             Some(ContainingBlockId(parent))
         } else {
             parent_node.containing_block()
+        }
+    }
+
+    fn formatting_context_for_child(&self, parent: Option<BoxId>) -> Option<FormattingContextId> {
+        let parent = parent?;
+        let parent_node = self.node(parent);
+
+        if parent_node.establishes_formatting_context().is_some() {
+            Some(FormattingContextId(parent))
+        } else {
+            parent_node.formatting_context()
         }
     }
 }
@@ -673,6 +758,42 @@ fn principal_establishes_containing_block(principal: PrincipalBox) -> bool {
     )
 }
 
+fn principal_establishes_formatting_context(
+    principal: PrincipalBox,
+) -> Option<FormattingContextKind> {
+    match principal.behavior() {
+        DisplayBoxBehavior::DocumentRoot
+        | DisplayBoxBehavior::DocumentElement
+        | DisplayBoxBehavior::InlineBlock => Some(FormattingContextKind::Block),
+        DisplayBoxBehavior::Block
+        | DisplayBoxBehavior::ListItem
+        | DisplayBoxBehavior::Anonymous
+        | DisplayBoxBehavior::Inline
+        | DisplayBoxBehavior::TextRun
+        | DisplayBoxBehavior::ReplacedInline
+        | DisplayBoxBehavior::Marker => None,
+    }
+}
+
+fn principal_block_formatting_participation(
+    principal: PrincipalBox,
+) -> BlockFormattingParticipation {
+    match principal.behavior() {
+        DisplayBoxBehavior::DocumentRoot => BlockFormattingParticipation::Root,
+        DisplayBoxBehavior::DocumentElement
+        | DisplayBoxBehavior::Block
+        | DisplayBoxBehavior::ListItem
+        | DisplayBoxBehavior::Anonymous => BlockFormattingParticipation::BlockLevel,
+        DisplayBoxBehavior::Inline | DisplayBoxBehavior::TextRun => {
+            BlockFormattingParticipation::InlineLevel
+        }
+        DisplayBoxBehavior::InlineBlock | DisplayBoxBehavior::ReplacedInline => {
+            BlockFormattingParticipation::AtomicInline
+        }
+        DisplayBoxBehavior::Marker => BlockFormattingParticipation::None,
+    }
+}
+
 fn supports_anonymous_block_children(node: &BoxNode<'_, '_>) -> bool {
     matches!(node.kind(), BoxKind::Block)
         && matches!(
@@ -710,11 +831,14 @@ fn append_box_node_snapshot(out: &mut String, tree: &BoxTree<'_, '_>, id: BoxId,
     let indent = "  ".repeat(depth);
     writeln!(
         out,
-        "{indent}{}: parent={} cb={} establishes-cb={} source-id={} source={} role={} kind={} display={} behavior={} children={} marker={} replaced={} intrinsic={}",
+        "{indent}{}: parent={} cb={} establishes-cb={} fc={} establishes-fc={} block-participation={} source-id={} source={} role={} kind={} display={} behavior={} children={} marker={} replaced={} intrinsic={}",
         box_id_debug_label(node.id),
         optional_box_id_debug_label(node.parent),
         optional_containing_block_id_debug_label(node.containing_block),
         bool_debug_label(node.establishes_containing_block),
+        optional_formatting_context_id_debug_label(node.formatting_context),
+        optional_formatting_context_kind_debug_label(node.establishes_formatting_context),
+        block_formatting_participation_debug_label(node.block_formatting_participation),
         optional_node_id_debug_label(node.direct_node_id()),
         node_debug_label(node.source.anchor_styled_node().node),
         role_debug_label(node.role),
@@ -745,6 +869,32 @@ fn optional_box_id_debug_label(id: Option<BoxId>) -> String {
 fn optional_containing_block_id_debug_label(id: Option<ContainingBlockId>) -> String {
     id.map(|id| box_id_debug_label(id.box_id()))
         .unwrap_or_else(|| "none".to_string())
+}
+
+fn optional_formatting_context_id_debug_label(id: Option<FormattingContextId>) -> String {
+    id.map(|id| box_id_debug_label(id.box_id()))
+        .unwrap_or_else(|| "none".to_string())
+}
+
+fn optional_formatting_context_kind_debug_label(
+    kind: Option<FormattingContextKind>,
+) -> &'static str {
+    match kind {
+        Some(FormattingContextKind::Block) => "block",
+        None => "none",
+    }
+}
+
+fn block_formatting_participation_debug_label(
+    participation: BlockFormattingParticipation,
+) -> &'static str {
+    match participation {
+        BlockFormattingParticipation::Root => "root",
+        BlockFormattingParticipation::BlockLevel => "block-level",
+        BlockFormattingParticipation::InlineLevel => "inline-level",
+        BlockFormattingParticipation::AtomicInline => "atomic-inline",
+        BlockFormattingParticipation::None => "none",
+    }
 }
 
 fn optional_node_id_debug_label(id: Option<Id>) -> String {
@@ -881,6 +1031,10 @@ mod tests {
 
     fn containing_block_box_id(node: &BoxNode<'_, '_>) -> Option<BoxId> {
         node.containing_block().map(ContainingBlockId::box_id)
+    }
+
+    fn formatting_context_box_id(node: &BoxNode<'_, '_>) -> Option<BoxId> {
+        node.formatting_context().map(FormattingContextId::box_id)
     }
 
     fn anonymous_boxes<'tree, 'style_tree, 'dom>(
@@ -1107,6 +1261,113 @@ mod tests {
     }
 
     #[test]
+    fn block_formatting_contexts_are_assigned_for_current_flow_subset() {
+        let dom = doc(vec![element(
+            2,
+            "html",
+            Vec::new(),
+            vec![element(
+                3,
+                "body",
+                vec![("display", "block")],
+                vec![element(
+                    4,
+                    "div",
+                    vec![("display", "block")],
+                    vec![
+                        element(5, "span", Vec::new(), vec![text(6, "inline")]),
+                        element(
+                            7,
+                            "span",
+                            vec![("display", "inline-block")],
+                            vec![text(8, "inline-block child")],
+                        ),
+                    ],
+                )],
+            )],
+        )]);
+        let styled = css::build_style_tree(&dom, None);
+        let tree = BoxTree::generate(&styled, None);
+
+        let document = tree.node(BoxId(0));
+        let html = box_by_node_id(&tree, Id(2));
+        let body = box_by_node_id(&tree, Id(3));
+        let div = box_by_node_id(&tree, Id(4));
+        let inline_span = box_by_node_id(&tree, Id(5));
+        let inline_text = box_by_node_id(&tree, Id(6));
+        let inline_block = box_by_node_id(&tree, Id(7));
+        let inline_block_text = box_by_node_id(&tree, Id(8));
+
+        assert_eq!(formatting_context_box_id(document), None);
+        assert_eq!(
+            document.establishes_formatting_context(),
+            Some(FormattingContextKind::Block)
+        );
+        assert_eq!(
+            document.block_formatting_participation(),
+            BlockFormattingParticipation::Root
+        );
+
+        assert_eq!(formatting_context_box_id(html), Some(document.id()));
+        assert_eq!(
+            html.establishes_formatting_context(),
+            Some(FormattingContextKind::Block)
+        );
+        assert_eq!(
+            html.block_formatting_participation(),
+            BlockFormattingParticipation::BlockLevel
+        );
+
+        assert_eq!(formatting_context_box_id(body), Some(html.id()));
+        assert_eq!(body.establishes_formatting_context(), None);
+        assert_eq!(
+            body.block_formatting_participation(),
+            BlockFormattingParticipation::BlockLevel
+        );
+
+        assert_eq!(formatting_context_box_id(div), Some(html.id()));
+        assert_eq!(div.establishes_formatting_context(), None);
+        assert_eq!(
+            div.block_formatting_participation(),
+            BlockFormattingParticipation::BlockLevel
+        );
+
+        assert_eq!(formatting_context_box_id(inline_span), Some(html.id()));
+        assert_eq!(inline_span.establishes_formatting_context(), None);
+        assert_eq!(
+            inline_span.block_formatting_participation(),
+            BlockFormattingParticipation::InlineLevel
+        );
+
+        assert_eq!(formatting_context_box_id(inline_text), Some(html.id()));
+        assert_eq!(inline_text.establishes_formatting_context(), None);
+        assert_eq!(
+            inline_text.block_formatting_participation(),
+            BlockFormattingParticipation::InlineLevel
+        );
+
+        assert_eq!(formatting_context_box_id(inline_block), Some(html.id()));
+        assert_eq!(
+            inline_block.establishes_formatting_context(),
+            Some(FormattingContextKind::Block)
+        );
+        assert_eq!(
+            inline_block.block_formatting_participation(),
+            BlockFormattingParticipation::AtomicInline
+        );
+
+        assert_eq!(
+            formatting_context_box_id(inline_block_text),
+            Some(inline_block.id())
+        );
+        assert_eq!(inline_block_text.establishes_formatting_context(), None);
+        assert_eq!(
+            inline_block_text.block_formatting_participation(),
+            BlockFormattingParticipation::InlineLevel
+        );
+    }
+
+    #[test]
     fn anonymous_blocks_establish_containing_blocks_for_wrapped_inline_runs() {
         let dom = doc(vec![element(
             2,
@@ -1140,6 +1401,117 @@ mod tests {
             Some(paragraph.id())
         );
         assert!(!paragraph_text.establishes_containing_block());
+    }
+
+    #[test]
+    fn anonymous_blocks_participate_without_establishing_block_formatting_contexts() {
+        let dom = doc(vec![element(
+            2,
+            "div",
+            Vec::new(),
+            vec![
+                text(3, "before"),
+                element(4, "p", Vec::new(), vec![text(5, "block")]),
+            ],
+        )]);
+        let styled = css::build_style_tree(&dom, None);
+        let tree = BoxTree::generate(&styled, None);
+
+        let document_element = box_by_node_id(&tree, Id(2));
+        let anonymous = tree.node(document_element.children()[0]);
+        let wrapped_text = box_by_node_id(&tree, Id(3));
+        let paragraph = box_by_node_id(&tree, Id(4));
+        let paragraph_text = box_by_node_id(&tree, Id(5));
+
+        assert_eq!(
+            formatting_context_box_id(anonymous),
+            Some(document_element.id())
+        );
+        assert_eq!(anonymous.establishes_formatting_context(), None);
+        assert_eq!(
+            anonymous.block_formatting_participation(),
+            BlockFormattingParticipation::BlockLevel
+        );
+
+        assert_eq!(
+            formatting_context_box_id(wrapped_text),
+            Some(document_element.id())
+        );
+        assert_eq!(wrapped_text.establishes_formatting_context(), None);
+        assert_eq!(
+            wrapped_text.block_formatting_participation(),
+            BlockFormattingParticipation::InlineLevel
+        );
+
+        assert_eq!(
+            formatting_context_box_id(paragraph),
+            Some(document_element.id())
+        );
+        assert_eq!(paragraph.establishes_formatting_context(), None);
+        assert_eq!(
+            paragraph.block_formatting_participation(),
+            BlockFormattingParticipation::BlockLevel
+        );
+
+        assert_eq!(
+            formatting_context_box_id(paragraph_text),
+            Some(document_element.id())
+        );
+        assert_eq!(paragraph_text.establishes_formatting_context(), None);
+    }
+
+    #[test]
+    fn list_items_participate_without_establishing_block_formatting_contexts() {
+        let dom = doc(vec![element(
+            2,
+            "html",
+            Vec::new(),
+            vec![element(
+                3,
+                "body",
+                Vec::new(),
+                vec![element(
+                    4,
+                    "ul",
+                    Vec::new(),
+                    vec![element(
+                        5,
+                        "li",
+                        vec![("display", "list-item")],
+                        vec![text(6, "item")],
+                    )],
+                )],
+            )],
+        )]);
+        let styled = css::build_style_tree(&dom, None);
+        let tree = BoxTree::generate(&styled, None);
+
+        let html = box_by_node_id(&tree, Id(2));
+        let list = box_by_node_id(&tree, Id(4));
+        let item = box_by_node_id(&tree, Id(5));
+        let item_text = box_by_node_id(&tree, Id(6));
+
+        assert_eq!(formatting_context_box_id(list), Some(html.id()));
+        assert_eq!(list.establishes_formatting_context(), None);
+        assert_eq!(
+            list.block_formatting_participation(),
+            BlockFormattingParticipation::BlockLevel
+        );
+
+        assert_eq!(formatting_context_box_id(item), Some(html.id()));
+        assert_eq!(item.establishes_formatting_context(), None);
+        assert_eq!(
+            item.block_formatting_participation(),
+            BlockFormattingParticipation::BlockLevel
+        );
+        assert_eq!(item.display_behavior(), DisplayBoxBehavior::ListItem);
+
+        assert_eq!(formatting_context_box_id(item_text), Some(html.id()));
+        assert_eq!(item_text.establishes_formatting_context(), None);
+        assert_eq!(
+            item_text.block_formatting_participation(),
+            BlockFormattingParticipation::InlineLevel
+        );
     }
 
     #[test]
@@ -1334,6 +1706,105 @@ mod tests {
             Some(inline_block.box_id())
         );
         assert!(!inline_block_text.establishes_containing_block());
+    }
+
+    #[test]
+    fn layout_projection_preserves_block_formatting_context_metadata() {
+        let dom = doc(vec![element(
+            2,
+            "html",
+            Vec::new(),
+            vec![element(
+                3,
+                "body",
+                Vec::new(),
+                vec![element(
+                    4,
+                    "div",
+                    Vec::new(),
+                    vec![
+                        element(5, "span", Vec::new(), vec![text(6, "inline")]),
+                        element(
+                            7,
+                            "span",
+                            vec![("display", "inline-block")],
+                            vec![text(8, "atomic")],
+                        ),
+                    ],
+                )],
+            )],
+        )]);
+        let styled = css::build_style_tree(&dom, None);
+        let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+
+        let html = find_layout_by_direct_node_id(&layout, Id(2)).expect("html layout box");
+        let div = find_layout_by_direct_node_id(&layout, Id(4)).expect("div layout box");
+        let inline_span =
+            find_layout_by_direct_node_id(&layout, Id(5)).expect("inline span layout box");
+        let inline_text =
+            find_layout_by_direct_node_id(&layout, Id(6)).expect("inline text layout box");
+        let inline_block =
+            find_layout_by_direct_node_id(&layout, Id(7)).expect("inline-block layout box");
+        let inline_block_text =
+            find_layout_by_direct_node_id(&layout, Id(8)).expect("inline-block text layout box");
+
+        assert_eq!(
+            html.establishes_formatting_context(),
+            Some(FormattingContextKind::Block)
+        );
+
+        assert_eq!(
+            div.formatting_context().map(FormattingContextId::box_id),
+            Some(html.box_id())
+        );
+        assert_eq!(div.establishes_formatting_context(), None);
+        assert_eq!(
+            div.block_formatting_participation(),
+            BlockFormattingParticipation::BlockLevel
+        );
+
+        assert_eq!(
+            inline_span
+                .formatting_context()
+                .map(FormattingContextId::box_id),
+            Some(html.box_id())
+        );
+        assert_eq!(inline_span.establishes_formatting_context(), None);
+        assert_eq!(
+            inline_span.block_formatting_participation(),
+            BlockFormattingParticipation::InlineLevel
+        );
+
+        assert_eq!(
+            inline_text
+                .formatting_context()
+                .map(FormattingContextId::box_id),
+            Some(html.box_id())
+        );
+        assert_eq!(inline_text.establishes_formatting_context(), None);
+
+        assert_eq!(
+            inline_block
+                .formatting_context()
+                .map(FormattingContextId::box_id),
+            Some(html.box_id())
+        );
+        assert_eq!(
+            inline_block.establishes_formatting_context(),
+            Some(FormattingContextKind::Block)
+        );
+        assert_eq!(
+            inline_block.block_formatting_participation(),
+            BlockFormattingParticipation::AtomicInline
+        );
+
+        assert_eq!(
+            inline_block_text
+                .formatting_context()
+                .map(FormattingContextId::box_id),
+            Some(inline_block.box_id())
+        );
+        assert_eq!(inline_block_text.establishes_formatting_context(), None);
     }
 
     #[test]
@@ -1571,10 +2042,10 @@ mod tests {
                 "box-tree\n",
                 "root: b0\n",
                 "boxes: 4\n",
-                "b0: parent=none cb=none establishes-cb=yes source-id=1 source=document role=document-root kind=block display=inline behavior=document-root children=[b1] marker=none replaced=none intrinsic=none\n",
-                "  b1: parent=b0 cb=b0 establishes-cb=yes source-id=2 source=element(\"div\") role=document-element kind=block display=block behavior=document-element children=[b2] marker=none replaced=none intrinsic=none\n",
-                "    b2: parent=b1 cb=b1 establishes-cb=no source-id=3 source=element(\"span\") role=ordinary-element kind=inline display=inline behavior=inline children=[b3] marker=none replaced=none intrinsic=none\n",
-                "      b3: parent=b2 cb=b1 establishes-cb=no source-id=4 source=text(\"x\") role=text-run kind=block display=inline behavior=text-run children=[] marker=none replaced=none intrinsic=none\n",
+                "b0: parent=none cb=none establishes-cb=yes fc=none establishes-fc=block block-participation=root source-id=1 source=document role=document-root kind=block display=inline behavior=document-root children=[b1] marker=none replaced=none intrinsic=none\n",
+                "  b1: parent=b0 cb=b0 establishes-cb=yes fc=b0 establishes-fc=block block-participation=block-level source-id=2 source=element(\"div\") role=document-element kind=block display=block behavior=document-element children=[b2] marker=none replaced=none intrinsic=none\n",
+                "    b2: parent=b1 cb=b1 establishes-cb=no fc=b1 establishes-fc=none block-participation=inline-level source-id=3 source=element(\"span\") role=ordinary-element kind=inline display=inline behavior=inline children=[b3] marker=none replaced=none intrinsic=none\n",
+                "      b3: parent=b2 cb=b1 establishes-cb=no fc=b1 establishes-fc=none block-participation=inline-level source-id=4 source=text(\"x\") role=text-run kind=block display=inline behavior=text-run children=[] marker=none replaced=none intrinsic=none\n",
             )
         );
     }
