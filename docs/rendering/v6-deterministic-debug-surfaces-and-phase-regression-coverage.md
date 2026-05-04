@@ -28,6 +28,7 @@ Related documents:
 - `docs/rendering/w5-containing-block-relationships.md`
 - `docs/rendering/w6-block-formatting-context-foundations.md`
 - `docs/rendering/w7-inline-formatting-context-foundations.md`
+- `docs/rendering/w8-box-generation-formatting-debug-surfaces.md`
 - `docs/architecture/ARCHITECTURE.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
 
@@ -53,6 +54,8 @@ Borrowser now exposes stable phase-boundary serialization through:
 - `RenderFrameExecutionTrace::to_debug_snapshot()`
 - `RenderPhaseBoundaryDebugSnapshot::to_debug_snapshot()`
 - `browser::rendering::render_phase_boundary_debug_snapshot(...)`
+- `BoxTree::to_debug_snapshot()` for Milestone W generated box-tree
+  foundations
 
 These surfaces are the normative V6 debug contract for:
 

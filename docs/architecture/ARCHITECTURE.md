@@ -314,6 +314,7 @@ The normative rendering ownership and phase-boundary contract lives in:
 * `docs/rendering/w5-containing-block-relationships.md`
 * `docs/rendering/w6-block-formatting-context-foundations.md`
 * `docs/rendering/w7-inline-formatting-context-foundations.md`
+* `docs/rendering/w8-box-generation-formatting-debug-surfaces.md`
 
 ---
 
@@ -326,10 +327,11 @@ Borrowser has a hybrid layout engine:
 
 Layout generates a **BoxTree** from styled content, then projects it into the
 current **LayoutBox** geometry structure consumed by paint and hit testing.
-Milestones W1 through W7 define this as a distinct layout-owned model derived
+Milestones W1 through W8 define this as a distinct layout-owned model derived
 from DOM and computed style, with explicit boundaries for display-to-box
 generation, anonymous boxes, containing-block modeling, block formatting
-contexts, inline formatting contexts, and later layout expansion.
+contexts, inline formatting contexts, deterministic debug surfaces, and later
+layout expansion.
 
 ---
 
