@@ -1,6 +1,5 @@
 use crate::{
-    BoxKind, LayoutBox, Rectangle, ReplacedKind, TextMeasurer, content_height, content_x_and_width,
-    content_y,
+    BoxKind, LayoutBox, Rectangle, ReplacedKind, TextMeasurer,
     inline::{InlineAction, InlineActionKind, InlineFragment, layout_inline_for_paint},
 };
 use css::Display;
@@ -94,10 +93,9 @@ fn hit_test_inline_fragments<'style_tree, 'dom>(
         _ => return None,
     }
 
-    let (content_x, content_width) =
-        content_x_and_width(layout.style, layout.rect.x, layout.rect.width);
-    let content_top = content_y(layout.style, layout.rect.y);
-    let content_h = content_height(layout.style, layout.rect.height);
+    let (content_x, content_width) = layout.content_x_and_width();
+    let content_top = layout.content_y();
+    let content_h = layout.content_height();
 
     let block_rect = Rectangle {
         x: content_x,

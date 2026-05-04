@@ -23,6 +23,7 @@ Related code:
 Related documents:
 - `docs/rendering/w2-structured-box-tree-data-structures.md`
 - `docs/rendering/w3-display-to-box-generation-behavior.md`
+- `docs/rendering/w4-anonymous-box-generation-supported-subset.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
@@ -140,7 +141,7 @@ Box generation owns:
   layout participation for the supported subset
 - preserving DOM child order for generated boxes
 - creating deterministic list marker metadata for supported lists
-- creating future anonymous boxes required by block/inline mixing rules
+- creating anonymous boxes required by supported block/inline mixing rules
 - creating future pseudo/generated boxes when those features exist
 - assigning future box-generation roles such as root box, ordinary box,
   anonymous box, marker box, and pseudo box
@@ -274,7 +275,8 @@ regression boundary until W-specific box-generation snapshots are introduced.
 W1 is an architecture contract. It intentionally does not ship:
 
 - a separate retained box-tree data structure
-- full anonymous box generation
+- full anonymous box generation beyond the supported W4 block/inline mixing
+  subset
 - explicit `FormattingContextKind` or `ContainingBlockId` types
 - flexbox, grid, floats, positioning, overflow, fragmentation, or transforms
 - a complete table formatting model
