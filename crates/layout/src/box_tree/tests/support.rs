@@ -1,5 +1,5 @@
-use crate::{BoxNode, BoxTree, ComputedStyle};
-use css::Length;
+use crate::{BoxNode, BoxTree};
+use css::{ComputedStyle, Length};
 use html::{Node, internal::Id};
 use std::sync::Arc;
 
