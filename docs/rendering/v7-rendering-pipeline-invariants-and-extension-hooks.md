@@ -33,6 +33,7 @@ Related documents:
 - `docs/rendering/w7-inline-formatting-context-foundations.md`
 - `docs/rendering/w8-box-generation-formatting-debug-surfaces.md`
 - `docs/rendering/w9-box-tree-invariants-extension-hooks.md`
+- `docs/rendering/x1-sizing-architecture-flow-correctness-contract.md`
 - `docs/architecture/ARCHITECTURE.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
 
@@ -149,7 +150,7 @@ Milestone V7 exposes these deferred hooks through
 | hook | integration owner | extends | contract rule |
 | --- | --- | --- | --- |
 | `BoxTreeFormalization` | `LayoutEngine` | `Layout`, `Paint`; `StyledTree`, `LayoutTree` | may continue expanding the box-tree representation, but must preserve typed style-to-layout and layout-to-paint handoffs |
-| `ConstraintSizingAndIntrinsicLayout` | `LayoutEngine` | `Style`, `Layout`; styled-tree, viewport, text, replaced metadata, layout tree | may add sizing/constraint algorithms, but layout must continue consuming computed values plus explicit environment inputs |
+| `ConstraintSizingAndIntrinsicLayout` | `LayoutEngine` | `Style`, `Layout`; styled-tree, viewport, text, replaced metadata, layout tree | must use the Milestone X sizing contract; layout must continue consuming computed values plus explicit environment inputs |
 | `PaintPrimitiveAndDisplayListExpansion` | `PaintEngine` | `Paint`, `FrameOrchestration`; layout/resource/input/paint artifacts | may expand paint output into richer scene/display-list forms without re-owning layout semantics |
 | `IncrementalInvalidationAndDependencyTracking` | `BrowserRuntime` | all phases; retained/computed/styled/layout/paint artifacts | may refine rerun planning only through explicit invalidation entry points and work plans |
 | `RetainedLayoutState` | `BrowserRuntime` | `Layout`, `Paint`, `FrameOrchestration`; viewport/text/replaced/layout artifacts | may introduce retained layout caches only as explicit runtime-owned retained state, not as borrowed `LayoutBox` retention |
