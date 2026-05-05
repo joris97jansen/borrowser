@@ -28,6 +28,7 @@ Related documents:
 - `docs/rendering/w6-block-formatting-context-foundations.md`
 - `docs/rendering/w7-inline-formatting-context-foundations.md`
 - `docs/rendering/w8-box-generation-formatting-debug-surfaces.md`
+- `docs/rendering/w9-box-tree-invariants-extension-hooks.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
@@ -272,9 +273,10 @@ Required invariants:
 - no later phase silently creates layout boxes to compensate for missing box
   generation behavior
 
-The existing `LayoutPhaseInput::to_debug_snapshot()` and
-`LayoutPhaseOutput::to_debug_snapshot()` surfaces remain the deterministic
-regression boundary until W-specific box-generation snapshots are introduced.
+The existing `BoxTree::to_debug_snapshot()`,
+`LayoutPhaseInput::to_debug_snapshot()`, and
+`LayoutPhaseOutput::to_debug_snapshot()` surfaces are the deterministic
+regression boundaries for box generation and layout handoff behavior.
 
 ## Deferred Work And Non-Goals
 
