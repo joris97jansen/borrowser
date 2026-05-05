@@ -13,7 +13,9 @@
 //! formatting context foundations are documented in
 //! `docs/rendering/w7-inline-formatting-context-foundations.md`; deterministic
 //! box-generation debug surfaces are documented in
-//! `docs/rendering/w8-box-generation-formatting-debug-surfaces.md`.
+//! `docs/rendering/w8-box-generation-formatting-debug-surfaces.md`; Milestone
+//! W close-out invariants and extension hooks are documented in
+//! `docs/rendering/w9-box-tree-invariants-extension-hooks.md`.
 //! `BoxTree` is the frame-local generated box-tree structure; `LayoutBox` is
 //! the current geometry projection consumed by paint and hit testing.
 
