@@ -15,7 +15,9 @@
 //! box-generation debug surfaces are documented in
 //! `docs/rendering/w8-box-generation-formatting-debug-surfaces.md`; Milestone
 //! W close-out invariants and extension hooks are documented in
-//! `docs/rendering/w9-box-tree-invariants-extension-hooks.md`.
+//! `docs/rendering/w9-box-tree-invariants-extension-hooks.md`; Milestone X
+//! sizing architecture and flow-correctness contracts are documented in
+//! `docs/rendering/x1-sizing-architecture-flow-correctness-contract.md`.
 //! `BoxTree` is the frame-local generated box-tree structure; `LayoutBox` is
 //! the current geometry projection consumed by paint and hit testing.
 
@@ -27,6 +29,7 @@ mod geometry;
 mod layout_box;
 mod phase;
 mod replaced_element;
+mod sizing;
 mod text;
 
 pub mod hit_test;
@@ -47,6 +50,10 @@ pub use inline::{LineBox, layout_inline_for_paint};
 pub use layout_box::LayoutBox;
 pub use phase::{LayoutPhaseInput, LayoutPhaseOutput};
 pub use replaced_element::{ReplacedElementInfoProvider, ReplacedKind};
+pub use sizing::{
+    AspectRatio, AvailableSize, AxisSizeConstraints, ConstraintSpace, CssPx, IntrinsicSizes,
+    SizeAxis, SizeConstraints, SizeResolutionReason, UsedAxisSize, UsedContentSize,
+};
 pub use text::TextMeasurer;
 
 pub(crate) use debug::{

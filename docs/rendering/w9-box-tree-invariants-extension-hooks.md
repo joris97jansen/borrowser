@@ -22,6 +22,7 @@ Related documents:
 - `docs/rendering/w6-block-formatting-context-foundations.md`
 - `docs/rendering/w7-inline-formatting-context-foundations.md`
 - `docs/rendering/w8-box-generation-formatting-debug-surfaces.md`
+- `docs/rendering/x1-sizing-architecture-flow-correctness-contract.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
@@ -238,9 +239,9 @@ Later layout milestones should attach at these points:
   generation before geometry code consumes it
 - anonymous generation expansion: extend `BoxSource`, roles, and generation
   normalization before paint or layout projection relies on the new boxes
-- sizing and intrinsic layout: consume `LayoutBox` metadata and computed style;
-  preserve explicit environment inputs for viewport, text measurement, and
-  replaced metadata
+- sizing and intrinsic layout: use the Milestone X sizing contract; consume
+  generated box metadata and computed style; preserve explicit environment
+  inputs for viewport, text measurement, and replaced metadata
 - positioning: extend containing-block rules and out-of-flow generated box
   participation explicitly
 - overflow and flow-root: extend formatting-context and containing-block
