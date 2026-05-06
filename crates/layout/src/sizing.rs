@@ -5,6 +5,7 @@
 //! architecture boundary that later X issues will implement against.
 
 use crate::ContainingBlockId;
+use css::{BoxMetrics, ComputedStyle, Length};
 
 /// Non-negative finite CSS px value used by sizing algorithms.
 ///
@@ -26,6 +27,67 @@ impl CssPx {
 
     pub fn get(self) -> f32 {
         self.0
+    }
+}
+
+/// Finite CSS px scalar that may be negative.
+///
+/// This is used for style inputs such as margins where negative values are
+/// valid. Used sizes and available sizes must continue to use `CssPx`.
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+pub struct SignedCssPx(f32);
+
+impl SignedCssPx {
+    pub const ZERO: Self = Self(0.0);
+
+    pub fn new(value: f32) -> Option<Self> {
+        if value.is_finite() {
+            Some(Self(if value == 0.0 { 0.0 } else { value }))
+        } else {
+            None
+        }
+    }
+
+    pub fn get(self) -> f32 {
+        self.0
+    }
+}
+
+/// Non-negative finite CSS percentage represented as a fraction.
+///
+/// `1.0` is 100%, `0.5` is 50%. Percentages are not currently produced by the
+/// CSS computed-value layer, but size input types can already represent them.
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+pub struct Percentage(f32);
+
+impl Percentage {
+    pub const ZERO: Self = Self(0.0);
+
+    pub fn from_fraction(value: f32) -> Option<Self> {
+        if value.is_finite() && value >= 0.0 {
+            Some(Self(if value == 0.0 { 0.0 } else { value }))
+        } else {
+            None
+        }
+    }
+
+    pub fn from_percent(value: f32) -> Option<Self> {
+        Self::from_fraction(value / 100.0)
+    }
+
+    pub fn fraction(self) -> f32 {
+        self.0
+    }
+
+    /// Resolve against an already-selected size basis.
+    ///
+    /// Callers resolving CSS sizing percentages should normally pass the
+    /// relevant `ContainingSize` axis, not narrowed `AvailableSpace`, unless a
+    /// specific CSS rule explicitly defines available space as its basis.
+    pub fn resolve_against(self, basis: AvailableSize) -> Option<CssPx> {
+        basis
+            .definite_value()
+            .and_then(|basis| CssPx::new(basis.get() * self.fraction()))
     }
 }
 
@@ -80,6 +142,86 @@ impl AvailableSize {
     }
 }
 
+/// Explicit containing block content-box dimensions.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ContainingSize {
+    containing_block: Option<ContainingBlockId>,
+    inline_size: AvailableSize,
+    block_size: AvailableSize,
+}
+
+impl ContainingSize {
+    pub fn new(
+        containing_block: Option<ContainingBlockId>,
+        inline_size: AvailableSize,
+        block_size: AvailableSize,
+    ) -> Self {
+        Self {
+            containing_block,
+            inline_size,
+            block_size,
+        }
+    }
+
+    pub fn containing_block(self) -> Option<ContainingBlockId> {
+        self.containing_block
+    }
+
+    pub fn inline_size(self) -> AvailableSize {
+        self.inline_size
+    }
+
+    pub fn block_size(self) -> AvailableSize {
+        self.block_size
+    }
+
+    pub fn size(self, axis: SizeAxis) -> AvailableSize {
+        match axis {
+            SizeAxis::Inline => self.inline_size,
+            SizeAxis::Block => self.block_size,
+        }
+    }
+}
+
+/// Available content-box space offered by the formatting context.
+///
+/// This normally matches the containing content size for simple normal flow,
+/// but the separate type lets later layout modes narrow available space without
+/// changing the containing block percentage basis.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AvailableSpace {
+    inline_size: AvailableSize,
+    block_size: AvailableSize,
+}
+
+impl AvailableSpace {
+    pub fn new(inline_size: AvailableSize, block_size: AvailableSize) -> Self {
+        Self {
+            inline_size,
+            block_size,
+        }
+    }
+
+    pub fn from_containing_size(containing_size: ContainingSize) -> Self {
+        Self::new(containing_size.inline_size(), containing_size.block_size())
+    }
+
+    pub fn inline_size(self) -> AvailableSize {
+        self.inline_size
+    }
+
+    pub fn block_size(self) -> AvailableSize {
+        self.block_size
+    }
+
+    pub fn size(self, axis: SizeAxis) -> AvailableSize {
+        match axis {
+            SizeAxis::Inline => self.inline_size,
+            SizeAxis::Block => self.block_size,
+        }
+    }
+}
+
 /// The sizing environment for a box before used-size resolution.
 ///
 /// Available sizes are content-box bases from the containing formatting
@@ -89,9 +231,8 @@ impl AvailableSize {
 /// sizes.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct ConstraintSpace {
-    containing_block: Option<ContainingBlockId>,
-    available_inline_size: AvailableSize,
-    available_block_size: AvailableSize,
+    containing_size: ContainingSize,
+    available_space: AvailableSpace,
 }
 
 impl ConstraintSpace {
@@ -100,30 +241,247 @@ impl ConstraintSpace {
         available_inline_size: AvailableSize,
         available_block_size: AvailableSize,
     ) -> Self {
-        Self {
+        let containing_size = ContainingSize::new(
             containing_block,
             available_inline_size,
             available_block_size,
+        );
+        Self::from_containing_size(containing_size)
+    }
+
+    pub fn from_containing_size(containing_size: ContainingSize) -> Self {
+        Self {
+            containing_size,
+            available_space: AvailableSpace::from_containing_size(containing_size),
         }
+    }
+
+    pub fn with_available_space(mut self, available_space: AvailableSpace) -> Self {
+        self.available_space = available_space;
+        self
+    }
+
+    pub fn containing_size(self) -> ContainingSize {
+        self.containing_size
+    }
+
+    pub fn available_space(self) -> AvailableSpace {
+        self.available_space
     }
 
     pub fn containing_block(self) -> Option<ContainingBlockId> {
-        self.containing_block
+        self.containing_size.containing_block()
     }
 
     pub fn available_inline_size(self) -> AvailableSize {
-        self.available_inline_size
+        self.available_space.inline_size()
     }
 
     pub fn available_block_size(self) -> AvailableSize {
-        self.available_block_size
+        self.available_space.block_size()
     }
 
     pub fn available_size(self, axis: SizeAxis) -> AvailableSize {
-        match axis {
-            SizeAxis::Inline => self.available_inline_size,
-            SizeAxis::Block => self.available_block_size,
+        self.available_space.size(axis)
+    }
+
+    pub fn containing_size_for_axis(self, axis: SizeAxis) -> AvailableSize {
+        self.containing_size.size(axis)
+    }
+}
+
+/// Physical four-sided style input.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PhysicalSides<T> {
+    top: T,
+    right: T,
+    bottom: T,
+    left: T,
+}
+
+impl<T: Copy> PhysicalSides<T> {
+    pub fn new(top: T, right: T, bottom: T, left: T) -> Self {
+        Self {
+            top,
+            right,
+            bottom,
+            left,
         }
+    }
+
+    pub fn top(self) -> T {
+        self.top
+    }
+
+    pub fn right(self) -> T {
+        self.right
+    }
+
+    pub fn bottom(self) -> T {
+        self.bottom
+    }
+
+    pub fn left(self) -> T {
+        self.left
+    }
+}
+
+/// Box metric style inputs required by size resolution.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StyleBoxMetrics {
+    margin: PhysicalSides<SignedCssPx>,
+    padding: PhysicalSides<CssPx>,
+}
+
+impl StyleBoxMetrics {
+    pub fn new(margin: PhysicalSides<SignedCssPx>, padding: PhysicalSides<CssPx>) -> Self {
+        Self { margin, padding }
+    }
+
+    pub fn from_box_metrics(metrics: BoxMetrics) -> Result<Self, StyleSizeInputError> {
+        Ok(Self {
+            margin: PhysicalSides::new(
+                signed_length(metrics.margin_top, StyleSizeInputProperty::MarginTop)?,
+                signed_length(metrics.margin_right, StyleSizeInputProperty::MarginRight)?,
+                signed_length(metrics.margin_bottom, StyleSizeInputProperty::MarginBottom)?,
+                signed_length(metrics.margin_left, StyleSizeInputProperty::MarginLeft)?,
+            ),
+            padding: PhysicalSides::new(
+                non_negative_length(metrics.padding_top, StyleSizeInputProperty::PaddingTop)?,
+                non_negative_length(metrics.padding_right, StyleSizeInputProperty::PaddingRight)?,
+                non_negative_length(
+                    metrics.padding_bottom,
+                    StyleSizeInputProperty::PaddingBottom,
+                )?,
+                non_negative_length(metrics.padding_left, StyleSizeInputProperty::PaddingLeft)?,
+            ),
+        })
+    }
+
+    pub fn margin(self) -> PhysicalSides<SignedCssPx> {
+        self.margin
+    }
+
+    pub fn padding(self) -> PhysicalSides<CssPx> {
+        self.padding
+    }
+}
+
+/// Style-provided preferred size for one axis.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum StylePreferredSize {
+    Auto,
+    Length(CssPx),
+    Percentage(Percentage),
+}
+
+/// Style-provided minimum size for one axis.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum StyleMinimumSize {
+    Auto,
+    Length(CssPx),
+    Percentage(Percentage),
+}
+
+/// Style-provided maximum size for one axis.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum StyleMaximumSize {
+    None,
+    Length(CssPx),
+    Percentage(Percentage),
+}
+
+/// Style sizing inputs for one logical axis.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct AxisStyleSizeInput {
+    preferred: StylePreferredSize,
+    min: StyleMinimumSize,
+    max: StyleMaximumSize,
+}
+
+impl AxisStyleSizeInput {
+    pub fn new(
+        preferred: StylePreferredSize,
+        min: StyleMinimumSize,
+        max: StyleMaximumSize,
+    ) -> Self {
+        Self {
+            preferred,
+            min,
+            max,
+        }
+    }
+
+    pub fn preferred(self) -> StylePreferredSize {
+        self.preferred
+    }
+
+    pub fn min(self) -> StyleMinimumSize {
+        self.min
+    }
+
+    pub fn max(self) -> StyleMaximumSize {
+        self.max
+    }
+}
+
+/// Style-driven sizing inputs for both axes in the current horizontal subset.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct StyleSizeInputs {
+    inline: AxisStyleSizeInput,
+    block: AxisStyleSizeInput,
+    box_metrics: StyleBoxMetrics,
+}
+
+impl StyleSizeInputs {
+    pub fn new(
+        inline: AxisStyleSizeInput,
+        block: AxisStyleSizeInput,
+        box_metrics: StyleBoxMetrics,
+    ) -> Self {
+        Self {
+            inline,
+            block,
+            box_metrics,
+        }
+    }
+
+    pub fn from_computed_style(style: &ComputedStyle) -> Result<Self, StyleSizeInputError> {
+        let inline = AxisStyleSizeInput::new(
+            preferred_size_from_length_or_auto(style.width(), StyleSizeInputProperty::Width)?,
+            minimum_size_from_length_or_auto(style.min_width(), StyleSizeInputProperty::MinWidth)?,
+            maximum_size_from_length_or_none(style.max_width(), StyleSizeInputProperty::MaxWidth)?,
+        );
+        let block = AxisStyleSizeInput::new(
+            preferred_size_from_length_or_auto(style.height(), StyleSizeInputProperty::Height)?,
+            StyleMinimumSize::Auto,
+            StyleMaximumSize::None,
+        );
+
+        Ok(Self::new(
+            inline,
+            block,
+            StyleBoxMetrics::from_box_metrics(style.box_metrics())?,
+        ))
+    }
+
+    pub fn inline(self) -> AxisStyleSizeInput {
+        self.inline
+    }
+
+    pub fn block(self) -> AxisStyleSizeInput {
+        self.block
+    }
+
+    pub fn axis(self, axis: SizeAxis) -> AxisStyleSizeInput {
+        match axis {
+            SizeAxis::Inline => self.inline,
+            SizeAxis::Block => self.block,
+        }
+    }
+
+    pub fn box_metrics(self) -> StyleBoxMetrics {
+        self.box_metrics
     }
 }
 
@@ -186,6 +544,40 @@ impl IntrinsicSizes {
 
     pub fn aspect_ratio(self) -> Option<AspectRatio> {
         self.aspect_ratio
+    }
+}
+
+/// Complete input bundle for resolving the used size of one generated box.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct SizeResolutionInput {
+    constraint_space: ConstraintSpace,
+    style: StyleSizeInputs,
+    intrinsic: IntrinsicSizes,
+}
+
+impl SizeResolutionInput {
+    pub fn new(
+        constraint_space: ConstraintSpace,
+        style: StyleSizeInputs,
+        intrinsic: IntrinsicSizes,
+    ) -> Self {
+        Self {
+            constraint_space,
+            style,
+            intrinsic,
+        }
+    }
+
+    pub fn constraint_space(self) -> ConstraintSpace {
+        self.constraint_space
+    }
+
+    pub fn style(self) -> StyleSizeInputs {
+        self.style
+    }
+
+    pub fn intrinsic(self) -> IntrinsicSizes {
+        self.intrinsic
     }
 }
 
@@ -268,7 +660,7 @@ impl SizeConstraints {
     }
 }
 
-/// Why a used size took its final value.
+/// Why the preferred size was selected before min/max constraint application.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SizeResolutionReason {
     DefiniteLength,
@@ -368,9 +760,139 @@ impl UsedContentSize {
     }
 }
 
+/// Supported style input property labels for deterministic validation errors.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StyleSizeInputProperty {
+    Width,
+    Height,
+    MinWidth,
+    MaxWidth,
+    MarginTop,
+    MarginRight,
+    MarginBottom,
+    MarginLeft,
+    PaddingTop,
+    PaddingRight,
+    PaddingBottom,
+    PaddingLeft,
+}
+
+impl StyleSizeInputProperty {
+    pub fn as_debug_label(self) -> &'static str {
+        match self {
+            Self::Width => "width",
+            Self::Height => "height",
+            Self::MinWidth => "min-width",
+            Self::MaxWidth => "max-width",
+            Self::MarginTop => "margin-top",
+            Self::MarginRight => "margin-right",
+            Self::MarginBottom => "margin-bottom",
+            Self::MarginLeft => "margin-left",
+            Self::PaddingTop => "padding-top",
+            Self::PaddingRight => "padding-right",
+            Self::PaddingBottom => "padding-bottom",
+            Self::PaddingLeft => "padding-left",
+        }
+    }
+}
+
+/// Validation error for materializing computed style into sizing inputs.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum StyleSizeInputError {
+    InvalidFiniteLength {
+        property: StyleSizeInputProperty,
+        value: f32,
+    },
+    InvalidNonNegativeLength {
+        property: StyleSizeInputProperty,
+        value: f32,
+    },
+}
+
+impl std::fmt::Display for StyleSizeInputError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match *self {
+            Self::InvalidFiniteLength { property, value } => write!(
+                f,
+                "sizing input '{}' must be finite CSS px, got {}",
+                property.as_debug_label(),
+                value
+            ),
+            Self::InvalidNonNegativeLength { property, value } => write!(
+                f,
+                "sizing input '{}' must be non-negative finite CSS px, got {}",
+                property.as_debug_label(),
+                value
+            ),
+        }
+    }
+}
+
+impl std::error::Error for StyleSizeInputError {}
+
+fn preferred_size_from_length_or_auto(
+    value: Option<Length>,
+    property: StyleSizeInputProperty,
+) -> Result<StylePreferredSize, StyleSizeInputError> {
+    match value {
+        Some(length) => {
+            non_negative_length_from_css(length, property).map(StylePreferredSize::Length)
+        }
+        None => Ok(StylePreferredSize::Auto),
+    }
+}
+
+fn minimum_size_from_length_or_auto(
+    value: Option<Length>,
+    property: StyleSizeInputProperty,
+) -> Result<StyleMinimumSize, StyleSizeInputError> {
+    match value {
+        Some(length) => {
+            non_negative_length_from_css(length, property).map(StyleMinimumSize::Length)
+        }
+        None => Ok(StyleMinimumSize::Auto),
+    }
+}
+
+fn maximum_size_from_length_or_none(
+    value: Option<Length>,
+    property: StyleSizeInputProperty,
+) -> Result<StyleMaximumSize, StyleSizeInputError> {
+    match value {
+        Some(length) => {
+            non_negative_length_from_css(length, property).map(StyleMaximumSize::Length)
+        }
+        None => Ok(StyleMaximumSize::None),
+    }
+}
+
+fn non_negative_length_from_css(
+    length: Length,
+    property: StyleSizeInputProperty,
+) -> Result<CssPx, StyleSizeInputError> {
+    match length {
+        Length::Px(value) => non_negative_length(value, property),
+    }
+}
+
+fn non_negative_length(
+    value: f32,
+    property: StyleSizeInputProperty,
+) -> Result<CssPx, StyleSizeInputError> {
+    CssPx::new(value).ok_or(StyleSizeInputError::InvalidNonNegativeLength { property, value })
+}
+
+fn signed_length(
+    value: f32,
+    property: StyleSizeInputProperty,
+) -> Result<SignedCssPx, StyleSizeInputError> {
+    SignedCssPx::new(value).ok_or(StyleSizeInputError::InvalidFiniteLength { property, value })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
+    use css::{ComputedStyle, ComputedValue, Length, PropertyId};
 
     #[test]
     fn css_px_accepts_only_non_negative_finite_values() {
@@ -390,6 +912,29 @@ mod tests {
                 .get()
                 .is_sign_negative()
         );
+    }
+
+    #[test]
+    fn signed_css_px_accepts_negative_lengths_and_normalizes_negative_zero() {
+        assert_eq!(SignedCssPx::new(-12.5).map(SignedCssPx::get), Some(-12.5));
+        assert_eq!(SignedCssPx::new(-0.0).map(SignedCssPx::get), Some(0.0));
+        assert!(
+            !SignedCssPx::new(-0.0)
+                .expect("negative zero is zero")
+                .get()
+                .is_sign_negative()
+        );
+        assert_eq!(SignedCssPx::new(f32::INFINITY), None);
+    }
+
+    #[test]
+    fn percentages_resolve_only_against_definite_available_size() {
+        let half = Percentage::from_percent(50.0).expect("finite percentage");
+        let basis = AvailableSize::definite(320.0).expect("finite basis");
+
+        assert_eq!(half.fraction(), 0.5);
+        assert_eq!(half.resolve_against(basis), CssPx::new(160.0));
+        assert_eq!(half.resolve_against(AvailableSize::Indefinite), None);
     }
 
     #[test]
@@ -486,5 +1031,184 @@ mod tests {
             space.available_size(SizeAxis::Block),
             AvailableSize::Indefinite
         );
+    }
+
+    #[test]
+    fn constraint_space_separates_containing_size_from_available_space() {
+        let containing_inline = AvailableSize::definite(500.0).expect("finite containing inline");
+        let available_inline = AvailableSize::definite(320.0).expect("finite available inline");
+        let containing_size =
+            ContainingSize::new(None, containing_inline, AvailableSize::Indefinite);
+        let available_space = AvailableSpace::new(available_inline, AvailableSize::Indefinite);
+        let space = ConstraintSpace::from_containing_size(containing_size)
+            .with_available_space(available_space);
+
+        assert_eq!(
+            space.containing_size_for_axis(SizeAxis::Inline),
+            containing_inline
+        );
+        assert_eq!(space.available_size(SizeAxis::Inline), available_inline);
+        assert_eq!(space.containing_size().containing_block(), None);
+    }
+
+    #[test]
+    fn style_box_metrics_validate_signed_margins_and_non_negative_padding() {
+        let metrics = BoxMetrics {
+            margin_top: -4.0,
+            margin_right: 1.0,
+            margin_bottom: -0.0,
+            margin_left: 2.0,
+            padding_top: 3.0,
+            padding_right: 4.0,
+            padding_bottom: 5.0,
+            padding_left: 6.0,
+        };
+
+        let inputs = StyleBoxMetrics::from_box_metrics(metrics).expect("valid box metrics");
+
+        assert_eq!(inputs.margin().top().get(), -4.0);
+        assert_eq!(inputs.margin().bottom().get(), 0.0);
+        assert_eq!(
+            inputs.padding().left(),
+            CssPx::new(6.0).expect("finite padding")
+        );
+
+        let invalid = StyleBoxMetrics::from_box_metrics(BoxMetrics {
+            padding_left: -1.0,
+            ..metrics
+        });
+        assert_eq!(
+            invalid,
+            Err(StyleSizeInputError::InvalidNonNegativeLength {
+                property: StyleSizeInputProperty::PaddingLeft,
+                value: -1.0,
+            })
+        );
+    }
+
+    #[test]
+    fn style_box_metrics_reject_non_finite_margins() {
+        let metrics = BoxMetrics {
+            margin_top: f32::INFINITY,
+            margin_right: 0.0,
+            margin_bottom: 0.0,
+            margin_left: 0.0,
+            padding_top: 0.0,
+            padding_right: 0.0,
+            padding_bottom: 0.0,
+            padding_left: 0.0,
+        };
+
+        assert_eq!(
+            StyleBoxMetrics::from_box_metrics(metrics),
+            Err(StyleSizeInputError::InvalidFiniteLength {
+                property: StyleSizeInputProperty::MarginTop,
+                value: f32::INFINITY,
+            })
+        );
+    }
+
+    #[test]
+    fn style_size_inputs_materialize_current_computed_sizing_properties() {
+        let style = ComputedStyle::initial()
+            .with_property(
+                PropertyId::Width,
+                ComputedValue::LengthOrAuto(Some(Length::Px(120.0))),
+            )
+            .expect("width")
+            .with_property(
+                PropertyId::Height,
+                ComputedValue::LengthOrAuto(Some(Length::Px(40.0))),
+            )
+            .expect("height")
+            .with_property(
+                PropertyId::MinWidth,
+                ComputedValue::LengthOrAuto(Some(Length::Px(80.0))),
+            )
+            .expect("min-width")
+            .with_property(
+                PropertyId::MaxWidth,
+                ComputedValue::LengthOrNone(Some(Length::Px(240.0))),
+            )
+            .expect("max-width")
+            .with_property(
+                PropertyId::MarginLeft,
+                ComputedValue::Length(Length::Px(-8.0)),
+            )
+            .expect("margin-left")
+            .with_property(
+                PropertyId::PaddingRight,
+                ComputedValue::Length(Length::Px(12.0)),
+            )
+            .expect("padding-right");
+
+        let inputs = StyleSizeInputs::from_computed_style(&style).expect("style inputs");
+
+        assert_eq!(
+            inputs.inline().preferred(),
+            StylePreferredSize::Length(CssPx::new(120.0).expect("finite width"))
+        );
+        assert_eq!(
+            inputs.inline().min(),
+            StyleMinimumSize::Length(CssPx::new(80.0).expect("finite min-width"))
+        );
+        assert_eq!(
+            inputs.inline().max(),
+            StyleMaximumSize::Length(CssPx::new(240.0).expect("finite max-width"))
+        );
+        assert_eq!(
+            inputs.block().preferred(),
+            StylePreferredSize::Length(CssPx::new(40.0).expect("finite height"))
+        );
+        assert_eq!(inputs.block().min(), StyleMinimumSize::Auto);
+        assert_eq!(inputs.block().max(), StyleMaximumSize::None);
+        assert_eq!(inputs.box_metrics().margin().left().get(), -8.0);
+        assert_eq!(
+            inputs.box_metrics().padding().right(),
+            CssPx::new(12.0).expect("finite padding")
+        );
+    }
+
+    #[test]
+    fn style_size_inputs_reject_invalid_non_negative_sizing_lengths() {
+        let style = ComputedStyle::initial()
+            .with_property(
+                PropertyId::Width,
+                ComputedValue::LengthOrAuto(Some(Length::Px(-1.0))),
+            )
+            .expect("width");
+
+        assert_eq!(
+            StyleSizeInputs::from_computed_style(&style),
+            Err(StyleSizeInputError::InvalidNonNegativeLength {
+                property: StyleSizeInputProperty::Width,
+                value: -1.0,
+            })
+        );
+    }
+
+    #[test]
+    fn size_resolution_input_preserves_constraint_style_and_intrinsic_inputs() {
+        let constraint_space = ConstraintSpace::new(
+            None,
+            AvailableSize::definite(640.0).expect("finite inline"),
+            AvailableSize::Indefinite,
+        );
+        let style = StyleSizeInputs::from_computed_style(&ComputedStyle::initial())
+            .expect("initial style inputs");
+        let intrinsic = IntrinsicSizes::new(
+            CssPx::new(20.0).expect("finite min-content"),
+            CssPx::new(80.0).expect("finite max-content"),
+            Some(CssPx::new(60.0).expect("finite preferred width")),
+            None,
+            None,
+        )
+        .expect("valid intrinsic sizes");
+
+        let input = SizeResolutionInput::new(constraint_space, style, intrinsic);
+
+        assert_eq!(input.constraint_space(), constraint_space);
+        assert_eq!(input.style(), style);
+        assert_eq!(input.intrinsic(), intrinsic);
     }
 }

@@ -317,6 +317,7 @@ The normative rendering ownership and phase-boundary contract lives in:
 * `docs/rendering/w8-box-generation-formatting-debug-surfaces.md`
 * `docs/rendering/w9-box-tree-invariants-extension-hooks.md`
 * `docs/rendering/x1-sizing-architecture-flow-correctness-contract.md`
+* `docs/rendering/x2-structured-size-resolution-model-inputs.md`
 
 ---
 
