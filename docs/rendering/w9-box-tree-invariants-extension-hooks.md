@@ -23,6 +23,7 @@ Related documents:
 - `docs/rendering/w7-inline-formatting-context-foundations.md`
 - `docs/rendering/w8-box-generation-formatting-debug-surfaces.md`
 - `docs/rendering/x1-sizing-architecture-flow-correctness-contract.md`
+- `docs/rendering/x2-structured-size-resolution-model-inputs.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`

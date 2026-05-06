@@ -17,7 +17,9 @@
 //! W close-out invariants and extension hooks are documented in
 //! `docs/rendering/w9-box-tree-invariants-extension-hooks.md`; Milestone X
 //! sizing architecture and flow-correctness contracts are documented in
-//! `docs/rendering/x1-sizing-architecture-flow-correctness-contract.md`.
+//! `docs/rendering/x1-sizing-architecture-flow-correctness-contract.md`; X2
+//! structured sizing inputs are documented in
+//! `docs/rendering/x2-structured-size-resolution-model-inputs.md`.
 //! `BoxTree` is the frame-local generated box-tree structure; `LayoutBox` is
 //! the current geometry projection consumed by paint and hit testing.
 
@@ -51,8 +53,11 @@ pub use layout_box::LayoutBox;
 pub use phase::{LayoutPhaseInput, LayoutPhaseOutput};
 pub use replaced_element::{ReplacedElementInfoProvider, ReplacedKind};
 pub use sizing::{
-    AspectRatio, AvailableSize, AxisSizeConstraints, ConstraintSpace, CssPx, IntrinsicSizes,
-    SizeAxis, SizeConstraints, SizeResolutionReason, UsedAxisSize, UsedContentSize,
+    AppliedSizeConstraint, AspectRatio, AvailableSize, AvailableSpace, AxisSizeConstraints,
+    AxisStyleSizeInput, ConstraintSpace, ContainingSize, CssPx, IntrinsicSizes, Percentage,
+    PhysicalSides, SignedCssPx, SizeAxis, SizeConstraints, SizeResolutionInput,
+    SizeResolutionReason, StyleBoxMetrics, StyleMaximumSize, StyleMinimumSize, StylePreferredSize,
+    StyleSizeInputError, StyleSizeInputProperty, StyleSizeInputs, UsedAxisSize, UsedContentSize,
 };
 pub use text::TextMeasurer;
 

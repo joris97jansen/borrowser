@@ -23,6 +23,7 @@ Related code:
 - `crates/css/src/computed/style.rs`
 
 Related documents:
+- `docs/rendering/x2-structured-size-resolution-model-inputs.md`
 - `docs/rendering/w1-box-tree-layout-model-contract.md`
 - `docs/rendering/w5-containing-block-relationships.md`
 - `docs/rendering/w6-block-formatting-context-foundations.md`
