@@ -8,6 +8,7 @@ use crate::{
 };
 
 use super::engine::layout_tokens;
+use super::intrinsic::intrinsic_sizes_for_layout_box;
 use super::options::INLINE_PADDING;
 use super::replaced::size_replaced_inline_children;
 use super::tokens::collect_inline_tokens_for_block_layout;
@@ -36,7 +37,7 @@ fn recompute_block_heights<'style_tree, 'dom>(
     node.rect.y = y;
 
     let mode = normal_flow_sizing_mode(node);
-    let sizing_input = size_resolution_input_for_layout_box(node, available_width);
+    let sizing_input = size_resolution_input_for_layout_box(measurer, node, available_width);
     let inline_size = resolve_normal_flow_inline_size(sizing_input, mode);
     let used_width = inline_size.border().get();
     node.rect.width = used_width;
@@ -244,6 +245,7 @@ fn normal_flow_sizing_mode(node: &LayoutBox<'_, '_>) -> NormalFlowSizingMode {
 }
 
 fn size_resolution_input_for_layout_box(
+    measurer: &dyn TextMeasurer,
     node: &LayoutBox<'_, '_>,
     available_width: f32,
 ) -> SizeResolutionInput {
@@ -261,7 +263,13 @@ fn size_resolution_input_for_layout_box(
             .expect("computed style must materialize deterministic sizing inputs")
     };
 
-    SizeResolutionInput::new(constraint_space, style, IntrinsicSizes::zero())
+    let intrinsic = if node.is_anonymous() {
+        IntrinsicSizes::zero()
+    } else {
+        intrinsic_sizes_for_layout_box(measurer, node)
+    };
+
+    SizeResolutionInput::new(constraint_space, style, intrinsic)
 }
 
 fn resolve_border_block_size(

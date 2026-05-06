@@ -10,6 +10,7 @@ percentages in CSS parsing, or full shrink-to-fit algorithms.
 
 Related code:
 - `crates/layout/src/sizing.rs`
+- `crates/layout/src/inline/intrinsic.rs`
 - `crates/layout/src/inline/refine.rs`
 - `crates/layout/src/layout_box.rs`
 - `crates/layout/src/geometry.rs`
@@ -18,6 +19,7 @@ Related code:
 Related documents:
 - `docs/rendering/x1-sizing-architecture-flow-correctness-contract.md`
 - `docs/rendering/x2-structured-size-resolution-model-inputs.md`
+- `docs/rendering/x4-intrinsic-sizing-supported-content.md`
 - `docs/rendering/w5-containing-block-relationships.md`
 - `docs/rendering/w6-block-formatting-context-foundations.md`
 - `docs/rendering/w7-inline-formatting-context-foundations.md`
@@ -135,7 +137,7 @@ X3 intentionally does not implement:
 - borders or `box-sizing`
 - margin auto distribution
 - full CSS 2.1 block width equation support
-- intrinsic shrink-to-fit for inline-blocks
+- broader intrinsic shrink-to-fit beyond the X4 supported atomic-inline subset
 - replaced-element sizing migration into the shared resolver
 - floats, positioning, flex, grid, table, or fragmentation sizing
 

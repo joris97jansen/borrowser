@@ -199,6 +199,132 @@ fn layout_clamps_atomic_inline_width_to_available_content_space() {
 }
 
 #[test]
+fn layout_uses_intrinsic_width_for_auto_inline_block_content() {
+    let dom = doc(vec![element(
+        2,
+        "div",
+        Vec::new(),
+        vec![element(
+            3,
+            "span",
+            vec![
+                ("display", "inline-block"),
+                ("padding-left", "5px"),
+                ("padding-right", "7px"),
+            ],
+            vec![text(4, "wide")],
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+    let inline_block =
+        find_layout_by_direct_node_id(&layout, Id(3)).expect("inline-block layout box");
+
+    assert_eq!(inline_block.rect.width, 44.0);
+    assert_eq!(inline_block.content_x_and_width(), (5.0, 32.0));
+}
+
+#[test]
+fn intrinsic_auto_inline_block_applies_replaced_control_padding_once() {
+    let dom = doc(vec![element(
+        2,
+        "div",
+        Vec::new(),
+        vec![element(
+            3,
+            "span",
+            vec![("display", "inline-block")],
+            vec![element(
+                4,
+                "button",
+                vec![
+                    ("padding-left", "20px"),
+                    ("padding-right", "30px"),
+                    ("font-size", "16px"),
+                ],
+                vec![text(5, "go")],
+            )],
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+    let inline_block =
+        find_layout_by_direct_node_id(&layout, Id(3)).expect("inline-block layout box");
+
+    // TestMeasurer: "go" = 16px, button internal chrome = 18px,
+    // button intrinsic content width = 34px, CSS padding = 20 + 30,
+    // outer inline-block content width = 84px.
+    assert_eq!(inline_block.rect.width, 84.0);
+    assert_eq!(inline_block.content_x_and_width(), (0.0, 84.0));
+}
+
+#[test]
+fn layout_shrink_to_fits_auto_inline_block_between_min_and_max_content() {
+    let dom = doc(vec![element(
+        2,
+        "div",
+        Vec::new(),
+        vec![element(
+            3,
+            "span",
+            vec![("display", "inline-block")],
+            vec![text(4, "hello world")],
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 60.0, &TestMeasurer, None);
+    let inline_block =
+        find_layout_by_direct_node_id(&layout, Id(3)).expect("inline-block layout box");
+
+    assert_eq!(inline_block.rect.width, 60.0);
+    assert_eq!(inline_block.content_x_and_width(), (0.0, 60.0));
+}
+
+#[test]
+fn layout_applies_max_width_after_intrinsic_auto_inline_block_width() {
+    let dom = doc(vec![element(
+        2,
+        "div",
+        Vec::new(),
+        vec![element(
+            3,
+            "span",
+            vec![("display", "inline-block"), ("max-width", "50px")],
+            vec![text(4, "hello world")],
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+    let inline_block =
+        find_layout_by_direct_node_id(&layout, Id(3)).expect("inline-block layout box");
+
+    assert_eq!(inline_block.rect.width, 50.0);
+    assert_eq!(inline_block.content_x_and_width(), (0.0, 50.0));
+}
+
+#[test]
+fn layout_explicit_inline_block_width_overrides_intrinsic_content_width() {
+    let dom = doc(vec![element(
+        2,
+        "div",
+        Vec::new(),
+        vec![element(
+            3,
+            "span",
+            vec![("display", "inline-block"), ("width", "100px")],
+            vec![text(4, "wide")],
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+    let inline_block =
+        find_layout_by_direct_node_id(&layout, Id(3)).expect("inline-block layout box");
+
+    assert_eq!(inline_block.rect.width, 100.0);
+    assert_eq!(inline_block.content_x_and_width(), (0.0, 100.0));
+}
+
+#[test]
 fn layout_projection_preserves_containing_block_metadata() {
     let dom = doc(vec![element(
         2,

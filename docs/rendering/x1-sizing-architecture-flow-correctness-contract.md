@@ -25,6 +25,7 @@ Related code:
 Related documents:
 - `docs/rendering/x2-structured-size-resolution-model-inputs.md`
 - `docs/rendering/x3-width-height-resolution-supported-subset.md`
+- `docs/rendering/x4-intrinsic-sizing-supported-content.md`
 - `docs/rendering/w1-box-tree-layout-model-contract.md`
 - `docs/rendering/w5-containing-block-relationships.md`
 - `docs/rendering/w6-block-formatting-context-foundations.md`

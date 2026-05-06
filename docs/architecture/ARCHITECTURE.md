@@ -319,6 +319,7 @@ The normative rendering ownership and phase-boundary contract lives in:
 * `docs/rendering/x1-sizing-architecture-flow-correctness-contract.md`
 * `docs/rendering/x2-structured-size-resolution-model-inputs.md`
 * `docs/rendering/x3-width-height-resolution-supported-subset.md`
+* `docs/rendering/x4-intrinsic-sizing-supported-content.md`
 
 ---
 

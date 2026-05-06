@@ -650,6 +650,7 @@ pub fn resolve_normal_flow_inline_size(
         .constraint_space()
         .containing_size_for_axis(SizeAxis::Inline);
     let axis = style.inline();
+    let intrinsic = input.intrinsic();
 
     let (preferred_value, preferred_reason) = match (mode, axis.preferred()) {
         (NormalFlowSizingMode::InlineLevel, _) => auto_stretch_preferred(available_content),
@@ -666,12 +667,24 @@ pub fn resolve_normal_flow_inline_size(
                 CssPx::ZERO,
                 SizeResolutionReason::DeferredIndefinitePercentage,
             )),
+        (NormalFlowSizingMode::AtomicInline, StylePreferredSize::Auto) => {
+            atomic_inline_auto_preferred(intrinsic, available_content)
+        }
         (_, StylePreferredSize::Auto) => auto_stretch_preferred(available_content),
     };
 
     let constraints = inline_constraints(axis, basis);
-    let (value, applied_constraint) =
-        apply_inline_size_adjustments(preferred_value, constraints, mode, available_content);
+    let allow_available_space_clamp = !matches!(
+        (mode, axis.preferred()),
+        (NormalFlowSizingMode::AtomicInline, StylePreferredSize::Auto)
+    );
+    let (value, applied_constraint) = apply_inline_size_adjustments(
+        preferred_value,
+        constraints,
+        mode,
+        available_content,
+        allow_available_space_clamp,
+    );
     let used = used_axis_size(preferred_value, preferred_reason, value, applied_constraint);
     let border = css_px_sum(value, padding_inline);
 
@@ -780,11 +793,50 @@ fn auto_stretch_preferred(available_content: Option<CssPx>) -> (CssPx, SizeResol
         .unwrap_or((CssPx::ZERO, SizeResolutionReason::UnsupportedDeferred))
 }
 
+fn atomic_inline_auto_preferred(
+    intrinsic: IntrinsicSizes,
+    available_content: Option<CssPx>,
+) -> (CssPx, SizeResolutionReason) {
+    let max_content = intrinsic
+        .preferred_inline_size()
+        .unwrap_or(intrinsic.max_content_inline_size());
+    if max_content == CssPx::ZERO {
+        return (CssPx::ZERO, SizeResolutionReason::AutoContentBased);
+    }
+
+    match available_content {
+        Some(available_content) => (
+            shrink_to_fit_inline_size(
+                intrinsic.min_content_inline_size(),
+                max_content,
+                available_content,
+            ),
+            SizeResolutionReason::ShrinkToFit,
+        ),
+        None => (max_content, SizeResolutionReason::IntrinsicPreferredSize),
+    }
+}
+
+fn shrink_to_fit_inline_size(
+    min_content: CssPx,
+    max_content: CssPx,
+    available_content: CssPx,
+) -> CssPx {
+    if available_content < min_content {
+        min_content
+    } else if available_content > max_content {
+        max_content
+    } else {
+        available_content
+    }
+}
+
 fn apply_inline_size_adjustments(
     preferred_value: CssPx,
     constraints: AxisSizeConstraints,
     mode: NormalFlowSizingMode,
     available_content: Option<CssPx>,
+    allow_available_space_clamp: bool,
 ) -> (CssPx, AppliedSizeConstraint) {
     let mut out = preferred_value;
     let mut applied = AppliedSizeConstraint::None;
@@ -793,7 +845,7 @@ fn apply_inline_size_adjustments(
         out = max;
         applied = AppliedSizeConstraint::Max;
     }
-    if matches!(mode, NormalFlowSizingMode::AtomicInline) {
+    if allow_available_space_clamp && matches!(mode, NormalFlowSizingMode::AtomicInline) {
         if let Some(available_content) = available_content.filter(|available| out > *available) {
             out = available_content;
             applied = AppliedSizeConstraint::AvailableSpaceClamp;
@@ -1659,6 +1711,134 @@ mod tests {
     }
 
     #[test]
+    fn atomic_inline_auto_width_uses_intrinsic_max_content_when_available_is_larger() {
+        let input = size_input_with_intrinsic(
+            ComputedStyle::initial(),
+            500.0,
+            IntrinsicSizes::new(
+                CssPx::new(40.0).expect("min-content"),
+                CssPx::new(120.0).expect("max-content"),
+                Some(CssPx::new(120.0).expect("preferred")),
+                None,
+                None,
+            )
+            .expect("intrinsic"),
+        );
+
+        let resolved = resolve_normal_flow_inline_size(input, NormalFlowSizingMode::AtomicInline);
+
+        assert_eq!(
+            resolved.content().value(),
+            CssPx::new(120.0).expect("content")
+        );
+        assert_eq!(
+            resolved.content().preferred_reason(),
+            SizeResolutionReason::ShrinkToFit
+        );
+        assert_eq!(
+            resolved.content().applied_constraint(),
+            AppliedSizeConstraint::None
+        );
+        assert_eq!(resolved.border(), CssPx::new(120.0).expect("border"));
+    }
+
+    #[test]
+    fn atomic_inline_auto_width_shrink_to_fit_uses_available_between_min_and_max_content() {
+        let input = size_input_with_intrinsic(
+            ComputedStyle::initial(),
+            80.0,
+            IntrinsicSizes::new(
+                CssPx::new(40.0).expect("min-content"),
+                CssPx::new(120.0).expect("max-content"),
+                Some(CssPx::new(120.0).expect("preferred")),
+                None,
+                None,
+            )
+            .expect("intrinsic"),
+        );
+
+        let resolved = resolve_normal_flow_inline_size(input, NormalFlowSizingMode::AtomicInline);
+
+        assert_eq!(
+            resolved.content().preferred_value(),
+            CssPx::new(80.0).expect("preferred")
+        );
+        assert_eq!(
+            resolved.content().preferred_reason(),
+            SizeResolutionReason::ShrinkToFit
+        );
+        assert_eq!(
+            resolved.content().applied_constraint(),
+            AppliedSizeConstraint::None
+        );
+        assert_eq!(resolved.border(), CssPx::new(80.0).expect("border"));
+    }
+
+    #[test]
+    fn atomic_inline_auto_width_uses_intrinsic_preferred_when_available_is_indefinite() {
+        let input = size_input_with_available_inline_and_intrinsic(
+            ComputedStyle::initial(),
+            AvailableSize::Indefinite,
+            IntrinsicSizes::new(
+                CssPx::new(40.0).expect("min-content"),
+                CssPx::new(120.0).expect("max-content"),
+                Some(CssPx::new(120.0).expect("preferred")),
+                None,
+                None,
+            )
+            .expect("intrinsic"),
+        );
+
+        let resolved = resolve_normal_flow_inline_size(input, NormalFlowSizingMode::AtomicInline);
+
+        assert_eq!(
+            resolved.content().value(),
+            CssPx::new(120.0).expect("content")
+        );
+        assert_eq!(
+            resolved.content().preferred_reason(),
+            SizeResolutionReason::IntrinsicPreferredSize
+        );
+        assert_eq!(
+            resolved.content().applied_constraint(),
+            AppliedSizeConstraint::None
+        );
+        assert_eq!(resolved.border(), CssPx::new(120.0).expect("border"));
+    }
+
+    #[test]
+    fn atomic_inline_explicit_width_still_overrides_intrinsic_width() {
+        let input = size_input_with_intrinsic(
+            ComputedStyle::initial()
+                .with_property(
+                    PropertyId::Width,
+                    ComputedValue::LengthOrAuto(Some(Length::Px(90.0))),
+                )
+                .expect("width"),
+            500.0,
+            IntrinsicSizes::new(
+                CssPx::new(40.0).expect("min-content"),
+                CssPx::new(120.0).expect("max-content"),
+                Some(CssPx::new(120.0).expect("preferred")),
+                None,
+                None,
+            )
+            .expect("intrinsic"),
+        );
+
+        let resolved = resolve_normal_flow_inline_size(input, NormalFlowSizingMode::AtomicInline);
+
+        assert_eq!(
+            resolved.content().value(),
+            CssPx::new(90.0).expect("content")
+        );
+        assert_eq!(
+            resolved.content().preferred_reason(),
+            SizeResolutionReason::DefiniteLength
+        );
+    }
+
+    #[test]
     fn normal_flow_explicit_height_is_content_box_and_padding_expands_border_box() {
         let input = size_input_with_style(
             ComputedStyle::initial()
@@ -1701,9 +1881,18 @@ mod tests {
         style: ComputedStyle,
         available_inline_size: f32,
     ) -> SizeResolutionInput {
-        size_input_with_available_inline_size(
+        size_input_with_intrinsic(style, available_inline_size, IntrinsicSizes::zero())
+    }
+
+    fn size_input_with_intrinsic(
+        style: ComputedStyle,
+        available_inline_size: f32,
+        intrinsic: IntrinsicSizes,
+    ) -> SizeResolutionInput {
+        size_input_with_available_inline_and_intrinsic(
             style,
             AvailableSize::definite(available_inline_size).expect("available inline size"),
+            intrinsic,
         )
     }
 
@@ -1711,9 +1900,21 @@ mod tests {
         style: ComputedStyle,
         available_inline_size: AvailableSize,
     ) -> SizeResolutionInput {
+        size_input_with_available_inline_and_intrinsic(
+            style,
+            available_inline_size,
+            IntrinsicSizes::zero(),
+        )
+    }
+
+    fn size_input_with_available_inline_and_intrinsic(
+        style: ComputedStyle,
+        available_inline_size: AvailableSize,
+        intrinsic: IntrinsicSizes,
+    ) -> SizeResolutionInput {
         let constraint_space =
             ConstraintSpace::new(None, available_inline_size, AvailableSize::Indefinite);
         let style = StyleSizeInputs::from_computed_style(&style).expect("style inputs");
-        SizeResolutionInput::new(constraint_space, style, IntrinsicSizes::zero())
+        SizeResolutionInput::new(constraint_space, style, intrinsic)
     }
 }

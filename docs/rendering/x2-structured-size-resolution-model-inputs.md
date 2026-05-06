@@ -16,6 +16,7 @@ Related code:
 Related documents:
 - `docs/rendering/x1-sizing-architecture-flow-correctness-contract.md`
 - `docs/rendering/x3-width-height-resolution-supported-subset.md`
+- `docs/rendering/x4-intrinsic-sizing-supported-content.md`
 - `docs/rendering/w5-containing-block-relationships.md`
 - `docs/rendering/w6-block-formatting-context-foundations.md`
 - `docs/rendering/w7-inline-formatting-context-foundations.md`
