@@ -24,6 +24,7 @@ Related code:
 
 Related documents:
 - `docs/rendering/x2-structured-size-resolution-model-inputs.md`
+- `docs/rendering/x3-width-height-resolution-supported-subset.md`
 - `docs/rendering/w1-box-tree-layout-model-contract.md`
 - `docs/rendering/w5-containing-block-relationships.md`
 - `docs/rendering/w6-block-formatting-context-foundations.md`
@@ -152,12 +153,13 @@ the sizing subsystem for used sizes and intrinsic contributions.
   contributions.
 - `AxisSizeConstraints` and `SizeConstraints`: min/max constraints with the
   invariant that min wins if min and max cross.
-- `AppliedSizeConstraint`: records whether min, max, or neither changed the
-  preferred size.
+- `AppliedSizeConstraint`: records whether min, max, available-space clamping,
+  or no post-preferred adjustment produced the final size.
 - `UsedAxisSize`: resolved content-box size for one axis, preserving both the
-  preferred value/reason and the final value after constraints.
+  preferred value/reason and the final value after post-preferred adjustments.
 - `UsedContentSize`: resolved logical content-box size for both axes.
-- `SizeResolutionReason`: deterministic explanation for a used-size result.
+- `SizeResolutionReason`: deterministic explanation for preferred-size
+  selection before post-preferred adjustments.
 
 Later implementation may add resolver functions, debug labels, and richer value
 types, but it must preserve this separation between inputs, intrinsic
@@ -297,8 +299,8 @@ In scope:
 - min overriding max when constraints cross
 - recomputing aspect-ratio-derived counterpart sizes when a constrained inline
   size changes and the opposite axis is auto
-- debug visibility into whether a size came from the preferred result or a
-  constraint
+- debug visibility into whether a size came from the preferred result, a
+  constraint, or an available-space clamp
 
 Deferred:
 
@@ -311,8 +313,9 @@ Deferred:
 Constraint application belongs after preferred size selection for the axis. It
 must not be duplicated in replaced-element, inline, or block layout helpers.
 Constraint metadata must preserve the preferred value and preferred
-`SizeResolutionReason`; min/max application is an operation after preferred-size
-resolution, not a replacement for the original sizing reason.
+`SizeResolutionReason`; min/max and available-space adjustments are operations
+after preferred-size resolution, not replacements for the original sizing
+reason.
 
 ## Shrink-To-Fit Scope
 
@@ -377,10 +380,10 @@ Debug surfaces must expose enough information to identify sizing regressions:
 - input available sizes and whether they are definite or indefinite
 - containing-block identity used as percentage basis
 - intrinsic contributions for supported content types
-- preferred size before constraints where meaningful
+- preferred size before post-preferred adjustments where meaningful
 - preferred `SizeResolutionReason`
-- applied min/max constraints
-- final used content size after constraints
+- applied min/max constraints or available-space clamps
+- final used content size after post-preferred adjustments
 
 The existing `LayoutPhaseInput::to_debug_snapshot`,
 `BoxTree::to_debug_snapshot`, and `LayoutPhaseOutput::to_debug_snapshot`
