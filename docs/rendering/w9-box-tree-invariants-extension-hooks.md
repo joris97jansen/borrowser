@@ -28,6 +28,7 @@ Related documents:
 - `docs/rendering/x4-intrinsic-sizing-supported-content.md`
 - `docs/rendering/x5-min-max-sizing-constraints.md`
 - `docs/rendering/x6-percentage-sizing-targeted-subset.md`
+- `docs/rendering/x7-shrink-to-fit-containing-size-dependent-sizing.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`

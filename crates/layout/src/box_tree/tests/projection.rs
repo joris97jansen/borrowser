@@ -404,6 +404,29 @@ fn layout_shrink_to_fits_auto_inline_block_between_min_and_max_content() {
 }
 
 #[test]
+fn layout_shrink_to_fits_auto_inline_block_to_min_content_floor() {
+    let dom = doc(vec![element(
+        2,
+        "div",
+        Vec::new(),
+        vec![element(
+            3,
+            "span",
+            vec![("display", "inline-block")],
+            vec![text(4, "hello world")],
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 20.0, &TestMeasurer, None);
+    let inline_block =
+        find_layout_by_direct_node_id(&layout, Id(3)).expect("inline-block layout box");
+
+    // TestMeasurer: longest unbreakable word is 5 chars * 16px * 0.5 = 40px.
+    assert_eq!(inline_block.rect.width, 40.0);
+    assert_eq!(inline_block.content_x_and_width(), (0.0, 40.0));
+}
+
+#[test]
 fn layout_applies_max_width_after_intrinsic_auto_inline_block_width() {
     let dom = doc(vec![element(
         2,
