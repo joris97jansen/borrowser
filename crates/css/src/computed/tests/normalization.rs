@@ -45,7 +45,7 @@ fn computed_value_normalizes_lengths_to_css_px() {
     );
     assert_eq!(
         normalized_value(PropertyId::Width, "width: 0"),
-        ComputedValue::LengthOrAuto(Some(Length::Px(0.0)))
+        ComputedValue::LengthPercentageOrAuto(Some(LengthPercentage::Length(Length::Px(0.0))))
     );
     assert_eq!(
         normalized_value(PropertyId::MarginTop, "margin-top: -0px"),
@@ -57,19 +57,35 @@ fn computed_value_normalizes_lengths_to_css_px() {
 fn computed_value_preserves_auto_and_none_branches() {
     assert_eq!(
         normalized_value(PropertyId::Width, "width: auto"),
-        ComputedValue::LengthOrAuto(None)
+        ComputedValue::LengthPercentageOrAuto(None)
     );
     assert_eq!(
         normalized_value(PropertyId::Height, "height: 25px"),
-        ComputedValue::LengthOrAuto(Some(Length::Px(25.0)))
+        ComputedValue::LengthPercentageOrAuto(Some(LengthPercentage::Length(Length::Px(25.0))))
     );
     assert_eq!(
         normalized_value(PropertyId::MaxWidth, "max-width: none"),
-        ComputedValue::LengthOrNone(None)
+        ComputedValue::LengthPercentageOrNone(None)
     );
     assert_eq!(
         normalized_value(PropertyId::MaxWidth, "max-width: 40px"),
-        ComputedValue::LengthOrNone(Some(Length::Px(40.0)))
+        ComputedValue::LengthPercentageOrNone(Some(LengthPercentage::Length(Length::Px(40.0))))
+    );
+}
+
+#[test]
+fn computed_value_preserves_length_percentages_for_layout_resolution() {
+    assert_eq!(
+        normalized_value(PropertyId::Width, "width: 50%"),
+        ComputedValue::LengthPercentageOrAuto(Some(LengthPercentage::Percentage(
+            Percentage::from_percent(50.0).expect("finite percentage"),
+        )))
+    );
+    assert_eq!(
+        normalized_value(PropertyId::MaxWidth, "max-width: 25%"),
+        ComputedValue::LengthPercentageOrNone(Some(LengthPercentage::Percentage(
+            Percentage::from_percent(25.0).expect("finite percentage"),
+        )))
     );
 }
 

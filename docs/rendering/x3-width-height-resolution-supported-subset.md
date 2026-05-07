@@ -5,8 +5,9 @@ Status: implemented width and height resolution for Milestone X issue 3
 
 This document defines the first concrete used-size resolver built on the X1/X2
 sizing contracts. X3 strengthens Borrowser's supported normal-flow width and
-height behavior without introducing flex, positioning, border sizing,
-percentages in CSS parsing, or full shrink-to-fit algorithms.
+height behavior without introducing flex, positioning, border sizing, or full
+shrink-to-fit algorithms. X6 later adds live percentage sizing on top of this
+resolver.
 
 Related code:
 - `crates/layout/src/sizing.rs`
@@ -21,6 +22,7 @@ Related documents:
 - `docs/rendering/x2-structured-size-resolution-model-inputs.md`
 - `docs/rendering/x4-intrinsic-sizing-supported-content.md`
 - `docs/rendering/x5-min-max-sizing-constraints.md`
+- `docs/rendering/x6-percentage-sizing-targeted-subset.md`
 - `docs/rendering/w5-containing-block-relationships.md`
 - `docs/rendering/w6-block-formatting-context-foundations.md`
 - `docs/rendering/w7-inline-formatting-context-foundations.md`
@@ -46,7 +48,6 @@ The supported model is still intentionally narrow:
 - no borders
 - no `box-sizing`
 - no `min-height` or `max-height` CSS properties yet
-- no parsed CSS percentages yet
 - normal-flow block, anonymous block, document/root, inline-level, and atomic
   inline sizing roles
 
@@ -132,8 +133,7 @@ geometry path.
 
 X3 intentionally does not implement:
 
-- CSS percentage parsing
-- percentage width/height behavior in live layout
+- percentage behavior beyond the X6 targeted subset
 - min-height or max-height
 - borders or `box-sizing`
 - margin auto distribution

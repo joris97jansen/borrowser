@@ -126,15 +126,18 @@ Current normalization is deterministic and layout-independent:
 - supported colors normalize to RGBA channels
 - supported display keywords normalize to the runtime `Display` enum
 - supported lengths normalize to CSS px
+- supported sizing percentages normalize to finite fractions and remain
+  unresolved until layout receives a containing-size basis
 - unitless zero normalizes to `0px`
 - `auto` remains the controlling branch for width, height, and min-width
 - `none` remains the controlling branch for max-width
 - runtime scalar overflow returns `ComputedValueNormalizationError`
 
 Milestone S does not resolve percentages, relative units, `calc(...)`, custom
-properties, CSS-wide keywords, or layout-dependent values. Future support for
-those features must extend the specified and computed value families without
-moving value resolution into layout or paint.
+properties, CSS-wide keywords, or layout-dependent values. Supported sizing
+percentages are preserved for the layout sizing model rather than resolved in
+CSS. Future support for broader value families must extend the specified and
+computed value families without moving value resolution into paint.
 
 ## Invalid Value Handling
 

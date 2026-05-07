@@ -24,8 +24,8 @@ typed specified-value representation:
 - `SpecifiedPropertyValue`
 - `SpecifiedValue`
 - property-family value types such as `SpecifiedColor`,
-  `SpecifiedDisplay`, `SpecifiedLength`, `SpecifiedLengthOrAuto`, and
-  `SpecifiedLengthOrNone`
+  `SpecifiedDisplay`, `SpecifiedLength`, `SpecifiedLengthPercentageOrAuto`, and
+  `SpecifiedLengthPercentageOrNone`
 - `SpecifiedValueParseError` for rejected authored values
 
 `CascadeSpecifiedValue` is no longer a generic wrapper around
@@ -65,8 +65,8 @@ The current subset has these typed specified families:
 | `Color` | `SpecifiedColor` | `red`, `transparent`, `#fff`, `#ff00aa` |
 | `DisplayKeyword` | `SpecifiedDisplay` | `block`, `inline`, `inline-block`, `list-item`, `none` |
 | `AbsoluteLength` | `SpecifiedLength` | `12px`, `0`, `-4px` for margins |
-| `AbsoluteLengthOrAuto` | `SpecifiedLengthOrAuto` | `auto`, `10px`, `0` |
-| `AbsoluteLengthOrNone` | `SpecifiedLengthOrNone` | `none`, `10px`, `0` |
+| `LengthPercentageOrAuto` | `SpecifiedLengthPercentageOrAuto` | `auto`, `10px`, `0`, `50%` |
+| `LengthPercentageOrNone` | `SpecifiedLengthPercentageOrNone` | `none`, `10px`, `0`, `50%` |
 
 Unitless zero is represented explicitly as specified syntax. It is not
 converted into computed px data in S3.
@@ -114,8 +114,8 @@ S3 itself did not implement:
 - computed-value conversion from `ResolvedStyle`
 - inheritance/default application beyond the existing cascade contract
 - layout-dependent resolution
-- relative units, percentages, shorthands, CSS-wide keywords, custom property
-  substitution, or function values
+- relative units, percentages outside supported sizing properties, shorthands,
+  CSS-wide keywords, custom property substitution, or function values
 - moving the legacy `compute_style(...)` string bridge to the typed pipeline
 
 S4 introduces specified-to-computed value normalization. Later S issues should

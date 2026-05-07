@@ -1,4 +1,4 @@
-use css::{ComputedStyle, Length};
+use css::{ComputedStyle, Length, LengthPercentage};
 
 use crate::{BoxKind, LayoutBox, ReplacedKind, TextMeasurer};
 
@@ -17,24 +17,15 @@ pub(crate) fn resolve_replaced_width_px(
     let mut w = intrinsic_width.max(0.0);
 
     // CSS width wins (px-only in Phase 1)
-    if let Some(Length::Px(px)) = style
-        .width()
-        .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
-    {
+    if let Some(px) = non_negative_px(style.width()) {
         w = px;
     }
 
     // Clamp with min/max-width (px-only)
-    if let Some(Length::Px(min_px)) = style
-        .min_width()
-        .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
-    {
+    if let Some(min_px) = non_negative_px(style.min_width()) {
         w = w.max(min_px);
     }
-    if let Some(Length::Px(max_px)) = style
-        .max_width()
-        .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
-    {
+    if let Some(max_px) = non_negative_px(style.max_width()) {
         w = w.min(max_px);
     }
 
@@ -100,11 +91,7 @@ pub(crate) fn size_replaced_inline_children<'style_tree, 'dom>(
 
                         let mut h = (line_h + pad_y).max(18.0);
 
-                        if let Some(Length::Px(px)) = child
-                            .style
-                            .height()
-                            .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
-                        {
+                        if let Some(px) = non_negative_px(child.style.height()) {
                             h = px;
                         }
 
@@ -136,11 +123,7 @@ pub(crate) fn size_replaced_inline_children<'style_tree, 'dom>(
                         let intrinsic_h = ((rows as f32) * line_h + pad_y).max(36.0);
 
                         let mut h = intrinsic_h;
-                        if let Some(Length::Px(px)) = child
-                            .style
-                            .height()
-                            .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
-                        {
+                        if let Some(px) = non_negative_px(child.style.height()) {
                             h = px;
                         }
 
@@ -153,14 +136,8 @@ pub(crate) fn size_replaced_inline_children<'style_tree, 'dom>(
                         let Length::Px(font_px) = child.style.font_size();
                         let intrinsic = font_px.max(12.0);
 
-                        let width_px = child.style.width().and_then(|len| match len {
-                            Length::Px(px) if px >= 0.0 => Some(px),
-                            _ => None,
-                        });
-                        let height_px = child.style.height().and_then(|len| match len {
-                            Length::Px(px) if px >= 0.0 => Some(px),
-                            _ => None,
-                        });
+                        let width_px = non_negative_px(child.style.width());
+                        let height_px = non_negative_px(child.style.height());
 
                         let desired_w = width_px.or(height_px).unwrap_or(intrinsic);
                         let w = resolve_replaced_width_px(child.style, content_width, desired_w);
@@ -194,26 +171,14 @@ pub(crate) fn size_replaced_inline_children<'style_tree, 'dom>(
                         // Buttons do not have an intrinsic aspect ratio like images do.
                         // Keep their height stable even when width is clamped.
                         let mut w = intrinsic_w;
-                        if let Some(Length::Px(px)) = child
-                            .style
-                            .width()
-                            .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
-                        {
+                        if let Some(px) = non_negative_px(child.style.width()) {
                             w = px;
                         }
 
-                        if let Some(Length::Px(min_px)) = child
-                            .style
-                            .min_width()
-                            .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
-                        {
+                        if let Some(min_px) = non_negative_px(child.style.min_width()) {
                             w = w.max(min_px);
                         }
-                        if let Some(Length::Px(max_px)) = child
-                            .style
-                            .max_width()
-                            .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
-                        {
+                        if let Some(max_px) = non_negative_px(child.style.max_width()) {
                             w = w.min(max_px);
                         }
 
@@ -221,11 +186,7 @@ pub(crate) fn size_replaced_inline_children<'style_tree, 'dom>(
                         w = w.min(content_width.max(0.0));
 
                         let mut h = intrinsic_h;
-                        if let Some(Length::Px(px)) = child
-                            .style
-                            .height()
-                            .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
-                        {
+                        if let Some(px) = non_negative_px(child.style.height()) {
                             h = px;
                         }
 
@@ -257,5 +218,12 @@ pub(crate) fn size_replaced_inline_children<'style_tree, 'dom>(
                 // Block children dont participate in this blocks inline formatting.
             }
         }
+    }
+}
+
+fn non_negative_px(value: Option<LengthPercentage>) -> Option<f32> {
+    match value {
+        Some(LengthPercentage::Length(Length::Px(px))) if px >= 0.0 => Some(px),
+        _ => None,
     }
 }

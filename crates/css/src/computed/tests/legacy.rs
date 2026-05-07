@@ -28,7 +28,9 @@ fn min_width_auto_clears_previous_length_but_none_is_not_accepted() {
         ],
         None,
     );
-    assert!(matches!(style.min_width(), Some(Length::Px(px)) if px == 10.0));
+    assert!(
+        matches!(style.min_width(), Some(LengthPercentage::Length(Length::Px(px))) if px == 10.0)
+    );
 }
 
 #[test]
@@ -51,7 +53,9 @@ fn max_width_none_clears_previous_length_but_auto_is_not_accepted() {
         ],
         None,
     );
-    assert!(matches!(style.max_width(), Some(Length::Px(px)) if px == 10.0));
+    assert!(
+        matches!(style.max_width(), Some(LengthPercentage::Length(Length::Px(px))) if px == 10.0)
+    );
 }
 
 #[test]

@@ -1,8 +1,47 @@
 /// CSS Length value, currently only supports `px`,
-/// but keep this extensible for `em`, `%`, etc.
+/// but keep this extensible for `em`, `rem`, `pt`, etc.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum Length {
     Px(f32),
+}
+
+/// CSS percentage value represented as a fraction.
+///
+/// `1.0` is 100%, `0.5` is 50%. Sign/range validity is property-specific and
+/// enforced before a percentage reaches computed style.
+#[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
+pub struct Percentage(f32);
+
+impl Percentage {
+    pub fn from_fraction(value: f32) -> Option<Self> {
+        if value.is_finite() {
+            Some(Self(if value == 0.0 { 0.0 } else { value }))
+        } else {
+            None
+        }
+    }
+
+    pub fn from_percent(value: f32) -> Option<Self> {
+        Self::from_fraction(value / 100.0)
+    }
+
+    pub fn fraction(self) -> f32 {
+        self.0
+    }
+
+    pub fn percent(self) -> f32 {
+        self.0 * 100.0
+    }
+}
+
+/// CSS `<length-percentage>` computed value.
+///
+/// Percentages remain unresolved at computed-value time. Layout resolves them
+/// against the appropriate containing-size basis.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub enum LengthPercentage {
+    Length(Length),
+    Percentage(Percentage),
 }
 
 /// CSS `display` value. This will be expanded over time.

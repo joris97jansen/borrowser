@@ -1,5 +1,6 @@
 use super::{
-    SpecifiedColorKeyword, SpecifiedColorSyntax, SpecifiedDisplayKeyword, SpecifiedLengthUnit,
+    SpecifiedColorKeyword, SpecifiedColorSyntax, SpecifiedDisplayKeyword,
+    SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto, SpecifiedLengthUnit,
     SpecifiedValue, SpecifiedValueLimits, SpecifiedValueParseErrorKind, parse_specified_value,
     parse_specified_value_with_limits,
 };
@@ -82,15 +83,35 @@ fn parses_representative_property_aware_specified_values() {
 #[test]
 fn parses_unitless_zero_as_specified_length_without_computing_it() {
     let width = parse(PropertyId::Width, "width: 0");
-    let SpecifiedValue::LengthOrAuto(super::SpecifiedLengthOrAuto::Length(length)) = width.value()
+    let SpecifiedValue::LengthPercentageOrAuto(SpecifiedLengthPercentageOrAuto::LengthPercentage(
+        SpecifiedLengthPercentage::Length(length),
+    )) = width.value()
     else {
-        panic!("expected length-or-auto length");
+        panic!("expected length-percentage-or-auto length");
     };
 
     assert_eq!(length.number(), "0");
     assert_eq!(length.numeric_value(), 0.0);
     assert_eq!(length.unit(), SpecifiedLengthUnit::UnitlessZero);
     assert_eq!(width.to_css_text(), "0");
+}
+
+#[test]
+fn parses_percentages_for_supported_sizing_properties_without_resolving_them() {
+    let width = parse(PropertyId::Width, "width: 50%");
+    let SpecifiedValue::LengthPercentageOrAuto(SpecifiedLengthPercentageOrAuto::LengthPercentage(
+        SpecifiedLengthPercentage::Percentage(percentage),
+    )) = width.value()
+    else {
+        panic!("expected width percentage");
+    };
+
+    assert_eq!(percentage.number(), "50");
+    assert_eq!(percentage.numeric_value(), 50.0);
+    assert_eq!(width.to_css_text(), "50%");
+
+    let max_width = parse(PropertyId::MaxWidth, "max-width: 25%");
+    assert_eq!(max_width.to_css_text(), "25%");
 }
 
 #[test]

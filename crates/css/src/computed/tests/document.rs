@@ -21,7 +21,10 @@ fn compute_style_from_resolved_style_materializes_cascade_fallbacks() {
         .expect("child computed style");
 
     assert_eq!(parent.color(), (0, 255, 0, 255));
-    assert_eq!(parent.width(), Some(Length::Px(40.0)));
+    assert_eq!(
+        parent.width(),
+        Some(LengthPercentage::Length(Length::Px(40.0)))
+    );
     assert_eq!(child.color(), parent.color());
     assert_eq!(child.width(), None);
     assert_eq!(child.box_metrics().padding_left, 0.0);
@@ -50,7 +53,10 @@ fn compute_document_styles_integrates_cascade_inheritance_defaults_and_computati
     let section = computed.entries()[0].style();
     assert_eq!(section.color(), (255, 0, 0, 255));
     assert_eq!(section.font_size(), Length::Px(20.0));
-    assert_eq!(section.width(), Some(Length::Px(40.0)));
+    assert_eq!(
+        section.width(),
+        Some(LengthPercentage::Length(Length::Px(40.0)))
+    );
     assert_eq!(section.background_color(), (0, 0, 0, 0));
 
     let span = computed.entries()[1].style();

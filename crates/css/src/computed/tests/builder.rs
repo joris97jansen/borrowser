@@ -20,7 +20,9 @@ fn computed_style_builder_materializes_structured_fields_from_property_entries()
     builder
         .record(
             PropertyId::Width,
-            ComputedValue::LengthOrAuto(Some(Length::Px(320.0))),
+            ComputedValue::LengthPercentageOrAuto(Some(LengthPercentage::Length(Length::Px(
+                320.0,
+            )))),
         )
         .expect("width");
 
@@ -28,10 +30,13 @@ fn computed_style_builder_materializes_structured_fields_from_property_entries()
 
     assert_eq!(style.color(), (12, 34, 56, 255));
     assert_eq!(style.box_metrics().margin_top, 18.0);
-    assert_eq!(style.width(), Some(Length::Px(320.0)));
+    assert_eq!(
+        style.width(),
+        Some(LengthPercentage::Length(Length::Px(320.0)))
+    );
     assert_eq!(
         style.get(PropertyId::Width).value(),
-        ComputedValue::LengthOrAuto(Some(Length::Px(320.0)))
+        ComputedValue::LengthPercentageOrAuto(Some(LengthPercentage::Length(Length::Px(320.0))))
     );
 }
 

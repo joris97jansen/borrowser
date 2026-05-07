@@ -17,8 +17,9 @@ pub use error::{SpecifiedValueParseError, SpecifiedValueParseErrorKind};
 pub use parse::{SpecifiedValueLimits, parse_specified_value, parse_specified_value_with_limits};
 pub use value::{
     SpecifiedColor, SpecifiedColorKeyword, SpecifiedColorSyntax, SpecifiedDisplay,
-    SpecifiedDisplayKeyword, SpecifiedHexColor, SpecifiedLength, SpecifiedLengthOrAuto,
-    SpecifiedLengthOrNone, SpecifiedLengthUnit, SpecifiedPropertyValue, SpecifiedValue,
+    SpecifiedDisplayKeyword, SpecifiedHexColor, SpecifiedLength, SpecifiedLengthPercentage,
+    SpecifiedLengthPercentageOrAuto, SpecifiedLengthPercentageOrNone, SpecifiedLengthUnit,
+    SpecifiedPercentage, SpecifiedPropertyValue, SpecifiedValue,
 };
 
 #[cfg(test)]

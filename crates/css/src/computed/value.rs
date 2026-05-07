@@ -1,14 +1,14 @@
 use crate::{
     InitialStyleValue, PropertyComputedValueKind, PropertyId,
     specified::{SpecifiedPropertyValue, SpecifiedValue},
-    values::{Display, Length},
+    values::{Display, Length, LengthPercentage},
 };
 
 use super::{
     format::{display_keyword, format_length},
     normalize::{
-        normalize_color, normalize_display, normalize_length, normalize_length_or_auto,
-        normalize_length_or_none,
+        normalize_color, normalize_display, normalize_length, normalize_length_percentage_or_auto,
+        normalize_length_percentage_or_none,
     },
 };
 
@@ -18,8 +18,8 @@ pub enum ComputedValue {
     Color((u8, u8, u8, u8)),
     Display(Display),
     Length(Length),
-    LengthOrAuto(Option<Length>),
-    LengthOrNone(Option<Length>),
+    LengthPercentageOrAuto(Option<LengthPercentage>),
+    LengthPercentageOrNone(Option<LengthPercentage>),
 }
 
 impl ComputedValue {
@@ -28,8 +28,8 @@ impl ComputedValue {
             Self::Color(_) => ComputedValueDiscriminant::Color,
             Self::Display(_) => ComputedValueDiscriminant::Display,
             Self::Length(_) => ComputedValueDiscriminant::Length,
-            Self::LengthOrAuto(_) => ComputedValueDiscriminant::LengthOrAuto,
-            Self::LengthOrNone(_) => ComputedValueDiscriminant::LengthOrNone,
+            Self::LengthPercentageOrAuto(_) => ComputedValueDiscriminant::LengthPercentageOrAuto,
+            Self::LengthPercentageOrNone(_) => ComputedValueDiscriminant::LengthPercentageOrNone,
         }
     }
 
@@ -40,8 +40,8 @@ impl ComputedValue {
             InitialStyleValue::DisplayInline => Self::Display(Display::Inline),
             InitialStyleValue::FontSizePx16 => Self::Length(Length::Px(16.0)),
             InitialStyleValue::ZeroPx => Self::Length(Length::Px(0.0)),
-            InitialStyleValue::AutoKeyword => Self::LengthOrAuto(None),
-            InitialStyleValue::NoneKeyword => Self::LengthOrNone(None),
+            InitialStyleValue::AutoKeyword => Self::LengthPercentageOrAuto(None),
+            InitialStyleValue::NoneKeyword => Self::LengthPercentageOrNone(None),
         }
     }
 
@@ -59,11 +59,11 @@ impl ComputedValue {
             SpecifiedValue::Color(color) => Self::Color(normalize_color(color)),
             SpecifiedValue::Display(display) => Self::Display(normalize_display(display.keyword())),
             SpecifiedValue::Length(length) => Self::Length(normalize_length(property, length)?),
-            SpecifiedValue::LengthOrAuto(value) => {
-                Self::LengthOrAuto(normalize_length_or_auto(property, value)?)
+            SpecifiedValue::LengthPercentageOrAuto(value) => {
+                Self::LengthPercentageOrAuto(normalize_length_percentage_or_auto(property, value)?)
             }
-            SpecifiedValue::LengthOrNone(value) => {
-                Self::LengthOrNone(normalize_length_or_none(property, value)?)
+            SpecifiedValue::LengthPercentageOrNone(value) => {
+                Self::LengthPercentageOrNone(normalize_length_percentage_or_none(property, value)?)
             }
         };
 
@@ -88,10 +88,10 @@ impl ComputedValue {
             Self::Color((r, g, b, a)) => format!("rgba({r}, {g}, {b}, {a})"),
             Self::Display(display) => display_keyword(display).to_string(),
             Self::Length(length) => format_length(length),
-            Self::LengthOrAuto(Some(length)) => format_length(length),
-            Self::LengthOrAuto(None) => "auto".to_string(),
-            Self::LengthOrNone(Some(length)) => format_length(length),
-            Self::LengthOrNone(None) => "none".to_string(),
+            Self::LengthPercentageOrAuto(Some(value)) => format_length_percentage(value),
+            Self::LengthPercentageOrAuto(None) => "auto".to_string(),
+            Self::LengthPercentageOrNone(Some(value)) => format_length_percentage(value),
+            Self::LengthPercentageOrNone(None) => "none".to_string(),
         }
     }
 }
@@ -155,8 +155,8 @@ pub enum ComputedValueDiscriminant {
     Color,
     Display,
     Length,
-    LengthOrAuto,
-    LengthOrNone,
+    LengthPercentageOrAuto,
+    LengthPercentageOrNone,
 }
 
 impl ComputedValueDiscriminant {
@@ -165,8 +165,8 @@ impl ComputedValueDiscriminant {
             Self::Color => "color",
             Self::Display => "display",
             Self::Length => "length",
-            Self::LengthOrAuto => "length-or-auto",
-            Self::LengthOrNone => "length-or-none",
+            Self::LengthPercentageOrAuto => "length-percentage-or-auto",
+            Self::LengthPercentageOrNone => "length-percentage-or-none",
         }
     }
 }
@@ -184,7 +184,18 @@ pub(super) fn computed_value_discriminant(
         PropertyComputedValueKind::AbsoluteColor => ComputedValueDiscriminant::Color,
         PropertyComputedValueKind::DisplayKeyword => ComputedValueDiscriminant::Display,
         PropertyComputedValueKind::AbsoluteLength => ComputedValueDiscriminant::Length,
-        PropertyComputedValueKind::AbsoluteLengthOrAuto => ComputedValueDiscriminant::LengthOrAuto,
-        PropertyComputedValueKind::AbsoluteLengthOrNone => ComputedValueDiscriminant::LengthOrNone,
+        PropertyComputedValueKind::LengthPercentageOrAuto => {
+            ComputedValueDiscriminant::LengthPercentageOrAuto
+        }
+        PropertyComputedValueKind::LengthPercentageOrNone => {
+            ComputedValueDiscriminant::LengthPercentageOrNone
+        }
+    }
+}
+
+fn format_length_percentage(value: LengthPercentage) -> String {
+    match value {
+        LengthPercentage::Length(length) => format_length(length),
+        LengthPercentage::Percentage(percentage) => format!("{}%", percentage.percent()),
     }
 }

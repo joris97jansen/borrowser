@@ -25,7 +25,8 @@
 //! intrinsic sizing for supported content is documented in
 //! `docs/rendering/x4-intrinsic-sizing-supported-content.md`; X5 min/max
 //! sizing constraints are documented in
-//! `docs/rendering/x5-min-max-sizing-constraints.md`.
+//! `docs/rendering/x5-min-max-sizing-constraints.md`; X6 percentage sizing is
+//! documented in `docs/rendering/x6-percentage-sizing-targeted-subset.md`.
 //! `BoxTree` is the frame-local generated box-tree structure; `LayoutBox` is
 //! the current geometry projection consumed by paint and hit testing.
 

@@ -2,9 +2,10 @@ use crate::{
     PropertyId,
     specified::{
         SpecifiedColor, SpecifiedColorKeyword, SpecifiedColorSyntax, SpecifiedDisplayKeyword,
-        SpecifiedLength, SpecifiedLengthOrAuto, SpecifiedLengthOrNone,
+        SpecifiedLength, SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto,
+        SpecifiedLengthPercentageOrNone, SpecifiedPercentage,
     },
-    values::{Display, Length},
+    values::{Display, Length, LengthPercentage, Percentage},
 };
 
 use super::value::{ComputedValueNormalizationError, ComputedValueNormalizationErrorKind};
@@ -56,24 +57,55 @@ pub(super) fn normalize_length(
     Ok(Length::Px(value))
 }
 
-pub(super) fn normalize_length_or_auto(
+pub(super) fn normalize_length_percentage_or_auto(
     property: PropertyId,
-    value: &SpecifiedLengthOrAuto,
-) -> Result<Option<Length>, ComputedValueNormalizationError> {
+    value: &SpecifiedLengthPercentageOrAuto,
+) -> Result<Option<LengthPercentage>, ComputedValueNormalizationError> {
     match value {
-        SpecifiedLengthOrAuto::Length(length) => normalize_length(property, length).map(Some),
-        SpecifiedLengthOrAuto::Auto { .. } => Ok(None),
+        SpecifiedLengthPercentageOrAuto::LengthPercentage(value) => {
+            normalize_length_percentage(property, value).map(Some)
+        }
+        SpecifiedLengthPercentageOrAuto::Auto { .. } => Ok(None),
     }
 }
 
-pub(super) fn normalize_length_or_none(
+pub(super) fn normalize_length_percentage_or_none(
     property: PropertyId,
-    value: &SpecifiedLengthOrNone,
-) -> Result<Option<Length>, ComputedValueNormalizationError> {
+    value: &SpecifiedLengthPercentageOrNone,
+) -> Result<Option<LengthPercentage>, ComputedValueNormalizationError> {
     match value {
-        SpecifiedLengthOrNone::Length(length) => normalize_length(property, length).map(Some),
-        SpecifiedLengthOrNone::None { .. } => Ok(None),
+        SpecifiedLengthPercentageOrNone::LengthPercentage(value) => {
+            normalize_length_percentage(property, value).map(Some)
+        }
+        SpecifiedLengthPercentageOrNone::None { .. } => Ok(None),
     }
+}
+
+pub(super) fn normalize_length_percentage(
+    property: PropertyId,
+    value: &SpecifiedLengthPercentage,
+) -> Result<LengthPercentage, ComputedValueNormalizationError> {
+    match value {
+        SpecifiedLengthPercentage::Length(length) => {
+            normalize_length(property, length).map(LengthPercentage::Length)
+        }
+        SpecifiedLengthPercentage::Percentage(percentage) => {
+            normalize_percentage(property, percentage).map(LengthPercentage::Percentage)
+        }
+    }
+}
+
+pub(super) fn normalize_percentage(
+    property: PropertyId,
+    percentage: &SpecifiedPercentage,
+) -> Result<Percentage, ComputedValueNormalizationError> {
+    let percent = normalize_px_scalar(property, percentage.numeric_value())?;
+    Percentage::from_percent(percent).ok_or_else(|| {
+        ComputedValueNormalizationError::new(
+            property,
+            ComputedValueNormalizationErrorKind::LengthOutOfRange,
+        )
+    })
 }
 
 fn normalize_px_scalar(

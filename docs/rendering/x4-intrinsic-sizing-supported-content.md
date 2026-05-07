@@ -19,6 +19,7 @@ Related documents:
 - `docs/rendering/x2-structured-size-resolution-model-inputs.md`
 - `docs/rendering/x3-width-height-resolution-supported-subset.md`
 - `docs/rendering/x5-min-max-sizing-constraints.md`
+- `docs/rendering/x6-percentage-sizing-targeted-subset.md`
 - `docs/rendering/w7-inline-formatting-context-foundations.md`
 - `docs/rendering/w9-box-tree-invariants-extension-hooks.md`
 
@@ -107,7 +108,7 @@ X4 adds layout-level regression tests for:
 
 X4 intentionally does not implement:
 
-- CSS percentage parsing or percentage intrinsic behavior
+- percentage intrinsic behavior beyond the X6 targeted sizing subset
 - intrinsic keywords such as `min-content`, `max-content`, or `fit-content`
 - full CSS text layout and Unicode line-breaking rules
 - hyphenation, soft wrap opportunities beyond the current whitespace subset,

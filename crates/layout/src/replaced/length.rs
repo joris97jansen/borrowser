@@ -1,8 +1,8 @@
-use css::Length;
+use css::{Length, LengthPercentage};
 
-pub fn px_opt(len: Option<Length>) -> Option<f32> {
-    match len {
-        Some(Length::Px(px)) => Some(px),
+pub fn px_opt(value: Option<LengthPercentage>) -> Option<f32> {
+    match value {
+        Some(LengthPercentage::Length(Length::Px(px))) => Some(px),
         _ => None,
     }
 }

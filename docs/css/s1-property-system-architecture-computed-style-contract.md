@@ -115,18 +115,18 @@ Current supported properties:
 | `color` | yes | `black` | `Color` | `AbsoluteColor` |
 | `display` | no | `inline` | `DisplayKeyword` | `DisplayKeyword` |
 | `font-size` | yes | `16px` | `AbsoluteLength` | `AbsoluteLength` |
-| `height` | no | `auto` | `AbsoluteLengthOrAuto` | `AbsoluteLengthOrAuto` |
+| `height` | no | `auto` | `LengthPercentageOrAuto` | `LengthPercentageOrAuto` |
 | `margin-bottom` | no | `0px` | `AbsoluteLength` | `AbsoluteLength` |
 | `margin-left` | no | `0px` | `AbsoluteLength` | `AbsoluteLength` |
 | `margin-right` | no | `0px` | `AbsoluteLength` | `AbsoluteLength` |
 | `margin-top` | no | `0px` | `AbsoluteLength` | `AbsoluteLength` |
-| `max-width` | no | `none` | `AbsoluteLengthOrNone` | `AbsoluteLengthOrNone` |
-| `min-width` | no | `auto` | `AbsoluteLengthOrAuto` | `AbsoluteLengthOrAuto` |
+| `max-width` | no | `none` | `LengthPercentageOrNone` | `LengthPercentageOrNone` |
+| `min-width` | no | `auto` | `LengthPercentageOrAuto` | `LengthPercentageOrAuto` |
 | `padding-bottom` | no | `0px` | `AbsoluteLength` | `AbsoluteLength` |
 | `padding-left` | no | `0px` | `AbsoluteLength` | `AbsoluteLength` |
 | `padding-right` | no | `0px` | `AbsoluteLength` | `AbsoluteLength` |
 | `padding-top` | no | `0px` | `AbsoluteLength` | `AbsoluteLength` |
-| `width` | no | `auto` | `AbsoluteLengthOrAuto` | `AbsoluteLengthOrAuto` |
+| `width` | no | `auto` | `LengthPercentageOrAuto` | `LengthPercentageOrAuto` |
 
 ## Specified Versus Computed Boundary
 
@@ -157,8 +157,9 @@ Current-scope guarantees:
   tuples, not kept as authored keywords or hashes
 - `AbsoluteLength` means computed lengths are normalized to the current CSS-px
   runtime contract
-- `AbsoluteLengthOrAuto` and `AbsoluteLengthOrNone` preserve the controlling
-  keyword while normalizing any length branch into CSS px
+- `LengthPercentageOrAuto` and `LengthPercentageOrNone` preserve the
+  controlling keyword while normalizing length branches into CSS px and keeping
+  percentage branches unresolved for layout
 - `DisplayKeyword` remains a canonical keyword enum, not a raw string
 
 Normative rule: `ComputedStyle` stores canonical runtime values, not authored
@@ -238,7 +239,8 @@ the full computed-value engine.
 Out of scope in this issue:
 
 - full property-specific specified-value parsers from `ResolvedStyle`
-- relative units, percentages, and any layout-dependent value resolution
+- relative units and any layout-dependent value resolution beyond preserving
+  supported sizing percentages for layout
 - CSS-wide keywords such as `inherit`, `initial`, `unset`, `revert`, or
   `revert-layer`
 - custom property substitution and `var(...)`

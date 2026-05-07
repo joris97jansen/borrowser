@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     PropertyId, property_registry,
-    values::{Display, Length},
+    values::{Display, Length, LengthPercentage},
 };
 
 use super::{
@@ -70,10 +70,10 @@ impl ComputedStyleBuilder {
                 padding_left: expect_px(&self.entries, PropertyId::PaddingLeft),
             },
             display: expect_display(&self.entries, PropertyId::Display),
-            width: expect_length_or_auto(&self.entries, PropertyId::Width),
-            height: expect_length_or_auto(&self.entries, PropertyId::Height),
-            min_width: expect_length_or_auto(&self.entries, PropertyId::MinWidth),
-            max_width: expect_length_or_none(&self.entries, PropertyId::MaxWidth),
+            width: expect_length_percentage_or_auto(&self.entries, PropertyId::Width),
+            height: expect_length_percentage_or_auto(&self.entries, PropertyId::Height),
+            min_width: expect_length_percentage_or_auto(&self.entries, PropertyId::MinWidth),
+            max_width: expect_length_percentage_or_none(&self.entries, PropertyId::MaxWidth),
         })
     }
 }
@@ -132,14 +132,14 @@ fn expect_px(entries: &BTreeMap<PropertyId, ComputedValue>, property: PropertyId
     }
 }
 
-fn expect_length_or_auto(
+fn expect_length_percentage_or_auto(
     entries: &BTreeMap<PropertyId, ComputedValue>,
     property: PropertyId,
-) -> Option<Length> {
+) -> Option<LengthPercentage> {
     match entries.get(&property).copied() {
-        Some(ComputedValue::LengthOrAuto(length)) => length,
+        Some(ComputedValue::LengthPercentageOrAuto(value)) => value,
         Some(other) => unreachable!(
-            "property '{}' expected length-or-auto computed value, got {:?}",
+            "property '{}' expected length-percentage-or-auto computed value, got {:?}",
             property.name(),
             other.discriminant()
         ),
@@ -150,14 +150,14 @@ fn expect_length_or_auto(
     }
 }
 
-fn expect_length_or_none(
+fn expect_length_percentage_or_none(
     entries: &BTreeMap<PropertyId, ComputedValue>,
     property: PropertyId,
-) -> Option<Length> {
+) -> Option<LengthPercentage> {
     match entries.get(&property).copied() {
-        Some(ComputedValue::LengthOrNone(length)) => length,
+        Some(ComputedValue::LengthPercentageOrNone(value)) => value,
         Some(other) => unreachable!(
-            "property '{}' expected length-or-none computed value, got {:?}",
+            "property '{}' expected length-percentage-or-none computed value, got {:?}",
             property.name(),
             other.discriminant()
         ),

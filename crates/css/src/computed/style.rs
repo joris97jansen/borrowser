@@ -4,7 +4,7 @@ use crate::{
     PropertyComputedValueKind, PropertyId,
     cascade::ResolvedStyle,
     property_registry,
-    values::{Display, Length},
+    values::{Display, Length, LengthPercentage},
 };
 
 use super::{
@@ -69,15 +69,14 @@ pub struct ComputedStyle {
     /// per-element defaults when no authored `display` declaration exists.
     pub(super) display: Display,
 
-    /// Optional width property. Not inherited. For now we treat this
-    /// as `px` only when specified.
-    pub(super) width: Option<Length>,
-    pub(super) height: Option<Length>,
+    /// Optional width property. Not inherited. `None` represents `auto`.
+    pub(super) width: Option<LengthPercentage>,
+    pub(super) height: Option<LengthPercentage>,
 
     /// `None` represents the current `auto` contract for `min-width`.
-    pub(super) min_width: Option<Length>,
+    pub(super) min_width: Option<LengthPercentage>,
     /// `None` represents the current `none` contract for `max-width`.
-    pub(super) max_width: Option<Length>,
+    pub(super) max_width: Option<LengthPercentage>,
 }
 
 impl ComputedStyle {
@@ -149,22 +148,22 @@ impl ComputedStyle {
     }
 
     /// Returns the computed `width`; `None` represents `auto`.
-    pub fn width(&self) -> Option<Length> {
+    pub fn width(&self) -> Option<LengthPercentage> {
         self.width
     }
 
     /// Returns the computed `height`; `None` represents `auto`.
-    pub fn height(&self) -> Option<Length> {
+    pub fn height(&self) -> Option<LengthPercentage> {
         self.height
     }
 
     /// Returns the computed `min-width`; `None` represents `auto`.
-    pub fn min_width(&self) -> Option<Length> {
+    pub fn min_width(&self) -> Option<LengthPercentage> {
         self.min_width
     }
 
     /// Returns the computed `max-width`; `None` represents `none`.
-    pub fn max_width(&self) -> Option<Length> {
+    pub fn max_width(&self) -> Option<LengthPercentage> {
         self.max_width
     }
 
@@ -202,7 +201,7 @@ impl ComputedStyle {
             PropertyId::Color => ComputedValue::Color(self.color),
             PropertyId::Display => ComputedValue::Display(self.display),
             PropertyId::FontSize => ComputedValue::Length(self.font_size),
-            PropertyId::Height => ComputedValue::LengthOrAuto(self.height),
+            PropertyId::Height => ComputedValue::LengthPercentageOrAuto(self.height),
             PropertyId::MarginBottom => {
                 ComputedValue::Length(Length::Px(self.box_metrics.margin_bottom))
             }
@@ -213,8 +212,8 @@ impl ComputedStyle {
                 ComputedValue::Length(Length::Px(self.box_metrics.margin_right))
             }
             PropertyId::MarginTop => ComputedValue::Length(Length::Px(self.box_metrics.margin_top)),
-            PropertyId::MaxWidth => ComputedValue::LengthOrNone(self.max_width),
-            PropertyId::MinWidth => ComputedValue::LengthOrAuto(self.min_width),
+            PropertyId::MaxWidth => ComputedValue::LengthPercentageOrNone(self.max_width),
+            PropertyId::MinWidth => ComputedValue::LengthPercentageOrAuto(self.min_width),
             PropertyId::PaddingBottom => {
                 ComputedValue::Length(Length::Px(self.box_metrics.padding_bottom))
             }
@@ -227,7 +226,7 @@ impl ComputedStyle {
             PropertyId::PaddingTop => {
                 ComputedValue::Length(Length::Px(self.box_metrics.padding_top))
             }
-            PropertyId::Width => ComputedValue::LengthOrAuto(self.width),
+            PropertyId::Width => ComputedValue::LengthPercentageOrAuto(self.width),
         };
 
         ComputedStyleEntry { property, value }
@@ -266,8 +265,8 @@ impl ComputedStyle {
             rgba_debug_label(self.color()),
             rgba_debug_label(self.background_color()),
             length_debug_label(self.font_size()),
-            optional_length_debug_label(self.width()),
-            optional_length_debug_label(self.height()),
+            optional_length_percentage_debug_label(self.width()),
+            optional_length_percentage_debug_label(self.height()),
             box_sides_debug_label(
                 box_metrics.margin_top,
                 box_metrics.margin_right,
@@ -305,9 +304,16 @@ fn length_debug_label(length: Length) -> String {
     }
 }
 
-fn optional_length_debug_label(length: Option<Length>) -> String {
-    match length {
-        Some(length) => length_debug_label(length),
+fn length_percentage_debug_label(value: LengthPercentage) -> String {
+    match value {
+        LengthPercentage::Length(length) => length_debug_label(length),
+        LengthPercentage::Percentage(percentage) => format!("{:.2}%", percentage.percent()),
+    }
+}
+
+fn optional_length_percentage_debug_label(value: Option<LengthPercentage>) -> String {
+    match value {
+        Some(value) => length_percentage_debug_label(value),
         None => "auto".to_string(),
     }
 }
