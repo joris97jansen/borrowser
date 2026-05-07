@@ -153,8 +153,10 @@ const fn default_length_sign_policy(
             PropertyLengthSignPolicy::NotLength
         }
         PropertySpecifiedValueKind::AbsoluteLength
-        | PropertySpecifiedValueKind::AbsoluteLengthOrAuto
-        | PropertySpecifiedValueKind::AbsoluteLengthOrNone => PropertyLengthSignPolicy::NonNegative,
+        | PropertySpecifiedValueKind::LengthPercentageOrAuto
+        | PropertySpecifiedValueKind::LengthPercentageOrNone => {
+            PropertyLengthSignPolicy::NonNegative
+        }
     }
 }
 
@@ -168,15 +170,15 @@ pub enum PropertyInheritance {
 /// Typed specified-value shape the property parser is expected to emit.
 ///
 /// The current supported subset keeps specified-value parsing layout
-/// independent. Relative units, percentages, and other layout-dependent forms
-/// remain out of scope until a later milestone extends the value model.
+/// independent. Percentages are preserved for layout-dependent resolution
+/// rather than resolved during parsing or computed-style construction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PropertySpecifiedValueKind {
     Color,
     DisplayKeyword,
     AbsoluteLength,
-    AbsoluteLengthOrAuto,
-    AbsoluteLengthOrNone,
+    LengthPercentageOrAuto,
+    LengthPercentageOrNone,
 }
 
 impl PropertySpecifiedValueKind {
@@ -185,8 +187,8 @@ impl PropertySpecifiedValueKind {
             Self::Color => "color",
             Self::DisplayKeyword => "display-keyword",
             Self::AbsoluteLength => "absolute-length",
-            Self::AbsoluteLengthOrAuto => "absolute-length-or-auto",
-            Self::AbsoluteLengthOrNone => "absolute-length-or-none",
+            Self::LengthPercentageOrAuto => "length-percentage-or-auto",
+            Self::LengthPercentageOrNone => "length-percentage-or-none",
         }
     }
 }
@@ -201,8 +203,8 @@ pub enum PropertyComputedValueKind {
     AbsoluteColor,
     DisplayKeyword,
     AbsoluteLength,
-    AbsoluteLengthOrAuto,
-    AbsoluteLengthOrNone,
+    LengthPercentageOrAuto,
+    LengthPercentageOrNone,
 }
 
 impl PropertyComputedValueKind {
@@ -211,8 +213,8 @@ impl PropertyComputedValueKind {
             Self::AbsoluteColor => "absolute-color",
             Self::DisplayKeyword => "display-keyword",
             Self::AbsoluteLength => "absolute-length",
-            Self::AbsoluteLengthOrAuto => "absolute-length-or-auto",
-            Self::AbsoluteLengthOrNone => "absolute-length-or-none",
+            Self::LengthPercentageOrAuto => "length-percentage-or-auto",
+            Self::LengthPercentageOrNone => "length-percentage-or-none",
         }
     }
 }

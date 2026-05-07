@@ -8,7 +8,7 @@ use super::{
     color::parse_color,
     display::parse_display,
     error::{SpecifiedValueParseError, SpecifiedValueParseErrorKind, error},
-    length::{parse_length, parse_length_or_auto, parse_length_or_none},
+    length::{parse_length, parse_length_percentage_or_auto, parse_length_percentage_or_none},
     value::{SpecifiedPropertyValue, SpecifiedValue},
 };
 
@@ -37,11 +37,15 @@ pub fn parse_specified_value_with_limits(
         PropertySpecifiedValueKind::AbsoluteLength => {
             SpecifiedValue::Length(parse_length(property, component)?)
         }
-        PropertySpecifiedValueKind::AbsoluteLengthOrAuto => {
-            SpecifiedValue::LengthOrAuto(parse_length_or_auto(property, component)?)
+        PropertySpecifiedValueKind::LengthPercentageOrAuto => {
+            SpecifiedValue::LengthPercentageOrAuto(parse_length_percentage_or_auto(
+                property, component,
+            )?)
         }
-        PropertySpecifiedValueKind::AbsoluteLengthOrNone => {
-            SpecifiedValue::LengthOrNone(parse_length_or_none(property, component)?)
+        PropertySpecifiedValueKind::LengthPercentageOrNone => {
+            SpecifiedValue::LengthPercentageOrNone(parse_length_percentage_or_none(
+                property, component,
+            )?)
         }
     };
 

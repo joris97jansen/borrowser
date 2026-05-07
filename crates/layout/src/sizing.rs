@@ -5,7 +5,7 @@
 //! architecture boundary that later X issues will implement against.
 
 use crate::ContainingBlockId;
-use css::{BoxMetrics, ComputedStyle, Length};
+use css::{BoxMetrics, ComputedStyle, Length, LengthPercentage};
 
 /// Non-negative finite CSS px value used by sizing algorithms.
 ///
@@ -55,8 +55,7 @@ impl SignedCssPx {
 
 /// Non-negative finite CSS percentage represented as a fraction.
 ///
-/// `1.0` is 100%, `0.5` is 50%. Percentages are not currently produced by the
-/// CSS computed-value layer, but size input types can already represent them.
+/// `1.0` is 100%, `0.5` is 50%.
 #[derive(Clone, Copy, Debug, PartialEq, PartialOrd)]
 pub struct Percentage(f32);
 
@@ -469,12 +468,24 @@ impl StyleSizeInputs {
 
     pub fn from_computed_style(style: &ComputedStyle) -> Result<Self, StyleSizeInputError> {
         let inline = AxisStyleSizeInput::new(
-            preferred_size_from_length_or_auto(style.width(), StyleSizeInputProperty::Width)?,
-            minimum_size_from_length_or_auto(style.min_width(), StyleSizeInputProperty::MinWidth)?,
-            maximum_size_from_length_or_none(style.max_width(), StyleSizeInputProperty::MaxWidth)?,
+            preferred_size_from_length_percentage_or_auto(
+                style.width(),
+                StyleSizeInputProperty::Width,
+            )?,
+            minimum_size_from_length_percentage_or_auto(
+                style.min_width(),
+                StyleSizeInputProperty::MinWidth,
+            )?,
+            maximum_size_from_length_percentage_or_none(
+                style.max_width(),
+                StyleSizeInputProperty::MaxWidth,
+            )?,
         );
         let block = AxisStyleSizeInput::new(
-            preferred_size_from_length_or_auto(style.height(), StyleSizeInputProperty::Height)?,
+            preferred_size_from_length_percentage_or_auto(
+                style.height(),
+                StyleSizeInputProperty::Height,
+            )?,
             StyleMinimumSize::Auto,
             StyleMaximumSize::None,
         );
@@ -719,7 +730,7 @@ pub fn resolve_normal_flow_block_size(
                 )
             })
             .unwrap_or((
-                CssPx::ZERO,
+                auto_content_block_size,
                 SizeResolutionReason::DeferredIndefinitePercentage,
             )),
         (_, StylePreferredSize::Auto) => (
@@ -1102,37 +1113,47 @@ impl std::fmt::Display for StyleSizeInputError {
 
 impl std::error::Error for StyleSizeInputError {}
 
-fn preferred_size_from_length_or_auto(
-    value: Option<Length>,
+fn preferred_size_from_length_percentage_or_auto(
+    value: Option<LengthPercentage>,
     property: StyleSizeInputProperty,
 ) -> Result<StylePreferredSize, StyleSizeInputError> {
     match value {
-        Some(length) => {
+        Some(LengthPercentage::Length(length)) => {
             non_negative_length_from_css(length, property).map(StylePreferredSize::Length)
+        }
+        Some(LengthPercentage::Percentage(percentage)) => {
+            non_negative_percentage_from_css(percentage, property)
+                .map(StylePreferredSize::Percentage)
         }
         None => Ok(StylePreferredSize::Auto),
     }
 }
 
-fn minimum_size_from_length_or_auto(
-    value: Option<Length>,
+fn minimum_size_from_length_percentage_or_auto(
+    value: Option<LengthPercentage>,
     property: StyleSizeInputProperty,
 ) -> Result<StyleMinimumSize, StyleSizeInputError> {
     match value {
-        Some(length) => {
+        Some(LengthPercentage::Length(length)) => {
             non_negative_length_from_css(length, property).map(StyleMinimumSize::Length)
+        }
+        Some(LengthPercentage::Percentage(percentage)) => {
+            non_negative_percentage_from_css(percentage, property).map(StyleMinimumSize::Percentage)
         }
         None => Ok(StyleMinimumSize::Auto),
     }
 }
 
-fn maximum_size_from_length_or_none(
-    value: Option<Length>,
+fn maximum_size_from_length_percentage_or_none(
+    value: Option<LengthPercentage>,
     property: StyleSizeInputProperty,
 ) -> Result<StyleMaximumSize, StyleSizeInputError> {
     match value {
-        Some(length) => {
+        Some(LengthPercentage::Length(length)) => {
             non_negative_length_from_css(length, property).map(StyleMaximumSize::Length)
+        }
+        Some(LengthPercentage::Percentage(percentage)) => {
+            non_negative_percentage_from_css(percentage, property).map(StyleMaximumSize::Percentage)
         }
         None => Ok(StyleMaximumSize::None),
     }
@@ -1145,6 +1166,18 @@ fn non_negative_length_from_css(
     match length {
         Length::Px(value) => non_negative_length(value, property),
     }
+}
+
+fn non_negative_percentage_from_css(
+    percentage: css::Percentage,
+    property: StyleSizeInputProperty,
+) -> Result<Percentage, StyleSizeInputError> {
+    Percentage::from_fraction(percentage.fraction()).ok_or(
+        StyleSizeInputError::InvalidNonNegativeLength {
+            property,
+            value: percentage.fraction(),
+        },
+    )
 }
 
 fn non_negative_length(
@@ -1439,22 +1472,22 @@ mod tests {
         let style = ComputedStyle::initial()
             .with_property(
                 PropertyId::Width,
-                ComputedValue::LengthOrAuto(Some(Length::Px(120.0))),
+                computed_length_percentage_or_auto_px(120.0),
             )
             .expect("width")
             .with_property(
                 PropertyId::Height,
-                ComputedValue::LengthOrAuto(Some(Length::Px(40.0))),
+                computed_length_percentage_or_auto_px(40.0),
             )
             .expect("height")
             .with_property(
                 PropertyId::MinWidth,
-                ComputedValue::LengthOrAuto(Some(Length::Px(80.0))),
+                computed_length_percentage_or_auto_px(80.0),
             )
             .expect("min-width")
             .with_property(
                 PropertyId::MaxWidth,
-                ComputedValue::LengthOrNone(Some(Length::Px(240.0))),
+                computed_length_percentage_or_none_px(240.0),
             )
             .expect("max-width")
             .with_property(
@@ -1496,11 +1529,63 @@ mod tests {
     }
 
     #[test]
+    fn style_size_inputs_materialize_percentage_sizing_properties() {
+        let style = ComputedStyle::initial()
+            .with_property(
+                PropertyId::Width,
+                ComputedValue::LengthPercentageOrAuto(Some(LengthPercentage::Percentage(
+                    css::Percentage::from_percent(50.0).expect("finite width percentage"),
+                ))),
+            )
+            .expect("width")
+            .with_property(
+                PropertyId::Height,
+                ComputedValue::LengthPercentageOrAuto(Some(LengthPercentage::Percentage(
+                    css::Percentage::from_percent(25.0).expect("finite height percentage"),
+                ))),
+            )
+            .expect("height")
+            .with_property(
+                PropertyId::MinWidth,
+                ComputedValue::LengthPercentageOrAuto(Some(LengthPercentage::Percentage(
+                    css::Percentage::from_percent(40.0).expect("finite min-width percentage"),
+                ))),
+            )
+            .expect("min-width")
+            .with_property(
+                PropertyId::MaxWidth,
+                ComputedValue::LengthPercentageOrNone(Some(LengthPercentage::Percentage(
+                    css::Percentage::from_percent(75.0).expect("finite max-width percentage"),
+                ))),
+            )
+            .expect("max-width");
+
+        let inputs = StyleSizeInputs::from_computed_style(&style).expect("style inputs");
+
+        assert_eq!(
+            inputs.inline().preferred(),
+            StylePreferredSize::Percentage(Percentage::from_percent(50.0).expect("width"))
+        );
+        assert_eq!(
+            inputs.block().preferred(),
+            StylePreferredSize::Percentage(Percentage::from_percent(25.0).expect("height"))
+        );
+        assert_eq!(
+            inputs.inline().min(),
+            StyleMinimumSize::Percentage(Percentage::from_percent(40.0).expect("min-width"))
+        );
+        assert_eq!(
+            inputs.inline().max(),
+            StyleMaximumSize::Percentage(Percentage::from_percent(75.0).expect("max-width"))
+        );
+    }
+
+    #[test]
     fn style_size_inputs_reject_invalid_non_negative_sizing_lengths() {
         let style = ComputedStyle::initial()
             .with_property(
                 PropertyId::Width,
-                ComputedValue::LengthOrAuto(Some(Length::Px(-1.0))),
+                computed_length_percentage_or_auto_px(-1.0),
             )
             .expect("width");
 
@@ -1574,7 +1659,7 @@ mod tests {
             ComputedStyle::initial()
                 .with_property(
                     PropertyId::Width,
-                    ComputedValue::LengthOrAuto(Some(Length::Px(100.0))),
+                    computed_length_percentage_or_auto_px(100.0),
                 )
                 .expect("width")
                 .with_property(
@@ -1604,17 +1689,83 @@ mod tests {
     }
 
     #[test]
+    fn normal_flow_percentage_width_resolves_against_containing_size_not_available_space() {
+        let input = size_input_with_containing_and_available_style(
+            ComputedStyle::initial()
+                .with_property(
+                    PropertyId::Width,
+                    ComputedValue::LengthPercentageOrAuto(Some(LengthPercentage::Percentage(
+                        css::Percentage::from_percent(50.0).expect("finite width percentage"),
+                    ))),
+                )
+                .expect("width")
+                .with_property(
+                    PropertyId::PaddingLeft,
+                    ComputedValue::Length(Length::Px(10.0)),
+                )
+                .expect("padding-left")
+                .with_property(
+                    PropertyId::PaddingRight,
+                    ComputedValue::Length(Length::Px(10.0)),
+                )
+                .expect("padding-right"),
+            AvailableSize::definite(400.0).expect("containing inline"),
+            AvailableSize::definite(300.0).expect("available inline"),
+            AvailableSize::Indefinite,
+        );
+
+        let resolved = resolve_normal_flow_inline_size(input, NormalFlowSizingMode::BlockLevel);
+
+        assert_eq!(
+            resolved.content().value(),
+            CssPx::new(200.0).expect("content")
+        );
+        assert_eq!(
+            resolved.content().preferred_reason(),
+            SizeResolutionReason::PercentageOfDefiniteContainingBlock
+        );
+        assert_eq!(resolved.border(), CssPx::new(220.0).expect("border"));
+    }
+
+    #[test]
+    fn normal_flow_percentage_width_defers_against_indefinite_containing_size() {
+        let input = size_input_with_available_inline_size(
+            ComputedStyle::initial()
+                .with_property(
+                    PropertyId::Width,
+                    ComputedValue::LengthPercentageOrAuto(Some(LengthPercentage::Percentage(
+                        css::Percentage::from_percent(50.0).expect("finite width percentage"),
+                    ))),
+                )
+                .expect("width"),
+            AvailableSize::Indefinite,
+        );
+
+        let resolved = resolve_normal_flow_inline_size(input, NormalFlowSizingMode::BlockLevel);
+
+        assert_eq!(resolved.content().value(), CssPx::ZERO);
+        assert_eq!(
+            resolved.content().preferred_reason(),
+            SizeResolutionReason::DeferredIndefinitePercentage
+        );
+        assert_eq!(
+            resolved.content().applied_constraint(),
+            AppliedSizeConstraint::None
+        );
+    }
+
+    #[test]
     fn normal_flow_min_max_constraints_apply_to_content_box_before_padding() {
         let input = size_input_with_style(
             ComputedStyle::initial()
                 .with_property(
                     PropertyId::Width,
-                    ComputedValue::LengthOrAuto(Some(Length::Px(200.0))),
+                    computed_length_percentage_or_auto_px(200.0),
                 )
                 .expect("width")
                 .with_property(
                     PropertyId::MaxWidth,
-                    ComputedValue::LengthOrNone(Some(Length::Px(120.0))),
+                    computed_length_percentage_or_none_px(120.0),
                 )
                 .expect("max-width")
                 .with_property(
@@ -1648,17 +1799,52 @@ mod tests {
     }
 
     #[test]
+    fn normal_flow_percentage_width_constraints_apply_after_explicit_width() {
+        let input = size_input_with_style(
+            ComputedStyle::initial()
+                .with_property(
+                    PropertyId::Width,
+                    computed_length_percentage_or_auto_px(300.0),
+                )
+                .expect("width")
+                .with_property(
+                    PropertyId::MaxWidth,
+                    ComputedValue::LengthPercentageOrNone(Some(LengthPercentage::Percentage(
+                        css::Percentage::from_percent(50.0).expect("finite max-width percentage"),
+                    ))),
+                )
+                .expect("max-width"),
+            400.0,
+        );
+
+        let resolved = resolve_normal_flow_inline_size(input, NormalFlowSizingMode::BlockLevel);
+
+        assert_eq!(
+            resolved.content().preferred_value(),
+            CssPx::new(300.0).expect("preferred")
+        );
+        assert_eq!(
+            resolved.content().value(),
+            CssPx::new(200.0).expect("content")
+        );
+        assert_eq!(
+            resolved.content().applied_constraint(),
+            AppliedSizeConstraint::Max
+        );
+    }
+
+    #[test]
     fn normal_flow_min_width_applies_to_content_box_before_padding() {
         let input = size_input_with_style(
             ComputedStyle::initial()
                 .with_property(
                     PropertyId::Width,
-                    ComputedValue::LengthOrAuto(Some(Length::Px(80.0))),
+                    computed_length_percentage_or_auto_px(80.0),
                 )
                 .expect("width")
                 .with_property(
                     PropertyId::MinWidth,
-                    ComputedValue::LengthOrAuto(Some(Length::Px(120.0))),
+                    computed_length_percentage_or_auto_px(120.0),
                 )
                 .expect("min-width")
                 .with_property(
@@ -1697,17 +1883,17 @@ mod tests {
             ComputedStyle::initial()
                 .with_property(
                     PropertyId::Width,
-                    ComputedValue::LengthOrAuto(Some(Length::Px(150.0))),
+                    computed_length_percentage_or_auto_px(150.0),
                 )
                 .expect("width")
                 .with_property(
                     PropertyId::MinWidth,
-                    ComputedValue::LengthOrAuto(Some(Length::Px(200.0))),
+                    computed_length_percentage_or_auto_px(200.0),
                 )
                 .expect("min-width")
                 .with_property(
                     PropertyId::MaxWidth,
-                    ComputedValue::LengthOrNone(Some(Length::Px(100.0))),
+                    computed_length_percentage_or_none_px(100.0),
                 )
                 .expect("max-width"),
             500.0,
@@ -1735,7 +1921,7 @@ mod tests {
             ComputedStyle::initial()
                 .with_property(
                     PropertyId::Width,
-                    ComputedValue::LengthOrAuto(Some(Length::Px(200.0))),
+                    computed_length_percentage_or_auto_px(200.0),
                 )
                 .expect("width"),
             100.0,
@@ -1764,12 +1950,12 @@ mod tests {
             ComputedStyle::initial()
                 .with_property(
                     PropertyId::Width,
-                    ComputedValue::LengthOrAuto(Some(Length::Px(200.0))),
+                    computed_length_percentage_or_auto_px(200.0),
                 )
                 .expect("width")
                 .with_property(
                     PropertyId::MinWidth,
-                    ComputedValue::LengthOrAuto(Some(Length::Px(150.0))),
+                    computed_length_percentage_or_auto_px(150.0),
                 )
                 .expect("min-width"),
             100.0,
@@ -1797,7 +1983,7 @@ mod tests {
             ComputedStyle::initial()
                 .with_property(
                     PropertyId::Width,
-                    ComputedValue::LengthOrAuto(Some(Length::Px(100.0))),
+                    computed_length_percentage_or_auto_px(100.0),
                 )
                 .expect("width"),
             AvailableSize::Indefinite,
@@ -1886,7 +2072,7 @@ mod tests {
             ComputedStyle::initial()
                 .with_property(
                     PropertyId::MinWidth,
-                    ComputedValue::LengthOrAuto(Some(Length::Px(100.0))),
+                    computed_length_percentage_or_auto_px(100.0),
                 )
                 .expect("min-width"),
             80.0,
@@ -1922,7 +2108,7 @@ mod tests {
             ComputedStyle::initial()
                 .with_property(
                     PropertyId::MaxWidth,
-                    ComputedValue::LengthOrNone(Some(Length::Px(90.0))),
+                    computed_length_percentage_or_none_px(90.0),
                 )
                 .expect("max-width"),
             500.0,
@@ -1990,7 +2176,7 @@ mod tests {
             ComputedStyle::initial()
                 .with_property(
                     PropertyId::Width,
-                    ComputedValue::LengthOrAuto(Some(Length::Px(90.0))),
+                    computed_length_percentage_or_auto_px(90.0),
                 )
                 .expect("width"),
             500.0,
@@ -2022,7 +2208,7 @@ mod tests {
             ComputedStyle::initial()
                 .with_property(
                     PropertyId::Height,
-                    ComputedValue::LengthOrAuto(Some(Length::Px(40.0))),
+                    computed_length_percentage_or_auto_px(40.0),
                 )
                 .expect("height")
                 .with_property(
@@ -2053,6 +2239,79 @@ mod tests {
             SizeResolutionReason::DefiniteLength
         );
         assert_eq!(resolved.border(), CssPx::new(52.0).expect("border"));
+    }
+
+    #[test]
+    fn normal_flow_percentage_height_resolves_against_definite_containing_block_size() {
+        let input = size_input_with_containing_and_available_style(
+            ComputedStyle::initial()
+                .with_property(
+                    PropertyId::Height,
+                    ComputedValue::LengthPercentageOrAuto(Some(LengthPercentage::Percentage(
+                        css::Percentage::from_percent(50.0).expect("finite height percentage"),
+                    ))),
+                )
+                .expect("height")
+                .with_property(
+                    PropertyId::PaddingTop,
+                    ComputedValue::Length(Length::Px(5.0)),
+                )
+                .expect("padding-top")
+                .with_property(
+                    PropertyId::PaddingBottom,
+                    ComputedValue::Length(Length::Px(5.0)),
+                )
+                .expect("padding-bottom"),
+            AvailableSize::definite(500.0).expect("containing inline"),
+            AvailableSize::definite(500.0).expect("available inline"),
+            AvailableSize::definite(300.0).expect("containing block"),
+        );
+
+        let resolved = resolve_normal_flow_block_size(
+            input,
+            NormalFlowSizingMode::BlockLevel,
+            CssPx::new(40.0).expect("auto content"),
+        );
+
+        assert_eq!(
+            resolved.content().value(),
+            CssPx::new(150.0).expect("content")
+        );
+        assert_eq!(
+            resolved.content().preferred_reason(),
+            SizeResolutionReason::PercentageOfDefiniteContainingBlock
+        );
+        assert_eq!(resolved.border(), CssPx::new(160.0).expect("border"));
+    }
+
+    #[test]
+    fn normal_flow_percentage_height_defers_against_indefinite_containing_block_size() {
+        let input = size_input_with_style(
+            ComputedStyle::initial()
+                .with_property(
+                    PropertyId::Height,
+                    ComputedValue::LengthPercentageOrAuto(Some(LengthPercentage::Percentage(
+                        css::Percentage::from_percent(50.0).expect("finite height percentage"),
+                    ))),
+                )
+                .expect("height"),
+            500.0,
+        );
+
+        let resolved = resolve_normal_flow_block_size(
+            input,
+            NormalFlowSizingMode::BlockLevel,
+            CssPx::new(40.0).expect("auto content"),
+        );
+
+        assert_eq!(
+            resolved.content().value(),
+            CssPx::new(40.0).expect("auto content")
+        );
+        assert_eq!(
+            resolved.content().preferred_reason(),
+            SizeResolutionReason::DeferredIndefinitePercentage
+        );
     }
 
     #[test]
@@ -2140,6 +2399,21 @@ mod tests {
         SizeResolutionInput::new(constraint_space, style, intrinsic)
     }
 
+    fn size_input_with_containing_and_available_style(
+        style: ComputedStyle,
+        containing_inline_size: AvailableSize,
+        available_inline_size: AvailableSize,
+        containing_block_size: AvailableSize,
+    ) -> SizeResolutionInput {
+        let containing_size =
+            ContainingSize::new(None, containing_inline_size, containing_block_size);
+        let available_space = AvailableSpace::new(available_inline_size, containing_block_size);
+        let constraint_space = ConstraintSpace::from_containing_size(containing_size)
+            .with_available_space(available_space);
+        let style = StyleSizeInputs::from_computed_style(&style).expect("style inputs");
+        SizeResolutionInput::new(constraint_space, style, IntrinsicSizes::zero())
+    }
+
     fn size_input_with_style_inputs(
         style: StyleSizeInputs,
         available_inline_size: f32,
@@ -2150,5 +2424,13 @@ mod tests {
             AvailableSize::Indefinite,
         );
         SizeResolutionInput::new(constraint_space, style, IntrinsicSizes::zero())
+    }
+
+    fn computed_length_percentage_or_auto_px(value: f32) -> ComputedValue {
+        ComputedValue::LengthPercentageOrAuto(Some(LengthPercentage::Length(Length::Px(value))))
+    }
+
+    fn computed_length_percentage_or_none_px(value: f32) -> ComputedValue {
+        ComputedValue::LengthPercentageOrNone(Some(LengthPercentage::Length(Length::Px(value))))
     }
 }

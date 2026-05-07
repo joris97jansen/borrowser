@@ -48,8 +48,8 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 16] = [
         "height",
         PropertyMetadata::not_inherited(
             InitialStyleValue::AutoKeyword,
-            PropertySpecifiedValueKind::AbsoluteLengthOrAuto,
-            PropertyComputedValueKind::AbsoluteLengthOrAuto,
+            PropertySpecifiedValueKind::LengthPercentageOrAuto,
+            PropertyComputedValueKind::LengthPercentageOrAuto,
         ),
     ),
     PropertyRegistration::new(
@@ -97,8 +97,8 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 16] = [
         "max-width",
         PropertyMetadata::not_inherited(
             InitialStyleValue::NoneKeyword,
-            PropertySpecifiedValueKind::AbsoluteLengthOrNone,
-            PropertyComputedValueKind::AbsoluteLengthOrNone,
+            PropertySpecifiedValueKind::LengthPercentageOrNone,
+            PropertyComputedValueKind::LengthPercentageOrNone,
         ),
     ),
     PropertyRegistration::new(
@@ -106,8 +106,8 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 16] = [
         "min-width",
         PropertyMetadata::not_inherited(
             InitialStyleValue::AutoKeyword,
-            PropertySpecifiedValueKind::AbsoluteLengthOrAuto,
-            PropertyComputedValueKind::AbsoluteLengthOrAuto,
+            PropertySpecifiedValueKind::LengthPercentageOrAuto,
+            PropertyComputedValueKind::LengthPercentageOrAuto,
         ),
     ),
     PropertyRegistration::new(
@@ -151,8 +151,8 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 16] = [
         "width",
         PropertyMetadata::not_inherited(
             InitialStyleValue::AutoKeyword,
-            PropertySpecifiedValueKind::AbsoluteLengthOrAuto,
-            PropertyComputedValueKind::AbsoluteLengthOrAuto,
+            PropertySpecifiedValueKind::LengthPercentageOrAuto,
+            PropertyComputedValueKind::LengthPercentageOrAuto,
         ),
     ),
 ];

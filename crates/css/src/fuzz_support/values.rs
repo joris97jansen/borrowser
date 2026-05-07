@@ -82,11 +82,11 @@ fn synthesized_value_for_property(
             cursor,
             property.metadata().length_sign == PropertyLengthSignPolicy::AllowNegative,
         ),
-        PropertySpecifiedValueKind::AbsoluteLengthOrAuto => {
+        PropertySpecifiedValueKind::LengthPercentageOrAuto => {
             if valid_bias && cursor.next_bool() {
                 "auto".to_string()
             } else if valid_bias {
-                absolute_length_value(
+                length_percentage_value(
                     cursor,
                     property.metadata().length_sign == PropertyLengthSignPolicy::AllowNegative,
                 )
@@ -96,11 +96,11 @@ fn synthesized_value_for_property(
                     .to_string()
             }
         }
-        PropertySpecifiedValueKind::AbsoluteLengthOrNone => {
+        PropertySpecifiedValueKind::LengthPercentageOrNone => {
             if valid_bias && cursor.next_bool() {
                 "none".to_string()
             } else if valid_bias {
-                absolute_length_value(
+                length_percentage_value(
                     cursor,
                     property.metadata().length_sign == PropertyLengthSignPolicy::AllowNegative,
                 )
@@ -111,6 +111,19 @@ fn synthesized_value_for_property(
             }
         }
     }
+}
+
+fn length_percentage_value(cursor: &mut ByteCursor<'_>, allow_negative: bool) -> String {
+    if cursor.next_bool() {
+        return absolute_length_value(cursor, allow_negative);
+    }
+
+    let value = if allow_negative {
+        cursor.choose_str(&["0%", "12.5%", "-5%", "100%"])
+    } else {
+        cursor.choose_str(&["0%", "12.5%", "50%", "100%"])
+    };
+    value.to_string()
 }
 
 fn absolute_length_value(cursor: &mut ByteCursor<'_>, allow_negative: bool) -> String {

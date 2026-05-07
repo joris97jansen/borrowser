@@ -20,6 +20,7 @@ Related documents:
 - `docs/rendering/x2-structured-size-resolution-model-inputs.md`
 - `docs/rendering/x3-width-height-resolution-supported-subset.md`
 - `docs/rendering/x4-intrinsic-sizing-supported-content.md`
+- `docs/rendering/x6-percentage-sizing-targeted-subset.md`
 - `docs/rendering/w9-box-tree-invariants-extension-hooks.md`
 
 ## Supported Scope
@@ -29,14 +30,18 @@ The live CSS-supported subset is:
 - `min-width: auto | <length>`
 - `max-width: none | <length>`
 
+X6 extends those live CSS values to also accept percentages:
+
+- `min-width: auto | <length> | <percentage>`
+- `max-width: none | <length> | <percentage>`
+
 The structured sizing model also supports logical block-axis min/max inputs
 through `AxisStyleSizeInput` and `StyleSizeInputs`. Those resolver-level block
 constraints are tested, but CSS `min-height` and `max-height` properties remain
 deferred until the CSS property model exposes them.
 
-Percentages remain represented in sizing input types, but live CSS parsing does
-not produce percentage sizing values yet. A percentage min/max value only
-resolves when the relevant containing-size basis is definite.
+A percentage min/max value only resolves when the relevant containing-size basis
+is definite.
 
 ## Constraint Ordering
 
@@ -101,7 +106,6 @@ X5 adds layout-level regression tests for:
 X5 intentionally does not implement:
 
 - CSS `min-height` and `max-height` properties
-- percentage parsing for min/max properties
 - `min-content`, `max-content`, `fit-content`, or other intrinsic sizing
   keywords as authored CSS values
 - aspect-ratio transfer after min/max-constrained inline sizes for replaced

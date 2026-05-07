@@ -38,6 +38,7 @@ Related documents:
 - `docs/rendering/x3-width-height-resolution-supported-subset.md`
 - `docs/rendering/x4-intrinsic-sizing-supported-content.md`
 - `docs/rendering/x5-min-max-sizing-constraints.md`
+- `docs/rendering/x6-percentage-sizing-targeted-subset.md`
 - `docs/architecture/ARCHITECTURE.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
 

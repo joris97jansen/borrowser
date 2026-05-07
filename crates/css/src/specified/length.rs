@@ -7,18 +7,19 @@ use super::{
     error::{SpecifiedValueParseError, SpecifiedValueParseErrorKind, error},
     parse::{ident_keyword, parse_number_text, resolve_text},
     value::{
-        SpecifiedLength, SpecifiedLengthNumber, SpecifiedLengthOrAuto, SpecifiedLengthOrNone,
-        SpecifiedLengthUnit,
+        SpecifiedLength, SpecifiedLengthNumber, SpecifiedLengthPercentage,
+        SpecifiedLengthPercentageOrAuto, SpecifiedLengthPercentageOrNone, SpecifiedLengthUnit,
+        SpecifiedPercentage, SpecifiedPercentageNumber,
     },
 };
 
-pub(super) fn parse_length_or_auto(
+pub(super) fn parse_length_percentage_or_auto(
     property: PropertyId,
     component: &ValueComponent,
-) -> Result<SpecifiedLengthOrAuto, SpecifiedValueParseError> {
+) -> Result<SpecifiedLengthPercentageOrAuto, SpecifiedValueParseError> {
     if let Some((keyword, span)) = ident_keyword(property, component)? {
         return if keyword == "auto" {
-            Ok(SpecifiedLengthOrAuto::Auto { span })
+            Ok(SpecifiedLengthPercentageOrAuto::Auto { span })
         } else {
             Err(error(
                 property,
@@ -27,16 +28,17 @@ pub(super) fn parse_length_or_auto(
         };
     }
 
-    parse_length(property, component).map(SpecifiedLengthOrAuto::Length)
+    parse_length_percentage(property, component)
+        .map(SpecifiedLengthPercentageOrAuto::LengthPercentage)
 }
 
-pub(super) fn parse_length_or_none(
+pub(super) fn parse_length_percentage_or_none(
     property: PropertyId,
     component: &ValueComponent,
-) -> Result<SpecifiedLengthOrNone, SpecifiedValueParseError> {
+) -> Result<SpecifiedLengthPercentageOrNone, SpecifiedValueParseError> {
     if let Some((keyword, span)) = ident_keyword(property, component)? {
         return if keyword == "none" {
-            Ok(SpecifiedLengthOrNone::None { span })
+            Ok(SpecifiedLengthPercentageOrNone::None { span })
         } else {
             Err(error(
                 property,
@@ -45,7 +47,27 @@ pub(super) fn parse_length_or_none(
         };
     }
 
-    parse_length(property, component).map(SpecifiedLengthOrNone::Length)
+    parse_length_percentage(property, component)
+        .map(SpecifiedLengthPercentageOrNone::LengthPercentage)
+}
+
+pub(super) fn parse_length_percentage(
+    property: PropertyId,
+    component: &ValueComponent,
+) -> Result<SpecifiedLengthPercentage, SpecifiedValueParseError> {
+    match component {
+        ValueComponent::Token(ValueToken::Percentage { span, text, .. }) => {
+            let (number, numeric_value) = parse_number_text(property, text)?;
+            reject_negative_if_needed(property, numeric_value)?;
+
+            Ok(SpecifiedLengthPercentage::Percentage(SpecifiedPercentage {
+                span: *span,
+                number,
+                numeric_value: SpecifiedPercentageNumber::new(numeric_value),
+            }))
+        }
+        _ => parse_length(property, component).map(SpecifiedLengthPercentage::Length),
+    }
 }
 
 pub(super) fn parse_length(

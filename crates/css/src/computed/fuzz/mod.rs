@@ -408,8 +408,8 @@ fn property_computed_kind_label(kind: PropertyComputedValueKind) -> &'static str
         PropertyComputedValueKind::AbsoluteColor => "color",
         PropertyComputedValueKind::DisplayKeyword => "display",
         PropertyComputedValueKind::AbsoluteLength => "length",
-        PropertyComputedValueKind::AbsoluteLengthOrAuto => "length-or-auto",
-        PropertyComputedValueKind::AbsoluteLengthOrNone => "length-or-none",
+        PropertyComputedValueKind::LengthPercentageOrAuto => "length-percentage-or-auto",
+        PropertyComputedValueKind::LengthPercentageOrNone => "length-percentage-or-none",
     }
 }
 

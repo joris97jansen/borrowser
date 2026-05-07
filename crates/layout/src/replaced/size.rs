@@ -89,7 +89,7 @@ pub fn compute_replaced_size(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use css::{ComputedValue, Length, PropertyId};
+    use css::{ComputedValue, Length, LengthPercentage, PropertyId};
 
     fn style_with(property: PropertyId, value: ComputedValue) -> ComputedStyle {
         ComputedStyle::initial()
@@ -116,7 +116,9 @@ mod tests {
     fn width_only_computes_height_from_ratio() {
         let style = style_with(
             PropertyId::Width,
-            ComputedValue::LengthOrAuto(Some(Length::Px(120.0))),
+            ComputedValue::LengthPercentageOrAuto(Some(LengthPercentage::Length(Length::Px(
+                120.0,
+            )))),
         );
 
         let intrinsic = IntrinsicSize::from_w_h(Some(200.0), Some(100.0)); // 2:1
@@ -130,7 +132,7 @@ mod tests {
     fn height_only_computes_width_from_ratio() {
         let style = style_with(
             PropertyId::Height,
-            ComputedValue::LengthOrAuto(Some(Length::Px(25.0))),
+            ComputedValue::LengthPercentageOrAuto(Some(LengthPercentage::Length(Length::Px(25.0)))),
         );
 
         let intrinsic = IntrinsicSize::from_w_h(Some(200.0), Some(100.0)); // 2:1
@@ -144,7 +146,7 @@ mod tests {
     fn max_width_clamps_and_scales_auto_height() {
         let style = style_with(
             PropertyId::MaxWidth,
-            ComputedValue::LengthOrNone(Some(Length::Px(80.0))),
+            ComputedValue::LengthPercentageOrNone(Some(LengthPercentage::Length(Length::Px(80.0)))),
         );
 
         let intrinsic = IntrinsicSize::from_w_h(Some(200.0), Some(100.0)); // 2:1

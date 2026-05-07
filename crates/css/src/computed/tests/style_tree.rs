@@ -14,7 +14,10 @@ fn build_style_tree_with_stylesheets_uses_structured_pipeline_without_mutating_d
 
     assert_eq!(styled.style.color(), (0, 0, 255, 255));
     assert_eq!(styled.children[0].style.color(), (0, 0, 255, 255));
-    assert_eq!(styled.children[0].style.width(), Some(Length::Px(5.0)));
+    assert_eq!(
+        styled.children[0].style.width(),
+        Some(LengthPercentage::Length(Length::Px(5.0)))
+    );
     let Node::Element {
         style, children, ..
     } = &dom

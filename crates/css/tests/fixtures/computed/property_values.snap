@@ -18,27 +18,27 @@ case[1]: background-color
   computed: rgba(0, 255, 170, 255)
 case[2]: width
   property: width
-  specified-contract: absolute-length-or-auto
-  computed-contract: absolute-length-or-auto
-  specified-kind: absolute-length-or-auto
+  specified-contract: length-percentage-or-auto
+  computed-contract: length-percentage-or-auto
+  specified-kind: length-percentage-or-auto
   specified: 25px
-  computed-kind: length-or-auto
+  computed-kind: length-percentage-or-auto
   computed: 25px
 case[3]: height
   property: height
-  specified-contract: absolute-length-or-auto
-  computed-contract: absolute-length-or-auto
-  specified-kind: absolute-length-or-auto
+  specified-contract: length-percentage-or-auto
+  computed-contract: length-percentage-or-auto
+  specified-kind: length-percentage-or-auto
   specified: auto
-  computed-kind: length-or-auto
+  computed-kind: length-percentage-or-auto
   computed: auto
 case[4]: max-width
   property: max-width
-  specified-contract: absolute-length-or-none
-  computed-contract: absolute-length-or-none
-  specified-kind: absolute-length-or-none
+  specified-contract: length-percentage-or-none
+  computed-contract: length-percentage-or-none
+  specified-kind: length-percentage-or-none
   specified: none
-  computed-kind: length-or-none
+  computed-kind: length-percentage-or-none
   computed: none
 case[5]: margin-left
   property: margin-left
@@ -56,15 +56,15 @@ case[6]: padding-left
   computed: not-computed
 case[7]: width
   property: width
-  specified-contract: absolute-length-or-auto
-  computed-contract: absolute-length-or-auto
+  specified-contract: length-percentage-or-auto
+  computed-contract: length-percentage-or-auto
   specified-error: negative-length-not-allowed
   computed: not-computed
 case[8]: width
   property: width
-  specified-contract: absolute-length-or-auto
-  computed-contract: absolute-length-or-auto
-  specified-kind: absolute-length-or-auto
+  specified-contract: length-percentage-or-auto
+  computed-contract: length-percentage-or-auto
+  specified-kind: length-percentage-or-auto
   specified: 1e39px
   computed-error: length-out-of-range
 case[9]: display

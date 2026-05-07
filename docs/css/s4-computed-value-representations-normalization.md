@@ -46,8 +46,8 @@ The current runtime computed-value variants are:
 - `ComputedValue::Color((u8, u8, u8, u8))`
 - `ComputedValue::Display(Display)`
 - `ComputedValue::Length(Length)`
-- `ComputedValue::LengthOrAuto(Option<Length>)`
-- `ComputedValue::LengthOrNone(Option<Length>)`
+- `ComputedValue::LengthPercentageOrAuto(Option<LengthPercentage>)`
+- `ComputedValue::LengthPercentageOrNone(Option<LengthPercentage>)`
 
 These variants match `PropertyComputedValueKind` and remain the values accepted
 by `ComputedStyleBuilder`.
@@ -64,9 +64,11 @@ Current rules:
 - display keywords normalize to the runtime `Display` enum
 - `px` lengths normalize to `Length::Px(f32)`
 - unitless zero normalizes to `Length::Px(0.0)`
+- sizing percentages normalize to finite `Percentage` fractions and remain
+  unresolved until layout receives a containing-size basis
 - negative zero normalizes to positive zero
-- `auto` in length-or-auto properties normalizes to `None`
-- `none` in length-or-none properties normalizes to `None`
+- `auto` in length-percentage-or-auto properties normalizes to `None`
+- `none` in length-percentage-or-none properties normalizes to `None`
 
 S4 does not perform inheritance, initial/default fallback, layout-dependent
 resolution, or UA/HTML bridge defaults. Those remain separate pipeline stages.
@@ -97,8 +99,8 @@ normalization begins.
 S4 does not implement:
 
 - inheritance/default resolution in the computed layer
-- relative units, percentages, font-relative resolution, or layout-dependent
-  values
+- relative units, percentages outside supported sizing properties,
+  font-relative resolution, or layout-dependent values
 - shorthands, CSS-wide keywords, custom property substitution, or function
   values
 - retirement of the legacy `compute_style(...)` bridge

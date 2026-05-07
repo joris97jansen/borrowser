@@ -69,10 +69,7 @@ fn computed_style_accessors_match_property_entries() {
         )
         .expect("font-size");
     builder
-        .record(
-            PropertyId::Height,
-            ComputedValue::LengthOrAuto(Some(Length::Px(30.0))),
-        )
+        .record(PropertyId::Height, length_percentage_or_auto_px(30.0))
         .expect("height");
     builder
         .record(
@@ -81,13 +78,13 @@ fn computed_style_accessors_match_property_entries() {
         )
         .expect("margin-top");
     builder
-        .record(
-            PropertyId::MaxWidth,
-            ComputedValue::LengthOrNone(Some(Length::Px(500.0))),
-        )
+        .record(PropertyId::MaxWidth, length_percentage_or_none_px(500.0))
         .expect("max-width");
     builder
-        .record(PropertyId::MinWidth, ComputedValue::LengthOrAuto(None))
+        .record(
+            PropertyId::MinWidth,
+            ComputedValue::LengthPercentageOrAuto(None),
+        )
         .expect("min-width");
     builder
         .record(
@@ -96,10 +93,7 @@ fn computed_style_accessors_match_property_entries() {
         )
         .expect("padding-left");
     builder
-        .record(
-            PropertyId::Width,
-            ComputedValue::LengthOrAuto(Some(Length::Px(300.0))),
-        )
+        .record(PropertyId::Width, length_percentage_or_auto_px(300.0))
         .expect("width");
 
     let style = builder.build().expect("computed style");
@@ -122,7 +116,7 @@ fn computed_style_accessors_match_property_entries() {
     );
     assert_eq!(
         style.get(PropertyId::Height).value(),
-        ComputedValue::LengthOrAuto(style.height())
+        ComputedValue::LengthPercentageOrAuto(style.height())
     );
     assert_eq!(
         style.get(PropertyId::MarginTop).value(),
@@ -130,11 +124,11 @@ fn computed_style_accessors_match_property_entries() {
     );
     assert_eq!(
         style.get(PropertyId::MaxWidth).value(),
-        ComputedValue::LengthOrNone(style.max_width())
+        ComputedValue::LengthPercentageOrNone(style.max_width())
     );
     assert_eq!(
         style.get(PropertyId::MinWidth).value(),
-        ComputedValue::LengthOrAuto(style.min_width())
+        ComputedValue::LengthPercentageOrAuto(style.min_width())
     );
     assert_eq!(
         style.get(PropertyId::PaddingLeft).value(),
@@ -142,7 +136,7 @@ fn computed_style_accessors_match_property_entries() {
     );
     assert_eq!(
         style.get(PropertyId::Width).value(),
-        ComputedValue::LengthOrAuto(style.width())
+        ComputedValue::LengthPercentageOrAuto(style.width())
     );
 }
 
@@ -186,10 +180,7 @@ fn computed_style_get_round_trips_all_builder_supported_properties_losslessly() 
         (PropertyId::Color, ComputedValue::Color((5, 6, 7, 8))),
         (PropertyId::Display, ComputedValue::Display(Display::Block)),
         (PropertyId::FontSize, ComputedValue::Length(Length::Px(9.0))),
-        (
-            PropertyId::Height,
-            ComputedValue::LengthOrAuto(Some(Length::Px(10.0))),
-        ),
+        (PropertyId::Height, length_percentage_or_auto_px(10.0)),
         (
             PropertyId::MarginBottom,
             ComputedValue::Length(Length::Px(11.0)),
@@ -206,14 +197,8 @@ fn computed_style_get_round_trips_all_builder_supported_properties_losslessly() 
             PropertyId::MarginTop,
             ComputedValue::Length(Length::Px(14.0)),
         ),
-        (
-            PropertyId::MaxWidth,
-            ComputedValue::LengthOrNone(Some(Length::Px(15.0))),
-        ),
-        (
-            PropertyId::MinWidth,
-            ComputedValue::LengthOrAuto(Some(Length::Px(16.0))),
-        ),
+        (PropertyId::MaxWidth, length_percentage_or_none_px(15.0)),
+        (PropertyId::MinWidth, length_percentage_or_auto_px(16.0)),
         (
             PropertyId::PaddingBottom,
             ComputedValue::Length(Length::Px(17.0)),
@@ -230,10 +215,7 @@ fn computed_style_get_round_trips_all_builder_supported_properties_losslessly() 
             PropertyId::PaddingTop,
             ComputedValue::Length(Length::Px(20.0)),
         ),
-        (
-            PropertyId::Width,
-            ComputedValue::LengthOrAuto(Some(Length::Px(21.0))),
-        ),
+        (PropertyId::Width, length_percentage_or_auto_px(21.0)),
     ];
 
     let mut builder = builder_with_initials_except(PropertyId::ALL.as_slice());
@@ -251,4 +233,12 @@ fn computed_style_get_round_trips_all_builder_supported_properties_losslessly() 
         assert_eq!(style.get(property).property(), property);
         assert_eq!(style.get(property).value(), value, "{}", property.name());
     }
+}
+
+fn length_percentage_or_auto_px(value: f32) -> ComputedValue {
+    ComputedValue::LengthPercentageOrAuto(Some(LengthPercentage::Length(Length::Px(value))))
+}
+
+fn length_percentage_or_none_px(value: f32) -> ComputedValue {
+    ComputedValue::LengthPercentageOrNone(Some(LengthPercentage::Length(Length::Px(value))))
 }

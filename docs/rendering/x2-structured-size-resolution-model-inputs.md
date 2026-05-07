@@ -18,6 +18,7 @@ Related documents:
 - `docs/rendering/x3-width-height-resolution-supported-subset.md`
 - `docs/rendering/x4-intrinsic-sizing-supported-content.md`
 - `docs/rendering/x5-min-max-sizing-constraints.md`
+- `docs/rendering/x6-percentage-sizing-targeted-subset.md`
 - `docs/rendering/w5-containing-block-relationships.md`
 - `docs/rendering/w6-block-formatting-context-foundations.md`
 - `docs/rendering/w7-inline-formatting-context-foundations.md`
@@ -99,9 +100,9 @@ It contains:
 
 Each `AxisStyleSizeInput` separates:
 
-- `StylePreferredSize`: `auto`, length, or future percentage
-- `StyleMinimumSize`: `auto`, length, or future percentage
-- `StyleMaximumSize`: `none`, length, or future percentage
+- `StylePreferredSize`: `auto`, length, or percentage
+- `StyleMinimumSize`: `auto`, length, or percentage
+- `StyleMaximumSize`: `none`, length, or percentage
 
 For the current supported CSS property subset:
 
@@ -127,8 +128,8 @@ non-negative used size values.
 - `1.0` means 100%
 - `0.5` means 50%
 
-CSS parsing does not yet produce percentage sizing values, but X2 can represent
-them so later percentage support does not require reshaping resolver inputs.
+X6 extends CSS parsing and computed style so supported sizing properties can
+produce percentage values without reshaping these resolver inputs.
 
 Percentage resolution must use `ContainingSize` when the relevant basis is
 definite. Resolvers must not accidentally use narrowed `AvailableSpace` as the
@@ -174,7 +175,6 @@ X2 intentionally does not implement:
 
 - width or height resolution algorithms
 - applying `StyleSizeInputs` to `LayoutBox` geometry
-- CSS percentage parsing
 - min-height or max-height computed properties
 - margin auto behavior
 - border and `box-sizing` inputs

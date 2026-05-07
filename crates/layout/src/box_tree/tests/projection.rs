@@ -92,6 +92,37 @@ fn layout_resolves_auto_width_as_available_border_box_after_padding() {
 }
 
 #[test]
+fn layout_resolves_percentage_width_against_containing_content_box() {
+    let dom = doc(vec![element(
+        2,
+        "section",
+        vec![
+            ("width", "200px"),
+            ("padding-left", "10px"),
+            ("padding-right", "10px"),
+        ],
+        vec![element(
+            3,
+            "div",
+            vec![
+                ("width", "50%"),
+                ("padding-left", "5px"),
+                ("padding-right", "5px"),
+            ],
+            Vec::new(),
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+    let section = find_layout_by_direct_node_id(&layout, Id(2)).expect("section layout box");
+    let div = find_layout_by_direct_node_id(&layout, Id(3)).expect("div layout box");
+
+    assert_eq!(section.content_x_and_width(), (10.0, 200.0));
+    assert_eq!(div.rect.width, 110.0);
+    assert_eq!(div.content_x_and_width(), (15.0, 100.0));
+}
+
+#[test]
 fn layout_applies_max_width_to_content_box_before_padding() {
     let dom = doc(vec![element(
         2,
@@ -110,6 +141,28 @@ fn layout_applies_max_width_to_content_box_before_padding() {
 
     assert_eq!(div.rect.width, 140.0);
     assert_eq!(div.content_x_and_width(), (10.0, 120.0));
+}
+
+#[test]
+fn layout_applies_percentage_min_max_width_constraints() {
+    let dom = doc(vec![element(
+        2,
+        "div",
+        vec![
+            ("width", "300px"),
+            ("min-width", "25%"),
+            ("max-width", "50%"),
+            ("padding-left", "10px"),
+            ("padding-right", "10px"),
+        ],
+        Vec::new(),
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 400.0, &TestMeasurer, None);
+    let div = find_layout_by_direct_node_id(&layout, Id(2)).expect("div layout box");
+
+    assert_eq!(div.rect.width, 220.0);
+    assert_eq!(div.content_x_and_width(), (10.0, 200.0));
 }
 
 #[test]
@@ -213,6 +266,28 @@ fn layout_clamps_atomic_inline_width_to_available_content_space() {
     )]);
     let styled = css::build_style_tree(&dom, None);
     let layout = crate::layout_block_tree(&styled, 100.0, &TestMeasurer, None);
+    let inline_block =
+        find_layout_by_direct_node_id(&layout, Id(3)).expect("inline-block layout box");
+
+    assert_eq!(inline_block.rect.width, 100.0);
+    assert_eq!(inline_block.content_x_and_width(), (0.0, 100.0));
+}
+
+#[test]
+fn layout_resolves_atomic_inline_percentage_width_against_containing_content_box() {
+    let dom = doc(vec![element(
+        2,
+        "div",
+        Vec::new(),
+        vec![element(
+            3,
+            "span",
+            vec![("display", "inline-block"), ("width", "50%")],
+            vec![text(4, "atomic")],
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 200.0, &TestMeasurer, None);
     let inline_block =
         find_layout_by_direct_node_id(&layout, Id(3)).expect("inline-block layout box");
 
