@@ -3,6 +3,7 @@ mod button;
 mod dom_attrs;
 mod engine;
 mod geometry;
+mod intrinsic;
 mod metrics;
 mod options;
 mod refine;

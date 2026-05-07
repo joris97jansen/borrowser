@@ -19,7 +19,11 @@
 //! sizing architecture and flow-correctness contracts are documented in
 //! `docs/rendering/x1-sizing-architecture-flow-correctness-contract.md`; X2
 //! structured sizing inputs are documented in
-//! `docs/rendering/x2-structured-size-resolution-model-inputs.md`.
+//! `docs/rendering/x2-structured-size-resolution-model-inputs.md`; X3
+//! supported width/height resolution is documented in
+//! `docs/rendering/x3-width-height-resolution-supported-subset.md`; X4
+//! intrinsic sizing for supported content is documented in
+//! `docs/rendering/x4-intrinsic-sizing-supported-content.md`.
 //! `BoxTree` is the frame-local generated box-tree structure; `LayoutBox` is
 //! the current geometry projection consumed by paint and hit testing.
 
@@ -54,10 +58,12 @@ pub use phase::{LayoutPhaseInput, LayoutPhaseOutput};
 pub use replaced_element::{ReplacedElementInfoProvider, ReplacedKind};
 pub use sizing::{
     AppliedSizeConstraint, AspectRatio, AvailableSize, AvailableSpace, AxisSizeConstraints,
-    AxisStyleSizeInput, ConstraintSpace, ContainingSize, CssPx, IntrinsicSizes, Percentage,
-    PhysicalSides, SignedCssPx, SizeAxis, SizeConstraints, SizeResolutionInput,
-    SizeResolutionReason, StyleBoxMetrics, StyleMaximumSize, StyleMinimumSize, StylePreferredSize,
-    StyleSizeInputError, StyleSizeInputProperty, StyleSizeInputs, UsedAxisSize, UsedContentSize,
+    AxisStyleSizeInput, ConstraintSpace, ContainingSize, CssPx, IntrinsicSizes,
+    NormalFlowSizingMode, Percentage, PhysicalSides, ResolvedAxisSize, SignedCssPx, SizeAxis,
+    SizeConstraints, SizeResolutionInput, SizeResolutionReason, StyleBoxMetrics, StyleMaximumSize,
+    StyleMinimumSize, StylePreferredSize, StyleSizeInputError, StyleSizeInputProperty,
+    StyleSizeInputs, UsedAxisSize, UsedContentSize, resolve_normal_flow_block_size,
+    resolve_normal_flow_inline_size,
 };
 pub use text::TextMeasurer;
 

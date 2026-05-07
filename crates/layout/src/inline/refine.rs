@@ -1,9 +1,14 @@
-use css::{ComputedStyle, Display, Length};
+use css::Display;
 use html::Node;
 
-use crate::{BlockFormattingParticipation, BoxKind, LayoutBox, Rectangle, TextMeasurer};
+use crate::{
+    AvailableSize, BlockFormattingParticipation, BoxKind, ConstraintSpace, CssPx, IntrinsicSizes,
+    LayoutBox, NormalFlowSizingMode, Rectangle, SizeResolutionInput, StyleSizeInputs, TextMeasurer,
+    resolve_normal_flow_block_size, resolve_normal_flow_inline_size,
+};
 
 use super::engine::layout_tokens;
+use super::intrinsic::intrinsic_sizes_for_layout_box;
 use super::options::INLINE_PADDING;
 use super::replaced::size_replaced_inline_children;
 use super::tokens::collect_inline_tokens_for_block_layout;
@@ -31,7 +36,10 @@ fn recompute_block_heights<'style_tree, 'dom>(
     node.rect.x = x;
     node.rect.y = y;
 
-    let used_width = resolve_used_width_for_layout_box(node, available_width);
+    let mode = normal_flow_sizing_mode(node);
+    let sizing_input = size_resolution_input_for_layout_box(measurer, node, available_width);
+    let inline_size = resolve_normal_flow_inline_size(sizing_input, mode);
+    let used_width = inline_size.border().get();
     node.rect.width = used_width;
 
     match node.node.node {
@@ -53,7 +61,7 @@ fn recompute_block_heights<'style_tree, 'dom>(
                 cursor_y += h + bm.margin_bottom;
             }
 
-            let height = cursor_y - y;
+            let height = resolve_border_block_size(node, sizing_input, mode, cursor_y - y);
             node.rect.height = height;
             height
         }
@@ -102,14 +110,12 @@ fn recompute_block_heights<'style_tree, 'dom>(
                     cursor_y += h + bm.margin_bottom;
                 }
 
-                let height = cursor_y - y;
+                let height = resolve_border_block_size(node, sizing_input, mode, cursor_y - y);
                 node.rect.height = height;
                 return height;
             }
 
             // --- Block-level element: inline content + block children + padding ---
-
-            let bm = node.box_metrics();
 
             // Content box horizontally: inside padding-left/right
             let (content_x, content_width) = content_x_and_width_for_box(node, x, used_width);
@@ -200,8 +206,10 @@ fn recompute_block_heights<'style_tree, 'dom>(
 
             let children_height = cursor_y - content_start_y;
 
-            // 4) Total height = padding-top + inline + children + padding-bottom
-            let total_height = bm.padding_top + inline_height + children_height + bm.padding_bottom;
+            // 4) Resolve auto content height through the sizing contract.
+            let auto_content_height = inline_height + children_height;
+            let total_height =
+                resolve_border_block_size(node, sizing_input, mode, auto_content_height);
 
             node.rect.height = total_height;
             total_height
@@ -222,66 +230,63 @@ fn participates_in_parent_inline_flow(node: &LayoutBox<'_, '_>) -> bool {
     )
 }
 
-fn resolve_used_width_for_block(
-    style: &ComputedStyle,
-    node: &html::Node,
-    kind: BoxKind,
-    available_width: f32,
-) -> f32 {
-    // 1) Start from available width.
-    let mut w = available_width.max(0.0);
-
-    // 2) Apply explicit width for non-inline elements.
-    if let html::Node::Element { .. } = node {
-        if let (false, Some(Length::Px(px))) = (
-            matches!(style.display(), Display::Inline),
-            style
-                .width()
-                .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0)),
-        ) {
-            w = px;
-        }
-
-        // Naïve shrink-to-fit **only** for inline-block:
-        //
-        // - If width was specified, we keep it but clamp to available_width.
-        // - If width was not specified, we just keep the "fill available" default.
-        // - In both cases we cap at available_width to avoid horizontal overflow.
-        if matches!(kind, BoxKind::InlineBlock) {
-            w = w.min(available_width.max(0.0));
-        }
+fn normal_flow_sizing_mode(node: &LayoutBox<'_, '_>) -> NormalFlowSizingMode {
+    if node.is_anonymous() {
+        return NormalFlowSizingMode::Anonymous;
     }
 
-    // 3) Apply min-width / max-width (px-only).
-    if let Some(Length::Px(min_px)) = style
-        .min_width()
-        .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
-    {
-        w = w.max(min_px);
+    match node.block_formatting_participation() {
+        BlockFormattingParticipation::Root => NormalFlowSizingMode::Document,
+        BlockFormattingParticipation::BlockLevel => NormalFlowSizingMode::BlockLevel,
+        BlockFormattingParticipation::InlineLevel => NormalFlowSizingMode::InlineLevel,
+        BlockFormattingParticipation::AtomicInline => NormalFlowSizingMode::AtomicInline,
+        BlockFormattingParticipation::None => NormalFlowSizingMode::BlockLevel,
     }
-
-    if let Some(Length::Px(max_px)) = style
-        .max_width()
-        .filter(|len| matches!(len, Length::Px(px) if *px >= 0.0))
-    {
-        w = w.min(max_px);
-    }
-
-    // 4) FINAL clamp for inline-block (naïve shrink-to-fit)
-    if matches!(kind, BoxKind::InlineBlock) {
-        w = w.min(available_width.max(0.0));
-    }
-
-    // Final safety: never negative.
-    w.max(0.0)
 }
 
-fn resolve_used_width_for_layout_box(node: &LayoutBox<'_, '_>, available_width: f32) -> f32 {
-    if node.is_anonymous() {
-        return available_width.max(0.0);
+fn size_resolution_input_for_layout_box(
+    measurer: &dyn TextMeasurer,
+    node: &LayoutBox<'_, '_>,
+    available_width: f32,
+) -> SizeResolutionInput {
+    let available_inline_size =
+        AvailableSize::Definite(CssPx::new(available_width.max(0.0)).expect("finite width"));
+    let constraint_space = ConstraintSpace::new(
+        node.containing_block(),
+        available_inline_size,
+        AvailableSize::Indefinite,
+    );
+    let style = if node.is_anonymous() {
+        StyleSizeInputs::auto_zero()
+    } else {
+        StyleSizeInputs::from_computed_style(node.style)
+            .expect("computed style must materialize deterministic sizing inputs")
+    };
+
+    let intrinsic = if node.is_anonymous() {
+        IntrinsicSizes::zero()
+    } else {
+        intrinsic_sizes_for_layout_box(measurer, node)
+    };
+
+    SizeResolutionInput::new(constraint_space, style, intrinsic)
+}
+
+fn resolve_border_block_size(
+    node: &LayoutBox<'_, '_>,
+    input: SizeResolutionInput,
+    mode: NormalFlowSizingMode,
+    auto_content_height: f32,
+) -> f32 {
+    if matches!(node.node.node, Node::Text { .. } | Node::Comment { .. }) {
+        return 0.0;
     }
 
-    resolve_used_width_for_block(node.style, node.node.node, node.kind, available_width)
+    let auto_content_height =
+        CssPx::new(auto_content_height.max(0.0)).expect("finite auto content height");
+    resolve_normal_flow_block_size(input, mode, auto_content_height)
+        .border()
+        .get()
 }
 
 fn content_x_and_width_for_box(
