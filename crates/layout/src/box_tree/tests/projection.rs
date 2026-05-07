@@ -134,6 +134,28 @@ fn layout_applies_min_width_to_content_box_before_padding() {
 }
 
 #[test]
+fn layout_crossed_min_max_width_resolves_with_minimum_winning() {
+    let dom = doc(vec![element(
+        2,
+        "div",
+        vec![
+            ("width", "150px"),
+            ("min-width", "200px"),
+            ("max-width", "100px"),
+            ("padding-left", "10px"),
+            ("padding-right", "10px"),
+        ],
+        Vec::new(),
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+    let div = find_layout_by_direct_node_id(&layout, Id(2)).expect("div layout box");
+
+    assert_eq!(div.rect.width, 220.0);
+    assert_eq!(div.content_x_and_width(), (10.0, 200.0));
+}
+
+#[test]
 fn layout_resolves_explicit_height_as_content_box_with_padding() {
     let dom = doc(vec![element(
         2,
@@ -196,6 +218,32 @@ fn layout_clamps_atomic_inline_width_to_available_content_space() {
 
     assert_eq!(inline_block.rect.width, 100.0);
     assert_eq!(inline_block.content_x_and_width(), (0.0, 100.0));
+}
+
+#[test]
+fn layout_atomic_inline_min_width_wins_over_available_content_clamp() {
+    let dom = doc(vec![element(
+        2,
+        "div",
+        Vec::new(),
+        vec![element(
+            3,
+            "span",
+            vec![
+                ("display", "inline-block"),
+                ("width", "200px"),
+                ("min-width", "150px"),
+            ],
+            vec![text(4, "atomic")],
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 100.0, &TestMeasurer, None);
+    let inline_block =
+        find_layout_by_direct_node_id(&layout, Id(3)).expect("inline-block layout box");
+
+    assert_eq!(inline_block.rect.width, 150.0);
+    assert_eq!(inline_block.content_x_and_width(), (0.0, 150.0));
 }
 
 #[test]
@@ -300,6 +348,28 @@ fn layout_applies_max_width_after_intrinsic_auto_inline_block_width() {
 
     assert_eq!(inline_block.rect.width, 50.0);
     assert_eq!(inline_block.content_x_and_width(), (0.0, 50.0));
+}
+
+#[test]
+fn layout_applies_min_width_after_intrinsic_auto_inline_block_width() {
+    let dom = doc(vec![element(
+        2,
+        "div",
+        Vec::new(),
+        vec![element(
+            3,
+            "span",
+            vec![("display", "inline-block"), ("min-width", "80px")],
+            vec![text(4, "wide")],
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+    let inline_block =
+        find_layout_by_direct_node_id(&layout, Id(3)).expect("inline-block layout box");
+
+    assert_eq!(inline_block.rect.width, 80.0);
+    assert_eq!(inline_block.content_x_and_width(), (0.0, 80.0));
 }
 
 #[test]

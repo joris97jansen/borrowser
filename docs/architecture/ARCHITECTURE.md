@@ -320,6 +320,7 @@ The normative rendering ownership and phase-boundary contract lives in:
 * `docs/rendering/x2-structured-size-resolution-model-inputs.md`
 * `docs/rendering/x3-width-height-resolution-supported-subset.md`
 * `docs/rendering/x4-intrinsic-sizing-supported-content.md`
+* `docs/rendering/x5-min-max-sizing-constraints.md`
 
 ---
 
