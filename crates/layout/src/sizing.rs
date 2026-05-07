@@ -845,11 +845,12 @@ fn apply_inline_size_adjustments(
         out = max;
         applied = AppliedSizeConstraint::Max;
     }
-    if allow_available_space_clamp && matches!(mode, NormalFlowSizingMode::AtomicInline) {
-        if let Some(available_content) = available_content.filter(|available| out > *available) {
-            out = available_content;
-            applied = AppliedSizeConstraint::AvailableSpaceClamp;
-        }
+    if allow_available_space_clamp
+        && matches!(mode, NormalFlowSizingMode::AtomicInline)
+        && let Some(available_content) = available_content.filter(|available| out > *available)
+    {
+        out = available_content;
+        applied = AppliedSizeConstraint::AvailableSpaceClamp;
     }
     if let Some(min) = constraints.min().filter(|min| out < *min) {
         out = min;
