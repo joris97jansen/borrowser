@@ -20,6 +20,7 @@ Related documents:
 - `docs/rendering/x1-sizing-architecture-flow-correctness-contract.md`
 - `docs/rendering/x2-structured-size-resolution-model-inputs.md`
 - `docs/rendering/x4-intrinsic-sizing-supported-content.md`
+- `docs/rendering/x5-min-max-sizing-constraints.md`
 - `docs/rendering/w5-containing-block-relationships.md`
 - `docs/rendering/w6-block-formatting-context-foundations.md`
 - `docs/rendering/w7-inline-formatting-context-foundations.md`

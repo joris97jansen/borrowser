@@ -23,7 +23,9 @@
 //! supported width/height resolution is documented in
 //! `docs/rendering/x3-width-height-resolution-supported-subset.md`; X4
 //! intrinsic sizing for supported content is documented in
-//! `docs/rendering/x4-intrinsic-sizing-supported-content.md`.
+//! `docs/rendering/x4-intrinsic-sizing-supported-content.md`; X5 min/max
+//! sizing constraints are documented in
+//! `docs/rendering/x5-min-max-sizing-constraints.md`.
 //! `BoxTree` is the frame-local generated box-tree structure; `LayoutBox` is
 //! the current geometry projection consumed by paint and hit testing.
 
