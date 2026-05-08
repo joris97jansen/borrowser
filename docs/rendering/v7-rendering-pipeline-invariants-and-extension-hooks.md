@@ -42,6 +42,7 @@ Related documents:
 - `docs/rendering/x7-shrink-to-fit-containing-size-dependent-sizing.md`
 - `docs/rendering/x8-flow-correctness-varied-sizing.md`
 - `docs/rendering/x9-deterministic-sizing-debug-regressions.md`
+- `docs/rendering/x10-sizing-invariants-extension-hooks.md`
 - `docs/architecture/ARCHITECTURE.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
 

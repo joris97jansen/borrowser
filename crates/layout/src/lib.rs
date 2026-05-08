@@ -32,7 +32,9 @@
 //! flow correctness under varied sizing conditions is documented in
 //! `docs/rendering/x8-flow-correctness-varied-sizing.md`; X9 deterministic
 //! sizing debug and regression surfaces are documented in
-//! `docs/rendering/x9-deterministic-sizing-debug-regressions.md`.
+//! `docs/rendering/x9-deterministic-sizing-debug-regressions.md`; X10
+//! Milestone X close-out invariants and extension hooks are documented in
+//! `docs/rendering/x10-sizing-invariants-extension-hooks.md`.
 //! `BoxTree` is the frame-local generated box-tree structure; `LayoutBox` is
 //! the current geometry projection consumed by paint and hit testing.
 
