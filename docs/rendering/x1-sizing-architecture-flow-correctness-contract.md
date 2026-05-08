@@ -28,6 +28,7 @@ Related documents:
 - `docs/rendering/x4-intrinsic-sizing-supported-content.md`
 - `docs/rendering/x5-min-max-sizing-constraints.md`
 - `docs/rendering/x6-percentage-sizing-targeted-subset.md`
+- `docs/rendering/x7-shrink-to-fit-containing-size-dependent-sizing.md`
 - `docs/rendering/w1-box-tree-layout-model-contract.md`
 - `docs/rendering/w5-containing-block-relationships.md`
 - `docs/rendering/w6-block-formatting-context-foundations.md`
@@ -336,8 +337,12 @@ For Milestone X, shrink-to-fit applies to:
 The target formula for supported shrink-to-fit behavior is:
 
 ```text
-min(max(min-content, available), max-content)
+min(max(min-content, available), preferred-ceiling)
 ```
+
+`preferred-ceiling` is max-content unless a supported intrinsic content type
+provides a separate preferred inline size, in which case that preferred size is
+clamped between min-content and max-content.
 
 The exact caller may use a narrower equivalent only when the supported content
 type cannot distinguish min-content from max-content yet, but the limitation

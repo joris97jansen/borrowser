@@ -287,6 +287,27 @@ impl ConstraintSpace {
     pub fn containing_size_for_axis(self, axis: SizeAxis) -> AvailableSize {
         self.containing_size.size(axis)
     }
+
+    /// Available content-box size after subtracting the box's own non-margin
+    /// edges for the selected axis.
+    ///
+    /// This uses `AvailableSpace`, not `ContainingSize`: it is suitable for
+    /// auto-stretch sizing, line-width selection, and shrink-to-fit available
+    /// space. CSS percentage resolution must continue to use
+    /// `containing_size_for_axis`.
+    pub fn available_size_after_edges(
+        self,
+        axis: SizeAxis,
+        start_edge: CssPx,
+        end_edge: CssPx,
+    ) -> AvailableSize {
+        match self.available_size(axis) {
+            AvailableSize::Definite(value) => {
+                AvailableSize::Definite(subtract_css_px(value, css_px_sum(start_edge, end_edge)))
+            }
+            AvailableSize::Indefinite => AvailableSize::Indefinite,
+        }
+    }
 }
 
 /// Physical four-sided style input.
@@ -579,6 +600,99 @@ impl IntrinsicSizes {
     }
 }
 
+/// Input to the supported shrink-to-fit inline-size algorithm.
+///
+/// Min/max content sizes are intrinsic content-box contributions. The
+/// available inline size is the content-box space offered by the formatting
+/// context after the box's own padding has been subtracted. It is deliberately
+/// separate from the containing-size percentage basis.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ShrinkToFitInput {
+    min_content_inline_size: CssPx,
+    max_content_inline_size: CssPx,
+    preferred_inline_size: Option<CssPx>,
+    available_inline_size: AvailableSize,
+}
+
+impl ShrinkToFitInput {
+    pub fn new(
+        min_content_inline_size: CssPx,
+        max_content_inline_size: CssPx,
+        preferred_inline_size: Option<CssPx>,
+        available_inline_size: AvailableSize,
+    ) -> Option<Self> {
+        if max_content_inline_size < min_content_inline_size {
+            return None;
+        }
+
+        Some(Self {
+            min_content_inline_size,
+            max_content_inline_size,
+            preferred_inline_size,
+            available_inline_size,
+        })
+    }
+
+    pub fn from_intrinsic_sizes(
+        intrinsic: IntrinsicSizes,
+        available_inline_size: AvailableSize,
+    ) -> Self {
+        Self {
+            min_content_inline_size: intrinsic.min_content_inline_size(),
+            max_content_inline_size: intrinsic.max_content_inline_size(),
+            preferred_inline_size: intrinsic.preferred_inline_size(),
+            available_inline_size,
+        }
+    }
+
+    pub fn min_content_inline_size(self) -> CssPx {
+        self.min_content_inline_size
+    }
+
+    pub fn max_content_inline_size(self) -> CssPx {
+        self.max_content_inline_size
+    }
+
+    pub fn preferred_inline_size(self) -> Option<CssPx> {
+        self.preferred_inline_size
+    }
+
+    pub fn available_inline_size(self) -> AvailableSize {
+        self.available_inline_size
+    }
+}
+
+/// Deterministic branch taken by shrink-to-fit resolution.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ShrinkToFitDecision {
+    EmptyIntrinsicContribution,
+    IndefiniteAvailableSpace,
+    MinContentFloor,
+    AvailableSpace,
+    PreferredCeiling,
+}
+
+/// Result of supported shrink-to-fit inline-size resolution.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct ShrinkToFitResult {
+    value: CssPx,
+    decision: ShrinkToFitDecision,
+}
+
+impl ShrinkToFitResult {
+    fn new(value: CssPx, decision: ShrinkToFitDecision) -> Self {
+        Self { value, decision }
+    }
+
+    pub fn value(self) -> CssPx {
+        self.value
+    }
+
+    pub fn decision(self) -> ShrinkToFitDecision {
+        self.decision
+    }
+}
+
 /// Complete input bundle for resolving the used size of one generated box.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct SizeResolutionInput {
@@ -649,14 +763,14 @@ pub fn resolve_normal_flow_inline_size(
     mode: NormalFlowSizingMode,
 ) -> ResolvedAxisSize {
     let style = input.style();
-    let available_inline = input
-        .constraint_space()
-        .available_size(SizeAxis::Inline)
-        .definite_value();
     let padding = style.box_metrics().padding();
     let padding_inline = css_px_sum(padding.left(), padding.right());
-    let available_content =
-        available_inline.map(|available_inline| subtract_css_px(available_inline, padding_inline));
+    let available_content_size = input.constraint_space().available_size_after_edges(
+        SizeAxis::Inline,
+        padding.left(),
+        padding.right(),
+    );
+    let available_content = available_content_size.definite_value();
     let basis = input
         .constraint_space()
         .containing_size_for_axis(SizeAxis::Inline);
@@ -679,7 +793,7 @@ pub fn resolve_normal_flow_inline_size(
                 SizeResolutionReason::DeferredIndefinitePercentage,
             )),
         (NormalFlowSizingMode::AtomicInline, StylePreferredSize::Auto) => {
-            atomic_inline_auto_preferred(intrinsic, available_content)
+            atomic_inline_auto_preferred(intrinsic, available_content_size)
         }
         (_, StylePreferredSize::Auto) => auto_stretch_preferred(available_content),
     };
@@ -807,39 +921,81 @@ fn auto_stretch_preferred(available_content: Option<CssPx>) -> (CssPx, SizeResol
 
 fn atomic_inline_auto_preferred(
     intrinsic: IntrinsicSizes,
-    available_content: Option<CssPx>,
+    available_content: AvailableSize,
 ) -> (CssPx, SizeResolutionReason) {
-    let max_content = intrinsic
-        .preferred_inline_size()
-        .unwrap_or(intrinsic.max_content_inline_size());
-    if max_content == CssPx::ZERO {
-        return (CssPx::ZERO, SizeResolutionReason::AutoContentBased);
+    let result = resolve_shrink_to_fit_inline_size(ShrinkToFitInput::from_intrinsic_sizes(
+        intrinsic,
+        available_content,
+    ));
+
+    let reason = match result.decision() {
+        ShrinkToFitDecision::EmptyIntrinsicContribution => SizeResolutionReason::AutoContentBased,
+        ShrinkToFitDecision::IndefiniteAvailableSpace => {
+            SizeResolutionReason::IntrinsicPreferredSize
+        }
+        ShrinkToFitDecision::MinContentFloor
+        | ShrinkToFitDecision::AvailableSpace
+        | ShrinkToFitDecision::PreferredCeiling => SizeResolutionReason::ShrinkToFit,
+    };
+
+    (result.value(), reason)
+}
+
+pub fn resolve_shrink_to_fit_inline_size(input: ShrinkToFitInput) -> ShrinkToFitResult {
+    let min_content = input.min_content_inline_size();
+    let max_content = input.max_content_inline_size();
+    let preferred = input.preferred_inline_size().unwrap_or(max_content);
+    let preferred_ceiling = clamp_css_px(preferred, min_content, max_content);
+
+    if min_content == CssPx::ZERO && max_content == CssPx::ZERO && preferred_ceiling == CssPx::ZERO
+    {
+        return ShrinkToFitResult::new(
+            CssPx::ZERO,
+            ShrinkToFitDecision::EmptyIntrinsicContribution,
+        );
     }
 
-    match available_content {
-        Some(available_content) => (
-            shrink_to_fit_inline_size(
-                intrinsic.min_content_inline_size(),
-                max_content,
-                available_content,
-            ),
-            SizeResolutionReason::ShrinkToFit,
+    match input.available_inline_size() {
+        AvailableSize::Indefinite => ShrinkToFitResult::new(
+            preferred_ceiling,
+            ShrinkToFitDecision::IndefiniteAvailableSpace,
         ),
-        None => (max_content, SizeResolutionReason::IntrinsicPreferredSize),
+        AvailableSize::Definite(available_content) => {
+            let value =
+                shrink_to_fit_inline_size(min_content, preferred_ceiling, available_content);
+            let decision = if value == min_content && available_content < min_content {
+                ShrinkToFitDecision::MinContentFloor
+            } else if value == preferred_ceiling && available_content > preferred_ceiling {
+                ShrinkToFitDecision::PreferredCeiling
+            } else {
+                ShrinkToFitDecision::AvailableSpace
+            };
+            ShrinkToFitResult::new(value, decision)
+        }
     }
 }
 
 fn shrink_to_fit_inline_size(
     min_content: CssPx,
-    max_content: CssPx,
+    preferred_ceiling: CssPx,
     available_content: CssPx,
 ) -> CssPx {
     if available_content < min_content {
         min_content
-    } else if available_content > max_content {
-        max_content
+    } else if available_content > preferred_ceiling {
+        preferred_ceiling
     } else {
         available_content
+    }
+}
+
+fn clamp_css_px(value: CssPx, min: CssPx, max: CssPx) -> CssPx {
+    if value < min {
+        min
+    } else if value > max {
+        max
+    } else {
+        value
     }
 }
 
@@ -1361,6 +1517,146 @@ mod tests {
     }
 
     #[test]
+    fn shrink_to_fit_input_rejects_crossed_intrinsic_bounds() {
+        let min = CssPx::new(20.0).expect("finite min");
+        let max = CssPx::new(10.0).expect("finite max");
+
+        assert_eq!(
+            ShrinkToFitInput::new(min, max, None, AvailableSize::Indefinite),
+            None
+        );
+    }
+
+    #[test]
+    fn shrink_to_fit_inline_size_reports_supported_formula_branches() {
+        let min = CssPx::new(40.0).expect("min-content");
+        let max = CssPx::new(120.0).expect("max-content");
+
+        let below_min = resolve_shrink_to_fit_inline_size(
+            ShrinkToFitInput::new(
+                min,
+                max,
+                None,
+                AvailableSize::Definite(CssPx::new(20.0).expect("available")),
+            )
+            .expect("shrink input"),
+        );
+        assert_eq!(below_min.value(), min);
+        assert_eq!(below_min.decision(), ShrinkToFitDecision::MinContentFloor);
+
+        let between = resolve_shrink_to_fit_inline_size(
+            ShrinkToFitInput::new(
+                min,
+                max,
+                None,
+                AvailableSize::Definite(CssPx::new(80.0).expect("available")),
+            )
+            .expect("shrink input"),
+        );
+        assert_eq!(between.value(), CssPx::new(80.0).expect("available"));
+        assert_eq!(between.decision(), ShrinkToFitDecision::AvailableSpace);
+
+        let above_max = resolve_shrink_to_fit_inline_size(
+            ShrinkToFitInput::new(
+                min,
+                max,
+                None,
+                AvailableSize::Definite(CssPx::new(200.0).expect("available")),
+            )
+            .expect("shrink input"),
+        );
+        assert_eq!(above_max.value(), max);
+        assert_eq!(above_max.decision(), ShrinkToFitDecision::PreferredCeiling);
+    }
+
+    #[test]
+    fn shrink_to_fit_definite_space_uses_clamped_preferred_ceiling() {
+        let result = resolve_shrink_to_fit_inline_size(
+            ShrinkToFitInput::new(
+                CssPx::new(40.0).expect("min-content"),
+                CssPx::new(120.0).expect("max-content"),
+                Some(CssPx::new(90.0).expect("preferred")),
+                AvailableSize::Definite(CssPx::new(200.0).expect("available")),
+            )
+            .expect("shrink input"),
+        );
+
+        assert_eq!(result.value(), CssPx::new(90.0).expect("preferred"));
+        assert_eq!(result.decision(), ShrinkToFitDecision::PreferredCeiling);
+    }
+
+    #[test]
+    fn shrink_to_fit_preferred_ceiling_is_clamped_to_intrinsic_bounds() {
+        let below_min = resolve_shrink_to_fit_inline_size(
+            ShrinkToFitInput::new(
+                CssPx::new(40.0).expect("min-content"),
+                CssPx::new(120.0).expect("max-content"),
+                Some(CssPx::new(20.0).expect("preferred below min")),
+                AvailableSize::Indefinite,
+            )
+            .expect("shrink input"),
+        );
+        assert_eq!(below_min.value(), CssPx::new(40.0).expect("min-content"));
+        assert_eq!(
+            below_min.decision(),
+            ShrinkToFitDecision::IndefiniteAvailableSpace
+        );
+
+        let above_max = resolve_shrink_to_fit_inline_size(
+            ShrinkToFitInput::new(
+                CssPx::new(40.0).expect("min-content"),
+                CssPx::new(120.0).expect("max-content"),
+                Some(CssPx::new(200.0).expect("preferred above max")),
+                AvailableSize::Indefinite,
+            )
+            .expect("shrink input"),
+        );
+        assert_eq!(above_max.value(), CssPx::new(120.0).expect("max-content"));
+        assert_eq!(
+            above_max.decision(),
+            ShrinkToFitDecision::IndefiniteAvailableSpace
+        );
+    }
+
+    #[test]
+    fn shrink_to_fit_indefinite_space_uses_intrinsic_preferred_size() {
+        let result = resolve_shrink_to_fit_inline_size(
+            ShrinkToFitInput::new(
+                CssPx::new(40.0).expect("min-content"),
+                CssPx::new(120.0).expect("max-content"),
+                Some(CssPx::new(90.0).expect("preferred")),
+                AvailableSize::Indefinite,
+            )
+            .expect("shrink input"),
+        );
+
+        assert_eq!(result.value(), CssPx::new(90.0).expect("preferred"));
+        assert_eq!(
+            result.decision(),
+            ShrinkToFitDecision::IndefiniteAvailableSpace
+        );
+    }
+
+    #[test]
+    fn shrink_to_fit_empty_intrinsic_contribution_is_explicit() {
+        let result = resolve_shrink_to_fit_inline_size(
+            ShrinkToFitInput::new(
+                CssPx::ZERO,
+                CssPx::ZERO,
+                None,
+                AvailableSize::Definite(CssPx::new(100.0).expect("available")),
+            )
+            .expect("shrink input"),
+        );
+
+        assert_eq!(result.value(), CssPx::ZERO);
+        assert_eq!(
+            result.decision(),
+            ShrinkToFitDecision::EmptyIntrinsicContribution
+        );
+    }
+
+    #[test]
     fn used_axis_size_preserves_preferred_reason_when_constrained() {
         let preferred = CssPx::new(80.0).expect("finite preferred");
         let final_value = CssPx::new(120.0).expect("finite final");
@@ -1408,6 +1704,45 @@ mod tests {
         );
         assert_eq!(space.available_size(SizeAxis::Inline), available_inline);
         assert_eq!(space.containing_size().containing_block(), None);
+    }
+
+    #[test]
+    fn constraint_space_available_size_after_edges_uses_available_space() {
+        let containing_inline = AvailableSize::definite(500.0).expect("finite containing inline");
+        let available_inline = AvailableSize::definite(120.0).expect("finite available inline");
+        let containing_size =
+            ContainingSize::new(None, containing_inline, AvailableSize::Indefinite);
+        let available_space = AvailableSpace::new(available_inline, AvailableSize::Indefinite);
+        let space = ConstraintSpace::from_containing_size(containing_size)
+            .with_available_space(available_space);
+
+        assert_eq!(
+            space.available_size_after_edges(
+                SizeAxis::Inline,
+                CssPx::new(30.0).expect("start edge"),
+                CssPx::new(100.0).expect("end edge"),
+            ),
+            AvailableSize::Definite(CssPx::ZERO)
+        );
+        assert_eq!(
+            space.containing_size_for_axis(SizeAxis::Inline),
+            containing_inline
+        );
+    }
+
+    #[test]
+    fn constraint_space_available_size_after_edges_preserves_indefinite_space() {
+        let space =
+            ConstraintSpace::new(None, AvailableSize::Indefinite, AvailableSize::Indefinite);
+
+        assert_eq!(
+            space.available_size_after_edges(
+                SizeAxis::Inline,
+                CssPx::new(12.0).expect("start edge"),
+                CssPx::new(8.0).expect("end edge"),
+            ),
+            AvailableSize::Indefinite
+        );
     }
 
     #[test]
@@ -2067,6 +2402,38 @@ mod tests {
     }
 
     #[test]
+    fn atomic_inline_auto_width_shrink_to_fit_uses_min_content_when_available_is_smaller() {
+        let input = size_input_with_intrinsic(
+            ComputedStyle::initial(),
+            20.0,
+            IntrinsicSizes::new(
+                CssPx::new(40.0).expect("min-content"),
+                CssPx::new(120.0).expect("max-content"),
+                Some(CssPx::new(120.0).expect("preferred")),
+                None,
+                None,
+            )
+            .expect("intrinsic"),
+        );
+
+        let resolved = resolve_normal_flow_inline_size(input, NormalFlowSizingMode::AtomicInline);
+
+        assert_eq!(
+            resolved.content().preferred_value(),
+            CssPx::new(40.0).expect("preferred")
+        );
+        assert_eq!(
+            resolved.content().preferred_reason(),
+            SizeResolutionReason::ShrinkToFit
+        );
+        assert_eq!(
+            resolved.content().applied_constraint(),
+            AppliedSizeConstraint::None
+        );
+        assert_eq!(resolved.border(), CssPx::new(40.0).expect("border"));
+    }
+
+    #[test]
     fn atomic_inline_auto_width_applies_min_width_after_intrinsic_shrink_to_fit() {
         let input = size_input_with_intrinsic(
             ComputedStyle::initial()
@@ -2099,6 +2466,94 @@ mod tests {
         assert_eq!(
             resolved.content().applied_constraint(),
             AppliedSizeConstraint::Min
+        );
+    }
+
+    #[test]
+    fn atomic_inline_auto_width_percentage_max_uses_containing_size_not_available_space() {
+        let input = size_input_with_containing_available_intrinsic_style(
+            ComputedStyle::initial()
+                .with_property(
+                    PropertyId::MaxWidth,
+                    ComputedValue::LengthPercentageOrNone(Some(LengthPercentage::Percentage(
+                        css::Percentage::from_percent(25.0).expect("finite max-width percentage"),
+                    ))),
+                )
+                .expect("max-width"),
+            AvailableSize::definite(400.0).expect("containing inline"),
+            AvailableSize::definite(80.0).expect("available inline"),
+            AvailableSize::Indefinite,
+            IntrinsicSizes::new(
+                CssPx::new(40.0).expect("min-content"),
+                CssPx::new(180.0).expect("max-content"),
+                Some(CssPx::new(180.0).expect("preferred")),
+                None,
+                None,
+            )
+            .expect("intrinsic"),
+        );
+
+        let resolved = resolve_normal_flow_inline_size(input, NormalFlowSizingMode::AtomicInline);
+
+        assert_eq!(
+            resolved.content().preferred_value(),
+            CssPx::new(80.0).expect("preferred")
+        );
+        assert_eq!(
+            resolved.content().preferred_reason(),
+            SizeResolutionReason::ShrinkToFit
+        );
+        assert_eq!(
+            resolved.content().value(),
+            CssPx::new(80.0).expect("content")
+        );
+        assert_eq!(
+            resolved.content().applied_constraint(),
+            AppliedSizeConstraint::None
+        );
+    }
+
+    #[test]
+    fn atomic_inline_auto_width_percentage_max_constrains_after_shrink_to_fit() {
+        let input = size_input_with_containing_available_intrinsic_style(
+            ComputedStyle::initial()
+                .with_property(
+                    PropertyId::MaxWidth,
+                    ComputedValue::LengthPercentageOrNone(Some(LengthPercentage::Percentage(
+                        css::Percentage::from_percent(25.0).expect("finite max-width percentage"),
+                    ))),
+                )
+                .expect("max-width"),
+            AvailableSize::definite(400.0).expect("containing inline"),
+            AvailableSize::definite(160.0).expect("available inline"),
+            AvailableSize::Indefinite,
+            IntrinsicSizes::new(
+                CssPx::new(40.0).expect("min-content"),
+                CssPx::new(220.0).expect("max-content"),
+                Some(CssPx::new(220.0).expect("preferred")),
+                None,
+                None,
+            )
+            .expect("intrinsic"),
+        );
+
+        let resolved = resolve_normal_flow_inline_size(input, NormalFlowSizingMode::AtomicInline);
+
+        assert_eq!(
+            resolved.content().preferred_value(),
+            CssPx::new(160.0).expect("preferred")
+        );
+        assert_eq!(
+            resolved.content().preferred_reason(),
+            SizeResolutionReason::ShrinkToFit
+        );
+        assert_eq!(
+            resolved.content().value(),
+            CssPx::new(100.0).expect("percentage max")
+        );
+        assert_eq!(
+            resolved.content().applied_constraint(),
+            AppliedSizeConstraint::Max
         );
     }
 
@@ -2405,13 +2860,29 @@ mod tests {
         available_inline_size: AvailableSize,
         containing_block_size: AvailableSize,
     ) -> SizeResolutionInput {
+        size_input_with_containing_available_intrinsic_style(
+            style,
+            containing_inline_size,
+            available_inline_size,
+            containing_block_size,
+            IntrinsicSizes::zero(),
+        )
+    }
+
+    fn size_input_with_containing_available_intrinsic_style(
+        style: ComputedStyle,
+        containing_inline_size: AvailableSize,
+        available_inline_size: AvailableSize,
+        containing_block_size: AvailableSize,
+        intrinsic: IntrinsicSizes,
+    ) -> SizeResolutionInput {
         let containing_size =
             ContainingSize::new(None, containing_inline_size, containing_block_size);
         let available_space = AvailableSpace::new(available_inline_size, containing_block_size);
         let constraint_space = ConstraintSpace::from_containing_size(containing_size)
             .with_available_space(available_space);
         let style = StyleSizeInputs::from_computed_style(&style).expect("style inputs");
-        SizeResolutionInput::new(constraint_space, style, IntrinsicSizes::zero())
+        SizeResolutionInput::new(constraint_space, style, intrinsic)
     }
 
     fn size_input_with_style_inputs(

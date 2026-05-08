@@ -26,7 +26,9 @@
 //! `docs/rendering/x4-intrinsic-sizing-supported-content.md`; X5 min/max
 //! sizing constraints are documented in
 //! `docs/rendering/x5-min-max-sizing-constraints.md`; X6 percentage sizing is
-//! documented in `docs/rendering/x6-percentage-sizing-targeted-subset.md`.
+//! documented in `docs/rendering/x6-percentage-sizing-targeted-subset.md`; X7
+//! shrink-to-fit and containing-size-dependent sizing are documented in
+//! `docs/rendering/x7-shrink-to-fit-containing-size-dependent-sizing.md`.
 //! `BoxTree` is the frame-local generated box-tree structure; `LayoutBox` is
 //! the current geometry projection consumed by paint and hit testing.
 
@@ -62,11 +64,12 @@ pub use replaced_element::{ReplacedElementInfoProvider, ReplacedKind};
 pub use sizing::{
     AppliedSizeConstraint, AspectRatio, AvailableSize, AvailableSpace, AxisSizeConstraints,
     AxisStyleSizeInput, ConstraintSpace, ContainingSize, CssPx, IntrinsicSizes,
-    NormalFlowSizingMode, Percentage, PhysicalSides, ResolvedAxisSize, SignedCssPx, SizeAxis,
-    SizeConstraints, SizeResolutionInput, SizeResolutionReason, StyleBoxMetrics, StyleMaximumSize,
-    StyleMinimumSize, StylePreferredSize, StyleSizeInputError, StyleSizeInputProperty,
-    StyleSizeInputs, UsedAxisSize, UsedContentSize, resolve_normal_flow_block_size,
-    resolve_normal_flow_inline_size,
+    NormalFlowSizingMode, Percentage, PhysicalSides, ResolvedAxisSize, ShrinkToFitDecision,
+    ShrinkToFitInput, ShrinkToFitResult, SignedCssPx, SizeAxis, SizeConstraints,
+    SizeResolutionInput, SizeResolutionReason, StyleBoxMetrics, StyleMaximumSize, StyleMinimumSize,
+    StylePreferredSize, StyleSizeInputError, StyleSizeInputProperty, StyleSizeInputs, UsedAxisSize,
+    UsedContentSize, resolve_normal_flow_block_size, resolve_normal_flow_inline_size,
+    resolve_shrink_to_fit_inline_size,
 };
 pub use text::TextMeasurer;
 
