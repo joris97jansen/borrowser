@@ -19,6 +19,7 @@ Related documents:
 - `docs/rendering/x4-intrinsic-sizing-supported-content.md`
 - `docs/rendering/x5-min-max-sizing-constraints.md`
 - `docs/rendering/x6-percentage-sizing-targeted-subset.md`
+- `docs/rendering/x8-flow-correctness-varied-sizing.md`
 
 ## Supported Scope
 

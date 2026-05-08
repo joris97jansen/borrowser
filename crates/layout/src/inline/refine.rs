@@ -2,9 +2,10 @@ use css::Display;
 use html::Node;
 
 use crate::{
-    AvailableSize, BlockFormattingParticipation, BoxKind, ConstraintSpace, CssPx, IntrinsicSizes,
-    LayoutBox, NormalFlowSizingMode, Rectangle, SizeResolutionInput, StyleSizeInputs, TextMeasurer,
-    resolve_normal_flow_block_size, resolve_normal_flow_inline_size,
+    AvailableSize, AvailableSpace, BlockFormattingParticipation, BoxKind, ConstraintSpace,
+    ContainingSize, CssPx, IntrinsicSizes, LayoutBox, NormalFlowSizingMode, Rectangle,
+    SizeResolutionInput, StyleSizeInputs, TextMeasurer, resolve_normal_flow_block_size,
+    resolve_normal_flow_inline_size,
 };
 
 use super::engine::layout_tokens;
@@ -12,6 +13,20 @@ use super::intrinsic::intrinsic_sizes_for_layout_box;
 use super::options::INLINE_PADDING;
 use super::replaced::size_replaced_inline_children;
 use super::tokens::collect_inline_tokens_for_block_layout;
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct FlowContentBox {
+    inline_start: f32,
+    inline_size: f32,
+    block_start: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct NormalFlowChildInlineInput {
+    border_x: f32,
+    containing_width: f32,
+    available_width: f32,
+}
 
 pub fn refine_layout_with_inline<'style_tree, 'dom>(
     measurer: &dyn TextMeasurer,
@@ -21,7 +36,7 @@ pub fn refine_layout_with_inline<'style_tree, 'dom>(
     let y = layout_root.rect.y;
     let width = layout_root.rect.width;
 
-    let new_height = recompute_block_heights(measurer, layout_root, x, y, width);
+    let new_height = recompute_block_heights(measurer, layout_root, x, y, width, width);
     layout_root.rect.height = new_height;
 }
 
@@ -30,6 +45,7 @@ fn recompute_block_heights<'style_tree, 'dom>(
     node: &mut LayoutBox<'style_tree, 'dom>,
     x: f32,
     y: f32,
+    containing_width: f32,
     available_width: f32,
 ) -> f32 {
     // Position & width are authoritative here
@@ -37,31 +53,37 @@ fn recompute_block_heights<'style_tree, 'dom>(
     node.rect.y = y;
 
     let mode = normal_flow_sizing_mode(node);
-    let sizing_input = size_resolution_input_for_layout_box(measurer, node, available_width);
+    let sizing_input =
+        size_resolution_input_for_layout_box(measurer, node, containing_width, available_width);
     let inline_size = resolve_normal_flow_inline_size(sizing_input, mode);
     let used_width = inline_size.border().get();
     node.rect.width = used_width;
 
     match node.node.node {
         Node::Document { .. } => {
-            let mut cursor_y = y;
-
-            let parent_x = x;
-            let parent_width = used_width;
+            let content_box = flow_content_box_for_box(node, x, y, used_width);
+            let mut cursor_y = content_box.block_start;
 
             for child in &mut node.children {
                 let bm = child.box_metrics();
 
                 cursor_y += bm.margin_top;
 
-                let child_x = parent_x + bm.margin_left;
-                let child_width = (parent_width - bm.margin_left - bm.margin_right).max(0.0);
+                let child_inline = normal_flow_child_inline_input(content_box, child);
 
-                let h = recompute_block_heights(measurer, child, child_x, cursor_y, child_width);
+                let h = recompute_block_heights(
+                    measurer,
+                    child,
+                    child_inline.border_x,
+                    cursor_y,
+                    child_inline.containing_width,
+                    child_inline.available_width,
+                );
                 cursor_y += h + bm.margin_bottom;
             }
 
-            let height = resolve_border_block_size(node, sizing_input, mode, cursor_y - y);
+            let auto_content_height = cursor_y - content_box.block_start;
+            let height = resolve_border_block_size(node, sizing_input, mode, auto_content_height);
             node.rect.height = height;
             height
         }
@@ -74,11 +96,6 @@ fn recompute_block_heights<'style_tree, 'dom>(
             // introduces an explicit box-tree/root-box model, the document
             // element acts as the top-level layout container here.
             if !node.is_anonymous() && name.eq_ignore_ascii_case("html") {
-                let mut cursor_y = y;
-
-                let parent_x = x;
-                let parent_width = used_width;
-
                 // Inline elements: height is 0 at block level.
                 if matches!(node.style.display(), Display::Inline) {
                     let (content_x, content_width) =
@@ -96,32 +113,16 @@ fn recompute_block_heights<'style_tree, 'dom>(
                     node.rect.height = 0.0;
                     return 0.0;
                 }
-
-                for child in &mut node.children {
-                    let bm = child.box_metrics();
-
-                    cursor_y += bm.margin_top;
-
-                    let child_x = parent_x + bm.margin_left;
-                    let child_width = (parent_width - bm.margin_left - bm.margin_right).max(0.0);
-
-                    let h =
-                        recompute_block_heights(measurer, child, child_x, cursor_y, child_width);
-                    cursor_y += h + bm.margin_bottom;
-                }
-
-                let height = resolve_border_block_size(node, sizing_input, mode, cursor_y - y);
-                node.rect.height = height;
-                return height;
             }
 
             // --- Block-level element: inline content + block children + padding ---
 
-            // Content box horizontally: inside padding-left/right
-            let (content_x, content_width) = content_x_and_width_for_box(node, x, used_width);
+            let content_box = flow_content_box_for_box(node, x, y, used_width);
+            let content_x = content_box.inline_start;
+            let content_width = content_box.inline_size;
 
             // Content box top (used as the baseline for inline layout)
-            let content_top = content_y_for_box(node, y);
+            let content_top = content_box.block_start;
 
             // 1) Layout inline-block children so we know their sizes.
             size_replaced_inline_children(measurer, node, content_x, content_top, content_width);
@@ -130,18 +131,20 @@ fn recompute_block_heights<'style_tree, 'dom>(
                 for child in &mut node.children {
                     if matches!(child.kind, BoxKind::InlineBlock) {
                         let cbm = child.box_metrics();
-
-                        // Horizontal position as if it lived in the content box.
-                        let child_x = content_x + cbm.margin_left;
-                        let child_width =
-                            (content_width - cbm.margin_left - cbm.margin_right).max(0.0);
+                        let child_inline = normal_flow_child_inline_input(content_box, child);
 
                         // Vertically, for now we place them starting at content_top;
                         // the inline engine will decide their final visual y position.
                         let child_y = content_top + cbm.margin_top;
 
-                        let _ =
-                            recompute_block_heights(measurer, child, child_x, child_y, child_width);
+                        let _ = recompute_block_heights(
+                            measurer,
+                            child,
+                            child_inline.border_x,
+                            child_y,
+                            child_inline.containing_width,
+                            child_inline.available_width,
+                        );
                     }
                 }
             }
@@ -195,10 +198,16 @@ fn recompute_block_heights<'style_tree, 'dom>(
                 // Child's margin-top
                 cursor_y += cbm.margin_top;
 
-                let child_x = content_x + cbm.margin_left;
-                let child_width = (content_width - cbm.margin_left - cbm.margin_right).max(0.0);
+                let child_inline = normal_flow_child_inline_input(content_box, child);
 
-                let h = recompute_block_heights(measurer, child, child_x, cursor_y, child_width);
+                let h = recompute_block_heights(
+                    measurer,
+                    child,
+                    child_inline.border_x,
+                    cursor_y,
+                    child_inline.containing_width,
+                    child_inline.available_width,
+                );
 
                 // Move down by child's height + margin-bottom
                 cursor_y += h + cbm.margin_bottom;
@@ -230,6 +239,35 @@ fn participates_in_parent_inline_flow(node: &LayoutBox<'_, '_>) -> bool {
     )
 }
 
+fn flow_content_box_for_box(
+    node: &LayoutBox<'_, '_>,
+    border_x: f32,
+    border_y: f32,
+    border_width: f32,
+) -> FlowContentBox {
+    let (inline_start, inline_size) = content_x_and_width_for_box(node, border_x, border_width);
+    FlowContentBox {
+        inline_start,
+        inline_size,
+        block_start: content_y_for_box(node, border_y),
+    }
+}
+
+fn normal_flow_child_inline_input(
+    parent_content_box: FlowContentBox,
+    child: &LayoutBox<'_, '_>,
+) -> NormalFlowChildInlineInput {
+    let child_metrics = child.box_metrics();
+    NormalFlowChildInlineInput {
+        border_x: parent_content_box.inline_start + child_metrics.margin_left,
+        containing_width: parent_content_box.inline_size,
+        available_width: (parent_content_box.inline_size
+            - child_metrics.margin_left
+            - child_metrics.margin_right)
+            .max(0.0),
+    }
+}
+
 fn normal_flow_sizing_mode(node: &LayoutBox<'_, '_>) -> NormalFlowSizingMode {
     if node.is_anonymous() {
         return NormalFlowSizingMode::Anonymous;
@@ -247,15 +285,21 @@ fn normal_flow_sizing_mode(node: &LayoutBox<'_, '_>) -> NormalFlowSizingMode {
 fn size_resolution_input_for_layout_box(
     measurer: &dyn TextMeasurer,
     node: &LayoutBox<'_, '_>,
+    containing_width: f32,
     available_width: f32,
 ) -> SizeResolutionInput {
+    let containing_inline_size =
+        AvailableSize::Definite(CssPx::new(containing_width.max(0.0)).expect("finite width"));
     let available_inline_size =
         AvailableSize::Definite(CssPx::new(available_width.max(0.0)).expect("finite width"));
-    let constraint_space = ConstraintSpace::new(
+    let containing_size = ContainingSize::new(
         node.containing_block(),
-        available_inline_size,
+        containing_inline_size,
         AvailableSize::Indefinite,
     );
+    let available_space = AvailableSpace::new(available_inline_size, AvailableSize::Indefinite);
+    let constraint_space = ConstraintSpace::from_containing_size(containing_size)
+        .with_available_space(available_space);
     let style = if node.is_anonymous() {
         StyleSizeInputs::auto_zero()
     } else {

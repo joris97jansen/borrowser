@@ -252,6 +252,113 @@ fn layout_derives_nested_auto_width_from_parent_content_box() {
 }
 
 #[test]
+fn layout_propagates_constrained_parent_content_width_to_descendant_flow() {
+    let dom = doc(vec![element(
+        2,
+        "section",
+        vec![
+            ("width", "300px"),
+            ("max-width", "120px"),
+            ("padding-left", "10px"),
+            ("padding-right", "10px"),
+        ],
+        vec![element(
+            3,
+            "div",
+            vec![
+                ("width", "50%"),
+                ("padding-left", "5px"),
+                ("padding-right", "5px"),
+            ],
+            Vec::new(),
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+    let section = find_layout_by_direct_node_id(&layout, Id(2)).expect("section layout box");
+    let div = find_layout_by_direct_node_id(&layout, Id(3)).expect("div layout box");
+
+    assert_eq!(section.rect.width, 140.0);
+    assert_eq!(section.content_x_and_width(), (10.0, 120.0));
+    assert_eq!(div.rect.x, 10.0);
+    assert_eq!(div.rect.width, 70.0);
+    assert_eq!(div.content_x_and_width(), (15.0, 60.0));
+}
+
+#[test]
+fn layout_child_percentage_width_uses_parent_content_width_not_margin_reduced_available_width() {
+    let dom = doc(vec![element(
+        2,
+        "section",
+        vec![
+            ("width", "200px"),
+            ("padding-left", "10px"),
+            ("padding-right", "10px"),
+        ],
+        vec![element(
+            3,
+            "div",
+            vec![
+                ("width", "50%"),
+                ("margin-left", "20px"),
+                ("margin-right", "30px"),
+                ("padding-left", "5px"),
+                ("padding-right", "5px"),
+            ],
+            Vec::new(),
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+    let section = find_layout_by_direct_node_id(&layout, Id(2)).expect("section layout box");
+    let div = find_layout_by_direct_node_id(&layout, Id(3)).expect("div layout box");
+
+    assert_eq!(section.content_x_and_width(), (10.0, 200.0));
+    assert_eq!(div.rect.x, 30.0);
+    assert_eq!(div.rect.width, 110.0);
+    assert_eq!(div.content_x_and_width(), (35.0, 100.0));
+}
+
+#[test]
+fn layout_root_element_children_flow_from_root_content_box() {
+    let dom = doc(vec![element(
+        2,
+        "html",
+        vec![
+            ("width", "200px"),
+            ("padding-left", "10px"),
+            ("padding-right", "20px"),
+            ("padding-top", "5px"),
+            ("padding-bottom", "7px"),
+        ],
+        vec![element(
+            3,
+            "body",
+            vec![
+                ("height", "20px"),
+                ("margin-left", "2px"),
+                ("margin-right", "3px"),
+                ("margin-top", "3px"),
+                ("margin-bottom", "4px"),
+            ],
+            Vec::new(),
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+    let html = find_layout_by_direct_node_id(&layout, Id(2)).expect("html layout box");
+    let body = find_layout_by_direct_node_id(&layout, Id(3)).expect("body layout box");
+
+    assert_eq!(html.rect.width, 230.0);
+    assert_eq!(html.content_x_and_width(), (10.0, 200.0));
+    assert_eq!(html.rect.height, 39.0);
+    assert_eq!(body.rect.x, 12.0);
+    assert_eq!(body.rect.y, 8.0);
+    assert_eq!(body.rect.width, 195.0);
+    assert_eq!(body.rect.height, 20.0);
+}
+
+#[test]
 fn layout_clamps_atomic_inline_width_to_available_content_space() {
     let dom = doc(vec![element(
         2,
