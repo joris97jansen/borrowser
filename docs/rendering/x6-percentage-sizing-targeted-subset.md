@@ -25,6 +25,7 @@ Related documents:
 - `docs/rendering/x5-min-max-sizing-constraints.md`
 - `docs/rendering/x7-shrink-to-fit-containing-size-dependent-sizing.md`
 - `docs/rendering/x8-flow-correctness-varied-sizing.md`
+- `docs/rendering/x9-deterministic-sizing-debug-regressions.md`
 - `docs/css/s3-parsed-specified-value-representations.md`
 - `docs/css/s4-computed-value-representations-normalization.md`
 

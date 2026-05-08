@@ -23,6 +23,7 @@ Related documents:
 - `docs/rendering/x6-percentage-sizing-targeted-subset.md`
 - `docs/rendering/x7-shrink-to-fit-containing-size-dependent-sizing.md`
 - `docs/rendering/x8-flow-correctness-varied-sizing.md`
+- `docs/rendering/x9-deterministic-sizing-debug-regressions.md`
 - `docs/rendering/w9-box-tree-invariants-extension-hooks.md`
 
 ## Supported Scope

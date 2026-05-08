@@ -8,6 +8,7 @@ use crate::{
     FormattingContextId, FormattingContextKind, InlineFormattingContextId,
     InlineFormattingParticipation, LayoutBox, LayoutPhaseInput, LayoutPhaseOutput, ListMarker,
     Rectangle, ReplacedKind, replaced::intrinsic::IntrinsicSize,
+    sizing::used_content_size_debug_label,
 };
 
 impl<'style_tree, 'dom, 'runtime> LayoutPhaseInput<'style_tree, 'dom, 'runtime> {
@@ -64,6 +65,32 @@ impl<'style_tree, 'dom> LayoutPhaseOutput<'style_tree, 'dom> {
         append_layout_box_snapshot(&mut out, self.root(), 0, 0);
         out
     }
+
+    /// Stable sizing-focused debug snapshot for normal-flow layout output.
+    ///
+    /// This surface complements `to_debug_snapshot()` by exposing content-box
+    /// geometry, box metrics, flow participation, and the used-size metadata
+    /// recorded by the normal-flow sizing pass.
+    pub fn to_sizing_debug_snapshot(&self) -> String {
+        let mut out = String::new();
+        writeln!(&mut out, "version: 1").expect("write snapshot");
+        writeln!(&mut out, "layout-sizing-flow").expect("write snapshot");
+        writeln!(&mut out, "viewport-width: {:.2}", self.viewport_width()).expect("write snapshot");
+        writeln!(
+            &mut out,
+            "document-rect: {}",
+            rectangle_debug_label(self.document_rect())
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut out,
+            "layout-boxes: {}",
+            count_layout_boxes(self.root())
+        )
+        .expect("write snapshot");
+        append_layout_sizing_snapshot(&mut out, self.root(), 0, 0);
+        out
+    }
 }
 
 fn count_styled_nodes(node: &StyledNode<'_>) -> usize {
@@ -117,6 +144,47 @@ fn append_layout_box_snapshot(
     let mut next_index = index + 1;
     for child in &layout.children {
         next_index = append_layout_box_snapshot(out, child, next_index, depth + 1);
+    }
+    next_index
+}
+
+fn append_layout_sizing_snapshot(
+    out: &mut String,
+    layout: &LayoutBox<'_, '_>,
+    index: usize,
+    depth: usize,
+) -> usize {
+    let indent = "  ".repeat(depth);
+    let metrics = layout.box_metrics();
+    let content_rect = Rectangle {
+        x: layout.content_x_and_width().0,
+        y: layout.content_y(),
+        width: layout.content_x_and_width().1,
+        height: layout.content_height(),
+    };
+
+    writeln!(
+        out,
+        "{indent}box[{index}]: box-id={} source={} node={} kind={} cb={} block-participation={} inline-participation={} border-box={} content-box={} margin={} padding={} used-size={} children={}",
+        box_id_debug_label(layout.box_id()),
+        layout_box_source_debug_label(layout.source),
+        node_debug_label(layout.node.node),
+        box_kind_debug_label(layout.kind),
+        optional_containing_block_id_debug_label(layout.containing_block()),
+        block_formatting_participation_debug_label(layout.block_formatting_participation()),
+        inline_formatting_participation_debug_label(layout.inline_formatting_participation()),
+        rectangle_debug_label(layout.rect),
+        rectangle_debug_label(content_rect),
+        box_metrics_margin_debug_label(metrics),
+        box_metrics_padding_debug_label(metrics),
+        used_content_size_debug_label(layout.used_content_size),
+        layout.children.len(),
+    )
+    .expect("write snapshot");
+
+    let mut next_index = index + 1;
+    for child in &layout.children {
+        next_index = append_layout_sizing_snapshot(out, child, next_index, depth + 1);
     }
     next_index
 }
@@ -267,5 +335,19 @@ fn rectangle_debug_label(rect: Rectangle) -> String {
     format!(
         "x={:.2} y={:.2} w={:.2} h={:.2}",
         rect.x, rect.y, rect.width, rect.height
+    )
+}
+
+fn box_metrics_margin_debug_label(metrics: css::BoxMetrics) -> String {
+    format!(
+        "(top={:.2}px right={:.2}px bottom={:.2}px left={:.2}px)",
+        metrics.margin_top, metrics.margin_right, metrics.margin_bottom, metrics.margin_left
+    )
+}
+
+fn box_metrics_padding_debug_label(metrics: css::BoxMetrics) -> String {
+    format!(
+        "(top={:.2}px right={:.2}px bottom={:.2}px left={:.2}px)",
+        metrics.padding_top, metrics.padding_right, metrics.padding_bottom, metrics.padding_left
     )
 }

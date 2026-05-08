@@ -4,8 +4,8 @@ use html::Node;
 use crate::{
     AvailableSize, AvailableSpace, BlockFormattingParticipation, BoxKind, ConstraintSpace,
     ContainingSize, CssPx, IntrinsicSizes, LayoutBox, NormalFlowSizingMode, Rectangle,
-    SizeResolutionInput, StyleSizeInputs, TextMeasurer, resolve_normal_flow_block_size,
-    resolve_normal_flow_inline_size,
+    ResolvedAxisSize, SizeResolutionInput, SizeResolutionReason, StyleSizeInputs, TextMeasurer,
+    UsedAxisSize, UsedContentSize, resolve_normal_flow_block_size, resolve_normal_flow_inline_size,
 };
 
 use super::engine::layout_tokens;
@@ -52,6 +52,13 @@ fn recompute_block_heights<'style_tree, 'dom>(
     node.rect.x = x;
     node.rect.y = y;
 
+    if matches!(node.node.node, Node::Text { .. } | Node::Comment { .. }) {
+        node.rect.width = 0.0;
+        node.rect.height = 0.0;
+        node.used_content_size = None;
+        return 0.0;
+    }
+
     let mode = normal_flow_sizing_mode(node);
     let sizing_input =
         size_resolution_input_for_layout_box(measurer, node, containing_width, available_width);
@@ -83,9 +90,8 @@ fn recompute_block_heights<'style_tree, 'dom>(
             }
 
             let auto_content_height = cursor_y - content_box.block_start;
-            let height = resolve_border_block_size(node, sizing_input, mode, auto_content_height);
-            node.rect.height = height;
-            height
+            let block_size = resolve_block_axis_size(sizing_input, mode, auto_content_height);
+            finish_resolved_size(node, inline_size, block_size)
         }
 
         Node::Element { name, .. } => {
@@ -110,8 +116,7 @@ fn recompute_block_heights<'style_tree, 'dom>(
                         content_width,
                     );
 
-                    node.rect.height = 0.0;
-                    return 0.0;
+                    return finish_resolved_size(node, inline_size, zero_block_axis_size());
                 }
             }
 
@@ -217,18 +222,13 @@ fn recompute_block_heights<'style_tree, 'dom>(
 
             // 4) Resolve auto content height through the sizing contract.
             let auto_content_height = inline_height + children_height;
-            let total_height =
-                resolve_border_block_size(node, sizing_input, mode, auto_content_height);
-
-            node.rect.height = total_height;
-            total_height
+            let block_size = resolve_block_axis_size(sizing_input, mode, auto_content_height);
+            finish_resolved_size(node, inline_size, block_size)
         }
 
-        // Text / Comment nodes: no own block height
-        Node::Text { .. } | Node::Comment { .. } => {
-            node.rect.height = 0.0;
-            0.0
-        }
+        Node::Text { .. } | Node::Comment { .. } => unreachable!(
+            "text and comment boxes do not independently resolve normal-flow used sizes"
+        ),
     }
 }
 
@@ -316,21 +316,35 @@ fn size_resolution_input_for_layout_box(
     SizeResolutionInput::new(constraint_space, style, intrinsic)
 }
 
-fn resolve_border_block_size(
-    node: &LayoutBox<'_, '_>,
+fn resolve_block_axis_size(
     input: SizeResolutionInput,
     mode: NormalFlowSizingMode,
     auto_content_height: f32,
-) -> f32 {
-    if matches!(node.node.node, Node::Text { .. } | Node::Comment { .. }) {
-        return 0.0;
-    }
-
+) -> ResolvedAxisSize {
     let auto_content_height =
         CssPx::new(auto_content_height.max(0.0)).expect("finite auto content height");
     resolve_normal_flow_block_size(input, mode, auto_content_height)
-        .border()
-        .get()
+}
+
+fn zero_block_axis_size() -> ResolvedAxisSize {
+    ResolvedAxisSize::new(
+        UsedAxisSize::unconstrained(CssPx::ZERO, SizeResolutionReason::AutoContentBased),
+        CssPx::ZERO,
+    )
+}
+
+fn finish_resolved_size(
+    node: &mut LayoutBox<'_, '_>,
+    inline_size: ResolvedAxisSize,
+    block_size: ResolvedAxisSize,
+) -> f32 {
+    let height = block_size.border().get();
+    node.rect.height = height;
+    node.used_content_size = Some(UsedContentSize::new(
+        inline_size.content(),
+        block_size.content(),
+    ));
+    height
 }
 
 fn content_x_and_width_for_box(
