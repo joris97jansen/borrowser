@@ -29,6 +29,7 @@ Related documents:
 - `docs/rendering/x5-min-max-sizing-constraints.md`
 - `docs/rendering/x6-percentage-sizing-targeted-subset.md`
 - `docs/rendering/x7-shrink-to-fit-containing-size-dependent-sizing.md`
+- `docs/rendering/x8-flow-correctness-varied-sizing.md`
 - `docs/rendering/w1-box-tree-layout-model-contract.md`
 - `docs/rendering/w5-containing-block-relationships.md`
 - `docs/rendering/w6-block-formatting-context-foundations.md`

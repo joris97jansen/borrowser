@@ -40,6 +40,7 @@ Related documents:
 - `docs/rendering/x5-min-max-sizing-constraints.md`
 - `docs/rendering/x6-percentage-sizing-targeted-subset.md`
 - `docs/rendering/x7-shrink-to-fit-containing-size-dependent-sizing.md`
+- `docs/rendering/x8-flow-correctness-varied-sizing.md`
 - `docs/architecture/ARCHITECTURE.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
 
