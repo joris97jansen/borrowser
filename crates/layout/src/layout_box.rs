@@ -4,7 +4,7 @@ use html::internal::Id;
 use crate::{
     BlockFormattingParticipation, BoxId, BoxKind, BoxSource, ContainingBlockId,
     FormattingContextId, FormattingContextKind, InlineFormattingContextId,
-    InlineFormattingParticipation, ListMarker, Rectangle, ReplacedKind,
+    InlineFormattingParticipation, ListMarker, Rectangle, ReplacedKind, UsedContentSize,
     replaced::intrinsic::IntrinsicSize,
 };
 
@@ -33,6 +33,7 @@ pub struct LayoutBox<'style_tree, 'dom> {
     pub list_marker: Option<ListMarker>,
     pub replaced: Option<ReplacedKind>,
     pub replaced_intrinsic: Option<IntrinsicSize>,
+    pub used_content_size: Option<UsedContentSize>,
 }
 
 impl<'style_tree, 'dom> LayoutBox<'style_tree, 'dom> {

@@ -320,6 +320,73 @@ fn layout_child_percentage_width_uses_parent_content_width_not_margin_reduced_av
 }
 
 #[test]
+fn layout_sizing_debug_snapshot_pins_flow_and_used_size_metadata() {
+    let dom = doc(vec![element(
+        2,
+        "section",
+        vec![
+            ("width", "200px"),
+            ("padding-left", "10px"),
+            ("padding-right", "10px"),
+        ],
+        vec![element(
+            3,
+            "div",
+            vec![
+                ("width", "50%"),
+                ("margin-left", "20px"),
+                ("margin-right", "30px"),
+                ("padding-left", "5px"),
+                ("padding-right", "5px"),
+            ],
+            Vec::new(),
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let output = crate::layout_document(crate::LayoutPhaseInput::new(
+        &styled,
+        500.0,
+        &TestMeasurer,
+        None,
+    ));
+
+    assert_eq!(
+        output.to_sizing_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "layout-sizing-flow\n",
+            "viewport-width: 500.00\n",
+            "document-rect: x=0.00 y=0.00 w=500.00 h=0.00\n",
+            "layout-boxes: 3\n",
+            "box[0]: box-id=b0 source=dom(1) node=document kind=block cb=none block-participation=root inline-participation=none border-box=x=0.00 y=0.00 w=500.00 h=0.00 content-box=x=0.00 y=0.00 w=500.00 h=0.00 margin=(top=0.00px right=0.00px bottom=0.00px left=0.00px) padding=(top=0.00px right=0.00px bottom=0.00px left=0.00px) used-size=inline(preferred=500.00px reason=auto-stretch-to-containing-block value=500.00px adjustment=none) block(preferred=0.00px reason=auto-content-based value=0.00px adjustment=none) children=1\n",
+            "  box[1]: box-id=b1 source=dom(2) node=element(\"section\") kind=block cb=b0 block-participation=block-level inline-participation=none border-box=x=0.00 y=0.00 w=220.00 h=0.00 content-box=x=10.00 y=0.00 w=200.00 h=0.00 margin=(top=0.00px right=0.00px bottom=0.00px left=0.00px) padding=(top=0.00px right=10.00px bottom=0.00px left=10.00px) used-size=inline(preferred=200.00px reason=definite-length value=200.00px adjustment=none) block(preferred=0.00px reason=auto-content-based value=0.00px adjustment=none) children=1\n",
+            "    box[2]: box-id=b2 source=dom(3) node=element(\"div\") kind=block cb=b1 block-participation=block-level inline-participation=none border-box=x=30.00 y=0.00 w=110.00 h=0.00 content-box=x=35.00 y=0.00 w=100.00 h=0.00 margin=(top=0.00px right=30.00px bottom=0.00px left=20.00px) padding=(top=0.00px right=5.00px bottom=0.00px left=5.00px) used-size=inline(preferred=100.00px reason=percentage-of-definite-containing-block value=100.00px adjustment=none) block(preferred=0.00px reason=auto-content-based value=0.00px adjustment=none) children=0\n",
+        )
+    );
+}
+
+#[test]
+fn layout_sizing_debug_snapshot_reports_text_runs_without_stretched_used_size() {
+    let dom = doc(vec![element(2, "div", Vec::new(), vec![text(3, "hello")])]);
+    let styled = css::build_style_tree(&dom, None);
+    let output = crate::layout_document(crate::LayoutPhaseInput::new(
+        &styled,
+        500.0,
+        &TestMeasurer,
+        None,
+    ));
+
+    let snapshot = output.to_sizing_debug_snapshot();
+    let text_line = snapshot
+        .lines()
+        .find(|line| line.contains("node=text(\"hello\")"))
+        .expect("text run sizing snapshot line");
+
+    assert!(text_line.contains("used-size=none"));
+    assert!(!text_line.contains("auto-stretch-to-containing-block"));
+}
+
+#[test]
 fn layout_root_element_children_flow_from_root_content_box() {
     let dom = doc(vec![element(
         2,

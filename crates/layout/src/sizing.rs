@@ -4,6 +4,8 @@
 //! It deliberately does not replace the current geometry pass yet; X1 is the
 //! architecture boundary that later X issues will implement against.
 
+use std::fmt::Write;
+
 use crate::ContainingBlockId;
 use css::{BoxMetrics, ComputedStyle, Length, LengthPercentage};
 
@@ -725,6 +727,86 @@ impl SizeResolutionInput {
     pub fn intrinsic(self) -> IntrinsicSizes {
         self.intrinsic
     }
+
+    /// Stable semantic debug snapshot for one normal-flow size-resolution input.
+    ///
+    /// The snapshot is intentionally derived from the same typed inputs and
+    /// resolver outputs used by layout. It is a regression surface for sizing
+    /// behavior, not a rendering or pixel-output format.
+    pub fn to_debug_snapshot(
+        self,
+        mode: NormalFlowSizingMode,
+        auto_content_block_size: CssPx,
+    ) -> String {
+        let inline = resolve_normal_flow_inline_size(self, mode);
+        let block = resolve_normal_flow_block_size(self, mode, auto_content_block_size);
+        let constraint_space = self.constraint_space();
+        let containing_size = constraint_space.containing_size();
+        let available_space = constraint_space.available_space();
+        let style = self.style();
+        let metrics = style.box_metrics();
+        let intrinsic = self.intrinsic();
+
+        let mut out = String::new();
+        writeln!(&mut out, "version: 1").expect("write snapshot");
+        writeln!(&mut out, "size-resolution").expect("write snapshot");
+        writeln!(&mut out, "mode: {}", mode.as_debug_label()).expect("write snapshot");
+        writeln!(
+            &mut out,
+            "auto-content-block-size: {}",
+            css_px_debug_label(auto_content_block_size)
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut out,
+            "constraint-space: containing-block={} containing-inline={} containing-block-size={} available-inline={} available-block={}",
+            optional_containing_block_debug_label(containing_size.containing_block()),
+            available_size_debug_label(containing_size.inline_size()),
+            available_size_debug_label(containing_size.block_size()),
+            available_size_debug_label(available_space.inline_size()),
+            available_size_debug_label(available_space.block_size()),
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut out,
+            "style: inline({}) block({})",
+            axis_style_input_debug_label(style.inline()),
+            axis_style_input_debug_label(style.block()),
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut out,
+            "box-metrics: margin={} padding={}",
+            signed_sides_debug_label(metrics.margin()),
+            css_px_sides_debug_label(metrics.padding()),
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut out,
+            "intrinsic: min-content-inline={} max-content-inline={} preferred-inline={} preferred-block={} aspect-ratio={}",
+            css_px_debug_label(intrinsic.min_content_inline_size()),
+            css_px_debug_label(intrinsic.max_content_inline_size()),
+            optional_css_px_debug_label(intrinsic.preferred_inline_size()),
+            optional_css_px_debug_label(intrinsic.preferred_block_size()),
+            optional_aspect_ratio_debug_label(intrinsic.aspect_ratio()),
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut out,
+            "result-inline: {} border={}",
+            used_axis_size_debug_label(inline.content()),
+            css_px_debug_label(inline.border()),
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut out,
+            "result-block: {} border={}",
+            used_axis_size_debug_label(block.content()),
+            css_px_debug_label(block.border()),
+        )
+        .expect("write snapshot");
+        out
+    }
 }
 
 /// Supported normal-flow sizing behavior for the current layout subset.
@@ -735,6 +817,18 @@ pub enum NormalFlowSizingMode {
     InlineLevel,
     AtomicInline,
     Anonymous,
+}
+
+impl NormalFlowSizingMode {
+    pub fn as_debug_label(self) -> &'static str {
+        match self {
+            Self::Document => "document",
+            Self::BlockLevel => "block-level",
+            Self::InlineLevel => "inline-level",
+            Self::AtomicInline => "atomic-inline",
+            Self::Anonymous => "anonymous",
+        }
+    }
 }
 
 /// Resolved content-box and border-box size for one axis.
@@ -1109,6 +1203,22 @@ pub enum SizeResolutionReason {
     UnsupportedDeferred,
 }
 
+impl SizeResolutionReason {
+    pub fn as_debug_label(self) -> &'static str {
+        match self {
+            Self::DefiniteLength => "definite-length",
+            Self::PercentageOfDefiniteContainingBlock => "percentage-of-definite-containing-block",
+            Self::AutoStretchToContainingBlock => "auto-stretch-to-containing-block",
+            Self::AutoContentBased => "auto-content-based",
+            Self::IntrinsicPreferredSize => "intrinsic-preferred-size",
+            Self::IntrinsicAspectRatioTransfer => "intrinsic-aspect-ratio-transfer",
+            Self::ShrinkToFit => "shrink-to-fit",
+            Self::DeferredIndefinitePercentage => "deferred-indefinite-percentage",
+            Self::UnsupportedDeferred => "unsupported-deferred",
+        }
+    }
+}
+
 /// Post-preferred size adjustment applied after preferred-size resolution.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum AppliedSizeConstraint {
@@ -1119,6 +1229,17 @@ pub enum AppliedSizeConstraint {
     Max,
     /// The formatting context's definite available space clamped the final size.
     AvailableSpaceClamp,
+}
+
+impl AppliedSizeConstraint {
+    pub fn as_debug_label(self) -> &'static str {
+        match self {
+            Self::None => "none",
+            Self::Min => "min",
+            Self::Max => "max",
+            Self::AvailableSpaceClamp => "available-space-clamp",
+        }
+    }
 }
 
 /// Used content-box size for one axis plus deterministic sizing metadata.
@@ -1357,6 +1478,118 @@ fn css_px_sum(a: CssPx, b: CssPx) -> CssPx {
 fn subtract_css_px(value: CssPx, amount: CssPx) -> CssPx {
     CssPx::new((value.get() - amount.get()).max(0.0))
         .expect("clamped difference of CSS px values is valid")
+}
+
+fn optional_containing_block_debug_label(value: Option<ContainingBlockId>) -> String {
+    value
+        .map(|id| format!("b{}", id.index()))
+        .unwrap_or_else(|| "none".to_string())
+}
+
+fn available_size_debug_label(value: AvailableSize) -> String {
+    match value {
+        AvailableSize::Definite(value) => css_px_debug_label(value),
+        AvailableSize::Indefinite => "indefinite".to_string(),
+    }
+}
+
+fn css_px_debug_label(value: CssPx) -> String {
+    format!("{:.2}px", value.get())
+}
+
+fn signed_css_px_debug_label(value: SignedCssPx) -> String {
+    format!("{:.2}px", value.get())
+}
+
+fn optional_css_px_debug_label(value: Option<CssPx>) -> String {
+    value
+        .map(css_px_debug_label)
+        .unwrap_or_else(|| "none".to_string())
+}
+
+fn optional_aspect_ratio_debug_label(value: Option<AspectRatio>) -> String {
+    value
+        .map(|ratio| format!("{:.4}", ratio.get()))
+        .unwrap_or_else(|| "none".to_string())
+}
+
+fn percentage_debug_label(value: Percentage) -> String {
+    format!("{:.2}%", value.fraction() * 100.0)
+}
+
+fn style_preferred_size_debug_label(value: StylePreferredSize) -> String {
+    match value {
+        StylePreferredSize::Auto => "auto".to_string(),
+        StylePreferredSize::Length(value) => css_px_debug_label(value),
+        StylePreferredSize::Percentage(value) => percentage_debug_label(value),
+    }
+}
+
+fn style_minimum_size_debug_label(value: StyleMinimumSize) -> String {
+    match value {
+        StyleMinimumSize::Auto => "auto".to_string(),
+        StyleMinimumSize::Length(value) => css_px_debug_label(value),
+        StyleMinimumSize::Percentage(value) => percentage_debug_label(value),
+    }
+}
+
+fn style_maximum_size_debug_label(value: StyleMaximumSize) -> String {
+    match value {
+        StyleMaximumSize::None => "none".to_string(),
+        StyleMaximumSize::Length(value) => css_px_debug_label(value),
+        StyleMaximumSize::Percentage(value) => percentage_debug_label(value),
+    }
+}
+
+fn axis_style_input_debug_label(value: AxisStyleSizeInput) -> String {
+    format!(
+        "preferred={} min={} max={}",
+        style_preferred_size_debug_label(value.preferred()),
+        style_minimum_size_debug_label(value.min()),
+        style_maximum_size_debug_label(value.max()),
+    )
+}
+
+fn css_px_sides_debug_label(value: PhysicalSides<CssPx>) -> String {
+    format!(
+        "(top={} right={} bottom={} left={})",
+        css_px_debug_label(value.top()),
+        css_px_debug_label(value.right()),
+        css_px_debug_label(value.bottom()),
+        css_px_debug_label(value.left()),
+    )
+}
+
+fn signed_sides_debug_label(value: PhysicalSides<SignedCssPx>) -> String {
+    format!(
+        "(top={} right={} bottom={} left={})",
+        signed_css_px_debug_label(value.top()),
+        signed_css_px_debug_label(value.right()),
+        signed_css_px_debug_label(value.bottom()),
+        signed_css_px_debug_label(value.left()),
+    )
+}
+
+pub(crate) fn used_axis_size_debug_label(value: UsedAxisSize) -> String {
+    format!(
+        "preferred={} reason={} value={} adjustment={}",
+        css_px_debug_label(value.preferred_value()),
+        value.preferred_reason().as_debug_label(),
+        css_px_debug_label(value.value()),
+        value.applied_constraint().as_debug_label(),
+    )
+}
+
+pub(crate) fn used_content_size_debug_label(value: Option<UsedContentSize>) -> String {
+    value
+        .map(|value| {
+            format!(
+                "inline({}) block({})",
+                used_axis_size_debug_label(value.inline()),
+                used_axis_size_debug_label(value.block()),
+            )
+        })
+        .unwrap_or_else(|| "none".to_string())
 }
 
 #[cfg(test)]
@@ -1674,6 +1907,84 @@ mod tests {
         );
         assert_eq!(used.value(), final_value);
         assert_eq!(used.applied_constraint(), AppliedSizeConstraint::Min);
+    }
+
+    #[test]
+    fn size_resolution_debug_snapshot_is_stable_and_semantic() {
+        let containing_size = ContainingSize::new(
+            None,
+            AvailableSize::definite(400.0).expect("containing inline"),
+            AvailableSize::Indefinite,
+        );
+        let available_space = AvailableSpace::new(
+            AvailableSize::definite(160.0).expect("available inline"),
+            AvailableSize::Indefinite,
+        );
+        let constraint_space = ConstraintSpace::from_containing_size(containing_size)
+            .with_available_space(available_space);
+        let style = StyleSizeInputs::new(
+            AxisStyleSizeInput::new(
+                StylePreferredSize::Auto,
+                StyleMinimumSize::Length(CssPx::new(50.0).expect("min-width")),
+                StyleMaximumSize::Percentage(
+                    Percentage::from_percent(25.0).expect("max-width percentage"),
+                ),
+            ),
+            AxisStyleSizeInput::new(
+                StylePreferredSize::Auto,
+                StyleMinimumSize::Auto,
+                StyleMaximumSize::None,
+            ),
+            StyleBoxMetrics::new(
+                PhysicalSides::new(
+                    SignedCssPx::new(1.0).expect("margin top"),
+                    SignedCssPx::new(2.0).expect("margin right"),
+                    SignedCssPx::new(3.0).expect("margin bottom"),
+                    SignedCssPx::new(4.0).expect("margin left"),
+                ),
+                PhysicalSides::new(
+                    CssPx::new(2.0).expect("padding top"),
+                    CssPx::new(10.0).expect("padding right"),
+                    CssPx::new(3.0).expect("padding bottom"),
+                    CssPx::new(10.0).expect("padding left"),
+                ),
+            ),
+        );
+        let intrinsic = IntrinsicSizes::new(
+            CssPx::new(40.0).expect("min-content"),
+            CssPx::new(220.0).expect("max-content"),
+            Some(CssPx::new(220.0).expect("preferred")),
+            None,
+            None,
+        )
+        .expect("intrinsic");
+        let input = SizeResolutionInput::new(constraint_space, style, intrinsic);
+
+        let snapshot = input.to_debug_snapshot(
+            NormalFlowSizingMode::AtomicInline,
+            CssPx::new(30.0).expect("auto content block size"),
+        );
+
+        assert_eq!(
+            snapshot,
+            "version: 1\n\
+size-resolution\n\
+mode: atomic-inline\n\
+auto-content-block-size: 30.00px\n\
+constraint-space: containing-block=none containing-inline=400.00px containing-block-size=indefinite available-inline=160.00px available-block=indefinite\n\
+style: inline(preferred=auto min=50.00px max=25.00%) block(preferred=auto min=auto max=none)\n\
+box-metrics: margin=(top=1.00px right=2.00px bottom=3.00px left=4.00px) padding=(top=2.00px right=10.00px bottom=3.00px left=10.00px)\n\
+intrinsic: min-content-inline=40.00px max-content-inline=220.00px preferred-inline=220.00px preferred-block=none aspect-ratio=none\n\
+result-inline: preferred=140.00px reason=shrink-to-fit value=100.00px adjustment=max border=120.00px\n\
+result-block: preferred=30.00px reason=auto-content-based value=30.00px adjustment=none border=35.00px\n"
+        );
+        assert_eq!(
+            snapshot,
+            input.to_debug_snapshot(
+                NormalFlowSizingMode::AtomicInline,
+                CssPx::new(30.0).expect("auto content block size"),
+            )
+        );
     }
 
     #[test]

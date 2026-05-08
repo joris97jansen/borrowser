@@ -96,5 +96,6 @@ fn layout_box_from_generated_tree<'style_tree, 'dom>(
         list_marker: box_node.list_marker(),
         replaced: box_node.replaced(),
         replaced_intrinsic: box_node.replaced_intrinsic(),
+        used_content_size: None,
     }
 }

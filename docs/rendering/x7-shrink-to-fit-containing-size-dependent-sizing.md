@@ -20,6 +20,7 @@ Related documents:
 - `docs/rendering/x5-min-max-sizing-constraints.md`
 - `docs/rendering/x6-percentage-sizing-targeted-subset.md`
 - `docs/rendering/x8-flow-correctness-varied-sizing.md`
+- `docs/rendering/x9-deterministic-sizing-debug-regressions.md`
 
 ## Supported Scope
 

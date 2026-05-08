@@ -30,7 +30,9 @@
 //! shrink-to-fit and containing-size-dependent sizing are documented in
 //! `docs/rendering/x7-shrink-to-fit-containing-size-dependent-sizing.md`; X8
 //! flow correctness under varied sizing conditions is documented in
-//! `docs/rendering/x8-flow-correctness-varied-sizing.md`.
+//! `docs/rendering/x8-flow-correctness-varied-sizing.md`; X9 deterministic
+//! sizing debug and regression surfaces are documented in
+//! `docs/rendering/x9-deterministic-sizing-debug-regressions.md`.
 //! `BoxTree` is the frame-local generated box-tree structure; `LayoutBox` is
 //! the current geometry projection consumed by paint and hit testing.
 
