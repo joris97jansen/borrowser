@@ -26,6 +26,7 @@ Related documents:
 - `docs/rendering/x7-shrink-to-fit-containing-size-dependent-sizing.md`
 - `docs/rendering/x8-flow-correctness-varied-sizing.md`
 - `docs/rendering/x9-deterministic-sizing-debug-regressions.md`
+- `docs/rendering/x10-sizing-invariants-extension-hooks.md`
 - `docs/rendering/w5-containing-block-relationships.md`
 - `docs/rendering/w6-block-formatting-context-foundations.md`
 - `docs/rendering/w7-inline-formatting-context-foundations.md`
