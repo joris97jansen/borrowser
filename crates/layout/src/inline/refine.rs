@@ -2,11 +2,11 @@ use css::Display;
 use html::Node;
 
 use crate::{
-    AvailableSize, AvailableSpace, BlockFormattingParticipation, BoxKind, ConstraintSpace,
-    ContainingSize, CssPx, IntrinsicSizes, LayoutBox, NormalFlowSizingMode, Rectangle,
-    ResolvedAxisSize, SignedCssPx, SizeResolutionInput, SizeResolutionReason, StyleSizeInputs,
-    TextMeasurer, UsedAxisSize, UsedContentSize, resolve_normal_flow_block_size,
-    resolve_normal_flow_inline_size,
+    AvailableSize, AvailableSpace, BlockFlowMarginCollapseCursor, BlockFormattingParticipation,
+    BoxKind, ConstraintSpace, ContainingSize, CssPx, IntrinsicSizes, LayoutBox,
+    NormalFlowSizingMode, Rectangle, ResolvedAxisSize, SignedCssPx, SizeResolutionInput,
+    SizeResolutionReason, StyleSizeInputs, TextMeasurer, UsedAxisSize, UsedContentSize,
+    resolve_normal_flow_block_size, resolve_normal_flow_inline_size,
 };
 
 use super::engine::layout_tokens;
@@ -70,11 +70,16 @@ fn recompute_block_heights<'style_tree, 'dom>(
     match node.node.node {
         Node::Document { .. } => {
             let content_box = flow_content_box_for_box(node, x, y, used_width);
-            let mut cursor_y = content_box.block_start;
+            let mut block_cursor = BlockFlowMarginCollapseCursor::new(content_box.block_start);
 
             for child in &mut node.children {
+                debug_assert!(
+                    participates_in_sibling_margin_collapse(child),
+                    "Y3 sibling margin collapse expects validated in-flow block-level children"
+                );
+
                 let margins = child.flow_margins();
-                let child_block_start = margins.apply_block_start(cursor_y);
+                let placement = block_cursor.next_in_flow_block(margins);
 
                 let child_inline = normal_flow_child_inline_input(content_box, child);
 
@@ -82,17 +87,19 @@ fn recompute_block_heights<'style_tree, 'dom>(
                     measurer,
                     child,
                     child_inline.border_x,
-                    child_block_start.get(),
+                    placement.border_block_start().get(),
                     child_inline.containing_width,
                     child_inline.available_width,
                 );
-                cursor_y = margins.advance_after_border_box(
-                    child_block_start,
+
+                block_cursor.finish_in_flow_block(
+                    placement.border_block_start(),
                     css_px_from_nonnegative(h, "child block size"),
+                    margins,
                 );
             }
 
-            let auto_content_height = cursor_y.get() - content_box.block_start.get();
+            let auto_content_height = block_cursor.auto_content_block_size().get();
             let block_size = resolve_block_axis_size(sizing_input, mode, auto_content_height);
             finish_resolved_size(node, inline_size, block_size)
         }
@@ -191,7 +198,7 @@ fn recompute_block_heights<'style_tree, 'dom>(
             // 3) Block children start below content_top + inline content
             let content_start_y = content_top + inline_height;
             let content_start_y = signed_px_from_finite(content_start_y, "content start y");
-            let mut cursor_y = content_start_y;
+            let mut block_cursor = BlockFlowMarginCollapseCursor::new(content_start_y);
 
             for child in &mut node.children {
                 // Skip inline-flow participants here; they were accounted for
@@ -202,8 +209,13 @@ fn recompute_block_heights<'style_tree, 'dom>(
                     continue;
                 }
 
+                debug_assert!(
+                    participates_in_sibling_margin_collapse(child),
+                    "Y3 sibling margin collapse expects validated in-flow block-level children"
+                );
+
                 let margins = child.flow_margins();
-                let child_block_start = margins.apply_block_start(cursor_y);
+                let placement = block_cursor.next_in_flow_block(margins);
 
                 let child_inline = normal_flow_child_inline_input(content_box, child);
 
@@ -211,18 +223,19 @@ fn recompute_block_heights<'style_tree, 'dom>(
                     measurer,
                     child,
                     child_inline.border_x,
-                    child_block_start.get(),
+                    placement.border_block_start().get(),
                     child_inline.containing_width,
                     child_inline.available_width,
                 );
 
-                cursor_y = margins.advance_after_border_box(
-                    child_block_start,
+                block_cursor.finish_in_flow_block(
+                    placement.border_block_start(),
                     css_px_from_nonnegative(h, "child block size"),
+                    margins,
                 );
             }
 
-            let children_height = cursor_y.get() - content_start_y.get();
+            let children_height = block_cursor.auto_content_block_size().get();
 
             // 4) Resolve auto content height through the sizing contract.
             let auto_content_height = inline_height + children_height;
@@ -240,6 +253,13 @@ fn participates_in_parent_inline_flow(node: &LayoutBox<'_, '_>) -> bool {
     matches!(
         node.block_formatting_participation(),
         BlockFormattingParticipation::InlineLevel | BlockFormattingParticipation::AtomicInline
+    )
+}
+
+fn participates_in_sibling_margin_collapse(node: &LayoutBox<'_, '_>) -> bool {
+    matches!(
+        node.block_formatting_participation(),
+        BlockFormattingParticipation::BlockLevel
     )
 }
 

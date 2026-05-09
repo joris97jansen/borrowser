@@ -568,6 +568,165 @@ impl CollapsedMargin {
     }
 }
 
+/// Deterministic record for one permitted margin-collapse operation.
+///
+/// The case name identifies the category of adjoining margins already validated
+/// by the caller. It is not itself permission to collapse arbitrary margins.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MarginCollapseDecision {
+    case: MarginCollapseCase,
+    previous_margin: SignedCssPx,
+    next_margin: SignedCssPx,
+    collapsed: CollapsedMargin,
+}
+
+impl MarginCollapseDecision {
+    /// Collapse the block-end margin of one in-flow block sibling with the
+    /// block-start margin of the next in-flow block sibling.
+    pub fn adjacent_block_siblings(
+        previous_block_end_margin: SignedCssPx,
+        next_block_start_margin: SignedCssPx,
+    ) -> Self {
+        Self {
+            case: MarginCollapseCase::AdjacentBlockSiblings,
+            previous_margin: previous_block_end_margin,
+            next_margin: next_block_start_margin,
+            collapsed: CollapsedMargin::from_adjoining(&[
+                previous_block_end_margin,
+                next_block_start_margin,
+            ]),
+        }
+    }
+
+    pub fn case(self) -> MarginCollapseCase {
+        self.case
+    }
+
+    pub fn previous_margin(self) -> SignedCssPx {
+        self.previous_margin
+    }
+
+    pub fn next_margin(self) -> SignedCssPx {
+        self.next_margin
+    }
+
+    pub fn collapsed_margin(self) -> CollapsedMargin {
+        self.collapsed
+    }
+
+    pub fn block_offset(self) -> SignedCssPx {
+        self.collapsed.value()
+    }
+
+    pub fn as_debug_label(self) -> String {
+        format!(
+            "case={} previous={} next={} collapsed=({})",
+            self.case.as_debug_label(),
+            signed_px_debug_label(self.previous_margin),
+            signed_px_debug_label(self.next_margin),
+            self.collapsed.as_debug_label(),
+        )
+    }
+}
+
+/// Block-axis cursor that applies the Y3 supported margin-collapse subset.
+///
+/// Supported today:
+/// - the first in-flow block child keeps its own block-start margin
+/// - adjacent in-flow block siblings collapse the previous block-end margin
+///   with the next block-start margin
+/// - the last in-flow block child keeps its own block-end margin
+///
+/// Parent/child collapse and empty-block self-collapse need additional
+/// boundary and content checks, so they are intentionally not folded into this
+/// cursor.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BlockFlowMarginCollapseCursor {
+    content_block_start: SignedCssPx,
+    previous_in_flow_block: Option<PreviousInFlowBlockMargin>,
+}
+
+impl BlockFlowMarginCollapseCursor {
+    pub fn new(content_block_start: SignedCssPx) -> Self {
+        Self {
+            content_block_start,
+            previous_in_flow_block: None,
+        }
+    }
+
+    pub fn next_in_flow_block(self, margins: FlowMargins) -> BlockFlowBlockPlacement {
+        match self.previous_in_flow_block {
+            Some(previous) => {
+                let decision = MarginCollapseDecision::adjacent_block_siblings(
+                    previous.block_end_margin,
+                    margins.block_start(),
+                );
+                BlockFlowBlockPlacement {
+                    border_block_start: signed_px_sum(
+                        previous.border_block_end,
+                        decision.block_offset(),
+                    ),
+                    margin_collapse: Some(decision),
+                }
+            }
+            None => BlockFlowBlockPlacement {
+                border_block_start: margins.apply_block_start(self.content_block_start),
+                margin_collapse: None,
+            },
+        }
+    }
+
+    pub fn finish_in_flow_block(
+        &mut self,
+        border_block_start: SignedCssPx,
+        border_block_size: CssPx,
+        margins: FlowMargins,
+    ) {
+        self.previous_in_flow_block = Some(PreviousInFlowBlockMargin {
+            border_block_end: signed_px_sum(
+                border_block_start,
+                signed_from_css_px(border_block_size),
+            ),
+            block_end_margin: margins.block_end(),
+        });
+    }
+
+    pub fn current_block_position(self) -> SignedCssPx {
+        match self.previous_in_flow_block {
+            Some(previous) => signed_px_sum(previous.border_block_end, previous.block_end_margin),
+            None => self.content_block_start,
+        }
+    }
+
+    pub fn auto_content_block_size(self) -> CssPx {
+        CssPx::new((self.current_block_position().get() - self.content_block_start.get()).max(0.0))
+            .expect("auto content block size is non-negative")
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct PreviousInFlowBlockMargin {
+    border_block_end: SignedCssPx,
+    block_end_margin: SignedCssPx,
+}
+
+/// Placement decision for one in-flow block child.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BlockFlowBlockPlacement {
+    border_block_start: SignedCssPx,
+    margin_collapse: Option<MarginCollapseDecision>,
+}
+
+impl BlockFlowBlockPlacement {
+    pub fn border_block_start(self) -> SignedCssPx {
+        self.border_block_start
+    }
+
+    pub fn margin_collapse(self) -> Option<MarginCollapseDecision> {
+        self.margin_collapse
+    }
+}
+
 /// Stable architecture/debug surface for Y1.
 pub fn advanced_flow_contract_debug_snapshot() -> String {
     let mut out = String::new();
@@ -744,6 +903,61 @@ mod tests {
             CollapsedMargin::from_adjoining(&[]),
             CollapsedMargin::zero()
         );
+    }
+
+    #[test]
+    fn margin_collapse_decision_records_adjacent_sibling_inputs() {
+        let decision = MarginCollapseDecision::adjacent_block_siblings(signed(10.0), signed(-8.0));
+
+        assert_eq!(decision.case(), MarginCollapseCase::AdjacentBlockSiblings);
+        assert_eq!(decision.previous_margin(), signed(10.0));
+        assert_eq!(decision.next_margin(), signed(-8.0));
+        assert_eq!(decision.block_offset(), signed(2.0));
+        assert_eq!(
+            decision.as_debug_label(),
+            "case=adjacent-block-siblings previous=10.00px next=-8.00px collapsed=(value=2.00px positive=10.00px negative=-8.00px)"
+        );
+    }
+
+    #[test]
+    fn block_flow_margin_cursor_collapses_adjacent_sibling_margins() {
+        let first_margins = FlowMargins::new(signed(5.0), signed(0.0), signed(10.0), signed(0.0));
+        let second_margins = FlowMargins::new(signed(20.0), signed(0.0), signed(7.0), signed(0.0));
+        let mut cursor = BlockFlowMarginCollapseCursor::new(signed(0.0));
+
+        let first = cursor.next_in_flow_block(first_margins);
+        assert_eq!(first.border_block_start(), signed(5.0));
+        assert_eq!(first.margin_collapse(), None);
+        cursor.finish_in_flow_block(first.border_block_start(), css(10.0), first_margins);
+
+        let second = cursor.next_in_flow_block(second_margins);
+        let collapse = second.margin_collapse().expect("sibling collapse");
+        assert_eq!(collapse.block_offset(), signed(20.0));
+        assert_eq!(second.border_block_start(), signed(35.0));
+        cursor.finish_in_flow_block(second.border_block_start(), css(15.0), second_margins);
+
+        assert_eq!(cursor.current_block_position(), signed(57.0));
+        assert_eq!(cursor.auto_content_block_size(), css(57.0));
+    }
+
+    #[test]
+    fn block_flow_margin_cursor_uses_css_negative_collapse_rule() {
+        let first_margins = FlowMargins::new(signed(0.0), signed(0.0), signed(8.0), signed(0.0));
+        let second_margins =
+            FlowMargins::new(signed(-13.0), signed(0.0), signed(-4.0), signed(0.0));
+        let mut cursor = BlockFlowMarginCollapseCursor::new(signed(0.0));
+
+        let first = cursor.next_in_flow_block(first_margins);
+        cursor.finish_in_flow_block(first.border_block_start(), css(10.0), first_margins);
+
+        let second = cursor.next_in_flow_block(second_margins);
+        let collapse = second.margin_collapse().expect("sibling collapse");
+        assert_eq!(collapse.block_offset(), signed(-5.0));
+        assert_eq!(second.border_block_start(), signed(5.0));
+        cursor.finish_in_flow_block(second.border_block_start(), css(10.0), second_margins);
+
+        assert_eq!(cursor.current_block_position(), signed(11.0));
+        assert_eq!(cursor.auto_content_block_size(), css(11.0));
     }
 
     #[test]
