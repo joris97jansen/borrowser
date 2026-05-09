@@ -38,7 +38,9 @@
 //! architecture and contracts are documented in
 //! `docs/rendering/y1-advanced-flow-layout-architecture-contract.md`; Y2
 //! structured margin handling is documented in
-//! `docs/rendering/y2-structured-margin-handling.md`.
+//! `docs/rendering/y2-structured-margin-handling.md`; Y3 adjacent block
+//! sibling margin collapsing is documented in
+//! `docs/rendering/y3-margin-collapsing-supported-subset.md`.
 //! `BoxTree` is the frame-local generated box-tree structure; `LayoutBox` is
 //! the current geometry projection consumed by paint and hit testing.
 
@@ -67,8 +69,9 @@ pub use box_tree::{
 };
 pub use document::{layout_block_tree, layout_document};
 pub use flow::{
-    CollapsedMargin, FlowMarginError, FlowMarginSide, FlowMargins, FlowParticipation,
-    MarginAdjustedChildInline, MarginCollapseBoundary, MarginCollapseCase, OutOfFlowKind,
+    BlockFlowBlockPlacement, BlockFlowMarginCollapseCursor, CollapsedMargin, FlowMarginError,
+    FlowMarginSide, FlowMargins, FlowParticipation, MarginAdjustedChildInline,
+    MarginCollapseBoundary, MarginCollapseCase, MarginCollapseDecision, OutOfFlowKind,
     OverflowKeyword, OverflowPolicy, PositionedContainingBlockStrategy, PositioningScheme,
     advanced_flow_contract_debug_snapshot,
 };

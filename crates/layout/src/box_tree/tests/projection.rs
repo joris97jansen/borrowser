@@ -321,7 +321,7 @@ fn layout_child_percentage_width_uses_parent_content_width_not_margin_reduced_av
 }
 
 #[test]
-fn layout_applies_block_margins_to_child_positioning_and_parent_auto_height() {
+fn layout_collapses_adjacent_block_sibling_margins() {
     let dom = doc(vec![element(
         2,
         "section",
@@ -357,9 +357,77 @@ fn layout_applies_block_margins_to_child_positioning_and_parent_auto_height() {
 
     assert_eq!(first.rect.y, 5.0);
     assert_eq!(first.rect.height, 10.0);
-    assert_eq!(second.rect.y, 33.0);
+    assert_eq!(second.rect.y, 26.0);
     assert_eq!(second.rect.height, 20.0);
-    assert_eq!(section.rect.height, 66.0);
+    assert_eq!(section.rect.height, 59.0);
+}
+
+#[test]
+fn layout_collapses_adjacent_block_sibling_margins_with_negative_values() {
+    let dom = doc(vec![element(
+        2,
+        "section",
+        Vec::new(),
+        vec![
+            element(
+                3,
+                "div",
+                vec![("height", "10px"), ("margin-bottom", "8px")],
+                Vec::new(),
+            ),
+            element(
+                4,
+                "div",
+                vec![("height", "10px"), ("margin-top", "-13px")],
+                Vec::new(),
+            ),
+        ],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+    let section = find_layout_by_direct_node_id(&layout, Id(2)).expect("section layout box");
+    let first = find_layout_by_direct_node_id(&layout, Id(3)).expect("first child layout box");
+    let second = find_layout_by_direct_node_id(&layout, Id(4)).expect("second child layout box");
+
+    assert_eq!(first.rect.y, 0.0);
+    assert_eq!(first.rect.height, 10.0);
+    assert_eq!(second.rect.y, 5.0);
+    assert_eq!(second.rect.height, 10.0);
+    assert_eq!(section.rect.height, 15.0);
+}
+
+#[test]
+fn layout_collapses_adjacent_block_sibling_margins_with_all_negative_values() {
+    let dom = doc(vec![element(
+        2,
+        "section",
+        Vec::new(),
+        vec![
+            element(
+                3,
+                "div",
+                vec![("height", "10px"), ("margin-bottom", "-4px")],
+                Vec::new(),
+            ),
+            element(
+                4,
+                "div",
+                vec![("height", "10px"), ("margin-top", "-13px")],
+                Vec::new(),
+            ),
+        ],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+    let section = find_layout_by_direct_node_id(&layout, Id(2)).expect("section layout box");
+    let first = find_layout_by_direct_node_id(&layout, Id(3)).expect("first child layout box");
+    let second = find_layout_by_direct_node_id(&layout, Id(4)).expect("second child layout box");
+
+    assert_eq!(first.rect.y, 0.0);
+    assert_eq!(first.rect.height, 10.0);
+    assert_eq!(second.rect.y, -3.0);
+    assert_eq!(second.rect.height, 10.0);
+    assert_eq!(section.rect.height, 7.0);
 }
 
 #[test]
