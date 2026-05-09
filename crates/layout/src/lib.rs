@@ -34,7 +34,9 @@
 //! sizing debug and regression surfaces are documented in
 //! `docs/rendering/x9-deterministic-sizing-debug-regressions.md`; X10
 //! Milestone X close-out invariants and extension hooks are documented in
-//! `docs/rendering/x10-sizing-invariants-extension-hooks.md`.
+//! `docs/rendering/x10-sizing-invariants-extension-hooks.md`; Milestone Y
+//! advanced flow architecture and contracts are documented in
+//! `docs/rendering/y1-advanced-flow-layout-architecture-contract.md`.
 //! `BoxTree` is the frame-local generated box-tree structure; `LayoutBox` is
 //! the current geometry projection consumed by paint and hit testing.
 
@@ -42,6 +44,7 @@ mod box_kind;
 mod box_tree;
 mod debug;
 mod document;
+mod flow;
 mod geometry;
 mod layout_box;
 mod phase;
@@ -61,6 +64,11 @@ pub use box_tree::{
     InlineFormattingParticipation, PrincipalBox,
 };
 pub use document::{layout_block_tree, layout_document};
+pub use flow::{
+    CollapsedMargin, FlowParticipation, MarginCollapseBoundary, MarginCollapseCase, OutOfFlowKind,
+    OverflowKeyword, OverflowPolicy, PositionedContainingBlockStrategy, PositioningScheme,
+    advanced_flow_contract_debug_snapshot,
+};
 pub use geometry::{Rectangle, content_height, content_x_and_width, content_y};
 pub use hit_test::{HitKind, hit_test};
 pub use inline::{LineBox, layout_inline_for_paint};
