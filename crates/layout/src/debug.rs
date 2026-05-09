@@ -156,6 +156,7 @@ fn append_layout_sizing_snapshot(
 ) -> usize {
     let indent = "  ".repeat(depth);
     let metrics = layout.box_metrics();
+    let margins = layout.flow_margins();
     let content_rect = Rectangle {
         x: layout.content_x_and_width().0,
         y: layout.content_y(),
@@ -175,7 +176,7 @@ fn append_layout_sizing_snapshot(
         inline_formatting_participation_debug_label(layout.inline_formatting_participation()),
         rectangle_debug_label(layout.rect),
         rectangle_debug_label(content_rect),
-        box_metrics_margin_debug_label(metrics),
+        flow_margins_debug_label(margins),
         box_metrics_padding_debug_label(metrics),
         used_content_size_debug_label(layout.used_content_size),
         layout.children.len(),
@@ -338,11 +339,8 @@ fn rectangle_debug_label(rect: Rectangle) -> String {
     )
 }
 
-fn box_metrics_margin_debug_label(metrics: css::BoxMetrics) -> String {
-    format!(
-        "(top={:.2}px right={:.2}px bottom={:.2}px left={:.2}px)",
-        metrics.margin_top, metrics.margin_right, metrics.margin_bottom, metrics.margin_left
-    )
+fn flow_margins_debug_label(margins: crate::FlowMargins) -> String {
+    margins.as_debug_label()
 }
 
 fn box_metrics_padding_debug_label(metrics: css::BoxMetrics) -> String {

@@ -1,8 +1,8 @@
 use css::ComputedStyle;
 
-use crate::{LayoutBox, ReplacedKind};
+use crate::{CssPx, FlowMargins, LayoutBox, ReplacedKind};
 
-use super::super::geometry::{MarginBoxSize, Margins, Pos, split_margin_and_paint_rect};
+use super::super::geometry::{BorderBoxSize, Pos, split_margin_and_paint_rect};
 use super::super::metrics::{
     inline_block_baseline_metrics_placeholder_bottom_edge, replaced_baseline_metrics_bottom_edge,
 };
@@ -19,30 +19,30 @@ impl<'m, 'style_tree, 'dom> InlineLayoutEngine<'m, 'style_tree, 'dom> {
         ctx: InlineContext,
         layout: Option<&'style_tree LayoutBox<'style_tree, 'dom>>,
     ) {
-        if self.cursor_x + width > self.max_x
+        let margins = FlowMargins::from_box_metrics(style.box_metrics())
+            .expect("computed style must materialize finite flow margins");
+        let advance_width = margins
+            .margin_box_inline_size(css_px_from_size(width))
+            .get();
+        let advance_height = margins
+            .margin_box_block_size(css_px_from_size(height))
+            .get();
+
+        if self.cursor_x + advance_width > self.max_x
             && !self.is_first_in_line
             && !self.wrap_to_next_line(None)
         {
             return;
         }
 
-        let metrics = inline_block_baseline_metrics_placeholder_bottom_edge(height);
-        let bm = style.box_metrics();
+        let metrics = inline_block_baseline_metrics_placeholder_bottom_edge(advance_height);
         let (advance_rect, paint_rect) = split_margin_and_paint_rect(
             Pos {
                 x: self.cursor_x,
                 y: self.cursor_y,
             },
-            MarginBoxSize {
-                width,
-                height: metrics.height(),
-            },
-            Margins {
-                left: bm.margin_left,
-                right: bm.margin_right,
-                top: bm.margin_top,
-                bottom: bm.margin_bottom,
-            },
+            BorderBoxSize { width, height },
+            margins,
         );
 
         self.line_fragments.push(LineFragment {
@@ -58,7 +58,7 @@ impl<'m, 'style_tree, 'dom> InlineLayoutEngine<'m, 'style_tree, 'dom> {
             descent: metrics.descent,
             baseline_shift: 0.0,
         });
-        self.cursor_x += width;
+        self.cursor_x += advance_width;
         self.line_ascent = self.line_ascent.max(metrics.ascent);
         self.line_descent = self.line_descent.max(metrics.descent);
         self.is_first_in_line = false;
@@ -73,30 +73,30 @@ impl<'m, 'style_tree, 'dom> InlineLayoutEngine<'m, 'style_tree, 'dom> {
         kind: ReplacedKind,
         layout: Option<&'style_tree LayoutBox<'style_tree, 'dom>>,
     ) {
-        if self.cursor_x + width > self.max_x
+        let margins = FlowMargins::from_box_metrics(style.box_metrics())
+            .expect("computed style must materialize finite flow margins");
+        let advance_width = margins
+            .margin_box_inline_size(css_px_from_size(width))
+            .get();
+        let advance_height = margins
+            .margin_box_block_size(css_px_from_size(height))
+            .get();
+
+        if self.cursor_x + advance_width > self.max_x
             && !self.is_first_in_line
             && !self.wrap_to_next_line(None)
         {
             return;
         }
 
-        let metrics = replaced_baseline_metrics_bottom_edge(height);
-        let bm = style.box_metrics();
+        let metrics = replaced_baseline_metrics_bottom_edge(advance_height);
         let (advance_rect, paint_rect) = split_margin_and_paint_rect(
             Pos {
                 x: self.cursor_x,
                 y: self.cursor_y,
             },
-            MarginBoxSize {
-                width,
-                height: metrics.height(),
-            },
-            Margins {
-                left: bm.margin_left,
-                right: bm.margin_right,
-                top: bm.margin_top,
-                bottom: bm.margin_bottom,
-            },
+            BorderBoxSize { width, height },
+            margins,
         );
 
         self.line_fragments.push(LineFragment {
@@ -113,7 +113,7 @@ impl<'m, 'style_tree, 'dom> InlineLayoutEngine<'m, 'style_tree, 'dom> {
             descent: metrics.descent,
             baseline_shift: 0.0,
         });
-        self.cursor_x += width;
+        self.cursor_x += advance_width;
         self.line_ascent = self.line_ascent.max(metrics.ascent);
         self.line_descent = self.line_descent.max(metrics.descent);
         self.is_first_in_line = false;
@@ -124,4 +124,12 @@ impl<'m, 'style_tree, 'dom> InlineLayoutEngine<'m, 'style_tree, 'dom> {
         let next_line_start_idx = source_range.map(|(_, newline_end)| newline_end);
         let _ = self.wrap_to_next_line(next_line_start_idx);
     }
+}
+
+fn css_px_from_size(value: f32) -> CssPx {
+    assert!(
+        value.is_finite(),
+        "atomic inline size must be finite: {value}"
+    );
+    CssPx::new(value.max(0.0)).expect("atomic inline size must be finite")
 }

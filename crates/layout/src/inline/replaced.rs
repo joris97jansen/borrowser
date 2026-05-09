@@ -1,6 +1,6 @@
 use css::{ComputedStyle, Length, LengthPercentage};
 
-use crate::{BoxKind, LayoutBox, ReplacedKind, TextMeasurer};
+use crate::{BoxKind, CssPx, LayoutBox, ReplacedKind, SignedCssPx, TextMeasurer};
 
 use crate::replaced::size::compute_replaced_size;
 
@@ -45,10 +45,20 @@ pub(crate) fn size_replaced_inline_children<'style_tree, 'dom>(
     for child in &mut parent.children {
         match child.kind {
             BoxKind::ReplacedInline => {
-                // Position relative to THIS blocks content box.
-                let cbm = child.style.box_metrics();
-                let child_x = content_x + cbm.margin_left;
-                let child_y = content_top + cbm.margin_top;
+                // Position relative to this block's content box.
+                let margins = child.flow_margins();
+                let child_inline = margins.apply_to_child_inline_axis(
+                    signed_px_from_finite(content_x, "replaced inline content x"),
+                    css_px_from_nonnegative(content_width, "replaced inline content width"),
+                );
+                let child_x = child_inline.border_inline_start().get();
+                let child_y = margins
+                    .apply_block_start(signed_px_from_finite(
+                        content_top,
+                        "replaced inline content top",
+                    ))
+                    .get();
+                let available_width = child_inline.available_inline_size().get();
 
                 child.rect.x = child_x;
                 child.rect.y = child_y;
@@ -62,10 +72,9 @@ pub(crate) fn size_replaced_inline_children<'style_tree, 'dom>(
                             .replaced_intrinsic
                             .unwrap_or_else(|| img_intrinsic_from_dom(child.node.node));
 
-                        // IMPORTANT: available inline space for this replaced box is the containing blocks content width.
-                        // Were sizing the box itself here; the inline formatter will still position/wrap it.
+                        // We're sizing the box itself here; the inline formatter will still position/wrap it.
                         let (w, h) =
-                            compute_replaced_size(child.style, intrinsic, Some(content_width));
+                            compute_replaced_size(child.style, intrinsic, Some(available_width));
 
                         child.rect.width = w;
                         child.rect.height = h;
@@ -82,7 +91,8 @@ pub(crate) fn size_replaced_inline_children<'style_tree, 'dom>(
                         let fudge = 8.0;
                         let intrinsic_w = (size_chars as f32) * avg_char_w + fudge;
 
-                        let w = resolve_replaced_width_px(child.style, content_width, intrinsic_w);
+                        let w =
+                            resolve_replaced_width_px(child.style, available_width, intrinsic_w);
 
                         // Height from line-height + padding (sane minimum)
                         let bm = child.style.box_metrics();
@@ -114,7 +124,8 @@ pub(crate) fn size_replaced_inline_children<'style_tree, 'dom>(
                         let fudge_x = 8.0;
                         let intrinsic_w = (cols as f32) * avg_char_w + fudge_x;
 
-                        let w = resolve_replaced_width_px(child.style, content_width, intrinsic_w);
+                        let w =
+                            resolve_replaced_width_px(child.style, available_width, intrinsic_w);
 
                         let bm = child.style.box_metrics();
                         let line_h = measurer.line_height(child.style);
@@ -140,7 +151,7 @@ pub(crate) fn size_replaced_inline_children<'style_tree, 'dom>(
                         let height_px = non_negative_px(child.style.height());
 
                         let desired_w = width_px.or(height_px).unwrap_or(intrinsic);
-                        let w = resolve_replaced_width_px(child.style, content_width, desired_w);
+                        let w = resolve_replaced_width_px(child.style, available_width, desired_w);
 
                         // Keep the control square unless a height is explicitly specified.
                         let h = height_px.unwrap_or(w);
@@ -183,7 +194,7 @@ pub(crate) fn size_replaced_inline_children<'style_tree, 'dom>(
                         }
 
                         // Final clamp to available inline space.
-                        w = w.min(content_width.max(0.0));
+                        w = w.min(available_width.max(0.0));
 
                         let mut h = intrinsic_h;
                         if let Some(px) = non_negative_px(child.style.height()) {
@@ -197,9 +208,9 @@ pub(crate) fn size_replaced_inline_children<'style_tree, 'dom>(
             }
 
             BoxKind::Inline => {
-                // KEY FIX:
-                // Replaced inline elements can be nested inside inline containers (<span> etc).
-                // They still size relative to the containing blocks content box.
+                // Replaced inline elements can be nested inside inline containers such as
+                // `<span>`.
+                // They still size relative to the containing block's content box.
                 size_replaced_inline_children(
                     measurer,
                     child,
@@ -215,10 +226,18 @@ pub(crate) fn size_replaced_inline_children<'style_tree, 'dom>(
             }
 
             BoxKind::Block => {
-                // Block children dont participate in this blocks inline formatting.
+                // Block children don't participate in this block's inline formatting.
             }
         }
     }
+}
+
+fn css_px_from_nonnegative(value: f32, label: &str) -> CssPx {
+    CssPx::new(value.max(0.0)).unwrap_or_else(|| panic!("{label} must be finite: {value}"))
+}
+
+fn signed_px_from_finite(value: f32, label: &str) -> SignedCssPx {
+    SignedCssPx::new(value).unwrap_or_else(|| panic!("{label} must be finite: {value}"))
 }
 
 fn non_negative_px(value: Option<LengthPercentage>) -> Option<f32> {

@@ -519,3 +519,55 @@ fn inline_block_margins_affect_wrapping() {
         _ => panic!("expected box fragment"),
     }
 }
+
+#[test]
+fn inline_block_negative_margins_do_not_expand_paint_rect_from_clamped_advance() {
+    let measurer = TestMeasurer;
+    let style = ComputedStyle::initial()
+        .with_property(
+            PropertyId::FontSize,
+            ComputedValue::Length(Length::Px(10.0)),
+        )
+        .unwrap_or_else(|error| panic!("failed to build test style: {error}"))
+        .with_property(
+            PropertyId::MarginLeft,
+            ComputedValue::Length(Length::Px(-30.0)),
+        )
+        .unwrap_or_else(|error| panic!("failed to build test style: {error}"))
+        .with_property(
+            PropertyId::MarginRight,
+            ComputedValue::Length(Length::Px(-30.0)),
+        )
+        .unwrap_or_else(|error| panic!("failed to build test style: {error}"));
+
+    let rect = Rectangle {
+        x: 0.0,
+        y: 0.0,
+        width: 100.0,
+        height: 100.0,
+    };
+    let tokens = vec![InlineToken::Box {
+        width: 20.0,
+        height: 20.0,
+        style: &style,
+        ctx: InlineContext::default(),
+        layout: None,
+    }];
+
+    let lines = layout_tokens(&measurer, rect, &style, tokens);
+    assert_eq!(lines.len(), 1);
+    assert_eq!(lines[0].fragments.len(), 1);
+
+    let fragment = &lines[0].fragments[0];
+    match &fragment.kind {
+        InlineFragment::Box { .. } => {}
+        _ => panic!("expected box fragment"),
+    }
+
+    let cursor_x = rect.x + INLINE_PADDING;
+    assert_approx_eq(fragment.advance_rect.rect().x, cursor_x);
+    assert_approx_eq(fragment.advance_rect.rect().width, 0.0);
+    assert_approx_eq(fragment.paint_rect.rect().x, cursor_x - 30.0);
+    assert_approx_eq(fragment.paint_rect.rect().width, 20.0);
+    assert_approx_eq(fragment.paint_rect.rect().height, 20.0);
+}

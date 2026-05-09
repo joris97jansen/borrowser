@@ -34,9 +34,11 @@
 //! sizing debug and regression surfaces are documented in
 //! `docs/rendering/x9-deterministic-sizing-debug-regressions.md`; X10
 //! Milestone X close-out invariants and extension hooks are documented in
-//! `docs/rendering/x10-sizing-invariants-extension-hooks.md`; Milestone Y
-//! advanced flow architecture and contracts are documented in
-//! `docs/rendering/y1-advanced-flow-layout-architecture-contract.md`.
+//! `docs/rendering/x10-sizing-invariants-extension-hooks.md`; Y1 advanced flow
+//! architecture and contracts are documented in
+//! `docs/rendering/y1-advanced-flow-layout-architecture-contract.md`; Y2
+//! structured margin handling is documented in
+//! `docs/rendering/y2-structured-margin-handling.md`.
 //! `BoxTree` is the frame-local generated box-tree structure; `LayoutBox` is
 //! the current geometry projection consumed by paint and hit testing.
 
@@ -65,7 +67,8 @@ pub use box_tree::{
 };
 pub use document::{layout_block_tree, layout_document};
 pub use flow::{
-    CollapsedMargin, FlowParticipation, MarginCollapseBoundary, MarginCollapseCase, OutOfFlowKind,
+    CollapsedMargin, FlowMarginError, FlowMarginSide, FlowMargins, FlowParticipation,
+    MarginAdjustedChildInline, MarginCollapseBoundary, MarginCollapseCase, OutOfFlowKind,
     OverflowKeyword, OverflowPolicy, PositionedContainingBlockStrategy, PositioningScheme,
     advanced_flow_contract_debug_snapshot,
 };

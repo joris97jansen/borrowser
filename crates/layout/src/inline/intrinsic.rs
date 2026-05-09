@@ -230,10 +230,9 @@ fn outer_intrinsic_contribution(
 ) -> InlineContributions {
     let content = intrinsic_contributions_for_layout_box(measurer, node);
     let metrics = node.style.box_metrics();
-    let horizontal_edges = metrics.padding_left
-        + metrics.padding_right
-        + metrics.margin_left.max(0.0)
-        + metrics.margin_right.max(0.0);
+    let margins = node.flow_margins();
+    let horizontal_edges =
+        metrics.padding_left + metrics.padding_right + margins.positive_inline_sum().get();
     let edges = css_px(horizontal_edges);
 
     InlineContributions::new(

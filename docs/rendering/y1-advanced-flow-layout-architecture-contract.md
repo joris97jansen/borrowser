@@ -31,6 +31,7 @@ Related documents:
 - `docs/rendering/x8-flow-correctness-varied-sizing.md`
 - `docs/rendering/x9-deterministic-sizing-debug-regressions.md`
 - `docs/rendering/x10-sizing-invariants-extension-hooks.md`
+- `docs/rendering/y2-structured-margin-handling.md`
 
 ## Purpose
 

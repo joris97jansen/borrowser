@@ -42,7 +42,8 @@ impl InlineContext {
 // Not exported outside inline; only used within this module tree.
 // Token invariants:
 // - `Space` is a single collapsible space and should never be emitted consecutively.
-// - `Box`/`Replaced` size uses margin-box dimensions (content size + margins).
+// - `Box`/`Replaced` carry border-box sizes. The inline engine derives
+//   non-negative margin-box advance sizes from `FlowMargins` during layout.
 // - Pending collapsible whitespace uses the first whitespace segment's style/ctx.
 // - `HardBreak` resets whitespace state (pending space cleared; next content is line-start).
 #[derive(Clone)]
@@ -62,8 +63,8 @@ pub(super) enum InlineToken<'style_tree, 'dom> {
     HardBreak {
         source_range: Option<(usize, usize)>,
     },
-    /// A "box token" representing an inline-level box (e.g. inline-block, image).
-    /// Width/height are the box size in px.
+    /// A token representing an atomic inline-level box.
+    /// Width/height are the actual border-box paint size in px.
     Box {
         width: f32,
         height: f32,
@@ -327,13 +328,6 @@ fn collect_inline_tokens_from_layout_box<'style_tree, 'dom>(
                     flush_pending_space(tokens, pending_space, *has_emitted_content);
 
                     let style = layout.style;
-                    let cbm = layout.style.box_metrics();
-
-                    let margin_box_width =
-                        (layout.rect.width + cbm.margin_left + cbm.margin_right).max(0.0);
-                    let margin_box_height =
-                        (layout.rect.height + cbm.margin_top + cbm.margin_bottom).max(0.0);
-                    debug_assert!(margin_box_width.is_finite() && margin_box_height.is_finite());
 
                     let layout_ref = match mode {
                         TokenCollectMode::Height => None,
@@ -343,8 +337,8 @@ fn collect_inline_tokens_from_layout_box<'style_tree, 'dom>(
                     match layout.kind {
                         BoxKind::InlineBlock => {
                             tokens.push(InlineToken::Box {
-                                width: margin_box_width,
-                                height: margin_box_height,
+                                width: layout.rect.width.max(0.0),
+                                height: layout.rect.height.max(0.0),
                                 style,
                                 ctx: next_ctx.clone(),
                                 layout: layout_ref,
@@ -356,8 +350,8 @@ fn collect_inline_tokens_from_layout_box<'style_tree, 'dom>(
                                 .expect("ReplacedInline must have replaced kind");
 
                             tokens.push(InlineToken::Replaced {
-                                width: margin_box_width,
-                                height: margin_box_height,
+                                width: layout.rect.width.max(0.0),
+                                height: layout.rect.height.max(0.0),
                                 style,
                                 ctx: next_ctx.clone(),
                                 kind,
