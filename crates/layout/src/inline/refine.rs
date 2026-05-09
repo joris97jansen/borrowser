@@ -4,8 +4,9 @@ use html::Node;
 use crate::{
     AvailableSize, AvailableSpace, BlockFormattingParticipation, BoxKind, ConstraintSpace,
     ContainingSize, CssPx, IntrinsicSizes, LayoutBox, NormalFlowSizingMode, Rectangle,
-    ResolvedAxisSize, SizeResolutionInput, SizeResolutionReason, StyleSizeInputs, TextMeasurer,
-    UsedAxisSize, UsedContentSize, resolve_normal_flow_block_size, resolve_normal_flow_inline_size,
+    ResolvedAxisSize, SignedCssPx, SizeResolutionInput, SizeResolutionReason, StyleSizeInputs,
+    TextMeasurer, UsedAxisSize, UsedContentSize, resolve_normal_flow_block_size,
+    resolve_normal_flow_inline_size,
 };
 
 use super::engine::layout_tokens;
@@ -16,9 +17,9 @@ use super::tokens::collect_inline_tokens_for_block_layout;
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 struct FlowContentBox {
-    inline_start: f32,
-    inline_size: f32,
-    block_start: f32,
+    inline_start: SignedCssPx,
+    inline_size: CssPx,
+    block_start: SignedCssPx,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -72,9 +73,8 @@ fn recompute_block_heights<'style_tree, 'dom>(
             let mut cursor_y = content_box.block_start;
 
             for child in &mut node.children {
-                let bm = child.box_metrics();
-
-                cursor_y += bm.margin_top;
+                let margins = child.flow_margins();
+                let child_block_start = margins.apply_block_start(cursor_y);
 
                 let child_inline = normal_flow_child_inline_input(content_box, child);
 
@@ -82,14 +82,17 @@ fn recompute_block_heights<'style_tree, 'dom>(
                     measurer,
                     child,
                     child_inline.border_x,
-                    cursor_y,
+                    child_block_start.get(),
                     child_inline.containing_width,
                     child_inline.available_width,
                 );
-                cursor_y += h + bm.margin_bottom;
+                cursor_y = margins.advance_after_border_box(
+                    child_block_start,
+                    css_px_from_nonnegative(h, "child block size"),
+                );
             }
 
-            let auto_content_height = cursor_y - content_box.block_start;
+            let auto_content_height = cursor_y.get() - content_box.block_start.get();
             let block_size = resolve_block_axis_size(sizing_input, mode, auto_content_height);
             finish_resolved_size(node, inline_size, block_size)
         }
@@ -123,11 +126,11 @@ fn recompute_block_heights<'style_tree, 'dom>(
             // --- Block-level element: inline content + block children + padding ---
 
             let content_box = flow_content_box_for_box(node, x, y, used_width);
-            let content_x = content_box.inline_start;
-            let content_width = content_box.inline_size;
+            let content_x = content_box.inline_start.get();
+            let content_width = content_box.inline_size.get();
 
             // Content box top (used as the baseline for inline layout)
-            let content_top = content_box.block_start;
+            let content_top = content_box.block_start.get();
 
             // 1) Layout inline-block children so we know their sizes.
             size_replaced_inline_children(measurer, node, content_x, content_top, content_width);
@@ -135,12 +138,12 @@ fn recompute_block_heights<'style_tree, 'dom>(
             {
                 for child in &mut node.children {
                     if matches!(child.kind, BoxKind::InlineBlock) {
-                        let cbm = child.box_metrics();
+                        let margins = child.flow_margins();
                         let child_inline = normal_flow_child_inline_input(content_box, child);
 
                         // Vertically, for now we place them starting at content_top;
                         // the inline engine will decide their final visual y position.
-                        let child_y = content_top + cbm.margin_top;
+                        let child_y = margins.apply_block_start(content_box.block_start).get();
 
                         let _ = recompute_block_heights(
                             measurer,
@@ -187,6 +190,7 @@ fn recompute_block_heights<'style_tree, 'dom>(
 
             // 3) Block children start below content_top + inline content
             let content_start_y = content_top + inline_height;
+            let content_start_y = signed_px_from_finite(content_start_y, "content start y");
             let mut cursor_y = content_start_y;
 
             for child in &mut node.children {
@@ -198,10 +202,8 @@ fn recompute_block_heights<'style_tree, 'dom>(
                     continue;
                 }
 
-                let cbm = child.box_metrics();
-
-                // Child's margin-top
-                cursor_y += cbm.margin_top;
+                let margins = child.flow_margins();
+                let child_block_start = margins.apply_block_start(cursor_y);
 
                 let child_inline = normal_flow_child_inline_input(content_box, child);
 
@@ -209,16 +211,18 @@ fn recompute_block_heights<'style_tree, 'dom>(
                     measurer,
                     child,
                     child_inline.border_x,
-                    cursor_y,
+                    child_block_start.get(),
                     child_inline.containing_width,
                     child_inline.available_width,
                 );
 
-                // Move down by child's height + margin-bottom
-                cursor_y += h + cbm.margin_bottom;
+                cursor_y = margins.advance_after_border_box(
+                    child_block_start,
+                    css_px_from_nonnegative(h, "child block size"),
+                );
             }
 
-            let children_height = cursor_y - content_start_y;
+            let children_height = cursor_y.get() - content_start_y.get();
 
             // 4) Resolve auto content height through the sizing contract.
             let auto_content_height = inline_height + children_height;
@@ -247,9 +251,12 @@ fn flow_content_box_for_box(
 ) -> FlowContentBox {
     let (inline_start, inline_size) = content_x_and_width_for_box(node, border_x, border_width);
     FlowContentBox {
-        inline_start,
-        inline_size,
-        block_start: content_y_for_box(node, border_y),
+        inline_start: signed_px_from_finite(inline_start, "content inline start"),
+        inline_size: css_px_from_nonnegative(inline_size, "content inline size"),
+        block_start: signed_px_from_finite(
+            content_y_for_box(node, border_y),
+            "content block start",
+        ),
     }
 }
 
@@ -257,14 +264,15 @@ fn normal_flow_child_inline_input(
     parent_content_box: FlowContentBox,
     child: &LayoutBox<'_, '_>,
 ) -> NormalFlowChildInlineInput {
-    let child_metrics = child.box_metrics();
+    let margins = child.flow_margins();
+    let child_inline = margins.apply_to_child_inline_axis(
+        parent_content_box.inline_start,
+        parent_content_box.inline_size,
+    );
     NormalFlowChildInlineInput {
-        border_x: parent_content_box.inline_start + child_metrics.margin_left,
-        containing_width: parent_content_box.inline_size,
-        available_width: (parent_content_box.inline_size
-            - child_metrics.margin_left
-            - child_metrics.margin_right)
-            .max(0.0),
+        border_x: child_inline.border_inline_start().get(),
+        containing_width: child_inline.containing_inline_size().get(),
+        available_width: child_inline.available_inline_size().get(),
     }
 }
 
@@ -360,4 +368,12 @@ fn content_x_and_width_for_box(
 
 fn content_y_for_box(node: &LayoutBox<'_, '_>, border_y: f32) -> f32 {
     border_y + node.box_metrics().padding_top
+}
+
+fn css_px_from_nonnegative(value: f32, label: &str) -> CssPx {
+    CssPx::new(value.max(0.0)).unwrap_or_else(|| panic!("{label} must be finite: {value}"))
+}
+
+fn signed_px_from_finite(value: f32, label: &str) -> SignedCssPx {
+    SignedCssPx::new(value).unwrap_or_else(|| panic!("{label} must be finite: {value}"))
 }

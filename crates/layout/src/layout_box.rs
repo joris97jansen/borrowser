@@ -2,7 +2,7 @@ use css::{BoxMetrics, ComputedStyle, StyledNode};
 use html::internal::Id;
 
 use crate::{
-    BlockFormattingParticipation, BoxId, BoxKind, BoxSource, ContainingBlockId,
+    BlockFormattingParticipation, BoxId, BoxKind, BoxSource, ContainingBlockId, FlowMargins,
     FormattingContextId, FormattingContextKind, InlineFormattingContextId,
     InlineFormattingParticipation, ListMarker, Rectangle, ReplacedKind, UsedContentSize,
     replaced::intrinsic::IntrinsicSize,
@@ -101,6 +101,11 @@ impl<'style_tree, 'dom> LayoutBox<'style_tree, 'dom> {
         } else {
             self.style.box_metrics()
         }
+    }
+
+    pub fn flow_margins(&self) -> FlowMargins {
+        FlowMargins::from_box_metrics(self.box_metrics())
+            .expect("computed style must materialize finite flow margins")
     }
 
     pub fn content_x_and_width(&self) -> (f32, f32) {

@@ -7,6 +7,8 @@
 
 use std::fmt::Write;
 
+use css::BoxMetrics;
+
 use crate::sizing::{CssPx, SignedCssPx};
 
 /// Positioning scheme after computed CSS `position` has been interpreted by
@@ -284,6 +286,225 @@ impl MarginCollapseBoundary {
     }
 }
 
+/// Logical side names for margins in the current horizontal writing-mode
+/// subset.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FlowMarginSide {
+    BlockStart,
+    InlineEnd,
+    BlockEnd,
+    InlineStart,
+}
+
+impl FlowMarginSide {
+    pub fn as_debug_label(self) -> &'static str {
+        match self {
+            Self::BlockStart => "block-start",
+            Self::InlineEnd => "inline-end",
+            Self::BlockEnd => "block-end",
+            Self::InlineStart => "inline-start",
+        }
+    }
+}
+
+/// Error returned when box metrics cannot be materialized as finite layout
+/// margins.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FlowMarginError {
+    side: FlowMarginSide,
+}
+
+impl FlowMarginError {
+    fn new(side: FlowMarginSide) -> Self {
+        Self { side }
+    }
+
+    pub fn side(self) -> FlowMarginSide {
+        self.side
+    }
+}
+
+impl std::fmt::Display for FlowMarginError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(
+            f,
+            "flow margin '{}' must be finite",
+            self.side.as_debug_label()
+        )
+    }
+}
+
+impl std::error::Error for FlowMarginError {}
+
+/// Explicit margins used by normal-flow placement.
+///
+/// Values are logical in the current horizontal writing-mode subset:
+/// block-start maps to physical top, inline-end to right, block-end to bottom,
+/// and inline-start to left. Negative values are valid and remain signed until
+/// a non-negative size, such as available inline space, is produced.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FlowMargins {
+    block_start: SignedCssPx,
+    inline_end: SignedCssPx,
+    block_end: SignedCssPx,
+    inline_start: SignedCssPx,
+}
+
+impl FlowMargins {
+    pub fn zero() -> Self {
+        Self {
+            block_start: SignedCssPx::ZERO,
+            inline_end: SignedCssPx::ZERO,
+            block_end: SignedCssPx::ZERO,
+            inline_start: SignedCssPx::ZERO,
+        }
+    }
+
+    pub fn new(
+        block_start: SignedCssPx,
+        inline_end: SignedCssPx,
+        block_end: SignedCssPx,
+        inline_start: SignedCssPx,
+    ) -> Self {
+        Self {
+            block_start,
+            inline_end,
+            block_end,
+            inline_start,
+        }
+    }
+
+    pub fn from_box_metrics(metrics: BoxMetrics) -> Result<Self, FlowMarginError> {
+        Ok(Self::new(
+            signed_margin(metrics.margin_top, FlowMarginSide::BlockStart)?,
+            signed_margin(metrics.margin_right, FlowMarginSide::InlineEnd)?,
+            signed_margin(metrics.margin_bottom, FlowMarginSide::BlockEnd)?,
+            signed_margin(metrics.margin_left, FlowMarginSide::InlineStart)?,
+        ))
+    }
+
+    pub fn block_start(self) -> SignedCssPx {
+        self.block_start
+    }
+
+    pub fn inline_end(self) -> SignedCssPx {
+        self.inline_end
+    }
+
+    pub fn block_end(self) -> SignedCssPx {
+        self.block_end
+    }
+
+    pub fn inline_start(self) -> SignedCssPx {
+        self.inline_start
+    }
+
+    pub fn top(self) -> SignedCssPx {
+        self.block_start
+    }
+
+    pub fn right(self) -> SignedCssPx {
+        self.inline_end
+    }
+
+    pub fn bottom(self) -> SignedCssPx {
+        self.block_end
+    }
+
+    pub fn left(self) -> SignedCssPx {
+        self.inline_start
+    }
+
+    /// Position and available-space inputs for an in-flow child inside a
+    /// parent's content box.
+    ///
+    /// The containing inline size is intentionally preserved as the parent
+    /// content-box size. Margins only move the child border box and narrow, or
+    /// with negative margins expand, the available inline space offered to
+    /// auto/stretch and shrink-to-fit sizing.
+    pub fn apply_to_child_inline_axis(
+        self,
+        parent_content_inline_start: SignedCssPx,
+        parent_content_inline_size: CssPx,
+    ) -> MarginAdjustedChildInline {
+        let border_inline_start = signed_px_sum(parent_content_inline_start, self.inline_start());
+        let available = (parent_content_inline_size.get()
+            - self.inline_start().get()
+            - self.inline_end().get())
+        .max(0.0);
+
+        MarginAdjustedChildInline {
+            border_inline_start,
+            containing_inline_size: parent_content_inline_size,
+            available_inline_size: CssPx::new(available).expect("available size is non-negative"),
+        }
+    }
+
+    pub fn apply_block_start(self, current_block_position: SignedCssPx) -> SignedCssPx {
+        signed_px_sum(current_block_position, self.block_start())
+    }
+
+    pub fn advance_after_border_box(
+        self,
+        border_block_start: SignedCssPx,
+        border_block_size: CssPx,
+    ) -> SignedCssPx {
+        signed_px_sum(
+            signed_px_sum(border_block_start, signed_from_css_px(border_block_size)),
+            self.block_end(),
+        )
+    }
+
+    pub fn margin_box_inline_size(self, border_inline_size: CssPx) -> CssPx {
+        let size = (border_inline_size.get() + self.inline_start().get() + self.inline_end().get())
+            .max(0.0);
+        CssPx::new(size).expect("margin box inline size is non-negative")
+    }
+
+    pub fn margin_box_block_size(self, border_block_size: CssPx) -> CssPx {
+        let size =
+            (border_block_size.get() + self.block_start().get() + self.block_end().get()).max(0.0);
+        CssPx::new(size).expect("margin box block size is non-negative")
+    }
+
+    pub fn positive_inline_sum(self) -> CssPx {
+        CssPx::new(self.inline_start().get().max(0.0) + self.inline_end().get().max(0.0))
+            .expect("positive inline margin sum is non-negative")
+    }
+
+    pub fn as_debug_label(self) -> String {
+        format!(
+            "(block-start={} inline-end={} block-end={} inline-start={})",
+            signed_px_debug_label(self.block_start),
+            signed_px_debug_label(self.inline_end),
+            signed_px_debug_label(self.block_end),
+            signed_px_debug_label(self.inline_start),
+        )
+    }
+}
+
+/// Inline-axis inputs derived from a child's margins and parent content box.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct MarginAdjustedChildInline {
+    border_inline_start: SignedCssPx,
+    containing_inline_size: CssPx,
+    available_inline_size: CssPx,
+}
+
+impl MarginAdjustedChildInline {
+    pub fn border_inline_start(self) -> SignedCssPx {
+        self.border_inline_start
+    }
+
+    pub fn containing_inline_size(self) -> CssPx {
+        self.containing_inline_size
+    }
+
+    pub fn available_inline_size(self) -> CssPx {
+        self.available_inline_size
+    }
+}
+
 /// Result of collapsing one adjoining margin set.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct CollapsedMargin {
@@ -400,6 +621,18 @@ fn signed_px_debug_label(value: SignedCssPx) -> String {
     format!("{:.2}px", value.get())
 }
 
+fn signed_margin(value: f32, side: FlowMarginSide) -> Result<SignedCssPx, FlowMarginError> {
+    SignedCssPx::new(value).ok_or_else(|| FlowMarginError::new(side))
+}
+
+fn signed_px_sum(a: SignedCssPx, b: SignedCssPx) -> SignedCssPx {
+    SignedCssPx::new(a.get() + b.get()).expect("signed px sum is finite")
+}
+
+fn signed_from_css_px(value: CssPx) -> SignedCssPx {
+    SignedCssPx::new(value.get()).expect("css px is finite")
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -410,6 +643,75 @@ mod tests {
 
     fn css(value: f32) -> CssPx {
         CssPx::new(value).expect("non-negative css px")
+    }
+
+    #[test]
+    fn flow_margins_materialize_finite_signed_box_metrics() {
+        let margins = FlowMargins::from_box_metrics(BoxMetrics {
+            margin_top: 5.0,
+            margin_right: -3.0,
+            margin_bottom: 7.0,
+            margin_left: -2.0,
+            ..BoxMetrics::zero()
+        })
+        .expect("flow margins");
+
+        assert_eq!(margins.block_start(), signed(5.0));
+        assert_eq!(margins.inline_end(), signed(-3.0));
+        assert_eq!(margins.block_end(), signed(7.0));
+        assert_eq!(margins.inline_start(), signed(-2.0));
+        assert_eq!(
+            margins.as_debug_label(),
+            "(block-start=5.00px inline-end=-3.00px block-end=7.00px inline-start=-2.00px)"
+        );
+    }
+
+    #[test]
+    fn flow_margins_reject_non_finite_values_with_side_metadata() {
+        let error = FlowMargins::from_box_metrics(BoxMetrics {
+            margin_top: f32::INFINITY,
+            ..BoxMetrics::zero()
+        })
+        .expect_err("non-finite margin must be rejected");
+
+        assert_eq!(error.side(), FlowMarginSide::BlockStart);
+        assert_eq!(
+            error.to_string(),
+            "flow margin 'block-start' must be finite"
+        );
+    }
+
+    #[test]
+    fn flow_margins_apply_child_inline_axis_without_changing_containing_size() {
+        let margins = FlowMargins::new(signed(0.0), signed(30.0), signed(0.0), signed(20.0));
+        let child = margins.apply_to_child_inline_axis(signed(10.0), css(200.0));
+
+        assert_eq!(child.border_inline_start(), signed(30.0));
+        assert_eq!(child.containing_inline_size(), css(200.0));
+        assert_eq!(child.available_inline_size(), css(150.0));
+    }
+
+    #[test]
+    fn negative_flow_margins_expand_available_inline_space() {
+        let margins = FlowMargins::new(signed(0.0), signed(30.0), signed(0.0), signed(-20.0));
+        let child = margins.apply_to_child_inline_axis(signed(0.0), css(200.0));
+
+        assert_eq!(child.border_inline_start(), signed(-20.0));
+        assert_eq!(child.containing_inline_size(), css(200.0));
+        assert_eq!(child.available_inline_size(), css(190.0));
+    }
+
+    #[test]
+    fn flow_margins_apply_block_axis_positions_and_margin_box_sizes() {
+        let margins = FlowMargins::new(signed(5.0), signed(3.0), signed(7.0), signed(2.0));
+        let border_start = margins.apply_block_start(signed(10.0));
+        let after = margins.advance_after_border_box(border_start, css(20.0));
+
+        assert_eq!(border_start, signed(15.0));
+        assert_eq!(after, signed(42.0));
+        assert_eq!(margins.margin_box_inline_size(css(100.0)), css(105.0));
+        assert_eq!(margins.margin_box_block_size(css(20.0)), css(32.0));
+        assert_eq!(margins.positive_inline_sum(), css(5.0));
     }
 
     #[test]
