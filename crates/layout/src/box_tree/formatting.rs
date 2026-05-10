@@ -1,6 +1,6 @@
 //! Formatting-context and flow participation classification.
 
-use crate::classify_replaced_kind;
+use crate::{OverflowPolicy, classify_replaced_kind};
 use css::StyledNode;
 
 use super::display::{
@@ -57,11 +57,17 @@ pub(super) fn principal_establishes_containing_block(principal: PrincipalBox) ->
 
 pub(super) fn principal_establishes_formatting_context(
     principal: PrincipalBox,
+    styled: &StyledNode<'_>,
 ) -> Option<FormattingContextKind> {
     match principal.behavior() {
         DisplayBoxBehavior::DocumentRoot
         | DisplayBoxBehavior::DocumentElement
         | DisplayBoxBehavior::InlineBlock => Some(FormattingContextKind::Block),
+        DisplayBoxBehavior::Block | DisplayBoxBehavior::ListItem
+            if overflow_establishes_formatting_context(styled) =>
+        {
+            Some(FormattingContextKind::Block)
+        }
         DisplayBoxBehavior::Block
         | DisplayBoxBehavior::ListItem
         | DisplayBoxBehavior::Anonymous
@@ -70,6 +76,11 @@ pub(super) fn principal_establishes_formatting_context(
         | DisplayBoxBehavior::ReplacedInline
         | DisplayBoxBehavior::Marker => None,
     }
+}
+
+fn overflow_establishes_formatting_context(styled: &StyledNode<'_>) -> bool {
+    OverflowPolicy::from_css_overflow(styled.style.overflow())
+        .establishes_independent_formatting_context()
 }
 
 pub(super) fn principal_block_formatting_participation(

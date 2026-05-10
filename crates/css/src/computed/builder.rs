@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     PropertyId, property_registry,
-    values::{Display, Length, LengthPercentage},
+    values::{Display, Length, LengthPercentage, Overflow},
 };
 
 use super::{
@@ -70,6 +70,7 @@ impl ComputedStyleBuilder {
                 padding_left: expect_px(&self.entries, PropertyId::PaddingLeft),
             },
             display: expect_display(&self.entries, PropertyId::Display),
+            overflow: expect_overflow(&self.entries, PropertyId::Overflow),
             width: expect_length_percentage_or_auto(&self.entries, PropertyId::Width),
             height: expect_length_percentage_or_auto(&self.entries, PropertyId::Height),
             min_width: expect_length_percentage_or_auto(&self.entries, PropertyId::MinWidth),
@@ -101,6 +102,24 @@ fn expect_display(entries: &BTreeMap<PropertyId, ComputedValue>, property: Prope
         Some(ComputedValue::Display(display)) => display,
         Some(other) => unreachable!(
             "property '{}' expected display computed value, got {:?}",
+            property.name(),
+            other.discriminant()
+        ),
+        None => unreachable!(
+            "property '{}' missing after completeness check",
+            property.name()
+        ),
+    }
+}
+
+fn expect_overflow(
+    entries: &BTreeMap<PropertyId, ComputedValue>,
+    property: PropertyId,
+) -> Overflow {
+    match entries.get(&property).copied() {
+        Some(ComputedValue::Overflow(overflow)) => overflow,
+        Some(other) => unreachable!(
+            "property '{}' expected overflow computed value, got {:?}",
             property.name(),
             other.discriminant()
         ),

@@ -121,6 +121,35 @@ fn paint_layout_box(
         paint_list_marker(layout, painter, origin, measurer);
     }
 
+    if let Some(clip) = layout.overflow_clip() {
+        let clip_rect = clip.rect();
+        let clip_rect = Rect::from_min_size(
+            Pos2 {
+                x: origin.x + clip_rect.x,
+                y: origin.y + clip_rect.y,
+            },
+            Vec2 {
+                x: clip_rect.width,
+                y: clip_rect.height,
+            },
+        );
+        let clip_painter = painter.with_clip_rect(clip_rect);
+        let clipped_ctx = PaintCtx {
+            painter: &clip_painter,
+            ..ctx
+        };
+        paint_layout_box_contents(layout, clipped_ctx, skip_inline_block_children);
+        return;
+    }
+
+    paint_layout_box_contents(layout, ctx, skip_inline_block_children);
+}
+
+fn paint_layout_box_contents(
+    layout: &LayoutBox<'_, '_>,
+    ctx: PaintCtx<'_>,
+    skip_inline_block_children: bool,
+) {
     // 2) Inline content
     inline::paint_inline_content(layout, ctx);
 
@@ -208,4 +237,53 @@ pub fn paint_page(input: PaintPhaseInput<'_, '_, '_>, args: PaintArgs<'_>) {
     };
 
     paint_layout_box(layout_root, ctx, true);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use css::{ComputedStyle, Length};
+    use html::{Node, internal::Id};
+    use layout::LayoutPhaseInput;
+    use std::sync::Arc;
+
+    struct TestMeasurer;
+
+    impl layout::TextMeasurer for TestMeasurer {
+        fn measure(&self, text: &str, _style: &ComputedStyle) -> f32 {
+            text.chars().count() as f32 * 8.0
+        }
+
+        fn line_height(&self, style: &ComputedStyle) -> f32 {
+            let Length::Px(px) = style.font_size();
+            px * 1.2
+        }
+    }
+
+    #[test]
+    fn paint_phase_input_exposes_layout_owned_overflow_clip() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("width".to_string(), "100px".to_string()),
+                    ("height".to_string(), "20px".to_string()),
+                    ("overflow".to_string(), "clip".to_string()),
+                ],
+                children: Vec::new(),
+            }],
+        };
+        let styled = css::build_style_tree(&dom, None);
+        let layout =
+            layout::layout_document(LayoutPhaseInput::new(&styled, 500.0, &TestMeasurer, None));
+        let snapshot = PaintPhaseInput::new(&layout).to_debug_snapshot();
+
+        assert!(snapshot.contains(
+            "overflow=policy=(inline=clip block=clip) clip=x=0.00 y=0.00 w=100.00 h=20.00"
+        ));
+    }
 }

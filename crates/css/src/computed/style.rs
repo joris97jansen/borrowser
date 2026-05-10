@@ -4,7 +4,7 @@ use crate::{
     PropertyComputedValueKind, PropertyId,
     cascade::ResolvedStyle,
     property_registry,
-    values::{Display, Length, LengthPercentage},
+    values::{Display, Length, LengthPercentage, Overflow},
 };
 
 use super::{
@@ -69,6 +69,9 @@ pub struct ComputedStyle {
     /// per-element defaults when no authored `display` declaration exists.
     pub(super) display: Display,
 
+    /// CSS `overflow` shorthand keyword after computed-value resolution.
+    pub(super) overflow: Overflow,
+
     /// Optional width property. Not inherited. `None` represents `auto`.
     pub(super) width: Option<LengthPercentage>,
     pub(super) height: Option<LengthPercentage>,
@@ -99,6 +102,7 @@ impl ComputedStyle {
             font_size: Length::Px(16.0),
             box_metrics: BoxMetrics::zero(),
             display: Display::Inline,
+            overflow: Overflow::Visible,
             width: None,
             height: None,
             min_width: None,
@@ -145,6 +149,11 @@ impl ComputedStyle {
     /// Returns the computed display keyword.
     pub fn display(&self) -> Display {
         self.display
+    }
+
+    /// Returns the computed `overflow` shorthand keyword.
+    pub fn overflow(&self) -> Overflow {
+        self.overflow
     }
 
     /// Returns the computed `width`; `None` represents `auto`.
@@ -214,6 +223,7 @@ impl ComputedStyle {
             PropertyId::MarginTop => ComputedValue::Length(Length::Px(self.box_metrics.margin_top)),
             PropertyId::MaxWidth => ComputedValue::LengthPercentageOrNone(self.max_width),
             PropertyId::MinWidth => ComputedValue::LengthPercentageOrAuto(self.min_width),
+            PropertyId::Overflow => ComputedValue::Overflow(self.overflow),
             PropertyId::PaddingBottom => {
                 ComputedValue::Length(Length::Px(self.box_metrics.padding_bottom))
             }
@@ -260,8 +270,9 @@ impl ComputedStyle {
         let box_metrics = self.box_metrics();
         let _ = write!(
             out,
-            "display={} color={} background={} font-size={} width={} height={} margin={} padding={}",
+            "display={} overflow={} color={} background={} font-size={} width={} height={} margin={} padding={}",
             display_debug_label(self.display()),
+            overflow_debug_label(self.overflow()),
             rgba_debug_label(self.color()),
             rgba_debug_label(self.background_color()),
             length_debug_label(self.font_size()),
@@ -291,6 +302,16 @@ fn display_debug_label(display: Display) -> &'static str {
         Display::InlineBlock => "inline-block",
         Display::ListItem => "list-item",
         Display::None => "none",
+    }
+}
+
+fn overflow_debug_label(overflow: Overflow) -> &'static str {
+    match overflow {
+        Overflow::Visible => "visible",
+        Overflow::Hidden => "hidden",
+        Overflow::Clip => "clip",
+        Overflow::Scroll => "scroll",
+        Overflow::Auto => "auto",
     }
 }
 

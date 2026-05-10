@@ -56,6 +56,7 @@ impl SpecifiedPropertyValue {
 pub enum SpecifiedValue {
     Color(SpecifiedColor),
     Display(SpecifiedDisplay),
+    Overflow(SpecifiedOverflow),
     Length(SpecifiedLength),
     LengthPercentageOrAuto(SpecifiedLengthPercentageOrAuto),
     LengthPercentageOrNone(SpecifiedLengthPercentageOrNone),
@@ -66,6 +67,7 @@ impl SpecifiedValue {
         match self {
             Self::Color(_) => PropertySpecifiedValueKind::Color,
             Self::Display(_) => PropertySpecifiedValueKind::DisplayKeyword,
+            Self::Overflow(_) => PropertySpecifiedValueKind::OverflowKeyword,
             Self::Length(_) => PropertySpecifiedValueKind::AbsoluteLength,
             Self::LengthPercentageOrAuto(_) => PropertySpecifiedValueKind::LengthPercentageOrAuto,
             Self::LengthPercentageOrNone(_) => PropertySpecifiedValueKind::LengthPercentageOrNone,
@@ -76,6 +78,7 @@ impl SpecifiedValue {
         match self {
             Self::Color(color) => color.span(),
             Self::Display(display) => display.span(),
+            Self::Overflow(overflow) => overflow.span(),
             Self::Length(length) => length.span(),
             Self::LengthPercentageOrAuto(value) => value.span(),
             Self::LengthPercentageOrNone(value) => value.span(),
@@ -86,6 +89,7 @@ impl SpecifiedValue {
         match self {
             Self::Color(color) => color.to_css_text(),
             Self::Display(display) => display.to_css_text().to_string(),
+            Self::Overflow(overflow) => overflow.to_css_text().to_string(),
             Self::Length(length) => length.to_css_text(),
             Self::LengthPercentageOrAuto(value) => value.to_css_text(),
             Self::LengthPercentageOrNone(value) => value.to_css_text(),
@@ -218,6 +222,47 @@ impl SpecifiedDisplayKeyword {
             Self::InlineBlock => "inline-block",
             Self::ListItem => "list-item",
             Self::None => "none",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpecifiedOverflow {
+    pub(super) span: CssSpan,
+    pub(super) keyword: SpecifiedOverflowKeyword,
+}
+
+impl SpecifiedOverflow {
+    pub fn span(&self) -> CssSpan {
+        self.span
+    }
+
+    pub fn keyword(&self) -> SpecifiedOverflowKeyword {
+        self.keyword
+    }
+
+    pub fn to_css_text(&self) -> &'static str {
+        self.keyword.as_css_keyword()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpecifiedOverflowKeyword {
+    Visible,
+    Hidden,
+    Clip,
+    Scroll,
+    Auto,
+}
+
+impl SpecifiedOverflowKeyword {
+    pub fn as_css_keyword(self) -> &'static str {
+        match self {
+            Self::Visible => "visible",
+            Self::Hidden => "hidden",
+            Self::Clip => "clip",
+            Self::Scroll => "scroll",
+            Self::Auto => "auto",
         }
     }
 }

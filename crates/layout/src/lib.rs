@@ -40,7 +40,9 @@
 //! structured margin handling is documented in
 //! `docs/rendering/y2-structured-margin-handling.md`; Y3 adjacent block
 //! sibling margin collapsing is documented in
-//! `docs/rendering/y3-margin-collapsing-supported-subset.md`.
+//! `docs/rendering/y3-margin-collapsing-supported-subset.md`; Y4 overflow
+//! layout and paint semantics are documented in
+//! `docs/rendering/y4-overflow-semantics-supported-subset.md`.
 //! `BoxTree` is the frame-local generated box-tree structure; `LayoutBox` is
 //! the current geometry projection consumed by paint and hit testing.
 
@@ -72,8 +74,8 @@ pub use flow::{
     BlockFlowBlockPlacement, BlockFlowMarginCollapseCursor, CollapsedMargin, FlowMarginError,
     FlowMarginSide, FlowMargins, FlowParticipation, MarginAdjustedChildInline,
     MarginCollapseBoundary, MarginCollapseCase, MarginCollapseDecision, OutOfFlowKind,
-    OverflowKeyword, OverflowPolicy, PositionedContainingBlockStrategy, PositioningScheme,
-    advanced_flow_contract_debug_snapshot,
+    OverflowClip, OverflowKeyword, OverflowPolicy, PositionedContainingBlockStrategy,
+    PositioningScheme, advanced_flow_contract_debug_snapshot,
 };
 pub use geometry::{Rectangle, content_height, content_x_and_width, content_y};
 pub use hit_test::{HitKind, hit_test};

@@ -10,6 +10,7 @@ mod color;
 mod display;
 mod error;
 mod length;
+mod overflow;
 mod parse;
 mod value;
 
@@ -19,7 +20,8 @@ pub use value::{
     SpecifiedColor, SpecifiedColorKeyword, SpecifiedColorSyntax, SpecifiedDisplay,
     SpecifiedDisplayKeyword, SpecifiedHexColor, SpecifiedLength, SpecifiedLengthPercentage,
     SpecifiedLengthPercentageOrAuto, SpecifiedLengthPercentageOrNone, SpecifiedLengthUnit,
-    SpecifiedPercentage, SpecifiedPropertyValue, SpecifiedValue,
+    SpecifiedOverflow, SpecifiedOverflowKeyword, SpecifiedPercentage, SpecifiedPropertyValue,
+    SpecifiedValue,
 };
 
 #[cfg(test)]

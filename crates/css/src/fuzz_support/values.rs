@@ -10,6 +10,8 @@ const DISPLAY_VALUES: &[&str] = &[
     "grid",
 ];
 
+const OVERFLOW_VALUES: &[&str] = &["visible", "hidden", "clip", "scroll", "auto", "overlay"];
+
 const COLOR_VALUES: &[&str] = &[
     "red",
     "#112233",
@@ -26,7 +28,7 @@ pub(crate) fn synthesized_supported_stylesheet_suite(bytes: &[u8], raw_css: &str
         raw_css.to_string(),
         format!(
             "body {{ color: {}; font-size: {}; }}\n\
-             div#hero.alpha {{ width: {}; display: {}; }}\n\
+             div#hero.alpha {{ width: {}; display: {}; overflow: {}; }}\n\
              section > span.label {{ background-color: {}; padding-left: {}; }}\n\
              section + aside.note {{ max-width: {}; margin-top: {}; }}\n\
              [data-kind=\"promo\"] {{ min-width: {}; }}",
@@ -34,6 +36,7 @@ pub(crate) fn synthesized_supported_stylesheet_suite(bytes: &[u8], raw_css: &str
             supported_absolute_length_value(&mut cursor, false),
             supported_auto_length_value(&mut cursor),
             cursor.choose_str(&DISPLAY_VALUES[..5]),
+            cursor.choose_str(&OVERFLOW_VALUES[..5]),
             cursor.choose_str(&COLOR_VALUES[..4]),
             supported_absolute_length_value(&mut cursor, false),
             supported_none_length_value(&mut cursor),
@@ -76,6 +79,13 @@ fn synthesized_value_for_property(
                 cursor.choose_str(&DISPLAY_VALUES[..5]).to_string()
             } else {
                 cursor.choose_str(&DISPLAY_VALUES[4..]).to_string()
+            }
+        }
+        PropertySpecifiedValueKind::OverflowKeyword => {
+            if valid_bias {
+                cursor.choose_str(&OVERFLOW_VALUES[..5]).to_string()
+            } else {
+                cursor.choose_str(&OVERFLOW_VALUES[5..]).to_string()
             }
         }
         PropertySpecifiedValueKind::AbsoluteLength => absolute_length_value(

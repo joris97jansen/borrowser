@@ -96,6 +96,14 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertyLengthSignPolicy::NonNegative,
         ),
         (
+            PropertyId::Overflow,
+            PropertyInheritance::NotInherited,
+            InitialStyleValue::OverflowVisible,
+            PropertySpecifiedValueKind::OverflowKeyword,
+            PropertyComputedValueKind::OverflowKeyword,
+            PropertyLengthSignPolicy::NotLength,
+        ),
+        (
             PropertyId::PaddingBottom,
             PropertyInheritance::NotInherited,
             InitialStyleValue::ZeroPx,
@@ -193,6 +201,10 @@ fn property_registry_lookup_is_deterministic_for_representative_property_names()
     assert_eq!(
         registry.lookup("padding-left").map(|entry| entry.id()),
         Some(PropertyId::PaddingLeft)
+    );
+    assert_eq!(
+        registry.lookup("overflow").map(|entry| entry.id()),
+        Some(PropertyId::Overflow)
     );
     assert_eq!(
         registry.lookup("width").map(|entry| entry.id()),

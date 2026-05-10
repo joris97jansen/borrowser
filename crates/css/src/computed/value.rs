@@ -1,7 +1,7 @@
 use crate::{
     InitialStyleValue, PropertyComputedValueKind, PropertyId,
     specified::{SpecifiedPropertyValue, SpecifiedValue},
-    values::{Display, Length, LengthPercentage},
+    values::{Display, Length, LengthPercentage, Overflow},
 };
 
 use super::{
@@ -17,6 +17,7 @@ use super::{
 pub enum ComputedValue {
     Color((u8, u8, u8, u8)),
     Display(Display),
+    Overflow(Overflow),
     Length(Length),
     LengthPercentageOrAuto(Option<LengthPercentage>),
     LengthPercentageOrNone(Option<LengthPercentage>),
@@ -27,6 +28,7 @@ impl ComputedValue {
         match self {
             Self::Color(_) => ComputedValueDiscriminant::Color,
             Self::Display(_) => ComputedValueDiscriminant::Display,
+            Self::Overflow(_) => ComputedValueDiscriminant::Overflow,
             Self::Length(_) => ComputedValueDiscriminant::Length,
             Self::LengthPercentageOrAuto(_) => ComputedValueDiscriminant::LengthPercentageOrAuto,
             Self::LengthPercentageOrNone(_) => ComputedValueDiscriminant::LengthPercentageOrNone,
@@ -42,6 +44,7 @@ impl ComputedValue {
             InitialStyleValue::ZeroPx => Self::Length(Length::Px(0.0)),
             InitialStyleValue::AutoKeyword => Self::LengthPercentageOrAuto(None),
             InitialStyleValue::NoneKeyword => Self::LengthPercentageOrNone(None),
+            InitialStyleValue::OverflowVisible => Self::Overflow(Overflow::Visible),
         }
     }
 
@@ -58,6 +61,9 @@ impl ComputedValue {
         let value = match specified.value() {
             SpecifiedValue::Color(color) => Self::Color(normalize_color(color)),
             SpecifiedValue::Display(display) => Self::Display(normalize_display(display.keyword())),
+            SpecifiedValue::Overflow(overflow) => {
+                Self::Overflow(normalize_overflow(overflow.keyword()))
+            }
             SpecifiedValue::Length(length) => Self::Length(normalize_length(property, length)?),
             SpecifiedValue::LengthPercentageOrAuto(value) => {
                 Self::LengthPercentageOrAuto(normalize_length_percentage_or_auto(property, value)?)
@@ -87,6 +93,7 @@ impl ComputedValue {
         match self {
             Self::Color((r, g, b, a)) => format!("rgba({r}, {g}, {b}, {a})"),
             Self::Display(display) => display_keyword(display).to_string(),
+            Self::Overflow(overflow) => overflow_keyword(overflow).to_string(),
             Self::Length(length) => format_length(length),
             Self::LengthPercentageOrAuto(Some(value)) => format_length_percentage(value),
             Self::LengthPercentageOrAuto(None) => "auto".to_string(),
@@ -154,6 +161,7 @@ impl ComputedValueNormalizationErrorKind {
 pub enum ComputedValueDiscriminant {
     Color,
     Display,
+    Overflow,
     Length,
     LengthPercentageOrAuto,
     LengthPercentageOrNone,
@@ -164,6 +172,7 @@ impl ComputedValueDiscriminant {
         match self {
             Self::Color => "color",
             Self::Display => "display",
+            Self::Overflow => "overflow",
             Self::Length => "length",
             Self::LengthPercentageOrAuto => "length-percentage-or-auto",
             Self::LengthPercentageOrNone => "length-percentage-or-none",
@@ -183,6 +192,7 @@ pub(super) fn computed_value_discriminant(
     match kind {
         PropertyComputedValueKind::AbsoluteColor => ComputedValueDiscriminant::Color,
         PropertyComputedValueKind::DisplayKeyword => ComputedValueDiscriminant::Display,
+        PropertyComputedValueKind::OverflowKeyword => ComputedValueDiscriminant::Overflow,
         PropertyComputedValueKind::AbsoluteLength => ComputedValueDiscriminant::Length,
         PropertyComputedValueKind::LengthPercentageOrAuto => {
             ComputedValueDiscriminant::LengthPercentageOrAuto
@@ -190,6 +200,26 @@ pub(super) fn computed_value_discriminant(
         PropertyComputedValueKind::LengthPercentageOrNone => {
             ComputedValueDiscriminant::LengthPercentageOrNone
         }
+    }
+}
+
+fn normalize_overflow(keyword: crate::SpecifiedOverflowKeyword) -> Overflow {
+    match keyword {
+        crate::SpecifiedOverflowKeyword::Visible => Overflow::Visible,
+        crate::SpecifiedOverflowKeyword::Hidden => Overflow::Hidden,
+        crate::SpecifiedOverflowKeyword::Clip => Overflow::Clip,
+        crate::SpecifiedOverflowKeyword::Scroll => Overflow::Scroll,
+        crate::SpecifiedOverflowKeyword::Auto => Overflow::Auto,
+    }
+}
+
+fn overflow_keyword(overflow: Overflow) -> &'static str {
+    match overflow {
+        Overflow::Visible => "visible",
+        Overflow::Hidden => "hidden",
+        Overflow::Clip => "clip",
+        Overflow::Scroll => "scroll",
+        Overflow::Auto => "auto",
     }
 }
 

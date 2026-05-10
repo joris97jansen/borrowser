@@ -118,7 +118,7 @@ fn append_layout_box_snapshot(
     let indent = "  ".repeat(depth);
     writeln!(
         out,
-        "{indent}box[{index}]: box-id={} anchor-id={} source={} node={} kind={} cb={} establishes-cb={} fc={} establishes-fc={} block-participation={} ifc={} establishes-ifc={} inline-participation={} rect={} children={} marker={} replaced={} intrinsic={} style={}",
+        "{indent}box[{index}]: box-id={} anchor-id={} source={} node={} kind={} cb={} establishes-cb={} fc={} establishes-fc={} block-participation={} ifc={} establishes-ifc={} inline-participation={} rect={} overflow={} children={} marker={} replaced={} intrinsic={} style={}",
         box_id_debug_label(layout.box_id()),
         layout.node_id().0,
         layout_box_source_debug_label(layout.source),
@@ -133,6 +133,7 @@ fn append_layout_box_snapshot(
         bool_debug_label(layout.establishes_inline_formatting_context()),
         inline_formatting_participation_debug_label(layout.inline_formatting_participation()),
         rectangle_debug_label(layout.rect),
+        overflow_debug_label(layout),
         layout.children.len(),
         list_marker_debug_label(layout.list_marker),
         replaced_kind_debug_label(layout.replaced),
@@ -166,7 +167,7 @@ fn append_layout_sizing_snapshot(
 
     writeln!(
         out,
-        "{indent}box[{index}]: box-id={} source={} node={} kind={} cb={} block-participation={} inline-participation={} border-box={} content-box={} margin={} padding={} used-size={} children={}",
+        "{indent}box[{index}]: box-id={} source={} node={} kind={} cb={} block-participation={} inline-participation={} border-box={} content-box={} overflow={} margin={} padding={} used-size={} children={}",
         box_id_debug_label(layout.box_id()),
         layout_box_source_debug_label(layout.source),
         node_debug_label(layout.node.node),
@@ -176,6 +177,7 @@ fn append_layout_sizing_snapshot(
         inline_formatting_participation_debug_label(layout.inline_formatting_participation()),
         rectangle_debug_label(layout.rect),
         rectangle_debug_label(content_rect),
+        overflow_debug_label(layout),
         flow_margins_debug_label(margins),
         box_metrics_padding_debug_label(metrics),
         used_content_size_debug_label(layout.used_content_size),
@@ -336,6 +338,18 @@ fn rectangle_debug_label(rect: Rectangle) -> String {
     format!(
         "x={:.2} y={:.2} w={:.2} h={:.2}",
         rect.x, rect.y, rect.width, rect.height
+    )
+}
+
+fn overflow_debug_label(layout: &LayoutBox<'_, '_>) -> String {
+    let clip = layout
+        .overflow_clip()
+        .map(|clip| rectangle_debug_label(clip.rect()))
+        .unwrap_or_else(|| "none".to_string());
+    format!(
+        "policy=({}) clip={}",
+        layout.overflow_policy().as_debug_label(),
+        clip
     )
 }
 

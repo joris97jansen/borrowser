@@ -231,6 +231,51 @@ fn list_items_participate_without_establishing_block_formatting_contexts() {
 }
 
 #[test]
+fn overflow_policy_establishes_block_formatting_context_metadata_for_supported_keywords() {
+    let dom = doc(vec![element(
+        2,
+        "html",
+        Vec::new(),
+        vec![element(
+            3,
+            "body",
+            vec![("display", "block")],
+            vec![
+                element(
+                    4,
+                    "section",
+                    vec![("display", "block"), ("overflow", "hidden")],
+                    vec![element(5, "div", vec![("display", "block")], Vec::new())],
+                ),
+                element(
+                    6,
+                    "aside",
+                    vec![("display", "block"), ("overflow", "clip")],
+                    Vec::new(),
+                ),
+            ],
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let tree = BoxTree::generate(&styled, None);
+
+    let html = box_by_node_id(&tree, Id(2));
+    let section = box_by_node_id(&tree, Id(4));
+    let section_child = box_by_node_id(&tree, Id(5));
+    let aside = box_by_node_id(&tree, Id(6));
+
+    assert_eq!(formatting_context_box_id(section), Some(html.id()));
+    assert_eq!(
+        section.establishes_formatting_context(),
+        Some(FormattingContextKind::Block)
+    );
+    assert_eq!(formatting_context_box_id(section_child), Some(section.id()));
+
+    assert_eq!(formatting_context_box_id(aside), Some(html.id()));
+    assert_eq!(aside.establishes_formatting_context(), None);
+}
+
+#[test]
 fn inline_formatting_contexts_are_assigned_for_current_inline_subset() {
     let dom = doc(vec![element(
         2,

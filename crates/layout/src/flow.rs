@@ -7,8 +7,9 @@
 
 use std::fmt::Write;
 
-use css::BoxMetrics;
+use css::{BoxMetrics, Overflow};
 
+use crate::geometry::Rectangle;
 use crate::sizing::{CssPx, SignedCssPx};
 
 /// Positioning scheme after computed CSS `position` has been interpreted by
@@ -159,6 +160,16 @@ pub enum OverflowKeyword {
 }
 
 impl OverflowKeyword {
+    pub fn from_css_overflow(overflow: Overflow) -> Self {
+        match overflow {
+            Overflow::Visible => Self::Visible,
+            Overflow::Hidden => Self::Hidden,
+            Overflow::Clip => Self::Clip,
+            Overflow::Scroll => Self::Scroll,
+            Overflow::Auto => Self::Auto,
+        }
+    }
+
     pub fn clips_paint(self) -> bool {
         !matches!(self, Self::Visible)
     }
@@ -193,6 +204,10 @@ pub struct OverflowPolicy {
 }
 
 impl OverflowPolicy {
+    pub fn from_css_overflow(overflow: Overflow) -> Self {
+        Self::uniform(OverflowKeyword::from_css_overflow(overflow))
+    }
+
     pub fn uniform(keyword: OverflowKeyword) -> Self {
         Self {
             inline: keyword,
@@ -220,8 +235,9 @@ impl OverflowPolicy {
         self.inline.creates_scroll_container() || self.block.creates_scroll_container()
     }
 
-    /// Whether this overflow policy should isolate normal-flow descendants in
-    /// an independent block formatting context.
+    /// Whether this overflow policy carries the independent formatting context
+    /// semantic. Y4 records the contract; full overflow-created BFC behavior is
+    /// integrated by later flow work.
     pub fn establishes_independent_formatting_context(self) -> bool {
         self.inline.establishes_independent_formatting_context()
             || self.block.establishes_independent_formatting_context()
@@ -232,6 +248,52 @@ impl OverflowPolicy {
             "inline={} block={}",
             self.inline.as_debug_label(),
             self.block.as_debug_label()
+        )
+    }
+}
+
+/// Layout-owned paint clip produced by an overflow policy.
+///
+/// The current no-border subset clips to the border box, which is equivalent
+/// to the padding box until border geometry exists. Paint consumes this rect;
+/// it must not reinterpret raw CSS overflow declarations.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct OverflowClip {
+    policy: OverflowPolicy,
+    rect: Rectangle,
+}
+
+impl OverflowClip {
+    pub fn from_policy_and_border_box(
+        policy: OverflowPolicy,
+        border_box: Rectangle,
+    ) -> Option<Self> {
+        if !policy.clips_paint() {
+            return None;
+        }
+
+        Some(Self {
+            policy,
+            rect: non_negative_rectangle(border_box),
+        })
+    }
+
+    pub fn policy(self) -> OverflowPolicy {
+        self.policy
+    }
+
+    pub fn rect(self) -> Rectangle {
+        self.rect
+    }
+
+    pub fn as_debug_label(self) -> String {
+        format!(
+            "policy=({}) clip=x={:.2} y={:.2} w={:.2} h={:.2}",
+            self.policy.as_debug_label(),
+            self.rect.x,
+            self.rect.y,
+            self.rect.width,
+            self.rect.height,
         )
     }
 }
@@ -780,6 +842,17 @@ fn signed_px_debug_label(value: SignedCssPx) -> String {
     format!("{:.2}px", value.get())
 }
 
+fn non_negative_rectangle(rect: Rectangle) -> Rectangle {
+    debug_assert!(rect.x.is_finite() && rect.y.is_finite());
+    debug_assert!(rect.width.is_finite() && rect.height.is_finite());
+    Rectangle {
+        x: rect.x,
+        y: rect.y,
+        width: rect.width.max(0.0),
+        height: rect.height.max(0.0),
+    }
+}
+
 fn signed_margin(value: f32, side: FlowMarginSide) -> Result<SignedCssPx, FlowMarginError> {
     SignedCssPx::new(value).ok_or_else(|| FlowMarginError::new(side))
 }
@@ -1021,6 +1094,44 @@ mod tests {
         assert!(mixed.creates_scroll_container());
         assert!(mixed.establishes_independent_formatting_context());
         assert_eq!(mixed.as_debug_label(), "inline=visible block=auto");
+
+        assert_eq!(
+            OverflowPolicy::from_css_overflow(Overflow::Hidden),
+            OverflowPolicy::uniform(OverflowKeyword::Hidden)
+        );
+    }
+
+    #[test]
+    fn overflow_clip_is_layout_owned_and_policy_driven() {
+        let border_box = Rectangle {
+            x: 10.0,
+            y: 20.0,
+            width: 100.0,
+            height: 50.0,
+        };
+
+        assert_eq!(
+            OverflowClip::from_policy_and_border_box(
+                OverflowPolicy::uniform(OverflowKeyword::Visible),
+                border_box,
+            ),
+            None
+        );
+
+        let clip = OverflowClip::from_policy_and_border_box(
+            OverflowPolicy::uniform(OverflowKeyword::Hidden),
+            border_box,
+        )
+        .expect("hidden overflow clips paint");
+        assert_eq!(
+            clip.policy(),
+            OverflowPolicy::uniform(OverflowKeyword::Hidden)
+        );
+        assert_eq!(clip.rect(), border_box);
+        assert_eq!(
+            clip.as_debug_label(),
+            "policy=(inline=hidden block=hidden) clip=x=10.00 y=20.00 w=100.00 h=50.00"
+        );
     }
 
     #[test]

@@ -1,6 +1,6 @@
 use super::super::*;
 use super::support::*;
-use crate::FlowMargins;
+use crate::{FlowMargins, OverflowKeyword, OverflowPolicy};
 use html::internal::Id;
 
 #[test]
@@ -455,6 +455,121 @@ fn layout_applies_negative_inline_margins_to_position_and_available_space() {
 }
 
 #[test]
+fn layout_materializes_overflow_policy_and_clip_without_changing_size() {
+    let dom = doc(vec![element(
+        2,
+        "section",
+        vec![
+            ("width", "100px"),
+            ("height", "50px"),
+            ("overflow", "hidden"),
+        ],
+        vec![element(3, "div", vec![("height", "80px")], Vec::new())],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+    let section = find_layout_by_direct_node_id(&layout, Id(2)).expect("section layout box");
+    let child = find_layout_by_direct_node_id(&layout, Id(3)).expect("child layout box");
+
+    assert_eq!(
+        section.overflow_policy(),
+        OverflowPolicy::uniform(OverflowKeyword::Hidden)
+    );
+    assert_eq!(
+        section.establishes_formatting_context(),
+        Some(FormattingContextKind::Block)
+    );
+    assert_eq!(
+        child.formatting_context(),
+        Some(FormattingContextId(section.box_id()))
+    );
+    assert_eq!(section.rect.height, 50.0);
+    assert_eq!(child.rect.height, 80.0);
+
+    let clip = section.overflow_clip().expect("hidden overflow clip");
+    assert_eq!(clip.policy(), section.overflow_policy());
+    assert_eq!(clip.rect(), section.rect);
+}
+
+#[test]
+fn layout_materializes_scroll_and_auto_overflow_clips() {
+    for (node_id, overflow, keyword) in [
+        (3, "scroll", OverflowKeyword::Scroll),
+        (4, "auto", OverflowKeyword::Auto),
+    ] {
+        let dom = doc(vec![element(
+            2,
+            "section",
+            Vec::new(),
+            vec![element(
+                node_id,
+                "div",
+                vec![
+                    ("width", "100px"),
+                    ("height", "50px"),
+                    ("overflow", overflow),
+                ],
+                Vec::new(),
+            )],
+        )]);
+        let styled = css::build_style_tree(&dom, None);
+        let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+        let div = find_layout_by_direct_node_id(&layout, Id(node_id)).expect("layout box");
+
+        assert_eq!(div.overflow_policy(), OverflowPolicy::uniform(keyword));
+        assert!(div.overflow_clip().is_some());
+        assert_eq!(
+            div.establishes_formatting_context(),
+            Some(FormattingContextKind::Block)
+        );
+    }
+}
+
+#[test]
+fn layout_keeps_visible_overflow_unclipped() {
+    let dom = doc(vec![element(
+        2,
+        "section",
+        vec![("width", "100px"), ("height", "50px")],
+        Vec::new(),
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+    let section = find_layout_by_direct_node_id(&layout, Id(2)).expect("section layout box");
+
+    assert_eq!(
+        section.overflow_policy(),
+        OverflowPolicy::uniform(OverflowKeyword::Visible)
+    );
+    assert_eq!(section.overflow_clip(), None);
+}
+
+#[test]
+fn layout_does_not_clip_ordinary_inline_overflow_hidden_boxes() {
+    let dom = doc(vec![element(
+        2,
+        "section",
+        Vec::new(),
+        vec![element(
+            3,
+            "span",
+            vec![("overflow", "hidden")],
+            vec![text(4, "inline")],
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+    let span = find_layout_by_direct_node_id(&layout, Id(3)).expect("span layout box");
+
+    assert_eq!(
+        span.overflow_policy(),
+        OverflowPolicy::uniform(OverflowKeyword::Hidden)
+    );
+    assert_eq!(span.overflow_clip(), None);
+    assert_eq!(span.establishes_formatting_context(), None);
+}
+
+#[test]
 fn anonymous_layout_boxes_do_not_inherit_anchor_margins_for_flow_placement() {
     let dom = doc(vec![element(
         2,
@@ -546,9 +661,9 @@ fn layout_sizing_debug_snapshot_pins_flow_and_used_size_metadata() {
             "viewport-width: 500.00\n",
             "document-rect: x=0.00 y=0.00 w=500.00 h=0.00\n",
             "layout-boxes: 3\n",
-            "box[0]: box-id=b0 source=dom(1) node=document kind=block cb=none block-participation=root inline-participation=none border-box=x=0.00 y=0.00 w=500.00 h=0.00 content-box=x=0.00 y=0.00 w=500.00 h=0.00 margin=(block-start=0.00px inline-end=0.00px block-end=0.00px inline-start=0.00px) padding=(top=0.00px right=0.00px bottom=0.00px left=0.00px) used-size=inline(preferred=500.00px reason=auto-stretch-to-containing-block value=500.00px adjustment=none) block(preferred=0.00px reason=auto-content-based value=0.00px adjustment=none) children=1\n",
-            "  box[1]: box-id=b1 source=dom(2) node=element(\"section\") kind=block cb=b0 block-participation=block-level inline-participation=none border-box=x=0.00 y=0.00 w=220.00 h=0.00 content-box=x=10.00 y=0.00 w=200.00 h=0.00 margin=(block-start=0.00px inline-end=0.00px block-end=0.00px inline-start=0.00px) padding=(top=0.00px right=10.00px bottom=0.00px left=10.00px) used-size=inline(preferred=200.00px reason=definite-length value=200.00px adjustment=none) block(preferred=0.00px reason=auto-content-based value=0.00px adjustment=none) children=1\n",
-            "    box[2]: box-id=b2 source=dom(3) node=element(\"div\") kind=block cb=b1 block-participation=block-level inline-participation=none border-box=x=30.00 y=0.00 w=110.00 h=0.00 content-box=x=35.00 y=0.00 w=100.00 h=0.00 margin=(block-start=0.00px inline-end=30.00px block-end=0.00px inline-start=20.00px) padding=(top=0.00px right=5.00px bottom=0.00px left=5.00px) used-size=inline(preferred=100.00px reason=percentage-of-definite-containing-block value=100.00px adjustment=none) block(preferred=0.00px reason=auto-content-based value=0.00px adjustment=none) children=0\n",
+            "box[0]: box-id=b0 source=dom(1) node=document kind=block cb=none block-participation=root inline-participation=none border-box=x=0.00 y=0.00 w=500.00 h=0.00 content-box=x=0.00 y=0.00 w=500.00 h=0.00 overflow=policy=(inline=visible block=visible) clip=none margin=(block-start=0.00px inline-end=0.00px block-end=0.00px inline-start=0.00px) padding=(top=0.00px right=0.00px bottom=0.00px left=0.00px) used-size=inline(preferred=500.00px reason=auto-stretch-to-containing-block value=500.00px adjustment=none) block(preferred=0.00px reason=auto-content-based value=0.00px adjustment=none) children=1\n",
+            "  box[1]: box-id=b1 source=dom(2) node=element(\"section\") kind=block cb=b0 block-participation=block-level inline-participation=none border-box=x=0.00 y=0.00 w=220.00 h=0.00 content-box=x=10.00 y=0.00 w=200.00 h=0.00 overflow=policy=(inline=visible block=visible) clip=none margin=(block-start=0.00px inline-end=0.00px block-end=0.00px inline-start=0.00px) padding=(top=0.00px right=10.00px bottom=0.00px left=10.00px) used-size=inline(preferred=200.00px reason=definite-length value=200.00px adjustment=none) block(preferred=0.00px reason=auto-content-based value=0.00px adjustment=none) children=1\n",
+            "    box[2]: box-id=b2 source=dom(3) node=element(\"div\") kind=block cb=b1 block-participation=block-level inline-participation=none border-box=x=30.00 y=0.00 w=110.00 h=0.00 content-box=x=35.00 y=0.00 w=100.00 h=0.00 overflow=policy=(inline=visible block=visible) clip=none margin=(block-start=0.00px inline-end=30.00px block-end=0.00px inline-start=20.00px) padding=(top=0.00px right=5.00px bottom=0.00px left=5.00px) used-size=inline(preferred=100.00px reason=percentage-of-definite-containing-block value=100.00px adjustment=none) block(preferred=0.00px reason=auto-content-based value=0.00px adjustment=none) children=0\n",
         )
     );
 }
