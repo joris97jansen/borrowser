@@ -407,6 +407,7 @@ fn property_computed_kind_label(kind: PropertyComputedValueKind) -> &'static str
     match kind {
         PropertyComputedValueKind::AbsoluteColor => "color",
         PropertyComputedValueKind::DisplayKeyword => "display",
+        PropertyComputedValueKind::OverflowKeyword => "overflow",
         PropertyComputedValueKind::AbsoluteLength => "length",
         PropertyComputedValueKind::LengthPercentageOrAuto => "length-percentage-or-auto",
         PropertyComputedValueKind::LengthPercentageOrNone => "length-percentage-or-none",

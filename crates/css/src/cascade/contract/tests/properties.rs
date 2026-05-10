@@ -72,6 +72,12 @@ fn supported_property_metadata_matches_current_subset_contract() {
             CascadePropertyLengthSignPolicy::NonNegative,
         ),
         (
+            CascadePropertyId::Overflow,
+            CascadeInheritance::NotInherited,
+            InitialStyleValue::OverflowVisible,
+            CascadePropertyLengthSignPolicy::NotLength,
+        ),
+        (
             CascadePropertyId::PaddingBottom,
             CascadeInheritance::NotInherited,
             InitialStyleValue::ZeroPx,

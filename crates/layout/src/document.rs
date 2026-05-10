@@ -1,8 +1,8 @@
 use css::StyledNode;
 
 use crate::{
-    BoxId, BoxTree, LayoutBox, LayoutPhaseInput, LayoutPhaseOutput, Rectangle,
-    ReplacedElementInfoProvider, TextMeasurer,
+    BoxId, BoxSource, BoxTree, LayoutBox, LayoutPhaseInput, LayoutPhaseOutput, OverflowKeyword,
+    OverflowPolicy, Rectangle, ReplacedElementInfoProvider, TextMeasurer,
 };
 
 /// Compute block layout for a style tree.
@@ -97,5 +97,17 @@ fn layout_box_from_generated_tree<'style_tree, 'dom>(
         replaced: box_node.replaced(),
         replaced_intrinsic: box_node.replaced_intrinsic(),
         used_content_size: None,
+        overflow_policy: overflow_policy_for_source(source, &styled.style),
     }
+}
+
+fn overflow_policy_for_source(
+    source: BoxSource<'_, '_>,
+    style: &css::ComputedStyle,
+) -> OverflowPolicy {
+    if matches!(source, BoxSource::Anonymous { .. }) {
+        return OverflowPolicy::uniform(OverflowKeyword::Visible);
+    }
+
+    OverflowPolicy::from_css_overflow(style.overflow())
 }

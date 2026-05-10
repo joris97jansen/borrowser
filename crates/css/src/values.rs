@@ -54,6 +54,16 @@ pub enum Display {
     None,
 }
 
+/// CSS `overflow` keyword for the current supported single-axis shorthand.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Overflow {
+    Visible,
+    Hidden,
+    Clip,
+    Scroll,
+    Auto,
+}
+
 pub fn parse_color(value: &str) -> Option<(u8, u8, u8, u8)> {
     let s = value.trim().to_ascii_lowercase();
     // HEX

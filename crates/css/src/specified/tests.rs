@@ -1,8 +1,8 @@
 use super::{
     SpecifiedColorKeyword, SpecifiedColorSyntax, SpecifiedDisplayKeyword,
     SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto, SpecifiedLengthUnit,
-    SpecifiedValue, SpecifiedValueLimits, SpecifiedValueParseErrorKind, parse_specified_value,
-    parse_specified_value_with_limits,
+    SpecifiedOverflowKeyword, SpecifiedValue, SpecifiedValueLimits, SpecifiedValueParseErrorKind,
+    parse_specified_value, parse_specified_value_with_limits,
 };
 use crate::{
     ParseOptions, PropertyId, PropertySpecifiedValueKind, Rule, parse_stylesheet_with_options,
@@ -78,6 +78,13 @@ fn parses_representative_property_aware_specified_values() {
 
     let max_width = parse(PropertyId::MaxWidth, "max-width: none");
     assert_eq!(max_width.to_css_text(), "none");
+
+    let overflow = parse(PropertyId::Overflow, "overflow: HIDDEN");
+    let SpecifiedValue::Overflow(overflow) = overflow.value() else {
+        panic!("expected overflow");
+    };
+    assert_eq!(overflow.keyword(), SpecifiedOverflowKeyword::Hidden);
+    assert_eq!(overflow.to_css_text(), "hidden");
 }
 
 #[test]
@@ -148,6 +155,10 @@ fn rejects_values_that_do_not_match_the_property_specified_shape() {
         parse_error(PropertyId::Color, "color: red blue"),
         SpecifiedValueParseErrorKind::UnexpectedComponentCount
     );
+    assert_eq!(
+        parse_error(PropertyId::Overflow, "overflow: overlay"),
+        SpecifiedValueParseErrorKind::UnsupportedOverflowKeyword
+    );
 }
 
 #[test]
@@ -189,6 +200,7 @@ fn supported_property_metadata_matches_emitted_specified_value_kinds() {
         (PropertyId::MarginTop, "margin-top: 1px"),
         (PropertyId::MaxWidth, "max-width: none"),
         (PropertyId::MinWidth, "min-width: auto"),
+        (PropertyId::Overflow, "overflow: visible"),
         (PropertyId::PaddingBottom, "padding-bottom: 1px"),
         (PropertyId::PaddingLeft, "padding-left: 1px"),
         (PropertyId::PaddingRight, "padding-right: 1px"),

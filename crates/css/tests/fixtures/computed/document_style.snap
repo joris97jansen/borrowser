@@ -12,6 +12,7 @@ element[0]: selector-id=1 name="main"
   margin-top: 0px
   max-width: none
   min-width: auto
+  overflow: visible
   padding-bottom: 0px
   padding-left: 0px
   padding-right: 0px
@@ -29,6 +30,7 @@ element[1]: selector-id=2 name="span"
   margin-top: 0px
   max-width: none
   min-width: auto
+  overflow: visible
   padding-bottom: 0px
   padding-left: 3px
   padding-right: 0px
@@ -46,6 +48,7 @@ element[2]: selector-id=3 name="button"
   margin-top: 0px
   max-width: none
   min-width: 80px
+  overflow: visible
   padding-bottom: 0px
   padding-left: 0px
   padding-right: 0px

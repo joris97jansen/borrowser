@@ -197,7 +197,9 @@ impl<'style_tree, 'dom> BoxTreeBuilder<'style_tree, 'dom> {
             containing_block: self.containing_block_for_child(parent),
             establishes_containing_block: principal_establishes_containing_block(principal),
             formatting_context: self.formatting_context_for_child(parent),
-            establishes_formatting_context: principal_establishes_formatting_context(principal),
+            establishes_formatting_context: principal_establishes_formatting_context(
+                principal, styled,
+            ),
             block_formatting_participation: principal_block_formatting_participation(principal),
             inline_formatting_context: self.inline_formatting_context_for_child(parent, principal),
             establishes_inline_formatting_context: principal_establishes_inline_formatting_context(

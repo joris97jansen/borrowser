@@ -6,7 +6,7 @@ use super::{
     },
 };
 
-pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 16] = [
+pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 17] = [
     PropertyRegistration::new(
         PropertyId::BackgroundColor,
         "background-color",
@@ -111,6 +111,15 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 16] = [
         ),
     ),
     PropertyRegistration::new(
+        PropertyId::Overflow,
+        "overflow",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::OverflowVisible,
+            PropertySpecifiedValueKind::OverflowKeyword,
+            PropertyComputedValueKind::OverflowKeyword,
+        ),
+    ),
+    PropertyRegistration::new(
         PropertyId::PaddingBottom,
         "padding-bottom",
         PropertyMetadata::not_inherited(
@@ -157,7 +166,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 16] = [
     ),
 ];
 
-pub(super) const PROPERTY_LOOKUP_BY_NAME: [PropertyNameLookupEntry; 16] = [
+pub(super) const PROPERTY_LOOKUP_BY_NAME: [PropertyNameLookupEntry; 17] = [
     PropertyNameLookupEntry::new("background-color", PropertyId::BackgroundColor),
     PropertyNameLookupEntry::new("color", PropertyId::Color),
     PropertyNameLookupEntry::new("display", PropertyId::Display),
@@ -169,6 +178,7 @@ pub(super) const PROPERTY_LOOKUP_BY_NAME: [PropertyNameLookupEntry; 16] = [
     PropertyNameLookupEntry::new("margin-top", PropertyId::MarginTop),
     PropertyNameLookupEntry::new("max-width", PropertyId::MaxWidth),
     PropertyNameLookupEntry::new("min-width", PropertyId::MinWidth),
+    PropertyNameLookupEntry::new("overflow", PropertyId::Overflow),
     PropertyNameLookupEntry::new("padding-bottom", PropertyId::PaddingBottom),
     PropertyNameLookupEntry::new("padding-left", PropertyId::PaddingLeft),
     PropertyNameLookupEntry::new("padding-right", PropertyId::PaddingRight),

@@ -4,8 +4,8 @@ use html::internal::Id;
 use crate::{
     BlockFormattingParticipation, BoxId, BoxKind, BoxSource, ContainingBlockId, FlowMargins,
     FormattingContextId, FormattingContextKind, InlineFormattingContextId,
-    InlineFormattingParticipation, ListMarker, Rectangle, ReplacedKind, UsedContentSize,
-    replaced::intrinsic::IntrinsicSize,
+    InlineFormattingParticipation, ListMarker, OverflowClip, OverflowKeyword, OverflowPolicy,
+    Rectangle, ReplacedKind, UsedContentSize, replaced::intrinsic::IntrinsicSize,
 };
 
 /// A geometry projection of one generated box-tree node.
@@ -34,6 +34,7 @@ pub struct LayoutBox<'style_tree, 'dom> {
     pub replaced: Option<ReplacedKind>,
     pub replaced_intrinsic: Option<IntrinsicSize>,
     pub used_content_size: Option<UsedContentSize>,
+    pub overflow_policy: OverflowPolicy,
 }
 
 impl<'style_tree, 'dom> LayoutBox<'style_tree, 'dom> {
@@ -106,6 +107,31 @@ impl<'style_tree, 'dom> LayoutBox<'style_tree, 'dom> {
     pub fn flow_margins(&self) -> FlowMargins {
         FlowMargins::from_box_metrics(self.box_metrics())
             .expect("computed style must materialize finite flow margins")
+    }
+
+    pub fn overflow_policy(&self) -> OverflowPolicy {
+        if self.is_anonymous() {
+            OverflowPolicy::uniform(OverflowKeyword::Visible)
+        } else {
+            self.overflow_policy
+        }
+    }
+
+    pub fn overflow_clip(&self) -> Option<OverflowClip> {
+        if !self.overflow_effects_apply() {
+            return None;
+        }
+
+        OverflowClip::from_policy_and_border_box(self.overflow_policy(), self.rect)
+    }
+
+    fn overflow_effects_apply(&self) -> bool {
+        matches!(
+            self.block_formatting_participation(),
+            BlockFormattingParticipation::Root
+                | BlockFormattingParticipation::BlockLevel
+                | BlockFormattingParticipation::AtomicInline
+        )
     }
 
     pub fn content_x_and_width(&self) -> (f32, f32) {
