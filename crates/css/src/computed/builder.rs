@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 
 use crate::{
     PropertyId, property_registry,
-    values::{Display, Length, LengthPercentage, Overflow},
+    values::{Display, Length, LengthPercentage, Overflow, Position},
 };
 
 use super::{
@@ -71,6 +71,7 @@ impl ComputedStyleBuilder {
             },
             display: expect_display(&self.entries, PropertyId::Display),
             overflow: expect_overflow(&self.entries, PropertyId::Overflow),
+            position: expect_position(&self.entries, PropertyId::Position),
             width: expect_length_percentage_or_auto(&self.entries, PropertyId::Width),
             height: expect_length_percentage_or_auto(&self.entries, PropertyId::Height),
             min_width: expect_length_percentage_or_auto(&self.entries, PropertyId::MinWidth),
@@ -120,6 +121,24 @@ fn expect_overflow(
         Some(ComputedValue::Overflow(overflow)) => overflow,
         Some(other) => unreachable!(
             "property '{}' expected overflow computed value, got {:?}",
+            property.name(),
+            other.discriminant()
+        ),
+        None => unreachable!(
+            "property '{}' missing after completeness check",
+            property.name()
+        ),
+    }
+}
+
+fn expect_position(
+    entries: &BTreeMap<PropertyId, ComputedValue>,
+    property: PropertyId,
+) -> Position {
+    match entries.get(&property).copied() {
+        Some(ComputedValue::Position(position)) => position,
+        Some(other) => unreachable!(
+            "property '{}' expected position computed value, got {:?}",
             property.name(),
             other.discriminant()
         ),

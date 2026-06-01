@@ -42,7 +42,9 @@
 //! sibling margin collapsing is documented in
 //! `docs/rendering/y3-margin-collapsing-supported-subset.md`; Y4 overflow
 //! layout and paint semantics are documented in
-//! `docs/rendering/y4-overflow-semantics-supported-subset.md`.
+//! `docs/rendering/y4-overflow-semantics-supported-subset.md`; Y5 positioned
+//! containing-block logic is documented in
+//! `docs/rendering/y5-positioned-containing-block-logic.md`.
 //! `BoxTree` is the frame-local generated box-tree structure; `LayoutBox` is
 //! the current geometry projection consumed by paint and hit testing.
 
@@ -67,7 +69,7 @@ pub use box_tree::{
     AnonymousBoxKind, BlockFormattingParticipation, BoxGenerationRole, BoxId, BoxNode, BoxSource,
     BoxSuppressionReason, BoxTree, ContainingBlockId, DisplayBoxBehavior, DisplayBoxGeneration,
     FormattingContextId, FormattingContextKind, InlineFormattingContextId,
-    InlineFormattingParticipation, PrincipalBox,
+    InlineFormattingParticipation, PositionedContainingBlockId, PrincipalBox,
 };
 pub use document::{layout_block_tree, layout_document};
 pub use flow::{

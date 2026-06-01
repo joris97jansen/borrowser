@@ -57,6 +57,7 @@ pub enum SpecifiedValue {
     Color(SpecifiedColor),
     Display(SpecifiedDisplay),
     Overflow(SpecifiedOverflow),
+    Position(SpecifiedPosition),
     Length(SpecifiedLength),
     LengthPercentageOrAuto(SpecifiedLengthPercentageOrAuto),
     LengthPercentageOrNone(SpecifiedLengthPercentageOrNone),
@@ -68,6 +69,7 @@ impl SpecifiedValue {
             Self::Color(_) => PropertySpecifiedValueKind::Color,
             Self::Display(_) => PropertySpecifiedValueKind::DisplayKeyword,
             Self::Overflow(_) => PropertySpecifiedValueKind::OverflowKeyword,
+            Self::Position(_) => PropertySpecifiedValueKind::PositionKeyword,
             Self::Length(_) => PropertySpecifiedValueKind::AbsoluteLength,
             Self::LengthPercentageOrAuto(_) => PropertySpecifiedValueKind::LengthPercentageOrAuto,
             Self::LengthPercentageOrNone(_) => PropertySpecifiedValueKind::LengthPercentageOrNone,
@@ -79,6 +81,7 @@ impl SpecifiedValue {
             Self::Color(color) => color.span(),
             Self::Display(display) => display.span(),
             Self::Overflow(overflow) => overflow.span(),
+            Self::Position(position) => position.span(),
             Self::Length(length) => length.span(),
             Self::LengthPercentageOrAuto(value) => value.span(),
             Self::LengthPercentageOrNone(value) => value.span(),
@@ -90,6 +93,7 @@ impl SpecifiedValue {
             Self::Color(color) => color.to_css_text(),
             Self::Display(display) => display.to_css_text().to_string(),
             Self::Overflow(overflow) => overflow.to_css_text().to_string(),
+            Self::Position(position) => position.to_css_text().to_string(),
             Self::Length(length) => length.to_css_text(),
             Self::LengthPercentageOrAuto(value) => value.to_css_text(),
             Self::LengthPercentageOrNone(value) => value.to_css_text(),
@@ -263,6 +267,47 @@ impl SpecifiedOverflowKeyword {
             Self::Clip => "clip",
             Self::Scroll => "scroll",
             Self::Auto => "auto",
+        }
+    }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpecifiedPosition {
+    pub(super) span: CssSpan,
+    pub(super) keyword: SpecifiedPositionKeyword,
+}
+
+impl SpecifiedPosition {
+    pub fn span(&self) -> CssSpan {
+        self.span
+    }
+
+    pub fn keyword(&self) -> SpecifiedPositionKeyword {
+        self.keyword
+    }
+
+    pub fn to_css_text(&self) -> &'static str {
+        self.keyword.as_css_keyword()
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpecifiedPositionKeyword {
+    Static,
+    Relative,
+    Absolute,
+    Fixed,
+    Sticky,
+}
+
+impl SpecifiedPositionKeyword {
+    pub fn as_css_keyword(self) -> &'static str {
+        match self {
+            Self::Static => "static",
+            Self::Relative => "relative",
+            Self::Absolute => "absolute",
+            Self::Fixed => "fixed",
+            Self::Sticky => "sticky",
         }
     }
 }

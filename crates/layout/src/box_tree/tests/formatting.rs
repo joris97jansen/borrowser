@@ -2,6 +2,7 @@ use html::internal::Id;
 
 use super::super::*;
 use super::support::*;
+use crate::{FlowParticipation, OutOfFlowKind, PositioningScheme};
 
 #[test]
 fn containing_blocks_are_assigned_for_current_flow_subset() {
@@ -67,6 +68,106 @@ fn containing_blocks_are_assigned_for_current_flow_subset() {
         Some(inline_block.id())
     );
     assert!(!inline_block_text.establishes_containing_block());
+}
+
+#[test]
+fn positioned_containing_blocks_resolve_for_supported_position_schemes() {
+    let dom = doc(vec![element(
+        2,
+        "main",
+        vec![("display", "block")],
+        vec![
+            element(
+                3,
+                "section",
+                vec![("display", "block"), ("position", "relative")],
+                vec![element(
+                    4,
+                    "aside",
+                    vec![("display", "block"), ("position", "absolute")],
+                    vec![element(
+                        5,
+                        "span",
+                        vec![("position", "absolute")],
+                        vec![text(6, "abs child")],
+                    )],
+                )],
+            ),
+            element(
+                7,
+                "footer",
+                vec![("display", "block"), ("position", "fixed")],
+                Vec::new(),
+            ),
+        ],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let tree = BoxTree::generate(&styled, None);
+
+    let document = tree.node(BoxId(0));
+    let main = box_by_node_id(&tree, Id(2));
+    let section = box_by_node_id(&tree, Id(3));
+    let aside = box_by_node_id(&tree, Id(4));
+    let span = box_by_node_id(&tree, Id(5));
+    let footer = box_by_node_id(&tree, Id(7));
+
+    assert!(document.establishes_positioned_containing_block());
+    assert_eq!(positioned_containing_block_box_id(document), None);
+
+    assert_eq!(section.positioning_scheme(), PositioningScheme::Relative);
+    assert_eq!(section.flow_participation(), FlowParticipation::InFlow);
+    assert!(section.establishes_positioned_containing_block());
+    assert_eq!(positioned_containing_block_box_id(section), Some(main.id()));
+
+    assert_eq!(aside.positioning_scheme(), PositioningScheme::Absolute);
+    assert_eq!(
+        aside.flow_participation(),
+        FlowParticipation::OutOfFlow(OutOfFlowKind::AbsolutelyPositioned)
+    );
+    assert!(aside.establishes_positioned_containing_block());
+    assert_eq!(
+        positioned_containing_block_box_id(aside),
+        Some(section.id())
+    );
+
+    assert_eq!(span.positioning_scheme(), PositioningScheme::Absolute);
+    assert_eq!(positioned_containing_block_box_id(span), Some(aside.id()));
+
+    assert_eq!(footer.positioning_scheme(), PositioningScheme::Fixed);
+    assert_eq!(
+        footer.flow_participation(),
+        FlowParticipation::OutOfFlow(OutOfFlowKind::FixedPositioned)
+    );
+    assert_eq!(
+        positioned_containing_block_box_id(footer),
+        Some(document.id())
+    );
+}
+
+#[test]
+fn absolute_positioned_boxes_without_positioned_ancestors_fall_back_to_initial_containing_block() {
+    let dom = doc(vec![element(
+        2,
+        "main",
+        vec![("display", "block")],
+        vec![element(
+            3,
+            "aside",
+            vec![("display", "block"), ("position", "absolute")],
+            Vec::new(),
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let tree = BoxTree::generate(&styled, None);
+
+    let document = tree.node(BoxId(0));
+    let aside = box_by_node_id(&tree, Id(3));
+
+    assert_eq!(aside.positioning_scheme(), PositioningScheme::Absolute);
+    assert_eq!(
+        positioned_containing_block_box_id(aside),
+        Some(document.id())
+    );
 }
 
 #[test]

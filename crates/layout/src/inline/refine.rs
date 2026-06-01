@@ -73,6 +73,10 @@ fn recompute_block_heights<'style_tree, 'dom>(
             let mut block_cursor = BlockFlowMarginCollapseCursor::new(content_box.block_start);
 
             for child in &mut node.children {
+                if !participates_in_parent_normal_flow(child) {
+                    continue;
+                }
+
                 debug_assert!(
                     participates_in_sibling_margin_collapse(child),
                     "Y3 sibling margin collapse expects validated in-flow block-level children"
@@ -205,7 +209,9 @@ fn recompute_block_heights<'style_tree, 'dom>(
                 // by the inline formatting work above. W6 makes this an
                 // explicit generated-box contract instead of inferring it from
                 // `BoxKind` alone.
-                if participates_in_parent_inline_flow(child) {
+                if participates_in_parent_inline_flow(child)
+                    || !participates_in_parent_normal_flow(child)
+                {
                     continue;
                 }
 
@@ -256,11 +262,16 @@ fn participates_in_parent_inline_flow(node: &LayoutBox<'_, '_>) -> bool {
     )
 }
 
+fn participates_in_parent_normal_flow(node: &LayoutBox<'_, '_>) -> bool {
+    node.flow_participation().contributes_to_parent_flow()
+}
+
 fn participates_in_sibling_margin_collapse(node: &LayoutBox<'_, '_>) -> bool {
-    matches!(
-        node.block_formatting_participation(),
-        BlockFormattingParticipation::BlockLevel
-    )
+    participates_in_parent_normal_flow(node)
+        && matches!(
+            node.block_formatting_participation(),
+            BlockFormattingParticipation::BlockLevel
+        )
 }
 
 fn flow_content_box_for_box(

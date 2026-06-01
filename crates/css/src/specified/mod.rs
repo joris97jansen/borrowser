@@ -12,6 +12,7 @@ mod error;
 mod length;
 mod overflow;
 mod parse;
+mod position;
 mod value;
 
 pub use error::{SpecifiedValueParseError, SpecifiedValueParseErrorKind};
@@ -20,8 +21,8 @@ pub use value::{
     SpecifiedColor, SpecifiedColorKeyword, SpecifiedColorSyntax, SpecifiedDisplay,
     SpecifiedDisplayKeyword, SpecifiedHexColor, SpecifiedLength, SpecifiedLengthPercentage,
     SpecifiedLengthPercentageOrAuto, SpecifiedLengthPercentageOrNone, SpecifiedLengthUnit,
-    SpecifiedOverflow, SpecifiedOverflowKeyword, SpecifiedPercentage, SpecifiedPropertyValue,
-    SpecifiedValue,
+    SpecifiedOverflow, SpecifiedOverflowKeyword, SpecifiedPercentage, SpecifiedPosition,
+    SpecifiedPositionKeyword, SpecifiedPropertyValue, SpecifiedValue,
 };
 
 #[cfg(test)]

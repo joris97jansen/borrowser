@@ -3,9 +3,10 @@ use html::internal::Id;
 
 use crate::{
     BlockFormattingParticipation, BoxId, BoxKind, BoxSource, ContainingBlockId, FlowMargins,
-    FormattingContextId, FormattingContextKind, InlineFormattingContextId,
+    FlowParticipation, FormattingContextId, FormattingContextKind, InlineFormattingContextId,
     InlineFormattingParticipation, ListMarker, OverflowClip, OverflowKeyword, OverflowPolicy,
-    Rectangle, ReplacedKind, UsedContentSize, replaced::intrinsic::IntrinsicSize,
+    PositionedContainingBlockId, PositioningScheme, Rectangle, ReplacedKind, UsedContentSize,
+    replaced::intrinsic::IntrinsicSize,
 };
 
 /// A geometry projection of one generated box-tree node.
@@ -24,6 +25,10 @@ pub struct LayoutBox<'style_tree, 'dom> {
     pub children: Vec<LayoutBox<'style_tree, 'dom>>,
     pub containing_block: Option<ContainingBlockId>,
     pub establishes_containing_block: bool,
+    pub positioning_scheme: PositioningScheme,
+    pub flow_participation: FlowParticipation,
+    pub positioned_containing_block: Option<PositionedContainingBlockId>,
+    pub establishes_positioned_containing_block: bool,
     pub formatting_context: Option<FormattingContextId>,
     pub establishes_formatting_context: Option<FormattingContextKind>,
     pub block_formatting_participation: BlockFormattingParticipation,
@@ -62,6 +67,22 @@ impl<'style_tree, 'dom> LayoutBox<'style_tree, 'dom> {
 
     pub fn establishes_containing_block(&self) -> bool {
         self.establishes_containing_block
+    }
+
+    pub fn positioning_scheme(&self) -> PositioningScheme {
+        self.positioning_scheme
+    }
+
+    pub fn flow_participation(&self) -> FlowParticipation {
+        self.flow_participation
+    }
+
+    pub fn positioned_containing_block(&self) -> Option<PositionedContainingBlockId> {
+        self.positioned_containing_block
+    }
+
+    pub fn establishes_positioned_containing_block(&self) -> bool {
+        self.establishes_positioned_containing_block
     }
 
     pub fn formatting_context(&self) -> Option<FormattingContextId> {

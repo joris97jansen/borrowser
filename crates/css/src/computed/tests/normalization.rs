@@ -46,6 +46,18 @@ fn computed_value_normalizes_overflow_keywords_to_runtime_enum() {
 }
 
 #[test]
+fn computed_value_normalizes_position_keywords_to_runtime_enum() {
+    assert_eq!(
+        normalized_value(PropertyId::Position, "position: relative"),
+        ComputedValue::Position(Position::Relative)
+    );
+    assert_eq!(
+        normalized_value(PropertyId::Position, "position: absolute"),
+        ComputedValue::Position(Position::Absolute)
+    );
+}
+
+#[test]
 fn computed_value_normalizes_lengths_to_css_px() {
     assert_eq!(
         normalized_value(PropertyId::FontSize, "font-size: 16px"),
@@ -120,6 +132,7 @@ fn computed_value_normalization_matches_property_metadata_for_supported_subset()
         (PropertyId::PaddingLeft, "padding-left: 1px"),
         (PropertyId::PaddingRight, "padding-right: 1px"),
         (PropertyId::PaddingTop, "padding-top: 1px"),
+        (PropertyId::Position, "position: static"),
         (PropertyId::Width, "width: auto"),
     ];
 

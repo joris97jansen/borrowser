@@ -5,6 +5,7 @@ use std::sync::Arc;
 
 use super::super::{
     BoxGenerationRole, BoxId, ContainingBlockId, FormattingContextId, InlineFormattingContextId,
+    PositionedContainingBlockId,
 };
 
 pub(super) struct TestMeasurer;
@@ -75,6 +76,11 @@ pub(super) fn box_by_node_id<'tree, 'style_tree, 'dom>(
 
 pub(super) fn containing_block_box_id(node: &BoxNode<'_, '_>) -> Option<BoxId> {
     node.containing_block().map(ContainingBlockId::box_id)
+}
+
+pub(super) fn positioned_containing_block_box_id(node: &BoxNode<'_, '_>) -> Option<BoxId> {
+    node.positioned_containing_block()
+        .map(PositionedContainingBlockId::box_id)
 }
 
 pub(super) fn formatting_context_box_id(node: &BoxNode<'_, '_>) -> Option<BoxId> {

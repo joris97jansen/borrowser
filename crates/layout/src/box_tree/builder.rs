@@ -1,7 +1,8 @@
 //! Styled-tree to generated box-tree construction.
 
 use crate::{
-    BoxKind, ListMarker, ReplacedElementInfoProvider, ReplacedKind, classify_replaced_kind,
+    BoxKind, ListMarker, PositionedContainingBlockStrategy, PositioningScheme,
+    ReplacedElementInfoProvider, ReplacedKind, classify_replaced_kind,
 };
 use css::{Display, StyledNode};
 use html::Node;
@@ -16,7 +17,10 @@ use super::formatting::{
     principal_establishes_formatting_context, principal_establishes_inline_formatting_context,
     principal_inline_formatting_participation, principal_participates_in_inline_formatting_context,
 };
-use super::ids::{BoxId, ContainingBlockId, FormattingContextId, InlineFormattingContextId};
+use super::ids::{
+    BoxId, ContainingBlockId, FormattingContextId, InlineFormattingContextId,
+    PositionedContainingBlockId,
+};
 use super::model::{BoxNode, BoxTree};
 use super::source::BoxSource;
 
@@ -184,6 +188,16 @@ impl<'style_tree, 'dom> BoxTreeBuilder<'style_tree, 'dom> {
         };
 
         let id = BoxId(self.nodes.len());
+        let containing_block = self.containing_block_for_child(parent);
+        let positioning_scheme = PositioningScheme::from_css_position(styled.style.position());
+        let positioned_containing_block = self.positioned_containing_block_for_child(
+            parent,
+            containing_block,
+            positioning_scheme,
+        );
+        let establishes_positioned_containing_block = positioning_scheme
+            .establishes_positioned_containing_block()
+            || matches!(principal.behavior(), DisplayBoxBehavior::DocumentRoot);
         self.nodes.push(BoxNode {
             id,
             parent,
@@ -194,8 +208,12 @@ impl<'style_tree, 'dom> BoxTreeBuilder<'style_tree, 'dom> {
             style: &styled.style,
             display: styled.style.display(),
             display_behavior: principal.behavior(),
-            containing_block: self.containing_block_for_child(parent),
+            containing_block,
             establishes_containing_block: principal_establishes_containing_block(principal),
+            positioning_scheme,
+            flow_participation: positioning_scheme.flow_participation(),
+            positioned_containing_block,
+            establishes_positioned_containing_block,
             formatting_context: self.formatting_context_for_child(parent),
             establishes_formatting_context: principal_establishes_formatting_context(
                 principal, styled,
@@ -219,6 +237,13 @@ impl<'style_tree, 'dom> BoxTreeBuilder<'style_tree, 'dom> {
         parent_styled: &'style_tree StyledNode<'dom>,
     ) -> BoxId {
         let id = BoxId(self.nodes.len());
+        let containing_block = self.containing_block_for_child(Some(parent));
+        let positioning_scheme = PositioningScheme::Static;
+        let positioned_containing_block = self.positioned_containing_block_for_child(
+            Some(parent),
+            containing_block,
+            positioning_scheme,
+        );
         self.nodes.push(BoxNode {
             id,
             parent: Some(parent),
@@ -232,8 +257,12 @@ impl<'style_tree, 'dom> BoxTreeBuilder<'style_tree, 'dom> {
             style: &parent_styled.style,
             display: Display::Block,
             display_behavior: DisplayBoxBehavior::Anonymous,
-            containing_block: self.containing_block_for_child(Some(parent)),
+            containing_block,
             establishes_containing_block: true,
+            positioning_scheme,
+            flow_participation: positioning_scheme.flow_participation(),
+            positioned_containing_block,
+            establishes_positioned_containing_block: false,
             formatting_context: self.formatting_context_for_child(Some(parent)),
             establishes_formatting_context: None,
             block_formatting_participation: BlockFormattingParticipation::BlockLevel,
@@ -262,6 +291,10 @@ impl<'style_tree, 'dom> BoxTreeBuilder<'style_tree, 'dom> {
             display_behavior: DisplayBoxBehavior::DocumentRoot,
             containing_block: None,
             establishes_containing_block: true,
+            positioning_scheme: PositioningScheme::Static,
+            flow_participation: PositioningScheme::Static.flow_participation(),
+            positioned_containing_block: None,
+            establishes_positioned_containing_block: true,
             formatting_context: None,
             establishes_formatting_context: Some(FormattingContextKind::Block),
             block_formatting_participation: BlockFormattingParticipation::Root,
@@ -292,6 +325,46 @@ impl<'style_tree, 'dom> BoxTreeBuilder<'style_tree, 'dom> {
         } else {
             parent_node.containing_block()
         }
+    }
+
+    fn positioned_containing_block_for_child(
+        &self,
+        parent: Option<BoxId>,
+        normal_flow_containing_block: Option<ContainingBlockId>,
+        positioning_scheme: PositioningScheme,
+    ) -> Option<PositionedContainingBlockId> {
+        match positioning_scheme.positioned_containing_block_strategy() {
+            PositionedContainingBlockStrategy::NormalFlowContainingBlock => {
+                normal_flow_containing_block.map(|id| PositionedContainingBlockId(id.box_id()))
+            }
+            PositionedContainingBlockStrategy::NearestPositionedAncestor => self
+                .nearest_positioned_ancestor(parent)
+                .or_else(|| self.initial_positioned_containing_block()),
+            PositionedContainingBlockStrategy::InitialContainingBlock => {
+                self.initial_positioned_containing_block()
+            }
+        }
+    }
+
+    fn nearest_positioned_ancestor(
+        &self,
+        mut ancestor: Option<BoxId>,
+    ) -> Option<PositionedContainingBlockId> {
+        while let Some(id) = ancestor {
+            let node = self.node(id);
+            if node.establishes_positioned_containing_block() {
+                return Some(PositionedContainingBlockId(id));
+            }
+            ancestor = node.parent();
+        }
+
+        None
+    }
+
+    fn initial_positioned_containing_block(&self) -> Option<PositionedContainingBlockId> {
+        self.nodes
+            .first()
+            .map(|node| PositionedContainingBlockId(node.id()))
     }
 
     fn formatting_context_for_child(&self, parent: Option<BoxId>) -> Option<FormattingContextId> {

@@ -136,6 +136,14 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertyLengthSignPolicy::NonNegative,
         ),
         (
+            PropertyId::Position,
+            PropertyInheritance::NotInherited,
+            InitialStyleValue::PositionStatic,
+            PropertySpecifiedValueKind::PositionKeyword,
+            PropertyComputedValueKind::PositionKeyword,
+            PropertyLengthSignPolicy::NotLength,
+        ),
+        (
             PropertyId::Width,
             PropertyInheritance::NotInherited,
             InitialStyleValue::AutoKeyword,

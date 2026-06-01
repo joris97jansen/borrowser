@@ -64,6 +64,10 @@ fn intrinsic_contributions_for_layout_box(
     measurer: &dyn TextMeasurer,
     node: &LayoutBox<'_, '_>,
 ) -> InlineContributions {
+    if !node.flow_participation().contributes_to_parent_flow() {
+        return InlineContributions::ZERO;
+    }
+
     match node.node.node {
         Node::Text { text, .. } => text_intrinsic_contributions(measurer, text, node.style),
         Node::Comment { .. } => InlineContributions::ZERO,
@@ -81,7 +85,10 @@ fn intrinsic_contributions_for_layout_box(
             let block_children = node
                 .children
                 .iter()
-                .filter(|child| !participates_in_parent_inline_flow(child))
+                .filter(|child| {
+                    child.flow_participation().contributes_to_parent_flow()
+                        && !participates_in_parent_inline_flow(child)
+                })
                 .fold(InlineContributions::ZERO, |acc, child| {
                     acc.max_with(outer_intrinsic_contribution(measurer, child))
                 });
@@ -107,6 +114,11 @@ fn collect_inline_contributions(
     node: &LayoutBox<'_, '_>,
     collector: &mut InlineContributionCollector,
 ) {
+    if !node.flow_participation().contributes_to_parent_flow() {
+        collector.reset_pending_space();
+        return;
+    }
+
     match node.node.node {
         Node::Text { text, .. } => {
             debug_assert_eq!(

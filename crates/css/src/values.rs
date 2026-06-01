@@ -64,6 +64,16 @@ pub enum Overflow {
     Auto,
 }
 
+/// CSS `position` keyword for the current positioning foundation subset.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Position {
+    Static,
+    Relative,
+    Absolute,
+    Fixed,
+    Sticky,
+}
+
 pub fn parse_color(value: &str) -> Option<(u8, u8, u8, u8)> {
     let s = value.trim().to_ascii_lowercase();
     // HEX

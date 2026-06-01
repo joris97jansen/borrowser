@@ -32,6 +32,7 @@ fn computed_style_initial_snapshot_is_total_and_canonical() {
             "  padding-left: 0px\n",
             "  padding-right: 0px\n",
             "  padding-top: 0px\n",
+            "  position: static\n",
             "  width: auto\n",
         )
     );
@@ -49,6 +50,7 @@ fn computed_style_accessors_match_property_entries() {
         PropertyId::MaxWidth,
         PropertyId::MinWidth,
         PropertyId::Overflow,
+        PropertyId::Position,
         PropertyId::PaddingLeft,
         PropertyId::Width,
     ]);
@@ -96,6 +98,12 @@ fn computed_style_accessors_match_property_entries() {
         .expect("overflow");
     builder
         .record(
+            PropertyId::Position,
+            ComputedValue::Position(Position::Relative),
+        )
+        .expect("position");
+    builder
+        .record(
             PropertyId::PaddingLeft,
             ComputedValue::Length(Length::Px(6.0)),
         )
@@ -141,6 +149,10 @@ fn computed_style_accessors_match_property_entries() {
     assert_eq!(
         style.get(PropertyId::Overflow).value(),
         ComputedValue::Overflow(style.overflow())
+    );
+    assert_eq!(
+        style.get(PropertyId::Position).value(),
+        ComputedValue::Position(style.position())
     );
     assert_eq!(
         style.get(PropertyId::PaddingLeft).value(),
@@ -230,6 +242,10 @@ fn computed_style_get_round_trips_all_builder_supported_properties_losslessly() 
         (
             PropertyId::PaddingTop,
             ComputedValue::Length(Length::Px(20.0)),
+        ),
+        (
+            PropertyId::Position,
+            ComputedValue::Position(Position::Sticky),
         ),
         (PropertyId::Width, length_percentage_or_auto_px(21.0)),
     ];

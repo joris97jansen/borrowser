@@ -22,11 +22,12 @@ pub enum PropertyId {
     PaddingLeft,
     PaddingRight,
     PaddingTop,
+    Position,
     Width,
 }
 
 impl PropertyId {
-    pub const ALL: [Self; 17] = [
+    pub const ALL: [Self; 18] = [
         Self::BackgroundColor,
         Self::Color,
         Self::Display,
@@ -43,6 +44,7 @@ impl PropertyId {
         Self::PaddingLeft,
         Self::PaddingRight,
         Self::PaddingTop,
+        Self::Position,
         Self::Width,
     ];
 
@@ -64,7 +66,8 @@ impl PropertyId {
             Self::PaddingLeft => 13,
             Self::PaddingRight => 14,
             Self::PaddingTop => 15,
-            Self::Width => 16,
+            Self::Position => 16,
+            Self::Width => 17,
         }
     }
 
@@ -154,7 +157,8 @@ const fn default_length_sign_policy(
     match specified_value {
         PropertySpecifiedValueKind::Color
         | PropertySpecifiedValueKind::DisplayKeyword
-        | PropertySpecifiedValueKind::OverflowKeyword => PropertyLengthSignPolicy::NotLength,
+        | PropertySpecifiedValueKind::OverflowKeyword
+        | PropertySpecifiedValueKind::PositionKeyword => PropertyLengthSignPolicy::NotLength,
         PropertySpecifiedValueKind::AbsoluteLength
         | PropertySpecifiedValueKind::LengthPercentageOrAuto
         | PropertySpecifiedValueKind::LengthPercentageOrNone => {
@@ -180,6 +184,7 @@ pub enum PropertySpecifiedValueKind {
     Color,
     DisplayKeyword,
     OverflowKeyword,
+    PositionKeyword,
     AbsoluteLength,
     LengthPercentageOrAuto,
     LengthPercentageOrNone,
@@ -191,6 +196,7 @@ impl PropertySpecifiedValueKind {
             Self::Color => "color",
             Self::DisplayKeyword => "display-keyword",
             Self::OverflowKeyword => "overflow-keyword",
+            Self::PositionKeyword => "position-keyword",
             Self::AbsoluteLength => "absolute-length",
             Self::LengthPercentageOrAuto => "length-percentage-or-auto",
             Self::LengthPercentageOrNone => "length-percentage-or-none",
@@ -208,6 +214,7 @@ pub enum PropertyComputedValueKind {
     AbsoluteColor,
     DisplayKeyword,
     OverflowKeyword,
+    PositionKeyword,
     AbsoluteLength,
     LengthPercentageOrAuto,
     LengthPercentageOrNone,
@@ -219,6 +226,7 @@ impl PropertyComputedValueKind {
             Self::AbsoluteColor => "absolute-color",
             Self::DisplayKeyword => "display-keyword",
             Self::OverflowKeyword => "overflow-keyword",
+            Self::PositionKeyword => "position-keyword",
             Self::AbsoluteLength => "absolute-length",
             Self::LengthPercentageOrAuto => "length-percentage-or-auto",
             Self::LengthPercentageOrNone => "length-percentage-or-none",
@@ -264,6 +272,7 @@ pub enum InitialStyleValue {
     AutoKeyword,
     NoneKeyword,
     OverflowVisible,
+    PositionStatic,
 }
 
 impl InitialStyleValue {
@@ -277,6 +286,7 @@ impl InitialStyleValue {
             Self::AutoKeyword => "auto",
             Self::NoneKeyword => "none",
             Self::OverflowVisible => "visible",
+            Self::PositionStatic => "static",
         }
     }
 }
