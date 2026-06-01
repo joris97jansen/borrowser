@@ -5,10 +5,10 @@ use html::Node;
 
 use crate::{
     AnonymousBoxKind, BlockFormattingParticipation, BoxId, BoxKind, BoxSource, ContainingBlockId,
-    FormattingContextId, FormattingContextKind, InlineFormattingContextId,
+    FlowParticipation, FormattingContextId, FormattingContextKind, InlineFormattingContextId,
     InlineFormattingParticipation, LayoutBox, LayoutPhaseInput, LayoutPhaseOutput, ListMarker,
-    Rectangle, ReplacedKind, replaced::intrinsic::IntrinsicSize,
-    sizing::used_content_size_debug_label,
+    PositionedContainingBlockId, PositioningScheme, Rectangle, ReplacedKind,
+    replaced::intrinsic::IntrinsicSize, sizing::used_content_size_debug_label,
 };
 
 impl<'style_tree, 'dom, 'runtime> LayoutPhaseInput<'style_tree, 'dom, 'runtime> {
@@ -118,7 +118,7 @@ fn append_layout_box_snapshot(
     let indent = "  ".repeat(depth);
     writeln!(
         out,
-        "{indent}box[{index}]: box-id={} anchor-id={} source={} node={} kind={} cb={} establishes-cb={} fc={} establishes-fc={} block-participation={} ifc={} establishes-ifc={} inline-participation={} rect={} overflow={} children={} marker={} replaced={} intrinsic={} style={}",
+        "{indent}box[{index}]: box-id={} anchor-id={} source={} node={} kind={} cb={} establishes-cb={} position={} flow={} positioned-cb={} establishes-positioned-cb={} fc={} establishes-fc={} block-participation={} ifc={} establishes-ifc={} inline-participation={} rect={} overflow={} children={} marker={} replaced={} intrinsic={} style={}",
         box_id_debug_label(layout.box_id()),
         layout.node_id().0,
         layout_box_source_debug_label(layout.source),
@@ -126,6 +126,10 @@ fn append_layout_box_snapshot(
         box_kind_debug_label(layout.kind),
         optional_containing_block_id_debug_label(layout.containing_block()),
         bool_debug_label(layout.establishes_containing_block()),
+        positioning_scheme_debug_label(layout.positioning_scheme()),
+        flow_participation_debug_label(layout.flow_participation()),
+        optional_positioned_containing_block_id_debug_label(layout.positioned_containing_block()),
+        bool_debug_label(layout.establishes_positioned_containing_block()),
         optional_formatting_context_id_debug_label(layout.formatting_context()),
         optional_formatting_context_kind_debug_label(layout.establishes_formatting_context()),
         block_formatting_participation_debug_label(layout.block_formatting_participation()),
@@ -167,12 +171,15 @@ fn append_layout_sizing_snapshot(
 
     writeln!(
         out,
-        "{indent}box[{index}]: box-id={} source={} node={} kind={} cb={} block-participation={} inline-participation={} border-box={} content-box={} overflow={} margin={} padding={} used-size={} children={}",
+        "{indent}box[{index}]: box-id={} source={} node={} kind={} cb={} position={} flow={} positioned-cb={} block-participation={} inline-participation={} border-box={} content-box={} overflow={} margin={} padding={} used-size={} children={}",
         box_id_debug_label(layout.box_id()),
         layout_box_source_debug_label(layout.source),
         node_debug_label(layout.node.node),
         box_kind_debug_label(layout.kind),
         optional_containing_block_id_debug_label(layout.containing_block()),
+        positioning_scheme_debug_label(layout.positioning_scheme()),
+        flow_participation_debug_label(layout.flow_participation()),
+        optional_positioned_containing_block_id_debug_label(layout.positioned_containing_block()),
         block_formatting_participation_debug_label(layout.block_formatting_participation()),
         inline_formatting_participation_debug_label(layout.inline_formatting_participation()),
         rectangle_debug_label(layout.rect),
@@ -199,6 +206,21 @@ fn box_id_debug_label(id: BoxId) -> String {
 fn optional_containing_block_id_debug_label(id: Option<ContainingBlockId>) -> String {
     id.map(|id| box_id_debug_label(id.box_id()))
         .unwrap_or_else(|| "none".to_string())
+}
+
+fn optional_positioned_containing_block_id_debug_label(
+    id: Option<PositionedContainingBlockId>,
+) -> String {
+    id.map(|id| box_id_debug_label(id.box_id()))
+        .unwrap_or_else(|| "none".to_string())
+}
+
+fn positioning_scheme_debug_label(scheme: PositioningScheme) -> &'static str {
+    scheme.as_debug_label()
+}
+
+fn flow_participation_debug_label(participation: FlowParticipation) -> &'static str {
+    participation.as_debug_label()
 }
 
 fn optional_formatting_context_id_debug_label(id: Option<FormattingContextId>) -> String {

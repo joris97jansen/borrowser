@@ -32,6 +32,25 @@ impl ContainingBlockId {
     }
 }
 
+/// Stable frame-local identity of the box that provides the containing block
+/// for CSS positioned layout.
+///
+/// This is separate from `ContainingBlockId`: normal-flow sizing and positioned
+/// layout can resolve against different generated ancestors. Y5 records that
+/// relationship before final positioned geometry is implemented.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub struct PositionedContainingBlockId(pub(in crate::box_tree) BoxId);
+
+impl PositionedContainingBlockId {
+    pub fn box_id(self) -> BoxId {
+        self.0
+    }
+
+    pub fn index(self) -> usize {
+        self.0.index()
+    }
+}
+
 /// Stable frame-local identity of a formatting context root.
 ///
 /// W6 models the supported normal-flow block formatting scope as generated-box

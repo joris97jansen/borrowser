@@ -102,6 +102,12 @@ fn supported_property_metadata_matches_current_subset_contract() {
             CascadePropertyLengthSignPolicy::NonNegative,
         ),
         (
+            CascadePropertyId::Position,
+            CascadeInheritance::NotInherited,
+            InitialStyleValue::PositionStatic,
+            CascadePropertyLengthSignPolicy::NotLength,
+        ),
+        (
             CascadePropertyId::Width,
             CascadeInheritance::NotInherited,
             InitialStyleValue::AutoKeyword,

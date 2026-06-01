@@ -7,7 +7,7 @@
 
 use std::fmt::Write;
 
-use css::{BoxMetrics, Overflow};
+use css::{BoxMetrics, Overflow, Position};
 
 use crate::geometry::Rectangle;
 use crate::sizing::{CssPx, SignedCssPx};
@@ -33,6 +33,16 @@ pub enum PositioningScheme {
 }
 
 impl PositioningScheme {
+    pub fn from_css_position(position: Position) -> Self {
+        match position {
+            Position::Static => Self::Static,
+            Position::Relative => Self::Relative,
+            Position::Absolute => Self::Absolute,
+            Position::Fixed => Self::Fixed,
+            Position::Sticky => Self::Sticky,
+        }
+    }
+
     pub fn flow_participation(self) -> FlowParticipation {
         match self {
             Self::Absolute => FlowParticipation::OutOfFlow(OutOfFlowKind::AbsolutelyPositioned),

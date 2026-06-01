@@ -4,7 +4,7 @@ use crate::{
     PropertyComputedValueKind, PropertyId,
     cascade::ResolvedStyle,
     property_registry,
-    values::{Display, Length, LengthPercentage, Overflow},
+    values::{Display, Length, LengthPercentage, Overflow, Position},
 };
 
 use super::{
@@ -72,6 +72,9 @@ pub struct ComputedStyle {
     /// CSS `overflow` shorthand keyword after computed-value resolution.
     pub(super) overflow: Overflow,
 
+    /// CSS `position` keyword after computed-value resolution.
+    pub(super) position: Position,
+
     /// Optional width property. Not inherited. `None` represents `auto`.
     pub(super) width: Option<LengthPercentage>,
     pub(super) height: Option<LengthPercentage>,
@@ -103,6 +106,7 @@ impl ComputedStyle {
             box_metrics: BoxMetrics::zero(),
             display: Display::Inline,
             overflow: Overflow::Visible,
+            position: Position::Static,
             width: None,
             height: None,
             min_width: None,
@@ -154,6 +158,11 @@ impl ComputedStyle {
     /// Returns the computed `overflow` shorthand keyword.
     pub fn overflow(&self) -> Overflow {
         self.overflow
+    }
+
+    /// Returns the computed `position` keyword.
+    pub fn position(&self) -> Position {
+        self.position
     }
 
     /// Returns the computed `width`; `None` represents `auto`.
@@ -224,6 +233,7 @@ impl ComputedStyle {
             PropertyId::MaxWidth => ComputedValue::LengthPercentageOrNone(self.max_width),
             PropertyId::MinWidth => ComputedValue::LengthPercentageOrAuto(self.min_width),
             PropertyId::Overflow => ComputedValue::Overflow(self.overflow),
+            PropertyId::Position => ComputedValue::Position(self.position),
             PropertyId::PaddingBottom => {
                 ComputedValue::Length(Length::Px(self.box_metrics.padding_bottom))
             }
@@ -270,9 +280,10 @@ impl ComputedStyle {
         let box_metrics = self.box_metrics();
         let _ = write!(
             out,
-            "display={} overflow={} color={} background={} font-size={} width={} height={} margin={} padding={}",
+            "display={} overflow={} position={} color={} background={} font-size={} width={} height={} margin={} padding={}",
             display_debug_label(self.display()),
             overflow_debug_label(self.overflow()),
+            position_debug_label(self.position()),
             rgba_debug_label(self.color()),
             rgba_debug_label(self.background_color()),
             length_debug_label(self.font_size()),
@@ -312,6 +323,16 @@ fn overflow_debug_label(overflow: Overflow) -> &'static str {
         Overflow::Clip => "clip",
         Overflow::Scroll => "scroll",
         Overflow::Auto => "auto",
+    }
+}
+
+fn position_debug_label(position: Position) -> &'static str {
+    match position {
+        Position::Static => "static",
+        Position::Relative => "relative",
+        Position::Absolute => "absolute",
+        Position::Fixed => "fixed",
+        Position::Sticky => "sticky",
     }
 }
 

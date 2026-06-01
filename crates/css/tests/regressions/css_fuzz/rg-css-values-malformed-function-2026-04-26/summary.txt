@@ -6,11 +6,11 @@ seed: 0
 termination: completed
 input-bytes: 16
 decoded-bytes: 16
-properties-observed: 17
-value-cases-observed: 51
+properties-observed: 18
+value-cases-observed: 54
 missing-declaration-value-cases: 0
-specified-ok-cases: 29
-specified-error-cases: 22
-computed-ok-cases: 29
+specified-ok-cases: 30
+specified-error-cases: 24
+computed-ok-cases: 30
 computed-error-cases: 0
-digest: 9022489231043778758
+digest: 9439101222183752486

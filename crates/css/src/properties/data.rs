@@ -6,7 +6,7 @@ use super::{
     },
 };
 
-pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 17] = [
+pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 18] = [
     PropertyRegistration::new(
         PropertyId::BackgroundColor,
         "background-color",
@@ -156,6 +156,15 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 17] = [
         ),
     ),
     PropertyRegistration::new(
+        PropertyId::Position,
+        "position",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::PositionStatic,
+            PropertySpecifiedValueKind::PositionKeyword,
+            PropertyComputedValueKind::PositionKeyword,
+        ),
+    ),
+    PropertyRegistration::new(
         PropertyId::Width,
         "width",
         PropertyMetadata::not_inherited(
@@ -166,7 +175,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 17] = [
     ),
 ];
 
-pub(super) const PROPERTY_LOOKUP_BY_NAME: [PropertyNameLookupEntry; 17] = [
+pub(super) const PROPERTY_LOOKUP_BY_NAME: [PropertyNameLookupEntry; 18] = [
     PropertyNameLookupEntry::new("background-color", PropertyId::BackgroundColor),
     PropertyNameLookupEntry::new("color", PropertyId::Color),
     PropertyNameLookupEntry::new("display", PropertyId::Display),
@@ -183,5 +192,6 @@ pub(super) const PROPERTY_LOOKUP_BY_NAME: [PropertyNameLookupEntry; 17] = [
     PropertyNameLookupEntry::new("padding-left", PropertyId::PaddingLeft),
     PropertyNameLookupEntry::new("padding-right", PropertyId::PaddingRight),
     PropertyNameLookupEntry::new("padding-top", PropertyId::PaddingTop),
+    PropertyNameLookupEntry::new("position", PropertyId::Position),
     PropertyNameLookupEntry::new("width", PropertyId::Width),
 ];

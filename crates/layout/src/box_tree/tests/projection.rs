@@ -1,6 +1,9 @@
 use super::super::*;
 use super::support::*;
-use crate::{FlowMargins, OverflowKeyword, OverflowPolicy};
+use crate::{
+    FlowMargins, FlowParticipation, OutOfFlowKind, OverflowKeyword, OverflowPolicy,
+    PositionedContainingBlockId, PositioningScheme,
+};
 use html::internal::Id;
 
 #[test]
@@ -431,6 +434,87 @@ fn layout_collapses_adjacent_block_sibling_margins_with_all_negative_values() {
 }
 
 #[test]
+fn absolute_positioned_block_does_not_contribute_to_parent_auto_height() {
+    let dom = doc(vec![element(
+        2,
+        "section",
+        Vec::new(),
+        vec![
+            element(3, "div", vec![("height", "10px")], Vec::new()),
+            element(
+                4,
+                "div",
+                vec![("position", "absolute"), ("height", "100px")],
+                Vec::new(),
+            ),
+        ],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+    let section = find_layout_by_direct_node_id(&layout, Id(2)).expect("section layout box");
+    let normal = find_layout_by_direct_node_id(&layout, Id(3)).expect("normal child layout box");
+    let absolute =
+        find_layout_by_direct_node_id(&layout, Id(4)).expect("absolute child layout box");
+
+    assert_eq!(normal.rect.y, 0.0);
+    assert_eq!(normal.rect.height, 10.0);
+    assert_eq!(
+        absolute.flow_participation(),
+        FlowParticipation::OutOfFlow(OutOfFlowKind::AbsolutelyPositioned)
+    );
+    assert_eq!(section.rect.height, 10.0);
+}
+
+#[test]
+fn absolute_positioned_block_does_not_participate_in_sibling_margin_collapse() {
+    let dom = doc(vec![element(
+        2,
+        "section",
+        Vec::new(),
+        vec![
+            element(
+                3,
+                "div",
+                vec![("height", "10px"), ("margin-bottom", "30px")],
+                Vec::new(),
+            ),
+            element(
+                4,
+                "div",
+                vec![
+                    ("position", "absolute"),
+                    ("height", "100px"),
+                    ("margin-top", "5px"),
+                    ("margin-bottom", "80px"),
+                ],
+                Vec::new(),
+            ),
+            element(
+                5,
+                "div",
+                vec![("height", "10px"), ("margin-top", "20px")],
+                Vec::new(),
+            ),
+        ],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+    let section = find_layout_by_direct_node_id(&layout, Id(2)).expect("section layout box");
+    let first = find_layout_by_direct_node_id(&layout, Id(3)).expect("first child layout box");
+    let absolute =
+        find_layout_by_direct_node_id(&layout, Id(4)).expect("absolute child layout box");
+    let second = find_layout_by_direct_node_id(&layout, Id(5)).expect("second child layout box");
+
+    assert_eq!(first.rect.y, 0.0);
+    assert_eq!(
+        absolute.flow_participation(),
+        FlowParticipation::OutOfFlow(OutOfFlowKind::AbsolutelyPositioned)
+    );
+    assert_eq!(second.rect.y, 40.0);
+    assert_eq!(section.rect.height, 50.0);
+}
+
+#[test]
 fn layout_applies_negative_inline_margins_to_position_and_available_space() {
     let dom = doc(vec![element(
         2,
@@ -661,9 +745,9 @@ fn layout_sizing_debug_snapshot_pins_flow_and_used_size_metadata() {
             "viewport-width: 500.00\n",
             "document-rect: x=0.00 y=0.00 w=500.00 h=0.00\n",
             "layout-boxes: 3\n",
-            "box[0]: box-id=b0 source=dom(1) node=document kind=block cb=none block-participation=root inline-participation=none border-box=x=0.00 y=0.00 w=500.00 h=0.00 content-box=x=0.00 y=0.00 w=500.00 h=0.00 overflow=policy=(inline=visible block=visible) clip=none margin=(block-start=0.00px inline-end=0.00px block-end=0.00px inline-start=0.00px) padding=(top=0.00px right=0.00px bottom=0.00px left=0.00px) used-size=inline(preferred=500.00px reason=auto-stretch-to-containing-block value=500.00px adjustment=none) block(preferred=0.00px reason=auto-content-based value=0.00px adjustment=none) children=1\n",
-            "  box[1]: box-id=b1 source=dom(2) node=element(\"section\") kind=block cb=b0 block-participation=block-level inline-participation=none border-box=x=0.00 y=0.00 w=220.00 h=0.00 content-box=x=10.00 y=0.00 w=200.00 h=0.00 overflow=policy=(inline=visible block=visible) clip=none margin=(block-start=0.00px inline-end=0.00px block-end=0.00px inline-start=0.00px) padding=(top=0.00px right=10.00px bottom=0.00px left=10.00px) used-size=inline(preferred=200.00px reason=definite-length value=200.00px adjustment=none) block(preferred=0.00px reason=auto-content-based value=0.00px adjustment=none) children=1\n",
-            "    box[2]: box-id=b2 source=dom(3) node=element(\"div\") kind=block cb=b1 block-participation=block-level inline-participation=none border-box=x=30.00 y=0.00 w=110.00 h=0.00 content-box=x=35.00 y=0.00 w=100.00 h=0.00 overflow=policy=(inline=visible block=visible) clip=none margin=(block-start=0.00px inline-end=30.00px block-end=0.00px inline-start=20.00px) padding=(top=0.00px right=5.00px bottom=0.00px left=5.00px) used-size=inline(preferred=100.00px reason=percentage-of-definite-containing-block value=100.00px adjustment=none) block(preferred=0.00px reason=auto-content-based value=0.00px adjustment=none) children=0\n",
+            "box[0]: box-id=b0 source=dom(1) node=document kind=block cb=none position=static flow=in-flow positioned-cb=none block-participation=root inline-participation=none border-box=x=0.00 y=0.00 w=500.00 h=0.00 content-box=x=0.00 y=0.00 w=500.00 h=0.00 overflow=policy=(inline=visible block=visible) clip=none margin=(block-start=0.00px inline-end=0.00px block-end=0.00px inline-start=0.00px) padding=(top=0.00px right=0.00px bottom=0.00px left=0.00px) used-size=inline(preferred=500.00px reason=auto-stretch-to-containing-block value=500.00px adjustment=none) block(preferred=0.00px reason=auto-content-based value=0.00px adjustment=none) children=1\n",
+            "  box[1]: box-id=b1 source=dom(2) node=element(\"section\") kind=block cb=b0 position=static flow=in-flow positioned-cb=b0 block-participation=block-level inline-participation=none border-box=x=0.00 y=0.00 w=220.00 h=0.00 content-box=x=10.00 y=0.00 w=200.00 h=0.00 overflow=policy=(inline=visible block=visible) clip=none margin=(block-start=0.00px inline-end=0.00px block-end=0.00px inline-start=0.00px) padding=(top=0.00px right=10.00px bottom=0.00px left=10.00px) used-size=inline(preferred=200.00px reason=definite-length value=200.00px adjustment=none) block(preferred=0.00px reason=auto-content-based value=0.00px adjustment=none) children=1\n",
+            "    box[2]: box-id=b2 source=dom(3) node=element(\"div\") kind=block cb=b1 position=static flow=in-flow positioned-cb=b1 block-participation=block-level inline-participation=none border-box=x=30.00 y=0.00 w=110.00 h=0.00 content-box=x=35.00 y=0.00 w=100.00 h=0.00 overflow=policy=(inline=visible block=visible) clip=none margin=(block-start=0.00px inline-end=30.00px block-end=0.00px inline-start=20.00px) padding=(top=0.00px right=5.00px bottom=0.00px left=5.00px) used-size=inline(preferred=100.00px reason=percentage-of-definite-containing-block value=100.00px adjustment=none) block(preferred=0.00px reason=auto-content-based value=0.00px adjustment=none) children=0\n",
         )
     );
 }
@@ -1031,6 +1115,42 @@ fn layout_projection_preserves_containing_block_metadata() {
         Some(inline_block.box_id())
     );
     assert!(!inline_block_text.establishes_containing_block());
+}
+
+#[test]
+fn layout_projection_preserves_positioned_containing_block_metadata() {
+    let dom = doc(vec![element(
+        2,
+        "main",
+        vec![("display", "block"), ("position", "relative")],
+        vec![element(
+            3,
+            "aside",
+            vec![("display", "block"), ("position", "absolute")],
+            Vec::new(),
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+
+    let main = find_layout_by_direct_node_id(&layout, Id(2)).expect("main layout box");
+    let aside = find_layout_by_direct_node_id(&layout, Id(3)).expect("aside layout box");
+
+    assert_eq!(main.positioning_scheme(), PositioningScheme::Relative);
+    assert_eq!(main.flow_participation(), FlowParticipation::InFlow);
+    assert!(main.establishes_positioned_containing_block());
+
+    assert_eq!(aside.positioning_scheme(), PositioningScheme::Absolute);
+    assert_eq!(
+        aside.flow_participation(),
+        FlowParticipation::OutOfFlow(OutOfFlowKind::AbsolutelyPositioned)
+    );
+    assert_eq!(
+        aside
+            .positioned_containing_block()
+            .map(PositionedContainingBlockId::box_id),
+        Some(main.box_id())
+    );
 }
 
 #[test]

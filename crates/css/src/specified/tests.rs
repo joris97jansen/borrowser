@@ -1,8 +1,8 @@
 use super::{
     SpecifiedColorKeyword, SpecifiedColorSyntax, SpecifiedDisplayKeyword,
     SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto, SpecifiedLengthUnit,
-    SpecifiedOverflowKeyword, SpecifiedValue, SpecifiedValueLimits, SpecifiedValueParseErrorKind,
-    parse_specified_value, parse_specified_value_with_limits,
+    SpecifiedOverflowKeyword, SpecifiedPositionKeyword, SpecifiedValue, SpecifiedValueLimits,
+    SpecifiedValueParseErrorKind, parse_specified_value, parse_specified_value_with_limits,
 };
 use crate::{
     ParseOptions, PropertyId, PropertySpecifiedValueKind, Rule, parse_stylesheet_with_options,
@@ -85,6 +85,13 @@ fn parses_representative_property_aware_specified_values() {
     };
     assert_eq!(overflow.keyword(), SpecifiedOverflowKeyword::Hidden);
     assert_eq!(overflow.to_css_text(), "hidden");
+
+    let position = parse(PropertyId::Position, "position: ReLaTiVe");
+    let SpecifiedValue::Position(position) = position.value() else {
+        panic!("expected position");
+    };
+    assert_eq!(position.keyword(), SpecifiedPositionKeyword::Relative);
+    assert_eq!(position.to_css_text(), "relative");
 }
 
 #[test]
@@ -159,6 +166,10 @@ fn rejects_values_that_do_not_match_the_property_specified_shape() {
         parse_error(PropertyId::Overflow, "overflow: overlay"),
         SpecifiedValueParseErrorKind::UnsupportedOverflowKeyword
     );
+    assert_eq!(
+        parse_error(PropertyId::Position, "position: center"),
+        SpecifiedValueParseErrorKind::UnsupportedPositionKeyword
+    );
 }
 
 #[test]
@@ -205,6 +216,7 @@ fn supported_property_metadata_matches_emitted_specified_value_kinds() {
         (PropertyId::PaddingLeft, "padding-left: 1px"),
         (PropertyId::PaddingRight, "padding-right: 1px"),
         (PropertyId::PaddingTop, "padding-top: 1px"),
+        (PropertyId::Position, "position: static"),
         (PropertyId::Width, "width: auto"),
     ];
 

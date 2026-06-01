@@ -1,7 +1,10 @@
 //! Generated box tree data model.
 
 use crate::replaced::intrinsic::IntrinsicSize;
-use crate::{BoxKind, ListMarker, ReplacedElementInfoProvider, ReplacedKind};
+use crate::{
+    BoxKind, FlowParticipation, ListMarker, PositioningScheme, ReplacedElementInfoProvider,
+    ReplacedKind,
+};
 use css::{ComputedStyle, Display, StyledNode};
 use html::internal::Id;
 use std::fmt;
@@ -10,7 +13,10 @@ use super::display::{BoxGenerationRole, DisplayBoxBehavior};
 use super::formatting::{
     BlockFormattingParticipation, FormattingContextKind, InlineFormattingParticipation,
 };
-use super::ids::{BoxId, ContainingBlockId, FormattingContextId, InlineFormattingContextId};
+use super::ids::{
+    BoxId, ContainingBlockId, FormattingContextId, InlineFormattingContextId,
+    PositionedContainingBlockId,
+};
 use super::source::BoxSource;
 
 /// A generated layout box node before final geometry is computed.
@@ -26,6 +32,10 @@ pub struct BoxNode<'style_tree, 'dom> {
     pub(super) display_behavior: DisplayBoxBehavior,
     pub(super) containing_block: Option<ContainingBlockId>,
     pub(super) establishes_containing_block: bool,
+    pub(super) positioning_scheme: PositioningScheme,
+    pub(super) flow_participation: FlowParticipation,
+    pub(super) positioned_containing_block: Option<PositionedContainingBlockId>,
+    pub(super) establishes_positioned_containing_block: bool,
     pub(super) formatting_context: Option<FormattingContextId>,
     pub(super) establishes_formatting_context: Option<FormattingContextKind>,
     pub(super) block_formatting_participation: BlockFormattingParticipation,
@@ -52,6 +62,16 @@ impl fmt::Debug for BoxNode<'_, '_> {
             .field(
                 "establishes_containing_block",
                 &self.establishes_containing_block,
+            )
+            .field("positioning_scheme", &self.positioning_scheme)
+            .field("flow_participation", &self.flow_participation)
+            .field(
+                "positioned_containing_block",
+                &self.positioned_containing_block,
+            )
+            .field(
+                "establishes_positioned_containing_block",
+                &self.establishes_positioned_containing_block,
             )
             .field("formatting_context", &self.formatting_context)
             .field(
@@ -121,6 +141,22 @@ impl<'style_tree, 'dom> BoxNode<'style_tree, 'dom> {
 
     pub fn establishes_containing_block(&self) -> bool {
         self.establishes_containing_block
+    }
+
+    pub fn positioning_scheme(&self) -> PositioningScheme {
+        self.positioning_scheme
+    }
+
+    pub fn flow_participation(&self) -> FlowParticipation {
+        self.flow_participation
+    }
+
+    pub fn positioned_containing_block(&self) -> Option<PositionedContainingBlockId> {
+        self.positioned_containing_block
+    }
+
+    pub fn establishes_positioned_containing_block(&self) -> bool {
+        self.establishes_positioned_containing_block
     }
 
     pub fn formatting_context(&self) -> Option<FormattingContextId> {

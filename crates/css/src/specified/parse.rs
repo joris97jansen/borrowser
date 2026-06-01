@@ -10,6 +10,7 @@ use super::{
     error::{SpecifiedValueParseError, SpecifiedValueParseErrorKind, error},
     length::{parse_length, parse_length_percentage_or_auto, parse_length_percentage_or_none},
     overflow::parse_overflow,
+    position::parse_position,
     value::{SpecifiedPropertyValue, SpecifiedValue},
 };
 
@@ -37,6 +38,9 @@ pub fn parse_specified_value_with_limits(
         }
         PropertySpecifiedValueKind::OverflowKeyword => {
             SpecifiedValue::Overflow(parse_overflow(property, component)?)
+        }
+        PropertySpecifiedValueKind::PositionKeyword => {
+            SpecifiedValue::Position(parse_position(property, component)?)
         }
         PropertySpecifiedValueKind::AbsoluteLength => {
             SpecifiedValue::Length(parse_length(property, component)?)

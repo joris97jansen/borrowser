@@ -271,6 +271,11 @@ fn collect_inline_tokens_from_layout_box<'style_tree, 'dom>(
     has_emitted_content: &mut bool,
     ctx: InlineContext,
 ) {
+    if !layout.flow_participation().contributes_to_parent_flow() {
+        reset_pending_space(pending_space);
+        return;
+    }
+
     match layout.node.node {
         Node::Text { text, .. } => {
             if text.is_empty() {

@@ -1,7 +1,7 @@
 use crate::{
     InitialStyleValue, PropertyComputedValueKind, PropertyId,
     specified::{SpecifiedPropertyValue, SpecifiedValue},
-    values::{Display, Length, LengthPercentage, Overflow},
+    values::{Display, Length, LengthPercentage, Overflow, Position},
 };
 
 use super::{
@@ -18,6 +18,7 @@ pub enum ComputedValue {
     Color((u8, u8, u8, u8)),
     Display(Display),
     Overflow(Overflow),
+    Position(Position),
     Length(Length),
     LengthPercentageOrAuto(Option<LengthPercentage>),
     LengthPercentageOrNone(Option<LengthPercentage>),
@@ -29,6 +30,7 @@ impl ComputedValue {
             Self::Color(_) => ComputedValueDiscriminant::Color,
             Self::Display(_) => ComputedValueDiscriminant::Display,
             Self::Overflow(_) => ComputedValueDiscriminant::Overflow,
+            Self::Position(_) => ComputedValueDiscriminant::Position,
             Self::Length(_) => ComputedValueDiscriminant::Length,
             Self::LengthPercentageOrAuto(_) => ComputedValueDiscriminant::LengthPercentageOrAuto,
             Self::LengthPercentageOrNone(_) => ComputedValueDiscriminant::LengthPercentageOrNone,
@@ -45,6 +47,7 @@ impl ComputedValue {
             InitialStyleValue::AutoKeyword => Self::LengthPercentageOrAuto(None),
             InitialStyleValue::NoneKeyword => Self::LengthPercentageOrNone(None),
             InitialStyleValue::OverflowVisible => Self::Overflow(Overflow::Visible),
+            InitialStyleValue::PositionStatic => Self::Position(Position::Static),
         }
     }
 
@@ -63,6 +66,9 @@ impl ComputedValue {
             SpecifiedValue::Display(display) => Self::Display(normalize_display(display.keyword())),
             SpecifiedValue::Overflow(overflow) => {
                 Self::Overflow(normalize_overflow(overflow.keyword()))
+            }
+            SpecifiedValue::Position(position) => {
+                Self::Position(normalize_position(position.keyword()))
             }
             SpecifiedValue::Length(length) => Self::Length(normalize_length(property, length)?),
             SpecifiedValue::LengthPercentageOrAuto(value) => {
@@ -94,6 +100,7 @@ impl ComputedValue {
             Self::Color((r, g, b, a)) => format!("rgba({r}, {g}, {b}, {a})"),
             Self::Display(display) => display_keyword(display).to_string(),
             Self::Overflow(overflow) => overflow_keyword(overflow).to_string(),
+            Self::Position(position) => position_keyword(position).to_string(),
             Self::Length(length) => format_length(length),
             Self::LengthPercentageOrAuto(Some(value)) => format_length_percentage(value),
             Self::LengthPercentageOrAuto(None) => "auto".to_string(),
@@ -162,6 +169,7 @@ pub enum ComputedValueDiscriminant {
     Color,
     Display,
     Overflow,
+    Position,
     Length,
     LengthPercentageOrAuto,
     LengthPercentageOrNone,
@@ -173,6 +181,7 @@ impl ComputedValueDiscriminant {
             Self::Color => "color",
             Self::Display => "display",
             Self::Overflow => "overflow",
+            Self::Position => "position",
             Self::Length => "length",
             Self::LengthPercentageOrAuto => "length-percentage-or-auto",
             Self::LengthPercentageOrNone => "length-percentage-or-none",
@@ -193,6 +202,7 @@ pub(super) fn computed_value_discriminant(
         PropertyComputedValueKind::AbsoluteColor => ComputedValueDiscriminant::Color,
         PropertyComputedValueKind::DisplayKeyword => ComputedValueDiscriminant::Display,
         PropertyComputedValueKind::OverflowKeyword => ComputedValueDiscriminant::Overflow,
+        PropertyComputedValueKind::PositionKeyword => ComputedValueDiscriminant::Position,
         PropertyComputedValueKind::AbsoluteLength => ComputedValueDiscriminant::Length,
         PropertyComputedValueKind::LengthPercentageOrAuto => {
             ComputedValueDiscriminant::LengthPercentageOrAuto
@@ -200,6 +210,16 @@ pub(super) fn computed_value_discriminant(
         PropertyComputedValueKind::LengthPercentageOrNone => {
             ComputedValueDiscriminant::LengthPercentageOrNone
         }
+    }
+}
+
+fn normalize_position(keyword: crate::SpecifiedPositionKeyword) -> Position {
+    match keyword {
+        crate::SpecifiedPositionKeyword::Static => Position::Static,
+        crate::SpecifiedPositionKeyword::Relative => Position::Relative,
+        crate::SpecifiedPositionKeyword::Absolute => Position::Absolute,
+        crate::SpecifiedPositionKeyword::Fixed => Position::Fixed,
+        crate::SpecifiedPositionKeyword::Sticky => Position::Sticky,
     }
 }
 
@@ -220,6 +240,16 @@ fn overflow_keyword(overflow: Overflow) -> &'static str {
         Overflow::Clip => "clip",
         Overflow::Scroll => "scroll",
         Overflow::Auto => "auto",
+    }
+}
+
+fn position_keyword(position: Position) -> &'static str {
+    match position {
+        Position::Static => "static",
+        Position::Relative => "relative",
+        Position::Absolute => "absolute",
+        Position::Fixed => "fixed",
+        Position::Sticky => "sticky",
     }
 }
 

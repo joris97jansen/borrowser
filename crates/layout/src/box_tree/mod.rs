@@ -20,7 +20,10 @@ pub use display::{
 pub use formatting::{
     BlockFormattingParticipation, FormattingContextKind, InlineFormattingParticipation,
 };
-pub use ids::{BoxId, ContainingBlockId, FormattingContextId, InlineFormattingContextId};
+pub use ids::{
+    BoxId, ContainingBlockId, FormattingContextId, InlineFormattingContextId,
+    PositionedContainingBlockId,
+};
 pub use model::{BoxNode, BoxTree};
 pub use source::BoxSource;
 
