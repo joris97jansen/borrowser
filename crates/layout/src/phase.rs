@@ -1,6 +1,8 @@
 use css::{StylePhaseOutput, StyledNode};
 
-use crate::{LayoutBox, Rectangle, ReplacedElementInfoProvider, TextMeasurer};
+use crate::{
+    LayoutBox, OutOfFlowLayoutParticipant, Rectangle, ReplacedElementInfoProvider, TextMeasurer,
+};
 
 /// Structured layout-phase input consumed by the layout engine.
 ///
@@ -69,13 +71,16 @@ impl<'style_tree, 'dom, 'runtime> LayoutPhaseInput<'style_tree, 'dom, 'runtime> 
 pub struct LayoutPhaseOutput<'style_tree, 'dom> {
     root: LayoutBox<'style_tree, 'dom>,
     available_width: f32,
+    out_of_flow_participants: Vec<OutOfFlowLayoutParticipant>,
 }
 
 impl<'style_tree, 'dom> LayoutPhaseOutput<'style_tree, 'dom> {
     pub fn new(root: LayoutBox<'style_tree, 'dom>, available_width: f32) -> Self {
+        let out_of_flow_participants = collect_out_of_flow_participants(&root);
         Self {
             root,
             available_width,
+            out_of_flow_participants,
         }
     }
 
@@ -95,7 +100,37 @@ impl<'style_tree, 'dom> LayoutPhaseOutput<'style_tree, 'dom> {
         self.available_width
     }
 
+    pub fn out_of_flow_participants(&self) -> &[OutOfFlowLayoutParticipant] {
+        &self.out_of_flow_participants
+    }
+
     pub fn content_height(&self) -> f32 {
         self.root.rect.height
+    }
+}
+
+fn collect_out_of_flow_participants(root: &LayoutBox<'_, '_>) -> Vec<OutOfFlowLayoutParticipant> {
+    let mut participants = Vec::new();
+    collect_out_of_flow_participants_from_box(root, &mut participants);
+    participants
+}
+
+fn collect_out_of_flow_participants_from_box(
+    layout: &LayoutBox<'_, '_>,
+    participants: &mut Vec<OutOfFlowLayoutParticipant>,
+) {
+    if let Some(kind) = layout.flow_participation().out_of_flow_kind() {
+        let positioned_containing_block = layout.positioned_containing_block().expect(
+            "Y5 must resolve positioned containing blocks before Y6 tracks out-of-flow participants",
+        );
+        participants.push(OutOfFlowLayoutParticipant::new(
+            layout.box_id(),
+            kind,
+            positioned_containing_block,
+        ));
+    }
+
+    for child in &layout.children {
+        collect_out_of_flow_participants_from_box(child, participants);
     }
 }

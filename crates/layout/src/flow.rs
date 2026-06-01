@@ -9,6 +9,7 @@ use std::fmt::Write;
 
 use css::{BoxMetrics, Overflow, Position};
 
+use crate::box_tree::{BoxId, PositionedContainingBlockId};
 use crate::geometry::Rectangle;
 use crate::sizing::{CssPx, SignedCssPx};
 
@@ -125,6 +126,50 @@ impl OutOfFlowKind {
             Self::AbsolutelyPositioned => "absolute",
             Self::FixedPositioned => "fixed",
         }
+    }
+}
+
+/// Frame-local record of a generated box that is excluded from normal-flow
+/// placement and reserved for a later positioned-layout pass.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct OutOfFlowLayoutParticipant {
+    box_id: BoxId,
+    kind: OutOfFlowKind,
+    positioned_containing_block: PositionedContainingBlockId,
+}
+
+impl OutOfFlowLayoutParticipant {
+    pub(crate) fn new(
+        box_id: BoxId,
+        kind: OutOfFlowKind,
+        positioned_containing_block: PositionedContainingBlockId,
+    ) -> Self {
+        Self {
+            box_id,
+            kind,
+            positioned_containing_block,
+        }
+    }
+
+    pub fn box_id(self) -> BoxId {
+        self.box_id
+    }
+
+    pub fn kind(self) -> OutOfFlowKind {
+        self.kind
+    }
+
+    pub fn positioned_containing_block(self) -> PositionedContainingBlockId {
+        self.positioned_containing_block
+    }
+
+    pub fn as_debug_label(self) -> String {
+        format!(
+            "box-id=b{} kind={} positioned-cb=b{}",
+            self.box_id.index(),
+            self.kind.as_debug_label(),
+            self.positioned_containing_block.index()
+        )
     }
 }
 
@@ -838,7 +883,7 @@ pub fn advanced_flow_contract_debug_snapshot() -> String {
     .expect("write snapshot");
     writeln!(
         &mut out,
-        "out-of-flow: queue-after-normal-flow=yes contributes-to-parent-auto-size=no final-geometry-from-positioning-phase=yes"
+        "out-of-flow: tracked-after-normal-flow=yes contributes-to-parent-auto-size=no final-geometry-from-positioning-phase=yes"
     )
     .expect("write snapshot");
     out
@@ -1155,7 +1200,7 @@ mod tests {
                 "margin-collapse-boundaries: root-element, independent-formatting-context, out-of-flow, inline-formatting-content, non-zero-padding-or-border, clearance, overflow-formatting-context, fragmentation\n",
                 "overflow: visible(clip=no scroll-container=no bfc=no), hidden(clip=yes scroll-container=yes bfc=yes), clip(clip=yes scroll-container=no bfc=no), scroll(clip=yes scroll-container=yes bfc=yes), auto(clip=yes scroll-container=yes bfc=yes)\n",
                 "positioning: static(flow=in-flow cb=normal-flow-containing-block establishes-positioned-cb=no), relative(flow=in-flow cb=normal-flow-containing-block establishes-positioned-cb=yes), absolute(flow=out-of-flow:absolute cb=nearest-positioned-ancestor establishes-positioned-cb=yes), fixed(flow=out-of-flow:fixed cb=initial-containing-block establishes-positioned-cb=yes), sticky(flow=in-flow cb=normal-flow-containing-block establishes-positioned-cb=yes)\n",
-                "out-of-flow: queue-after-normal-flow=yes contributes-to-parent-auto-size=no final-geometry-from-positioning-phase=yes\n",
+                "out-of-flow: tracked-after-normal-flow=yes contributes-to-parent-auto-size=no final-geometry-from-positioning-phase=yes\n",
             )
         );
     }

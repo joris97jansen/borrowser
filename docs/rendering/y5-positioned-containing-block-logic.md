@@ -57,6 +57,11 @@ does not yet compute their final out-of-flow geometry. Static-position capture,
 out-of-flow queues, inset resolution, and final positioned painting are
 deferred to later Milestone Y issues.
 
+Y6 formalizes the next handoff by tracking absolute and fixed boxes in a
+deterministic layout-phase out-of-flow participant registry. That registry
+consumes the `PositionedContainingBlockId` resolved here; it does not recompute
+containing-block relationships.
+
 ## Determinism
 
 Resolution is deterministic for a fixed generated box tree:

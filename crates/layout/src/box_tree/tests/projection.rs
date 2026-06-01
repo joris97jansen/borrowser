@@ -1154,6 +1154,171 @@ fn layout_projection_preserves_positioned_containing_block_metadata() {
 }
 
 #[test]
+fn layout_phase_output_tracks_out_of_flow_participants_in_tree_order() {
+    let dom = doc(vec![element(
+        2,
+        "main",
+        vec![("display", "block"), ("position", "relative")],
+        vec![
+            element(3, "header", vec![("display", "block")], Vec::new()),
+            element(
+                4,
+                "aside",
+                vec![("display", "block"), ("position", "absolute")],
+                Vec::new(),
+            ),
+            element(
+                5,
+                "nav",
+                vec![("display", "block"), ("position", "fixed")],
+                Vec::new(),
+            ),
+            element(
+                6,
+                "section",
+                vec![("display", "block"), ("position", "relative")],
+                Vec::new(),
+            ),
+            element(
+                7,
+                "footer",
+                vec![("display", "block"), ("position", "sticky")],
+                Vec::new(),
+            ),
+        ],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let output = crate::layout_document(crate::LayoutPhaseInput::new(
+        &styled,
+        500.0,
+        &TestMeasurer,
+        None,
+    ));
+
+    let main = find_layout_by_direct_node_id(output.root(), Id(2)).expect("main layout box");
+    let header = find_layout_by_direct_node_id(output.root(), Id(3)).expect("header layout box");
+    let aside = find_layout_by_direct_node_id(output.root(), Id(4)).expect("aside layout box");
+    let nav = find_layout_by_direct_node_id(output.root(), Id(5)).expect("nav layout box");
+    let section = find_layout_by_direct_node_id(output.root(), Id(6)).expect("section layout box");
+    let footer = find_layout_by_direct_node_id(output.root(), Id(7)).expect("footer layout box");
+
+    assert_eq!(main.flow_participation(), FlowParticipation::InFlow);
+    assert_eq!(header.flow_participation(), FlowParticipation::InFlow);
+    assert_eq!(section.flow_participation(), FlowParticipation::InFlow);
+    assert_eq!(footer.flow_participation(), FlowParticipation::InFlow);
+
+    let participants = output.out_of_flow_participants();
+    assert_eq!(participants.len(), 2);
+
+    assert_eq!(participants[0].box_id(), aside.box_id());
+    assert_eq!(participants[0].kind(), OutOfFlowKind::AbsolutelyPositioned);
+    assert_eq!(
+        participants[0].positioned_containing_block().box_id(),
+        main.box_id()
+    );
+
+    assert_eq!(participants[1].box_id(), nav.box_id());
+    assert_eq!(participants[1].kind(), OutOfFlowKind::FixedPositioned);
+    assert_eq!(
+        participants[1].positioned_containing_block().box_id(),
+        output.root().box_id()
+    );
+
+    let snapshot = output.to_debug_snapshot();
+    assert!(snapshot.contains("out-of-flow-participants: 2"));
+    assert!(snapshot.contains(&format!(
+        "out-of-flow[0]: box-id=b{} kind=absolute positioned-cb=b{}",
+        aside.box_id().index(),
+        main.box_id().index()
+    )));
+    assert!(snapshot.contains(&format!(
+        "out-of-flow[1]: box-id=b{} kind=fixed positioned-cb=b{}",
+        nav.box_id().index(),
+        output.root().box_id().index()
+    )));
+}
+
+#[test]
+fn fixed_positioned_block_does_not_contribute_to_parent_auto_height() {
+    let dom = doc(vec![element(
+        2,
+        "section",
+        Vec::new(),
+        vec![
+            element(3, "div", vec![("height", "10px")], Vec::new()),
+            element(
+                4,
+                "div",
+                vec![("position", "fixed"), ("height", "100px")],
+                Vec::new(),
+            ),
+        ],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let output = crate::layout_document(crate::LayoutPhaseInput::new(
+        &styled,
+        500.0,
+        &TestMeasurer,
+        None,
+    ));
+    let section = find_layout_by_direct_node_id(output.root(), Id(2)).expect("section layout box");
+    let fixed = find_layout_by_direct_node_id(output.root(), Id(4)).expect("fixed layout box");
+
+    assert_eq!(
+        fixed.flow_participation(),
+        FlowParticipation::OutOfFlow(OutOfFlowKind::FixedPositioned)
+    );
+    assert_eq!(section.rect.height, 10.0);
+    assert_eq!(output.out_of_flow_participants().len(), 1);
+    assert_eq!(
+        output.out_of_flow_participants()[0].box_id(),
+        fixed.box_id()
+    );
+}
+
+#[test]
+fn inline_out_of_flow_descendants_are_tracked_without_contributing_inline_content() {
+    let dom = doc(vec![element(
+        2,
+        "section",
+        vec![("display", "block"), ("width", "60px")],
+        vec![
+            text(3, "ok"),
+            element(
+                4,
+                "span",
+                vec![("position", "absolute")],
+                vec![text(5, "this absolute text would wrap if it stayed inline")],
+            ),
+        ],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let output = crate::layout_document(crate::LayoutPhaseInput::new(
+        &styled,
+        500.0,
+        &TestMeasurer,
+        None,
+    ));
+    let section = find_layout_by_direct_node_id(output.root(), Id(2)).expect("section layout box");
+    let span = find_layout_by_direct_node_id(output.root(), Id(4)).expect("span layout box");
+
+    assert_eq!(
+        span.flow_participation(),
+        FlowParticipation::OutOfFlow(OutOfFlowKind::AbsolutelyPositioned)
+    );
+    assert!(
+        output
+            .out_of_flow_participants()
+            .iter()
+            .any(|participant| participant.box_id() == span.box_id())
+    );
+    assert!(
+        section.rect.height < 30.0,
+        "out-of-flow inline descendants must not add wrapped inline content height"
+    );
+}
+
+#[test]
 fn layout_projection_preserves_block_formatting_context_metadata() {
     let dom = doc(vec![element(
         2,

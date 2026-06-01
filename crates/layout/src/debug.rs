@@ -62,6 +62,15 @@ impl<'style_tree, 'dom> LayoutPhaseOutput<'style_tree, 'dom> {
             count_layout_boxes(self.root())
         )
         .expect("write snapshot");
+        if !self.out_of_flow_participants().is_empty() {
+            writeln!(
+                &mut out,
+                "out-of-flow-participants: {}",
+                self.out_of_flow_participants().len()
+            )
+            .expect("write snapshot");
+            append_out_of_flow_participants_snapshot(&mut out, self.out_of_flow_participants());
+        }
         append_layout_box_snapshot(&mut out, self.root(), 0, 0);
         out
     }
@@ -88,6 +97,15 @@ impl<'style_tree, 'dom> LayoutPhaseOutput<'style_tree, 'dom> {
             count_layout_boxes(self.root())
         )
         .expect("write snapshot");
+        if !self.out_of_flow_participants().is_empty() {
+            writeln!(
+                &mut out,
+                "out-of-flow-participants: {}",
+                self.out_of_flow_participants().len()
+            )
+            .expect("write snapshot");
+            append_out_of_flow_participants_snapshot(&mut out, self.out_of_flow_participants());
+        }
         append_layout_sizing_snapshot(&mut out, self.root(), 0, 0);
         out
     }
@@ -107,6 +125,20 @@ fn count_layout_boxes(layout: &LayoutBox<'_, '_>) -> usize {
         .iter()
         .map(|child| count_layout_boxes(child))
         .sum::<usize>()
+}
+
+fn append_out_of_flow_participants_snapshot(
+    out: &mut String,
+    participants: &[crate::OutOfFlowLayoutParticipant],
+) {
+    for (index, participant) in participants.iter().enumerate() {
+        writeln!(
+            out,
+            "out-of-flow[{index}]: {}",
+            participant.as_debug_label()
+        )
+        .expect("write snapshot");
+    }
 }
 
 fn append_layout_box_snapshot(
