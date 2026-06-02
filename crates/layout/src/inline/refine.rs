@@ -84,6 +84,7 @@ fn recompute_block_heights<'style_tree, 'dom>(
 
                 let margins = child.flow_margins();
                 let placement = block_cursor.next_in_flow_block(margins);
+                child.block_flow_placement = Some(placement);
 
                 let child_inline = normal_flow_child_inline_input(content_box, child);
 
@@ -222,6 +223,7 @@ fn recompute_block_heights<'style_tree, 'dom>(
 
                 let margins = child.flow_margins();
                 let placement = block_cursor.next_in_flow_block(margins);
+                child.block_flow_placement = Some(placement);
 
                 let child_inline = normal_flow_child_inline_input(content_box, child);
 

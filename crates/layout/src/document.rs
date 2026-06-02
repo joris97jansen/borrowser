@@ -101,6 +101,7 @@ fn layout_box_from_generated_tree<'style_tree, 'dom>(
         replaced: box_node.replaced(),
         replaced_intrinsic: box_node.replaced_intrinsic(),
         used_content_size: None,
+        block_flow_placement: None,
         overflow_policy: overflow_policy_for_source(source, &styled.style),
     }
 }

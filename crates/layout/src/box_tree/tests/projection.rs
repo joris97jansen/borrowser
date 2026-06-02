@@ -1643,6 +1643,91 @@ fn combined_flow_debug_snapshot_includes_margin_overflow_position_and_participan
 }
 
 #[test]
+fn advanced_flow_debug_snapshot_records_semantic_y2_to_y6_decisions() {
+    let dom = doc(vec![element(
+        2,
+        "main",
+        vec![
+            ("position", "relative"),
+            ("overflow", "hidden"),
+            ("width", "200px"),
+        ],
+        vec![
+            element(
+                3,
+                "div",
+                vec![
+                    ("height", "10px"),
+                    ("margin-left", "5px"),
+                    ("margin-bottom", "30px"),
+                ],
+                Vec::new(),
+            ),
+            element(
+                4,
+                "aside",
+                vec![
+                    ("position", "absolute"),
+                    ("overflow", "clip"),
+                    ("height", "100px"),
+                    ("margin-top", "5px"),
+                ],
+                Vec::new(),
+            ),
+            element(
+                5,
+                "section",
+                vec![
+                    ("height", "10px"),
+                    ("margin-top", "-12px"),
+                    ("margin-bottom", "4px"),
+                    ("overflow", "auto"),
+                ],
+                Vec::new(),
+            ),
+        ],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let output = crate::layout_document(crate::LayoutPhaseInput::new(
+        &styled,
+        500.0,
+        &TestMeasurer,
+        None,
+    ));
+    let header = find_layout_by_direct_node_id(output.root(), Id(3)).expect("header layout box");
+    let aside = find_layout_by_direct_node_id(output.root(), Id(4)).expect("aside layout box");
+    let section = find_layout_by_direct_node_id(output.root(), Id(5)).expect("section layout box");
+
+    assert!(header.block_flow_placement().is_some());
+    assert_eq!(aside.block_flow_placement(), None);
+    assert!(
+        section
+            .block_flow_placement()
+            .and_then(|placement| placement.margin_collapse())
+            .is_some(),
+        "advanced-flow debug must retain the margin-collapse decision from layout"
+    );
+
+    assert_eq!(
+        output.to_advanced_flow_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "layout-advanced-flow\n",
+            "viewport-width: 500.00\n",
+            "document-rect: x=0.00 y=0.00 w=500.00 h=42.00\n",
+            "layout-boxes: 5\n",
+            "out-of-flow-participants: 1\n",
+            "out-of-flow[0]: box-id=b3 kind=absolute positioned-cb=b1\n",
+            "box[0]: box-id=b0 source=dom(1) node=document kind=block cb=none establishes-cb=yes position=static flow=in-flow positioned-cb=none establishes-positioned-cb=yes fc=none establishes-fc=block block-participation=root inline-participation=none block-flow-placement=none overflow=policy=(inline=visible block=visible) clip=none margin=(block-start=0.00px inline-end=0.00px block-end=0.00px inline-start=0.00px) border-box=x=0.00 y=0.00 w=500.00 h=42.00 content-box=x=0.00 y=0.00 w=500.00 h=42.00 children=1\n",
+            "  box[1]: box-id=b1 source=dom(2) node=element(\"main\") kind=block cb=b0 establishes-cb=yes position=relative flow=in-flow positioned-cb=b0 establishes-positioned-cb=yes fc=b0 establishes-fc=block block-participation=block-level inline-participation=none block-flow-placement=(border-block-start=0.00px margin-collapse=none) overflow=policy=(inline=hidden block=hidden) clip=x=0.00 y=0.00 w=200.00 h=42.00 margin=(block-start=0.00px inline-end=0.00px block-end=0.00px inline-start=0.00px) border-box=x=0.00 y=0.00 w=200.00 h=42.00 content-box=x=0.00 y=0.00 w=200.00 h=42.00 children=3\n",
+            "    box[2]: box-id=b2 source=dom(3) node=element(\"div\") kind=block cb=b1 establishes-cb=yes position=static flow=in-flow positioned-cb=b1 establishes-positioned-cb=no fc=b1 establishes-fc=none block-participation=block-level inline-participation=none block-flow-placement=(border-block-start=0.00px margin-collapse=none) overflow=policy=(inline=visible block=visible) clip=none margin=(block-start=0.00px inline-end=0.00px block-end=30.00px inline-start=5.00px) border-box=x=5.00 y=0.00 w=195.00 h=10.00 content-box=x=5.00 y=0.00 w=195.00 h=10.00 children=0\n",
+            "    box[3]: box-id=b3 source=dom(4) node=element(\"aside\") kind=block cb=b1 establishes-cb=yes position=absolute flow=out-of-flow:absolute positioned-cb=b1 establishes-positioned-cb=yes fc=b1 establishes-fc=none block-participation=block-level inline-participation=none block-flow-placement=none overflow=policy=(inline=clip block=clip) clip=x=0.00 y=0.00 w=500.00 h=0.00 margin=(block-start=5.00px inline-end=0.00px block-end=0.00px inline-start=0.00px) border-box=x=0.00 y=0.00 w=500.00 h=0.00 content-box=x=0.00 y=0.00 w=500.00 h=0.00 children=0\n",
+            "    box[4]: box-id=b4 source=dom(5) node=element(\"section\") kind=block cb=b1 establishes-cb=yes position=static flow=in-flow positioned-cb=b1 establishes-positioned-cb=no fc=b1 establishes-fc=block block-participation=block-level inline-participation=none block-flow-placement=(border-block-start=28.00px margin-collapse=(case=adjacent-block-siblings previous=30.00px next=-12.00px collapsed=(value=18.00px positive=30.00px negative=-12.00px))) overflow=policy=(inline=auto block=auto) clip=x=0.00 y=28.00 w=200.00 h=10.00 margin=(block-start=-12.00px inline-end=0.00px block-end=4.00px inline-start=0.00px) border-box=x=0.00 y=28.00 w=200.00 h=10.00 content-box=x=0.00 y=28.00 w=200.00 h=10.00 children=0\n",
+        )
+    );
+}
+
+#[test]
 fn layout_projection_preserves_block_formatting_context_metadata() {
     let dom = doc(vec![element(
         2,
