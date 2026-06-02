@@ -842,6 +842,18 @@ impl BlockFlowBlockPlacement {
     pub fn margin_collapse(self) -> Option<MarginCollapseDecision> {
         self.margin_collapse
     }
+
+    pub fn as_debug_label(self) -> String {
+        let collapse = self
+            .margin_collapse
+            .map(|decision| format!("({})", decision.as_debug_label()))
+            .unwrap_or_else(|| "none".to_string());
+        format!(
+            "border-block-start={} margin-collapse={}",
+            signed_px_debug_label(self.border_block_start),
+            collapse,
+        )
+    }
 }
 
 /// Stable architecture/debug surface for Y1.

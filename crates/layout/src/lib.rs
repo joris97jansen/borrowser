@@ -46,7 +46,9 @@
 //! containing-block logic is documented in
 //! `docs/rendering/y5-positioned-containing-block-logic.md`; Y6 out-of-flow
 //! layout participation groundwork is documented in
-//! `docs/rendering/y6-out-of-flow-layout-participation-groundwork.md`.
+//! `docs/rendering/y6-out-of-flow-layout-participation-groundwork.md`; Y8
+//! deterministic advanced-flow debug regressions are documented in
+//! `docs/rendering/y8-deterministic-advanced-flow-debug-regressions.md`.
 //! `BoxTree` is the frame-local generated box-tree structure; `LayoutBox` is
 //! the current geometry projection consumed by paint and hit testing.
 

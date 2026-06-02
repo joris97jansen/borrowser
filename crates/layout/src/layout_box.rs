@@ -2,11 +2,11 @@ use css::{BoxMetrics, ComputedStyle, StyledNode};
 use html::internal::Id;
 
 use crate::{
-    BlockFormattingParticipation, BoxId, BoxKind, BoxSource, ContainingBlockId, FlowMargins,
-    FlowParticipation, FormattingContextId, FormattingContextKind, InlineFormattingContextId,
-    InlineFormattingParticipation, ListMarker, OverflowClip, OverflowKeyword, OverflowPolicy,
-    PositionedContainingBlockId, PositioningScheme, Rectangle, ReplacedKind, UsedContentSize,
-    replaced::intrinsic::IntrinsicSize,
+    BlockFlowBlockPlacement, BlockFormattingParticipation, BoxId, BoxKind, BoxSource,
+    ContainingBlockId, FlowMargins, FlowParticipation, FormattingContextId, FormattingContextKind,
+    InlineFormattingContextId, InlineFormattingParticipation, ListMarker, OverflowClip,
+    OverflowKeyword, OverflowPolicy, PositionedContainingBlockId, PositioningScheme, Rectangle,
+    ReplacedKind, UsedContentSize, replaced::intrinsic::IntrinsicSize,
 };
 
 /// A geometry projection of one generated box-tree node.
@@ -39,6 +39,7 @@ pub struct LayoutBox<'style_tree, 'dom> {
     pub replaced: Option<ReplacedKind>,
     pub replaced_intrinsic: Option<IntrinsicSize>,
     pub used_content_size: Option<UsedContentSize>,
+    pub block_flow_placement: Option<BlockFlowBlockPlacement>,
     pub overflow_policy: OverflowPolicy,
 }
 
@@ -128,6 +129,10 @@ impl<'style_tree, 'dom> LayoutBox<'style_tree, 'dom> {
     pub fn flow_margins(&self) -> FlowMargins {
         FlowMargins::from_box_metrics(self.box_metrics())
             .expect("computed style must materialize finite flow margins")
+    }
+
+    pub fn block_flow_placement(&self) -> Option<BlockFlowBlockPlacement> {
+        self.block_flow_placement
     }
 
     pub fn overflow_policy(&self) -> OverflowPolicy {

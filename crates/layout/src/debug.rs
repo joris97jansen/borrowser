@@ -109,6 +109,41 @@ impl<'style_tree, 'dom> LayoutPhaseOutput<'style_tree, 'dom> {
         append_layout_sizing_snapshot(&mut out, self.root(), 0, 0);
         out
     }
+
+    /// Stable debug snapshot for Milestone Y advanced-flow decisions.
+    ///
+    /// This surface records the semantic layout decisions retained on
+    /// `LayoutBox`, including block-flow placement and margin-collapse records.
+    /// It must not reconstruct those decisions from final coordinates.
+    pub fn to_advanced_flow_debug_snapshot(&self) -> String {
+        let mut out = String::new();
+        writeln!(&mut out, "version: 1").expect("write snapshot");
+        writeln!(&mut out, "layout-advanced-flow").expect("write snapshot");
+        writeln!(&mut out, "viewport-width: {:.2}", self.viewport_width()).expect("write snapshot");
+        writeln!(
+            &mut out,
+            "document-rect: {}",
+            rectangle_debug_label(self.document_rect())
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut out,
+            "layout-boxes: {}",
+            count_layout_boxes(self.root())
+        )
+        .expect("write snapshot");
+        if !self.out_of_flow_participants().is_empty() {
+            writeln!(
+                &mut out,
+                "out-of-flow-participants: {}",
+                self.out_of_flow_participants().len()
+            )
+            .expect("write snapshot");
+            append_out_of_flow_participants_snapshot(&mut out, self.out_of_flow_participants());
+        }
+        append_layout_advanced_flow_snapshot(&mut out, self.root(), 0, 0);
+        out
+    }
 }
 
 fn count_styled_nodes(node: &StyledNode<'_>) -> usize {
@@ -227,6 +262,53 @@ fn append_layout_sizing_snapshot(
     let mut next_index = index + 1;
     for child in &layout.children {
         next_index = append_layout_sizing_snapshot(out, child, next_index, depth + 1);
+    }
+    next_index
+}
+
+fn append_layout_advanced_flow_snapshot(
+    out: &mut String,
+    layout: &LayoutBox<'_, '_>,
+    index: usize,
+    depth: usize,
+) -> usize {
+    let indent = "  ".repeat(depth);
+    let content_rect = Rectangle {
+        x: layout.content_x_and_width().0,
+        y: layout.content_y(),
+        width: layout.content_x_and_width().1,
+        height: layout.content_height(),
+    };
+
+    writeln!(
+        out,
+        "{indent}box[{index}]: box-id={} source={} node={} kind={} cb={} establishes-cb={} position={} flow={} positioned-cb={} establishes-positioned-cb={} fc={} establishes-fc={} block-participation={} inline-participation={} block-flow-placement={} overflow={} margin={} border-box={} content-box={} children={}",
+        box_id_debug_label(layout.box_id()),
+        layout_box_source_debug_label(layout.source),
+        node_debug_label(layout.node.node),
+        box_kind_debug_label(layout.kind),
+        optional_containing_block_id_debug_label(layout.containing_block()),
+        bool_debug_label(layout.establishes_containing_block()),
+        positioning_scheme_debug_label(layout.positioning_scheme()),
+        flow_participation_debug_label(layout.flow_participation()),
+        optional_positioned_containing_block_id_debug_label(layout.positioned_containing_block()),
+        bool_debug_label(layout.establishes_positioned_containing_block()),
+        optional_formatting_context_id_debug_label(layout.formatting_context()),
+        optional_formatting_context_kind_debug_label(layout.establishes_formatting_context()),
+        block_formatting_participation_debug_label(layout.block_formatting_participation()),
+        inline_formatting_participation_debug_label(layout.inline_formatting_participation()),
+        block_flow_placement_debug_label(layout),
+        overflow_debug_label(layout),
+        flow_margins_debug_label(layout.flow_margins()),
+        rectangle_debug_label(layout.rect),
+        rectangle_debug_label(content_rect),
+        layout.children.len(),
+    )
+    .expect("write snapshot");
+
+    let mut next_index = index + 1;
+    for child in &layout.children {
+        next_index = append_layout_advanced_flow_snapshot(out, child, next_index, depth + 1);
     }
     next_index
 }
@@ -405,6 +487,13 @@ fn overflow_debug_label(layout: &LayoutBox<'_, '_>) -> String {
         layout.overflow_policy().as_debug_label(),
         clip
     )
+}
+
+fn block_flow_placement_debug_label(layout: &LayoutBox<'_, '_>) -> String {
+    layout
+        .block_flow_placement()
+        .map(|placement| format!("({})", placement.as_debug_label()))
+        .unwrap_or_else(|| "none".to_string())
 }
 
 fn flow_margins_debug_label(margins: crate::FlowMargins) -> String {
