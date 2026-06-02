@@ -48,7 +48,9 @@
 //! layout participation groundwork is documented in
 //! `docs/rendering/y6-out-of-flow-layout-participation-groundwork.md`; Y8
 //! deterministic advanced-flow debug regressions are documented in
-//! `docs/rendering/y8-deterministic-advanced-flow-debug-regressions.md`.
+//! `docs/rendering/y8-deterministic-advanced-flow-debug-regressions.md`; Y9
+//! Milestone Y close-out invariants and extension points are documented in
+//! `docs/rendering/y9-advanced-flow-invariants-extension-points.md`.
 //! `BoxTree` is the frame-local generated box-tree structure; `LayoutBox` is
 //! the current geometry projection consumed by paint and hit testing.
 
