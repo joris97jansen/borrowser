@@ -654,6 +654,124 @@ fn layout_does_not_clip_ordinary_inline_overflow_hidden_boxes() {
 }
 
 #[test]
+fn margin_and_overflow_hidden_compose_without_size_or_clip_drift() {
+    let dom = doc(vec![element(
+        2,
+        "section",
+        vec![("width", "200px")],
+        vec![element(
+            3,
+            "div",
+            vec![
+                ("width", "100px"),
+                ("height", "40px"),
+                ("margin-top", "12px"),
+                ("margin-right", "-5px"),
+                ("margin-bottom", "18px"),
+                ("margin-left", "15px"),
+                ("overflow", "hidden"),
+            ],
+            vec![element(4, "p", vec![("height", "80px")], Vec::new())],
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+    let section = find_layout_by_direct_node_id(&layout, Id(2)).expect("section layout box");
+    let div = find_layout_by_direct_node_id(&layout, Id(3)).expect("div layout box");
+    let overflowing_child =
+        find_layout_by_direct_node_id(&layout, Id(4)).expect("overflowing child layout box");
+
+    assert_eq!(div.rect.x, 15.0);
+    assert_eq!(div.rect.y, 12.0);
+    assert_eq!(div.rect.width, 100.0);
+    assert_eq!(div.rect.height, 40.0);
+    assert_eq!(overflowing_child.rect.height, 80.0);
+    assert_eq!(section.rect.height, 70.0);
+
+    assert_eq!(
+        div.overflow_policy(),
+        OverflowPolicy::uniform(OverflowKeyword::Hidden)
+    );
+    assert_eq!(
+        div.establishes_formatting_context(),
+        Some(FormattingContextKind::Block)
+    );
+    let clip = div.overflow_clip().expect("hidden overflow clip");
+    assert_eq!(clip.policy(), div.overflow_policy());
+    assert_eq!(clip.rect(), div.rect);
+}
+
+#[test]
+fn overflow_hidden_positioned_ancestor_preserves_positioned_containing_block() {
+    let dom = doc(vec![element(
+        2,
+        "main",
+        vec![
+            ("position", "relative"),
+            ("overflow", "hidden"),
+            ("width", "200px"),
+            ("height", "100px"),
+        ],
+        vec![element(
+            3,
+            "section",
+            vec![("overflow", "hidden")],
+            vec![element(
+                4,
+                "aside",
+                vec![("position", "absolute"), ("height", "30px")],
+                Vec::new(),
+            )],
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let output = crate::layout_document(crate::LayoutPhaseInput::new(
+        &styled,
+        500.0,
+        &TestMeasurer,
+        None,
+    ));
+    let main = find_layout_by_direct_node_id(output.root(), Id(2)).expect("main layout box");
+    let section = find_layout_by_direct_node_id(output.root(), Id(3)).expect("section layout box");
+    let aside = find_layout_by_direct_node_id(output.root(), Id(4)).expect("aside layout box");
+
+    assert_eq!(main.positioning_scheme(), PositioningScheme::Relative);
+    assert!(main.establishes_positioned_containing_block());
+    assert_eq!(
+        main.overflow_policy(),
+        OverflowPolicy::uniform(OverflowKeyword::Hidden)
+    );
+    assert!(main.overflow_clip().is_some());
+
+    assert_eq!(
+        section.overflow_policy(),
+        OverflowPolicy::uniform(OverflowKeyword::Hidden)
+    );
+    assert_eq!(
+        section.establishes_formatting_context(),
+        Some(FormattingContextKind::Block)
+    );
+    assert!(!section.establishes_positioned_containing_block());
+
+    assert_eq!(aside.positioning_scheme(), PositioningScheme::Absolute);
+    assert_eq!(
+        aside.flow_participation(),
+        FlowParticipation::OutOfFlow(OutOfFlowKind::AbsolutelyPositioned)
+    );
+    assert_eq!(
+        aside
+            .positioned_containing_block()
+            .map(PositionedContainingBlockId::box_id),
+        Some(main.box_id())
+    );
+    assert_eq!(output.out_of_flow_participants().len(), 1);
+    assert_eq!(
+        output.out_of_flow_participants()[0].box_id(),
+        aside.box_id()
+    );
+}
+
+#[test]
 fn anonymous_layout_boxes_do_not_inherit_anchor_margins_for_flow_placement() {
     let dom = doc(vec![element(
         2,
@@ -1316,6 +1434,212 @@ fn inline_out_of_flow_descendants_are_tracked_without_contributing_inline_conten
         section.rect.height < 30.0,
         "out-of-flow inline descendants must not add wrapped inline content height"
     );
+}
+
+#[test]
+fn positioned_out_of_flow_block_is_ignored_by_margin_collapse_with_overflow_siblings() {
+    let dom = doc(vec![element(
+        2,
+        "section",
+        vec![("overflow", "hidden")],
+        vec![
+            element(
+                3,
+                "div",
+                vec![("height", "10px"), ("margin-bottom", "30px")],
+                Vec::new(),
+            ),
+            element(
+                4,
+                "aside",
+                vec![
+                    ("position", "absolute"),
+                    ("height", "100px"),
+                    ("margin-top", "5px"),
+                    ("margin-bottom", "80px"),
+                    ("overflow", "hidden"),
+                ],
+                Vec::new(),
+            ),
+            element(
+                5,
+                "div",
+                vec![
+                    ("height", "10px"),
+                    ("margin-top", "20px"),
+                    ("overflow", "clip"),
+                ],
+                Vec::new(),
+            ),
+        ],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let output = crate::layout_document(crate::LayoutPhaseInput::new(
+        &styled,
+        500.0,
+        &TestMeasurer,
+        None,
+    ));
+    let section = find_layout_by_direct_node_id(output.root(), Id(2)).expect("section layout box");
+    let first = find_layout_by_direct_node_id(output.root(), Id(3)).expect("first layout box");
+    let absolute =
+        find_layout_by_direct_node_id(output.root(), Id(4)).expect("absolute layout box");
+    let second = find_layout_by_direct_node_id(output.root(), Id(5)).expect("second layout box");
+
+    assert_eq!(
+        section.overflow_policy(),
+        OverflowPolicy::uniform(OverflowKeyword::Hidden)
+    );
+    assert!(section.overflow_clip().is_some());
+    assert_eq!(first.rect.y, 0.0);
+    assert_eq!(second.rect.y, 40.0);
+    assert_eq!(section.rect.height, 50.0);
+
+    assert_eq!(
+        absolute.flow_participation(),
+        FlowParticipation::OutOfFlow(OutOfFlowKind::AbsolutelyPositioned)
+    );
+    assert_eq!(
+        absolute.overflow_policy(),
+        OverflowPolicy::uniform(OverflowKeyword::Hidden)
+    );
+    assert!(absolute.overflow_clip().is_some());
+    assert_eq!(output.out_of_flow_participants().len(), 1);
+    assert_eq!(
+        output.out_of_flow_participants()[0].box_id(),
+        absolute.box_id()
+    );
+}
+
+#[test]
+fn out_of_flow_participants_remain_preorder_deterministic_under_mixed_flow() {
+    let dom = doc(vec![element(
+        2,
+        "main",
+        vec![("position", "relative"), ("overflow", "hidden")],
+        vec![
+            element(
+                3,
+                "header",
+                vec![("height", "10px"), ("margin-bottom", "8px")],
+                Vec::new(),
+            ),
+            element(
+                4,
+                "aside",
+                vec![("position", "absolute"), ("overflow", "hidden")],
+                vec![element(
+                    5,
+                    "span",
+                    vec![("position", "absolute")],
+                    Vec::new(),
+                )],
+            ),
+            element(
+                7,
+                "section",
+                vec![("position", "relative"), ("overflow", "auto")],
+                vec![element(
+                    8,
+                    "nav",
+                    vec![("position", "fixed"), ("height", "20px")],
+                    Vec::new(),
+                )],
+            ),
+        ],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let output = crate::layout_document(crate::LayoutPhaseInput::new(
+        &styled,
+        500.0,
+        &TestMeasurer,
+        None,
+    ));
+    let main = find_layout_by_direct_node_id(output.root(), Id(2)).expect("main layout box");
+    let aside = find_layout_by_direct_node_id(output.root(), Id(4)).expect("aside layout box");
+    let nested = find_layout_by_direct_node_id(output.root(), Id(5)).expect("nested layout box");
+    let section = find_layout_by_direct_node_id(output.root(), Id(7)).expect("section layout box");
+    let fixed = find_layout_by_direct_node_id(output.root(), Id(8)).expect("fixed layout box");
+
+    assert_eq!(
+        section.overflow_policy(),
+        OverflowPolicy::uniform(OverflowKeyword::Auto)
+    );
+    assert_eq!(section.positioning_scheme(), PositioningScheme::Relative);
+    assert!(section.establishes_positioned_containing_block());
+
+    let participants = output.out_of_flow_participants();
+    assert_eq!(participants.len(), 3);
+    assert_eq!(participants[0].box_id(), aside.box_id());
+    assert_eq!(participants[0].kind(), OutOfFlowKind::AbsolutelyPositioned);
+    assert_eq!(
+        participants[0].positioned_containing_block().box_id(),
+        main.box_id()
+    );
+    assert_eq!(participants[1].box_id(), nested.box_id());
+    assert_eq!(participants[1].kind(), OutOfFlowKind::AbsolutelyPositioned);
+    assert_eq!(
+        participants[1].positioned_containing_block().box_id(),
+        aside.box_id()
+    );
+    assert_eq!(participants[2].box_id(), fixed.box_id());
+    assert_eq!(participants[2].kind(), OutOfFlowKind::FixedPositioned);
+    assert_eq!(
+        participants[2].positioned_containing_block().box_id(),
+        output.root().box_id()
+    );
+}
+
+#[test]
+fn combined_flow_debug_snapshot_includes_margin_overflow_position_and_participants() {
+    let dom = doc(vec![element(
+        2,
+        "main",
+        vec![
+            ("position", "relative"),
+            ("overflow", "hidden"),
+            ("margin-left", "10px"),
+            ("width", "120px"),
+            ("height", "40px"),
+        ],
+        vec![element(
+            3,
+            "aside",
+            vec![
+                ("position", "absolute"),
+                ("overflow", "clip"),
+                ("margin-top", "6px"),
+                ("height", "20px"),
+            ],
+            Vec::new(),
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let output = crate::layout_document(crate::LayoutPhaseInput::new(
+        &styled,
+        500.0,
+        &TestMeasurer,
+        None,
+    ));
+    let main = find_layout_by_direct_node_id(output.root(), Id(2)).expect("main layout box");
+    let aside = find_layout_by_direct_node_id(output.root(), Id(3)).expect("aside layout box");
+    let snapshot = output.to_sizing_debug_snapshot();
+
+    assert!(snapshot.contains("out-of-flow-participants: 1"));
+    assert!(snapshot.contains(&format!(
+        "out-of-flow[0]: box-id=b{} kind=absolute positioned-cb=b{}",
+        aside.box_id().index(),
+        main.box_id().index()
+    )));
+    assert!(snapshot.contains("position=relative flow=in-flow"));
+    assert!(snapshot.contains("position=absolute flow=out-of-flow:absolute"));
+    assert!(snapshot.contains("overflow=policy=(inline=hidden block=hidden)"));
+    assert!(snapshot.contains("overflow=policy=(inline=clip block=clip)"));
+    assert!(snapshot.contains(
+        "margin=(block-start=0.00px inline-end=0.00px block-end=0.00px inline-start=10.00px)"
+    ));
+    assert!(snapshot.contains("clip=x=10.00 y=0.00 w=120.00 h=40.00"));
+    assert!(snapshot.contains(&format!("positioned-cb=b{}", main.box_id().index())));
 }
 
 #[test]
