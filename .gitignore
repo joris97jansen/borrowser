@@ -1,3 +1,4 @@
 /target
 /fuzz/target
 /fuzz/artifacts
+WORKFLOW.md

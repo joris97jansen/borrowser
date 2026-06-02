@@ -44,7 +44,9 @@
 //! layout and paint semantics are documented in
 //! `docs/rendering/y4-overflow-semantics-supported-subset.md`; Y5 positioned
 //! containing-block logic is documented in
-//! `docs/rendering/y5-positioned-containing-block-logic.md`.
+//! `docs/rendering/y5-positioned-containing-block-logic.md`; Y6 out-of-flow
+//! layout participation groundwork is documented in
+//! `docs/rendering/y6-out-of-flow-layout-participation-groundwork.md`.
 //! `BoxTree` is the frame-local generated box-tree structure; `LayoutBox` is
 //! the current geometry projection consumed by paint and hit testing.
 
@@ -76,8 +78,8 @@ pub use flow::{
     BlockFlowBlockPlacement, BlockFlowMarginCollapseCursor, CollapsedMargin, FlowMarginError,
     FlowMarginSide, FlowMargins, FlowParticipation, MarginAdjustedChildInline,
     MarginCollapseBoundary, MarginCollapseCase, MarginCollapseDecision, OutOfFlowKind,
-    OverflowClip, OverflowKeyword, OverflowPolicy, PositionedContainingBlockStrategy,
-    PositioningScheme, advanced_flow_contract_debug_snapshot,
+    OutOfFlowLayoutParticipant, OverflowClip, OverflowKeyword, OverflowPolicy,
+    PositionedContainingBlockStrategy, PositioningScheme, advanced_flow_contract_debug_snapshot,
 };
 pub use geometry::{Rectangle, content_height, content_x_and_width, content_y};
 pub use hit_test::{HitKind, hit_test};
