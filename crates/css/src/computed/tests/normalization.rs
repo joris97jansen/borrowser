@@ -31,6 +31,10 @@ fn computed_value_normalizes_display_keywords_to_runtime_enum() {
         normalized_value(PropertyId::Display, "display: none"),
         ComputedValue::Display(Display::None)
     );
+    assert_eq!(
+        normalized_value(PropertyId::Display, "display: flex"),
+        ComputedValue::Display(Display::Flex)
+    );
 }
 
 #[test]

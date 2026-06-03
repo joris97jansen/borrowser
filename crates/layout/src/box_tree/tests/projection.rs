@@ -1942,3 +1942,64 @@ fn layout_debug_snapshot_distinguishes_anonymous_box_sources() {
     assert!(snapshot.contains("source=dom(3) node=text(\"before\")"));
     assert!(snapshot.contains("source=dom(4) node=element(\"p\")"));
 }
+
+#[test]
+fn layout_projection_preserves_flex_container_and_item_metadata() {
+    let dom = doc(vec![element(
+        2,
+        "html",
+        Vec::new(),
+        vec![element(
+            3,
+            "body",
+            Vec::new(),
+            vec![element(
+                4,
+                "section",
+                vec![("display", "flex")],
+                vec![
+                    element(5, "div", Vec::new(), Vec::new()),
+                    element(6, "aside", vec![("position", "absolute")], Vec::new()),
+                ],
+            )],
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let output = crate::layout_document(crate::LayoutPhaseInput::new(
+        &styled,
+        500.0,
+        &TestMeasurer,
+        None,
+    ));
+
+    let section = find_layout_by_direct_node_id(output.root(), Id(4)).expect("section layout box");
+    let div = find_layout_by_direct_node_id(output.root(), Id(5)).expect("div layout box");
+    let aside = find_layout_by_direct_node_id(output.root(), Id(6)).expect("aside layout box");
+
+    assert_eq!(
+        section.display_behavior(),
+        DisplayBoxBehavior::FlexContainer
+    );
+    assert_eq!(
+        section.establishes_formatting_context(),
+        Some(FormattingContextKind::Flex)
+    );
+    assert_eq!(
+        section.flex_formatting_participation(),
+        FlexFormattingParticipation::None
+    );
+
+    assert_eq!(
+        div.flex_formatting_participation(),
+        FlexFormattingParticipation::FlexItem
+    );
+    assert_eq!(
+        aside.flex_formatting_participation(),
+        FlexFormattingParticipation::None
+    );
+
+    let snapshot = output.to_debug_snapshot();
+    assert!(snapshot.contains("behavior=flex-container"));
+    assert!(snapshot.contains("establishes-fc=flex"));
+    assert!(snapshot.contains("flex-participation=flex-item"));
+}

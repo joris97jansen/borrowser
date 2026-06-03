@@ -67,6 +67,7 @@ pub enum DisplayBoxBehavior {
     Inline,
     InlineBlock,
     ListItem,
+    FlexContainer,
     TextRun,
     ReplacedInline,
     Anonymous,
@@ -135,6 +136,7 @@ fn principal_box_for_styled_node(
                     Display::Inline => (BoxKind::Inline, DisplayBoxBehavior::Inline),
                     Display::InlineBlock => (BoxKind::InlineBlock, DisplayBoxBehavior::InlineBlock),
                     Display::ListItem => (BoxKind::Block, DisplayBoxBehavior::ListItem),
+                    Display::Flex => (BoxKind::Block, DisplayBoxBehavior::FlexContainer),
                     Display::None => unreachable!("display:none is suppressed before box creation"),
                 }
             }

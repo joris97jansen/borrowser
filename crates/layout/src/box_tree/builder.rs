@@ -1,7 +1,7 @@
 //! Styled-tree to generated box-tree construction.
 
 use crate::{
-    BoxKind, ListMarker, PositionedContainingBlockStrategy, PositioningScheme,
+    BoxKind, FlowParticipation, ListMarker, PositionedContainingBlockStrategy, PositioningScheme,
     ReplacedElementInfoProvider, ReplacedKind, classify_replaced_kind,
 };
 use css::{Display, StyledNode};
@@ -12,10 +12,11 @@ use super::display::{
     display_box_generation, principal_participates_inline,
 };
 use super::formatting::{
-    BlockFormattingParticipation, FormattingContextKind, InlineFormattingParticipation,
-    principal_block_formatting_participation, principal_establishes_containing_block,
-    principal_establishes_formatting_context, principal_establishes_inline_formatting_context,
-    principal_inline_formatting_participation, principal_participates_in_inline_formatting_context,
+    BlockFormattingParticipation, FlexFormattingParticipation, FormattingContextKind,
+    InlineFormattingParticipation, principal_block_formatting_participation,
+    principal_establishes_containing_block, principal_establishes_formatting_context,
+    principal_establishes_inline_formatting_context, principal_inline_formatting_participation,
+    principal_participates_in_inline_formatting_context,
 };
 use super::ids::{
     BoxId, ContainingBlockId, FormattingContextId, InlineFormattingContextId,
@@ -190,6 +191,7 @@ impl<'style_tree, 'dom> BoxTreeBuilder<'style_tree, 'dom> {
         let id = BoxId(self.nodes.len());
         let containing_block = self.containing_block_for_child(parent);
         let positioning_scheme = PositioningScheme::from_css_position(styled.style.position());
+        let flow_participation = positioning_scheme.flow_participation();
         let positioned_containing_block = self.positioned_containing_block_for_child(
             parent,
             containing_block,
@@ -211,7 +213,7 @@ impl<'style_tree, 'dom> BoxTreeBuilder<'style_tree, 'dom> {
             containing_block,
             establishes_containing_block: principal_establishes_containing_block(principal),
             positioning_scheme,
-            flow_participation: positioning_scheme.flow_participation(),
+            flow_participation,
             positioned_containing_block,
             establishes_positioned_containing_block,
             formatting_context: self.formatting_context_for_child(parent),
@@ -219,6 +221,8 @@ impl<'style_tree, 'dom> BoxTreeBuilder<'style_tree, 'dom> {
                 principal, styled,
             ),
             block_formatting_participation: principal_block_formatting_participation(principal),
+            flex_formatting_participation: self
+                .flex_formatting_participation_for_child(parent, flow_participation),
             inline_formatting_context: self.inline_formatting_context_for_child(parent, principal),
             establishes_inline_formatting_context: principal_establishes_inline_formatting_context(
                 principal, styled,
@@ -239,6 +243,7 @@ impl<'style_tree, 'dom> BoxTreeBuilder<'style_tree, 'dom> {
         let id = BoxId(self.nodes.len());
         let containing_block = self.containing_block_for_child(Some(parent));
         let positioning_scheme = PositioningScheme::Static;
+        let flow_participation = positioning_scheme.flow_participation();
         let positioned_containing_block = self.positioned_containing_block_for_child(
             Some(parent),
             containing_block,
@@ -260,12 +265,14 @@ impl<'style_tree, 'dom> BoxTreeBuilder<'style_tree, 'dom> {
             containing_block,
             establishes_containing_block: true,
             positioning_scheme,
-            flow_participation: positioning_scheme.flow_participation(),
+            flow_participation,
             positioned_containing_block,
             establishes_positioned_containing_block: false,
             formatting_context: self.formatting_context_for_child(Some(parent)),
             establishes_formatting_context: None,
             block_formatting_participation: BlockFormattingParticipation::BlockLevel,
+            flex_formatting_participation: self
+                .flex_formatting_participation_for_child(Some(parent), flow_participation),
             inline_formatting_context: None,
             establishes_inline_formatting_context: true,
             inline_formatting_participation: InlineFormattingParticipation::None,
@@ -298,6 +305,7 @@ impl<'style_tree, 'dom> BoxTreeBuilder<'style_tree, 'dom> {
             formatting_context: None,
             establishes_formatting_context: Some(FormattingContextKind::Block),
             block_formatting_participation: BlockFormattingParticipation::Root,
+            flex_formatting_participation: FlexFormattingParticipation::None,
             inline_formatting_context: None,
             establishes_inline_formatting_context: false,
             inline_formatting_participation: InlineFormattingParticipation::None,
@@ -375,6 +383,26 @@ impl<'style_tree, 'dom> BoxTreeBuilder<'style_tree, 'dom> {
             Some(FormattingContextId(parent))
         } else {
             parent_node.formatting_context()
+        }
+    }
+
+    fn flex_formatting_participation_for_child(
+        &self,
+        parent: Option<BoxId>,
+        flow_participation: FlowParticipation,
+    ) -> FlexFormattingParticipation {
+        let Some(parent) = parent else {
+            return FlexFormattingParticipation::None;
+        };
+
+        if self.node(parent).display_behavior() != DisplayBoxBehavior::FlexContainer {
+            return FlexFormattingParticipation::None;
+        }
+
+        if flow_participation.contributes_to_parent_flow() {
+            FlexFormattingParticipation::FlexItem
+        } else {
+            FlexFormattingParticipation::None
         }
     }
 

@@ -18,7 +18,8 @@ pub use display::{
     DisplayBoxGeneration, PrincipalBox,
 };
 pub use formatting::{
-    BlockFormattingParticipation, FormattingContextKind, InlineFormattingParticipation,
+    BlockFormattingParticipation, FlexFormattingParticipation, FormattingContextKind,
+    InlineFormattingParticipation,
 };
 pub use ids::{
     BoxId, ContainingBlockId, FormattingContextId, InlineFormattingContextId,

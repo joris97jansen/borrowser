@@ -80,6 +80,7 @@ fn layout_box_from_generated_tree<'style_tree, 'dom>(
     LayoutBox {
         box_id: box_node.id(),
         kind: box_node.kind(),
+        display_behavior: box_node.display_behavior(),
         style: box_node.style(),
         source,
         node: styled,
@@ -94,6 +95,7 @@ fn layout_box_from_generated_tree<'style_tree, 'dom>(
         formatting_context: box_node.formatting_context(),
         establishes_formatting_context: box_node.establishes_formatting_context(),
         block_formatting_participation: box_node.block_formatting_participation(),
+        flex_formatting_participation: box_node.flex_formatting_participation(),
         inline_formatting_context: box_node.inline_formatting_context(),
         establishes_inline_formatting_context: box_node.establishes_inline_formatting_context(),
         inline_formatting_participation: box_node.inline_formatting_participation(),

@@ -13,6 +13,8 @@ use super::display::{
 pub enum FormattingContextKind {
     /// Borrowser's W6 normal-flow block formatting scope.
     Block,
+    /// Borrowser's Z2 flex formatting scope.
+    Flex,
 }
 
 /// How a generated box participates in the current block-flow model.
@@ -43,12 +45,22 @@ pub enum InlineFormattingParticipation {
     AtomicInline,
 }
 
+/// How a generated box participates in a flex formatting context.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FlexFormattingParticipation {
+    /// The box is not a flex item.
+    None,
+    /// Direct generated in-flow child of a flex container.
+    FlexItem,
+}
+
 pub(super) fn principal_establishes_containing_block(principal: PrincipalBox) -> bool {
     matches!(
         principal.behavior(),
         DisplayBoxBehavior::DocumentRoot
             | DisplayBoxBehavior::DocumentElement
             | DisplayBoxBehavior::Block
+            | DisplayBoxBehavior::FlexContainer
             | DisplayBoxBehavior::InlineBlock
             | DisplayBoxBehavior::ListItem
             | DisplayBoxBehavior::Anonymous
@@ -60,6 +72,7 @@ pub(super) fn principal_establishes_formatting_context(
     styled: &StyledNode<'_>,
 ) -> Option<FormattingContextKind> {
     match principal.behavior() {
+        DisplayBoxBehavior::FlexContainer => Some(FormattingContextKind::Flex),
         DisplayBoxBehavior::DocumentRoot
         | DisplayBoxBehavior::DocumentElement
         | DisplayBoxBehavior::InlineBlock => Some(FormattingContextKind::Block),
@@ -90,6 +103,7 @@ pub(super) fn principal_block_formatting_participation(
         DisplayBoxBehavior::DocumentRoot => BlockFormattingParticipation::Root,
         DisplayBoxBehavior::DocumentElement
         | DisplayBoxBehavior::Block
+        | DisplayBoxBehavior::FlexContainer
         | DisplayBoxBehavior::ListItem
         | DisplayBoxBehavior::Anonymous => BlockFormattingParticipation::BlockLevel,
         DisplayBoxBehavior::Inline | DisplayBoxBehavior::TextRun => {
@@ -116,6 +130,7 @@ pub(super) fn principal_establishes_inline_formatting_context(
             styled_children_form_direct_inline_formatting_context(styled, principal.role())
         }
         DisplayBoxBehavior::DocumentRoot
+        | DisplayBoxBehavior::FlexContainer
         | DisplayBoxBehavior::Inline
         | DisplayBoxBehavior::TextRun
         | DisplayBoxBehavior::ReplacedInline
@@ -136,6 +151,7 @@ pub(super) fn principal_inline_formatting_participation(
         DisplayBoxBehavior::DocumentRoot
         | DisplayBoxBehavior::DocumentElement
         | DisplayBoxBehavior::Block
+        | DisplayBoxBehavior::FlexContainer
         | DisplayBoxBehavior::ListItem
         | DisplayBoxBehavior::Anonymous
         | DisplayBoxBehavior::Marker => InlineFormattingParticipation::None,

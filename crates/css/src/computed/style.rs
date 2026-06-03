@@ -312,6 +312,7 @@ fn display_debug_label(display: Display) -> &'static str {
         Display::Inline => "inline",
         Display::InlineBlock => "inline-block",
         Display::ListItem => "list-item",
+        Display::Flex => "flex",
         Display::None => "none",
     }
 }

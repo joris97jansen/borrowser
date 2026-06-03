@@ -50,7 +50,11 @@
 //! deterministic advanced-flow debug regressions are documented in
 //! `docs/rendering/y8-deterministic-advanced-flow-debug-regressions.md`; Y9
 //! Milestone Y close-out invariants and extension points are documented in
-//! `docs/rendering/y9-advanced-flow-invariants-extension-points.md`.
+//! `docs/rendering/y9-advanced-flow-invariants-extension-points.md`; Z1 flex
+//! layout architecture is documented in
+//! `docs/rendering/z1-flex-layout-architecture-contract.md`; Z2 flex box-tree
+//! structure is documented in
+//! `docs/rendering/z2-flex-box-tree-structure.md`.
 //! `BoxTree` is the frame-local generated box-tree structure; `LayoutBox` is
 //! the current geometry projection consumed by paint and hit testing.
 
@@ -74,8 +78,9 @@ pub use box_kind::{BoxKind, ListMarker};
 pub use box_tree::{
     AnonymousBoxKind, BlockFormattingParticipation, BoxGenerationRole, BoxId, BoxNode, BoxSource,
     BoxSuppressionReason, BoxTree, ContainingBlockId, DisplayBoxBehavior, DisplayBoxGeneration,
-    FormattingContextId, FormattingContextKind, InlineFormattingContextId,
-    InlineFormattingParticipation, PositionedContainingBlockId, PrincipalBox,
+    FlexFormattingParticipation, FormattingContextId, FormattingContextKind,
+    InlineFormattingContextId, InlineFormattingParticipation, PositionedContainingBlockId,
+    PrincipalBox,
 };
 pub use document::{layout_block_tree, layout_document};
 pub use flow::{

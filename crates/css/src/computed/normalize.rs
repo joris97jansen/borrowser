@@ -44,6 +44,7 @@ pub(super) fn normalize_display(display: SpecifiedDisplayKeyword) -> Display {
         SpecifiedDisplayKeyword::Inline => Display::Inline,
         SpecifiedDisplayKeyword::InlineBlock => Display::InlineBlock,
         SpecifiedDisplayKeyword::ListItem => Display::ListItem,
+        SpecifiedDisplayKeyword::Flex => Display::Flex,
         SpecifiedDisplayKeyword::None => Display::None,
     }
 }
