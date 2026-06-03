@@ -21,6 +21,7 @@ Related documents:
 - `docs/rendering/x8-flow-correctness-varied-sizing.md`
 - `docs/rendering/x9-deterministic-sizing-debug-regressions.md`
 - `docs/rendering/w9-box-tree-invariants-extension-hooks.md`
+- `docs/rendering/z1-flex-layout-architecture-contract.md`
 
 Related code:
 
