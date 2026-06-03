@@ -3,10 +3,11 @@ use html::internal::Id;
 
 use crate::{
     BlockFlowBlockPlacement, BlockFormattingParticipation, BoxId, BoxKind, BoxSource,
-    ContainingBlockId, FlowMargins, FlowParticipation, FormattingContextId, FormattingContextKind,
-    InlineFormattingContextId, InlineFormattingParticipation, ListMarker, OverflowClip,
-    OverflowKeyword, OverflowPolicy, PositionedContainingBlockId, PositioningScheme, Rectangle,
-    ReplacedKind, UsedContentSize, replaced::intrinsic::IntrinsicSize,
+    ContainingBlockId, DisplayBoxBehavior, FlexFormattingParticipation, FlowMargins,
+    FlowParticipation, FormattingContextId, FormattingContextKind, InlineFormattingContextId,
+    InlineFormattingParticipation, ListMarker, OverflowClip, OverflowKeyword, OverflowPolicy,
+    PositionedContainingBlockId, PositioningScheme, Rectangle, ReplacedKind, UsedContentSize,
+    replaced::intrinsic::IntrinsicSize,
 };
 
 /// A geometry projection of one generated box-tree node.
@@ -18,6 +19,7 @@ use crate::{
 pub struct LayoutBox<'style_tree, 'dom> {
     pub box_id: BoxId,
     pub kind: BoxKind,
+    pub display_behavior: DisplayBoxBehavior,
     pub style: &'style_tree ComputedStyle,
     pub source: BoxSource<'style_tree, 'dom>,
     pub node: &'style_tree StyledNode<'dom>,
@@ -32,6 +34,7 @@ pub struct LayoutBox<'style_tree, 'dom> {
     pub formatting_context: Option<FormattingContextId>,
     pub establishes_formatting_context: Option<FormattingContextKind>,
     pub block_formatting_participation: BlockFormattingParticipation,
+    pub flex_formatting_participation: FlexFormattingParticipation,
     pub inline_formatting_context: Option<InlineFormattingContextId>,
     pub establishes_inline_formatting_context: bool,
     pub inline_formatting_participation: InlineFormattingParticipation,
@@ -60,6 +63,10 @@ impl<'style_tree, 'dom> LayoutBox<'style_tree, 'dom> {
 
     pub fn direct_node_id(&self) -> Option<Id> {
         self.source.direct_node_id()
+    }
+
+    pub fn display_behavior(&self) -> DisplayBoxBehavior {
+        self.display_behavior
     }
 
     pub fn containing_block(&self) -> Option<ContainingBlockId> {
@@ -96,6 +103,10 @@ impl<'style_tree, 'dom> LayoutBox<'style_tree, 'dom> {
 
     pub fn block_formatting_participation(&self) -> BlockFormattingParticipation {
         self.block_formatting_participation
+    }
+
+    pub fn flex_formatting_participation(&self) -> FlexFormattingParticipation {
+        self.flex_formatting_participation
     }
 
     pub fn inline_formatting_context(&self) -> Option<InlineFormattingContextId> {

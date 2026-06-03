@@ -22,6 +22,7 @@ fn supported_display_values_map_to_principal_box_behavior() {
                 element(7, "li", vec![("display", "list-item")], Vec::new()),
                 element(8, "span", vec![("display", "none")], Vec::new()),
                 element(9, "input", vec![("display", "inline-block")], Vec::new()),
+                element(10, "section", vec![("display", "flex")], Vec::new()),
             ],
         )],
     )]);
@@ -71,6 +72,11 @@ fn supported_display_values_map_to_principal_box_behavior() {
     assert_eq!(input.display(), Display::InlineBlock);
     assert_eq!(input.display_behavior(), DisplayBoxBehavior::ReplacedInline);
     assert_eq!(input.replaced(), Some(ReplacedKind::InputText));
+
+    let flex = box_by_node_id(&tree, Id(10));
+    assert_eq!(flex.kind(), BoxKind::Block);
+    assert_eq!(flex.display(), Display::Flex);
+    assert_eq!(flex.display_behavior(), DisplayBoxBehavior::FlexContainer);
 }
 
 #[test]
@@ -83,7 +89,7 @@ fn unsupported_display_keywords_do_not_reach_box_generation_as_deferred_modes() 
             3,
             "body",
             Vec::new(),
-            vec![element(4, "span", vec![("display", "flex")], Vec::new())],
+            vec![element(4, "span", vec![("display", "grid")], Vec::new())],
         )],
     )]);
     let styled = css::build_style_tree(&dom, None);

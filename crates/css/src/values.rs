@@ -51,6 +51,7 @@ pub enum Display {
     Inline,
     InlineBlock,
     ListItem,
+    Flex,
     None,
 }
 
@@ -138,6 +139,7 @@ pub fn parse_display(value: &str) -> Option<Display> {
         "inline" => Some(Display::Inline),
         "inline-block" => Some(Display::InlineBlock),
         "list-item" => Some(Display::ListItem),
+        "flex" => Some(Display::Flex),
         "none" => Some(Display::None),
         _ => None, // unknown / unsupported → ignored
     }

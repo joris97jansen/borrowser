@@ -22,6 +22,7 @@ pub(super) fn parse_display(
         "inline" => SpecifiedDisplayKeyword::Inline,
         "inline-block" => SpecifiedDisplayKeyword::InlineBlock,
         "list-item" => SpecifiedDisplayKeyword::ListItem,
+        "flex" => SpecifiedDisplayKeyword::Flex,
         "none" => SpecifiedDisplayKeyword::None,
         _ => {
             return Err(error(

@@ -545,3 +545,129 @@ fn inline_block_with_mixed_children_does_not_claim_direct_inline_formatting_cont
         InlineFormattingParticipation::TextRun
     );
 }
+
+#[test]
+fn flex_container_establishes_flex_context_and_marks_direct_in_flow_children_as_items() {
+    let dom = doc(vec![element(
+        2,
+        "html",
+        Vec::new(),
+        vec![element(
+            3,
+            "body",
+            Vec::new(),
+            vec![element(
+                4,
+                "section",
+                vec![("display", "flex")],
+                vec![
+                    element(5, "div", Vec::new(), Vec::new()),
+                    element(6, "aside", vec![("position", "absolute")], Vec::new()),
+                    element(
+                        7,
+                        "article",
+                        vec![("display", "flex")],
+                        vec![element(8, "p", Vec::new(), Vec::new())],
+                    ),
+                ],
+            )],
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let tree = BoxTree::generate(&styled, None);
+
+    let section = box_by_node_id(&tree, Id(4));
+    let div = box_by_node_id(&tree, Id(5));
+    let aside = box_by_node_id(&tree, Id(6));
+    let article = box_by_node_id(&tree, Id(7));
+    let p = box_by_node_id(&tree, Id(8));
+
+    assert_eq!(
+        section.display_behavior(),
+        DisplayBoxBehavior::FlexContainer
+    );
+    assert_eq!(
+        section.establishes_formatting_context(),
+        Some(FormattingContextKind::Flex)
+    );
+    assert_eq!(
+        section.block_formatting_participation(),
+        BlockFormattingParticipation::BlockLevel
+    );
+    assert_eq!(
+        section.flex_formatting_participation(),
+        FlexFormattingParticipation::None
+    );
+
+    assert_eq!(formatting_context_box_id(div), Some(section.id()));
+    assert_eq!(
+        div.flex_formatting_participation(),
+        FlexFormattingParticipation::FlexItem
+    );
+
+    assert_eq!(formatting_context_box_id(aside), Some(section.id()));
+    assert_eq!(
+        aside.flex_formatting_participation(),
+        FlexFormattingParticipation::None
+    );
+    assert_eq!(
+        aside.flow_participation(),
+        FlowParticipation::OutOfFlow(OutOfFlowKind::AbsolutelyPositioned)
+    );
+
+    assert_eq!(
+        article.flex_formatting_participation(),
+        FlexFormattingParticipation::FlexItem
+    );
+    assert_eq!(
+        article.establishes_formatting_context(),
+        Some(FormattingContextKind::Flex)
+    );
+
+    assert_eq!(formatting_context_box_id(p), Some(article.id()));
+    assert_eq!(
+        p.flex_formatting_participation(),
+        FlexFormattingParticipation::FlexItem
+    );
+}
+
+#[test]
+fn flex_container_marks_direct_inline_child_as_flex_item_without_establishing_inline_context() {
+    let dom = doc(vec![element(
+        2,
+        "html",
+        Vec::new(),
+        vec![element(
+            3,
+            "body",
+            Vec::new(),
+            vec![element(
+                4,
+                "section",
+                vec![("display", "flex")],
+                vec![element(5, "span", Vec::new(), Vec::new())],
+            )],
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let tree = BoxTree::generate(&styled, None);
+
+    let section = box_by_node_id(&tree, Id(4));
+    let span = box_by_node_id(&tree, Id(5));
+
+    assert_eq!(
+        section.display_behavior(),
+        DisplayBoxBehavior::FlexContainer
+    );
+    assert_eq!(
+        section.establishes_formatting_context(),
+        Some(FormattingContextKind::Flex)
+    );
+    assert!(!section.establishes_inline_formatting_context());
+
+    assert_eq!(
+        span.flex_formatting_participation(),
+        FlexFormattingParticipation::FlexItem
+    );
+    assert_eq!(inline_formatting_context_box_id(span), None);
+}

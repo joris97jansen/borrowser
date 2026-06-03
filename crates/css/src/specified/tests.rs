@@ -64,6 +64,13 @@ fn parses_representative_property_aware_specified_values() {
     assert_eq!(display.keyword(), SpecifiedDisplayKeyword::InlineBlock);
     assert_eq!(display.to_css_text(), "inline-block");
 
+    let display_flex = parse(PropertyId::Display, "display: FLEX");
+    let SpecifiedValue::Display(display_flex) = display_flex.value() else {
+        panic!("expected display");
+    };
+    assert_eq!(display_flex.keyword(), SpecifiedDisplayKeyword::Flex);
+    assert_eq!(display_flex.to_css_text(), "flex");
+
     let margin = parse(PropertyId::MarginLeft, "margin-left: -4.5px");
     let SpecifiedValue::Length(length) = margin.value() else {
         panic!("expected length");

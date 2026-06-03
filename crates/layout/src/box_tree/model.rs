@@ -11,7 +11,8 @@ use std::fmt;
 
 use super::display::{BoxGenerationRole, DisplayBoxBehavior};
 use super::formatting::{
-    BlockFormattingParticipation, FormattingContextKind, InlineFormattingParticipation,
+    BlockFormattingParticipation, FlexFormattingParticipation, FormattingContextKind,
+    InlineFormattingParticipation,
 };
 use super::ids::{
     BoxId, ContainingBlockId, FormattingContextId, InlineFormattingContextId,
@@ -39,6 +40,7 @@ pub struct BoxNode<'style_tree, 'dom> {
     pub(super) formatting_context: Option<FormattingContextId>,
     pub(super) establishes_formatting_context: Option<FormattingContextKind>,
     pub(super) block_formatting_participation: BlockFormattingParticipation,
+    pub(super) flex_formatting_participation: FlexFormattingParticipation,
     pub(super) inline_formatting_context: Option<InlineFormattingContextId>,
     pub(super) establishes_inline_formatting_context: bool,
     pub(super) inline_formatting_participation: InlineFormattingParticipation,
@@ -81,6 +83,10 @@ impl fmt::Debug for BoxNode<'_, '_> {
             .field(
                 "block_formatting_participation",
                 &self.block_formatting_participation,
+            )
+            .field(
+                "flex_formatting_participation",
+                &self.flex_formatting_participation,
             )
             .field("inline_formatting_context", &self.inline_formatting_context)
             .field(
@@ -169,6 +175,10 @@ impl<'style_tree, 'dom> BoxNode<'style_tree, 'dom> {
 
     pub fn block_formatting_participation(&self) -> BlockFormattingParticipation {
         self.block_formatting_participation
+    }
+
+    pub fn flex_formatting_participation(&self) -> FlexFormattingParticipation {
+        self.flex_formatting_participation
     }
 
     pub fn inline_formatting_context(&self) -> Option<InlineFormattingContextId> {

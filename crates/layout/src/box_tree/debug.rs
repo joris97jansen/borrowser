@@ -10,7 +10,8 @@ use std::fmt::Write;
 
 use super::display::{AnonymousBoxKind, BoxGenerationRole, DisplayBoxBehavior};
 use super::formatting::{
-    BlockFormattingParticipation, FormattingContextKind, InlineFormattingParticipation,
+    BlockFormattingParticipation, FlexFormattingParticipation, FormattingContextKind,
+    InlineFormattingParticipation,
 };
 use super::ids::{
     BoxId, ContainingBlockId, FormattingContextId, InlineFormattingContextId,
@@ -37,7 +38,7 @@ fn append_box_node_snapshot(out: &mut String, tree: &BoxTree<'_, '_>, id: BoxId,
     let indent = "  ".repeat(depth);
     writeln!(
         out,
-        "{indent}{}: parent={} cb={} establishes-cb={} position={} flow={} positioned-cb={} establishes-positioned-cb={} fc={} establishes-fc={} block-participation={} ifc={} establishes-ifc={} inline-participation={} source-id={} source={} role={} kind={} display={} behavior={} children={} marker={} replaced={} intrinsic={}",
+        "{indent}{}: parent={} cb={} establishes-cb={} position={} flow={} positioned-cb={} establishes-positioned-cb={} fc={} establishes-fc={} block-participation={} flex-participation={} ifc={} establishes-ifc={} inline-participation={} source-id={} source={} role={} kind={} display={} behavior={} children={} marker={} replaced={} intrinsic={}",
         box_id_debug_label(node.id),
         optional_box_id_debug_label(node.parent),
         optional_containing_block_id_debug_label(node.containing_block),
@@ -49,6 +50,7 @@ fn append_box_node_snapshot(out: &mut String, tree: &BoxTree<'_, '_>, id: BoxId,
         optional_formatting_context_id_debug_label(node.formatting_context),
         optional_formatting_context_kind_debug_label(node.establishes_formatting_context),
         block_formatting_participation_debug_label(node.block_formatting_participation),
+        flex_formatting_participation_debug_label(node.flex_formatting_participation),
         optional_inline_formatting_context_id_debug_label(node.inline_formatting_context),
         bool_debug_label(node.establishes_inline_formatting_context),
         inline_formatting_participation_debug_label(node.inline_formatting_participation),
@@ -109,6 +111,7 @@ fn optional_formatting_context_kind_debug_label(
 ) -> &'static str {
     match kind {
         Some(FormattingContextKind::Block) => "block",
+        Some(FormattingContextKind::Flex) => "flex",
         None => "none",
     }
 }
@@ -122,6 +125,15 @@ fn block_formatting_participation_debug_label(
         BlockFormattingParticipation::InlineLevel => "inline-level",
         BlockFormattingParticipation::AtomicInline => "atomic-inline",
         BlockFormattingParticipation::None => "none",
+    }
+}
+
+fn flex_formatting_participation_debug_label(
+    participation: FlexFormattingParticipation,
+) -> &'static str {
+    match participation {
+        FlexFormattingParticipation::None => "none",
+        FlexFormattingParticipation::FlexItem => "flex-item",
     }
 }
 
@@ -182,6 +194,7 @@ fn display_debug_label(display: Display) -> &'static str {
         Display::Inline => "inline",
         Display::InlineBlock => "inline-block",
         Display::ListItem => "list-item",
+        Display::Flex => "flex",
         Display::None => "none",
     }
 }
@@ -194,6 +207,7 @@ fn display_behavior_debug_label(behavior: DisplayBoxBehavior) -> &'static str {
         DisplayBoxBehavior::Inline => "inline",
         DisplayBoxBehavior::InlineBlock => "inline-block",
         DisplayBoxBehavior::ListItem => "list-item",
+        DisplayBoxBehavior::FlexContainer => "flex-container",
         DisplayBoxBehavior::TextRun => "text-run",
         DisplayBoxBehavior::ReplacedInline => "replaced-inline",
         DisplayBoxBehavior::Anonymous => "anonymous",

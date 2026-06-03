@@ -94,6 +94,7 @@ pub(super) fn display_keyword(display: Display) -> &'static str {
         Display::Inline => "inline",
         Display::InlineBlock => "inline-block",
         Display::ListItem => "list-item",
+        Display::Flex => "flex",
         Display::None => "none",
     }
 }

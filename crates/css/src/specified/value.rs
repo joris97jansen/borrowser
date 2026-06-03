@@ -215,6 +215,7 @@ pub enum SpecifiedDisplayKeyword {
     Inline,
     InlineBlock,
     ListItem,
+    Flex,
     None,
 }
 
@@ -225,6 +226,7 @@ impl SpecifiedDisplayKeyword {
             Self::Inline => "inline",
             Self::InlineBlock => "inline-block",
             Self::ListItem => "list-item",
+            Self::Flex => "flex",
             Self::None => "none",
         }
     }

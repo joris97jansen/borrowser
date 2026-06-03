@@ -5,10 +5,11 @@ use html::Node;
 
 use crate::{
     AnonymousBoxKind, BlockFormattingParticipation, BoxId, BoxKind, BoxSource, ContainingBlockId,
-    FlowParticipation, FormattingContextId, FormattingContextKind, InlineFormattingContextId,
-    InlineFormattingParticipation, LayoutBox, LayoutPhaseInput, LayoutPhaseOutput, ListMarker,
-    PositionedContainingBlockId, PositioningScheme, Rectangle, ReplacedKind,
-    replaced::intrinsic::IntrinsicSize, sizing::used_content_size_debug_label,
+    DisplayBoxBehavior, FlexFormattingParticipation, FlowParticipation, FormattingContextId,
+    FormattingContextKind, InlineFormattingContextId, InlineFormattingParticipation, LayoutBox,
+    LayoutPhaseInput, LayoutPhaseOutput, ListMarker, PositionedContainingBlockId,
+    PositioningScheme, Rectangle, ReplacedKind, replaced::intrinsic::IntrinsicSize,
+    sizing::used_content_size_debug_label,
 };
 
 impl<'style_tree, 'dom, 'runtime> LayoutPhaseInput<'style_tree, 'dom, 'runtime> {
@@ -183,14 +184,18 @@ fn append_layout_box_snapshot(
     depth: usize,
 ) -> usize {
     let indent = "  ".repeat(depth);
+    let behavior = flex_display_behavior_debug_label(layout);
+    let flex_participation =
+        flex_formatting_participation_debug_label(layout.flex_formatting_participation());
     writeln!(
         out,
-        "{indent}box[{index}]: box-id={} anchor-id={} source={} node={} kind={} cb={} establishes-cb={} position={} flow={} positioned-cb={} establishes-positioned-cb={} fc={} establishes-fc={} block-participation={} ifc={} establishes-ifc={} inline-participation={} rect={} overflow={} children={} marker={} replaced={} intrinsic={} style={}",
+        "{indent}box[{index}]: box-id={} anchor-id={} source={} node={} kind={}{} cb={} establishes-cb={} position={} flow={} positioned-cb={} establishes-positioned-cb={} fc={} establishes-fc={} block-participation={}{} ifc={} establishes-ifc={} inline-participation={} rect={} overflow={} children={} marker={} replaced={} intrinsic={} style={}",
         box_id_debug_label(layout.box_id()),
         layout.node_id().0,
         layout_box_source_debug_label(layout.source),
         node_debug_label(layout.node.node),
         box_kind_debug_label(layout.kind),
+        behavior,
         optional_containing_block_id_debug_label(layout.containing_block()),
         bool_debug_label(layout.establishes_containing_block()),
         positioning_scheme_debug_label(layout.positioning_scheme()),
@@ -200,6 +205,7 @@ fn append_layout_box_snapshot(
         optional_formatting_context_id_debug_label(layout.formatting_context()),
         optional_formatting_context_kind_debug_label(layout.establishes_formatting_context()),
         block_formatting_participation_debug_label(layout.block_formatting_participation()),
+        flex_participation,
         optional_inline_formatting_context_id_debug_label(layout.inline_formatting_context()),
         bool_debug_label(layout.establishes_inline_formatting_context()),
         inline_formatting_participation_debug_label(layout.inline_formatting_participation()),
@@ -347,6 +353,7 @@ fn optional_formatting_context_kind_debug_label(
 ) -> &'static str {
     match kind {
         Some(FormattingContextKind::Block) => "block",
+        Some(FormattingContextKind::Flex) => "flex",
         None => "none",
     }
 }
@@ -360,6 +367,13 @@ fn block_formatting_participation_debug_label(
         BlockFormattingParticipation::InlineLevel => "inline-level",
         BlockFormattingParticipation::AtomicInline => "atomic-inline",
         BlockFormattingParticipation::None => "none",
+    }
+}
+
+fn flex_formatting_participation_debug_label(participation: FlexFormattingParticipation) -> String {
+    match participation {
+        FlexFormattingParticipation::None => String::new(),
+        FlexFormattingParticipation::FlexItem => " flex-participation=flex-item".to_string(),
     }
 }
 
@@ -421,6 +435,13 @@ pub(crate) fn box_kind_debug_label(kind: BoxKind) -> &'static str {
         BoxKind::Inline => "inline",
         BoxKind::InlineBlock => "inline-block",
         BoxKind::ReplacedInline => "replaced-inline",
+    }
+}
+
+fn flex_display_behavior_debug_label(layout: &LayoutBox<'_, '_>) -> &'static str {
+    match layout.display_behavior() {
+        DisplayBoxBehavior::FlexContainer => " behavior=flex-container",
+        _ => "",
     }
 }
 
