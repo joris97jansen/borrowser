@@ -41,6 +41,7 @@ Related documents:
 - `docs/rendering/x1-sizing-architecture-flow-correctness-contract.md`
 - `docs/rendering/x8-flow-correctness-varied-sizing.md`
 - `docs/rendering/x10-sizing-invariants-extension-hooks.md`
+- `docs/rendering/z1-flex-layout-architecture-contract.md`
 
 ## Purpose
 
