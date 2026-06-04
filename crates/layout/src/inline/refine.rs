@@ -3,9 +3,11 @@ use html::Node;
 
 use crate::{
     AvailableSize, AvailableSpace, BlockFlowMarginCollapseCursor, BlockFormattingParticipation,
-    BoxKind, ConstraintSpace, ContainingSize, CssPx, IntrinsicSizes, LayoutBox,
+    BoxKind, ConstraintSpace, ContainingSize, CssPx, DisplayBoxBehavior,
+    FlexFormattingParticipation, FlexItemMainAxisInput, IntrinsicSizes, LayoutBox,
     NormalFlowSizingMode, Rectangle, ResolvedAxisSize, SignedCssPx, SizeResolutionInput,
     SizeResolutionReason, StyleSizeInputs, TextMeasurer, UsedAxisSize, UsedContentSize,
+    resolve_flex_distributed_inline_size, resolve_flex_main_axis_layout,
     resolve_normal_flow_block_size, resolve_normal_flow_inline_size,
 };
 
@@ -37,7 +39,7 @@ pub fn refine_layout_with_inline<'style_tree, 'dom>(
     let y = layout_root.rect.y;
     let width = layout_root.rect.width;
 
-    let new_height = recompute_block_heights(measurer, layout_root, x, y, width, width);
+    let new_height = recompute_block_heights(measurer, layout_root, x, y, width, width, None);
     layout_root.rect.height = new_height;
 }
 
@@ -48,6 +50,7 @@ fn recompute_block_heights<'style_tree, 'dom>(
     y: f32,
     containing_width: f32,
     available_width: f32,
+    forced_inline_size: Option<ResolvedAxisSize>,
 ) -> f32 {
     // Position & width are authoritative here
     node.rect.x = x;
@@ -63,7 +66,8 @@ fn recompute_block_heights<'style_tree, 'dom>(
     let mode = normal_flow_sizing_mode(node);
     let sizing_input =
         size_resolution_input_for_layout_box(measurer, node, containing_width, available_width);
-    let inline_size = resolve_normal_flow_inline_size(sizing_input, mode);
+    let inline_size =
+        forced_inline_size.unwrap_or_else(|| resolve_normal_flow_inline_size(sizing_input, mode));
     let used_width = inline_size.border().get();
     node.rect.width = used_width;
 
@@ -95,6 +99,7 @@ fn recompute_block_heights<'style_tree, 'dom>(
                     placement.border_block_start().get(),
                     child_inline.containing_width,
                     child_inline.available_width,
+                    None,
                 );
 
                 block_cursor.finish_in_flow_block(
@@ -144,6 +149,16 @@ fn recompute_block_heights<'style_tree, 'dom>(
             // Content box top (used as the baseline for inline layout)
             let content_top = content_box.block_start.get();
 
+            if matches!(node.display_behavior(), DisplayBoxBehavior::FlexContainer) {
+                return layout_flex_container(
+                    measurer,
+                    node,
+                    sizing_input,
+                    inline_size,
+                    content_box,
+                );
+            }
+
             // 1) Layout inline-block children so we know their sizes.
             size_replaced_inline_children(measurer, node, content_x, content_top, content_width);
 
@@ -164,6 +179,7 @@ fn recompute_block_heights<'style_tree, 'dom>(
                             child_y,
                             child_inline.containing_width,
                             child_inline.available_width,
+                            None,
                         );
                     }
                 }
@@ -234,6 +250,7 @@ fn recompute_block_heights<'style_tree, 'dom>(
                     placement.border_block_start().get(),
                     child_inline.containing_width,
                     child_inline.available_width,
+                    None,
                 );
 
                 block_cursor.finish_in_flow_block(
@@ -255,6 +272,124 @@ fn recompute_block_heights<'style_tree, 'dom>(
             "text and comment boxes do not independently resolve normal-flow used sizes"
         ),
     }
+}
+
+fn layout_flex_container<'style_tree, 'dom>(
+    measurer: &dyn TextMeasurer,
+    node: &mut LayoutBox<'style_tree, 'dom>,
+    sizing_input: SizeResolutionInput,
+    inline_size: ResolvedAxisSize,
+    content_box: FlowContentBox,
+) -> f32 {
+    let flex_entries = flex_item_main_axis_entries(measurer, node, content_box);
+    let flex_inputs = flex_entries
+        .iter()
+        .map(|entry| entry.flex_input)
+        .collect::<Vec<_>>();
+    let raw_layout = resolve_flex_main_axis_layout(content_box.inline_size, &flex_inputs);
+    node.flex_container_main_axis = Some(raw_layout.container());
+
+    let mut cursor = 0.0;
+    let mut auto_content_height: f32 = 0.0;
+
+    for (entry, raw_item) in flex_entries
+        .into_iter()
+        .zip(raw_layout.items().iter().copied())
+    {
+        let child = &mut node.children[entry.child_index];
+        let target_content_size = content_size_for_border_width(child, raw_item.target_main_size());
+        let distributed_inline =
+            resolve_flex_distributed_inline_size(entry.sizing_input, target_content_size);
+
+        cursor += entry.flex_input.margin_start().get();
+        let offset = signed_px_from_finite(cursor, "flex item final main offset");
+        let final_item = crate::FlexItemMainAxisLayout::new(
+            entry.flex_input,
+            distributed_inline.border(),
+            offset,
+        );
+        child.flex_item_main_axis = Some(final_item);
+
+        let child_x = content_box.inline_start.get() + offset.get();
+        let child_y = child
+            .flow_margins()
+            .apply_block_start(content_box.block_start)
+            .get();
+        let child_height = recompute_block_heights(
+            measurer,
+            child,
+            child_x,
+            child_y,
+            content_box.inline_size.get(),
+            distributed_inline.border().get(),
+            Some(distributed_inline),
+        );
+
+        let margins = child.flow_margins();
+        let margin_box_height =
+            (margins.block_start().get() + child_height + margins.block_end().get()).max(0.0);
+        auto_content_height = auto_content_height.max(margin_box_height);
+        cursor += distributed_inline.border().get() + entry.flex_input.margin_end().get();
+    }
+
+    let block_size = resolve_block_axis_size(
+        sizing_input,
+        normal_flow_sizing_mode(node),
+        auto_content_height,
+    );
+    finish_resolved_size(node, inline_size, block_size)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct FlexItemMainAxisEntry {
+    child_index: usize,
+    sizing_input: SizeResolutionInput,
+    flex_input: FlexItemMainAxisInput,
+}
+
+fn flex_item_main_axis_entries(
+    measurer: &dyn TextMeasurer,
+    node: &LayoutBox<'_, '_>,
+    content_box: FlowContentBox,
+) -> Vec<FlexItemMainAxisEntry> {
+    node.children
+        .iter()
+        .enumerate()
+        .filter(|(_, child)| participates_in_parent_flex_layout(child))
+        .map(|(child_index, child)| {
+            let child_inline = normal_flow_child_inline_input(content_box, child);
+            let sizing_input = size_resolution_input_for_layout_box(
+                measurer,
+                child,
+                child_inline.containing_width,
+                child_inline.available_width,
+            );
+            let basis = resolve_normal_flow_inline_size(
+                sizing_input,
+                NormalFlowSizingMode::FlexItemMainAxis,
+            );
+            let margins = child.flow_margins();
+            let flex_input = FlexItemMainAxisInput::default_row_auto_basis(
+                basis.border(),
+                margins.inline_start(),
+                margins.inline_end(),
+            );
+
+            FlexItemMainAxisEntry {
+                child_index,
+                sizing_input,
+                flex_input,
+            }
+        })
+        .collect()
+}
+
+fn participates_in_parent_flex_layout(node: &LayoutBox<'_, '_>) -> bool {
+    node.flow_participation().contributes_to_parent_flow()
+        && matches!(
+            node.flex_formatting_participation(),
+            FlexFormattingParticipation::FlexItem
+        )
 }
 
 fn participates_in_parent_inline_flow(node: &LayoutBox<'_, '_>) -> bool {
@@ -401,6 +536,14 @@ fn content_x_and_width_for_box(
 
 fn content_y_for_box(node: &LayoutBox<'_, '_>, border_y: f32) -> f32 {
     border_y + node.box_metrics().padding_top
+}
+
+fn content_size_for_border_width(node: &LayoutBox<'_, '_>, border_width: CssPx) -> CssPx {
+    let bm = node.box_metrics();
+    css_px_from_nonnegative(
+        border_width.get() - bm.padding_left - bm.padding_right,
+        "flex item target content size",
+    )
 }
 
 fn css_px_from_nonnegative(value: f32, label: &str) -> CssPx {

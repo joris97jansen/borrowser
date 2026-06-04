@@ -7,6 +7,7 @@ use crate::{
     FlowParticipation, FormattingContextId, FormattingContextKind, InlineFormattingContextId,
     InlineFormattingParticipation, ListMarker, OverflowClip, OverflowKeyword, OverflowPolicy,
     PositionedContainingBlockId, PositioningScheme, Rectangle, ReplacedKind, UsedContentSize,
+    flex::{FlexContainerMainAxisLayout, FlexItemMainAxisLayout},
     replaced::intrinsic::IntrinsicSize,
 };
 
@@ -38,6 +39,8 @@ pub struct LayoutBox<'style_tree, 'dom> {
     pub inline_formatting_context: Option<InlineFormattingContextId>,
     pub establishes_inline_formatting_context: bool,
     pub inline_formatting_participation: InlineFormattingParticipation,
+    pub flex_container_main_axis: Option<FlexContainerMainAxisLayout>,
+    pub flex_item_main_axis: Option<FlexItemMainAxisLayout>,
     pub list_marker: Option<ListMarker>,
     pub replaced: Option<ReplacedKind>,
     pub replaced_intrinsic: Option<IntrinsicSize>,

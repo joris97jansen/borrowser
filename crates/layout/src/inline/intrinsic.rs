@@ -43,7 +43,7 @@ impl InlineContributions {
     }
 }
 
-pub(super) fn intrinsic_sizes_for_layout_box(
+pub(crate) fn intrinsic_sizes_for_layout_box(
     measurer: &dyn TextMeasurer,
     node: &LayoutBox<'_, '_>,
 ) -> IntrinsicSizes {

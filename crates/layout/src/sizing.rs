@@ -816,6 +816,7 @@ pub enum NormalFlowSizingMode {
     BlockLevel,
     InlineLevel,
     AtomicInline,
+    FlexItemMainAxis,
     Anonymous,
 }
 
@@ -826,6 +827,7 @@ impl NormalFlowSizingMode {
             Self::BlockLevel => "block-level",
             Self::InlineLevel => "inline-level",
             Self::AtomicInline => "atomic-inline",
+            Self::FlexItemMainAxis => "flex-item-main-axis",
             Self::Anonymous => "anonymous",
         }
     }
@@ -889,6 +891,9 @@ pub fn resolve_normal_flow_inline_size(
         (NormalFlowSizingMode::AtomicInline, StylePreferredSize::Auto) => {
             atomic_inline_auto_preferred(intrinsic, available_content_size)
         }
+        (NormalFlowSizingMode::FlexItemMainAxis, StylePreferredSize::Auto) => {
+            flex_item_main_axis_auto_preferred(intrinsic)
+        }
         (_, StylePreferredSize::Auto) => auto_stretch_preferred(available_content),
     };
 
@@ -906,6 +911,30 @@ pub fn resolve_normal_flow_inline_size(
     let (value, applied_constraint) = constraints
         .clamp_with_available_space(preferred_value, atomic_inline_available_space_clamp);
     let used = used_axis_size(preferred_value, preferred_reason, value, applied_constraint);
+    let border = css_px_sum(value, padding_inline);
+
+    ResolvedAxisSize::new(used, border)
+}
+
+pub fn resolve_flex_distributed_inline_size(
+    input: SizeResolutionInput,
+    preferred_content_size: CssPx,
+) -> ResolvedAxisSize {
+    let style = input.style();
+    let padding = style.box_metrics().padding();
+    let padding_inline = css_px_sum(padding.left(), padding.right());
+    let basis = input
+        .constraint_space()
+        .containing_size_for_axis(SizeAxis::Inline);
+    let constraints = inline_constraints(style.inline(), basis);
+    let (value, applied_constraint) =
+        constraints.clamp_with_applied_constraint(preferred_content_size);
+    let used = used_axis_size(
+        preferred_content_size,
+        SizeResolutionReason::FlexDistributed,
+        value,
+        applied_constraint,
+    );
     let border = css_px_sum(value, padding_inline);
 
     ResolvedAxisSize::new(used, border)
@@ -1020,6 +1049,25 @@ fn atomic_inline_auto_preferred(
     let result = resolve_shrink_to_fit_inline_size(ShrinkToFitInput::from_intrinsic_sizes(
         intrinsic,
         available_content,
+    ));
+
+    let reason = match result.decision() {
+        ShrinkToFitDecision::EmptyIntrinsicContribution => SizeResolutionReason::AutoContentBased,
+        ShrinkToFitDecision::IndefiniteAvailableSpace => {
+            SizeResolutionReason::IntrinsicPreferredSize
+        }
+        ShrinkToFitDecision::MinContentFloor
+        | ShrinkToFitDecision::AvailableSpace
+        | ShrinkToFitDecision::PreferredCeiling => SizeResolutionReason::ShrinkToFit,
+    };
+
+    (result.value(), reason)
+}
+
+fn flex_item_main_axis_auto_preferred(intrinsic: IntrinsicSizes) -> (CssPx, SizeResolutionReason) {
+    let result = resolve_shrink_to_fit_inline_size(ShrinkToFitInput::from_intrinsic_sizes(
+        intrinsic,
+        AvailableSize::Indefinite,
     ));
 
     let reason = match result.decision() {
@@ -1199,6 +1247,7 @@ pub enum SizeResolutionReason {
     IntrinsicPreferredSize,
     IntrinsicAspectRatioTransfer,
     ShrinkToFit,
+    FlexDistributed,
     DeferredIndefinitePercentage,
     UnsupportedDeferred,
 }
@@ -1213,6 +1262,7 @@ impl SizeResolutionReason {
             Self::IntrinsicPreferredSize => "intrinsic-preferred-size",
             Self::IntrinsicAspectRatioTransfer => "intrinsic-aspect-ratio-transfer",
             Self::ShrinkToFit => "shrink-to-fit",
+            Self::FlexDistributed => "flex-distributed",
             Self::DeferredIndefinitePercentage => "deferred-indefinite-percentage",
             Self::UnsupportedDeferred => "unsupported-deferred",
         }
