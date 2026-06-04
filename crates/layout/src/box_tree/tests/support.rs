@@ -57,6 +57,15 @@ pub(super) fn doc(children: Vec<Node>) -> Node {
     }
 }
 
+pub(super) fn doc_with_body(children: Vec<Node>) -> Node {
+    doc(vec![element(
+        90_000,
+        "html",
+        Vec::new(),
+        vec![element(90_001, "body", Vec::new(), children)],
+    )])
+}
+
 pub(super) fn source_ids(tree: &BoxTree<'_, '_>) -> Vec<Option<Id>> {
     tree.nodes()
         .iter()

@@ -54,7 +54,9 @@
 //! layout architecture is documented in
 //! `docs/rendering/z1-flex-layout-architecture-contract.md`; Z2 flex box-tree
 //! structure is documented in
-//! `docs/rendering/z2-flex-box-tree-structure.md`.
+//! `docs/rendering/z2-flex-box-tree-structure.md`; Z3 flex main-axis layout is
+//! documented in
+//! `docs/rendering/z3-flex-main-axis-layout-core-subset.md`.
 //! `BoxTree` is the frame-local generated box-tree structure; `LayoutBox` is
 //! the current geometry projection consumed by paint and hit testing.
 
@@ -62,6 +64,7 @@ mod box_kind;
 mod box_tree;
 mod debug;
 mod document;
+mod flex;
 mod flow;
 mod geometry;
 mod layout_box;
@@ -83,6 +86,10 @@ pub use box_tree::{
     PrincipalBox,
 };
 pub use document::{layout_block_tree, layout_document};
+pub use flex::{
+    FlexContainerMainAxisLayout, FlexFreeSpaceDistribution, FlexItemMainAxisInput,
+    FlexItemMainAxisLayout, FlexMainAxis, FlexMainAxisLayout, resolve_flex_main_axis_layout,
+};
 pub use flow::{
     BlockFlowBlockPlacement, BlockFlowMarginCollapseCursor, CollapsedMargin, FlowMarginError,
     FlowMarginSide, FlowMargins, FlowParticipation, MarginAdjustedChildInline,
@@ -103,8 +110,8 @@ pub use sizing::{
     ShrinkToFitInput, ShrinkToFitResult, SignedCssPx, SizeAxis, SizeConstraints,
     SizeResolutionInput, SizeResolutionReason, StyleBoxMetrics, StyleMaximumSize, StyleMinimumSize,
     StylePreferredSize, StyleSizeInputError, StyleSizeInputProperty, StyleSizeInputs, UsedAxisSize,
-    UsedContentSize, resolve_normal_flow_block_size, resolve_normal_flow_inline_size,
-    resolve_shrink_to_fit_inline_size,
+    UsedContentSize, resolve_flex_distributed_inline_size, resolve_normal_flow_block_size,
+    resolve_normal_flow_inline_size, resolve_shrink_to_fit_inline_size,
 };
 pub use text::TextMeasurer;
 
