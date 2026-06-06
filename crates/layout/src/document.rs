@@ -101,6 +101,8 @@ fn layout_box_from_generated_tree<'style_tree, 'dom>(
         inline_formatting_participation: box_node.inline_formatting_participation(),
         flex_container_main_axis: None,
         flex_item_main_axis: None,
+        flex_container_cross_axis: None,
+        flex_item_cross_axis: None,
         list_marker: box_node.list_marker(),
         replaced: box_node.replaced(),
         replaced_intrinsic: box_node.replaced_intrinsic(),

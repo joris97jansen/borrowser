@@ -4,9 +4,11 @@ use html::Node;
 use crate::{
     AvailableSize, AvailableSpace, BlockFlowMarginCollapseCursor, BlockFormattingParticipation,
     BoxKind, ConstraintSpace, ContainingSize, CssPx, DisplayBoxBehavior,
-    FlexFormattingParticipation, FlexItemMainAxisInput, IntrinsicSizes, LayoutBox,
-    NormalFlowSizingMode, Rectangle, ResolvedAxisSize, SignedCssPx, SizeResolutionInput,
-    SizeResolutionReason, StyleSizeInputs, TextMeasurer, UsedAxisSize, UsedContentSize,
+    FlexFormattingParticipation, FlexItemCrossAxisInput, FlexItemCrossAxisLayout,
+    FlexItemMainAxisInput, FlexItemMainAxisLayout, IntrinsicSizes, LayoutBox, NormalFlowSizingMode,
+    Rectangle, ResolvedAxisSize, SignedCssPx, SizeResolutionInput, SizeResolutionReason,
+    StylePreferredSize, StyleSizeInputs, TextMeasurer, UsedAxisSize, UsedContentSize,
+    resolve_flex_cross_axis_layout, resolve_flex_distributed_block_size,
     resolve_flex_distributed_inline_size, resolve_flex_main_axis_layout,
     resolve_normal_flow_block_size, resolve_normal_flow_inline_size,
 };
@@ -31,6 +33,32 @@ struct NormalFlowChildInlineInput {
     available_width: f32,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq)]
+struct ForcedAxisSizes {
+    inline: Option<ResolvedAxisSize>,
+    block: Option<ResolvedAxisSize>,
+}
+
+impl ForcedAxisSizes {
+    fn none() -> Self {
+        Self::default()
+    }
+
+    fn inline(inline: ResolvedAxisSize) -> Self {
+        Self {
+            inline: Some(inline),
+            block: None,
+        }
+    }
+
+    fn inline_and_block(inline: ResolvedAxisSize, block: ResolvedAxisSize) -> Self {
+        Self {
+            inline: Some(inline),
+            block: Some(block),
+        }
+    }
+}
+
 pub fn refine_layout_with_inline<'style_tree, 'dom>(
     measurer: &dyn TextMeasurer,
     layout_root: &mut LayoutBox<'style_tree, 'dom>,
@@ -39,7 +67,15 @@ pub fn refine_layout_with_inline<'style_tree, 'dom>(
     let y = layout_root.rect.y;
     let width = layout_root.rect.width;
 
-    let new_height = recompute_block_heights(measurer, layout_root, x, y, width, width, None);
+    let new_height = recompute_block_heights(
+        measurer,
+        layout_root,
+        x,
+        y,
+        width,
+        width,
+        ForcedAxisSizes::none(),
+    );
     layout_root.rect.height = new_height;
 }
 
@@ -50,7 +86,7 @@ fn recompute_block_heights<'style_tree, 'dom>(
     y: f32,
     containing_width: f32,
     available_width: f32,
-    forced_inline_size: Option<ResolvedAxisSize>,
+    forced_sizes: ForcedAxisSizes,
 ) -> f32 {
     // Position & width are authoritative here
     node.rect.x = x;
@@ -66,8 +102,9 @@ fn recompute_block_heights<'style_tree, 'dom>(
     let mode = normal_flow_sizing_mode(node);
     let sizing_input =
         size_resolution_input_for_layout_box(measurer, node, containing_width, available_width);
-    let inline_size =
-        forced_inline_size.unwrap_or_else(|| resolve_normal_flow_inline_size(sizing_input, mode));
+    let inline_size = forced_sizes
+        .inline
+        .unwrap_or_else(|| resolve_normal_flow_inline_size(sizing_input, mode));
     let used_width = inline_size.border().get();
     node.rect.width = used_width;
 
@@ -99,7 +136,7 @@ fn recompute_block_heights<'style_tree, 'dom>(
                     placement.border_block_start().get(),
                     child_inline.containing_width,
                     child_inline.available_width,
-                    None,
+                    ForcedAxisSizes::none(),
                 );
 
                 block_cursor.finish_in_flow_block(
@@ -110,7 +147,9 @@ fn recompute_block_heights<'style_tree, 'dom>(
             }
 
             let auto_content_height = block_cursor.auto_content_block_size().get();
-            let block_size = resolve_block_axis_size(sizing_input, mode, auto_content_height);
+            let block_size = forced_sizes.block.unwrap_or_else(|| {
+                resolve_block_axis_size(sizing_input, mode, auto_content_height)
+            });
             finish_resolved_size(node, inline_size, block_size)
         }
 
@@ -136,7 +175,8 @@ fn recompute_block_heights<'style_tree, 'dom>(
                         content_width,
                     );
 
-                    return finish_resolved_size(node, inline_size, zero_block_axis_size());
+                    let block_size = forced_sizes.block.unwrap_or_else(zero_block_axis_size);
+                    return finish_resolved_size(node, inline_size, block_size);
                 }
             }
 
@@ -156,6 +196,7 @@ fn recompute_block_heights<'style_tree, 'dom>(
                     sizing_input,
                     inline_size,
                     content_box,
+                    forced_sizes.block,
                 );
             }
 
@@ -179,7 +220,7 @@ fn recompute_block_heights<'style_tree, 'dom>(
                             child_y,
                             child_inline.containing_width,
                             child_inline.available_width,
-                            None,
+                            ForcedAxisSizes::none(),
                         );
                     }
                 }
@@ -250,7 +291,7 @@ fn recompute_block_heights<'style_tree, 'dom>(
                     placement.border_block_start().get(),
                     child_inline.containing_width,
                     child_inline.available_width,
-                    None,
+                    ForcedAxisSizes::none(),
                 );
 
                 block_cursor.finish_in_flow_block(
@@ -264,7 +305,9 @@ fn recompute_block_heights<'style_tree, 'dom>(
 
             // 4) Resolve auto content height through the sizing contract.
             let auto_content_height = inline_height + children_height;
-            let block_size = resolve_block_axis_size(sizing_input, mode, auto_content_height);
+            let block_size = forced_sizes.block.unwrap_or_else(|| {
+                resolve_block_axis_size(sizing_input, mode, auto_content_height)
+            });
             finish_resolved_size(node, inline_size, block_size)
         }
 
@@ -280,6 +323,7 @@ fn layout_flex_container<'style_tree, 'dom>(
     sizing_input: SizeResolutionInput,
     inline_size: ResolvedAxisSize,
     content_box: FlowContentBox,
+    forced_block_size: Option<ResolvedAxisSize>,
 ) -> f32 {
     let flex_entries = flex_item_main_axis_entries(measurer, node, content_box);
     let flex_inputs = flex_entries
@@ -290,7 +334,7 @@ fn layout_flex_container<'style_tree, 'dom>(
     node.flex_container_main_axis = Some(raw_layout.container());
 
     let mut cursor = 0.0;
-    let mut auto_content_height: f32 = 0.0;
+    let mut item_layouts = Vec::with_capacity(flex_entries.len());
 
     for (entry, raw_item) in flex_entries
         .into_iter()
@@ -308,7 +352,6 @@ fn layout_flex_container<'style_tree, 'dom>(
             distributed_inline.border(),
             offset,
         );
-        child.flex_item_main_axis = Some(final_item);
 
         let child_x = content_box.inline_start.get() + offset.get();
         let child_y = child
@@ -322,22 +365,124 @@ fn layout_flex_container<'style_tree, 'dom>(
             child_y,
             content_box.inline_size.get(),
             distributed_inline.border().get(),
-            Some(distributed_inline),
+            ForcedAxisSizes::inline(distributed_inline),
         );
 
         let margins = child.flow_margins();
-        let margin_box_height =
-            (margins.block_start().get() + child_height + margins.block_end().get()).max(0.0);
-        auto_content_height = auto_content_height.max(margin_box_height);
+        let cross_input = FlexItemCrossAxisInput::default_row_stretch(
+            css_px_from_nonnegative(child_height, "flex item hypothetical cross size"),
+            margins.block_start(),
+            margins.block_end(),
+            flex_item_can_stretch_cross_axis(entry.sizing_input),
+        );
+        item_layouts.push(FlexItemLayoutEntry {
+            child_index: entry.child_index,
+            sizing_input: entry.sizing_input,
+            distributed_inline,
+            main_layout: final_item,
+            cross_input,
+        });
         cursor += distributed_inline.border().get() + entry.flex_input.margin_end().get();
     }
 
-    let block_size = resolve_block_axis_size(
-        sizing_input,
-        normal_flow_sizing_mode(node),
-        auto_content_height,
-    );
+    let cross_inputs = item_layouts
+        .iter()
+        .map(|entry| entry.cross_input)
+        .collect::<Vec<_>>();
+    let auto_cross_layout = resolve_flex_cross_axis_layout(None, &cross_inputs);
+    let block_size = forced_block_size.unwrap_or_else(|| {
+        resolve_block_axis_size(
+            sizing_input,
+            normal_flow_sizing_mode(node),
+            auto_cross_layout.container().auto_cross_size().get(),
+        )
+    });
+    let available_cross_size =
+        flex_container_available_cross_size(sizing_input, block_size, forced_block_size.is_some());
+    let cross_layout = resolve_flex_cross_axis_layout(available_cross_size, &cross_inputs);
+    node.flex_container_cross_axis = Some(cross_layout.container());
+
+    for (entry, cross_item) in item_layouts
+        .into_iter()
+        .zip(cross_layout.items().iter().copied())
+    {
+        let child = &mut node.children[entry.child_index];
+        child.flex_item_main_axis = Some(entry.main_layout);
+        child.flex_item_cross_axis = Some(cross_item);
+
+        let forced_child_block_size =
+            flex_item_forced_cross_size(child, entry.sizing_input, cross_item);
+        let child_x = content_box.inline_start.get() + entry.main_layout.main_offset().get();
+        let child_y = content_box.block_start.get() + cross_item.cross_offset().get();
+
+        let _ = recompute_block_heights(
+            measurer,
+            child,
+            child_x,
+            child_y,
+            content_box.inline_size.get(),
+            entry.distributed_inline.border().get(),
+            forced_child_block_size
+                .map(|block| ForcedAxisSizes::inline_and_block(entry.distributed_inline, block))
+                .unwrap_or_else(|| ForcedAxisSizes::inline(entry.distributed_inline)),
+        );
+    }
+
     finish_resolved_size(node, inline_size, block_size)
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+struct FlexItemLayoutEntry {
+    child_index: usize,
+    sizing_input: SizeResolutionInput,
+    distributed_inline: ResolvedAxisSize,
+    main_layout: FlexItemMainAxisLayout,
+    cross_input: FlexItemCrossAxisInput,
+}
+
+fn flex_container_available_cross_size(
+    sizing_input: SizeResolutionInput,
+    block_size: ResolvedAxisSize,
+    forced_block_size: bool,
+) -> Option<CssPx> {
+    if forced_block_size {
+        return Some(block_size.content().value());
+    }
+
+    match (
+        sizing_input.style().block().preferred(),
+        block_size.content().preferred_reason(),
+    ) {
+        (
+            StylePreferredSize::Length(_) | StylePreferredSize::Percentage(_),
+            SizeResolutionReason::DefiniteLength
+            | SizeResolutionReason::PercentageOfDefiniteContainingBlock,
+        ) => Some(block_size.content().value()),
+        _ => None,
+    }
+}
+
+fn flex_item_can_stretch_cross_axis(sizing_input: SizeResolutionInput) -> bool {
+    matches!(
+        sizing_input.style().block().preferred(),
+        StylePreferredSize::Auto
+    )
+}
+
+fn flex_item_forced_cross_size(
+    child: &LayoutBox<'_, '_>,
+    sizing_input: SizeResolutionInput,
+    cross_item: FlexItemCrossAxisLayout,
+) -> Option<ResolvedAxisSize> {
+    if !cross_item.stretches() {
+        return None;
+    }
+
+    let target_content_size = content_size_for_border_height(child, cross_item.target_cross_size());
+    Some(resolve_flex_distributed_block_size(
+        sizing_input,
+        target_content_size,
+    ))
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -543,6 +688,14 @@ fn content_size_for_border_width(node: &LayoutBox<'_, '_>, border_width: CssPx) 
     css_px_from_nonnegative(
         border_width.get() - bm.padding_left - bm.padding_right,
         "flex item target content size",
+    )
+}
+
+fn content_size_for_border_height(node: &LayoutBox<'_, '_>, border_height: CssPx) -> CssPx {
+    let bm = node.box_metrics();
+    css_px_from_nonnegative(
+        border_height.get() - bm.padding_top - bm.padding_bottom,
+        "flex item target cross content size",
     )
 }
 

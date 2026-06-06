@@ -940,6 +940,30 @@ pub fn resolve_flex_distributed_inline_size(
     ResolvedAxisSize::new(used, border)
 }
 
+pub fn resolve_flex_distributed_block_size(
+    input: SizeResolutionInput,
+    preferred_content_size: CssPx,
+) -> ResolvedAxisSize {
+    let style = input.style();
+    let padding = style.box_metrics().padding();
+    let padding_block = css_px_sum(padding.top(), padding.bottom());
+    let basis = input
+        .constraint_space()
+        .containing_size_for_axis(SizeAxis::Block);
+    let constraints = block_constraints(style.block(), basis);
+    let (value, applied_constraint) =
+        constraints.clamp_with_applied_constraint(preferred_content_size);
+    let used = used_axis_size(
+        preferred_content_size,
+        SizeResolutionReason::FlexDistributed,
+        value,
+        applied_constraint,
+    );
+    let border = css_px_sum(value, padding_block);
+
+    ResolvedAxisSize::new(used, border)
+}
+
 pub fn resolve_normal_flow_block_size(
     input: SizeResolutionInput,
     mode: NormalFlowSizingMode,

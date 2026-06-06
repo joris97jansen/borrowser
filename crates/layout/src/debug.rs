@@ -190,9 +190,12 @@ fn append_layout_box_snapshot(
     let flex_container_main_axis =
         flex_container_main_axis_debug_label(layout.flex_container_main_axis);
     let flex_item_main_axis = flex_item_main_axis_debug_label(layout.flex_item_main_axis);
+    let flex_container_cross_axis =
+        flex_container_cross_axis_debug_label(layout.flex_container_cross_axis);
+    let flex_item_cross_axis = flex_item_cross_axis_debug_label(layout.flex_item_cross_axis);
     writeln!(
         out,
-        "{indent}box[{index}]: box-id={} anchor-id={} source={} node={} kind={}{} cb={} establishes-cb={} position={} flow={} positioned-cb={} establishes-positioned-cb={} fc={} establishes-fc={} block-participation={}{}{}{} ifc={} establishes-ifc={} inline-participation={} rect={} overflow={} children={} marker={} replaced={} intrinsic={} style={}",
+        "{indent}box[{index}]: box-id={} anchor-id={} source={} node={} kind={}{} cb={} establishes-cb={} position={} flow={} positioned-cb={} establishes-positioned-cb={} fc={} establishes-fc={} block-participation={}{}{}{}{}{} ifc={} establishes-ifc={} inline-participation={} rect={} overflow={} children={} marker={} replaced={} intrinsic={} style={}",
         box_id_debug_label(layout.box_id()),
         layout.node_id().0,
         layout_box_source_debug_label(layout.source),
@@ -211,6 +214,8 @@ fn append_layout_box_snapshot(
         flex_participation,
         flex_container_main_axis,
         flex_item_main_axis,
+        flex_container_cross_axis,
+        flex_item_cross_axis,
         optional_inline_formatting_context_id_debug_label(layout.inline_formatting_context()),
         bool_debug_label(layout.establishes_inline_formatting_context()),
         inline_formatting_participation_debug_label(layout.inline_formatting_participation()),
@@ -393,6 +398,20 @@ fn flex_container_main_axis_debug_label(
 fn flex_item_main_axis_debug_label(layout: Option<crate::FlexItemMainAxisLayout>) -> String {
     layout
         .map(|layout| format!(" flex-item-main-axis=({})", layout.as_debug_label()))
+        .unwrap_or_default()
+}
+
+fn flex_container_cross_axis_debug_label(
+    layout: Option<crate::FlexContainerCrossAxisLayout>,
+) -> String {
+    layout
+        .map(|layout| format!(" flex-cross-axis=({})", layout.as_debug_label()))
+        .unwrap_or_default()
+}
+
+fn flex_item_cross_axis_debug_label(layout: Option<crate::FlexItemCrossAxisLayout>) -> String {
+    layout
+        .map(|layout| format!(" flex-item-cross-axis=({})", layout.as_debug_label()))
         .unwrap_or_default()
 }
 

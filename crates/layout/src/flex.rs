@@ -1,8 +1,8 @@
-//! Layout-owned flex main-axis algorithm for the Milestone Z core subset.
+//! Layout-owned flex algorithms for the Milestone Z core subset.
 //!
 //! This module is deliberately independent of CSS parsing. CSS owns authored
-//! values; layout consumes typed factors, basis sizes, and generated flex item
-//! participation metadata.
+//! values; layout consumes typed factors, sizes, alignment defaults, and
+//! generated flex item participation metadata.
 
 use std::fmt::Write;
 
@@ -17,6 +17,38 @@ impl FlexMainAxis {
     pub fn as_debug_label(self) -> &'static str {
         match self {
             Self::Row => "row",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FlexCrossAxis {
+    Block,
+}
+
+impl FlexCrossAxis {
+    pub fn as_debug_label(self) -> &'static str {
+        match self {
+            Self::Block => "block",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum FlexCrossAxisAlignment {
+    Start,
+    Center,
+    End,
+    Stretch,
+}
+
+impl FlexCrossAxisAlignment {
+    pub fn as_debug_label(self) -> &'static str {
+        match self {
+            Self::Start => "start",
+            Self::Center => "center",
+            Self::End => "end",
+            Self::Stretch => "stretch",
         }
     }
 }
@@ -51,6 +83,64 @@ pub struct FlexContainerMainAxisLayout {
     total_outer_base_size: SignedCssPx,
     free_space: SignedCssPx,
     distribution: FlexFreeSpaceDistribution,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FlexContainerCrossAxisLayout {
+    axis: FlexCrossAxis,
+    available_cross_size: Option<CssPx>,
+    line_cross_size: CssPx,
+    auto_cross_size: CssPx,
+    used_cross_size: CssPx,
+}
+
+impl FlexContainerCrossAxisLayout {
+    fn new(
+        axis: FlexCrossAxis,
+        available_cross_size: Option<CssPx>,
+        line_cross_size: CssPx,
+        auto_cross_size: CssPx,
+        used_cross_size: CssPx,
+    ) -> Self {
+        Self {
+            axis,
+            available_cross_size,
+            line_cross_size,
+            auto_cross_size,
+            used_cross_size,
+        }
+    }
+
+    pub fn axis(self) -> FlexCrossAxis {
+        self.axis
+    }
+
+    pub fn available_cross_size(self) -> Option<CssPx> {
+        self.available_cross_size
+    }
+
+    pub fn line_cross_size(self) -> CssPx {
+        self.line_cross_size
+    }
+
+    pub fn auto_cross_size(self) -> CssPx {
+        self.auto_cross_size
+    }
+
+    pub fn used_cross_size(self) -> CssPx {
+        self.used_cross_size
+    }
+
+    pub fn as_debug_label(self) -> String {
+        format!(
+            "axis={} available={} line={} auto={} used={}",
+            self.axis.as_debug_label(),
+            optional_css_px_debug_label(self.available_cross_size),
+            css_px_debug_label(self.line_cross_size),
+            css_px_debug_label(self.auto_cross_size),
+            css_px_debug_label(self.used_cross_size),
+        )
+    }
 }
 
 impl FlexContainerMainAxisLayout {
@@ -109,6 +199,72 @@ pub struct FlexItemMainAxisInput {
     margin_end: SignedCssPx,
     flex_grow: f32,
     flex_shrink: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FlexItemCrossAxisInput {
+    hypothetical_cross_size: CssPx,
+    margin_before: SignedCssPx,
+    margin_after: SignedCssPx,
+    alignment: FlexCrossAxisAlignment,
+    can_stretch: bool,
+}
+
+impl FlexItemCrossAxisInput {
+    pub fn new(
+        hypothetical_cross_size: CssPx,
+        margin_before: SignedCssPx,
+        margin_after: SignedCssPx,
+        alignment: FlexCrossAxisAlignment,
+        can_stretch: bool,
+    ) -> Self {
+        Self {
+            hypothetical_cross_size,
+            margin_before,
+            margin_after,
+            alignment,
+            can_stretch,
+        }
+    }
+
+    pub fn default_row_stretch(
+        hypothetical_cross_size: CssPx,
+        margin_before: SignedCssPx,
+        margin_after: SignedCssPx,
+        can_stretch: bool,
+    ) -> Self {
+        Self::new(
+            hypothetical_cross_size,
+            margin_before,
+            margin_after,
+            FlexCrossAxisAlignment::Stretch,
+            can_stretch,
+        )
+    }
+
+    pub fn hypothetical_cross_size(self) -> CssPx {
+        self.hypothetical_cross_size
+    }
+
+    pub fn margin_before(self) -> SignedCssPx {
+        self.margin_before
+    }
+
+    pub fn margin_after(self) -> SignedCssPx {
+        self.margin_after
+    }
+
+    pub fn alignment(self) -> FlexCrossAxisAlignment {
+        self.alignment
+    }
+
+    pub fn can_stretch(self) -> bool {
+        self.can_stretch
+    }
+
+    fn outer_hypothetical_size(self) -> f32 {
+        self.margin_before.get() + self.hypothetical_cross_size.get() + self.margin_after.get()
+    }
 }
 
 impl FlexItemMainAxisInput {
@@ -181,6 +337,80 @@ pub struct FlexItemMainAxisLayout {
     flex_shrink: f32,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct FlexItemCrossAxisLayout {
+    hypothetical_cross_size: CssPx,
+    target_cross_size: CssPx,
+    cross_offset: SignedCssPx,
+    margin_before: SignedCssPx,
+    margin_after: SignedCssPx,
+    alignment: FlexCrossAxisAlignment,
+    can_stretch: bool,
+}
+
+impl FlexItemCrossAxisLayout {
+    pub fn new(
+        input: FlexItemCrossAxisInput,
+        target_cross_size: CssPx,
+        cross_offset: SignedCssPx,
+    ) -> Self {
+        Self {
+            hypothetical_cross_size: input.hypothetical_cross_size,
+            target_cross_size,
+            cross_offset,
+            margin_before: input.margin_before,
+            margin_after: input.margin_after,
+            alignment: input.alignment,
+            can_stretch: input.can_stretch,
+        }
+    }
+
+    pub fn hypothetical_cross_size(self) -> CssPx {
+        self.hypothetical_cross_size
+    }
+
+    pub fn target_cross_size(self) -> CssPx {
+        self.target_cross_size
+    }
+
+    pub fn cross_offset(self) -> SignedCssPx {
+        self.cross_offset
+    }
+
+    pub fn margin_before(self) -> SignedCssPx {
+        self.margin_before
+    }
+
+    pub fn margin_after(self) -> SignedCssPx {
+        self.margin_after
+    }
+
+    pub fn alignment(self) -> FlexCrossAxisAlignment {
+        self.alignment
+    }
+
+    pub fn can_stretch(self) -> bool {
+        self.can_stretch
+    }
+
+    pub fn stretches(self) -> bool {
+        self.alignment == FlexCrossAxisAlignment::Stretch && self.can_stretch
+    }
+
+    pub fn as_debug_label(self) -> String {
+        format!(
+            "hypothetical={} target={} offset={} margin-before={} margin-after={} alignment={} can-stretch={}",
+            css_px_debug_label(self.hypothetical_cross_size),
+            css_px_debug_label(self.target_cross_size),
+            signed_css_px_debug_label(self.cross_offset),
+            signed_css_px_debug_label(self.margin_before),
+            signed_css_px_debug_label(self.margin_after),
+            self.alignment.as_debug_label(),
+            bool_debug_label(self.can_stretch),
+        )
+    }
+}
+
 impl FlexItemMainAxisLayout {
     pub fn new(
         input: FlexItemMainAxisInput,
@@ -246,6 +476,42 @@ pub struct FlexMainAxisLayout {
     items: Vec<FlexItemMainAxisLayout>,
 }
 
+#[derive(Clone, Debug, PartialEq)]
+pub struct FlexCrossAxisLayout {
+    container: FlexContainerCrossAxisLayout,
+    items: Vec<FlexItemCrossAxisLayout>,
+}
+
+impl FlexCrossAxisLayout {
+    fn new(container: FlexContainerCrossAxisLayout, items: Vec<FlexItemCrossAxisLayout>) -> Self {
+        Self { container, items }
+    }
+
+    pub fn container(&self) -> FlexContainerCrossAxisLayout {
+        self.container
+    }
+
+    pub fn items(&self) -> &[FlexItemCrossAxisLayout] {
+        &self.items
+    }
+
+    pub fn into_items(self) -> Vec<FlexItemCrossAxisLayout> {
+        self.items
+    }
+
+    pub fn to_debug_snapshot(&self) -> String {
+        let mut out = String::new();
+        writeln!(&mut out, "version: 1").expect("write snapshot");
+        writeln!(&mut out, "flex-cross-axis").expect("write snapshot");
+        writeln!(&mut out, "container: {}", self.container.as_debug_label())
+            .expect("write snapshot");
+        for (index, item) in self.items.iter().enumerate() {
+            writeln!(&mut out, "item[{index}]: {}", item.as_debug_label()).expect("write snapshot");
+        }
+        out
+    }
+}
+
 impl FlexMainAxisLayout {
     fn new(container: FlexContainerMainAxisLayout, items: Vec<FlexItemMainAxisLayout>) -> Self {
         Self { container, items }
@@ -304,6 +570,39 @@ pub fn resolve_flex_main_axis_layout(
     );
 
     FlexMainAxisLayout::new(container, layout_items)
+}
+
+pub fn resolve_flex_cross_axis_layout(
+    available_cross_size: Option<CssPx>,
+    items: &[FlexItemCrossAxisInput],
+) -> FlexCrossAxisLayout {
+    let auto_cross_size = items
+        .iter()
+        .map(|item| item.outer_hypothetical_size())
+        .fold(0.0, f32::max);
+    let auto_cross_size = css_px_from_nonnegative(auto_cross_size, "flex auto cross size");
+    let used_cross_size = available_cross_size.unwrap_or(auto_cross_size);
+    let line_cross_size = used_cross_size;
+
+    let layout_items = items
+        .iter()
+        .copied()
+        .map(|item| {
+            let target_cross_size = target_cross_size_for_item(item, line_cross_size);
+            let cross_offset = cross_offset_for_item(item, target_cross_size, line_cross_size);
+            FlexItemCrossAxisLayout::new(item, target_cross_size, cross_offset)
+        })
+        .collect();
+
+    let container = FlexContainerCrossAxisLayout::new(
+        FlexCrossAxis::Block,
+        available_cross_size,
+        line_cross_size,
+        auto_cross_size,
+        used_cross_size,
+    );
+
+    FlexCrossAxisLayout::new(container, layout_items)
 }
 
 fn distribution_for(items: &[FlexItemMainAxisInput], free_space: f32) -> FlexFreeSpaceDistribution {
@@ -376,6 +675,44 @@ fn target_sizes_for_distribution(
             items.iter().map(|item| item.base_main_size()).collect()
         }
     }
+}
+
+fn target_cross_size_for_item(item: FlexItemCrossAxisInput, line_cross_size: CssPx) -> CssPx {
+    if item.alignment() == FlexCrossAxisAlignment::Stretch && item.can_stretch() {
+        let stretched =
+            line_cross_size.get() - item.margin_before().get() - item.margin_after().get();
+        css_px_from_nonnegative(stretched, "flex stretched cross size")
+    } else {
+        item.hypothetical_cross_size()
+    }
+}
+
+fn cross_offset_for_item(
+    item: FlexItemCrossAxisInput,
+    target_cross_size: CssPx,
+    line_cross_size: CssPx,
+) -> SignedCssPx {
+    let outer_target =
+        item.margin_before().get() + target_cross_size.get() + item.margin_after().get();
+    let free_space = line_cross_size.get() - outer_target;
+    let offset = match item.alignment() {
+        FlexCrossAxisAlignment::Start | FlexCrossAxisAlignment::Stretch => {
+            item.margin_before().get()
+        }
+        FlexCrossAxisAlignment::Center => item.margin_before().get() + free_space / 2.0,
+        FlexCrossAxisAlignment::End => item.margin_before().get() + free_space,
+    };
+    signed_px_from_finite(offset, "flex item cross offset")
+}
+
+fn bool_debug_label(value: bool) -> &'static str {
+    if value { "yes" } else { "no" }
+}
+
+fn optional_css_px_debug_label(value: Option<CssPx>) -> String {
+    value
+        .map(css_px_debug_label)
+        .unwrap_or_else(|| "auto".to_string())
 }
 
 fn is_valid_factor(value: f32) -> bool {
@@ -490,6 +827,93 @@ mod tests {
         assert_eq!(layout.items()[1].target_main_size(), px(40.0));
     }
 
+    #[test]
+    fn flex_cross_no_items_records_deterministic_container_sizes() {
+        let auto = resolve_flex_cross_axis_layout(None, &[]);
+        assert_eq!(auto.container().axis(), FlexCrossAxis::Block);
+        assert_eq!(auto.container().available_cross_size(), None);
+        assert_eq!(auto.container().line_cross_size(), px(0.0));
+        assert_eq!(auto.container().auto_cross_size(), px(0.0));
+        assert_eq!(auto.container().used_cross_size(), px(0.0));
+        assert!(auto.items().is_empty());
+
+        let explicit = resolve_flex_cross_axis_layout(Some(px(80.0)), &[]);
+        assert_eq!(explicit.container().available_cross_size(), Some(px(80.0)));
+        assert_eq!(explicit.container().line_cross_size(), px(80.0));
+        assert_eq!(explicit.container().auto_cross_size(), px(0.0));
+        assert_eq!(explicit.container().used_cross_size(), px(80.0));
+    }
+
+    #[test]
+    fn flex_cross_auto_container_uses_max_outer_hypothetical_size() {
+        let layout = resolve_flex_cross_axis_layout(
+            None,
+            &[
+                cross_item(10.0, 2.0, 3.0, FlexCrossAxisAlignment::Stretch, true),
+                cross_item(20.0, 1.0, 4.0, FlexCrossAxisAlignment::Stretch, true),
+            ],
+        );
+
+        assert_eq!(layout.container().auto_cross_size(), px(25.0));
+        assert_eq!(layout.container().line_cross_size(), px(25.0));
+        assert_eq!(layout.items()[0].target_cross_size(), px(20.0));
+        assert_eq!(layout.items()[0].cross_offset(), spx(2.0));
+        assert_eq!(layout.items()[1].target_cross_size(), px(20.0));
+        assert_eq!(layout.items()[1].cross_offset(), spx(1.0));
+    }
+
+    #[test]
+    fn flex_cross_explicit_container_drives_stretch_target_size() {
+        let layout = resolve_flex_cross_axis_layout(
+            Some(px(60.0)),
+            &[cross_item(
+                10.0,
+                5.0,
+                7.0,
+                FlexCrossAxisAlignment::Stretch,
+                true,
+            )],
+        );
+
+        assert_eq!(layout.container().line_cross_size(), px(60.0));
+        assert_eq!(layout.container().auto_cross_size(), px(22.0));
+        assert_eq!(layout.items()[0].target_cross_size(), px(48.0));
+        assert_eq!(layout.items()[0].cross_offset(), spx(5.0));
+    }
+
+    #[test]
+    fn flex_cross_alignment_offsets_are_deterministic() {
+        let layout = resolve_flex_cross_axis_layout(
+            Some(px(100.0)),
+            &[
+                cross_item(20.0, 5.0, 5.0, FlexCrossAxisAlignment::Start, false),
+                cross_item(20.0, 5.0, 5.0, FlexCrossAxisAlignment::Center, false),
+                cross_item(20.0, 5.0, 5.0, FlexCrossAxisAlignment::End, false),
+            ],
+        );
+
+        assert_eq!(layout.items()[0].cross_offset(), spx(5.0));
+        assert_eq!(layout.items()[1].cross_offset(), spx(40.0));
+        assert_eq!(layout.items()[2].cross_offset(), spx(75.0));
+    }
+
+    #[test]
+    fn flex_cross_stretch_clamps_negative_target_size_to_zero() {
+        let layout = resolve_flex_cross_axis_layout(
+            Some(px(10.0)),
+            &[cross_item(
+                30.0,
+                8.0,
+                9.0,
+                FlexCrossAxisAlignment::Stretch,
+                true,
+            )],
+        );
+
+        assert_eq!(layout.items()[0].target_cross_size(), px(0.0));
+        assert_eq!(layout.items()[0].cross_offset(), spx(8.0));
+    }
+
     fn item(
         base: f32,
         margin_start: f32,
@@ -499,6 +923,22 @@ mod tests {
     ) -> FlexItemMainAxisInput {
         FlexItemMainAxisInput::new(px(base), spx(margin_start), spx(margin_end), grow, shrink)
             .expect("valid flex item input")
+    }
+
+    fn cross_item(
+        hypothetical: f32,
+        margin_before: f32,
+        margin_after: f32,
+        alignment: FlexCrossAxisAlignment,
+        can_stretch: bool,
+    ) -> FlexItemCrossAxisInput {
+        FlexItemCrossAxisInput::new(
+            px(hypothetical),
+            spx(margin_before),
+            spx(margin_after),
+            alignment,
+            can_stretch,
+        )
     }
 
     fn px(value: f32) -> CssPx {
