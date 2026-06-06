@@ -25,6 +25,7 @@ Related documents:
 - `docs/rendering/x4-intrinsic-sizing-supported-content.md`
 - `docs/rendering/x5-min-max-sizing-constraints.md`
 - `docs/rendering/x7-shrink-to-fit-containing-size-dependent-sizing.md`
+- `docs/rendering/z4-flex-cross-axis-layout-core-subset.md`
 
 ## Supported Scope
 
@@ -98,6 +99,10 @@ minimal cross-axis bookkeeping step top-aligns items at the container content
 top and computes the container auto block size from the maximum laid-out item
 height. This is required to produce coherent geometry, but it is not
 cross-axis alignment support.
+
+Z4 supersedes that minimal bookkeeping with a typed, layout-owned cross-axis
+pass for the row-only single-line subset. See
+`docs/rendering/z4-flex-cross-axis-layout-core-subset.md`.
 
 Paint consumes the final `LayoutBox` rectangles exactly as it does for other
 layout modes. Paint must not inspect flex metadata to infer behavior.

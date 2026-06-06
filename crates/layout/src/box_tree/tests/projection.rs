@@ -2042,9 +2042,11 @@ fn flex_row_items_are_laid_out_horizontally_in_generated_order() {
     assert_eq!(first.rect.x, section.content_x_and_width().0);
     assert_eq!(first.rect.y, section.content_y());
     assert_eq!(first.rect.width, 80.0);
+    assert_eq!(first.rect.height, 10.0);
     assert_eq!(second.rect.x, section.content_x_and_width().0 + 80.0);
     assert_eq!(second.rect.y, section.content_y());
     assert_eq!(second.rect.width, 60.0);
+    assert_eq!(second.rect.height, 20.0);
 
     assert_eq!(
         section
@@ -2068,6 +2070,22 @@ fn flex_row_items_are_laid_out_horizontally_in_generated_order() {
             .main_offset()
             .get(),
         80.0
+    );
+    assert_eq!(
+        section
+            .flex_container_cross_axis
+            .expect("container cross metadata")
+            .auto_cross_size()
+            .get(),
+        20.0
+    );
+    assert_eq!(
+        first
+            .flex_item_cross_axis
+            .expect("first item cross metadata")
+            .target_cross_size()
+            .get(),
+        10.0
     );
 }
 
@@ -2104,9 +2122,109 @@ fn flex_row_excludes_out_of_flow_children_from_main_axis_distribution() {
     assert_eq!(first.rect.x, section.content_x_and_width().0);
     assert_eq!(second.rect.x, section.content_x_and_width().0 + 70.0);
     assert_eq!(aside.flex_item_main_axis, None);
+    assert_eq!(aside.flex_item_cross_axis, None);
     assert_eq!(
         aside.flow_participation(),
         FlowParticipation::OutOfFlow(OutOfFlowKind::AbsolutelyPositioned)
+    );
+}
+
+#[test]
+fn flex_row_auto_cross_size_uses_max_item_outer_cross_size() {
+    let dom = doc_with_body(vec![element(
+        2,
+        "section",
+        vec![("display", "flex"), ("width", "300px")],
+        vec![
+            element(
+                3,
+                "div",
+                vec![("height", "10px"), ("margin-top", "2px")],
+                Vec::new(),
+            ),
+            element(
+                4,
+                "div",
+                vec![("height", "20px"), ("margin-bottom", "4px")],
+                Vec::new(),
+            ),
+        ],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let output = crate::layout_document(crate::LayoutPhaseInput::new(
+        &styled,
+        500.0,
+        &TestMeasurer,
+        None,
+    ));
+
+    let section = find_layout_by_direct_node_id(output.root(), Id(2)).expect("section layout box");
+    let first = find_layout_by_direct_node_id(output.root(), Id(3)).expect("first flex item");
+    let second = find_layout_by_direct_node_id(output.root(), Id(4)).expect("second flex item");
+
+    assert_eq!(section.rect.height, 24.0);
+    assert_eq!(first.rect.y, section.content_y() + 2.0);
+    assert_eq!(first.rect.height, 10.0);
+    assert_eq!(second.rect.y, section.content_y());
+    assert_eq!(second.rect.height, 20.0);
+    assert_eq!(
+        section
+            .flex_container_cross_axis
+            .expect("container cross metadata")
+            .auto_cross_size()
+            .get(),
+        24.0
+    );
+}
+
+#[test]
+fn flex_row_explicit_cross_size_stretches_auto_height_items() {
+    let dom = doc_with_body(vec![element(
+        2,
+        "section",
+        vec![("display", "flex"), ("width", "300px"), ("height", "60px")],
+        vec![
+            element(3, "div", Vec::new(), Vec::new()),
+            element(4, "div", vec![("height", "20px")], Vec::new()),
+        ],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let output = crate::layout_document(crate::LayoutPhaseInput::new(
+        &styled,
+        500.0,
+        &TestMeasurer,
+        None,
+    ));
+
+    let section = find_layout_by_direct_node_id(output.root(), Id(2)).expect("section layout box");
+    let first = find_layout_by_direct_node_id(output.root(), Id(3)).expect("first flex item");
+    let second = find_layout_by_direct_node_id(output.root(), Id(4)).expect("second flex item");
+
+    assert_eq!(section.rect.height, 60.0);
+    assert_eq!(first.rect.y, section.content_y());
+    assert_eq!(first.rect.height, 60.0);
+    assert_eq!(second.rect.y, section.content_y());
+    assert_eq!(second.rect.height, 20.0);
+    assert_eq!(
+        section
+            .flex_container_cross_axis
+            .expect("container cross metadata")
+            .available_cross_size()
+            .expect("explicit cross size")
+            .get(),
+        60.0
+    );
+    assert!(
+        first
+            .flex_item_cross_axis
+            .expect("first item cross metadata")
+            .stretches()
+    );
+    assert!(
+        !second
+            .flex_item_cross_axis
+            .expect("second item cross metadata")
+            .stretches()
     );
 }
 
@@ -2203,6 +2321,8 @@ fn flex_main_axis_debug_snapshot_exposes_container_and_item_decisions() {
 
     assert!(snapshot.contains("flex-main-axis=(axis=row"));
     assert!(snapshot.contains("distribution=negative-shrink"));
+    assert!(snapshot.contains("flex-cross-axis=(axis=block"));
     assert!(snapshot.contains("flex-item-main-axis=(base=100.00px target=75.00px offset=0.00px"));
     assert!(snapshot.contains("flex-item-main-axis=(base=100.00px target=75.00px offset=75.00px"));
+    assert!(snapshot.contains("flex-item-cross-axis=(hypothetical=0.00px"));
 }
