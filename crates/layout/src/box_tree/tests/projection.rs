@@ -2299,6 +2299,251 @@ fn flex_row_distribution_applies_min_width_through_sizing_constraints() {
 }
 
 #[test]
+fn z5_flex_container_participates_in_parent_block_flow_with_auto_height() {
+    let dom = doc(vec![element(
+        2,
+        "main",
+        Vec::new(),
+        vec![
+            element(3, "div", vec![("height", "10px")], Vec::new()),
+            element(
+                4,
+                "section",
+                vec![("display", "flex"), ("width", "300px")],
+                vec![
+                    element(5, "div", vec![("height", "20px")], Vec::new()),
+                    element(6, "div", vec![("height", "12px")], Vec::new()),
+                ],
+            ),
+            element(7, "footer", vec![("height", "5px")], Vec::new()),
+        ],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let layout = crate::layout_block_tree(&styled, 500.0, &TestMeasurer, None);
+
+    let main = find_layout_by_direct_node_id(&layout, Id(2)).expect("main layout box");
+    let before = find_layout_by_direct_node_id(&layout, Id(3)).expect("before layout box");
+    let flex = find_layout_by_direct_node_id(&layout, Id(4)).expect("flex layout box");
+    let after = find_layout_by_direct_node_id(&layout, Id(7)).expect("after layout box");
+
+    assert_eq!(before.rect.y, main.content_y());
+    assert_eq!(before.rect.height, 10.0);
+    assert_eq!(flex.rect.y, main.content_y() + 10.0);
+    assert_eq!(flex.rect.height, 20.0);
+    assert_eq!(after.rect.y, main.content_y() + 30.0);
+    assert_eq!(main.rect.height, 35.0);
+    assert_eq!(flex.display_behavior(), DisplayBoxBehavior::FlexContainer);
+    assert_eq!(
+        flex.block_formatting_participation(),
+        BlockFormattingParticipation::BlockLevel
+    );
+}
+
+#[test]
+fn z5_flex_item_percentage_width_uses_containing_size_not_margin_narrowed_available_space() {
+    let dom = doc_with_body(vec![element(
+        2,
+        "section",
+        vec![
+            ("display", "flex"),
+            ("width", "200px"),
+            ("padding-left", "10px"),
+            ("padding-right", "10px"),
+        ],
+        vec![element(
+            3,
+            "div",
+            vec![
+                ("width", "50%"),
+                ("height", "10px"),
+                ("margin-left", "20px"),
+                ("margin-right", "30px"),
+            ],
+            Vec::new(),
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let output = crate::layout_document(crate::LayoutPhaseInput::new(
+        &styled,
+        500.0,
+        &TestMeasurer,
+        None,
+    ));
+
+    let section = find_layout_by_direct_node_id(output.root(), Id(2)).expect("section layout box");
+    let item = find_layout_by_direct_node_id(output.root(), Id(3)).expect("flex item");
+
+    assert_eq!(section.content_x_and_width(), (10.0, 200.0));
+    assert_eq!(item.rect.x, 30.0);
+    assert_eq!(item.rect.width, 100.0);
+    assert_eq!(
+        item.flex_item_main_axis
+            .expect("item flex main-axis metadata")
+            .margin_start()
+            .get(),
+        20.0
+    );
+    assert_eq!(
+        item.used_content_size
+            .expect("item used size")
+            .inline()
+            .preferred_reason(),
+        crate::SizeResolutionReason::FlexDistributed
+    );
+}
+
+#[test]
+fn z5_flex_distributed_size_preserves_content_box_constraints_and_padding() {
+    let dom = doc_with_body(vec![element(
+        2,
+        "section",
+        vec![("display", "flex"), ("width", "80px")],
+        vec![element(
+            3,
+            "div",
+            vec![
+                ("width", "100px"),
+                ("min-width", "90px"),
+                ("padding-left", "5px"),
+                ("padding-right", "5px"),
+            ],
+            Vec::new(),
+        )],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let output = crate::layout_document(crate::LayoutPhaseInput::new(
+        &styled,
+        500.0,
+        &TestMeasurer,
+        None,
+    ));
+
+    let item = find_layout_by_direct_node_id(output.root(), Id(3)).expect("flex item");
+    let inline = item.used_content_size.expect("item used size").inline();
+
+    assert_eq!(item.rect.width, 100.0);
+    assert_eq!(item.content_x_and_width(), (5.0, 90.0));
+    assert_eq!(
+        inline.preferred_reason(),
+        crate::SizeResolutionReason::FlexDistributed
+    );
+    assert_eq!(
+        inline.applied_constraint(),
+        crate::AppliedSizeConstraint::Min
+    );
+}
+
+#[test]
+fn z5_nested_flex_container_is_flex_item_and_own_formatting_context() {
+    let dom = doc_with_body(vec![element(
+        2,
+        "section",
+        vec![("display", "flex"), ("width", "300px")],
+        vec![
+            element(
+                3,
+                "article",
+                vec![("display", "flex"), ("width", "120px")],
+                vec![
+                    element(4, "div", vec![("width", "30px")], Vec::new()),
+                    element(5, "div", vec![("width", "40px")], Vec::new()),
+                ],
+            ),
+            element(6, "aside", vec![("width", "50px")], Vec::new()),
+        ],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let output = crate::layout_document(crate::LayoutPhaseInput::new(
+        &styled,
+        500.0,
+        &TestMeasurer,
+        None,
+    ));
+
+    let outer = find_layout_by_direct_node_id(output.root(), Id(2)).expect("outer flex");
+    let nested = find_layout_by_direct_node_id(output.root(), Id(3)).expect("nested flex");
+    let nested_first = find_layout_by_direct_node_id(output.root(), Id(4)).expect("nested item");
+    let nested_second = find_layout_by_direct_node_id(output.root(), Id(5)).expect("nested item");
+    let sibling = find_layout_by_direct_node_id(output.root(), Id(6)).expect("sibling item");
+
+    assert_eq!(
+        nested.flex_formatting_participation(),
+        FlexFormattingParticipation::FlexItem
+    );
+    assert_eq!(nested.display_behavior(), DisplayBoxBehavior::FlexContainer);
+    assert_eq!(
+        nested.establishes_formatting_context(),
+        Some(FormattingContextKind::Flex)
+    );
+    assert_eq!(nested.rect.x, outer.content_x_and_width().0);
+    assert_eq!(sibling.rect.x, outer.content_x_and_width().0 + 120.0);
+    assert_eq!(nested_first.rect.x, nested.content_x_and_width().0);
+    assert_eq!(nested_second.rect.x, nested.content_x_and_width().0 + 30.0);
+}
+
+#[test]
+fn z5_out_of_flow_child_inside_flex_keeps_positioning_metadata_without_flex_participation() {
+    let dom = doc_with_body(vec![element(
+        2,
+        "section",
+        vec![
+            ("display", "flex"),
+            ("position", "relative"),
+            ("width", "300px"),
+        ],
+        vec![
+            element(3, "div", vec![("width", "60px")], Vec::new()),
+            element(
+                4,
+                "aside",
+                vec![("position", "absolute"), ("width", "90px")],
+                Vec::new(),
+            ),
+            element(5, "div", vec![("width", "40px")], Vec::new()),
+        ],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let output = crate::layout_document(crate::LayoutPhaseInput::new(
+        &styled,
+        500.0,
+        &TestMeasurer,
+        None,
+    ));
+
+    let section = find_layout_by_direct_node_id(output.root(), Id(2)).expect("section layout box");
+    let first = find_layout_by_direct_node_id(output.root(), Id(3)).expect("first flex item");
+    let aside = find_layout_by_direct_node_id(output.root(), Id(4)).expect("out-of-flow child");
+    let second = find_layout_by_direct_node_id(output.root(), Id(5)).expect("second flex item");
+
+    assert_eq!(first.rect.x, section.content_x_and_width().0);
+    assert_eq!(second.rect.x, section.content_x_and_width().0 + 60.0);
+    assert_eq!(
+        aside.flow_participation(),
+        FlowParticipation::OutOfFlow(OutOfFlowKind::AbsolutelyPositioned)
+    );
+    assert_eq!(
+        aside
+            .positioned_containing_block()
+            .expect("absolute child positioned containing block")
+            .box_id(),
+        section.box_id()
+    );
+    assert_eq!(aside.flex_item_main_axis, None);
+    assert_eq!(aside.flex_item_cross_axis, None);
+    assert_eq!(output.out_of_flow_participants().len(), 1);
+    assert_eq!(
+        output.out_of_flow_participants()[0].box_id(),
+        aside.box_id()
+    );
+    assert_eq!(
+        output.out_of_flow_participants()[0]
+            .positioned_containing_block()
+            .box_id(),
+        section.box_id()
+    );
+}
+
+#[test]
 fn flex_main_axis_debug_snapshot_exposes_container_and_item_decisions() {
     let dom = doc_with_body(vec![element(
         2,
