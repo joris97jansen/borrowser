@@ -58,7 +58,9 @@
 //! documented in
 //! `docs/rendering/z3-flex-main-axis-layout-core-subset.md`; Z4 flex
 //! cross-axis layout is documented in
-//! `docs/rendering/z4-flex-cross-axis-layout-core-subset.md`.
+//! `docs/rendering/z4-flex-cross-axis-layout-core-subset.md`; Z5 flex
+//! integration hardening is documented in
+//! `docs/rendering/z5-flex-layout-integration-hardening.md`.
 //! `BoxTree` is the frame-local generated box-tree structure; `LayoutBox` is
 //! the current geometry projection consumed by paint and hit testing.
 
