@@ -145,6 +145,27 @@ impl<'style_tree, 'dom> LayoutPhaseOutput<'style_tree, 'dom> {
         append_layout_advanced_flow_snapshot(&mut out, self.root(), 0, 0);
         out
     }
+
+    /// Stable flex-focused debug snapshot for retained flex layout decisions.
+    ///
+    /// This surface serializes the flex metadata stored on `LayoutBox` by the
+    /// layout algorithm. It deliberately avoids reconstructing flex decisions
+    /// from final rectangles.
+    pub fn to_flex_debug_snapshot(&self) -> String {
+        let mut out = String::new();
+        writeln!(&mut out, "version: 1").expect("write snapshot");
+        writeln!(&mut out, "layout-flex").expect("write snapshot");
+        writeln!(&mut out, "viewport-width: {:.2}", self.viewport_width()).expect("write snapshot");
+        writeln!(
+            &mut out,
+            "flex-containers: {}",
+            count_flex_containers(self.root())
+        )
+        .expect("write snapshot");
+        let mut next_container_index = 0;
+        append_layout_flex_snapshot(&mut out, self.root(), &mut next_container_index);
+        out
+    }
 }
 
 fn count_styled_nodes(node: &StyledNode<'_>) -> usize {
@@ -161,6 +182,19 @@ fn count_layout_boxes(layout: &LayoutBox<'_, '_>) -> usize {
         .iter()
         .map(|child| count_layout_boxes(child))
         .sum::<usize>()
+}
+
+fn count_flex_containers(layout: &LayoutBox<'_, '_>) -> usize {
+    let self_count = usize::from(matches!(
+        layout.display_behavior(),
+        DisplayBoxBehavior::FlexContainer
+    ));
+    self_count
+        + layout
+            .children
+            .iter()
+            .map(|child| count_flex_containers(child))
+            .sum::<usize>()
 }
 
 fn append_out_of_flow_participants_snapshot(
@@ -234,6 +268,59 @@ fn append_layout_box_snapshot(
         next_index = append_layout_box_snapshot(out, child, next_index, depth + 1);
     }
     next_index
+}
+
+fn append_layout_flex_snapshot(
+    out: &mut String,
+    layout: &LayoutBox<'_, '_>,
+    next_container_index: &mut usize,
+) {
+    if matches!(layout.display_behavior(), DisplayBoxBehavior::FlexContainer) {
+        let container_index = *next_container_index;
+        *next_container_index += 1;
+        let flex_items = direct_flex_items(layout);
+
+        writeln!(
+            out,
+            "container[{container_index}]: box-id={} source={} node={} main=({}) cross=({}) items={}",
+            box_id_debug_label(layout.box_id()),
+            layout_box_source_debug_label(layout.source),
+            node_debug_label(layout.node.node),
+            retained_flex_container_main_axis_debug_label(layout.flex_container_main_axis),
+            retained_flex_container_cross_axis_debug_label(layout.flex_container_cross_axis),
+            flex_items.len(),
+        )
+        .expect("write snapshot");
+
+        for (item_index, item) in flex_items.iter().enumerate() {
+            writeln!(
+                out,
+                "  item[{item_index}]: box-id={} source={} node={} main=({}) cross=({})",
+                box_id_debug_label(item.box_id()),
+                layout_box_source_debug_label(item.source),
+                node_debug_label(item.node.node),
+                retained_flex_item_main_axis_debug_label(item.flex_item_main_axis),
+                retained_flex_item_cross_axis_debug_label(item.flex_item_cross_axis),
+            )
+            .expect("write snapshot");
+        }
+    }
+
+    for child in &layout.children {
+        append_layout_flex_snapshot(out, child, next_container_index);
+    }
+}
+
+fn direct_flex_items<'layout, 'style_tree, 'dom>(
+    layout: &'layout LayoutBox<'style_tree, 'dom>,
+) -> Vec<&'layout LayoutBox<'style_tree, 'dom>> {
+    layout
+        .children
+        .iter()
+        .filter(|child| {
+            child.flex_formatting_participation() == FlexFormattingParticipation::FlexItem
+        })
+        .collect()
 }
 
 fn append_layout_sizing_snapshot(
@@ -395,10 +482,26 @@ fn flex_container_main_axis_debug_label(
         .unwrap_or_default()
 }
 
+fn retained_flex_container_main_axis_debug_label(
+    layout: Option<crate::FlexContainerMainAxisLayout>,
+) -> String {
+    layout
+        .map(|layout| layout.as_debug_label())
+        .unwrap_or_else(|| "none".to_string())
+}
+
 fn flex_item_main_axis_debug_label(layout: Option<crate::FlexItemMainAxisLayout>) -> String {
     layout
         .map(|layout| format!(" flex-item-main-axis=({})", layout.as_debug_label()))
         .unwrap_or_default()
+}
+
+fn retained_flex_item_main_axis_debug_label(
+    layout: Option<crate::FlexItemMainAxisLayout>,
+) -> String {
+    layout
+        .map(|layout| layout.as_debug_label())
+        .unwrap_or_else(|| "none".to_string())
 }
 
 fn flex_container_cross_axis_debug_label(
@@ -409,10 +512,26 @@ fn flex_container_cross_axis_debug_label(
         .unwrap_or_default()
 }
 
+fn retained_flex_container_cross_axis_debug_label(
+    layout: Option<crate::FlexContainerCrossAxisLayout>,
+) -> String {
+    layout
+        .map(|layout| layout.as_debug_label())
+        .unwrap_or_else(|| "none".to_string())
+}
+
 fn flex_item_cross_axis_debug_label(layout: Option<crate::FlexItemCrossAxisLayout>) -> String {
     layout
         .map(|layout| format!(" flex-item-cross-axis=({})", layout.as_debug_label()))
         .unwrap_or_default()
+}
+
+fn retained_flex_item_cross_axis_debug_label(
+    layout: Option<crate::FlexItemCrossAxisLayout>,
+) -> String {
+    layout
+        .map(|layout| layout.as_debug_label())
+        .unwrap_or_else(|| "none".to_string())
 }
 
 fn optional_inline_formatting_context_id_debug_label(
