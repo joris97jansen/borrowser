@@ -223,6 +223,39 @@ fn property_registry_lookup_is_deterministic_for_representative_property_names()
 }
 
 #[test]
+fn unsupported_flex_properties_are_not_registered_for_cascade_or_computed_style() {
+    let registry = property_registry();
+    let unsupported_flex_properties = [
+        "align-content",
+        "align-items",
+        "align-self",
+        "column-gap",
+        "flex",
+        "flex-basis",
+        "flex-direction",
+        "flex-flow",
+        "flex-grow",
+        "flex-shrink",
+        "flex-wrap",
+        "gap",
+        "justify-content",
+        "order",
+        "row-gap",
+    ];
+
+    for name in unsupported_flex_properties {
+        assert_eq!(PropertyId::from_name(name), None, "{name}");
+        assert_eq!(registry.lookup(name), None, "{name}");
+        assert!(
+            PropertyId::ALL
+                .iter()
+                .all(|property| property.name() != name),
+            "{name}"
+        );
+    }
+}
+
+#[test]
 fn property_lookup_table_is_sorted_for_binary_search() {
     let names = PROPERTY_LOOKUP_BY_NAME
         .iter()

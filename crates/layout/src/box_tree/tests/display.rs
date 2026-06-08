@@ -81,24 +81,35 @@ fn supported_display_values_map_to_principal_box_behavior() {
 
 #[test]
 fn unsupported_display_keywords_do_not_reach_box_generation_as_deferred_modes() {
-    let dom = doc(vec![element(
-        2,
-        "html",
-        Vec::new(),
-        vec![element(
-            3,
-            "body",
+    for (node_id, display) in [(4, "grid"), (5, "inline-flex")] {
+        let dom = doc(vec![element(
+            2,
+            "html",
             Vec::new(),
-            vec![element(4, "span", vec![("display", "grid")], Vec::new())],
-        )],
-    )]);
-    let styled = css::build_style_tree(&dom, None);
-    let tree = BoxTree::generate(&styled, None);
+            vec![element(
+                3,
+                "body",
+                Vec::new(),
+                vec![element(
+                    node_id,
+                    "span",
+                    vec![("display", display)],
+                    Vec::new(),
+                )],
+            )],
+        )]);
+        let styled = css::build_style_tree(&dom, None);
+        let tree = BoxTree::generate(&styled, None);
 
-    let unsupported = box_by_node_id(&tree, Id(4));
-    assert_eq!(unsupported.display(), Display::Inline);
-    assert_eq!(unsupported.kind(), BoxKind::Inline);
-    assert_eq!(unsupported.display_behavior(), DisplayBoxBehavior::Inline);
+        let unsupported = box_by_node_id(&tree, Id(node_id));
+        assert_eq!(unsupported.display(), Display::Inline, "{display}");
+        assert_eq!(unsupported.kind(), BoxKind::Inline, "{display}");
+        assert_eq!(
+            unsupported.display_behavior(),
+            DisplayBoxBehavior::Inline,
+            "{display}"
+        );
+    }
 }
 
 #[test]

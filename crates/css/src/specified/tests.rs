@@ -142,6 +142,10 @@ fn rejects_values_that_do_not_match_the_property_specified_shape() {
         SpecifiedValueParseErrorKind::UnsupportedDisplayKeyword
     );
     assert_eq!(
+        parse_error(PropertyId::Display, "display: inline-flex"),
+        SpecifiedValueParseErrorKind::UnsupportedDisplayKeyword
+    );
+    assert_eq!(
         parse_error(PropertyId::Width, "width: none"),
         SpecifiedValueParseErrorKind::UnsupportedKeyword
     );

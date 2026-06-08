@@ -2299,6 +2299,118 @@ fn flex_row_distribution_applies_min_width_through_sizing_constraints() {
 }
 
 #[test]
+fn unsupported_authored_flex_declarations_do_not_change_z6_production_subset_layout() {
+    let dom = doc_with_body(vec![element(
+        2,
+        "section",
+        vec![
+            ("display", "flex"),
+            ("width", "300px"),
+            ("height", "60px"),
+            ("flex-direction", "column"),
+            ("flex-wrap", "wrap"),
+            ("flex-flow", "column wrap"),
+            ("justify-content", "center"),
+            ("align-items", "center"),
+            ("align-content", "space-between"),
+            ("gap", "20px"),
+            ("row-gap", "30px"),
+            ("column-gap", "40px"),
+        ],
+        vec![
+            element(
+                3,
+                "div",
+                vec![
+                    ("width", "40px"),
+                    ("height", "10px"),
+                    ("order", "2"),
+                    ("align-self", "flex-end"),
+                    ("flex", "1 0 100px"),
+                    ("flex-grow", "1"),
+                    ("flex-shrink", "0"),
+                    ("flex-basis", "100px"),
+                ],
+                Vec::new(),
+            ),
+            element(
+                4,
+                "div",
+                vec![("width", "30px"), ("height", "20px"), ("order", "1")],
+                Vec::new(),
+            ),
+        ],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let output = crate::layout_document(crate::LayoutPhaseInput::new(
+        &styled,
+        500.0,
+        &TestMeasurer,
+        None,
+    ));
+
+    let section = find_layout_by_direct_node_id(output.root(), Id(2)).expect("section layout box");
+    let first = find_layout_by_direct_node_id(output.root(), Id(3)).expect("first flex item");
+    let second = find_layout_by_direct_node_id(output.root(), Id(4)).expect("second flex item");
+
+    assert_eq!(
+        section
+            .flex_container_main_axis
+            .expect("container main-axis metadata")
+            .axis(),
+        crate::FlexMainAxis::Row
+    );
+    assert_eq!(
+        section
+            .flex_container_cross_axis
+            .expect("container cross-axis metadata")
+            .axis(),
+        crate::FlexCrossAxis::Block
+    );
+    assert_eq!(
+        section
+            .flex_container_main_axis
+            .expect("container main-axis metadata")
+            .distribution(),
+        crate::FlexFreeSpaceDistribution::PositiveNoGrow
+    );
+
+    assert_eq!(first.rect.x, section.content_x_and_width().0);
+    assert_eq!(first.rect.y, section.content_y());
+    assert_eq!(first.rect.width, 40.0);
+    assert_eq!(first.rect.height, 10.0);
+    assert_eq!(second.rect.x, section.content_x_and_width().0 + 40.0);
+    assert_eq!(second.rect.y, section.content_y());
+    assert_eq!(second.rect.width, 30.0);
+    assert_eq!(second.rect.height, 20.0);
+
+    let first_main = first
+        .flex_item_main_axis
+        .expect("first item main-axis metadata");
+    assert_eq!(first_main.base_main_size().get(), 40.0);
+    assert_eq!(first_main.target_main_size().get(), 40.0);
+    assert_eq!(first_main.flex_grow(), 0.0);
+    assert_eq!(first_main.flex_shrink(), 1.0);
+    assert_eq!(first_main.main_offset().get(), 0.0);
+
+    assert_eq!(
+        second
+            .flex_item_main_axis
+            .expect("second item main-axis metadata")
+            .main_offset()
+            .get(),
+        40.0
+    );
+    assert_eq!(
+        first
+            .flex_item_cross_axis
+            .expect("first item cross-axis metadata")
+            .alignment(),
+        crate::FlexCrossAxisAlignment::Stretch
+    );
+}
+
+#[test]
 fn z5_flex_container_participates_in_parent_block_flow_with_auto_height() {
     let dom = doc(vec![element(
         2,
