@@ -2683,3 +2683,54 @@ fn flex_main_axis_debug_snapshot_exposes_container_and_item_decisions() {
     assert!(snapshot.contains("flex-item-main-axis=(base=100.00px target=75.00px offset=75.00px"));
     assert!(snapshot.contains("flex-item-cross-axis=(hypothetical=0.00px"));
 }
+
+#[test]
+fn flex_layout_debug_snapshot_pins_retained_main_and_cross_axis_metadata() {
+    let dom = doc_with_body(vec![element(
+        2,
+        "section",
+        vec![("display", "flex"), ("width", "150px"), ("height", "40px")],
+        vec![
+            element(
+                3,
+                "div",
+                vec![
+                    ("width", "100px"),
+                    ("margin-top", "2px"),
+                    ("margin-bottom", "3px"),
+                ],
+                Vec::new(),
+            ),
+            element(
+                4,
+                "div",
+                vec![
+                    ("width", "100px"),
+                    ("height", "20px"),
+                    ("margin-top", "4px"),
+                ],
+                Vec::new(),
+            ),
+        ],
+    )]);
+    let styled = css::build_style_tree(&dom, None);
+    let output = crate::layout_document(crate::LayoutPhaseInput::new(
+        &styled,
+        500.0,
+        &TestMeasurer,
+        None,
+    ));
+
+    assert_eq!(
+        output.to_flex_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "layout-flex\n",
+            "viewport-width: 500.00\n",
+            "flex-containers: 1\n",
+            "container[0]: box-id=b3 source=dom(2) node=element(\"section\") main=(axis=row available=150.00px outer-base=200.00px free-space=-50.00px distribution=negative-shrink) cross=(axis=block available=40.00px line=40.00px auto=24.00px used=40.00px) items=2\n",
+            "  item[0]: box-id=b4 source=dom(3) node=element(\"div\") main=(base=100.00px target=75.00px offset=0.00px margin-start=0.00px margin-end=0.00px grow=0.00 shrink=1.00) cross=(hypothetical=0.00px target=35.00px offset=2.00px margin-before=2.00px margin-after=3.00px alignment=stretch can-stretch=yes)\n",
+            "  item[1]: box-id=b5 source=dom(4) node=element(\"div\") main=(base=100.00px target=75.00px offset=75.00px margin-start=0.00px margin-end=0.00px grow=0.00 shrink=1.00) cross=(hypothetical=20.00px target=20.00px offset=4.00px margin-before=4.00px margin-after=0.00px alignment=stretch can-stretch=no)\n",
+        )
+    );
+}

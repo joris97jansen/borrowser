@@ -829,6 +829,26 @@ mod tests {
     }
 
     #[test]
+    fn flex_main_axis_debug_snapshot_is_exact_and_deterministic() {
+        let layout = resolve_flex_main_axis_layout(
+            px(100.0),
+            &[
+                item(100.0, 0.0, 0.0, 0.0, 1.0),
+                item(50.0, 0.0, 0.0, 0.0, 2.0),
+            ],
+        );
+
+        assert_eq!(
+            layout.to_debug_snapshot(),
+            "version: 1\n\
+flex-main-axis\n\
+container: axis=row available=100.00px outer-base=150.00px free-space=-50.00px distribution=negative-shrink\n\
+item[0]: base=100.00px target=75.00px offset=0.00px margin-start=0.00px margin-end=0.00px grow=0.00 shrink=1.00\n\
+item[1]: base=50.00px target=25.00px offset=75.00px margin-start=0.00px margin-end=0.00px grow=0.00 shrink=2.00\n"
+        );
+    }
+
+    #[test]
     fn flex_cross_no_items_records_deterministic_container_sizes() {
         let auto = resolve_flex_cross_axis_layout(None, &[]);
         assert_eq!(auto.container().axis(), FlexCrossAxis::Block);
@@ -913,6 +933,26 @@ mod tests {
 
         assert_eq!(layout.items()[0].target_cross_size(), px(0.0));
         assert_eq!(layout.items()[0].cross_offset(), spx(8.0));
+    }
+
+    #[test]
+    fn flex_cross_axis_debug_snapshot_is_exact_and_deterministic() {
+        let layout = resolve_flex_cross_axis_layout(
+            Some(px(60.0)),
+            &[
+                cross_item(10.0, 5.0, 7.0, FlexCrossAxisAlignment::Stretch, true),
+                cross_item(20.0, 2.0, 3.0, FlexCrossAxisAlignment::End, false),
+            ],
+        );
+
+        assert_eq!(
+            layout.to_debug_snapshot(),
+            "version: 1\n\
+flex-cross-axis\n\
+container: axis=block available=60.00px line=60.00px auto=25.00px used=60.00px\n\
+item[0]: hypothetical=10.00px target=48.00px offset=5.00px margin-before=5.00px margin-after=7.00px alignment=stretch can-stretch=yes\n\
+item[1]: hypothetical=20.00px target=20.00px offset=37.00px margin-before=2.00px margin-after=3.00px alignment=end can-stretch=no\n"
+        );
     }
 
     fn item(
