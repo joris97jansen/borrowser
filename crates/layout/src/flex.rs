@@ -743,6 +743,7 @@ mod tests {
     fn no_items_records_deterministic_noop_distribution() {
         let layout = resolve_flex_main_axis_layout(px(200.0), &[]);
 
+        assert_eq!(layout.container().axis(), FlexMainAxis::Row);
         assert_eq!(
             layout.container().distribution(),
             FlexFreeSpaceDistribution::NoItems

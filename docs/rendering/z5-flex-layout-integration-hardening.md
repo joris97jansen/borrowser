@@ -27,6 +27,7 @@ Related documents:
 - `docs/rendering/z2-flex-box-tree-structure.md`
 - `docs/rendering/z3-flex-main-axis-layout-core-subset.md`
 - `docs/rendering/z4-flex-cross-axis-layout-core-subset.md`
+- `docs/rendering/z6-flex-unsupported-feature-handling.md`
 - `docs/rendering/w5-containing-block-relationships.md`
 - `docs/rendering/w9-box-tree-invariants-extension-hooks.md`
 - `docs/rendering/x1-sizing-architecture-flow-correctness-contract.md`
@@ -159,7 +160,8 @@ Z5 does not implement:
 
 Unsupported flex features must remain explicit follow-up work. They must not
 be approximated through block layout patches, paint-time inference, browser
-runtime behavior, or raw DOM/CSS shortcuts.
+runtime behavior, or raw DOM/CSS shortcuts. Z6 records the boundary-specific
+unsupported feature policy for those exclusions.
 
 ## Exit Contract
 

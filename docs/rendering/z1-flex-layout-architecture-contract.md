@@ -205,7 +205,9 @@ alongside them when implementation begins.
 
 Adding `display: flex` must not silently route through
 `DisplayBoxBehavior::Block`. Unsupported display values must remain explicit
-until the corresponding layout contract and tests exist.
+until the corresponding layout contract and tests exist. The implemented
+Milestone Z unsupported-feature policy is recorded in
+`docs/rendering/z6-flex-unsupported-feature-handling.md`.
 
 ## Formatting-Context Integration
 
