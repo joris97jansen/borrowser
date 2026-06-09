@@ -3,11 +3,18 @@ pub mod contracts;
 mod context;
 mod images;
 mod inline;
+mod primitives;
 mod replaced;
 mod text_control;
 
 pub(crate) use context::PaintCtx;
 pub use images::{ImageProvider, ImageState};
+pub use primitives::{
+    PaintBackground, PaintBorder, PaintBorderEdges, PaintBorderSide, PaintClip, PaintClipScope,
+    PaintColor, PaintInlineBox, PaintInput, PaintListMarker, PaintListMarkerKind, PaintNode,
+    PaintPrimitive, PaintPrimitiveKind, PaintReplaced, PaintReplacedKind, PaintSource, PaintText,
+    PaintTree,
+};
 
 use crate::EguiTextMeasurer;
 use crate::input::{ActiveTarget, InputValueStore};
@@ -36,6 +43,13 @@ impl<'layout, 'style_tree, 'dom> PaintPhaseInput<'layout, 'style_tree, 'dom> {
 
     pub fn layout_root(&self) -> &'layout LayoutBox<'style_tree, 'dom> {
         self.layout.root()
+    }
+
+    pub fn to_paint_input(
+        &self,
+        measurer: &dyn TextMeasurer,
+    ) -> PaintInput<'layout, 'style_tree, 'dom> {
+        PaintInput::from_phase_input(*self, measurer)
     }
 
     /// Stable debug snapshot for the semantic layout-to-paint handoff.
