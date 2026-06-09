@@ -1,3 +1,5 @@
+pub mod contracts;
+
 mod context;
 mod images;
 mod inline;
