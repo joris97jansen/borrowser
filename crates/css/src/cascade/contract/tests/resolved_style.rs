@@ -55,6 +55,18 @@ fn resolve_cascade_style_marks_inherited_properties_only_when_parent_is_present(
             "version: 1\n",
             "resolved-style\n",
             "  background-color: initial(transparent)\n",
+            "  border-bottom-color: initial(transparent)\n",
+            "  border-bottom-style: initial(none)\n",
+            "  border-bottom-width: initial(0px)\n",
+            "  border-left-color: initial(transparent)\n",
+            "  border-left-style: initial(none)\n",
+            "  border-left-width: initial(0px)\n",
+            "  border-right-color: initial(transparent)\n",
+            "  border-right-style: initial(none)\n",
+            "  border-right-width: initial(0px)\n",
+            "  border-top-color: initial(transparent)\n",
+            "  border-top-style: initial(none)\n",
+            "  border-top-width: initial(0px)\n",
             "  color: inherited\n",
             "  display: initial(inline)\n",
             "  font-size: inherited\n",
@@ -116,6 +128,18 @@ fn resolve_initial_style_materializes_total_canonical_initial_style() {
             "version: 1\n",
             "resolved-style\n",
             "  background-color: initial(transparent)\n",
+            "  border-bottom-color: initial(transparent)\n",
+            "  border-bottom-style: initial(none)\n",
+            "  border-bottom-width: initial(0px)\n",
+            "  border-left-color: initial(transparent)\n",
+            "  border-left-style: initial(none)\n",
+            "  border-left-width: initial(0px)\n",
+            "  border-right-color: initial(transparent)\n",
+            "  border-right-style: initial(none)\n",
+            "  border-right-width: initial(0px)\n",
+            "  border-top-color: initial(transparent)\n",
+            "  border-top-style: initial(none)\n",
+            "  border-top-width: initial(0px)\n",
             "  color: initial(black)\n",
             "  display: initial(inline)\n",
             "  font-size: initial(16px)\n",
@@ -376,8 +400,12 @@ fn resolved_style_builder_is_deterministic_and_property_sorted() {
         style.entries()[0].property(),
         CascadePropertyId::BackgroundColor
     );
-    assert_eq!(style.entries()[1].property(), CascadePropertyId::Color);
-    assert_eq!(style.entries()[2].property(), CascadePropertyId::Display);
+    assert_eq!(
+        style.entries()[1].property(),
+        CascadePropertyId::BorderBottomColor
+    );
+    assert_eq!(style.entries()[13].property(), CascadePropertyId::Color);
+    assert_eq!(style.entries()[14].property(), CascadePropertyId::Display);
     assert_eq!(
         style.get(CascadePropertyId::Width).expect("width").source(),
         &ResolvedValueSource::Initial(InitialStyleValue::AutoKeyword)
@@ -388,6 +416,18 @@ fn resolved_style_builder_is_deterministic_and_property_sorted() {
             "version: 1\n",
             "resolved-style\n",
             "  background-color: initial(transparent)\n",
+            "  border-bottom-color: initial(transparent)\n",
+            "  border-bottom-style: initial(none)\n",
+            "  border-bottom-width: initial(0px)\n",
+            "  border-left-color: initial(transparent)\n",
+            "  border-left-style: initial(none)\n",
+            "  border-left-width: initial(0px)\n",
+            "  border-right-color: initial(transparent)\n",
+            "  border-right-style: initial(none)\n",
+            "  border-right-width: initial(0px)\n",
+            "  border-top-color: initial(transparent)\n",
+            "  border-top-style: initial(none)\n",
+            "  border-top-width: initial(0px)\n",
             "  color: inherited\n",
             "  display: winner(source=stylesheet[0/0]/declaration[1], band=author-normal, specificity=selector(0,0,1), rule-order=0, declaration-order=1, value=\"block\")\n",
             "  font-size: initial(16px)\n",

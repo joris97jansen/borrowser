@@ -7,6 +7,18 @@ use super::registry::property_registry;
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, Ord, PartialOrd)]
 pub enum PropertyId {
     BackgroundColor,
+    BorderBottomColor,
+    BorderBottomStyle,
+    BorderBottomWidth,
+    BorderLeftColor,
+    BorderLeftStyle,
+    BorderLeftWidth,
+    BorderRightColor,
+    BorderRightStyle,
+    BorderRightWidth,
+    BorderTopColor,
+    BorderTopStyle,
+    BorderTopWidth,
     Color,
     Display,
     FontSize,
@@ -27,8 +39,20 @@ pub enum PropertyId {
 }
 
 impl PropertyId {
-    pub const ALL: [Self; 18] = [
+    pub const ALL: [Self; 30] = [
         Self::BackgroundColor,
+        Self::BorderBottomColor,
+        Self::BorderBottomStyle,
+        Self::BorderBottomWidth,
+        Self::BorderLeftColor,
+        Self::BorderLeftStyle,
+        Self::BorderLeftWidth,
+        Self::BorderRightColor,
+        Self::BorderRightStyle,
+        Self::BorderRightWidth,
+        Self::BorderTopColor,
+        Self::BorderTopStyle,
+        Self::BorderTopWidth,
         Self::Color,
         Self::Display,
         Self::FontSize,
@@ -51,23 +75,35 @@ impl PropertyId {
     pub const fn as_index(self) -> usize {
         match self {
             Self::BackgroundColor => 0,
-            Self::Color => 1,
-            Self::Display => 2,
-            Self::FontSize => 3,
-            Self::Height => 4,
-            Self::MarginBottom => 5,
-            Self::MarginLeft => 6,
-            Self::MarginRight => 7,
-            Self::MarginTop => 8,
-            Self::MaxWidth => 9,
-            Self::MinWidth => 10,
-            Self::Overflow => 11,
-            Self::PaddingBottom => 12,
-            Self::PaddingLeft => 13,
-            Self::PaddingRight => 14,
-            Self::PaddingTop => 15,
-            Self::Position => 16,
-            Self::Width => 17,
+            Self::BorderBottomColor => 1,
+            Self::BorderBottomStyle => 2,
+            Self::BorderBottomWidth => 3,
+            Self::BorderLeftColor => 4,
+            Self::BorderLeftStyle => 5,
+            Self::BorderLeftWidth => 6,
+            Self::BorderRightColor => 7,
+            Self::BorderRightStyle => 8,
+            Self::BorderRightWidth => 9,
+            Self::BorderTopColor => 10,
+            Self::BorderTopStyle => 11,
+            Self::BorderTopWidth => 12,
+            Self::Color => 13,
+            Self::Display => 14,
+            Self::FontSize => 15,
+            Self::Height => 16,
+            Self::MarginBottom => 17,
+            Self::MarginLeft => 18,
+            Self::MarginRight => 19,
+            Self::MarginTop => 20,
+            Self::MaxWidth => 21,
+            Self::MinWidth => 22,
+            Self::Overflow => 23,
+            Self::PaddingBottom => 24,
+            Self::PaddingLeft => 25,
+            Self::PaddingRight => 26,
+            Self::PaddingTop => 27,
+            Self::Position => 28,
+            Self::Width => 29,
         }
     }
 
@@ -156,6 +192,7 @@ const fn default_length_sign_policy(
 ) -> PropertyLengthSignPolicy {
     match specified_value {
         PropertySpecifiedValueKind::Color
+        | PropertySpecifiedValueKind::BorderStyleKeyword
         | PropertySpecifiedValueKind::DisplayKeyword
         | PropertySpecifiedValueKind::OverflowKeyword
         | PropertySpecifiedValueKind::PositionKeyword => PropertyLengthSignPolicy::NotLength,
@@ -181,6 +218,7 @@ pub enum PropertyInheritance {
 /// rather than resolved during parsing or computed-style construction.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PropertySpecifiedValueKind {
+    BorderStyleKeyword,
     Color,
     DisplayKeyword,
     OverflowKeyword,
@@ -193,6 +231,7 @@ pub enum PropertySpecifiedValueKind {
 impl PropertySpecifiedValueKind {
     pub fn as_debug_label(self) -> &'static str {
         match self {
+            Self::BorderStyleKeyword => "border-style-keyword",
             Self::Color => "color",
             Self::DisplayKeyword => "display-keyword",
             Self::OverflowKeyword => "overflow-keyword",
@@ -212,6 +251,7 @@ impl PropertySpecifiedValueKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PropertyComputedValueKind {
     AbsoluteColor,
+    BorderStyleKeyword,
     DisplayKeyword,
     OverflowKeyword,
     PositionKeyword,
@@ -224,6 +264,7 @@ impl PropertyComputedValueKind {
     pub fn as_debug_label(self) -> &'static str {
         match self {
             Self::AbsoluteColor => "absolute-color",
+            Self::BorderStyleKeyword => "border-style-keyword",
             Self::DisplayKeyword => "display-keyword",
             Self::OverflowKeyword => "overflow-keyword",
             Self::PositionKeyword => "position-keyword",
@@ -264,6 +305,7 @@ pub enum PropertyLengthSignPolicy {
 /// responsible for converting these tokens into normalized runtime data.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InitialStyleValue {
+    BorderStyleNone,
     ColorBlack,
     TransparentColor,
     DisplayInline,
@@ -278,6 +320,7 @@ pub enum InitialStyleValue {
 impl InitialStyleValue {
     pub fn as_debug_label(self) -> &'static str {
         match self {
+            Self::BorderStyleNone => "none",
             Self::ColorBlack => "black",
             Self::TransparentColor => "transparent",
             Self::DisplayInline => "inline",

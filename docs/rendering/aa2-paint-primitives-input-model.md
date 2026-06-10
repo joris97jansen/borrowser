@@ -20,6 +20,7 @@ Related code:
 
 Related documents:
 - `docs/rendering/aa1-paint-model-architecture-ordering-contracts.md`
+- `docs/rendering/aa3-border-rendering-box-decoration.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
 - `docs/rendering/w1-box-tree-layout-model-contract.md`
@@ -107,8 +108,8 @@ AA2 defines these paint primitive categories:
 - `InlineBox`
 - `Replaced`
 
-The border primitive is vocabulary only in AA2. CSS border style resolution and
-visual border rendering remain future work.
+The border primitive was vocabulary only in AA2. AA3 populates and renders this
+primitive for the supported physical solid rectangular border subset.
 
 Primitives store semantic CSS-pixel rectangles, source identity, colors, font
 sizes, marker kinds, and replaced kinds. They do not store `egui::Painter`,
@@ -120,10 +121,11 @@ For each paint node in the current supported subset, primitive construction
 uses this order:
 
 1. background
-2. list marker
-3. overflow clip
-4. inline formatting primitives
-5. child paint nodes in layout child order
+2. border for the AA3 supported subset
+3. list marker
+4. overflow clip
+5. inline formatting primitives
+6. child paint nodes in layout child order
 
 This matches the AA1 supported ordering subset without claiming full CSS
 painting order, stacking-context behavior, or z-index semantics.
@@ -162,7 +164,8 @@ AA2 does not implement:
 - GPU abstractions
 - full CSS painting order
 - stacking contexts or `z-index`
-- visual border rendering
+- unsupported border styles, border-radius, border-image, logical borders, and
+  border shorthands
 - outlines
 - text decorations
 - pixel snapshot testing

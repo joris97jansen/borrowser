@@ -406,6 +406,7 @@ fn observe_value_case_once(
 fn property_computed_kind_label(kind: PropertyComputedValueKind) -> &'static str {
     match kind {
         PropertyComputedValueKind::AbsoluteColor => "color",
+        PropertyComputedValueKind::BorderStyleKeyword => "border-style",
         PropertyComputedValueKind::DisplayKeyword => "display",
         PropertyComputedValueKind::OverflowKeyword => "overflow",
         PropertyComputedValueKind::PositionKeyword => "position",

@@ -674,19 +674,22 @@ fn content_x_and_width_for_box(
     border_width: f32,
 ) -> (f32, f32) {
     let bm = node.box_metrics();
-    let content_x = border_x + bm.padding_left;
-    let content_width = (border_width - bm.padding_left - bm.padding_right).max(0.0);
+    let content_x = border_x + bm.border_left + bm.padding_left;
+    let content_width =
+        (border_width - bm.border_left - bm.padding_left - bm.padding_right - bm.border_right)
+            .max(0.0);
     (content_x, content_width)
 }
 
 fn content_y_for_box(node: &LayoutBox<'_, '_>, border_y: f32) -> f32 {
-    border_y + node.box_metrics().padding_top
+    let bm = node.box_metrics();
+    border_y + bm.border_top + bm.padding_top
 }
 
 fn content_size_for_border_width(node: &LayoutBox<'_, '_>, border_width: CssPx) -> CssPx {
     let bm = node.box_metrics();
     css_px_from_nonnegative(
-        border_width.get() - bm.padding_left - bm.padding_right,
+        border_width.get() - bm.border_left - bm.padding_left - bm.padding_right - bm.border_right,
         "flex item target content size",
     )
 }
@@ -694,7 +697,7 @@ fn content_size_for_border_width(node: &LayoutBox<'_, '_>, border_width: CssPx) 
 fn content_size_for_border_height(node: &LayoutBox<'_, '_>, border_height: CssPx) -> CssPx {
     let bm = node.box_metrics();
     css_px_from_nonnegative(
-        border_height.get() - bm.padding_top - bm.padding_bottom,
+        border_height.get() - bm.border_top - bm.padding_top - bm.padding_bottom - bm.border_bottom,
         "flex item target cross content size",
     )
 }

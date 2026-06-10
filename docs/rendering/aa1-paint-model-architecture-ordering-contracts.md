@@ -30,6 +30,7 @@ Related documents:
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
 - `docs/rendering/aa2-paint-primitives-input-model.md`
+- `docs/rendering/aa3-border-rendering-box-decoration.md`
 - `docs/rendering/w8-box-generation-formatting-debug-surfaces.md`
 - `docs/rendering/w9-box-tree-invariants-extension-hooks.md`
 - `docs/rendering/y4-overflow-semantics-supported-subset.md`
@@ -183,8 +184,8 @@ not introduce pixel snapshot testing.
 
 Later AA issues may extend the paint model at named points:
 
-- borders and box decorations: add paint primitives after background ordering
-  is made explicit for the supported subset
+- borders and box decorations: AA3 adds the first physical solid rectangular
+  border subset after background ordering
 - outlines: add a paint step with explicit geometry and ordering rules
 - text decorations: extend inline fragment painting deliberately
 - clipping refinements: extend layout-owned clip metadata and paint
@@ -198,9 +199,9 @@ Later AA issues may extend the paint model at named points:
 
 ## Deliberate Exclusions
 
-AA1 deliberately does not implement or define:
+AA1 deliberately did not implement or define:
 
-- borders
+- borders, until AA3 added the supported physical solid rectangular subset
 - outlines
 - text decorations
 - full CSS painting order
@@ -217,5 +218,6 @@ AA1 deliberately does not implement or define:
 
 These exclusions are exposed in code through `paint_excluded_features()` so
 future work has to change the contract deliberately when one of these features
-enters scope. AA2 refines this by defining a border primitive vocabulary while
-still excluding visual border rendering.
+enters scope. AA2 refines this by defining a border primitive vocabulary. AA3
+removes visual border rendering from the excluded set only for the supported
+physical solid rectangular subset.

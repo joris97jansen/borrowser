@@ -95,8 +95,9 @@ overflowing descendant visual content does not retroactively change used size.
 ## Paint Clipping
 
 `OverflowClip` is derived from `OverflowPolicy` and the box's final border-box
-rectangle. The current no-border subset clips to the border box, which is
-equivalent to the padding box until border geometry exists.
+rectangle. AA3 adds border geometry, but the supported overflow subset still
+clips to the layout-owned border box rather than deriving a separate retained
+clip node or background-clip model.
 
 Paint applies this clip to the box's inline content and descendant subtree.
 Background painting remains tied to the box's own border-box geometry. List

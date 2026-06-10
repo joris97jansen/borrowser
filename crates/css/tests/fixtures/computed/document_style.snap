@@ -2,6 +2,18 @@ version: 1
 computed-document-style
 element[0]: selector-id=1 name="main"
   background-color: rgba(0, 0, 0, 0)
+  border-bottom-color: rgba(0, 0, 0, 0)
+  border-bottom-style: none
+  border-bottom-width: 0px
+  border-left-color: rgba(0, 0, 0, 0)
+  border-left-style: none
+  border-left-width: 0px
+  border-right-color: rgba(0, 0, 0, 0)
+  border-right-style: none
+  border-right-width: 0px
+  border-top-color: rgba(0, 0, 0, 0)
+  border-top-style: none
+  border-top-width: 0px
   color: rgba(0, 128, 128, 255)
   display: inline
   font-size: 18px
@@ -21,6 +33,18 @@ element[0]: selector-id=1 name="main"
   width: 320px
 element[1]: selector-id=2 name="span"
   background-color: rgba(0, 255, 0, 255)
+  border-bottom-color: rgba(0, 0, 0, 0)
+  border-bottom-style: none
+  border-bottom-width: 0px
+  border-left-color: rgba(0, 0, 0, 0)
+  border-left-style: none
+  border-left-width: 0px
+  border-right-color: rgba(0, 0, 0, 0)
+  border-right-style: none
+  border-right-width: 0px
+  border-top-color: rgba(0, 0, 0, 0)
+  border-top-style: none
+  border-top-width: 0px
   color: rgba(0, 128, 128, 255)
   display: inline-block
   font-size: 18px
@@ -40,6 +64,18 @@ element[1]: selector-id=2 name="span"
   width: auto
 element[2]: selector-id=3 name="button"
   background-color: rgba(0, 0, 0, 0)
+  border-bottom-color: rgba(0, 0, 0, 0)
+  border-bottom-style: none
+  border-bottom-width: 0px
+  border-left-color: rgba(0, 0, 0, 0)
+  border-left-style: none
+  border-left-width: 0px
+  border-right-color: rgba(0, 0, 0, 0)
+  border-right-style: none
+  border-right-width: 0px
+  border-top-color: rgba(0, 0, 0, 0)
+  border-top-style: none
+  border-top-width: 0px
   color: rgba(255, 0, 0, 255)
   display: inline
   font-size: 18px

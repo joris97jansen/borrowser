@@ -5,12 +5,33 @@ use super::*;
 fn computed_style_builder_materializes_structured_fields_from_property_entries() {
     let mut builder = builder_with_initials_except(&[
         PropertyId::Color,
+        PropertyId::BorderTopColor,
+        PropertyId::BorderTopStyle,
+        PropertyId::BorderTopWidth,
         PropertyId::MarginTop,
         PropertyId::Width,
     ]);
     builder
         .record(PropertyId::Color, ComputedValue::Color((12, 34, 56, 255)))
         .expect("color");
+    builder
+        .record(
+            PropertyId::BorderTopColor,
+            ComputedValue::Color((200, 10, 20, 255)),
+        )
+        .expect("border-top-color");
+    builder
+        .record(
+            PropertyId::BorderTopStyle,
+            ComputedValue::BorderStyle(BorderStyle::Solid),
+        )
+        .expect("border-top-style");
+    builder
+        .record(
+            PropertyId::BorderTopWidth,
+            ComputedValue::Length(Length::Px(3.0)),
+        )
+        .expect("border-top-width");
     builder
         .record(
             PropertyId::MarginTop,
@@ -29,6 +50,9 @@ fn computed_style_builder_materializes_structured_fields_from_property_entries()
     let style = builder.build().expect("computed style");
 
     assert_eq!(style.color(), (12, 34, 56, 255));
+    assert_eq!(style.border_edges().top.style, BorderStyle::Solid);
+    assert_eq!(style.border_edges().top.color, (200, 10, 20, 255));
+    assert_eq!(style.box_metrics().border_top, 3.0);
     assert_eq!(style.box_metrics().margin_top, 18.0);
     assert_eq!(
         style.width(),

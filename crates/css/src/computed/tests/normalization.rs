@@ -121,6 +121,18 @@ fn computed_value_preserves_length_percentages_for_layout_resolution() {
 fn computed_value_normalization_matches_property_metadata_for_supported_subset() {
     let representative = [
         (PropertyId::BackgroundColor, "background-color: transparent"),
+        (PropertyId::BorderBottomColor, "border-bottom-color: red"),
+        (PropertyId::BorderBottomStyle, "border-bottom-style: solid"),
+        (PropertyId::BorderBottomWidth, "border-bottom-width: 1px"),
+        (PropertyId::BorderLeftColor, "border-left-color: green"),
+        (PropertyId::BorderLeftStyle, "border-left-style: none"),
+        (PropertyId::BorderLeftWidth, "border-left-width: 2px"),
+        (PropertyId::BorderRightColor, "border-right-color: blue"),
+        (PropertyId::BorderRightStyle, "border-right-style: solid"),
+        (PropertyId::BorderRightWidth, "border-right-width: 3px"),
+        (PropertyId::BorderTopColor, "border-top-color: black"),
+        (PropertyId::BorderTopStyle, "border-top-style: solid"),
+        (PropertyId::BorderTopWidth, "border-top-width: 4px"),
         (PropertyId::Color, "color: black"),
         (PropertyId::Display, "display: block"),
         (PropertyId::FontSize, "font-size: 16px"),

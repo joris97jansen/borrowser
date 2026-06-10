@@ -1,8 +1,9 @@
 use super::{
-    SpecifiedColorKeyword, SpecifiedColorSyntax, SpecifiedDisplayKeyword,
-    SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto, SpecifiedLengthUnit,
-    SpecifiedOverflowKeyword, SpecifiedPositionKeyword, SpecifiedValue, SpecifiedValueLimits,
-    SpecifiedValueParseErrorKind, parse_specified_value, parse_specified_value_with_limits,
+    SpecifiedBorderStyleKeyword, SpecifiedColorKeyword, SpecifiedColorSyntax,
+    SpecifiedDisplayKeyword, SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto,
+    SpecifiedLengthUnit, SpecifiedOverflowKeyword, SpecifiedPositionKeyword, SpecifiedValue,
+    SpecifiedValueLimits, SpecifiedValueParseErrorKind, parse_specified_value,
+    parse_specified_value_with_limits,
 };
 use crate::{
     ParseOptions, PropertyId, PropertySpecifiedValueKind, Rule, parse_stylesheet_with_options,
@@ -56,6 +57,13 @@ fn parses_representative_property_aware_specified_values() {
     };
     assert_eq!(hex.digits(), "aa00ff");
     assert_eq!(hex.rgba(), (170, 0, 255, 255));
+
+    let border_style = parse(PropertyId::BorderTopStyle, "border-top-style: SOLID");
+    let SpecifiedValue::BorderStyle(border_style) = border_style.value() else {
+        panic!("expected border style");
+    };
+    assert_eq!(border_style.keyword(), SpecifiedBorderStyleKeyword::Solid);
+    assert_eq!(border_style.to_css_text(), "solid");
 
     let display = parse(PropertyId::Display, "display: inline-block");
     let SpecifiedValue::Display(display) = display.value() else {
@@ -146,6 +154,10 @@ fn rejects_values_that_do_not_match_the_property_specified_shape() {
         SpecifiedValueParseErrorKind::UnsupportedDisplayKeyword
     );
     assert_eq!(
+        parse_error(PropertyId::BorderTopStyle, "border-top-style: dashed"),
+        SpecifiedValueParseErrorKind::UnsupportedKeyword
+    );
+    assert_eq!(
         parse_error(PropertyId::Width, "width: none"),
         SpecifiedValueParseErrorKind::UnsupportedKeyword
     );
@@ -212,6 +224,18 @@ fn specified_value_parser_enforces_component_limits_before_shape_parsing() {
 fn supported_property_metadata_matches_emitted_specified_value_kinds() {
     let representative = [
         (PropertyId::BackgroundColor, "background-color: transparent"),
+        (PropertyId::BorderBottomColor, "border-bottom-color: red"),
+        (PropertyId::BorderBottomStyle, "border-bottom-style: solid"),
+        (PropertyId::BorderBottomWidth, "border-bottom-width: 1px"),
+        (PropertyId::BorderLeftColor, "border-left-color: green"),
+        (PropertyId::BorderLeftStyle, "border-left-style: none"),
+        (PropertyId::BorderLeftWidth, "border-left-width: 2px"),
+        (PropertyId::BorderRightColor, "border-right-color: blue"),
+        (PropertyId::BorderRightStyle, "border-right-style: solid"),
+        (PropertyId::BorderRightWidth, "border-right-width: 3px"),
+        (PropertyId::BorderTopColor, "border-top-color: black"),
+        (PropertyId::BorderTopStyle, "border-top-style: solid"),
+        (PropertyId::BorderTopWidth, "border-top-width: 4px"),
         (PropertyId::Color, "color: black"),
         (PropertyId::Display, "display: block"),
         (PropertyId::FontSize, "font-size: 16px"),

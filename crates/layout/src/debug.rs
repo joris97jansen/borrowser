@@ -341,7 +341,7 @@ fn append_layout_sizing_snapshot(
 
     writeln!(
         out,
-        "{indent}box[{index}]: box-id={} source={} node={} kind={} cb={} position={} flow={} positioned-cb={} block-participation={} inline-participation={} border-box={} content-box={} overflow={} margin={} padding={} used-size={} children={}",
+        "{indent}box[{index}]: box-id={} source={} node={} kind={} cb={} position={} flow={} positioned-cb={} block-participation={} inline-participation={} border-box={} content-box={} overflow={} margin={} padding={} border={} used-size={} children={}",
         box_id_debug_label(layout.box_id()),
         layout_box_source_debug_label(layout.source),
         node_debug_label(layout.node.node),
@@ -357,6 +357,7 @@ fn append_layout_sizing_snapshot(
         overflow_debug_label(layout),
         flow_margins_debug_label(margins),
         box_metrics_padding_debug_label(metrics),
+        box_metrics_border_debug_label(metrics),
         used_content_size_debug_label(layout.used_content_size),
         layout.children.len(),
     )
@@ -385,7 +386,7 @@ fn append_layout_advanced_flow_snapshot(
 
     writeln!(
         out,
-        "{indent}box[{index}]: box-id={} source={} node={} kind={} cb={} establishes-cb={} position={} flow={} positioned-cb={} establishes-positioned-cb={} fc={} establishes-fc={} block-participation={} inline-participation={} block-flow-placement={} overflow={} margin={} border-box={} content-box={} children={}",
+        "{indent}box[{index}]: box-id={} source={} node={} kind={} cb={} establishes-cb={} position={} flow={} positioned-cb={} establishes-positioned-cb={} fc={} establishes-fc={} block-participation={} inline-participation={} block-flow-placement={} overflow={} margin={} border={} border-box={} content-box={} children={}",
         box_id_debug_label(layout.box_id()),
         layout_box_source_debug_label(layout.source),
         node_debug_label(layout.node.node),
@@ -403,6 +404,7 @@ fn append_layout_advanced_flow_snapshot(
         block_flow_placement_debug_label(layout),
         overflow_debug_label(layout),
         flow_margins_debug_label(layout.flow_margins()),
+        box_metrics_border_debug_label(layout.box_metrics()),
         rectangle_debug_label(layout.rect),
         rectangle_debug_label(content_rect),
         layout.children.len(),
@@ -682,5 +684,12 @@ fn box_metrics_padding_debug_label(metrics: css::BoxMetrics) -> String {
     format!(
         "(top={:.2}px right={:.2}px bottom={:.2}px left={:.2}px)",
         metrics.padding_top, metrics.padding_right, metrics.padding_bottom, metrics.padding_left
+    )
+}
+
+fn box_metrics_border_debug_label(metrics: css::BoxMetrics) -> String {
+    format!(
+        "(top={:.2}px right={:.2}px bottom={:.2}px left={:.2}px)",
+        metrics.border_top, metrics.border_right, metrics.border_bottom, metrics.border_left
     )
 }

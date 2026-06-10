@@ -131,6 +131,12 @@ fn paint_layout_box(
         painter.rect_filled(rect, 0.0, Color32::from_rgba_unmultiplied(r, g, b, a));
     }
 
+    if let Some(border) =
+        primitives::border_primitive_from_layout(layout, PaintSource::from_layout(layout))
+    {
+        paint_border_primitive(border, painter, origin);
+    }
+
     // 1) List marker (for display:list-item), if any.
     //    This does not affect layout; it's purely visual.
     if !layout.is_anonymous() && matches!(layout.style.display(), Display::ListItem) {
@@ -159,6 +165,75 @@ fn paint_layout_box(
     }
 
     paint_layout_box_contents(layout, ctx, skip_inline_block_children);
+}
+
+fn paint_border_primitive(border: PaintBorder, painter: &Painter, origin: Pos2) {
+    paint_border_side_rect(
+        painter,
+        origin,
+        Rectangle {
+            x: border.rect.x,
+            y: border.rect.y,
+            width: border.rect.width,
+            height: border.edges.top.width,
+        },
+        border.edges.top,
+    );
+    paint_border_side_rect(
+        painter,
+        origin,
+        Rectangle {
+            x: border.rect.x + (border.rect.width - border.edges.right.width).max(0.0),
+            y: border.rect.y,
+            width: border.edges.right.width,
+            height: border.rect.height,
+        },
+        border.edges.right,
+    );
+    paint_border_side_rect(
+        painter,
+        origin,
+        Rectangle {
+            x: border.rect.x,
+            y: border.rect.y + (border.rect.height - border.edges.bottom.width).max(0.0),
+            width: border.rect.width,
+            height: border.edges.bottom.width,
+        },
+        border.edges.bottom,
+    );
+    paint_border_side_rect(
+        painter,
+        origin,
+        Rectangle {
+            x: border.rect.x,
+            y: border.rect.y,
+            width: border.edges.left.width,
+            height: border.rect.height,
+        },
+        border.edges.left,
+    );
+}
+
+fn paint_border_side_rect(painter: &Painter, origin: Pos2, rect: Rectangle, side: PaintBorderSide) {
+    if !side.is_visible() {
+        return;
+    }
+
+    let rect = Rect::from_min_size(
+        Pos2 {
+            x: origin.x + rect.x,
+            y: origin.y + rect.y,
+        },
+        Vec2 {
+            x: rect.width.max(0.0),
+            y: rect.height.max(0.0),
+        },
+    );
+    painter.rect_filled(
+        rect,
+        0.0,
+        Color32::from_rgba_unmultiplied(side.color.r, side.color.g, side.color.b, side.color.a),
+    );
 }
 
 fn paint_layout_box_contents(
