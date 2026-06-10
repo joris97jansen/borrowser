@@ -55,6 +55,13 @@ pub enum Display {
     None,
 }
 
+/// CSS physical border style for the current supported subset.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum BorderStyle {
+    None,
+    Solid,
+}
+
 /// CSS `overflow` keyword for the current supported single-axis shorthand.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Overflow {

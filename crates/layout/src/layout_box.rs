@@ -181,17 +181,24 @@ impl<'style_tree, 'dom> LayoutBox<'style_tree, 'dom> {
 
     pub fn content_x_and_width(&self) -> (f32, f32) {
         let bm = self.box_metrics();
-        let content_x = self.rect.x + bm.padding_left;
-        let content_width = (self.rect.width - bm.padding_left - bm.padding_right).max(0.0);
+        let content_x = self.rect.x + bm.border_left + bm.padding_left;
+        let content_width = (self.rect.width
+            - bm.border_left
+            - bm.padding_left
+            - bm.padding_right
+            - bm.border_right)
+            .max(0.0);
         (content_x, content_width)
     }
 
     pub fn content_y(&self) -> f32 {
-        self.rect.y + self.box_metrics().padding_top
+        let bm = self.box_metrics();
+        self.rect.y + bm.border_top + bm.padding_top
     }
 
     pub fn content_height(&self) -> f32 {
         let bm = self.box_metrics();
-        (self.rect.height - bm.padding_top - bm.padding_bottom).max(0.0)
+        (self.rect.height - bm.border_top - bm.padding_top - bm.padding_bottom - bm.border_bottom)
+            .max(0.0)
     }
 }

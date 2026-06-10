@@ -8,6 +8,18 @@ version: 1
 computed-document-style
 element[0]: selector-id=1 name="html"
   background-color: rgba(0, 0, 0, 0)
+  border-bottom-color: rgba(0, 0, 0, 0)
+  border-bottom-style: none
+  border-bottom-width: 0px
+  border-left-color: rgba(0, 0, 0, 0)
+  border-left-style: none
+  border-left-width: 0px
+  border-right-color: rgba(0, 0, 0, 0)
+  border-right-style: none
+  border-right-width: 0px
+  border-top-color: rgba(0, 0, 0, 0)
+  border-top-style: none
+  border-top-width: 0px
   color: rgba(0, 0, 0, 255)
   display: inline
   font-size: 16px
@@ -27,6 +39,18 @@ element[0]: selector-id=1 name="html"
   width: auto
 element[1]: selector-id=2 name="head"
   background-color: rgba(0, 0, 0, 0)
+  border-bottom-color: rgba(0, 0, 0, 0)
+  border-bottom-style: none
+  border-bottom-width: 0px
+  border-left-color: rgba(0, 0, 0, 0)
+  border-left-style: none
+  border-left-width: 0px
+  border-right-color: rgba(0, 0, 0, 0)
+  border-right-style: none
+  border-right-width: 0px
+  border-top-color: rgba(0, 0, 0, 0)
+  border-top-style: none
+  border-top-width: 0px
   color: rgba(0, 0, 0, 255)
   display: inline
   font-size: 16px
@@ -46,6 +70,18 @@ element[1]: selector-id=2 name="head"
   width: auto
 element[2]: selector-id=3 name="title"
   background-color: rgba(0, 0, 0, 0)
+  border-bottom-color: rgba(0, 0, 0, 0)
+  border-bottom-style: none
+  border-bottom-width: 0px
+  border-left-color: rgba(0, 0, 0, 0)
+  border-left-style: none
+  border-left-width: 0px
+  border-right-color: rgba(0, 0, 0, 0)
+  border-right-style: none
+  border-right-width: 0px
+  border-top-color: rgba(0, 0, 0, 0)
+  border-top-style: none
+  border-top-width: 0px
   color: rgba(0, 0, 0, 255)
   display: inline
   font-size: 16px
@@ -65,6 +101,18 @@ element[2]: selector-id=3 name="title"
   width: auto
 element[3]: selector-id=4 name="body"
   background-color: rgba(255, 255, 255, 255)
+  border-bottom-color: rgba(0, 0, 0, 0)
+  border-bottom-style: none
+  border-bottom-width: 0px
+  border-left-color: rgba(0, 0, 0, 0)
+  border-left-style: none
+  border-left-width: 0px
+  border-right-color: rgba(0, 0, 0, 0)
+  border-right-style: none
+  border-right-width: 0px
+  border-top-color: rgba(0, 0, 0, 0)
+  border-top-style: none
+  border-top-width: 0px
   color: rgba(17, 17, 17, 255)
   display: inline
   font-size: 16px
@@ -84,6 +132,18 @@ element[3]: selector-id=4 name="body"
   width: auto
 element[4]: selector-id=5 name="div"
   background-color: rgba(248, 248, 248, 255)
+  border-bottom-color: rgba(0, 0, 0, 0)
+  border-bottom-style: none
+  border-bottom-width: 0px
+  border-left-color: rgba(0, 0, 0, 0)
+  border-left-style: none
+  border-left-width: 0px
+  border-right-color: rgba(0, 0, 0, 0)
+  border-right-style: none
+  border-right-width: 0px
+  border-top-color: rgba(0, 0, 0, 0)
+  border-top-style: none
+  border-top-width: 0px
   color: rgba(17, 17, 17, 255)
   display: block
   font-size: 16px
@@ -103,6 +163,18 @@ element[4]: selector-id=5 name="div"
   width: auto
 element[5]: selector-id=6 name="aside"
   background-color: rgba(0, 0, 0, 0)
+  border-bottom-color: rgba(0, 0, 0, 0)
+  border-bottom-style: none
+  border-bottom-width: 0px
+  border-left-color: rgba(0, 0, 0, 0)
+  border-left-style: none
+  border-left-width: 0px
+  border-right-color: rgba(0, 0, 0, 0)
+  border-right-style: none
+  border-right-width: 0px
+  border-top-color: rgba(0, 0, 0, 0)
+  border-top-style: none
+  border-top-width: 0px
   color: rgba(85, 85, 85, 255)
   display: block
   font-size: 16px
@@ -122,6 +194,18 @@ element[5]: selector-id=6 name="aside"
   width: 220px
 element[6]: selector-id=7 name="nav"
   background-color: rgba(0, 0, 0, 0)
+  border-bottom-color: rgba(0, 0, 0, 0)
+  border-bottom-style: none
+  border-bottom-width: 0px
+  border-left-color: rgba(0, 0, 0, 0)
+  border-left-style: none
+  border-left-width: 0px
+  border-right-color: rgba(0, 0, 0, 0)
+  border-right-style: none
+  border-right-width: 0px
+  border-top-color: rgba(0, 0, 0, 0)
+  border-top-style: none
+  border-top-width: 0px
   color: rgba(85, 85, 85, 255)
   display: inline
   font-size: 16px
@@ -141,6 +225,18 @@ element[6]: selector-id=7 name="nav"
   width: auto
 element[7]: selector-id=8 name="a"
   background-color: rgba(0, 0, 0, 0)
+  border-bottom-color: rgba(0, 0, 0, 0)
+  border-bottom-style: none
+  border-bottom-width: 0px
+  border-left-color: rgba(0, 0, 0, 0)
+  border-left-style: none
+  border-left-width: 0px
+  border-right-color: rgba(0, 0, 0, 0)
+  border-right-style: none
+  border-right-width: 0px
+  border-top-color: rgba(0, 0, 0, 0)
+  border-top-style: none
+  border-top-width: 0px
   color: rgba(68, 85, 102, 255)
   display: block
   font-size: 16px
@@ -160,6 +256,18 @@ element[7]: selector-id=8 name="a"
   width: auto
 element[8]: selector-id=9 name="a"
   background-color: rgba(238, 238, 255, 255)
+  border-bottom-color: rgba(0, 0, 0, 0)
+  border-bottom-style: none
+  border-bottom-width: 0px
+  border-left-color: rgba(0, 0, 0, 0)
+  border-left-style: none
+  border-left-width: 0px
+  border-right-color: rgba(0, 0, 0, 0)
+  border-right-style: none
+  border-right-width: 0px
+  border-top-color: rgba(0, 0, 0, 0)
+  border-top-style: none
+  border-top-width: 0px
   color: rgba(0, 0, 255, 255)
   display: block
   font-size: 16px
@@ -179,6 +287,18 @@ element[8]: selector-id=9 name="a"
   width: auto
 element[9]: selector-id=10 name="a"
   background-color: rgba(0, 0, 0, 0)
+  border-bottom-color: rgba(0, 0, 0, 0)
+  border-bottom-style: none
+  border-bottom-width: 0px
+  border-left-color: rgba(0, 0, 0, 0)
+  border-left-style: none
+  border-left-width: 0px
+  border-right-color: rgba(0, 0, 0, 0)
+  border-right-style: none
+  border-right-width: 0px
+  border-top-color: rgba(0, 0, 0, 0)
+  border-top-style: none
+  border-top-width: 0px
   color: rgba(68, 85, 102, 255)
   display: block
   font-size: 16px
@@ -198,6 +318,18 @@ element[9]: selector-id=10 name="a"
   width: auto
 element[10]: selector-id=11 name="main"
   background-color: rgba(255, 255, 255, 255)
+  border-bottom-color: rgba(0, 0, 0, 0)
+  border-bottom-style: none
+  border-bottom-width: 0px
+  border-left-color: rgba(0, 0, 0, 0)
+  border-left-style: none
+  border-left-width: 0px
+  border-right-color: rgba(0, 0, 0, 0)
+  border-right-style: none
+  border-right-width: 0px
+  border-top-color: rgba(0, 0, 0, 0)
+  border-top-style: none
+  border-top-width: 0px
   color: rgba(34, 34, 34, 255)
   display: inline
   font-size: 16px
@@ -217,6 +349,18 @@ element[10]: selector-id=11 name="main"
   width: auto
 element[11]: selector-id=12 name="h1"
   background-color: rgba(0, 0, 0, 0)
+  border-bottom-color: rgba(0, 0, 0, 0)
+  border-bottom-style: none
+  border-bottom-width: 0px
+  border-left-color: rgba(0, 0, 0, 0)
+  border-left-style: none
+  border-left-width: 0px
+  border-right-color: rgba(0, 0, 0, 0)
+  border-right-style: none
+  border-right-width: 0px
+  border-top-color: rgba(0, 0, 0, 0)
+  border-top-style: none
+  border-top-width: 0px
   color: rgba(34, 34, 34, 255)
   display: inline
   font-size: 30px
@@ -236,6 +380,18 @@ element[11]: selector-id=12 name="h1"
   width: auto
 element[12]: selector-id=13 name="p"
   background-color: rgba(0, 0, 0, 0)
+  border-bottom-color: rgba(0, 0, 0, 0)
+  border-bottom-style: none
+  border-bottom-width: 0px
+  border-left-color: rgba(0, 0, 0, 0)
+  border-left-style: none
+  border-left-width: 0px
+  border-right-color: rgba(0, 0, 0, 0)
+  border-right-style: none
+  border-right-width: 0px
+  border-top-color: rgba(0, 0, 0, 0)
+  border-top-style: none
+  border-top-width: 0px
   color: rgba(85, 85, 85, 255)
   display: inline
   font-size: 18px
@@ -255,6 +411,18 @@ element[12]: selector-id=13 name="p"
   width: auto
 element[13]: selector-id=14 name="pre"
   background-color: rgba(17, 17, 17, 255)
+  border-bottom-color: rgba(0, 0, 0, 0)
+  border-bottom-style: none
+  border-bottom-width: 0px
+  border-left-color: rgba(0, 0, 0, 0)
+  border-left-style: none
+  border-left-width: 0px
+  border-right-color: rgba(0, 0, 0, 0)
+  border-right-style: none
+  border-right-width: 0px
+  border-top-color: rgba(0, 0, 0, 0)
+  border-top-style: none
+  border-top-width: 0px
   color: rgba(255, 255, 255, 255)
   display: block
   font-size: 16px
@@ -274,6 +442,18 @@ element[13]: selector-id=14 name="pre"
   width: auto
 element[14]: selector-id=15 name="code"
   background-color: rgba(0, 0, 0, 0)
+  border-bottom-color: rgba(0, 0, 0, 0)
+  border-bottom-style: none
+  border-bottom-width: 0px
+  border-left-color: rgba(0, 0, 0, 0)
+  border-left-style: none
+  border-left-width: 0px
+  border-right-color: rgba(0, 0, 0, 0)
+  border-right-style: none
+  border-right-width: 0px
+  border-top-color: rgba(0, 0, 0, 0)
+  border-top-style: none
+  border-top-width: 0px
   color: rgba(0, 255, 255, 255)
   display: inline
   font-size: 14px
@@ -293,6 +473,18 @@ element[14]: selector-id=15 name="code"
   width: auto
 element[15]: selector-id=16 name="section"
   background-color: rgba(255, 255, 238, 255)
+  border-bottom-color: rgba(0, 0, 0, 0)
+  border-bottom-style: none
+  border-bottom-width: 0px
+  border-left-color: rgba(0, 0, 0, 0)
+  border-left-style: none
+  border-left-width: 0px
+  border-right-color: rgba(0, 0, 0, 0)
+  border-right-style: none
+  border-right-width: 0px
+  border-top-color: rgba(0, 0, 0, 0)
+  border-top-style: none
+  border-top-width: 0px
   color: rgba(128, 0, 0, 255)
   display: inline
   font-size: 16px
@@ -312,6 +504,18 @@ element[15]: selector-id=16 name="section"
   width: auto
 element[16]: selector-id=17 name="h2"
   background-color: rgba(0, 0, 0, 0)
+  border-bottom-color: rgba(0, 0, 0, 0)
+  border-bottom-style: none
+  border-bottom-width: 0px
+  border-left-color: rgba(0, 0, 0, 0)
+  border-left-style: none
+  border-left-width: 0px
+  border-right-color: rgba(0, 0, 0, 0)
+  border-right-style: none
+  border-right-width: 0px
+  border-top-color: rgba(0, 0, 0, 0)
+  border-top-style: none
+  border-top-width: 0px
   color: rgba(128, 0, 0, 255)
   display: inline
   font-size: 20px
@@ -331,6 +535,18 @@ element[16]: selector-id=17 name="h2"
   width: auto
 element[17]: selector-id=18 name="p"
   background-color: rgba(0, 0, 0, 0)
+  border-bottom-color: rgba(0, 0, 0, 0)
+  border-bottom-style: none
+  border-bottom-width: 0px
+  border-left-color: rgba(0, 0, 0, 0)
+  border-left-style: none
+  border-left-width: 0px
+  border-right-color: rgba(0, 0, 0, 0)
+  border-right-style: none
+  border-right-width: 0px
+  border-top-color: rgba(0, 0, 0, 0)
+  border-top-style: none
+  border-top-width: 0px
   color: rgba(128, 0, 0, 255)
   display: inline
   font-size: 16px

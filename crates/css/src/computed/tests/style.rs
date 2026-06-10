@@ -17,6 +17,18 @@ fn computed_style_initial_snapshot_is_total_and_canonical() {
             "version: 1\n",
             "computed-style\n",
             "  background-color: rgba(0, 0, 0, 0)\n",
+            "  border-bottom-color: rgba(0, 0, 0, 0)\n",
+            "  border-bottom-style: none\n",
+            "  border-bottom-width: 0px\n",
+            "  border-left-color: rgba(0, 0, 0, 0)\n",
+            "  border-left-style: none\n",
+            "  border-left-width: 0px\n",
+            "  border-right-color: rgba(0, 0, 0, 0)\n",
+            "  border-right-style: none\n",
+            "  border-right-width: 0px\n",
+            "  border-top-color: rgba(0, 0, 0, 0)\n",
+            "  border-top-style: none\n",
+            "  border-top-width: 0px\n",
             "  color: rgba(0, 0, 0, 255)\n",
             "  display: inline\n",
             "  font-size: 16px\n",
@@ -42,6 +54,9 @@ fn computed_style_initial_snapshot_is_total_and_canonical() {
 fn computed_style_accessors_match_property_entries() {
     let mut builder = builder_with_initials_except(&[
         PropertyId::BackgroundColor,
+        PropertyId::BorderTopColor,
+        PropertyId::BorderTopStyle,
+        PropertyId::BorderTopWidth,
         PropertyId::Color,
         PropertyId::Display,
         PropertyId::FontSize,
@@ -60,6 +75,24 @@ fn computed_style_accessors_match_property_entries() {
             ComputedValue::Color((3, 4, 5, 6)),
         )
         .expect("background-color");
+    builder
+        .record(
+            PropertyId::BorderTopColor,
+            ComputedValue::Color((30, 40, 50, 255)),
+        )
+        .expect("border-top-color");
+    builder
+        .record(
+            PropertyId::BorderTopStyle,
+            ComputedValue::BorderStyle(BorderStyle::Solid),
+        )
+        .expect("border-top-style");
+    builder
+        .record(
+            PropertyId::BorderTopWidth,
+            ComputedValue::Length(Length::Px(2.0)),
+        )
+        .expect("border-top-width");
     builder
         .record(PropertyId::Color, ComputedValue::Color((7, 8, 9, 255)))
         .expect("color");
@@ -118,6 +151,19 @@ fn computed_style_accessors_match_property_entries() {
         style.get(PropertyId::BackgroundColor).value(),
         ComputedValue::Color(style.background_color())
     );
+    assert_eq!(
+        style.get(PropertyId::BorderTopColor).value(),
+        ComputedValue::Color(style.border_edges().top.color)
+    );
+    assert_eq!(
+        style.get(PropertyId::BorderTopStyle).value(),
+        ComputedValue::BorderStyle(style.border_edges().top.style)
+    );
+    assert_eq!(
+        style.get(PropertyId::BorderTopWidth).value(),
+        ComputedValue::Length(Length::Px(style.border_edges().top.width))
+    );
+    assert_eq!(style.box_metrics().border_top, 2.0);
     assert_eq!(
         style.get(PropertyId::Color).value(),
         ComputedValue::Color(style.color())
@@ -200,6 +246,54 @@ fn computed_style_get_round_trips_all_builder_supported_properties_losslessly() 
         (
             PropertyId::BackgroundColor,
             ComputedValue::Color((1, 2, 3, 4)),
+        ),
+        (
+            PropertyId::BorderBottomColor,
+            ComputedValue::Color((10, 20, 30, 255)),
+        ),
+        (
+            PropertyId::BorderBottomStyle,
+            ComputedValue::BorderStyle(BorderStyle::Solid),
+        ),
+        (
+            PropertyId::BorderBottomWidth,
+            ComputedValue::Length(Length::Px(1.0)),
+        ),
+        (
+            PropertyId::BorderLeftColor,
+            ComputedValue::Color((40, 50, 60, 255)),
+        ),
+        (
+            PropertyId::BorderLeftStyle,
+            ComputedValue::BorderStyle(BorderStyle::None),
+        ),
+        (
+            PropertyId::BorderLeftWidth,
+            ComputedValue::Length(Length::Px(2.0)),
+        ),
+        (
+            PropertyId::BorderRightColor,
+            ComputedValue::Color((70, 80, 90, 255)),
+        ),
+        (
+            PropertyId::BorderRightStyle,
+            ComputedValue::BorderStyle(BorderStyle::Solid),
+        ),
+        (
+            PropertyId::BorderRightWidth,
+            ComputedValue::Length(Length::Px(3.0)),
+        ),
+        (
+            PropertyId::BorderTopColor,
+            ComputedValue::Color((100, 110, 120, 255)),
+        ),
+        (
+            PropertyId::BorderTopStyle,
+            ComputedValue::BorderStyle(BorderStyle::Solid),
+        ),
+        (
+            PropertyId::BorderTopWidth,
+            ComputedValue::Length(Length::Px(4.0)),
         ),
         (PropertyId::Color, ComputedValue::Color((5, 6, 7, 8))),
         (PropertyId::Display, ComputedValue::Display(Display::Block)),

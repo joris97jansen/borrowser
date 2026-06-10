@@ -6,7 +6,7 @@ use super::{
     },
 };
 
-pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 18] = [
+pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 30] = [
     PropertyRegistration::new(
         PropertyId::BackgroundColor,
         "background-color",
@@ -14,6 +14,114 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 18] = [
             InitialStyleValue::TransparentColor,
             PropertySpecifiedValueKind::Color,
             PropertyComputedValueKind::AbsoluteColor,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::BorderBottomColor,
+        "border-bottom-color",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::TransparentColor,
+            PropertySpecifiedValueKind::Color,
+            PropertyComputedValueKind::AbsoluteColor,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::BorderBottomStyle,
+        "border-bottom-style",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::BorderStyleNone,
+            PropertySpecifiedValueKind::BorderStyleKeyword,
+            PropertyComputedValueKind::BorderStyleKeyword,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::BorderBottomWidth,
+        "border-bottom-width",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::ZeroPx,
+            PropertySpecifiedValueKind::AbsoluteLength,
+            PropertyComputedValueKind::AbsoluteLength,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::BorderLeftColor,
+        "border-left-color",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::TransparentColor,
+            PropertySpecifiedValueKind::Color,
+            PropertyComputedValueKind::AbsoluteColor,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::BorderLeftStyle,
+        "border-left-style",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::BorderStyleNone,
+            PropertySpecifiedValueKind::BorderStyleKeyword,
+            PropertyComputedValueKind::BorderStyleKeyword,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::BorderLeftWidth,
+        "border-left-width",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::ZeroPx,
+            PropertySpecifiedValueKind::AbsoluteLength,
+            PropertyComputedValueKind::AbsoluteLength,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::BorderRightColor,
+        "border-right-color",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::TransparentColor,
+            PropertySpecifiedValueKind::Color,
+            PropertyComputedValueKind::AbsoluteColor,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::BorderRightStyle,
+        "border-right-style",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::BorderStyleNone,
+            PropertySpecifiedValueKind::BorderStyleKeyword,
+            PropertyComputedValueKind::BorderStyleKeyword,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::BorderRightWidth,
+        "border-right-width",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::ZeroPx,
+            PropertySpecifiedValueKind::AbsoluteLength,
+            PropertyComputedValueKind::AbsoluteLength,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::BorderTopColor,
+        "border-top-color",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::TransparentColor,
+            PropertySpecifiedValueKind::Color,
+            PropertyComputedValueKind::AbsoluteColor,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::BorderTopStyle,
+        "border-top-style",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::BorderStyleNone,
+            PropertySpecifiedValueKind::BorderStyleKeyword,
+            PropertyComputedValueKind::BorderStyleKeyword,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::BorderTopWidth,
+        "border-top-width",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::ZeroPx,
+            PropertySpecifiedValueKind::AbsoluteLength,
+            PropertyComputedValueKind::AbsoluteLength,
         ),
     ),
     PropertyRegistration::new(
@@ -175,8 +283,20 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 18] = [
     ),
 ];
 
-pub(super) const PROPERTY_LOOKUP_BY_NAME: [PropertyNameLookupEntry; 18] = [
+pub(super) const PROPERTY_LOOKUP_BY_NAME: [PropertyNameLookupEntry; 30] = [
     PropertyNameLookupEntry::new("background-color", PropertyId::BackgroundColor),
+    PropertyNameLookupEntry::new("border-bottom-color", PropertyId::BorderBottomColor),
+    PropertyNameLookupEntry::new("border-bottom-style", PropertyId::BorderBottomStyle),
+    PropertyNameLookupEntry::new("border-bottom-width", PropertyId::BorderBottomWidth),
+    PropertyNameLookupEntry::new("border-left-color", PropertyId::BorderLeftColor),
+    PropertyNameLookupEntry::new("border-left-style", PropertyId::BorderLeftStyle),
+    PropertyNameLookupEntry::new("border-left-width", PropertyId::BorderLeftWidth),
+    PropertyNameLookupEntry::new("border-right-color", PropertyId::BorderRightColor),
+    PropertyNameLookupEntry::new("border-right-style", PropertyId::BorderRightStyle),
+    PropertyNameLookupEntry::new("border-right-width", PropertyId::BorderRightWidth),
+    PropertyNameLookupEntry::new("border-top-color", PropertyId::BorderTopColor),
+    PropertyNameLookupEntry::new("border-top-style", PropertyId::BorderTopStyle),
+    PropertyNameLookupEntry::new("border-top-width", PropertyId::BorderTopWidth),
     PropertyNameLookupEntry::new("color", PropertyId::Color),
     PropertyNameLookupEntry::new("display", PropertyId::Display),
     PropertyNameLookupEntry::new("font-size", PropertyId::FontSize),

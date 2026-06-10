@@ -51,6 +51,7 @@ pub struct PaintArchitectureContract {
 pub enum PaintOrderStep {
     LayoutBoxPreorderTraversal,
     BoxBackground,
+    BoxBorder,
     ListMarker,
     OverflowClipForContents,
     InlineFormattingContent,
@@ -61,6 +62,7 @@ pub enum PaintOrderStep {
 pub enum PaintOrderSource {
     LayoutBoxPreorder,
     ComputedStyleOnLayoutBox,
+    ComputedBorderOnLayoutBox,
     LayoutListMarkerMetadata,
     LayoutOverflowClipMetadata,
     LayoutInlineFragments,
@@ -93,7 +95,7 @@ pub enum PaintPrimitiveContractSource {
     LayoutOverflowClipMetadata,
     LayoutInlineFragments,
     LayoutReplacedMetadata,
-    DeferredCssBorderModel,
+    ComputedBorderModel,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -106,7 +108,9 @@ pub struct PaintPrimitiveContract {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PaintExcludedFeature {
-    BorderVisualRendering,
+    UnsupportedBorderStyles,
+    BorderRadius,
+    BorderImage,
     Outlines,
     TextDecorations,
     FullCssPaintingOrder,
@@ -197,7 +201,7 @@ static PAINT_ARCHITECTURE_CONTRACTS: [PaintArchitectureContract; 12] = [
     },
 ];
 
-static PAINT_ORDER_CONTRACTS: [PaintOrderContract; 6] = [
+static PAINT_ORDER_CONTRACTS: [PaintOrderContract; 7] = [
     PaintOrderContract {
         step: PaintOrderStep::LayoutBoxPreorderTraversal,
         owner: PaintContractOwner::Paint,
@@ -207,6 +211,11 @@ static PAINT_ORDER_CONTRACTS: [PaintOrderContract; 6] = [
         step: PaintOrderStep::BoxBackground,
         owner: PaintContractOwner::Paint,
         source: PaintOrderSource::ComputedStyleOnLayoutBox,
+    },
+    PaintOrderContract {
+        step: PaintOrderStep::BoxBorder,
+        owner: PaintContractOwner::Paint,
+        source: PaintOrderSource::ComputedBorderOnLayoutBox,
     },
     PaintOrderContract {
         step: PaintOrderStep::ListMarker,
@@ -240,7 +249,7 @@ static PAINT_PRIMITIVE_CONTRACTS: [PaintPrimitiveContract; 7] = [
     PaintPrimitiveContract {
         primitive: PaintPrimitiveContractKind::Border,
         owner: PaintContractOwner::Paint,
-        source: PaintPrimitiveContractSource::DeferredCssBorderModel,
+        source: PaintPrimitiveContractSource::ComputedBorderModel,
         backend_specific: false,
     },
     PaintPrimitiveContract {
@@ -275,8 +284,10 @@ static PAINT_PRIMITIVE_CONTRACTS: [PaintPrimitiveContract; 7] = [
     },
 ];
 
-static PAINT_EXCLUDED_FEATURES: [PaintExcludedFeature; 14] = [
-    PaintExcludedFeature::BorderVisualRendering,
+static PAINT_EXCLUDED_FEATURES: [PaintExcludedFeature; 16] = [
+    PaintExcludedFeature::UnsupportedBorderStyles,
+    PaintExcludedFeature::BorderRadius,
+    PaintExcludedFeature::BorderImage,
     PaintExcludedFeature::Outlines,
     PaintExcludedFeature::TextDecorations,
     PaintExcludedFeature::FullCssPaintingOrder,
@@ -338,6 +349,11 @@ mod tests {
                     step: PaintOrderStep::BoxBackground,
                     owner: PaintContractOwner::Paint,
                     source: PaintOrderSource::ComputedStyleOnLayoutBox,
+                },
+                PaintOrderContract {
+                    step: PaintOrderStep::BoxBorder,
+                    owner: PaintContractOwner::Paint,
+                    source: PaintOrderSource::ComputedBorderOnLayoutBox,
                 },
                 PaintOrderContract {
                     step: PaintOrderStep::ListMarker,
@@ -431,7 +447,7 @@ mod tests {
                 PaintPrimitiveContract {
                     primitive: PaintPrimitiveContractKind::Border,
                     owner: PaintContractOwner::Paint,
-                    source: PaintPrimitiveContractSource::DeferredCssBorderModel,
+                    source: PaintPrimitiveContractSource::ComputedBorderModel,
                     backend_specific: false,
                 },
                 PaintPrimitiveContract {
@@ -474,7 +490,9 @@ mod tests {
         assert_eq!(
             excluded,
             &[
-                PaintExcludedFeature::BorderVisualRendering,
+                PaintExcludedFeature::UnsupportedBorderStyles,
+                PaintExcludedFeature::BorderRadius,
+                PaintExcludedFeature::BorderImage,
                 PaintExcludedFeature::Outlines,
                 PaintExcludedFeature::TextDecorations,
                 PaintExcludedFeature::FullCssPaintingOrder,

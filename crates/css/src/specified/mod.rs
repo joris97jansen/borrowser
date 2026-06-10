@@ -6,6 +6,7 @@
 //! inheritance, initial/default fallback, layout-dependent resolution, or
 //! computed-value normalization.
 
+mod border;
 mod color;
 mod display;
 mod error;
@@ -18,11 +19,12 @@ mod value;
 pub use error::{SpecifiedValueParseError, SpecifiedValueParseErrorKind};
 pub use parse::{SpecifiedValueLimits, parse_specified_value, parse_specified_value_with_limits};
 pub use value::{
-    SpecifiedColor, SpecifiedColorKeyword, SpecifiedColorSyntax, SpecifiedDisplay,
-    SpecifiedDisplayKeyword, SpecifiedHexColor, SpecifiedLength, SpecifiedLengthPercentage,
-    SpecifiedLengthPercentageOrAuto, SpecifiedLengthPercentageOrNone, SpecifiedLengthUnit,
-    SpecifiedOverflow, SpecifiedOverflowKeyword, SpecifiedPercentage, SpecifiedPosition,
-    SpecifiedPositionKeyword, SpecifiedPropertyValue, SpecifiedValue,
+    SpecifiedBorderStyle, SpecifiedBorderStyleKeyword, SpecifiedColor, SpecifiedColorKeyword,
+    SpecifiedColorSyntax, SpecifiedDisplay, SpecifiedDisplayKeyword, SpecifiedHexColor,
+    SpecifiedLength, SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto,
+    SpecifiedLengthPercentageOrNone, SpecifiedLengthUnit, SpecifiedOverflow,
+    SpecifiedOverflowKeyword, SpecifiedPercentage, SpecifiedPosition, SpecifiedPositionKeyword,
+    SpecifiedPropertyValue, SpecifiedValue,
 };
 
 #[cfg(test)]

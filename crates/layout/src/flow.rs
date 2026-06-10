@@ -309,9 +309,8 @@ impl OverflowPolicy {
 
 /// Layout-owned paint clip produced by an overflow policy.
 ///
-/// The current no-border subset clips to the border box, which is equivalent
-/// to the padding box until border geometry exists. Paint consumes this rect;
-/// it must not reinterpret raw CSS overflow declarations.
+/// AA3 border geometry clips to the final border box. Paint consumes this
+/// rect; it must not reinterpret raw CSS overflow declarations.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct OverflowClip {
     policy: OverflowPolicy,

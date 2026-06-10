@@ -54,6 +54,7 @@ impl SpecifiedPropertyValue {
 /// before computation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SpecifiedValue {
+    BorderStyle(SpecifiedBorderStyle),
     Color(SpecifiedColor),
     Display(SpecifiedDisplay),
     Overflow(SpecifiedOverflow),
@@ -66,6 +67,7 @@ pub enum SpecifiedValue {
 impl SpecifiedValue {
     pub fn kind(&self) -> PropertySpecifiedValueKind {
         match self {
+            Self::BorderStyle(_) => PropertySpecifiedValueKind::BorderStyleKeyword,
             Self::Color(_) => PropertySpecifiedValueKind::Color,
             Self::Display(_) => PropertySpecifiedValueKind::DisplayKeyword,
             Self::Overflow(_) => PropertySpecifiedValueKind::OverflowKeyword,
@@ -78,6 +80,7 @@ impl SpecifiedValue {
 
     pub fn span(&self) -> CssSpan {
         match self {
+            Self::BorderStyle(border_style) => border_style.span(),
             Self::Color(color) => color.span(),
             Self::Display(display) => display.span(),
             Self::Overflow(overflow) => overflow.span(),
@@ -90,6 +93,7 @@ impl SpecifiedValue {
 
     pub fn to_css_text(&self) -> String {
         match self {
+            Self::BorderStyle(border_style) => border_style.to_css_text().to_string(),
             Self::Color(color) => color.to_css_text(),
             Self::Display(display) => display.to_css_text().to_string(),
             Self::Overflow(overflow) => overflow.to_css_text().to_string(),
@@ -99,6 +103,18 @@ impl SpecifiedValue {
             Self::LengthPercentageOrNone(value) => value.to_css_text(),
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpecifiedBorderStyle {
+    pub(super) span: CssSpan,
+    pub(super) keyword: SpecifiedBorderStyleKeyword,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpecifiedBorderStyleKeyword {
+    None,
+    Solid,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

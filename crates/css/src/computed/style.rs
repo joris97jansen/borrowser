@@ -4,7 +4,7 @@ use crate::{
     PropertyComputedValueKind, PropertyId,
     cascade::ResolvedStyle,
     property_registry,
-    values::{Display, Length, LengthPercentage, Overflow, Position},
+    values::{BorderStyle, Display, Length, LengthPercentage, Overflow, Position},
 };
 
 use super::{
@@ -31,11 +31,70 @@ pub struct BoxMetrics {
     pub padding_right: f32,
     pub padding_bottom: f32,
     pub padding_left: f32,
+
+    // Used physical border widths in CSS px for the supported subset.
+    pub border_top: f32,
+    pub border_right: f32,
+    pub border_bottom: f32,
+    pub border_left: f32,
 }
 
 impl BoxMetrics {
     pub fn zero() -> Self {
         Self::default()
+    }
+}
+
+/// Computed physical border data for the current supported subset.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BorderEdges {
+    pub top: BorderSide,
+    pub right: BorderSide,
+    pub bottom: BorderSide,
+    pub left: BorderSide,
+}
+
+impl BorderEdges {
+    pub fn zero() -> Self {
+        Self {
+            top: BorderSide::none(),
+            right: BorderSide::none(),
+            bottom: BorderSide::none(),
+            left: BorderSide::none(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct BorderSide {
+    pub width: f32,
+    pub style: BorderStyle,
+    pub color: (u8, u8, u8, u8),
+}
+
+impl BorderSide {
+    pub fn none() -> Self {
+        Self {
+            width: 0.0,
+            style: BorderStyle::None,
+            color: (0, 0, 0, 0),
+        }
+    }
+
+    pub fn used_width(self) -> f32 {
+        if self.has_used_width() {
+            self.width
+        } else {
+            0.0
+        }
+    }
+
+    pub fn has_used_width(self) -> bool {
+        self.width > 0.0 && matches!(self.style, BorderStyle::Solid)
+    }
+
+    pub fn is_paint_visible(self) -> bool {
+        self.has_used_width() && self.color.3 > 0
     }
 }
 
@@ -61,6 +120,9 @@ pub struct ComputedStyle {
     /// This is an ergonomic view over individual property entries, not a
     /// second source of truth.
     pub(super) box_metrics: BoxMetrics,
+
+    /// Computed physical border sides for the supported rectangular subset.
+    pub(super) border_edges: BorderEdges,
 
     /// CSS `display` value.
     ///
@@ -104,6 +166,7 @@ impl ComputedStyle {
             background_color: (0, 0, 0, 0),
             font_size: Length::Px(16.0),
             box_metrics: BoxMetrics::zero(),
+            border_edges: BorderEdges::zero(),
             display: Display::Inline,
             overflow: Overflow::Visible,
             position: Position::Static,
@@ -148,6 +211,10 @@ impl ComputedStyle {
     /// margin and padding properties.
     pub fn box_metrics(&self) -> BoxMetrics {
         self.box_metrics
+    }
+
+    pub fn border_edges(&self) -> BorderEdges {
+        self.border_edges
     }
 
     /// Returns the computed display keyword.
@@ -216,6 +283,30 @@ impl ComputedStyle {
     pub fn get(&self, property: PropertyId) -> ComputedStyleEntry {
         let value = match property {
             PropertyId::BackgroundColor => ComputedValue::Color(self.background_color),
+            PropertyId::BorderBottomColor => ComputedValue::Color(self.border_edges.bottom.color),
+            PropertyId::BorderBottomStyle => {
+                ComputedValue::BorderStyle(self.border_edges.bottom.style)
+            }
+            PropertyId::BorderBottomWidth => {
+                ComputedValue::Length(Length::Px(self.border_edges.bottom.width))
+            }
+            PropertyId::BorderLeftColor => ComputedValue::Color(self.border_edges.left.color),
+            PropertyId::BorderLeftStyle => ComputedValue::BorderStyle(self.border_edges.left.style),
+            PropertyId::BorderLeftWidth => {
+                ComputedValue::Length(Length::Px(self.border_edges.left.width))
+            }
+            PropertyId::BorderRightColor => ComputedValue::Color(self.border_edges.right.color),
+            PropertyId::BorderRightStyle => {
+                ComputedValue::BorderStyle(self.border_edges.right.style)
+            }
+            PropertyId::BorderRightWidth => {
+                ComputedValue::Length(Length::Px(self.border_edges.right.width))
+            }
+            PropertyId::BorderTopColor => ComputedValue::Color(self.border_edges.top.color),
+            PropertyId::BorderTopStyle => ComputedValue::BorderStyle(self.border_edges.top.style),
+            PropertyId::BorderTopWidth => {
+                ComputedValue::Length(Length::Px(self.border_edges.top.width))
+            }
             PropertyId::Color => ComputedValue::Color(self.color),
             PropertyId::Display => ComputedValue::Display(self.display),
             PropertyId::FontSize => ComputedValue::Length(self.font_size),
@@ -280,7 +371,7 @@ impl ComputedStyle {
         let box_metrics = self.box_metrics();
         let _ = write!(
             out,
-            "display={} overflow={} position={} color={} background={} font-size={} width={} height={} margin={} padding={}",
+            "display={} overflow={} position={} color={} background={} font-size={} width={} height={} margin={} padding={} border={}",
             display_debug_label(self.display()),
             overflow_debug_label(self.overflow()),
             position_debug_label(self.position()),
@@ -300,6 +391,12 @@ impl ComputedStyle {
                 box_metrics.padding_right,
                 box_metrics.padding_bottom,
                 box_metrics.padding_left,
+            ),
+            box_sides_debug_label(
+                box_metrics.border_top,
+                box_metrics.border_right,
+                box_metrics.border_bottom,
+                box_metrics.border_left,
             ),
         );
         out

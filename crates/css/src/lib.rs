@@ -56,8 +56,8 @@ pub use cascade::{
     try_resolve_document_styles_with_limits,
 };
 pub use computed::{
-    BoxMetrics, ComputedDocumentStyle, ComputedDocumentStyleWithStats, ComputedElementStyle,
-    ComputedStyleBuildError, ComputedStyleBuilder, ComputedStyleEntry,
+    BorderEdges, BorderSide, BoxMetrics, ComputedDocumentStyle, ComputedDocumentStyleWithStats,
+    ComputedElementStyle, ComputedStyleBuildError, ComputedStyleBuilder, ComputedStyleEntry,
     ComputedStyleResolutionError, ComputedStyleReuseStats, ComputedValue,
     ComputedValueDiscriminant, ComputedValueNormalizationError,
     ComputedValueNormalizationErrorKind, IncrementalComputedDocumentStyle, StylePhaseOutput,
@@ -97,13 +97,13 @@ pub use selectors::{
     serialize_selector_list_for_snapshot, serialize_selector_parse_result_for_snapshot,
 };
 pub use specified::{
-    SpecifiedColor, SpecifiedColorKeyword, SpecifiedColorSyntax, SpecifiedDisplay,
-    SpecifiedDisplayKeyword, SpecifiedHexColor, SpecifiedLength, SpecifiedLengthPercentage,
-    SpecifiedLengthPercentageOrAuto, SpecifiedLengthPercentageOrNone, SpecifiedLengthUnit,
-    SpecifiedOverflow, SpecifiedOverflowKeyword, SpecifiedPercentage, SpecifiedPosition,
-    SpecifiedPositionKeyword, SpecifiedPropertyValue, SpecifiedValue, SpecifiedValueLimits,
-    SpecifiedValueParseError, SpecifiedValueParseErrorKind, parse_specified_value,
-    parse_specified_value_with_limits,
+    SpecifiedBorderStyle, SpecifiedBorderStyleKeyword, SpecifiedColor, SpecifiedColorKeyword,
+    SpecifiedColorSyntax, SpecifiedDisplay, SpecifiedDisplayKeyword, SpecifiedHexColor,
+    SpecifiedLength, SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto,
+    SpecifiedLengthPercentageOrNone, SpecifiedLengthUnit, SpecifiedOverflow,
+    SpecifiedOverflowKeyword, SpecifiedPercentage, SpecifiedPosition, SpecifiedPositionKeyword,
+    SpecifiedPropertyValue, SpecifiedValue, SpecifiedValueLimits, SpecifiedValueParseError,
+    SpecifiedValueParseErrorKind, parse_specified_value, parse_specified_value_with_limits,
 };
 
 // Explicit syntax-layer surface for parser/tokenizer work and syntax tests.
@@ -147,5 +147,6 @@ pub use syntax::Declaration as CompatDeclaration;
 pub use syntax::serialize_compat_stylesheet_for_snapshot;
 
 pub use values::{
-    Display, Length, LengthPercentage, Overflow, Percentage, Position, parse_color, parse_length,
+    BorderStyle, Display, Length, LengthPercentage, Overflow, Percentage, Position, parse_color,
+    parse_length,
 };

@@ -45,7 +45,18 @@ Notes:
 
 Current supported property set is intentionally small. Major missing families:
 
-- borders: `border-*`, border styles, border colors, border radius
+- borders:
+  - full `border` shorthand support
+  - `border-width`, `border-style`, and `border-color` shorthands
+  - additional border styles beyond the supported subset
+  - border radius
+  - border images
+  - logical border properties
+- CSS shorthand and multi-component declaration expansion:
+  - broad shorthand parsing is not yet supported
+  - declarations that expand into multiple longhands are intentionally limited
+  - current feature work should prefer explicit longhands unless shorthand
+    support is part of the issue scope
 - fonts: `font-family`, `font-weight`, `font-style`, line-height variants
 - text: `white-space`, text alignment, text decoration, text transform
 - backgrounds: images, repeat, position, size, attachment, multiple backgrounds
@@ -72,13 +83,15 @@ Missing or incomplete:
 - fragmentation and pagination
 - full inline formatting behavior, including bidi and advanced line breaking
 - full replaced-element and intrinsic-size compatibility
-- margin/border/padding completeness for all formatting contexts
+- margin/border/padding completeness across all formatting contexts and edge
+  cases
 
 ## Paint / GFX
 
 Missing or incomplete:
 
-- borders and border radius
+- full border rendering beyond the supported physical solid-border subset
+- border radius
 - background images and advanced background painting
 - shadows, transforms, opacity, filters, and clipping interactions
 - stacking-context paint ordering

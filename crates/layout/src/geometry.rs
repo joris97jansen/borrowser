@@ -25,18 +25,22 @@ impl PartialEq for Rectangle {
     }
 }
 
-/// The inner "content box" of a layout box: border box minus padding.
+/// The inner "content box" of a layout box: border box minus border and padding.
 /// We expose it via small helpers so that all code computes content
 /// geometry in a single, consistent way.
 pub fn content_x_and_width(style: &ComputedStyle, border_x: f32, border_width: f32) -> (f32, f32) {
     let bm = style.box_metrics();
 
-    let content_x = border_x + bm.padding_left;
-    let content_width = (border_width - bm.padding_left - bm.padding_right).max(0.0);
+    let content_x = border_x + bm.border_left + bm.padding_left;
+    let content_width =
+        (border_width - bm.border_left - bm.padding_left - bm.padding_right - bm.border_right)
+            .max(0.0);
 
     debug_assert!(
         content_width >= 0.0,
-        "content_x_and_width produced negative width: border_width={border_width}, paddings=({}, {})",
+        "content_x_and_width produced negative width: border_width={border_width}, borders=({}, {}), paddings=({}, {})",
+        bm.border_left,
+        bm.border_right,
         bm.padding_left,
         bm.padding_right,
     );
@@ -44,20 +48,24 @@ pub fn content_x_and_width(style: &ComputedStyle, border_x: f32, border_width: f
     (content_x, content_width)
 }
 
-/// Vertical position of the content box top (border box top + padding-top).
+/// Vertical position of the content box top (border box top + border-top + padding-top).
 pub fn content_y(style: &ComputedStyle, border_y: f32) -> f32 {
     let bm = style.box_metrics();
-    border_y + bm.padding_top
+    border_y + bm.border_top + bm.padding_top
 }
 
-/// Height of the content box (border box height minus vertical padding).
+/// Height of the content box (border box height minus vertical border and padding).
 pub fn content_height(style: &ComputedStyle, border_height: f32) -> f32 {
     let bm = style.box_metrics();
-    let content_height = (border_height - bm.padding_top - bm.padding_bottom).max(0.0);
+    let content_height =
+        (border_height - bm.border_top - bm.padding_top - bm.padding_bottom - bm.border_bottom)
+            .max(0.0);
 
     debug_assert!(
         content_height >= 0.0,
-        "content_height produced negative height: border_height={border_height}, paddings=({}, {})",
+        "content_height produced negative height: border_height={border_height}, borders=({}, {}), paddings=({}, {})",
+        bm.border_top,
+        bm.border_bottom,
         bm.padding_top,
         bm.padding_bottom,
     );

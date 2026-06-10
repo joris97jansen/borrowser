@@ -5,6 +5,7 @@ use crate::{
 };
 
 use super::{
+    border::parse_border_style,
     color::parse_color,
     display::parse_display,
     error::{SpecifiedValueParseError, SpecifiedValueParseErrorKind, error},
@@ -30,6 +31,9 @@ pub fn parse_specified_value_with_limits(
 ) -> Result<SpecifiedPropertyValue, SpecifiedValueParseError> {
     let component = sole_non_trivia_component(property, value, limits)?;
     let specified = match property.metadata().specified_value {
+        PropertySpecifiedValueKind::BorderStyleKeyword => {
+            SpecifiedValue::BorderStyle(parse_border_style(property, component)?)
+        }
         PropertySpecifiedValueKind::Color => {
             SpecifiedValue::Color(parse_color(property, component)?)
         }

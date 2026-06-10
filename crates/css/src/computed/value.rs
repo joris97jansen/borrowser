@@ -1,20 +1,21 @@
 use crate::{
     InitialStyleValue, PropertyComputedValueKind, PropertyId,
     specified::{SpecifiedPropertyValue, SpecifiedValue},
-    values::{Display, Length, LengthPercentage, Overflow, Position},
+    values::{BorderStyle, Display, Length, LengthPercentage, Overflow, Position},
 };
 
 use super::{
     format::{display_keyword, format_length},
     normalize::{
-        normalize_color, normalize_display, normalize_length, normalize_length_percentage_or_auto,
-        normalize_length_percentage_or_none,
+        normalize_border_style, normalize_color, normalize_display, normalize_length,
+        normalize_length_percentage_or_auto, normalize_length_percentage_or_none,
     },
 };
 
 /// Typed computed-value surface for the current supported property subset.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ComputedValue {
+    BorderStyle(BorderStyle),
     Color((u8, u8, u8, u8)),
     Display(Display),
     Overflow(Overflow),
@@ -27,6 +28,7 @@ pub enum ComputedValue {
 impl ComputedValue {
     pub fn discriminant(self) -> ComputedValueDiscriminant {
         match self {
+            Self::BorderStyle(_) => ComputedValueDiscriminant::BorderStyle,
             Self::Color(_) => ComputedValueDiscriminant::Color,
             Self::Display(_) => ComputedValueDiscriminant::Display,
             Self::Overflow(_) => ComputedValueDiscriminant::Overflow,
@@ -39,6 +41,7 @@ impl ComputedValue {
 
     pub fn from_initial(property: PropertyId) -> Self {
         match property.initial_value() {
+            InitialStyleValue::BorderStyleNone => Self::BorderStyle(BorderStyle::None),
             InitialStyleValue::ColorBlack => Self::Color((0, 0, 0, 255)),
             InitialStyleValue::TransparentColor => Self::Color((0, 0, 0, 0)),
             InitialStyleValue::DisplayInline => Self::Display(Display::Inline),
@@ -62,6 +65,9 @@ impl ComputedValue {
     ) -> Result<Self, ComputedValueNormalizationError> {
         let property = specified.property();
         let value = match specified.value() {
+            SpecifiedValue::BorderStyle(border_style) => {
+                Self::BorderStyle(normalize_border_style(border_style.keyword()))
+            }
             SpecifiedValue::Color(color) => Self::Color(normalize_color(color)),
             SpecifiedValue::Display(display) => Self::Display(normalize_display(display.keyword())),
             SpecifiedValue::Overflow(overflow) => {
@@ -97,6 +103,7 @@ impl ComputedValue {
     /// derived formatting or parser-facing text.
     pub fn to_debug_label(self) -> String {
         match self {
+            Self::BorderStyle(style) => border_style_keyword(style).to_string(),
             Self::Color((r, g, b, a)) => format!("rgba({r}, {g}, {b}, {a})"),
             Self::Display(display) => display_keyword(display).to_string(),
             Self::Overflow(overflow) => overflow_keyword(overflow).to_string(),
@@ -166,6 +173,7 @@ impl ComputedValueNormalizationErrorKind {
 /// Runtime-discriminant for `ComputedValue`.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ComputedValueDiscriminant {
+    BorderStyle,
     Color,
     Display,
     Overflow,
@@ -178,6 +186,7 @@ pub enum ComputedValueDiscriminant {
 impl ComputedValueDiscriminant {
     pub fn as_debug_label(self) -> &'static str {
         match self {
+            Self::BorderStyle => "border-style",
             Self::Color => "color",
             Self::Display => "display",
             Self::Overflow => "overflow",
@@ -199,6 +208,7 @@ pub(super) fn computed_value_discriminant(
     kind: PropertyComputedValueKind,
 ) -> ComputedValueDiscriminant {
     match kind {
+        PropertyComputedValueKind::BorderStyleKeyword => ComputedValueDiscriminant::BorderStyle,
         PropertyComputedValueKind::AbsoluteColor => ComputedValueDiscriminant::Color,
         PropertyComputedValueKind::DisplayKeyword => ComputedValueDiscriminant::Display,
         PropertyComputedValueKind::OverflowKeyword => ComputedValueDiscriminant::Overflow,
@@ -210,6 +220,13 @@ pub(super) fn computed_value_discriminant(
         PropertyComputedValueKind::LengthPercentageOrNone => {
             ComputedValueDiscriminant::LengthPercentageOrNone
         }
+    }
+}
+
+fn border_style_keyword(style: BorderStyle) -> &'static str {
+    match style {
+        BorderStyle::None => "none",
+        BorderStyle::Solid => "solid",
     }
 }
 

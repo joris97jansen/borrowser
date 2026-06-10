@@ -13,7 +13,7 @@ use crate::{
     SpecifiedPropertyValue, parse_specified_value, parse_stylesheet_with_options,
     property_registry, resolve_cascade_style_from_rule_inputs, resolve_document_styles,
     resolve_initial_style,
-    values::{Display, Length, LengthPercentage, Overflow, Percentage, Position},
+    values::{BorderStyle, Display, Length, LengthPercentage, Overflow, Percentage, Position},
 };
 use html::{Node, internal::Id};
 use std::sync::Arc;

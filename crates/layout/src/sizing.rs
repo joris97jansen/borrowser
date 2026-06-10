@@ -353,6 +353,7 @@ impl<T: Copy> PhysicalSides<T> {
 pub struct StyleBoxMetrics {
     margin: PhysicalSides<SignedCssPx>,
     padding: PhysicalSides<CssPx>,
+    border: PhysicalSides<CssPx>,
 }
 
 impl StyleBoxMetrics {
@@ -365,11 +366,20 @@ impl StyleBoxMetrics {
                 SignedCssPx::ZERO,
             ),
             padding: PhysicalSides::new(CssPx::ZERO, CssPx::ZERO, CssPx::ZERO, CssPx::ZERO),
+            border: PhysicalSides::new(CssPx::ZERO, CssPx::ZERO, CssPx::ZERO, CssPx::ZERO),
         }
     }
 
-    pub fn new(margin: PhysicalSides<SignedCssPx>, padding: PhysicalSides<CssPx>) -> Self {
-        Self { margin, padding }
+    pub fn new(
+        margin: PhysicalSides<SignedCssPx>,
+        padding: PhysicalSides<CssPx>,
+        border: PhysicalSides<CssPx>,
+    ) -> Self {
+        Self {
+            margin,
+            padding,
+            border,
+        }
     }
 
     pub fn from_box_metrics(metrics: BoxMetrics) -> Result<Self, StyleSizeInputError> {
@@ -389,6 +399,12 @@ impl StyleBoxMetrics {
                 )?,
                 non_negative_length(metrics.padding_left, StyleSizeInputProperty::PaddingLeft)?,
             ),
+            border: PhysicalSides::new(
+                non_negative_length(metrics.border_top, StyleSizeInputProperty::BorderTop)?,
+                non_negative_length(metrics.border_right, StyleSizeInputProperty::BorderRight)?,
+                non_negative_length(metrics.border_bottom, StyleSizeInputProperty::BorderBottom)?,
+                non_negative_length(metrics.border_left, StyleSizeInputProperty::BorderLeft)?,
+            ),
         })
     }
 
@@ -398,6 +414,10 @@ impl StyleBoxMetrics {
 
     pub fn padding(self) -> PhysicalSides<CssPx> {
         self.padding
+    }
+
+    pub fn border(self) -> PhysicalSides<CssPx> {
+        self.border
     }
 }
 
@@ -776,9 +796,10 @@ impl SizeResolutionInput {
         .expect("write snapshot");
         writeln!(
             &mut out,
-            "box-metrics: margin={} padding={}",
+            "box-metrics: margin={} padding={} border={}",
             signed_sides_debug_label(metrics.margin()),
             css_px_sides_debug_label(metrics.padding()),
+            css_px_sides_debug_label(metrics.border()),
         )
         .expect("write snapshot");
         writeln!(
@@ -860,11 +881,14 @@ pub fn resolve_normal_flow_inline_size(
 ) -> ResolvedAxisSize {
     let style = input.style();
     let padding = style.box_metrics().padding();
-    let padding_inline = css_px_sum(padding.left(), padding.right());
+    let border = style.box_metrics().border();
+    let inline_start_edges = css_px_sum(border.left(), padding.left());
+    let inline_end_edges = css_px_sum(padding.right(), border.right());
+    let inline_edges = css_px_sum(inline_start_edges, inline_end_edges);
     let available_content_size = input.constraint_space().available_size_after_edges(
         SizeAxis::Inline,
-        padding.left(),
-        padding.right(),
+        inline_start_edges,
+        inline_end_edges,
     );
     let available_content = available_content_size.definite_value();
     let basis = input
@@ -911,7 +935,7 @@ pub fn resolve_normal_flow_inline_size(
     let (value, applied_constraint) = constraints
         .clamp_with_available_space(preferred_value, atomic_inline_available_space_clamp);
     let used = used_axis_size(preferred_value, preferred_reason, value, applied_constraint);
-    let border = css_px_sum(value, padding_inline);
+    let border = css_px_sum(value, inline_edges);
 
     ResolvedAxisSize::new(used, border)
 }
@@ -922,7 +946,11 @@ pub fn resolve_flex_distributed_inline_size(
 ) -> ResolvedAxisSize {
     let style = input.style();
     let padding = style.box_metrics().padding();
-    let padding_inline = css_px_sum(padding.left(), padding.right());
+    let border_metrics = style.box_metrics().border();
+    let inline_edges = css_px_sum(
+        css_px_sum(border_metrics.left(), padding.left()),
+        css_px_sum(padding.right(), border_metrics.right()),
+    );
     let basis = input
         .constraint_space()
         .containing_size_for_axis(SizeAxis::Inline);
@@ -935,7 +963,7 @@ pub fn resolve_flex_distributed_inline_size(
         value,
         applied_constraint,
     );
-    let border = css_px_sum(value, padding_inline);
+    let border = css_px_sum(value, inline_edges);
 
     ResolvedAxisSize::new(used, border)
 }
@@ -946,7 +974,11 @@ pub fn resolve_flex_distributed_block_size(
 ) -> ResolvedAxisSize {
     let style = input.style();
     let padding = style.box_metrics().padding();
-    let padding_block = css_px_sum(padding.top(), padding.bottom());
+    let border_metrics = style.box_metrics().border();
+    let block_edges = css_px_sum(
+        css_px_sum(border_metrics.top(), padding.top()),
+        css_px_sum(padding.bottom(), border_metrics.bottom()),
+    );
     let basis = input
         .constraint_space()
         .containing_size_for_axis(SizeAxis::Block);
@@ -959,7 +991,7 @@ pub fn resolve_flex_distributed_block_size(
         value,
         applied_constraint,
     );
-    let border = css_px_sum(value, padding_block);
+    let border = css_px_sum(value, block_edges);
 
     ResolvedAxisSize::new(used, border)
 }
@@ -971,7 +1003,11 @@ pub fn resolve_normal_flow_block_size(
 ) -> ResolvedAxisSize {
     let style = input.style();
     let padding = style.box_metrics().padding();
-    let padding_block = css_px_sum(padding.top(), padding.bottom());
+    let border_metrics = style.box_metrics().border();
+    let block_edges = css_px_sum(
+        css_px_sum(border_metrics.top(), padding.top()),
+        css_px_sum(padding.bottom(), border_metrics.bottom()),
+    );
     let basis = input
         .constraint_space()
         .containing_size_for_axis(SizeAxis::Block);
@@ -1003,7 +1039,7 @@ pub fn resolve_normal_flow_block_size(
     let constraints = block_constraints(axis, basis);
     let (value, applied_constraint) = constraints.clamp_with_applied_constraint(preferred_value);
     let used = used_axis_size(preferred_value, preferred_reason, value, applied_constraint);
-    let border = css_px_sum(value, padding_block);
+    let border = css_px_sum(value, block_edges);
 
     ResolvedAxisSize::new(used, border)
 }
@@ -1409,6 +1445,10 @@ pub enum StyleSizeInputProperty {
     PaddingRight,
     PaddingBottom,
     PaddingLeft,
+    BorderTop,
+    BorderRight,
+    BorderBottom,
+    BorderLeft,
 }
 
 impl StyleSizeInputProperty {
@@ -1426,6 +1466,10 @@ impl StyleSizeInputProperty {
             Self::PaddingRight => "padding-right",
             Self::PaddingBottom => "padding-bottom",
             Self::PaddingLeft => "padding-left",
+            Self::BorderTop => "border-top-width",
+            Self::BorderRight => "border-right-width",
+            Self::BorderBottom => "border-bottom-width",
+            Self::BorderLeft => "border-left-width",
         }
     }
 }
@@ -1669,7 +1713,7 @@ pub(crate) fn used_content_size_debug_label(value: Option<UsedContentSize>) -> S
 #[cfg(test)]
 mod tests {
     use super::*;
-    use css::{ComputedStyle, ComputedValue, Length, PropertyId};
+    use css::{BorderStyle, ComputedStyle, ComputedValue, Length, PropertyId};
 
     #[test]
     fn css_px_accepts_only_non_negative_finite_values() {
@@ -2022,6 +2066,12 @@ mod tests {
                     CssPx::new(3.0).expect("padding bottom"),
                     CssPx::new(10.0).expect("padding left"),
                 ),
+                PhysicalSides::new(
+                    CssPx::new(1.0).expect("border top"),
+                    CssPx::new(2.0).expect("border right"),
+                    CssPx::new(1.0).expect("border bottom"),
+                    CssPx::new(2.0).expect("border left"),
+                ),
             ),
         );
         let intrinsic = IntrinsicSizes::new(
@@ -2047,10 +2097,10 @@ mode: atomic-inline\n\
 auto-content-block-size: 30.00px\n\
 constraint-space: containing-block=none containing-inline=400.00px containing-block-size=indefinite available-inline=160.00px available-block=indefinite\n\
 style: inline(preferred=auto min=50.00px max=25.00%) block(preferred=auto min=auto max=none)\n\
-box-metrics: margin=(top=1.00px right=2.00px bottom=3.00px left=4.00px) padding=(top=2.00px right=10.00px bottom=3.00px left=10.00px)\n\
+box-metrics: margin=(top=1.00px right=2.00px bottom=3.00px left=4.00px) padding=(top=2.00px right=10.00px bottom=3.00px left=10.00px) border=(top=1.00px right=2.00px bottom=1.00px left=2.00px)\n\
 intrinsic: min-content-inline=40.00px max-content-inline=220.00px preferred-inline=220.00px preferred-block=none aspect-ratio=none\n\
-result-inline: preferred=140.00px reason=shrink-to-fit value=100.00px adjustment=max border=120.00px\n\
-result-block: preferred=30.00px reason=auto-content-based value=30.00px adjustment=none border=35.00px\n"
+result-inline: preferred=136.00px reason=shrink-to-fit value=100.00px adjustment=max border=124.00px\n\
+result-block: preferred=30.00px reason=auto-content-based value=30.00px adjustment=none border=37.00px\n"
         );
         assert_eq!(
             snapshot,
@@ -2141,6 +2191,10 @@ result-block: preferred=30.00px reason=auto-content-based value=30.00px adjustme
             padding_right: 4.0,
             padding_bottom: 5.0,
             padding_left: 6.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
         };
 
         let inputs = StyleBoxMetrics::from_box_metrics(metrics).expect("valid box metrics");
@@ -2176,6 +2230,10 @@ result-block: preferred=30.00px reason=auto-content-based value=30.00px adjustme
             padding_right: 0.0,
             padding_bottom: 0.0,
             padding_left: 0.0,
+            border_top: 0.0,
+            border_right: 0.0,
+            border_bottom: 0.0,
+            border_left: 0.0,
         };
 
         assert_eq!(
@@ -2406,6 +2464,103 @@ result-block: preferred=30.00px reason=auto-content-based value=30.00px adjustme
             SizeResolutionReason::DefiniteLength
         );
         assert_eq!(resolved.border(), CssPx::new(125.0).expect("border"));
+    }
+
+    #[test]
+    fn normal_flow_explicit_width_includes_visible_border_edges_in_border_box() {
+        let input = size_input_with_style(
+            ComputedStyle::initial()
+                .with_property(
+                    PropertyId::Width,
+                    computed_length_percentage_or_auto_px(100.0),
+                )
+                .expect("width")
+                .with_property(
+                    PropertyId::PaddingLeft,
+                    ComputedValue::Length(Length::Px(10.0)),
+                )
+                .expect("padding-left")
+                .with_property(
+                    PropertyId::PaddingRight,
+                    ComputedValue::Length(Length::Px(15.0)),
+                )
+                .expect("padding-right")
+                .with_property(
+                    PropertyId::BorderLeftColor,
+                    ComputedValue::Color((255, 0, 0, 255)),
+                )
+                .expect("border-left-color")
+                .with_property(
+                    PropertyId::BorderLeftStyle,
+                    ComputedValue::BorderStyle(BorderStyle::Solid),
+                )
+                .expect("border-left-style")
+                .with_property(
+                    PropertyId::BorderLeftWidth,
+                    ComputedValue::Length(Length::Px(2.0)),
+                )
+                .expect("border-left-width")
+                .with_property(
+                    PropertyId::BorderRightColor,
+                    ComputedValue::Color((0, 0, 255, 255)),
+                )
+                .expect("border-right-color")
+                .with_property(
+                    PropertyId::BorderRightStyle,
+                    ComputedValue::BorderStyle(BorderStyle::Solid),
+                )
+                .expect("border-right-style")
+                .with_property(
+                    PropertyId::BorderRightWidth,
+                    ComputedValue::Length(Length::Px(4.0)),
+                )
+                .expect("border-right-width"),
+            500.0,
+        );
+
+        let resolved = resolve_normal_flow_inline_size(input, NormalFlowSizingMode::BlockLevel);
+
+        assert_eq!(
+            resolved.content().value(),
+            CssPx::new(100.0).expect("content")
+        );
+        assert_eq!(resolved.border(), CssPx::new(131.0).expect("border"));
+    }
+
+    #[test]
+    fn normal_flow_explicit_width_includes_transparent_solid_border_edges_in_border_box() {
+        let input = size_input_with_style(
+            ComputedStyle::initial()
+                .with_property(
+                    PropertyId::Width,
+                    computed_length_percentage_or_auto_px(100.0),
+                )
+                .expect("width")
+                .with_property(
+                    PropertyId::BorderLeftColor,
+                    ComputedValue::Color((0, 0, 0, 0)),
+                )
+                .expect("border-left-color")
+                .with_property(
+                    PropertyId::BorderLeftStyle,
+                    ComputedValue::BorderStyle(BorderStyle::Solid),
+                )
+                .expect("border-left-style")
+                .with_property(
+                    PropertyId::BorderLeftWidth,
+                    ComputedValue::Length(Length::Px(10.0)),
+                )
+                .expect("border-left-width"),
+            500.0,
+        );
+
+        let resolved = resolve_normal_flow_inline_size(input, NormalFlowSizingMode::BlockLevel);
+
+        assert_eq!(
+            resolved.content().value(),
+            CssPx::new(100.0).expect("content")
+        );
+        assert_eq!(resolved.border(), CssPx::new(110.0).expect("border"));
     }
 
     #[test]

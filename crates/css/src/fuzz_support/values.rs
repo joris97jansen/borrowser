@@ -72,6 +72,15 @@ fn synthesized_value_for_property(
     valid_bias: bool,
 ) -> String {
     match property.metadata().specified_value {
+        PropertySpecifiedValueKind::BorderStyleKeyword => {
+            if valid_bias {
+                cursor.choose_str(&["none", "solid"]).to_string()
+            } else {
+                cursor
+                    .choose_str(&["dashed", "dotted", "double", "bogus"])
+                    .to_string()
+            }
+        }
         PropertySpecifiedValueKind::Color => {
             if valid_bias {
                 cursor.choose_str(&COLOR_VALUES[..4]).to_string()

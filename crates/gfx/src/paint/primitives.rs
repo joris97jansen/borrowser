@@ -163,7 +163,7 @@ pub struct PaintSource {
 }
 
 impl PaintSource {
-    fn from_layout(layout: &LayoutBox<'_, '_>) -> Self {
+    pub(super) fn from_layout(layout: &LayoutBox<'_, '_>) -> Self {
         Self {
             box_id: layout.box_id().index(),
             node_id: layout.node_id(),
@@ -204,12 +204,16 @@ impl PaintPrimitive {
                 background.color.to_debug_label()
             ),
             Self::Border(border) => format!(
-                "border rect={} top={:.2} right={:.2} bottom={:.2} left={:.2}",
+                "border rect={} top=({:.2},{}) right=({:.2},{}) bottom=({:.2},{}) left=({:.2},{})",
                 rectangle_debug_label(border.rect),
                 border.edges.top.width,
+                border.edges.top.color.to_debug_label(),
                 border.edges.right.width,
+                border.edges.right.color.to_debug_label(),
                 border.edges.bottom.width,
-                border.edges.left.width
+                border.edges.bottom.color.to_debug_label(),
+                border.edges.left.width,
+                border.edges.left.color.to_debug_label()
             ),
             Self::ListMarker(marker) => format!(
                 "list-marker rect={} kind={}",
@@ -401,6 +405,7 @@ fn append_box_primitives(
 ) {
     let source = PaintSource::from_layout(layout);
     append_background_primitive(layout, source, primitives);
+    append_border_primitive(layout, source, primitives);
     append_list_marker_primitive(layout, source, primitives);
     append_clip_primitive(layout, source, primitives);
     append_inline_primitives(layout, measurer, primitives);
@@ -421,6 +426,69 @@ fn append_background_primitive(
         rect: layout.rect,
         color,
     }));
+}
+
+fn append_border_primitive(
+    layout: &LayoutBox<'_, '_>,
+    source: PaintSource,
+    primitives: &mut Vec<PaintPrimitive>,
+) {
+    if let Some(border) = border_primitive_from_layout(layout, source) {
+        primitives.push(PaintPrimitive::Border(border));
+    }
+}
+
+pub(super) fn border_primitive_from_layout(
+    layout: &LayoutBox<'_, '_>,
+    source: PaintSource,
+) -> Option<PaintBorder> {
+    if layout.is_anonymous() {
+        return None;
+    }
+
+    let edges = layout.style.border_edges();
+    let border = PaintBorder {
+        source,
+        rect: layout.rect,
+        edges: PaintBorderEdges {
+            top: paint_border_side(edges.top),
+            right: paint_border_side(edges.right),
+            bottom: paint_border_side(edges.bottom),
+            left: paint_border_side(edges.left),
+        },
+    };
+
+    border.has_visible_side().then_some(border)
+}
+
+impl PaintBorder {
+    pub fn has_visible_side(&self) -> bool {
+        [
+            self.edges.top,
+            self.edges.right,
+            self.edges.bottom,
+            self.edges.left,
+        ]
+        .iter()
+        .any(|side| side.is_visible())
+    }
+}
+
+impl PaintBorderSide {
+    pub fn is_visible(self) -> bool {
+        self.width > 0.0 && self.color.is_visible()
+    }
+}
+
+fn paint_border_side(side: css::BorderSide) -> PaintBorderSide {
+    PaintBorderSide {
+        width: if side.is_paint_visible() {
+            side.used_width()
+        } else {
+            0.0
+        },
+        color: PaintColor::from_rgba(side.color),
+    }
 }
 
 fn append_list_marker_primitive(
@@ -654,6 +722,9 @@ mod tests {
                     ("width".to_string(), "120px".to_string()),
                     ("height".to_string(), "40px".to_string()),
                     ("background-color".to_string(), "#112233".to_string()),
+                    ("border-top-width".to_string(), "2px".to_string()),
+                    ("border-top-style".to_string(), "solid".to_string()),
+                    ("border-top-color".to_string(), "red".to_string()),
                     ("overflow".to_string(), "clip".to_string()),
                 ],
                 children: vec![Node::Text {
@@ -673,6 +744,7 @@ mod tests {
             primitive_kinds(node),
             vec![
                 PaintPrimitiveKind::Background,
+                PaintPrimitiveKind::Border,
                 PaintPrimitiveKind::Clip,
                 PaintPrimitiveKind::Text,
             ]
@@ -680,8 +752,72 @@ mod tests {
 
         assert!(node.primitives().iter().any(|primitive| matches!(
             primitive,
+            PaintPrimitive::Border(PaintBorder { edges, .. })
+                if edges.top.width == 2.0 && edges.top.color == PaintColor::from_rgba((255, 0, 0, 255))
+        )));
+        assert!(node.primitives().iter().any(|primitive| matches!(
+            primitive,
             PaintPrimitive::Text(PaintText { text, .. }) if text == "Hello"
         )));
+    }
+
+    #[test]
+    fn paint_tree_skips_invisible_border_primitives_deterministically() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![
+                Node::Element {
+                    id: Id(2),
+                    name: Arc::from("section"),
+                    attributes: Vec::new(),
+                    style: vec![
+                        ("border-top-width".to_string(), "2px".to_string()),
+                        ("border-top-style".to_string(), "solid".to_string()),
+                    ],
+                    children: Vec::new(),
+                },
+                Node::Element {
+                    id: Id(3),
+                    name: Arc::from("section"),
+                    attributes: Vec::new(),
+                    style: vec![
+                        ("border-top-width".to_string(), "2px".to_string()),
+                        ("border-top-color".to_string(), "red".to_string()),
+                    ],
+                    children: Vec::new(),
+                },
+                Node::Element {
+                    id: Id(4),
+                    name: Arc::from("section"),
+                    attributes: Vec::new(),
+                    style: vec![
+                        ("border-top-style".to_string(), "solid".to_string()),
+                        ("border-top-color".to_string(), "red".to_string()),
+                    ],
+                    children: Vec::new(),
+                },
+                Node::Element {
+                    id: Id(5),
+                    name: Arc::from("section"),
+                    attributes: Vec::new(),
+                    style: vec![
+                        ("border-top-width".to_string(), "2px".to_string()),
+                        ("border-top-style".to_string(), "solid".to_string()),
+                        ("border-top-color".to_string(), "transparent".to_string()),
+                    ],
+                    children: Vec::new(),
+                },
+            ],
+        };
+
+        let styled = build_style_tree(&dom);
+        let layout = build_layout_for(&styled);
+        let input = build_paint_input(&layout);
+
+        assert!(
+            first_node_with_primitive(input.tree().root(), PaintPrimitiveKind::Border).is_none()
+        );
     }
 
     #[test]

@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 
 use crate::{
     PropertyId, property_registry,
-    values::{Display, Length, LengthPercentage, Overflow, Position},
+    values::{BorderStyle, Display, Length, LengthPercentage, Overflow, Position},
 };
 
 use super::{
-    style::{BoxMetrics, ComputedStyle, ComputedStyleBuildError},
+    style::{BorderEdges, BorderSide, BoxMetrics, ComputedStyle, ComputedStyleBuildError},
     value::{ComputedValue, computed_value_discriminant},
 };
 
@@ -55,6 +55,33 @@ impl ComputedStyleBuilder {
             return Err(ComputedStyleBuildError::MissingProperties { missing_properties });
         }
 
+        let border_edges = BorderEdges {
+            top: border_side(
+                &self.entries,
+                PropertyId::BorderTopWidth,
+                PropertyId::BorderTopStyle,
+                PropertyId::BorderTopColor,
+            ),
+            right: border_side(
+                &self.entries,
+                PropertyId::BorderRightWidth,
+                PropertyId::BorderRightStyle,
+                PropertyId::BorderRightColor,
+            ),
+            bottom: border_side(
+                &self.entries,
+                PropertyId::BorderBottomWidth,
+                PropertyId::BorderBottomStyle,
+                PropertyId::BorderBottomColor,
+            ),
+            left: border_side(
+                &self.entries,
+                PropertyId::BorderLeftWidth,
+                PropertyId::BorderLeftStyle,
+                PropertyId::BorderLeftColor,
+            ),
+        };
+
         Ok(ComputedStyle {
             color: expect_color(&self.entries, PropertyId::Color),
             background_color: expect_color(&self.entries, PropertyId::BackgroundColor),
@@ -68,7 +95,12 @@ impl ComputedStyleBuilder {
                 padding_right: expect_px(&self.entries, PropertyId::PaddingRight),
                 padding_bottom: expect_px(&self.entries, PropertyId::PaddingBottom),
                 padding_left: expect_px(&self.entries, PropertyId::PaddingLeft),
+                border_top: border_edges.top.used_width(),
+                border_right: border_edges.right.used_width(),
+                border_bottom: border_edges.bottom.used_width(),
+                border_left: border_edges.left.used_width(),
             },
+            border_edges,
             display: expect_display(&self.entries, PropertyId::Display),
             overflow: expect_overflow(&self.entries, PropertyId::Overflow),
             position: expect_position(&self.entries, PropertyId::Position),
@@ -77,6 +109,37 @@ impl ComputedStyleBuilder {
             min_width: expect_length_percentage_or_auto(&self.entries, PropertyId::MinWidth),
             max_width: expect_length_percentage_or_none(&self.entries, PropertyId::MaxWidth),
         })
+    }
+}
+
+fn border_side(
+    entries: &BTreeMap<PropertyId, ComputedValue>,
+    width: PropertyId,
+    style: PropertyId,
+    color: PropertyId,
+) -> BorderSide {
+    BorderSide {
+        width: expect_px(entries, width),
+        style: expect_border_style(entries, style),
+        color: expect_color(entries, color),
+    }
+}
+
+fn expect_border_style(
+    entries: &BTreeMap<PropertyId, ComputedValue>,
+    property: PropertyId,
+) -> BorderStyle {
+    match entries.get(&property).copied() {
+        Some(ComputedValue::BorderStyle(style)) => style,
+        Some(other) => unreachable!(
+            "property '{}' expected border-style computed value, got {:?}",
+            property.name(),
+            other.discriminant()
+        ),
+        None => unreachable!(
+            "property '{}' missing after completeness check",
+            property.name()
+        ),
     }
 }
 
