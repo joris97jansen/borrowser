@@ -18,6 +18,9 @@ pub enum PaintArchitectureArtifact {
     OverflowPolicy,
     OverflowClipMetadata,
     PaintPhaseInput,
+    StructuredPaintInput,
+    PaintTree,
+    PaintPrimitives,
     PaintArgs,
     ImmediatePaintOutput,
     LowLevelDrawExecution,
@@ -28,6 +31,8 @@ pub enum PaintArchitectureArtifact {
 pub enum PaintArchitectureRole {
     OwnsSemanticData,
     ConsumesSemanticInput,
+    BuildsSemanticPaintModel,
+    DefinesPaintPrimitiveVocabulary,
     ConsumesRuntimeContext,
     EmitsImmediateOutput,
     ExecutesDrawCommands,
@@ -70,8 +75,38 @@ pub struct PaintOrderContract {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PaintPrimitiveContractKind {
+    Background,
+    Border,
+    ListMarker,
+    OverflowClip,
+    Text,
+    InlineBox,
+    Replaced,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PaintPrimitiveContractSource {
+    LayoutGeometry,
+    ComputedStyleOnLayoutBox,
+    LayoutListMarkerMetadata,
+    LayoutOverflowClipMetadata,
+    LayoutInlineFragments,
+    LayoutReplacedMetadata,
+    DeferredCssBorderModel,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PaintPrimitiveContract {
+    pub primitive: PaintPrimitiveContractKind,
+    pub owner: PaintContractOwner,
+    pub source: PaintPrimitiveContractSource,
+    pub backend_specific: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PaintExcludedFeature {
-    Borders,
+    BorderVisualRendering,
     Outlines,
     TextDecorations,
     FullCssPaintingOrder,
@@ -87,7 +122,7 @@ pub enum PaintExcludedFeature {
     NewVisualBehavior,
 }
 
-static PAINT_ARCHITECTURE_CONTRACTS: [PaintArchitectureContract; 9] = [
+static PAINT_ARCHITECTURE_CONTRACTS: [PaintArchitectureContract; 12] = [
     PaintArchitectureContract {
         artifact: PaintArchitectureArtifact::LayoutGeometry,
         owner: PaintContractOwner::Layout,
@@ -116,6 +151,24 @@ static PAINT_ARCHITECTURE_CONTRACTS: [PaintArchitectureContract; 9] = [
         artifact: PaintArchitectureArtifact::PaintPhaseInput,
         owner: PaintContractOwner::Paint,
         role: PaintArchitectureRole::ConsumesSemanticInput,
+        retained: false,
+    },
+    PaintArchitectureContract {
+        artifact: PaintArchitectureArtifact::StructuredPaintInput,
+        owner: PaintContractOwner::Paint,
+        role: PaintArchitectureRole::BuildsSemanticPaintModel,
+        retained: false,
+    },
+    PaintArchitectureContract {
+        artifact: PaintArchitectureArtifact::PaintTree,
+        owner: PaintContractOwner::Paint,
+        role: PaintArchitectureRole::BuildsSemanticPaintModel,
+        retained: false,
+    },
+    PaintArchitectureContract {
+        artifact: PaintArchitectureArtifact::PaintPrimitives,
+        owner: PaintContractOwner::Paint,
+        role: PaintArchitectureRole::DefinesPaintPrimitiveVocabulary,
         retained: false,
     },
     PaintArchitectureContract {
@@ -177,8 +230,53 @@ static PAINT_ORDER_CONTRACTS: [PaintOrderContract; 6] = [
     },
 ];
 
+static PAINT_PRIMITIVE_CONTRACTS: [PaintPrimitiveContract; 7] = [
+    PaintPrimitiveContract {
+        primitive: PaintPrimitiveContractKind::Background,
+        owner: PaintContractOwner::Paint,
+        source: PaintPrimitiveContractSource::ComputedStyleOnLayoutBox,
+        backend_specific: false,
+    },
+    PaintPrimitiveContract {
+        primitive: PaintPrimitiveContractKind::Border,
+        owner: PaintContractOwner::Paint,
+        source: PaintPrimitiveContractSource::DeferredCssBorderModel,
+        backend_specific: false,
+    },
+    PaintPrimitiveContract {
+        primitive: PaintPrimitiveContractKind::ListMarker,
+        owner: PaintContractOwner::Paint,
+        source: PaintPrimitiveContractSource::LayoutListMarkerMetadata,
+        backend_specific: false,
+    },
+    PaintPrimitiveContract {
+        primitive: PaintPrimitiveContractKind::OverflowClip,
+        owner: PaintContractOwner::Paint,
+        source: PaintPrimitiveContractSource::LayoutOverflowClipMetadata,
+        backend_specific: false,
+    },
+    PaintPrimitiveContract {
+        primitive: PaintPrimitiveContractKind::Text,
+        owner: PaintContractOwner::Paint,
+        source: PaintPrimitiveContractSource::LayoutInlineFragments,
+        backend_specific: false,
+    },
+    PaintPrimitiveContract {
+        primitive: PaintPrimitiveContractKind::InlineBox,
+        owner: PaintContractOwner::Paint,
+        source: PaintPrimitiveContractSource::LayoutInlineFragments,
+        backend_specific: false,
+    },
+    PaintPrimitiveContract {
+        primitive: PaintPrimitiveContractKind::Replaced,
+        owner: PaintContractOwner::Paint,
+        source: PaintPrimitiveContractSource::LayoutReplacedMetadata,
+        backend_specific: false,
+    },
+];
+
 static PAINT_EXCLUDED_FEATURES: [PaintExcludedFeature; 14] = [
-    PaintExcludedFeature::Borders,
+    PaintExcludedFeature::BorderVisualRendering,
     PaintExcludedFeature::Outlines,
     PaintExcludedFeature::TextDecorations,
     PaintExcludedFeature::FullCssPaintingOrder,
@@ -200,6 +298,10 @@ pub fn paint_architecture_contracts() -> &'static [PaintArchitectureContract] {
 
 pub fn paint_order_contracts() -> &'static [PaintOrderContract] {
     &PAINT_ORDER_CONTRACTS
+}
+
+pub fn paint_primitive_contracts() -> &'static [PaintPrimitiveContract] {
+    &PAINT_PRIMITIVE_CONTRACTS
 }
 
 pub fn paint_excluded_features() -> &'static [PaintExcludedFeature] {
@@ -283,6 +385,27 @@ mod tests {
         assert_eq!(input.role, PaintArchitectureRole::ConsumesSemanticInput);
         assert!(!input.retained);
 
+        for artifact in [
+            PaintArchitectureArtifact::StructuredPaintInput,
+            PaintArchitectureArtifact::PaintTree,
+        ] {
+            let contract = architecture_contract(artifact);
+            assert_eq!(contract.owner, PaintContractOwner::Paint);
+            assert_eq!(
+                contract.role,
+                PaintArchitectureRole::BuildsSemanticPaintModel
+            );
+            assert!(!contract.retained);
+        }
+
+        let primitives = architecture_contract(PaintArchitectureArtifact::PaintPrimitives);
+        assert_eq!(primitives.owner, PaintContractOwner::Paint);
+        assert_eq!(
+            primitives.role,
+            PaintArchitectureRole::DefinesPaintPrimitiveVocabulary
+        );
+        assert!(!primitives.retained);
+
         let args = architecture_contract(PaintArchitectureArtifact::PaintArgs);
         assert_eq!(args.owner, PaintContractOwner::Gfx);
         assert_eq!(args.role, PaintArchitectureRole::ConsumesRuntimeContext);
@@ -295,12 +418,63 @@ mod tests {
     }
 
     #[test]
+    fn paint_primitive_contracts_are_paint_owned_and_backend_independent() {
+        assert_eq!(
+            paint_primitive_contracts(),
+            &[
+                PaintPrimitiveContract {
+                    primitive: PaintPrimitiveContractKind::Background,
+                    owner: PaintContractOwner::Paint,
+                    source: PaintPrimitiveContractSource::ComputedStyleOnLayoutBox,
+                    backend_specific: false,
+                },
+                PaintPrimitiveContract {
+                    primitive: PaintPrimitiveContractKind::Border,
+                    owner: PaintContractOwner::Paint,
+                    source: PaintPrimitiveContractSource::DeferredCssBorderModel,
+                    backend_specific: false,
+                },
+                PaintPrimitiveContract {
+                    primitive: PaintPrimitiveContractKind::ListMarker,
+                    owner: PaintContractOwner::Paint,
+                    source: PaintPrimitiveContractSource::LayoutListMarkerMetadata,
+                    backend_specific: false,
+                },
+                PaintPrimitiveContract {
+                    primitive: PaintPrimitiveContractKind::OverflowClip,
+                    owner: PaintContractOwner::Paint,
+                    source: PaintPrimitiveContractSource::LayoutOverflowClipMetadata,
+                    backend_specific: false,
+                },
+                PaintPrimitiveContract {
+                    primitive: PaintPrimitiveContractKind::Text,
+                    owner: PaintContractOwner::Paint,
+                    source: PaintPrimitiveContractSource::LayoutInlineFragments,
+                    backend_specific: false,
+                },
+                PaintPrimitiveContract {
+                    primitive: PaintPrimitiveContractKind::InlineBox,
+                    owner: PaintContractOwner::Paint,
+                    source: PaintPrimitiveContractSource::LayoutInlineFragments,
+                    backend_specific: false,
+                },
+                PaintPrimitiveContract {
+                    primitive: PaintPrimitiveContractKind::Replaced,
+                    owner: PaintContractOwner::Paint,
+                    source: PaintPrimitiveContractSource::LayoutReplacedMetadata,
+                    backend_specific: false,
+                },
+            ]
+        );
+    }
+
+    #[test]
     fn paint_contract_explicitly_excludes_deferred_visual_and_scene_features() {
         let excluded = paint_excluded_features();
         assert_eq!(
             excluded,
             &[
-                PaintExcludedFeature::Borders,
+                PaintExcludedFeature::BorderVisualRendering,
                 PaintExcludedFeature::Outlines,
                 PaintExcludedFeature::TextDecorations,
                 PaintExcludedFeature::FullCssPaintingOrder,

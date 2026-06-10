@@ -12,6 +12,7 @@ of accumulating ad hoc drawing logic.
 Related code:
 - `crates/gfx/src/paint/mod.rs`
 - `crates/gfx/src/paint/contracts.rs`
+- `crates/gfx/src/paint/primitives.rs`
 - `crates/gfx/src/paint/context.rs`
 - `crates/gfx/src/paint/inline.rs`
 - `crates/gfx/src/paint/replaced.rs`
@@ -28,6 +29,7 @@ Related documents:
 - `docs/rendering/v3-retained-state-versus-rebuilt-state-ownership.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
+- `docs/rendering/aa2-paint-primitives-input-model.md`
 - `docs/rendering/w8-box-generation-formatting-debug-surfaces.md`
 - `docs/rendering/w9-box-tree-invariants-extension-hooks.md`
 - `docs/rendering/y4-overflow-semantics-supported-subset.md`
@@ -215,4 +217,5 @@ AA1 deliberately does not implement or define:
 
 These exclusions are exposed in code through `paint_excluded_features()` so
 future work has to change the contract deliberately when one of these features
-enters scope.
+enters scope. AA2 refines this by defining a border primitive vocabulary while
+still excluding visual border rendering.
