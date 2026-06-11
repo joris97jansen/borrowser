@@ -56,6 +56,7 @@ pub enum PaintOrderStep {
     OverflowClipForContents,
     InlineFormattingContent,
     ChildSubtree,
+    BoxOutline,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -63,6 +64,7 @@ pub enum PaintOrderSource {
     LayoutBoxPreorder,
     ComputedStyleOnLayoutBox,
     ComputedBorderOnLayoutBox,
+    ComputedOutlineOnLayoutBox,
     LayoutListMarkerMetadata,
     LayoutOverflowClipMetadata,
     LayoutInlineFragments,
@@ -80,6 +82,7 @@ pub struct PaintOrderContract {
 pub enum PaintPrimitiveContractKind {
     Background,
     Border,
+    Outline,
     ListMarker,
     OverflowClip,
     Text,
@@ -96,6 +99,7 @@ pub enum PaintPrimitiveContractSource {
     LayoutInlineFragments,
     LayoutReplacedMetadata,
     ComputedBorderModel,
+    ComputedOutlineModel,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -111,7 +115,8 @@ pub enum PaintExcludedFeature {
     UnsupportedBorderStyles,
     BorderRadius,
     BorderImage,
-    Outlines,
+    UnsupportedOutlineStyles,
+    OutlineOffset,
     TextDecorations,
     FullCssPaintingOrder,
     StackingContexts,
@@ -201,7 +206,7 @@ static PAINT_ARCHITECTURE_CONTRACTS: [PaintArchitectureContract; 12] = [
     },
 ];
 
-static PAINT_ORDER_CONTRACTS: [PaintOrderContract; 7] = [
+static PAINT_ORDER_CONTRACTS: [PaintOrderContract; 8] = [
     PaintOrderContract {
         step: PaintOrderStep::LayoutBoxPreorderTraversal,
         owner: PaintContractOwner::Paint,
@@ -237,9 +242,14 @@ static PAINT_ORDER_CONTRACTS: [PaintOrderContract; 7] = [
         owner: PaintContractOwner::Paint,
         source: PaintOrderSource::LayoutChildOrder,
     },
+    PaintOrderContract {
+        step: PaintOrderStep::BoxOutline,
+        owner: PaintContractOwner::Paint,
+        source: PaintOrderSource::ComputedOutlineOnLayoutBox,
+    },
 ];
 
-static PAINT_PRIMITIVE_CONTRACTS: [PaintPrimitiveContract; 7] = [
+static PAINT_PRIMITIVE_CONTRACTS: [PaintPrimitiveContract; 8] = [
     PaintPrimitiveContract {
         primitive: PaintPrimitiveContractKind::Background,
         owner: PaintContractOwner::Paint,
@@ -250,6 +260,12 @@ static PAINT_PRIMITIVE_CONTRACTS: [PaintPrimitiveContract; 7] = [
         primitive: PaintPrimitiveContractKind::Border,
         owner: PaintContractOwner::Paint,
         source: PaintPrimitiveContractSource::ComputedBorderModel,
+        backend_specific: false,
+    },
+    PaintPrimitiveContract {
+        primitive: PaintPrimitiveContractKind::Outline,
+        owner: PaintContractOwner::Paint,
+        source: PaintPrimitiveContractSource::ComputedOutlineModel,
         backend_specific: false,
     },
     PaintPrimitiveContract {
@@ -284,11 +300,12 @@ static PAINT_PRIMITIVE_CONTRACTS: [PaintPrimitiveContract; 7] = [
     },
 ];
 
-static PAINT_EXCLUDED_FEATURES: [PaintExcludedFeature; 16] = [
+static PAINT_EXCLUDED_FEATURES: [PaintExcludedFeature; 17] = [
     PaintExcludedFeature::UnsupportedBorderStyles,
     PaintExcludedFeature::BorderRadius,
     PaintExcludedFeature::BorderImage,
-    PaintExcludedFeature::Outlines,
+    PaintExcludedFeature::UnsupportedOutlineStyles,
+    PaintExcludedFeature::OutlineOffset,
     PaintExcludedFeature::TextDecorations,
     PaintExcludedFeature::FullCssPaintingOrder,
     PaintExcludedFeature::StackingContexts,
@@ -375,6 +392,11 @@ mod tests {
                     owner: PaintContractOwner::Paint,
                     source: PaintOrderSource::LayoutChildOrder,
                 },
+                PaintOrderContract {
+                    step: PaintOrderStep::BoxOutline,
+                    owner: PaintContractOwner::Paint,
+                    source: PaintOrderSource::ComputedOutlineOnLayoutBox,
+                },
             ]
         );
     }
@@ -451,6 +473,12 @@ mod tests {
                     backend_specific: false,
                 },
                 PaintPrimitiveContract {
+                    primitive: PaintPrimitiveContractKind::Outline,
+                    owner: PaintContractOwner::Paint,
+                    source: PaintPrimitiveContractSource::ComputedOutlineModel,
+                    backend_specific: false,
+                },
+                PaintPrimitiveContract {
                     primitive: PaintPrimitiveContractKind::ListMarker,
                     owner: PaintContractOwner::Paint,
                     source: PaintPrimitiveContractSource::LayoutListMarkerMetadata,
@@ -493,7 +521,8 @@ mod tests {
                 PaintExcludedFeature::UnsupportedBorderStyles,
                 PaintExcludedFeature::BorderRadius,
                 PaintExcludedFeature::BorderImage,
-                PaintExcludedFeature::Outlines,
+                PaintExcludedFeature::UnsupportedOutlineStyles,
+                PaintExcludedFeature::OutlineOffset,
                 PaintExcludedFeature::TextDecorations,
                 PaintExcludedFeature::FullCssPaintingOrder,
                 PaintExcludedFeature::StackingContexts,

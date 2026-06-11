@@ -62,6 +62,13 @@ pub enum BorderStyle {
     Solid,
 }
 
+/// CSS outline style for the current supported rectangular outline subset.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum OutlineStyle {
+    None,
+    Solid,
+}
+
 /// CSS `overflow` keyword for the current supported single-axis shorthand.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Overflow {

@@ -52,6 +52,11 @@ Current supported property set is intentionally small. Major missing families:
   - border radius
   - border images
   - logical border properties
+- outlines:
+  - `outline` shorthand support
+  - `outline-offset`
+  - `auto` and additional outline styles beyond the supported subset
+  - rounded outline geometry
 - CSS shorthand and multi-component declaration expansion:
   - broad shorthand parsing is not yet supported
   - declarations that expand into multiple longhands are intentionally limited
@@ -91,6 +96,7 @@ Missing or incomplete:
 Missing or incomplete:
 
 - full border rendering beyond the supported physical solid-border subset
+- full outline rendering beyond the supported rectangular longhand subset
 - border radius
 - background images and advanced background painting
 - shadows, transforms, opacity, filters, and clipping interactions

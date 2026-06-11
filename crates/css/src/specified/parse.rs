@@ -10,6 +10,7 @@ use super::{
     display::parse_display,
     error::{SpecifiedValueParseError, SpecifiedValueParseErrorKind, error},
     length::{parse_length, parse_length_percentage_or_auto, parse_length_percentage_or_none},
+    outline::parse_outline_style,
     overflow::parse_overflow,
     position::parse_position,
     value::{SpecifiedPropertyValue, SpecifiedValue},
@@ -33,6 +34,9 @@ pub fn parse_specified_value_with_limits(
     let specified = match property.metadata().specified_value {
         PropertySpecifiedValueKind::BorderStyleKeyword => {
             SpecifiedValue::BorderStyle(parse_border_style(property, component)?)
+        }
+        PropertySpecifiedValueKind::OutlineStyleKeyword => {
+            SpecifiedValue::OutlineStyle(parse_outline_style(property, component)?)
         }
         PropertySpecifiedValueKind::Color => {
             SpecifiedValue::Color(parse_color(property, component)?)

@@ -6,7 +6,7 @@ use super::{
     },
 };
 
-pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 30] = [
+pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 33] = [
     PropertyRegistration::new(
         PropertyId::BackgroundColor,
         "background-color",
@@ -228,6 +228,33 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 30] = [
         ),
     ),
     PropertyRegistration::new(
+        PropertyId::OutlineColor,
+        "outline-color",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::TransparentColor,
+            PropertySpecifiedValueKind::Color,
+            PropertyComputedValueKind::AbsoluteColor,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::OutlineStyle,
+        "outline-style",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::OutlineStyleNone,
+            PropertySpecifiedValueKind::OutlineStyleKeyword,
+            PropertyComputedValueKind::OutlineStyleKeyword,
+        ),
+    ),
+    PropertyRegistration::new(
+        PropertyId::OutlineWidth,
+        "outline-width",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::ZeroPx,
+            PropertySpecifiedValueKind::AbsoluteLength,
+            PropertyComputedValueKind::AbsoluteLength,
+        ),
+    ),
+    PropertyRegistration::new(
         PropertyId::PaddingBottom,
         "padding-bottom",
         PropertyMetadata::not_inherited(
@@ -283,7 +310,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 30] = [
     ),
 ];
 
-pub(super) const PROPERTY_LOOKUP_BY_NAME: [PropertyNameLookupEntry; 30] = [
+pub(super) const PROPERTY_LOOKUP_BY_NAME: [PropertyNameLookupEntry; 33] = [
     PropertyNameLookupEntry::new("background-color", PropertyId::BackgroundColor),
     PropertyNameLookupEntry::new("border-bottom-color", PropertyId::BorderBottomColor),
     PropertyNameLookupEntry::new("border-bottom-style", PropertyId::BorderBottomStyle),
@@ -307,6 +334,9 @@ pub(super) const PROPERTY_LOOKUP_BY_NAME: [PropertyNameLookupEntry; 30] = [
     PropertyNameLookupEntry::new("margin-top", PropertyId::MarginTop),
     PropertyNameLookupEntry::new("max-width", PropertyId::MaxWidth),
     PropertyNameLookupEntry::new("min-width", PropertyId::MinWidth),
+    PropertyNameLookupEntry::new("outline-color", PropertyId::OutlineColor),
+    PropertyNameLookupEntry::new("outline-style", PropertyId::OutlineStyle),
+    PropertyNameLookupEntry::new("outline-width", PropertyId::OutlineWidth),
     PropertyNameLookupEntry::new("overflow", PropertyId::Overflow),
     PropertyNameLookupEntry::new("padding-bottom", PropertyId::PaddingBottom),
     PropertyNameLookupEntry::new("padding-left", PropertyId::PaddingLeft),

@@ -150,6 +150,24 @@ fn supported_property_metadata_matches_current_subset_contract() {
             CascadePropertyLengthSignPolicy::NotLength,
         ),
         (
+            CascadePropertyId::OutlineColor,
+            CascadeInheritance::NotInherited,
+            InitialStyleValue::TransparentColor,
+            CascadePropertyLengthSignPolicy::NotLength,
+        ),
+        (
+            CascadePropertyId::OutlineStyle,
+            CascadeInheritance::NotInherited,
+            InitialStyleValue::OutlineStyleNone,
+            CascadePropertyLengthSignPolicy::NotLength,
+        ),
+        (
+            CascadePropertyId::OutlineWidth,
+            CascadeInheritance::NotInherited,
+            InitialStyleValue::ZeroPx,
+            CascadePropertyLengthSignPolicy::NonNegative,
+        ),
+        (
             CascadePropertyId::PaddingBottom,
             CascadeInheritance::NotInherited,
             InitialStyleValue::ZeroPx,

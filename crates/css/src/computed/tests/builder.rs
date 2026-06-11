@@ -9,6 +9,9 @@ fn computed_style_builder_materializes_structured_fields_from_property_entries()
         PropertyId::BorderTopStyle,
         PropertyId::BorderTopWidth,
         PropertyId::MarginTop,
+        PropertyId::OutlineColor,
+        PropertyId::OutlineStyle,
+        PropertyId::OutlineWidth,
         PropertyId::Width,
     ]);
     builder
@@ -40,6 +43,24 @@ fn computed_style_builder_materializes_structured_fields_from_property_entries()
         .expect("margin-top");
     builder
         .record(
+            PropertyId::OutlineColor,
+            ComputedValue::Color((20, 30, 40, 255)),
+        )
+        .expect("outline-color");
+    builder
+        .record(
+            PropertyId::OutlineStyle,
+            ComputedValue::OutlineStyle(OutlineStyle::Solid),
+        )
+        .expect("outline-style");
+    builder
+        .record(
+            PropertyId::OutlineWidth,
+            ComputedValue::Length(Length::Px(7.0)),
+        )
+        .expect("outline-width");
+    builder
+        .record(
             PropertyId::Width,
             ComputedValue::LengthPercentageOrAuto(Some(LengthPercentage::Length(Length::Px(
                 320.0,
@@ -53,6 +74,10 @@ fn computed_style_builder_materializes_structured_fields_from_property_entries()
     assert_eq!(style.border_edges().top.style, BorderStyle::Solid);
     assert_eq!(style.border_edges().top.color, (200, 10, 20, 255));
     assert_eq!(style.box_metrics().border_top, 3.0);
+    assert_eq!(style.outline().style, OutlineStyle::Solid);
+    assert_eq!(style.outline().color, (20, 30, 40, 255));
+    assert_eq!(style.outline().width, 7.0);
+    assert_eq!(style.box_metrics().border_right, 0.0);
     assert_eq!(style.box_metrics().margin_top, 18.0);
     assert_eq!(
         style.width(),

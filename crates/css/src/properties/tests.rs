@@ -200,6 +200,30 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertyLengthSignPolicy::NotLength,
         ),
         (
+            PropertyId::OutlineColor,
+            PropertyInheritance::NotInherited,
+            InitialStyleValue::TransparentColor,
+            PropertySpecifiedValueKind::Color,
+            PropertyComputedValueKind::AbsoluteColor,
+            PropertyLengthSignPolicy::NotLength,
+        ),
+        (
+            PropertyId::OutlineStyle,
+            PropertyInheritance::NotInherited,
+            InitialStyleValue::OutlineStyleNone,
+            PropertySpecifiedValueKind::OutlineStyleKeyword,
+            PropertyComputedValueKind::OutlineStyleKeyword,
+            PropertyLengthSignPolicy::NotLength,
+        ),
+        (
+            PropertyId::OutlineWidth,
+            PropertyInheritance::NotInherited,
+            InitialStyleValue::ZeroPx,
+            PropertySpecifiedValueKind::AbsoluteLength,
+            PropertyComputedValueKind::AbsoluteLength,
+            PropertyLengthSignPolicy::NonNegative,
+        ),
+        (
             PropertyId::PaddingBottom,
             PropertyInheritance::NotInherited,
             InitialStyleValue::ZeroPx,
@@ -309,6 +333,10 @@ fn property_registry_lookup_is_deterministic_for_representative_property_names()
     assert_eq!(
         registry.lookup("overflow").map(|entry| entry.id()),
         Some(PropertyId::Overflow)
+    );
+    assert_eq!(
+        registry.lookup("outline-style").map(|entry| entry.id()),
+        Some(PropertyId::OutlineStyle)
     );
     assert_eq!(
         registry.lookup("width").map(|entry| entry.id()),

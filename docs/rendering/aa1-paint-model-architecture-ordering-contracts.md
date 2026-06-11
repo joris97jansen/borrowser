@@ -31,6 +31,7 @@ Related documents:
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
 - `docs/rendering/aa2-paint-primitives-input-model.md`
 - `docs/rendering/aa3-border-rendering-box-decoration.md`
+- `docs/rendering/aa4-outline-rendering-box-decoration.md`
 - `docs/rendering/w8-box-generation-formatting-debug-surfaces.md`
 - `docs/rendering/w9-box-tree-invariants-extension-hooks.md`
 - `docs/rendering/y4-overflow-semantics-supported-subset.md`
@@ -78,6 +79,8 @@ Paint owns translating layout output plus runtime paint context into the
 current frame's visual output for the supported subset:
 
 - box backgrounds
+- borders for the AA3 supported subset
+- outlines for the AA4 supported subset
 - list markers
 - inline text fragments
 - inline-block subtree painting at inline fragment positions
@@ -136,11 +139,13 @@ Paint traverses paintable `LayoutBox` nodes in deterministic layout-tree
 preorder. The supported order inside each visited box is:
 
 1. paint the box background from computed style on the `LayoutBox`
-2. paint the list marker when layout exposes list marker metadata
-3. when layout exposes `OverflowClip`, apply that clip to contents and
+2. paint the border for the AA3 supported subset
+3. paint the list marker when layout exposes list marker metadata
+4. when layout exposes `OverflowClip`, apply that clip to contents and
    descendants
-4. paint inline formatting content from layout inline fragments
-5. paint child subtrees in layout child order
+5. paint inline formatting content from layout inline fragments
+6. paint child subtrees in layout child order
+7. paint the outline for the AA4 supported subset
 
 Inline content is ordered by the layout inline fragment sequence. Inline-block
 and replaced fragments are painted at their inline fragment positions; the
@@ -186,7 +191,8 @@ Later AA issues may extend the paint model at named points:
 
 - borders and box decorations: AA3 adds the first physical solid rectangular
   border subset after background ordering
-- outlines: add a paint step with explicit geometry and ordering rules
+- outlines and box decorations: AA4 adds the first paint-only rectangular
+  outline subset after child subtree ordering
 - text decorations: extend inline fragment painting deliberately
 - clipping refinements: extend layout-owned clip metadata and paint
   consumption rules
@@ -202,7 +208,8 @@ Later AA issues may extend the paint model at named points:
 AA1 deliberately did not implement or define:
 
 - borders, until AA3 added the supported physical solid rectangular subset
-- outlines
+- outline shorthand, outline offset, unsupported outline styles, and rounded
+  outline geometry
 - text decorations
 - full CSS painting order
 - stacking contexts
@@ -220,4 +227,5 @@ These exclusions are exposed in code through `paint_excluded_features()` so
 future work has to change the contract deliberately when one of these features
 enters scope. AA2 refines this by defining a border primitive vocabulary. AA3
 removes visual border rendering from the excluded set only for the supported
-physical solid rectangular subset.
+physical solid rectangular subset. AA4 removes outline rendering from the
+excluded set only for the supported paint-only rectangular longhand subset.

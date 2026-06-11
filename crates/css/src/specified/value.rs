@@ -55,6 +55,7 @@ impl SpecifiedPropertyValue {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SpecifiedValue {
     BorderStyle(SpecifiedBorderStyle),
+    OutlineStyle(SpecifiedOutlineStyle),
     Color(SpecifiedColor),
     Display(SpecifiedDisplay),
     Overflow(SpecifiedOverflow),
@@ -68,6 +69,7 @@ impl SpecifiedValue {
     pub fn kind(&self) -> PropertySpecifiedValueKind {
         match self {
             Self::BorderStyle(_) => PropertySpecifiedValueKind::BorderStyleKeyword,
+            Self::OutlineStyle(_) => PropertySpecifiedValueKind::OutlineStyleKeyword,
             Self::Color(_) => PropertySpecifiedValueKind::Color,
             Self::Display(_) => PropertySpecifiedValueKind::DisplayKeyword,
             Self::Overflow(_) => PropertySpecifiedValueKind::OverflowKeyword,
@@ -81,6 +83,7 @@ impl SpecifiedValue {
     pub fn span(&self) -> CssSpan {
         match self {
             Self::BorderStyle(border_style) => border_style.span(),
+            Self::OutlineStyle(outline_style) => outline_style.span(),
             Self::Color(color) => color.span(),
             Self::Display(display) => display.span(),
             Self::Overflow(overflow) => overflow.span(),
@@ -94,6 +97,7 @@ impl SpecifiedValue {
     pub fn to_css_text(&self) -> String {
         match self {
             Self::BorderStyle(border_style) => border_style.to_css_text().to_string(),
+            Self::OutlineStyle(outline_style) => outline_style.to_css_text().to_string(),
             Self::Color(color) => color.to_css_text(),
             Self::Display(display) => display.to_css_text().to_string(),
             Self::Overflow(overflow) => overflow.to_css_text().to_string(),
@@ -113,6 +117,18 @@ pub struct SpecifiedBorderStyle {
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum SpecifiedBorderStyleKeyword {
+    None,
+    Solid,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpecifiedOutlineStyle {
+    pub(super) span: CssSpan,
+    pub(super) keyword: SpecifiedOutlineStyleKeyword,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpecifiedOutlineStyleKeyword {
     None,
     Solid,
 }

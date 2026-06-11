@@ -4,7 +4,7 @@ use crate::{
     PropertyComputedValueKind, PropertyId,
     cascade::ResolvedStyle,
     property_registry,
-    values::{BorderStyle, Display, Length, LengthPercentage, Overflow, Position},
+    values::{BorderStyle, Display, Length, LengthPercentage, OutlineStyle, Overflow, Position},
 };
 
 use super::{
@@ -98,6 +98,32 @@ impl BorderSide {
     }
 }
 
+/// Computed outline data for the current supported rectangular subset.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct Outline {
+    pub width: f32,
+    pub style: OutlineStyle,
+    pub color: (u8, u8, u8, u8),
+}
+
+impl Outline {
+    pub fn none() -> Self {
+        Self {
+            width: 0.0,
+            style: OutlineStyle::None,
+            color: (0, 0, 0, 0),
+        }
+    }
+
+    pub fn has_used_width(self) -> bool {
+        self.width > 0.0 && matches!(self.style, OutlineStyle::Solid)
+    }
+
+    pub fn is_paint_visible(self) -> bool {
+        self.has_used_width() && self.color.3 > 0
+    }
+}
+
 /// Total computed style for the current supported property subset.
 ///
 /// Some runtime fields are grouped for consumer ergonomics, such as
@@ -123,6 +149,9 @@ pub struct ComputedStyle {
 
     /// Computed physical border sides for the supported rectangular subset.
     pub(super) border_edges: BorderEdges,
+
+    /// Computed outline for the supported paint-only rectangular subset.
+    pub(super) outline: Outline,
 
     /// CSS `display` value.
     ///
@@ -167,6 +196,7 @@ impl ComputedStyle {
             font_size: Length::Px(16.0),
             box_metrics: BoxMetrics::zero(),
             border_edges: BorderEdges::zero(),
+            outline: Outline::none(),
             display: Display::Inline,
             overflow: Overflow::Visible,
             position: Position::Static,
@@ -215,6 +245,10 @@ impl ComputedStyle {
 
     pub fn border_edges(&self) -> BorderEdges {
         self.border_edges
+    }
+
+    pub fn outline(&self) -> Outline {
+        self.outline
     }
 
     /// Returns the computed display keyword.
@@ -324,6 +358,9 @@ impl ComputedStyle {
             PropertyId::MaxWidth => ComputedValue::LengthPercentageOrNone(self.max_width),
             PropertyId::MinWidth => ComputedValue::LengthPercentageOrAuto(self.min_width),
             PropertyId::Overflow => ComputedValue::Overflow(self.overflow),
+            PropertyId::OutlineColor => ComputedValue::Color(self.outline.color),
+            PropertyId::OutlineStyle => ComputedValue::OutlineStyle(self.outline.style),
+            PropertyId::OutlineWidth => ComputedValue::Length(Length::Px(self.outline.width)),
             PropertyId::Position => ComputedValue::Position(self.position),
             PropertyId::PaddingBottom => {
                 ComputedValue::Length(Length::Px(self.box_metrics.padding_bottom))

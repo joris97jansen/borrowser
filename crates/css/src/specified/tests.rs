@@ -1,9 +1,9 @@
 use super::{
     SpecifiedBorderStyleKeyword, SpecifiedColorKeyword, SpecifiedColorSyntax,
     SpecifiedDisplayKeyword, SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto,
-    SpecifiedLengthUnit, SpecifiedOverflowKeyword, SpecifiedPositionKeyword, SpecifiedValue,
-    SpecifiedValueLimits, SpecifiedValueParseErrorKind, parse_specified_value,
-    parse_specified_value_with_limits,
+    SpecifiedLengthUnit, SpecifiedOutlineStyleKeyword, SpecifiedOverflowKeyword,
+    SpecifiedPositionKeyword, SpecifiedValue, SpecifiedValueLimits, SpecifiedValueParseErrorKind,
+    parse_specified_value, parse_specified_value_with_limits,
 };
 use crate::{
     ParseOptions, PropertyId, PropertySpecifiedValueKind, Rule, parse_stylesheet_with_options,
@@ -64,6 +64,13 @@ fn parses_representative_property_aware_specified_values() {
     };
     assert_eq!(border_style.keyword(), SpecifiedBorderStyleKeyword::Solid);
     assert_eq!(border_style.to_css_text(), "solid");
+
+    let outline_style = parse(PropertyId::OutlineStyle, "outline-style: SOLID");
+    let SpecifiedValue::OutlineStyle(outline_style) = outline_style.value() else {
+        panic!("expected outline style");
+    };
+    assert_eq!(outline_style.keyword(), SpecifiedOutlineStyleKeyword::Solid);
+    assert_eq!(outline_style.to_css_text(), "solid");
 
     let display = parse(PropertyId::Display, "display: inline-block");
     let SpecifiedValue::Display(display) = display.value() else {
@@ -158,6 +165,18 @@ fn rejects_values_that_do_not_match_the_property_specified_shape() {
         SpecifiedValueParseErrorKind::UnsupportedKeyword
     );
     assert_eq!(
+        parse_error(PropertyId::OutlineStyle, "outline-style: dashed"),
+        SpecifiedValueParseErrorKind::UnsupportedKeyword
+    );
+    assert_eq!(
+        parse_error(PropertyId::OutlineStyle, "outline-style: auto"),
+        SpecifiedValueParseErrorKind::UnsupportedKeyword
+    );
+    assert_eq!(
+        parse_error(PropertyId::OutlineWidth, "outline-width: -1px"),
+        SpecifiedValueParseErrorKind::NegativeLengthNotAllowed
+    );
+    assert_eq!(
         parse_error(PropertyId::Width, "width: none"),
         SpecifiedValueParseErrorKind::UnsupportedKeyword
     );
@@ -247,6 +266,9 @@ fn supported_property_metadata_matches_emitted_specified_value_kinds() {
         (PropertyId::MaxWidth, "max-width: none"),
         (PropertyId::MinWidth, "min-width: auto"),
         (PropertyId::Overflow, "overflow: visible"),
+        (PropertyId::OutlineColor, "outline-color: red"),
+        (PropertyId::OutlineStyle, "outline-style: solid"),
+        (PropertyId::OutlineWidth, "outline-width: 2px"),
         (PropertyId::PaddingBottom, "padding-bottom: 1px"),
         (PropertyId::PaddingLeft, "padding-left: 1px"),
         (PropertyId::PaddingRight, "padding-right: 1px"),

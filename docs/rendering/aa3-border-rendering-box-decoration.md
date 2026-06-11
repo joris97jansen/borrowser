@@ -22,6 +22,7 @@ Related code:
 Related documents:
 - `docs/rendering/aa1-paint-model-architecture-ordering-contracts.md`
 - `docs/rendering/aa2-paint-primitives-input-model.md`
+- `docs/rendering/aa4-outline-rendering-box-decoration.md`
 - `docs/rendering/x1-sizing-architecture-flow-correctness-contract.md`
 - `docs/rendering/y4-overflow-semantics-supported-subset.md`
 - `docs/css/s9-property-system-computed-style-runtime-contract.md`
@@ -89,6 +90,7 @@ The supported per-box paint order is:
 4. overflow clip for contents and descendants
 5. inline formatting primitives
 6. child paint nodes in layout child order
+7. outline for the AA4 supported subset
 
 This remains a supported subset. It does not define full CSS stacking,
 compositing, or z-index behavior.
@@ -128,7 +130,8 @@ AA3 deliberately does not implement:
 - border-image;
 - logical border properties;
 - collapsed table borders;
-- outline rendering;
+- outline shorthand, outline offset, unsupported outline styles, and rounded
+  outline geometry;
 - text decorations;
 - background-clip or background-origin expansion;
 - inline fragmentation edge cases;

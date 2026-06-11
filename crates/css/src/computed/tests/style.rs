@@ -40,6 +40,9 @@ fn computed_style_initial_snapshot_is_total_and_canonical() {
             "  max-width: none\n",
             "  min-width: auto\n",
             "  overflow: visible\n",
+            "  outline-color: rgba(0, 0, 0, 0)\n",
+            "  outline-style: none\n",
+            "  outline-width: 0px\n",
             "  padding-bottom: 0px\n",
             "  padding-left: 0px\n",
             "  padding-right: 0px\n",
@@ -65,6 +68,9 @@ fn computed_style_accessors_match_property_entries() {
         PropertyId::MaxWidth,
         PropertyId::MinWidth,
         PropertyId::Overflow,
+        PropertyId::OutlineColor,
+        PropertyId::OutlineStyle,
+        PropertyId::OutlineWidth,
         PropertyId::Position,
         PropertyId::PaddingLeft,
         PropertyId::Width,
@@ -129,6 +135,24 @@ fn computed_style_accessors_match_property_entries() {
             ComputedValue::Overflow(Overflow::Hidden),
         )
         .expect("overflow");
+    builder
+        .record(
+            PropertyId::OutlineColor,
+            ComputedValue::Color((11, 12, 13, 255)),
+        )
+        .expect("outline-color");
+    builder
+        .record(
+            PropertyId::OutlineStyle,
+            ComputedValue::OutlineStyle(OutlineStyle::Solid),
+        )
+        .expect("outline-style");
+    builder
+        .record(
+            PropertyId::OutlineWidth,
+            ComputedValue::Length(Length::Px(5.0)),
+        )
+        .expect("outline-width");
     builder
         .record(
             PropertyId::Position,
@@ -196,6 +220,20 @@ fn computed_style_accessors_match_property_entries() {
         style.get(PropertyId::Overflow).value(),
         ComputedValue::Overflow(style.overflow())
     );
+    assert_eq!(
+        style.get(PropertyId::OutlineColor).value(),
+        ComputedValue::Color(style.outline().color)
+    );
+    assert_eq!(
+        style.get(PropertyId::OutlineStyle).value(),
+        ComputedValue::OutlineStyle(style.outline().style)
+    );
+    assert_eq!(
+        style.get(PropertyId::OutlineWidth).value(),
+        ComputedValue::Length(Length::Px(style.outline().width))
+    );
+    assert_eq!(style.outline().width, 5.0);
+    assert_eq!(style.box_metrics().border_top, 2.0);
     assert_eq!(
         style.get(PropertyId::Position).value(),
         ComputedValue::Position(style.position())
@@ -322,26 +360,38 @@ fn computed_style_get_round_trips_all_builder_supported_properties_losslessly() 
             ComputedValue::Overflow(Overflow::Scroll),
         ),
         (
+            PropertyId::OutlineColor,
+            ComputedValue::Color((22, 23, 24, 255)),
+        ),
+        (
+            PropertyId::OutlineStyle,
+            ComputedValue::OutlineStyle(OutlineStyle::Solid),
+        ),
+        (
+            PropertyId::OutlineWidth,
+            ComputedValue::Length(Length::Px(25.0)),
+        ),
+        (
             PropertyId::PaddingBottom,
-            ComputedValue::Length(Length::Px(17.0)),
+            ComputedValue::Length(Length::Px(26.0)),
         ),
         (
             PropertyId::PaddingLeft,
-            ComputedValue::Length(Length::Px(18.0)),
+            ComputedValue::Length(Length::Px(27.0)),
         ),
         (
             PropertyId::PaddingRight,
-            ComputedValue::Length(Length::Px(19.0)),
+            ComputedValue::Length(Length::Px(28.0)),
         ),
         (
             PropertyId::PaddingTop,
-            ComputedValue::Length(Length::Px(20.0)),
+            ComputedValue::Length(Length::Px(29.0)),
         ),
         (
             PropertyId::Position,
             ComputedValue::Position(Position::Sticky),
         ),
-        (PropertyId::Width, length_percentage_or_auto_px(21.0)),
+        (PropertyId::Width, length_percentage_or_auto_px(30.0)),
     ];
 
     let mut builder = builder_with_initials_except(PropertyId::ALL.as_slice());

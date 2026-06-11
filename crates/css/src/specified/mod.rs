@@ -11,6 +11,7 @@ mod color;
 mod display;
 mod error;
 mod length;
+mod outline;
 mod overflow;
 mod parse;
 mod position;
@@ -22,9 +23,9 @@ pub use value::{
     SpecifiedBorderStyle, SpecifiedBorderStyleKeyword, SpecifiedColor, SpecifiedColorKeyword,
     SpecifiedColorSyntax, SpecifiedDisplay, SpecifiedDisplayKeyword, SpecifiedHexColor,
     SpecifiedLength, SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto,
-    SpecifiedLengthPercentageOrNone, SpecifiedLengthUnit, SpecifiedOverflow,
-    SpecifiedOverflowKeyword, SpecifiedPercentage, SpecifiedPosition, SpecifiedPositionKeyword,
-    SpecifiedPropertyValue, SpecifiedValue,
+    SpecifiedLengthPercentageOrNone, SpecifiedLengthUnit, SpecifiedOutlineStyle,
+    SpecifiedOutlineStyleKeyword, SpecifiedOverflow, SpecifiedOverflowKeyword, SpecifiedPercentage,
+    SpecifiedPosition, SpecifiedPositionKeyword, SpecifiedPropertyValue, SpecifiedValue,
 };
 
 #[cfg(test)]

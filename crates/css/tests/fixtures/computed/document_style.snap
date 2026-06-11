@@ -25,6 +25,9 @@ element[0]: selector-id=1 name="main"
   max-width: none
   min-width: auto
   overflow: visible
+  outline-color: rgba(0, 0, 0, 0)
+  outline-style: none
+  outline-width: 0px
   padding-bottom: 0px
   padding-left: 0px
   padding-right: 0px
@@ -56,6 +59,9 @@ element[1]: selector-id=2 name="span"
   max-width: none
   min-width: auto
   overflow: visible
+  outline-color: rgba(0, 0, 0, 0)
+  outline-style: none
+  outline-width: 0px
   padding-bottom: 0px
   padding-left: 3px
   padding-right: 0px
@@ -87,6 +93,9 @@ element[2]: selector-id=3 name="button"
   max-width: none
   min-width: 80px
   overflow: visible
+  outline-color: rgba(0, 0, 0, 0)
+  outline-style: none
+  outline-width: 0px
   padding-bottom: 0px
   padding-left: 0px
   padding-right: 0px

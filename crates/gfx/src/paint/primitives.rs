@@ -92,6 +92,7 @@ pub struct PaintNode {
     source: PaintSource,
     primitives: Vec<PaintPrimitive>,
     children: Vec<PaintNode>,
+    post_primitives: Vec<PaintPrimitive>,
 }
 
 impl PaintNode {
@@ -107,6 +108,10 @@ impl PaintNode {
         &self.children
     }
 
+    pub fn post_primitives(&self) -> &[PaintPrimitive] {
+        &self.post_primitives
+    }
+
     fn from_layout(layout: &LayoutBox<'_, '_>, measurer: &dyn TextMeasurer) -> Self {
         let source = PaintSource::from_layout(layout);
         if is_non_rendering_element(layout.node.node) {
@@ -114,11 +119,14 @@ impl PaintNode {
                 source,
                 primitives: Vec::new(),
                 children: Vec::new(),
+                post_primitives: Vec::new(),
             };
         }
 
         let mut primitives = Vec::new();
         append_box_primitives(layout, measurer, &mut primitives);
+        let mut post_primitives = Vec::new();
+        append_post_child_primitives(layout, source, &mut post_primitives);
 
         let children = layout
             .children
@@ -130,6 +138,7 @@ impl PaintNode {
             source,
             primitives,
             children,
+            post_primitives,
         }
     }
 
@@ -142,7 +151,7 @@ impl PaintNode {
             self.source.box_id,
             self.source.node_id.0,
             self.source.anonymous,
-            self.primitives.len(),
+            self.primitives.len() + self.post_primitives.len(),
             self.children.len()
         )?;
         for primitive in &self.primitives {
@@ -150,6 +159,14 @@ impl PaintNode {
         }
         for child in &self.children {
             child.append_debug_snapshot(out, depth + 1)?;
+        }
+        for primitive in &self.post_primitives {
+            writeln!(
+                out,
+                "{}  post-primitive {}",
+                indent,
+                primitive.to_debug_label()
+            )?;
         }
         Ok(())
     }
@@ -176,6 +193,7 @@ impl PaintSource {
 pub enum PaintPrimitive {
     Background(PaintBackground),
     Border(PaintBorder),
+    Outline(PaintOutline),
     ListMarker(PaintListMarker),
     Clip(PaintClip),
     Text(PaintText),
@@ -188,6 +206,7 @@ impl PaintPrimitive {
         match self {
             Self::Background(_) => PaintPrimitiveKind::Background,
             Self::Border(_) => PaintPrimitiveKind::Border,
+            Self::Outline(_) => PaintPrimitiveKind::Outline,
             Self::ListMarker(_) => PaintPrimitiveKind::ListMarker,
             Self::Clip(_) => PaintPrimitiveKind::Clip,
             Self::Text(_) => PaintPrimitiveKind::Text,
@@ -214,6 +233,13 @@ impl PaintPrimitive {
                 border.edges.bottom.color.to_debug_label(),
                 border.edges.left.width,
                 border.edges.left.color.to_debug_label()
+            ),
+            Self::Outline(outline) => format!(
+                "outline border-rect={} outer-rect={} width={:.2} color={}",
+                rectangle_debug_label(outline.border_rect),
+                rectangle_debug_label(outline.outer_rect),
+                outline.width,
+                outline.color.to_debug_label()
             ),
             Self::ListMarker(marker) => format!(
                 "list-marker rect={} kind={}",
@@ -251,6 +277,7 @@ impl PaintPrimitive {
 pub enum PaintPrimitiveKind {
     Background,
     Border,
+    Outline,
     ListMarker,
     Clip,
     Text,
@@ -282,6 +309,15 @@ pub struct PaintBorderEdges {
 
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct PaintBorderSide {
+    pub width: f32,
+    pub color: PaintColor,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PaintOutline {
+    pub source: PaintSource,
+    pub border_rect: Rectangle,
+    pub outer_rect: Rectangle,
     pub width: f32,
     pub color: PaintColor,
 }
@@ -411,6 +447,16 @@ fn append_box_primitives(
     append_inline_primitives(layout, measurer, primitives);
 }
 
+fn append_post_child_primitives(
+    layout: &LayoutBox<'_, '_>,
+    source: PaintSource,
+    primitives: &mut Vec<PaintPrimitive>,
+) {
+    if let Some(outline) = outline_primitive_from_layout(layout, source) {
+        primitives.push(PaintPrimitive::Outline(outline));
+    }
+}
+
 fn append_background_primitive(
     layout: &LayoutBox<'_, '_>,
     source: PaintSource,
@@ -426,6 +472,37 @@ fn append_background_primitive(
         rect: layout.rect,
         color,
     }));
+}
+
+pub(super) fn outline_primitive_from_layout(
+    layout: &LayoutBox<'_, '_>,
+    source: PaintSource,
+) -> Option<PaintOutline> {
+    if layout.is_anonymous() {
+        return None;
+    }
+
+    let outline = layout.style.outline();
+    if !outline.is_paint_visible() {
+        return None;
+    }
+
+    let width = outline.width;
+    let border_rect = layout.rect;
+    let outer_rect = Rectangle {
+        x: border_rect.x - width,
+        y: border_rect.y - width,
+        width: border_rect.width + width * 2.0,
+        height: border_rect.height + width * 2.0,
+    };
+
+    Some(PaintOutline {
+        source,
+        border_rect,
+        outer_rect,
+        width,
+        color: PaintColor::from_rgba(outline.color),
+    })
 }
 
 fn append_border_primitive(
@@ -679,6 +756,7 @@ mod tests {
         if node
             .primitives()
             .iter()
+            .chain(node.post_primitives().iter())
             .any(|primitive| primitive.kind() == kind)
         {
             return Some(node);
@@ -689,8 +767,31 @@ mod tests {
             .find_map(|child| first_node_with_primitive(child, kind))
     }
 
+    fn non_anonymous_node_by_source_id(node: &PaintNode, id: Id) -> Option<&PaintNode> {
+        if node.source().node_id == id && !node.source().anonymous {
+            return Some(node);
+        }
+
+        node.children()
+            .iter()
+            .find_map(|child| non_anonymous_node_by_source_id(child, id))
+    }
+
     fn primitive_kinds(node: &PaintNode) -> Vec<PaintPrimitiveKind> {
         node.primitives().iter().map(PaintPrimitive::kind).collect()
+    }
+
+    fn flattened_paint_order(node: &PaintNode) -> Vec<PaintPrimitiveKind> {
+        let mut order = node
+            .primitives()
+            .iter()
+            .map(PaintPrimitive::kind)
+            .collect::<Vec<_>>();
+        for child in node.children() {
+            order.extend(flattened_paint_order(child));
+        }
+        order.extend(node.post_primitives().iter().map(PaintPrimitive::kind));
+        order
     }
 
     #[test]
@@ -762,6 +863,172 @@ mod tests {
     }
 
     #[test]
+    fn paint_tree_emits_outline_as_distinct_post_child_primitive() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "120px".to_string()),
+                    ("height".to_string(), "40px".to_string()),
+                    ("outline-width".to_string(), "3px".to_string()),
+                    ("outline-style".to_string(), "solid".to_string()),
+                    ("outline-color".to_string(), "red".to_string()),
+                ],
+                children: Vec::new(),
+            }],
+        };
+
+        let styled = build_style_tree(&dom);
+        let layout = build_layout_for(&styled);
+        let input = build_paint_input(&layout);
+        let node = non_anonymous_node_by_source_id(input.tree().root(), Id(2))
+            .expect("section outline paint node");
+
+        assert!(
+            node.primitives()
+                .iter()
+                .all(|primitive| primitive.kind() != PaintPrimitiveKind::Border)
+        );
+        assert!(node.post_primitives().iter().any(|primitive| matches!(
+            primitive,
+            PaintPrimitive::Outline(PaintOutline { width: 3.0, color, .. })
+                if *color == PaintColor::from_rgba((255, 0, 0, 255))
+        )));
+    }
+
+    #[test]
+    fn paint_tree_orders_outline_after_contents_and_child_subtrees() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "120px".to_string()),
+                    ("height".to_string(), "40px".to_string()),
+                    ("background-color".to_string(), "white".to_string()),
+                    ("border-top-width".to_string(), "2px".to_string()),
+                    ("border-top-style".to_string(), "solid".to_string()),
+                    ("border-top-color".to_string(), "blue".to_string()),
+                    ("overflow".to_string(), "clip".to_string()),
+                    ("outline-width".to_string(), "3px".to_string()),
+                    ("outline-style".to_string(), "solid".to_string()),
+                    ("outline-color".to_string(), "red".to_string()),
+                ],
+                children: vec![
+                    Node::Text {
+                        id: Id(3),
+                        text: "Hello".to_string(),
+                    },
+                    Node::Element {
+                        id: Id(4),
+                        name: Arc::from("div"),
+                        attributes: Vec::new(),
+                        style: vec![
+                            ("display".to_string(), "block".to_string()),
+                            ("width".to_string(), "20px".to_string()),
+                            ("height".to_string(), "10px".to_string()),
+                            ("background-color".to_string(), "green".to_string()),
+                        ],
+                        children: Vec::new(),
+                    },
+                ],
+            }],
+        };
+
+        let styled = build_style_tree(&dom);
+        let layout = build_layout_for(&styled);
+        let input = build_paint_input(&layout);
+        let node = non_anonymous_node_by_source_id(input.tree().root(), Id(2))
+            .expect("section outline paint node");
+
+        assert!(matches!(
+            node.primitives(),
+            [PaintPrimitive::Background(_), PaintPrimitive::Border(_), ..]
+        ));
+        assert!(node.post_primitives().iter().any(|primitive| matches!(
+            primitive,
+            PaintPrimitive::Outline(PaintOutline { source, .. }) if source.node_id == Id(2)
+        )));
+
+        let order = flattened_paint_order(node);
+        assert_eq!(order.last(), Some(&PaintPrimitiveKind::Outline));
+        let child_background = order
+            .iter()
+            .position(|kind| *kind == PaintPrimitiveKind::Background)
+            .expect("section background");
+        let final_outline = order
+            .iter()
+            .rposition(|kind| *kind == PaintPrimitiveKind::Outline)
+            .expect("section outline");
+        assert!(child_background < final_outline);
+    }
+
+    #[test]
+    fn paint_tree_outline_geometry_expands_outside_border_box() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "100px".to_string()),
+                    ("height".to_string(), "20px".to_string()),
+                    ("outline-width".to_string(), "4px".to_string()),
+                    ("outline-style".to_string(), "solid".to_string()),
+                    ("outline-color".to_string(), "red".to_string()),
+                ],
+                children: Vec::new(),
+            }],
+        };
+
+        let styled = build_style_tree(&dom);
+        let layout = build_layout_for(&styled);
+        let input = build_paint_input(&layout);
+        let node = non_anonymous_node_by_source_id(input.tree().root(), Id(2))
+            .expect("section outline paint node");
+
+        let outline = node
+            .post_primitives()
+            .iter()
+            .find_map(|primitive| match primitive {
+                PaintPrimitive::Outline(outline) => Some(*outline),
+                _ => None,
+            })
+            .expect("outline primitive");
+
+        assert_eq!(
+            outline.border_rect,
+            Rectangle {
+                x: 0.0,
+                y: 0.0,
+                width: 100.0,
+                height: 20.0,
+            }
+        );
+        assert_eq!(
+            outline.outer_rect,
+            Rectangle {
+                x: -4.0,
+                y: -4.0,
+                width: 108.0,
+                height: 28.0,
+            }
+        );
+    }
+
+    #[test]
     fn paint_tree_skips_invisible_border_primitives_deterministically() {
         let dom = Node::Document {
             id: Id(1),
@@ -817,6 +1084,55 @@ mod tests {
 
         assert!(
             first_node_with_primitive(input.tree().root(), PaintPrimitiveKind::Border).is_none()
+        );
+    }
+
+    #[test]
+    fn paint_tree_skips_invisible_outline_primitives_deterministically() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![
+                Node::Element {
+                    id: Id(2),
+                    name: Arc::from("section"),
+                    attributes: Vec::new(),
+                    style: vec![
+                        ("outline-style".to_string(), "solid".to_string()),
+                        ("outline-color".to_string(), "red".to_string()),
+                    ],
+                    children: Vec::new(),
+                },
+                Node::Element {
+                    id: Id(3),
+                    name: Arc::from("section"),
+                    attributes: Vec::new(),
+                    style: vec![
+                        ("outline-width".to_string(), "2px".to_string()),
+                        ("outline-color".to_string(), "red".to_string()),
+                    ],
+                    children: Vec::new(),
+                },
+                Node::Element {
+                    id: Id(4),
+                    name: Arc::from("section"),
+                    attributes: Vec::new(),
+                    style: vec![
+                        ("outline-width".to_string(), "2px".to_string()),
+                        ("outline-style".to_string(), "solid".to_string()),
+                        ("outline-color".to_string(), "transparent".to_string()),
+                    ],
+                    children: Vec::new(),
+                },
+            ],
+        };
+
+        let styled = build_style_tree(&dom);
+        let layout = build_layout_for(&styled);
+        let input = build_paint_input(&layout);
+
+        assert!(
+            first_node_with_primitive(input.tree().root(), PaintPrimitiveKind::Outline).is_none()
         );
     }
 
