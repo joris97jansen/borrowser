@@ -30,6 +30,9 @@ pub enum PropertyId {
     MaxWidth,
     MinWidth,
     Overflow,
+    OutlineColor,
+    OutlineStyle,
+    OutlineWidth,
     PaddingBottom,
     PaddingLeft,
     PaddingRight,
@@ -39,7 +42,7 @@ pub enum PropertyId {
 }
 
 impl PropertyId {
-    pub const ALL: [Self; 30] = [
+    pub const ALL: [Self; 33] = [
         Self::BackgroundColor,
         Self::BorderBottomColor,
         Self::BorderBottomStyle,
@@ -64,6 +67,9 @@ impl PropertyId {
         Self::MaxWidth,
         Self::MinWidth,
         Self::Overflow,
+        Self::OutlineColor,
+        Self::OutlineStyle,
+        Self::OutlineWidth,
         Self::PaddingBottom,
         Self::PaddingLeft,
         Self::PaddingRight,
@@ -98,12 +104,15 @@ impl PropertyId {
             Self::MaxWidth => 21,
             Self::MinWidth => 22,
             Self::Overflow => 23,
-            Self::PaddingBottom => 24,
-            Self::PaddingLeft => 25,
-            Self::PaddingRight => 26,
-            Self::PaddingTop => 27,
-            Self::Position => 28,
-            Self::Width => 29,
+            Self::OutlineColor => 24,
+            Self::OutlineStyle => 25,
+            Self::OutlineWidth => 26,
+            Self::PaddingBottom => 27,
+            Self::PaddingLeft => 28,
+            Self::PaddingRight => 29,
+            Self::PaddingTop => 30,
+            Self::Position => 31,
+            Self::Width => 32,
         }
     }
 
@@ -193,6 +202,7 @@ const fn default_length_sign_policy(
     match specified_value {
         PropertySpecifiedValueKind::Color
         | PropertySpecifiedValueKind::BorderStyleKeyword
+        | PropertySpecifiedValueKind::OutlineStyleKeyword
         | PropertySpecifiedValueKind::DisplayKeyword
         | PropertySpecifiedValueKind::OverflowKeyword
         | PropertySpecifiedValueKind::PositionKeyword => PropertyLengthSignPolicy::NotLength,
@@ -219,6 +229,7 @@ pub enum PropertyInheritance {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PropertySpecifiedValueKind {
     BorderStyleKeyword,
+    OutlineStyleKeyword,
     Color,
     DisplayKeyword,
     OverflowKeyword,
@@ -232,6 +243,7 @@ impl PropertySpecifiedValueKind {
     pub fn as_debug_label(self) -> &'static str {
         match self {
             Self::BorderStyleKeyword => "border-style-keyword",
+            Self::OutlineStyleKeyword => "outline-style-keyword",
             Self::Color => "color",
             Self::DisplayKeyword => "display-keyword",
             Self::OverflowKeyword => "overflow-keyword",
@@ -252,6 +264,7 @@ impl PropertySpecifiedValueKind {
 pub enum PropertyComputedValueKind {
     AbsoluteColor,
     BorderStyleKeyword,
+    OutlineStyleKeyword,
     DisplayKeyword,
     OverflowKeyword,
     PositionKeyword,
@@ -265,6 +278,7 @@ impl PropertyComputedValueKind {
         match self {
             Self::AbsoluteColor => "absolute-color",
             Self::BorderStyleKeyword => "border-style-keyword",
+            Self::OutlineStyleKeyword => "outline-style-keyword",
             Self::DisplayKeyword => "display-keyword",
             Self::OverflowKeyword => "overflow-keyword",
             Self::PositionKeyword => "position-keyword",
@@ -306,6 +320,7 @@ pub enum PropertyLengthSignPolicy {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum InitialStyleValue {
     BorderStyleNone,
+    OutlineStyleNone,
     ColorBlack,
     TransparentColor,
     DisplayInline,
@@ -321,6 +336,7 @@ impl InitialStyleValue {
     pub fn as_debug_label(self) -> &'static str {
         match self {
             Self::BorderStyleNone => "none",
+            Self::OutlineStyleNone => "none",
             Self::ColorBlack => "black",
             Self::TransparentColor => "transparent",
             Self::DisplayInline => "inline",

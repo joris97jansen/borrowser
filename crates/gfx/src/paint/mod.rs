@@ -12,8 +12,8 @@ pub use images::{ImageProvider, ImageState};
 pub use primitives::{
     PaintBackground, PaintBorder, PaintBorderEdges, PaintBorderSide, PaintClip, PaintClipScope,
     PaintColor, PaintInlineBox, PaintInput, PaintListMarker, PaintListMarkerKind, PaintNode,
-    PaintPrimitive, PaintPrimitiveKind, PaintReplaced, PaintReplacedKind, PaintSource, PaintText,
-    PaintTree,
+    PaintOutline, PaintPrimitive, PaintPrimitiveKind, PaintReplaced, PaintReplacedKind,
+    PaintSource, PaintText, PaintTree,
 };
 
 use crate::EguiTextMeasurer;
@@ -161,10 +161,20 @@ fn paint_layout_box(
             ..ctx
         };
         paint_layout_box_contents(layout, clipped_ctx, skip_inline_block_children);
+        paint_outline_for_layout(layout, painter, origin);
         return;
     }
 
     paint_layout_box_contents(layout, ctx, skip_inline_block_children);
+    paint_outline_for_layout(layout, painter, origin);
+}
+
+fn paint_outline_for_layout(layout: &LayoutBox<'_, '_>, painter: &Painter, origin: Pos2) {
+    if let Some(outline) =
+        primitives::outline_primitive_from_layout(layout, PaintSource::from_layout(layout))
+    {
+        paint_outline_primitive(outline, painter, origin);
+    }
 }
 
 fn paint_border_primitive(border: PaintBorder, painter: &Painter, origin: Pos2) {
@@ -211,6 +221,57 @@ fn paint_border_primitive(border: PaintBorder, painter: &Painter, origin: Pos2) 
             height: border.rect.height,
         },
         border.edges.left,
+    );
+}
+
+fn paint_outline_primitive(outline: PaintOutline, painter: &Painter, origin: Pos2) {
+    let side = PaintBorderSide {
+        width: outline.width,
+        color: outline.color,
+    };
+    paint_border_side_rect(
+        painter,
+        origin,
+        Rectangle {
+            x: outline.outer_rect.x,
+            y: outline.outer_rect.y,
+            width: outline.outer_rect.width,
+            height: outline.width,
+        },
+        side,
+    );
+    paint_border_side_rect(
+        painter,
+        origin,
+        Rectangle {
+            x: outline.border_rect.x + outline.border_rect.width,
+            y: outline.border_rect.y,
+            width: outline.width,
+            height: outline.border_rect.height,
+        },
+        side,
+    );
+    paint_border_side_rect(
+        painter,
+        origin,
+        Rectangle {
+            x: outline.outer_rect.x,
+            y: outline.border_rect.y + outline.border_rect.height,
+            width: outline.outer_rect.width,
+            height: outline.width,
+        },
+        side,
+    );
+    paint_border_side_rect(
+        painter,
+        origin,
+        Rectangle {
+            x: outline.outer_rect.x,
+            y: outline.border_rect.y,
+            width: outline.width,
+            height: outline.border_rect.height,
+        },
+        side,
     );
 }
 

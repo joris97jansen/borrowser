@@ -1,7 +1,7 @@
 use crate::{
     InitialStyleValue, PropertyComputedValueKind, PropertyId,
     specified::{SpecifiedPropertyValue, SpecifiedValue},
-    values::{BorderStyle, Display, Length, LengthPercentage, Overflow, Position},
+    values::{BorderStyle, Display, Length, LengthPercentage, OutlineStyle, Overflow, Position},
 };
 
 use super::{
@@ -9,6 +9,7 @@ use super::{
     normalize::{
         normalize_border_style, normalize_color, normalize_display, normalize_length,
         normalize_length_percentage_or_auto, normalize_length_percentage_or_none,
+        normalize_outline_style,
     },
 };
 
@@ -16,6 +17,7 @@ use super::{
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub enum ComputedValue {
     BorderStyle(BorderStyle),
+    OutlineStyle(OutlineStyle),
     Color((u8, u8, u8, u8)),
     Display(Display),
     Overflow(Overflow),
@@ -29,6 +31,7 @@ impl ComputedValue {
     pub fn discriminant(self) -> ComputedValueDiscriminant {
         match self {
             Self::BorderStyle(_) => ComputedValueDiscriminant::BorderStyle,
+            Self::OutlineStyle(_) => ComputedValueDiscriminant::OutlineStyle,
             Self::Color(_) => ComputedValueDiscriminant::Color,
             Self::Display(_) => ComputedValueDiscriminant::Display,
             Self::Overflow(_) => ComputedValueDiscriminant::Overflow,
@@ -42,6 +45,7 @@ impl ComputedValue {
     pub fn from_initial(property: PropertyId) -> Self {
         match property.initial_value() {
             InitialStyleValue::BorderStyleNone => Self::BorderStyle(BorderStyle::None),
+            InitialStyleValue::OutlineStyleNone => Self::OutlineStyle(OutlineStyle::None),
             InitialStyleValue::ColorBlack => Self::Color((0, 0, 0, 255)),
             InitialStyleValue::TransparentColor => Self::Color((0, 0, 0, 0)),
             InitialStyleValue::DisplayInline => Self::Display(Display::Inline),
@@ -67,6 +71,9 @@ impl ComputedValue {
         let value = match specified.value() {
             SpecifiedValue::BorderStyle(border_style) => {
                 Self::BorderStyle(normalize_border_style(border_style.keyword()))
+            }
+            SpecifiedValue::OutlineStyle(outline_style) => {
+                Self::OutlineStyle(normalize_outline_style(outline_style.keyword()))
             }
             SpecifiedValue::Color(color) => Self::Color(normalize_color(color)),
             SpecifiedValue::Display(display) => Self::Display(normalize_display(display.keyword())),
@@ -104,6 +111,7 @@ impl ComputedValue {
     pub fn to_debug_label(self) -> String {
         match self {
             Self::BorderStyle(style) => border_style_keyword(style).to_string(),
+            Self::OutlineStyle(style) => outline_style_keyword(style).to_string(),
             Self::Color((r, g, b, a)) => format!("rgba({r}, {g}, {b}, {a})"),
             Self::Display(display) => display_keyword(display).to_string(),
             Self::Overflow(overflow) => overflow_keyword(overflow).to_string(),
@@ -174,6 +182,7 @@ impl ComputedValueNormalizationErrorKind {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ComputedValueDiscriminant {
     BorderStyle,
+    OutlineStyle,
     Color,
     Display,
     Overflow,
@@ -187,6 +196,7 @@ impl ComputedValueDiscriminant {
     pub fn as_debug_label(self) -> &'static str {
         match self {
             Self::BorderStyle => "border-style",
+            Self::OutlineStyle => "outline-style",
             Self::Color => "color",
             Self::Display => "display",
             Self::Overflow => "overflow",
@@ -209,6 +219,7 @@ pub(super) fn computed_value_discriminant(
 ) -> ComputedValueDiscriminant {
     match kind {
         PropertyComputedValueKind::BorderStyleKeyword => ComputedValueDiscriminant::BorderStyle,
+        PropertyComputedValueKind::OutlineStyleKeyword => ComputedValueDiscriminant::OutlineStyle,
         PropertyComputedValueKind::AbsoluteColor => ComputedValueDiscriminant::Color,
         PropertyComputedValueKind::DisplayKeyword => ComputedValueDiscriminant::Display,
         PropertyComputedValueKind::OverflowKeyword => ComputedValueDiscriminant::Overflow,
@@ -227,6 +238,13 @@ fn border_style_keyword(style: BorderStyle) -> &'static str {
     match style {
         BorderStyle::None => "none",
         BorderStyle::Solid => "solid",
+    }
+}
+
+fn outline_style_keyword(style: OutlineStyle) -> &'static str {
+    match style {
+        OutlineStyle::None => "none",
+        OutlineStyle::Solid => "solid",
     }
 }
 

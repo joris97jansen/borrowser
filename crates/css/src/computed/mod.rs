@@ -41,7 +41,8 @@ pub use document::{
 pub use format::computed_value_debug_snapshot;
 pub use legacy::{build_style_tree, compute_style};
 pub use style::{
-    BorderEdges, BorderSide, BoxMetrics, ComputedStyle, ComputedStyleBuildError, ComputedStyleEntry,
+    BorderEdges, BorderSide, BoxMetrics, ComputedStyle, ComputedStyleBuildError,
+    ComputedStyleEntry, Outline,
 };
 pub use style_tree::{
     StylePhaseOutput, StyledNode, build_style_tree_from_computed_styles,

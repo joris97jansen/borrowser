@@ -5,7 +5,7 @@ use crate::{
         SpecifiedLength, SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto,
         SpecifiedLengthPercentageOrNone, SpecifiedPercentage,
     },
-    values::{BorderStyle, Display, Length, LengthPercentage, Percentage},
+    values::{BorderStyle, Display, Length, LengthPercentage, OutlineStyle, Percentage},
 };
 
 use super::value::{ComputedValueNormalizationError, ComputedValueNormalizationErrorKind};
@@ -53,6 +53,13 @@ pub(super) fn normalize_border_style(style: crate::SpecifiedBorderStyleKeyword) 
     match style {
         crate::SpecifiedBorderStyleKeyword::None => BorderStyle::None,
         crate::SpecifiedBorderStyleKeyword::Solid => BorderStyle::Solid,
+    }
+}
+
+pub(super) fn normalize_outline_style(style: crate::SpecifiedOutlineStyleKeyword) -> OutlineStyle {
+    match style {
+        crate::SpecifiedOutlineStyleKeyword::None => OutlineStyle::None,
+        crate::SpecifiedOutlineStyleKeyword::Solid => OutlineStyle::Solid,
     }
 }
 

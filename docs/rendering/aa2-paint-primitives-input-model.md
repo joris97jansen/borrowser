@@ -21,6 +21,7 @@ Related code:
 Related documents:
 - `docs/rendering/aa1-paint-model-architecture-ordering-contracts.md`
 - `docs/rendering/aa3-border-rendering-box-decoration.md`
+- `docs/rendering/aa4-outline-rendering-box-decoration.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
 - `docs/rendering/w1-box-tree-layout-model-contract.md`
@@ -102,6 +103,7 @@ AA2 defines these paint primitive categories:
 
 - `Background`
 - `Border`
+- `Outline`
 - `ListMarker`
 - `Clip`
 - `Text`
@@ -110,6 +112,8 @@ AA2 defines these paint primitive categories:
 
 The border primitive was vocabulary only in AA2. AA3 populates and renders this
 primitive for the supported physical solid rectangular border subset.
+AA4 adds a distinct outline primitive for the supported paint-only rectangular
+outline subset.
 
 Primitives store semantic CSS-pixel rectangles, source identity, colors, font
 sizes, marker kinds, and replaced kinds. They do not store `egui::Painter`,
@@ -126,6 +130,7 @@ uses this order:
 4. overflow clip
 5. inline formatting primitives
 6. child paint nodes in layout child order
+7. outline for the AA4 supported subset
 
 This matches the AA1 supported ordering subset without claiming full CSS
 painting order, stacking-context behavior, or z-index semantics.
@@ -166,7 +171,8 @@ AA2 does not implement:
 - stacking contexts or `z-index`
 - unsupported border styles, border-radius, border-image, logical borders, and
   border shorthands
-- outlines
+- outline shorthand, outline offset, unsupported outline styles, and rounded
+  outline geometry
 - text decorations
 - pixel snapshot testing
 - broad visual fidelity changes

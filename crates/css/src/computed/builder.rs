@@ -2,11 +2,11 @@ use std::collections::BTreeMap;
 
 use crate::{
     PropertyId, property_registry,
-    values::{BorderStyle, Display, Length, LengthPercentage, Overflow, Position},
+    values::{BorderStyle, Display, Length, LengthPercentage, OutlineStyle, Overflow, Position},
 };
 
 use super::{
-    style::{BorderEdges, BorderSide, BoxMetrics, ComputedStyle, ComputedStyleBuildError},
+    style::{BorderEdges, BorderSide, BoxMetrics, ComputedStyle, ComputedStyleBuildError, Outline},
     value::{ComputedValue, computed_value_discriminant},
 };
 
@@ -101,6 +101,11 @@ impl ComputedStyleBuilder {
                 border_left: border_edges.left.used_width(),
             },
             border_edges,
+            outline: Outline {
+                width: expect_px(&self.entries, PropertyId::OutlineWidth),
+                style: expect_outline_style(&self.entries, PropertyId::OutlineStyle),
+                color: expect_color(&self.entries, PropertyId::OutlineColor),
+            },
             display: expect_display(&self.entries, PropertyId::Display),
             overflow: expect_overflow(&self.entries, PropertyId::Overflow),
             position: expect_position(&self.entries, PropertyId::Position),
@@ -122,6 +127,24 @@ fn border_side(
         width: expect_px(entries, width),
         style: expect_border_style(entries, style),
         color: expect_color(entries, color),
+    }
+}
+
+fn expect_outline_style(
+    entries: &BTreeMap<PropertyId, ComputedValue>,
+    property: PropertyId,
+) -> OutlineStyle {
+    match entries.get(&property).copied() {
+        Some(ComputedValue::OutlineStyle(style)) => style,
+        Some(other) => unreachable!(
+            "property '{}' expected outline-style computed value, got {:?}",
+            property.name(),
+            other.discriminant()
+        ),
+        None => unreachable!(
+            "property '{}' missing after completeness check",
+            property.name()
+        ),
     }
 }
 

@@ -50,6 +50,18 @@ fn computed_value_normalizes_overflow_keywords_to_runtime_enum() {
 }
 
 #[test]
+fn computed_value_normalizes_outline_keywords_to_runtime_enum() {
+    assert_eq!(
+        normalized_value(PropertyId::OutlineStyle, "outline-style: solid"),
+        ComputedValue::OutlineStyle(OutlineStyle::Solid)
+    );
+    assert_eq!(
+        normalized_value(PropertyId::OutlineStyle, "outline-style: none"),
+        ComputedValue::OutlineStyle(OutlineStyle::None)
+    );
+}
+
+#[test]
 fn computed_value_normalizes_position_keywords_to_runtime_enum() {
     assert_eq!(
         normalized_value(PropertyId::Position, "position: relative"),
@@ -144,6 +156,9 @@ fn computed_value_normalization_matches_property_metadata_for_supported_subset()
         (PropertyId::MaxWidth, "max-width: none"),
         (PropertyId::MinWidth, "min-width: auto"),
         (PropertyId::Overflow, "overflow: visible"),
+        (PropertyId::OutlineColor, "outline-color: red"),
+        (PropertyId::OutlineStyle, "outline-style: solid"),
+        (PropertyId::OutlineWidth, "outline-width: 2px"),
         (PropertyId::PaddingBottom, "padding-bottom: 1px"),
         (PropertyId::PaddingLeft, "padding-left: 1px"),
         (PropertyId::PaddingRight, "padding-right: 1px"),

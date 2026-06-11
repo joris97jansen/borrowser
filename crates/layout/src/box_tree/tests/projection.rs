@@ -96,6 +96,78 @@ fn layout_resolves_auto_width_as_available_border_box_after_padding() {
 }
 
 #[test]
+fn layout_ignores_outline_for_box_metrics_and_geometry() {
+    let without_outline = doc(vec![element(
+        2,
+        "section",
+        vec![
+            ("width", "100px"),
+            ("height", "20px"),
+            ("padding-left", "10px"),
+            ("padding-right", "5px"),
+            ("border-top-width", "2px"),
+            ("border-top-style", "solid"),
+            ("border-top-color", "red"),
+        ],
+        vec![text(3, "Hello")],
+    )]);
+    let with_outline = doc(vec![element(
+        2,
+        "section",
+        vec![
+            ("width", "100px"),
+            ("height", "20px"),
+            ("padding-left", "10px"),
+            ("padding-right", "5px"),
+            ("border-top-width", "2px"),
+            ("border-top-style", "solid"),
+            ("border-top-color", "red"),
+            ("outline-width", "8px"),
+            ("outline-style", "solid"),
+            ("outline-color", "blue"),
+        ],
+        vec![text(3, "Hello")],
+    )]);
+
+    let styled_without = css::build_style_tree(&without_outline, None);
+    let styled_with = css::build_style_tree(&with_outline, None);
+    let layout_without = crate::layout_document(crate::LayoutPhaseInput::new(
+        &styled_without,
+        500.0,
+        &TestMeasurer,
+        None,
+    ));
+    let layout_with = crate::layout_document(crate::LayoutPhaseInput::new(
+        &styled_with,
+        500.0,
+        &TestMeasurer,
+        None,
+    ));
+
+    assert_eq!(
+        layout_with.to_sizing_debug_snapshot(),
+        layout_without.to_sizing_debug_snapshot()
+    );
+
+    let section_without =
+        find_layout_by_direct_node_id(layout_without.root(), Id(2)).expect("section layout box");
+    let section_with =
+        find_layout_by_direct_node_id(layout_with.root(), Id(2)).expect("section layout box");
+
+    assert_eq!(section_with.rect, section_without.rect);
+    assert_eq!(
+        section_with.content_x_and_width(),
+        section_without.content_x_and_width()
+    );
+    assert_eq!(section_with.content_y(), section_without.content_y());
+    assert_eq!(
+        section_with.content_height(),
+        section_without.content_height()
+    );
+    assert_eq!(section_with.box_metrics(), section_without.box_metrics());
+}
+
+#[test]
 fn layout_resolves_percentage_width_against_containing_content_box() {
     let dom = doc(vec![element(
         2,
