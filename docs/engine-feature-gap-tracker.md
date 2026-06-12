@@ -107,6 +107,15 @@ Missing or incomplete:
 
 ## Paint / GFX
 
+Current supported subset:
+
+- deterministic AA paint ordering for box background, box border, list marker,
+  overflow clip scope for contents and descendants, inline formatting content,
+  child subtrees in layout order, and box outline; see
+  `docs/rendering/aa7-deterministic-paint-ordering-layering-rules.md`
+- basic paint-time overflow clipping when Layout exposes an overflow clip; see
+  `docs/rendering/aa6-overflow-clipping-paint-behavior.md`
+
 Missing or incomplete:
 
 - full border rendering beyond the supported physical solid-border subset
@@ -114,7 +123,8 @@ Missing or incomplete:
 - border radius
 - background images and advanced background painting
 - shadows, transforms, opacity, filters, and advanced clipping interactions
-- stacking-context paint ordering
+- full CSS stacking-context paint ordering, including z-index and positioned
+  descendants
 - scrollbars and scrollable overflow painting
 - selection painting outside supported text-control paths
 - font fallback and advanced text shaping

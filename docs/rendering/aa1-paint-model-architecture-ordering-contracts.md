@@ -1,6 +1,6 @@
 # AA1: Paint Model Architecture And Ordering Contracts
 
-Last updated: 2026-06-09
+Last updated: 2026-06-12
 Status: implemented architecture contract for Milestone AA issue 1
 
 This document defines Borrowser's paint architecture before Milestone AA adds
@@ -34,6 +34,7 @@ Related documents:
 - `docs/rendering/aa4-outline-rendering-box-decoration.md`
 - `docs/rendering/aa5-text-decoration-rendering-subset.md`
 - `docs/rendering/aa6-overflow-clipping-paint-behavior.md`
+- `docs/rendering/aa7-deterministic-paint-ordering-layering-rules.md`
 - `docs/rendering/w8-box-generation-formatting-debug-surfaces.md`
 - `docs/rendering/w9-box-tree-invariants-extension-hooks.md`
 - `docs/rendering/y4-overflow-semantics-supported-subset.md`
@@ -158,6 +159,9 @@ boxes in the outer subtree so they are not emitted twice.
 
 The static contract surface in `crates/gfx/src/paint/contracts.rs` exposes this
 subset through `paint_order_contracts()`.
+AA7 formalizes the same supported subset through explicit `PaintOrderPhase`
+metadata and semantic order debug snapshots. It does not introduce global
+sorting, full CSS painting order, stacking contexts, or compositor layers.
 
 ## Overflow And Clipping
 
@@ -233,3 +237,6 @@ enters scope. AA2 refines this by defining a border primitive vocabulary. AA3
 removes visual border rendering from the excluded set only for the supported
 physical solid rectangular subset. AA4 removes outline rendering from the
 excluded set only for the supported paint-only rectangular longhand subset.
+AA7 enforces deterministic ordering for the current subset without removing
+the full CSS painting order, stacking, `z-index`, compositing, retained scene,
+GPU, or pixel snapshot exclusions.

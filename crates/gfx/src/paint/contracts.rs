@@ -79,6 +79,33 @@ pub struct PaintOrderContract {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PaintOrderPhase {
+    BoxBackground,
+    BoxBorder,
+    ListMarker,
+    OverflowClipForContentsAndDescendants,
+    InlineFormattingContent,
+    ChildSubtree,
+    BoxOutline,
+}
+
+impl PaintOrderPhase {
+    pub const fn debug_label(self) -> &'static str {
+        match self {
+            Self::BoxBackground => "box-background",
+            Self::BoxBorder => "box-border",
+            Self::ListMarker => "list-marker",
+            Self::OverflowClipForContentsAndDescendants => {
+                "overflow-clip-for-contents-and-descendants"
+            }
+            Self::InlineFormattingContent => "inline-formatting-content",
+            Self::ChildSubtree => "child-subtree",
+            Self::BoxOutline => "box-outline",
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum PaintPrimitiveContractKind {
     Background,
     Border,
@@ -251,6 +278,16 @@ static PAINT_ORDER_CONTRACTS: [PaintOrderContract; 8] = [
     },
 ];
 
+static PAINT_ORDER_PHASES: [PaintOrderPhase; 7] = [
+    PaintOrderPhase::BoxBackground,
+    PaintOrderPhase::BoxBorder,
+    PaintOrderPhase::ListMarker,
+    PaintOrderPhase::OverflowClipForContentsAndDescendants,
+    PaintOrderPhase::InlineFormattingContent,
+    PaintOrderPhase::ChildSubtree,
+    PaintOrderPhase::BoxOutline,
+];
+
 static PAINT_PRIMITIVE_CONTRACTS: [PaintPrimitiveContract; 9] = [
     PaintPrimitiveContract {
         primitive: PaintPrimitiveContractKind::Background,
@@ -336,6 +373,10 @@ pub fn paint_order_contracts() -> &'static [PaintOrderContract] {
     &PAINT_ORDER_CONTRACTS
 }
 
+pub fn paint_order_phases() -> &'static [PaintOrderPhase] {
+    &PAINT_ORDER_PHASES
+}
+
 pub fn paint_primitive_contracts() -> &'static [PaintPrimitiveContract] {
     &PAINT_PRIMITIVE_CONTRACTS
 }
@@ -405,6 +446,40 @@ mod tests {
                     owner: PaintContractOwner::Paint,
                     source: PaintOrderSource::ComputedOutlineOnLayoutBox,
                 },
+            ]
+        );
+    }
+
+    #[test]
+    fn paint_order_phases_expose_supported_aa_subset_deterministically() {
+        let first = paint_order_phases();
+        let second = paint_order_phases();
+        assert_eq!(first, second);
+        assert_eq!(
+            first,
+            &[
+                PaintOrderPhase::BoxBackground,
+                PaintOrderPhase::BoxBorder,
+                PaintOrderPhase::ListMarker,
+                PaintOrderPhase::OverflowClipForContentsAndDescendants,
+                PaintOrderPhase::InlineFormattingContent,
+                PaintOrderPhase::ChildSubtree,
+                PaintOrderPhase::BoxOutline,
+            ]
+        );
+        assert_eq!(
+            first
+                .iter()
+                .map(|phase| phase.debug_label())
+                .collect::<Vec<_>>(),
+            vec![
+                "box-background",
+                "box-border",
+                "list-marker",
+                "overflow-clip-for-contents-and-descendants",
+                "inline-formatting-content",
+                "child-subtree",
+                "box-outline",
             ]
         );
     }

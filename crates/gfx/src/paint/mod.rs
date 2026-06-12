@@ -578,6 +578,147 @@ mod tests {
         );
     }
 
+    #[test]
+    fn immediate_paint_orders_parent_box_visuals_child_subtree_and_parent_outline() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "120px".to_string()),
+                    ("height".to_string(), "60px".to_string()),
+                    ("background-color".to_string(), "#102030".to_string()),
+                    ("border-top-width".to_string(), "2px".to_string()),
+                    ("border-top-style".to_string(), "solid".to_string()),
+                    ("border-top-color".to_string(), "#405060".to_string()),
+                    ("outline-width".to_string(), "3px".to_string()),
+                    ("outline-style".to_string(), "solid".to_string()),
+                    ("outline-color".to_string(), "#a0b0c0".to_string()),
+                ],
+                children: vec![Node::Element {
+                    id: Id(3),
+                    name: Arc::from("div"),
+                    attributes: Vec::new(),
+                    style: vec![
+                        ("display".to_string(), "block".to_string()),
+                        ("width".to_string(), "40px".to_string()),
+                        ("height".to_string(), "20px".to_string()),
+                        ("background-color".to_string(), "#708090".to_string()),
+                    ],
+                    children: Vec::new(),
+                }],
+            }],
+        };
+        let shapes = paint_shapes_for_dom(&dom);
+        let fills = rect_fill_sequence(&shapes);
+
+        let parent_background = position_of_fill(&fills, Color32::from_rgb(0x10, 0x20, 0x30))
+            .expect("parent background fill");
+        let parent_border = position_of_fill(&fills, Color32::from_rgb(0x40, 0x50, 0x60))
+            .expect("parent border fill");
+        let child_background = position_of_fill(&fills, Color32::from_rgb(0x70, 0x80, 0x90))
+            .expect("child background fill");
+        let parent_outline = position_of_fill(&fills, Color32::from_rgb(0xa0, 0xb0, 0xc0))
+            .expect("parent outline fill");
+
+        assert!(parent_background < parent_border);
+        assert!(parent_border < child_background);
+        assert!(child_background < parent_outline);
+    }
+
+    #[test]
+    fn immediate_paint_preserves_layout_sibling_order() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "120px".to_string()),
+                ],
+                children: vec![
+                    Node::Element {
+                        id: Id(3),
+                        name: Arc::from("div"),
+                        attributes: Vec::new(),
+                        style: vec![
+                            ("display".to_string(), "block".to_string()),
+                            ("width".to_string(), "40px".to_string()),
+                            ("height".to_string(), "20px".to_string()),
+                            ("background-color".to_string(), "#112233".to_string()),
+                        ],
+                        children: Vec::new(),
+                    },
+                    Node::Element {
+                        id: Id(4),
+                        name: Arc::from("div"),
+                        attributes: Vec::new(),
+                        style: vec![
+                            ("display".to_string(), "block".to_string()),
+                            ("width".to_string(), "40px".to_string()),
+                            ("height".to_string(), "20px".to_string()),
+                            ("background-color".to_string(), "#445566".to_string()),
+                        ],
+                        children: Vec::new(),
+                    },
+                ],
+            }],
+        };
+        let shapes = paint_shapes_for_dom(&dom);
+        let fills = rect_fill_sequence(&shapes);
+
+        let first = position_of_fill(&fills, Color32::from_rgb(0x11, 0x22, 0x33))
+            .expect("first child fill");
+        let second = position_of_fill(&fills, Color32::from_rgb(0x44, 0x55, 0x66))
+            .expect("second child fill");
+
+        assert!(first < second);
+    }
+
+    #[test]
+    fn immediate_paint_repeated_execution_has_stable_rect_fill_order() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "120px".to_string()),
+                    ("height".to_string(), "60px".to_string()),
+                    ("background-color".to_string(), "#102030".to_string()),
+                    ("overflow".to_string(), "clip".to_string()),
+                ],
+                children: vec![Node::Element {
+                    id: Id(3),
+                    name: Arc::from("div"),
+                    attributes: Vec::new(),
+                    style: vec![
+                        ("display".to_string(), "block".to_string()),
+                        ("width".to_string(), "40px".to_string()),
+                        ("height".to_string(), "20px".to_string()),
+                        ("background-color".to_string(), "#708090".to_string()),
+                    ],
+                    children: Vec::new(),
+                }],
+            }],
+        };
+
+        let first = rect_fill_signature(&paint_shapes_for_dom(&dom));
+        let second = rect_fill_signature(&paint_shapes_for_dom(&dom));
+
+        assert_eq!(first, second);
+    }
+
     fn clip_rects_for_fill(shapes: &[egui::epaint::ClippedShape], fill: Color32) -> Vec<Rect> {
         shapes
             .iter()
@@ -600,5 +741,79 @@ mod tests {
             .children
             .iter()
             .find_map(|child| find_layout_by_direct_node_id(child, id))
+    }
+
+    fn paint_shapes_for_dom(dom: &Node) -> Vec<egui::epaint::ClippedShape> {
+        let styled = css::build_style_tree(dom, None);
+        let layout =
+            layout::layout_document(LayoutPhaseInput::new(&styled, 500.0, &TestMeasurer, None));
+        let input_values = InputValueStore::new();
+        let resources = NoopImageProvider;
+        let ctx = egui::Context::default();
+        let initial_clip = Rect::from_min_size(
+            Pos2 {
+                x: -100.0,
+                y: -100.0,
+            },
+            Vec2 { x: 400.0, y: 400.0 },
+        );
+        ctx.run(
+            RawInput {
+                screen_rect: Some(initial_clip),
+                ..Default::default()
+            },
+            |ctx| {
+                let painter = Painter::new(
+                    ctx.clone(),
+                    LayerId::new(Order::Foreground, egui::Id::new("page-paint")),
+                    initial_clip,
+                );
+                let measurer = EguiTextMeasurer::new(ctx);
+                paint_page(
+                    PaintPhaseInput::new(&layout),
+                    PaintArgs {
+                        painter: &painter,
+                        origin: Pos2 { x: 0.0, y: 0.0 },
+                        measurer: &measurer,
+                        base_url: None,
+                        resources: &resources,
+                        input_values: &input_values,
+                        focused: None,
+                        focused_textarea_lines: None,
+                        active: None,
+                        selection_bg_fill: Color32::TRANSPARENT,
+                        selection_stroke: Stroke::NONE,
+                        fragment_rects: None,
+                    },
+                );
+            },
+        )
+        .shapes
+    }
+
+    fn rect_fill_sequence(shapes: &[egui::epaint::ClippedShape]) -> Vec<Color32> {
+        shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                Shape::Rect(rect) if rect.fill != Color32::TRANSPARENT => Some(rect.fill),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn rect_fill_signature(shapes: &[egui::epaint::ClippedShape]) -> Vec<(Color32, Rect)> {
+        shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                Shape::Rect(rect) if rect.fill != Color32::TRANSPARENT => {
+                    Some((rect.fill, shape.clip_rect))
+                }
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn position_of_fill(fills: &[Color32], fill: Color32) -> Option<usize> {
+        fills.iter().position(|candidate| *candidate == fill)
     }
 }

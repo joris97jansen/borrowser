@@ -7,6 +7,7 @@ use layout::inline::{InlineFragment, layout_inline_for_paint};
 use layout::{LayoutBox, LayoutPhaseOutput, ListMarker, Rectangle, ReplacedKind, TextMeasurer};
 
 use super::PaintPhaseInput;
+use super::contracts::PaintOrderPhase;
 
 /// Paint-owned semantic input derived from layout output for one paint phase.
 ///
@@ -63,6 +64,26 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
             .expect("write paint input snapshot");
         out
     }
+
+    /// Stable semantic paint-order snapshot for the supported AA subset.
+    ///
+    /// This walks the paint tree in construction order. It is a debug and
+    /// regression surface, not a sorted display list or retained paint scene.
+    pub fn to_order_debug_snapshot(&self) -> String {
+        let mut out = String::new();
+        writeln!(&mut out, "version: 1").expect("write paint order snapshot");
+        writeln!(&mut out, "paint-order").expect("write paint order snapshot");
+        writeln!(
+            &mut out,
+            "layout-root-id: {}",
+            self.layout.root().node_id().0
+        )
+        .expect("write paint order snapshot");
+        self.tree
+            .append_order_debug_snapshot(&mut out)
+            .expect("write paint order snapshot");
+        out
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -84,6 +105,11 @@ impl PaintTree {
     fn append_debug_snapshot(&self, out: &mut String) -> std::fmt::Result {
         writeln!(out, "paint-tree")?;
         self.root.append_debug_snapshot(out, 0)
+    }
+
+    fn append_order_debug_snapshot(&self, out: &mut String) -> std::fmt::Result {
+        writeln!(out, "paint-tree-order")?;
+        self.root.append_order_debug_snapshot(out, 0)
     }
 }
 
@@ -170,6 +196,45 @@ impl PaintNode {
         }
         Ok(())
     }
+
+    fn append_order_debug_snapshot(&self, out: &mut String, depth: usize) -> std::fmt::Result {
+        let indent = "  ".repeat(depth);
+        writeln!(
+            out,
+            "{}box={} node={} anonymous={}",
+            indent, self.source.box_id, self.source.node_id.0, self.source.anonymous
+        )?;
+        for primitive in &self.primitives {
+            writeln!(
+                out,
+                "{}  phase={} primitive {}",
+                indent,
+                primitive.order_phase().debug_label(),
+                primitive.to_debug_label()
+            )?;
+        }
+        for child in &self.children {
+            writeln!(
+                out,
+                "{}  phase={} child-subtree box={} node={}",
+                indent,
+                PaintOrderPhase::ChildSubtree.debug_label(),
+                child.source.box_id,
+                child.source.node_id.0
+            )?;
+            child.append_order_debug_snapshot(out, depth + 1)?;
+        }
+        for primitive in &self.post_primitives {
+            writeln!(
+                out,
+                "{}  phase={} primitive {}",
+                indent,
+                primitive.order_phase().debug_label(),
+                primitive.to_debug_label()
+            )?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -214,6 +279,19 @@ impl PaintPrimitive {
             Self::TextDecoration(_) => PaintPrimitiveKind::TextDecoration,
             Self::InlineBox(_) => PaintPrimitiveKind::InlineBox,
             Self::Replaced(_) => PaintPrimitiveKind::Replaced,
+        }
+    }
+
+    pub fn order_phase(&self) -> PaintOrderPhase {
+        match self {
+            Self::Background(_) => PaintOrderPhase::BoxBackground,
+            Self::Border(_) => PaintOrderPhase::BoxBorder,
+            Self::Outline(_) => PaintOrderPhase::BoxOutline,
+            Self::ListMarker(_) => PaintOrderPhase::ListMarker,
+            Self::Clip(_) => PaintOrderPhase::OverflowClipForContentsAndDescendants,
+            Self::Text(_) | Self::TextDecoration(_) | Self::InlineBox(_) | Self::Replaced(_) => {
+                PaintOrderPhase::InlineFormattingContent
+            }
         }
     }
 
@@ -835,6 +913,14 @@ mod tests {
             .to_debug_snapshot()
     }
 
+    fn build_paint_order_snapshot(dom: &Node) -> String {
+        let styled = css::build_style_tree(dom, None);
+        let layout =
+            layout::layout_document(LayoutPhaseInput::new(&styled, 500.0, &TestMeasurer, None));
+        PaintInput::from_phase_input(PaintPhaseInput::new(&layout), &TestMeasurer)
+            .to_order_debug_snapshot()
+    }
+
     fn first_node_with_primitive(node: &PaintNode, kind: PaintPrimitiveKind) -> Option<&PaintNode> {
         if node
             .primitives()
@@ -874,6 +960,24 @@ mod tests {
             order.extend(flattened_paint_order(child));
         }
         order.extend(node.post_primitives().iter().map(PaintPrimitive::kind));
+        order
+    }
+
+    fn flattened_paint_phases(node: &PaintNode) -> Vec<PaintOrderPhase> {
+        let mut order = node
+            .primitives()
+            .iter()
+            .map(PaintPrimitive::order_phase)
+            .collect::<Vec<_>>();
+        for child in node.children() {
+            order.push(PaintOrderPhase::ChildSubtree);
+            order.extend(flattened_paint_phases(child));
+        }
+        order.extend(
+            node.post_primitives()
+                .iter()
+                .map(PaintPrimitive::order_phase),
+        );
         order
     }
 
@@ -943,6 +1047,99 @@ mod tests {
             primitive,
             PaintPrimitive::Text(PaintText { text, .. }) if text == "Hello"
         )));
+    }
+
+    #[test]
+    fn paint_order_snapshot_records_supported_phases_without_sorting() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "120px".to_string()),
+                    ("height".to_string(), "40px".to_string()),
+                    ("background-color".to_string(), "#112233".to_string()),
+                    ("border-top-width".to_string(), "2px".to_string()),
+                    ("border-top-style".to_string(), "solid".to_string()),
+                    ("border-top-color".to_string(), "#445566".to_string()),
+                    ("overflow".to_string(), "clip".to_string()),
+                    ("outline-width".to_string(), "3px".to_string()),
+                    ("outline-style".to_string(), "solid".to_string()),
+                    ("outline-color".to_string(), "#778899".to_string()),
+                ],
+                children: vec![Node::Text {
+                    id: Id(3),
+                    text: "Hello".to_string(),
+                }],
+            }],
+        };
+
+        let snapshot = build_paint_order_snapshot(&dom);
+        let second = build_paint_order_snapshot(&dom);
+
+        assert_eq!(snapshot, second);
+        assert!(snapshot.contains("paint-order"));
+        assert!(snapshot.contains("phase=box-background primitive background"));
+        assert!(snapshot.contains("phase=box-border primitive border"));
+        assert!(
+            snapshot.contains("phase=overflow-clip-for-contents-and-descendants primitive clip")
+        );
+        assert!(snapshot.contains("phase=inline-formatting-content primitive text"));
+        assert!(snapshot.contains("phase=box-outline primitive outline"));
+        assert!(!snapshot.contains("egui"));
+    }
+
+    #[test]
+    fn paint_order_keeps_parent_background_and_border_before_child_subtree() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "120px".to_string()),
+                    ("height".to_string(), "60px".to_string()),
+                    ("background-color".to_string(), "#102030".to_string()),
+                    ("border-top-width".to_string(), "2px".to_string()),
+                    ("border-top-style".to_string(), "solid".to_string()),
+                    ("border-top-color".to_string(), "#405060".to_string()),
+                ],
+                children: vec![Node::Element {
+                    id: Id(3),
+                    name: Arc::from("div"),
+                    attributes: Vec::new(),
+                    style: vec![
+                        ("display".to_string(), "block".to_string()),
+                        ("width".to_string(), "40px".to_string()),
+                        ("height".to_string(), "20px".to_string()),
+                        ("background-color".to_string(), "#708090".to_string()),
+                    ],
+                    children: Vec::new(),
+                }],
+            }],
+        };
+
+        let styled = build_style_tree(&dom);
+        let layout = build_layout_for(&styled);
+        let input = build_paint_input(&layout);
+        let section = non_anonymous_node_by_source_id(input.tree().root(), Id(2))
+            .expect("section paint node");
+
+        assert_eq!(
+            &flattened_paint_phases(section)[..3],
+            &[
+                PaintOrderPhase::BoxBackground,
+                PaintOrderPhase::BoxBorder,
+                PaintOrderPhase::ChildSubtree,
+            ]
+        );
     }
 
     #[test]
@@ -1124,6 +1321,16 @@ mod tests {
         assert_eq!(
             primitive_kinds(node),
             vec![PaintPrimitiveKind::Text, PaintPrimitiveKind::TextDecoration,]
+        );
+        assert_eq!(
+            node.primitives()
+                .iter()
+                .map(PaintPrimitive::order_phase)
+                .collect::<Vec<_>>(),
+            vec![
+                PaintOrderPhase::InlineFormattingContent,
+                PaintOrderPhase::InlineFormattingContent,
+            ]
         );
         assert!(matches!(
             &node.primitives()[0],
@@ -1350,6 +1557,137 @@ mod tests {
             .rposition(|kind| *kind == PaintPrimitiveKind::Outline)
             .expect("section outline");
         assert!(child_background < final_outline);
+
+        let phases = flattened_paint_phases(node);
+        assert_eq!(phases.last(), Some(&PaintOrderPhase::BoxOutline));
+        assert!(
+            phases
+                .iter()
+                .position(|phase| *phase == PaintOrderPhase::ChildSubtree)
+                .expect("child subtree phase")
+                < phases
+                    .iter()
+                    .rposition(|phase| *phase == PaintOrderPhase::BoxOutline)
+                    .expect("outline phase")
+        );
+    }
+
+    #[test]
+    fn paint_order_preserves_layout_sibling_order() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "120px".to_string()),
+                ],
+                children: vec![
+                    Node::Element {
+                        id: Id(3),
+                        name: Arc::from("div"),
+                        attributes: Vec::new(),
+                        style: vec![
+                            ("display".to_string(), "block".to_string()),
+                            ("width".to_string(), "40px".to_string()),
+                            ("height".to_string(), "10px".to_string()),
+                            ("background-color".to_string(), "#010203".to_string()),
+                        ],
+                        children: Vec::new(),
+                    },
+                    Node::Element {
+                        id: Id(4),
+                        name: Arc::from("div"),
+                        attributes: Vec::new(),
+                        style: vec![
+                            ("display".to_string(), "block".to_string()),
+                            ("width".to_string(), "40px".to_string()),
+                            ("height".to_string(), "10px".to_string()),
+                            ("background-color".to_string(), "#040506".to_string()),
+                        ],
+                        children: Vec::new(),
+                    },
+                ],
+            }],
+        };
+
+        let snapshot = build_paint_order_snapshot(&dom);
+        let lines = snapshot.lines().collect::<Vec<_>>();
+        let first_child = lines
+            .iter()
+            .position(|line| {
+                line.contains("phase=child-subtree child-subtree") && line.contains("node=3")
+            })
+            .expect("first child subtree order");
+        let second_child = lines
+            .iter()
+            .position(|line| {
+                line.contains("phase=child-subtree child-subtree") && line.contains("node=4")
+            })
+            .expect("second child subtree order");
+
+        assert!(first_child < second_child);
+    }
+
+    #[test]
+    fn paint_order_keeps_clip_before_contents_without_reordering_box_visuals() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "120px".to_string()),
+                    ("height".to_string(), "40px".to_string()),
+                    ("background-color".to_string(), "#112233".to_string()),
+                    ("border-top-width".to_string(), "2px".to_string()),
+                    ("border-top-style".to_string(), "solid".to_string()),
+                    ("border-top-color".to_string(), "#445566".to_string()),
+                    ("overflow".to_string(), "clip".to_string()),
+                    ("outline-width".to_string(), "3px".to_string()),
+                    ("outline-style".to_string(), "solid".to_string()),
+                    ("outline-color".to_string(), "#778899".to_string()),
+                ],
+                children: vec![Node::Text {
+                    id: Id(3),
+                    text: "Hello".to_string(),
+                }],
+            }],
+        };
+
+        let styled = build_style_tree(&dom);
+        let layout = build_layout_for(&styled);
+        let input = build_paint_input(&layout);
+        let section = non_anonymous_node_by_source_id(input.tree().root(), Id(2))
+            .expect("section paint node");
+
+        let phases = flattened_paint_phases(section);
+        assert_eq!(
+            &phases[..4],
+            &[
+                PaintOrderPhase::BoxBackground,
+                PaintOrderPhase::BoxBorder,
+                PaintOrderPhase::OverflowClipForContentsAndDescendants,
+                PaintOrderPhase::InlineFormattingContent,
+            ]
+        );
+        assert_eq!(phases.last(), Some(&PaintOrderPhase::BoxOutline));
+        assert!(
+            phases
+                .iter()
+                .position(|phase| *phase == PaintOrderPhase::OverflowClipForContentsAndDescendants)
+                .expect("overflow clip phase")
+                < phases
+                    .iter()
+                    .position(|phase| *phase == PaintOrderPhase::InlineFormattingContent)
+                    .expect("inline formatting phase")
+        );
     }
 
     #[test]
