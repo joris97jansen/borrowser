@@ -2,8 +2,9 @@ use super::{
     SpecifiedBorderStyleKeyword, SpecifiedColorKeyword, SpecifiedColorSyntax,
     SpecifiedDisplayKeyword, SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto,
     SpecifiedLengthUnit, SpecifiedOutlineStyleKeyword, SpecifiedOverflowKeyword,
-    SpecifiedPositionKeyword, SpecifiedValue, SpecifiedValueLimits, SpecifiedValueParseErrorKind,
-    parse_specified_value, parse_specified_value_with_limits,
+    SpecifiedPositionKeyword, SpecifiedTextDecorationLineKeyword, SpecifiedValue,
+    SpecifiedValueLimits, SpecifiedValueParseErrorKind, parse_specified_value,
+    parse_specified_value_with_limits,
 };
 use crate::{
     ParseOptions, PropertyId, PropertySpecifiedValueKind, Rule, parse_stylesheet_with_options,
@@ -114,6 +115,20 @@ fn parses_representative_property_aware_specified_values() {
     };
     assert_eq!(position.keyword(), SpecifiedPositionKeyword::Relative);
     assert_eq!(position.to_css_text(), "relative");
+
+    let text_decoration_line = parse(
+        PropertyId::TextDecorationLine,
+        "text-decoration-line: UNDERLINE",
+    );
+    let SpecifiedValue::TextDecorationLine(text_decoration_line) = text_decoration_line.value()
+    else {
+        panic!("expected text-decoration-line");
+    };
+    assert_eq!(
+        text_decoration_line.keyword(),
+        SpecifiedTextDecorationLineKeyword::Underline
+    );
+    assert_eq!(text_decoration_line.to_css_text(), "underline");
 }
 
 #[test]
@@ -212,6 +227,20 @@ fn rejects_values_that_do_not_match_the_property_specified_shape() {
         parse_error(PropertyId::Position, "position: center"),
         SpecifiedValueParseErrorKind::UnsupportedPositionKeyword
     );
+    assert_eq!(
+        parse_error(
+            PropertyId::TextDecorationLine,
+            "text-decoration-line: overline"
+        ),
+        SpecifiedValueParseErrorKind::UnsupportedKeyword
+    );
+    assert_eq!(
+        parse_error(
+            PropertyId::TextDecorationLine,
+            "text-decoration-line: underline overline"
+        ),
+        SpecifiedValueParseErrorKind::UnexpectedComponentCount
+    );
 }
 
 #[test]
@@ -274,6 +303,10 @@ fn supported_property_metadata_matches_emitted_specified_value_kinds() {
         (PropertyId::PaddingRight, "padding-right: 1px"),
         (PropertyId::PaddingTop, "padding-top: 1px"),
         (PropertyId::Position, "position: static"),
+        (
+            PropertyId::TextDecorationLine,
+            "text-decoration-line: underline",
+        ),
         (PropertyId::Width, "width: auto"),
     ];
 

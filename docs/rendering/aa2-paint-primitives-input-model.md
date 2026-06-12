@@ -22,6 +22,7 @@ Related documents:
 - `docs/rendering/aa1-paint-model-architecture-ordering-contracts.md`
 - `docs/rendering/aa3-border-rendering-box-decoration.md`
 - `docs/rendering/aa4-outline-rendering-box-decoration.md`
+- `docs/rendering/aa5-text-decoration-rendering-subset.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
 - `docs/rendering/w1-box-tree-layout-model-contract.md`
@@ -107,6 +108,7 @@ AA2 defines these paint primitive categories:
 - `ListMarker`
 - `Clip`
 - `Text`
+- `TextDecoration`
 - `InlineBox`
 - `Replaced`
 
@@ -114,6 +116,8 @@ The border primitive was vocabulary only in AA2. AA3 populates and renders this
 primitive for the supported physical solid rectangular border subset.
 AA4 adds a distinct outline primitive for the supported paint-only rectangular
 outline subset.
+AA5 adds a distinct text decoration primitive for the supported underline-only
+text-fragment subset.
 
 Primitives store semantic CSS-pixel rectangles, source identity, colors, font
 sizes, marker kinds, and replaced kinds. They do not store `egui::Painter`,
@@ -173,7 +177,7 @@ AA2 does not implement:
   border shorthands
 - outline shorthand, outline offset, unsupported outline styles, and rounded
   outline geometry
-- text decorations
+- text decoration features beyond the AA5 underline-only text-fragment subset
 - pixel snapshot testing
 - broad visual fidelity changes
 

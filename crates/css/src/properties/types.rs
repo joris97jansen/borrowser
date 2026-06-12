@@ -38,11 +38,12 @@ pub enum PropertyId {
     PaddingRight,
     PaddingTop,
     Position,
+    TextDecorationLine,
     Width,
 }
 
 impl PropertyId {
-    pub const ALL: [Self; 33] = [
+    pub const ALL: [Self; 34] = [
         Self::BackgroundColor,
         Self::BorderBottomColor,
         Self::BorderBottomStyle,
@@ -75,6 +76,7 @@ impl PropertyId {
         Self::PaddingRight,
         Self::PaddingTop,
         Self::Position,
+        Self::TextDecorationLine,
         Self::Width,
     ];
 
@@ -112,7 +114,8 @@ impl PropertyId {
             Self::PaddingRight => 29,
             Self::PaddingTop => 30,
             Self::Position => 31,
-            Self::Width => 32,
+            Self::TextDecorationLine => 32,
+            Self::Width => 33,
         }
     }
 
@@ -203,6 +206,7 @@ const fn default_length_sign_policy(
         PropertySpecifiedValueKind::Color
         | PropertySpecifiedValueKind::BorderStyleKeyword
         | PropertySpecifiedValueKind::OutlineStyleKeyword
+        | PropertySpecifiedValueKind::TextDecorationLineKeyword
         | PropertySpecifiedValueKind::DisplayKeyword
         | PropertySpecifiedValueKind::OverflowKeyword
         | PropertySpecifiedValueKind::PositionKeyword => PropertyLengthSignPolicy::NotLength,
@@ -230,6 +234,7 @@ pub enum PropertyInheritance {
 pub enum PropertySpecifiedValueKind {
     BorderStyleKeyword,
     OutlineStyleKeyword,
+    TextDecorationLineKeyword,
     Color,
     DisplayKeyword,
     OverflowKeyword,
@@ -244,6 +249,7 @@ impl PropertySpecifiedValueKind {
         match self {
             Self::BorderStyleKeyword => "border-style-keyword",
             Self::OutlineStyleKeyword => "outline-style-keyword",
+            Self::TextDecorationLineKeyword => "text-decoration-line-keyword",
             Self::Color => "color",
             Self::DisplayKeyword => "display-keyword",
             Self::OverflowKeyword => "overflow-keyword",
@@ -265,6 +271,7 @@ pub enum PropertyComputedValueKind {
     AbsoluteColor,
     BorderStyleKeyword,
     OutlineStyleKeyword,
+    TextDecorationLineKeyword,
     DisplayKeyword,
     OverflowKeyword,
     PositionKeyword,
@@ -279,6 +286,7 @@ impl PropertyComputedValueKind {
             Self::AbsoluteColor => "absolute-color",
             Self::BorderStyleKeyword => "border-style-keyword",
             Self::OutlineStyleKeyword => "outline-style-keyword",
+            Self::TextDecorationLineKeyword => "text-decoration-line-keyword",
             Self::DisplayKeyword => "display-keyword",
             Self::OverflowKeyword => "overflow-keyword",
             Self::PositionKeyword => "position-keyword",
@@ -330,6 +338,7 @@ pub enum InitialStyleValue {
     NoneKeyword,
     OverflowVisible,
     PositionStatic,
+    TextDecorationLineNone,
 }
 
 impl InitialStyleValue {
@@ -346,6 +355,7 @@ impl InitialStyleValue {
             Self::NoneKeyword => "none",
             Self::OverflowVisible => "visible",
             Self::PositionStatic => "static",
+            Self::TextDecorationLineNone => "none",
         }
     }
 }

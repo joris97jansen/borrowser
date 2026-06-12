@@ -16,6 +16,15 @@ const POSITION_VALUES: &[&str] = &[
     "static", "relative", "absolute", "fixed", "sticky", "center",
 ];
 
+const TEXT_DECORATION_LINE_VALUES: &[&str] = &[
+    "none",
+    "underline",
+    "overline",
+    "line-through",
+    "blink",
+    "bogus",
+];
+
 const COLOR_VALUES: &[&str] = &[
     "red",
     "#112233",
@@ -87,6 +96,17 @@ fn synthesized_value_for_property(
             } else {
                 cursor
                     .choose_str(&["auto", "dashed", "dotted", "double", "bogus"])
+                    .to_string()
+            }
+        }
+        PropertySpecifiedValueKind::TextDecorationLineKeyword => {
+            if valid_bias {
+                cursor
+                    .choose_str(&TEXT_DECORATION_LINE_VALUES[..2])
+                    .to_string()
+            } else {
+                cursor
+                    .choose_str(&TEXT_DECORATION_LINE_VALUES[2..])
                     .to_string()
             }
         }

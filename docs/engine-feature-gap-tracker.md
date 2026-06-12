@@ -63,7 +63,20 @@ Current supported property set is intentionally small. Major missing families:
   - current feature work should prefer explicit longhands unless shorthand
     support is part of the issue scope
 - fonts: `font-family`, `font-weight`, `font-style`, line-height variants
-- text: `white-space`, text alignment, text decoration, text transform
+- text:
+  - `white-space`, text alignment, text transform
+  - supported text-decoration subset: `text-decoration-line: none` and
+    `text-decoration-line: underline`
+  - full CSS Text Decoration beyond the AA5 underline subset is missing; see
+    `docs/rendering/aa5-text-decoration-rendering-subset.md`
+  - missing text-decoration follow-ups include `text-decoration` shorthand,
+    `text-decoration-color`, `text-decoration-style`,
+    `text-decoration-thickness`, `text-underline-offset`,
+    `text-underline-position`, overline, line-through, blink, skip-ink, real
+    font-metric/table-based underline positioning, full propagation and
+    cancellation semantics, nested inline behavior beyond AA5, atomic
+    inline/replaced behavior, bidi/ruby/vertical-writing-mode behavior, and UA
+    stylesheet link underline behavior
 - backgrounds: images, repeat, position, size, attachment, multiple backgrounds
 - box effects: shadows, opacity, transforms, filters
 - layout: floats, clear, grid, table layout, multi-column layout

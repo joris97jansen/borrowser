@@ -140,6 +140,7 @@ fn computed_document_style_snapshot_is_deterministic() {
             "  padding-right: 0px\n",
             "  padding-top: 0px\n",
             "  position: static\n",
+            "  text-decoration-line: none\n",
             "  width: 12px\n",
             "element[1]: selector-id=2 name=\"span\"\n",
             "  background-color: rgba(0, 0, 0, 0)\n",
@@ -174,6 +175,7 @@ fn computed_document_style_snapshot_is_deterministic() {
             "  padding-right: 0px\n",
             "  padding-top: 0px\n",
             "  position: static\n",
+            "  text-decoration-line: none\n",
             "  width: auto\n",
         )
     );

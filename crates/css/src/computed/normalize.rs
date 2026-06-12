@@ -5,7 +5,10 @@ use crate::{
         SpecifiedLength, SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto,
         SpecifiedLengthPercentageOrNone, SpecifiedPercentage,
     },
-    values::{BorderStyle, Display, Length, LengthPercentage, OutlineStyle, Percentage},
+    values::{
+        BorderStyle, Display, Length, LengthPercentage, OutlineStyle, Percentage,
+        TextDecorationLine,
+    },
 };
 
 use super::value::{ComputedValueNormalizationError, ComputedValueNormalizationErrorKind};
@@ -60,6 +63,15 @@ pub(super) fn normalize_outline_style(style: crate::SpecifiedOutlineStyleKeyword
     match style {
         crate::SpecifiedOutlineStyleKeyword::None => OutlineStyle::None,
         crate::SpecifiedOutlineStyleKeyword::Solid => OutlineStyle::Solid,
+    }
+}
+
+pub(super) fn normalize_text_decoration_line(
+    line: crate::SpecifiedTextDecorationLineKeyword,
+) -> TextDecorationLine {
+    match line {
+        crate::SpecifiedTextDecorationLineKeyword::None => TextDecorationLine::None,
+        crate::SpecifiedTextDecorationLineKeyword::Underline => TextDecorationLine::Underline,
     }
 }
 

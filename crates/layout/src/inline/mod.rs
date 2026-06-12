@@ -21,5 +21,6 @@ pub use engine::layout_inline_for_paint;
 pub use refine::refine_layout_with_inline;
 pub use textarea::layout_textarea_value_for_paint;
 pub use types::{
-    AdvanceRect, InlineAction, InlineActionKind, InlineFragment, LineBox, LineFragment, PaintRect,
+    AdvanceRect, InlineAction, InlineActionKind, InlineFragment, InlineTextDecoration, LineBox,
+    LineFragment, PaintRect,
 };

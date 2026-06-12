@@ -3,7 +3,7 @@ use super::options::INLINE_PADDING;
 use super::tokens::{InlineContext, InlineToken};
 use super::types::InlineFragment;
 use crate::{Rectangle, ReplacedKind, TextMeasurer};
-use css::{ComputedStyle, ComputedValue, Length, PropertyId};
+use css::{ComputedStyle, ComputedValue, Length, PropertyId, TextDecorationLine};
 use html::{Node, internal::Id};
 use std::sync::Arc;
 
@@ -49,6 +49,96 @@ fn style_with(property: PropertyId, value: ComputedValue) -> ComputedStyle {
     ComputedStyle::initial()
         .with_property(property, value)
         .unwrap_or_else(|error| panic!("failed to build test style: {error}"))
+}
+
+#[test]
+fn text_decoration_metadata_is_carried_by_text_fragments_deterministically() {
+    let measurer = TestMeasurer;
+    let style = style_with(
+        PropertyId::TextDecorationLine,
+        ComputedValue::TextDecorationLine(TextDecorationLine::Underline),
+    )
+    .with_property(
+        PropertyId::FontSize,
+        ComputedValue::Length(Length::Px(20.0)),
+    )
+    .expect("font size");
+
+    let rect = Rectangle {
+        x: 0.0,
+        y: 0.0,
+        width: 500.0,
+        height: 200.0,
+    };
+    let ctx = InlineContext::default();
+    let tokens = vec![InlineToken::Word {
+        text: "underlined".to_string(),
+        style: &style,
+        ctx,
+        source_range: None,
+    }];
+
+    let lines = layout_tokens(&measurer, rect, &style, tokens);
+    assert_eq!(lines.len(), 1);
+    let fragment = &lines[0].fragments[0];
+    let InlineFragment::Text {
+        decoration: Some(decoration),
+        ..
+    } = &fragment.kind
+    else {
+        panic!("expected decorated text fragment");
+    };
+
+    assert_eq!(decoration.line, TextDecorationLine::Underline);
+    assert_eq!(decoration.color, style.color());
+    assert_approx_eq(decoration.font_size_px, 20.0);
+    assert_approx_eq(decoration.thickness, 1.25);
+    assert_approx_eq(decoration.underline_offset, 2.1);
+    assert_approx_eq(
+        fragment.paint_rect.rect().y + fragment.ascent + fragment.baseline_shift,
+        lines[0].baseline,
+    );
+}
+
+#[test]
+fn inline_context_propagates_active_underline_without_css_inheritance() {
+    let measurer = TestMeasurer;
+    let container_style = style_with(
+        PropertyId::TextDecorationLine,
+        ComputedValue::TextDecorationLine(TextDecorationLine::Underline),
+    );
+    let child_style = ComputedStyle::initial();
+    assert_eq!(
+        child_style.text_decoration_line(),
+        TextDecorationLine::None,
+        "text-decoration-line must not be globally inherited"
+    );
+
+    let rect = Rectangle {
+        x: 0.0,
+        y: 0.0,
+        width: 500.0,
+        height: 200.0,
+    };
+    let ctx = InlineContext::default().with_style_decoration(&container_style);
+    let tokens = vec![InlineToken::Word {
+        text: "child".to_string(),
+        style: &child_style,
+        ctx,
+        source_range: None,
+    }];
+
+    let lines = layout_tokens(&measurer, rect, &container_style, tokens);
+    let InlineFragment::Text {
+        decoration: Some(decoration),
+        ..
+    } = &lines[0].fragments[0].kind
+    else {
+        panic!("expected propagated underline on child text fragment");
+    };
+
+    assert_eq!(decoration.line, TextDecorationLine::Underline);
+    assert_eq!(decoration.color, child_style.color());
 }
 
 #[test]

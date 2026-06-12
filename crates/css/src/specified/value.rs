@@ -56,6 +56,7 @@ impl SpecifiedPropertyValue {
 pub enum SpecifiedValue {
     BorderStyle(SpecifiedBorderStyle),
     OutlineStyle(SpecifiedOutlineStyle),
+    TextDecorationLine(SpecifiedTextDecorationLine),
     Color(SpecifiedColor),
     Display(SpecifiedDisplay),
     Overflow(SpecifiedOverflow),
@@ -70,6 +71,7 @@ impl SpecifiedValue {
         match self {
             Self::BorderStyle(_) => PropertySpecifiedValueKind::BorderStyleKeyword,
             Self::OutlineStyle(_) => PropertySpecifiedValueKind::OutlineStyleKeyword,
+            Self::TextDecorationLine(_) => PropertySpecifiedValueKind::TextDecorationLineKeyword,
             Self::Color(_) => PropertySpecifiedValueKind::Color,
             Self::Display(_) => PropertySpecifiedValueKind::DisplayKeyword,
             Self::Overflow(_) => PropertySpecifiedValueKind::OverflowKeyword,
@@ -84,6 +86,7 @@ impl SpecifiedValue {
         match self {
             Self::BorderStyle(border_style) => border_style.span(),
             Self::OutlineStyle(outline_style) => outline_style.span(),
+            Self::TextDecorationLine(text_decoration_line) => text_decoration_line.span(),
             Self::Color(color) => color.span(),
             Self::Display(display) => display.span(),
             Self::Overflow(overflow) => overflow.span(),
@@ -98,6 +101,9 @@ impl SpecifiedValue {
         match self {
             Self::BorderStyle(border_style) => border_style.to_css_text().to_string(),
             Self::OutlineStyle(outline_style) => outline_style.to_css_text().to_string(),
+            Self::TextDecorationLine(text_decoration_line) => {
+                text_decoration_line.to_css_text().to_string()
+            }
             Self::Color(color) => color.to_css_text(),
             Self::Display(display) => display.to_css_text().to_string(),
             Self::Overflow(overflow) => overflow.to_css_text().to_string(),
@@ -131,6 +137,18 @@ pub struct SpecifiedOutlineStyle {
 pub enum SpecifiedOutlineStyleKeyword {
     None,
     Solid,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpecifiedTextDecorationLine {
+    pub(super) span: CssSpan,
+    pub(super) keyword: SpecifiedTextDecorationLineKeyword,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpecifiedTextDecorationLineKeyword {
+    None,
+    Underline,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -15,7 +15,7 @@ use crate::{
     resolve_initial_style,
     values::{
         BorderStyle, Display, Length, LengthPercentage, OutlineStyle, Overflow, Percentage,
-        Position,
+        Position, TextDecorationLine,
     },
 };
 use html::{Node, internal::Id};

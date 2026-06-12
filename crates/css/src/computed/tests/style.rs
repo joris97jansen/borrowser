@@ -48,6 +48,7 @@ fn computed_style_initial_snapshot_is_total_and_canonical() {
             "  padding-right: 0px\n",
             "  padding-top: 0px\n",
             "  position: static\n",
+            "  text-decoration-line: none\n",
             "  width: auto\n",
         )
     );
@@ -73,6 +74,7 @@ fn computed_style_accessors_match_property_entries() {
         PropertyId::OutlineWidth,
         PropertyId::Position,
         PropertyId::PaddingLeft,
+        PropertyId::TextDecorationLine,
         PropertyId::Width,
     ]);
     builder
@@ -166,6 +168,12 @@ fn computed_style_accessors_match_property_entries() {
         )
         .expect("padding-left");
     builder
+        .record(
+            PropertyId::TextDecorationLine,
+            ComputedValue::TextDecorationLine(TextDecorationLine::Underline),
+        )
+        .expect("text-decoration-line");
+    builder
         .record(PropertyId::Width, length_percentage_or_auto_px(300.0))
         .expect("width");
 
@@ -242,6 +250,11 @@ fn computed_style_accessors_match_property_entries() {
         style.get(PropertyId::PaddingLeft).value(),
         ComputedValue::Length(Length::Px(style.box_metrics().padding_left))
     );
+    assert_eq!(
+        style.get(PropertyId::TextDecorationLine).value(),
+        ComputedValue::TextDecorationLine(style.text_decoration_line())
+    );
+    assert_eq!(style.text_decoration_line(), TextDecorationLine::Underline);
     assert_eq!(
         style.get(PropertyId::Width).value(),
         ComputedValue::LengthPercentageOrAuto(style.width())
@@ -390,6 +403,10 @@ fn computed_style_get_round_trips_all_builder_supported_properties_losslessly() 
         (
             PropertyId::Position,
             ComputedValue::Position(Position::Sticky),
+        ),
+        (
+            PropertyId::TextDecorationLine,
+            ComputedValue::TextDecorationLine(TextDecorationLine::Underline),
         ),
         (PropertyId::Width, length_percentage_or_auto_px(30.0)),
     ];

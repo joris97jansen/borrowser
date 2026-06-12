@@ -10,7 +10,7 @@
 //!
 //! These rules are relied upon by layout, painting, and hit-testing; keep them stable.
 
-use css::ComputedStyle;
+use css::{ComputedStyle, TextDecorationLine};
 use html::{Node, internal::Id};
 use std::sync::Arc;
 
@@ -24,6 +24,7 @@ pub(super) struct InlineContext {
     pub(super) link_target: Option<Id>,
     /// Cloned per token; keep this cheap (shared string).
     pub(super) link_href: Option<Arc<str>>,
+    pub(super) text_decoration_line: Option<TextDecorationLine>,
 }
 
 impl InlineContext {
@@ -35,6 +36,19 @@ impl InlineContext {
             kind: InlineActionKind::Link,
             href: self.link_href.clone(),
         })
+    }
+
+    #[inline(always)]
+    pub(super) fn active_text_decoration_line(&self) -> Option<TextDecorationLine> {
+        self.text_decoration_line
+    }
+
+    #[inline(always)]
+    pub(super) fn with_style_decoration(mut self, style: &ComputedStyle) -> Self {
+        if matches!(style.text_decoration_line(), TextDecorationLine::Underline) {
+            self.text_decoration_line = Some(TextDecorationLine::Underline);
+        }
+        self
     }
 }
 
@@ -206,7 +220,7 @@ fn collect_inline_tokens_for_block_layout_impl<'style_tree, 'dom>(
     let mut pending_space: Option<PendingSpace<'style_tree>> = None;
     let mut has_emitted_content = false;
 
-    let ctx = InlineContext::default();
+    let ctx = InlineContext::default().with_style_decoration(block.style);
 
     for child in &block.children {
         collect_inline_tokens_from_layout_box(
@@ -307,6 +321,7 @@ fn collect_inline_tokens_from_layout_box<'style_tree, 'dom>(
                 next_ctx.link_target = Some(layout.node_id());
                 next_ctx.link_href = get_attr(layout.node.node, "href").map(Arc::from);
             }
+            next_ctx = next_ctx.with_style_decoration(layout.style);
 
             match layout.inline_formatting_participation() {
                 InlineFormattingParticipation::InlineContainer => {

@@ -13,7 +13,7 @@ pub use primitives::{
     PaintBackground, PaintBorder, PaintBorderEdges, PaintBorderSide, PaintClip, PaintClipScope,
     PaintColor, PaintInlineBox, PaintInput, PaintListMarker, PaintListMarkerKind, PaintNode,
     PaintOutline, PaintPrimitive, PaintPrimitiveKind, PaintReplaced, PaintReplacedKind,
-    PaintSource, PaintText, PaintTree,
+    PaintSource, PaintText, PaintTextDecoration, PaintTextDecorationLine, PaintTree,
 };
 
 use crate::EguiTextMeasurer;

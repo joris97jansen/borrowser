@@ -4,7 +4,10 @@ use crate::{
     PropertyComputedValueKind, PropertyId,
     cascade::ResolvedStyle,
     property_registry,
-    values::{BorderStyle, Display, Length, LengthPercentage, OutlineStyle, Overflow, Position},
+    values::{
+        BorderStyle, Display, Length, LengthPercentage, OutlineStyle, Overflow, Position,
+        TextDecorationLine,
+    },
 };
 
 use super::{
@@ -166,6 +169,9 @@ pub struct ComputedStyle {
     /// CSS `position` keyword after computed-value resolution.
     pub(super) position: Position,
 
+    /// CSS `text-decoration-line` keyword for the supported underline subset.
+    pub(super) text_decoration_line: TextDecorationLine,
+
     /// Optional width property. Not inherited. `None` represents `auto`.
     pub(super) width: Option<LengthPercentage>,
     pub(super) height: Option<LengthPercentage>,
@@ -200,6 +206,7 @@ impl ComputedStyle {
             display: Display::Inline,
             overflow: Overflow::Visible,
             position: Position::Static,
+            text_decoration_line: TextDecorationLine::None,
             width: None,
             height: None,
             min_width: None,
@@ -264,6 +271,11 @@ impl ComputedStyle {
     /// Returns the computed `position` keyword.
     pub fn position(&self) -> Position {
         self.position
+    }
+
+    /// Returns the computed `text-decoration-line` keyword.
+    pub fn text_decoration_line(&self) -> TextDecorationLine {
+        self.text_decoration_line
     }
 
     /// Returns the computed `width`; `None` represents `auto`.
@@ -373,6 +385,9 @@ impl ComputedStyle {
             }
             PropertyId::PaddingTop => {
                 ComputedValue::Length(Length::Px(self.box_metrics.padding_top))
+            }
+            PropertyId::TextDecorationLine => {
+                ComputedValue::TextDecorationLine(self.text_decoration_line)
             }
             PropertyId::Width => ComputedValue::LengthPercentageOrAuto(self.width),
         };
