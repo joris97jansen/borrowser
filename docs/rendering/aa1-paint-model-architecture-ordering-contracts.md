@@ -33,6 +33,7 @@ Related documents:
 - `docs/rendering/aa3-border-rendering-box-decoration.md`
 - `docs/rendering/aa4-outline-rendering-box-decoration.md`
 - `docs/rendering/aa5-text-decoration-rendering-subset.md`
+- `docs/rendering/aa6-overflow-clipping-paint-behavior.md`
 - `docs/rendering/w8-box-generation-formatting-debug-surfaces.md`
 - `docs/rendering/w9-box-tree-invariants-extension-hooks.md`
 - `docs/rendering/y4-overflow-semantics-supported-subset.md`
@@ -197,8 +198,8 @@ Later AA issues may extend the paint model at named points:
 - outlines and box decorations: AA4 adds the first paint-only rectangular
   outline subset after child subtree ordering
 - text decorations: AA5 adds the first underline-only text-fragment subset
-- clipping refinements: extend layout-owned clip metadata and paint
-  consumption rules
+- clipping refinements: AA6 defines the paint-time scope for layout-owned
+  overflow clips
 - stacking and `z-index`: introduce explicit stacking-context model and
   ordering contracts before changing traversal behavior
 - compositing and GPU work: introduce compositor/layer ownership separately

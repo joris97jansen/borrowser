@@ -946,6 +946,153 @@ mod tests {
     }
 
     #[test]
+    fn paint_tree_clip_primitive_uses_layout_owned_rect_and_scope() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "120px".to_string()),
+                    ("height".to_string(), "40px".to_string()),
+                    ("overflow".to_string(), "hidden".to_string()),
+                ],
+                children: Vec::new(),
+            }],
+        };
+
+        let styled = build_style_tree(&dom);
+        let layout = build_layout_for(&styled);
+        let input = build_paint_input(&layout);
+        let node = non_anonymous_node_by_source_id(input.tree().root(), Id(2))
+            .expect("section paint node");
+        let clip = node
+            .primitives()
+            .iter()
+            .find_map(|primitive| match primitive {
+                PaintPrimitive::Clip(clip) => Some(*clip),
+                _ => None,
+            })
+            .expect("layout-owned overflow clip primitive");
+
+        assert_eq!(clip.source.node_id, Id(2));
+        assert_eq!(
+            clip.rect,
+            Rectangle {
+                x: 0.0,
+                y: 0.0,
+                width: 120.0,
+                height: 40.0,
+            }
+        );
+        assert_eq!(clip.scope, PaintClipScope::ContentsAndDescendants);
+        assert!(input.to_debug_snapshot().contains(
+            "primitive clip rect=x=0.00 y=0.00 w=120.00 h=40.00 scope=contents-and-descendants"
+        ));
+    }
+
+    #[test]
+    fn paint_tree_emits_clips_only_for_layout_provided_overflow_clips() {
+        for (node_id, overflow) in [(2, "hidden"), (3, "clip"), (4, "scroll"), (5, "auto")] {
+            let dom = Node::Document {
+                id: Id(1),
+                doctype: None,
+                children: vec![Node::Element {
+                    id: Id(node_id),
+                    name: Arc::from("section"),
+                    attributes: Vec::new(),
+                    style: vec![
+                        ("display".to_string(), "block".to_string()),
+                        ("width".to_string(), "80px".to_string()),
+                        ("height".to_string(), "30px".to_string()),
+                        ("overflow".to_string(), overflow.to_string()),
+                    ],
+                    children: Vec::new(),
+                }],
+            };
+
+            let styled = build_style_tree(&dom);
+            let layout = build_layout_for(&styled);
+            let input = build_paint_input(&layout);
+            let node = non_anonymous_node_by_source_id(input.tree().root(), Id(node_id))
+                .expect("section paint node");
+
+            assert!(
+                node.primitives()
+                    .iter()
+                    .any(|primitive| matches!(primitive, PaintPrimitive::Clip(_))),
+                "overflow:{overflow} should emit a layout-provided clip primitive"
+            );
+        }
+
+        let visible_dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(10),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "80px".to_string()),
+                    ("height".to_string(), "30px".to_string()),
+                    ("overflow".to_string(), "visible".to_string()),
+                ],
+                children: Vec::new(),
+            }],
+        };
+        let styled = build_style_tree(&visible_dom);
+        let layout = build_layout_for(&styled);
+        let input = build_paint_input(&layout);
+        let visible = non_anonymous_node_by_source_id(input.tree().root(), Id(10))
+            .expect("visible section paint node");
+
+        assert!(
+            visible
+                .primitives()
+                .iter()
+                .all(|primitive| primitive.kind() != PaintPrimitiveKind::Clip),
+            "paint must not invent a clip when layout exposes none"
+        );
+
+        let inline_dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(20),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: Vec::new(),
+                children: vec![Node::Element {
+                    id: Id(21),
+                    name: Arc::from("span"),
+                    attributes: Vec::new(),
+                    style: vec![("overflow".to_string(), "hidden".to_string())],
+                    children: vec![Node::Text {
+                        id: Id(22),
+                        text: "inline".to_string(),
+                    }],
+                }],
+            }],
+        };
+        let styled = build_style_tree(&inline_dom);
+        let layout = build_layout_for(&styled);
+        let input = build_paint_input(&layout);
+        let span = non_anonymous_node_by_source_id(input.tree().root(), Id(21))
+            .expect("inline span paint node");
+
+        assert!(
+            span.primitives()
+                .iter()
+                .all(|primitive| primitive.kind() != PaintPrimitiveKind::Clip),
+            "paint must follow layout and not clip ordinary inline overflow boxes"
+        );
+    }
+
+    #[test]
     fn paint_tree_emits_text_decoration_after_decorated_text_fragments() {
         let dom = Node::Document {
             id: Id(1),

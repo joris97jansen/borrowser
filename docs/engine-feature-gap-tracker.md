@@ -82,7 +82,8 @@ Current supported property set is intentionally small. Major missing families:
 - layout: floats, clear, grid, table layout, multi-column layout
 - positioning: complete absolute/fixed/sticky geometry and z-index/stacking
 - sizing: full intrinsic sizing keywords and browser-compatible min/max nuance
-- overflow: scrollbars, scroll containers, overflow-x/y split behavior
+- overflow: scrollbars, scroll containers, scroll offsets, overflow-x/y split
+  behavior, viewport/body overflow propagation
 - selectors/media: broad selector coverage, media queries, pseudo-classes,
   pseudo-elements
 - custom properties and variables
@@ -112,12 +113,19 @@ Missing or incomplete:
 - full outline rendering beyond the supported rectangular longhand subset
 - border radius
 - background images and advanced background painting
-- shadows, transforms, opacity, filters, and clipping interactions
+- shadows, transforms, opacity, filters, and advanced clipping interactions
 - stacking-context paint ordering
 - scrollbars and scrollable overflow painting
 - selection painting outside supported text-control paths
 - font fallback and advanced text shaping
 - flex/grid/table-specific paint behavior where future layout data requires it
+
+Notes:
+
+- Basic paint-time overflow clipping is supported when Layout exposes an
+  overflow clip; Layout owns overflow semantics, and Paint consumes final layout
+  clip metadata. See
+  `docs/rendering/aa6-overflow-clipping-paint-behavior.md`.
 
 ## Browser Runtime / Platform
 
