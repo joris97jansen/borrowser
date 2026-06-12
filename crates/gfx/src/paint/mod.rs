@@ -143,30 +143,41 @@ fn paint_layout_box(
         paint_list_marker(layout, painter, origin, measurer);
     }
 
-    if let Some(clip) = layout.overflow_clip() {
-        let clip_rect = clip.rect();
-        let clip_rect = Rect::from_min_size(
-            Pos2 {
-                x: origin.x + clip_rect.x,
-                y: origin.y + clip_rect.y,
-            },
-            Vec2 {
-                x: clip_rect.width,
-                y: clip_rect.height,
-            },
-        );
-        let clip_painter = painter.with_clip_rect(clip_rect);
-        let clipped_ctx = PaintCtx {
-            painter: &clip_painter,
-            ..ctx
-        };
-        paint_layout_box_contents(layout, clipped_ctx, skip_inline_block_children);
-        paint_outline_for_layout(layout, painter, origin);
-        return;
-    }
-
-    paint_layout_box_contents(layout, ctx, skip_inline_block_children);
+    paint_layout_box_contents_with_own_overflow_clip(layout, ctx, skip_inline_block_children);
     paint_outline_for_layout(layout, painter, origin);
+}
+
+fn paint_layout_box_contents_with_own_overflow_clip(
+    layout: &LayoutBox<'_, '_>,
+    ctx: PaintCtx<'_>,
+    skip_inline_block_children: bool,
+) {
+    let Some(clip) = layout.overflow_clip() else {
+        paint_layout_box_contents(layout, ctx, skip_inline_block_children);
+        return;
+    };
+
+    let clip_painter = ctx
+        .painter
+        .with_clip_rect(backend_rect_from_layout_rect(clip.rect(), ctx.origin));
+    let clipped_ctx = PaintCtx {
+        painter: &clip_painter,
+        ..ctx
+    };
+    paint_layout_box_contents(layout, clipped_ctx, skip_inline_block_children);
+}
+
+fn backend_rect_from_layout_rect(rect: Rectangle, origin: Pos2) -> Rect {
+    Rect::from_min_size(
+        Pos2 {
+            x: origin.x + rect.x,
+            y: origin.y + rect.y,
+        },
+        Vec2 {
+            x: rect.width,
+            y: rect.height,
+        },
+    )
 }
 
 fn paint_outline_for_layout(layout: &LayoutBox<'_, '_>, painter: &Painter, origin: Pos2) {
@@ -395,6 +406,7 @@ pub fn paint_page(input: PaintPhaseInput<'_, '_, '_>, args: PaintArgs<'_>) {
 mod tests {
     use super::*;
     use css::{ComputedStyle, Length};
+    use egui::{LayerId, Order, RawInput, Shape};
     use html::{Node, internal::Id};
     use layout::LayoutPhaseInput;
     use std::sync::Arc;
@@ -409,6 +421,18 @@ mod tests {
         fn line_height(&self, style: &ComputedStyle) -> f32 {
             let Length::Px(px) = style.font_size();
             px * 1.2
+        }
+    }
+
+    struct NoopImageProvider;
+
+    impl ImageProvider for NoopImageProvider {
+        fn image_state_by_url(&self, _url: &str) -> ImageState {
+            ImageState::Missing
+        }
+
+        fn image_intrinsic_size_px(&self, _url: &str) -> Option<(u32, u32)> {
+            None
         }
     }
 
@@ -437,5 +461,144 @@ mod tests {
         assert!(snapshot.contains(
             "overflow=policy=(inline=clip block=clip) clip=x=0.00 y=0.00 w=100.00 h=20.00"
         ));
+    }
+
+    #[test]
+    fn immediate_paint_scopes_own_overflow_clip_to_contents_and_descendants() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "100px".to_string()),
+                    ("height".to_string(), "50px".to_string()),
+                    ("overflow".to_string(), "clip".to_string()),
+                    ("background-color".to_string(), "#0a141e".to_string()),
+                    ("border-top-width".to_string(), "2px".to_string()),
+                    ("border-top-style".to_string(), "solid".to_string()),
+                    ("border-top-color".to_string(), "#28323c".to_string()),
+                    ("outline-width".to_string(), "3px".to_string()),
+                    ("outline-style".to_string(), "solid".to_string()),
+                    ("outline-color".to_string(), "#46505a".to_string()),
+                ],
+                children: vec![Node::Element {
+                    id: Id(3),
+                    name: Arc::from("div"),
+                    attributes: Vec::new(),
+                    style: vec![
+                        ("display".to_string(), "block".to_string()),
+                        ("width".to_string(), "140px".to_string()),
+                        ("height".to_string(), "70px".to_string()),
+                        ("background-color".to_string(), "#5a646e".to_string()),
+                        ("outline-width".to_string(), "4px".to_string()),
+                        ("outline-style".to_string(), "solid".to_string()),
+                        ("outline-color".to_string(), "#78828c".to_string()),
+                    ],
+                    children: Vec::new(),
+                }],
+            }],
+        };
+        let styled = css::build_style_tree(&dom, None);
+        let layout =
+            layout::layout_document(LayoutPhaseInput::new(&styled, 500.0, &TestMeasurer, None));
+        let input_values = InputValueStore::new();
+        let resources = NoopImageProvider;
+        let ctx = egui::Context::default();
+        let initial_clip = Rect::from_min_size(
+            Pos2 {
+                x: -100.0,
+                y: -100.0,
+            },
+            Vec2 { x: 400.0, y: 400.0 },
+        );
+        let output = ctx.run(
+            RawInput {
+                screen_rect: Some(initial_clip),
+                ..Default::default()
+            },
+            |ctx| {
+                let painter = Painter::new(
+                    ctx.clone(),
+                    LayerId::new(Order::Foreground, egui::Id::new("page-paint")),
+                    initial_clip,
+                );
+                let measurer = EguiTextMeasurer::new(ctx);
+                paint_page(
+                    PaintPhaseInput::new(&layout),
+                    PaintArgs {
+                        painter: &painter,
+                        origin: Pos2 { x: 0.0, y: 0.0 },
+                        measurer: &measurer,
+                        base_url: None,
+                        resources: &resources,
+                        input_values: &input_values,
+                        focused: None,
+                        focused_textarea_lines: None,
+                        active: None,
+                        selection_bg_fill: Color32::TRANSPARENT,
+                        selection_stroke: Stroke::NONE,
+                        fragment_rects: None,
+                    },
+                );
+            },
+        );
+        let section_clip = find_layout_by_direct_node_id(layout.root(), Id(2))
+            .and_then(LayoutBox::overflow_clip)
+            .map(|clip| backend_rect_from_layout_rect(clip.rect(), Pos2 { x: 0.0, y: 0.0 }))
+            .expect("layout-owned section overflow clip");
+
+        assert_eq!(
+            clip_rects_for_fill(&output.shapes, Color32::from_rgb(0x0a, 0x14, 0x1e)),
+            vec![initial_clip],
+            "own background must not be clipped by the box's own overflow clip"
+        );
+        assert_eq!(
+            clip_rects_for_fill(&output.shapes, Color32::from_rgb(0x28, 0x32, 0x3c)),
+            vec![initial_clip],
+            "own border must not be clipped by the box's own overflow clip"
+        );
+        assert_eq!(
+            clip_rects_for_fill(&output.shapes, Color32::from_rgb(0x5a, 0x64, 0x6e)),
+            vec![section_clip],
+            "descendant background must be clipped by the ancestor overflow clip"
+        );
+        assert_eq!(
+            clip_rects_for_fill(&output.shapes, Color32::from_rgb(0x46, 0x50, 0x5a)),
+            vec![initial_clip; 4],
+            "own outline must not be clipped by the box's own overflow clip"
+        );
+        assert_eq!(
+            clip_rects_for_fill(&output.shapes, Color32::from_rgb(0x78, 0x82, 0x8c)),
+            vec![section_clip; 4],
+            "ancestor clips must apply to descendant outlines"
+        );
+    }
+
+    fn clip_rects_for_fill(shapes: &[egui::epaint::ClippedShape], fill: Color32) -> Vec<Rect> {
+        shapes
+            .iter()
+            .filter_map(|shape| match &shape.shape {
+                Shape::Rect(rect) if rect.fill == fill => Some(shape.clip_rect),
+                _ => None,
+            })
+            .collect()
+    }
+
+    fn find_layout_by_direct_node_id<'layout, 'style_tree, 'dom>(
+        layout: &'layout LayoutBox<'style_tree, 'dom>,
+        id: Id,
+    ) -> Option<&'layout LayoutBox<'style_tree, 'dom>> {
+        if layout.direct_node_id() == Some(id) {
+            return Some(layout);
+        }
+
+        layout
+            .children
+            .iter()
+            .find_map(|child| find_layout_by_direct_node_id(child, id))
     }
 }

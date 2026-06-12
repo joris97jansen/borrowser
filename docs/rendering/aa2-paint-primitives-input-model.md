@@ -23,6 +23,7 @@ Related documents:
 - `docs/rendering/aa3-border-rendering-box-decoration.md`
 - `docs/rendering/aa4-outline-rendering-box-decoration.md`
 - `docs/rendering/aa5-text-decoration-rendering-subset.md`
+- `docs/rendering/aa6-overflow-clipping-paint-behavior.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
 - `docs/rendering/w1-box-tree-layout-model-contract.md`
