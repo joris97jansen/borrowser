@@ -1,7 +1,10 @@
 use crate::{
     InitialStyleValue, PropertyComputedValueKind, PropertyId,
     specified::{SpecifiedPropertyValue, SpecifiedValue},
-    values::{BorderStyle, Display, Length, LengthPercentage, OutlineStyle, Overflow, Position},
+    values::{
+        BorderStyle, Display, Length, LengthPercentage, OutlineStyle, Overflow, Position,
+        TextDecorationLine,
+    },
 };
 
 use super::{
@@ -9,7 +12,7 @@ use super::{
     normalize::{
         normalize_border_style, normalize_color, normalize_display, normalize_length,
         normalize_length_percentage_or_auto, normalize_length_percentage_or_none,
-        normalize_outline_style,
+        normalize_outline_style, normalize_text_decoration_line,
     },
 };
 
@@ -18,6 +21,7 @@ use super::{
 pub enum ComputedValue {
     BorderStyle(BorderStyle),
     OutlineStyle(OutlineStyle),
+    TextDecorationLine(TextDecorationLine),
     Color((u8, u8, u8, u8)),
     Display(Display),
     Overflow(Overflow),
@@ -32,6 +36,7 @@ impl ComputedValue {
         match self {
             Self::BorderStyle(_) => ComputedValueDiscriminant::BorderStyle,
             Self::OutlineStyle(_) => ComputedValueDiscriminant::OutlineStyle,
+            Self::TextDecorationLine(_) => ComputedValueDiscriminant::TextDecorationLine,
             Self::Color(_) => ComputedValueDiscriminant::Color,
             Self::Display(_) => ComputedValueDiscriminant::Display,
             Self::Overflow(_) => ComputedValueDiscriminant::Overflow,
@@ -46,6 +51,9 @@ impl ComputedValue {
         match property.initial_value() {
             InitialStyleValue::BorderStyleNone => Self::BorderStyle(BorderStyle::None),
             InitialStyleValue::OutlineStyleNone => Self::OutlineStyle(OutlineStyle::None),
+            InitialStyleValue::TextDecorationLineNone => {
+                Self::TextDecorationLine(TextDecorationLine::None)
+            }
             InitialStyleValue::ColorBlack => Self::Color((0, 0, 0, 255)),
             InitialStyleValue::TransparentColor => Self::Color((0, 0, 0, 0)),
             InitialStyleValue::DisplayInline => Self::Display(Display::Inline),
@@ -75,6 +83,9 @@ impl ComputedValue {
             SpecifiedValue::OutlineStyle(outline_style) => {
                 Self::OutlineStyle(normalize_outline_style(outline_style.keyword()))
             }
+            SpecifiedValue::TextDecorationLine(text_decoration_line) => Self::TextDecorationLine(
+                normalize_text_decoration_line(text_decoration_line.keyword()),
+            ),
             SpecifiedValue::Color(color) => Self::Color(normalize_color(color)),
             SpecifiedValue::Display(display) => Self::Display(normalize_display(display.keyword())),
             SpecifiedValue::Overflow(overflow) => {
@@ -112,6 +123,7 @@ impl ComputedValue {
         match self {
             Self::BorderStyle(style) => border_style_keyword(style).to_string(),
             Self::OutlineStyle(style) => outline_style_keyword(style).to_string(),
+            Self::TextDecorationLine(line) => text_decoration_line_keyword(line).to_string(),
             Self::Color((r, g, b, a)) => format!("rgba({r}, {g}, {b}, {a})"),
             Self::Display(display) => display_keyword(display).to_string(),
             Self::Overflow(overflow) => overflow_keyword(overflow).to_string(),
@@ -183,6 +195,7 @@ impl ComputedValueNormalizationErrorKind {
 pub enum ComputedValueDiscriminant {
     BorderStyle,
     OutlineStyle,
+    TextDecorationLine,
     Color,
     Display,
     Overflow,
@@ -197,6 +210,7 @@ impl ComputedValueDiscriminant {
         match self {
             Self::BorderStyle => "border-style",
             Self::OutlineStyle => "outline-style",
+            Self::TextDecorationLine => "text-decoration-line",
             Self::Color => "color",
             Self::Display => "display",
             Self::Overflow => "overflow",
@@ -220,6 +234,9 @@ pub(super) fn computed_value_discriminant(
     match kind {
         PropertyComputedValueKind::BorderStyleKeyword => ComputedValueDiscriminant::BorderStyle,
         PropertyComputedValueKind::OutlineStyleKeyword => ComputedValueDiscriminant::OutlineStyle,
+        PropertyComputedValueKind::TextDecorationLineKeyword => {
+            ComputedValueDiscriminant::TextDecorationLine
+        }
         PropertyComputedValueKind::AbsoluteColor => ComputedValueDiscriminant::Color,
         PropertyComputedValueKind::DisplayKeyword => ComputedValueDiscriminant::Display,
         PropertyComputedValueKind::OverflowKeyword => ComputedValueDiscriminant::Overflow,
@@ -245,6 +262,13 @@ fn outline_style_keyword(style: OutlineStyle) -> &'static str {
     match style {
         OutlineStyle::None => "none",
         OutlineStyle::Solid => "solid",
+    }
+}
+
+fn text_decoration_line_keyword(line: TextDecorationLine) -> &'static str {
+    match line {
+        TextDecorationLine::None => "none",
+        TextDecorationLine::Underline => "underline",
     }
 }
 

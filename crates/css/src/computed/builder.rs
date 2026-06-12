@@ -2,7 +2,10 @@ use std::collections::BTreeMap;
 
 use crate::{
     PropertyId, property_registry,
-    values::{BorderStyle, Display, Length, LengthPercentage, OutlineStyle, Overflow, Position},
+    values::{
+        BorderStyle, Display, Length, LengthPercentage, OutlineStyle, Overflow, Position,
+        TextDecorationLine,
+    },
 };
 
 use super::{
@@ -109,6 +112,10 @@ impl ComputedStyleBuilder {
             display: expect_display(&self.entries, PropertyId::Display),
             overflow: expect_overflow(&self.entries, PropertyId::Overflow),
             position: expect_position(&self.entries, PropertyId::Position),
+            text_decoration_line: expect_text_decoration_line(
+                &self.entries,
+                PropertyId::TextDecorationLine,
+            ),
             width: expect_length_percentage_or_auto(&self.entries, PropertyId::Width),
             height: expect_length_percentage_or_auto(&self.entries, PropertyId::Height),
             min_width: expect_length_percentage_or_auto(&self.entries, PropertyId::MinWidth),
@@ -225,6 +232,24 @@ fn expect_position(
         Some(ComputedValue::Position(position)) => position,
         Some(other) => unreachable!(
             "property '{}' expected position computed value, got {:?}",
+            property.name(),
+            other.discriminant()
+        ),
+        None => unreachable!(
+            "property '{}' missing after completeness check",
+            property.name()
+        ),
+    }
+}
+
+fn expect_text_decoration_line(
+    entries: &BTreeMap<PropertyId, ComputedValue>,
+    property: PropertyId,
+) -> TextDecorationLine {
+    match entries.get(&property).copied() {
+        Some(ComputedValue::TextDecorationLine(line)) => line,
+        Some(other) => unreachable!(
+            "property '{}' expected text-decoration-line computed value, got {:?}",
             property.name(),
             other.discriminant()
         ),

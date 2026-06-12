@@ -62,6 +62,21 @@ fn computed_value_normalizes_outline_keywords_to_runtime_enum() {
 }
 
 #[test]
+fn computed_value_normalizes_text_decoration_line_keywords_to_runtime_enum() {
+    assert_eq!(
+        normalized_value(
+            PropertyId::TextDecorationLine,
+            "text-decoration-line: underline"
+        ),
+        ComputedValue::TextDecorationLine(TextDecorationLine::Underline)
+    );
+    assert_eq!(
+        normalized_value(PropertyId::TextDecorationLine, "text-decoration-line: none"),
+        ComputedValue::TextDecorationLine(TextDecorationLine::None)
+    );
+}
+
+#[test]
 fn computed_value_normalizes_position_keywords_to_runtime_enum() {
     assert_eq!(
         normalized_value(PropertyId::Position, "position: relative"),
@@ -164,6 +179,10 @@ fn computed_value_normalization_matches_property_metadata_for_supported_subset()
         (PropertyId::PaddingRight, "padding-right: 1px"),
         (PropertyId::PaddingTop, "padding-top: 1px"),
         (PropertyId::Position, "position: static"),
+        (
+            PropertyId::TextDecorationLine,
+            "text-decoration-line: underline",
+        ),
         (PropertyId::Width, "width: auto"),
     ];
 

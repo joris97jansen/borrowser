@@ -198,6 +198,12 @@ fn supported_property_metadata_matches_current_subset_contract() {
             CascadePropertyLengthSignPolicy::NotLength,
         ),
         (
+            CascadePropertyId::TextDecorationLine,
+            CascadeInheritance::NotInherited,
+            InitialStyleValue::TextDecorationLineNone,
+            CascadePropertyLengthSignPolicy::NotLength,
+        ),
+        (
             CascadePropertyId::Width,
             CascadeInheritance::NotInherited,
             InitialStyleValue::AutoKeyword,

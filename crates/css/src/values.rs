@@ -69,6 +69,13 @@ pub enum OutlineStyle {
     Solid,
 }
 
+/// CSS `text-decoration-line` value for the current supported text decoration subset.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum TextDecorationLine {
+    None,
+    Underline,
+}
+
 /// CSS `overflow` keyword for the current supported single-axis shorthand.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Overflow {

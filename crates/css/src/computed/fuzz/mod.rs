@@ -408,6 +408,7 @@ fn property_computed_kind_label(kind: PropertyComputedValueKind) -> &'static str
         PropertyComputedValueKind::AbsoluteColor => "color",
         PropertyComputedValueKind::BorderStyleKeyword => "border-style",
         PropertyComputedValueKind::OutlineStyleKeyword => "outline-style",
+        PropertyComputedValueKind::TextDecorationLineKeyword => "text-decoration-line",
         PropertyComputedValueKind::DisplayKeyword => "display",
         PropertyComputedValueKind::OverflowKeyword => "overflow",
         PropertyComputedValueKind::PositionKeyword => "position",

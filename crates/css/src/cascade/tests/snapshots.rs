@@ -47,6 +47,7 @@ fn resolved_document_style_debug_snapshot_is_stable() {
             "    padding-right: initial(0px)\n",
             "    padding-top: initial(0px)\n",
             "    position: initial(static)\n",
+            "    text-decoration-line: initial(none)\n",
             "    width: initial(auto)\n",
         )
     );
@@ -112,6 +113,7 @@ fn document_style_resolution_debug_snapshot_covers_override_inheritance_and_defa
             "    padding-right: initial(0px)\n",
             "    padding-top: initial(0px)\n",
             "    position: initial(static)\n",
+            "    text-decoration-line: initial(none)\n",
             "    width: initial(auto)\n",
             "element[1]: selector-id=2 name=\"div\"\n",
             "  cascade-evaluation\n",
@@ -161,6 +163,7 @@ fn document_style_resolution_debug_snapshot_covers_override_inheritance_and_defa
             "    padding-right: initial(0px)\n",
             "    padding-top: initial(0px)\n",
             "    position: initial(static)\n",
+            "    text-decoration-line: initial(none)\n",
             "    width: initial(auto)\n",
         )
     );

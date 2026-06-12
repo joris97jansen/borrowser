@@ -33,6 +33,7 @@ element[0]: selector-id=1 name="main"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: 320px
 element[1]: selector-id=2 name="span"
   background-color: rgba(0, 255, 0, 255)
@@ -67,6 +68,7 @@ element[1]: selector-id=2 name="span"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[2]: selector-id=3 name="button"
   background-color: rgba(0, 0, 0, 0)
@@ -101,4 +103,5 @@ element[2]: selector-id=3 name="button"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto

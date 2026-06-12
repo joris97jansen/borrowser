@@ -32,6 +32,7 @@ Related documents:
 - `docs/rendering/aa2-paint-primitives-input-model.md`
 - `docs/rendering/aa3-border-rendering-box-decoration.md`
 - `docs/rendering/aa4-outline-rendering-box-decoration.md`
+- `docs/rendering/aa5-text-decoration-rendering-subset.md`
 - `docs/rendering/w8-box-generation-formatting-debug-surfaces.md`
 - `docs/rendering/w9-box-tree-invariants-extension-hooks.md`
 - `docs/rendering/y4-overflow-semantics-supported-subset.md`
@@ -83,6 +84,7 @@ current frame's visual output for the supported subset:
 - outlines for the AA4 supported subset
 - list markers
 - inline text fragments
+- text decoration for the AA5 supported underline subset
 - inline-block subtree painting at inline fragment positions
 - replaced fragments and form-control visuals
 - image/fallback visuals
@@ -147,10 +149,11 @@ preorder. The supported order inside each visited box is:
 6. paint child subtrees in layout child order
 7. paint the outline for the AA4 supported subset
 
-Inline content is ordered by the layout inline fragment sequence. Inline-block
-and replaced fragments are painted at their inline fragment positions; the
-later recursive child walk skips those boxes in the outer subtree so they are
-not emitted twice.
+Inline content is ordered by the layout inline fragment sequence. For the AA5
+supported subset, decorated text fragments emit text first and then a
+text-decoration primitive. Inline-block and replaced fragments are painted at
+their inline fragment positions; the later recursive child walk skips those
+boxes in the outer subtree so they are not emitted twice.
 
 The static contract surface in `crates/gfx/src/paint/contracts.rs` exposes this
 subset through `paint_order_contracts()`.
@@ -193,7 +196,7 @@ Later AA issues may extend the paint model at named points:
   border subset after background ordering
 - outlines and box decorations: AA4 adds the first paint-only rectangular
   outline subset after child subtree ordering
-- text decorations: extend inline fragment painting deliberately
+- text decorations: AA5 adds the first underline-only text-fragment subset
 - clipping refinements: extend layout-owned clip metadata and paint
   consumption rules
 - stacking and `z-index`: introduce explicit stacking-context model and
@@ -210,7 +213,7 @@ AA1 deliberately did not implement or define:
 - borders, until AA3 added the supported physical solid rectangular subset
 - outline shorthand, outline offset, unsupported outline styles, and rounded
   outline geometry
-- text decorations
+- text decoration features beyond the AA5 underline-only text-fragment subset
 - full CSS painting order
 - stacking contexts
 - `z-index`

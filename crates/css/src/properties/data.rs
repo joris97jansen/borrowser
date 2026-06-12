@@ -6,7 +6,7 @@ use super::{
     },
 };
 
-pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 33] = [
+pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 34] = [
     PropertyRegistration::new(
         PropertyId::BackgroundColor,
         "background-color",
@@ -300,6 +300,15 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 33] = [
         ),
     ),
     PropertyRegistration::new(
+        PropertyId::TextDecorationLine,
+        "text-decoration-line",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::TextDecorationLineNone,
+            PropertySpecifiedValueKind::TextDecorationLineKeyword,
+            PropertyComputedValueKind::TextDecorationLineKeyword,
+        ),
+    ),
+    PropertyRegistration::new(
         PropertyId::Width,
         "width",
         PropertyMetadata::not_inherited(
@@ -310,7 +319,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 33] = [
     ),
 ];
 
-pub(super) const PROPERTY_LOOKUP_BY_NAME: [PropertyNameLookupEntry; 33] = [
+pub(super) const PROPERTY_LOOKUP_BY_NAME: [PropertyNameLookupEntry; 34] = [
     PropertyNameLookupEntry::new("background-color", PropertyId::BackgroundColor),
     PropertyNameLookupEntry::new("border-bottom-color", PropertyId::BorderBottomColor),
     PropertyNameLookupEntry::new("border-bottom-style", PropertyId::BorderBottomStyle),
@@ -343,5 +352,6 @@ pub(super) const PROPERTY_LOOKUP_BY_NAME: [PropertyNameLookupEntry; 33] = [
     PropertyNameLookupEntry::new("padding-right", PropertyId::PaddingRight),
     PropertyNameLookupEntry::new("padding-top", PropertyId::PaddingTop),
     PropertyNameLookupEntry::new("position", PropertyId::Position),
+    PropertyNameLookupEntry::new("text-decoration-line", PropertyId::TextDecorationLine),
     PropertyNameLookupEntry::new("width", PropertyId::Width),
 ];

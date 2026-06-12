@@ -264,6 +264,14 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertyLengthSignPolicy::NotLength,
         ),
         (
+            PropertyId::TextDecorationLine,
+            PropertyInheritance::NotInherited,
+            InitialStyleValue::TextDecorationLineNone,
+            PropertySpecifiedValueKind::TextDecorationLineKeyword,
+            PropertyComputedValueKind::TextDecorationLineKeyword,
+            PropertyLengthSignPolicy::NotLength,
+        ),
+        (
             PropertyId::Width,
             PropertyInheritance::NotInherited,
             InitialStyleValue::AutoKeyword,
@@ -339,6 +347,12 @@ fn property_registry_lookup_is_deterministic_for_representative_property_names()
         Some(PropertyId::OutlineStyle)
     );
     assert_eq!(
+        registry
+            .lookup("text-decoration-line")
+            .map(|entry| entry.id()),
+        Some(PropertyId::TextDecorationLine)
+    );
+    assert_eq!(
         registry.lookup("width").map(|entry| entry.id()),
         Some(PropertyId::Width)
     );
@@ -368,6 +382,28 @@ fn unsupported_flex_properties_are_not_registered_for_cascade_or_computed_style(
     ];
 
     for name in unsupported_flex_properties {
+        assert_eq!(PropertyId::from_name(name), None, "{name}");
+        assert_eq!(registry.lookup(name), None, "{name}");
+        assert!(
+            PropertyId::ALL
+                .iter()
+                .all(|property| property.name() != name),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn unsupported_text_decoration_properties_are_not_registered_for_cascade_or_computed_style() {
+    let registry = property_registry();
+    let unsupported_text_decoration_properties = [
+        "text-decoration",
+        "text-decoration-color",
+        "text-decoration-style",
+        "text-decoration-thickness",
+    ];
+
+    for name in unsupported_text_decoration_properties {
         assert_eq!(PropertyId::from_name(name), None, "{name}");
         assert_eq!(registry.lookup(name), None, "{name}");
         assert!(

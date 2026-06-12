@@ -39,6 +39,7 @@ element[0]: selector-id=1 name="html"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[1]: selector-id=2 name="head"
   background-color: rgba(0, 0, 0, 0)
@@ -73,6 +74,7 @@ element[1]: selector-id=2 name="head"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[2]: selector-id=3 name="title"
   background-color: rgba(0, 0, 0, 0)
@@ -107,6 +109,7 @@ element[2]: selector-id=3 name="title"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[3]: selector-id=4 name="body"
   background-color: rgba(255, 255, 255, 255)
@@ -141,6 +144,7 @@ element[3]: selector-id=4 name="body"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[4]: selector-id=5 name="div"
   background-color: rgba(248, 248, 248, 255)
@@ -175,6 +179,7 @@ element[4]: selector-id=5 name="div"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[5]: selector-id=6 name="aside"
   background-color: rgba(0, 0, 0, 0)
@@ -209,6 +214,7 @@ element[5]: selector-id=6 name="aside"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: 220px
 element[6]: selector-id=7 name="nav"
   background-color: rgba(0, 0, 0, 0)
@@ -243,6 +249,7 @@ element[6]: selector-id=7 name="nav"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[7]: selector-id=8 name="a"
   background-color: rgba(0, 0, 0, 0)
@@ -277,6 +284,7 @@ element[7]: selector-id=8 name="a"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[8]: selector-id=9 name="a"
   background-color: rgba(238, 238, 255, 255)
@@ -311,6 +319,7 @@ element[8]: selector-id=9 name="a"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[9]: selector-id=10 name="a"
   background-color: rgba(0, 0, 0, 0)
@@ -345,6 +354,7 @@ element[9]: selector-id=10 name="a"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[10]: selector-id=11 name="main"
   background-color: rgba(255, 255, 255, 255)
@@ -379,6 +389,7 @@ element[10]: selector-id=11 name="main"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[11]: selector-id=12 name="h1"
   background-color: rgba(0, 0, 0, 0)
@@ -413,6 +424,7 @@ element[11]: selector-id=12 name="h1"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[12]: selector-id=13 name="p"
   background-color: rgba(0, 0, 0, 0)
@@ -447,6 +459,7 @@ element[12]: selector-id=13 name="p"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[13]: selector-id=14 name="pre"
   background-color: rgba(17, 17, 17, 255)
@@ -481,6 +494,7 @@ element[13]: selector-id=14 name="pre"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[14]: selector-id=15 name="code"
   background-color: rgba(0, 0, 0, 0)
@@ -515,6 +529,7 @@ element[14]: selector-id=15 name="code"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[15]: selector-id=16 name="section"
   background-color: rgba(255, 255, 238, 255)
@@ -549,6 +564,7 @@ element[15]: selector-id=16 name="section"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[16]: selector-id=17 name="h2"
   background-color: rgba(0, 0, 0, 0)
@@ -583,6 +599,7 @@ element[16]: selector-id=17 name="h2"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[17]: selector-id=18 name="p"
   background-color: rgba(0, 0, 0, 0)
@@ -617,5 +634,6 @@ element[17]: selector-id=18 name="p"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 

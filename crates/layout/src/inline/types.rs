@@ -1,5 +1,5 @@
 use crate::{LayoutBox, Rectangle, ReplacedKind};
-use css::ComputedStyle;
+use css::{ComputedStyle, TextDecorationLine};
 use html::internal::Id;
 use std::sync::Arc;
 
@@ -45,6 +45,20 @@ pub struct InlineAction {
     pub href: Option<Arc<str>>,
 }
 
+/// Layout-owned text decoration metadata for one inline text fragment.
+///
+/// The geometry is finalized by paint from the fragment rectangle and
+/// baseline. Thickness and offset are deterministic CSS-px values derived
+/// from inline metrics when the text fragment is created.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct InlineTextDecoration {
+    pub line: TextDecorationLine,
+    pub color: (u8, u8, u8, u8),
+    pub font_size_px: f32,
+    pub thickness: f32,
+    pub underline_offset: f32,
+}
+
 /// The logical content carried by a line fragment.
 /// - `Text` is inline text
 /// - `Box` is inline-level replaced/box content (e.g., inline-block)
@@ -52,6 +66,7 @@ pub enum InlineFragment<'style_tree, 'dom> {
     Text {
         text: String,
         style: &'style_tree ComputedStyle,
+        decoration: Option<InlineTextDecoration>,
         action: Option<InlineAction>,
     },
     Box {

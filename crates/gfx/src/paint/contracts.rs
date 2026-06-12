@@ -86,6 +86,7 @@ pub enum PaintPrimitiveContractKind {
     ListMarker,
     OverflowClip,
     Text,
+    TextDecoration,
     InlineBox,
     Replaced,
 }
@@ -100,6 +101,7 @@ pub enum PaintPrimitiveContractSource {
     LayoutReplacedMetadata,
     ComputedBorderModel,
     ComputedOutlineModel,
+    ComputedTextDecorationModel,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -117,7 +119,7 @@ pub enum PaintExcludedFeature {
     BorderImage,
     UnsupportedOutlineStyles,
     OutlineOffset,
-    TextDecorations,
+    UnsupportedTextDecorationFeatures,
     FullCssPaintingOrder,
     StackingContexts,
     ZIndex,
@@ -249,7 +251,7 @@ static PAINT_ORDER_CONTRACTS: [PaintOrderContract; 8] = [
     },
 ];
 
-static PAINT_PRIMITIVE_CONTRACTS: [PaintPrimitiveContract; 8] = [
+static PAINT_PRIMITIVE_CONTRACTS: [PaintPrimitiveContract; 9] = [
     PaintPrimitiveContract {
         primitive: PaintPrimitiveContractKind::Background,
         owner: PaintContractOwner::Paint,
@@ -287,6 +289,12 @@ static PAINT_PRIMITIVE_CONTRACTS: [PaintPrimitiveContract; 8] = [
         backend_specific: false,
     },
     PaintPrimitiveContract {
+        primitive: PaintPrimitiveContractKind::TextDecoration,
+        owner: PaintContractOwner::Paint,
+        source: PaintPrimitiveContractSource::ComputedTextDecorationModel,
+        backend_specific: false,
+    },
+    PaintPrimitiveContract {
         primitive: PaintPrimitiveContractKind::InlineBox,
         owner: PaintContractOwner::Paint,
         source: PaintPrimitiveContractSource::LayoutInlineFragments,
@@ -306,7 +314,7 @@ static PAINT_EXCLUDED_FEATURES: [PaintExcludedFeature; 17] = [
     PaintExcludedFeature::BorderImage,
     PaintExcludedFeature::UnsupportedOutlineStyles,
     PaintExcludedFeature::OutlineOffset,
-    PaintExcludedFeature::TextDecorations,
+    PaintExcludedFeature::UnsupportedTextDecorationFeatures,
     PaintExcludedFeature::FullCssPaintingOrder,
     PaintExcludedFeature::StackingContexts,
     PaintExcludedFeature::ZIndex,
@@ -497,6 +505,12 @@ mod tests {
                     backend_specific: false,
                 },
                 PaintPrimitiveContract {
+                    primitive: PaintPrimitiveContractKind::TextDecoration,
+                    owner: PaintContractOwner::Paint,
+                    source: PaintPrimitiveContractSource::ComputedTextDecorationModel,
+                    backend_specific: false,
+                },
+                PaintPrimitiveContract {
                     primitive: PaintPrimitiveContractKind::InlineBox,
                     owner: PaintContractOwner::Paint,
                     source: PaintPrimitiveContractSource::LayoutInlineFragments,
@@ -523,7 +537,7 @@ mod tests {
                 PaintExcludedFeature::BorderImage,
                 PaintExcludedFeature::UnsupportedOutlineStyles,
                 PaintExcludedFeature::OutlineOffset,
-                PaintExcludedFeature::TextDecorations,
+                PaintExcludedFeature::UnsupportedTextDecorationFeatures,
                 PaintExcludedFeature::FullCssPaintingOrder,
                 PaintExcludedFeature::StackingContexts,
                 PaintExcludedFeature::ZIndex,

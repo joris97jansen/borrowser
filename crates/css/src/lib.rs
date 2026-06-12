@@ -102,7 +102,8 @@ pub use specified::{
     SpecifiedLength, SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto,
     SpecifiedLengthPercentageOrNone, SpecifiedLengthUnit, SpecifiedOutlineStyle,
     SpecifiedOutlineStyleKeyword, SpecifiedOverflow, SpecifiedOverflowKeyword, SpecifiedPercentage,
-    SpecifiedPosition, SpecifiedPositionKeyword, SpecifiedPropertyValue, SpecifiedValue,
+    SpecifiedPosition, SpecifiedPositionKeyword, SpecifiedPropertyValue,
+    SpecifiedTextDecorationLine, SpecifiedTextDecorationLineKeyword, SpecifiedValue,
     SpecifiedValueLimits, SpecifiedValueParseError, SpecifiedValueParseErrorKind,
     parse_specified_value, parse_specified_value_with_limits,
 };
@@ -149,5 +150,5 @@ pub use syntax::serialize_compat_stylesheet_for_snapshot;
 
 pub use values::{
     BorderStyle, Display, Length, LengthPercentage, OutlineStyle, Overflow, Percentage, Position,
-    parse_color, parse_length,
+    TextDecorationLine, parse_color, parse_length,
 };

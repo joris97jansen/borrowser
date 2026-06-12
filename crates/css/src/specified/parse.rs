@@ -13,6 +13,7 @@ use super::{
     outline::parse_outline_style,
     overflow::parse_overflow,
     position::parse_position,
+    text_decoration::parse_text_decoration_line,
     value::{SpecifiedPropertyValue, SpecifiedValue},
 };
 
@@ -37,6 +38,9 @@ pub fn parse_specified_value_with_limits(
         }
         PropertySpecifiedValueKind::OutlineStyleKeyword => {
             SpecifiedValue::OutlineStyle(parse_outline_style(property, component)?)
+        }
+        PropertySpecifiedValueKind::TextDecorationLineKeyword => {
+            SpecifiedValue::TextDecorationLine(parse_text_decoration_line(property, component)?)
         }
         PropertySpecifiedValueKind::Color => {
             SpecifiedValue::Color(parse_color(property, component)?)

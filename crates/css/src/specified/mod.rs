@@ -15,6 +15,7 @@ mod outline;
 mod overflow;
 mod parse;
 mod position;
+mod text_decoration;
 mod value;
 
 pub use error::{SpecifiedValueParseError, SpecifiedValueParseErrorKind};
@@ -25,7 +26,8 @@ pub use value::{
     SpecifiedLength, SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto,
     SpecifiedLengthPercentageOrNone, SpecifiedLengthUnit, SpecifiedOutlineStyle,
     SpecifiedOutlineStyleKeyword, SpecifiedOverflow, SpecifiedOverflowKeyword, SpecifiedPercentage,
-    SpecifiedPosition, SpecifiedPositionKeyword, SpecifiedPropertyValue, SpecifiedValue,
+    SpecifiedPosition, SpecifiedPositionKeyword, SpecifiedPropertyValue,
+    SpecifiedTextDecorationLine, SpecifiedTextDecorationLineKeyword, SpecifiedValue,
 };
 
 #[cfg(test)]

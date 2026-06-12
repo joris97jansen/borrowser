@@ -1,4 +1,4 @@
-use css::{Display, Length};
+use css::{Display, Length, TextDecorationLine};
 use egui::{Align2, Color32, FontId, Pos2, Rect, Vec2};
 use html::Node;
 use layout::{
@@ -66,7 +66,12 @@ fn paint_line_boxes(lines: &[LineBox<'_, '_>], ctx: PaintCtx<'_>) {
     for line in lines {
         for frag in &line.fragments {
             match &frag.kind {
-                InlineFragment::Text { text, style, .. } => {
+                InlineFragment::Text {
+                    text,
+                    style,
+                    decoration,
+                    ..
+                } => {
                     let (cr, cg, cb, ca) = style.color();
                     let text_color = Color32::from_rgba_unmultiplied(cr, cg, cb, ca);
 
@@ -80,6 +85,26 @@ fn paint_line_boxes(lines: &[LineBox<'_, '_>], ctx: PaintCtx<'_>) {
                     };
 
                     painter.text(pos, Align2::LEFT_TOP, text, font_id, text_color);
+                    if let Some(decoration) = decoration
+                        && matches!(decoration.line, TextDecorationLine::Underline)
+                    {
+                        let baseline = paint_rect.y + frag.ascent + frag.baseline_shift;
+                        let rect = Rect::from_min_size(
+                            Pos2 {
+                                x: origin.x + paint_rect.x,
+                                y: origin.y + baseline + decoration.underline_offset,
+                            },
+                            Vec2::new(paint_rect.width, decoration.thickness),
+                        );
+                        let (r, g, b, a) = decoration.color;
+                        if paint_rect.width > 0.0 && decoration.thickness > 0.0 && a > 0 {
+                            painter.rect_filled(
+                                rect,
+                                0.0,
+                                Color32::from_rgba_unmultiplied(r, g, b, a),
+                            );
+                        }
+                    }
                 }
 
                 InlineFragment::Box { style, layout, .. } => {

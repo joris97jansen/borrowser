@@ -1,16 +1,19 @@
-use css::ComputedStyle;
+use css::{ComputedStyle, Length, TextDecorationLine};
 
 use crate::Rectangle;
 
 use super::super::breaker::break_word_prefix_end;
 use super::super::metrics::compute_text_metrics;
 use super::super::tokens::InlineContext;
-use super::super::types::{AdvanceRect, InlineAction, InlineFragment, LineFragment, PaintRect};
+use super::super::types::{
+    AdvanceRect, InlineAction, InlineFragment, InlineTextDecoration, LineFragment, PaintRect,
+};
 use super::state::{InlineLayoutEngine, measure_nonzero};
 
 struct TextFragmentSpec<'style_tree> {
     text: String,
     style: &'style_tree ComputedStyle,
+    decoration: Option<InlineTextDecoration>,
     action: Option<InlineAction>,
     source_range: Option<(usize, usize)>,
     width: f32,
@@ -46,10 +49,12 @@ impl<'m, 'style_tree, 'dom> InlineLayoutEngine<'m, 'style_tree, 'dom> {
 
         let metrics = compute_text_metrics(self.measurer, style);
         let action = ctx.to_action();
+        let decoration = text_decoration_for_fragment(style, &ctx, metrics.descent);
 
         self.push_text_fragment(TextFragmentSpec {
             text: " ".to_string(),
             style,
+            decoration,
             action,
             source_range,
             width: space_width,
@@ -71,6 +76,7 @@ impl<'m, 'style_tree, 'dom> InlineLayoutEngine<'m, 'style_tree, 'dom> {
         let descent = metrics.descent;
         let height = metrics.height();
         let action = ctx.to_action();
+        let decoration = text_decoration_for_fragment(style, &ctx, descent);
 
         let mut remaining_text = text;
         let mut remaining_source_start = source_range.map(|(start, _)| start);
@@ -96,6 +102,7 @@ impl<'m, 'style_tree, 'dom> InlineLayoutEngine<'m, 'style_tree, 'dom> {
                 self.push_text_fragment(TextFragmentSpec {
                     text: remaining_text,
                     style,
+                    decoration,
                     action: action.clone(),
                     source_range: source,
                     width: word_width,
@@ -120,6 +127,7 @@ impl<'m, 'style_tree, 'dom> InlineLayoutEngine<'m, 'style_tree, 'dom> {
                 self.push_text_fragment(TextFragmentSpec {
                     text: remaining_text,
                     style,
+                    decoration,
                     action: action.clone(),
                     source_range: source,
                     width: word_width,
@@ -144,6 +152,7 @@ impl<'m, 'style_tree, 'dom> InlineLayoutEngine<'m, 'style_tree, 'dom> {
             self.push_text_fragment(TextFragmentSpec {
                 text: prefix_text,
                 style,
+                decoration,
                 action: action.clone(),
                 source_range: prefix_source,
                 width: prefix_width,
@@ -174,6 +183,7 @@ impl<'m, 'style_tree, 'dom> InlineLayoutEngine<'m, 'style_tree, 'dom> {
             kind: InlineFragment::Text {
                 text: spec.text,
                 style: spec.style,
+                decoration: spec.decoration,
                 action: spec.action,
             },
             advance_rect: AdvanceRect::new(rect),
@@ -190,6 +200,38 @@ impl<'m, 'style_tree, 'dom> InlineLayoutEngine<'m, 'style_tree, 'dom> {
         self.is_first_in_line = false;
         self.note_source_range(spec.source_range);
     }
+}
+
+fn text_decoration_for_fragment(
+    style: &ComputedStyle,
+    ctx: &InlineContext,
+    descent: f32,
+) -> Option<InlineTextDecoration> {
+    let active = matches!(style.text_decoration_line(), TextDecorationLine::Underline)
+        || matches!(
+            ctx.active_text_decoration_line(),
+            Some(TextDecorationLine::Underline)
+        );
+    if !active {
+        return None;
+    }
+
+    let Length::Px(font_size_px) = style.font_size();
+    Some(InlineTextDecoration {
+        line: TextDecorationLine::Underline,
+        color: style.color(),
+        font_size_px,
+        thickness: underline_thickness(font_size_px),
+        underline_offset: underline_offset(descent),
+    })
+}
+
+fn underline_thickness(font_size_px: f32) -> f32 {
+    (font_size_px * 0.0625).max(1.0)
+}
+
+fn underline_offset(descent: f32) -> f32 {
+    (descent * 0.35).max(1.0)
 }
 
 fn text_source_range(

@@ -86,6 +86,7 @@ fn resolve_cascade_style_marks_inherited_properties_only_when_parent_is_present(
             "  padding-right: initial(0px)\n",
             "  padding-top: initial(0px)\n",
             "  position: initial(static)\n",
+            "  text-decoration-line: initial(none)\n",
             "  width: initial(auto)\n",
         )
     );
@@ -162,6 +163,7 @@ fn resolve_initial_style_materializes_total_canonical_initial_style() {
             "  padding-right: initial(0px)\n",
             "  padding-top: initial(0px)\n",
             "  position: initial(static)\n",
+            "  text-decoration-line: initial(none)\n",
             "  width: initial(auto)\n",
         )
     );
@@ -453,6 +455,7 @@ fn resolved_style_builder_is_deterministic_and_property_sorted() {
             "  padding-right: initial(0px)\n",
             "  padding-top: initial(0px)\n",
             "  position: initial(static)\n",
+            "  text-decoration-line: initial(none)\n",
             "  width: initial(auto)\n",
         )
     );

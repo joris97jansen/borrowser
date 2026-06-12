@@ -1,6 +1,6 @@
 use std::fmt::Write;
 
-use css::{Display, Length};
+use css::{Display, Length, TextDecorationLine};
 use html::dom_utils::is_non_rendering_element;
 use html::internal::Id;
 use layout::inline::{InlineFragment, layout_inline_for_paint};
@@ -197,6 +197,7 @@ pub enum PaintPrimitive {
     ListMarker(PaintListMarker),
     Clip(PaintClip),
     Text(PaintText),
+    TextDecoration(PaintTextDecoration),
     InlineBox(PaintInlineBox),
     Replaced(PaintReplaced),
 }
@@ -210,6 +211,7 @@ impl PaintPrimitive {
             Self::ListMarker(_) => PaintPrimitiveKind::ListMarker,
             Self::Clip(_) => PaintPrimitiveKind::Clip,
             Self::Text(_) => PaintPrimitiveKind::Text,
+            Self::TextDecoration(_) => PaintPrimitiveKind::TextDecoration,
             Self::InlineBox(_) => PaintPrimitiveKind::InlineBox,
             Self::Replaced(_) => PaintPrimitiveKind::Replaced,
         }
@@ -258,6 +260,13 @@ impl PaintPrimitive {
                 text.font_size_px,
                 text.text
             ),
+            Self::TextDecoration(decoration) => format!(
+                "text-decoration rect={} line={} color={} thickness={:.2}",
+                rectangle_debug_label(decoration.rect),
+                decoration.line.to_debug_label(),
+                decoration.color.to_debug_label(),
+                decoration.thickness
+            ),
             Self::InlineBox(inline_box) => format!(
                 "inline-box rect={} source={}",
                 rectangle_debug_label(inline_box.rect),
@@ -281,6 +290,7 @@ pub enum PaintPrimitiveKind {
     ListMarker,
     Clip,
     Text,
+    TextDecoration,
     InlineBox,
     Replaced,
 }
@@ -373,6 +383,28 @@ pub struct PaintText {
     pub text: String,
     pub color: PaintColor,
     pub font_size_px: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct PaintTextDecoration {
+    pub source: PaintSource,
+    pub rect: Rectangle,
+    pub line: PaintTextDecorationLine,
+    pub color: PaintColor,
+    pub thickness: f32,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PaintTextDecorationLine {
+    Underline,
+}
+
+impl PaintTextDecorationLine {
+    fn to_debug_label(self) -> &'static str {
+        match self {
+            Self::Underline => "underline",
+        }
+    }
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -645,8 +677,16 @@ fn append_inline_primitives(
 
     for line in layout_inline_for_paint(measurer, block_rect, layout) {
         for fragment in line.fragments {
+            let fragment_rect = fragment.paint_rect.rect();
+            let fragment_ascent = fragment.ascent;
+            let fragment_baseline_shift = fragment.baseline_shift;
             match fragment.kind {
-                InlineFragment::Text { text, style, .. } => {
+                InlineFragment::Text {
+                    text,
+                    style,
+                    decoration,
+                    ..
+                } => {
                     primitives.push(PaintPrimitive::Text(PaintText {
                         source: PaintSource::from_layout(layout),
                         rect: fragment.paint_rect.rect(),
@@ -654,6 +694,17 @@ fn append_inline_primitives(
                         color: PaintColor::from_rgba(style.color()),
                         font_size_px: font_size_px(style.font_size()),
                     }));
+                    if let Some(decoration) = decoration
+                        && let Some(primitive) = text_decoration_primitive_from_fragment(
+                            layout,
+                            fragment_rect,
+                            fragment_ascent,
+                            fragment_baseline_shift,
+                            decoration,
+                        )
+                    {
+                        primitives.push(PaintPrimitive::TextDecoration(primitive));
+                    }
                 }
                 InlineFragment::Box { style, layout, .. } => {
                     let fallback = PaintColor::from_rgba(style.background_color());
@@ -673,6 +724,38 @@ fn append_inline_primitives(
             }
         }
     }
+}
+
+fn text_decoration_primitive_from_fragment(
+    layout: &LayoutBox<'_, '_>,
+    text_rect: Rectangle,
+    fragment_ascent: f32,
+    fragment_baseline_shift: f32,
+    decoration: layout::inline::InlineTextDecoration,
+) -> Option<PaintTextDecoration> {
+    if !matches!(decoration.line, TextDecorationLine::Underline) {
+        return None;
+    }
+
+    if text_rect.width <= 0.0 || decoration.thickness <= 0.0 || decoration.color.3 == 0 {
+        return None;
+    }
+
+    let baseline = text_rect.y + fragment_ascent + fragment_baseline_shift;
+    let rect = Rectangle {
+        x: text_rect.x,
+        y: baseline + decoration.underline_offset,
+        width: text_rect.width,
+        height: decoration.thickness,
+    };
+
+    Some(PaintTextDecoration {
+        source: PaintSource::from_layout(layout),
+        rect,
+        line: PaintTextDecorationLine::Underline,
+        color: PaintColor::from_rgba(decoration.color),
+        thickness: decoration.thickness,
+    })
 }
 
 impl PaintReplacedKind {
@@ -710,7 +793,7 @@ fn optional_source_debug_label(source: Option<PaintSource>) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use css::{ComputedStyle, Length};
+    use css::{ComputedStyle, Length, TextDecorationLine};
     use html::{Node, internal::Id};
     use layout::LayoutPhaseInput;
     use std::sync::Arc;
@@ -860,6 +943,156 @@ mod tests {
             primitive,
             PaintPrimitive::Text(PaintText { text, .. }) if text == "Hello"
         )));
+    }
+
+    #[test]
+    fn paint_tree_emits_text_decoration_after_decorated_text_fragments() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "200px".to_string()),
+                    ("font-size".to_string(), "20px".to_string()),
+                    ("color".to_string(), "red".to_string()),
+                    ("text-decoration-line".to_string(), "underline".to_string()),
+                ],
+                children: vec![Node::Text {
+                    id: Id(3),
+                    text: "Hello".to_string(),
+                }],
+            }],
+        };
+
+        let styled = build_style_tree(&dom);
+        let layout = build_layout_for(&styled);
+        let input = build_paint_input(&layout);
+        let node = first_node_with_primitive(input.tree().root(), PaintPrimitiveKind::Text)
+            .expect("section text paint node");
+
+        assert_eq!(
+            primitive_kinds(node),
+            vec![PaintPrimitiveKind::Text, PaintPrimitiveKind::TextDecoration,]
+        );
+        assert!(matches!(
+            &node.primitives()[0],
+            PaintPrimitive::Text(PaintText { text, .. }) if text == "Hello"
+        ));
+
+        let decoration = node
+            .primitives()
+            .iter()
+            .find_map(|primitive| match primitive {
+                PaintPrimitive::TextDecoration(decoration) => Some(*decoration),
+                _ => None,
+            })
+            .expect("text decoration primitive");
+
+        assert_eq!(decoration.line, PaintTextDecorationLine::Underline);
+        assert_eq!(decoration.color, PaintColor::from_rgba((255, 0, 0, 255)));
+        assert_eq!(decoration.thickness, 1.25);
+        assert_eq!(
+            decoration.rect,
+            Rectangle {
+                x: 4.0,
+                y: 24.1,
+                width: 40.0,
+                height: 1.25,
+            }
+        );
+    }
+
+    #[test]
+    fn paint_tree_omits_text_decoration_for_none_and_atomic_inline_fragments() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "200px".to_string()),
+                ],
+                children: vec![
+                    Node::Text {
+                        id: Id(3),
+                        text: "Hello".to_string(),
+                    },
+                    Node::Element {
+                        id: Id(4),
+                        name: Arc::from("span"),
+                        attributes: Vec::new(),
+                        style: vec![("display".to_string(), "inline-block".to_string())],
+                        children: vec![Node::Text {
+                            id: Id(5),
+                            text: "Box".to_string(),
+                        }],
+                    },
+                ],
+            }],
+        };
+
+        let styled = build_style_tree(&dom);
+        let layout = build_layout_for(&styled);
+        let input = build_paint_input(&layout);
+
+        assert!(
+            first_node_with_primitive(input.tree().root(), PaintPrimitiveKind::TextDecoration)
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn paint_tree_propagates_inline_container_underline_to_child_text() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "200px".to_string()),
+                    ("text-decoration-line".to_string(), "underline".to_string()),
+                ],
+                children: vec![Node::Element {
+                    id: Id(3),
+                    name: Arc::from("span"),
+                    attributes: Vec::new(),
+                    style: Vec::new(),
+                    children: vec![Node::Text {
+                        id: Id(4),
+                        text: "Child".to_string(),
+                    }],
+                }],
+            }],
+        };
+
+        let styled = build_style_tree(&dom);
+        let layout = build_layout_for(&styled);
+        let input = build_paint_input(&layout);
+
+        assert!(
+            first_node_with_primitive(input.tree().root(), PaintPrimitiveKind::TextDecoration)
+                .is_some()
+        );
+        let span = styled
+            .children
+            .first()
+            .and_then(|section| section.children.first())
+            .expect("span styled node");
+        assert_eq!(
+            span.style.text_decoration_line(),
+            TextDecorationLine::None,
+            "underline propagation must not rely on inherited computed style"
+        );
     }
 
     #[test]

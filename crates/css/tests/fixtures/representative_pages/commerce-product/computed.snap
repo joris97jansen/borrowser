@@ -39,6 +39,7 @@ element[0]: selector-id=1 name="html"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[1]: selector-id=2 name="head"
   background-color: rgba(0, 0, 0, 0)
@@ -73,6 +74,7 @@ element[1]: selector-id=2 name="head"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[2]: selector-id=3 name="title"
   background-color: rgba(0, 0, 0, 0)
@@ -107,6 +109,7 @@ element[2]: selector-id=3 name="title"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[3]: selector-id=4 name="body"
   background-color: rgba(250, 250, 250, 255)
@@ -141,6 +144,7 @@ element[3]: selector-id=4 name="body"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[4]: selector-id=5 name="main"
   background-color: rgba(255, 255, 255, 255)
@@ -175,6 +179,7 @@ element[4]: selector-id=5 name="main"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[5]: selector-id=6 name="section"
   background-color: rgba(238, 238, 238, 255)
@@ -209,6 +214,7 @@ element[5]: selector-id=6 name="section"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: 320px
 element[6]: selector-id=7 name="img"
   background-color: rgba(0, 0, 0, 0)
@@ -243,6 +249,7 @@ element[6]: selector-id=7 name="img"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: 300px
 element[7]: selector-id=8 name="section"
   background-color: rgba(0, 0, 0, 0)
@@ -277,6 +284,7 @@ element[7]: selector-id=8 name="section"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[8]: selector-id=9 name="h1"
   background-color: rgba(0, 0, 0, 0)
@@ -311,6 +319,7 @@ element[8]: selector-id=9 name="h1"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[9]: selector-id=10 name="p"
   background-color: rgba(0, 0, 0, 0)
@@ -345,6 +354,7 @@ element[9]: selector-id=10 name="p"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[10]: selector-id=11 name="p"
   background-color: rgba(255, 255, 238, 255)
@@ -379,6 +389,7 @@ element[10]: selector-id=11 name="p"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[11]: selector-id=12 name="form"
   background-color: rgba(0, 0, 0, 0)
@@ -413,6 +424,7 @@ element[11]: selector-id=12 name="form"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[12]: selector-id=13 name="label"
   background-color: rgba(0, 0, 0, 0)
@@ -447,6 +459,7 @@ element[12]: selector-id=13 name="label"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[13]: selector-id=14 name="select"
   background-color: rgba(0, 0, 0, 0)
@@ -481,6 +494,7 @@ element[13]: selector-id=14 name="select"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[14]: selector-id=15 name="option"
   background-color: rgba(0, 0, 0, 0)
@@ -515,6 +529,7 @@ element[14]: selector-id=15 name="option"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[15]: selector-id=16 name="option"
   background-color: rgba(0, 0, 0, 0)
@@ -549,6 +564,7 @@ element[15]: selector-id=16 name="option"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 element[16]: selector-id=17 name="input"
   background-color: rgba(238, 238, 255, 255)
@@ -583,6 +599,7 @@ element[16]: selector-id=17 name="input"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: 260px
 element[17]: selector-id=18 name="button"
   background-color: rgba(0, 128, 0, 255)
@@ -617,5 +634,6 @@ element[17]: selector-id=18 name="button"
   padding-right: 0px
   padding-top: 0px
   position: static
+  text-decoration-line: none
   width: auto
 
