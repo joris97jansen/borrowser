@@ -1,6 +1,6 @@
 # AA2: Paint Primitives And Input Model
 
-Last updated: 2026-06-09
+Last updated: 2026-06-12
 Status: implemented architecture and model contract for Milestone AA issue 2
 
 This document defines Borrowser's structured paint primitive and paint input
@@ -24,6 +24,7 @@ Related documents:
 - `docs/rendering/aa4-outline-rendering-box-decoration.md`
 - `docs/rendering/aa5-text-decoration-rendering-subset.md`
 - `docs/rendering/aa6-overflow-clipping-paint-behavior.md`
+- `docs/rendering/aa7-deterministic-paint-ordering-layering-rules.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
 - `docs/rendering/w1-box-tree-layout-model-contract.md`
@@ -139,6 +140,10 @@ uses this order:
 
 This matches the AA1 supported ordering subset without claiming full CSS
 painting order, stacking-context behavior, or z-index semantics.
+AA7 makes this order an explicit contract/debug surface with
+`PaintOrderPhase` and `PaintInput::to_order_debug_snapshot()`. The order is
+preserved by construction from layout-owned traversal and paint-owned
+sequencing rules; it is not produced by sorting primitives after construction.
 
 ## Relation To Immediate Drawing
 
