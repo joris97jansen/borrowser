@@ -109,6 +109,9 @@ Missing or incomplete:
 
 Current supported subset:
 
+- Milestone AA's supported paint model, invariants, limitations, and future
+  attachment points are closed out in
+  `docs/rendering/aa9-paint-model-invariants-extension-points.md`.
 - deterministic AA paint ordering for box background, box border, list marker,
   overflow clip scope for contents and descendants, inline formatting content,
   child subtrees in layout order, and box outline; see
