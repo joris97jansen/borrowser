@@ -113,6 +113,9 @@ Current supported subset:
   overflow clip scope for contents and descendants, inline formatting content,
   child subtrees in layout order, and box outline; see
   `docs/rendering/aa7-deterministic-paint-ordering-layering-rules.md`
+- deterministic Paint-owned paint-operation debug snapshots for structural visual
+  regression coverage of the supported AA paint subset; see
+  `docs/rendering/aa8-paint-debug-visual-regression-surface.md`
 - basic paint-time overflow clipping when Layout exposes an overflow clip; see
   `docs/rendering/aa6-overflow-clipping-paint-behavior.md`
 
@@ -129,6 +132,7 @@ Missing or incomplete:
 - selection painting outside supported text-control paths
 - font fallback and advanced text shaping
 - flex/grid/table-specific paint behavior where future layout data requires it
+- pixel/raster visual regression infrastructure
 
 Notes:
 
@@ -136,6 +140,9 @@ Notes:
   overflow clip; Layout owns overflow semantics, and Paint consumes final layout
   clip metadata. See
   `docs/rendering/aa6-overflow-clipping-paint-behavior.md`.
+- AA8 visual regression coverage is structural Paint-owned paint-operation
+  snapshotting, not screenshot or pixel comparison. Browser/runtime may expose
+  this debug output but does not define paint semantics.
 
 ## Browser Runtime / Platform
 

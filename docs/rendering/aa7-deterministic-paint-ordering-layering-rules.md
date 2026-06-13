@@ -11,6 +11,7 @@ GPU layers, or pixel snapshot infrastructure.
 
 Related code:
 - `crates/gfx/src/paint/contracts.rs`
+- `crates/gfx/src/paint/debug.rs`
 - `crates/gfx/src/paint/primitives.rs`
 - `crates/gfx/src/paint/mod.rs`
 - `crates/gfx/src/paint/inline.rs`
@@ -27,6 +28,7 @@ Related documents:
 - `docs/rendering/aa4-outline-rendering-box-decoration.md`
 - `docs/rendering/aa5-text-decoration-rendering-subset.md`
 - `docs/rendering/aa6-overflow-clipping-paint-behavior.md`
+- `docs/rendering/aa8-paint-debug-visual-regression-surface.md`
 - `docs/rendering/y4-overflow-semantics-supported-subset.md`
 
 ## Supported Ordering Contract
@@ -98,6 +100,8 @@ The semantic paint model and immediate backend painting must remain aligned:
 
 The order debug snapshot is a stable regression surface. It is not a public API,
 retained display list, scene graph, command buffer, or compositor artifact.
+AA8 extends this with a paint-operation debug snapshot that uses the same
+paint-owned ordering rules while remaining structural and backend-independent.
 
 ## Determinism Invariants
 

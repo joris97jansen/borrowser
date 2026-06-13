@@ -12,6 +12,7 @@ of accumulating ad hoc drawing logic.
 Related code:
 - `crates/gfx/src/paint/mod.rs`
 - `crates/gfx/src/paint/contracts.rs`
+- `crates/gfx/src/paint/debug.rs`
 - `crates/gfx/src/paint/primitives.rs`
 - `crates/gfx/src/paint/context.rs`
 - `crates/gfx/src/paint/inline.rs`
@@ -35,6 +36,7 @@ Related documents:
 - `docs/rendering/aa5-text-decoration-rendering-subset.md`
 - `docs/rendering/aa6-overflow-clipping-paint-behavior.md`
 - `docs/rendering/aa7-deterministic-paint-ordering-layering-rules.md`
+- `docs/rendering/aa8-paint-debug-visual-regression-surface.md`
 - `docs/rendering/w8-box-generation-formatting-debug-surfaces.md`
 - `docs/rendering/w9-box-tree-invariants-extension-hooks.md`
 - `docs/rendering/y4-overflow-semantics-supported-subset.md`
@@ -57,7 +59,9 @@ before expanding visual fidelity.
 
 The current paint result is immediate frame output. Borrowser does not yet have
 a retained display list, retained paint scene, compositor tree, GPU pipeline
-contract, or pixel snapshot surface.
+contract, or pixel snapshot surface. AA8 adds a deterministic paint-operation
+debug snapshot derived from paint primitives; it remains an internal regression
+surface, not a retained display list or backend command stream.
 
 ## Ownership Boundaries
 

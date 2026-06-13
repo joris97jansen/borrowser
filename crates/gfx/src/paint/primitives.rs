@@ -84,6 +84,15 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
             .expect("write paint order snapshot");
         out
     }
+
+    /// Stable paint-owned operation snapshot for visual regression tests.
+    ///
+    /// This is derived from semantic paint primitives and AA ordering rules.
+    /// It is not a backend command stream, pixel snapshot, retained display
+    /// list, scene graph, or compositor artifact.
+    pub fn to_operation_debug_snapshot(&self) -> String {
+        super::debug::paint_operation_debug_snapshot(self)
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
