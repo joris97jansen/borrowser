@@ -1,6 +1,7 @@
 pub mod contracts;
 
 mod context;
+mod debug;
 mod images;
 mod inline;
 mod primitives;

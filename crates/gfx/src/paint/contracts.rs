@@ -21,6 +21,7 @@ pub enum PaintArchitectureArtifact {
     StructuredPaintInput,
     PaintTree,
     PaintPrimitives,
+    PaintOperationDebugSnapshot,
     PaintArgs,
     ImmediatePaintOutput,
     LowLevelDrawExecution,
@@ -33,6 +34,7 @@ pub enum PaintArchitectureRole {
     ConsumesSemanticInput,
     BuildsSemanticPaintModel,
     DefinesPaintPrimitiveVocabulary,
+    SerializesPaintOperationDebugSurface,
     ConsumesRuntimeContext,
     EmitsImmediateOutput,
     ExecutesDrawCommands,
@@ -156,11 +158,13 @@ pub enum PaintExcludedFeature {
     RetainedPaintScenes,
     Scrollbars,
     ScrollOffsets,
+    RasterSnapshotTesting,
     PixelSnapshotTesting,
+    RuntimeDrawRecorder,
     NewVisualBehavior,
 }
 
-static PAINT_ARCHITECTURE_CONTRACTS: [PaintArchitectureContract; 12] = [
+static PAINT_ARCHITECTURE_CONTRACTS: [PaintArchitectureContract; 13] = [
     PaintArchitectureContract {
         artifact: PaintArchitectureArtifact::LayoutGeometry,
         owner: PaintContractOwner::Layout,
@@ -207,6 +211,12 @@ static PAINT_ARCHITECTURE_CONTRACTS: [PaintArchitectureContract; 12] = [
         artifact: PaintArchitectureArtifact::PaintPrimitives,
         owner: PaintContractOwner::Paint,
         role: PaintArchitectureRole::DefinesPaintPrimitiveVocabulary,
+        retained: false,
+    },
+    PaintArchitectureContract {
+        artifact: PaintArchitectureArtifact::PaintOperationDebugSnapshot,
+        owner: PaintContractOwner::Paint,
+        role: PaintArchitectureRole::SerializesPaintOperationDebugSurface,
         retained: false,
     },
     PaintArchitectureContract {
@@ -345,7 +355,7 @@ static PAINT_PRIMITIVE_CONTRACTS: [PaintPrimitiveContract; 9] = [
     },
 ];
 
-static PAINT_EXCLUDED_FEATURES: [PaintExcludedFeature; 17] = [
+static PAINT_EXCLUDED_FEATURES: [PaintExcludedFeature; 19] = [
     PaintExcludedFeature::UnsupportedBorderStyles,
     PaintExcludedFeature::BorderRadius,
     PaintExcludedFeature::BorderImage,
@@ -361,7 +371,9 @@ static PAINT_EXCLUDED_FEATURES: [PaintExcludedFeature; 17] = [
     PaintExcludedFeature::RetainedPaintScenes,
     PaintExcludedFeature::Scrollbars,
     PaintExcludedFeature::ScrollOffsets,
+    PaintExcludedFeature::RasterSnapshotTesting,
     PaintExcludedFeature::PixelSnapshotTesting,
+    PaintExcludedFeature::RuntimeDrawRecorder,
     PaintExcludedFeature::NewVisualBehavior,
 ];
 
@@ -527,6 +539,15 @@ mod tests {
         );
         assert!(!primitives.retained);
 
+        let operations =
+            architecture_contract(PaintArchitectureArtifact::PaintOperationDebugSnapshot);
+        assert_eq!(operations.owner, PaintContractOwner::Paint);
+        assert_eq!(
+            operations.role,
+            PaintArchitectureRole::SerializesPaintOperationDebugSurface
+        );
+        assert!(!operations.retained);
+
         let args = architecture_contract(PaintArchitectureArtifact::PaintArgs);
         assert_eq!(args.owner, PaintContractOwner::Gfx);
         assert_eq!(args.role, PaintArchitectureRole::ConsumesRuntimeContext);
@@ -622,7 +643,9 @@ mod tests {
                 PaintExcludedFeature::RetainedPaintScenes,
                 PaintExcludedFeature::Scrollbars,
                 PaintExcludedFeature::ScrollOffsets,
+                PaintExcludedFeature::RasterSnapshotTesting,
                 PaintExcludedFeature::PixelSnapshotTesting,
+                PaintExcludedFeature::RuntimeDrawRecorder,
                 PaintExcludedFeature::NewVisualBehavior,
             ]
         );

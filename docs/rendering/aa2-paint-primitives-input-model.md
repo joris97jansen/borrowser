@@ -10,6 +10,7 @@ unchanged.
 
 Related code:
 - `crates/gfx/src/paint/mod.rs`
+- `crates/gfx/src/paint/debug.rs`
 - `crates/gfx/src/paint/primitives.rs`
 - `crates/gfx/src/paint/contracts.rs`
 - `crates/gfx/src/paint/inline.rs`
@@ -25,6 +26,7 @@ Related documents:
 - `docs/rendering/aa5-text-decoration-rendering-subset.md`
 - `docs/rendering/aa6-overflow-clipping-paint-behavior.md`
 - `docs/rendering/aa7-deterministic-paint-ordering-layering-rules.md`
+- `docs/rendering/aa8-paint-debug-visual-regression-surface.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
 - `docs/rendering/w1-box-tree-layout-model-contract.md`
@@ -168,6 +170,9 @@ AA2 tests should assert semantic model behavior:
 - backend-independent debug snapshots
 
 Pixel snapshots and manual visual inspection are not the AA2 contract.
+AA8 later adds deterministic paint-operation debug snapshots as a structural
+visual regression surface derived from this primitive model, still without
+pixel/raster comparison.
 
 ## Deliberate Exclusions
 
