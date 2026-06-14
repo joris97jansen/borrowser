@@ -37,6 +37,7 @@ Related documents:
 - `docs/rendering/aa6-overflow-clipping-paint-behavior.md`
 - `docs/rendering/aa7-deterministic-paint-ordering-layering-rules.md`
 - `docs/rendering/aa8-paint-debug-visual-regression-surface.md`
+- `docs/rendering/ab1-stacking-layering-invalidation-architecture.md`
 - `docs/rendering/w8-box-generation-formatting-debug-surfaces.md`
 - `docs/rendering/w9-box-tree-invariants-extension-hooks.md`
 - `docs/rendering/y4-overflow-semantics-supported-subset.md`
@@ -208,8 +209,8 @@ Later AA issues may extend the paint model at named points:
 - text decorations: AA5 adds the first underline-only text-fragment subset
 - clipping refinements: AA6 defines the paint-time scope for layout-owned
   overflow clips
-- stacking and `z-index`: introduce explicit stacking-context model and
-  ordering contracts before changing traversal behavior
+- stacking and `z-index`: extend the AB1 stacking-context model and ordering
+  contracts before changing traversal behavior
 - compositing and GPU work: introduce compositor/layer ownership separately
   from immediate paint output
 - retained display lists or retained paint scenes: add explicit retained
@@ -244,3 +245,5 @@ excluded set only for the supported paint-only rectangular longhand subset.
 AA7 enforces deterministic ordering for the current subset without removing
 the full CSS painting order, stacking, `z-index`, compositing, retained scene,
 GPU, or pixel snapshot exclusions.
+AB1 now records the architecture that later stacking, layering, and paint
+invalidation work must extend before changing those exclusions.

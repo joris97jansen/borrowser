@@ -21,6 +21,7 @@ Related documents:
 - `docs/rendering/aa3-border-rendering-box-decoration.md`
 - `docs/rendering/aa4-outline-rendering-box-decoration.md`
 - `docs/rendering/aa5-text-decoration-rendering-subset.md`
+- `docs/rendering/ab1-stacking-layering-invalidation-architecture.md`
 - `docs/rendering/y4-overflow-semantics-supported-subset.md`
 
 ## Ownership
@@ -42,6 +43,9 @@ That clipped painter is an execution detail for the current frame, not retained
 paint state.
 
 Browser/runtime orchestration must not emulate or repair clipping behavior.
+AB1 keeps this boundary for future stacking work: an overflow clip is a scoped
+paint execution context, not a stacking context, semantic layer, retained clip
+node, compositor layer, or paint invalidation boundary by itself.
 
 ## Clip Scope
 
