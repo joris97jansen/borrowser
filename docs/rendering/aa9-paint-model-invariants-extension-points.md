@@ -38,6 +38,7 @@ Detailed source contracts:
 - `docs/rendering/aa6-overflow-clipping-paint-behavior.md`
 - `docs/rendering/aa7-deterministic-paint-ordering-layering-rules.md`
 - `docs/rendering/aa8-paint-debug-visual-regression-surface.md`
+- `docs/rendering/ab1-stacking-layering-invalidation-architecture.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
 - `docs/rendering/y4-overflow-semantics-supported-subset.md`
 
@@ -269,7 +270,7 @@ implementation commitments and do not imply support today:
   geometry contracts without re-owning CSS or layout;
 - full text decoration: extend CSS property support, layout inline decoration
   metadata, and paint decoration primitives deliberately;
-- stacking contexts and `z-index`: introduce an explicit stacking model before
+- stacking contexts and `z-index`: extend the AB1 stacking model before
   changing traversal or layering behavior;
 - compositing and layers: define compositor ownership separately from immediate
   paint output and semantic paint primitives;
@@ -283,6 +284,11 @@ implementation commitments and do not imply support today:
   separate from AA8 structural snapshots;
 - incremental invalidation: route through browser/runtime invalidation contracts
   and preserve explicit phase boundaries.
+
+AB1 is the architecture contract that connects these extension points. It does
+not remove the current exclusions by itself; it defines the ownership,
+determinism, debug-surface, and invalidation rules future issues must satisfy
+before doing so.
 
 Any future extension must state which subsystem owns the new semantics, which
 existing contract changes, which debug surface proves determinism, and which

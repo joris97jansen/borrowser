@@ -33,6 +33,7 @@ Related documents:
 - `docs/rendering/w7-inline-formatting-context-foundations.md`
 - `docs/rendering/w8-box-generation-formatting-debug-surfaces.md`
 - `docs/rendering/w9-box-tree-invariants-extension-hooks.md`
+- `docs/rendering/ab1-stacking-layering-invalidation-architecture.md`
 - `docs/rendering/x1-sizing-architecture-flow-correctness-contract.md`
 - `docs/rendering/x2-structured-size-resolution-model-inputs.md`
 - `docs/rendering/x3-width-height-resolution-supported-subset.md`
@@ -175,7 +176,7 @@ Milestone V intentionally does not ship:
 
 - a formal retained box-tree cache
 - block/inline sizing completeness beyond the current baseline
-- advanced paint primitives or stacking-context/layer architecture
+- advanced paint primitives or behavioral stacking-context/layer architecture
 - retained display lists or scene graphs
 - targeted dependency-driven invalidation
 - resource dependency graphs
@@ -183,6 +184,9 @@ Milestone V intentionally does not ship:
 - async frame production
 
 Those are now explicit extension hooks, not missing architecture.
+AB1 defines the stacking, semantic layering, and paint-invalidation architecture
+that future rendering milestones must extend before implementing those
+behaviors.
 
 ## Alignment With Tests
 

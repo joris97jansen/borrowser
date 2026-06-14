@@ -29,6 +29,7 @@ Related documents:
 - `docs/rendering/aa5-text-decoration-rendering-subset.md`
 - `docs/rendering/aa6-overflow-clipping-paint-behavior.md`
 - `docs/rendering/aa8-paint-debug-visual-regression-surface.md`
+- `docs/rendering/ab1-stacking-layering-invalidation-architecture.md`
 - `docs/rendering/y4-overflow-semantics-supported-subset.md`
 
 ## Supported Ordering Contract
@@ -139,5 +140,5 @@ AA7 deliberately does not implement:
 - broad replaced-control internal ordering beyond current supported inline
   paint item behavior.
 
-Those features must extend the paint ordering model through explicit later
-contracts before changing traversal or layering behavior.
+Those features must extend the AB1 stacking, layering, and invalidation
+architecture before changing traversal or layering behavior.
