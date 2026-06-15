@@ -1,6 +1,6 @@
 # AB1: Stacking, Layering, And Invalidation Architecture
 
-Last updated: 2026-06-14
+Last updated: 2026-06-15
 Status: architecture contract for Milestone AB issue 1
 
 This document defines Borrowser's architecture for future stacking-context,
@@ -15,6 +15,7 @@ or runtime scheduling ad hoc.
 
 Related code:
 - `crates/gfx/src/paint/contracts.rs`
+- `crates/gfx/src/paint/stacking.rs`
 - `crates/gfx/src/paint/primitives.rs`
 - `crates/gfx/src/paint/debug.rs`
 - `crates/gfx/src/paint/mod.rs`
@@ -30,6 +31,7 @@ Related documents:
 - `docs/rendering/aa6-overflow-clipping-paint-behavior.md`
 - `docs/rendering/aa7-deterministic-paint-ordering-layering-rules.md`
 - `docs/rendering/aa9-paint-model-invariants-extension-points.md`
+- `docs/rendering/ab2-stacking-context-representation.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
@@ -59,12 +61,15 @@ The current implementation remains:
 LayoutPhaseOutput
   -> PaintPhaseInput
   -> PaintInput
+  -> StackingContextTree
   -> PaintTree
   -> PaintPrimitive
   -> immediate paint output
 ```
 
-AB1 does not replace that pipeline. It defines how future work may extend it.
+AB1 does not replace that pipeline. AB2 adds the first explicit
+root-context-only `StackingContextTree` representation inside `PaintInput`
+without changing visual paint order.
 
 ## Ownership Boundaries
 
@@ -132,9 +137,10 @@ A stacking context is a paint-owned ordering boundary. It groups a box and its
 descendant paintable content into an atomic unit relative to sibling stacking
 contexts in the parent context.
 
-For AB1, Borrowser defines the concept but does not construct behavioral
-stacking contexts beyond the current document-level paint traversal. Future
-issues must explicitly define:
+AB2 implements the root stacking context as an explicit paint-owned
+representation. It does not construct behavioral child stacking contexts
+beyond the current document-level paint traversal. Future issues must
+explicitly define:
 
 - which computed style and layout facts establish a context;
 - the context's parent relationship;
@@ -143,8 +149,9 @@ issues must explicitly define:
 - how its contents are ordered internally;
 - how it is represented in debug output.
 
-The root document establishes the conceptual root stacking context. That does
-not change current AA paint behavior.
+The root document establishes the root stacking context. AB2 represents that
+context with `StackingContextId::ROOT`; all currently paintable layout boxes
+belong to that context and current AA paint behavior remains unchanged.
 
 ### Semantic Paint Layer
 
@@ -287,11 +294,11 @@ resource state, and input state:
 
 AB1 deliberately does not implement:
 
-- behavioral stacking-context construction;
+- behavioral child stacking-context construction;
 - `z-index` parsing or sorting;
 - full CSS painting order;
 - opacity, transforms, filters, blend modes, or isolation behavior;
-- semantic layer tree construction;
+- semantic layer tree construction beyond the AB2 root context representation;
 - retained display lists;
 - retained paint scenes;
 - compositor layers;

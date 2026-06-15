@@ -6,6 +6,7 @@ mod images;
 mod inline;
 mod primitives;
 mod replaced;
+mod stacking;
 mod text_control;
 
 pub(crate) use context::PaintCtx;
@@ -15,6 +16,10 @@ pub use primitives::{
     PaintColor, PaintInlineBox, PaintInput, PaintListMarker, PaintListMarkerKind, PaintNode,
     PaintOutline, PaintPrimitive, PaintPrimitiveKind, PaintReplaced, PaintReplacedKind,
     PaintSource, PaintText, PaintTextDecoration, PaintTextDecorationLine, PaintTree,
+};
+pub use stacking::{
+    StackablePaintItem, StackingContextId, StackingContextNode, StackingContextSource,
+    StackingContextTree,
 };
 
 use crate::EguiTextMeasurer;

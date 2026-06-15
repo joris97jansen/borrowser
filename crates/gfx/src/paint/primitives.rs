@@ -8,6 +8,7 @@ use layout::{LayoutBox, LayoutPhaseOutput, ListMarker, Rectangle, ReplacedKind, 
 
 use super::PaintPhaseInput;
 use super::contracts::PaintOrderPhase;
+use super::stacking::StackingContextTree;
 
 /// Paint-owned semantic input derived from layout output for one paint phase.
 ///
@@ -16,6 +17,7 @@ use super::contracts::PaintOrderPhase;
 pub struct PaintInput<'layout, 'style_tree, 'dom> {
     layout: &'layout LayoutPhaseOutput<'style_tree, 'dom>,
     tree: PaintTree,
+    stacking_contexts: StackingContextTree,
 }
 
 impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
@@ -26,6 +28,7 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
         Self {
             layout: input.layout(),
             tree: PaintTree::from_layout(input.layout_root(), measurer),
+            stacking_contexts: StackingContextTree::from_layout(input.layout_root()),
         }
     }
 
@@ -35,6 +38,10 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
 
     pub fn tree(&self) -> &PaintTree {
         &self.tree
+    }
+
+    pub fn stacking_contexts(&self) -> &StackingContextTree {
+        &self.stacking_contexts
     }
 
     pub fn to_debug_snapshot(&self) -> String {
@@ -83,6 +90,15 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
             .append_order_debug_snapshot(&mut out)
             .expect("write paint order snapshot");
         out
+    }
+
+    /// Stable paint-owned stacking-context snapshot for AB2.
+    ///
+    /// This is a frame-local semantic representation derived before immediate
+    /// backend drawing. It is not a compositor layer tree, retained scene,
+    /// display list, backend command stream, or paint invalidation surface.
+    pub fn to_stacking_context_debug_snapshot(&self) -> String {
+        self.stacking_contexts.to_debug_snapshot()
     }
 
     /// Stable paint-owned operation snapshot for visual regression tests.
@@ -879,6 +895,7 @@ fn optional_source_debug_label(source: Option<PaintSource>) -> String {
 
 #[cfg(test)]
 mod tests {
+    use super::super::stacking::{StackingContextId, StackingContextSource};
     use super::*;
     use css::{ComputedStyle, Length, TextDecorationLine};
     use html::{Node, internal::Id};
@@ -928,6 +945,14 @@ mod tests {
             layout::layout_document(LayoutPhaseInput::new(&styled, 500.0, &TestMeasurer, None));
         PaintInput::from_phase_input(PaintPhaseInput::new(&layout), &TestMeasurer)
             .to_order_debug_snapshot()
+    }
+
+    fn build_stacking_context_snapshot(dom: &Node) -> String {
+        let styled = css::build_style_tree(dom, None);
+        let layout =
+            layout::layout_document(LayoutPhaseInput::new(&styled, 500.0, &TestMeasurer, None));
+        PaintInput::from_phase_input(PaintPhaseInput::new(&layout), &TestMeasurer)
+            .to_stacking_context_debug_snapshot()
     }
 
     fn first_node_with_primitive(node: &PaintNode, kind: PaintPrimitiveKind) -> Option<&PaintNode> {
@@ -1003,6 +1028,187 @@ mod tests {
 
         assert_eq!(input.layout().viewport_width(), 500.0);
         assert_eq!(input.tree().root().source().node_id, Id(1));
+    }
+
+    #[test]
+    fn stacking_context_tree_always_has_deterministic_root_context() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: Vec::new(),
+                children: Vec::new(),
+            }],
+        };
+
+        let styled = build_style_tree(&dom);
+        let layout = build_layout_for(&styled);
+        let input = build_paint_input(&layout);
+        let contexts = input.stacking_contexts();
+        let root = contexts.root();
+
+        assert_eq!(contexts.root_id(), StackingContextId::ROOT);
+        assert_eq!(root.id(), StackingContextId::ROOT);
+        assert_eq!(root.parent(), None);
+        assert!(root.children().is_empty());
+        assert_eq!(contexts.contexts().len(), 1);
+        assert_eq!(contexts.context(StackingContextId::ROOT), Some(root));
+        assert!(matches!(
+            root.source(),
+            StackingContextSource::RootDocument(PaintSource {
+                box_id: 0,
+                node_id: Id(1),
+                anonymous: false,
+            })
+        ));
+    }
+
+    #[test]
+    fn stacking_context_tree_associates_paintable_boxes_with_root_in_layout_order() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![("display".to_string(), "block".to_string())],
+                children: vec![
+                    Node::Element {
+                        id: Id(3),
+                        name: Arc::from("div"),
+                        attributes: Vec::new(),
+                        style: vec![("display".to_string(), "block".to_string())],
+                        children: Vec::new(),
+                    },
+                    Node::Element {
+                        id: Id(4),
+                        name: Arc::from("aside"),
+                        attributes: Vec::new(),
+                        style: vec![("display".to_string(), "block".to_string())],
+                        children: Vec::new(),
+                    },
+                ],
+            }],
+        };
+
+        let styled = build_style_tree(&dom);
+        let layout = build_layout_for(&styled);
+        let input = build_paint_input(&layout);
+        let root = input.stacking_contexts().root();
+        let item_sources = root
+            .items()
+            .iter()
+            .map(|item| item.source())
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            item_sources,
+            vec![
+                PaintSource {
+                    box_id: 0,
+                    node_id: Id(1),
+                    anonymous: false,
+                },
+                PaintSource {
+                    box_id: 1,
+                    node_id: Id(2),
+                    anonymous: false,
+                },
+                PaintSource {
+                    box_id: 2,
+                    node_id: Id(3),
+                    anonymous: false,
+                },
+                PaintSource {
+                    box_id: 3,
+                    node_id: Id(4),
+                    anonymous: false,
+                },
+            ]
+        );
+
+        for item in root.items() {
+            assert_eq!(item.context(), StackingContextId::ROOT);
+            assert_eq!(
+                input.stacking_contexts().context_for_source(item.source()),
+                Some(StackingContextId::ROOT)
+            );
+        }
+    }
+
+    #[test]
+    fn stacking_context_debug_snapshot_is_deterministic_and_backend_independent() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: Vec::new(),
+                children: vec![Node::Element {
+                    id: Id(3),
+                    name: Arc::from("div"),
+                    attributes: Vec::new(),
+                    style: Vec::new(),
+                    children: Vec::new(),
+                }],
+            }],
+        };
+
+        let first = build_stacking_context_snapshot(&dom);
+        let second = build_stacking_context_snapshot(&dom);
+
+        assert_eq!(first, second);
+        assert!(first.starts_with("version: 1\nstacking-context-tree\n"));
+        assert!(first.contains("root-context: 0"));
+        assert!(first.contains(
+            "context id=0 parent=none source=root-document(box=0 node=1 anonymous=false)"
+        ));
+        assert!(first.contains("item source=box=1 node=2 anonymous=false context=0"));
+        assert!(!first.contains("egui"));
+        assert!(!first.contains("gpu"));
+        assert!(!first.contains("texture"));
+        assert!(!first.contains("compositor"));
+    }
+
+    #[test]
+    fn overflow_clips_do_not_create_stacking_contexts() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "120px".to_string()),
+                    ("height".to_string(), "40px".to_string()),
+                    ("overflow".to_string(), "clip".to_string()),
+                ],
+                children: Vec::new(),
+            }],
+        };
+
+        let styled = build_style_tree(&dom);
+        let layout = build_layout_for(&styled);
+        let input = build_paint_input(&layout);
+        let section = non_anonymous_node_by_source_id(input.tree().root(), Id(2))
+            .expect("section paint node");
+
+        assert!(
+            section
+                .primitives()
+                .iter()
+                .any(|primitive| matches!(primitive, PaintPrimitive::Clip(_)))
+        );
+        assert_eq!(input.stacking_contexts().contexts().len(), 1);
+        assert_eq!(input.stacking_contexts().root().items().len(), 2);
     }
 
     #[test]
@@ -1099,6 +1305,7 @@ mod tests {
         );
         assert!(snapshot.contains("phase=inline-formatting-content primitive text"));
         assert!(snapshot.contains("phase=box-outline primitive outline"));
+        assert!(!snapshot.contains("stacking-context"));
         assert!(!snapshot.contains("egui"));
     }
 

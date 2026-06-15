@@ -15,6 +15,7 @@ Milestone AA paint subset.
 
 Related code:
 - `crates/gfx/src/paint/contracts.rs`
+- `crates/gfx/src/paint/stacking.rs`
 - `crates/gfx/src/paint/primitives.rs`
 - `crates/gfx/src/paint/debug.rs`
 - `crates/gfx/src/paint/mod.rs`
@@ -39,6 +40,7 @@ Detailed source contracts:
 - `docs/rendering/aa7-deterministic-paint-ordering-layering-rules.md`
 - `docs/rendering/aa8-paint-debug-visual-regression-surface.md`
 - `docs/rendering/ab1-stacking-layering-invalidation-architecture.md`
+- `docs/rendering/ab2-stacking-context-representation.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
 - `docs/rendering/y4-overflow-semantics-supported-subset.md`
 
@@ -237,7 +239,7 @@ resource state, and input state:
 The AA paint model deliberately excludes:
 
 - full CSS painting order;
-- stacking contexts;
+- behavioral stacking contexts beyond AB2's root representation;
 - `z-index`;
 - compositing;
 - retained display lists;
@@ -270,7 +272,7 @@ implementation commitments and do not imply support today:
   geometry contracts without re-owning CSS or layout;
 - full text decoration: extend CSS property support, layout inline decoration
   metadata, and paint decoration primitives deliberately;
-- stacking contexts and `z-index`: extend the AB1 stacking model before
+- stacking contexts and `z-index`: extend the AB1/AB2 stacking model before
   changing traversal or layering behavior;
 - compositing and layers: define compositor ownership separately from immediate
   paint output and semantic paint primitives;

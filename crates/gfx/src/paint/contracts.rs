@@ -20,8 +20,10 @@ pub enum PaintArchitectureArtifact {
     PaintPhaseInput,
     StructuredPaintInput,
     PaintTree,
+    StackingContextTree,
     PaintPrimitives,
     PaintOperationDebugSnapshot,
+    StackingContextDebugSnapshot,
     PaintArgs,
     ImmediatePaintOutput,
     LowLevelDrawExecution,
@@ -35,6 +37,7 @@ pub enum PaintArchitectureRole {
     BuildsSemanticPaintModel,
     DefinesPaintPrimitiveVocabulary,
     SerializesPaintOperationDebugSurface,
+    SerializesStackingContextDebugSurface,
     ConsumesRuntimeContext,
     EmitsImmediateOutput,
     ExecutesDrawCommands,
@@ -150,7 +153,7 @@ pub enum PaintExcludedFeature {
     OutlineOffset,
     UnsupportedTextDecorationFeatures,
     FullCssPaintingOrder,
-    StackingContexts,
+    BehavioralStackingContexts,
     ZIndex,
     Compositing,
     GpuPipeline,
@@ -164,7 +167,7 @@ pub enum PaintExcludedFeature {
     NewVisualBehavior,
 }
 
-static PAINT_ARCHITECTURE_CONTRACTS: [PaintArchitectureContract; 13] = [
+static PAINT_ARCHITECTURE_CONTRACTS: [PaintArchitectureContract; 15] = [
     PaintArchitectureContract {
         artifact: PaintArchitectureArtifact::LayoutGeometry,
         owner: PaintContractOwner::Layout,
@@ -208,6 +211,12 @@ static PAINT_ARCHITECTURE_CONTRACTS: [PaintArchitectureContract; 13] = [
         retained: false,
     },
     PaintArchitectureContract {
+        artifact: PaintArchitectureArtifact::StackingContextTree,
+        owner: PaintContractOwner::Paint,
+        role: PaintArchitectureRole::BuildsSemanticPaintModel,
+        retained: false,
+    },
+    PaintArchitectureContract {
         artifact: PaintArchitectureArtifact::PaintPrimitives,
         owner: PaintContractOwner::Paint,
         role: PaintArchitectureRole::DefinesPaintPrimitiveVocabulary,
@@ -217,6 +226,12 @@ static PAINT_ARCHITECTURE_CONTRACTS: [PaintArchitectureContract; 13] = [
         artifact: PaintArchitectureArtifact::PaintOperationDebugSnapshot,
         owner: PaintContractOwner::Paint,
         role: PaintArchitectureRole::SerializesPaintOperationDebugSurface,
+        retained: false,
+    },
+    PaintArchitectureContract {
+        artifact: PaintArchitectureArtifact::StackingContextDebugSnapshot,
+        owner: PaintContractOwner::Paint,
+        role: PaintArchitectureRole::SerializesStackingContextDebugSurface,
         retained: false,
     },
     PaintArchitectureContract {
@@ -363,7 +378,7 @@ static PAINT_EXCLUDED_FEATURES: [PaintExcludedFeature; 19] = [
     PaintExcludedFeature::OutlineOffset,
     PaintExcludedFeature::UnsupportedTextDecorationFeatures,
     PaintExcludedFeature::FullCssPaintingOrder,
-    PaintExcludedFeature::StackingContexts,
+    PaintExcludedFeature::BehavioralStackingContexts,
     PaintExcludedFeature::ZIndex,
     PaintExcludedFeature::Compositing,
     PaintExcludedFeature::GpuPipeline,
@@ -521,6 +536,7 @@ mod tests {
         for artifact in [
             PaintArchitectureArtifact::StructuredPaintInput,
             PaintArchitectureArtifact::PaintTree,
+            PaintArchitectureArtifact::StackingContextTree,
         ] {
             let contract = architecture_contract(artifact);
             assert_eq!(contract.owner, PaintContractOwner::Paint);
@@ -547,6 +563,15 @@ mod tests {
             PaintArchitectureRole::SerializesPaintOperationDebugSurface
         );
         assert!(!operations.retained);
+
+        let stacking =
+            architecture_contract(PaintArchitectureArtifact::StackingContextDebugSnapshot);
+        assert_eq!(stacking.owner, PaintContractOwner::Paint);
+        assert_eq!(
+            stacking.role,
+            PaintArchitectureRole::SerializesStackingContextDebugSurface
+        );
+        assert!(!stacking.retained);
 
         let args = architecture_contract(PaintArchitectureArtifact::PaintArgs);
         assert_eq!(args.owner, PaintContractOwner::Gfx);
@@ -635,7 +660,7 @@ mod tests {
                 PaintExcludedFeature::OutlineOffset,
                 PaintExcludedFeature::UnsupportedTextDecorationFeatures,
                 PaintExcludedFeature::FullCssPaintingOrder,
-                PaintExcludedFeature::StackingContexts,
+                PaintExcludedFeature::BehavioralStackingContexts,
                 PaintExcludedFeature::ZIndex,
                 PaintExcludedFeature::Compositing,
                 PaintExcludedFeature::GpuPipeline,
