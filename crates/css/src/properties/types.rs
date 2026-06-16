@@ -40,10 +40,11 @@ pub enum PropertyId {
     Position,
     TextDecorationLine,
     Width,
+    ZIndex,
 }
 
 impl PropertyId {
-    pub const ALL: [Self; 34] = [
+    pub const ALL: [Self; 35] = [
         Self::BackgroundColor,
         Self::BorderBottomColor,
         Self::BorderBottomStyle,
@@ -78,6 +79,7 @@ impl PropertyId {
         Self::Position,
         Self::TextDecorationLine,
         Self::Width,
+        Self::ZIndex,
     ];
 
     pub const fn as_index(self) -> usize {
@@ -116,6 +118,7 @@ impl PropertyId {
             Self::Position => 31,
             Self::TextDecorationLine => 32,
             Self::Width => 33,
+            Self::ZIndex => 34,
         }
     }
 
@@ -209,7 +212,8 @@ const fn default_length_sign_policy(
         | PropertySpecifiedValueKind::TextDecorationLineKeyword
         | PropertySpecifiedValueKind::DisplayKeyword
         | PropertySpecifiedValueKind::OverflowKeyword
-        | PropertySpecifiedValueKind::PositionKeyword => PropertyLengthSignPolicy::NotLength,
+        | PropertySpecifiedValueKind::PositionKeyword
+        | PropertySpecifiedValueKind::ZIndex => PropertyLengthSignPolicy::NotLength,
         PropertySpecifiedValueKind::AbsoluteLength
         | PropertySpecifiedValueKind::LengthPercentageOrAuto
         | PropertySpecifiedValueKind::LengthPercentageOrNone => {
@@ -239,6 +243,7 @@ pub enum PropertySpecifiedValueKind {
     DisplayKeyword,
     OverflowKeyword,
     PositionKeyword,
+    ZIndex,
     AbsoluteLength,
     LengthPercentageOrAuto,
     LengthPercentageOrNone,
@@ -254,6 +259,7 @@ impl PropertySpecifiedValueKind {
             Self::DisplayKeyword => "display-keyword",
             Self::OverflowKeyword => "overflow-keyword",
             Self::PositionKeyword => "position-keyword",
+            Self::ZIndex => "z-index",
             Self::AbsoluteLength => "absolute-length",
             Self::LengthPercentageOrAuto => "length-percentage-or-auto",
             Self::LengthPercentageOrNone => "length-percentage-or-none",
@@ -275,6 +281,7 @@ pub enum PropertyComputedValueKind {
     DisplayKeyword,
     OverflowKeyword,
     PositionKeyword,
+    ZIndex,
     AbsoluteLength,
     LengthPercentageOrAuto,
     LengthPercentageOrNone,
@@ -290,6 +297,7 @@ impl PropertyComputedValueKind {
             Self::DisplayKeyword => "display-keyword",
             Self::OverflowKeyword => "overflow-keyword",
             Self::PositionKeyword => "position-keyword",
+            Self::ZIndex => "z-index",
             Self::AbsoluteLength => "absolute-length",
             Self::LengthPercentageOrAuto => "length-percentage-or-auto",
             Self::LengthPercentageOrNone => "length-percentage-or-none",
@@ -339,6 +347,7 @@ pub enum InitialStyleValue {
     OverflowVisible,
     PositionStatic,
     TextDecorationLineNone,
+    ZIndexAuto,
 }
 
 impl InitialStyleValue {
@@ -356,6 +365,7 @@ impl InitialStyleValue {
             Self::OverflowVisible => "visible",
             Self::PositionStatic => "static",
             Self::TextDecorationLineNone => "none",
+            Self::ZIndexAuto => "auto",
         }
     }
 }

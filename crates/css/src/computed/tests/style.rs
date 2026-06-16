@@ -50,6 +50,7 @@ fn computed_style_initial_snapshot_is_total_and_canonical() {
             "  position: static\n",
             "  text-decoration-line: none\n",
             "  width: auto\n",
+            "  z-index: auto\n",
         )
     );
 }
@@ -76,6 +77,7 @@ fn computed_style_accessors_match_property_entries() {
         PropertyId::PaddingLeft,
         PropertyId::TextDecorationLine,
         PropertyId::Width,
+        PropertyId::ZIndex,
     ]);
     builder
         .record(
@@ -176,6 +178,12 @@ fn computed_style_accessors_match_property_entries() {
     builder
         .record(PropertyId::Width, length_percentage_or_auto_px(300.0))
         .expect("width");
+    builder
+        .record(
+            PropertyId::ZIndex,
+            ComputedValue::ZIndex(ZIndex::Integer(7)),
+        )
+        .expect("z-index");
 
     let style = builder.build().expect("computed style");
 
@@ -259,6 +267,11 @@ fn computed_style_accessors_match_property_entries() {
         style.get(PropertyId::Width).value(),
         ComputedValue::LengthPercentageOrAuto(style.width())
     );
+    assert_eq!(
+        style.get(PropertyId::ZIndex).value(),
+        ComputedValue::ZIndex(style.z_index())
+    );
+    assert_eq!(style.z_index(), ZIndex::Integer(7));
 }
 
 #[test]
@@ -409,6 +422,10 @@ fn computed_style_get_round_trips_all_builder_supported_properties_losslessly() 
             ComputedValue::TextDecorationLine(TextDecorationLine::Underline),
         ),
         (PropertyId::Width, length_percentage_or_auto_px(30.0)),
+        (
+            PropertyId::ZIndex,
+            ComputedValue::ZIndex(ZIndex::Integer(-2)),
+        ),
     ];
 
     let mut builder = builder_with_initials_except(PropertyId::ALL.as_slice());

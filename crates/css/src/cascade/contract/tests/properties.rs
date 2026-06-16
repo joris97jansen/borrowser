@@ -209,6 +209,12 @@ fn supported_property_metadata_matches_current_subset_contract() {
             InitialStyleValue::AutoKeyword,
             CascadePropertyLengthSignPolicy::NonNegative,
         ),
+        (
+            CascadePropertyId::ZIndex,
+            CascadeInheritance::NotInherited,
+            InitialStyleValue::ZIndexAuto,
+            CascadePropertyLengthSignPolicy::NotLength,
+        ),
     ];
 
     assert_eq!(CascadePropertyId::ALL.len(), expected.len());

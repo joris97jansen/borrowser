@@ -96,6 +96,13 @@ pub enum Position {
     Sticky,
 }
 
+/// CSS `z-index` value for the current stacking subset.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ZIndex {
+    Auto,
+    Integer(i32),
+}
+
 pub fn parse_color(value: &str) -> Option<(u8, u8, u8, u8)> {
     let s = value.trim().to_ascii_lowercase();
     // HEX

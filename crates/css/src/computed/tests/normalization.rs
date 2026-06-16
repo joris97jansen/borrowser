@@ -89,6 +89,18 @@ fn computed_value_normalizes_position_keywords_to_runtime_enum() {
 }
 
 #[test]
+fn computed_value_normalizes_z_index_to_runtime_enum() {
+    assert_eq!(
+        normalized_value(PropertyId::ZIndex, "z-index: auto"),
+        ComputedValue::ZIndex(ZIndex::Auto)
+    );
+    assert_eq!(
+        normalized_value(PropertyId::ZIndex, "z-index: -4"),
+        ComputedValue::ZIndex(ZIndex::Integer(-4))
+    );
+}
+
+#[test]
 fn computed_value_normalizes_lengths_to_css_px() {
     assert_eq!(
         normalized_value(PropertyId::FontSize, "font-size: 16px"),
@@ -184,6 +196,7 @@ fn computed_value_normalization_matches_property_metadata_for_supported_subset()
             "text-decoration-line: underline",
         ),
         (PropertyId::Width, "width: auto"),
+        (PropertyId::ZIndex, "z-index: auto"),
     ];
 
     for property in property_registry().ids() {

@@ -6,7 +6,7 @@ use super::{
     },
 };
 
-pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 34] = [
+pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
     PropertyRegistration::new(
         PropertyId::BackgroundColor,
         "background-color",
@@ -317,9 +317,18 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 34] = [
             PropertyComputedValueKind::LengthPercentageOrAuto,
         ),
     ),
+    PropertyRegistration::new(
+        PropertyId::ZIndex,
+        "z-index",
+        PropertyMetadata::not_inherited(
+            InitialStyleValue::ZIndexAuto,
+            PropertySpecifiedValueKind::ZIndex,
+            PropertyComputedValueKind::ZIndex,
+        ),
+    ),
 ];
 
-pub(super) const PROPERTY_LOOKUP_BY_NAME: [PropertyNameLookupEntry; 34] = [
+pub(super) const PROPERTY_LOOKUP_BY_NAME: [PropertyNameLookupEntry; 35] = [
     PropertyNameLookupEntry::new("background-color", PropertyId::BackgroundColor),
     PropertyNameLookupEntry::new("border-bottom-color", PropertyId::BorderBottomColor),
     PropertyNameLookupEntry::new("border-bottom-style", PropertyId::BorderBottomStyle),
@@ -354,4 +363,5 @@ pub(super) const PROPERTY_LOOKUP_BY_NAME: [PropertyNameLookupEntry; 34] = [
     PropertyNameLookupEntry::new("position", PropertyId::Position),
     PropertyNameLookupEntry::new("text-decoration-line", PropertyId::TextDecorationLine),
     PropertyNameLookupEntry::new("width", PropertyId::Width),
+    PropertyNameLookupEntry::new("z-index", PropertyId::ZIndex),
 ];

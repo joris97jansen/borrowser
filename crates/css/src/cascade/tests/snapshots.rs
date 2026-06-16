@@ -49,6 +49,7 @@ fn resolved_document_style_debug_snapshot_is_stable() {
             "    position: initial(static)\n",
             "    text-decoration-line: initial(none)\n",
             "    width: initial(auto)\n",
+            "    z-index: initial(auto)\n",
         )
     );
 }
@@ -115,6 +116,7 @@ fn document_style_resolution_debug_snapshot_covers_override_inheritance_and_defa
             "    position: initial(static)\n",
             "    text-decoration-line: initial(none)\n",
             "    width: initial(auto)\n",
+            "    z-index: initial(auto)\n",
             "element[1]: selector-id=2 name=\"div\"\n",
             "  cascade-evaluation\n",
             "  rule-inputs: 2\n",
@@ -165,6 +167,7 @@ fn document_style_resolution_debug_snapshot_covers_override_inheritance_and_defa
             "    position: initial(static)\n",
             "    text-decoration-line: initial(none)\n",
             "    width: initial(auto)\n",
+            "    z-index: initial(auto)\n",
         )
     );
 }

@@ -3,8 +3,8 @@ use super::{
     SpecifiedDisplayKeyword, SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto,
     SpecifiedLengthUnit, SpecifiedOutlineStyleKeyword, SpecifiedOverflowKeyword,
     SpecifiedPositionKeyword, SpecifiedTextDecorationLineKeyword, SpecifiedValue,
-    SpecifiedValueLimits, SpecifiedValueParseErrorKind, parse_specified_value,
-    parse_specified_value_with_limits,
+    SpecifiedValueLimits, SpecifiedValueParseErrorKind, SpecifiedZIndexValue,
+    parse_specified_value, parse_specified_value_with_limits,
 };
 use crate::{
     ParseOptions, PropertyId, PropertySpecifiedValueKind, Rule, parse_stylesheet_with_options,
@@ -115,6 +115,16 @@ fn parses_representative_property_aware_specified_values() {
     };
     assert_eq!(position.keyword(), SpecifiedPositionKeyword::Relative);
     assert_eq!(position.to_css_text(), "relative");
+
+    let z_index = parse(PropertyId::ZIndex, "z-index: -3");
+    let SpecifiedValue::ZIndex(z_index) = z_index.value() else {
+        panic!("expected z-index");
+    };
+    assert_eq!(z_index.value(), SpecifiedZIndexValue::Integer(-3));
+    assert_eq!(z_index.to_css_text(), "-3");
+
+    let z_index_auto = parse(PropertyId::ZIndex, "z-index: AUTO");
+    assert_eq!(z_index_auto.to_css_text(), "auto");
 
     let text_decoration_line = parse(
         PropertyId::TextDecorationLine,
@@ -228,6 +238,18 @@ fn rejects_values_that_do_not_match_the_property_specified_shape() {
         SpecifiedValueParseErrorKind::UnsupportedPositionKeyword
     );
     assert_eq!(
+        parse_error(PropertyId::ZIndex, "z-index: 1.5"),
+        SpecifiedValueParseErrorKind::InvalidInteger
+    );
+    assert_eq!(
+        parse_error(PropertyId::ZIndex, "z-index: 1px"),
+        SpecifiedValueParseErrorKind::UnsupportedComponent
+    );
+    assert_eq!(
+        parse_error(PropertyId::ZIndex, "z-index: top"),
+        SpecifiedValueParseErrorKind::UnsupportedKeyword
+    );
+    assert_eq!(
         parse_error(
             PropertyId::TextDecorationLine,
             "text-decoration-line: overline"
@@ -308,6 +330,7 @@ fn supported_property_metadata_matches_emitted_specified_value_kinds() {
             "text-decoration-line: underline",
         ),
         (PropertyId::Width, "width: auto"),
+        (PropertyId::ZIndex, "z-index: auto"),
     ];
 
     for property in property_registry().ids() {

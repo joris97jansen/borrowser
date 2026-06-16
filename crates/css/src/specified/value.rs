@@ -61,6 +61,7 @@ pub enum SpecifiedValue {
     Display(SpecifiedDisplay),
     Overflow(SpecifiedOverflow),
     Position(SpecifiedPosition),
+    ZIndex(SpecifiedZIndex),
     Length(SpecifiedLength),
     LengthPercentageOrAuto(SpecifiedLengthPercentageOrAuto),
     LengthPercentageOrNone(SpecifiedLengthPercentageOrNone),
@@ -76,6 +77,7 @@ impl SpecifiedValue {
             Self::Display(_) => PropertySpecifiedValueKind::DisplayKeyword,
             Self::Overflow(_) => PropertySpecifiedValueKind::OverflowKeyword,
             Self::Position(_) => PropertySpecifiedValueKind::PositionKeyword,
+            Self::ZIndex(_) => PropertySpecifiedValueKind::ZIndex,
             Self::Length(_) => PropertySpecifiedValueKind::AbsoluteLength,
             Self::LengthPercentageOrAuto(_) => PropertySpecifiedValueKind::LengthPercentageOrAuto,
             Self::LengthPercentageOrNone(_) => PropertySpecifiedValueKind::LengthPercentageOrNone,
@@ -91,6 +93,7 @@ impl SpecifiedValue {
             Self::Display(display) => display.span(),
             Self::Overflow(overflow) => overflow.span(),
             Self::Position(position) => position.span(),
+            Self::ZIndex(z_index) => z_index.span(),
             Self::Length(length) => length.span(),
             Self::LengthPercentageOrAuto(value) => value.span(),
             Self::LengthPercentageOrNone(value) => value.span(),
@@ -108,6 +111,7 @@ impl SpecifiedValue {
             Self::Display(display) => display.to_css_text().to_string(),
             Self::Overflow(overflow) => overflow.to_css_text().to_string(),
             Self::Position(position) => position.to_css_text().to_string(),
+            Self::ZIndex(z_index) => z_index.to_css_text(),
             Self::Length(length) => length.to_css_text(),
             Self::LengthPercentageOrAuto(value) => value.to_css_text(),
             Self::LengthPercentageOrNone(value) => value.to_css_text(),
@@ -362,6 +366,35 @@ impl SpecifiedPositionKeyword {
             Self::Sticky => "sticky",
         }
     }
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct SpecifiedZIndex {
+    pub(super) span: CssSpan,
+    pub(super) value: SpecifiedZIndexValue,
+}
+
+impl SpecifiedZIndex {
+    pub fn span(&self) -> CssSpan {
+        self.span
+    }
+
+    pub fn value(&self) -> SpecifiedZIndexValue {
+        self.value
+    }
+
+    pub fn to_css_text(&self) -> String {
+        match self.value {
+            SpecifiedZIndexValue::Auto => "auto".to_string(),
+            SpecifiedZIndexValue::Integer(value) => value.to_string(),
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SpecifiedZIndexValue {
+    Auto,
+    Integer(i32),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

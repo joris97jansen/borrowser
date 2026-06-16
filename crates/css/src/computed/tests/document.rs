@@ -142,6 +142,7 @@ fn computed_document_style_snapshot_is_deterministic() {
             "  position: static\n",
             "  text-decoration-line: none\n",
             "  width: 12px\n",
+            "  z-index: auto\n",
             "element[1]: selector-id=2 name=\"span\"\n",
             "  background-color: rgba(0, 0, 0, 0)\n",
             "  border-bottom-color: rgba(0, 0, 0, 0)\n",
@@ -177,6 +178,7 @@ fn computed_document_style_snapshot_is_deterministic() {
             "  position: static\n",
             "  text-decoration-line: none\n",
             "  width: auto\n",
+            "  z-index: auto\n",
         )
     );
 }

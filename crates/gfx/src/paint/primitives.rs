@@ -8,7 +8,7 @@ use layout::{LayoutBox, LayoutPhaseOutput, ListMarker, Rectangle, ReplacedKind, 
 
 use super::PaintPhaseInput;
 use super::contracts::PaintOrderPhase;
-use super::stacking::StackingContextTree;
+use super::stacking::{StackingContextId, StackingContextTree, StackingLayerKind};
 
 /// Paint-owned semantic input derived from layout output for one paint phase.
 ///
@@ -86,8 +86,7 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
             self.layout.root().node_id().0
         )
         .expect("write paint order snapshot");
-        self.tree
-            .append_order_debug_snapshot(&mut out)
+        self.append_stacking_order_debug_snapshot(&mut out)
             .expect("write paint order snapshot");
         out
     }
@@ -109,6 +108,76 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
     pub fn to_operation_debug_snapshot(&self) -> String {
         super::debug::paint_operation_debug_snapshot(self)
     }
+
+    fn append_stacking_order_debug_snapshot(&self, out: &mut String) -> std::fmt::Result {
+        writeln!(out, "paint-tree-order")?;
+        self.append_context_order_debug_snapshot(self.stacking_contexts.root_id(), out, 0)
+    }
+
+    fn append_context_order_debug_snapshot(
+        &self,
+        context_id: StackingContextId,
+        out: &mut String,
+        depth: usize,
+    ) -> std::fmt::Result {
+        self.append_child_contexts_for_order_layer(
+            context_id,
+            StackingLayerKind::NegativeZIndex,
+            out,
+            depth,
+        )?;
+
+        let Some(context) = self.stacking_contexts.context(context_id) else {
+            return Ok(());
+        };
+        if let Some(node) = self.tree.node_for_source(context.source().paint_source()) {
+            node.append_order_debug_snapshot_with_stacking_contexts(
+                out,
+                depth,
+                context_id,
+                &self.stacking_contexts,
+            )?;
+        }
+
+        self.append_child_contexts_for_order_layer(
+            context_id,
+            StackingLayerKind::ZeroZIndex,
+            out,
+            depth,
+        )?;
+        self.append_child_contexts_for_order_layer(
+            context_id,
+            StackingLayerKind::PositiveZIndex,
+            out,
+            depth,
+        )
+    }
+
+    fn append_child_contexts_for_order_layer(
+        &self,
+        parent: StackingContextId,
+        layer: StackingLayerKind,
+        out: &mut String,
+        depth: usize,
+    ) -> std::fmt::Result {
+        for child in self
+            .stacking_contexts
+            .child_contexts_for_layer(parent, layer)
+        {
+            let indent = "  ".repeat(depth);
+            writeln!(
+                out,
+                "{}phase=stacking-context child-context id={} layer={} z-index={} tree-order={}",
+                indent,
+                child.id().index(),
+                child.order_key().layer().debug_label(),
+                optional_i32_debug_label(child.order_key().z_index()),
+                child.order_key().tree_order(),
+            )?;
+            self.append_context_order_debug_snapshot(child.id(), out, depth + 1)?;
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -121,6 +190,10 @@ impl PaintTree {
         &self.root
     }
 
+    pub fn node_for_source(&self, source: PaintSource) -> Option<&PaintNode> {
+        self.root.node_for_source(source)
+    }
+
     fn from_layout(layout: &LayoutBox<'_, '_>, measurer: &dyn TextMeasurer) -> Self {
         Self {
             root: PaintNode::from_layout(layout, measurer),
@@ -130,11 +203,6 @@ impl PaintTree {
     fn append_debug_snapshot(&self, out: &mut String) -> std::fmt::Result {
         writeln!(out, "paint-tree")?;
         self.root.append_debug_snapshot(out, 0)
-    }
-
-    fn append_order_debug_snapshot(&self, out: &mut String) -> std::fmt::Result {
-        writeln!(out, "paint-tree-order")?;
-        self.root.append_order_debug_snapshot(out, 0)
     }
 }
 
@@ -161,6 +229,16 @@ impl PaintNode {
 
     pub fn post_primitives(&self) -> &[PaintPrimitive] {
         &self.post_primitives
+    }
+
+    fn node_for_source(&self, source: PaintSource) -> Option<&PaintNode> {
+        if self.source == source {
+            return Some(self);
+        }
+
+        self.children
+            .iter()
+            .find_map(|child| child.node_for_source(source))
     }
 
     fn from_layout(layout: &LayoutBox<'_, '_>, measurer: &dyn TextMeasurer) -> Self {
@@ -222,7 +300,13 @@ impl PaintNode {
         Ok(())
     }
 
-    fn append_order_debug_snapshot(&self, out: &mut String, depth: usize) -> std::fmt::Result {
+    fn append_order_debug_snapshot_with_stacking_contexts(
+        &self,
+        out: &mut String,
+        depth: usize,
+        owner_context: StackingContextId,
+        stacking_contexts: &StackingContextTree,
+    ) -> std::fmt::Result {
         let indent = "  ".repeat(depth);
         writeln!(
             out,
@@ -239,6 +323,13 @@ impl PaintNode {
             )?;
         }
         for child in &self.children {
+            if stacking_contexts
+                .context_id_for_source_context(child.source)
+                .is_some_and(|context| context != owner_context)
+            {
+                continue;
+            }
+
             writeln!(
                 out,
                 "{}  phase={} child-subtree box={} node={}",
@@ -247,7 +338,12 @@ impl PaintNode {
                 child.source.box_id,
                 child.source.node_id.0
             )?;
-            child.append_order_debug_snapshot(out, depth + 1)?;
+            child.append_order_debug_snapshot_with_stacking_contexts(
+                out,
+                depth + 1,
+                owner_context,
+                stacking_contexts,
+            )?;
         }
         for primitive in &self.post_primitives {
             writeln!(
@@ -893,9 +989,15 @@ fn optional_source_debug_label(source: Option<PaintSource>) -> String {
         .unwrap_or_else(|| "none".to_string())
 }
 
+fn optional_i32_debug_label(value: Option<i32>) -> String {
+    value
+        .map(|value| value.to_string())
+        .unwrap_or_else(|| "auto".to_string())
+}
+
 #[cfg(test)]
 mod tests {
-    use super::super::stacking::{StackingContextId, StackingContextSource};
+    use super::super::stacking::{StackingContextId, StackingContextSource, StackingLayerKind};
     use super::*;
     use css::{ComputedStyle, Length, TextDecorationLine};
     use html::{Node, internal::Id};
@@ -982,6 +1084,31 @@ mod tests {
 
     fn primitive_kinds(node: &PaintNode) -> Vec<PaintPrimitiveKind> {
         node.primitives().iter().map(PaintPrimitive::kind).collect()
+    }
+
+    fn positioned_block(id: Id, z_index: &str, color: &str, children: Vec<Node>) -> Node {
+        Node::Element {
+            id,
+            name: Arc::from("div"),
+            attributes: Vec::new(),
+            style: vec![
+                ("display".to_string(), "block".to_string()),
+                ("position".to_string(), "relative".to_string()),
+                ("z-index".to_string(), z_index.to_string()),
+                ("width".to_string(), "20px".to_string()),
+                ("height".to_string(), "20px".to_string()),
+                ("background-color".to_string(), color.to_string()),
+            ],
+            children,
+        }
+    }
+
+    fn child_context_node_ids(contexts: &StackingContextTree, layer: StackingLayerKind) -> Vec<Id> {
+        contexts
+            .child_contexts_for_layer(StackingContextId::ROOT, layer)
+            .iter()
+            .map(|context| context.source().paint_source().node_id)
+            .collect()
     }
 
     fn flattened_paint_order(node: &PaintNode) -> Vec<PaintPrimitiveKind> {
@@ -1164,12 +1291,14 @@ mod tests {
         let second = build_stacking_context_snapshot(&dom);
 
         assert_eq!(first, second);
-        assert!(first.starts_with("version: 1\nstacking-context-tree\n"));
+        assert!(first.starts_with("version: 2\nstacking-context-tree\n"));
         assert!(first.contains("root-context: 0"));
         assert!(first.contains(
-            "context id=0 parent=none source=root-document(box=0 node=1 anonymous=false)"
+            "context id=0 parent=none source=root-document(box=0 node=1 anonymous=false) layer=normal-flow z-index=auto tree-order=0"
         ));
-        assert!(first.contains("item source=box=1 node=2 anonymous=false context=0"));
+        assert!(first.contains(
+            "item source=box=1 node=2 anonymous=false context=0 layer=normal-flow z-index=auto"
+        ));
         assert!(!first.contains("egui"));
         assert!(!first.contains("gpu"));
         assert!(!first.contains("texture"));
@@ -1209,6 +1338,177 @@ mod tests {
         );
         assert_eq!(input.stacking_contexts().contexts().len(), 1);
         assert_eq!(input.stacking_contexts().root().items().len(), 2);
+    }
+
+    #[test]
+    fn positioned_integer_z_index_creates_child_context_only_for_supported_trigger() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![("display".to_string(), "block".to_string())],
+                children: vec![
+                    Node::Element {
+                        id: Id(3),
+                        name: Arc::from("div"),
+                        attributes: Vec::new(),
+                        style: vec![
+                            ("display".to_string(), "block".to_string()),
+                            ("position".to_string(), "relative".to_string()),
+                            ("z-index".to_string(), "2".to_string()),
+                        ],
+                        children: Vec::new(),
+                    },
+                    Node::Element {
+                        id: Id(4),
+                        name: Arc::from("div"),
+                        attributes: Vec::new(),
+                        style: vec![
+                            ("display".to_string(), "block".to_string()),
+                            ("z-index".to_string(), "9".to_string()),
+                        ],
+                        children: Vec::new(),
+                    },
+                    Node::Element {
+                        id: Id(5),
+                        name: Arc::from("div"),
+                        attributes: Vec::new(),
+                        style: vec![
+                            ("display".to_string(), "block".to_string()),
+                            ("position".to_string(), "relative".to_string()),
+                            ("z-index".to_string(), "auto".to_string()),
+                        ],
+                        children: Vec::new(),
+                    },
+                ],
+            }],
+        };
+
+        let styled = build_style_tree(&dom);
+        let layout = build_layout_for(&styled);
+        let input = build_paint_input(&layout);
+        let contexts = input.stacking_contexts();
+        let root = contexts.root();
+
+        assert_eq!(contexts.contexts().len(), 2);
+        assert_eq!(root.children().len(), 1);
+        let child_id = root.children()[0];
+        let child = contexts.context(child_id).expect("child context");
+        assert!(matches!(
+            child.source(),
+            StackingContextSource::PositionedElement(PaintSource { node_id: Id(3), .. })
+        ));
+        assert_eq!(child.order_key().layer(), StackingLayerKind::PositiveZIndex);
+        assert_eq!(child.order_key().z_index(), Some(2));
+        assert_eq!(
+            contexts.context_for_source(child.source().paint_source()),
+            Some(child_id)
+        );
+        assert!(
+            root.items()
+                .iter()
+                .any(|item| item.source().node_id == Id(4))
+        );
+        assert!(
+            root.items()
+                .iter()
+                .any(|item| item.source().node_id == Id(5))
+        );
+    }
+
+    #[test]
+    fn child_context_layers_and_ties_are_deterministic() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![("display".to_string(), "block".to_string())],
+                children: vec![
+                    positioned_block(Id(3), "-1", "#111111", Vec::new()),
+                    positioned_block(Id(4), "0", "#222222", Vec::new()),
+                    positioned_block(Id(5), "2", "#333333", Vec::new()),
+                    positioned_block(Id(6), "2", "#444444", Vec::new()),
+                ],
+            }],
+        };
+
+        let styled = build_style_tree(&dom);
+        let layout = build_layout_for(&styled);
+        let input = build_paint_input(&layout);
+        let contexts = input.stacking_contexts();
+
+        assert_eq!(
+            child_context_node_ids(contexts, StackingLayerKind::NegativeZIndex),
+            vec![Id(3)]
+        );
+        assert_eq!(
+            child_context_node_ids(contexts, StackingLayerKind::ZeroZIndex),
+            vec![Id(4)]
+        );
+        assert_eq!(
+            child_context_node_ids(contexts, StackingLayerKind::PositiveZIndex),
+            vec![Id(5), Id(6)]
+        );
+    }
+
+    #[test]
+    fn nested_positioned_z_index_contexts_are_owned_by_nearest_context() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![("display".to_string(), "block".to_string())],
+                children: vec![
+                    positioned_block(
+                        Id(3),
+                        "1",
+                        "#111111",
+                        vec![positioned_block(Id(4), "-1", "#222222", Vec::new())],
+                    ),
+                    positioned_block(Id(5), "2", "#333333", Vec::new()),
+                ],
+            }],
+        };
+
+        let styled = build_style_tree(&dom);
+        let layout = build_layout_for(&styled);
+        let input = build_paint_input(&layout);
+        let contexts = input.stacking_contexts();
+        let first = contexts
+            .contexts()
+            .iter()
+            .find(|context| context.source().paint_source().node_id == Id(3))
+            .expect("first positioned context");
+        let nested = contexts
+            .contexts()
+            .iter()
+            .find(|context| context.source().paint_source().node_id == Id(4))
+            .expect("nested positioned context");
+
+        assert_eq!(first.parent(), Some(StackingContextId::ROOT));
+        assert_eq!(nested.parent(), Some(first.id()));
+        assert_eq!(first.children(), &[nested.id()]);
+        assert_eq!(
+            child_context_node_ids(contexts, StackingLayerKind::PositiveZIndex),
+            vec![Id(3), Id(5)]
+        );
+        assert_eq!(
+            contexts
+                .child_contexts_for_layer(first.id(), StackingLayerKind::NegativeZIndex)
+                .iter()
+                .map(|context| context.source().paint_source().node_id)
+                .collect::<Vec<_>>(),
+            vec![Id(4)]
+        );
     }
 
     #[test]

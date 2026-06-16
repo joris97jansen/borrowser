@@ -15,6 +15,7 @@ use super::{
     position::parse_position,
     text_decoration::parse_text_decoration_line,
     value::{SpecifiedPropertyValue, SpecifiedValue},
+    z_index::parse_z_index,
 };
 
 /// Parses one model-layer declaration value into a property-aware specified
@@ -53,6 +54,9 @@ pub fn parse_specified_value_with_limits(
         }
         PropertySpecifiedValueKind::PositionKeyword => {
             SpecifiedValue::Position(parse_position(property, component)?)
+        }
+        PropertySpecifiedValueKind::ZIndex => {
+            SpecifiedValue::ZIndex(parse_z_index(property, component)?)
         }
         PropertySpecifiedValueKind::AbsoluteLength => {
             SpecifiedValue::Length(parse_length(property, component)?)

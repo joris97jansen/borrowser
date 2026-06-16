@@ -21,6 +21,8 @@ pub(crate) struct PaintCtx<'a> {
     pub(crate) selection_bg_fill: Color32,
     pub(crate) selection_stroke: Stroke,
     pub(crate) fragment_rects: Option<&'a RefCell<HashMap<Id, Rectangle>>>,
+    pub(crate) stacking_contexts:
+        Option<(&'a super::StackingContextTree, super::StackingContextId)>,
 }
 
 impl<'a> PaintCtx<'a> {

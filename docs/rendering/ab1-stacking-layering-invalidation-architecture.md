@@ -32,6 +32,7 @@ Related documents:
 - `docs/rendering/aa7-deterministic-paint-ordering-layering-rules.md`
 - `docs/rendering/aa9-paint-model-invariants-extension-points.md`
 - `docs/rendering/ab2-stacking-context-representation.md`
+- `docs/rendering/ab3-z-order-layering-semantics.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
@@ -69,7 +70,9 @@ LayoutPhaseOutput
 
 AB1 does not replace that pipeline. AB2 adds the first explicit
 root-context-only `StackingContextTree` representation inside `PaintInput`
-without changing visual paint order.
+without changing visual paint order. AB3 refines that representation with the
+first narrow behavioral child-context and z-order subset for positioned boxes
+with computed integer `z-index`.
 
 ## Ownership Boundaries
 
@@ -138,9 +141,9 @@ descendant paintable content into an atomic unit relative to sibling stacking
 contexts in the parent context.
 
 AB2 implements the root stacking context as an explicit paint-owned
-representation. It does not construct behavioral child stacking contexts
-beyond the current document-level paint traversal. Future issues must
-explicitly define:
+representation. AB3 adds child stacking contexts only for positioned generated
+boxes with computed integer `z-index`. Future issues that broaden stacking
+behavior must explicitly define:
 
 - which computed style and layout facts establish a context;
 - the context's parent relationship;
@@ -311,6 +314,11 @@ AB1 deliberately does not implement:
 These remain excluded because AB1 is the architecture issue. Later issues must
 remove exclusions one at a time with code, tests, debug surfaces, and updated
 contracts.
+
+AB3 removes the first narrow slice of these exclusions by adding CSS
+`z-index: auto | <integer>` and paint-owned child contexts only for positioned
+generated boxes with computed integer `z-index`. Full CSS stacking-context and
+`z-index` behavior remains excluded.
 
 ## Extension Rules For Future AB Issues
 

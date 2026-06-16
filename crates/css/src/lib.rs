@@ -104,8 +104,8 @@ pub use specified::{
     SpecifiedOutlineStyleKeyword, SpecifiedOverflow, SpecifiedOverflowKeyword, SpecifiedPercentage,
     SpecifiedPosition, SpecifiedPositionKeyword, SpecifiedPropertyValue,
     SpecifiedTextDecorationLine, SpecifiedTextDecorationLineKeyword, SpecifiedValue,
-    SpecifiedValueLimits, SpecifiedValueParseError, SpecifiedValueParseErrorKind,
-    parse_specified_value, parse_specified_value_with_limits,
+    SpecifiedValueLimits, SpecifiedValueParseError, SpecifiedValueParseErrorKind, SpecifiedZIndex,
+    SpecifiedZIndexValue, parse_specified_value, parse_specified_value_with_limits,
 };
 
 // Explicit syntax-layer surface for parser/tokenizer work and syntax tests.
@@ -150,5 +150,5 @@ pub use syntax::serialize_compat_stylesheet_for_snapshot;
 
 pub use values::{
     BorderStyle, Display, Length, LengthPercentage, OutlineStyle, Overflow, Percentage, Position,
-    TextDecorationLine, parse_color, parse_length,
+    TextDecorationLine, ZIndex, parse_color, parse_length,
 };
