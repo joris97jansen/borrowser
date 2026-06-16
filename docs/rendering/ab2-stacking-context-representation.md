@@ -7,10 +7,10 @@ This document defines Borrowser's first concrete stacking-context
 representation. AB2 makes stacking contexts explicit, deterministic, and
 testable inside the paint pipeline without changing visual paint order.
 
-AB2 does not implement `z-index`, opacity, transforms, filters, blend modes,
-isolation, containment, compositor layers, GPU layers, retained display lists,
-retained paint scenes, targeted repaint, dirty regions, or paint invalidation
-behavior.
+AB2 does not implement the AB3 `z-index` subset, opacity, transforms, filters,
+blend modes, isolation, containment, compositor layers, GPU layers, retained
+display lists, retained paint scenes, targeted repaint, dirty regions, or paint
+invalidation behavior.
 
 Related code:
 - `crates/gfx/src/paint/stacking.rs`
@@ -21,6 +21,7 @@ Related code:
 
 Related documents:
 - `docs/rendering/ab1-stacking-layering-invalidation-architecture.md`
+- `docs/rendering/ab3-z-order-layering-semantics.md`
 - `docs/rendering/aa7-deterministic-paint-ordering-layering-rules.md`
 - `docs/rendering/aa9-paint-model-invariants-extension-points.md`
 - `docs/rendering/aa6-overflow-clipping-paint-behavior.md`
@@ -28,20 +29,20 @@ Related documents:
 
 ## Scope
 
-AB2 introduces a paint-owned, frame-local `StackingContextTree` attached to
-`PaintInput`.
+AB2 introduced a paint-owned, frame-local `StackingContextTree` attached to
+`PaintInput`. Its original supported subset was intentionally root-context-only:
 
-The supported subset is intentionally root-context-only:
+- every `PaintInput` had one root stacking context;
+- the root context had deterministic `StackingContextId::ROOT`;
+- every paintable layout box belonged to the root context;
+- membership followed layout-owned traversal order;
+- the existing AA paint order remained unchanged.
 
-- every `PaintInput` has one root stacking context;
-- the root context has deterministic `StackingContextId::ROOT`;
-- every currently paintable layout box belongs to the root context;
-- membership follows layout-owned traversal order;
-- the existing AA paint order remains unchanged.
-
-AB2 does not create placeholder child contexts. Future issues must add child
-contexts only when they define the computed style and layout facts that
-establish those contexts and the ordering rules that use them.
+AB3 refines that representation with the first narrow child-context and z-order
+subset. The current supported subset still always has the deterministic root
+context, and additionally creates child contexts only for positioned generated
+boxes with computed integer `z-index`. Broader child-context triggers remain
+excluded until explicitly contracted.
 
 ## Ownership
 
@@ -64,8 +65,10 @@ Layout provides stable inputs only:
 Layout does not store stacking-context ownership, sort paint primitives, create
 compositor layers, or decide paint invalidation boundaries.
 
-CSS owns future authored and computed style inputs that may establish stacking
-contexts, but AB2 does not add CSS properties or computed values.
+CSS owns authored and computed style inputs that may establish stacking
+contexts. AB2 did not add CSS properties or computed values; AB3 adds the
+narrow `z-index: auto | <integer>` input consumed by paint for the supported
+positioned integer subset.
 
 Browser/runtime owns frame orchestration and invalidation requests. It does not
 reinterpret stacking membership or decide paint order.
@@ -76,8 +79,9 @@ reinterpret stacking membership or decide paint order.
 `StackingContextTree`.
 
 The root context source is the root layout box represented as
-`StackingContextSource::RootDocument(PaintSource)`. It has no parent and no
-child contexts in AB2.
+`StackingContextSource::RootDocument(PaintSource)`. It has no parent. AB3 may
+add child contexts below it for the supported positioned integer `z-index`
+subset.
 
 The root context is a semantic paint representation. It is not a compositor
 layer, retained scene node, display list, backend command buffer, texture, GPU
@@ -86,7 +90,9 @@ resource, or invalidation boundary.
 ## Stackable Paint Items
 
 `StackablePaintItem` records that a paint source belongs to a stacking context.
-For AB2, all items belong to `StackingContextId::ROOT`.
+For AB2, all items belong to `StackingContextId::ROOT`. In AB3, items belong to
+the root context or to a paint-owned child context created by the supported
+positioned integer `z-index` trigger.
 
 Items are collected from layout boxes before immediate backend drawing. They
 are not discovered by scanning emitted backend operations.
@@ -132,9 +138,12 @@ resource state, and input state:
 - stacking-context representation is deterministic;
 - the root context always exists;
 - `StackingContextId::ROOT` is the root context ID;
-- box membership preserves layout-owned traversal order;
+- box membership preserves layout-owned traversal order within each owning
+  context;
 - every stackable item has a valid owning context;
-- visual paint order remains the AA supported order;
+- visual paint order remains the AA supported order inside one context source;
+  AB3 may order child contexts before or after that source according to its
+  supported z-order layers;
 - overflow clips remain clip scopes, not stacking contexts;
 - stacking representation is built before immediate backend drawing;
 - backend, compositor, GPU, retained-scene, and invalidation concepts do not
@@ -144,12 +153,14 @@ resource state, and input state:
 
 AB2 deliberately excludes:
 
-- `z-index` parsing, computed values, sorting, or behavior;
 - full CSS painting order;
+- full CSS `z-index` behavior beyond AB3's positioned integer subset;
 - opacity, transforms, filters, blend modes, isolation, and containment
   stacking triggers;
-- semantic child stacking contexts;
-- semantic paint layers beyond the root context representation;
+- semantic child stacking contexts beyond AB3's positioned integer `z-index`
+  subset;
+- semantic paint layers beyond AB3's negative, normal, zero, and positive
+  z-order buckets;
 - compositor layers;
 - GPU layers or promotion logic;
 - retained display lists;

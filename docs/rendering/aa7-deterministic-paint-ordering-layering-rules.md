@@ -30,6 +30,7 @@ Related documents:
 - `docs/rendering/aa6-overflow-clipping-paint-behavior.md`
 - `docs/rendering/aa8-paint-debug-visual-regression-surface.md`
 - `docs/rendering/ab1-stacking-layering-invalidation-architecture.md`
+- `docs/rendering/ab3-z-order-layering-semantics.md`
 - `docs/rendering/y4-overflow-semantics-supported-subset.md`
 
 ## Supported Ordering Contract
@@ -103,6 +104,8 @@ The order debug snapshot is a stable regression surface. It is not a public API,
 retained display list, scene graph, command buffer, or compositor artifact.
 AA8 extends this with a paint-operation debug snapshot that uses the same
 paint-owned ordering rules while remaining structural and backend-independent.
+AB3 further routes these debug surfaces through the supported paint-owned
+stacking traversal for positioned integer `z-index` child contexts.
 
 ## Determinism Invariants
 
@@ -126,8 +129,8 @@ resource state, and input state:
 AA7 deliberately does not implement:
 
 - full CSS painting order;
-- stacking contexts;
-- `z-index`;
+- full CSS stacking contexts;
+- full CSS `z-index` behavior beyond AB3's positioned integer subset;
 - opacity layering;
 - transforms;
 - compositing;
@@ -140,5 +143,5 @@ AA7 deliberately does not implement:
 - broad replaced-control internal ordering beyond current supported inline
   paint item behavior.
 
-Those features must extend the AB1 stacking, layering, and invalidation
+Those features must extend the AB1/AB3 stacking, layering, and invalidation
 architecture before changing traversal or layering behavior.

@@ -6,7 +6,7 @@ use crate::{
     property_registry,
     values::{
         BorderStyle, Display, Length, LengthPercentage, OutlineStyle, Overflow, Position,
-        TextDecorationLine,
+        TextDecorationLine, ZIndex,
     },
 };
 
@@ -169,6 +169,9 @@ pub struct ComputedStyle {
     /// CSS `position` keyword after computed-value resolution.
     pub(super) position: Position,
 
+    /// CSS `z-index` value after computed-value resolution.
+    pub(super) z_index: ZIndex,
+
     /// CSS `text-decoration-line` keyword for the supported underline subset.
     pub(super) text_decoration_line: TextDecorationLine,
 
@@ -206,6 +209,7 @@ impl ComputedStyle {
             display: Display::Inline,
             overflow: Overflow::Visible,
             position: Position::Static,
+            z_index: ZIndex::Auto,
             text_decoration_line: TextDecorationLine::None,
             width: None,
             height: None,
@@ -271,6 +275,11 @@ impl ComputedStyle {
     /// Returns the computed `position` keyword.
     pub fn position(&self) -> Position {
         self.position
+    }
+
+    /// Returns the computed `z-index` value.
+    pub fn z_index(&self) -> ZIndex {
+        self.z_index
     }
 
     /// Returns the computed `text-decoration-line` keyword.
@@ -374,6 +383,7 @@ impl ComputedStyle {
             PropertyId::OutlineStyle => ComputedValue::OutlineStyle(self.outline.style),
             PropertyId::OutlineWidth => ComputedValue::Length(Length::Px(self.outline.width)),
             PropertyId::Position => ComputedValue::Position(self.position),
+            PropertyId::ZIndex => ComputedValue::ZIndex(self.z_index),
             PropertyId::PaddingBottom => {
                 ComputedValue::Length(Length::Px(self.box_metrics.padding_bottom))
             }
@@ -423,10 +433,11 @@ impl ComputedStyle {
         let box_metrics = self.box_metrics();
         let _ = write!(
             out,
-            "display={} overflow={} position={} color={} background={} font-size={} width={} height={} margin={} padding={} border={}",
+            "display={} overflow={} position={} z-index={} color={} background={} font-size={} width={} height={} margin={} padding={} border={}",
             display_debug_label(self.display()),
             overflow_debug_label(self.overflow()),
             position_debug_label(self.position()),
+            z_index_debug_label(self.z_index()),
             rgba_debug_label(self.color()),
             rgba_debug_label(self.background_color()),
             length_debug_label(self.font_size()),
@@ -483,6 +494,13 @@ fn position_debug_label(position: Position) -> &'static str {
         Position::Absolute => "absolute",
         Position::Fixed => "fixed",
         Position::Sticky => "sticky",
+    }
+}
+
+fn z_index_debug_label(z_index: ZIndex) -> String {
+    match z_index {
+        ZIndex::Auto => "auto".to_string(),
+        ZIndex::Integer(value) => value.to_string(),
     }
 }
 

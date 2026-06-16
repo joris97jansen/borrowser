@@ -17,6 +17,7 @@ mod parse;
 mod position;
 mod text_decoration;
 mod value;
+mod z_index;
 
 pub use error::{SpecifiedValueParseError, SpecifiedValueParseErrorKind};
 pub use parse::{SpecifiedValueLimits, parse_specified_value, parse_specified_value_with_limits};
@@ -28,6 +29,7 @@ pub use value::{
     SpecifiedOutlineStyleKeyword, SpecifiedOverflow, SpecifiedOverflowKeyword, SpecifiedPercentage,
     SpecifiedPosition, SpecifiedPositionKeyword, SpecifiedPropertyValue,
     SpecifiedTextDecorationLine, SpecifiedTextDecorationLineKeyword, SpecifiedValue,
+    SpecifiedZIndex, SpecifiedZIndexValue,
 };
 
 #[cfg(test)]

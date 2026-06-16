@@ -4,7 +4,7 @@ use crate::{
     PropertyId, property_registry,
     values::{
         BorderStyle, Display, Length, LengthPercentage, OutlineStyle, Overflow, Position,
-        TextDecorationLine,
+        TextDecorationLine, ZIndex,
     },
 };
 
@@ -112,6 +112,7 @@ impl ComputedStyleBuilder {
             display: expect_display(&self.entries, PropertyId::Display),
             overflow: expect_overflow(&self.entries, PropertyId::Overflow),
             position: expect_position(&self.entries, PropertyId::Position),
+            z_index: expect_z_index(&self.entries, PropertyId::ZIndex),
             text_decoration_line: expect_text_decoration_line(
                 &self.entries,
                 PropertyId::TextDecorationLine,
@@ -232,6 +233,21 @@ fn expect_position(
         Some(ComputedValue::Position(position)) => position,
         Some(other) => unreachable!(
             "property '{}' expected position computed value, got {:?}",
+            property.name(),
+            other.discriminant()
+        ),
+        None => unreachable!(
+            "property '{}' missing after completeness check",
+            property.name()
+        ),
+    }
+}
+
+fn expect_z_index(entries: &BTreeMap<PropertyId, ComputedValue>, property: PropertyId) -> ZIndex {
+    match entries.get(&property).copied() {
+        Some(ComputedValue::ZIndex(z_index)) => z_index,
+        Some(other) => unreachable!(
+            "property '{}' expected z-index computed value, got {:?}",
             property.name(),
             other.discriminant()
         ),

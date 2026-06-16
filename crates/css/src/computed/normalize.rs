@@ -3,11 +3,11 @@ use crate::{
     specified::{
         SpecifiedColor, SpecifiedColorKeyword, SpecifiedColorSyntax, SpecifiedDisplayKeyword,
         SpecifiedLength, SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto,
-        SpecifiedLengthPercentageOrNone, SpecifiedPercentage,
+        SpecifiedLengthPercentageOrNone, SpecifiedPercentage, SpecifiedZIndexValue,
     },
     values::{
         BorderStyle, Display, Length, LengthPercentage, OutlineStyle, Percentage,
-        TextDecorationLine,
+        TextDecorationLine, ZIndex,
     },
 };
 
@@ -72,6 +72,13 @@ pub(super) fn normalize_text_decoration_line(
     match line {
         crate::SpecifiedTextDecorationLineKeyword::None => TextDecorationLine::None,
         crate::SpecifiedTextDecorationLineKeyword::Underline => TextDecorationLine::Underline,
+    }
+}
+
+pub(super) fn normalize_z_index(value: SpecifiedZIndexValue) -> ZIndex {
+    match value {
+        SpecifiedZIndexValue::Auto => ZIndex::Auto,
+        SpecifiedZIndexValue::Integer(value) => ZIndex::Integer(value),
     }
 }
 

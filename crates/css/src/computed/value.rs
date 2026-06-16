@@ -3,7 +3,7 @@ use crate::{
     specified::{SpecifiedPropertyValue, SpecifiedValue},
     values::{
         BorderStyle, Display, Length, LengthPercentage, OutlineStyle, Overflow, Position,
-        TextDecorationLine,
+        TextDecorationLine, ZIndex,
     },
 };
 
@@ -12,7 +12,7 @@ use super::{
     normalize::{
         normalize_border_style, normalize_color, normalize_display, normalize_length,
         normalize_length_percentage_or_auto, normalize_length_percentage_or_none,
-        normalize_outline_style, normalize_text_decoration_line,
+        normalize_outline_style, normalize_text_decoration_line, normalize_z_index,
     },
 };
 
@@ -26,6 +26,7 @@ pub enum ComputedValue {
     Display(Display),
     Overflow(Overflow),
     Position(Position),
+    ZIndex(ZIndex),
     Length(Length),
     LengthPercentageOrAuto(Option<LengthPercentage>),
     LengthPercentageOrNone(Option<LengthPercentage>),
@@ -41,6 +42,7 @@ impl ComputedValue {
             Self::Display(_) => ComputedValueDiscriminant::Display,
             Self::Overflow(_) => ComputedValueDiscriminant::Overflow,
             Self::Position(_) => ComputedValueDiscriminant::Position,
+            Self::ZIndex(_) => ComputedValueDiscriminant::ZIndex,
             Self::Length(_) => ComputedValueDiscriminant::Length,
             Self::LengthPercentageOrAuto(_) => ComputedValueDiscriminant::LengthPercentageOrAuto,
             Self::LengthPercentageOrNone(_) => ComputedValueDiscriminant::LengthPercentageOrNone,
@@ -63,6 +65,7 @@ impl ComputedValue {
             InitialStyleValue::NoneKeyword => Self::LengthPercentageOrNone(None),
             InitialStyleValue::OverflowVisible => Self::Overflow(Overflow::Visible),
             InitialStyleValue::PositionStatic => Self::Position(Position::Static),
+            InitialStyleValue::ZIndexAuto => Self::ZIndex(ZIndex::Auto),
         }
     }
 
@@ -94,6 +97,7 @@ impl ComputedValue {
             SpecifiedValue::Position(position) => {
                 Self::Position(normalize_position(position.keyword()))
             }
+            SpecifiedValue::ZIndex(z_index) => Self::ZIndex(normalize_z_index(z_index.value())),
             SpecifiedValue::Length(length) => Self::Length(normalize_length(property, length)?),
             SpecifiedValue::LengthPercentageOrAuto(value) => {
                 Self::LengthPercentageOrAuto(normalize_length_percentage_or_auto(property, value)?)
@@ -128,6 +132,7 @@ impl ComputedValue {
             Self::Display(display) => display_keyword(display).to_string(),
             Self::Overflow(overflow) => overflow_keyword(overflow).to_string(),
             Self::Position(position) => position_keyword(position).to_string(),
+            Self::ZIndex(z_index) => z_index_debug_label(z_index),
             Self::Length(length) => format_length(length),
             Self::LengthPercentageOrAuto(Some(value)) => format_length_percentage(value),
             Self::LengthPercentageOrAuto(None) => "auto".to_string(),
@@ -200,6 +205,7 @@ pub enum ComputedValueDiscriminant {
     Display,
     Overflow,
     Position,
+    ZIndex,
     Length,
     LengthPercentageOrAuto,
     LengthPercentageOrNone,
@@ -215,6 +221,7 @@ impl ComputedValueDiscriminant {
             Self::Display => "display",
             Self::Overflow => "overflow",
             Self::Position => "position",
+            Self::ZIndex => "z-index",
             Self::Length => "length",
             Self::LengthPercentageOrAuto => "length-percentage-or-auto",
             Self::LengthPercentageOrNone => "length-percentage-or-none",
@@ -241,6 +248,7 @@ pub(super) fn computed_value_discriminant(
         PropertyComputedValueKind::DisplayKeyword => ComputedValueDiscriminant::Display,
         PropertyComputedValueKind::OverflowKeyword => ComputedValueDiscriminant::Overflow,
         PropertyComputedValueKind::PositionKeyword => ComputedValueDiscriminant::Position,
+        PropertyComputedValueKind::ZIndex => ComputedValueDiscriminant::ZIndex,
         PropertyComputedValueKind::AbsoluteLength => ComputedValueDiscriminant::Length,
         PropertyComputedValueKind::LengthPercentageOrAuto => {
             ComputedValueDiscriminant::LengthPercentageOrAuto
@@ -309,6 +317,13 @@ fn position_keyword(position: Position) -> &'static str {
         Position::Absolute => "absolute",
         Position::Fixed => "fixed",
         Position::Sticky => "sticky",
+    }
+}
+
+fn z_index_debug_label(z_index: ZIndex) -> String {
+    match z_index {
+        ZIndex::Auto => "auto".to_string(),
+        ZIndex::Integer(value) => value.to_string(),
     }
 }
 

@@ -41,6 +41,7 @@ element[0]: selector-id=1 name="html"
   position: static
   text-decoration-line: none
   width: auto
+  z-index: auto
 element[1]: selector-id=2 name="head"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
@@ -76,6 +77,7 @@ element[1]: selector-id=2 name="head"
   position: static
   text-decoration-line: none
   width: auto
+  z-index: auto
 element[2]: selector-id=3 name="title"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
@@ -111,6 +113,7 @@ element[2]: selector-id=3 name="title"
   position: static
   text-decoration-line: none
   width: auto
+  z-index: auto
 element[3]: selector-id=4 name="body"
   background-color: rgba(255, 255, 255, 255)
   border-bottom-color: rgba(0, 0, 0, 0)
@@ -146,6 +149,7 @@ element[3]: selector-id=4 name="body"
   position: static
   text-decoration-line: none
   width: auto
+  z-index: auto
 element[4]: selector-id=5 name="div"
   background-color: rgba(248, 248, 248, 255)
   border-bottom-color: rgba(0, 0, 0, 0)
@@ -181,6 +185,7 @@ element[4]: selector-id=5 name="div"
   position: static
   text-decoration-line: none
   width: auto
+  z-index: auto
 element[5]: selector-id=6 name="aside"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
@@ -216,6 +221,7 @@ element[5]: selector-id=6 name="aside"
   position: static
   text-decoration-line: none
   width: 220px
+  z-index: auto
 element[6]: selector-id=7 name="nav"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
@@ -251,6 +257,7 @@ element[6]: selector-id=7 name="nav"
   position: static
   text-decoration-line: none
   width: auto
+  z-index: auto
 element[7]: selector-id=8 name="a"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
@@ -286,6 +293,7 @@ element[7]: selector-id=8 name="a"
   position: static
   text-decoration-line: none
   width: auto
+  z-index: auto
 element[8]: selector-id=9 name="a"
   background-color: rgba(238, 238, 255, 255)
   border-bottom-color: rgba(0, 0, 0, 0)
@@ -321,6 +329,7 @@ element[8]: selector-id=9 name="a"
   position: static
   text-decoration-line: none
   width: auto
+  z-index: auto
 element[9]: selector-id=10 name="a"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
@@ -356,6 +365,7 @@ element[9]: selector-id=10 name="a"
   position: static
   text-decoration-line: none
   width: auto
+  z-index: auto
 element[10]: selector-id=11 name="main"
   background-color: rgba(255, 255, 255, 255)
   border-bottom-color: rgba(0, 0, 0, 0)
@@ -391,6 +401,7 @@ element[10]: selector-id=11 name="main"
   position: static
   text-decoration-line: none
   width: auto
+  z-index: auto
 element[11]: selector-id=12 name="h1"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
@@ -426,6 +437,7 @@ element[11]: selector-id=12 name="h1"
   position: static
   text-decoration-line: none
   width: auto
+  z-index: auto
 element[12]: selector-id=13 name="p"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
@@ -461,6 +473,7 @@ element[12]: selector-id=13 name="p"
   position: static
   text-decoration-line: none
   width: auto
+  z-index: auto
 element[13]: selector-id=14 name="pre"
   background-color: rgba(17, 17, 17, 255)
   border-bottom-color: rgba(0, 0, 0, 0)
@@ -496,6 +509,7 @@ element[13]: selector-id=14 name="pre"
   position: static
   text-decoration-line: none
   width: auto
+  z-index: auto
 element[14]: selector-id=15 name="code"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
@@ -531,6 +545,7 @@ element[14]: selector-id=15 name="code"
   position: static
   text-decoration-line: none
   width: auto
+  z-index: auto
 element[15]: selector-id=16 name="section"
   background-color: rgba(255, 255, 238, 255)
   border-bottom-color: rgba(0, 0, 0, 0)
@@ -566,6 +581,7 @@ element[15]: selector-id=16 name="section"
   position: static
   text-decoration-line: none
   width: auto
+  z-index: auto
 element[16]: selector-id=17 name="h2"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
@@ -601,6 +617,7 @@ element[16]: selector-id=17 name="h2"
   position: static
   text-decoration-line: none
   width: auto
+  z-index: auto
 element[17]: selector-id=18 name="p"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
@@ -636,4 +653,5 @@ element[17]: selector-id=18 name="p"
   position: static
   text-decoration-line: none
   width: auto
+  z-index: auto
 

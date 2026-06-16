@@ -279,6 +279,14 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertyComputedValueKind::LengthPercentageOrAuto,
             PropertyLengthSignPolicy::NonNegative,
         ),
+        (
+            PropertyId::ZIndex,
+            PropertyInheritance::NotInherited,
+            InitialStyleValue::ZIndexAuto,
+            PropertySpecifiedValueKind::ZIndex,
+            PropertyComputedValueKind::ZIndex,
+            PropertyLengthSignPolicy::NotLength,
+        ),
     ];
 
     let registry = property_registry();
@@ -355,6 +363,10 @@ fn property_registry_lookup_is_deterministic_for_representative_property_names()
     assert_eq!(
         registry.lookup("width").map(|entry| entry.id()),
         Some(PropertyId::Width)
+    );
+    assert_eq!(
+        registry.lookup("z-index").map(|entry| entry.id()),
+        Some(PropertyId::ZIndex)
     );
     assert_eq!(registry.lookup("zoom"), None);
     assert_eq!(registry.lookup("COLOR"), None);

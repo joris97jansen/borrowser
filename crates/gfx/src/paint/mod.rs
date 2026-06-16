@@ -19,7 +19,7 @@ pub use primitives::{
 };
 pub use stacking::{
     StackablePaintItem, StackingContextId, StackingContextNode, StackingContextSource,
-    StackingContextTree,
+    StackingContextTree, StackingLayerKind, StackingOrderKey,
 };
 
 use crate::EguiTextMeasurer;
@@ -324,6 +324,14 @@ fn paint_layout_box_contents(
 
     // 3) Recurse into children
     for child in &layout.children {
+        if let Some((tree, owner_context)) = ctx.stacking_contexts
+            && tree
+                .context_id_for_source_context(PaintSource::from_layout(child))
+                .is_some_and(|context| context != owner_context)
+        {
+            continue;
+        }
+
         // ✅ Inline engine already painted inline-blocks AND replaced elements via fragments.
         if skip_inline_block_children
             && (matches!(child.kind, BoxKind::InlineBlock) || child.replaced.is_some())
@@ -389,7 +397,7 @@ fn paint_list_marker(
 }
 
 pub fn paint_page(input: PaintPhaseInput<'_, '_, '_>, args: PaintArgs<'_>) {
-    let layout_root = input.layout_root();
+    let paint_input = input.to_paint_input(args.measurer);
     let ctx = PaintCtx {
         painter: args.painter,
         origin: args.origin,
@@ -403,9 +411,170 @@ pub fn paint_page(input: PaintPhaseInput<'_, '_, '_>, args: PaintArgs<'_>) {
         selection_bg_fill: args.selection_bg_fill,
         selection_stroke: args.selection_stroke,
         fragment_rects: args.fragment_rects,
+        stacking_contexts: None,
     };
 
-    paint_layout_box(layout_root, ctx, true);
+    paint_stacking_context(
+        paint_input.stacking_contexts().root_id(),
+        &paint_input,
+        ctx,
+        true,
+    );
+}
+
+fn paint_stacking_context(
+    context_id: StackingContextId,
+    input: &PaintInput<'_, '_, '_>,
+    ctx: PaintCtx<'_>,
+    skip_inline_block_children: bool,
+) {
+    let ancestor_clips = if context_id == input.stacking_contexts().root_id() {
+        Vec::new()
+    } else {
+        input
+            .stacking_contexts()
+            .context(context_id)
+            .map(|context| {
+                ancestor_overflow_clip_rects(input.layout().root(), context.source().paint_source())
+            })
+            .unwrap_or_default()
+    };
+    paint_stacking_context_with_clip_chain(
+        &ancestor_clips,
+        context_id,
+        input,
+        ctx,
+        skip_inline_block_children,
+    );
+}
+
+fn paint_stacking_context_with_clip_chain(
+    clips: &[Rectangle],
+    context_id: StackingContextId,
+    input: &PaintInput<'_, '_, '_>,
+    ctx: PaintCtx<'_>,
+    skip_inline_block_children: bool,
+) {
+    let Some((clip, rest)) = clips.split_first() else {
+        paint_stacking_context_body(context_id, input, ctx, skip_inline_block_children);
+        return;
+    };
+
+    let clip_painter = ctx
+        .painter
+        .with_clip_rect(backend_rect_from_layout_rect(*clip, ctx.origin));
+    let clipped_ctx = PaintCtx {
+        painter: &clip_painter,
+        ..ctx
+    };
+    paint_stacking_context_with_clip_chain(
+        rest,
+        context_id,
+        input,
+        clipped_ctx,
+        skip_inline_block_children,
+    );
+}
+
+fn paint_stacking_context_body(
+    context_id: StackingContextId,
+    input: &PaintInput<'_, '_, '_>,
+    ctx: PaintCtx<'_>,
+    skip_inline_block_children: bool,
+) {
+    let Some(context) = input.stacking_contexts().context(context_id) else {
+        return;
+    };
+
+    paint_child_contexts_for_layer(
+        context_id,
+        StackingLayerKind::NegativeZIndex,
+        input,
+        ctx,
+        skip_inline_block_children,
+    );
+
+    let source = context.source().paint_source();
+    if let Some(layout) = find_layout_by_paint_source(input.layout().root(), source) {
+        let context_ctx = PaintCtx {
+            stacking_contexts: Some((input.stacking_contexts(), context_id)),
+            ..ctx
+        };
+        paint_layout_box(layout, context_ctx, skip_inline_block_children);
+    }
+
+    paint_child_contexts_for_layer(
+        context_id,
+        StackingLayerKind::ZeroZIndex,
+        input,
+        ctx,
+        skip_inline_block_children,
+    );
+    paint_child_contexts_for_layer(
+        context_id,
+        StackingLayerKind::PositiveZIndex,
+        input,
+        ctx,
+        skip_inline_block_children,
+    );
+}
+
+fn paint_child_contexts_for_layer(
+    parent: StackingContextId,
+    layer: StackingLayerKind,
+    input: &PaintInput<'_, '_, '_>,
+    ctx: PaintCtx<'_>,
+    skip_inline_block_children: bool,
+) {
+    for child in input
+        .stacking_contexts()
+        .child_contexts_for_layer(parent, layer)
+    {
+        paint_stacking_context(child.id(), input, ctx, skip_inline_block_children);
+    }
+}
+
+fn find_layout_by_paint_source<'layout, 'style_tree, 'dom>(
+    layout: &'layout LayoutBox<'style_tree, 'dom>,
+    source: PaintSource,
+) -> Option<&'layout LayoutBox<'style_tree, 'dom>> {
+    if PaintSource::from_layout(layout) == source {
+        return Some(layout);
+    }
+
+    layout
+        .children
+        .iter()
+        .find_map(|child| find_layout_by_paint_source(child, source))
+}
+
+fn ancestor_overflow_clip_rects(root: &LayoutBox<'_, '_>, source: PaintSource) -> Vec<Rectangle> {
+    let mut clips = Vec::new();
+    if collect_ancestor_overflow_clip_rects(root, source, &mut clips) {
+        clips.reverse();
+    }
+    clips
+}
+
+fn collect_ancestor_overflow_clip_rects(
+    layout: &LayoutBox<'_, '_>,
+    source: PaintSource,
+    clips: &mut Vec<Rectangle>,
+) -> bool {
+    if PaintSource::from_layout(layout) == source {
+        return true;
+    }
+
+    for child in &layout.children {
+        if collect_ancestor_overflow_clip_rects(child, source, clips) {
+            if let Some(clip) = layout.overflow_clip() {
+                clips.push(clip.rect());
+            }
+            return true;
+        }
+    }
+
+    false
 }
 
 #[cfg(test)]
@@ -689,6 +858,153 @@ mod tests {
     }
 
     #[test]
+    fn immediate_paint_uses_ab3_z_index_layer_order() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "120px".to_string()),
+                    ("height".to_string(), "20px".to_string()),
+                    ("background-color".to_string(), "#00aa00".to_string()),
+                ],
+                children: vec![
+                    positioned_block(Id(3), "0", "#0000aa", Vec::new()),
+                    positioned_block(Id(4), "-1", "#aa0000", Vec::new()),
+                    positioned_block(Id(5), "2", "#aaaa00", Vec::new()),
+                ],
+            }],
+        };
+
+        let fills = rect_fill_sequence(&paint_shapes_for_dom(&dom));
+        let negative = position_of_fill(&fills, Color32::from_rgb(0xaa, 0x00, 0x00))
+            .expect("negative z-index fill");
+        let normal = position_of_fill(&fills, Color32::from_rgb(0x00, 0xaa, 0x00))
+            .expect("normal flow fill");
+        let zero =
+            position_of_fill(&fills, Color32::from_rgb(0x00, 0x00, 0xaa)).expect("zero fill");
+        let positive = position_of_fill(&fills, Color32::from_rgb(0xaa, 0xaa, 0x00))
+            .expect("positive z-index fill");
+
+        assert!(negative < normal);
+        assert!(normal < zero);
+        assert!(zero < positive);
+    }
+
+    #[test]
+    fn immediate_paint_keeps_child_context_atomic_relative_to_siblings() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![("display".to_string(), "block".to_string())],
+                children: vec![
+                    positioned_block(
+                        Id(3),
+                        "1",
+                        "#aa0000",
+                        vec![positioned_block(Id(4), "-1", "#00aa00", Vec::new())],
+                    ),
+                    positioned_block(Id(5), "2", "#0000aa", Vec::new()),
+                ],
+            }],
+        };
+
+        let fills = rect_fill_sequence(&paint_shapes_for_dom(&dom));
+        let nested_negative = position_of_fill(&fills, Color32::from_rgb(0x00, 0xaa, 0x00))
+            .expect("nested negative fill");
+        let parent =
+            position_of_fill(&fills, Color32::from_rgb(0xaa, 0x00, 0x00)).expect("parent fill");
+        let sibling =
+            position_of_fill(&fills, Color32::from_rgb(0x00, 0x00, 0xaa)).expect("sibling fill");
+
+        assert!(nested_negative < parent);
+        assert!(parent < sibling);
+    }
+
+    #[test]
+    fn immediate_paint_keeps_positioned_child_context_under_ancestor_overflow_clip() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "40px".to_string()),
+                    ("height".to_string(), "20px".to_string()),
+                    ("overflow".to_string(), "clip".to_string()),
+                ],
+                children: vec![positioned_block(Id(3), "1", "#aa0000", Vec::new())],
+            }],
+        };
+
+        let styled = css::build_style_tree(&dom, None);
+        let layout =
+            layout::layout_document(LayoutPhaseInput::new(&styled, 500.0, &TestMeasurer, None));
+        let section_clip = find_layout_by_direct_node_id(layout.root(), Id(2))
+            .and_then(LayoutBox::overflow_clip)
+            .map(|clip| backend_rect_from_layout_rect(clip.rect(), Pos2 { x: 0.0, y: 0.0 }))
+            .expect("layout-owned section overflow clip");
+        let input_values = InputValueStore::new();
+        let resources = NoopImageProvider;
+        let ctx = egui::Context::default();
+        let initial_clip = Rect::from_min_size(
+            Pos2 {
+                x: -100.0,
+                y: -100.0,
+            },
+            Vec2 { x: 400.0, y: 400.0 },
+        );
+        let output = ctx.run(
+            RawInput {
+                screen_rect: Some(initial_clip),
+                ..Default::default()
+            },
+            |ctx| {
+                let painter = Painter::new(
+                    ctx.clone(),
+                    LayerId::new(Order::Foreground, egui::Id::new("page-paint")),
+                    initial_clip,
+                );
+                let measurer = EguiTextMeasurer::new(ctx);
+                paint_page(
+                    PaintPhaseInput::new(&layout),
+                    PaintArgs {
+                        painter: &painter,
+                        origin: Pos2 { x: 0.0, y: 0.0 },
+                        measurer: &measurer,
+                        base_url: None,
+                        resources: &resources,
+                        input_values: &input_values,
+                        focused: None,
+                        focused_textarea_lines: None,
+                        active: None,
+                        selection_bg_fill: Color32::TRANSPARENT,
+                        selection_stroke: Stroke::NONE,
+                        fragment_rects: None,
+                    },
+                );
+            },
+        );
+
+        assert_eq!(
+            clip_rects_for_fill(&output.shapes, Color32::from_rgb(0xaa, 0x00, 0x00)),
+            vec![section_clip],
+            "positioned child contexts remain descendants for overflow clipping"
+        );
+    }
+
+    #[test]
     fn immediate_paint_repeated_execution_has_stable_rect_fill_order() {
         let dom = Node::Document {
             id: Id(1),
@@ -795,6 +1111,23 @@ mod tests {
             },
         )
         .shapes
+    }
+
+    fn positioned_block(id: Id, z_index: &str, color: &str, children: Vec<Node>) -> Node {
+        Node::Element {
+            id,
+            name: Arc::from("div"),
+            attributes: Vec::new(),
+            style: vec![
+                ("display".to_string(), "block".to_string()),
+                ("position".to_string(), "relative".to_string()),
+                ("z-index".to_string(), z_index.to_string()),
+                ("width".to_string(), "20px".to_string()),
+                ("height".to_string(), "20px".to_string()),
+                ("background-color".to_string(), color.to_string()),
+            ],
+            children,
+        }
     }
 
     fn rect_fill_sequence(shapes: &[egui::epaint::ClippedShape]) -> Vec<Color32> {

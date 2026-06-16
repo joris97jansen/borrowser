@@ -1,13 +1,13 @@
 use std::fmt::Write;
 
-use layout::Rectangle;
+use layout::{LayoutBox, Rectangle};
 
 use super::contracts::PaintOrderPhase;
 use super::{
     PaintBorder, PaintBorderSide, PaintClip, PaintClipScope, PaintColor, PaintInlineBox,
     PaintInput, PaintListMarker, PaintListMarkerKind, PaintNode, PaintOutline, PaintPrimitive,
     PaintReplaced, PaintReplacedKind, PaintSource, PaintText, PaintTextDecoration,
-    PaintTextDecorationLine,
+    PaintTextDecorationLine, StackingContextId, StackingContextNode, StackingLayerKind,
 };
 
 /// Stable paint-owned operation snapshot for visual regression tests.
@@ -58,14 +58,65 @@ impl<'a, 'layout, 'style_tree, 'dom> PaintOperationDebugWriter<'a, 'layout, 'sty
             rectangle_debug_label(self.input.layout().document_rect())
         )
         .expect("write paint operation snapshot");
-        self.write_node(self.input.tree().root());
+        self.write_stacking_context(self.input.stacking_contexts().root());
     }
 
     fn finish(self) -> String {
         self.out
     }
 
-    fn write_node(&mut self, node: &PaintNode) {
+    fn write_stacking_context(&mut self, context: &StackingContextNode) {
+        if context.id() != self.input.stacking_contexts().root_id() {
+            let clips = ancestor_overflow_clips(
+                self.input.layout().root(),
+                context.source().paint_source(),
+            );
+            self.write_stacking_context_with_ancestor_clips(&clips, context);
+            return;
+        }
+
+        self.write_stacking_context_body(context);
+    }
+
+    fn write_stacking_context_with_ancestor_clips(
+        &mut self,
+        clips: &[PaintClip],
+        context: &StackingContextNode,
+    ) {
+        let Some((clip, rest)) = clips.split_first() else {
+            self.write_stacking_context_body(context);
+            return;
+        };
+
+        self.write_clip_operation("begin-clip", clip);
+        self.write_stacking_context_with_ancestor_clips(rest, context);
+        self.write_clip_operation("end-clip", clip);
+    }
+
+    fn write_stacking_context_body(&mut self, context: &StackingContextNode) {
+        self.write_child_contexts(context.id(), StackingLayerKind::NegativeZIndex);
+
+        let source = context.source().paint_source();
+        let Some(node) = self.input.tree().node_for_source(source) else {
+            return;
+        };
+        self.write_node(node, context.id());
+
+        self.write_child_contexts(context.id(), StackingLayerKind::ZeroZIndex);
+        self.write_child_contexts(context.id(), StackingLayerKind::PositiveZIndex);
+    }
+
+    fn write_child_contexts(&mut self, parent: StackingContextId, layer: StackingLayerKind) {
+        for child in self
+            .input
+            .stacking_contexts()
+            .child_contexts_for_layer(parent, layer)
+        {
+            self.write_stacking_context(child);
+        }
+    }
+
+    fn write_node(&mut self, node: &PaintNode, owner_context: StackingContextId) {
         let clip_index = node
             .primitives()
             .iter()
@@ -73,7 +124,7 @@ impl<'a, 'layout, 'style_tree, 'dom> PaintOperationDebugWriter<'a, 'layout, 'sty
 
         let Some(clip_index) = clip_index else {
             self.write_primitives(node.primitives());
-            self.write_children(node);
+            self.write_children(node, owner_context);
             self.write_primitives(node.post_primitives());
             return;
         };
@@ -85,14 +136,23 @@ impl<'a, 'layout, 'style_tree, 'dom> PaintOperationDebugWriter<'a, 'layout, 'sty
         };
         self.write_clip_operation("begin-clip", clip);
         self.write_primitives(&node.primitives()[clip_index + 1..]);
-        self.write_children(node);
+        self.write_children(node, owner_context);
         self.write_clip_operation("end-clip", clip);
         self.write_primitives(node.post_primitives());
     }
 
-    fn write_children(&mut self, node: &PaintNode) {
+    fn write_children(&mut self, node: &PaintNode, owner_context: StackingContextId) {
         for child in node.children() {
-            self.write_node(child);
+            if self
+                .input
+                .stacking_contexts()
+                .context_id_for_source_context(child.source())
+                .is_some_and(|context| context != owner_context)
+            {
+                continue;
+            }
+
+            self.write_node(child, owner_context);
         }
     }
 
@@ -419,6 +479,39 @@ fn replaced_kind_debug_label(kind: PaintReplacedKind) -> &'static str {
     }
 }
 
+fn ancestor_overflow_clips(root: &LayoutBox<'_, '_>, source: PaintSource) -> Vec<PaintClip> {
+    let mut clips = Vec::new();
+    if collect_ancestor_overflow_clips(root, source, &mut clips) {
+        clips.reverse();
+    }
+    clips
+}
+
+fn collect_ancestor_overflow_clips(
+    layout: &LayoutBox<'_, '_>,
+    source: PaintSource,
+    clips: &mut Vec<PaintClip>,
+) -> bool {
+    if PaintSource::from_layout(layout) == source {
+        return true;
+    }
+
+    for child in &layout.children {
+        if collect_ancestor_overflow_clips(child, source, clips) {
+            if let Some(clip) = layout.overflow_clip() {
+                clips.push(PaintClip {
+                    source: PaintSource::from_layout(layout),
+                    rect: clip.rect(),
+                    scope: PaintClipScope::ContentsAndDescendants,
+                });
+            }
+            return true;
+        }
+    }
+
+    false
+}
+
 #[cfg(test)]
 mod tests {
     use css::{ComputedStyle, Length};
@@ -452,6 +545,34 @@ mod tests {
             .lines()
             .position(|line| line.contains(pattern))
             .unwrap_or_else(|| panic!("snapshot should contain {pattern:?}\n{snapshot}"))
+    }
+
+    fn line_index_after(snapshot: &str, pattern: &str, after: usize) -> usize {
+        snapshot
+            .lines()
+            .enumerate()
+            .skip(after + 1)
+            .find_map(|(index, line)| line.contains(pattern).then_some(index))
+            .unwrap_or_else(|| {
+                panic!("snapshot should contain {pattern:?} after line {after}\n{snapshot}")
+            })
+    }
+
+    fn positioned_block(id: Id, z_index: &str, color: &str, children: Vec<Node>) -> Node {
+        Node::Element {
+            id,
+            name: Arc::from("div"),
+            attributes: Vec::new(),
+            style: vec![
+                ("display".to_string(), "block".to_string()),
+                ("position".to_string(), "relative".to_string()),
+                ("z-index".to_string(), z_index.to_string()),
+                ("width".to_string(), "20px".to_string()),
+                ("height".to_string(), "20px".to_string()),
+                ("background-color".to_string(), color.to_string()),
+            ],
+            children,
+        }
     }
 
     #[test]
@@ -527,6 +648,116 @@ mod tests {
         );
 
         assert_eq!(snapshot, expected);
+    }
+
+    #[test]
+    fn paint_operation_snapshot_uses_ab3_z_index_layer_order() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "120px".to_string()),
+                    ("height".to_string(), "20px".to_string()),
+                    ("background-color".to_string(), "#00aa00".to_string()),
+                ],
+                children: vec![
+                    positioned_block(Id(3), "0", "#0000aa", Vec::new()),
+                    positioned_block(Id(4), "-1", "#aa0000", Vec::new()),
+                    positioned_block(Id(5), "2", "#aaaa00", Vec::new()),
+                ],
+            }],
+        };
+
+        let snapshot = build_paint_operation_snapshot(&dom);
+        let negative = line_index(&snapshot, "color=rgba(170,0,0,255)");
+        let normal = line_index(&snapshot, "color=rgba(0,170,0,255)");
+        let zero = line_index(&snapshot, "color=rgba(0,0,170,255)");
+        let positive = line_index(&snapshot, "color=rgba(170,170,0,255)");
+
+        assert!(negative < normal);
+        assert!(normal < zero);
+        assert!(zero < positive);
+    }
+
+    #[test]
+    fn paint_operation_snapshot_keeps_child_context_atomic_relative_to_siblings() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![("display".to_string(), "block".to_string())],
+                children: vec![
+                    positioned_block(
+                        Id(3),
+                        "1",
+                        "#aa0000",
+                        vec![positioned_block(Id(4), "-1", "#00aa00", Vec::new())],
+                    ),
+                    positioned_block(Id(5), "2", "#0000aa", Vec::new()),
+                ],
+            }],
+        };
+
+        let snapshot = build_paint_operation_snapshot(&dom);
+        let nested_negative = line_index(&snapshot, "color=rgba(0,170,0,255)");
+        let parent = line_index(&snapshot, "color=rgba(170,0,0,255)");
+        let sibling = line_index(&snapshot, "color=rgba(0,0,170,255)");
+
+        assert!(nested_negative < parent);
+        assert!(parent < sibling);
+    }
+
+    #[test]
+    fn paint_operation_snapshot_keeps_positioned_child_context_under_ancestor_overflow_clip() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "40px".to_string()),
+                    ("height".to_string(), "20px".to_string()),
+                    ("overflow".to_string(), "clip".to_string()),
+                ],
+                children: vec![positioned_block(Id(3), "1", "#aa0000", Vec::new())],
+            }],
+        };
+
+        let snapshot = build_paint_operation_snapshot(&dom);
+        let clip_pattern =
+            "source=(box=1 node=2 anonymous=false) rect=x=0.00 y=0.00 w=40.00 h=20.00";
+        let begin_clip = line_index_after(&snapshot, "kind=begin-clip", 5);
+        let child_background = line_index(&snapshot, "color=rgba(170,0,0,255)");
+        let end_clip = line_index_after(&snapshot, "kind=end-clip", child_background);
+
+        assert!(
+            snapshot
+                .lines()
+                .nth(begin_clip)
+                .unwrap()
+                .contains(clip_pattern)
+        );
+        assert!(
+            snapshot
+                .lines()
+                .nth(end_clip)
+                .unwrap()
+                .contains(clip_pattern)
+        );
+
+        assert!(begin_clip < child_background);
+        assert!(child_background < end_clip);
     }
 
     #[test]

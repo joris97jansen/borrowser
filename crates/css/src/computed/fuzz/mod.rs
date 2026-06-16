@@ -412,6 +412,7 @@ fn property_computed_kind_label(kind: PropertyComputedValueKind) -> &'static str
         PropertyComputedValueKind::DisplayKeyword => "display",
         PropertyComputedValueKind::OverflowKeyword => "overflow",
         PropertyComputedValueKind::PositionKeyword => "position",
+        PropertyComputedValueKind::ZIndex => "z-index",
         PropertyComputedValueKind::AbsoluteLength => "length",
         PropertyComputedValueKind::LengthPercentageOrAuto => "length-percentage-or-auto",
         PropertyComputedValueKind::LengthPercentageOrNone => "length-percentage-or-none",

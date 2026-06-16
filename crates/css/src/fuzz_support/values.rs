@@ -138,6 +138,17 @@ fn synthesized_value_for_property(
                 cursor.choose_str(&POSITION_VALUES[5..]).to_string()
             }
         }
+        PropertySpecifiedValueKind::ZIndex => {
+            if valid_bias {
+                cursor
+                    .choose_str(&["auto", "0", "1", "-1", "12"])
+                    .to_string()
+            } else {
+                cursor
+                    .choose_str(&["1.5", "1px", "top", "auto auto"])
+                    .to_string()
+            }
+        }
         PropertySpecifiedValueKind::AbsoluteLength => absolute_length_value(
             cursor,
             property.metadata().length_sign == PropertyLengthSignPolicy::AllowNegative,
