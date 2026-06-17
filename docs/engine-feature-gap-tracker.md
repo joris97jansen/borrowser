@@ -135,6 +135,10 @@ Current supported subset:
   `StackingContextTree::ordered_slots`; see
   `docs/rendering/ab3-z-order-layering-semantics.md` and
   `docs/rendering/ab4-stacking-context-paint-order.md`
+- AB5 structured paint invalidation foundation: explicit repaint triggers,
+  conservative `Document`/`Viewport` scopes, deterministic paint invalidation
+  requests/state, and runtime-owned pending paint dirtiness; see
+  `docs/rendering/ab5-structured-paint-invalidation-model.md`
 
 Missing or incomplete:
 
@@ -164,8 +168,11 @@ Missing or incomplete:
     interactions
   - masks, clip-path, advanced clipping, and border-radius clipping
     interactions
-  - compositor layer promotion, retained display lists/scenes, GPU
-    compositing, and paint invalidation
+  - compositor layer promotion, retained display lists/scenes, GPU compositing,
+    and compositor-layer invalidation
+- optimized repaint execution remains missing: retained paint scenes,
+  minimal dirty-region propagation, GPU compositing, and backend partial repaint
+  execution are not implemented
 - scrollbars and scrollable overflow painting
 - selection painting outside supported text-control paths
 - font fallback and advanced text shaping

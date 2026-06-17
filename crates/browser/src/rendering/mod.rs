@@ -28,13 +28,15 @@ pub use debug::{
 pub(crate) use frame::build_render_frame_execution_trace;
 pub(crate) use frame::{OrchestratedFrameOutcome, execute_prepared_page_frame, prepare_page_frame};
 pub use invalidation::{
-    PendingRenderWork, PhaseRerunSource, RenderInvalidationRequest, RenderWorkPlan,
+    PendingPaintInvalidations, PendingRenderWork, PhaseRerunSource, RenderInvalidationRequest,
+    RenderWorkPlan, paint_invalidation_request, paint_invalidation_request_contracts,
     render_invalidation_request, render_invalidation_request_contracts,
 };
 pub use lifecycle::{RenderArtifactState, RenderPipelineDebugSnapshot, StyleInvalidationState};
 pub use types::{
-    RenderArtifact, RenderInvalidationEntryPoint, RenderRebuildTrigger, RenderingPhase,
-    RenderingSubsystem,
+    PaintInvalidationReason, PaintInvalidationRequest, PaintInvalidationScope,
+    PaintInvalidationTrigger, RenderArtifact, RenderInvalidationEntryPoint, RenderRebuildTrigger,
+    RenderingPhase, RenderingSubsystem,
 };
 
 #[cfg(test)]

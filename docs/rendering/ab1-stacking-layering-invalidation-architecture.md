@@ -34,6 +34,7 @@ Related documents:
 - `docs/rendering/ab2-stacking-context-representation.md`
 - `docs/rendering/ab3-z-order-layering-semantics.md`
 - `docs/rendering/ab4-stacking-context-paint-order.md`
+- `docs/rendering/ab5-structured-paint-invalidation-model.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
@@ -247,6 +248,22 @@ AB1 does not add new invalidation entry points. Existing entry points continue
 to describe whether style, layout, paint, and frame orchestration rerun
 directly or as a cascade from earlier phases.
 
+AB5 extends this model with a structured paint invalidation contract:
+
+```text
+RenderInvalidationRequest
+  -> PaintInvalidationRequest
+  -> PendingPaintInvalidations
+  -> conservative effective paint scope
+```
+
+This records why paint is dirty and whether the current conservative scope is
+`Document` or `Viewport`. Full-frame repaint is therefore represented as an
+explicit conservative scope rather than as an implicit absence of structure.
+AB5 does not introduce retained display lists, retained paint scenes,
+compositor behavior, GPU behavior, dirty-region propagation, or backend
+partial-raster execution.
+
 Future paint invalidation must extend this model rather than bypass it:
 
 - style changes may affect stacking inputs, so they conservatively invalidate
@@ -260,7 +277,8 @@ Future paint invalidation must extend this model rather than bypass it:
 - targeted repaint must have a conservative fallback when dependency tracking
   is incomplete.
 
-Full-frame paint rerun remains the current baseline. It is not the final
+Document-scoped paint invalidation remains the current conservative baseline
+for broad style, layout, resource, and document changes. It is not the final
 architecture for Milestone AB, and future issues must name the boundary between
 full-frame fallback and targeted invalidation.
 
@@ -295,6 +313,8 @@ resource state, and input state:
 - compositor and GPU decisions must not leak into semantic paint primitives;
 - retained paint artifacts must have explicit ownership and invalidation
   contracts before they exist.
+- frame-local paint and stacking identifiers must not be stored as retained
+  runtime invalidation keys.
 
 ## Deliberate Exclusions
 
@@ -311,6 +331,7 @@ AB1 deliberately does not implement:
 - GPU layer trees or promotion logic;
 - targeted repaint execution;
 - dirty-region computation;
+- paint-source-scoped or stacking-context-scoped retained invalidation keys;
 - pixel or raster snapshot infrastructure;
 - new CSS property support.
 
@@ -327,6 +348,10 @@ AB4 removes the traversal-first paint-order execution gap by routing
 cross-context order through `StackingContextTree::ordered_slots`. It does not
 remove the exclusions for full CSS painting order, compositor layers, retained
 paint artifacts, or paint invalidation.
+
+AB5 removes the gap where paint reruns had no paint-specific invalidation
+reason or scope. It keeps targeted repaint execution, retained paint artifacts,
+dirty regions, compositor layers, and GPU behavior excluded.
 
 ## Extension Rules For Future AB Issues
 

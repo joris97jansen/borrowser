@@ -86,6 +86,124 @@ fn render_invalidation_request_contracts_cover_each_entry_point_once() {
 }
 
 #[test]
+fn paint_invalidation_request_contracts_pin_explicit_repaint_scope_and_reason() {
+    let expected = [
+        PaintInvalidationRequest {
+            entry_point: RenderInvalidationEntryPoint::DocumentReplaced,
+            trigger: PaintInvalidationTrigger::DocumentReplaced,
+            reason: PaintInvalidationReason::ConservativeUnknownImpact,
+            scope: PaintInvalidationScope::Document,
+        },
+        PaintInvalidationRequest {
+            entry_point: RenderInvalidationEntryPoint::DomStructureChanged,
+            trigger: PaintInvalidationTrigger::DomStructureChanged,
+            reason: PaintInvalidationReason::CascadedFromStyle,
+            scope: PaintInvalidationScope::Document,
+        },
+        PaintInvalidationRequest {
+            entry_point: RenderInvalidationEntryPoint::DomAttributesChanged,
+            trigger: PaintInvalidationTrigger::DomAttributesChanged,
+            reason: PaintInvalidationReason::CascadedFromStyle,
+            scope: PaintInvalidationScope::Document,
+        },
+        PaintInvalidationRequest {
+            entry_point: RenderInvalidationEntryPoint::DomTextChanged,
+            trigger: PaintInvalidationTrigger::DomTextChanged,
+            reason: PaintInvalidationReason::CascadedFromLayout,
+            scope: PaintInvalidationScope::Document,
+        },
+        PaintInvalidationRequest {
+            entry_point: RenderInvalidationEntryPoint::StylesheetSetChanged,
+            trigger: PaintInvalidationTrigger::StylesheetSetChanged,
+            reason: PaintInvalidationReason::CascadedFromStyle,
+            scope: PaintInvalidationScope::Document,
+        },
+        PaintInvalidationRequest {
+            entry_point: RenderInvalidationEntryPoint::ViewportChanged,
+            trigger: PaintInvalidationTrigger::ViewportChanged,
+            reason: PaintInvalidationReason::CascadedFromLayout,
+            scope: PaintInvalidationScope::Viewport,
+        },
+        PaintInvalidationRequest {
+            entry_point: RenderInvalidationEntryPoint::ResourceStateChanged,
+            trigger: PaintInvalidationTrigger::ResourceStateChanged,
+            reason: PaintInvalidationReason::DirectPaintDependency,
+            scope: PaintInvalidationScope::Document,
+        },
+        PaintInvalidationRequest {
+            entry_point: RenderInvalidationEntryPoint::InputStateChanged,
+            trigger: PaintInvalidationTrigger::InputStateChanged,
+            reason: PaintInvalidationReason::RuntimeInputState,
+            scope: PaintInvalidationScope::Viewport,
+        },
+    ];
+
+    assert_eq!(paint_invalidation_request_contracts(), expected);
+    for request in expected {
+        assert_eq!(paint_invalidation_request(request.entry_point), request);
+    }
+}
+
+#[test]
+fn paint_invalidation_contracts_cover_each_paint_rerunning_entry_point_once() {
+    let paint_contracts = paint_invalidation_request_contracts();
+
+    for render_request in render_invalidation_request_contracts() {
+        let count = paint_contracts
+            .iter()
+            .filter(|contract| contract.entry_point == render_request.entry_point)
+            .count();
+
+        if render_request.paint_invalidation().is_some() {
+            assert_eq!(
+                count, 1,
+                "paint rerun entry point must have exactly one paint invalidation contract: {:?}",
+                render_request.entry_point
+            );
+        } else {
+            assert_eq!(
+                count, 0,
+                "non-paint entry point must not have a paint invalidation contract: {:?}",
+                render_request.entry_point
+            );
+        }
+    }
+
+    assert_eq!(
+        paint_contracts.len(),
+        render_invalidation_request_contracts()
+            .iter()
+            .filter(|request| request.paint_invalidation().is_some())
+            .count()
+    );
+}
+
+#[test]
+fn render_invalidation_request_derives_paint_invalidation_from_paint_work() {
+    let input = render_invalidation_request(RenderInvalidationEntryPoint::InputStateChanged);
+    assert_eq!(
+        input.paint_invalidation(),
+        Some(PaintInvalidationRequest {
+            entry_point: RenderInvalidationEntryPoint::InputStateChanged,
+            trigger: PaintInvalidationTrigger::InputStateChanged,
+            reason: PaintInvalidationReason::RuntimeInputState,
+            scope: PaintInvalidationScope::Viewport,
+        })
+    );
+
+    let dom = render_invalidation_request(RenderInvalidationEntryPoint::DomStructureChanged);
+    assert_eq!(
+        dom.paint_invalidation(),
+        Some(PaintInvalidationRequest {
+            entry_point: RenderInvalidationEntryPoint::DomStructureChanged,
+            trigger: PaintInvalidationTrigger::DomStructureChanged,
+            reason: PaintInvalidationReason::CascadedFromStyle,
+            scope: PaintInvalidationScope::Document,
+        })
+    );
+}
+
+#[test]
 fn direct_invalidation_phase_sources_align_with_phase_rebuild_triggers() {
     let phase_contracts = render_phase_contracts();
 
@@ -143,6 +261,72 @@ fn pending_render_work_deduplicates_and_preserves_request_order() {
             RenderInvalidationEntryPoint::ResourceStateChanged,
         ]
     );
+}
+
+#[test]
+fn pending_render_work_derives_ordered_deduplicated_paint_invalidations() {
+    let mut pending = PendingRenderWork::default();
+    pending.push(render_invalidation_request(
+        RenderInvalidationEntryPoint::InputStateChanged,
+    ));
+    pending.push(render_invalidation_request(
+        RenderInvalidationEntryPoint::ResourceStateChanged,
+    ));
+    pending.push(render_invalidation_request(
+        RenderInvalidationEntryPoint::InputStateChanged,
+    ));
+
+    let paint = pending.paint_invalidations();
+    assert_eq!(
+        paint
+            .requests()
+            .iter()
+            .map(|request| request.entry_point)
+            .collect::<Vec<_>>(),
+        vec![
+            RenderInvalidationEntryPoint::InputStateChanged,
+            RenderInvalidationEntryPoint::ResourceStateChanged,
+        ]
+    );
+    assert_eq!(
+        paint
+            .requests()
+            .iter()
+            .map(|request| request.scope)
+            .collect::<Vec<_>>(),
+        vec![
+            PaintInvalidationScope::Viewport,
+            PaintInvalidationScope::Document,
+        ]
+    );
+}
+
+#[test]
+fn pending_paint_invalidations_compute_conservative_effective_scope() {
+    let mut pending = PendingPaintInvalidations::default();
+    assert_eq!(pending.effective_scope(), None);
+    assert!(pending.is_empty());
+
+    pending.push(paint_invalidation_request(
+        RenderInvalidationEntryPoint::InputStateChanged,
+    ));
+    assert_eq!(
+        pending.effective_scope(),
+        Some(PaintInvalidationScope::Viewport)
+    );
+
+    pending.push(paint_invalidation_request(
+        RenderInvalidationEntryPoint::DocumentReplaced,
+    ));
+    assert_eq!(
+        pending.effective_scope(),
+        Some(PaintInvalidationScope::Document)
+    );
+
+    pending.push(paint_invalidation_request(
+        RenderInvalidationEntryPoint::InputStateChanged,
+    ));
+    assert_eq!(pending.requests().len(), 2);
 }
 
 #[test]

@@ -74,6 +74,9 @@ surfaces:
   Retained-versus-rebuilt artifact lifetimes and retention owners.
 - `browser::rendering::render_invalidation_request_contracts()`
   Runtime invalidation entry points and their phase rerun plans.
+- `browser::rendering::paint_invalidation_request_contracts()`
+  Paint-specific invalidation reasons and conservative repaint scopes derived
+  from runtime invalidation entry points.
 - `browser::rendering::render_extension_hook_contracts()`
   Deferred rendering hooks that later milestones may extend without
   reinterpreting the current architecture.
@@ -120,6 +123,10 @@ them.
 - Rendering work enters only through explicit
   `RenderInvalidationEntryPoint -> RenderInvalidationRequest -> PendingRenderWork`
   boundaries.
+- Paint invalidation is derived from render invalidation requests through
+  explicit `PaintInvalidationRequest` contracts.
+- Full-document paint invalidation is represented as an explicit conservative
+  scope, not as an implicit absence of structure.
 - `PendingRenderWork` is consumed on the next orchestrated frame attempt, not
   only after successful paint.
 - `ViewportChanged` remains an explicit in-frame trigger synthesized by runtime
@@ -178,7 +185,8 @@ Milestone V intentionally does not ship:
 - block/inline sizing completeness beyond the current baseline
 - advanced paint primitives or behavioral stacking-context/layer architecture
 - retained display lists or scene graphs
-- targeted dependency-driven invalidation
+- targeted dependency-driven invalidation beyond AB5's structured conservative
+  paint invalidation model
 - resource dependency graphs
 - compositor scheduling
 - async frame production
@@ -197,6 +205,7 @@ surface:
 - `render_artifact_ownership_contracts_cover_each_artifact_once()`
 - `phase_contract_outputs_align_with_artifact_lifetimes()`
 - `render_invalidation_request_contracts_cover_each_entry_point_once()`
+- `paint_invalidation_contracts_cover_each_paint_rerunning_entry_point_once()`
 - `direct_invalidation_phase_sources_align_with_phase_rebuild_triggers()`
 - `frame_execution_trace_distinguishes_requested_work_from_frame_prerequisites()`
 - `style_to_layout_handoff_uses_explicit_phase_output_models()`
