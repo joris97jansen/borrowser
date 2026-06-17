@@ -8,7 +8,7 @@ use crate::text_control::{find_layout_box_by_id, sync_input_scroll_for_caret};
 use crate::textarea::sync_textarea_scroll_for_caret;
 use crate::util::{get_attr, input_text_padding, resolve_relative_url};
 use css::StylePhaseOutput;
-use egui::{Color32, ScrollArea, Sense, Stroke, Ui, Vec2};
+use egui::{Color32, Rect, ScrollArea, Sense, Stroke, Ui, Vec2};
 use html::{Node, internal::Id};
 use input_core::InputValueStore as CoreInputValueStore;
 use layout::{
@@ -45,6 +45,7 @@ pub struct ViewportCtx<'ui, 'style, R, F> {
     pub form_controls: &'ui F,
     pub interaction: &'ui mut InteractionState,
     pub config: ViewportConfig,
+    pub repaint_policy: ViewportRepaintPolicy,
 }
 
 impl<'ui, 'style, R, F> ViewportCtx<'ui, 'style, R, F> {
@@ -66,6 +67,40 @@ impl<'ui, 'style, R, F> ViewportCtx<'ui, 'style, R, F> {
             form_controls,
             interaction,
             config: ViewportConfig::default(),
+            repaint_policy: ViewportRepaintPolicy::default(),
+        }
+    }
+
+    pub fn with_repaint_policy(mut self, repaint_policy: ViewportRepaintPolicy) -> Self {
+        self.repaint_policy = repaint_policy;
+        self
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ViewportRepaintScope {
+    Viewport,
+    Document,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ViewportRepaintPolicy {
+    pending_scope: Option<ViewportRepaintScope>,
+}
+
+impl ViewportRepaintPolicy {
+    pub fn from_pending_scope(scope: Option<ViewportRepaintScope>) -> Self {
+        Self {
+            pending_scope: scope,
+        }
+    }
+
+    pub fn scope_for_frame(self, viewport_changed: bool) -> ViewportRepaintScope {
+        match (self.pending_scope, viewport_changed) {
+            (Some(ViewportRepaintScope::Document), _) => ViewportRepaintScope::Document,
+            (Some(ViewportRepaintScope::Viewport), _) => ViewportRepaintScope::Viewport,
+            (None, true) => ViewportRepaintScope::Viewport,
+            (None, false) => ViewportRepaintScope::Document,
         }
     }
 }
@@ -74,6 +109,7 @@ pub struct ViewportFrameOutput {
     pub action: Option<PageAction>,
     pub viewport_changed: bool,
     pub requested_followup_render: bool,
+    pub repaint_scope: ViewportRepaintScope,
 }
 
 pub fn execute_viewport_frame<R: ImageProvider, F: FormControlHandler<CoreInputValueStore>>(
@@ -88,6 +124,7 @@ pub fn execute_viewport_frame<R: ImageProvider, F: FormControlHandler<CoreInputV
         form_controls,
         interaction,
         config,
+        repaint_policy,
     } = ctx;
 
     ScrollArea::vertical()
@@ -136,6 +173,7 @@ pub fn execute_viewport_frame<R: ImageProvider, F: FormControlHandler<CoreInputV
                 Some((layout_root.rect.width, layout_root.rect.height));
 
             let layout_changed = viewport_width_changed || layout_root_size_changed;
+            let repaint_scope = repaint_policy.scope_for_frame(viewport_width_changed);
 
             if layout_changed {
                 interaction.focused_input_rect = None;
@@ -202,9 +240,13 @@ pub fn execute_viewport_frame<R: ImageProvider, F: FormControlHandler<CoreInputV
 
                 let focused_textarea_lines =
                     focused.and_then(|id| interaction.textarea.focused_lines(id));
+                let viewport_clip =
+                    viewport_repaint_clip(repaint_scope, content_rect, ui.clip_rect());
+                let clipped_painter = viewport_clip.map(|clip| painter.with_clip_rect(clip));
+                let paint_painter = clipped_painter.as_ref().unwrap_or(&painter);
 
                 let paint_args = PaintArgs {
-                    painter: &painter,
+                    painter: paint_painter,
                     origin,
                     measurer: &measurer,
                     base_url,
@@ -239,9 +281,21 @@ pub fn execute_viewport_frame<R: ImageProvider, F: FormControlHandler<CoreInputV
                 action: input_result.action,
                 viewport_changed: viewport_width_changed,
                 requested_followup_render: input_result.requested_followup_render,
+                repaint_scope,
             }
         })
         .inner
+}
+
+fn viewport_repaint_clip(
+    scope: ViewportRepaintScope,
+    content_rect: Rect,
+    viewport_rect: Rect,
+) -> Option<Rect> {
+    match scope {
+        ViewportRepaintScope::Document => None,
+        ViewportRepaintScope::Viewport => Some(content_rect.intersect(viewport_rect)),
+    }
 }
 
 struct ViewportReplacedInfo<'a, R> {
@@ -258,5 +312,58 @@ impl<R: ImageProvider> ReplacedElementInfoProvider for ViewportReplacedInfo<'_, 
             Some(w as f32),
             Some(h as f32),
         ))
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use egui::{Pos2, Vec2};
+
+    #[test]
+    fn repaint_policy_preserves_document_as_conservative_pending_scope() {
+        let policy =
+            ViewportRepaintPolicy::from_pending_scope(Some(ViewportRepaintScope::Document));
+
+        assert_eq!(
+            policy.scope_for_frame(false),
+            ViewportRepaintScope::Document
+        );
+        assert_eq!(policy.scope_for_frame(true), ViewportRepaintScope::Document);
+    }
+
+    #[test]
+    fn repaint_policy_uses_viewport_for_pending_or_synthesized_viewport_scope() {
+        let pending_viewport =
+            ViewportRepaintPolicy::from_pending_scope(Some(ViewportRepaintScope::Viewport));
+        assert_eq!(
+            pending_viewport.scope_for_frame(false),
+            ViewportRepaintScope::Viewport
+        );
+
+        let no_pending = ViewportRepaintPolicy::from_pending_scope(None);
+        assert_eq!(
+            no_pending.scope_for_frame(true),
+            ViewportRepaintScope::Viewport
+        );
+        assert_eq!(
+            no_pending.scope_for_frame(false),
+            ViewportRepaintScope::Document
+        );
+    }
+
+    #[test]
+    fn viewport_repaint_clip_distinguishes_viewport_from_document_scope() {
+        let content = Rect::from_min_size(Pos2::new(0.0, 0.0), Vec2::new(200.0, 600.0));
+        let viewport = Rect::from_min_size(Pos2::new(0.0, 100.0), Vec2::new(200.0, 150.0));
+
+        assert_eq!(
+            viewport_repaint_clip(ViewportRepaintScope::Document, content, viewport),
+            None
+        );
+        assert_eq!(
+            viewport_repaint_clip(ViewportRepaintScope::Viewport, content, viewport),
+            Some(viewport)
+        );
     }
 }

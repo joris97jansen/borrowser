@@ -94,3 +94,14 @@ pub struct PaintInvalidationRequest {
     pub reason: PaintInvalidationReason,
     pub scope: PaintInvalidationScope,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RepaintExecutionScope {
+    Viewport,
+    Document,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RepaintExecutionPlan {
+    pub scope: RepaintExecutionScope,
+}

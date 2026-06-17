@@ -22,7 +22,7 @@ pub use contracts::{
 };
 pub use debug::{
     RenderFrameExecutionTrace, RenderPhaseBoundaryDebugSnapshot, RenderPhaseExecutionKind,
-    RenderPhaseExecutionTrace, render_phase_boundary_debug_snapshot,
+    RenderPhaseExecutionTrace, RepaintExecutionTrace, render_phase_boundary_debug_snapshot,
 };
 #[cfg(test)]
 pub(crate) use frame::build_render_frame_execution_trace;
@@ -36,7 +36,7 @@ pub use lifecycle::{RenderArtifactState, RenderPipelineDebugSnapshot, StyleInval
 pub use types::{
     PaintInvalidationReason, PaintInvalidationRequest, PaintInvalidationScope,
     PaintInvalidationTrigger, RenderArtifact, RenderInvalidationEntryPoint, RenderRebuildTrigger,
-    RenderingPhase, RenderingSubsystem,
+    RenderingPhase, RenderingSubsystem, RepaintExecutionPlan, RepaintExecutionScope,
 };
 
 #[cfg(test)]

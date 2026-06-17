@@ -139,6 +139,10 @@ Current supported subset:
   conservative `Document`/`Viewport` scopes, deterministic paint invalidation
   requests/state, and runtime-owned pending paint dirtiness; see
   `docs/rendering/ab5-structured-paint-invalidation-model.md`
+- AB6 basic targeted repaint execution uses the structured AB5 invalidation
+  model with conservative `Document` and `Viewport` execution scopes;
+  browser/runtime derives repaint scope, and GFX consumes the selected scope;
+  see `docs/rendering/ab6-basic-targeted-repaint-behavior.md`
 
 Missing or incomplete:
 
@@ -170,9 +174,10 @@ Missing or incomplete:
     interactions
   - compositor layer promotion, retained display lists/scenes, GPU compositing,
     and compositor-layer invalidation
-- optimized repaint execution remains missing: retained paint scenes,
-  minimal dirty-region propagation, GPU compositing, and backend partial repaint
-  execution are not implemented
+- advanced optimized repaint remains missing: retained paint scenes/display
+  lists, minimal dirty-region propagation, paint-source-scoped repaint,
+  compositor-layer invalidation, GPU compositing, and backend partial
+  raster/partial repaint execution are not implemented
 - scrollbars and scrollable overflow painting
 - selection painting outside supported text-control paths
 - font fallback and advanced text shaping

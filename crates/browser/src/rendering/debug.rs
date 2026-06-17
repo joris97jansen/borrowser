@@ -8,7 +8,9 @@ use std::fmt::Write;
 
 use super::frame::build_render_frame_execution_trace;
 use super::invalidation::PendingRenderWork;
-use super::types::{RenderInvalidationEntryPoint, RenderRebuildTrigger, RenderingPhase};
+use super::types::{
+    RenderInvalidationEntryPoint, RenderRebuildTrigger, RenderingPhase, RepaintExecutionScope,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RenderPhaseExecutionKind {
@@ -26,6 +28,11 @@ pub struct RenderPhaseExecutionTrace {
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
+pub struct RepaintExecutionTrace {
+    pub scope: RepaintExecutionScope,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RenderFrameExecutionTrace {
     /// Invalidation entry points that actively shaped this frame.
     ///
@@ -37,6 +44,7 @@ pub struct RenderFrameExecutionTrace {
     pub layout: RenderPhaseExecutionTrace,
     pub paint: RenderPhaseExecutionTrace,
     pub frame_orchestration: RenderPhaseExecutionTrace,
+    pub repaint_execution: RepaintExecutionTrace,
     pub semantic_phase_order: Vec<RenderingPhase>,
 }
 
@@ -60,6 +68,7 @@ impl RenderFrameExecutionTrace {
         append_phase_trace_snapshot(&mut out, "layout", &self.layout);
         append_phase_trace_snapshot(&mut out, "paint", &self.paint);
         append_phase_trace_snapshot(&mut out, "frame-orchestration", &self.frame_orchestration);
+        append_repaint_execution_snapshot(&mut out, &self.repaint_execution);
         writeln!(
             &mut out,
             "semantic-phase-order: {}",
@@ -72,6 +81,15 @@ impl RenderFrameExecutionTrace {
         .expect("write snapshot");
         out
     }
+}
+
+fn append_repaint_execution_snapshot(out: &mut String, trace: &RepaintExecutionTrace) {
+    writeln!(
+        out,
+        "repaint-execution: scope={}",
+        repaint_execution_scope_debug_label(trace.scope)
+    )
+    .expect("write snapshot");
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -210,5 +228,12 @@ fn rebuild_trigger_debug_label(trigger: RenderRebuildTrigger) -> &'static str {
         RenderRebuildTrigger::ResourceStateChanged => "resource-state-changed",
         RenderRebuildTrigger::InputStateChanged => "input-state-changed",
         RenderRebuildTrigger::LayoutOutputsChanged => "layout-outputs-changed",
+    }
+}
+
+fn repaint_execution_scope_debug_label(scope: RepaintExecutionScope) -> &'static str {
+    match scope {
+        RepaintExecutionScope::Viewport => "viewport",
+        RepaintExecutionScope::Document => "document",
     }
 }

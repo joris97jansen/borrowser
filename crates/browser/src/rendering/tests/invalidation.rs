@@ -330,6 +330,81 @@ fn pending_paint_invalidations_compute_conservative_effective_scope() {
 }
 
 #[test]
+fn repaint_execution_plan_uses_viewport_for_viewport_scoped_invalidations() {
+    let mut pending = PendingRenderWork::default();
+    pending.push(render_invalidation_request(
+        RenderInvalidationEntryPoint::InputStateChanged,
+    ));
+
+    assert_eq!(
+        RepaintExecutionPlan::from_pending_render_work(&pending),
+        RepaintExecutionPlan {
+            scope: RepaintExecutionScope::Viewport,
+        }
+    );
+
+    let mut viewport_pending = PendingRenderWork::default();
+    viewport_pending.push(render_invalidation_request(
+        RenderInvalidationEntryPoint::ViewportChanged,
+    ));
+    assert_eq!(
+        RepaintExecutionPlan::from_pending_render_work(&viewport_pending).scope,
+        RepaintExecutionScope::Viewport
+    );
+}
+
+#[test]
+fn repaint_execution_plan_uses_document_for_document_scoped_invalidations() {
+    for entry_point in [
+        RenderInvalidationEntryPoint::DocumentReplaced,
+        RenderInvalidationEntryPoint::DomStructureChanged,
+        RenderInvalidationEntryPoint::DomAttributesChanged,
+        RenderInvalidationEntryPoint::DomTextChanged,
+        RenderInvalidationEntryPoint::StylesheetSetChanged,
+        RenderInvalidationEntryPoint::ResourceStateChanged,
+    ] {
+        let mut pending = PendingRenderWork::default();
+        pending.push(render_invalidation_request(entry_point));
+
+        assert_eq!(
+            RepaintExecutionPlan::from_pending_render_work(&pending).scope,
+            RepaintExecutionScope::Document,
+            "{entry_point:?} should conservatively repaint the document"
+        );
+    }
+}
+
+#[test]
+fn repaint_execution_plan_uses_document_for_mixed_viewport_and_document_invalidations() {
+    let mut pending = PendingRenderWork::default();
+    pending.push(render_invalidation_request(
+        RenderInvalidationEntryPoint::InputStateChanged,
+    ));
+    pending.push(render_invalidation_request(
+        RenderInvalidationEntryPoint::ResourceStateChanged,
+    ));
+
+    assert_eq!(
+        RepaintExecutionPlan::from_frame_inputs(&pending, true).scope,
+        RepaintExecutionScope::Document
+    );
+}
+
+#[test]
+fn repaint_execution_plan_treats_synthesized_viewport_change_as_viewport_repaint() {
+    let pending = PendingRenderWork::default();
+
+    assert_eq!(
+        RepaintExecutionPlan::from_frame_inputs(&pending, true).scope,
+        RepaintExecutionScope::Viewport
+    );
+    assert_eq!(
+        RepaintExecutionPlan::from_frame_inputs(&pending, false).scope,
+        RepaintExecutionScope::Document
+    );
+}
+
+#[test]
 fn document_replacement_returns_explicit_full_pipeline_work_request() {
     let output = parse_document(
         "<!doctype html><html><head><style>p { color: red; }</style></head><body><p>Hello</p></body></html>",
