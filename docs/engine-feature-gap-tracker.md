@@ -81,7 +81,8 @@ Current supported property set is intentionally small. Major missing families:
 - box effects: shadows, opacity, transforms, filters
 - layout: floats, clear, grid, table layout, multi-column layout
 - positioning: complete absolute/fixed/sticky geometry and full CSS
-  stacking/compositing beyond the AB3 supported `z-index` subset
+  stacking/compositing beyond the AB3/AB4 supported positioned integer
+  `z-index` and stacking-order execution subset
 - sizing: full intrinsic sizing keywords and browser-compatible min/max nuance
 - overflow: scrollbars, scroll containers, scroll offsets, overflow-x/y split
   behavior, viewport/body overflow propagation
@@ -98,7 +99,8 @@ Missing or incomplete:
 - table layout
 - floats and clear
 - full positioned layout geometry
-- full CSS stacking/compositing beyond the AB3 supported `z-index` subset
+- full CSS stacking/compositing beyond the AB3/AB4 supported positioned
+  integer `z-index` and stacking-order execution subset
 - writing modes and logical-axis remapping
 - fragmentation and pagination
 - full inline formatting behavior, including bidi and advanced line breaking
@@ -122,13 +124,21 @@ Current supported subset:
   `docs/rendering/aa8-paint-debug-visual-regression-surface.md`
 - basic paint-time overflow clipping when Layout exposes an overflow clip; see
   `docs/rendering/aa6-overflow-clipping-paint-behavior.md`
-- narrow AB3 z-order supported subset: authored/computed
+- narrow AB3/AB4 z-order and stacking-order execution supported subset:
+  authored/computed
   `z-index: auto | <integer>` is supported, but affects paint ordering only for
   generated boxes where `position != static`; positioned boxes with integer
-  `z-index` can create paint-owned child stacking contexts ordered through
-  deterministic negative, normal, zero, and positive buckets, with
-  paint-owned debug/test surfaces; see
-  `docs/rendering/ab3-z-order-layering-semantics.md`
+  `z-index` can create paint-owned child stacking contexts; AB4 orders those
+  child contexts around the context source subtree through deterministic
+  negative, zero, and positive stacking slots, with semantic order snapshots,
+  operation snapshots, and immediate painting routed through
+  `StackingContextTree::ordered_slots`; see
+  `docs/rendering/ab3-z-order-layering-semantics.md` and
+  `docs/rendering/ab4-stacking-context-paint-order.md`
+- AB5 structured paint invalidation foundation: explicit repaint triggers,
+  conservative `Document`/`Viewport` scopes, deterministic paint invalidation
+  requests/state, and runtime-owned pending paint dirtiness; see
+  `docs/rendering/ab5-structured-paint-invalidation-model.md`
 
 Missing or incomplete:
 
@@ -137,8 +147,8 @@ Missing or incomplete:
 - border radius
 - background images and advanced background painting
 - shadows, transforms, opacity, filters, and advanced clipping interactions
-- full CSS stacking/compositing remains missing beyond the AB3 supported
-  `z-index` subset, including:
+- full CSS stacking/compositing remains missing beyond the AB3/AB4 supported
+  positioned integer `z-index` and stacking-order execution subset, including:
   - complete CSS painting order for all formatting contexts
   - full stacking-context creation triggers beyond positioned integer
     `z-index`
@@ -149,8 +159,8 @@ Missing or incomplete:
   - mix-blend-mode, isolation, and blending/compositing semantics
   - contain/containment and will-change-related stacking/compositing behavior
   - full positioned layout geometry for absolute/fixed/sticky elements
-  - complete `z-index:auto`, `z-index:0`, negative, and positive behavior
-    across nested contexts
+  - complete CSS-compatible `z-index` behavior across all stacking-context
+    triggers, formatting contexts, and positioned-layout cases
   - inline, float, table, flex, grid, and pseudo-element painting-order
     interactions
   - top layer behavior such as dialogs/popovers
@@ -158,8 +168,11 @@ Missing or incomplete:
     interactions
   - masks, clip-path, advanced clipping, and border-radius clipping
     interactions
-  - compositor layer promotion, retained display lists/scenes, GPU
-    compositing, and paint invalidation
+  - compositor layer promotion, retained display lists/scenes, GPU compositing,
+    and compositor-layer invalidation
+- optimized repaint execution remains missing: retained paint scenes,
+  minimal dirty-region propagation, GPU compositing, and backend partial repaint
+  execution are not implemented
 - scrollbars and scrollable overflow painting
 - selection painting outside supported text-control paths
 - font fallback and advanced text shaping

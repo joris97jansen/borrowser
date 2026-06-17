@@ -59,3 +59,38 @@ pub enum RenderInvalidationEntryPoint {
     ResourceStateChanged,
     InputStateChanged,
 }
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PaintInvalidationTrigger {
+    DocumentReplaced,
+    DomStructureChanged,
+    DomAttributesChanged,
+    DomTextChanged,
+    StylesheetSetChanged,
+    ViewportChanged,
+    ResourceStateChanged,
+    InputStateChanged,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PaintInvalidationReason {
+    CascadedFromStyle,
+    CascadedFromLayout,
+    DirectPaintDependency,
+    RuntimeInputState,
+    ConservativeUnknownImpact,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
+pub enum PaintInvalidationScope {
+    Viewport,
+    Document,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct PaintInvalidationRequest {
+    pub entry_point: RenderInvalidationEntryPoint,
+    pub trigger: PaintInvalidationTrigger,
+    pub reason: PaintInvalidationReason,
+    pub scope: PaintInvalidationScope,
+}

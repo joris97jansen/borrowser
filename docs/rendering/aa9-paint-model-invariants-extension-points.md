@@ -43,6 +43,7 @@ Detailed source contracts:
 - `docs/rendering/ab2-stacking-context-representation.md`
 - `docs/rendering/ab3-z-order-layering-semantics.md`
 - `docs/rendering/ab4-stacking-context-paint-order.md`
+- `docs/rendering/ab5-structured-paint-invalidation-model.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
 - `docs/rendering/y4-overflow-semantics-supported-subset.md`
 
@@ -251,7 +252,8 @@ The AA paint model deliberately excludes:
 - retained display lists;
 - retained paint scenes;
 - GPU layer trees or GPU pipeline abstractions;
-- invalidation or retained paint cache machinery;
+- targeted paint invalidation or retained paint cache machinery beyond AB5's
+  structured runtime paint invalidation contracts;
 - transforms;
 - opacity;
 - blend modes;
@@ -290,8 +292,9 @@ implementation commitments and do not imply support today:
   adding scrollbars, scroll offsets, or retained clip/scroll nodes;
 - pixel or raster visual regression: add a platform-aware determinism contract
   separate from AA8 structural snapshots;
-- incremental invalidation: route through browser/runtime invalidation contracts
-  and preserve explicit phase boundaries.
+- incremental invalidation: extend AB5's structured paint invalidation model
+  through browser/runtime invalidation contracts and preserve explicit phase
+  boundaries.
 
 AB1 is the architecture contract that connects these extension points. It does
 not remove the current exclusions by itself; it defines the ownership,
