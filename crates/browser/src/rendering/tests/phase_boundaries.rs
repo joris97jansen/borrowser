@@ -123,6 +123,7 @@ orchestration:
     direct-triggers: 0
     cascaded-from: 1
       - style
+  repaint-execution: scope=document
   semantic-phase-order: style -> layout -> paint
 "#
     );
@@ -249,6 +250,7 @@ orchestration:
       - input-state-changed
       - viewport-changed
     cascaded-from: 0
+  repaint-execution: scope=document
   semantic-phase-order: style -> layout -> paint
 "#
     );

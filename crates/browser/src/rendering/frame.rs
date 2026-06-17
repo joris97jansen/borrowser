@@ -7,7 +7,9 @@ use css::{ComputedStyleResolutionError, StylePhaseOutput};
 use egui::Ui;
 use gfx::input::PageAction;
 use gfx::paint::ImageProvider;
-use gfx::viewport::{ViewportCtx, execute_viewport_frame};
+use gfx::viewport::{
+    ViewportCtx, ViewportRepaintPolicy, ViewportRepaintScope, execute_viewport_frame,
+};
 
 use super::debug::{
     RenderFrameExecutionTrace, RenderPhaseExecutionKind, RenderPhaseExecutionTrace,
@@ -16,6 +18,7 @@ use super::invalidation::{
     PendingRenderWork, PhaseRerunSource, RenderInvalidationRequest, render_invalidation_request,
 };
 use super::page_background::find_page_background_color;
+use super::types::{PaintInvalidationScope, RepaintExecutionPlan, RepaintExecutionScope};
 use super::types::{RenderInvalidationEntryPoint, RenderRebuildTrigger, RenderingPhase};
 
 pub(crate) struct OrchestratedFrameOutcome {
@@ -91,20 +94,28 @@ pub(crate) fn execute_prepared_page_frame<R: ImageProvider>(
         base_url,
         form_controls,
     } = prepared;
-    let viewport_result = execute_viewport_frame(ViewportCtx::new(
-        ui,
-        &style_output,
-        base_url.as_deref(),
-        resources,
-        &mut input_state.input_values,
-        &form_controls,
-        &mut input_state.interaction,
-    ));
+    let repaint_policy = viewport_repaint_policy(&pending_work);
+    let viewport_result = execute_viewport_frame(
+        ViewportCtx::new(
+            ui,
+            &style_output,
+            base_url.as_deref(),
+            resources,
+            &mut input_state.input_values,
+            &form_controls,
+            &mut input_state.interaction,
+        )
+        .with_repaint_policy(repaint_policy),
+    );
 
     let trace = build_render_frame_execution_trace(
         &pending_work,
         style_dirty_before_frame,
         viewport_result.viewport_changed,
+    );
+    debug_assert_eq!(
+        trace.repaint_execution.scope,
+        repaint_execution_scope_from_viewport(viewport_result.repaint_scope)
     );
     let followup_render_request = viewport_result
         .requested_followup_render
@@ -172,6 +183,9 @@ pub(crate) fn build_render_frame_execution_trace(
             frame_orchestration,
             RenderPhaseExecutionKind::RequiredForCurrentFrame,
         ),
+        repaint_execution: super::debug::RepaintExecutionTrace {
+            scope: RepaintExecutionPlan::from_frame_inputs(pending_work, viewport_changed).scope,
+        },
         semantic_phase_order: vec![
             RenderingPhase::Style,
             RenderingPhase::Layout,
@@ -201,5 +215,27 @@ fn phase_trace(
 fn push_unique<T: Copy + PartialEq>(items: &mut Vec<T>, item: T) {
     if !items.contains(&item) {
         items.push(item);
+    }
+}
+
+fn viewport_repaint_policy(pending_work: &PendingRenderWork) -> ViewportRepaintPolicy {
+    let paint = pending_work.paint_invalidations();
+    let pending_scope = paint
+        .effective_scope()
+        .map(viewport_repaint_scope_from_paint);
+    ViewportRepaintPolicy::from_pending_scope(pending_scope)
+}
+
+fn viewport_repaint_scope_from_paint(scope: PaintInvalidationScope) -> ViewportRepaintScope {
+    match scope {
+        PaintInvalidationScope::Viewport => ViewportRepaintScope::Viewport,
+        PaintInvalidationScope::Document => ViewportRepaintScope::Document,
+    }
+}
+
+fn repaint_execution_scope_from_viewport(scope: ViewportRepaintScope) -> RepaintExecutionScope {
+    match scope {
+        ViewportRepaintScope::Viewport => RepaintExecutionScope::Viewport,
+        ViewportRepaintScope::Document => RepaintExecutionScope::Document,
     }
 }

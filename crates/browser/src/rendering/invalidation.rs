@@ -3,7 +3,7 @@
 use super::types::{
     PaintInvalidationReason, PaintInvalidationRequest, PaintInvalidationScope,
     PaintInvalidationTrigger, RenderInvalidationEntryPoint, RenderRebuildTrigger, RenderingPhase,
-    RenderingSubsystem,
+    RenderingSubsystem, RepaintExecutionPlan, RepaintExecutionScope,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -310,5 +310,40 @@ impl PendingPaintInvalidations {
 
     pub fn effective_scope(&self) -> Option<PaintInvalidationScope> {
         self.requests.iter().map(|request| request.scope).max()
+    }
+}
+
+impl RepaintExecutionPlan {
+    pub const fn document() -> Self {
+        Self {
+            scope: RepaintExecutionScope::Document,
+        }
+    }
+
+    pub const fn viewport() -> Self {
+        Self {
+            scope: RepaintExecutionScope::Viewport,
+        }
+    }
+
+    pub fn from_pending_render_work(pending: &PendingRenderWork) -> Self {
+        Self::from_paint_invalidations(&pending.paint_invalidations())
+    }
+
+    pub fn from_frame_inputs(pending: &PendingRenderWork, viewport_changed: bool) -> Self {
+        let paint = pending.paint_invalidations();
+        match paint.effective_scope() {
+            Some(PaintInvalidationScope::Document) => Self::document(),
+            Some(PaintInvalidationScope::Viewport) => Self::viewport(),
+            None if viewport_changed => Self::viewport(),
+            None => Self::document(),
+        }
+    }
+
+    pub fn from_paint_invalidations(pending: &PendingPaintInvalidations) -> Self {
+        match pending.effective_scope() {
+            Some(PaintInvalidationScope::Viewport) => Self::viewport(),
+            Some(PaintInvalidationScope::Document) | None => Self::document(),
+        }
     }
 }

@@ -28,6 +28,10 @@ fn frame_execution_trace_distinguishes_requested_work_from_frame_prerequisites()
         vec![RenderRebuildTrigger::InputStateChanged]
     );
     assert_eq!(
+        trace.repaint_execution.scope,
+        RepaintExecutionScope::Viewport
+    );
+    assert_eq!(
         trace.frame_orchestration.kind,
         RenderPhaseExecutionKind::Requested
     );
@@ -68,5 +72,51 @@ fn frame_execution_trace_adds_viewport_change_as_direct_runtime_trigger() {
     assert_eq!(
         trace.frame_orchestration.direct_triggers,
         vec![RenderRebuildTrigger::ViewportChanged]
+    );
+    assert_eq!(
+        trace.repaint_execution.scope,
+        RepaintExecutionScope::Document
+    );
+}
+
+#[test]
+fn frame_execution_trace_records_viewport_repaint_for_synthesized_viewport_change() {
+    let pending = PendingRenderWork::default();
+
+    let trace = build_render_frame_execution_trace(&pending, false, true);
+    assert_eq!(
+        trace.triggered_entry_points,
+        vec![RenderInvalidationEntryPoint::ViewportChanged]
+    );
+    assert_eq!(
+        trace.repaint_execution.scope,
+        RepaintExecutionScope::Viewport
+    );
+    assert!(
+        trace
+            .to_debug_snapshot()
+            .contains("repaint-execution: scope=viewport")
+    );
+}
+
+#[test]
+fn frame_execution_trace_records_document_repaint_for_mixed_invalidations() {
+    let mut pending = PendingRenderWork::default();
+    pending.push(render_invalidation_request(
+        RenderInvalidationEntryPoint::InputStateChanged,
+    ));
+    pending.push(render_invalidation_request(
+        RenderInvalidationEntryPoint::ResourceStateChanged,
+    ));
+
+    let trace = build_render_frame_execution_trace(&pending, false, false);
+    assert_eq!(
+        trace.repaint_execution.scope,
+        RepaintExecutionScope::Document
+    );
+    assert!(
+        trace
+            .to_debug_snapshot()
+            .contains("repaint-execution: scope=document")
     );
 }

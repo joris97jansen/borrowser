@@ -35,6 +35,7 @@ Related documents:
 - `docs/rendering/ab3-z-order-layering-semantics.md`
 - `docs/rendering/ab4-stacking-context-paint-order.md`
 - `docs/rendering/ab5-structured-paint-invalidation-model.md`
+- `docs/rendering/ab6-basic-targeted-repaint-behavior.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
@@ -352,6 +353,12 @@ paint artifacts, or paint invalidation.
 AB5 removes the gap where paint reruns had no paint-specific invalidation
 reason or scope. It keeps targeted repaint execution, retained paint artifacts,
 dirty regions, compositor layers, and GPU behavior excluded.
+
+AB6 removes the specific targeted-repaint execution gap for AB5's supported
+`Document` and `Viewport` scopes. It keeps arbitrary dirty rectangles,
+paint-source-scoped repaint, stacking-context-scoped repaint, retained display
+lists, retained paint scenes, compositor layers, and GPU partial raster
+excluded.
 
 ## Extension Rules For Future AB Issues
 

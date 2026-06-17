@@ -27,6 +27,7 @@ Related documents:
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
 - `docs/rendering/aa9-paint-model-invariants-extension-points.md`
 - `docs/rendering/ab4-stacking-context-paint-order.md`
+- `docs/rendering/ab6-basic-targeted-repaint-behavior.md`
 
 ## Purpose
 
@@ -192,6 +193,11 @@ AB5 deliberately excludes:
 Future issues may remove individual exclusions only by defining stable
 ownership, deterministic identifiers, dependency derivation, fallback behavior,
 and regression surfaces.
+
+AB6 removes the narrow execution-policy exclusion for AB5's supported
+`Document` and `Viewport` scopes. It does not remove the exclusions for dirty
+regions, retained paint artifacts, paint-source-scoped invalidation, compositor
+layers, or GPU behavior.
 
 ## Extension Points
 
