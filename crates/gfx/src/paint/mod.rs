@@ -19,7 +19,7 @@ pub use primitives::{
 };
 pub use stacking::{
     StackablePaintItem, StackingContextId, StackingContextNode, StackingContextSource,
-    StackingContextTree, StackingLayerKind, StackingOrderKey,
+    StackingContextTree, StackingLayerKind, StackingOrderKey, StackingOrderSlot,
 };
 
 use crate::EguiTextMeasurer;
@@ -325,9 +325,7 @@ fn paint_layout_box_contents(
     // 3) Recurse into children
     for child in &layout.children {
         if let Some((tree, owner_context)) = ctx.stacking_contexts
-            && tree
-                .context_id_for_source_context(PaintSource::from_layout(child))
-                .is_some_and(|context| context != owner_context)
+            && tree.source_starts_external_context(owner_context, PaintSource::from_layout(child))
         {
             continue;
         }
@@ -482,55 +480,21 @@ fn paint_stacking_context_body(
     ctx: PaintCtx<'_>,
     skip_inline_block_children: bool,
 ) {
-    let Some(context) = input.stacking_contexts().context(context_id) else {
-        return;
-    };
-
-    paint_child_contexts_for_layer(
-        context_id,
-        StackingLayerKind::NegativeZIndex,
-        input,
-        ctx,
-        skip_inline_block_children,
-    );
-
-    let source = context.source().paint_source();
-    if let Some(layout) = find_layout_by_paint_source(input.layout().root(), source) {
-        let context_ctx = PaintCtx {
-            stacking_contexts: Some((input.stacking_contexts(), context_id)),
-            ..ctx
-        };
-        paint_layout_box(layout, context_ctx, skip_inline_block_children);
-    }
-
-    paint_child_contexts_for_layer(
-        context_id,
-        StackingLayerKind::ZeroZIndex,
-        input,
-        ctx,
-        skip_inline_block_children,
-    );
-    paint_child_contexts_for_layer(
-        context_id,
-        StackingLayerKind::PositiveZIndex,
-        input,
-        ctx,
-        skip_inline_block_children,
-    );
-}
-
-fn paint_child_contexts_for_layer(
-    parent: StackingContextId,
-    layer: StackingLayerKind,
-    input: &PaintInput<'_, '_, '_>,
-    ctx: PaintCtx<'_>,
-    skip_inline_block_children: bool,
-) {
-    for child in input
-        .stacking_contexts()
-        .child_contexts_for_layer(parent, layer)
-    {
-        paint_stacking_context(child.id(), input, ctx, skip_inline_block_children);
+    for slot in input.stacking_contexts().ordered_slots(context_id) {
+        match slot {
+            StackingOrderSlot::ChildContext(child_context_id) => {
+                paint_stacking_context(child_context_id, input, ctx, skip_inline_block_children);
+            }
+            StackingOrderSlot::ContextSource(source) => {
+                if let Some(layout) = find_layout_by_paint_source(input.layout().root(), source) {
+                    let context_ctx = PaintCtx {
+                        stacking_contexts: Some((input.stacking_contexts(), context_id)),
+                        ..ctx
+                    };
+                    paint_layout_box(layout, context_ctx, skip_inline_block_children);
+                }
+            }
+        }
     }
 }
 
@@ -896,6 +860,120 @@ mod tests {
     }
 
     #[test]
+    fn paint_order_operation_snapshot_and_immediate_paint_agree_on_stacking_order() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "120px".to_string()),
+                    ("height".to_string(), "20px".to_string()),
+                    ("background-color".to_string(), "#00aa00".to_string()),
+                ],
+                children: vec![
+                    positioned_block(Id(3), "0", "#0000aa", Vec::new()),
+                    positioned_block(Id(4), "-1", "#aa0000", Vec::new()),
+                    positioned_block(Id(5), "2", "#aaaa00", Vec::new()),
+                ],
+            }],
+        };
+
+        let order_snapshot = paint_order_snapshot_for_dom(&dom);
+        let operation_snapshot = paint_operation_snapshot_for_dom(&dom);
+        assert_color_order(
+            &order_snapshot,
+            [
+                "color=rgba(170,0,0,255)",
+                "color=rgba(0,170,0,255)",
+                "color=rgba(0,0,170,255)",
+                "color=rgba(170,170,0,255)",
+            ],
+        );
+        assert_color_order(
+            &operation_snapshot,
+            [
+                "color=rgba(170,0,0,255)",
+                "color=rgba(0,170,0,255)",
+                "color=rgba(0,0,170,255)",
+                "color=rgba(170,170,0,255)",
+            ],
+        );
+
+        let fills = rect_fill_sequence(&paint_shapes_for_dom(&dom));
+        let negative = position_of_fill(&fills, Color32::from_rgb(0xaa, 0x00, 0x00))
+            .expect("negative z-index fill");
+        let normal = position_of_fill(&fills, Color32::from_rgb(0x00, 0xaa, 0x00))
+            .expect("normal flow fill");
+        let zero =
+            position_of_fill(&fills, Color32::from_rgb(0x00, 0x00, 0xaa)).expect("zero fill");
+        let positive = position_of_fill(&fills, Color32::from_rgb(0xaa, 0xaa, 0x00))
+            .expect("positive z-index fill");
+
+        assert!(negative < normal);
+        assert!(normal < zero);
+        assert!(zero < positive);
+    }
+
+    #[test]
+    fn immediate_paint_keeps_static_integer_and_positioned_auto_z_index_in_source_order() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![("display".to_string(), "block".to_string())],
+                children: vec![
+                    Node::Element {
+                        id: Id(3),
+                        name: Arc::from("div"),
+                        attributes: Vec::new(),
+                        style: vec![
+                            ("display".to_string(), "block".to_string()),
+                            ("z-index".to_string(), "9".to_string()),
+                            ("width".to_string(), "20px".to_string()),
+                            ("height".to_string(), "20px".to_string()),
+                            ("background-color".to_string(), "#aa0000".to_string()),
+                        ],
+                        children: Vec::new(),
+                    },
+                    Node::Element {
+                        id: Id(4),
+                        name: Arc::from("div"),
+                        attributes: Vec::new(),
+                        style: vec![
+                            ("display".to_string(), "block".to_string()),
+                            ("position".to_string(), "relative".to_string()),
+                            ("z-index".to_string(), "auto".to_string()),
+                            ("width".to_string(), "20px".to_string()),
+                            ("height".to_string(), "20px".to_string()),
+                            ("background-color".to_string(), "#00aa00".to_string()),
+                        ],
+                        children: Vec::new(),
+                    },
+                    positioned_block(Id(5), "1", "#0000aa", Vec::new()),
+                ],
+            }],
+        };
+
+        let fills = rect_fill_sequence(&paint_shapes_for_dom(&dom));
+        let static_integer = position_of_fill(&fills, Color32::from_rgb(0xaa, 0x00, 0x00))
+            .expect("static integer z-index fill");
+        let positioned_auto = position_of_fill(&fills, Color32::from_rgb(0x00, 0xaa, 0x00))
+            .expect("positioned auto z-index fill");
+        let positive_context = position_of_fill(&fills, Color32::from_rgb(0x00, 0x00, 0xaa))
+            .expect("positive child-context fill");
+
+        assert!(static_integer < positioned_auto);
+        assert!(positioned_auto < positive_context);
+    }
+
+    #[test]
     fn immediate_paint_keeps_child_context_atomic_relative_to_siblings() {
         let dom = Node::Document {
             id: Id(1),
@@ -1111,6 +1189,38 @@ mod tests {
             },
         )
         .shapes
+    }
+
+    fn paint_order_snapshot_for_dom(dom: &Node) -> String {
+        let styled = css::build_style_tree(dom, None);
+        let layout =
+            layout::layout_document(LayoutPhaseInput::new(&styled, 500.0, &TestMeasurer, None));
+        PaintPhaseInput::new(&layout)
+            .to_paint_input(&TestMeasurer)
+            .to_order_debug_snapshot()
+    }
+
+    fn paint_operation_snapshot_for_dom(dom: &Node) -> String {
+        let styled = css::build_style_tree(dom, None);
+        let layout =
+            layout::layout_document(LayoutPhaseInput::new(&styled, 500.0, &TestMeasurer, None));
+        PaintPhaseInput::new(&layout)
+            .to_paint_input(&TestMeasurer)
+            .to_operation_debug_snapshot()
+    }
+
+    fn assert_color_order<const N: usize>(snapshot: &str, colors: [&str; N]) {
+        let mut previous = None;
+        for color in colors {
+            let index = snapshot
+                .lines()
+                .position(|line| line.contains(color))
+                .unwrap_or_else(|| panic!("snapshot should contain {color:?}\n{snapshot}"));
+            if let Some(previous) = previous {
+                assert!(previous < index, "{color} should appear after prior color");
+            }
+            previous = Some(index);
+        }
     }
 
     fn positioned_block(id: Id, z_index: &str, color: &str, children: Vec<Node>) -> Node {

@@ -26,6 +26,7 @@ Related code:
 Related documents:
 - `docs/rendering/ab1-stacking-layering-invalidation-architecture.md`
 - `docs/rendering/ab2-stacking-context-representation.md`
+- `docs/rendering/ab4-stacking-context-paint-order.md`
 - `docs/rendering/aa7-deterministic-paint-ordering-layering-rules.md`
 - `docs/rendering/aa9-paint-model-invariants-extension-points.md`
 - `docs/rendering/aa6-overflow-clipping-paint-behavior.md`
@@ -130,8 +131,9 @@ metadata; it does not inspect raw CSS overflow declarations.
 
 `PaintInput::to_order_debug_snapshot()` and
 `PaintInput::to_operation_debug_snapshot()` consume the resolved stacking
-traversal. Immediate painting uses the same resolved traversal. Backend draw
-commands are not sorted after emission.
+traversal. AB4 centralizes that traversal through
+`StackingContextTree::ordered_slots`, and immediate painting uses the same
+resolved slots. Backend draw commands are not sorted after emission.
 
 ## Invariants
 

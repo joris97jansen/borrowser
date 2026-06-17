@@ -68,6 +68,12 @@ The paint-owned API is:
 PaintInput::to_operation_debug_snapshot() -> String
 ```
 
+AB4 requires this snapshot to consume the same
+`StackingContextTree::ordered_slots` sequence used by
+`PaintInput::to_order_debug_snapshot()` and immediate painting. The snapshot
+must not reconstruct cross-context order independently or sort already-flattened
+operations.
+
 Every snapshot begins with a stable header:
 
 ```text

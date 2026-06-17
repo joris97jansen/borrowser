@@ -7,7 +7,7 @@ use super::{
     PaintBorder, PaintBorderSide, PaintClip, PaintClipScope, PaintColor, PaintInlineBox,
     PaintInput, PaintListMarker, PaintListMarkerKind, PaintNode, PaintOutline, PaintPrimitive,
     PaintReplaced, PaintReplacedKind, PaintSource, PaintText, PaintTextDecoration,
-    PaintTextDecorationLine, StackingContextId, StackingContextNode, StackingLayerKind,
+    PaintTextDecorationLine, StackingContextId, StackingContextNode, StackingOrderSlot,
 };
 
 /// Stable paint-owned operation snapshot for visual regression tests.
@@ -94,25 +94,19 @@ impl<'a, 'layout, 'style_tree, 'dom> PaintOperationDebugWriter<'a, 'layout, 'sty
     }
 
     fn write_stacking_context_body(&mut self, context: &StackingContextNode) {
-        self.write_child_contexts(context.id(), StackingLayerKind::NegativeZIndex);
-
-        let source = context.source().paint_source();
-        let Some(node) = self.input.tree().node_for_source(source) else {
-            return;
-        };
-        self.write_node(node, context.id());
-
-        self.write_child_contexts(context.id(), StackingLayerKind::ZeroZIndex);
-        self.write_child_contexts(context.id(), StackingLayerKind::PositiveZIndex);
-    }
-
-    fn write_child_contexts(&mut self, parent: StackingContextId, layer: StackingLayerKind) {
-        for child in self
-            .input
-            .stacking_contexts()
-            .child_contexts_for_layer(parent, layer)
-        {
-            self.write_stacking_context(child);
+        for slot in self.input.stacking_contexts().ordered_slots(context.id()) {
+            match slot {
+                StackingOrderSlot::ChildContext(child_context_id) => {
+                    if let Some(child) = self.input.stacking_contexts().context(child_context_id) {
+                        self.write_stacking_context(child);
+                    }
+                }
+                StackingOrderSlot::ContextSource(source) => {
+                    if let Some(node) = self.input.tree().node_for_source(source) {
+                        self.write_node(node, context.id());
+                    }
+                }
+            }
         }
     }
 
@@ -146,8 +140,7 @@ impl<'a, 'layout, 'style_tree, 'dom> PaintOperationDebugWriter<'a, 'layout, 'sty
             if self
                 .input
                 .stacking_contexts()
-                .context_id_for_source_context(child.source())
-                .is_some_and(|context| context != owner_context)
+                .source_starts_external_context(owner_context, child.source())
             {
                 continue;
             }

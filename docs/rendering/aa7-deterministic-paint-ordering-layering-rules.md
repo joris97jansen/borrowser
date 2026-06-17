@@ -31,6 +31,7 @@ Related documents:
 - `docs/rendering/aa8-paint-debug-visual-regression-surface.md`
 - `docs/rendering/ab1-stacking-layering-invalidation-architecture.md`
 - `docs/rendering/ab3-z-order-layering-semantics.md`
+- `docs/rendering/ab4-stacking-context-paint-order.md`
 - `docs/rendering/y4-overflow-semantics-supported-subset.md`
 
 ## Supported Ordering Contract
@@ -95,17 +96,19 @@ values or decide whether a box clips.
 
 The semantic paint model and immediate backend painting must remain aligned:
 
-- `PaintInput::to_order_debug_snapshot()` walks the semantic `PaintTree` in
-  construction order;
-- immediate painting follows the same per-box sequence in `paint_layout_box`;
+- `PaintInput::to_order_debug_snapshot()` walks the semantic `PaintTree`
+  through the AB4 resolved stacking-context slot order;
+- immediate painting follows the same AB4 slot order and the same per-box
+  sequence in `paint_layout_box`;
 - regression tests cover both semantic order and immediate output order.
 
 The order debug snapshot is a stable regression surface. It is not a public API,
 retained display list, scene graph, command buffer, or compositor artifact.
 AA8 extends this with a paint-operation debug snapshot that uses the same
 paint-owned ordering rules while remaining structural and backend-independent.
-AB3 further routes these debug surfaces through the supported paint-owned
-stacking traversal for positioned integer `z-index` child contexts.
+AB3 defines the supported positioned integer `z-index` child contexts. AB4
+routes order snapshots, operation snapshots, and immediate painting through the
+same paint-owned `StackingContextTree::ordered_slots` traversal.
 
 ## Determinism Invariants
 
@@ -123,6 +126,8 @@ resource state, and input state:
 - semantic paint order snapshots are deterministic across construction runs;
 - immediate backend rectangle paint order is deterministic for representative
   supported scenarios.
+- child stacking-context roots are emitted through their AB4 child-context
+  slots, not through parent source-subtree traversal.
 
 ## Deliberate Exclusions
 
