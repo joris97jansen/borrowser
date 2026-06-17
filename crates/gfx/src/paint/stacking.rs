@@ -112,6 +112,52 @@ impl StackingContextTree {
         children
     }
 
+    /// Returns the canonical paint-owned order for one stacking context.
+    ///
+    /// AB4 makes this slot order the shared source of cross-context paint
+    /// ordering for semantic order snapshots, operation snapshots, and
+    /// immediate painting. The context source subtree is represented as a slot
+    /// so consumers can keep AA per-box ordering inside the source while
+    /// emitting child contexts only through their explicit stacking slots.
+    pub fn ordered_slots(&self, context: StackingContextId) -> Vec<StackingOrderSlot> {
+        let mut slots = Vec::new();
+
+        self.push_child_context_slots(context, StackingLayerKind::NegativeZIndex, &mut slots);
+
+        if let Some(context_node) = self.context(context) {
+            slots.push(StackingOrderSlot::ContextSource(
+                context_node.source.paint_source(),
+            ));
+        }
+
+        self.push_child_context_slots(context, StackingLayerKind::ZeroZIndex, &mut slots);
+        self.push_child_context_slots(context, StackingLayerKind::PositiveZIndex, &mut slots);
+
+        slots
+    }
+
+    pub fn source_starts_external_context(
+        &self,
+        owner_context: StackingContextId,
+        source: PaintSource,
+    ) -> bool {
+        self.context_id_for_source_context(source)
+            .is_some_and(|context| context != owner_context)
+    }
+
+    fn push_child_context_slots(
+        &self,
+        parent: StackingContextId,
+        layer: StackingLayerKind,
+        slots: &mut Vec<StackingOrderSlot>,
+    ) {
+        slots.extend(
+            self.child_contexts_for_layer(parent, layer)
+                .into_iter()
+                .map(|context| StackingOrderSlot::ChildContext(context.id)),
+        );
+    }
+
     pub fn to_debug_snapshot(&self) -> String {
         let mut out = String::new();
         writeln!(&mut out, "version: 2").expect("write stacking context snapshot");
@@ -238,6 +284,12 @@ impl StackablePaintItem {
     pub fn order_key(self) -> StackingOrderKey {
         self.order_key
     }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum StackingOrderSlot {
+    ChildContext(StackingContextId),
+    ContextSource(PaintSource),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]

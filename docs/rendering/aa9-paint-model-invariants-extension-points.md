@@ -42,6 +42,7 @@ Detailed source contracts:
 - `docs/rendering/ab1-stacking-layering-invalidation-architecture.md`
 - `docs/rendering/ab2-stacking-context-representation.md`
 - `docs/rendering/ab3-z-order-layering-semantics.md`
+- `docs/rendering/ab4-stacking-context-paint-order.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
 - `docs/rendering/y4-overflow-semantics-supported-subset.md`
 
@@ -171,7 +172,10 @@ inline fragment positions, and the outer child walk avoids emitting them twice.
 This order is the supported Borrowser AA subset. It is not full CSS painting
 order, and it does not define full stacking contexts, full `z-index`,
 compositor layers, or opacity/transform/filter ordering. AB3 extends the paint
-model with a narrow positioned integer `z-index` child-context subset.
+model with a narrow positioned integer `z-index` child-context subset. AB4
+makes the explicit `StackingContextTree` slot order the shared source of
+cross-context paint order for semantic snapshots, operation snapshots, and
+immediate painting.
 
 ## Overflow Clip Scope
 

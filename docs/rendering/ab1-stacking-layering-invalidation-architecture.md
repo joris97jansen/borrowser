@@ -33,6 +33,7 @@ Related documents:
 - `docs/rendering/aa9-paint-model-invariants-extension-points.md`
 - `docs/rendering/ab2-stacking-context-representation.md`
 - `docs/rendering/ab3-z-order-layering-semantics.md`
+- `docs/rendering/ab4-stacking-context-paint-order.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
@@ -72,7 +73,9 @@ AB1 does not replace that pipeline. AB2 adds the first explicit
 root-context-only `StackingContextTree` representation inside `PaintInput`
 without changing visual paint order. AB3 refines that representation with the
 first narrow behavioral child-context and z-order subset for positioned boxes
-with computed integer `z-index`.
+with computed integer `z-index`. AB4 makes the explicit
+`StackingContextTree` slot order the shared source for semantic order
+snapshots, operation snapshots, and immediate painting.
 
 ## Ownership Boundaries
 
@@ -319,6 +322,11 @@ AB3 removes the first narrow slice of these exclusions by adding CSS
 `z-index: auto | <integer>` and paint-owned child contexts only for positioned
 generated boxes with computed integer `z-index`. Full CSS stacking-context and
 `z-index` behavior remains excluded.
+
+AB4 removes the traversal-first paint-order execution gap by routing
+cross-context order through `StackingContextTree::ordered_slots`. It does not
+remove the exclusions for full CSS painting order, compositor layers, retained
+paint artifacts, or paint invalidation.
 
 ## Extension Rules For Future AB Issues
 
