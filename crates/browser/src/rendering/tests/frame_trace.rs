@@ -100,6 +100,40 @@ fn frame_execution_trace_records_viewport_repaint_for_synthesized_viewport_chang
 }
 
 #[test]
+fn frame_execution_trace_debug_snapshot_is_exact_for_viewport_repaint() {
+    let pending = PendingRenderWork::default();
+
+    let trace = build_render_frame_execution_trace(&pending, false, true);
+
+    assert_eq!(
+        trace.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "render-frame-execution-trace\n",
+            "triggered-entry-points: 1\n",
+            "  - viewport-changed\n",
+            "style: phase=style kind=materialized-from-retained-artifacts\n",
+            "  direct-triggers: 0\n",
+            "  cascaded-from: 0\n",
+            "layout: phase=layout kind=requested\n",
+            "  direct-triggers: 1\n",
+            "    - viewport-changed\n",
+            "  cascaded-from: 0\n",
+            "paint: phase=paint kind=requested\n",
+            "  direct-triggers: 0\n",
+            "  cascaded-from: 1\n",
+            "    - layout\n",
+            "frame-orchestration: phase=frame-orchestration kind=requested\n",
+            "  direct-triggers: 1\n",
+            "    - viewport-changed\n",
+            "  cascaded-from: 0\n",
+            "repaint-execution: scope=viewport\n",
+            "semantic-phase-order: style -> layout -> paint\n",
+        )
+    );
+}
+
+#[test]
 fn frame_execution_trace_records_document_repaint_for_mixed_invalidations() {
     let mut pending = PendingRenderWork::default();
     pending.push(render_invalidation_request(

@@ -22,7 +22,8 @@ pub use contracts::{
 };
 pub use debug::{
     RenderFrameExecutionTrace, RenderPhaseBoundaryDebugSnapshot, RenderPhaseExecutionKind,
-    RenderPhaseExecutionTrace, RepaintExecutionTrace, render_phase_boundary_debug_snapshot,
+    RenderPhaseExecutionTrace, RepaintExecutionTrace, paint_invalidation_debug_snapshot,
+    render_phase_boundary_debug_snapshot,
 };
 #[cfg(test)]
 pub(crate) use frame::build_render_frame_execution_trace;

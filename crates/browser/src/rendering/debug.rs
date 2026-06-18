@@ -9,7 +9,9 @@ use std::fmt::Write;
 use super::frame::build_render_frame_execution_trace;
 use super::invalidation::PendingRenderWork;
 use super::types::{
-    RenderInvalidationEntryPoint, RenderRebuildTrigger, RenderingPhase, RepaintExecutionScope,
+    PaintInvalidationReason, PaintInvalidationScope, PaintInvalidationTrigger,
+    RenderInvalidationEntryPoint, RenderRebuildTrigger, RenderingPhase, RepaintExecutionPlan,
+    RepaintExecutionScope,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -81,6 +83,52 @@ impl RenderFrameExecutionTrace {
         .expect("write snapshot");
         out
     }
+}
+
+/// Stable runtime-owned paint invalidation and repaint-planning snapshot.
+///
+/// This debug surface is derived from pending render work through the AB5/AB6
+/// invalidation and repaint-plan APIs. It is not a retained paint scene,
+/// compositor layer tree, dirty-region graph, backend command stream, or paint
+/// ordering surface.
+pub fn paint_invalidation_debug_snapshot(pending: &PendingRenderWork) -> String {
+    let paint = pending.paint_invalidations();
+    let repaint = RepaintExecutionPlan::from_paint_invalidations(&paint);
+    let mut out = String::new();
+    writeln!(&mut out, "version: 1").expect("write paint invalidation snapshot");
+    writeln!(&mut out, "paint-invalidation-snapshot").expect("write paint invalidation snapshot");
+    writeln!(
+        &mut out,
+        "pending-render-work: {}",
+        pending.requests().len()
+    )
+    .expect("write paint invalidation snapshot");
+    writeln!(&mut out, "paint-invalidations: {}", paint.requests().len())
+        .expect("write paint invalidation snapshot");
+    for (index, request) in paint.requests().iter().enumerate() {
+        writeln!(
+            &mut out,
+            "  request[{index}]: entry-point={} trigger={} reason={} scope={}",
+            entry_point_debug_label(request.entry_point),
+            paint_invalidation_trigger_debug_label(request.trigger),
+            paint_invalidation_reason_debug_label(request.reason),
+            paint_invalidation_scope_debug_label(request.scope)
+        )
+        .expect("write paint invalidation snapshot");
+    }
+    writeln!(
+        &mut out,
+        "effective-scope: {}",
+        optional_paint_invalidation_scope_debug_label(paint.effective_scope())
+    )
+    .expect("write paint invalidation snapshot");
+    writeln!(
+        &mut out,
+        "repaint-execution-plan: scope={}",
+        repaint_execution_scope_debug_label(repaint.scope)
+    )
+    .expect("write paint invalidation snapshot");
+    out
 }
 
 fn append_repaint_execution_snapshot(out: &mut String, trace: &RepaintExecutionTrace) {
@@ -203,6 +251,45 @@ fn entry_point_debug_label(entry_point: RenderInvalidationEntryPoint) -> &'stati
         RenderInvalidationEntryPoint::ViewportChanged => "viewport-changed",
         RenderInvalidationEntryPoint::ResourceStateChanged => "resource-state-changed",
         RenderInvalidationEntryPoint::InputStateChanged => "input-state-changed",
+    }
+}
+
+fn paint_invalidation_trigger_debug_label(trigger: PaintInvalidationTrigger) -> &'static str {
+    match trigger {
+        PaintInvalidationTrigger::DocumentReplaced => "document-replaced",
+        PaintInvalidationTrigger::DomStructureChanged => "dom-structure-changed",
+        PaintInvalidationTrigger::DomAttributesChanged => "dom-attributes-changed",
+        PaintInvalidationTrigger::DomTextChanged => "dom-text-changed",
+        PaintInvalidationTrigger::StylesheetSetChanged => "stylesheet-set-changed",
+        PaintInvalidationTrigger::ViewportChanged => "viewport-changed",
+        PaintInvalidationTrigger::ResourceStateChanged => "resource-state-changed",
+        PaintInvalidationTrigger::InputStateChanged => "input-state-changed",
+    }
+}
+
+fn paint_invalidation_reason_debug_label(reason: PaintInvalidationReason) -> &'static str {
+    match reason {
+        PaintInvalidationReason::ConservativeUnknownImpact => "conservative-unknown-impact",
+        PaintInvalidationReason::CascadedFromStyle => "cascaded-from-style",
+        PaintInvalidationReason::CascadedFromLayout => "cascaded-from-layout",
+        PaintInvalidationReason::DirectPaintDependency => "direct-paint-dependency",
+        PaintInvalidationReason::RuntimeInputState => "runtime-input-state",
+    }
+}
+
+fn optional_paint_invalidation_scope_debug_label(
+    scope: Option<PaintInvalidationScope>,
+) -> &'static str {
+    match scope {
+        Some(scope) => paint_invalidation_scope_debug_label(scope),
+        None => "none",
+    }
+}
+
+fn paint_invalidation_scope_debug_label(scope: PaintInvalidationScope) -> &'static str {
+    match scope {
+        PaintInvalidationScope::Viewport => "viewport",
+        PaintInvalidationScope::Document => "document",
     }
 }
 
