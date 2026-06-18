@@ -34,6 +34,7 @@ Related documents:
 - `docs/rendering/w8-box-generation-formatting-debug-surfaces.md`
 - `docs/rendering/w9-box-tree-invariants-extension-hooks.md`
 - `docs/rendering/ab1-stacking-layering-invalidation-architecture.md`
+- `docs/rendering/ab8-stacking-compositing-invalidation-closeout.md`
 - `docs/rendering/x1-sizing-architecture-flow-correctness-contract.md`
 - `docs/rendering/x2-structured-size-resolution-model-inputs.md`
 - `docs/rendering/x3-width-height-resolution-supported-subset.md`

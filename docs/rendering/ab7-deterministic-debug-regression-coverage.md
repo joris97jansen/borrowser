@@ -30,6 +30,7 @@ Related documents:
 - `docs/rendering/ab4-stacking-context-paint-order.md`
 - `docs/rendering/ab5-structured-paint-invalidation-model.md`
 - `docs/rendering/ab6-basic-targeted-repaint-behavior.md`
+- `docs/rendering/ab8-stacking-compositing-invalidation-closeout.md`
 - `docs/rendering/aa8-paint-debug-visual-regression-surface.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
 
