@@ -143,6 +143,10 @@ Current supported subset:
   model with conservative `Document` and `Viewport` execution scopes;
   browser/runtime derives repaint scope, and GFX consumes the selected scope;
   see `docs/rendering/ab6-basic-targeted-repaint-behavior.md`
+- AB7 deterministic debug and regression surfaces expose paint-owned
+  stacking/layering decisions and browser/runtime-owned invalidation/repaint
+  planning through semantic, backend-independent snapshots; see
+  `docs/rendering/ab7-deterministic-debug-regression-coverage.md`
 
 Missing or incomplete:
 
@@ -193,6 +197,8 @@ Notes:
 - AA8 visual regression coverage is structural Paint-owned paint-operation
   snapshotting, not screenshot or pixel comparison. Browser/runtime may expose
   this debug output but does not define paint semantics.
+- AB7 snapshots are semantic debug/regression surfaces for stacking and
+  invalidation, not pixel/raster visual regression infrastructure.
 
 ## Browser Runtime / Platform
 

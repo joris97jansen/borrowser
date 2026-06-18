@@ -8,7 +8,9 @@ use layout::{LayoutBox, LayoutPhaseOutput, ListMarker, Rectangle, ReplacedKind, 
 
 use super::PaintPhaseInput;
 use super::contracts::PaintOrderPhase;
-use super::stacking::{StackingContextId, StackingContextTree, StackingOrderSlot};
+use super::stacking::{
+    StackingContextId, StackingContextSource, StackingContextTree, StackingOrderSlot,
+};
 
 /// Paint-owned semantic input derived from layout output for one paint phase.
 ///
@@ -100,6 +102,33 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
         self.stacking_contexts.to_debug_snapshot()
     }
 
+    /// Stable paint-owned layering snapshot for AB7 regression tests.
+    ///
+    /// This exposes the canonical stacking-context slot order used by semantic
+    /// order snapshots, operation snapshots, and immediate painting. It is not
+    /// a compositor layer tree, retained scene, display list, backend command
+    /// stream, or paint invalidation surface.
+    pub fn to_layering_debug_snapshot(&self) -> String {
+        let mut out = String::new();
+        writeln!(&mut out, "version: 1").expect("write paint layering snapshot");
+        writeln!(&mut out, "paint-layering-snapshot").expect("write paint layering snapshot");
+        writeln!(
+            &mut out,
+            "layout-root-id: {}",
+            self.layout.root().node_id().0
+        )
+        .expect("write paint layering snapshot");
+        writeln!(
+            &mut out,
+            "root-context: {}",
+            self.stacking_contexts.root_id().index()
+        )
+        .expect("write paint layering snapshot");
+        self.append_layering_context_debug_snapshot(self.stacking_contexts.root_id(), &mut out, 0)
+            .expect("write paint layering snapshot");
+        out
+    }
+
     /// Stable paint-owned operation snapshot for visual regression tests.
     ///
     /// This is derived from semantic paint primitives and AA ordering rules.
@@ -147,6 +176,79 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
                             &self.stacking_contexts,
                         )?;
                     }
+                }
+            }
+        }
+
+        Ok(())
+    }
+
+    fn append_layering_context_debug_snapshot(
+        &self,
+        context_id: StackingContextId,
+        out: &mut String,
+        depth: usize,
+    ) -> std::fmt::Result {
+        let Some(context) = self.stacking_contexts.context(context_id) else {
+            return Ok(());
+        };
+        let indent = "  ".repeat(depth);
+        writeln!(
+            out,
+            "{}context id={} parent={} source={} layer={} z-index={} tree-order={} children={} items={}",
+            indent,
+            context.id().index(),
+            optional_context_debug_label(context.parent()),
+            context_source_debug_label(context.source()),
+            context.order_key().layer().debug_label(),
+            optional_i32_debug_label(context.order_key().z_index()),
+            context.order_key().tree_order(),
+            context.children().len(),
+            context.items().len()
+        )?;
+        writeln!(out, "{}  items:", indent)?;
+        for (index, item) in context.items().iter().enumerate() {
+            writeln!(
+                out,
+                "{}    item[{index}]: source={} layer={} z-index={} tree-order={}",
+                indent,
+                paint_source_debug_label(item.source()),
+                item.order_key().layer().debug_label(),
+                optional_i32_debug_label(item.order_key().z_index()),
+                item.order_key().tree_order()
+            )?;
+        }
+        writeln!(out, "{}  ordered-slots:", indent)?;
+        for (index, slot) in self
+            .stacking_contexts
+            .ordered_slots(context_id)
+            .iter()
+            .enumerate()
+        {
+            match *slot {
+                StackingOrderSlot::ChildContext(child_context_id) => {
+                    let Some(child) = self.stacking_contexts.context(child_context_id) else {
+                        continue;
+                    };
+                    writeln!(
+                        out,
+                        "{}    slot[{index}]: child-context id={} source={} layer={} z-index={} tree-order={}",
+                        indent,
+                        child.id().index(),
+                        context_source_debug_label(child.source()),
+                        child.order_key().layer().debug_label(),
+                        optional_i32_debug_label(child.order_key().z_index()),
+                        child.order_key().tree_order()
+                    )?;
+                    self.append_layering_context_debug_snapshot(child.id(), out, depth + 2)?;
+                }
+                StackingOrderSlot::ContextSource(source) => {
+                    writeln!(
+                        out,
+                        "{}    slot[{index}]: context-source source={}",
+                        indent,
+                        paint_source_debug_label(source)
+                    )?;
                 }
             }
         }
@@ -967,6 +1069,29 @@ fn optional_i32_debug_label(value: Option<i32>) -> String {
         .unwrap_or_else(|| "auto".to_string())
 }
 
+fn optional_context_debug_label(id: Option<StackingContextId>) -> String {
+    id.map(|id| id.index().to_string())
+        .unwrap_or_else(|| "none".to_string())
+}
+
+fn context_source_debug_label(source: StackingContextSource) -> String {
+    match source {
+        StackingContextSource::RootDocument(source) => {
+            format!("root-document({})", paint_source_debug_label(source))
+        }
+        StackingContextSource::PositionedElement(source) => {
+            format!("positioned-element({})", paint_source_debug_label(source))
+        }
+    }
+}
+
+fn paint_source_debug_label(source: PaintSource) -> String {
+    format!(
+        "box={} node={} anonymous={}",
+        source.box_id, source.node_id.0, source.anonymous
+    )
+}
+
 #[cfg(test)]
 mod tests {
     use super::super::stacking::{
@@ -1029,6 +1154,29 @@ mod tests {
             layout::layout_document(LayoutPhaseInput::new(&styled, 500.0, &TestMeasurer, None));
         PaintInput::from_phase_input(PaintPhaseInput::new(&layout), &TestMeasurer)
             .to_stacking_context_debug_snapshot()
+    }
+
+    fn build_layering_snapshot(dom: &Node) -> String {
+        let styled = css::build_style_tree(dom, None);
+        let layout =
+            layout::layout_document(LayoutPhaseInput::new(&styled, 500.0, &TestMeasurer, None));
+        PaintInput::from_phase_input(PaintPhaseInput::new(&layout), &TestMeasurer)
+            .to_layering_debug_snapshot()
+    }
+
+    fn build_paint_operation_snapshot(dom: &Node) -> String {
+        let styled = css::build_style_tree(dom, None);
+        let layout =
+            layout::layout_document(LayoutPhaseInput::new(&styled, 500.0, &TestMeasurer, None));
+        PaintInput::from_phase_input(PaintPhaseInput::new(&layout), &TestMeasurer)
+            .to_operation_debug_snapshot()
+    }
+
+    fn line_index(snapshot: &str, pattern: &str) -> usize {
+        snapshot
+            .lines()
+            .position(|line| line.contains(pattern))
+            .unwrap_or_else(|| panic!("snapshot should contain {pattern:?}\n{snapshot}"))
     }
 
     fn first_node_with_primitive(node: &PaintNode, kind: PaintPrimitiveKind) -> Option<&PaintNode> {
@@ -1301,6 +1449,113 @@ mod tests {
         assert!(!first.contains("gpu"));
         assert!(!first.contains("texture"));
         assert!(!first.contains("compositor"));
+    }
+
+    #[test]
+    fn paint_layering_snapshot_exact_overlap_fixture() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "120px".to_string()),
+                    ("height".to_string(), "20px".to_string()),
+                    ("background-color".to_string(), "#00aa00".to_string()),
+                ],
+                children: vec![
+                    positioned_block(Id(3), "0", "#0000aa", Vec::new()),
+                    positioned_block(Id(4), "-1", "#aa0000", Vec::new()),
+                    positioned_block(Id(5), "2", "#aaaa00", Vec::new()),
+                ],
+            }],
+        };
+
+        let snapshot = build_layering_snapshot(&dom);
+        let expected = concat!(
+            "version: 1\n",
+            "paint-layering-snapshot\n",
+            "layout-root-id: 1\n",
+            "root-context: 0\n",
+            "context id=0 parent=none source=root-document(box=0 node=1 anonymous=false) layer=normal-flow z-index=auto tree-order=0 children=3 items=2\n",
+            "  items:\n",
+            "    item[0]: source=box=0 node=1 anonymous=false layer=normal-flow z-index=auto tree-order=0\n",
+            "    item[1]: source=box=1 node=2 anonymous=false layer=normal-flow z-index=auto tree-order=1\n",
+            "  ordered-slots:\n",
+            "    slot[0]: child-context id=2 source=positioned-element(box=3 node=4 anonymous=false) layer=negative-z-index z-index=-1 tree-order=3\n",
+            "    context id=2 parent=0 source=positioned-element(box=3 node=4 anonymous=false) layer=negative-z-index z-index=-1 tree-order=3 children=0 items=1\n",
+            "      items:\n",
+            "        item[0]: source=box=3 node=4 anonymous=false layer=normal-flow z-index=auto tree-order=3\n",
+            "      ordered-slots:\n",
+            "        slot[0]: context-source source=box=3 node=4 anonymous=false\n",
+            "    slot[1]: context-source source=box=0 node=1 anonymous=false\n",
+            "    slot[2]: child-context id=1 source=positioned-element(box=2 node=3 anonymous=false) layer=zero-z-index z-index=0 tree-order=2\n",
+            "    context id=1 parent=0 source=positioned-element(box=2 node=3 anonymous=false) layer=zero-z-index z-index=0 tree-order=2 children=0 items=1\n",
+            "      items:\n",
+            "        item[0]: source=box=2 node=3 anonymous=false layer=normal-flow z-index=auto tree-order=2\n",
+            "      ordered-slots:\n",
+            "        slot[0]: context-source source=box=2 node=3 anonymous=false\n",
+            "    slot[3]: child-context id=3 source=positioned-element(box=4 node=5 anonymous=false) layer=positive-z-index z-index=2 tree-order=4\n",
+            "    context id=3 parent=0 source=positioned-element(box=4 node=5 anonymous=false) layer=positive-z-index z-index=2 tree-order=4 children=0 items=1\n",
+            "      items:\n",
+            "        item[0]: source=box=4 node=5 anonymous=false layer=normal-flow z-index=auto tree-order=4\n",
+            "      ordered-slots:\n",
+            "        slot[0]: context-source source=box=4 node=5 anonymous=false\n",
+        );
+
+        assert_eq!(snapshot, expected);
+    }
+
+    #[test]
+    fn paint_layering_snapshot_keeps_child_context_atomic() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![("display".to_string(), "block".to_string())],
+                children: vec![
+                    positioned_block(
+                        Id(3),
+                        "1",
+                        "#aa0000",
+                        vec![positioned_block(Id(4), "-1", "#00aa00", Vec::new())],
+                    ),
+                    positioned_block(Id(5), "2", "#0000aa", Vec::new()),
+                ],
+            }],
+        };
+
+        let snapshot = build_layering_snapshot(&dom);
+        let parent_context = snapshot
+            .lines()
+            .position(|line| {
+                line.contains("source=positioned-element(box=2 node=3 anonymous=false)")
+                    && line.contains("layer=positive-z-index")
+            })
+            .expect("parent child context");
+        let nested_context = snapshot
+            .lines()
+            .position(|line| {
+                line.contains("source=positioned-element(box=3 node=4 anonymous=false)")
+                    && line.contains("layer=negative-z-index")
+            })
+            .expect("nested child context");
+        let sibling_context = snapshot
+            .lines()
+            .position(|line| {
+                line.contains("source=positioned-element(box=4 node=5 anonymous=false)")
+                    && line.contains("layer=positive-z-index")
+            })
+            .expect("sibling child context");
+
+        assert!(parent_context < nested_context);
+        assert!(nested_context < sibling_context);
     }
 
     #[test]
@@ -2286,6 +2541,58 @@ mod tests {
         assert!(negative_context < section_background);
         assert!(section_background < zero_context);
         assert!(zero_context < positive_context);
+    }
+
+    #[test]
+    fn layering_order_snapshot_and_operation_snapshot_stay_aligned() {
+        let dom = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![Node::Element {
+                id: Id(2),
+                name: Arc::from("section"),
+                attributes: Vec::new(),
+                style: vec![
+                    ("display".to_string(), "block".to_string()),
+                    ("width".to_string(), "120px".to_string()),
+                    ("height".to_string(), "20px".to_string()),
+                    ("background-color".to_string(), "#00aa00".to_string()),
+                ],
+                children: vec![
+                    positioned_block(Id(3), "0", "#0000aa", Vec::new()),
+                    positioned_block(Id(4), "-1", "#aa0000", Vec::new()),
+                    positioned_block(Id(5), "2", "#aaaa00", Vec::new()),
+                ],
+            }],
+        };
+
+        let layering = build_layering_snapshot(&dom);
+        let order = build_paint_order_snapshot(&dom);
+        let operations = build_paint_operation_snapshot(&dom);
+
+        let layering_negative = line_index(&layering, "slot[0]: child-context id=2");
+        let layering_normal = line_index(&layering, "slot[1]: context-source");
+        let layering_zero = line_index(&layering, "slot[2]: child-context id=1");
+        let layering_positive = line_index(&layering, "slot[3]: child-context id=3");
+        assert!(layering_negative < layering_normal);
+        assert!(layering_normal < layering_zero);
+        assert!(layering_zero < layering_positive);
+
+        let order_negative = line_index(&order, "layer=negative-z-index");
+        let order_normal = line_index(&order, "color=rgba(0,170,0,255)");
+        let order_zero = line_index(&order, "layer=zero-z-index");
+        let order_positive = line_index(&order, "layer=positive-z-index");
+        assert!(order_negative < order_normal);
+        assert!(order_normal < order_zero);
+        assert!(order_zero < order_positive);
+
+        let operation_negative = line_index(&operations, "color=rgba(170,0,0,255)");
+        let operation_normal = line_index(&operations, "color=rgba(0,170,0,255)");
+        let operation_zero = line_index(&operations, "color=rgba(0,0,170,255)");
+        let operation_positive = line_index(&operations, "color=rgba(170,170,0,255)");
+        assert!(operation_negative < operation_normal);
+        assert!(operation_normal < operation_zero);
+        assert!(operation_zero < operation_positive);
     }
 
     #[test]

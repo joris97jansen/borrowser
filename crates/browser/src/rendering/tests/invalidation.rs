@@ -330,6 +330,51 @@ fn pending_paint_invalidations_compute_conservative_effective_scope() {
 }
 
 #[test]
+fn paint_invalidation_debug_snapshot_is_exact_for_mixed_repaint_scopes() {
+    let mut pending = PendingRenderWork::default();
+    pending.push(render_invalidation_request(
+        RenderInvalidationEntryPoint::InputStateChanged,
+    ));
+    pending.push(render_invalidation_request(
+        RenderInvalidationEntryPoint::ResourceStateChanged,
+    ));
+    pending.push(render_invalidation_request(
+        RenderInvalidationEntryPoint::InputStateChanged,
+    ));
+
+    assert_eq!(
+        paint_invalidation_debug_snapshot(&pending),
+        concat!(
+            "version: 1\n",
+            "paint-invalidation-snapshot\n",
+            "pending-render-work: 2\n",
+            "paint-invalidations: 2\n",
+            "  request[0]: entry-point=input-state-changed trigger=input-state-changed reason=runtime-input-state scope=viewport\n",
+            "  request[1]: entry-point=resource-state-changed trigger=resource-state-changed reason=direct-paint-dependency scope=document\n",
+            "effective-scope: document\n",
+            "repaint-execution-plan: scope=document\n",
+        )
+    );
+}
+
+#[test]
+fn paint_invalidation_debug_snapshot_is_exact_for_empty_pending_work() {
+    let pending = PendingRenderWork::default();
+
+    assert_eq!(
+        paint_invalidation_debug_snapshot(&pending),
+        concat!(
+            "version: 1\n",
+            "paint-invalidation-snapshot\n",
+            "pending-render-work: 0\n",
+            "paint-invalidations: 0\n",
+            "effective-scope: none\n",
+            "repaint-execution-plan: scope=document\n",
+        )
+    );
+}
+
+#[test]
 fn repaint_execution_plan_uses_viewport_for_viewport_scoped_invalidations() {
     let mut pending = PendingRenderWork::default();
     pending.push(render_invalidation_request(
