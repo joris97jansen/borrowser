@@ -44,6 +44,7 @@ Detailed source contracts:
 - `docs/rendering/ab3-z-order-layering-semantics.md`
 - `docs/rendering/ab4-stacking-context-paint-order.md`
 - `docs/rendering/ab5-structured-paint-invalidation-model.md`
+- `docs/rendering/ab8-stacking-compositing-invalidation-closeout.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
 - `docs/rendering/y4-overflow-semantics-supported-subset.md`
 

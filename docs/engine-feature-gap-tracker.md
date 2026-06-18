@@ -115,6 +115,10 @@ Current supported subset:
 - Milestone AA's supported paint model, invariants, limitations, and future
   attachment points are closed out in
   `docs/rendering/aa9-paint-model-invariants-extension-points.md`.
+- Milestone AB's supported stacking, semantic layering, paint invalidation,
+  repaint execution, debug-surface, and future attachment-point model is closed
+  out in
+  `docs/rendering/ab8-stacking-compositing-invalidation-closeout.md`.
 - deterministic AA paint ordering for box background, box border, list marker,
   overflow clip scope for contents and descendants, inline formatting content,
   child subtrees in layout order, and box outline; see
@@ -199,6 +203,10 @@ Notes:
   this debug output but does not define paint semantics.
 - AB7 snapshots are semantic debug/regression surfaces for stacking and
   invalidation, not pixel/raster visual regression infrastructure.
+- AB8 uses "compositing semantics" to mean the current semantic paint layering
+  model and future compositor extension points. It does not mean compositor
+  layers, GPU layers, retained scenes, dirty-region invalidation, or backend
+  partial-raster behavior are implemented.
 
 ## Browser Runtime / Platform
 

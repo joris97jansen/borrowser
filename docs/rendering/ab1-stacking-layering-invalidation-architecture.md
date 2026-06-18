@@ -37,6 +37,7 @@ Related documents:
 - `docs/rendering/ab5-structured-paint-invalidation-model.md`
 - `docs/rendering/ab6-basic-targeted-repaint-behavior.md`
 - `docs/rendering/ab7-deterministic-debug-regression-coverage.md`
+- `docs/rendering/ab8-stacking-compositing-invalidation-closeout.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
