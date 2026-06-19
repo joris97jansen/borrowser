@@ -77,11 +77,7 @@ impl PageState {
         let retained = &mut self.rendering;
         let trigger = hint.trigger;
         retained.last_restyle_trigger = Some(trigger);
-        retained.generations.dom = retained
-            .generations
-            .dom
-            .checked_add(1)
-            .expect("page DOM generation exhausted");
+        retained.mark_dom_generation_changed();
 
         match trigger {
             RestyleTrigger::TextMutated => {

@@ -307,6 +307,7 @@ The normative rendering ownership and phase-boundary contract lives in:
 * `docs/rendering/v5-explicit-runtime-render-orchestration-path.md`
 * `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
 * `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
+* `docs/rendering/ac1-retained-render-state-runtime-contract.md`
 * `docs/rendering/w1-box-tree-layout-model-contract.md`
 * `docs/rendering/w2-structured-box-tree-data-structures.md`
 * `docs/rendering/w3-display-to-box-generation-behavior.md`
