@@ -35,17 +35,22 @@ impl PageState {
 
     #[cfg(test)]
     pub(crate) fn style_dirty(&self) -> bool {
-        self.rendering.style_dirty
+        self.rendering.style_dirty()
     }
 
     #[cfg(test)]
     pub(crate) fn layout_dirty(&self) -> bool {
-        self.rendering.layout_dirty
+        self.rendering.layout_dirty()
     }
 
     #[cfg(test)]
     pub(crate) fn clear_layout_dirty_for_tests(&mut self) {
-        self.rendering.layout_dirty = false;
+        self.rendering.clear_layout_dirty_for_tests();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn clear_all_dirty_for_tests(&mut self) {
+        self.rendering.clear_all_dirty_for_tests();
     }
 
     #[cfg(test)]

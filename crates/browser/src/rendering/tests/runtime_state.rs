@@ -17,7 +17,28 @@ fn retained_render_state_initializes_with_epoch_zero() {
     assert_eq!(snapshot.layout_tree, RenderArtifactState::Absent);
     assert_eq!(snapshot.paint_output, RenderArtifactState::Absent);
     assert!(snapshot.style_dirty);
-    assert!(snapshot.layout_dirty_placeholder);
+    assert!(snapshot.layout_dirty);
+    assert!(snapshot.paint_dirty);
+    assert_eq!(
+        snapshot.dirty_state.entries,
+        vec![
+            DirtyEntry::new(
+                DirtyPhase::Style,
+                DirtyReason::ConservativeUnknownImpact,
+                DirtyScope::Document,
+            ),
+            DirtyEntry::new(
+                DirtyPhase::Layout,
+                DirtyReason::CascadedFromStyle,
+                DirtyScope::Document,
+            ),
+            DirtyEntry::new(
+                DirtyPhase::Paint,
+                DirtyReason::CascadedFromLayout,
+                DirtyScope::Document,
+            ),
+        ]
+    );
     assert_eq!(snapshot.style_invalidation, StyleInvalidationState::Full);
     assert_eq!(
         snapshot.retained_identity_domain,
@@ -61,8 +82,13 @@ fn retained_render_state_debug_snapshot_is_deterministic() {
             "  layout-tree: absent\n",
             "  paint-output: absent\n",
             "dirty-state:\n",
+            "  entries: 3\n",
+            "    entry[0]: phase=style reason=conservative-unknown-impact scope=document\n",
+            "    entry[1]: phase=layout reason=cascaded-from-style scope=document\n",
+            "    entry[2]: phase=paint reason=cascaded-from-layout scope=document\n",
             "  style-dirty: true\n",
-            "  layout-dirty-placeholder: true\n",
+            "  layout-dirty: true\n",
+            "  paint-dirty: true\n",
             "  style-invalidation: full\n",
             "retained-identities:\n",
             "  identity-domain: 0\n",
@@ -106,8 +132,13 @@ fn retained_render_identities_allocate_deterministically_for_initial_document() 
             "  layout-tree: frame-local-rebuilt-per-frame\n",
             "  paint-output: immediate-frame-output\n",
             "dirty-state:\n",
+            "  entries: 3\n",
+            "    entry[0]: phase=style reason=document-replaced scope=document\n",
+            "    entry[1]: phase=layout reason=cascaded-from-style scope=document\n",
+            "    entry[2]: phase=paint reason=cascaded-from-layout scope=document\n",
             "  style-dirty: true\n",
-            "  layout-dirty-placeholder: true\n",
+            "  layout-dirty: true\n",
+            "  paint-dirty: true\n",
             "  style-invalidation: full\n",
             "retained-identities:\n",
             "  identity-domain: 1\n",
@@ -161,8 +192,23 @@ fn debug_snapshot_reports_retained_style_artifacts_and_ephemeral_downstream_tree
             styled_tree: RenderArtifactState::BorrowBackedRebuiltOnDemand,
             layout_tree: RenderArtifactState::FrameLocalRebuiltPerFrame,
             paint_output: RenderArtifactState::ImmediateFrameOutput,
+            dirty_state: DirtyStateDebugSnapshot {
+                entries: vec![
+                    DirtyEntry::new(
+                        DirtyPhase::Layout,
+                        DirtyReason::CascadedFromStyle,
+                        DirtyScope::Document,
+                    ),
+                    DirtyEntry::new(
+                        DirtyPhase::Paint,
+                        DirtyReason::CascadedFromLayout,
+                        DirtyScope::Document,
+                    ),
+                ],
+            },
             style_dirty: false,
             layout_dirty: true,
+            paint_dirty: true,
             style_invalidation: StyleInvalidationState::None,
         }
     );
@@ -202,6 +248,40 @@ fn retained_render_state_survives_noop_render_without_epoch_churn() {
 
     let after_noop = page.retained_render_state_debug_snapshot();
     assert_eq!(after_noop, before_noop);
+}
+
+#[test]
+fn noop_update_does_not_mark_clean_retained_dirty_state() {
+    let mut page = page_with_dom(
+        "<!doctype html><html><head><style>p { color: red; }</style></head><body><p>Hello</p></body></html>",
+    );
+    let initial_style = style_output_for_test(&mut page);
+    assert_eq!(
+        styled_element_color(initial_style.root(), "p"),
+        (255, 0, 0, 255)
+    );
+    drop(initial_style);
+
+    page.clear_all_dirty_for_tests();
+    assert!(
+        page.retained_render_state_debug_snapshot()
+            .dirty_state
+            .entries
+            .is_empty()
+    );
+
+    let noop_style = style_output_for_test(&mut page);
+    assert_eq!(
+        styled_element_color(noop_style.root(), "p"),
+        (255, 0, 0, 255)
+    );
+    drop(noop_style);
+
+    let after = page.retained_render_state_debug_snapshot();
+    assert!(!after.style_dirty);
+    assert!(!after.layout_dirty);
+    assert!(!after.paint_dirty);
+    assert!(after.dirty_state.entries.is_empty());
 }
 
 #[test]
@@ -448,6 +528,27 @@ fn attribute_mutation_keeps_style_cache_but_marks_it_stale_until_restored() {
     );
     assert!(stale.style_dirty);
     assert!(stale.layout_dirty);
+    assert!(stale.paint_dirty);
+    assert_eq!(
+        stale.dirty_state.entries,
+        vec![
+            DirtyEntry::new(
+                DirtyPhase::Style,
+                DirtyReason::StyleInputChanged,
+                DirtyScope::Document,
+            ),
+            DirtyEntry::new(
+                DirtyPhase::Layout,
+                DirtyReason::CascadedFromStyle,
+                DirtyScope::Document,
+            ),
+            DirtyEntry::new(
+                DirtyPhase::Paint,
+                DirtyReason::CascadedFromLayout,
+                DirtyScope::Document,
+            ),
+        ]
+    );
 
     let restyled = style_output_for_test(&mut page);
     assert_eq!(styled_element_color(restyled.root(), "p"), (255, 0, 0, 255));
@@ -492,6 +593,22 @@ fn text_mutation_dirties_layout_without_invalidating_computed_style() {
     assert_eq!(snapshot.style_invalidation, StyleInvalidationState::None);
     assert!(!snapshot.style_dirty);
     assert!(snapshot.layout_dirty);
+    assert!(snapshot.paint_dirty);
+    assert_eq!(
+        snapshot.dirty_state.entries,
+        vec![
+            DirtyEntry::new(
+                DirtyPhase::Layout,
+                DirtyReason::TextContentChanged,
+                DirtyScope::Document,
+            ),
+            DirtyEntry::new(
+                DirtyPhase::Paint,
+                DirtyReason::CascadedFromLayout,
+                DirtyScope::Document,
+            ),
+        ]
+    );
 }
 
 #[test]
@@ -517,8 +634,28 @@ fn navigation_reset_clears_page_owned_retained_render_state() {
             styled_tree: RenderArtifactState::Absent,
             layout_tree: RenderArtifactState::Absent,
             paint_output: RenderArtifactState::Absent,
+            dirty_state: DirtyStateDebugSnapshot {
+                entries: vec![
+                    DirtyEntry::new(
+                        DirtyPhase::Style,
+                        DirtyReason::ConservativeUnknownImpact,
+                        DirtyScope::Document,
+                    ),
+                    DirtyEntry::new(
+                        DirtyPhase::Layout,
+                        DirtyReason::CascadedFromStyle,
+                        DirtyScope::Document,
+                    ),
+                    DirtyEntry::new(
+                        DirtyPhase::Paint,
+                        DirtyReason::CascadedFromLayout,
+                        DirtyScope::Document,
+                    ),
+                ],
+            },
             style_dirty: true,
             layout_dirty: true,
+            paint_dirty: true,
             style_invalidation: StyleInvalidationState::Full,
         }
     );

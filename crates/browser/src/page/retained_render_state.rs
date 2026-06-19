@@ -1,7 +1,9 @@
 use crate::document_style::DocumentStyleSet;
 use crate::rendering::{
-    FrameLocalIdentityState, RenderArtifactState, RenderEpoch, RenderPipelineDebugSnapshot,
+    DirtyPhase, DirtyStateDebugSnapshot, FrameLocalIdentityState, RenderArtifactState,
+    RenderDirtyState, RenderEpoch, RenderInvalidationEntryPoint, RenderPipelineDebugSnapshot,
     RetainedRenderIdentityMap, RetainedRenderStateDebugSnapshot, StyleInvalidationState,
+    dirty_request_for_entry_point,
 };
 use css::ComputedStyleReuseStats;
 use html::Node;
@@ -20,8 +22,7 @@ pub(super) struct RetainedRenderState {
     pub(super) document_styles: DocumentStyleSet,
     pub(super) generations: PageStyleGenerations,
     pub(super) style_cache: Option<PageStyleCache>,
-    pub(super) style_dirty: bool,
-    pub(super) layout_dirty: bool,
+    pub(super) dirty_state: RenderDirtyState,
     pub(super) last_restyle_trigger: Option<RestyleTrigger>,
     pub(super) pending_style_invalidation: Option<StyleInvalidationScope>,
     pub(super) last_style_recalc: Option<StyleRecalcKind>,
@@ -36,8 +37,7 @@ impl RetainedRenderState {
             document_styles: DocumentStyleSet::default(),
             generations: PageStyleGenerations::default(),
             style_cache: None,
-            style_dirty: true,
-            layout_dirty: true,
+            dirty_state: RenderDirtyState::document_initial(),
             last_restyle_trigger: None,
             pending_style_invalidation: Some(StyleInvalidationScope::Full),
             last_style_recalc: None,
@@ -51,8 +51,7 @@ impl RetainedRenderState {
         self.document_styles.clear();
         self.generations = PageStyleGenerations::default();
         self.style_cache = None;
-        self.style_dirty = true;
-        self.layout_dirty = true;
+        self.dirty_state = RenderDirtyState::document_initial();
         self.last_restyle_trigger = None;
         self.pending_style_invalidation = Some(StyleInvalidationScope::Full);
         self.last_style_recalc = None;
@@ -83,8 +82,42 @@ impl RetainedRenderState {
         pending
     }
 
+    pub(super) fn style_dirty(&self) -> bool {
+        self.dirty_state.is_phase_dirty(DirtyPhase::Style)
+    }
+
+    pub(super) fn layout_dirty(&self) -> bool {
+        self.dirty_state.is_phase_dirty(DirtyPhase::Layout)
+    }
+
+    pub(super) fn paint_dirty(&self) -> bool {
+        self.dirty_state.is_phase_dirty(DirtyPhase::Paint)
+    }
+
+    pub(super) fn clear_style_dirty_after_recompute(&mut self) {
+        self.dirty_state.clear_phase(DirtyPhase::Style);
+    }
+
+    #[cfg(test)]
+    pub(super) fn clear_layout_dirty_for_tests(&mut self) {
+        self.dirty_state.clear_phase(DirtyPhase::Layout);
+    }
+
+    #[cfg(test)]
+    pub(super) fn clear_all_dirty_for_tests(&mut self) {
+        self.dirty_state.clear();
+    }
+
+    pub(super) fn mark_dirty_for_entry_point(&mut self, entry_point: RenderInvalidationEntryPoint) {
+        if matches!(entry_point, RenderInvalidationEntryPoint::DocumentReplaced) {
+            self.dirty_state.clear();
+        }
+        let request = dirty_request_for_entry_point(entry_point);
+        self.dirty_state.extend(request.entries);
+    }
+
     pub(super) fn debug_snapshot(&self, has_dom: bool) -> RenderPipelineDebugSnapshot {
-        let style_cache_state = match (&self.style_cache, self.style_dirty) {
+        let style_cache_state = match (&self.style_cache, self.style_dirty()) {
             (None, _) => RenderArtifactState::Absent,
             (Some(_), true) => RenderArtifactState::RetainedStale,
             (Some(_), false) => RenderArtifactState::RetainedFresh,
@@ -119,8 +152,12 @@ impl RetainedRenderState {
             styled_tree,
             layout_tree,
             paint_output,
-            style_dirty: self.style_dirty,
-            layout_dirty: self.layout_dirty,
+            dirty_state: DirtyStateDebugSnapshot {
+                entries: self.dirty_state.entries().to_vec(),
+            },
+            style_dirty: self.style_dirty(),
+            layout_dirty: self.layout_dirty(),
+            paint_dirty: self.paint_dirty(),
             style_invalidation,
         }
     }
@@ -138,8 +175,10 @@ impl RetainedRenderState {
             styled_tree: pipeline.styled_tree,
             layout_tree: pipeline.layout_tree,
             paint_output: pipeline.paint_output,
+            dirty_state: pipeline.dirty_state,
             style_dirty: pipeline.style_dirty,
-            layout_dirty_placeholder: pipeline.layout_dirty,
+            layout_dirty: pipeline.layout_dirty,
+            paint_dirty: pipeline.paint_dirty,
             style_invalidation: pipeline.style_invalidation,
             retained_identity_domain: self.identities.domain(),
             retained_identities: self.identities.identities(),
@@ -175,12 +214,10 @@ impl RetainedRenderState {
             .expect("page stylesheet generation exhausted");
         self.advance_render_epoch();
         self.invalidate_style(StyleInvalidationScope::Full);
+        self.mark_dirty_for_entry_point(RenderInvalidationEntryPoint::StylesheetSetChanged);
     }
 
     pub(super) fn invalidate_style(&mut self, scope: StyleInvalidationScope) {
-        self.style_dirty = true;
-        self.layout_dirty = true;
-
         let merged = match self.pending_style_invalidation.take() {
             Some(existing) => existing.merge(scope),
             None => scope,

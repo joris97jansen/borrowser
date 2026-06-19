@@ -23,7 +23,7 @@ impl PageState {
         };
 
         let retained = &mut self.rendering;
-        let needs_recompute = retained.style_dirty
+        let needs_recompute = retained.style_dirty()
             || retained.style_cache.as_ref().is_none_or(|cache| {
                 cache.style_input_generation != retained.generations.style_inputs
                     || cache.stylesheet_generation != retained.generations.stylesheets
@@ -32,6 +32,7 @@ impl PageState {
         if needs_recompute {
             let pending_style_invalidation = retained.take_style_invalidation_for_recompute();
             let consumed_pending_invalidation = pending_style_invalidation.is_some();
+            let mut style_dirty = true;
             recompute_styles(
                 dom,
                 &retained.document_styles.cascade_stylesheet_inputs(),
@@ -39,11 +40,14 @@ impl PageState {
                 pending_style_invalidation.unwrap_or(StyleInvalidationScope::Full),
                 StyleRecomputeState {
                     style_cache: &mut retained.style_cache,
-                    style_dirty: &mut retained.style_dirty,
+                    style_dirty: &mut style_dirty,
                     last_style_recalc: &mut retained.last_style_recalc,
                     last_style_reuse: &mut retained.last_style_reuse,
                 },
             )?;
+            if !style_dirty {
+                retained.clear_style_dirty_after_recompute();
+            }
             if !consumed_pending_invalidation {
                 retained.advance_render_epoch();
             }

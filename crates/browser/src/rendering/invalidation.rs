@@ -1,9 +1,11 @@
 //! Runtime invalidation entry points and pending render work.
 
 use super::types::{
+    DirtyEntry, DirtyPhase, DirtyPropagationResult, DirtyReason, DirtyScope,
     PaintInvalidationReason, PaintInvalidationRequest, PaintInvalidationScope,
-    PaintInvalidationTrigger, RenderInvalidationEntryPoint, RenderRebuildTrigger, RenderingPhase,
-    RenderingSubsystem, RepaintExecutionPlan, RepaintExecutionScope,
+    PaintInvalidationTrigger, RenderDirtyRequest, RenderDirtyState, RenderInvalidationEntryPoint,
+    RenderRebuildTrigger, RenderingPhase, RenderingSubsystem, RepaintExecutionPlan,
+    RepaintExecutionScope,
 };
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -42,6 +44,10 @@ impl RenderInvalidationRequest {
                 Some(paint_invalidation_request(self.entry_point))
             }
         }
+    }
+
+    pub fn dirty_request(self) -> RenderDirtyRequest {
+        dirty_request_for_entry_point(self.entry_point)
     }
 }
 
@@ -247,6 +253,172 @@ pub fn paint_invalidation_request(
         .expect("paint invalidation contract must exist for every paint entry point")
 }
 
+pub fn dirty_request_for_entry_point(
+    entry_point: RenderInvalidationEntryPoint,
+) -> RenderDirtyRequest {
+    let (direct, propagated): (Vec<DirtyEntry>, Vec<DirtyEntry>) = match entry_point {
+        RenderInvalidationEntryPoint::DocumentReplaced => (
+            vec![DirtyEntry::new(
+                DirtyPhase::Style,
+                DirtyReason::DocumentReplaced,
+                DirtyScope::Document,
+            )],
+            vec![
+                DirtyEntry::new(
+                    DirtyPhase::Layout,
+                    DirtyReason::CascadedFromStyle,
+                    DirtyScope::Document,
+                ),
+                DirtyEntry::new(
+                    DirtyPhase::Paint,
+                    DirtyReason::CascadedFromLayout,
+                    DirtyScope::Document,
+                ),
+            ],
+        ),
+        RenderInvalidationEntryPoint::DomStructureChanged => (
+            vec![DirtyEntry::new(
+                DirtyPhase::Style,
+                DirtyReason::DomContentChanged,
+                DirtyScope::Document,
+            )],
+            vec![
+                DirtyEntry::new(
+                    DirtyPhase::Layout,
+                    DirtyReason::CascadedFromStyle,
+                    DirtyScope::Document,
+                ),
+                DirtyEntry::new(
+                    DirtyPhase::Paint,
+                    DirtyReason::CascadedFromLayout,
+                    DirtyScope::Document,
+                ),
+            ],
+        ),
+        RenderInvalidationEntryPoint::DomAttributesChanged => (
+            vec![DirtyEntry::new(
+                DirtyPhase::Style,
+                DirtyReason::StyleInputChanged,
+                DirtyScope::Document,
+            )],
+            vec![
+                DirtyEntry::new(
+                    DirtyPhase::Layout,
+                    DirtyReason::CascadedFromStyle,
+                    DirtyScope::Document,
+                ),
+                DirtyEntry::new(
+                    DirtyPhase::Paint,
+                    DirtyReason::CascadedFromLayout,
+                    DirtyScope::Document,
+                ),
+            ],
+        ),
+        RenderInvalidationEntryPoint::DomTextChanged => (
+            vec![DirtyEntry::new(
+                DirtyPhase::Layout,
+                DirtyReason::TextContentChanged,
+                DirtyScope::Document,
+            )],
+            vec![DirtyEntry::new(
+                DirtyPhase::Paint,
+                DirtyReason::CascadedFromLayout,
+                DirtyScope::Document,
+            )],
+        ),
+        RenderInvalidationEntryPoint::StylesheetSetChanged => (
+            vec![DirtyEntry::new(
+                DirtyPhase::Style,
+                DirtyReason::StylesheetChanged,
+                DirtyScope::Document,
+            )],
+            vec![
+                DirtyEntry::new(
+                    DirtyPhase::Layout,
+                    DirtyReason::CascadedFromStyle,
+                    DirtyScope::Document,
+                ),
+                DirtyEntry::new(
+                    DirtyPhase::Paint,
+                    DirtyReason::CascadedFromLayout,
+                    DirtyScope::Document,
+                ),
+            ],
+        ),
+        RenderInvalidationEntryPoint::ViewportChanged => (
+            vec![DirtyEntry::new(
+                DirtyPhase::Layout,
+                DirtyReason::ViewportChanged,
+                DirtyScope::Viewport,
+            )],
+            vec![DirtyEntry::new(
+                DirtyPhase::Paint,
+                DirtyReason::CascadedFromLayout,
+                DirtyScope::Viewport,
+            )],
+        ),
+        RenderInvalidationEntryPoint::ResourceStateChanged => (
+            vec![
+                DirtyEntry::new(
+                    DirtyPhase::Layout,
+                    DirtyReason::ResourceStateChanged,
+                    DirtyScope::Document,
+                ),
+                DirtyEntry::new(
+                    DirtyPhase::Paint,
+                    DirtyReason::ResourceStateChanged,
+                    DirtyScope::Document,
+                ),
+            ],
+            vec![],
+        ),
+        RenderInvalidationEntryPoint::InputStateChanged => (
+            vec![DirtyEntry::new(
+                DirtyPhase::Paint,
+                DirtyReason::RuntimeInputState,
+                DirtyScope::Viewport,
+            )],
+            vec![],
+        ),
+    };
+
+    let mut entries = Vec::with_capacity(direct.len() + propagated.len());
+    entries.extend(direct);
+    entries.extend(propagated);
+    let mut state = RenderDirtyState::new();
+    state.extend(entries);
+
+    RenderDirtyRequest {
+        entry_point,
+        entries: state.entries().to_vec(),
+    }
+}
+
+pub fn dirty_propagation_for_entry_point(
+    entry_point: RenderInvalidationEntryPoint,
+) -> DirtyPropagationResult {
+    let request = dirty_request_for_entry_point(entry_point);
+    let mut direct = Vec::new();
+    let mut propagated = Vec::new();
+
+    for entry in &request.entries {
+        match entry.reason {
+            DirtyReason::CascadedFromStyle | DirtyReason::CascadedFromLayout => {
+                propagated.push(*entry)
+            }
+            _ => direct.push(*entry),
+        }
+    }
+
+    let mut state = RenderDirtyState::new();
+    state.extend(request.entries);
+    DirtyPropagationResult {
+        direct,
+        propagated,
+        state,
+    }
+}
+
 /// Runtime-owned queue of invalidation requests awaiting the next frame.
 ///
 /// V4 introduced explicit invalidation entry points and work plans. V5 makes
@@ -280,6 +452,14 @@ impl PendingRenderWork {
             }
         }
         pending
+    }
+
+    pub fn dirty_state(&self) -> RenderDirtyState {
+        let mut state = RenderDirtyState::new();
+        for request in &self.requests {
+            state.extend(request.dirty_request().entries);
+        }
+        state
     }
 }
 
