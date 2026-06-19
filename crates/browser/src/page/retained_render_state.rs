@@ -1,5 +1,8 @@
 use crate::document_style::DocumentStyleSet;
-use crate::rendering::{RenderArtifactState, RenderPipelineDebugSnapshot, StyleInvalidationState};
+use crate::rendering::{
+    RenderArtifactState, RenderEpoch, RenderPipelineDebugSnapshot, RetainedRenderIdentityState,
+    RetainedRenderStateDebugSnapshot, StyleInvalidationState,
+};
 use css::ComputedStyleReuseStats;
 
 use super::restyle::{RestyleTrigger, StyleInvalidationScope};
@@ -12,6 +15,7 @@ use super::style_cache::{PageStyleCache, PageStyleGenerations, StyleRecalcKind};
 /// paint output remain outside this struct by contract.
 #[derive(Clone, Debug)]
 pub(super) struct RetainedRenderState {
+    pub(super) render_epoch: RenderEpoch,
     pub(super) document_styles: DocumentStyleSet,
     pub(super) generations: PageStyleGenerations,
     pub(super) style_cache: Option<PageStyleCache>,
@@ -26,6 +30,7 @@ pub(super) struct RetainedRenderState {
 impl RetainedRenderState {
     pub(super) fn new() -> Self {
         Self {
+            render_epoch: RenderEpoch::initial(),
             document_styles: DocumentStyleSet::default(),
             generations: PageStyleGenerations::default(),
             style_cache: None,
@@ -39,6 +44,7 @@ impl RetainedRenderState {
     }
 
     pub(super) fn reset_for_navigation(&mut self) {
+        self.render_epoch = RenderEpoch::initial();
         self.document_styles.clear();
         self.generations = PageStyleGenerations::default();
         self.style_cache = None;
@@ -48,6 +54,29 @@ impl RetainedRenderState {
         self.pending_style_invalidation = Some(StyleInvalidationScope::Full);
         self.last_style_recalc = None;
         self.last_style_reuse = None;
+    }
+
+    pub(super) fn advance_render_epoch(&mut self) {
+        self.render_epoch = self.render_epoch.next();
+    }
+
+    pub(super) fn mark_dom_generation_changed(&mut self) {
+        self.generations.dom = self
+            .generations
+            .dom
+            .checked_add(1)
+            .expect("page DOM generation exhausted");
+        self.advance_render_epoch();
+    }
+
+    pub(super) fn take_style_invalidation_for_recompute(
+        &mut self,
+    ) -> Option<StyleInvalidationScope> {
+        let pending = self.pending_style_invalidation.take();
+        if pending.is_some() {
+            self.advance_render_epoch();
+        }
+        pending
     }
 
     pub(super) fn debug_snapshot(&self, has_dom: bool) -> RenderPipelineDebugSnapshot {
@@ -92,6 +121,29 @@ impl RetainedRenderState {
         }
     }
 
+    pub(super) fn retained_debug_snapshot(
+        &self,
+        has_dom: bool,
+    ) -> RetainedRenderStateDebugSnapshot {
+        let pipeline = self.debug_snapshot(has_dom);
+        RetainedRenderStateDebugSnapshot {
+            render_epoch: self.render_epoch,
+            has_dom: pipeline.has_dom,
+            resolved_styles: pipeline.resolved_styles,
+            computed_styles: pipeline.computed_styles,
+            styled_tree: pipeline.styled_tree,
+            layout_tree: pipeline.layout_tree,
+            paint_output: pipeline.paint_output,
+            style_dirty: pipeline.style_dirty,
+            layout_dirty_placeholder: pipeline.layout_dirty,
+            style_invalidation: pipeline.style_invalidation,
+            layout_identity: RetainedRenderIdentityState::NoneFrameLocal,
+            paint_identity: RetainedRenderIdentityState::NoneFrameLocal,
+            stacking_identity: RetainedRenderIdentityState::NoneFrameLocal,
+            traversal_identity: RetainedRenderIdentityState::NoneFrameLocal,
+        }
+    }
+
     pub(super) fn mark_style_inputs_changed(&mut self, scope: StyleInvalidationScope) {
         self.generations.style_inputs = self
             .generations
@@ -107,6 +159,7 @@ impl RetainedRenderState {
             .stylesheets
             .checked_add(1)
             .expect("page stylesheet generation exhausted");
+        self.advance_render_epoch();
         self.invalidate_style(StyleInvalidationScope::Full);
     }
 

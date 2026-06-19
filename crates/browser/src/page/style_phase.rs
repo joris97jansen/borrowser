@@ -4,6 +4,7 @@ use css::{
 };
 
 use super::PageState;
+use super::restyle::StyleInvalidationScope;
 use super::style_cache::{StyleRecalcKind, StyleRecomputeState, recompute_styles};
 
 impl PageState {
@@ -29,18 +30,23 @@ impl PageState {
             });
 
         if needs_recompute {
+            let pending_style_invalidation = retained.take_style_invalidation_for_recompute();
+            let consumed_pending_invalidation = pending_style_invalidation.is_some();
             recompute_styles(
                 dom,
                 &retained.document_styles.cascade_stylesheet_inputs(),
                 retained.generations,
+                pending_style_invalidation.unwrap_or(StyleInvalidationScope::Full),
                 StyleRecomputeState {
                     style_cache: &mut retained.style_cache,
-                    pending_style_invalidation: &mut retained.pending_style_invalidation,
                     style_dirty: &mut retained.style_dirty,
                     last_style_recalc: &mut retained.last_style_recalc,
                     last_style_reuse: &mut retained.last_style_reuse,
                 },
             )?;
+            if !consumed_pending_invalidation {
+                retained.advance_render_epoch();
+            }
         } else {
             retained.last_style_recalc = Some(StyleRecalcKind::ReusedCache);
             retained.last_style_reuse = Some(ComputedStyleReuseStats::default());

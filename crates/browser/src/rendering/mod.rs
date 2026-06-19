@@ -33,7 +33,10 @@ pub use invalidation::{
     RenderWorkPlan, paint_invalidation_request, paint_invalidation_request_contracts,
     render_invalidation_request, render_invalidation_request_contracts,
 };
-pub use lifecycle::{RenderArtifactState, RenderPipelineDebugSnapshot, StyleInvalidationState};
+pub use lifecycle::{
+    RenderArtifactState, RenderEpoch, RenderPipelineDebugSnapshot, RetainedRenderIdentityState,
+    RetainedRenderStateDebugSnapshot, StyleInvalidationState,
+};
 pub use types::{
     PaintInvalidationReason, PaintInvalidationRequest, PaintInvalidationScope,
     PaintInvalidationTrigger, RenderArtifact, RenderInvalidationEntryPoint, RenderRebuildTrigger,

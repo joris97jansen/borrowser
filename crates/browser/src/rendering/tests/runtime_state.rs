@@ -1,7 +1,71 @@
-use crate::page::RestyleHint;
+use crate::page::{PageState, RestyleHint};
 use crate::rendering::*;
 
 use super::support::*;
+
+#[test]
+fn retained_render_state_initializes_with_epoch_zero() {
+    let page = PageState::new();
+
+    let snapshot = page.retained_render_state_debug_snapshot();
+    assert_eq!(snapshot.render_epoch, RenderEpoch::initial());
+    assert!(!snapshot.has_dom);
+    assert_eq!(snapshot.resolved_styles, RenderArtifactState::Absent);
+    assert_eq!(snapshot.computed_styles, RenderArtifactState::Absent);
+    assert_eq!(snapshot.styled_tree, RenderArtifactState::Absent);
+    assert_eq!(snapshot.layout_tree, RenderArtifactState::Absent);
+    assert_eq!(snapshot.paint_output, RenderArtifactState::Absent);
+    assert!(snapshot.style_dirty);
+    assert!(snapshot.layout_dirty_placeholder);
+    assert_eq!(snapshot.style_invalidation, StyleInvalidationState::Full);
+    assert_eq!(
+        snapshot.layout_identity,
+        RetainedRenderIdentityState::NoneFrameLocal
+    );
+    assert_eq!(
+        snapshot.paint_identity,
+        RetainedRenderIdentityState::NoneFrameLocal
+    );
+    assert_eq!(
+        snapshot.stacking_identity,
+        RetainedRenderIdentityState::NoneFrameLocal
+    );
+    assert_eq!(
+        snapshot.traversal_identity,
+        RetainedRenderIdentityState::NoneFrameLocal
+    );
+}
+
+#[test]
+fn retained_render_state_debug_snapshot_is_deterministic() {
+    let page = PageState::new();
+
+    assert_eq!(
+        page.retained_render_state_debug_snapshot()
+            .to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "retained-render-state\n",
+            "render-epoch: 0\n",
+            "has-dom: false\n",
+            "artifacts:\n",
+            "  resolved-styles: absent\n",
+            "  computed-styles: absent\n",
+            "  styled-tree: absent\n",
+            "  layout-tree: absent\n",
+            "  paint-output: absent\n",
+            "dirty-state:\n",
+            "  style-dirty: true\n",
+            "  layout-dirty-placeholder: true\n",
+            "  style-invalidation: full\n",
+            "retained-identities:\n",
+            "  layout: none-frame-local\n",
+            "  paint: none-frame-local\n",
+            "  stacking: none-frame-local\n",
+            "  traversal: none-frame-local\n",
+        )
+    );
+}
 
 #[test]
 fn debug_snapshot_reports_retained_style_artifacts_and_ephemeral_downstream_trees() {
@@ -31,6 +95,99 @@ fn debug_snapshot_reports_retained_style_artifacts_and_ephemeral_downstream_tree
             style_invalidation: StyleInvalidationState::None,
         }
     );
+}
+
+#[test]
+fn retained_render_state_survives_noop_render_without_epoch_churn() {
+    let mut page = page_with_dom(
+        "<!doctype html><html><head><style>p { color: red; }</style></head><body><p>Hello</p></body></html>",
+    );
+
+    let initial_style = style_output_for_test(&mut page);
+    assert_eq!(
+        styled_element_color(initial_style.root(), "p"),
+        (255, 0, 0, 255)
+    );
+    drop(initial_style);
+
+    let before_noop = page.retained_render_state_debug_snapshot();
+    assert!(before_noop.render_epoch > RenderEpoch::initial());
+    assert_eq!(
+        before_noop.resolved_styles,
+        RenderArtifactState::RetainedFresh
+    );
+    assert_eq!(
+        before_noop.computed_styles,
+        RenderArtifactState::RetainedFresh
+    );
+    assert!(!before_noop.style_dirty);
+
+    let noop_style = style_output_for_test(&mut page);
+    assert_eq!(
+        styled_element_color(noop_style.root(), "p"),
+        (255, 0, 0, 255)
+    );
+    drop(noop_style);
+
+    let after_noop = page.retained_render_state_debug_snapshot();
+    assert_eq!(after_noop, before_noop);
+}
+
+#[test]
+fn retained_render_epoch_advances_when_failed_recompute_consumes_pending_invalidation() {
+    let mut page = page_with_dom(
+        "<!doctype html><html><head><style>div { width: 1e39px; }</style></head><body><div>bad</div></body></html>",
+    );
+    let before = page.retained_render_state_debug_snapshot();
+    assert_eq!(before.style_invalidation, StyleInvalidationState::Full);
+
+    let error = match page.build_style_phase_output() {
+        Ok(_) => panic!("style recomputation must fail on out-of-range computed width"),
+        Err(error) => error,
+    };
+    assert!(
+        error.to_string().contains("length-out-of-range"),
+        "unexpected style recomputation error: {error}"
+    );
+
+    let after = page.retained_render_state_debug_snapshot();
+    assert!(
+        after.render_epoch > before.render_epoch,
+        "consuming retained style invalidation must advance the render epoch even when recomputation fails"
+    );
+    assert!(after.style_dirty);
+    assert_eq!(after.style_invalidation, StyleInvalidationState::None);
+}
+
+#[test]
+fn retained_render_state_debug_snapshot_does_not_expose_frame_local_ids() {
+    let mut page = page_with_node(doc_with_explicit_ids());
+    let style_output = style_output_for_test(&mut page);
+    drop(style_output);
+
+    let snapshot = page
+        .retained_render_state_debug_snapshot()
+        .to_debug_snapshot();
+
+    for forbidden in [
+        "LayoutBox",
+        "BoxId",
+        "StackingContextId",
+        "PaintId",
+        "PaintPrimitiveId",
+        "source-order-id",
+        "traversal-id",
+    ] {
+        assert!(
+            !snapshot.contains(forbidden),
+            "retained render state debug snapshot must not expose {forbidden}"
+        );
+    }
+
+    assert!(snapshot.contains("  layout: none-frame-local\n"));
+    assert!(snapshot.contains("  paint: none-frame-local\n"));
+    assert!(snapshot.contains("  stacking: none-frame-local\n"));
+    assert!(snapshot.contains("  traversal: none-frame-local\n"));
 }
 
 #[test]
@@ -135,5 +292,9 @@ fn navigation_reset_clears_page_owned_retained_render_state() {
             layout_dirty: true,
             style_invalidation: StyleInvalidationState::Full,
         }
+    );
+    assert_eq!(
+        page.retained_render_state_debug_snapshot().render_epoch,
+        RenderEpoch::initial()
     );
 }

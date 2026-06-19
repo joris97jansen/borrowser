@@ -38,7 +38,6 @@ pub(crate) enum StyleRecalcKind {
 
 pub(super) struct StyleRecomputeState<'a> {
     pub(super) style_cache: &'a mut Option<PageStyleCache>,
-    pub(super) pending_style_invalidation: &'a mut Option<StyleInvalidationScope>,
     pub(super) style_dirty: &'a mut bool,
     pub(super) last_style_recalc: &'a mut Option<StyleRecalcKind>,
     pub(super) last_style_reuse: &'a mut Option<ComputedStyleReuseStats>,
@@ -48,13 +47,9 @@ pub(super) fn recompute_styles(
     dom: &Node,
     sheets: &[StylesheetCascadeInput<'_>],
     generations: PageStyleGenerations,
+    pending: StyleInvalidationScope,
     state: StyleRecomputeState<'_>,
 ) -> Result<(), ComputedStyleResolutionError> {
-    let pending = state
-        .pending_style_invalidation
-        .take()
-        .unwrap_or(StyleInvalidationScope::Full);
-
     if let StyleInvalidationScope::AttributeSuffix { node_ids } = &pending
         && let Some(cache) = state.style_cache.as_ref()
         && cache.stylesheet_generation == generations.stylesheets

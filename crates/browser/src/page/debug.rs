@@ -1,4 +1,4 @@
-use crate::rendering::RenderPipelineDebugSnapshot;
+use crate::rendering::{RenderPipelineDebugSnapshot, RetainedRenderStateDebugSnapshot};
 #[cfg(test)]
 use css::ComputedStyleReuseStats;
 
@@ -16,6 +16,16 @@ impl PageState {
     /// artifact between frames.
     pub fn render_pipeline_debug_snapshot(&self) -> RenderPipelineDebugSnapshot {
         self.rendering.debug_snapshot(self.dom.is_some())
+    }
+
+    /// Reports browser/runtime-owned retained render state for incremental
+    /// rendering contracts.
+    ///
+    /// The render epoch advances when retained runtime rendering state changes.
+    /// It is not a frame counter, layout pass counter, paint pass counter,
+    /// cache-hit proof, artifact-reuse proof, or stable layout/paint identity.
+    pub fn retained_render_state_debug_snapshot(&self) -> RetainedRenderStateDebugSnapshot {
+        self.rendering.retained_debug_snapshot(self.dom.is_some())
     }
 
     #[cfg(test)]
