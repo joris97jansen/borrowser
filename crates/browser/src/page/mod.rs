@@ -70,14 +70,19 @@ impl PageState {
         hint: RestyleHint,
     ) -> RenderInvalidationRequest {
         self.dom = Some(dom);
+        self.rendering
+            .reset_retained_identities_for_document_replacement();
         self.mark_dom_changed(hint)
     }
 
     pub(crate) fn mark_dom_changed(&mut self, hint: RestyleHint) -> RenderInvalidationRequest {
-        let retained = &mut self.rendering;
         let trigger = hint.trigger;
-        retained.last_restyle_trigger = Some(trigger);
-        retained.mark_dom_generation_changed();
+        self.rendering.last_restyle_trigger = Some(trigger);
+        self.rendering.mark_dom_generation_changed();
+
+        if let Some(dom) = self.dom.as_deref() {
+            self.rendering.reconcile_retained_identities_from_dom(dom);
+        }
 
         match trigger {
             RestyleTrigger::TextMutated => {
@@ -87,7 +92,7 @@ impl PageState {
                 // reconciliation, which separately invalidates style. Future
                 // text-sensitive selector or generated-content support must
                 // widen this contract if text content becomes style-relevant.
-                retained.layout_dirty = true;
+                self.rendering.layout_dirty = true;
             }
             RestyleTrigger::DocumentReplaced | RestyleTrigger::TreeMutated => self
                 .rendering

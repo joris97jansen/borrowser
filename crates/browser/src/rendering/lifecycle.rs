@@ -2,6 +2,11 @@
 
 use std::fmt::Write;
 
+use super::{
+    RetainedRenderIdentity, RetainedRenderIdentityDomain, retained_render_anchor_debug_label,
+    retained_render_artifact_kind_debug_label,
+};
+
 /// Browser/runtime generation for retained render state.
 ///
 /// This is not a frame counter, phase execution counter, cache proof, artifact
@@ -60,11 +65,10 @@ pub struct RenderPipelineDebugSnapshot {
     pub style_invalidation: StyleInvalidationState,
 }
 
-/// Runtime-visible retained identity policy for artifacts whose concrete IDs
-/// remain frame-local in AC1.
+/// Runtime-visible policy for identity domains that remain frame-local.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum RetainedRenderIdentityState {
-    NoneFrameLocal,
+pub enum FrameLocalIdentityState {
+    NotRetained,
 }
 
 /// Deterministic browser/runtime debug summary of retained render state.
@@ -72,7 +76,7 @@ pub enum RetainedRenderIdentityState {
 /// This snapshot reports retained runtime metadata and artifact lifetime
 /// policy. It deliberately does not expose frame-local layout, paint,
 /// traversal, or stacking IDs as retained identities.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RetainedRenderStateDebugSnapshot {
     pub render_epoch: RenderEpoch,
     pub has_dom: bool,
@@ -84,10 +88,12 @@ pub struct RetainedRenderStateDebugSnapshot {
     pub style_dirty: bool,
     pub layout_dirty_placeholder: bool,
     pub style_invalidation: StyleInvalidationState,
-    pub layout_identity: RetainedRenderIdentityState,
-    pub paint_identity: RetainedRenderIdentityState,
-    pub stacking_identity: RetainedRenderIdentityState,
-    pub traversal_identity: RetainedRenderIdentityState,
+    pub retained_identity_domain: RetainedRenderIdentityDomain,
+    pub retained_identities: Vec<RetainedRenderIdentity>,
+    pub layout_identity: FrameLocalIdentityState,
+    pub paint_identity: FrameLocalIdentityState,
+    pub stacking_identity: FrameLocalIdentityState,
+    pub traversal_source_order_identity: FrameLocalIdentityState,
 }
 
 impl RetainedRenderStateDebugSnapshot {
@@ -148,26 +154,48 @@ impl RetainedRenderStateDebugSnapshot {
         writeln!(&mut out, "retained-identities:").expect("write retained render state snapshot");
         writeln!(
             &mut out,
-            "  layout: {}",
-            retained_identity_state_debug_label(self.layout_identity)
+            "  identity-domain: {}",
+            self.retained_identity_domain.value()
         )
         .expect("write retained render state snapshot");
         writeln!(
             &mut out,
-            "  paint: {}",
-            retained_identity_state_debug_label(self.paint_identity)
+            "  render-artifacts: {}",
+            self.retained_identities.len()
+        )
+        .expect("write retained render state snapshot");
+        for identity in &self.retained_identities {
+            writeln!(
+                &mut out,
+                "    - retained-render-id={} kind={} anchor={}",
+                identity.id.value(),
+                retained_render_artifact_kind_debug_label(identity.kind),
+                retained_render_anchor_debug_label(identity.anchor)
+            )
+            .expect("write retained render state snapshot");
+        }
+        writeln!(
+            &mut out,
+            "  frame-local-layout-ids: {}",
+            frame_local_identity_state_debug_label(self.layout_identity)
         )
         .expect("write retained render state snapshot");
         writeln!(
             &mut out,
-            "  stacking: {}",
-            retained_identity_state_debug_label(self.stacking_identity)
+            "  frame-local-paint-ids: {}",
+            frame_local_identity_state_debug_label(self.paint_identity)
         )
         .expect("write retained render state snapshot");
         writeln!(
             &mut out,
-            "  traversal: {}",
-            retained_identity_state_debug_label(self.traversal_identity)
+            "  frame-local-stacking-ids: {}",
+            frame_local_identity_state_debug_label(self.stacking_identity)
+        )
+        .expect("write retained render state snapshot");
+        writeln!(
+            &mut out,
+            "  frame-local-traversal-source-order-ids: {}",
+            frame_local_identity_state_debug_label(self.traversal_source_order_identity)
         )
         .expect("write retained render state snapshot");
         out
@@ -193,8 +221,8 @@ fn style_invalidation_state_debug_label(state: StyleInvalidationState) -> &'stat
     }
 }
 
-fn retained_identity_state_debug_label(state: RetainedRenderIdentityState) -> &'static str {
+fn frame_local_identity_state_debug_label(state: FrameLocalIdentityState) -> &'static str {
     match state {
-        RetainedRenderIdentityState::NoneFrameLocal => "none-frame-local",
+        FrameLocalIdentityState::NotRetained => "not-retained",
     }
 }

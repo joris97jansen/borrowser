@@ -8,15 +8,16 @@ foundation for incremental rendering work.
 
 AC1 does not optimize rendering. It does not introduce retained layout caches,
 retained paint caches, targeted relayout, dirty-region rendering, compositor
-layers, GPU layers, or broad stable retained identities. It makes the runtime
+layers, GPU layers, or broad retained artifact reuse. It makes the runtime
 state that may survive across render updates explicit, typed, inspectable, and
-ready for later dirty-state tracking, work planning, and conservative artifact
-reuse.
+ready for later retained identity tracking, dirty-state tracking, work
+planning, and conservative artifact reuse.
 
 Related code:
 - `crates/browser/src/page/retained_render_state.rs`
 - `crates/browser/src/page/debug.rs`
 - `crates/browser/src/page/style_phase.rs`
+- `crates/browser/src/rendering/identity.rs`
 - `crates/browser/src/rendering/lifecycle.rs`
 - `crates/browser/src/rendering/debug.rs`
 - `crates/browser/src/rendering/invalidation.rs`
@@ -24,6 +25,7 @@ Related code:
 - `crates/browser/src/rendering/tests/runtime_state.rs`
 
 Related documents:
+- `docs/rendering/ac2-retained-render-identities.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v3-retained-state-versus-rebuilt-state-ownership.md`
@@ -154,10 +156,6 @@ AC1 explicitly does not retain:
 
 - `StyledNode` trees;
 - `LayoutBox` trees;
-- `BoxId` values as retained identities;
-- traversal or source-order IDs as retained identities;
-- `StackingContextId` values as retained identities;
-- paint primitive IDs as retained identities;
 - display lists;
 - retained paint scenes;
 - compositor layers;
@@ -165,8 +163,11 @@ AC1 explicitly does not retain:
 
 Frame-local layout, paint, traversal, source-order, and stacking identifiers
 may appear in their owning subsystem's frame-local debug surfaces. They must
-not be presented by browser/runtime retained state as stable retained
-identities.
+not be presented by browser/runtime retained state as retained identities.
+AC2 adds a separate browser/runtime-owned retained render identity model for
+currently representable DOM-backed render artifacts; it does not make
+`BoxId`, paint operation order/indices, `StackingContextId`, traversal IDs, or
+source-order IDs retained cache keys.
 
 ## Debug Surface
 
@@ -187,8 +188,10 @@ It reports:
 - retained/rebuilt artifact lifetime states;
 - minimal dirty-state placeholders;
 - style invalidation summary;
-- explicit `none-frame-local` identity policy for layout, paint, stacking, and
-  traversal identities.
+- retained render identity domain and currently representable retained render
+  identities introduced by AC2;
+- explicit `not-retained` policy for frame-local layout, paint, stacking, and
+  traversal/source-order identities.
 
 The retained render-state debug surface is deterministic. It is an internal
 regression contract, not a public API.
@@ -225,8 +228,8 @@ AC1 deliberately excludes:
 - display-list reuse;
 - retained paint scenes;
 - compositor or GPU layer models;
-- stable retained layout, paint, stacking, traversal, or paint primitive
-  identities;
+- retained layout, paint, stacking, traversal, or paint primitive identities
+  beyond AC2's minimal browser/runtime-owned retained render IDs;
 - performance or allocation guardrails for incremental behavior.
 
 Future AC issues may add those concepts only by defining explicit ownership,
@@ -241,7 +244,6 @@ explicit contracts:
 
 - retained dirty-state scopes and reasons;
 - deterministic render work plans;
-- retained render identities that are distinct from frame-local IDs;
 - conservative style artifact reuse summaries;
 - conservative layout artifact reuse only after layout ownership and
   invalidation rules are documented;

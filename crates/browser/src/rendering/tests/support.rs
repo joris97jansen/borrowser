@@ -196,6 +196,115 @@ pub(super) fn replace_first_text_optional(
     }
 }
 
+pub(super) fn remove_first_element(node: &mut Node, want_name: &str) -> html::internal::Id {
+    remove_first_element_optional(node, want_name).expect("target element should exist")
+}
+
+pub(super) fn remove_first_element_optional(
+    node: &mut Node,
+    want_name: &str,
+) -> Option<html::internal::Id> {
+    match node {
+        Node::Document { children, .. } | Node::Element { children, .. } => {
+            if let Some(index) = children.iter().position(
+                |child| matches!(child, Node::Element { name, .. } if name.as_ref() == want_name),
+            ) {
+                return Some(children.remove(index).id());
+            }
+
+            children
+                .iter_mut()
+                .find_map(|child| remove_first_element_optional(child, want_name))
+        }
+        Node::Text { .. } | Node::Comment { .. } => None,
+    }
+}
+
+pub(super) fn replace_first_element(
+    node: &mut Node,
+    want_name: &str,
+    replacement: Node,
+) -> html::internal::Id {
+    replace_first_element_optional(node, want_name, replacement)
+        .expect("target element should exist")
+}
+
+pub(super) fn replace_first_element_optional(
+    node: &mut Node,
+    want_name: &str,
+    replacement: Node,
+) -> Option<html::internal::Id> {
+    match node {
+        Node::Document { children, .. } | Node::Element { children, .. } => {
+            if let Some(index) = children.iter().position(
+                |child| matches!(child, Node::Element { name, .. } if name.as_ref() == want_name),
+            ) {
+                let removed = children[index].id();
+                children[index] = replacement;
+                return Some(removed);
+            }
+
+            for child in children {
+                if let Some(removed) =
+                    replace_first_element_optional(child, want_name, replacement_node(&replacement))
+                {
+                    return Some(removed);
+                }
+            }
+            None
+        }
+        Node::Text { .. } | Node::Comment { .. } => None,
+    }
+}
+
+fn replacement_node(node: &Node) -> Node {
+    match node {
+        Node::Document {
+            id,
+            doctype,
+            children,
+        } => Node::Document {
+            id: *id,
+            doctype: doctype.clone(),
+            children: children.iter().map(replacement_node).collect(),
+        },
+        Node::Element {
+            id,
+            name,
+            attributes,
+            style,
+            children,
+        } => Node::Element {
+            id: *id,
+            name: Arc::clone(name),
+            attributes: attributes.clone(),
+            style: style.clone(),
+            children: children.iter().map(replacement_node).collect(),
+        },
+        Node::Text { id, text } => Node::Text {
+            id: *id,
+            text: text.clone(),
+        },
+        Node::Comment { id, text } => Node::Comment {
+            id: *id,
+            text: text.clone(),
+        },
+    }
+}
+
+pub(super) fn paragraph_node(id: u32, text_id: u32, text: &str) -> Node {
+    Node::Element {
+        id: html::internal::Id(id),
+        name: Arc::from("p"),
+        attributes: Vec::new(),
+        style: Vec::new(),
+        children: vec![Node::Text {
+            id: html::internal::Id(text_id),
+            text: text.to_string(),
+        }],
+    }
+}
+
 pub(super) struct FixedTextMeasurer;
 
 impl TextMeasurer for FixedTextMeasurer {

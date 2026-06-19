@@ -10,6 +10,7 @@
 mod contracts;
 mod debug;
 mod frame;
+mod identity;
 mod invalidation;
 mod lifecycle;
 mod page_background;
@@ -28,13 +29,21 @@ pub use debug::{
 #[cfg(test)]
 pub(crate) use frame::build_render_frame_execution_trace;
 pub(crate) use frame::{OrchestratedFrameOutcome, execute_prepared_page_frame, prepare_page_frame};
+pub use identity::{
+    RetainedRenderAnchor, RetainedRenderArtifactKind, RetainedRenderId, RetainedRenderIdentity,
+    RetainedRenderIdentityDomain,
+};
+pub(crate) use identity::{
+    RetainedRenderIdentityMap, retained_render_anchor_debug_label,
+    retained_render_artifact_kind_debug_label,
+};
 pub use invalidation::{
     PendingPaintInvalidations, PendingRenderWork, PhaseRerunSource, RenderInvalidationRequest,
     RenderWorkPlan, paint_invalidation_request, paint_invalidation_request_contracts,
     render_invalidation_request, render_invalidation_request_contracts,
 };
 pub use lifecycle::{
-    RenderArtifactState, RenderEpoch, RenderPipelineDebugSnapshot, RetainedRenderIdentityState,
+    FrameLocalIdentityState, RenderArtifactState, RenderEpoch, RenderPipelineDebugSnapshot,
     RetainedRenderStateDebugSnapshot, StyleInvalidationState,
 };
 pub use types::{
