@@ -90,6 +90,14 @@ impl RestyleHint {
             attribute_dirty_nodes: Vec::new(),
         }
     }
+
+    #[cfg(test)]
+    pub(crate) fn tree_mutated() -> Self {
+        Self {
+            trigger: RestyleTrigger::TreeMutated,
+            attribute_dirty_nodes: Vec::new(),
+        }
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

@@ -217,6 +217,16 @@ Current supported subset:
   render-state debug snapshots, no-op epoch preservation, fallible recompute
   epoch correctness, and explicit frame-local identity non-retention; see
   `docs/rendering/ac1-retained-render-state-runtime-contract.md`.
+- AC2 stable retained render identities: browser/runtime owns typed retained
+  render identities, uses DOM IDs only as anchors/provenance, treats full
+  document replacement as a retained identity boundary, prunes removed
+  artifacts before allocation, avoids retained ID recycling within the active
+  document identity lifetime, exposes deterministic retained identity debug
+  output, and keeps layout, paint, stacking, and traversal/source-order IDs
+  explicitly frame-local; this does not add style/layout/paint caches,
+  dirty-state planning, retained layout trees, retained paint scenes/display
+  lists, compositor/GPU concepts, or dirty-region rendering; see
+  `docs/rendering/ac2-retained-render-identities.md`.
 
 Missing or incomplete:
 

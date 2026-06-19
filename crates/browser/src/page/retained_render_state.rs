@@ -1,9 +1,10 @@
 use crate::document_style::DocumentStyleSet;
 use crate::rendering::{
-    RenderArtifactState, RenderEpoch, RenderPipelineDebugSnapshot, RetainedRenderIdentityState,
-    RetainedRenderStateDebugSnapshot, StyleInvalidationState,
+    FrameLocalIdentityState, RenderArtifactState, RenderEpoch, RenderPipelineDebugSnapshot,
+    RetainedRenderIdentityMap, RetainedRenderStateDebugSnapshot, StyleInvalidationState,
 };
 use css::ComputedStyleReuseStats;
+use html::Node;
 
 use super::restyle::{RestyleTrigger, StyleInvalidationScope};
 use super::style_cache::{PageStyleCache, PageStyleGenerations, StyleRecalcKind};
@@ -25,6 +26,7 @@ pub(super) struct RetainedRenderState {
     pub(super) pending_style_invalidation: Option<StyleInvalidationScope>,
     pub(super) last_style_recalc: Option<StyleRecalcKind>,
     pub(super) last_style_reuse: Option<ComputedStyleReuseStats>,
+    pub(super) identities: RetainedRenderIdentityMap,
 }
 
 impl RetainedRenderState {
@@ -40,6 +42,7 @@ impl RetainedRenderState {
             pending_style_invalidation: Some(StyleInvalidationScope::Full),
             last_style_recalc: None,
             last_style_reuse: None,
+            identities: RetainedRenderIdentityMap::new(),
         }
     }
 
@@ -54,6 +57,7 @@ impl RetainedRenderState {
         self.pending_style_invalidation = Some(StyleInvalidationScope::Full);
         self.last_style_recalc = None;
         self.last_style_reuse = None;
+        self.identities.reset_for_navigation();
     }
 
     pub(super) fn advance_render_epoch(&mut self) {
@@ -137,11 +141,21 @@ impl RetainedRenderState {
             style_dirty: pipeline.style_dirty,
             layout_dirty_placeholder: pipeline.layout_dirty,
             style_invalidation: pipeline.style_invalidation,
-            layout_identity: RetainedRenderIdentityState::NoneFrameLocal,
-            paint_identity: RetainedRenderIdentityState::NoneFrameLocal,
-            stacking_identity: RetainedRenderIdentityState::NoneFrameLocal,
-            traversal_identity: RetainedRenderIdentityState::NoneFrameLocal,
+            retained_identity_domain: self.identities.domain(),
+            retained_identities: self.identities.identities(),
+            layout_identity: FrameLocalIdentityState::NotRetained,
+            paint_identity: FrameLocalIdentityState::NotRetained,
+            stacking_identity: FrameLocalIdentityState::NotRetained,
+            traversal_source_order_identity: FrameLocalIdentityState::NotRetained,
         }
+    }
+
+    pub(super) fn reset_retained_identities_for_document_replacement(&mut self) {
+        self.identities.reset_for_document_replacement();
+    }
+
+    pub(super) fn reconcile_retained_identities_from_dom(&mut self, dom: &Node) {
+        self.identities.reconcile_live_dom(dom);
     }
 
     pub(super) fn mark_style_inputs_changed(&mut self, scope: StyleInvalidationScope) {
