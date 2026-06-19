@@ -227,10 +227,17 @@ Current supported subset:
   dirty-state planning, retained layout trees, retained paint scenes/display
   lists, compositor/GPU concepts, or dirty-region rendering; see
   `docs/rendering/ac2-retained-render-identities.md`.
+- AC3 explicit dirty-state tracking: browser/runtime owns typed style, layout,
+  and paint dirty entries with deterministic reasons, scopes, propagation,
+  merge/deduplication behavior, conservative document/viewport fallbacks, and
+  retained dirty-state debug output; this does not add retained layout caches,
+  retained paint caches, dirty-region rendering, compositor/GPU concepts, or
+  broad browser-owned CSS property-impact classification; see
+  `docs/rendering/ac3-explicit-dirty-state-tracking.md`.
 
 Missing or incomplete:
 
-- explicit retained dirty-state scopes and deterministic render work planning
+- deterministic render work planning
 - conservative style/layout/paint artifact reuse beyond current retained style
   foundations
 - incremental rendering performance/allocation guardrails

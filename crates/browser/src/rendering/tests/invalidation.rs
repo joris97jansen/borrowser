@@ -302,6 +302,175 @@ fn pending_render_work_derives_ordered_deduplicated_paint_invalidations() {
 }
 
 #[test]
+fn dirty_request_for_viewport_change_marks_layout_and_paint_not_style() {
+    let request = dirty_request_for_entry_point(RenderInvalidationEntryPoint::ViewportChanged);
+
+    assert_eq!(
+        request.entries,
+        vec![
+            DirtyEntry::new(
+                DirtyPhase::Layout,
+                DirtyReason::ViewportChanged,
+                DirtyScope::Viewport,
+            ),
+            DirtyEntry::new(
+                DirtyPhase::Paint,
+                DirtyReason::CascadedFromLayout,
+                DirtyScope::Viewport,
+            ),
+        ]
+    );
+
+    let mut pending = PendingRenderWork::default();
+    pending.push(render_invalidation_request(
+        RenderInvalidationEntryPoint::ViewportChanged,
+    ));
+    let dirty = pending.dirty_state();
+    assert!(!dirty.is_phase_dirty(DirtyPhase::Style));
+    assert!(dirty.is_phase_dirty(DirtyPhase::Layout));
+    assert!(dirty.is_phase_dirty(DirtyPhase::Paint));
+    assert_eq!(
+        dirty.effective_scope(DirtyPhase::Layout),
+        DirtyScope::Viewport
+    );
+    assert_eq!(
+        dirty.effective_scope(DirtyPhase::Paint),
+        DirtyScope::Viewport
+    );
+}
+
+#[test]
+fn dirty_request_for_input_state_is_paint_only_when_runtime_can_classify_it() {
+    let request = dirty_request_for_entry_point(RenderInvalidationEntryPoint::InputStateChanged);
+
+    assert_eq!(
+        request.entries,
+        vec![DirtyEntry::new(
+            DirtyPhase::Paint,
+            DirtyReason::RuntimeInputState,
+            DirtyScope::Viewport,
+        )]
+    );
+
+    let mut pending = PendingRenderWork::default();
+    pending.push(render_invalidation_request(
+        RenderInvalidationEntryPoint::InputStateChanged,
+    ));
+    let dirty = pending.dirty_state();
+    assert!(!dirty.is_phase_dirty(DirtyPhase::Style));
+    assert!(!dirty.is_phase_dirty(DirtyPhase::Layout));
+    assert!(dirty.is_phase_dirty(DirtyPhase::Paint));
+    assert_eq!(
+        dirty.effective_scope(DirtyPhase::Paint),
+        DirtyScope::Viewport
+    );
+}
+
+#[test]
+fn dirty_request_for_document_replacement_propagates_style_to_layout_to_paint() {
+    let propagation =
+        dirty_propagation_for_entry_point(RenderInvalidationEntryPoint::DocumentReplaced);
+
+    assert_eq!(
+        propagation.direct,
+        vec![DirtyEntry::new(
+            DirtyPhase::Style,
+            DirtyReason::DocumentReplaced,
+            DirtyScope::Document,
+        )]
+    );
+    assert_eq!(
+        propagation.propagated,
+        vec![
+            DirtyEntry::new(
+                DirtyPhase::Layout,
+                DirtyReason::CascadedFromStyle,
+                DirtyScope::Document,
+            ),
+            DirtyEntry::new(
+                DirtyPhase::Paint,
+                DirtyReason::CascadedFromLayout,
+                DirtyScope::Document,
+            ),
+        ]
+    );
+    assert!(propagation.state.is_phase_dirty(DirtyPhase::Style));
+    assert!(propagation.state.is_phase_dirty(DirtyPhase::Layout));
+    assert!(propagation.state.is_phase_dirty(DirtyPhase::Paint));
+}
+
+#[test]
+fn dirty_state_merging_is_deterministic_deduplicated_and_conservative() {
+    let mut dirty = RenderDirtyState::new();
+    dirty.push(DirtyEntry::new(
+        DirtyPhase::Paint,
+        DirtyReason::RuntimeInputState,
+        DirtyScope::Viewport,
+    ));
+    dirty.push(DirtyEntry::new(
+        DirtyPhase::Style,
+        DirtyReason::StyleInputChanged,
+        DirtyScope::Document,
+    ));
+    dirty.push(DirtyEntry::new(
+        DirtyPhase::Paint,
+        DirtyReason::RuntimeInputState,
+        DirtyScope::Viewport,
+    ));
+    dirty.push(DirtyEntry::new(
+        DirtyPhase::Paint,
+        DirtyReason::RuntimeInputState,
+        DirtyScope::Document,
+    ));
+
+    assert_eq!(
+        dirty.entries(),
+        &[
+            DirtyEntry::new(
+                DirtyPhase::Style,
+                DirtyReason::StyleInputChanged,
+                DirtyScope::Document,
+            ),
+            DirtyEntry::new(
+                DirtyPhase::Paint,
+                DirtyReason::RuntimeInputState,
+                DirtyScope::Document,
+            ),
+        ]
+    );
+    assert_eq!(
+        dirty.effective_scope(DirtyPhase::Paint),
+        DirtyScope::Document
+    );
+}
+
+#[test]
+fn unknown_dirty_state_falls_back_to_visible_document_scope() {
+    let dirty = RenderDirtyState::conservative_unknown();
+
+    assert_eq!(
+        dirty.entries(),
+        &[
+            DirtyEntry::new(
+                DirtyPhase::Style,
+                DirtyReason::ConservativeUnknownImpact,
+                DirtyScope::Document,
+            ),
+            DirtyEntry::new(
+                DirtyPhase::Layout,
+                DirtyReason::ConservativeUnknownImpact,
+                DirtyScope::Document,
+            ),
+            DirtyEntry::new(
+                DirtyPhase::Paint,
+                DirtyReason::ConservativeUnknownImpact,
+                DirtyScope::Document,
+            ),
+        ]
+    );
+}
+
+#[test]
 fn pending_paint_invalidations_compute_conservative_effective_scope() {
     let mut pending = PendingPaintInvalidations::default();
     assert_eq!(pending.effective_scope(), None);
@@ -521,6 +690,7 @@ fn stylesheet_reconcile_returns_explicit_style_invalidation_request() {
     let mut page = PageState::new();
     page.start_nav("https://example.com/index.html");
     let _ = page.replace_dom(Box::new(output.document), RestyleHint::document_replaced());
+    page.clear_all_dirty_for_tests();
 
     let outcome = page.reconcile_document_stylesheets();
     let request = outcome
@@ -544,4 +714,26 @@ fn stylesheet_reconcile_returns_explicit_style_invalidation_request() {
         PhaseRerunSource::CascadedFrom(RenderingPhase::Layout)
     );
     assert_eq!(outcome.fetches.len(), 1);
+
+    let snapshot = page.retained_render_state_debug_snapshot();
+    assert_eq!(
+        snapshot.dirty_state.entries,
+        vec![
+            DirtyEntry::new(
+                DirtyPhase::Style,
+                DirtyReason::StylesheetChanged,
+                DirtyScope::Document,
+            ),
+            DirtyEntry::new(
+                DirtyPhase::Layout,
+                DirtyReason::CascadedFromStyle,
+                DirtyScope::Document,
+            ),
+            DirtyEntry::new(
+                DirtyPhase::Paint,
+                DirtyReason::CascadedFromLayout,
+                DirtyScope::Document,
+            ),
+        ]
+    );
 }

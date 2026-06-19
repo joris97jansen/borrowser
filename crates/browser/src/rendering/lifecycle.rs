@@ -2,6 +2,7 @@
 
 use std::fmt::Write;
 
+use super::types::{DirtyEntry, DirtyPhase, DirtyScopeDebugLabel};
 use super::{
     RetainedRenderIdentity, RetainedRenderIdentityDomain, retained_render_anchor_debug_label,
     retained_render_artifact_kind_debug_label,
@@ -52,7 +53,7 @@ pub enum StyleInvalidationState {
     AttributeSuffix,
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RenderPipelineDebugSnapshot {
     pub has_dom: bool,
     pub resolved_styles: RenderArtifactState,
@@ -60,9 +61,22 @@ pub struct RenderPipelineDebugSnapshot {
     pub styled_tree: RenderArtifactState,
     pub layout_tree: RenderArtifactState,
     pub paint_output: RenderArtifactState,
+    pub dirty_state: DirtyStateDebugSnapshot,
     pub style_dirty: bool,
     pub layout_dirty: bool,
+    pub paint_dirty: bool,
     pub style_invalidation: StyleInvalidationState,
+}
+
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct DirtyStateDebugSnapshot {
+    pub entries: Vec<DirtyEntry>,
+}
+
+impl DirtyStateDebugSnapshot {
+    pub fn is_phase_dirty(&self, phase: DirtyPhase) -> bool {
+        self.entries.iter().any(|entry| entry.phase == phase)
+    }
 }
 
 /// Runtime-visible policy for identity domains that remain frame-local.
@@ -85,8 +99,10 @@ pub struct RetainedRenderStateDebugSnapshot {
     pub styled_tree: RenderArtifactState,
     pub layout_tree: RenderArtifactState,
     pub paint_output: RenderArtifactState,
+    pub dirty_state: DirtyStateDebugSnapshot,
     pub style_dirty: bool,
-    pub layout_dirty_placeholder: bool,
+    pub layout_dirty: bool,
+    pub paint_dirty: bool,
     pub style_invalidation: StyleInvalidationState,
     pub retained_identity_domain: RetainedRenderIdentityDomain,
     pub retained_identities: Vec<RetainedRenderIdentity>,
@@ -136,15 +152,13 @@ impl RetainedRenderStateDebugSnapshot {
             render_artifact_state_debug_label(self.paint_output)
         )
         .expect("write retained render state snapshot");
-        writeln!(&mut out, "dirty-state:").expect("write retained render state snapshot");
+        append_dirty_state_debug_snapshot(&mut out, &self.dirty_state);
         writeln!(&mut out, "  style-dirty: {}", self.style_dirty)
             .expect("write retained render state snapshot");
-        writeln!(
-            &mut out,
-            "  layout-dirty-placeholder: {}",
-            self.layout_dirty_placeholder
-        )
-        .expect("write retained render state snapshot");
+        writeln!(&mut out, "  layout-dirty: {}", self.layout_dirty)
+            .expect("write retained render state snapshot");
+        writeln!(&mut out, "  paint-dirty: {}", self.paint_dirty)
+            .expect("write retained render state snapshot");
         writeln!(
             &mut out,
             "  style-invalidation: {}",
@@ -199,6 +213,31 @@ impl RetainedRenderStateDebugSnapshot {
         )
         .expect("write retained render state snapshot");
         out
+    }
+}
+
+fn append_dirty_state_debug_snapshot(out: &mut String, snapshot: &DirtyStateDebugSnapshot) {
+    writeln!(out, "dirty-state:").expect("write retained render state snapshot");
+    writeln!(out, "  entries: {}", snapshot.entries.len())
+        .expect("write retained render state snapshot");
+    for (index, entry) in snapshot.entries.iter().enumerate() {
+        writeln!(
+            out,
+            "    entry[{index}]: phase={} reason={} scope={}",
+            entry.phase.debug_label(),
+            entry.reason.debug_label(),
+            dirty_scope_debug_label(entry.scope.debug_label())
+        )
+        .expect("write retained render state snapshot");
+    }
+}
+
+fn dirty_scope_debug_label(label: DirtyScopeDebugLabel) -> String {
+    match label {
+        DirtyScopeDebugLabel::Static(label) => label.to_string(),
+        DirtyScopeDebugLabel::RetainedId { prefix, id } => {
+            format!("{prefix}(retained-render-id={})", id.value())
+        }
     }
 }
 

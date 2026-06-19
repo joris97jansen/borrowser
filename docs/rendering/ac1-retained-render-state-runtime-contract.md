@@ -10,7 +10,7 @@ AC1 does not optimize rendering. It does not introduce retained layout caches,
 retained paint caches, targeted relayout, dirty-region rendering, compositor
 layers, GPU layers, or broad retained artifact reuse. It makes the runtime
 state that may survive across render updates explicit, typed, inspectable, and
-ready for later retained identity tracking, dirty-state tracking, work
+ready for AC2 retained identity tracking, AC3 dirty-state tracking, later work
 planning, and conservative artifact reuse.
 
 Related code:
@@ -26,6 +26,7 @@ Related code:
 
 Related documents:
 - `docs/rendering/ac2-retained-render-identities.md`
+- `docs/rendering/ac3-explicit-dirty-state-tracking.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v3-retained-state-versus-rebuilt-state-ownership.md`
@@ -67,7 +68,7 @@ Browser/runtime owns:
 - document stylesheet attachment state;
 - retained style artifact lifecycle in `PageState`;
 - runtime invalidation coordination;
-- minimal dirty-state placeholders and summaries;
+- explicit retained dirty-state summaries introduced by AC3;
 - deterministic retained-state debug summaries.
 
 CSS owns:
@@ -148,7 +149,7 @@ AC1 explicitly allows browser/runtime retained state to include:
 - render epochs;
 - document stylesheet lifecycle state;
 - retained resolved/computed style artifacts already covered by V3;
-- style and layout dirty placeholders already present in `PageState`;
+- explicit style, layout, and paint dirty-state entries covered by AC3;
 - style invalidation summaries;
 - deterministic debug summaries of artifact lifetime policy.
 
@@ -186,7 +187,7 @@ It reports:
 - render epoch;
 - DOM presence;
 - retained/rebuilt artifact lifetime states;
-- minimal dirty-state placeholders;
+- explicit style, layout, and paint dirty-state summaries;
 - style invalidation summary;
 - retained render identity domain and currently representable retained render
   identities introduced by AC2;
@@ -223,7 +224,6 @@ AC1 deliberately excludes:
 - retained paint caches;
 - targeted relayout;
 - deterministic render work planning;
-- full dirty-state tracking;
 - dirty-region rendering;
 - display-list reuse;
 - retained paint scenes;
@@ -242,7 +242,6 @@ tests.
 Future Milestone AC work should extend this foundation through adjacent,
 explicit contracts:
 
-- retained dirty-state scopes and reasons;
 - deterministic render work plans;
 - conservative style artifact reuse summaries;
 - conservative layout artifact reuse only after layout ownership and

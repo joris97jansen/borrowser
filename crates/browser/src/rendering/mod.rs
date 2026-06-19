@@ -39,17 +39,20 @@ pub(crate) use identity::{
 };
 pub use invalidation::{
     PendingPaintInvalidations, PendingRenderWork, PhaseRerunSource, RenderInvalidationRequest,
-    RenderWorkPlan, paint_invalidation_request, paint_invalidation_request_contracts,
-    render_invalidation_request, render_invalidation_request_contracts,
+    RenderWorkPlan, dirty_propagation_for_entry_point, dirty_request_for_entry_point,
+    paint_invalidation_request, paint_invalidation_request_contracts, render_invalidation_request,
+    render_invalidation_request_contracts,
 };
 pub use lifecycle::{
-    FrameLocalIdentityState, RenderArtifactState, RenderEpoch, RenderPipelineDebugSnapshot,
-    RetainedRenderStateDebugSnapshot, StyleInvalidationState,
+    DirtyStateDebugSnapshot, FrameLocalIdentityState, RenderArtifactState, RenderEpoch,
+    RenderPipelineDebugSnapshot, RetainedRenderStateDebugSnapshot, StyleInvalidationState,
 };
 pub use types::{
+    DirtyEntry, DirtyPhase, DirtyPropagationResult, DirtyReason, DirtyScope, DirtyScopeDebugLabel,
     PaintInvalidationReason, PaintInvalidationRequest, PaintInvalidationScope,
-    PaintInvalidationTrigger, RenderArtifact, RenderInvalidationEntryPoint, RenderRebuildTrigger,
-    RenderingPhase, RenderingSubsystem, RepaintExecutionPlan, RepaintExecutionScope,
+    PaintInvalidationTrigger, RenderArtifact, RenderDirtyRequest, RenderDirtyState,
+    RenderInvalidationEntryPoint, RenderRebuildTrigger, RenderingPhase, RenderingSubsystem,
+    RepaintExecutionPlan, RepaintExecutionScope,
 };
 
 #[cfg(test)]

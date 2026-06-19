@@ -92,7 +92,6 @@ impl PageState {
                 // reconciliation, which separately invalidates style. Future
                 // text-sensitive selector or generated-content support must
                 // widen this contract if text content becomes style-relevant.
-                self.rendering.layout_dirty = true;
             }
             RestyleTrigger::DocumentReplaced | RestyleTrigger::TreeMutated => self
                 .rendering
@@ -108,7 +107,9 @@ impl PageState {
             }
         }
 
-        render_invalidation_request(trigger.render_invalidation_entry_point())
+        let entry_point = trigger.render_invalidation_entry_point();
+        self.rendering.mark_dirty_for_entry_point(entry_point);
+        render_invalidation_request(entry_point)
     }
 
     pub fn outline(&self, cap: usize) -> Vec<String> {
