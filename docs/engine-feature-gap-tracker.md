@@ -210,8 +210,20 @@ Notes:
 
 ## Browser Runtime / Platform
 
+Current supported subset:
+
+- AC1 runtime-owned retained render state foundation: `PageState` owns
+  `RetainedRenderState`, typed `RenderEpoch` semantics, deterministic retained
+  render-state debug snapshots, no-op epoch preservation, fallible recompute
+  epoch correctness, and explicit frame-local identity non-retention; see
+  `docs/rendering/ac1-retained-render-state-runtime-contract.md`.
+
 Missing or incomplete:
 
+- explicit retained dirty-state scopes and deterministic render work planning
+- conservative style/layout/paint artifact reuse beyond current retained style
+  foundations
+- incremental rendering performance/allocation guardrails
 - JavaScript execution and DOM bindings
 - event loop, timers, microtasks, and script-triggered invalidation
 - full DOM mutation APIs
