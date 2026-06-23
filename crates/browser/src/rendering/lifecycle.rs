@@ -53,6 +53,40 @@ pub enum StyleInvalidationState {
     AttributeSuffix,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RetainedStyleArtifactKey {
+    pub identity_domain: RetainedRenderIdentityDomain,
+    pub style_input_generation: u64,
+    pub stylesheet_generation: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RetainedStyleArtifactStats {
+    pub reuse_count: u64,
+    pub recompute_count: u64,
+    pub discard_count: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RetainedStyleArtifactAction {
+    #[default]
+    None,
+    InitialCompute,
+    Reused,
+    FullRecompute,
+    IncrementalSuffixRecompute,
+    DiscardedForFullInvalidation,
+    FallbackFullRecompute,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RetainedStyleArtifactDebugSnapshot {
+    pub key: Option<RetainedStyleArtifactKey>,
+    pub state: RenderArtifactState,
+    pub last_action: RetainedStyleArtifactAction,
+    pub stats: RetainedStyleArtifactStats,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RenderPipelineDebugSnapshot {
     pub has_dom: bool,
@@ -66,6 +100,7 @@ pub struct RenderPipelineDebugSnapshot {
     pub layout_dirty: bool,
     pub paint_dirty: bool,
     pub style_invalidation: StyleInvalidationState,
+    pub style_artifacts: RetainedStyleArtifactDebugSnapshot,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -104,6 +139,7 @@ pub struct RetainedRenderStateDebugSnapshot {
     pub layout_dirty: bool,
     pub paint_dirty: bool,
     pub style_invalidation: StyleInvalidationState,
+    pub style_artifacts: RetainedStyleArtifactDebugSnapshot,
     pub retained_identity_domain: RetainedRenderIdentityDomain,
     pub retained_identities: Vec<RetainedRenderIdentity>,
     pub layout_identity: FrameLocalIdentityState,
@@ -165,6 +201,7 @@ impl RetainedRenderStateDebugSnapshot {
             style_invalidation_state_debug_label(self.style_invalidation)
         )
         .expect("write retained render state snapshot");
+        append_retained_style_artifact_debug_snapshot(&mut out, self.style_artifacts);
         writeln!(&mut out, "retained-identities:").expect("write retained render state snapshot");
         writeln!(
             &mut out,
@@ -216,6 +253,42 @@ impl RetainedRenderStateDebugSnapshot {
     }
 }
 
+fn append_retained_style_artifact_debug_snapshot(
+    out: &mut String,
+    snapshot: RetainedStyleArtifactDebugSnapshot,
+) {
+    writeln!(out, "style-artifacts:").expect("write retained render state snapshot");
+    match snapshot.key {
+        Some(key) => writeln!(
+            out,
+            "  key: identity-domain={} style-input-generation={} stylesheet-generation={}",
+            key.identity_domain.value(),
+            key.style_input_generation,
+            key.stylesheet_generation
+        ),
+        None => writeln!(out, "  key: none"),
+    }
+    .expect("write retained render state snapshot");
+    writeln!(
+        out,
+        "  state: {}",
+        render_artifact_state_debug_label(snapshot.state)
+    )
+    .expect("write retained render state snapshot");
+    writeln!(
+        out,
+        "  last-action: {}",
+        retained_style_artifact_action_debug_label(snapshot.last_action)
+    )
+    .expect("write retained render state snapshot");
+    writeln!(out, "  reuse-count: {}", snapshot.stats.reuse_count)
+        .expect("write retained render state snapshot");
+    writeln!(out, "  recompute-count: {}", snapshot.stats.recompute_count)
+        .expect("write retained render state snapshot");
+    writeln!(out, "  discard-count: {}", snapshot.stats.discard_count)
+        .expect("write retained render state snapshot");
+}
+
 fn append_dirty_state_debug_snapshot(out: &mut String, snapshot: &DirtyStateDebugSnapshot) {
     writeln!(out, "dirty-state:").expect("write retained render state snapshot");
     writeln!(out, "  entries: {}", snapshot.entries.len())
@@ -257,6 +330,20 @@ fn style_invalidation_state_debug_label(state: StyleInvalidationState) -> &'stat
         StyleInvalidationState::None => "none",
         StyleInvalidationState::Full => "full",
         StyleInvalidationState::AttributeSuffix => "attribute-suffix",
+    }
+}
+
+fn retained_style_artifact_action_debug_label(action: RetainedStyleArtifactAction) -> &'static str {
+    match action {
+        RetainedStyleArtifactAction::None => "none",
+        RetainedStyleArtifactAction::InitialCompute => "initial-compute",
+        RetainedStyleArtifactAction::Reused => "reused",
+        RetainedStyleArtifactAction::FullRecompute => "full-recompute",
+        RetainedStyleArtifactAction::IncrementalSuffixRecompute => "incremental-suffix-recompute",
+        RetainedStyleArtifactAction::DiscardedForFullInvalidation => {
+            "discarded-for-full-invalidation"
+        }
+        RetainedStyleArtifactAction::FallbackFullRecompute => "fallback-full-recompute",
     }
 }
 

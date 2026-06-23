@@ -46,7 +46,9 @@ pub use invalidation::{
 };
 pub use lifecycle::{
     DirtyStateDebugSnapshot, FrameLocalIdentityState, RenderArtifactState, RenderEpoch,
-    RenderPipelineDebugSnapshot, RetainedRenderStateDebugSnapshot, StyleInvalidationState,
+    RenderPipelineDebugSnapshot, RetainedRenderStateDebugSnapshot, RetainedStyleArtifactAction,
+    RetainedStyleArtifactDebugSnapshot, RetainedStyleArtifactKey, RetainedStyleArtifactStats,
+    StyleInvalidationState,
 };
 pub use types::{
     DirtyEntry, DirtyPhase, DirtyPropagationResult, DirtyReason, DirtyScope, DirtyScopeDebugLabel,

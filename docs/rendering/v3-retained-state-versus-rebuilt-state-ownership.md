@@ -23,6 +23,7 @@ Related documents:
 - `docs/rendering/v5-explicit-runtime-render-orchestration-path.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
+- `docs/rendering/ac5-retained-style-artifact-reuse.md`
 - `docs/architecture/ARCHITECTURE.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
 
@@ -161,6 +162,11 @@ V3 keeps this baseline explicit:
 - no current API implies retained layout, retained display lists, or partial
   paint caches already exist
 
+AC5 refines this retained style baseline with an explicit retained style
+artifact key, lifecycle counters, and deterministic debug output for
+`ResolvedDocumentStyle` and `ComputedDocumentStyle` reuse, recompute, and
+discard decisions.
+
 ## Invalidation Direction
 
 Retained state ownership also defines invalidation ownership:
@@ -207,6 +213,9 @@ The repository now pins retained-state behavior through:
 
 - `render_artifact_ownership_contracts_pin_retained_vs_rebuilt_lifetimes()`
 - `debug_snapshot_reports_retained_style_artifacts_and_ephemeral_downstream_trees()`
+- `initial_style_computation_records_retained_style_artifact_lifecycle()`
+- `viewport_update_reuses_retained_style_artifacts_without_restyle()`
+- `stylesheet_update_discards_retained_style_artifacts()`
 - `attribute_mutation_keeps_style_cache_but_marks_it_stale_until_restored()`
 - `text_mutation_dirties_layout_without_invalidating_computed_style()`
 - `navigation_reset_clears_page_owned_retained_render_state()`

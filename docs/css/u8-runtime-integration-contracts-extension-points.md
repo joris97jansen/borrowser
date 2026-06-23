@@ -235,8 +235,7 @@ generation caching is future work.
 
 ```text
 PageStyleCache {
-  style_input_generation,
-  stylesheet_generation,
+  key: RetainedStyleArtifactKey,
   resolved: ResolvedDocumentStyle,
   computed: ComputedDocumentStyle,
 }
@@ -246,13 +245,23 @@ Cache reuse is allowed only when:
 
 ```text
 style_dirty == false
-and cache.style_input_generation == generations.style_inputs
-and cache.stylesheet_generation == generations.stylesheets
+and cache.key == RetainedStyleArtifactKey {
+  identity_domain,
+  style_input_generation,
+  stylesheet_generation
+}
 ```
 
 The cache stores owned resolved/computed artifacts, not `StyledNode<'_>`.
 `StyledNode` remains a borrow-backed view and is rebuilt from the current DOM
 and cached computed styles. This avoids a self-referential `PageState`.
+
+The identity-domain component prevents reuse across full document replacement,
+even if a newly materialized document has matching numeric DOM IDs. AC5 records
+retained style artifact reuse, recompute, discard, and fallback decisions in
+the retained render-state debug surface. These diagnostics count only retained
+`ResolvedDocumentStyle` and `ComputedDocumentStyle` artifacts; rebuilding
+borrow-backed `StyledNode` views is not retained artifact reuse.
 
 ### Incremental Suffix Restyle
 

@@ -41,6 +41,15 @@ fn retained_render_state_initializes_with_epoch_zero() {
     );
     assert_eq!(snapshot.style_invalidation, StyleInvalidationState::Full);
     assert_eq!(
+        snapshot.style_artifacts,
+        RetainedStyleArtifactDebugSnapshot {
+            key: None,
+            state: RenderArtifactState::Absent,
+            last_action: RetainedStyleArtifactAction::None,
+            stats: RetainedStyleArtifactStats::default(),
+        }
+    );
+    assert_eq!(
         snapshot.retained_identity_domain,
         RetainedRenderIdentityDomain::initial()
     );
@@ -90,6 +99,13 @@ fn retained_render_state_debug_snapshot_is_deterministic() {
             "  layout-dirty: true\n",
             "  paint-dirty: true\n",
             "  style-invalidation: full\n",
+            "style-artifacts:\n",
+            "  key: none\n",
+            "  state: absent\n",
+            "  last-action: none\n",
+            "  reuse-count: 0\n",
+            "  recompute-count: 0\n",
+            "  discard-count: 0\n",
             "retained-identities:\n",
             "  identity-domain: 0\n",
             "  render-artifacts: 0\n",
@@ -140,6 +156,13 @@ fn retained_render_identities_allocate_deterministically_for_initial_document() 
             "  layout-dirty: true\n",
             "  paint-dirty: true\n",
             "  style-invalidation: full\n",
+            "style-artifacts:\n",
+            "  key: none\n",
+            "  state: absent\n",
+            "  last-action: none\n",
+            "  reuse-count: 0\n",
+            "  recompute-count: 0\n",
+            "  discard-count: 0\n",
             "retained-identities:\n",
             "  identity-domain: 1\n",
             "  render-artifacts: 5\n",
@@ -183,6 +206,9 @@ fn debug_snapshot_reports_retained_style_artifacts_and_ephemeral_downstream_tree
     drop(style_output);
 
     let snapshot = page.render_pipeline_debug_snapshot();
+    let identity_domain = page
+        .retained_render_state_debug_snapshot()
+        .retained_identity_domain;
     assert_eq!(
         snapshot,
         RenderPipelineDebugSnapshot {
@@ -210,6 +236,59 @@ fn debug_snapshot_reports_retained_style_artifacts_and_ephemeral_downstream_tree
             layout_dirty: true,
             paint_dirty: true,
             style_invalidation: StyleInvalidationState::None,
+            style_artifacts: RetainedStyleArtifactDebugSnapshot {
+                key: Some(RetainedStyleArtifactKey {
+                    identity_domain,
+                    style_input_generation: 1,
+                    stylesheet_generation: 1,
+                }),
+                state: RenderArtifactState::RetainedFresh,
+                last_action: RetainedStyleArtifactAction::InitialCompute,
+                stats: RetainedStyleArtifactStats {
+                    reuse_count: 0,
+                    recompute_count: 1,
+                    discard_count: 0,
+                },
+            },
+        }
+    );
+}
+
+#[test]
+fn initial_style_computation_records_retained_style_artifact_lifecycle() {
+    let mut page = page_with_dom(
+        "<!doctype html><html><head><style>p { color: red; }</style></head><body><p>Hello</p></body></html>",
+    );
+
+    let style_output = style_output_for_test(&mut page);
+    assert_eq!(
+        styled_element_color(style_output.root(), "p"),
+        (255, 0, 0, 255)
+    );
+    drop(style_output);
+
+    let snapshot = page.retained_render_state_debug_snapshot();
+    let key = snapshot
+        .style_artifacts
+        .key
+        .expect("retained style artifacts should have a key after initial compute");
+    assert_eq!(key.identity_domain, snapshot.retained_identity_domain);
+    assert_eq!(key.style_input_generation, 1);
+    assert_eq!(key.stylesheet_generation, 1);
+    assert_eq!(
+        snapshot.style_artifacts.state,
+        RenderArtifactState::RetainedFresh
+    );
+    assert_eq!(
+        snapshot.style_artifacts.last_action,
+        RetainedStyleArtifactAction::InitialCompute
+    );
+    assert_eq!(
+        snapshot.style_artifacts.stats,
+        RetainedStyleArtifactStats {
+            reuse_count: 0,
+            recompute_count: 1,
+            discard_count: 0,
         }
     );
 }
@@ -238,6 +317,8 @@ fn retained_render_state_survives_noop_render_without_epoch_churn() {
         RenderArtifactState::RetainedFresh
     );
     assert!(!before_noop.style_dirty);
+    assert_eq!(before_noop.style_artifacts.stats.reuse_count, 0);
+    assert_eq!(before_noop.style_artifacts.stats.recompute_count, 1);
 
     let noop_style = style_output_for_test(&mut page);
     assert_eq!(
@@ -247,7 +328,60 @@ fn retained_render_state_survives_noop_render_without_epoch_churn() {
     drop(noop_style);
 
     let after_noop = page.retained_render_state_debug_snapshot();
-    assert_eq!(after_noop, before_noop);
+    assert_eq!(after_noop.render_epoch, before_noop.render_epoch);
+    assert_eq!(after_noop.style_artifacts.stats.reuse_count, 1);
+    assert_eq!(after_noop.style_artifacts.stats.recompute_count, 1);
+    assert_eq!(
+        after_noop.style_artifacts.last_action,
+        RetainedStyleArtifactAction::Reused
+    );
+    assert_eq!(
+        after_noop.style_artifacts.key,
+        before_noop.style_artifacts.key
+    );
+}
+
+#[test]
+fn viewport_update_reuses_retained_style_artifacts_without_restyle() {
+    let mut page = page_with_dom(
+        "<!doctype html><html><head><style>p { color: red; }</style></head><body><p>Hello</p></body></html>",
+    );
+    let initial_style = style_output_for_test(&mut page);
+    assert_eq!(
+        styled_element_color(initial_style.root(), "p"),
+        (255, 0, 0, 255)
+    );
+    drop(initial_style);
+    page.clear_all_dirty_for_tests();
+
+    let mut pending = PendingRenderWork::default();
+    pending.push(render_invalidation_request(
+        RenderInvalidationEntryPoint::ViewportChanged,
+    ));
+    let plan = page.derive_render_work_plan(&pending);
+    assert_eq!(
+        plan.restyle.decision,
+        RenderWorkDecision::ReuseRetainedStyle
+    );
+    assert_eq!(plan.relayout.decision, RenderWorkDecision::Relayout);
+    assert_eq!(plan.repaint.decision, RenderWorkDecision::Repaint);
+
+    let before = page.retained_render_state_debug_snapshot();
+    let viewport_style = style_output_for_test(&mut page);
+    assert_eq!(
+        styled_element_color(viewport_style.root(), "p"),
+        (255, 0, 0, 255)
+    );
+    drop(viewport_style);
+
+    let after = page.retained_render_state_debug_snapshot();
+    assert_eq!(after.render_epoch, before.render_epoch);
+    assert!(!after.style_dirty);
+    assert_eq!(after.style_artifacts.stats.reuse_count, 1);
+    assert_eq!(
+        after.style_artifacts.last_action,
+        RetainedStyleArtifactAction::Reused
+    );
 }
 
 #[test]
@@ -282,6 +416,11 @@ fn noop_update_does_not_mark_clean_retained_dirty_state() {
     assert!(!after.layout_dirty);
     assert!(!after.paint_dirty);
     assert!(after.dirty_state.entries.is_empty());
+    assert_eq!(after.style_artifacts.stats.reuse_count, 1);
+    assert_eq!(
+        after.style_artifacts.last_action,
+        RetainedStyleArtifactAction::Reused
+    );
 }
 
 #[test]
@@ -419,6 +558,52 @@ fn full_document_replacement_starts_new_identity_domain_even_when_dom_ids_match(
 }
 
 #[test]
+fn document_replacement_discards_style_artifacts_across_identity_domains() {
+    let mut page = page_with_node(doc_with_explicit_ids());
+    let first_style = style_output_for_test(&mut page);
+    drop(first_style);
+    let before = page.retained_render_state_debug_snapshot();
+    assert_eq!(before.style_artifacts.stats.recompute_count, 1);
+    assert_eq!(before.style_artifacts.stats.discard_count, 0);
+
+    let _ = page.replace_dom(
+        Box::new(doc_with_explicit_ids()),
+        RestyleHint::document_replaced(),
+    );
+
+    let discarded = page.retained_render_state_debug_snapshot();
+    assert_ne!(
+        discarded.retained_identity_domain, before.retained_identity_domain,
+        "full document replacement must start a new retained identity domain"
+    );
+    assert_eq!(discarded.style_artifacts.key, None);
+    assert_eq!(discarded.style_artifacts.stats.discard_count, 1);
+    assert_eq!(
+        discarded.style_artifacts.last_action,
+        RetainedStyleArtifactAction::DiscardedForFullInvalidation
+    );
+
+    let second_style = style_output_for_test(&mut page);
+    drop(second_style);
+    let after = page.retained_render_state_debug_snapshot();
+    assert_eq!(
+        after
+            .style_artifacts
+            .key
+            .expect("style key after replacement recompute")
+            .identity_domain,
+        after.retained_identity_domain
+    );
+    assert_eq!(after.style_artifacts.stats.reuse_count, 0);
+    assert_eq!(after.style_artifacts.stats.recompute_count, 2);
+    assert_eq!(after.style_artifacts.stats.discard_count, 1);
+    assert_eq!(
+        after.style_artifacts.last_action,
+        RetainedStyleArtifactAction::FullRecompute
+    );
+}
+
+#[test]
 fn replace_dom_enforces_identity_boundary_even_with_non_document_replaced_hint() {
     let mut page = page_with_node(doc_with_explicit_ids());
     let before = page.retained_render_state_debug_snapshot();
@@ -526,6 +711,15 @@ fn attribute_mutation_keeps_style_cache_but_marks_it_stale_until_restored() {
         stale.style_invalidation,
         StyleInvalidationState::AttributeSuffix
     );
+    assert_eq!(
+        stale.style_artifacts.state,
+        RenderArtifactState::RetainedStale
+    );
+    assert_eq!(
+        stale.style_artifacts.last_action,
+        RetainedStyleArtifactAction::InitialCompute
+    );
+    assert_eq!(stale.style_artifacts.stats.recompute_count, 1);
     assert!(stale.style_dirty);
     assert!(stale.layout_dirty);
     assert!(stale.paint_dirty);
@@ -565,6 +759,130 @@ fn attribute_mutation_keeps_style_cache_but_marks_it_stale_until_restored() {
     );
     assert_eq!(refreshed.style_invalidation, StyleInvalidationState::None);
     assert!(!refreshed.style_dirty);
+    assert_eq!(
+        refreshed.style_artifacts.last_action,
+        RetainedStyleArtifactAction::IncrementalSuffixRecompute
+    );
+    assert_eq!(refreshed.style_artifacts.stats.recompute_count, 2);
+    assert_eq!(refreshed.style_artifacts.stats.discard_count, 0);
+}
+
+#[test]
+fn inline_style_attribute_change_uses_supported_attribute_suffix_scope() {
+    let mut page = page_with_dom(
+        "<!doctype html><html><head><style>p { color: black; }</style></head><body><p>Hello</p></body></html>",
+    );
+    let initial = style_output_for_test(&mut page);
+    assert_eq!(styled_element_color(initial.root(), "p"), (0, 0, 0, 255));
+    drop(initial);
+
+    let p_id = set_first_element_attr(
+        page.dom
+            .as_deref_mut()
+            .expect("page DOM should exist for mutation"),
+        "p",
+        "style",
+        Some("color: red;".to_string()),
+    );
+    page.mark_dom_changed_for_tests(RestyleHint::attributes_changed(vec![p_id]));
+
+    let stale = page.render_pipeline_debug_snapshot();
+    assert_eq!(
+        stale.style_invalidation,
+        StyleInvalidationState::AttributeSuffix
+    );
+    assert_eq!(
+        stale.style_artifacts.state,
+        RenderArtifactState::RetainedStale
+    );
+
+    let restyled = style_output_for_test(&mut page);
+    assert_eq!(styled_element_color(restyled.root(), "p"), (255, 0, 0, 255));
+    drop(restyled);
+
+    let refreshed = page.render_pipeline_debug_snapshot();
+    assert_eq!(
+        refreshed.style_artifacts.last_action,
+        RetainedStyleArtifactAction::IncrementalSuffixRecompute
+    );
+    assert_eq!(refreshed.style_artifacts.stats.recompute_count, 2);
+}
+
+#[test]
+fn attribute_change_without_dirty_nodes_falls_back_to_full_style_invalidation() {
+    let mut page = page_with_dom(
+        "<!doctype html><html><head><style>.hot { color: red; } p { color: black; }</style></head><body><p>Hello</p></body></html>",
+    );
+    let initial = style_output_for_test(&mut page);
+    assert_eq!(styled_element_color(initial.root(), "p"), (0, 0, 0, 255));
+    drop(initial);
+
+    set_first_element_attr(
+        page.dom
+            .as_deref_mut()
+            .expect("page DOM should exist for mutation"),
+        "p",
+        "class",
+        Some("hot".to_string()),
+    );
+    page.mark_dom_changed_for_tests(RestyleHint::attributes_changed(Vec::new()));
+
+    let invalidated = page.render_pipeline_debug_snapshot();
+    assert_eq!(invalidated.resolved_styles, RenderArtifactState::Absent);
+    assert_eq!(invalidated.computed_styles, RenderArtifactState::Absent);
+    assert_eq!(invalidated.style_invalidation, StyleInvalidationState::Full);
+    assert_eq!(invalidated.style_artifacts.key, None);
+    assert_eq!(invalidated.style_artifacts.stats.discard_count, 1);
+    assert_eq!(
+        invalidated.style_artifacts.last_action,
+        RetainedStyleArtifactAction::DiscardedForFullInvalidation
+    );
+
+    let restyled = style_output_for_test(&mut page);
+    assert_eq!(styled_element_color(restyled.root(), "p"), (255, 0, 0, 255));
+    drop(restyled);
+
+    let refreshed = page.render_pipeline_debug_snapshot();
+    assert_eq!(
+        refreshed.style_artifacts.last_action,
+        RetainedStyleArtifactAction::FullRecompute
+    );
+    assert_eq!(refreshed.style_artifacts.stats.recompute_count, 2);
+    assert_eq!(refreshed.style_artifacts.stats.discard_count, 1);
+}
+
+#[test]
+fn stylesheet_update_discards_retained_style_artifacts() {
+    let mut page = page_with_dom("<!doctype html><html><body><p>Hello</p></body></html>");
+    let initial = style_output_for_test(&mut page);
+    drop(initial);
+
+    let slot = page.register_css("https://example.com/style.css");
+    let invalidation = page.apply_css_block(slot, "p { color: red; }");
+    assert!(invalidation.is_some());
+
+    let discarded = page.render_pipeline_debug_snapshot();
+    assert_eq!(discarded.resolved_styles, RenderArtifactState::Absent);
+    assert_eq!(discarded.computed_styles, RenderArtifactState::Absent);
+    assert_eq!(discarded.style_invalidation, StyleInvalidationState::Full);
+    assert_eq!(discarded.style_artifacts.key, None);
+    assert_eq!(discarded.style_artifacts.stats.discard_count, 1);
+    assert_eq!(
+        discarded.style_artifacts.last_action,
+        RetainedStyleArtifactAction::DiscardedForFullInvalidation
+    );
+
+    let restyled = style_output_for_test(&mut page);
+    assert_eq!(styled_element_color(restyled.root(), "p"), (255, 0, 0, 255));
+    drop(restyled);
+
+    let refreshed = page.render_pipeline_debug_snapshot();
+    assert_eq!(
+        refreshed.style_artifacts.last_action,
+        RetainedStyleArtifactAction::FullRecompute
+    );
+    assert_eq!(refreshed.style_artifacts.stats.recompute_count, 2);
+    assert_eq!(refreshed.style_artifacts.stats.discard_count, 1);
 }
 
 #[test]
@@ -657,6 +975,12 @@ fn navigation_reset_clears_page_owned_retained_render_state() {
             layout_dirty: true,
             paint_dirty: true,
             style_invalidation: StyleInvalidationState::Full,
+            style_artifacts: RetainedStyleArtifactDebugSnapshot {
+                key: None,
+                state: RenderArtifactState::Absent,
+                last_action: RetainedStyleArtifactAction::None,
+                stats: RetainedStyleArtifactStats::default(),
+            },
         }
     );
     assert_eq!(

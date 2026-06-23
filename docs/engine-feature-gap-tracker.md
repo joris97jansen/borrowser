@@ -243,11 +243,23 @@ Current supported subset:
   compositor/GPU concepts, retained display lists/scenes, or a browser-owned
   CSS property-impact table; see
   `docs/rendering/ac4-deterministic-render-work-plans.md`.
+- AC5 retained style artifact reuse: browser/runtime keys retained
+  `ResolvedDocumentStyle` and `ComputedDocumentStyle` artifacts by retained
+  identity domain plus style-input and stylesheet generations, reuses them for
+  no-op and viewport-only style-clean updates, conservatively discards them on
+  full style invalidation such as stylesheet or document replacement changes,
+  records reuse/recompute/discard lifecycle counts in deterministic debug
+  output, and keeps CSS ownership of selector matching, cascade behavior,
+  computed values, inheritance, property meaning, and style-tree construction;
+  this does not add fake selector dependency tracking, browser-owned CSS
+  property impact tables, retained layout caches, retained paint caches,
+  display lists/scenes, compositor/GPU concepts, or dirty-region rendering;
+  see `docs/rendering/ac5-retained-style-artifact-reuse.md`.
 
 Missing or incomplete:
 
-- conservative style/layout/paint artifact reuse beyond current retained style
-  foundations
+- conservative layout/paint artifact reuse beyond current retained style
+  artifact reuse foundations
 - incremental rendering performance/allocation guardrails
 - JavaScript execution and DOM bindings
 - event loop, timers, microtasks, and script-triggered invalidation
