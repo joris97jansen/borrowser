@@ -37,7 +37,7 @@ rerun plans:
 ```text
 RenderInvalidationEntryPoint
   -> RenderInvalidationRequest
-  -> RenderWorkPlan
+  -> RenderInvalidationWorkPlan
   -> PendingRenderWork
   -> next frame orchestration
 ```

@@ -16,14 +16,14 @@ pub enum PhaseRerunSource {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct RenderWorkPlan {
+pub struct RenderInvalidationWorkPlan {
     pub style: PhaseRerunSource,
     pub layout: PhaseRerunSource,
     pub paint: PhaseRerunSource,
     pub frame_orchestration: PhaseRerunSource,
 }
 
-impl RenderWorkPlan {
+impl RenderInvalidationWorkPlan {
     pub const fn requests_redraw(self) -> bool {
         !matches!(self.frame_orchestration, PhaseRerunSource::None)
     }
@@ -33,12 +33,12 @@ impl RenderWorkPlan {
 pub struct RenderInvalidationRequest {
     pub entry_point: RenderInvalidationEntryPoint,
     pub requested_by: RenderingSubsystem,
-    pub work: RenderWorkPlan,
+    pub requested_work: RenderInvalidationWorkPlan,
 }
 
 impl RenderInvalidationRequest {
     pub fn paint_invalidation(self) -> Option<PaintInvalidationRequest> {
-        match self.work.paint {
+        match self.requested_work.paint {
             PhaseRerunSource::None => None,
             PhaseRerunSource::Direct(_) | PhaseRerunSource::CascadedFrom(_) => {
                 Some(paint_invalidation_request(self.entry_point))
@@ -85,7 +85,7 @@ static RENDER_INVALIDATION_REQUEST_CONTRACTS: [RenderInvalidationRequest; 8] = [
     RenderInvalidationRequest {
         entry_point: RenderInvalidationEntryPoint::DocumentReplaced,
         requested_by: RenderingSubsystem::BrowserRuntime,
-        work: RenderWorkPlan {
+        requested_work: RenderInvalidationWorkPlan {
             style: PhaseRerunSource::Direct(RenderRebuildTrigger::DomReplaced),
             layout: PhaseRerunSource::CascadedFrom(RenderingPhase::Style),
             paint: PhaseRerunSource::CascadedFrom(RenderingPhase::Layout),
@@ -95,7 +95,7 @@ static RENDER_INVALIDATION_REQUEST_CONTRACTS: [RenderInvalidationRequest; 8] = [
     RenderInvalidationRequest {
         entry_point: RenderInvalidationEntryPoint::DomStructureChanged,
         requested_by: RenderingSubsystem::BrowserRuntime,
-        work: RenderWorkPlan {
+        requested_work: RenderInvalidationWorkPlan {
             style: PhaseRerunSource::Direct(RenderRebuildTrigger::DomStructureChanged),
             layout: PhaseRerunSource::CascadedFrom(RenderingPhase::Style),
             paint: PhaseRerunSource::CascadedFrom(RenderingPhase::Layout),
@@ -105,7 +105,7 @@ static RENDER_INVALIDATION_REQUEST_CONTRACTS: [RenderInvalidationRequest; 8] = [
     RenderInvalidationRequest {
         entry_point: RenderInvalidationEntryPoint::DomAttributesChanged,
         requested_by: RenderingSubsystem::BrowserRuntime,
-        work: RenderWorkPlan {
+        requested_work: RenderInvalidationWorkPlan {
             style: PhaseRerunSource::Direct(RenderRebuildTrigger::DomAttributesChanged),
             layout: PhaseRerunSource::CascadedFrom(RenderingPhase::Style),
             paint: PhaseRerunSource::CascadedFrom(RenderingPhase::Layout),
@@ -115,7 +115,7 @@ static RENDER_INVALIDATION_REQUEST_CONTRACTS: [RenderInvalidationRequest; 8] = [
     RenderInvalidationRequest {
         entry_point: RenderInvalidationEntryPoint::DomTextChanged,
         requested_by: RenderingSubsystem::BrowserRuntime,
-        work: RenderWorkPlan {
+        requested_work: RenderInvalidationWorkPlan {
             style: PhaseRerunSource::None,
             layout: PhaseRerunSource::Direct(RenderRebuildTrigger::DomTextChanged),
             paint: PhaseRerunSource::CascadedFrom(RenderingPhase::Layout),
@@ -125,7 +125,7 @@ static RENDER_INVALIDATION_REQUEST_CONTRACTS: [RenderInvalidationRequest; 8] = [
     RenderInvalidationRequest {
         entry_point: RenderInvalidationEntryPoint::StylesheetSetChanged,
         requested_by: RenderingSubsystem::BrowserRuntime,
-        work: RenderWorkPlan {
+        requested_work: RenderInvalidationWorkPlan {
             style: PhaseRerunSource::Direct(RenderRebuildTrigger::StylesheetSetChanged),
             layout: PhaseRerunSource::CascadedFrom(RenderingPhase::Style),
             paint: PhaseRerunSource::CascadedFrom(RenderingPhase::Layout),
@@ -135,7 +135,7 @@ static RENDER_INVALIDATION_REQUEST_CONTRACTS: [RenderInvalidationRequest; 8] = [
     RenderInvalidationRequest {
         entry_point: RenderInvalidationEntryPoint::ViewportChanged,
         requested_by: RenderingSubsystem::BrowserView,
-        work: RenderWorkPlan {
+        requested_work: RenderInvalidationWorkPlan {
             style: PhaseRerunSource::None,
             layout: PhaseRerunSource::Direct(RenderRebuildTrigger::ViewportChanged),
             paint: PhaseRerunSource::CascadedFrom(RenderingPhase::Layout),
@@ -145,7 +145,7 @@ static RENDER_INVALIDATION_REQUEST_CONTRACTS: [RenderInvalidationRequest; 8] = [
     RenderInvalidationRequest {
         entry_point: RenderInvalidationEntryPoint::ResourceStateChanged,
         requested_by: RenderingSubsystem::BrowserRuntime,
-        work: RenderWorkPlan {
+        requested_work: RenderInvalidationWorkPlan {
             style: PhaseRerunSource::None,
             layout: PhaseRerunSource::Direct(RenderRebuildTrigger::ResourceStateChanged),
             paint: PhaseRerunSource::Direct(RenderRebuildTrigger::ResourceStateChanged),
@@ -157,7 +157,7 @@ static RENDER_INVALIDATION_REQUEST_CONTRACTS: [RenderInvalidationRequest; 8] = [
     RenderInvalidationRequest {
         entry_point: RenderInvalidationEntryPoint::InputStateChanged,
         requested_by: RenderingSubsystem::BrowserView,
-        work: RenderWorkPlan {
+        requested_work: RenderInvalidationWorkPlan {
             style: PhaseRerunSource::None,
             layout: PhaseRerunSource::None,
             paint: PhaseRerunSource::Direct(RenderRebuildTrigger::InputStateChanged),

@@ -95,12 +95,12 @@ impl Tab {
 
     pub(super) fn request_render_work(&mut self, request: RenderInvalidationRequest) {
         debug_assert!(
-            request.work.requests_redraw(),
+            request.requested_work.requests_redraw(),
             "render invalidation request must request a frame: {:?}",
             request
         );
         self.pending_render_work.push(request);
-        if request.work.requests_redraw() {
+        if request.requested_work.requests_redraw() {
             self.poke_redraw();
         }
     }

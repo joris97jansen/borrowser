@@ -2,8 +2,8 @@ use crate::document_style::DocumentStyleSet;
 use crate::rendering::{
     DirtyPhase, DirtyStateDebugSnapshot, FrameLocalIdentityState, RenderArtifactState,
     RenderDirtyState, RenderEpoch, RenderInvalidationEntryPoint, RenderPipelineDebugSnapshot,
-    RetainedRenderIdentityMap, RetainedRenderStateDebugSnapshot, StyleInvalidationState,
-    dirty_request_for_entry_point,
+    RetainedRenderIdentityMap, RetainedRenderStateDebugSnapshot, RetainedStyleArtifactState,
+    StyleInvalidationState, dirty_request_for_entry_point,
 };
 use css::ComputedStyleReuseStats;
 use html::Node;
@@ -92,6 +92,18 @@ impl RetainedRenderState {
 
     pub(super) fn paint_dirty(&self) -> bool {
         self.dirty_state.is_phase_dirty(DirtyPhase::Paint)
+    }
+
+    pub(super) fn dirty_state(&self) -> &RenderDirtyState {
+        &self.dirty_state
+    }
+
+    pub(super) fn retained_style_artifact_state(&self) -> RetainedStyleArtifactState {
+        match (&self.style_cache, self.style_dirty()) {
+            (None, _) => RetainedStyleArtifactState::Absent,
+            (Some(_), true) => RetainedStyleArtifactState::Stale,
+            (Some(_), false) => RetainedStyleArtifactState::Fresh,
+        }
     }
 
     pub(super) fn clear_style_dirty_after_recompute(&mut self) {

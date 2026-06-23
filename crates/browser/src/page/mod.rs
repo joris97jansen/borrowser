@@ -12,7 +12,10 @@ pub(crate) use style_cache::{PageStyleGenerations, StyleRecalcKind};
 pub(crate) use stylesheets::PageStylesheetReconcile;
 
 use crate::form_controls::{FormControlIndex, seed_input_state_from_dom};
-use crate::rendering::{RenderInvalidationRequest, render_invalidation_request};
+use crate::rendering::{
+    PendingRenderWork, RenderInvalidationRequest, RenderWorkPlan, RenderWorkPlanInput,
+    render_invalidation_request,
+};
 use gfx::input::InputValueStore;
 use html::{
     Node,
@@ -110,6 +113,22 @@ impl PageState {
         let entry_point = trigger.render_invalidation_entry_point();
         self.rendering.mark_dirty_for_entry_point(entry_point);
         render_invalidation_request(entry_point)
+    }
+
+    pub(crate) fn derive_render_work_plan(
+        &self,
+        pending_work: &PendingRenderWork,
+    ) -> RenderWorkPlan {
+        RenderWorkPlan::derive(RenderWorkPlanInput {
+            has_dom: self.dom.is_some(),
+            retained_style_artifacts: self.rendering.retained_style_artifact_state(),
+            retained_dirty_state: self.rendering.dirty_state(),
+            pending_work,
+        })
+    }
+
+    pub(crate) fn style_dirty_for_rendering(&self) -> bool {
+        self.rendering.style_dirty()
     }
 
     pub fn outline(&self, cap: usize) -> Vec<String> {

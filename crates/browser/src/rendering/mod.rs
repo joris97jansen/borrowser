@@ -15,6 +15,7 @@ mod invalidation;
 mod lifecycle;
 mod page_background;
 mod types;
+mod work_plan;
 
 pub use contracts::{
     RenderArtifactLifetime, RenderArtifactOwnershipContract, RenderExtensionHook,
@@ -39,7 +40,7 @@ pub(crate) use identity::{
 };
 pub use invalidation::{
     PendingPaintInvalidations, PendingRenderWork, PhaseRerunSource, RenderInvalidationRequest,
-    RenderWorkPlan, dirty_propagation_for_entry_point, dirty_request_for_entry_point,
+    RenderInvalidationWorkPlan, dirty_propagation_for_entry_point, dirty_request_for_entry_point,
     paint_invalidation_request, paint_invalidation_request_contracts, render_invalidation_request,
     render_invalidation_request_contracts,
 };
@@ -53,6 +54,10 @@ pub use types::{
     PaintInvalidationTrigger, RenderArtifact, RenderDirtyRequest, RenderDirtyState,
     RenderInvalidationEntryPoint, RenderRebuildTrigger, RenderingPhase, RenderingSubsystem,
     RepaintExecutionPlan, RepaintExecutionScope,
+};
+pub use work_plan::{
+    PlannedRenderWork, RenderWorkDecision, RenderWorkFallbackReason, RenderWorkPlan,
+    RenderWorkPlanInput, RenderWorkPlanReason, RetainedStyleArtifactState,
 };
 
 #[cfg(test)]

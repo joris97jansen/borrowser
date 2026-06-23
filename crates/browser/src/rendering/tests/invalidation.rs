@@ -12,47 +12,47 @@ fn render_invalidation_request_contracts_pin_runtime_entry_points() {
     let attrs = render_invalidation_request(RenderInvalidationEntryPoint::DomAttributesChanged);
     assert_eq!(attrs.requested_by, RenderingSubsystem::BrowserRuntime);
     assert_eq!(
-        attrs.work.style,
+        attrs.requested_work.style,
         PhaseRerunSource::Direct(RenderRebuildTrigger::DomAttributesChanged)
     );
     assert_eq!(
-        attrs.work.layout,
+        attrs.requested_work.layout,
         PhaseRerunSource::CascadedFrom(RenderingPhase::Style)
     );
     assert_eq!(
-        attrs.work.paint,
+        attrs.requested_work.paint,
         PhaseRerunSource::CascadedFrom(RenderingPhase::Layout)
     );
 
     let text = render_invalidation_request(RenderInvalidationEntryPoint::DomTextChanged);
     assert_eq!(text.requested_by, RenderingSubsystem::BrowserRuntime);
-    assert_eq!(text.work.style, PhaseRerunSource::None);
+    assert_eq!(text.requested_work.style, PhaseRerunSource::None);
     assert_eq!(
-        text.work.layout,
+        text.requested_work.layout,
         PhaseRerunSource::Direct(RenderRebuildTrigger::DomTextChanged)
     );
     assert_eq!(
-        text.work.frame_orchestration,
+        text.requested_work.frame_orchestration,
         PhaseRerunSource::Direct(RenderRebuildTrigger::DomTextChanged)
     );
 
     let input = render_invalidation_request(RenderInvalidationEntryPoint::InputStateChanged);
     assert_eq!(input.requested_by, RenderingSubsystem::BrowserView);
-    assert_eq!(input.work.style, PhaseRerunSource::None);
-    assert_eq!(input.work.layout, PhaseRerunSource::None);
+    assert_eq!(input.requested_work.style, PhaseRerunSource::None);
+    assert_eq!(input.requested_work.layout, PhaseRerunSource::None);
     assert_eq!(
-        input.work.paint,
+        input.requested_work.paint,
         PhaseRerunSource::Direct(RenderRebuildTrigger::InputStateChanged)
     );
 
     let resource = render_invalidation_request(RenderInvalidationEntryPoint::ResourceStateChanged);
     assert_eq!(resource.requested_by, RenderingSubsystem::BrowserRuntime);
     assert_eq!(
-        resource.work.layout,
+        resource.requested_work.layout,
         PhaseRerunSource::Direct(RenderRebuildTrigger::ResourceStateChanged)
     );
     assert_eq!(
-        resource.work.paint,
+        resource.requested_work.paint,
         PhaseRerunSource::Direct(RenderRebuildTrigger::ResourceStateChanged)
     );
 }
@@ -209,18 +209,18 @@ fn direct_invalidation_phase_sources_align_with_phase_rebuild_triggers() {
 
     for request in render_invalidation_request_contracts() {
         assert!(
-            request.work.requests_redraw(),
+            request.requested_work.requests_redraw(),
             "every shipped invalidation entry point should request a frame: {:?}",
             request.entry_point
         );
 
         for (phase, source) in [
-            (RenderingPhase::Style, request.work.style),
-            (RenderingPhase::Layout, request.work.layout),
-            (RenderingPhase::Paint, request.work.paint),
+            (RenderingPhase::Style, request.requested_work.style),
+            (RenderingPhase::Layout, request.requested_work.layout),
+            (RenderingPhase::Paint, request.requested_work.paint),
             (
                 RenderingPhase::FrameOrchestration,
-                request.work.frame_orchestration,
+                request.requested_work.frame_orchestration,
             ),
         ] {
             if let PhaseRerunSource::Direct(trigger) = source {
@@ -635,19 +635,19 @@ fn document_replacement_returns_explicit_full_pipeline_work_request() {
     );
     assert_eq!(request.requested_by, RenderingSubsystem::BrowserRuntime);
     assert_eq!(
-        request.work.style,
+        request.requested_work.style,
         PhaseRerunSource::Direct(RenderRebuildTrigger::DomReplaced)
     );
     assert_eq!(
-        request.work.layout,
+        request.requested_work.layout,
         PhaseRerunSource::CascadedFrom(RenderingPhase::Style)
     );
     assert_eq!(
-        request.work.paint,
+        request.requested_work.paint,
         PhaseRerunSource::CascadedFrom(RenderingPhase::Layout)
     );
     assert_eq!(
-        request.work.frame_orchestration,
+        request.requested_work.frame_orchestration,
         PhaseRerunSource::CascadedFrom(RenderingPhase::Style)
     );
 }
@@ -665,17 +665,17 @@ fn dom_text_mutation_returns_explicit_layout_and_paint_work_request() {
         RenderInvalidationEntryPoint::DomTextChanged
     );
     assert_eq!(request.requested_by, RenderingSubsystem::BrowserRuntime);
-    assert_eq!(request.work.style, PhaseRerunSource::None);
+    assert_eq!(request.requested_work.style, PhaseRerunSource::None);
     assert_eq!(
-        request.work.layout,
+        request.requested_work.layout,
         PhaseRerunSource::Direct(RenderRebuildTrigger::DomTextChanged)
     );
     assert_eq!(
-        request.work.paint,
+        request.requested_work.paint,
         PhaseRerunSource::CascadedFrom(RenderingPhase::Layout)
     );
     assert_eq!(
-        request.work.frame_orchestration,
+        request.requested_work.frame_orchestration,
         PhaseRerunSource::Direct(RenderRebuildTrigger::DomTextChanged)
     );
 }
@@ -702,15 +702,15 @@ fn stylesheet_reconcile_returns_explicit_style_invalidation_request() {
     );
     assert_eq!(request.requested_by, RenderingSubsystem::BrowserRuntime);
     assert_eq!(
-        request.work.style,
+        request.requested_work.style,
         PhaseRerunSource::Direct(RenderRebuildTrigger::StylesheetSetChanged)
     );
     assert_eq!(
-        request.work.layout,
+        request.requested_work.layout,
         PhaseRerunSource::CascadedFrom(RenderingPhase::Style)
     );
     assert_eq!(
-        request.work.paint,
+        request.requested_work.paint,
         PhaseRerunSource::CascadedFrom(RenderingPhase::Layout)
     );
     assert_eq!(outcome.fetches.len(), 1);
