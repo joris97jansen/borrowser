@@ -6,8 +6,8 @@ use crate::rendering::{
     RetainedLayoutArtifactDebugSnapshot, RetainedLayoutArtifactState, RetainedLayoutArtifactStats,
     RetainedPaintArtifactAction, RetainedPaintArtifactDebugSnapshot, RetainedPaintArtifactKey,
     RetainedPaintArtifactKeySeed, RetainedPaintArtifactState, RetainedPaintArtifactStats,
-    RetainedPaintFrameAction, RetainedPaintFrameResult, RetainedRenderIdentityMap,
-    RetainedRenderStateDebugSnapshot, RetainedStyleArtifactAction,
+    RetainedPaintFrameAction, RetainedPaintFrameResult, RetainedRenderGenerationDebugSnapshot,
+    RetainedRenderIdentityMap, RetainedRenderStateDebugSnapshot, RetainedStyleArtifactAction,
     RetainedStyleArtifactDebugSnapshot, RetainedStyleArtifactKey, RetainedStyleArtifactState,
     RetainedStyleArtifactStats, StyleInvalidationState, dirty_request_for_entry_point,
 };
@@ -484,6 +484,7 @@ impl RetainedRenderState {
             layout_dirty: self.layout_dirty(),
             paint_dirty: self.paint_dirty(),
             style_invalidation,
+            generations: self.generation_debug_snapshot(),
             style_artifacts: self.style_artifact_debug_snapshot(style_cache_state),
             layout_artifacts: self.layout_artifact_debug_snapshot(layout_tree),
             paint_artifacts: self.paint_artifact_debug_snapshot(paint_output),
@@ -508,6 +509,7 @@ impl RetainedRenderState {
             layout_dirty: pipeline.layout_dirty,
             paint_dirty: pipeline.paint_dirty,
             style_invalidation: pipeline.style_invalidation,
+            generations: pipeline.generations,
             style_artifacts: pipeline.style_artifacts,
             layout_artifacts: pipeline.layout_artifacts,
             paint_artifacts: pipeline.paint_artifacts,
@@ -620,6 +622,20 @@ impl RetainedRenderState {
             state,
             last_action: self.last_paint_artifact_action,
             stats: self.paint_artifact_stats,
+        }
+    }
+
+    fn generation_debug_snapshot(&self) -> RetainedRenderGenerationDebugSnapshot {
+        RetainedRenderGenerationDebugSnapshot {
+            dom_generation: self.generations.dom,
+            style_input_generation: self.generations.style_inputs,
+            stylesheet_generation: self.generations.stylesheets,
+            layout_input_generation: self.generations.layout_inputs,
+            layout_style_generation: self.generations.layout_style,
+            paint_style_generation: self.generations.paint_style,
+            paint_input_generation: self.generations.paint_inputs,
+            text_measurement_generation: self.generations.text_measurement,
+            replaced_metadata_generation: self.generations.replaced_metadata,
         }
     }
 }

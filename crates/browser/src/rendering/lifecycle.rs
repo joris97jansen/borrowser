@@ -185,6 +185,19 @@ pub struct RetainedPaintFrameResult {
     pub artifact: PaintArtifact,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RetainedRenderGenerationDebugSnapshot {
+    pub dom_generation: u64,
+    pub style_input_generation: u64,
+    pub stylesheet_generation: u64,
+    pub layout_input_generation: u64,
+    pub layout_style_generation: u64,
+    pub paint_style_generation: u64,
+    pub paint_input_generation: u64,
+    pub text_measurement_generation: u64,
+    pub replaced_metadata_generation: u64,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RenderPipelineDebugSnapshot {
     pub has_dom: bool,
@@ -198,6 +211,7 @@ pub struct RenderPipelineDebugSnapshot {
     pub layout_dirty: bool,
     pub paint_dirty: bool,
     pub style_invalidation: StyleInvalidationState,
+    pub generations: RetainedRenderGenerationDebugSnapshot,
     pub style_artifacts: RetainedStyleArtifactDebugSnapshot,
     pub layout_artifacts: RetainedLayoutArtifactDebugSnapshot,
     pub paint_artifacts: RetainedPaintArtifactDebugSnapshot,
@@ -239,6 +253,7 @@ pub struct RetainedRenderStateDebugSnapshot {
     pub layout_dirty: bool,
     pub paint_dirty: bool,
     pub style_invalidation: StyleInvalidationState,
+    pub generations: RetainedRenderGenerationDebugSnapshot,
     pub style_artifacts: RetainedStyleArtifactDebugSnapshot,
     pub layout_artifacts: RetainedLayoutArtifactDebugSnapshot,
     pub paint_artifacts: RetainedPaintArtifactDebugSnapshot,
@@ -303,6 +318,7 @@ impl RetainedRenderStateDebugSnapshot {
             style_invalidation_state_debug_label(self.style_invalidation)
         )
         .expect("write retained render state snapshot");
+        append_generation_debug_snapshot(&mut out, self.generations);
         append_retained_style_artifact_debug_snapshot(&mut out, self.style_artifacts);
         append_retained_layout_artifact_debug_snapshot(&mut out, self.layout_artifacts);
         append_retained_paint_artifact_debug_snapshot(&mut out, self.paint_artifacts);
@@ -355,6 +371,63 @@ impl RetainedRenderStateDebugSnapshot {
         .expect("write retained render state snapshot");
         out
     }
+}
+
+fn append_generation_debug_snapshot(
+    out: &mut String,
+    snapshot: RetainedRenderGenerationDebugSnapshot,
+) {
+    writeln!(out, "generations:").expect("write retained render state snapshot");
+    writeln!(out, "  dom-generation: {}", snapshot.dom_generation)
+        .expect("write retained render state snapshot");
+    writeln!(
+        out,
+        "  style-input-generation: {}",
+        snapshot.style_input_generation
+    )
+    .expect("write retained render state snapshot");
+    writeln!(
+        out,
+        "  stylesheet-generation: {}",
+        snapshot.stylesheet_generation
+    )
+    .expect("write retained render state snapshot");
+    writeln!(
+        out,
+        "  layout-input-generation: {}",
+        snapshot.layout_input_generation
+    )
+    .expect("write retained render state snapshot");
+    writeln!(
+        out,
+        "  layout-style-generation: {}",
+        snapshot.layout_style_generation
+    )
+    .expect("write retained render state snapshot");
+    writeln!(
+        out,
+        "  paint-style-generation: {}",
+        snapshot.paint_style_generation
+    )
+    .expect("write retained render state snapshot");
+    writeln!(
+        out,
+        "  paint-input-generation: {}",
+        snapshot.paint_input_generation
+    )
+    .expect("write retained render state snapshot");
+    writeln!(
+        out,
+        "  text-measurement-generation: {}",
+        snapshot.text_measurement_generation
+    )
+    .expect("write retained render state snapshot");
+    writeln!(
+        out,
+        "  replaced-metadata-generation: {}",
+        snapshot.replaced_metadata_generation
+    )
+    .expect("write retained render state snapshot");
 }
 
 fn append_retained_paint_artifact_debug_snapshot(

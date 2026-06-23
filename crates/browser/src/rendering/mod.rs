@@ -50,9 +50,10 @@ pub use lifecycle::{
     RenderPipelineDebugSnapshot, RetainedLayoutArtifactAction, RetainedLayoutArtifactDebugSnapshot,
     RetainedLayoutArtifactStats, RetainedPaintArtifactAction, RetainedPaintArtifactDebugSnapshot,
     RetainedPaintArtifactKey, RetainedPaintArtifactKeySeed, RetainedPaintArtifactStats,
-    RetainedPaintFrameAction, RetainedPaintFrameResult, RetainedRenderStateDebugSnapshot,
-    RetainedStyleArtifactAction, RetainedStyleArtifactDebugSnapshot, RetainedStyleArtifactKey,
-    RetainedStyleArtifactStats, StyleInvalidationState,
+    RetainedPaintFrameAction, RetainedPaintFrameResult, RetainedRenderGenerationDebugSnapshot,
+    RetainedRenderStateDebugSnapshot, RetainedStyleArtifactAction,
+    RetainedStyleArtifactDebugSnapshot, RetainedStyleArtifactKey, RetainedStyleArtifactStats,
+    StyleInvalidationState,
 };
 pub use types::{
     DirtyEntry, DirtyPhase, DirtyPropagationResult, DirtyReason, DirtyScope, DirtyScopeDebugLabel,
