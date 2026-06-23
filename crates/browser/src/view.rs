@@ -85,9 +85,13 @@ pub(crate) fn content(
         followup_render_request,
         trace,
         retained_layout_result,
+        retained_paint_result,
     } = frame_outcome;
     if let Some(retained_layout_result) = retained_layout_result {
         page.record_layout_frame_result(retained_layout_result);
+    }
+    if let Some(retained_paint_result) = retained_paint_result {
+        page.record_paint_frame_result(retained_paint_result);
     }
     show_status_overlay(ctx, loading, status.map(|status| status.as_str()));
     ViewContentOutcome {

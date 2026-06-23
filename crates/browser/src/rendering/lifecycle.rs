@@ -7,6 +7,7 @@ use super::{
     RetainedRenderIdentity, RetainedRenderIdentityDomain, retained_render_anchor_debug_label,
     retained_render_artifact_kind_debug_label,
 };
+use gfx::paint::PaintArtifact;
 use layout::{RetainedLayoutKey, RetainedLayoutKeySeed};
 
 /// Browser/runtime generation for retained render state.
@@ -116,6 +117,74 @@ pub struct RetainedLayoutArtifactDebugSnapshot {
     pub stats: RetainedLayoutArtifactStats,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RetainedPaintArtifactKey {
+    pub identity_domain: RetainedRenderIdentityDomain,
+    pub layout_key: RetainedLayoutKey,
+    pub paint_style_generation: u64,
+    pub paint_input_generation: u64,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RetainedPaintArtifactKeySeed {
+    pub identity_domain: RetainedRenderIdentityDomain,
+    pub paint_style_generation: u64,
+    pub paint_input_generation: u64,
+}
+
+impl RetainedPaintArtifactKeySeed {
+    pub fn for_layout_key(self, layout_key: RetainedLayoutKey) -> RetainedPaintArtifactKey {
+        RetainedPaintArtifactKey {
+            identity_domain: self.identity_domain,
+            layout_key,
+            paint_style_generation: self.paint_style_generation,
+            paint_input_generation: self.paint_input_generation,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RetainedPaintArtifactStats {
+    pub reuse_count: u64,
+    pub recompute_count: u64,
+    pub discard_count: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RetainedPaintArtifactAction {
+    #[default]
+    None,
+    InitialCompute,
+    Reused,
+    Recomputed,
+    DiscardedForInvalidation,
+    ConservativeDocumentFallback,
+    ConservativeViewportFallback,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RetainedPaintArtifactDebugSnapshot {
+    pub key: Option<RetainedPaintArtifactKey>,
+    pub state: RenderArtifactState,
+    pub last_action: RetainedPaintArtifactAction,
+    pub stats: RetainedPaintArtifactStats,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RetainedPaintFrameAction {
+    Reused,
+    Recomputed,
+    ConservativeDocumentFallback,
+    ConservativeViewportFallback,
+}
+
+#[derive(Clone, Debug)]
+pub struct RetainedPaintFrameResult {
+    pub key: RetainedPaintArtifactKey,
+    pub action: RetainedPaintFrameAction,
+    pub artifact: PaintArtifact,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RenderPipelineDebugSnapshot {
     pub has_dom: bool,
@@ -131,6 +200,7 @@ pub struct RenderPipelineDebugSnapshot {
     pub style_invalidation: StyleInvalidationState,
     pub style_artifacts: RetainedStyleArtifactDebugSnapshot,
     pub layout_artifacts: RetainedLayoutArtifactDebugSnapshot,
+    pub paint_artifacts: RetainedPaintArtifactDebugSnapshot,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -171,6 +241,7 @@ pub struct RetainedRenderStateDebugSnapshot {
     pub style_invalidation: StyleInvalidationState,
     pub style_artifacts: RetainedStyleArtifactDebugSnapshot,
     pub layout_artifacts: RetainedLayoutArtifactDebugSnapshot,
+    pub paint_artifacts: RetainedPaintArtifactDebugSnapshot,
     pub retained_identity_domain: RetainedRenderIdentityDomain,
     pub retained_identities: Vec<RetainedRenderIdentity>,
     pub layout_identity: FrameLocalIdentityState,
@@ -234,6 +305,7 @@ impl RetainedRenderStateDebugSnapshot {
         .expect("write retained render state snapshot");
         append_retained_style_artifact_debug_snapshot(&mut out, self.style_artifacts);
         append_retained_layout_artifact_debug_snapshot(&mut out, self.layout_artifacts);
+        append_retained_paint_artifact_debug_snapshot(&mut out, self.paint_artifacts);
         writeln!(&mut out, "retained-identities:").expect("write retained render state snapshot");
         writeln!(
             &mut out,
@@ -283,6 +355,48 @@ impl RetainedRenderStateDebugSnapshot {
         .expect("write retained render state snapshot");
         out
     }
+}
+
+fn append_retained_paint_artifact_debug_snapshot(
+    out: &mut String,
+    snapshot: RetainedPaintArtifactDebugSnapshot,
+) {
+    writeln!(out, "paint-artifacts:").expect("write retained render state snapshot");
+    match snapshot.key {
+        Some(key) => writeln!(
+            out,
+            "  key: identity-domain={} layout-key=(identity-domain={} layout-input-generation={} layout-style-generation={} viewport-width-key={} text-measurement-generation={} replaced-metadata-generation={}) paint-style-generation={} paint-input-generation={}",
+            key.identity_domain.value(),
+            key.layout_key.identity_domain,
+            key.layout_key.layout_input_generation,
+            key.layout_key.layout_style_generation,
+            key.layout_key.viewport_width.value(),
+            key.layout_key.text_measurement_generation,
+            key.layout_key.replaced_metadata_generation,
+            key.paint_style_generation,
+            key.paint_input_generation
+        ),
+        None => writeln!(out, "  key: none"),
+    }
+    .expect("write retained render state snapshot");
+    writeln!(
+        out,
+        "  state: {}",
+        render_artifact_state_debug_label(snapshot.state)
+    )
+    .expect("write retained render state snapshot");
+    writeln!(
+        out,
+        "  last-action: {}",
+        retained_paint_artifact_action_debug_label(snapshot.last_action)
+    )
+    .expect("write retained render state snapshot");
+    writeln!(out, "  reuse-count: {}", snapshot.stats.reuse_count)
+        .expect("write retained render state snapshot");
+    writeln!(out, "  recompute-count: {}", snapshot.stats.recompute_count)
+        .expect("write retained render state snapshot");
+    writeln!(out, "  discard-count: {}", snapshot.stats.discard_count)
+        .expect("write retained render state snapshot");
 }
 
 fn append_retained_layout_artifact_debug_snapshot(
@@ -442,6 +556,22 @@ fn retained_layout_artifact_action_debug_label(
         RetainedLayoutArtifactAction::DiscardedForInvalidation => "discarded-for-invalidation",
         RetainedLayoutArtifactAction::MaterializationFailedFallback => {
             "materialization-failed-fallback"
+        }
+    }
+}
+
+fn retained_paint_artifact_action_debug_label(action: RetainedPaintArtifactAction) -> &'static str {
+    match action {
+        RetainedPaintArtifactAction::None => "none",
+        RetainedPaintArtifactAction::InitialCompute => "initial-compute",
+        RetainedPaintArtifactAction::Reused => "reused",
+        RetainedPaintArtifactAction::Recomputed => "recomputed",
+        RetainedPaintArtifactAction::DiscardedForInvalidation => "discarded-for-invalidation",
+        RetainedPaintArtifactAction::ConservativeDocumentFallback => {
+            "conservative-document-fallback"
+        }
+        RetainedPaintArtifactAction::ConservativeViewportFallback => {
+            "conservative-viewport-fallback"
         }
     }
 }

@@ -3,7 +3,9 @@ use crate::input::{
     FormControlHandler, FrameInputCtx, InputValueStore, InteractionState, PageAction,
     route_frame_input,
 };
-use crate::paint::{ImageProvider, PaintArgs, PaintPhaseInput, paint_page};
+use crate::paint::{
+    ImageProvider, PaintArgs, PaintArtifact, PaintPhaseInput, paint_page_with_artifact,
+};
 use crate::text_control::{find_layout_box_by_id, sync_input_scroll_for_caret};
 use crate::textarea::sync_textarea_scroll_for_caret;
 use crate::util::{get_attr, input_text_padding, resolve_relative_url};
@@ -49,6 +51,7 @@ pub struct ViewportCtx<'ui, 'style, R, F> {
     pub config: ViewportConfig,
     pub repaint_policy: ViewportRepaintPolicy,
     pub retained_layout: Option<ViewportRetainedLayout<'ui>>,
+    pub retained_paint: Option<ViewportRetainedPaint<'ui>>,
 }
 
 impl<'ui, 'style, R, F> ViewportCtx<'ui, 'style, R, F> {
@@ -72,6 +75,7 @@ impl<'ui, 'style, R, F> ViewportCtx<'ui, 'style, R, F> {
             config: ViewportConfig::default(),
             repaint_policy: ViewportRepaintPolicy::default(),
             retained_layout: None,
+            retained_paint: None,
         }
     }
 
@@ -84,6 +88,11 @@ impl<'ui, 'style, R, F> ViewportCtx<'ui, 'style, R, F> {
         self.retained_layout = Some(retained_layout);
         self
     }
+
+    pub fn with_retained_paint(mut self, retained_paint: ViewportRetainedPaint<'ui>) -> Self {
+        self.retained_paint = Some(retained_paint);
+        self
+    }
 }
 
 #[derive(Clone, Copy, Debug)]
@@ -92,6 +101,24 @@ pub struct ViewportRetainedLayout<'a> {
     pub retained: Option<&'a RetainedLayoutArtifact>,
     pub reuse_allowed: bool,
     pub conservative_dirty_fallback: bool,
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ViewportRetainedPaint<'a> {
+    pub retained: Option<&'a PaintArtifact>,
+    pub reuse_allowed: bool,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ViewportPaintArtifactAction {
+    Reused,
+    Recomputed,
+}
+
+#[derive(Clone, Debug)]
+pub struct ViewportPaintArtifactResult {
+    pub action: ViewportPaintArtifactAction,
+    pub artifact: PaintArtifact,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -128,6 +155,7 @@ pub struct ViewportFrameOutput {
     pub requested_followup_render: bool,
     pub repaint_scope: ViewportRepaintScope,
     pub retained_layout_result: Option<RetainedLayoutFrameResult>,
+    pub retained_paint_result: Option<ViewportPaintArtifactResult>,
 }
 
 pub fn execute_viewport_frame<R: ImageProvider, F: FormControlHandler<CoreInputValueStore>>(
@@ -144,6 +172,7 @@ pub fn execute_viewport_frame<R: ImageProvider, F: FormControlHandler<CoreInputV
         config,
         repaint_policy,
         retained_layout,
+        retained_paint,
     } = ctx;
 
     ScrollArea::vertical()
@@ -327,7 +356,7 @@ pub fn execute_viewport_frame<R: ImageProvider, F: FormControlHandler<CoreInputV
             // Paint
             let focused = interaction.focused_node_id;
             let active = interaction.active;
-            {
+            let retained_paint_result = {
                 let selection = ui.visuals().selection;
                 let bg = selection.bg_fill;
                 let selection_bg_fill =
@@ -356,8 +385,34 @@ pub fn execute_viewport_frame<R: ImageProvider, F: FormControlHandler<CoreInputV
                     selection_stroke,
                     fragment_rects: Some(&fragment_rects),
                 };
-                paint_page(PaintPhaseInput::new(&layout_output), paint_args);
-            }
+                let paint_phase_input = PaintPhaseInput::new(&layout_output);
+                let retained_reuse = retained_paint.and_then(|retained| {
+                    can_reuse_retained_paint(
+                        retained.reuse_allowed,
+                        retained_layout_result.as_ref().map(|result| result.action),
+                    )
+                    .then_some(retained.retained)
+                    .flatten()
+                });
+                match retained_reuse {
+                    Some(artifact) => {
+                        paint_page_with_artifact(paint_phase_input, artifact, paint_args);
+                        retained_paint.map(|_| ViewportPaintArtifactResult {
+                            action: ViewportPaintArtifactAction::Reused,
+                            artifact: artifact.clone(),
+                        })
+                    }
+                    None => {
+                        let artifact =
+                            PaintArtifact::from_phase_input(paint_phase_input, &measurer);
+                        paint_page_with_artifact(paint_phase_input, &artifact, paint_args);
+                        retained_paint.map(|_| ViewportPaintArtifactResult {
+                            action: ViewportPaintArtifactAction::Recomputed,
+                            artifact,
+                        })
+                    }
+                }
+            };
 
             let input_result = route_frame_input(FrameInputCtx {
                 ui,
@@ -380,6 +435,7 @@ pub fn execute_viewport_frame<R: ImageProvider, F: FormControlHandler<CoreInputV
                 requested_followup_render: input_result.requested_followup_render,
                 repaint_scope,
                 retained_layout_result,
+                retained_paint_result,
             }
         })
         .inner
@@ -394,6 +450,17 @@ fn viewport_repaint_clip(
         ViewportRepaintScope::Document => None,
         ViewportRepaintScope::Viewport => Some(content_rect.intersect(viewport_rect)),
     }
+}
+
+fn can_reuse_retained_paint(
+    reuse_allowed: bool,
+    retained_layout_action: Option<RetainedLayoutFrameAction>,
+) -> bool {
+    reuse_allowed
+        && matches!(
+            retained_layout_action,
+            Some(RetainedLayoutFrameAction::Reused)
+        )
 }
 
 struct ViewportReplacedInfo<'a, R> {
@@ -463,5 +530,34 @@ mod tests {
             viewport_repaint_clip(ViewportRepaintScope::Viewport, content, viewport),
             Some(viewport)
         );
+    }
+
+    #[test]
+    fn retained_paint_reuse_requires_actual_retained_layout_reuse() {
+        assert!(can_reuse_retained_paint(
+            true,
+            Some(RetainedLayoutFrameAction::Reused)
+        ));
+        assert!(!can_reuse_retained_paint(
+            false,
+            Some(RetainedLayoutFrameAction::Reused)
+        ));
+        assert!(!can_reuse_retained_paint(
+            true,
+            Some(RetainedLayoutFrameAction::Recomputed)
+        ));
+        assert!(!can_reuse_retained_paint(
+            true,
+            Some(RetainedLayoutFrameAction::ConservativeFallback(
+                RetainedLayoutFallbackReason::KeyMismatch,
+            ))
+        ));
+        assert!(!can_reuse_retained_paint(
+            true,
+            Some(RetainedLayoutFrameAction::ConservativeFallback(
+                RetainedLayoutFallbackReason::MaterializationFailed,
+            ))
+        ));
+        assert!(!can_reuse_retained_paint(true, None));
     }
 }

@@ -6,10 +6,10 @@ use crate::page::PageState;
 use css::{ComputedStyleResolutionError, StylePhaseOutput};
 use egui::Ui;
 use gfx::input::PageAction;
-use gfx::paint::ImageProvider;
+use gfx::paint::{ImageProvider, PaintArtifact};
 use gfx::viewport::{
-    ViewportCtx, ViewportRepaintPolicy, ViewportRepaintScope, ViewportRetainedLayout,
-    execute_viewport_frame,
+    ViewportCtx, ViewportPaintArtifactAction, ViewportRepaintPolicy, ViewportRepaintScope,
+    ViewportRetainedLayout, ViewportRetainedPaint, execute_viewport_frame,
 };
 use layout::{RetainedLayoutArtifact, RetainedLayoutFrameResult, RetainedLayoutKeySeed};
 
@@ -22,13 +22,15 @@ use super::invalidation::{
 use super::page_background::find_page_background_color;
 use super::types::{PaintInvalidationScope, RepaintExecutionPlan, RepaintExecutionScope};
 use super::types::{RenderInvalidationEntryPoint, RenderRebuildTrigger, RenderingPhase};
-use super::work_plan::RenderWorkPlan;
+use super::work_plan::{RenderWorkPlan, RepaintExecution};
+use super::{RetainedPaintArtifactKeySeed, RetainedPaintFrameAction, RetainedPaintFrameResult};
 
 pub(crate) struct OrchestratedFrameOutcome {
     pub(crate) action: Option<PageAction>,
     pub(crate) followup_render_request: Option<RenderInvalidationRequest>,
     pub(crate) trace: RenderFrameExecutionTrace,
     pub(crate) retained_layout_result: Option<RetainedLayoutFrameResult>,
+    pub(crate) retained_paint_result: Option<RetainedPaintFrameResult>,
 }
 
 pub(crate) struct PreparedPageFrame<'a> {
@@ -37,6 +39,8 @@ pub(crate) struct PreparedPageFrame<'a> {
     pub(crate) work_plan: RenderWorkPlan,
     retained_layout_key_seed: RetainedLayoutKeySeed,
     retained_layout_artifact: Option<RetainedLayoutArtifact>,
+    retained_paint_key_seed: RetainedPaintArtifactKeySeed,
+    retained_paint_artifact: Option<PaintArtifact>,
     pending_work: PendingRenderWork,
     style_dirty_before_frame: bool,
     base_url: Option<String>,
@@ -83,6 +87,8 @@ pub(crate) fn prepare_page_frame(
         work_plan: prepared_style.work_plan,
         retained_layout_key_seed: prepared_style.retained_layout_key_seed,
         retained_layout_artifact: prepared_style.retained_layout_artifact,
+        retained_paint_key_seed: prepared_style.retained_paint_key_seed,
+        retained_paint_artifact: prepared_style.retained_paint_artifact,
         pending_work,
         style_dirty_before_frame,
         base_url,
@@ -102,6 +108,8 @@ pub(crate) fn execute_prepared_page_frame<R: ImageProvider>(
         work_plan,
         retained_layout_key_seed,
         retained_layout_artifact,
+        retained_paint_key_seed,
+        retained_paint_artifact,
         pending_work,
         style_dirty_before_frame,
         base_url,
@@ -130,8 +138,41 @@ pub(crate) fn execute_prepared_page_frame<R: ImageProvider>(
                 work_plan.relayout_execution,
                 super::work_plan::RelayoutExecution::ConservativeDocumentFallback { .. }
             ),
+        })
+        .with_retained_paint(ViewportRetainedPaint {
+            retained: retained_paint_artifact.as_ref(),
+            reuse_allowed: matches!(work_plan.repaint_execution, RepaintExecution::ReuseRetained),
         }),
     );
+    let retained_paint_result = match (
+        viewport_result.retained_paint_result,
+        viewport_result.retained_layout_result.as_ref(),
+    ) {
+        (Some(paint_result), Some(layout_result)) => {
+            let key = retained_paint_key_seed.for_layout_key(layout_result.key);
+            let action = match paint_result.action {
+                ViewportPaintArtifactAction::Reused => {
+                    debug_assert!(
+                        matches!(
+                            layout_result.action,
+                            layout::RetainedLayoutFrameAction::Reused
+                        ),
+                        "retained paint reuse requires actual retained layout reuse"
+                    );
+                    RetainedPaintFrameAction::Reused
+                }
+                ViewportPaintArtifactAction::Recomputed => {
+                    retained_paint_action_for_recompute(&work_plan)
+                }
+            };
+            Some(RetainedPaintFrameResult {
+                key,
+                action,
+                artifact: paint_result.artifact,
+            })
+        }
+        _ => None,
+    };
 
     let trace = build_render_frame_execution_trace(
         &pending_work,
@@ -143,6 +184,9 @@ pub(crate) fn execute_prepared_page_frame<R: ImageProvider>(
             .is_some_and(|result| {
                 matches!(result.action, layout::RetainedLayoutFrameAction::Reused)
             }),
+        retained_paint_result
+            .as_ref()
+            .is_some_and(|result| matches!(result.action, RetainedPaintFrameAction::Reused)),
     );
     debug_assert_eq!(
         trace.repaint_execution.scope,
@@ -157,6 +201,21 @@ pub(crate) fn execute_prepared_page_frame<R: ImageProvider>(
         followup_render_request,
         trace,
         retained_layout_result: viewport_result.retained_layout_result,
+        retained_paint_result,
+    }
+}
+
+fn retained_paint_action_for_recompute(work_plan: &RenderWorkPlan) -> RetainedPaintFrameAction {
+    match work_plan.repaint_execution {
+        RepaintExecution::ConservativeDocumentFallback { .. } => {
+            RetainedPaintFrameAction::ConservativeDocumentFallback
+        }
+        RepaintExecution::ConservativeViewportFallback { .. } | RepaintExecution::Viewport => {
+            RetainedPaintFrameAction::ConservativeViewportFallback
+        }
+        RepaintExecution::None
+        | RepaintExecution::ReuseRetained
+        | RepaintExecution::FullDocument => RetainedPaintFrameAction::Recomputed,
     }
 }
 
@@ -165,6 +224,7 @@ pub(crate) fn build_render_frame_execution_trace(
     style_dirty_before_frame: bool,
     viewport_changed: bool,
     layout_reused_from_retained_artifacts: bool,
+    paint_reused_from_retained_artifacts: bool,
 ) -> RenderFrameExecutionTrace {
     let mut triggered_entry_points = pending_work
         .requests()
@@ -202,16 +262,17 @@ pub(crate) fn build_render_frame_execution_trace(
     } else {
         RenderPhaseExecutionKind::RequiredForCurrentFrame
     };
+    let paint_fallback = if paint_reused_from_retained_artifacts {
+        RenderPhaseExecutionKind::MaterializedFromRetainedArtifacts
+    } else {
+        RenderPhaseExecutionKind::RequiredForCurrentFrame
+    };
 
     RenderFrameExecutionTrace {
         triggered_entry_points,
         style: phase_trace(RenderingPhase::Style, style, style_fallback),
         layout: phase_trace(RenderingPhase::Layout, layout, layout_fallback),
-        paint: phase_trace(
-            RenderingPhase::Paint,
-            paint,
-            RenderPhaseExecutionKind::RequiredForCurrentFrame,
-        ),
+        paint: phase_trace(RenderingPhase::Paint, paint, paint_fallback),
         frame_orchestration: phase_trace(
             RenderingPhase::FrameOrchestration,
             frame_orchestration,

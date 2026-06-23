@@ -148,7 +148,9 @@ Style planning may report retained style reuse only when retained style
 artifacts are fresh and style is not dirty. AC6 extends layout planning so
 relayout reports retained layout reuse, requested relayout scope, and the
 actual relayout execution strategy. Paint planning reports repaint from dirty
-state; AC6 does not introduce retained paint reuse.
+state. AC7 extends paint planning with conservative retained paint artifact
+state and repaint execution strategy without adding dirty regions, display
+lists, retained scenes, or compositor concepts.
 
 `ConservativeUnknownImpact` in the canonical dirty state produces an explicit
 `conservative-fallback` entry in the plan. Full-document or viewport fallback
@@ -186,6 +188,7 @@ canonical-dirty-state:
 restyle: decision=... scope=...
 relayout: decision=... scope=...
 repaint: decision=... scope=...
+repaint-execution: strategy=...
 conservative-fallback: ...
 ```
 
@@ -213,7 +216,8 @@ AC4 deliberately excludes:
 - style artifact lifecycle accounting and conservative retained artifact reuse
   beyond pre-execution planning; AC5 defines that execution-side contract;
 - retained layout caches;
-- retained paint caches;
+- retained paint caches beyond AC7's conservative paint-owned semantic
+  artifact reuse contract;
 - retained display lists or scenes;
 - targeted relayout;
 - dirty-region rendering;
@@ -223,7 +227,7 @@ AC4 deliberately excludes:
 - dependency graphs from DOM/style/layout nodes to retained paint artifacts.
 
 AC6 adds the first conservative retained layout artifact reuse path and
-explicit relayout fallback execution strategy. Future paint artifact reuse may
-be added only after defining ownership, retained identifiers, dependency
-derivation, conservative fallback behavior, deterministic debug output, and
-tests.
+explicit relayout fallback execution strategy. AC7 adds conservative retained
+paint artifact reuse only for paint-owned semantic artifacts wrapped by
+browser/runtime-owned keys, lifetime, planning, fallback behavior, deterministic
+debug output, and tests.

@@ -224,7 +224,8 @@ AC1 deliberately excludes:
 - retained style cache work beyond AC5's conservative retained
   resolved/computed style artifact reuse contract;
 - retained layout caches;
-- retained paint caches;
+- retained paint caches beyond AC7's conservative paint-owned semantic
+  artifact reuse contract;
 - targeted relayout;
 - deterministic render work planning;
 - dirty-region rendering;
@@ -237,8 +238,11 @@ AC1 deliberately excludes:
 
 AC6 adds the first retained layout artifact foundation with explicit ownership,
 layout-owned materialization, conservative fallback behavior, deterministic
-debug output, and representative tests. Other future retained concepts may be
-added only through similarly explicit contracts.
+debug output, and representative tests. AC7 adds conservative retained
+paint-owned semantic artifact reuse and repaint planning without adding
+retained paint scenes, display lists, compositor layers, or backend command
+caches. Other future retained concepts may be added only through similarly
+explicit contracts.
 
 ## Future Extension Points
 
@@ -249,8 +253,7 @@ explicit contracts:
 - conservative style artifact reuse summaries, now defined by AC5;
 - conservative layout artifact reuse only after layout ownership and
   invalidation rules are documented;
-- conservative paint artifact reuse only after paint ownership and
-  invalidation rules are documented;
+- conservative paint artifact reuse summaries, now defined by AC7;
 - measurable incremental behavior guardrails.
 
 Those extensions must preserve the AC1 rule that browser/runtime owns retained

@@ -4,11 +4,15 @@ use crate::rendering::{
     FrameLocalIdentityState, RenderArtifactState, RenderDirtyState, RenderEpoch,
     RenderInvalidationEntryPoint, RenderPipelineDebugSnapshot, RetainedLayoutArtifactAction,
     RetainedLayoutArtifactDebugSnapshot, RetainedLayoutArtifactState, RetainedLayoutArtifactStats,
-    RetainedRenderIdentityMap, RetainedRenderStateDebugSnapshot, RetainedStyleArtifactAction,
+    RetainedPaintArtifactAction, RetainedPaintArtifactDebugSnapshot, RetainedPaintArtifactKey,
+    RetainedPaintArtifactKeySeed, RetainedPaintArtifactState, RetainedPaintArtifactStats,
+    RetainedPaintFrameAction, RetainedPaintFrameResult, RetainedRenderIdentityMap,
+    RetainedRenderStateDebugSnapshot, RetainedStyleArtifactAction,
     RetainedStyleArtifactDebugSnapshot, RetainedStyleArtifactKey, RetainedStyleArtifactState,
     RetainedStyleArtifactStats, StyleInvalidationState, dirty_request_for_entry_point,
 };
 use css::{ComputedDocumentStyleLayoutImpact, ComputedStyleReuseStats};
+use gfx::paint::PaintArtifact;
 use html::Node;
 use layout::{
     RetainedLayoutArtifact, RetainedLayoutFallbackReason, RetainedLayoutFrameAction,
@@ -39,7 +43,16 @@ pub(super) struct RetainedRenderState {
     pub(super) layout_cache: Option<RetainedLayoutArtifact>,
     pub(super) layout_artifact_stats: RetainedLayoutArtifactStats,
     pub(super) last_layout_artifact_action: RetainedLayoutArtifactAction,
+    pub(super) paint_cache: Option<RetainedPaintArtifactEntry>,
+    pub(super) paint_artifact_stats: RetainedPaintArtifactStats,
+    pub(super) last_paint_artifact_action: RetainedPaintArtifactAction,
     pub(super) identities: RetainedRenderIdentityMap,
+}
+
+#[derive(Clone, Debug)]
+pub(super) struct RetainedPaintArtifactEntry {
+    pub(super) key: RetainedPaintArtifactKey,
+    pub(super) artifact: PaintArtifact,
 }
 
 impl RetainedRenderState {
@@ -59,6 +72,9 @@ impl RetainedRenderState {
             layout_cache: None,
             layout_artifact_stats: RetainedLayoutArtifactStats::default(),
             last_layout_artifact_action: RetainedLayoutArtifactAction::None,
+            paint_cache: None,
+            paint_artifact_stats: RetainedPaintArtifactStats::default(),
+            last_paint_artifact_action: RetainedPaintArtifactAction::None,
             identities: RetainedRenderIdentityMap::new(),
         }
     }
@@ -78,6 +94,9 @@ impl RetainedRenderState {
         self.layout_cache = None;
         self.layout_artifact_stats = RetainedLayoutArtifactStats::default();
         self.last_layout_artifact_action = RetainedLayoutArtifactAction::None;
+        self.paint_cache = None;
+        self.paint_artifact_stats = RetainedPaintArtifactStats::default();
+        self.last_paint_artifact_action = RetainedPaintArtifactAction::None;
         self.identities.reset_for_navigation();
     }
 
@@ -136,6 +155,14 @@ impl RetainedRenderState {
         }
     }
 
+    pub(super) fn retained_paint_artifact_state(&self) -> RetainedPaintArtifactState {
+        match (&self.paint_cache, self.paint_dirty()) {
+            (None, _) => RetainedPaintArtifactState::Absent,
+            (Some(_), true) => RetainedPaintArtifactState::Stale,
+            (Some(_), false) => RetainedPaintArtifactState::Fresh,
+        }
+    }
+
     pub(super) fn retained_layout_key_seed(&self) -> RetainedLayoutKeySeed {
         RetainedLayoutKeySeed {
             identity_domain: self.identities.domain().value(),
@@ -148,6 +175,18 @@ impl RetainedRenderState {
 
     pub(super) fn retained_layout_artifact(&self) -> Option<&RetainedLayoutArtifact> {
         self.layout_cache.as_ref()
+    }
+
+    pub(super) fn retained_paint_artifact(&self) -> Option<&PaintArtifact> {
+        self.paint_cache.as_ref().map(|entry| &entry.artifact)
+    }
+
+    pub(super) fn retained_paint_key_seed(&self) -> RetainedPaintArtifactKeySeed {
+        RetainedPaintArtifactKeySeed {
+            identity_domain: self.identities.domain(),
+            paint_style_generation: self.generations.paint_style,
+            paint_input_generation: self.generations.paint_inputs,
+        }
     }
 
     pub(super) fn current_style_artifact_key(&self) -> RetainedStyleArtifactKey {
@@ -201,6 +240,11 @@ impl RetainedRenderState {
     ) {
         match impact {
             ComputedDocumentStyleLayoutImpact::PaintOnly => {
+                self.generations.paint_style = self
+                    .generations
+                    .paint_style
+                    .checked_add(1)
+                    .expect("paint style generation exhausted");
                 self.dirty_state
                     .remove_phase_reason(DirtyPhase::Layout, DirtyReason::CascadedFromStyle);
                 if !self.layout_dirty() {
@@ -220,6 +264,11 @@ impl RetainedRenderState {
                     .layout_style
                     .checked_add(1)
                     .expect("layout style generation exhausted");
+                self.generations.paint_style = self
+                    .generations
+                    .paint_style
+                    .checked_add(1)
+                    .expect("paint style generation exhausted");
                 self.dirty_state.push(DirtyEntry::new(
                     DirtyPhase::Layout,
                     DirtyReason::LayoutAffectingStyleChanged,
@@ -277,6 +326,56 @@ impl RetainedRenderState {
         self.dirty_state.clear_phase(DirtyPhase::Layout);
     }
 
+    pub(super) fn record_paint_frame_result(&mut self, result: RetainedPaintFrameResult) {
+        match result.action {
+            RetainedPaintFrameAction::Reused => {
+                self.paint_artifact_stats.reuse_count = self
+                    .paint_artifact_stats
+                    .reuse_count
+                    .checked_add(1)
+                    .expect("retained paint artifact reuse count exhausted");
+                self.last_paint_artifact_action = RetainedPaintArtifactAction::Reused;
+            }
+            RetainedPaintFrameAction::Recomputed => {
+                self.paint_artifact_stats.recompute_count = self
+                    .paint_artifact_stats
+                    .recompute_count
+                    .checked_add(1)
+                    .expect("retained paint artifact recompute count exhausted");
+                self.last_paint_artifact_action = if self.paint_cache.is_none()
+                    && self.paint_artifact_stats.recompute_count == 1
+                {
+                    RetainedPaintArtifactAction::InitialCompute
+                } else {
+                    RetainedPaintArtifactAction::Recomputed
+                };
+            }
+            RetainedPaintFrameAction::ConservativeDocumentFallback => {
+                self.paint_artifact_stats.recompute_count = self
+                    .paint_artifact_stats
+                    .recompute_count
+                    .checked_add(1)
+                    .expect("retained paint artifact recompute count exhausted");
+                self.last_paint_artifact_action =
+                    RetainedPaintArtifactAction::ConservativeDocumentFallback;
+            }
+            RetainedPaintFrameAction::ConservativeViewportFallback => {
+                self.paint_artifact_stats.recompute_count = self
+                    .paint_artifact_stats
+                    .recompute_count
+                    .checked_add(1)
+                    .expect("retained paint artifact recompute count exhausted");
+                self.last_paint_artifact_action =
+                    RetainedPaintArtifactAction::ConservativeViewportFallback;
+            }
+        }
+        self.paint_cache = Some(RetainedPaintArtifactEntry {
+            key: result.key,
+            artifact: result.artifact,
+        });
+        self.dirty_state.clear_phase(DirtyPhase::Paint);
+    }
+
     pub(super) fn clear_style_dirty_after_recompute(&mut self) {
         self.dirty_state.clear_phase(DirtyPhase::Style);
     }
@@ -295,6 +394,7 @@ impl RetainedRenderState {
         if matches!(entry_point, RenderInvalidationEntryPoint::DocumentReplaced) {
             self.dirty_state.clear();
             self.discard_layout_for_full_invalidation();
+            self.discard_paint_for_full_invalidation();
         }
         match entry_point {
             RenderInvalidationEntryPoint::DocumentReplaced
@@ -312,11 +412,22 @@ impl RetainedRenderState {
                     .replaced_metadata
                     .checked_add(1)
                     .expect("replaced metadata generation exhausted");
+                self.generations.paint_inputs = self
+                    .generations
+                    .paint_inputs
+                    .checked_add(1)
+                    .expect("paint input generation exhausted");
+            }
+            RenderInvalidationEntryPoint::InputStateChanged => {
+                self.generations.paint_inputs = self
+                    .generations
+                    .paint_inputs
+                    .checked_add(1)
+                    .expect("paint input generation exhausted");
             }
             RenderInvalidationEntryPoint::ViewportChanged
             | RenderInvalidationEntryPoint::DomAttributesChanged
-            | RenderInvalidationEntryPoint::StylesheetSetChanged
-            | RenderInvalidationEntryPoint::InputStateChanged => {}
+            | RenderInvalidationEntryPoint::StylesheetSetChanged => {}
         }
         let request = dirty_request_for_entry_point(entry_point);
         self.dirty_state.extend(request.entries);
@@ -337,7 +448,11 @@ impl RetainedRenderState {
                     (Some(_), true) => RenderArtifactState::RetainedStale,
                     (Some(_), false) => RenderArtifactState::RetainedFresh,
                 },
-                RenderArtifactState::ImmediateFrameOutput,
+                match (&self.paint_cache, self.paint_dirty()) {
+                    (None, _) => RenderArtifactState::Absent,
+                    (Some(_), true) => RenderArtifactState::RetainedStale,
+                    (Some(_), false) => RenderArtifactState::RetainedFresh,
+                },
             )
         } else {
             (
@@ -371,6 +486,7 @@ impl RetainedRenderState {
             style_invalidation,
             style_artifacts: self.style_artifact_debug_snapshot(style_cache_state),
             layout_artifacts: self.layout_artifact_debug_snapshot(layout_tree),
+            paint_artifacts: self.paint_artifact_debug_snapshot(paint_output),
         }
     }
 
@@ -394,6 +510,7 @@ impl RetainedRenderState {
             style_invalidation: pipeline.style_invalidation,
             style_artifacts: pipeline.style_artifacts,
             layout_artifacts: pipeline.layout_artifacts,
+            paint_artifacts: pipeline.paint_artifacts,
             retained_identity_domain: self.identities.domain(),
             retained_identities: self.identities.identities(),
             layout_identity: FrameLocalIdentityState::NotRetained,
@@ -418,6 +535,18 @@ impl RetainedRenderState {
                 RetainedLayoutArtifactAction::DiscardedForInvalidation;
         }
         self.layout_cache = None;
+    }
+
+    pub(super) fn discard_paint_for_full_invalidation(&mut self) {
+        if self.paint_cache.is_some() {
+            self.paint_artifact_stats.discard_count = self
+                .paint_artifact_stats
+                .discard_count
+                .checked_add(1)
+                .expect("retained paint artifact discard count exhausted");
+            self.last_paint_artifact_action = RetainedPaintArtifactAction::DiscardedForInvalidation;
+        }
+        self.paint_cache = None;
     }
 
     pub(super) fn reconcile_retained_identities_from_dom(&mut self, dom: &Node) {
@@ -479,6 +608,18 @@ impl RetainedRenderState {
             state,
             last_action: self.last_layout_artifact_action,
             stats: self.layout_artifact_stats,
+        }
+    }
+
+    fn paint_artifact_debug_snapshot(
+        &self,
+        state: RenderArtifactState,
+    ) -> RetainedPaintArtifactDebugSnapshot {
+        RetainedPaintArtifactDebugSnapshot {
+            key: self.paint_cache.as_ref().map(|cache| cache.key),
+            state,
+            last_action: self.last_paint_artifact_action,
+            stats: self.paint_artifact_stats,
         }
     }
 }

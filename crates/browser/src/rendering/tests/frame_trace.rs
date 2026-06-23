@@ -7,7 +7,7 @@ fn frame_execution_trace_distinguishes_requested_work_from_frame_prerequisites()
         RenderInvalidationEntryPoint::InputStateChanged,
     ));
 
-    let trace = build_render_frame_execution_trace(&pending, false, false, false);
+    let trace = build_render_frame_execution_trace(&pending, false, false, false, false);
     assert_eq!(
         trace.triggered_entry_points,
         vec![RenderInvalidationEntryPoint::InputStateChanged]
@@ -52,7 +52,7 @@ fn frame_execution_trace_adds_viewport_change_as_direct_runtime_trigger() {
         RenderInvalidationEntryPoint::DocumentReplaced,
     ));
 
-    let trace = build_render_frame_execution_trace(&pending, true, true, false);
+    let trace = build_render_frame_execution_trace(&pending, true, true, false, false);
     assert_eq!(
         trace.triggered_entry_points,
         vec![
@@ -83,7 +83,7 @@ fn frame_execution_trace_adds_viewport_change_as_direct_runtime_trigger() {
 fn frame_execution_trace_records_viewport_repaint_for_synthesized_viewport_change() {
     let pending = PendingRenderWork::default();
 
-    let trace = build_render_frame_execution_trace(&pending, false, true, false);
+    let trace = build_render_frame_execution_trace(&pending, false, true, false, false);
     assert_eq!(
         trace.triggered_entry_points,
         vec![RenderInvalidationEntryPoint::ViewportChanged]
@@ -103,7 +103,7 @@ fn frame_execution_trace_records_viewport_repaint_for_synthesized_viewport_chang
 fn frame_execution_trace_debug_snapshot_is_exact_for_viewport_repaint() {
     let pending = PendingRenderWork::default();
 
-    let trace = build_render_frame_execution_trace(&pending, false, true, false);
+    let trace = build_render_frame_execution_trace(&pending, false, true, false, false);
 
     assert_eq!(
         trace.to_debug_snapshot(),
@@ -143,7 +143,7 @@ fn frame_execution_trace_records_document_repaint_for_mixed_invalidations() {
         RenderInvalidationEntryPoint::ResourceStateChanged,
     ));
 
-    let trace = build_render_frame_execution_trace(&pending, false, false, false);
+    let trace = build_render_frame_execution_trace(&pending, false, false, false, false);
     assert_eq!(
         trace.repaint_execution.scope,
         RepaintExecutionScope::Document
@@ -153,4 +153,22 @@ fn frame_execution_trace_records_document_repaint_for_mixed_invalidations() {
             .to_debug_snapshot()
             .contains("repaint-execution: scope=document")
     );
+}
+
+#[test]
+fn frame_execution_trace_reports_retained_paint_reuse_for_noop_frame() {
+    let pending = PendingRenderWork::default();
+
+    let trace = build_render_frame_execution_trace(&pending, false, false, true, true);
+
+    assert_eq!(
+        trace.layout.kind,
+        RenderPhaseExecutionKind::MaterializedFromRetainedArtifacts
+    );
+    assert_eq!(
+        trace.paint.kind,
+        RenderPhaseExecutionKind::MaterializedFromRetainedArtifacts
+    );
+    assert!(trace.paint.direct_triggers.is_empty());
+    assert!(trace.paint.cascaded_from.is_empty());
 }

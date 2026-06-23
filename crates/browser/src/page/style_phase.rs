@@ -2,8 +2,10 @@ use css::{
     ComputedDocumentStyleLayoutImpact, ComputedStyleResolutionError, ComputedStyleReuseStats,
     StylePhaseOutput, build_style_tree_from_computed_styles,
 };
+use gfx::paint::PaintArtifact;
 use layout::{RetainedLayoutArtifact, RetainedLayoutKeySeed};
 
+use crate::rendering::RetainedPaintArtifactKeySeed;
 use crate::rendering::{PendingRenderWork, RenderWorkPlan, RetainedStyleArtifactAction};
 
 use super::PageState;
@@ -15,6 +17,8 @@ pub(crate) struct PreparedStylePhaseForFrame<'a> {
     pub(crate) work_plan: RenderWorkPlan,
     pub(crate) retained_layout_key_seed: RetainedLayoutKeySeed,
     pub(crate) retained_layout_artifact: Option<RetainedLayoutArtifact>,
+    pub(crate) retained_paint_key_seed: RetainedPaintArtifactKeySeed,
+    pub(crate) retained_paint_artifact: Option<PaintArtifact>,
 }
 
 impl PageState {
@@ -56,6 +60,8 @@ impl PageState {
         let work_plan = self.derive_render_work_plan(pending_work);
         let retained_layout_key_seed = self.retained_layout_key_seed();
         let retained_layout_artifact = self.retained_layout_artifact().cloned();
+        let retained_paint_key_seed = self.retained_paint_key_seed();
+        let retained_paint_artifact = self.retained_paint_artifact().cloned();
 
         let Some(dom) = self.dom.as_deref() else {
             return Ok(None);
@@ -73,6 +79,8 @@ impl PageState {
                     work_plan,
                     retained_layout_key_seed,
                     retained_layout_artifact,
+                    retained_paint_key_seed,
+                    retained_paint_artifact,
                 })
             })
     }

@@ -48,9 +48,11 @@ pub use invalidation::{
 pub use lifecycle::{
     DirtyStateDebugSnapshot, FrameLocalIdentityState, RenderArtifactState, RenderEpoch,
     RenderPipelineDebugSnapshot, RetainedLayoutArtifactAction, RetainedLayoutArtifactDebugSnapshot,
-    RetainedLayoutArtifactStats, RetainedRenderStateDebugSnapshot, RetainedStyleArtifactAction,
-    RetainedStyleArtifactDebugSnapshot, RetainedStyleArtifactKey, RetainedStyleArtifactStats,
-    StyleInvalidationState,
+    RetainedLayoutArtifactStats, RetainedPaintArtifactAction, RetainedPaintArtifactDebugSnapshot,
+    RetainedPaintArtifactKey, RetainedPaintArtifactKeySeed, RetainedPaintArtifactStats,
+    RetainedPaintFrameAction, RetainedPaintFrameResult, RetainedRenderStateDebugSnapshot,
+    RetainedStyleArtifactAction, RetainedStyleArtifactDebugSnapshot, RetainedStyleArtifactKey,
+    RetainedStyleArtifactStats, StyleInvalidationState,
 };
 pub use types::{
     DirtyEntry, DirtyPhase, DirtyPropagationResult, DirtyReason, DirtyScope, DirtyScopeDebugLabel,
@@ -61,8 +63,8 @@ pub use types::{
 };
 pub use work_plan::{
     PlannedRenderWork, RelayoutExecution, RenderWorkDecision, RenderWorkFallbackReason,
-    RenderWorkPlan, RenderWorkPlanInput, RenderWorkPlanReason, RetainedLayoutArtifactState,
-    RetainedStyleArtifactState,
+    RenderWorkPlan, RenderWorkPlanInput, RenderWorkPlanReason, RepaintExecution,
+    RetainedLayoutArtifactState, RetainedPaintArtifactState, RetainedStyleArtifactState,
 };
 
 #[cfg(test)]

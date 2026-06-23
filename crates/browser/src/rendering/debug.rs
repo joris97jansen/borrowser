@@ -195,6 +195,7 @@ pub fn render_phase_boundary_debug_snapshot(
         style_dirty_before_frame,
         viewport_changed,
         false,
+        false,
     );
 
     Ok(Some(RenderPhaseBoundaryDebugSnapshot {
