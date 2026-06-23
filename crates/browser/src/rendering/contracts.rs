@@ -74,8 +74,7 @@ const FRAME_ORCHESTRATION_CONSUMES: &[RenderArtifact] = &[
 ];
 const FRAME_ORCHESTRATION_PRODUCES: &[RenderArtifact] =
     &[RenderArtifact::LayoutTree, RenderArtifact::PaintCommands];
-const FRAME_ORCHESTRATION_REBUILDS: &[RenderArtifact] =
-    &[RenderArtifact::LayoutTree, RenderArtifact::PaintCommands];
+const FRAME_ORCHESTRATION_REBUILDS: &[RenderArtifact] = &[RenderArtifact::PaintCommands];
 const FRAME_ORCHESTRATION_TRIGGERS: &[RenderRebuildTrigger] = &[
     RenderRebuildTrigger::StyleOutputsChanged,
     RenderRebuildTrigger::DomTextChanged,
@@ -109,7 +108,7 @@ const LAYOUT_CONSUMES: &[RenderArtifact] = &[
     RenderArtifact::ReplacedElementMetadata,
 ];
 const LAYOUT_PRODUCES: &[RenderArtifact] = &[RenderArtifact::LayoutTree];
-const LAYOUT_REBUILDS: &[RenderArtifact] = &[RenderArtifact::LayoutTree];
+const LAYOUT_RETAINED: &[RenderArtifact] = &[RenderArtifact::LayoutTree];
 const LAYOUT_TRIGGERS: &[RenderRebuildTrigger] = &[
     RenderRebuildTrigger::StyleOutputsChanged,
     RenderRebuildTrigger::DomTextChanged,
@@ -206,8 +205,8 @@ static RENDER_PHASE_CONTRACTS: [RenderingPhaseContract; 4] = [
         engine_owner: RenderingSubsystem::LayoutEngine,
         consumes: LAYOUT_CONSUMES,
         produces: LAYOUT_PRODUCES,
-        retained_outputs: &[],
-        rebuilt_outputs: LAYOUT_REBUILDS,
+        retained_outputs: LAYOUT_RETAINED,
+        rebuilt_outputs: &[],
         rebuild_triggers: LAYOUT_TRIGGERS,
     },
     RenderingPhaseContract {
@@ -294,8 +293,8 @@ static RENDER_ARTIFACT_OWNERSHIP_CONTRACTS: [RenderArtifactOwnershipContract; 12
     RenderArtifactOwnershipContract {
         artifact: RenderArtifact::LayoutTree,
         semantic_owner: RenderingSubsystem::LayoutEngine,
-        retention_owner: None,
-        lifetime: RenderArtifactLifetime::FrameLocalRebuiltPerFrame,
+        retention_owner: Some(RenderingSubsystem::BrowserRuntime),
+        lifetime: RenderArtifactLifetime::RetainedAcrossUpdates,
     },
     RenderArtifactOwnershipContract {
         artifact: RenderArtifact::ResourceState,

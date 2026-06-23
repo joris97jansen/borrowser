@@ -9,8 +9,10 @@ an explicit identity domain and do not accidentally key retained state by
 temporary frame-local IDs.
 
 AC2 does not introduce style, layout, or paint caches. It does not introduce
-dirty-state planning, retained layout trees, retained paint scenes, display
-lists, compositor layers, GPU resources, or dirty-region rendering.
+dirty-state planning, retained paint scenes, display lists, compositor layers,
+GPU resources, or dirty-region rendering. AC6 later uses AC2 retained render
+identity domains as part of retained layout cache keys without treating
+frame-local layout IDs as retained identities.
 
 Related code:
 

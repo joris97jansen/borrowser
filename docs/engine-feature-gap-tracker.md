@@ -255,11 +255,20 @@ Current supported subset:
   property impact tables, retained layout caches, retained paint caches,
   display lists/scenes, compositor/GPU concepts, or dirty-region rendering;
   see `docs/rendering/ac5-retained-style-artifact-reuse.md`.
+- AC6 retained layout artifact foundation: browser/runtime owns retained
+  layout artifact lifetime, keys, counters, dirty-state integration, and debug
+  accounting while Layout owns retained layout artifact materialization,
+  geometry, formatting behavior, layout order, and layout metadata. No-op and
+  safely classified paint-only updates can reuse retained layout. Requested
+  relayout scopes are explicit, and narrower scopes conservatively execute as
+  document relayout when Layout cannot safely perform true targeted relayout;
+  see `docs/rendering/ac6-retained-layout-artifact-foundation.md`.
 
 Missing or incomplete:
 
-- conservative layout/paint artifact reuse beyond current retained style
-  artifact reuse foundations
+- true minimal/subtree relayout execution and layout dependency graphs
+- retained paint artifact reuse beyond current retained style/layout
+  foundations
 - incremental rendering performance/allocation guardrails
 - JavaScript execution and DOM bindings
 - event loop, timers, microtasks, and script-triggered invalidation

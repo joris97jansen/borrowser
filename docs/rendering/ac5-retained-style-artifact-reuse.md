@@ -8,9 +8,10 @@ AC5 makes browser/runtime-owned style artifact lifetime, cache keys,
 reuse/recompute/discard accounting, and deterministic debug output explicit.
 
 AC5 does not introduce selector dependency tracking, style sharing beyond the
-existing CSS-owned computed-style paths, retained layout caches, retained paint
-caches, retained display lists, retained scenes, compositor layers, GPU
-concepts, or browser-owned CSS property impact tables.
+existing CSS-owned computed-style paths, retained paint caches, retained
+display lists, retained scenes, compositor layers, GPU concepts, or
+browser-owned CSS property impact tables. AC6 later adds retained layout
+artifact reuse and CSS-owned computed-style layout-impact classification.
 
 Related code:
 
@@ -187,7 +188,6 @@ AC5 deliberately excludes:
 
 - fake selector dependency tracking;
 - browser-owned CSS property impact tables;
-- retained layout trees or layout cache keys;
 - retained paint commands, display lists, or scenes;
 - dirty-region rendering;
 - compositor or GPU concepts;

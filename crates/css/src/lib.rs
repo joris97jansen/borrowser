@@ -56,8 +56,9 @@ pub use cascade::{
     try_resolve_document_styles_with_limits,
 };
 pub use computed::{
-    BorderEdges, BorderSide, BoxMetrics, ComputedDocumentStyle, ComputedDocumentStyleWithStats,
-    ComputedElementStyle, ComputedStyleBuildError, ComputedStyleBuilder, ComputedStyleEntry,
+    BorderEdges, BorderSide, BoxMetrics, ComputedDocumentStyle, ComputedDocumentStyleLayoutImpact,
+    ComputedDocumentStyleWithStats, ComputedElementStyle, ComputedStyleBuildError,
+    ComputedStyleBuilder, ComputedStyleEntry, ComputedStyleLayoutImpact,
     ComputedStyleResolutionError, ComputedStyleReuseStats, ComputedValue,
     ComputedValueDiscriminant, ComputedValueNormalizationError,
     ComputedValueNormalizationErrorKind, IncrementalComputedDocumentStyle, StylePhaseOutput,

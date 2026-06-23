@@ -12,7 +12,9 @@ use egui::{Color32, Rect, ScrollArea, Sense, Stroke, Ui, Vec2};
 use html::{Node, internal::Id};
 use input_core::InputValueStore as CoreInputValueStore;
 use layout::{
-    LayoutPhaseInput, Rectangle, ReplacedElementInfoProvider, ReplacedKind, layout_document,
+    LayoutPhaseInput, Rectangle, ReplacedElementInfoProvider, ReplacedKind, RetainedLayoutArtifact,
+    RetainedLayoutFallbackReason, RetainedLayoutFrameAction, RetainedLayoutFrameResult,
+    RetainedLayoutKeySeed, layout_document,
 };
 use std::cell::RefCell;
 use std::collections::HashMap;
@@ -46,6 +48,7 @@ pub struct ViewportCtx<'ui, 'style, R, F> {
     pub interaction: &'ui mut InteractionState,
     pub config: ViewportConfig,
     pub repaint_policy: ViewportRepaintPolicy,
+    pub retained_layout: Option<ViewportRetainedLayout<'ui>>,
 }
 
 impl<'ui, 'style, R, F> ViewportCtx<'ui, 'style, R, F> {
@@ -68,6 +71,7 @@ impl<'ui, 'style, R, F> ViewportCtx<'ui, 'style, R, F> {
             interaction,
             config: ViewportConfig::default(),
             repaint_policy: ViewportRepaintPolicy::default(),
+            retained_layout: None,
         }
     }
 
@@ -75,6 +79,19 @@ impl<'ui, 'style, R, F> ViewportCtx<'ui, 'style, R, F> {
         self.repaint_policy = repaint_policy;
         self
     }
+
+    pub fn with_retained_layout(mut self, retained_layout: ViewportRetainedLayout<'ui>) -> Self {
+        self.retained_layout = Some(retained_layout);
+        self
+    }
+}
+
+#[derive(Clone, Copy, Debug)]
+pub struct ViewportRetainedLayout<'a> {
+    pub key_seed: RetainedLayoutKeySeed,
+    pub retained: Option<&'a RetainedLayoutArtifact>,
+    pub reuse_allowed: bool,
+    pub conservative_dirty_fallback: bool,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -110,6 +127,7 @@ pub struct ViewportFrameOutput {
     pub viewport_changed: bool,
     pub requested_followup_render: bool,
     pub repaint_scope: ViewportRepaintScope,
+    pub retained_layout_result: Option<RetainedLayoutFrameResult>,
 }
 
 pub fn execute_viewport_frame<R: ImageProvider, F: FormControlHandler<CoreInputValueStore>>(
@@ -125,6 +143,7 @@ pub fn execute_viewport_frame<R: ImageProvider, F: FormControlHandler<CoreInputV
         interaction,
         config,
         repaint_policy,
+        retained_layout,
     } = ctx;
 
     ScrollArea::vertical()
@@ -140,12 +159,90 @@ pub fn execute_viewport_frame<R: ImageProvider, F: FormControlHandler<CoreInputV
                 base_url,
                 resources,
             };
-            let layout_output = layout_document(LayoutPhaseInput::from_style_output(
-                style,
-                available_width,
-                &measurer,
-                Some(&replaced_info),
-            ));
+            let (layout_output, retained_layout_result) = match retained_layout {
+                Some(retained_layout) => {
+                    let key = retained_layout.key_seed.for_viewport_width(available_width);
+                    let retained_attempt = retained_layout
+                        .reuse_allowed
+                        .then_some(retained_layout.retained)
+                        .flatten()
+                        .filter(|artifact| artifact.key() == key)
+                        .map(|artifact| (artifact, artifact.materialize(style.root())));
+
+                    match retained_attempt {
+                        Some((artifact, Ok(output))) => (
+                            output,
+                            Some(RetainedLayoutFrameResult {
+                                key,
+                                action: RetainedLayoutFrameAction::Reused,
+                                artifact: artifact.clone(),
+                            }),
+                        ),
+                        Some((_artifact, Err(_))) => {
+                            let output = layout_document(LayoutPhaseInput::from_style_output(
+                                style,
+                                available_width,
+                                &measurer,
+                                Some(&replaced_info),
+                            ));
+                            let artifact = RetainedLayoutArtifact::from_layout_output(key, &output);
+                            (
+                                output,
+                                Some(RetainedLayoutFrameResult {
+                                    key,
+                                    action: RetainedLayoutFrameAction::ConservativeFallback(
+                                        RetainedLayoutFallbackReason::MaterializationFailed,
+                                    ),
+                                    artifact,
+                                }),
+                            )
+                        }
+                        None => {
+                            let output = layout_document(LayoutPhaseInput::from_style_output(
+                                style,
+                                available_width,
+                                &measurer,
+                                Some(&replaced_info),
+                            ));
+                            let artifact = RetainedLayoutArtifact::from_layout_output(key, &output);
+                            let action = if retained_layout.conservative_dirty_fallback {
+                                RetainedLayoutFrameAction::ConservativeFallback(
+                                    RetainedLayoutFallbackReason::DirtyLayout,
+                                )
+                            } else if retained_layout.reuse_allowed
+                                && retained_layout.retained.is_none()
+                            {
+                                RetainedLayoutFrameAction::ConservativeFallback(
+                                    RetainedLayoutFallbackReason::MissingRetainedArtifact,
+                                )
+                            } else if retained_layout.reuse_allowed {
+                                RetainedLayoutFrameAction::ConservativeFallback(
+                                    RetainedLayoutFallbackReason::KeyMismatch,
+                                )
+                            } else {
+                                RetainedLayoutFrameAction::Recomputed
+                            };
+                            (
+                                output,
+                                Some(RetainedLayoutFrameResult {
+                                    key,
+                                    action,
+                                    artifact,
+                                }),
+                            )
+                        }
+                    }
+                }
+                None => (
+                    layout_document(LayoutPhaseInput::from_style_output(
+                        style,
+                        available_width,
+                        &measurer,
+                        Some(&replaced_info),
+                    )),
+                    None,
+                ),
+            };
             let layout_root = layout_output.root();
 
             let content_height = layout_output.content_height().max(min_height);
@@ -282,6 +379,7 @@ pub fn execute_viewport_frame<R: ImageProvider, F: FormControlHandler<CoreInputV
                 viewport_changed: viewport_width_changed,
                 requested_followup_render: input_result.requested_followup_render,
                 repaint_scope,
+                retained_layout_result,
             }
         })
         .inner

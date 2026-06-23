@@ -145,10 +145,10 @@ The plan reports three phase decisions:
 - `repaint`.
 
 Style planning may report retained style reuse only when retained style
-artifacts are fresh and style is not dirty. Layout and paint planning report
-whether relayout or repaint is planned from dirty state. They do not report
-retained layout or retained paint reuse because those artifacts are not
-retained yet.
+artifacts are fresh and style is not dirty. AC6 extends layout planning so
+relayout reports retained layout reuse, requested relayout scope, and the
+actual relayout execution strategy. Paint planning reports repaint from dirty
+state; AC6 does not introduce retained paint reuse.
 
 `ConservativeUnknownImpact` in the canonical dirty state produces an explicit
 `conservative-fallback` entry in the plan. Full-document or viewport fallback
@@ -222,8 +222,8 @@ AC4 deliberately excludes:
 - browser-owned CSS property-impact classification;
 - dependency graphs from DOM/style/layout nodes to retained paint artifacts.
 
-Future AC issues may add layout or paint artifact reuse only after defining
-ownership, retained identifiers, dependency derivation, conservative fallback
-behavior, deterministic debug output, and tests. AC5 adds the first
-conservative retained style artifact reuse path for resolved/computed style
-artifacts only.
+AC6 adds the first conservative retained layout artifact reuse path and
+explicit relayout fallback execution strategy. Future paint artifact reuse may
+be added only after defining ownership, retained identifiers, dependency
+derivation, conservative fallback behavior, deterministic debug output, and
+tests.

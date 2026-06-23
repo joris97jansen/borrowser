@@ -1,6 +1,9 @@
 use super::support::*;
 use super::*;
-use crate::{StyleResolutionError, StyleResolutionLimit, StyleResolutionLimits};
+use crate::{
+    ComputedDocumentStyleLayoutImpact, StyleResolutionError, StyleResolutionLimit,
+    StyleResolutionLimits,
+};
 
 #[test]
 fn compute_style_from_resolved_style_materializes_cascade_fallbacks() {
@@ -66,6 +69,39 @@ fn compute_document_styles_integrates_cascade_inheritance_defaults_and_computati
     assert_eq!(span.background_color(), (0, 255, 0, 255));
     assert_eq!(span.box_metrics().padding_left, 3.0);
     assert_eq!(span.display(), Display::InlineBlock);
+}
+
+#[test]
+fn computed_document_style_layout_impact_distinguishes_paint_layout_and_unknown() {
+    let dom = element(
+        "section",
+        Vec::new(),
+        vec![element("p", Vec::new(), Vec::new())],
+    );
+    let base = compute_document_styles(&dom, &[stylesheet("p { color: red; }")])
+        .expect("base computed document");
+    let paint_only = compute_document_styles(&dom, &[stylesheet("p { color: blue; }")])
+        .expect("paint-only computed document");
+    let layout_affecting = compute_document_styles(&dom, &[stylesheet("p { width: 20px; }")])
+        .expect("layout-affecting computed document");
+    let different_shape = compute_document_styles(
+        &element("section", Vec::new(), Vec::new()),
+        &[stylesheet("section { color: red; }")],
+    )
+    .expect("different shape computed document");
+
+    assert_eq!(
+        paint_only.layout_impact_against(&base),
+        ComputedDocumentStyleLayoutImpact::PaintOnly
+    );
+    assert_eq!(
+        layout_affecting.layout_impact_against(&base),
+        ComputedDocumentStyleLayoutImpact::LayoutAffecting
+    );
+    assert_eq!(
+        different_shape.layout_impact_against(&base),
+        ComputedDocumentStyleLayoutImpact::Unknown
+    );
 }
 
 #[test]

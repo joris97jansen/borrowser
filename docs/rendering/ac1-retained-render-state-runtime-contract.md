@@ -28,6 +28,7 @@ Related documents:
 - `docs/rendering/ac2-retained-render-identities.md`
 - `docs/rendering/ac3-explicit-dirty-state-tracking.md`
 - `docs/rendering/ac5-retained-style-artifact-reuse.md`
+- `docs/rendering/ac6-retained-layout-artifact-foundation.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v3-retained-state-versus-rebuilt-state-ownership.md`
@@ -234,10 +235,10 @@ AC1 deliberately excludes:
   beyond AC2's minimal browser/runtime-owned retained render IDs;
 - performance or allocation guardrails for incremental behavior.
 
-Future AC issues may add those concepts only by defining explicit ownership,
-stable identifiers where retention is needed, dependency derivation,
-conservative fallback behavior, deterministic debug output, and representative
-tests.
+AC6 adds the first retained layout artifact foundation with explicit ownership,
+layout-owned materialization, conservative fallback behavior, deterministic
+debug output, and representative tests. Other future retained concepts may be
+added only through similarly explicit contracts.
 
 ## Future Extension Points
 

@@ -7,6 +7,7 @@ use super::{
     RetainedRenderIdentity, RetainedRenderIdentityDomain, retained_render_anchor_debug_label,
     retained_render_artifact_kind_debug_label,
 };
+use layout::{RetainedLayoutKey, RetainedLayoutKeySeed};
 
 /// Browser/runtime generation for retained render state.
 ///
@@ -87,6 +88,34 @@ pub struct RetainedStyleArtifactDebugSnapshot {
     pub stats: RetainedStyleArtifactStats,
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct RetainedLayoutArtifactStats {
+    pub reuse_count: u64,
+    pub recompute_count: u64,
+    pub discard_count: u64,
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum RetainedLayoutArtifactAction {
+    #[default]
+    None,
+    InitialCompute,
+    Reused,
+    FullDocumentRelayout,
+    ConservativeDocumentFallback,
+    DiscardedForInvalidation,
+    MaterializationFailedFallback,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct RetainedLayoutArtifactDebugSnapshot {
+    pub key_seed: RetainedLayoutKeySeed,
+    pub key: Option<RetainedLayoutKey>,
+    pub state: RenderArtifactState,
+    pub last_action: RetainedLayoutArtifactAction,
+    pub stats: RetainedLayoutArtifactStats,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RenderPipelineDebugSnapshot {
     pub has_dom: bool,
@@ -101,6 +130,7 @@ pub struct RenderPipelineDebugSnapshot {
     pub paint_dirty: bool,
     pub style_invalidation: StyleInvalidationState,
     pub style_artifacts: RetainedStyleArtifactDebugSnapshot,
+    pub layout_artifacts: RetainedLayoutArtifactDebugSnapshot,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -140,6 +170,7 @@ pub struct RetainedRenderStateDebugSnapshot {
     pub paint_dirty: bool,
     pub style_invalidation: StyleInvalidationState,
     pub style_artifacts: RetainedStyleArtifactDebugSnapshot,
+    pub layout_artifacts: RetainedLayoutArtifactDebugSnapshot,
     pub retained_identity_domain: RetainedRenderIdentityDomain,
     pub retained_identities: Vec<RetainedRenderIdentity>,
     pub layout_identity: FrameLocalIdentityState,
@@ -202,6 +233,7 @@ impl RetainedRenderStateDebugSnapshot {
         )
         .expect("write retained render state snapshot");
         append_retained_style_artifact_debug_snapshot(&mut out, self.style_artifacts);
+        append_retained_layout_artifact_debug_snapshot(&mut out, self.layout_artifacts);
         writeln!(&mut out, "retained-identities:").expect("write retained render state snapshot");
         writeln!(
             &mut out,
@@ -251,6 +283,55 @@ impl RetainedRenderStateDebugSnapshot {
         .expect("write retained render state snapshot");
         out
     }
+}
+
+fn append_retained_layout_artifact_debug_snapshot(
+    out: &mut String,
+    snapshot: RetainedLayoutArtifactDebugSnapshot,
+) {
+    writeln!(out, "layout-artifacts:").expect("write retained render state snapshot");
+    writeln!(
+        out,
+        "  key-seed: identity-domain={} layout-input-generation={} layout-style-generation={} text-measurement-generation={} replaced-metadata-generation={}",
+        snapshot.key_seed.identity_domain,
+        snapshot.key_seed.layout_input_generation,
+        snapshot.key_seed.layout_style_generation,
+        snapshot.key_seed.text_measurement_generation,
+        snapshot.key_seed.replaced_metadata_generation,
+    )
+    .expect("write retained render state snapshot");
+    match snapshot.key {
+        Some(key) => writeln!(
+            out,
+            "  key: identity-domain={} layout-input-generation={} layout-style-generation={} viewport-width-key={} text-measurement-generation={} replaced-metadata-generation={}",
+            key.identity_domain,
+            key.layout_input_generation,
+            key.layout_style_generation,
+            key.viewport_width.value(),
+            key.text_measurement_generation,
+            key.replaced_metadata_generation
+        ),
+        None => writeln!(out, "  key: none"),
+    }
+    .expect("write retained render state snapshot");
+    writeln!(
+        out,
+        "  state: {}",
+        render_artifact_state_debug_label(snapshot.state)
+    )
+    .expect("write retained render state snapshot");
+    writeln!(
+        out,
+        "  last-action: {}",
+        retained_layout_artifact_action_debug_label(snapshot.last_action)
+    )
+    .expect("write retained render state snapshot");
+    writeln!(out, "  reuse-count: {}", snapshot.stats.reuse_count)
+        .expect("write retained render state snapshot");
+    writeln!(out, "  recompute-count: {}", snapshot.stats.recompute_count)
+        .expect("write retained render state snapshot");
+    writeln!(out, "  discard-count: {}", snapshot.stats.discard_count)
+        .expect("write retained render state snapshot");
 }
 
 fn append_retained_style_artifact_debug_snapshot(
@@ -344,6 +425,24 @@ fn retained_style_artifact_action_debug_label(action: RetainedStyleArtifactActio
             "discarded-for-full-invalidation"
         }
         RetainedStyleArtifactAction::FallbackFullRecompute => "fallback-full-recompute",
+    }
+}
+
+fn retained_layout_artifact_action_debug_label(
+    action: RetainedLayoutArtifactAction,
+) -> &'static str {
+    match action {
+        RetainedLayoutArtifactAction::None => "none",
+        RetainedLayoutArtifactAction::InitialCompute => "initial-compute",
+        RetainedLayoutArtifactAction::Reused => "reused",
+        RetainedLayoutArtifactAction::FullDocumentRelayout => "full-document-relayout",
+        RetainedLayoutArtifactAction::ConservativeDocumentFallback => {
+            "conservative-document-fallback"
+        }
+        RetainedLayoutArtifactAction::DiscardedForInvalidation => "discarded-for-invalidation",
+        RetainedLayoutArtifactAction::MaterializationFailedFallback => {
+            "materialization-failed-fallback"
+        }
     }
 }
 
