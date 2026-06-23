@@ -11,6 +11,7 @@ fn derive_plan(
         has_dom: true,
         retained_style_artifacts,
         retained_layout_artifacts: RetainedLayoutArtifactState::Fresh,
+        retained_paint_artifacts: RetainedPaintArtifactState::Fresh,
         retained_dirty_state,
         pending_work,
     })
@@ -39,7 +40,11 @@ fn no_op_dirty_state_plans_minimal_work() {
         RenderWorkDecision::ReuseRetainedLayout
     );
     assert_eq!(plan.relayout_execution, RelayoutExecution::ReuseRetained);
-    assert_eq!(plan.repaint.decision, RenderWorkDecision::None);
+    assert_eq!(
+        plan.repaint.decision,
+        RenderWorkDecision::ReuseRetainedPaint
+    );
+    assert_eq!(plan.repaint_execution, RepaintExecution::ReuseRetained);
     assert_eq!(plan.conservative_fallback, None);
 }
 
@@ -275,6 +280,7 @@ fn render_work_plan_debug_snapshot_is_exact_for_viewport_update() {
             "repaint: decision=repaint scope=viewport\n",
             "  reasons: 1\n",
             "    - dirty(cascaded-from-layout)\n",
+            "repaint-execution: strategy=viewport\n",
             "conservative-fallback: none\n",
         )
     );
@@ -312,6 +318,7 @@ fn render_work_plan_debug_snapshot_is_exact_for_conservative_unknown() {
             "repaint: decision=conservative-fallback scope=document\n",
             "  reasons: 1\n",
             "    - dirty(conservative-unknown-impact)\n",
+            "repaint-execution: strategy=conservative-document-fallback requested-scope=document reason=conservative-unknown-impact(document)\n",
             "conservative-fallback: reason=conservative-unknown-impact scope=document\n",
         )
     );

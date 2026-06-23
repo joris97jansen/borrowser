@@ -195,9 +195,11 @@ ownership, deterministic identifiers, dependency derivation, fallback behavior,
 and regression surfaces.
 
 AB6 removes the narrow execution-policy exclusion for AB5's supported
-`Document` and `Viewport` scopes. It does not remove the exclusions for dirty
-regions, retained paint artifacts, paint-source-scoped invalidation, compositor
-layers, or GPU behavior.
+`Document` and `Viewport` scopes. AC7 removes the narrow retained paint
+artifact exclusion only for paint-owned semantic artifacts wrapped by
+browser/runtime-owned retained keys and lifetime. These do not remove the
+exclusions for dirty regions, paint-source-scoped invalidation, compositor
+layers, retained paint scenes/display lists, or GPU behavior.
 
 ## Extension Points
 

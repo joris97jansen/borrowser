@@ -14,9 +14,10 @@ pub(crate) use stylesheets::PageStylesheetReconcile;
 use crate::form_controls::{FormControlIndex, seed_input_state_from_dom};
 use crate::rendering::{
     PendingRenderWork, RenderInvalidationRequest, RenderWorkPlan, RenderWorkPlanInput,
-    render_invalidation_request,
+    RetainedPaintArtifactKeySeed, RetainedPaintFrameResult, render_invalidation_request,
 };
 use gfx::input::InputValueStore;
+use gfx::paint::PaintArtifact;
 use html::{
     Node,
     dom_utils::outline_from_dom,
@@ -124,6 +125,7 @@ impl PageState {
             has_dom: self.dom.is_some(),
             retained_style_artifacts: self.rendering.retained_style_artifact_state(),
             retained_layout_artifacts: self.rendering.retained_layout_artifact_state(),
+            retained_paint_artifacts: self.rendering.retained_paint_artifact_state(),
             retained_dirty_state: self.rendering.dirty_state(),
             pending_work,
         })
@@ -137,8 +139,20 @@ impl PageState {
         self.rendering.retained_layout_artifact()
     }
 
+    pub(crate) fn retained_paint_artifact(&self) -> Option<&PaintArtifact> {
+        self.rendering.retained_paint_artifact()
+    }
+
+    pub(crate) fn retained_paint_key_seed(&self) -> RetainedPaintArtifactKeySeed {
+        self.rendering.retained_paint_key_seed()
+    }
+
     pub(crate) fn record_layout_frame_result(&mut self, result: RetainedLayoutFrameResult) {
         self.rendering.record_layout_frame_result(result);
+    }
+
+    pub(crate) fn record_paint_frame_result(&mut self, result: RetainedPaintFrameResult) {
+        self.rendering.record_paint_frame_result(result);
     }
 
     pub(crate) fn style_dirty_for_rendering(&self) -> bool {

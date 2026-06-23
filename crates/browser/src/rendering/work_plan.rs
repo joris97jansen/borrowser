@@ -27,10 +27,18 @@ pub enum RetainedLayoutArtifactState {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RetainedPaintArtifactState {
+    Absent,
+    Fresh,
+    Stale,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum RenderWorkDecision {
     None,
     ReuseRetainedStyle,
     ReuseRetainedLayout,
+    ReuseRetainedPaint,
     Restyle,
     Relayout,
     Repaint,
@@ -48,6 +56,9 @@ pub enum RenderWorkPlanReason {
     RetainedLayoutArtifactAbsent,
     RetainedLayoutArtifactFresh,
     RetainedLayoutArtifactStale,
+    RetainedPaintArtifactAbsent,
+    RetainedPaintArtifactFresh,
+    RetainedPaintArtifactStale,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -74,6 +85,21 @@ pub enum RelayoutExecution {
     },
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum RepaintExecution {
+    None,
+    ReuseRetained,
+    FullDocument,
+    Viewport,
+    ConservativeDocumentFallback {
+        requested_scope: DirtyScope,
+        reason: RenderWorkFallbackReason,
+    },
+    ConservativeViewportFallback {
+        requested_scope: DirtyScope,
+    },
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct RenderWorkPlan {
     pub entry_points: Vec<RenderInvalidationEntryPoint>,
@@ -82,6 +108,7 @@ pub struct RenderWorkPlan {
     pub relayout: PlannedRenderWork,
     pub relayout_execution: RelayoutExecution,
     pub repaint: PlannedRenderWork,
+    pub repaint_execution: RepaintExecution,
     pub conservative_fallback: Option<RenderWorkFallbackReason>,
 }
 
@@ -89,6 +116,7 @@ pub struct RenderWorkPlanInput<'a> {
     pub has_dom: bool,
     pub retained_style_artifacts: RetainedStyleArtifactState,
     pub retained_layout_artifacts: RetainedLayoutArtifactState,
+    pub retained_paint_artifacts: RetainedPaintArtifactState,
     pub retained_dirty_state: &'a RenderDirtyState,
     pub pending_work: &'a PendingRenderWork,
 }
@@ -124,10 +152,17 @@ impl RenderWorkPlan {
                 &dirty_state,
                 conservative_fallback,
             ),
-            repaint: plan_phase(
+            repaint: plan_repaint(
                 input.has_dom,
-                DirtyPhase::Paint,
-                RenderWorkDecision::Repaint,
+                input.retained_layout_artifacts,
+                input.retained_paint_artifacts,
+                &dirty_state,
+                conservative_fallback,
+            ),
+            repaint_execution: plan_repaint_execution(
+                input.has_dom,
+                input.retained_layout_artifacts,
+                input.retained_paint_artifacts,
                 &dirty_state,
                 conservative_fallback,
             ),
@@ -151,6 +186,7 @@ impl RenderWorkPlan {
         append_planned_work_snapshot(&mut out, "relayout", &self.relayout);
         append_relayout_execution_snapshot(&mut out, self.relayout_execution);
         append_planned_work_snapshot(&mut out, "repaint", &self.repaint);
+        append_repaint_execution_snapshot(&mut out, self.repaint_execution);
         append_fallback_snapshot(&mut out, self.conservative_fallback);
         out
     }
@@ -323,10 +359,10 @@ fn plan_relayout_execution(
     RelayoutExecution::FullDocument
 }
 
-fn plan_phase(
+fn plan_repaint(
     has_dom: bool,
-    phase: DirtyPhase,
-    dirty_decision: RenderWorkDecision,
+    layout_artifacts: RetainedLayoutArtifactState,
+    paint_artifacts: RetainedPaintArtifactState,
     dirty_state: &RenderDirtyState,
     conservative_fallback: Option<RenderWorkFallbackReason>,
 ) -> PlannedRenderWork {
@@ -334,23 +370,97 @@ fn plan_phase(
         return planned_no_document();
     }
 
-    let scope = dirty_state.effective_scope(phase);
-    if scope == DirtyScope::None {
-        return PlannedRenderWork {
-            decision: RenderWorkDecision::None,
-            scope,
-            reasons: vec![RenderWorkPlanReason::CleanDirtyState],
+    let paint_scope = dirty_state.effective_scope(DirtyPhase::Paint);
+    let layout_scope = dirty_state.effective_scope(DirtyPhase::Layout);
+    if paint_scope == DirtyScope::None && layout_scope == DirtyScope::None {
+        return match (layout_artifacts, paint_artifacts) {
+            (RetainedLayoutArtifactState::Fresh, RetainedPaintArtifactState::Fresh) => {
+                PlannedRenderWork {
+                    decision: RenderWorkDecision::ReuseRetainedPaint,
+                    scope: DirtyScope::None,
+                    reasons: vec![
+                        RenderWorkPlanReason::CleanDirtyState,
+                        RenderWorkPlanReason::RetainedPaintArtifactFresh,
+                    ],
+                }
+            }
+            (_, RetainedPaintArtifactState::Absent) => PlannedRenderWork {
+                decision: RenderWorkDecision::Repaint,
+                scope: DirtyScope::Document,
+                reasons: vec![RenderWorkPlanReason::RetainedPaintArtifactAbsent],
+            },
+            (_, RetainedPaintArtifactState::Stale) => PlannedRenderWork {
+                decision: RenderWorkDecision::Repaint,
+                scope: DirtyScope::Document,
+                reasons: vec![RenderWorkPlanReason::RetainedPaintArtifactStale],
+            },
+            (RetainedLayoutArtifactState::Absent, RetainedPaintArtifactState::Fresh) => {
+                PlannedRenderWork {
+                    decision: RenderWorkDecision::Repaint,
+                    scope: DirtyScope::Document,
+                    reasons: vec![RenderWorkPlanReason::RetainedLayoutArtifactAbsent],
+                }
+            }
+            (RetainedLayoutArtifactState::Stale, RetainedPaintArtifactState::Fresh) => {
+                PlannedRenderWork {
+                    decision: RenderWorkDecision::Repaint,
+                    scope: DirtyScope::Document,
+                    reasons: vec![RenderWorkPlanReason::RetainedLayoutArtifactStale],
+                }
+            }
         };
     }
 
+    let scope = paint_scope.conservative_merge(layout_scope);
     PlannedRenderWork {
         decision: if conservative_fallback.is_some() {
             RenderWorkDecision::ConservativeFallback
         } else {
-            dirty_decision
+            RenderWorkDecision::Repaint
         },
         scope,
-        reasons: dirty_reasons(dirty_state, phase),
+        reasons: dirty_reasons(dirty_state, DirtyPhase::Paint),
+    }
+}
+
+fn plan_repaint_execution(
+    has_dom: bool,
+    layout_artifacts: RetainedLayoutArtifactState,
+    paint_artifacts: RetainedPaintArtifactState,
+    dirty_state: &RenderDirtyState,
+    conservative_fallback: Option<RenderWorkFallbackReason>,
+) -> RepaintExecution {
+    if !has_dom {
+        return RepaintExecution::None;
+    }
+
+    let paint_scope = dirty_state.effective_scope(DirtyPhase::Paint);
+    let layout_scope = dirty_state.effective_scope(DirtyPhase::Layout);
+    if paint_scope == DirtyScope::None && layout_scope == DirtyScope::None {
+        return match (layout_artifacts, paint_artifacts) {
+            (RetainedLayoutArtifactState::Fresh, RetainedPaintArtifactState::Fresh) => {
+                RepaintExecution::ReuseRetained
+            }
+            _ => RepaintExecution::FullDocument,
+        };
+    }
+
+    let scope = paint_scope.conservative_merge(layout_scope);
+    if let Some(reason) = conservative_fallback {
+        return RepaintExecution::ConservativeDocumentFallback {
+            requested_scope: scope,
+            reason,
+        };
+    }
+
+    match scope {
+        DirtyScope::None => RepaintExecution::None,
+        DirtyScope::Viewport => RepaintExecution::Viewport,
+        DirtyScope::Document => RepaintExecution::FullDocument,
+        narrowed => RepaintExecution::ConservativeDocumentFallback {
+            requested_scope: narrowed,
+            reason: RenderWorkFallbackReason::ConservativeUnknownImpact { scope: narrowed },
+        },
     }
 }
 
@@ -425,6 +535,34 @@ fn append_relayout_execution_snapshot(out: &mut String, execution: RelayoutExecu
     .expect("write render work plan relayout execution snapshot");
 }
 
+fn append_repaint_execution_snapshot(out: &mut String, execution: RepaintExecution) {
+    match execution {
+        RepaintExecution::None => writeln!(out, "repaint-execution: strategy=none"),
+        RepaintExecution::ReuseRetained => {
+            writeln!(out, "repaint-execution: strategy=reuse-retained")
+        }
+        RepaintExecution::FullDocument => {
+            writeln!(out, "repaint-execution: strategy=full-document")
+        }
+        RepaintExecution::Viewport => writeln!(out, "repaint-execution: strategy=viewport"),
+        RepaintExecution::ConservativeDocumentFallback {
+            requested_scope,
+            reason,
+        } => writeln!(
+            out,
+            "repaint-execution: strategy=conservative-document-fallback requested-scope={} reason={}",
+            dirty_scope_debug_label(requested_scope.debug_label()),
+            fallback_reason_debug_label(reason)
+        ),
+        RepaintExecution::ConservativeViewportFallback { requested_scope } => writeln!(
+            out,
+            "repaint-execution: strategy=conservative-viewport-fallback requested-scope={}",
+            dirty_scope_debug_label(requested_scope.debug_label())
+        ),
+    }
+    .expect("write render work plan repaint execution snapshot");
+}
+
 fn append_fallback_snapshot(out: &mut String, fallback: Option<RenderWorkFallbackReason>) {
     match fallback {
         Some(RenderWorkFallbackReason::ConservativeUnknownImpact { scope }) => writeln!(
@@ -447,6 +585,7 @@ fn work_decision_debug_label(decision: RenderWorkDecision) -> &'static str {
         RenderWorkDecision::None => "none",
         RenderWorkDecision::ReuseRetainedStyle => "reuse-retained-style",
         RenderWorkDecision::ReuseRetainedLayout => "reuse-retained-layout",
+        RenderWorkDecision::ReuseRetainedPaint => "reuse-retained-paint",
         RenderWorkDecision::Restyle => "restyle",
         RenderWorkDecision::Relayout => "relayout",
         RenderWorkDecision::Repaint => "repaint",
@@ -473,6 +612,11 @@ fn work_reason_debug_label(reason: RenderWorkPlanReason) -> String {
         RenderWorkPlanReason::RetainedLayoutArtifactStale => {
             retained_layout_artifact_reason("stale")
         }
+        RenderWorkPlanReason::RetainedPaintArtifactAbsent => {
+            retained_paint_artifact_reason("absent")
+        }
+        RenderWorkPlanReason::RetainedPaintArtifactFresh => retained_paint_artifact_reason("fresh"),
+        RenderWorkPlanReason::RetainedPaintArtifactStale => retained_paint_artifact_reason("stale"),
     }
 }
 
@@ -487,6 +631,13 @@ fn retained_layout_artifact_reason(state: &str) -> String {
     format!(
         "retained-layout-artifact({})={state}",
         render_artifact_debug_label(RenderArtifact::LayoutTree)
+    )
+}
+
+fn retained_paint_artifact_reason(state: &str) -> String {
+    format!(
+        "retained-paint-artifact({})={state}",
+        render_artifact_debug_label(RenderArtifact::PaintCommands)
     )
 }
 

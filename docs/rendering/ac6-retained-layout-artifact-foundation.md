@@ -200,4 +200,5 @@ AC6 does not introduce:
 - retained display lists or paint scenes;
 - compositor layers or GPU resources;
 - browser-owned CSS property-impact tables;
-- retained paint artifact reuse.
+- retained paint artifact reuse; AC7 adds that later as a separate
+  browser/runtime-retained, paint-owned semantic artifact contract.

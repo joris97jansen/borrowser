@@ -1,7 +1,14 @@
+use crate::input_state::DocumentInputState;
 use crate::page::{PageState, RestyleHint};
 use crate::rendering::*;
+use crate::resources::ResourceManager;
+use egui::{CentralPanel, Context, Pos2, RawInput, Rect, Vec2};
+use gfx::paint::{PaintArtifact, PaintPhaseInput};
 use html::internal::Id;
-use layout::{LayoutPhaseInput, RetainedLayoutFrameAction, RetainedLayoutFrameResult};
+use layout::{
+    LayoutPhaseInput, RetainedLayoutFallbackReason, RetainedLayoutFrameAction,
+    RetainedLayoutFrameResult,
+};
 
 use super::support::*;
 
@@ -115,6 +122,13 @@ fn retained_render_state_debug_snapshot_is_deterministic() {
             "  reuse-count: 0\n",
             "  recompute-count: 0\n",
             "  discard-count: 0\n",
+            "paint-artifacts:\n",
+            "  key: none\n",
+            "  state: absent\n",
+            "  last-action: none\n",
+            "  reuse-count: 0\n",
+            "  recompute-count: 0\n",
+            "  discard-count: 0\n",
             "retained-identities:\n",
             "  identity-domain: 0\n",
             "  render-artifacts: 0\n",
@@ -155,7 +169,7 @@ fn retained_render_identities_allocate_deterministically_for_initial_document() 
             "  computed-styles: absent\n",
             "  styled-tree: borrow-backed-rebuilt-on-demand\n",
             "  layout-tree: absent\n",
-            "  paint-output: immediate-frame-output\n",
+            "  paint-output: absent\n",
             "dirty-state:\n",
             "  entries: 3\n",
             "    entry[0]: phase=style reason=document-replaced scope=document\n",
@@ -174,6 +188,13 @@ fn retained_render_identities_allocate_deterministically_for_initial_document() 
             "  discard-count: 0\n",
             "layout-artifacts:\n",
             "  key-seed: identity-domain=1 layout-input-generation=1 layout-style-generation=0 text-measurement-generation=0 replaced-metadata-generation=0\n",
+            "  key: none\n",
+            "  state: absent\n",
+            "  last-action: none\n",
+            "  reuse-count: 0\n",
+            "  recompute-count: 0\n",
+            "  discard-count: 0\n",
+            "paint-artifacts:\n",
             "  key: none\n",
             "  state: absent\n",
             "  last-action: none\n",
@@ -234,7 +255,7 @@ fn debug_snapshot_reports_retained_style_artifacts_and_ephemeral_downstream_tree
             computed_styles: RenderArtifactState::RetainedFresh,
             styled_tree: RenderArtifactState::BorrowBackedRebuiltOnDemand,
             layout_tree: RenderArtifactState::Absent,
-            paint_output: RenderArtifactState::ImmediateFrameOutput,
+            paint_output: RenderArtifactState::Absent,
             dirty_state: DirtyStateDebugSnapshot {
                 entries: vec![
                     DirtyEntry::new(
@@ -279,6 +300,12 @@ fn debug_snapshot_reports_retained_style_artifacts_and_ephemeral_downstream_tree
                 state: RenderArtifactState::Absent,
                 last_action: RetainedLayoutArtifactAction::None,
                 stats: RetainedLayoutArtifactStats::default(),
+            },
+            paint_artifacts: RetainedPaintArtifactDebugSnapshot {
+                key: None,
+                state: RenderArtifactState::Absent,
+                last_action: RetainedPaintArtifactAction::None,
+                stats: RetainedPaintArtifactStats::default(),
             },
         }
     );
@@ -352,11 +379,44 @@ fn retained_layout_artifact_counters_record_recompute_and_reuse() {
 }
 
 #[test]
+fn retained_paint_artifact_counters_record_recompute_and_reuse() {
+    let mut page = page_with_dom(
+        "<!doctype html><html><body><p style=\"display: block; width: 100px;\">Hello</p></body></html>",
+    );
+    seed_retained_paint_for_test(&mut page);
+
+    let snapshot = page.retained_render_state_debug_snapshot();
+    let key = snapshot
+        .paint_artifacts
+        .key
+        .expect("retained paint artifact should have key");
+    let artifact = page
+        .retained_paint_artifact()
+        .expect("retained paint artifact should exist")
+        .clone();
+    page.record_paint_frame_result(RetainedPaintFrameResult {
+        key,
+        action: RetainedPaintFrameAction::Reused,
+        artifact,
+    });
+
+    let snapshot = page.retained_render_state_debug_snapshot();
+    assert_eq!(snapshot.paint_output, RenderArtifactState::RetainedFresh);
+    assert_eq!(
+        snapshot.paint_artifacts.last_action,
+        RetainedPaintArtifactAction::Reused
+    );
+    assert_eq!(snapshot.paint_artifacts.stats.recompute_count, 1);
+    assert_eq!(snapshot.paint_artifacts.stats.reuse_count, 1);
+    assert_eq!(snapshot.paint_artifacts.stats.discard_count, 0);
+}
+
+#[test]
 fn paint_only_style_change_preserves_layout_and_plans_retained_layout_reuse() {
     let mut page = page_with_dom(
         "<!doctype html><html><head><style>.paint { background-color: red; }</style></head><body><p style=\"display: block; width: 100px;\">Hello</p></body></html>",
     );
-    seed_retained_layout_for_test(&mut page);
+    seed_retained_paint_for_test(&mut page);
     page.clear_all_dirty_for_tests();
 
     let dirty_id = {
@@ -389,8 +449,244 @@ fn paint_only_style_change_preserves_layout_and_plans_retained_layout_reuse() {
         prepared.work_plan.relayout_execution,
         RelayoutExecution::ReuseRetained
     );
+    assert_eq!(
+        prepared.work_plan.repaint.decision,
+        RenderWorkDecision::Repaint
+    );
+    assert_eq!(
+        prepared.work_plan.repaint_execution,
+        RepaintExecution::FullDocument
+    );
     let p = find_styled_element(prepared.style_output.root(), "p").expect("p should exist");
     assert_eq!(p.style.background_color(), (255, 0, 0, 255));
+    drop(prepared);
+
+    let snapshot = page.retained_render_state_debug_snapshot();
+    assert_eq!(
+        snapshot.layout_artifacts.state,
+        RenderArtifactState::RetainedFresh
+    );
+    assert_eq!(
+        snapshot.paint_artifacts.state,
+        RenderArtifactState::RetainedStale
+    );
+}
+
+#[test]
+fn layout_affecting_style_change_forces_paint_recompute_planning() {
+    let mut page = page_with_dom(
+        "<!doctype html><html><body><p style=\"display: block; width: 100px;\">Hello</p></body></html>",
+    );
+    seed_retained_paint_for_test(&mut page);
+    page.clear_all_dirty_for_tests();
+
+    let dirty_id = {
+        let dom = page.dom.as_deref_mut().expect("dom should exist");
+        set_first_element_attr(
+            dom,
+            "p",
+            "style",
+            Some("display: block; width: 140px;".to_string()),
+        )
+    };
+    page.mark_dom_changed_for_tests(RestyleHint::attributes_changed(vec![dirty_id]));
+
+    let prepared = page
+        .prepare_style_phase_for_frame(&PendingRenderWork::default())
+        .expect("frame preparation should succeed")
+        .expect("document should produce a frame");
+    assert!(
+        prepared
+            .work_plan
+            .dirty_state
+            .is_phase_dirty(DirtyPhase::Layout)
+    );
+    assert!(
+        prepared
+            .work_plan
+            .dirty_state
+            .is_phase_dirty(DirtyPhase::Paint)
+    );
+    assert_eq!(
+        prepared.work_plan.relayout.decision,
+        RenderWorkDecision::Relayout
+    );
+    assert_eq!(
+        prepared.work_plan.repaint.decision,
+        RenderWorkDecision::Repaint
+    );
+    drop(prepared);
+
+    assert_eq!(
+        page.retained_render_state_debug_snapshot()
+            .paint_artifacts
+            .state,
+        RenderArtifactState::RetainedStale
+    );
+}
+
+#[test]
+fn stacking_order_affecting_style_change_invalidates_retained_paint() {
+    let mut page = page_with_dom(
+        "<!doctype html><html><body><div style=\"position: relative; z-index: 1;\">One</div><div style=\"position: relative; z-index: 2;\">Two</div></body></html>",
+    );
+    seed_retained_paint_for_test(&mut page);
+    page.clear_all_dirty_for_tests();
+
+    let dirty_id = {
+        let dom = page.dom.as_deref_mut().expect("dom should exist");
+        set_first_element_attr(
+            dom,
+            "div",
+            "style",
+            Some("position: relative; z-index: 5;".to_string()),
+        )
+    };
+    page.mark_dom_changed_for_tests(RestyleHint::attributes_changed(vec![dirty_id]));
+
+    let prepared = page
+        .prepare_style_phase_for_frame(&PendingRenderWork::default())
+        .expect("frame preparation should succeed")
+        .expect("document should produce a frame");
+    assert_eq!(
+        prepared.work_plan.repaint.decision,
+        RenderWorkDecision::Repaint
+    );
+    assert!(
+        prepared
+            .work_plan
+            .dirty_state
+            .entries()
+            .contains(&DirtyEntry::new(
+                DirtyPhase::Paint,
+                DirtyReason::CascadedFromLayout,
+                DirtyScope::Document,
+            ))
+    );
+    drop(prepared);
+
+    assert_eq!(
+        page.retained_render_state_debug_snapshot()
+            .paint_artifacts
+            .state,
+        RenderArtifactState::RetainedStale
+    );
+}
+
+#[test]
+fn retained_paint_recomputes_when_actual_layout_reuse_key_mismatches() {
+    let mut page = page_with_dom(
+        "<!doctype html><html><body><p style=\"display: block; width: 100px;\">Hello</p></body></html>",
+    );
+    seed_retained_paint_for_test(&mut page);
+    page.clear_all_dirty_for_tests();
+
+    let old_paint_key = page
+        .retained_render_state_debug_snapshot()
+        .paint_artifacts
+        .key
+        .expect("seeded retained paint should have a key");
+    let prepared = prepare_page_frame(&mut page, PendingRenderWork::default())
+        .expect("frame preparation should succeed")
+        .expect("document should produce a frame");
+    assert_eq!(
+        prepared.work_plan.repaint_execution,
+        RepaintExecution::ReuseRetained
+    );
+    assert_eq!(
+        prepared.work_plan.relayout_execution,
+        RelayoutExecution::ReuseRetained
+    );
+
+    let mut input_state = DocumentInputState::new();
+    let resources = ResourceManager::new();
+    let ctx = Context::default();
+    let mut prepared = Some(prepared);
+    let mut outcome = None;
+    let _ = ctx.run(
+        RawInput {
+            screen_rect: Some(Rect::from_min_size(
+                Pos2::new(0.0, 0.0),
+                Vec2::new(640.0, 480.0),
+            )),
+            ..RawInput::default()
+        },
+        |ctx| {
+            CentralPanel::default().show(ctx, |ui| {
+                outcome = Some(execute_prepared_page_frame(
+                    ui,
+                    prepared.take().expect("prepared frame should execute once"),
+                    &mut input_state,
+                    &resources,
+                ));
+            });
+        },
+    );
+    let mut outcome = outcome.expect("frame should execute");
+
+    let retained_layout_result = outcome
+        .retained_layout_result
+        .as_ref()
+        .expect("retained layout result should be reported");
+    assert_ne!(retained_layout_result.key, old_paint_key.layout_key);
+    assert_eq!(
+        retained_layout_result.action,
+        RetainedLayoutFrameAction::ConservativeFallback(RetainedLayoutFallbackReason::KeyMismatch)
+    );
+    let actual_layout_key = retained_layout_result.key;
+
+    let retained_paint_result = outcome
+        .retained_paint_result
+        .as_ref()
+        .expect("retained paint result should be reported");
+    assert_eq!(retained_paint_result.key.layout_key, actual_layout_key);
+    assert_ne!(
+        retained_paint_result.key.layout_key,
+        old_paint_key.layout_key
+    );
+    assert_eq!(
+        retained_paint_result.action,
+        RetainedPaintFrameAction::Recomputed
+    );
+    assert_ne!(
+        outcome.trace.paint.kind,
+        RenderPhaseExecutionKind::MaterializedFromRetainedArtifacts
+    );
+    assert!(
+        !outcome
+            .trace
+            .to_debug_snapshot()
+            .contains("paint: phase=paint kind=materialized-from-retained-artifacts")
+    );
+
+    page.record_layout_frame_result(
+        outcome
+            .retained_layout_result
+            .take()
+            .expect("retained layout result should be recorded"),
+    );
+    page.record_paint_frame_result(
+        outcome
+            .retained_paint_result
+            .take()
+            .expect("retained paint result should be recorded"),
+    );
+
+    let snapshot = page.retained_render_state_debug_snapshot();
+    assert_eq!(
+        snapshot
+            .paint_artifacts
+            .key
+            .expect("recomputed retained paint should have a key")
+            .layout_key,
+        actual_layout_key
+    );
+    assert_eq!(
+        snapshot.paint_artifacts.last_action,
+        RetainedPaintArtifactAction::Recomputed
+    );
+    assert_eq!(snapshot.paint_artifacts.stats.reuse_count, 0);
+    assert_eq!(snapshot.paint_artifacts.stats.recompute_count, 2);
 }
 
 #[test]
@@ -1214,6 +1510,12 @@ fn navigation_reset_clears_page_owned_retained_render_state() {
                 last_action: RetainedLayoutArtifactAction::None,
                 stats: RetainedLayoutArtifactStats::default(),
             },
+            paint_artifacts: RetainedPaintArtifactDebugSnapshot {
+                key: None,
+                state: RenderArtifactState::Absent,
+                last_action: RetainedPaintArtifactAction::None,
+                stats: RetainedPaintArtifactStats::default(),
+            },
         }
     );
     assert_eq!(
@@ -1256,6 +1558,34 @@ fn seed_retained_layout_for_test(page: &mut PageState) {
         key,
         action: RetainedLayoutFrameAction::Recomputed,
         artifact,
+    });
+}
+
+fn seed_retained_paint_for_test(page: &mut PageState) {
+    let layout_key = page.retained_layout_key_seed().for_viewport_width(320.0);
+    let paint_key = page.retained_paint_key_seed().for_layout_key(layout_key);
+    let style_output = style_output_for_test(page);
+    let layout_output = layout::layout_document(LayoutPhaseInput::from_style_output(
+        &style_output,
+        320.0,
+        &TestMeasurer,
+        None,
+    ));
+    let layout_artifact =
+        layout::RetainedLayoutArtifact::from_layout_output(layout_key, &layout_output);
+    let paint_artifact =
+        PaintArtifact::from_phase_input(PaintPhaseInput::new(&layout_output), &TestMeasurer);
+    drop(layout_output);
+    drop(style_output);
+    page.record_layout_frame_result(RetainedLayoutFrameResult {
+        key: layout_key,
+        action: RetainedLayoutFrameAction::Recomputed,
+        artifact: layout_artifact,
+    });
+    page.record_paint_frame_result(RetainedPaintFrameResult {
+        key: paint_key,
+        action: RetainedPaintFrameAction::Recomputed,
+        artifact: paint_artifact,
     });
 }
 

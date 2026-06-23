@@ -134,12 +134,16 @@ AB6 deliberately excludes:
 - stacking-context-scoped repaint;
 - retained display lists;
 - retained paint scenes;
+- retained paint artifacts beyond AC7's paint-owned semantic artifact reuse
+  contract;
 - compositor layers;
 - GPU partial raster;
 - per-node repaint;
 - dependency graphs from DOM/style/layout nodes to paint artifacts;
 - pixel or raster snapshot testing.
 
-Future issues may add narrower repaint behavior only after defining stable
-ownership, identifiers, dependency derivation, fallback behavior, and
-deterministic debug surfaces.
+AC7 adds conservative retained paint-owned semantic artifact reuse and repaint
+planning for the existing `Document` and `Viewport` scopes. Future issues may
+add narrower repaint behavior only after defining stable ownership,
+identifiers, dependency derivation, fallback behavior, and deterministic debug
+surfaces.

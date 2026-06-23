@@ -12,9 +12,9 @@ mod text_control;
 pub(crate) use context::PaintCtx;
 pub use images::{ImageProvider, ImageState};
 pub use primitives::{
-    PaintBackground, PaintBorder, PaintBorderEdges, PaintBorderSide, PaintClip, PaintClipScope,
-    PaintColor, PaintInlineBox, PaintInput, PaintListMarker, PaintListMarkerKind, PaintNode,
-    PaintOutline, PaintPrimitive, PaintPrimitiveKind, PaintReplaced, PaintReplacedKind,
+    PaintArtifact, PaintBackground, PaintBorder, PaintBorderEdges, PaintBorderSide, PaintClip,
+    PaintClipScope, PaintColor, PaintInlineBox, PaintInput, PaintListMarker, PaintListMarkerKind,
+    PaintNode, PaintOutline, PaintPrimitive, PaintPrimitiveKind, PaintReplaced, PaintReplacedKind,
     PaintSource, PaintText, PaintTextDecoration, PaintTextDecorationLine, PaintTree,
 };
 pub use stacking::{
@@ -395,7 +395,15 @@ fn paint_list_marker(
 }
 
 pub fn paint_page(input: PaintPhaseInput<'_, '_, '_>, args: PaintArgs<'_>) {
-    let paint_input = input.to_paint_input(args.measurer);
+    let artifact = PaintArtifact::from_phase_input(input, args.measurer);
+    paint_page_with_artifact(input, &artifact, args);
+}
+
+pub fn paint_page_with_artifact(
+    input: PaintPhaseInput<'_, '_, '_>,
+    artifact: &PaintArtifact,
+    args: PaintArgs<'_>,
+) {
     let ctx = PaintCtx {
         painter: args.painter,
         origin: args.origin,
@@ -413,8 +421,9 @@ pub fn paint_page(input: PaintPhaseInput<'_, '_, '_>, args: PaintArgs<'_>) {
     };
 
     paint_stacking_context(
-        paint_input.stacking_contexts().root_id(),
-        &paint_input,
+        artifact.stacking_contexts().root_id(),
+        input.layout(),
+        artifact,
         ctx,
         true,
     );
@@ -422,25 +431,27 @@ pub fn paint_page(input: PaintPhaseInput<'_, '_, '_>, args: PaintArgs<'_>) {
 
 fn paint_stacking_context(
     context_id: StackingContextId,
-    input: &PaintInput<'_, '_, '_>,
+    layout: &LayoutPhaseOutput<'_, '_>,
+    artifact: &PaintArtifact,
     ctx: PaintCtx<'_>,
     skip_inline_block_children: bool,
 ) {
-    let ancestor_clips = if context_id == input.stacking_contexts().root_id() {
+    let ancestor_clips = if context_id == artifact.stacking_contexts().root_id() {
         Vec::new()
     } else {
-        input
+        artifact
             .stacking_contexts()
             .context(context_id)
             .map(|context| {
-                ancestor_overflow_clip_rects(input.layout().root(), context.source().paint_source())
+                ancestor_overflow_clip_rects(layout.root(), context.source().paint_source())
             })
             .unwrap_or_default()
     };
     paint_stacking_context_with_clip_chain(
         &ancestor_clips,
         context_id,
-        input,
+        layout,
+        artifact,
         ctx,
         skip_inline_block_children,
     );
@@ -449,12 +460,19 @@ fn paint_stacking_context(
 fn paint_stacking_context_with_clip_chain(
     clips: &[Rectangle],
     context_id: StackingContextId,
-    input: &PaintInput<'_, '_, '_>,
+    layout: &LayoutPhaseOutput<'_, '_>,
+    artifact: &PaintArtifact,
     ctx: PaintCtx<'_>,
     skip_inline_block_children: bool,
 ) {
     let Some((clip, rest)) = clips.split_first() else {
-        paint_stacking_context_body(context_id, input, ctx, skip_inline_block_children);
+        paint_stacking_context_body(
+            context_id,
+            layout,
+            artifact,
+            ctx,
+            skip_inline_block_children,
+        );
         return;
     };
 
@@ -468,7 +486,8 @@ fn paint_stacking_context_with_clip_chain(
     paint_stacking_context_with_clip_chain(
         rest,
         context_id,
-        input,
+        layout,
+        artifact,
         clipped_ctx,
         skip_inline_block_children,
     );
@@ -476,22 +495,29 @@ fn paint_stacking_context_with_clip_chain(
 
 fn paint_stacking_context_body(
     context_id: StackingContextId,
-    input: &PaintInput<'_, '_, '_>,
+    layout: &LayoutPhaseOutput<'_, '_>,
+    artifact: &PaintArtifact,
     ctx: PaintCtx<'_>,
     skip_inline_block_children: bool,
 ) {
-    for slot in input.stacking_contexts().ordered_slots(context_id) {
+    for slot in artifact.stacking_contexts().ordered_slots(context_id) {
         match slot {
             StackingOrderSlot::ChildContext(child_context_id) => {
-                paint_stacking_context(child_context_id, input, ctx, skip_inline_block_children);
+                paint_stacking_context(
+                    child_context_id,
+                    layout,
+                    artifact,
+                    ctx,
+                    skip_inline_block_children,
+                );
             }
             StackingOrderSlot::ContextSource(source) => {
-                if let Some(layout) = find_layout_by_paint_source(input.layout().root(), source) {
+                if let Some(layout_box) = find_layout_by_paint_source(layout.root(), source) {
                     let context_ctx = PaintCtx {
-                        stacking_contexts: Some((input.stacking_contexts(), context_id)),
+                        stacking_contexts: Some((artifact.stacking_contexts(), context_id)),
                         ..ctx
                     };
-                    paint_layout_box(layout, context_ctx, skip_inline_block_children);
+                    paint_layout_box(layout_box, context_ctx, skip_inline_block_children);
                 }
             }
         }

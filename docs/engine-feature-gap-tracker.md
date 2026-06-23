@@ -263,12 +263,18 @@ Current supported subset:
   relayout scopes are explicit, and narrower scopes conservatively execute as
   document relayout when Layout cannot safely perform true targeted relayout;
   see `docs/rendering/ac6-retained-layout-artifact-foundation.md`.
+- AC7 retained paint artifact reuse and repaint planning: browser/runtime owns
+  retained paint artifact lifetime, keys, counters, repaint planning,
+  conservative fallbacks, and debug reporting while Paint owns the semantic
+  paint artifact, stacking contexts, paint ordering, semantic layers, and
+  primitives. No-op frames can reuse retained paint artifacts when runtime keys
+  still match, and paint-only changes can plan repaint without relayout where
+  CSS-owned impact classification supports that; see
+  `docs/rendering/ac7-retained-paint-artifact-reuse-repaint-planning.md`.
 
 Missing or incomplete:
 
 - true minimal/subtree relayout execution and layout dependency graphs
-- retained paint artifact reuse beyond current retained style/layout
-  foundations
 - incremental rendering performance/allocation guardrails
 - JavaScript execution and DOM bindings
 - event loop, timers, microtasks, and script-triggered invalidation

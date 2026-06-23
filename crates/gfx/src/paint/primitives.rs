@@ -18,8 +18,7 @@ use super::stacking::{
 /// scene graph, backend command buffer, or compositor structure.
 pub struct PaintInput<'layout, 'style_tree, 'dom> {
     layout: &'layout LayoutPhaseOutput<'style_tree, 'dom>,
-    tree: PaintTree,
-    stacking_contexts: StackingContextTree,
+    artifact: PaintArtifact,
 }
 
 impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
@@ -29,8 +28,7 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
     ) -> Self {
         Self {
             layout: input.layout(),
-            tree: PaintTree::from_layout(input.layout_root(), measurer),
-            stacking_contexts: StackingContextTree::from_layout(input.layout_root()),
+            artifact: PaintArtifact::from_phase_input(input, measurer),
         }
     }
 
@@ -39,11 +37,15 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
     }
 
     pub fn tree(&self) -> &PaintTree {
-        &self.tree
+        self.artifact.tree()
     }
 
     pub fn stacking_contexts(&self) -> &StackingContextTree {
-        &self.stacking_contexts
+        self.artifact.stacking_contexts()
+    }
+
+    pub fn artifact(&self) -> &PaintArtifact {
+        &self.artifact
     }
 
     pub fn to_debug_snapshot(&self) -> String {
@@ -68,7 +70,7 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
             rectangle_debug_label(self.layout.document_rect())
         )
         .expect("write paint input snapshot");
-        self.tree
+        self.tree()
             .append_debug_snapshot(&mut out)
             .expect("write paint input snapshot");
         out
@@ -99,7 +101,7 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
     /// backend drawing. It is not a compositor layer tree, retained scene,
     /// display list, backend command stream, or paint invalidation surface.
     pub fn to_stacking_context_debug_snapshot(&self) -> String {
-        self.stacking_contexts.to_debug_snapshot()
+        self.stacking_contexts().to_debug_snapshot()
     }
 
     /// Stable paint-owned layering snapshot for AB7 regression tests.
@@ -121,11 +123,15 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
         writeln!(
             &mut out,
             "root-context: {}",
-            self.stacking_contexts.root_id().index()
+            self.stacking_contexts().root_id().index()
         )
         .expect("write paint layering snapshot");
-        self.append_layering_context_debug_snapshot(self.stacking_contexts.root_id(), &mut out, 0)
-            .expect("write paint layering snapshot");
+        self.append_layering_context_debug_snapshot(
+            self.stacking_contexts().root_id(),
+            &mut out,
+            0,
+        )
+        .expect("write paint layering snapshot");
         out
     }
 
@@ -140,7 +146,7 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
 
     fn append_stacking_order_debug_snapshot(&self, out: &mut String) -> std::fmt::Result {
         writeln!(out, "paint-tree-order")?;
-        self.append_context_order_debug_snapshot(self.stacking_contexts.root_id(), out, 0)
+        self.append_context_order_debug_snapshot(self.stacking_contexts().root_id(), out, 0)
     }
 
     fn append_context_order_debug_snapshot(
@@ -149,10 +155,10 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
         out: &mut String,
         depth: usize,
     ) -> std::fmt::Result {
-        for slot in self.stacking_contexts.ordered_slots(context_id) {
+        for slot in self.stacking_contexts().ordered_slots(context_id) {
             match slot {
                 StackingOrderSlot::ChildContext(child_context_id) => {
-                    let Some(child) = self.stacking_contexts.context(child_context_id) else {
+                    let Some(child) = self.stacking_contexts().context(child_context_id) else {
                         continue;
                     };
                     let indent = "  ".repeat(depth);
@@ -168,12 +174,12 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
                     self.append_context_order_debug_snapshot(child.id(), out, depth + 1)?;
                 }
                 StackingOrderSlot::ContextSource(source) => {
-                    if let Some(node) = self.tree.node_for_source(source) {
+                    if let Some(node) = self.tree().node_for_source(source) {
                         node.append_order_debug_snapshot_with_stacking_contexts(
                             out,
                             depth,
                             context_id,
-                            &self.stacking_contexts,
+                            self.stacking_contexts(),
                         )?;
                     }
                 }
@@ -189,7 +195,7 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
         out: &mut String,
         depth: usize,
     ) -> std::fmt::Result {
-        let Some(context) = self.stacking_contexts.context(context_id) else {
+        let Some(context) = self.stacking_contexts().context(context_id) else {
             return Ok(());
         };
         let indent = "  ".repeat(depth);
@@ -220,14 +226,14 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
         }
         writeln!(out, "{}  ordered-slots:", indent)?;
         for (index, slot) in self
-            .stacking_contexts
+            .stacking_contexts()
             .ordered_slots(context_id)
             .iter()
             .enumerate()
         {
             match *slot {
                 StackingOrderSlot::ChildContext(child_context_id) => {
-                    let Some(child) = self.stacking_contexts.context(child_context_id) else {
+                    let Some(child) = self.stacking_contexts().context(child_context_id) else {
                         continue;
                     };
                     writeln!(
@@ -254,6 +260,49 @@ impl<'layout, 'style_tree, 'dom> PaintInput<'layout, 'style_tree, 'dom> {
         }
 
         Ok(())
+    }
+}
+
+/// Paint-owned semantic artifact derived from layout output for immediate
+/// painting.
+///
+/// This owned artifact is not a browser/runtime cache key, backend command
+/// stream, display-list architecture, compositor layer tree, or GPU resource.
+/// Browser/runtime may retain it, but paint remains the owner of its semantic
+/// meaning.
+#[derive(Clone, Debug, PartialEq)]
+pub struct PaintArtifact {
+    tree: PaintTree,
+    stacking_contexts: StackingContextTree,
+}
+
+impl PaintArtifact {
+    pub fn from_phase_input(
+        input: PaintPhaseInput<'_, '_, '_>,
+        measurer: &dyn TextMeasurer,
+    ) -> Self {
+        Self {
+            tree: PaintTree::from_layout(input.layout_root(), measurer),
+            stacking_contexts: StackingContextTree::from_layout(input.layout_root()),
+        }
+    }
+
+    pub fn tree(&self) -> &PaintTree {
+        &self.tree
+    }
+
+    pub fn stacking_contexts(&self) -> &StackingContextTree {
+        &self.stacking_contexts
+    }
+
+    pub fn to_debug_snapshot(&self) -> String {
+        let mut out = String::new();
+        writeln!(&mut out, "version: 1").expect("write paint artifact snapshot");
+        writeln!(&mut out, "paint-artifact").expect("write paint artifact snapshot");
+        self.tree
+            .append_debug_snapshot(&mut out)
+            .expect("write paint artifact snapshot");
+        out
     }
 }
 
