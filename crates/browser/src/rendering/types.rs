@@ -313,6 +313,11 @@ impl RenderDirtyState {
         self.entries.retain(|entry| entry.phase != phase);
     }
 
+    pub(crate) fn remove_phase_reason(&mut self, phase: DirtyPhase, reason: DirtyReason) {
+        self.entries
+            .retain(|entry| entry.phase != phase || entry.reason != reason);
+    }
+
     pub fn is_empty(&self) -> bool {
         self.entries.is_empty()
     }

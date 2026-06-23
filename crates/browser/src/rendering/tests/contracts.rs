@@ -70,6 +70,8 @@ fn render_phase_contracts_pin_expected_phase_boundaries() {
         ]
     );
     assert_eq!(layout.produces, &[RenderArtifact::LayoutTree]);
+    assert_eq!(layout.retained_outputs, &[RenderArtifact::LayoutTree]);
+    assert_eq!(layout.rebuilt_outputs, &[]);
     assert_eq!(
         layout.rebuild_triggers,
         &[
@@ -139,10 +141,13 @@ fn render_artifact_ownership_contracts_pin_retained_vs_rebuilt_lifetimes() {
 
     let layout = artifact_contract(contracts, RenderArtifact::LayoutTree);
     assert_eq!(layout.semantic_owner, RenderingSubsystem::LayoutEngine);
-    assert_eq!(layout.retention_owner, None);
+    assert_eq!(
+        layout.retention_owner,
+        Some(RenderingSubsystem::BrowserRuntime)
+    );
     assert_eq!(
         layout.lifetime,
-        RenderArtifactLifetime::FrameLocalRebuiltPerFrame
+        RenderArtifactLifetime::RetainedAcrossUpdates
     );
 
     let paint = artifact_contract(contracts, RenderArtifact::PaintCommands);

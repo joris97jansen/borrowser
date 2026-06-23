@@ -9,6 +9,20 @@ use layout::replaced::intrinsic::IntrinsicSize;
 use layout::{LayoutBox, ReplacedElementInfoProvider, TextMeasurer};
 use std::sync::Arc;
 
+pub(super) struct TestMeasurer;
+
+impl TextMeasurer for TestMeasurer {
+    fn measure(&self, text: &str, style: &css::ComputedStyle) -> f32 {
+        let css::values::Length::Px(font_px) = style.font_size();
+        text.chars().count() as f32 * font_px * 0.5
+    }
+
+    fn line_height(&self, style: &css::ComputedStyle) -> f32 {
+        let css::values::Length::Px(font_px) = style.font_size();
+        font_px * 1.2
+    }
+}
+
 pub(super) fn page_with_dom(input: &str) -> PageState {
     let output = parse_document(input, HtmlParseOptions::default()).expect("parse should work");
     page_with_node(output.document)

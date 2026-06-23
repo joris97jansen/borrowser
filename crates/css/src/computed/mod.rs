@@ -22,6 +22,7 @@ mod document;
 mod format;
 #[cfg(any(test, feature = "css-fuzzing"))]
 pub mod fuzz;
+mod impact;
 mod legacy;
 mod normalize;
 mod style;
@@ -39,6 +40,7 @@ pub use document::{
     compute_style_from_resolved_style,
 };
 pub use format::computed_value_debug_snapshot;
+pub use impact::{ComputedDocumentStyleLayoutImpact, ComputedStyleLayoutImpact};
 pub use legacy::{build_style_tree, compute_style};
 pub use style::{
     BorderEdges, BorderSide, BoxMetrics, ComputedStyle, ComputedStyleBuildError,

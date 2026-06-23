@@ -10,6 +10,7 @@ fn derive_plan(
     RenderWorkPlan::derive(RenderWorkPlanInput {
         has_dom: true,
         retained_style_artifacts,
+        retained_layout_artifacts: RetainedLayoutArtifactState::Fresh,
         retained_dirty_state,
         pending_work,
     })
@@ -33,7 +34,11 @@ fn no_op_dirty_state_plans_minimal_work() {
         RenderWorkDecision::ReuseRetainedStyle
     );
     assert_eq!(plan.restyle.scope, DirtyScope::None);
-    assert_eq!(plan.relayout.decision, RenderWorkDecision::None);
+    assert_eq!(
+        plan.relayout.decision,
+        RenderWorkDecision::ReuseRetainedLayout
+    );
+    assert_eq!(plan.relayout_execution, RelayoutExecution::ReuseRetained);
     assert_eq!(plan.repaint.decision, RenderWorkDecision::None);
     assert_eq!(plan.conservative_fallback, None);
 }
@@ -61,8 +66,20 @@ fn viewport_dirty_state_plans_relayout_and_repaint_without_restyle() {
         plan.restyle.decision,
         RenderWorkDecision::ReuseRetainedStyle
     );
-    assert_eq!(plan.relayout.decision, RenderWorkDecision::Relayout);
+    assert_eq!(
+        plan.relayout.decision,
+        RenderWorkDecision::ConservativeFallback
+    );
     assert_eq!(plan.relayout.scope, DirtyScope::Viewport);
+    assert_eq!(
+        plan.relayout_execution,
+        RelayoutExecution::ConservativeDocumentFallback {
+            requested_scope: DirtyScope::Viewport,
+            reason: RenderWorkFallbackReason::TargetedRelayoutNotExecutable {
+                scope: DirtyScope::Viewport,
+            },
+        }
+    );
     assert_eq!(plan.repaint.decision, RenderWorkDecision::Repaint);
     assert_eq!(plan.repaint.scope, DirtyScope::Viewport);
     assert_eq!(plan.conservative_fallback, None);
@@ -132,7 +149,11 @@ fn paint_dirty_state_plans_repaint_without_relayout() {
         plan.restyle.decision,
         RenderWorkDecision::ReuseRetainedStyle
     );
-    assert_eq!(plan.relayout.decision, RenderWorkDecision::None);
+    assert_eq!(
+        plan.relayout.decision,
+        RenderWorkDecision::ReuseRetainedLayout
+    );
+    assert_eq!(plan.relayout_execution, RelayoutExecution::ReuseRetained);
     assert_eq!(plan.repaint.decision, RenderWorkDecision::Repaint);
     assert_eq!(plan.repaint.scope, DirtyScope::Viewport);
 }
@@ -247,9 +268,10 @@ fn render_work_plan_debug_snapshot_is_exact_for_viewport_update() {
             "  reasons: 2\n",
             "    - clean-dirty-state\n",
             "    - retained-style-artifact(computed-document-style)=fresh\n",
-            "relayout: decision=relayout scope=viewport\n",
+            "relayout: decision=conservative-fallback scope=viewport\n",
             "  reasons: 1\n",
             "    - dirty(viewport-changed)\n",
+            "relayout-execution: strategy=conservative-document-fallback requested-scope=viewport reason=targeted-relayout-not-executable(viewport)\n",
             "repaint: decision=repaint scope=viewport\n",
             "  reasons: 1\n",
             "    - dirty(cascaded-from-layout)\n",
@@ -286,6 +308,7 @@ fn render_work_plan_debug_snapshot_is_exact_for_conservative_unknown() {
             "relayout: decision=conservative-fallback scope=document\n",
             "  reasons: 1\n",
             "    - dirty(conservative-unknown-impact)\n",
+            "relayout-execution: strategy=conservative-document-fallback requested-scope=document reason=conservative-unknown-impact(document)\n",
             "repaint: decision=conservative-fallback scope=document\n",
             "  reasons: 1\n",
             "    - dirty(conservative-unknown-impact)\n",
@@ -323,8 +346,20 @@ fn prepare_page_frame_carries_derived_work_plan_before_execution() {
         RenderWorkDecision::ReuseRetainedStyle
     );
     assert_eq!(plan.restyle.scope, DirtyScope::None);
-    assert_eq!(plan.relayout.decision, RenderWorkDecision::Relayout);
+    assert_eq!(
+        plan.relayout.decision,
+        RenderWorkDecision::ConservativeFallback
+    );
     assert_eq!(plan.relayout.scope, DirtyScope::Viewport);
+    assert_eq!(
+        plan.relayout_execution,
+        RelayoutExecution::ConservativeDocumentFallback {
+            requested_scope: DirtyScope::Viewport,
+            reason: RenderWorkFallbackReason::TargetedRelayoutNotExecutable {
+                scope: DirtyScope::Viewport,
+            },
+        }
+    );
     assert_eq!(plan.repaint.decision, RenderWorkDecision::Repaint);
     assert_eq!(plan.repaint.scope, DirtyScope::Viewport);
     assert_eq!(plan.conservative_fallback, None);

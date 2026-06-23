@@ -1,3 +1,5 @@
+#[cfg(test)]
+use crate::rendering::RenderInvalidationEntryPoint;
 use crate::rendering::{RenderPipelineDebugSnapshot, RetainedRenderStateDebugSnapshot};
 #[cfg(test)]
 use css::ComputedStyleReuseStats;
@@ -10,10 +12,9 @@ impl PageState {
     /// Reports the retained/rebuilt policy for rendering artifacts owned or
     /// coordinated by the current page state.
     ///
-    /// For frame-local layout and immediate paint output, this snapshot records
-    /// the rebuild policy used when the viewport renders a frame. It does not
-    /// imply that `PageState` currently retains a live layout tree or paint
-    /// artifact between frames.
+    /// For retained layout and immediate paint output, this snapshot records
+    /// the current retained layout artifact state and the immediate paint
+    /// output policy. It does not imply retained paint artifacts.
     pub fn render_pipeline_debug_snapshot(&self) -> RenderPipelineDebugSnapshot {
         self.rendering.debug_snapshot(self.dom.is_some())
     }
@@ -56,6 +57,14 @@ impl PageState {
     #[cfg(test)]
     pub(crate) fn mark_dom_changed_for_tests(&mut self, hint: RestyleHint) {
         let _ = self.mark_dom_changed(hint);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn mark_render_entry_point_for_tests(
+        &mut self,
+        entry_point: RenderInvalidationEntryPoint,
+    ) {
+        self.rendering.mark_dirty_for_entry_point(entry_point);
     }
 
     #[cfg(test)]

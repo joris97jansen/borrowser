@@ -1,6 +1,7 @@
 use crate::page::{PageState, RestyleHint};
 use crate::rendering::*;
 use html::internal::Id;
+use layout::{LayoutPhaseInput, RetainedLayoutFrameAction, RetainedLayoutFrameResult};
 
 use super::support::*;
 
@@ -106,6 +107,14 @@ fn retained_render_state_debug_snapshot_is_deterministic() {
             "  reuse-count: 0\n",
             "  recompute-count: 0\n",
             "  discard-count: 0\n",
+            "layout-artifacts:\n",
+            "  key-seed: identity-domain=0 layout-input-generation=0 layout-style-generation=0 text-measurement-generation=0 replaced-metadata-generation=0\n",
+            "  key: none\n",
+            "  state: absent\n",
+            "  last-action: none\n",
+            "  reuse-count: 0\n",
+            "  recompute-count: 0\n",
+            "  discard-count: 0\n",
             "retained-identities:\n",
             "  identity-domain: 0\n",
             "  render-artifacts: 0\n",
@@ -145,7 +154,7 @@ fn retained_render_identities_allocate_deterministically_for_initial_document() 
             "  resolved-styles: absent\n",
             "  computed-styles: absent\n",
             "  styled-tree: borrow-backed-rebuilt-on-demand\n",
-            "  layout-tree: frame-local-rebuilt-per-frame\n",
+            "  layout-tree: absent\n",
             "  paint-output: immediate-frame-output\n",
             "dirty-state:\n",
             "  entries: 3\n",
@@ -157,6 +166,14 @@ fn retained_render_identities_allocate_deterministically_for_initial_document() 
             "  paint-dirty: true\n",
             "  style-invalidation: full\n",
             "style-artifacts:\n",
+            "  key: none\n",
+            "  state: absent\n",
+            "  last-action: none\n",
+            "  reuse-count: 0\n",
+            "  recompute-count: 0\n",
+            "  discard-count: 0\n",
+            "layout-artifacts:\n",
+            "  key-seed: identity-domain=1 layout-input-generation=1 layout-style-generation=0 text-measurement-generation=0 replaced-metadata-generation=0\n",
             "  key: none\n",
             "  state: absent\n",
             "  last-action: none\n",
@@ -216,7 +233,7 @@ fn debug_snapshot_reports_retained_style_artifacts_and_ephemeral_downstream_tree
             resolved_styles: RenderArtifactState::RetainedFresh,
             computed_styles: RenderArtifactState::RetainedFresh,
             styled_tree: RenderArtifactState::BorrowBackedRebuiltOnDemand,
-            layout_tree: RenderArtifactState::FrameLocalRebuiltPerFrame,
+            layout_tree: RenderArtifactState::Absent,
             paint_output: RenderArtifactState::ImmediateFrameOutput,
             dirty_state: DirtyStateDebugSnapshot {
                 entries: vec![
@@ -249,6 +266,19 @@ fn debug_snapshot_reports_retained_style_artifacts_and_ephemeral_downstream_tree
                     recompute_count: 1,
                     discard_count: 0,
                 },
+            },
+            layout_artifacts: RetainedLayoutArtifactDebugSnapshot {
+                key_seed: layout::RetainedLayoutKeySeed {
+                    identity_domain: identity_domain.value(),
+                    layout_input_generation: 1,
+                    layout_style_generation: 0,
+                    text_measurement_generation: 0,
+                    replaced_metadata_generation: 0,
+                },
+                key: None,
+                state: RenderArtifactState::Absent,
+                last_action: RetainedLayoutArtifactAction::None,
+                stats: RetainedLayoutArtifactStats::default(),
             },
         }
     );
@@ -290,6 +320,184 @@ fn initial_style_computation_records_retained_style_artifact_lifecycle() {
             recompute_count: 1,
             discard_count: 0,
         }
+    );
+}
+
+#[test]
+fn retained_layout_artifact_counters_record_recompute_and_reuse() {
+    let mut page = page_with_dom(
+        "<!doctype html><html><body><p style=\"display: block; width: 100px;\">Hello</p></body></html>",
+    );
+    seed_retained_layout_for_test(&mut page);
+
+    let artifact = page
+        .retained_layout_artifact()
+        .expect("retained layout artifact should exist")
+        .clone();
+    page.record_layout_frame_result(RetainedLayoutFrameResult {
+        key: artifact.key(),
+        action: RetainedLayoutFrameAction::Reused,
+        artifact,
+    });
+
+    let snapshot = page.retained_render_state_debug_snapshot();
+    assert_eq!(snapshot.layout_tree, RenderArtifactState::RetainedFresh);
+    assert_eq!(
+        snapshot.layout_artifacts.last_action,
+        RetainedLayoutArtifactAction::Reused
+    );
+    assert_eq!(snapshot.layout_artifacts.stats.recompute_count, 1);
+    assert_eq!(snapshot.layout_artifacts.stats.reuse_count, 1);
+    assert_eq!(snapshot.layout_artifacts.stats.discard_count, 0);
+}
+
+#[test]
+fn paint_only_style_change_preserves_layout_and_plans_retained_layout_reuse() {
+    let mut page = page_with_dom(
+        "<!doctype html><html><head><style>.paint { background-color: red; }</style></head><body><p style=\"display: block; width: 100px;\">Hello</p></body></html>",
+    );
+    seed_retained_layout_for_test(&mut page);
+    page.clear_all_dirty_for_tests();
+
+    let dirty_id = {
+        let dom = page.dom.as_deref_mut().expect("dom should exist");
+        set_first_element_attr(dom, "p", "class", Some("paint".to_string()))
+    };
+    page.mark_dom_changed_for_tests(RestyleHint::attributes_changed(vec![dirty_id]));
+
+    let prepared = page
+        .prepare_style_phase_for_frame(&PendingRenderWork::default())
+        .expect("frame preparation should succeed")
+        .expect("document should produce a frame");
+    assert!(
+        !prepared
+            .work_plan
+            .dirty_state
+            .is_phase_dirty(DirtyPhase::Layout)
+    );
+    assert!(
+        prepared
+            .work_plan
+            .dirty_state
+            .is_phase_dirty(DirtyPhase::Paint)
+    );
+    assert_eq!(
+        prepared.work_plan.relayout.decision,
+        RenderWorkDecision::ReuseRetainedLayout
+    );
+    assert_eq!(
+        prepared.work_plan.relayout_execution,
+        RelayoutExecution::ReuseRetained
+    );
+    let p = find_styled_element(prepared.style_output.root(), "p").expect("p should exist");
+    assert_eq!(p.style.background_color(), (255, 0, 0, 255));
+}
+
+#[test]
+fn paint_only_style_change_preserves_existing_viewport_layout_dirty_entry() {
+    let mut page = page_with_dom(
+        "<!doctype html><html><head><style>.paint { background-color: red; }</style></head><body><p style=\"display: block; width: 100px;\">Hello</p></body></html>",
+    );
+    seed_retained_layout_for_test(&mut page);
+    page.clear_all_dirty_for_tests();
+    page.mark_render_entry_point_for_tests(RenderInvalidationEntryPoint::ViewportChanged);
+
+    let dirty_id = {
+        let dom = page.dom.as_deref_mut().expect("dom should exist");
+        set_first_element_attr(dom, "p", "class", Some("paint".to_string()))
+    };
+    page.mark_dom_changed_for_tests(RestyleHint::attributes_changed(vec![dirty_id]));
+
+    let prepared = page
+        .prepare_style_phase_for_frame(&PendingRenderWork::default())
+        .expect("frame preparation should succeed")
+        .expect("document should produce a frame");
+
+    assert!(
+        prepared
+            .work_plan
+            .dirty_state
+            .entries()
+            .contains(&DirtyEntry::new(
+                DirtyPhase::Layout,
+                DirtyReason::ViewportChanged,
+                DirtyScope::Viewport,
+            )),
+        "paint-only style narrowing must preserve unrelated viewport layout dirtiness"
+    );
+    assert!(
+        !prepared
+            .work_plan
+            .dirty_state
+            .entries()
+            .contains(&DirtyEntry::new(
+                DirtyPhase::Layout,
+                DirtyReason::CascadedFromStyle,
+                DirtyScope::Document,
+            )),
+        "paint-only style narrowing should remove only the style-derived layout cascade"
+    );
+    assert!(
+        prepared
+            .work_plan
+            .dirty_state
+            .entries()
+            .contains(&DirtyEntry::new(
+                DirtyPhase::Paint,
+                DirtyReason::PaintOnlyStyleChanged,
+                DirtyScope::Document,
+            ))
+    );
+    assert_eq!(
+        prepared.work_plan.relayout.decision,
+        RenderWorkDecision::ConservativeFallback,
+        "retained layout reuse is only valid when no other layout dirtiness remains"
+    );
+    assert_eq!(
+        prepared.work_plan.relayout_execution,
+        RelayoutExecution::ConservativeDocumentFallback {
+            requested_scope: DirtyScope::Viewport,
+            reason: RenderWorkFallbackReason::TargetedRelayoutNotExecutable {
+                scope: DirtyScope::Viewport,
+            },
+        }
+    );
+    assert!(
+        prepared.work_plan.to_debug_snapshot().contains(
+            "relayout-execution: strategy=conservative-document-fallback requested-scope=viewport reason=targeted-relayout-not-executable(viewport)\n"
+        ),
+        "debug output must distinguish requested relayout scope from conservative execution fallback"
+    );
+}
+
+#[test]
+fn layout_affecting_style_change_marks_layout_dirty() {
+    let mut page = page_with_dom(
+        "<!doctype html><html><head><style>.wide { width: 120px; }</style></head><body><p style=\"display: block;\">Hello</p></body></html>",
+    );
+    seed_retained_layout_for_test(&mut page);
+    page.clear_all_dirty_for_tests();
+
+    let dirty_id = {
+        let dom = page.dom.as_deref_mut().expect("dom should exist");
+        set_first_element_attr(dom, "p", "class", Some("wide".to_string()))
+    };
+    page.mark_dom_changed_for_tests(RestyleHint::attributes_changed(vec![dirty_id]));
+
+    let prepared = page
+        .prepare_style_phase_for_frame(&PendingRenderWork::default())
+        .expect("frame preparation should succeed")
+        .expect("document should produce a frame");
+    assert!(
+        prepared
+            .work_plan
+            .dirty_state
+            .is_phase_dirty(DirtyPhase::Layout)
+    );
+    assert_eq!(prepared.work_plan.relayout.scope, DirtyScope::Document);
+    assert_eq!(
+        prepared.work_plan.relayout_execution,
+        RelayoutExecution::FullDocument
     );
 }
 
@@ -363,7 +571,19 @@ fn viewport_update_reuses_retained_style_artifacts_without_restyle() {
         plan.restyle.decision,
         RenderWorkDecision::ReuseRetainedStyle
     );
-    assert_eq!(plan.relayout.decision, RenderWorkDecision::Relayout);
+    assert_eq!(
+        plan.relayout.decision,
+        RenderWorkDecision::ConservativeFallback
+    );
+    assert_eq!(
+        plan.relayout_execution,
+        RelayoutExecution::ConservativeDocumentFallback {
+            requested_scope: DirtyScope::Viewport,
+            reason: RenderWorkFallbackReason::TargetedRelayoutNotExecutable {
+                scope: DirtyScope::Viewport,
+            },
+        }
+    );
     assert_eq!(plan.repaint.decision, RenderWorkDecision::Repaint);
 
     let before = page.retained_render_state_debug_snapshot();
@@ -981,6 +1201,19 @@ fn navigation_reset_clears_page_owned_retained_render_state() {
                 last_action: RetainedStyleArtifactAction::None,
                 stats: RetainedStyleArtifactStats::default(),
             },
+            layout_artifacts: RetainedLayoutArtifactDebugSnapshot {
+                key_seed: layout::RetainedLayoutKeySeed {
+                    identity_domain: 0,
+                    layout_input_generation: 0,
+                    layout_style_generation: 0,
+                    text_measurement_generation: 0,
+                    replaced_metadata_generation: 0,
+                },
+                key: None,
+                state: RenderArtifactState::Absent,
+                last_action: RetainedLayoutArtifactAction::None,
+                stats: RetainedLayoutArtifactStats::default(),
+            },
         }
     );
     assert_eq!(
@@ -1005,6 +1238,25 @@ fn retained_identity(retained_id: u64, dom_anchor: u32) -> RetainedRenderIdentit
         kind: RetainedRenderArtifactKind::DomBackedRenderNode,
         anchor: RetainedRenderAnchor::DomNode(Id(dom_anchor)),
     }
+}
+
+fn seed_retained_layout_for_test(page: &mut PageState) {
+    let key = page.retained_layout_key_seed().for_viewport_width(320.0);
+    let style_output = style_output_for_test(page);
+    let layout_output = layout::layout_document(LayoutPhaseInput::from_style_output(
+        &style_output,
+        320.0,
+        &TestMeasurer,
+        None,
+    ));
+    let artifact = layout::RetainedLayoutArtifact::from_layout_output(key, &layout_output);
+    drop(layout_output);
+    drop(style_output);
+    page.record_layout_frame_result(RetainedLayoutFrameResult {
+        key,
+        action: RetainedLayoutFrameAction::Recomputed,
+        artifact,
+    });
 }
 
 fn identity_for_dom_anchor(

@@ -8,6 +8,10 @@
 pub struct BoxId(pub(in crate::box_tree) usize);
 
 impl BoxId {
+    pub(crate) fn from_index(index: usize) -> Self {
+        Self(index)
+    }
+
     pub fn index(self) -> usize {
         self.0
     }
@@ -23,6 +27,10 @@ impl BoxId {
 pub struct ContainingBlockId(pub(in crate::box_tree) BoxId);
 
 impl ContainingBlockId {
+    pub(crate) fn from_box_id(box_id: BoxId) -> Self {
+        Self(box_id)
+    }
+
     pub fn box_id(self) -> BoxId {
         self.0
     }
@@ -42,6 +50,10 @@ impl ContainingBlockId {
 pub struct PositionedContainingBlockId(pub(in crate::box_tree) BoxId);
 
 impl PositionedContainingBlockId {
+    pub(crate) fn from_box_id(box_id: BoxId) -> Self {
+        Self(box_id)
+    }
+
     pub fn box_id(self) -> BoxId {
         self.0
     }
@@ -61,6 +73,10 @@ impl PositionedContainingBlockId {
 pub struct FormattingContextId(pub(in crate::box_tree) BoxId);
 
 impl FormattingContextId {
+    pub(crate) fn from_box_id(box_id: BoxId) -> Self {
+        Self(box_id)
+    }
+
     pub fn box_id(self) -> BoxId {
         self.0
     }
@@ -80,6 +96,10 @@ impl FormattingContextId {
 pub struct InlineFormattingContextId(pub(in crate::box_tree) BoxId);
 
 impl InlineFormattingContextId {
+    pub(crate) fn from_box_id(box_id: BoxId) -> Self {
+        Self(box_id)
+    }
+
     pub fn box_id(self) -> BoxId {
         self.0
     }

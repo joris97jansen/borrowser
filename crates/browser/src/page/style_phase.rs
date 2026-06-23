@@ -1,13 +1,21 @@
 use css::{
-    ComputedStyleResolutionError, ComputedStyleReuseStats, StylePhaseOutput,
-    build_style_tree_from_computed_styles,
+    ComputedDocumentStyleLayoutImpact, ComputedStyleResolutionError, ComputedStyleReuseStats,
+    StylePhaseOutput, build_style_tree_from_computed_styles,
 };
+use layout::{RetainedLayoutArtifact, RetainedLayoutKeySeed};
 
-use crate::rendering::RetainedStyleArtifactAction;
+use crate::rendering::{PendingRenderWork, RenderWorkPlan, RetainedStyleArtifactAction};
 
 use super::PageState;
 use super::restyle::StyleInvalidationScope;
 use super::style_cache::{StyleRecalcKind, StyleRecomputeState, recompute_styles};
+
+pub(crate) struct PreparedStylePhaseForFrame<'a> {
+    pub(crate) style_output: StylePhaseOutput<'a>,
+    pub(crate) work_plan: RenderWorkPlan,
+    pub(crate) retained_layout_key_seed: RetainedLayoutKeySeed,
+    pub(crate) retained_layout_artifact: Option<RetainedLayoutArtifact>,
+}
 
 impl PageState {
     /// Runtime style-phase boundary for page rendering.
@@ -20,8 +28,58 @@ impl PageState {
     pub(crate) fn build_style_phase_output(
         &mut self,
     ) -> Result<Option<StylePhaseOutput<'_>>, ComputedStyleResolutionError> {
+        if !self.ensure_retained_style_artifacts()? {
+            return Ok(None);
+        }
+
         let Some(dom) = self.dom.as_deref() else {
             return Ok(None);
+        };
+        let cache = self
+            .rendering
+            .style_cache
+            .as_ref()
+            .expect("style cache must exist after successful style computation");
+        build_style_tree_from_computed_styles(dom, &cache.computed)
+            .map(StylePhaseOutput::new)
+            .map(Some)
+    }
+
+    pub(crate) fn prepare_style_phase_for_frame(
+        &mut self,
+        pending_work: &PendingRenderWork,
+    ) -> Result<Option<PreparedStylePhaseForFrame<'_>>, ComputedStyleResolutionError> {
+        if !self.ensure_retained_style_artifacts()? {
+            return Ok(None);
+        }
+
+        let work_plan = self.derive_render_work_plan(pending_work);
+        let retained_layout_key_seed = self.retained_layout_key_seed();
+        let retained_layout_artifact = self.retained_layout_artifact().cloned();
+
+        let Some(dom) = self.dom.as_deref() else {
+            return Ok(None);
+        };
+        let cache = self
+            .rendering
+            .style_cache
+            .as_ref()
+            .expect("style cache must exist after successful style computation");
+        build_style_tree_from_computed_styles(dom, &cache.computed)
+            .map(StylePhaseOutput::new)
+            .map(|style_output| {
+                Some(PreparedStylePhaseForFrame {
+                    style_output,
+                    work_plan,
+                    retained_layout_key_seed,
+                    retained_layout_artifact,
+                })
+            })
+    }
+
+    fn ensure_retained_style_artifacts(&mut self) -> Result<bool, ComputedStyleResolutionError> {
+        let Some(dom) = self.dom.as_deref() else {
+            return Ok(false);
         };
 
         let retained = &mut self.rendering;
@@ -29,6 +87,10 @@ impl PageState {
 
         if needs_recompute {
             let had_cache_before = retained.style_cache.is_some();
+            let previous_computed = retained
+                .style_cache
+                .as_ref()
+                .map(|cache| cache.computed.clone());
             let recompute_count_before = retained.style_artifact_stats.recompute_count;
             let style_key = retained.current_style_artifact_key();
             let pending_style_invalidation = retained.take_style_invalidation_for_recompute();
@@ -54,6 +116,17 @@ impl PageState {
             if !consumed_pending_invalidation {
                 retained.advance_render_epoch();
             }
+            if let Some(previous) = previous_computed.as_ref()
+                && let Some(current) = retained.style_cache.as_ref()
+            {
+                retained.record_computed_style_layout_impact(
+                    current.computed.layout_impact_against(previous),
+                );
+            } else if had_cache_before {
+                retained.record_computed_style_layout_impact(
+                    ComputedDocumentStyleLayoutImpact::Unknown,
+                );
+            }
             retained.record_style_artifact_recompute(style_artifact_action_for_recompute(
                 retained.last_style_recalc,
                 pending_for_action,
@@ -66,13 +139,7 @@ impl PageState {
             retained.record_style_artifact_reuse();
         }
 
-        let cache = retained
-            .style_cache
-            .as_ref()
-            .expect("style cache must exist after successful style computation");
-        build_style_tree_from_computed_styles(dom, &cache.computed)
-            .map(StylePhaseOutput::new)
-            .map(Some)
+        Ok(true)
     }
 }
 

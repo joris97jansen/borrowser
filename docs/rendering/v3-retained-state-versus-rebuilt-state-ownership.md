@@ -24,6 +24,7 @@ Related documents:
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
 - `docs/rendering/ac5-retained-style-artifact-reuse.md`
+- `docs/rendering/ac6-retained-layout-artifact-foundation.md`
 - `docs/architecture/ARCHITECTURE.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
 
@@ -66,7 +67,7 @@ The current artifact lifetime contract is:
 | `ViewportMetrics` | browser view | none | frame-local input |
 | `TextMeasurement` | layout engine | none | frame-local input |
 | `ReplacedElementMetadata` | layout engine | none | frame-local input |
-| `LayoutTree` | layout engine | none | frame-local rebuilt per frame |
+| `LayoutTree` | layout engine | browser runtime | retained across updates |
 | `ResourceState` | browser runtime | browser runtime | retained across updates |
 | `InputState` | browser runtime | browser runtime | retained across updates |
 | `PaintCommands` | paint engine | none | immediate frame output |
@@ -104,8 +105,8 @@ struct RetainedRenderState {
     document_styles: DocumentStyleSet,
     generations: PageStyleGenerations,
     style_cache: Option<PageStyleCache>,
-    style_dirty: bool,
-    layout_dirty: bool,
+    layout_cache: Option<RetainedLayoutArtifact>,
+    dirty_state: RenderDirtyState,
     last_restyle_trigger: Option<RestyleTrigger>,
     pending_style_invalidation: Option<StyleInvalidationScope>,
     last_style_recalc: Option<StyleRecalcKind>,
@@ -114,15 +115,17 @@ struct RetainedRenderState {
 ```
 
 This is the normative owner for page-local retained rendering artifacts and
-invalidations. It is not a layout cache and not a retained paint scene.
+invalidations. It owns the retained layout artifact lifetime added by AC6, but
+not layout semantics or retained paint scenes.
 
 ### Retained In `RetainedRenderState`
 
 - `DocumentStyleSet`
 - `PageStyleGenerations`
 - `PageStyleCache { resolved, computed }`
+- `RetainedLayoutArtifact`
 - dirty bits and invalidation scope
-- style recompute diagnostics used for deterministic tests/debugging
+- style and layout lifecycle diagnostics used for deterministic tests/debugging
 
 ### Retained In `PageState` But Outside `RetainedRenderState`
 
@@ -158,14 +161,17 @@ The following artifacts remain intentionally rebuilt:
 V3 keeps this baseline explicit:
 
 - retained style artifacts may be reused across updates
-- rebuilt downstream artifacts are still reconstructed from retained inputs
-- no current API implies retained layout, retained display lists, or partial
-  paint caches already exist
+- borrow-backed style trees and layout phase outputs are still materialized for
+  the current frame
+- no current API implies retained display lists, retained paint scenes, or
+  partial paint caches already exist
 
 AC5 refines this retained style baseline with an explicit retained style
 artifact key, lifecycle counters, and deterministic debug output for
 `ResolvedDocumentStyle` and `ComputedDocumentStyle` reuse, recompute, and
-discard decisions.
+discard decisions. AC6 extends the retained model with an explicit retained
+layout artifact key, layout-owned materialization, lifecycle counters, and
+conservative relayout fallback reporting.
 
 ## Invalidation Direction
 
@@ -180,8 +186,8 @@ Retained state ownership also defines invalidation ownership:
 
 This is the architectural direction for later incremental work:
 
-- future retained layout state must become its own explicit retained owner
-  rather than silently expanding `layout_dirty`
+- retained layout state is explicit AC6 browser/runtime-owned lifetime around
+  layout-owned artifact semantics and materialization
 - future retained paint/display-list state must become its own explicit
   retained owner rather than being inferred from the current paint call path
 
@@ -223,7 +229,9 @@ The repository now pins retained-state behavior through:
 These tests validate:
 
 - retained style artifacts live in page-owned retained state
-- downstream styled/layout/paint artifacts are not retained across updates
+- downstream styled trees and paint artifacts are not retained across updates
+- layout artifacts may be retained only through the AC6 layout-owned retained
+  artifact and browser/runtime lifetime contract
 - invalidation mutates retained ownership state, not implicit downstream caches
 - navigation reset clears page-owned retained rendering state deterministically
 
@@ -231,9 +239,8 @@ These tests validate:
 
 V3 does not introduce:
 
-- retained layout trees
+- true minimal/subtree relayout
 - retained display lists or paint caches
-- layout generations or layout cache keys
 - partial layout invalidation
 - compositing/layer-tree ownership
 - async scene building

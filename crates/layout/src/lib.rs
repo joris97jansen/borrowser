@@ -76,6 +76,7 @@ mod geometry;
 mod layout_box;
 mod phase;
 mod replaced_element;
+mod retained;
 mod sizing;
 mod text;
 
@@ -111,6 +112,11 @@ pub use inline::{LineBox, layout_inline_for_paint};
 pub use layout_box::LayoutBox;
 pub use phase::{LayoutPhaseInput, LayoutPhaseOutput};
 pub use replaced_element::{ReplacedElementInfoProvider, ReplacedKind};
+pub use retained::{
+    RetainedLayoutArtifact, RetainedLayoutFallbackReason, RetainedLayoutFrameAction,
+    RetainedLayoutFrameResult, RetainedLayoutKey, RetainedLayoutKeySeed,
+    RetainedLayoutMaterializationError, RetainedViewportWidthKey,
+};
 pub use sizing::{
     AppliedSizeConstraint, AspectRatio, AvailableSize, AvailableSpace, AxisSizeConstraints,
     AxisStyleSizeInput, ConstraintSpace, ContainingSize, CssPx, IntrinsicSizes,

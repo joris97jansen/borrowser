@@ -201,9 +201,11 @@ Layout owns:
 - future containing-block resolution
 - future intrinsic sizing and constraint solving
 
-Layout must not mutate DOM or computed style. Any future retained layout cache
-must be an explicit retained artifact with invalidation rules, not an accidental
-extension of the current frame-local `BoxTree` or `LayoutBox` lifetimes.
+Layout must not mutate DOM or computed style. AC6 introduces an explicit
+layout-owned retained artifact and materialization path. That retained artifact
+stores owned geometry and layout metadata; it does not retain `LayoutBox`,
+`StyledNode`, `&ComputedStyle`, or frame-local `BoxId` values as retained
+identities.
 
 ## Formatting Context Model
 
@@ -289,7 +291,7 @@ W1 is an architecture contract. It intentionally does not ship:
   W5/W6/W7 in-flow subset
 - flexbox, grid, floats, positioning, overflow, fragmentation, or transforms
 - a complete table formatting model
-- retained layout caching
+- true minimal/subtree relayout execution
 - display-list or paint tree changes
 - CSSOM integration
 

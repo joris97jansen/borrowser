@@ -1,5 +1,6 @@
 use super::support::*;
 use super::*;
+use crate::ComputedStyleLayoutImpact;
 
 #[test]
 fn computed_style_initial_snapshot_is_total_and_canonical() {
@@ -272,6 +273,29 @@ fn computed_style_accessors_match_property_entries() {
         ComputedValue::ZIndex(style.z_index())
     );
     assert_eq!(style.z_index(), ZIndex::Integer(7));
+}
+
+#[test]
+fn computed_style_layout_impact_is_owned_by_computed_style() {
+    let base = ComputedStyle::initial();
+    let paint_only = base
+        .with_property(
+            PropertyId::BackgroundColor,
+            ComputedValue::Color((20, 30, 40, 255)),
+        )
+        .expect("background color update");
+    let layout_affecting = base
+        .with_property(PropertyId::Width, length_percentage_or_auto_px(120.0))
+        .expect("width update");
+
+    assert_eq!(
+        paint_only.layout_impact_against(&base),
+        ComputedStyleLayoutImpact::PaintOnly
+    );
+    assert_eq!(
+        layout_affecting.layout_impact_against(&base),
+        ComputedStyleLayoutImpact::LayoutAffecting
+    );
 }
 
 #[test]

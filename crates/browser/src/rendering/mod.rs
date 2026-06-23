@@ -1,9 +1,10 @@
 //! Rendering pipeline contracts and debug surfaces.
 //!
-//! Milestone V formalizes the rendering pipeline without prematurely adding
-//! retained layout or paint caches. This module records the current ownership
-//! boundaries, phase I/O, rebuild triggers, and runtime-visible retained vs.
-//! rebuilt state so later rendering work can evolve against explicit contracts.
+//! Milestone V formalized the rendering pipeline; Milestone AC extends it with
+//! retained runtime state, retained style artifacts, and retained layout
+//! artifacts. This module records the current ownership boundaries, phase I/O,
+//! rebuild triggers, and runtime-visible retained vs. rebuilt state so later
+//! rendering work can evolve against explicit contracts.
 //! It also pins the deferred extension hooks that later milestones are allowed
 //! to extend without reinterpreting the current ownership model.
 
@@ -46,7 +47,8 @@ pub use invalidation::{
 };
 pub use lifecycle::{
     DirtyStateDebugSnapshot, FrameLocalIdentityState, RenderArtifactState, RenderEpoch,
-    RenderPipelineDebugSnapshot, RetainedRenderStateDebugSnapshot, RetainedStyleArtifactAction,
+    RenderPipelineDebugSnapshot, RetainedLayoutArtifactAction, RetainedLayoutArtifactDebugSnapshot,
+    RetainedLayoutArtifactStats, RetainedRenderStateDebugSnapshot, RetainedStyleArtifactAction,
     RetainedStyleArtifactDebugSnapshot, RetainedStyleArtifactKey, RetainedStyleArtifactStats,
     StyleInvalidationState,
 };
@@ -58,8 +60,9 @@ pub use types::{
     RepaintExecutionPlan, RepaintExecutionScope,
 };
 pub use work_plan::{
-    PlannedRenderWork, RenderWorkDecision, RenderWorkFallbackReason, RenderWorkPlan,
-    RenderWorkPlanInput, RenderWorkPlanReason, RetainedStyleArtifactState,
+    PlannedRenderWork, RelayoutExecution, RenderWorkDecision, RenderWorkFallbackReason,
+    RenderWorkPlan, RenderWorkPlanInput, RenderWorkPlanReason, RetainedLayoutArtifactState,
+    RetainedStyleArtifactState,
 };
 
 #[cfg(test)]

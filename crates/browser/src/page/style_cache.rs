@@ -16,6 +16,10 @@ pub(crate) struct PageStyleGenerations {
     pub(crate) dom: u64,
     pub(crate) style_inputs: u64,
     pub(crate) stylesheets: u64,
+    pub(crate) layout_inputs: u64,
+    pub(crate) layout_style: u64,
+    pub(crate) text_measurement: u64,
+    pub(crate) replaced_metadata: u64,
 }
 
 #[derive(Clone, Debug)]

@@ -22,6 +22,7 @@ use html::{
     dom_utils::outline_from_dom,
     head::{HeadMetadata, extract_head_metadata},
 };
+use layout::{RetainedLayoutArtifact, RetainedLayoutFrameResult, RetainedLayoutKeySeed};
 
 use restyle::StyleInvalidationScope;
 use retained_render_state::RetainedRenderState;
@@ -122,9 +123,22 @@ impl PageState {
         RenderWorkPlan::derive(RenderWorkPlanInput {
             has_dom: self.dom.is_some(),
             retained_style_artifacts: self.rendering.retained_style_artifact_state(),
+            retained_layout_artifacts: self.rendering.retained_layout_artifact_state(),
             retained_dirty_state: self.rendering.dirty_state(),
             pending_work,
         })
+    }
+
+    pub(crate) fn retained_layout_key_seed(&self) -> RetainedLayoutKeySeed {
+        self.rendering.retained_layout_key_seed()
+    }
+
+    pub(crate) fn retained_layout_artifact(&self) -> Option<&RetainedLayoutArtifact> {
+        self.rendering.retained_layout_artifact()
+    }
+
+    pub(crate) fn record_layout_frame_result(&mut self, result: RetainedLayoutFrameResult) {
+        self.rendering.record_layout_frame_result(result);
     }
 
     pub(crate) fn style_dirty_for_rendering(&self) -> bool {

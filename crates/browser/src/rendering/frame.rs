@@ -8,8 +8,10 @@ use egui::Ui;
 use gfx::input::PageAction;
 use gfx::paint::ImageProvider;
 use gfx::viewport::{
-    ViewportCtx, ViewportRepaintPolicy, ViewportRepaintScope, execute_viewport_frame,
+    ViewportCtx, ViewportRepaintPolicy, ViewportRepaintScope, ViewportRetainedLayout,
+    execute_viewport_frame,
 };
+use layout::{RetainedLayoutArtifact, RetainedLayoutFrameResult, RetainedLayoutKeySeed};
 
 use super::debug::{
     RenderFrameExecutionTrace, RenderPhaseExecutionKind, RenderPhaseExecutionTrace,
@@ -26,12 +28,15 @@ pub(crate) struct OrchestratedFrameOutcome {
     pub(crate) action: Option<PageAction>,
     pub(crate) followup_render_request: Option<RenderInvalidationRequest>,
     pub(crate) trace: RenderFrameExecutionTrace,
+    pub(crate) retained_layout_result: Option<RetainedLayoutFrameResult>,
 }
 
 pub(crate) struct PreparedPageFrame<'a> {
     pub(crate) style_output: StylePhaseOutput<'a>,
     pub(crate) page_background: Option<(u8, u8, u8, u8)>,
     pub(crate) work_plan: RenderWorkPlan,
+    retained_layout_key_seed: RetainedLayoutKeySeed,
+    retained_layout_artifact: Option<RetainedLayoutArtifact>,
     pending_work: PendingRenderWork,
     style_dirty_before_frame: bool,
     base_url: Option<String>,
@@ -62,21 +67,22 @@ pub(crate) fn prepare_page_frame(
     page: &mut PageState,
     pending_work: PendingRenderWork,
 ) -> Result<Option<PreparedPageFrame<'_>>, ComputedStyleResolutionError> {
-    let work_plan = page.derive_render_work_plan(&pending_work);
     let style_dirty_before_frame = page.style_dirty_for_rendering();
     let base_url = page.base_url.clone();
     let form_controls = page.form_controls.clone();
 
-    let style_output = match page.build_style_phase_output()? {
-        Some(style_output) => style_output,
+    let prepared_style = match page.prepare_style_phase_for_frame(&pending_work)? {
+        Some(prepared_style) => prepared_style,
         None => return Ok(None),
     };
-    let page_background = find_page_background_color(&style_output);
+    let page_background = find_page_background_color(&prepared_style.style_output);
 
     Ok(Some(PreparedPageFrame {
-        style_output,
+        style_output: prepared_style.style_output,
         page_background,
-        work_plan,
+        work_plan: prepared_style.work_plan,
+        retained_layout_key_seed: prepared_style.retained_layout_key_seed,
+        retained_layout_artifact: prepared_style.retained_layout_artifact,
         pending_work,
         style_dirty_before_frame,
         base_url,
@@ -93,7 +99,9 @@ pub(crate) fn execute_prepared_page_frame<R: ImageProvider>(
     let PreparedPageFrame {
         style_output,
         page_background: _page_background,
-        work_plan: _work_plan,
+        work_plan,
+        retained_layout_key_seed,
+        retained_layout_artifact,
         pending_work,
         style_dirty_before_frame,
         base_url,
@@ -110,13 +118,31 @@ pub(crate) fn execute_prepared_page_frame<R: ImageProvider>(
             &form_controls,
             &mut input_state.interaction,
         )
-        .with_repaint_policy(repaint_policy),
+        .with_repaint_policy(repaint_policy)
+        .with_retained_layout(ViewportRetainedLayout {
+            key_seed: retained_layout_key_seed,
+            retained: retained_layout_artifact.as_ref(),
+            reuse_allowed: matches!(
+                work_plan.relayout_execution,
+                super::work_plan::RelayoutExecution::ReuseRetained
+            ),
+            conservative_dirty_fallback: matches!(
+                work_plan.relayout_execution,
+                super::work_plan::RelayoutExecution::ConservativeDocumentFallback { .. }
+            ),
+        }),
     );
 
     let trace = build_render_frame_execution_trace(
         &pending_work,
         style_dirty_before_frame,
         viewport_result.viewport_changed,
+        viewport_result
+            .retained_layout_result
+            .as_ref()
+            .is_some_and(|result| {
+                matches!(result.action, layout::RetainedLayoutFrameAction::Reused)
+            }),
     );
     debug_assert_eq!(
         trace.repaint_execution.scope,
@@ -130,6 +156,7 @@ pub(crate) fn execute_prepared_page_frame<R: ImageProvider>(
         action: viewport_result.action,
         followup_render_request,
         trace,
+        retained_layout_result: viewport_result.retained_layout_result,
     }
 }
 
@@ -137,6 +164,7 @@ pub(crate) fn build_render_frame_execution_trace(
     pending_work: &PendingRenderWork,
     style_dirty_before_frame: bool,
     viewport_changed: bool,
+    layout_reused_from_retained_artifacts: bool,
 ) -> RenderFrameExecutionTrace {
     let mut triggered_entry_points = pending_work
         .requests()
@@ -169,15 +197,16 @@ pub(crate) fn build_render_frame_execution_trace(
     } else {
         RenderPhaseExecutionKind::MaterializedFromRetainedArtifacts
     };
+    let layout_fallback = if layout_reused_from_retained_artifacts {
+        RenderPhaseExecutionKind::MaterializedFromRetainedArtifacts
+    } else {
+        RenderPhaseExecutionKind::RequiredForCurrentFrame
+    };
 
     RenderFrameExecutionTrace {
         triggered_entry_points,
         style: phase_trace(RenderingPhase::Style, style, style_fallback),
-        layout: phase_trace(
-            RenderingPhase::Layout,
-            layout,
-            RenderPhaseExecutionKind::RequiredForCurrentFrame,
-        ),
+        layout: phase_trace(RenderingPhase::Layout, layout, layout_fallback),
         paint: phase_trace(
             RenderingPhase::Paint,
             paint,

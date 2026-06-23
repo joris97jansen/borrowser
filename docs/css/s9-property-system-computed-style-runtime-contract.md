@@ -214,6 +214,8 @@ Layout may:
 - perform layout-dependent geometry decisions from already-computed values
 - define layout-specific algorithms for block, inline, replaced, and text
   behavior
+- consume CSS-owned computed-style layout-impact classification when deciding
+  whether style changes affect layout
 
 Layout must not:
 
@@ -235,6 +237,24 @@ Paint and `gfx` must not:
 - infer missing supported property values
 - recover from invalid declarations
 - mutate `ComputedStyle`
+
+## Layout-Impact Classification
+
+AC6 adds CSS-owned computed-style layout-impact classification:
+
+- `ComputedStyle::layout_impact_against(...)`
+- `ComputedDocumentStyle::layout_impact_against(...)`
+
+The classifier compares computed-style outputs and returns a conservative
+impact result for the currently supported property subset. Paint-only
+properties such as color, background color, outline, and text decoration may
+preserve retained layout. Display, font metrics, box metrics, sizing,
+positioning, overflow, z-index, and unknown document-shape changes are
+layout-affecting or unknown and must conservatively dirty layout.
+
+Browser/runtime may consume the classification result to decide retained
+layout reuse. Browser/runtime must not duplicate the property table or infer
+CSS property impact by inspecting declarations.
 
 ## Legacy Compatibility Boundary
 

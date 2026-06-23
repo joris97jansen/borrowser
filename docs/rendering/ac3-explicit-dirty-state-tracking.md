@@ -219,6 +219,6 @@ AC3 deliberately excludes:
 - use of frame-local layout, paint, stacking, or traversal IDs as dirty keys;
 - deterministic render work planning beyond dirty-state derivation.
 
-Future AC work may add narrower scopes, work planning, or artifact reuse only
-after defining ownership, dependency derivation, conservative fallback
-behavior, debug output, and tests.
+AC6 adds retained layout artifact reuse and explicit relayout execution
+fallbacks on top of this dirty-state vocabulary. True minimal/subtree relayout
+remains future work until Layout can execute those scopes safely.
