@@ -308,6 +308,7 @@ The normative rendering ownership and phase-boundary contract lives in:
 * `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
 * `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
 * `docs/rendering/ac1-retained-render-state-runtime-contract.md`
+* `docs/rendering/ac4-deterministic-render-work-plans.md`
 * `docs/rendering/w1-box-tree-layout-model-contract.md`
 * `docs/rendering/w2-structured-box-tree-data-structures.md`
 * `docs/rendering/w3-display-to-box-generation-behavior.md`
@@ -460,13 +461,21 @@ Each page-rendering frame now follows this explicit orchestration contract:
 2. Runtime invalidation enters as `RenderInvalidationRequest`.
 3. `Tab::request_render_work(...)` queues work in `PendingRenderWork`.
 4. `browser::view::content(...)` starts the next orchestrated frame attempt.
-5. `browser::rendering::prepare_page_frame(...)` asks `PageState` for `StylePhaseOutput`.
-6. `browser::rendering::execute_prepared_page_frame(...)` executes the viewport frame.
-7. `gfx::viewport::execute_viewport_frame(...)` prepares the current layout and paint execution inputs.
-8. `layout::layout_document(LayoutPhaseInput::from_style_output(...))` produces `LayoutPhaseOutput`.
-9. `gfx::paint::paint_page(PaintPhaseInput::new(...), PaintArgs { ... })` emits immediate paint commands for the current frame.
-10. `RenderFrameExecutionTrace` records the orchestration decision for the frame attempt.
+5. `browser::rendering::prepare_page_frame(...)` asks `PageState` to derive a deterministic `RenderWorkPlan` from retained dirty state and pending invalidation work.
+6. `browser::rendering::prepare_page_frame(...)` asks `PageState` for `StylePhaseOutput`.
+7. `browser::rendering::execute_prepared_page_frame(...)` executes the viewport frame.
+8. `gfx::viewport::execute_viewport_frame(...)` prepares the current layout and paint execution inputs.
+9. `layout::layout_document(LayoutPhaseInput::from_style_output(...))` produces `LayoutPhaseOutput`.
+10. `gfx::paint::paint_page(PaintPhaseInput::new(...), PaintArgs { ... })` emits immediate paint commands for the current frame.
+11. `RenderFrameExecutionTrace` records the orchestration decision for the frame attempt.
 ```
+
+`PageState::derive_render_work_plan(...)` is the browser/runtime planning
+boundary for the current frame attempt. It normalizes retained dirty state and
+pending invalidation work into a deterministic `RenderWorkPlan` before style,
+layout, or paint execution starts. The planner coordinates runtime work from
+typed dirty state and retained style artifact status; it does not perform CSS,
+layout, or paint semantics.
 
 `PageState::build_style_phase_output()` remains the page-owned style
 preparation implementation. It reuses or recomputes retained

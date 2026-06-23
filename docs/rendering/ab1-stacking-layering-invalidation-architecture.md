@@ -188,7 +188,8 @@ be discovered by scanning already-emitted backend draw commands.
 A paint invalidation boundary describes the smallest future semantic paint
 artifact that can be considered dirty independently of the full frame. In AB1
 this is an architecture concept only. The current runtime still requests paint
-work through existing `RenderInvalidationEntryPoint` and `RenderWorkPlan`
+work through existing `RenderInvalidationEntryPoint` and
+`RenderInvalidationWorkPlan`
 contracts.
 
 Future targeted repaint work must define:
@@ -242,7 +243,7 @@ Current invalidation remains runtime-owned and phase-oriented:
 ```text
 RenderInvalidationEntryPoint
   -> RenderInvalidationRequest
-  -> RenderWorkPlan
+  -> RenderInvalidationWorkPlan
   -> PendingRenderWork
   -> next frame orchestration
 ```

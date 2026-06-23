@@ -20,6 +20,7 @@ use super::invalidation::{
 use super::page_background::find_page_background_color;
 use super::types::{PaintInvalidationScope, RepaintExecutionPlan, RepaintExecutionScope};
 use super::types::{RenderInvalidationEntryPoint, RenderRebuildTrigger, RenderingPhase};
+use super::work_plan::RenderWorkPlan;
 
 pub(crate) struct OrchestratedFrameOutcome {
     pub(crate) action: Option<PageAction>,
@@ -30,6 +31,7 @@ pub(crate) struct OrchestratedFrameOutcome {
 pub(crate) struct PreparedPageFrame<'a> {
     pub(crate) style_output: StylePhaseOutput<'a>,
     pub(crate) page_background: Option<(u8, u8, u8, u8)>,
+    pub(crate) work_plan: RenderWorkPlan,
     pending_work: PendingRenderWork,
     style_dirty_before_frame: bool,
     base_url: Option<String>,
@@ -60,7 +62,8 @@ pub(crate) fn prepare_page_frame(
     page: &mut PageState,
     pending_work: PendingRenderWork,
 ) -> Result<Option<PreparedPageFrame<'_>>, ComputedStyleResolutionError> {
-    let style_snapshot = page.render_pipeline_debug_snapshot();
+    let work_plan = page.derive_render_work_plan(&pending_work);
+    let style_dirty_before_frame = page.style_dirty_for_rendering();
     let base_url = page.base_url.clone();
     let form_controls = page.form_controls.clone();
 
@@ -73,8 +76,9 @@ pub(crate) fn prepare_page_frame(
     Ok(Some(PreparedPageFrame {
         style_output,
         page_background,
+        work_plan,
         pending_work,
-        style_dirty_before_frame: style_snapshot.style_dirty,
+        style_dirty_before_frame,
         base_url,
         form_controls,
     }))
@@ -89,6 +93,7 @@ pub(crate) fn execute_prepared_page_frame<R: ImageProvider>(
     let PreparedPageFrame {
         style_output,
         page_background: _page_background,
+        work_plan: _work_plan,
         pending_work,
         style_dirty_before_frame,
         base_url,
@@ -144,19 +149,19 @@ pub(crate) fn build_render_frame_execution_trace(
     let mut frame_orchestration = PhaseReasonAccumulator::default();
 
     for request in pending_work.requests() {
-        style.record(request.work.style);
-        layout.record(request.work.layout);
-        paint.record(request.work.paint);
-        frame_orchestration.record(request.work.frame_orchestration);
+        style.record(request.requested_work.style);
+        layout.record(request.requested_work.layout);
+        paint.record(request.requested_work.paint);
+        frame_orchestration.record(request.requested_work.frame_orchestration);
     }
 
     if viewport_changed {
         let request = render_invalidation_request(RenderInvalidationEntryPoint::ViewportChanged);
         push_unique(&mut triggered_entry_points, request.entry_point);
-        style.record(request.work.style);
-        layout.record(request.work.layout);
-        paint.record(request.work.paint);
-        frame_orchestration.record(request.work.frame_orchestration);
+        style.record(request.requested_work.style);
+        layout.record(request.requested_work.layout);
+        paint.record(request.requested_work.paint);
+        frame_orchestration.record(request.requested_work.frame_orchestration);
     }
 
     let style_fallback = if style_dirty_before_frame {

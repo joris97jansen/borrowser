@@ -211,7 +211,7 @@ Runtime invalidation enters through the existing rendering model:
 ```text
 RenderInvalidationEntryPoint
   -> RenderInvalidationRequest
-  -> RenderWorkPlan
+  -> RenderInvalidationWorkPlan
   -> PendingRenderWork
 ```
 

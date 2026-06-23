@@ -234,10 +234,18 @@ Current supported subset:
   retained paint caches, dirty-region rendering, compositor/GPU concepts, or
   broad browser-owned CSS property-impact classification; see
   `docs/rendering/ac3-explicit-dirty-state-tracking.md`.
+- AC4 deterministic render work planning: browser/runtime derives an explicit
+  pre-execution `RenderWorkPlan` from retained dirty state, pending
+  invalidation work, and existing retained style artifact state; plans expose
+  restyle, relayout, repaint, and conservative fallback decisions through
+  deterministic debug output; this does not add retained layout caches,
+  retained paint caches, targeted relayout, dirty-region rendering,
+  compositor/GPU concepts, retained display lists/scenes, or a browser-owned
+  CSS property-impact table; see
+  `docs/rendering/ac4-deterministic-render-work-plans.md`.
 
 Missing or incomplete:
 
-- deterministic render work planning
 - conservative style/layout/paint artifact reuse beyond current retained style
   foundations
 - incremental rendering performance/allocation guardrails
