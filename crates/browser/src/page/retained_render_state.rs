@@ -2,8 +2,9 @@ use crate::document_style::DocumentStyleSet;
 use crate::rendering::{
     DirtyPhase, DirtyStateDebugSnapshot, FrameLocalIdentityState, RenderArtifactState,
     RenderDirtyState, RenderEpoch, RenderInvalidationEntryPoint, RenderPipelineDebugSnapshot,
-    RetainedRenderIdentityMap, RetainedRenderStateDebugSnapshot, RetainedStyleArtifactState,
-    StyleInvalidationState, dirty_request_for_entry_point,
+    RetainedRenderIdentityMap, RetainedRenderStateDebugSnapshot, RetainedStyleArtifactAction,
+    RetainedStyleArtifactDebugSnapshot, RetainedStyleArtifactKey, RetainedStyleArtifactState,
+    RetainedStyleArtifactStats, StyleInvalidationState, dirty_request_for_entry_point,
 };
 use css::ComputedStyleReuseStats;
 use html::Node;
@@ -27,6 +28,8 @@ pub(super) struct RetainedRenderState {
     pub(super) pending_style_invalidation: Option<StyleInvalidationScope>,
     pub(super) last_style_recalc: Option<StyleRecalcKind>,
     pub(super) last_style_reuse: Option<ComputedStyleReuseStats>,
+    pub(super) style_artifact_stats: RetainedStyleArtifactStats,
+    pub(super) last_style_artifact_action: RetainedStyleArtifactAction,
     pub(super) identities: RetainedRenderIdentityMap,
 }
 
@@ -42,6 +45,8 @@ impl RetainedRenderState {
             pending_style_invalidation: Some(StyleInvalidationScope::Full),
             last_style_recalc: None,
             last_style_reuse: None,
+            style_artifact_stats: RetainedStyleArtifactStats::default(),
+            last_style_artifact_action: RetainedStyleArtifactAction::None,
             identities: RetainedRenderIdentityMap::new(),
         }
     }
@@ -56,6 +61,8 @@ impl RetainedRenderState {
         self.pending_style_invalidation = Some(StyleInvalidationScope::Full);
         self.last_style_recalc = None;
         self.last_style_reuse = None;
+        self.style_artifact_stats = RetainedStyleArtifactStats::default();
+        self.last_style_artifact_action = RetainedStyleArtifactAction::None;
         self.identities.reset_for_navigation();
     }
 
@@ -104,6 +111,51 @@ impl RetainedRenderState {
             (Some(_), true) => RetainedStyleArtifactState::Stale,
             (Some(_), false) => RetainedStyleArtifactState::Fresh,
         }
+    }
+
+    pub(super) fn current_style_artifact_key(&self) -> RetainedStyleArtifactKey {
+        RetainedStyleArtifactKey {
+            identity_domain: self.identities.domain(),
+            style_input_generation: self.generations.style_inputs,
+            stylesheet_generation: self.generations.stylesheets,
+        }
+    }
+
+    pub(super) fn style_cache_matches_current_key(&self) -> bool {
+        self.style_cache
+            .as_ref()
+            .is_some_and(|cache| cache.key == self.current_style_artifact_key())
+    }
+
+    pub(super) fn record_style_artifact_reuse(&mut self) {
+        self.style_artifact_stats.reuse_count = self
+            .style_artifact_stats
+            .reuse_count
+            .checked_add(1)
+            .expect("retained style artifact reuse count exhausted");
+        self.last_style_artifact_action = RetainedStyleArtifactAction::Reused;
+    }
+
+    pub(super) fn record_style_artifact_recompute(&mut self, action: RetainedStyleArtifactAction) {
+        self.style_artifact_stats.recompute_count = self
+            .style_artifact_stats
+            .recompute_count
+            .checked_add(1)
+            .expect("retained style artifact recompute count exhausted");
+        self.last_style_artifact_action = action;
+    }
+
+    fn record_style_artifact_discard_for_full_invalidation(&mut self) {
+        if self.style_cache.is_none() {
+            return;
+        }
+
+        self.style_artifact_stats.discard_count = self
+            .style_artifact_stats
+            .discard_count
+            .checked_add(1)
+            .expect("retained style artifact discard count exhausted");
+        self.last_style_artifact_action = RetainedStyleArtifactAction::DiscardedForFullInvalidation;
     }
 
     pub(super) fn clear_style_dirty_after_recompute(&mut self) {
@@ -171,6 +223,7 @@ impl RetainedRenderState {
             layout_dirty: self.layout_dirty(),
             paint_dirty: self.paint_dirty(),
             style_invalidation,
+            style_artifacts: self.style_artifact_debug_snapshot(style_cache_state),
         }
     }
 
@@ -192,6 +245,7 @@ impl RetainedRenderState {
             layout_dirty: pipeline.layout_dirty,
             paint_dirty: pipeline.paint_dirty,
             style_invalidation: pipeline.style_invalidation,
+            style_artifacts: pipeline.style_artifacts,
             retained_identity_domain: self.identities.domain(),
             retained_identities: self.identities.identities(),
             layout_identity: FrameLocalIdentityState::NotRetained,
@@ -236,9 +290,22 @@ impl RetainedRenderState {
         };
 
         if matches!(merged, StyleInvalidationScope::Full) {
+            self.record_style_artifact_discard_for_full_invalidation();
             self.style_cache = None;
         }
         self.pending_style_invalidation = Some(merged);
+    }
+
+    fn style_artifact_debug_snapshot(
+        &self,
+        state: RenderArtifactState,
+    ) -> RetainedStyleArtifactDebugSnapshot {
+        RetainedStyleArtifactDebugSnapshot {
+            key: self.style_cache.as_ref().map(|cache| cache.key),
+            state,
+            last_action: self.last_style_artifact_action,
+            stats: self.style_artifact_stats,
+        }
     }
 }
 

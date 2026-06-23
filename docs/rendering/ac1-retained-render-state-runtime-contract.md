@@ -27,6 +27,7 @@ Related code:
 Related documents:
 - `docs/rendering/ac2-retained-render-identities.md`
 - `docs/rendering/ac3-explicit-dirty-state-tracking.md`
+- `docs/rendering/ac5-retained-style-artifact-reuse.md`
 - `docs/rendering/v1-rendering-architecture-ownership-phase-contracts.md`
 - `docs/rendering/v2-rendering-pipeline-phase-output-models.md`
 - `docs/rendering/v3-retained-state-versus-rebuilt-state-ownership.md`
@@ -205,8 +206,8 @@ For a fixed sequence of browser/runtime invalidations and render updates:
 - initial retained state uses epoch `0`;
 - navigation reset returns retained state to epoch `0`;
 - no-op updates without new invalidation preserve the retained render epoch;
-- retained style artifacts are reported only according to the existing V3
-  retained-style contract;
+- retained style artifacts are reported according to the V3 retained-style
+  contract and the AC5 retained style artifact lifecycle/debug contract;
 - frame-local style, layout, paint, traversal, and stacking artifacts are not
   represented as retained identities;
 - browser/runtime owns retained state lifetime and invalidation coordination;
@@ -219,7 +220,8 @@ For a fixed sequence of browser/runtime invalidations and render updates:
 
 AC1 deliberately excludes:
 
-- real style cache work beyond the existing retained style cache contract;
+- retained style cache work beyond AC5's conservative retained
+  resolved/computed style artifact reuse contract;
 - retained layout caches;
 - retained paint caches;
 - targeted relayout;
@@ -243,7 +245,7 @@ Future Milestone AC work should extend this foundation through adjacent,
 explicit contracts:
 
 - deterministic render work plans;
-- conservative style artifact reuse summaries;
+- conservative style artifact reuse summaries, now defined by AC5;
 - conservative layout artifact reuse only after layout ownership and
   invalidation rules are documented;
 - conservative paint artifact reuse only after paint ownership and

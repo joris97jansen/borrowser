@@ -4,6 +4,7 @@ use super::support::{
     two_paragraph_patch_document,
 };
 use crate::page::StyleRecalcKind;
+use crate::rendering::RetainedStyleArtifactAction;
 use bus::CoreEvent;
 use core_types::{DomHandle, DomVersion};
 use css::ComputedStyleReuseStats;
@@ -123,5 +124,20 @@ fn clean_style_cache_reuses_computed_document_without_recompute() {
         tab.page.last_style_reuse(),
         Some(ComputedStyleReuseStats { hits: 0, misses: 0 }),
         "no per-pass sharing work should run when the page cache is reused"
+    );
+    assert_eq!(
+        tab.page
+            .retained_render_state_debug_snapshot()
+            .style_artifacts
+            .last_action,
+        RetainedStyleArtifactAction::Reused
+    );
+    assert_eq!(
+        tab.page
+            .retained_render_state_debug_snapshot()
+            .style_artifacts
+            .stats
+            .reuse_count,
+        1
     );
 }

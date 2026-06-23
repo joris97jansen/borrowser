@@ -7,6 +7,8 @@ use css::{
 };
 use html::Node;
 
+use crate::rendering::RetainedStyleArtifactKey;
+
 use super::restyle::StyleInvalidationScope;
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
@@ -18,8 +20,7 @@ pub(crate) struct PageStyleGenerations {
 
 #[derive(Clone, Debug)]
 pub(super) struct PageStyleCache {
-    pub(super) style_input_generation: u64,
-    pub(super) stylesheet_generation: u64,
+    pub(super) key: RetainedStyleArtifactKey,
     pub(super) resolved: ResolvedDocumentStyle,
     pub(super) computed: ComputedDocumentStyle,
 }
@@ -47,12 +48,13 @@ pub(super) fn recompute_styles(
     dom: &Node,
     sheets: &[StylesheetCascadeInput<'_>],
     generations: PageStyleGenerations,
+    key: RetainedStyleArtifactKey,
     pending: StyleInvalidationScope,
     state: StyleRecomputeState<'_>,
 ) -> Result<(), ComputedStyleResolutionError> {
     if let StyleInvalidationScope::AttributeSuffix { node_ids } = &pending
         && let Some(cache) = state.style_cache.as_ref()
-        && cache.stylesheet_generation == generations.stylesheets
+        && cache.key.stylesheet_generation == generations.stylesheets
     {
         let limits = StyleResolutionLimits::default();
         if let Some(incremental) =
@@ -71,8 +73,7 @@ pub(super) fn recompute_styles(
             });
             *state.last_style_reuse = Some(incremental.reuse_stats);
             *state.style_cache = Some(PageStyleCache {
-                style_input_generation: generations.style_inputs,
-                stylesheet_generation: generations.stylesheets,
+                key,
                 resolved: incremental.resolved,
                 computed: incremental.computed,
             });
@@ -88,8 +89,7 @@ pub(super) fn recompute_styles(
     *state.last_style_recalc = Some(StyleRecalcKind::Full { elements });
     *state.last_style_reuse = Some(computed.reuse_stats);
     *state.style_cache = Some(PageStyleCache {
-        style_input_generation: generations.style_inputs,
-        stylesheet_generation: generations.stylesheets,
+        key,
         resolved,
         computed: computed.computed,
     });

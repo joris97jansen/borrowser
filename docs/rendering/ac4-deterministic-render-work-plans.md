@@ -27,6 +27,7 @@ Related documents:
 - `docs/rendering/ac1-retained-render-state-runtime-contract.md`
 - `docs/rendering/ac2-retained-render-identities.md`
 - `docs/rendering/ac3-explicit-dirty-state-tracking.md`
+- `docs/rendering/ac5-retained-style-artifact-reuse.md`
 - `docs/rendering/v4-invalidation-and-rebuild-entry-points.md`
 - `docs/rendering/v5-explicit-runtime-render-orchestration-path.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
@@ -209,7 +210,8 @@ For equivalent retained state and pending invalidation input:
 
 AC4 deliberately excludes:
 
-- new style artifact reuse beyond the existing retained style/cache contract;
+- style artifact lifecycle accounting and conservative retained artifact reuse
+  beyond pre-execution planning; AC5 defines that execution-side contract;
 - retained layout caches;
 - retained paint caches;
 - retained display lists or scenes;
@@ -220,6 +222,8 @@ AC4 deliberately excludes:
 - browser-owned CSS property-impact classification;
 - dependency graphs from DOM/style/layout nodes to retained paint artifacts.
 
-Future AC issues may add artifact reuse only after defining ownership,
-retained identifiers, dependency derivation, conservative fallback behavior,
-deterministic debug output, and tests.
+Future AC issues may add layout or paint artifact reuse only after defining
+ownership, retained identifiers, dependency derivation, conservative fallback
+behavior, deterministic debug output, and tests. AC5 adds the first
+conservative retained style artifact reuse path for resolved/computed style
+artifacts only.
