@@ -107,6 +107,16 @@ fn retained_render_state_debug_snapshot_is_deterministic() {
             "  layout-dirty: true\n",
             "  paint-dirty: true\n",
             "  style-invalidation: full\n",
+            "generations:\n",
+            "  dom-generation: 0\n",
+            "  style-input-generation: 0\n",
+            "  stylesheet-generation: 0\n",
+            "  layout-input-generation: 0\n",
+            "  layout-style-generation: 0\n",
+            "  paint-style-generation: 0\n",
+            "  paint-input-generation: 0\n",
+            "  text-measurement-generation: 0\n",
+            "  replaced-metadata-generation: 0\n",
             "style-artifacts:\n",
             "  key: none\n",
             "  state: absent\n",
@@ -179,6 +189,16 @@ fn retained_render_identities_allocate_deterministically_for_initial_document() 
             "  layout-dirty: true\n",
             "  paint-dirty: true\n",
             "  style-invalidation: full\n",
+            "generations:\n",
+            "  dom-generation: 1\n",
+            "  style-input-generation: 1\n",
+            "  stylesheet-generation: 0\n",
+            "  layout-input-generation: 1\n",
+            "  layout-style-generation: 0\n",
+            "  paint-style-generation: 0\n",
+            "  paint-input-generation: 0\n",
+            "  text-measurement-generation: 0\n",
+            "  replaced-metadata-generation: 0\n",
             "style-artifacts:\n",
             "  key: none\n",
             "  state: absent\n",
@@ -274,6 +294,17 @@ fn debug_snapshot_reports_retained_style_artifacts_and_ephemeral_downstream_tree
             layout_dirty: true,
             paint_dirty: true,
             style_invalidation: StyleInvalidationState::None,
+            generations: RetainedRenderGenerationDebugSnapshot {
+                dom_generation: 1,
+                style_input_generation: 1,
+                stylesheet_generation: 1,
+                layout_input_generation: 1,
+                layout_style_generation: 0,
+                paint_style_generation: 0,
+                paint_input_generation: 0,
+                text_measurement_generation: 0,
+                replaced_metadata_generation: 0,
+            },
             style_artifacts: RetainedStyleArtifactDebugSnapshot {
                 key: Some(RetainedStyleArtifactKey {
                     identity_domain,
@@ -940,6 +971,104 @@ fn noop_update_does_not_mark_clean_retained_dirty_state() {
 }
 
 #[test]
+fn ac8_retained_snapshot_reports_actual_reuse_summaries_and_generations() {
+    let mut page = page_with_dom(
+        "<!doctype html><html><body><p style=\"display: block; width: 100px; color: red;\">Hello</p></body></html>",
+    );
+    seed_retained_paint_for_test(&mut page);
+    page.clear_all_dirty_for_tests();
+
+    let reused_style = style_output_for_test(&mut page);
+    drop(reused_style);
+
+    let before_reuse = page.retained_render_state_debug_snapshot();
+    let layout_key = before_reuse
+        .layout_artifacts
+        .key
+        .expect("retained layout should have key");
+    let layout_artifact = page
+        .retained_layout_artifact()
+        .expect("retained layout artifact should exist")
+        .clone();
+    page.record_layout_frame_result(RetainedLayoutFrameResult {
+        key: layout_key,
+        action: RetainedLayoutFrameAction::Reused,
+        artifact: layout_artifact,
+    });
+
+    let before_paint_reuse = page.retained_render_state_debug_snapshot();
+    let paint_key = before_paint_reuse
+        .paint_artifacts
+        .key
+        .expect("retained paint should have key");
+    let paint_artifact = page
+        .retained_paint_artifact()
+        .expect("retained paint artifact should exist")
+        .clone();
+    page.record_paint_frame_result(RetainedPaintFrameResult {
+        key: paint_key,
+        action: RetainedPaintFrameAction::Reused,
+        artifact: paint_artifact,
+    });
+
+    let snapshot = page.retained_render_state_debug_snapshot();
+    assert_eq!(snapshot.generations.dom_generation, 1);
+    assert_eq!(snapshot.generations.style_input_generation, 1);
+    assert_eq!(snapshot.generations.layout_input_generation, 1);
+    assert_eq!(snapshot.generations.layout_style_generation, 0);
+    assert_eq!(snapshot.generations.paint_style_generation, 0);
+    assert_eq!(snapshot.generations.paint_input_generation, 0);
+    assert_eq!(
+        snapshot.style_artifacts.last_action,
+        RetainedStyleArtifactAction::Reused
+    );
+    assert_eq!(snapshot.style_artifacts.stats.reuse_count, 1);
+    assert_eq!(snapshot.style_artifacts.stats.recompute_count, 1);
+    assert_eq!(
+        snapshot.layout_artifacts.last_action,
+        RetainedLayoutArtifactAction::Reused
+    );
+    assert_eq!(snapshot.layout_artifacts.stats.reuse_count, 1);
+    assert_eq!(snapshot.layout_artifacts.stats.recompute_count, 1);
+    assert_eq!(
+        snapshot.paint_artifacts.last_action,
+        RetainedPaintArtifactAction::Reused
+    );
+    assert_eq!(snapshot.paint_artifacts.stats.reuse_count, 1);
+    assert_eq!(snapshot.paint_artifacts.stats.recompute_count, 1);
+
+    let rendered = snapshot.to_debug_snapshot();
+    assert!(rendered.contains("generations:\n"));
+    assert!(rendered.contains("  dom-generation: 1\n"));
+    assert!(rendered.contains("  style-input-generation: 1\n"));
+    assert!(rendered.contains("  layout-input-generation: 1\n"));
+    assert!(rendered.contains("  paint-input-generation: 0\n"));
+    assert!(rendered.contains("style-artifacts:\n"));
+    assert!(rendered.contains("  last-action: reused\n"));
+    assert!(rendered.contains("layout-artifacts:\n"));
+    assert!(rendered.contains("paint-artifacts:\n"));
+}
+
+#[test]
+fn ac8_retained_snapshot_is_stable_across_equivalent_incremental_runs() {
+    fn rendered_snapshot_after_equivalent_update() -> String {
+        let mut page = page_with_dom(
+            "<!doctype html><html><body><p style=\"display: block; width: 100px; color: red;\">Hello</p></body></html>",
+        );
+        seed_retained_paint_for_test(&mut page);
+        page.clear_all_dirty_for_tests();
+        page.mark_render_entry_point_for_tests(RenderInvalidationEntryPoint::InputStateChanged);
+        page.retained_render_state_debug_snapshot()
+            .to_debug_snapshot()
+    }
+
+    assert_eq!(
+        rendered_snapshot_after_equivalent_update(),
+        rendered_snapshot_after_equivalent_update()
+    );
+}
+
+#[test]
 fn same_document_text_update_preserves_surviving_retained_identity() {
     let mut page = page_with_node(doc_with_explicit_ids());
     let before = page.retained_render_state_debug_snapshot();
@@ -1180,12 +1309,14 @@ fn retained_render_state_debug_snapshot_does_not_expose_frame_local_ids() {
         "LayoutBox",
         "BoxId",
         "StackingContextId",
+        "stacking-context-id=",
         "PaintId",
         "PaintPrimitiveId",
         "source-order-id=",
         "traversal-id=",
         "paint-operation-index",
         "paint-order-index",
+        "0x",
     ] {
         assert!(
             !snapshot.contains(forbidden),
@@ -1491,6 +1622,7 @@ fn navigation_reset_clears_page_owned_retained_render_state() {
             layout_dirty: true,
             paint_dirty: true,
             style_invalidation: StyleInvalidationState::Full,
+            generations: RetainedRenderGenerationDebugSnapshot::default(),
             style_artifacts: RetainedStyleArtifactDebugSnapshot {
                 key: None,
                 state: RenderArtifactState::Absent,

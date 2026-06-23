@@ -49,6 +49,44 @@ fn no_op_dirty_state_plans_minimal_work() {
 }
 
 #[test]
+fn render_work_plan_debug_snapshot_is_exact_for_no_op_frame() {
+    let retained_dirty_state = RenderDirtyState::new();
+    let pending_work = PendingRenderWork::default();
+
+    let plan = derive_plan(
+        &retained_dirty_state,
+        &pending_work,
+        RetainedStyleArtifactState::Fresh,
+    );
+
+    assert_eq!(
+        plan.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "render-work-plan\n",
+            "entry-points: 0\n",
+            "canonical-dirty-state:\n",
+            "  entries: 0\n",
+            "restyle: decision=reuse-retained-style scope=none\n",
+            "  reasons: 2\n",
+            "    - clean-dirty-state\n",
+            "    - retained-style-artifact(computed-document-style)=fresh\n",
+            "relayout: decision=reuse-retained-layout scope=none\n",
+            "  reasons: 2\n",
+            "    - clean-dirty-state\n",
+            "    - retained-layout-artifact(layout-tree)=fresh\n",
+            "relayout-execution: strategy=reuse-retained\n",
+            "repaint: decision=reuse-retained-paint scope=none\n",
+            "  reasons: 2\n",
+            "    - clean-dirty-state\n",
+            "    - retained-paint-artifact(paint-commands)=fresh\n",
+            "repaint-execution: strategy=reuse-retained\n",
+            "conservative-fallback: none\n",
+        )
+    );
+}
+
+#[test]
 fn viewport_dirty_state_plans_relayout_and_repaint_without_restyle() {
     let retained_dirty_state = RenderDirtyState::new();
     let mut pending_work = PendingRenderWork::default();
@@ -113,6 +151,48 @@ fn style_dirty_state_plans_restyle_relayout_and_repaint() {
 }
 
 #[test]
+fn render_work_plan_debug_snapshot_is_exact_for_style_update() {
+    let mut retained_dirty_state = RenderDirtyState::new();
+    retained_dirty_state.extend(
+        dirty_request_for_entry_point(RenderInvalidationEntryPoint::DomAttributesChanged).entries,
+    );
+    let pending_work = PendingRenderWork::default();
+
+    let plan = derive_plan(
+        &retained_dirty_state,
+        &pending_work,
+        RetainedStyleArtifactState::Stale,
+    );
+
+    assert_eq!(
+        plan.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "render-work-plan\n",
+            "entry-points: 0\n",
+            "canonical-dirty-state:\n",
+            "  entries: 3\n",
+            "    entry[0]: phase=style reason=style-input-changed scope=document\n",
+            "    entry[1]: phase=layout reason=cascaded-from-style scope=document\n",
+            "    entry[2]: phase=paint reason=cascaded-from-layout scope=document\n",
+            "restyle: decision=restyle scope=document\n",
+            "  reasons: 2\n",
+            "    - dirty(style-input-changed)\n",
+            "    - retained-style-artifact(computed-document-style)=stale\n",
+            "relayout: decision=relayout scope=document\n",
+            "  reasons: 1\n",
+            "    - dirty(cascaded-from-style)\n",
+            "relayout-execution: strategy=full-document\n",
+            "repaint: decision=repaint scope=document\n",
+            "  reasons: 1\n",
+            "    - dirty(cascaded-from-layout)\n",
+            "repaint-execution: strategy=full-document\n",
+            "conservative-fallback: none\n",
+        )
+    );
+}
+
+#[test]
 fn layout_dirty_state_plans_relayout_and_repaint_without_restyle() {
     let mut retained_dirty_state = RenderDirtyState::new();
     retained_dirty_state.extend(
@@ -134,6 +214,47 @@ fn layout_dirty_state_plans_relayout_and_repaint_without_restyle() {
     assert_eq!(plan.relayout.scope, DirtyScope::Document);
     assert_eq!(plan.repaint.decision, RenderWorkDecision::Repaint);
     assert_eq!(plan.repaint.scope, DirtyScope::Document);
+}
+
+#[test]
+fn render_work_plan_debug_snapshot_is_exact_for_layout_update() {
+    let mut retained_dirty_state = RenderDirtyState::new();
+    retained_dirty_state.extend(
+        dirty_request_for_entry_point(RenderInvalidationEntryPoint::DomTextChanged).entries,
+    );
+    let pending_work = PendingRenderWork::default();
+
+    let plan = derive_plan(
+        &retained_dirty_state,
+        &pending_work,
+        RetainedStyleArtifactState::Fresh,
+    );
+
+    assert_eq!(
+        plan.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "render-work-plan\n",
+            "entry-points: 0\n",
+            "canonical-dirty-state:\n",
+            "  entries: 2\n",
+            "    entry[0]: phase=layout reason=text-content-changed scope=document\n",
+            "    entry[1]: phase=paint reason=cascaded-from-layout scope=document\n",
+            "restyle: decision=reuse-retained-style scope=none\n",
+            "  reasons: 2\n",
+            "    - clean-dirty-state\n",
+            "    - retained-style-artifact(computed-document-style)=fresh\n",
+            "relayout: decision=relayout scope=document\n",
+            "  reasons: 1\n",
+            "    - dirty(text-content-changed)\n",
+            "relayout-execution: strategy=full-document\n",
+            "repaint: decision=repaint scope=document\n",
+            "  reasons: 1\n",
+            "    - dirty(cascaded-from-layout)\n",
+            "repaint-execution: strategy=full-document\n",
+            "conservative-fallback: none\n",
+        )
+    );
 }
 
 #[test]
@@ -161,6 +282,47 @@ fn paint_dirty_state_plans_repaint_without_relayout() {
     assert_eq!(plan.relayout_execution, RelayoutExecution::ReuseRetained);
     assert_eq!(plan.repaint.decision, RenderWorkDecision::Repaint);
     assert_eq!(plan.repaint.scope, DirtyScope::Viewport);
+}
+
+#[test]
+fn render_work_plan_debug_snapshot_is_exact_for_paint_only_update() {
+    let mut retained_dirty_state = RenderDirtyState::new();
+    retained_dirty_state.extend(
+        dirty_request_for_entry_point(RenderInvalidationEntryPoint::InputStateChanged).entries,
+    );
+    let pending_work = PendingRenderWork::default();
+
+    let plan = derive_plan(
+        &retained_dirty_state,
+        &pending_work,
+        RetainedStyleArtifactState::Fresh,
+    );
+
+    assert_eq!(
+        plan.to_debug_snapshot(),
+        concat!(
+            "version: 1\n",
+            "render-work-plan\n",
+            "entry-points: 0\n",
+            "canonical-dirty-state:\n",
+            "  entries: 1\n",
+            "    entry[0]: phase=paint reason=runtime-input-state scope=viewport\n",
+            "restyle: decision=reuse-retained-style scope=none\n",
+            "  reasons: 2\n",
+            "    - clean-dirty-state\n",
+            "    - retained-style-artifact(computed-document-style)=fresh\n",
+            "relayout: decision=reuse-retained-layout scope=none\n",
+            "  reasons: 2\n",
+            "    - clean-dirty-state\n",
+            "    - retained-layout-artifact(layout-tree)=fresh\n",
+            "relayout-execution: strategy=reuse-retained\n",
+            "repaint: decision=repaint scope=viewport\n",
+            "  reasons: 1\n",
+            "    - dirty(runtime-input-state)\n",
+            "repaint-execution: strategy=viewport\n",
+            "conservative-fallback: none\n",
+        )
+    );
 }
 
 #[test]

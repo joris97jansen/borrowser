@@ -271,6 +271,14 @@ Current supported subset:
   still match, and paint-only changes can plan repaint without relayout where
   CSS-owned impact classification supports that; see
   `docs/rendering/ac7-retained-paint-artifact-reuse-repaint-planning.md`.
+- AC8 incremental rendering debug snapshots: browser/runtime exposes
+  deterministic retained-state, dirty-state, render work-plan, execution-trace,
+  generation, artifact lifecycle, reuse/recompute/discard, and conservative
+  fallback debug output for retained rendering decisions. These snapshots are
+  internal regression contracts and do not introduce new optimization behavior,
+  dirty-region rendering, compositor/GPU concepts, retained display lists, or
+  new artifact reuse semantics; see
+  `docs/rendering/ac8-incremental-rendering-debug-snapshots.md`.
 
 Missing or incomplete:
 
