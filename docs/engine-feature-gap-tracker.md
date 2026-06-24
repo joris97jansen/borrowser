@@ -279,11 +279,21 @@ Current supported subset:
   dirty-region rendering, compositor/GPU concepts, retained display lists, or
   new artifact reuse semantics; see
   `docs/rendering/ac8-incremental-rendering-debug-snapshots.md`.
+- AC9 incremental rendering performance guardrails: browser/runtime has
+  deterministic CI-safe retained rendering guard tests for initial render,
+  no-op repeated render, repeated viewport resize, text/content update,
+  paint-only style update, layout-affecting style update, stylesheet/global
+  style update, and representative in-repo page updates. These guardrails use
+  existing lifecycle counters, retained dirty-state cleanup, retained artifact
+  states, retained identity counts, and frame traces rather than wall-clock CI
+  thresholds. Heap-byte allocation measurement is not part of the default
+  browser rendering proof; see
+  `docs/rendering/ac9-incremental-rendering-performance-guardrails.md`.
 
 Missing or incomplete:
 
 - true minimal/subtree relayout execution and layout dependency graphs
-- incremental rendering performance/allocation guardrails
+- heap-byte allocation guards for browser rendering retained-state updates
 - JavaScript execution and DOM bindings
 - event loop, timers, microtasks, and script-triggered invalidation
 - full DOM mutation APIs
