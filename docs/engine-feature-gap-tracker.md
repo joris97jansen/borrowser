@@ -289,14 +289,34 @@ Current supported subset:
   thresholds. Heap-byte allocation measurement is not part of the default
   browser rendering proof; see
   `docs/rendering/ac9-incremental-rendering-performance-guardrails.md`.
+- Milestone AC retained rendering runtime foundation closeout: browser/runtime
+  now has documented retained rendering purpose and scope, subsystem ownership
+  boundaries, retained versus rebuilt state, retained state lifetime, retained
+  identity invariants, dirty-state propagation, deterministic work-plan
+  derivation, style/layout/paint artifact reuse rules, conservative fallback
+  behavior, internal debug/regression snapshot surfaces, regression test
+  surfaces, performance guardrails, known limitations, and future extension
+  points. This marks Milestone AC complete only as a retained runtime
+  foundation and does not claim compositor/GPU layers, full dirty-region
+  rendering, selector dependency invalidation, CSS containment, HTML parser
+  conformance, JavaScript/event-loop invalidation, or broad WPT integration;
+  see `docs/rendering/ac10-retained-rendering-runtime-closeout.md`.
 
 Missing or incomplete:
 
 - true minimal/subtree relayout execution and layout dependency graphs
+- compositor/GPU layer architecture and scheduling
+- full dirty-region rendering and partial raster invalidation
+- retained display-list or scene-graph architecture beyond AC7's semantic
+  paint artifact reuse
+- full selector dependency invalidation
+- CSS containment
 - heap-byte allocation guards for browser rendering retained-state updates
 - JavaScript execution and DOM bindings
 - event loop, timers, microtasks, and script-triggered invalidation
 - full DOM mutation APIs
+- full HTML parser conformance
+- broad WPT integration for rendering/runtime retained behavior
 - full form submission and navigation behavior
 - focus management and keyboard navigation
 - origin/security policy model
