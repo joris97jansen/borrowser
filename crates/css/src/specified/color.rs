@@ -1,52 +1,49 @@
 use crate::{
     model::{ValueComponent, ValueToken},
     properties::PropertyId,
+    values::{CssColorValue, CssHexColor},
 };
 
 use super::{
+    core::{keyword_value, resolve_text, unsupported_component_error},
     error::{SpecifiedValueParseError, SpecifiedValueParseErrorKind, error},
-    parse::resolve_text,
-    value::{SpecifiedColor, SpecifiedColorKeyword, SpecifiedColorSyntax, SpecifiedHexColor},
+    value::{SpecifiedColor, SpecifiedColorKeyword, SpecifiedColorSyntax},
 };
 
 pub(super) fn parse_color(
     property: PropertyId,
     component: &ValueComponent,
 ) -> Result<SpecifiedColor, SpecifiedValueParseError> {
+    if let Some(keyword) = keyword_value(property, component)? {
+        let Some(keyword_value) = parse_color_keyword(keyword.canonical()) else {
+            return Err(error(
+                property,
+                SpecifiedValueParseErrorKind::UnsupportedColorKeyword,
+            ));
+        };
+
+        return Ok(SpecifiedColor {
+            value: CssColorValue::new(keyword.span(), SpecifiedColorSyntax::Keyword(keyword_value)),
+        });
+    }
+
     let ValueComponent::Token(token) = component else {
-        return Err(error(
-            property,
-            SpecifiedValueParseErrorKind::UnsupportedComponent,
-        ));
+        return Err(unsupported_component_error(property, component));
     };
 
     let syntax = match token {
-        ValueToken::Ident { text, .. } => {
-            let keyword = resolve_text(property, text)?.to_ascii_lowercase();
-            let Some(keyword) = parse_color_keyword(&keyword) else {
-                return Err(error(
-                    property,
-                    SpecifiedValueParseErrorKind::UnsupportedColorKeyword,
-                ));
-            };
-            SpecifiedColorSyntax::Keyword(keyword)
-        }
         ValueToken::Hash { text, .. } => {
             let digits = resolve_text(property, text)?.to_ascii_lowercase();
             let rgba = parse_hex_color_digits(property, &digits)?;
-            SpecifiedColorSyntax::Hex(SpecifiedHexColor { digits, rgba })
+            SpecifiedColorSyntax::Hex(CssHexColor::new(digits, rgba))
         }
         _ => {
-            return Err(error(
-                property,
-                SpecifiedValueParseErrorKind::UnsupportedComponent,
-            ));
+            return Err(unsupported_component_error(property, component));
         }
     };
 
     Ok(SpecifiedColor {
-        span: token.span(),
-        syntax,
+        value: CssColorValue::new(token.span(), syntax),
     })
 }
 

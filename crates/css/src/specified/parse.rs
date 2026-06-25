@@ -1,7 +1,6 @@
 use crate::{
-    model::{DeclarationValue, ValueComponent, ValueText, ValueToken},
+    model::{DeclarationValue, ValueComponent, ValueToken},
     properties::{PropertyId, PropertySpecifiedValueKind},
-    syntax::CssSpan,
 };
 
 use super::{
@@ -134,41 +133,4 @@ fn is_trivia(component: &ValueComponent) -> bool {
         component,
         ValueComponent::Token(ValueToken::Whitespace { .. } | ValueToken::Comment { .. })
     )
-}
-
-pub(super) fn ident_keyword(
-    property: PropertyId,
-    component: &ValueComponent,
-) -> Result<Option<(String, CssSpan)>, SpecifiedValueParseError> {
-    let ValueComponent::Token(ValueToken::Ident { span, text }) = component else {
-        return Ok(None);
-    };
-
-    Ok(Some((
-        resolve_text(property, text)?.to_ascii_lowercase(),
-        *span,
-    )))
-}
-
-pub(super) fn parse_number_text(
-    property: PropertyId,
-    text: &ValueText,
-) -> Result<(String, f64), SpecifiedValueParseError> {
-    let number = resolve_text(property, text)?.to_string();
-    let numeric_value = number
-        .parse::<f64>()
-        .ok()
-        .filter(|value| value.is_finite())
-        .ok_or_else(|| error(property, SpecifiedValueParseErrorKind::InvalidLengthNumber))?;
-
-    Ok((number, numeric_value))
-}
-
-pub(super) fn resolve_text(
-    property: PropertyId,
-    text: &ValueText,
-) -> Result<&str, SpecifiedValueParseError> {
-    text.text
-        .as_deref()
-        .ok_or_else(|| error(property, SpecifiedValueParseErrorKind::UnresolvedTokenText))
 }

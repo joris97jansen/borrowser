@@ -1,8 +1,8 @@
 use crate::{model::ValueComponent, properties::PropertyId};
 
 use super::{
+    core::{keyword_value, unsupported_component_error},
     error::{SpecifiedValueParseError, SpecifiedValueParseErrorKind, error},
-    parse::ident_keyword,
     value::{SpecifiedPosition, SpecifiedPositionKeyword},
 };
 
@@ -10,14 +10,11 @@ pub(super) fn parse_position(
     property: PropertyId,
     component: &ValueComponent,
 ) -> Result<SpecifiedPosition, SpecifiedValueParseError> {
-    let Some((keyword, span)) = ident_keyword(property, component)? else {
-        return Err(error(
-            property,
-            SpecifiedValueParseErrorKind::UnsupportedComponent,
-        ));
+    let Some(keyword) = keyword_value(property, component)? else {
+        return Err(unsupported_component_error(property, component));
     };
 
-    let keyword = match keyword.as_str() {
+    let position_keyword = match keyword.canonical() {
         "static" => SpecifiedPositionKeyword::Static,
         "relative" => SpecifiedPositionKeyword::Relative,
         "absolute" => SpecifiedPositionKeyword::Absolute,
@@ -31,5 +28,8 @@ pub(super) fn parse_position(
         }
     };
 
-    Ok(SpecifiedPosition { span, keyword })
+    Ok(SpecifiedPosition {
+        span: keyword.span(),
+        keyword: position_keyword,
+    })
 }

@@ -1,15 +1,15 @@
 use crate::{
     model::{ValueComponent, ValueToken},
     properties::{PropertyId, PropertyLengthSignPolicy},
+    values::{CssLengthPercentageValue, CssLengthUnit, CssLengthValue, CssPercentageValue},
 };
 
 use super::{
+    core::{keyword_value, number_value_from_parts, resolve_text, unsupported_component_error},
     error::{SpecifiedValueParseError, SpecifiedValueParseErrorKind, error},
-    parse::{ident_keyword, parse_number_text, resolve_text},
     value::{
-        SpecifiedLength, SpecifiedLengthNumber, SpecifiedLengthPercentage,
-        SpecifiedLengthPercentageOrAuto, SpecifiedLengthPercentageOrNone, SpecifiedLengthUnit,
-        SpecifiedPercentage, SpecifiedPercentageNumber,
+        SpecifiedLength, SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto,
+        SpecifiedLengthPercentageOrNone,
     },
 };
 
@@ -17,9 +17,11 @@ pub(super) fn parse_length_percentage_or_auto(
     property: PropertyId,
     component: &ValueComponent,
 ) -> Result<SpecifiedLengthPercentageOrAuto, SpecifiedValueParseError> {
-    if let Some((keyword, span)) = ident_keyword(property, component)? {
-        return if keyword == "auto" {
-            Ok(SpecifiedLengthPercentageOrAuto::Auto { span })
+    if let Some(keyword) = keyword_value(property, component)? {
+        return if keyword.canonical() == "auto" {
+            Ok(SpecifiedLengthPercentageOrAuto::Auto {
+                span: keyword.span(),
+            })
         } else {
             Err(error(
                 property,
@@ -36,9 +38,11 @@ pub(super) fn parse_length_percentage_or_none(
     property: PropertyId,
     component: &ValueComponent,
 ) -> Result<SpecifiedLengthPercentageOrNone, SpecifiedValueParseError> {
-    if let Some((keyword, span)) = ident_keyword(property, component)? {
-        return if keyword == "none" {
-            Ok(SpecifiedLengthPercentageOrNone::None { span })
+    if let Some(keyword) = keyword_value(property, component)? {
+        return if keyword.canonical() == "none" {
+            Ok(SpecifiedLengthPercentageOrNone::None {
+                span: keyword.span(),
+            })
         } else {
             Err(error(
                 property,
@@ -56,17 +60,18 @@ pub(super) fn parse_length_percentage(
     component: &ValueComponent,
 ) -> Result<SpecifiedLengthPercentage, SpecifiedValueParseError> {
     match component {
-        ValueComponent::Token(ValueToken::Percentage { span, text, .. }) => {
-            let (number, numeric_value) = parse_number_text(property, text)?;
+        ValueComponent::Token(ValueToken::Percentage { span, kind, text }) => {
+            let number = number_value_from_parts(property, *span, *kind, text)?;
+            let numeric_value = number.numeric_value();
             reject_negative_if_needed(property, numeric_value)?;
 
-            Ok(SpecifiedLengthPercentage::Percentage(SpecifiedPercentage {
-                span: *span,
-                number,
-                numeric_value: SpecifiedPercentageNumber::new(numeric_value),
-            }))
+            Ok(SpecifiedLengthPercentage {
+                value: CssLengthPercentageValue::Percentage(CssPercentageValue::new(number)),
+            })
         }
-        _ => parse_length(property, component).map(SpecifiedLengthPercentage::Length),
+        _ => parse_length(property, component).map(|length| SpecifiedLengthPercentage {
+            value: CssLengthPercentageValue::Length(length.value),
+        }),
     }
 }
 
@@ -75,17 +80,18 @@ pub(super) fn parse_length(
     component: &ValueComponent,
 ) -> Result<SpecifiedLength, SpecifiedValueParseError> {
     let ValueComponent::Token(token) = component else {
-        return Err(error(
-            property,
-            SpecifiedValueParseErrorKind::UnsupportedComponent,
-        ));
+        return Err(unsupported_component_error(property, component));
     };
 
     match token {
         ValueToken::Dimension {
-            span, number, unit, ..
+            span,
+            kind,
+            number,
+            unit,
         } => {
-            let (number, numeric_value) = parse_number_text(property, number)?;
+            let number = number_value_from_parts(property, *span, *kind, number)?;
+            let numeric_value = number.numeric_value();
             reject_negative_if_needed(property, numeric_value)?;
 
             let unit = resolve_text(property, unit)?.to_ascii_lowercase();
@@ -97,14 +103,12 @@ pub(super) fn parse_length(
             }
 
             Ok(SpecifiedLength {
-                span: *span,
-                number,
-                numeric_value: SpecifiedLengthNumber::new(numeric_value),
-                unit: SpecifiedLengthUnit::Px,
+                value: CssLengthValue::new(number, CssLengthUnit::Px),
             })
         }
-        ValueToken::Number { span, text, .. } => {
-            let (number, numeric_value) = parse_number_text(property, text)?;
+        ValueToken::Number { span, kind, text } => {
+            let number = number_value_from_parts(property, *span, *kind, text)?;
+            let numeric_value = number.numeric_value();
             reject_negative_if_needed(property, numeric_value)?;
             if numeric_value != 0.0 {
                 return Err(error(
@@ -114,20 +118,14 @@ pub(super) fn parse_length(
             }
 
             Ok(SpecifiedLength {
-                span: *span,
-                number,
-                numeric_value: SpecifiedLengthNumber::new(numeric_value),
-                unit: SpecifiedLengthUnit::UnitlessZero,
+                value: CssLengthValue::new(number, CssLengthUnit::UnitlessZero),
             })
         }
         ValueToken::Ident { .. } => Err(error(
             property,
             SpecifiedValueParseErrorKind::UnsupportedKeyword,
         )),
-        _ => Err(error(
-            property,
-            SpecifiedValueParseErrorKind::UnsupportedComponent,
-        )),
+        _ => Err(unsupported_component_error(property, component)),
     }
 }
 

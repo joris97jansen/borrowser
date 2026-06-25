@@ -1,8 +1,8 @@
 use crate::{model::ValueComponent, properties::PropertyId};
 
 use super::{
+    core::{keyword_value, unsupported_component_error},
     error::{SpecifiedValueParseError, SpecifiedValueParseErrorKind, error},
-    parse::ident_keyword,
     value::{SpecifiedDisplay, SpecifiedDisplayKeyword},
 };
 
@@ -10,14 +10,11 @@ pub(super) fn parse_display(
     property: PropertyId,
     component: &ValueComponent,
 ) -> Result<SpecifiedDisplay, SpecifiedValueParseError> {
-    let Some((keyword, span)) = ident_keyword(property, component)? else {
-        return Err(error(
-            property,
-            SpecifiedValueParseErrorKind::UnsupportedComponent,
-        ));
+    let Some(keyword) = keyword_value(property, component)? else {
+        return Err(unsupported_component_error(property, component));
     };
 
-    let keyword = match keyword.as_str() {
+    let display_keyword = match keyword.canonical() {
         "block" => SpecifiedDisplayKeyword::Block,
         "inline" => SpecifiedDisplayKeyword::Inline,
         "inline-block" => SpecifiedDisplayKeyword::InlineBlock,
@@ -32,5 +29,8 @@ pub(super) fn parse_display(
         }
     };
 
-    Ok(SpecifiedDisplay { span, keyword })
+    Ok(SpecifiedDisplay {
+        span: keyword.span(),
+        keyword: display_keyword,
+    })
 }

@@ -53,6 +53,12 @@ Architecture status:
 - AD1 is architecture-only. It does not add broad property coverage, CSS-wide
   keyword support, shorthand support, registry-backed invalidation impact
   metadata, or new Browser/runtime impact APIs.
+- AD2 adds the CSS-owned typed core value model foundation for the current
+  supported property parsing subset; see
+  `docs/css/ad2-typed-core-css-value-model.md`.
+- AD2 does not add broad CSS Values and Units coverage, new property families,
+  URL/resource loading, broad function support, CSS-wide keywords, shorthands,
+  or invalidation impact classification.
 - Concrete CSS-owned invalidation impact classification for supported
   properties remains future AD7 work.
 

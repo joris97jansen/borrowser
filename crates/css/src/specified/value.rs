@@ -2,6 +2,10 @@ use crate::{
     model::DeclarationValue,
     properties::{PropertyId, PropertySpecifiedValueKind},
     syntax::CssSpan,
+    values::{
+        CssColorKeyword, CssColorSyntax, CssColorValue, CssHexColor, CssIntegerValue,
+        CssLengthPercentageValue, CssLengthUnit, CssLengthValue, CssPercentageValue,
+    },
 };
 
 use super::{error::SpecifiedValueParseError, parse::parse_specified_value};
@@ -157,91 +161,26 @@ pub enum SpecifiedTextDecorationLineKeyword {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SpecifiedColor {
-    pub(super) span: CssSpan,
-    pub(super) syntax: SpecifiedColorSyntax,
+    pub(super) value: CssColorValue,
 }
 
 impl SpecifiedColor {
     pub fn span(&self) -> CssSpan {
-        self.span
+        self.value.span()
     }
 
     pub fn syntax(&self) -> &SpecifiedColorSyntax {
-        &self.syntax
+        self.value.syntax()
     }
 
     pub fn to_css_text(&self) -> String {
-        match &self.syntax {
-            SpecifiedColorSyntax::Keyword(keyword) => keyword.as_css_keyword().to_string(),
-            SpecifiedColorSyntax::Hex(hex) => format!("#{}", hex.digits()),
-        }
+        self.value.to_css_text()
     }
 }
 
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum SpecifiedColorSyntax {
-    Keyword(SpecifiedColorKeyword),
-    Hex(SpecifiedHexColor),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SpecifiedColorKeyword {
-    Black,
-    Blue,
-    Cyan,
-    Gray,
-    Green,
-    Magenta,
-    Maroon,
-    Navy,
-    Olive,
-    Purple,
-    Red,
-    Silver,
-    Teal,
-    Transparent,
-    White,
-    Yellow,
-}
-
-impl SpecifiedColorKeyword {
-    pub fn as_css_keyword(self) -> &'static str {
-        match self {
-            Self::Black => "black",
-            Self::Blue => "blue",
-            Self::Cyan => "cyan",
-            Self::Gray => "gray",
-            Self::Green => "green",
-            Self::Magenta => "magenta",
-            Self::Maroon => "maroon",
-            Self::Navy => "navy",
-            Self::Olive => "olive",
-            Self::Purple => "purple",
-            Self::Red => "red",
-            Self::Silver => "silver",
-            Self::Teal => "teal",
-            Self::Transparent => "transparent",
-            Self::White => "white",
-            Self::Yellow => "yellow",
-        }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct SpecifiedHexColor {
-    pub(super) digits: String,
-    pub(super) rgba: (u8, u8, u8, u8),
-}
-
-impl SpecifiedHexColor {
-    pub fn digits(&self) -> &str {
-        &self.digits
-    }
-
-    pub fn rgba(&self) -> (u8, u8, u8, u8) {
-        self.rgba
-    }
-}
+pub type SpecifiedColorSyntax = CssColorSyntax;
+pub type SpecifiedColorKeyword = CssColorKeyword;
+pub type SpecifiedHexColor = CssHexColor;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SpecifiedDisplay {
@@ -370,158 +309,111 @@ impl SpecifiedPositionKeyword {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SpecifiedZIndex {
-    pub(super) span: CssSpan,
     pub(super) value: SpecifiedZIndexValue,
 }
 
 impl SpecifiedZIndex {
     pub fn span(&self) -> CssSpan {
-        self.span
+        match &self.value {
+            SpecifiedZIndexValue::Auto { span } => *span,
+            SpecifiedZIndexValue::Integer(value) => value.span(),
+        }
     }
 
-    pub fn value(&self) -> SpecifiedZIndexValue {
-        self.value
+    pub fn value(&self) -> &SpecifiedZIndexValue {
+        &self.value
     }
 
     pub fn to_css_text(&self) -> String {
-        match self.value {
-            SpecifiedZIndexValue::Auto => "auto".to_string(),
-            SpecifiedZIndexValue::Integer(value) => value.to_string(),
+        match &self.value {
+            SpecifiedZIndexValue::Auto { .. } => "auto".to_string(),
+            SpecifiedZIndexValue::Integer(value) => value.to_css_text().to_string(),
         }
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SpecifiedZIndexValue {
-    Auto,
-    Integer(i32),
+    Auto { span: CssSpan },
+    Integer(CssIntegerValue),
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SpecifiedLength {
-    pub(super) span: CssSpan,
-    pub(super) number: String,
-    pub(super) numeric_value: SpecifiedLengthNumber,
-    pub(super) unit: SpecifiedLengthUnit,
+    pub(super) value: CssLengthValue,
 }
-
-#[derive(Clone, Copy, Debug)]
-pub(super) struct SpecifiedLengthNumber(f64);
-
-impl SpecifiedLengthNumber {
-    pub(super) fn new(value: f64) -> Self {
-        Self(value)
-    }
-
-    fn get(self) -> f64 {
-        self.0
-    }
-}
-
-impl PartialEq for SpecifiedLengthNumber {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.to_bits() == other.0.to_bits()
-    }
-}
-
-impl Eq for SpecifiedLengthNumber {}
 
 impl SpecifiedLength {
     pub fn span(&self) -> CssSpan {
-        self.span
+        self.value.span()
     }
 
     pub fn number(&self) -> &str {
-        &self.number
+        self.value.number()
     }
 
     pub fn numeric_value(&self) -> f64 {
-        self.numeric_value.get()
+        self.value.numeric_value()
     }
 
     pub fn unit(&self) -> SpecifiedLengthUnit {
-        self.unit
+        self.value.unit()
+    }
+
+    pub fn value(&self) -> &CssLengthValue {
+        &self.value
     }
 
     pub fn to_css_text(&self) -> String {
-        match self.unit {
-            SpecifiedLengthUnit::Px => format!("{}px", self.number),
-            SpecifiedLengthUnit::UnitlessZero => self.number.clone(),
-        }
+        self.value.to_css_text()
     }
 }
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SpecifiedLengthUnit {
-    Px,
-    UnitlessZero,
-}
+pub type SpecifiedLengthUnit = CssLengthUnit;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct SpecifiedPercentage {
-    pub(super) span: CssSpan,
-    pub(super) number: String,
-    pub(super) numeric_value: SpecifiedPercentageNumber,
+    pub(super) value: CssPercentageValue,
 }
-
-#[derive(Clone, Copy, Debug)]
-pub(super) struct SpecifiedPercentageNumber(f64);
-
-impl SpecifiedPercentageNumber {
-    pub(super) fn new(value: f64) -> Self {
-        Self(value)
-    }
-
-    fn get(self) -> f64 {
-        self.0
-    }
-}
-
-impl PartialEq for SpecifiedPercentageNumber {
-    fn eq(&self, other: &Self) -> bool {
-        self.0.to_bits() == other.0.to_bits()
-    }
-}
-
-impl Eq for SpecifiedPercentageNumber {}
 
 impl SpecifiedPercentage {
     pub fn span(&self) -> CssSpan {
-        self.span
+        self.value.span()
     }
 
     pub fn number(&self) -> &str {
-        &self.number
+        self.value.number()
     }
 
     pub fn numeric_value(&self) -> f64 {
-        self.numeric_value.get()
+        self.value.numeric_value()
+    }
+
+    pub fn value(&self) -> &CssPercentageValue {
+        &self.value
     }
 
     pub fn to_css_text(&self) -> String {
-        format!("{}%", self.number)
+        self.value.to_css_text()
     }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub enum SpecifiedLengthPercentage {
-    Length(SpecifiedLength),
-    Percentage(SpecifiedPercentage),
+pub struct SpecifiedLengthPercentage {
+    pub(super) value: CssLengthPercentageValue,
 }
 
 impl SpecifiedLengthPercentage {
     pub fn span(&self) -> CssSpan {
-        match self {
-            Self::Length(length) => length.span(),
-            Self::Percentage(percentage) => percentage.span(),
-        }
+        self.value.span()
+    }
+
+    pub fn value(&self) -> &CssLengthPercentageValue {
+        &self.value
     }
 
     pub fn to_css_text(&self) -> String {
-        match self {
-            Self::Length(length) => length.to_css_text(),
-            Self::Percentage(percentage) => percentage.to_css_text(),
-        }
+        self.value.to_css_text()
     }
 }
 

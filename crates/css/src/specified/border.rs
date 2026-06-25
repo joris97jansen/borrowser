@@ -1,8 +1,8 @@
 use crate::{PropertyId, model::ValueComponent, syntax::CssSpan};
 
 use super::{
+    core::{keyword_value, unsupported_component_error},
     error::{SpecifiedValueParseError, SpecifiedValueParseErrorKind, error},
-    parse::ident_keyword,
     value::{SpecifiedBorderStyle, SpecifiedBorderStyleKeyword},
 };
 
@@ -10,14 +10,11 @@ pub(super) fn parse_border_style(
     property: PropertyId,
     component: &ValueComponent,
 ) -> Result<SpecifiedBorderStyle, SpecifiedValueParseError> {
-    let Some((keyword, span)) = ident_keyword(property, component)? else {
-        return Err(error(
-            property,
-            SpecifiedValueParseErrorKind::UnsupportedKeyword,
-        ));
+    let Some(keyword) = keyword_value(property, component)? else {
+        return Err(unsupported_component_error(property, component));
     };
 
-    let keyword = match keyword.as_str() {
+    let style_keyword = match keyword.canonical() {
         "none" => SpecifiedBorderStyleKeyword::None,
         "solid" => SpecifiedBorderStyleKeyword::Solid,
         _ => {
@@ -28,7 +25,10 @@ pub(super) fn parse_border_style(
         }
     };
 
-    Ok(SpecifiedBorderStyle { span, keyword })
+    Ok(SpecifiedBorderStyle {
+        span: keyword.span(),
+        keyword: style_keyword,
+    })
 }
 
 impl SpecifiedBorderStyleKeyword {

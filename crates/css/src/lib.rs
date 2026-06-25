@@ -150,6 +150,9 @@ pub use syntax::Declaration as CompatDeclaration;
 pub use syntax::serialize_compat_stylesheet_for_snapshot;
 
 pub use values::{
-    BorderStyle, Display, Length, LengthPercentage, OutlineStyle, Overflow, Percentage, Position,
-    TextDecorationLine, ZIndex, parse_color, parse_length,
+    BorderStyle, CssColorKeyword, CssColorSyntax, CssColorValue, CssFunctionValue, CssHexColor,
+    CssIntegerValue, CssKeywordValue, CssLengthPercentageValue, CssLengthUnit, CssLengthValue,
+    CssNumberScalar, CssNumberValue, CssPercentageValue, CssStringValue, CssUrlValue, Display,
+    Length, LengthPercentage, OutlineStyle, Overflow, Percentage, Position, TextDecorationLine,
+    ZIndex, parse_color, parse_length,
 };
