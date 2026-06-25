@@ -1,8 +1,8 @@
 use crate::{model::ValueComponent, properties::PropertyId};
 
 use super::{
+    core::{keyword_value, unsupported_component_error},
     error::{SpecifiedValueParseError, SpecifiedValueParseErrorKind, error},
-    parse::ident_keyword,
     value::{SpecifiedOverflow, SpecifiedOverflowKeyword},
 };
 
@@ -10,14 +10,11 @@ pub(super) fn parse_overflow(
     property: PropertyId,
     component: &ValueComponent,
 ) -> Result<SpecifiedOverflow, SpecifiedValueParseError> {
-    let Some((keyword, span)) = ident_keyword(property, component)? else {
-        return Err(error(
-            property,
-            SpecifiedValueParseErrorKind::UnsupportedComponent,
-        ));
+    let Some(keyword) = keyword_value(property, component)? else {
+        return Err(unsupported_component_error(property, component));
     };
 
-    let keyword = match keyword.as_str() {
+    let overflow_keyword = match keyword.canonical() {
         "visible" => SpecifiedOverflowKeyword::Visible,
         "hidden" => SpecifiedOverflowKeyword::Hidden,
         "clip" => SpecifiedOverflowKeyword::Clip,
@@ -31,5 +28,8 @@ pub(super) fn parse_overflow(
         }
     };
 
-    Ok(SpecifiedOverflow { span, keyword })
+    Ok(SpecifiedOverflow {
+        span: keyword.span(),
+        keyword: overflow_keyword,
+    })
 }

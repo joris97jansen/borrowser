@@ -3,11 +3,11 @@ use crate::{
     specified::{
         SpecifiedColor, SpecifiedColorKeyword, SpecifiedColorSyntax, SpecifiedDisplayKeyword,
         SpecifiedLength, SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto,
-        SpecifiedLengthPercentageOrNone, SpecifiedPercentage, SpecifiedZIndexValue,
+        SpecifiedLengthPercentageOrNone, SpecifiedZIndexValue,
     },
     values::{
-        BorderStyle, Display, Length, LengthPercentage, OutlineStyle, Percentage,
-        TextDecorationLine, ZIndex,
+        BorderStyle, CssLengthPercentageValue, CssLengthValue, CssPercentageValue, Display, Length,
+        LengthPercentage, OutlineStyle, Percentage, TextDecorationLine, ZIndex,
     },
 };
 
@@ -75,16 +75,23 @@ pub(super) fn normalize_text_decoration_line(
     }
 }
 
-pub(super) fn normalize_z_index(value: SpecifiedZIndexValue) -> ZIndex {
+pub(super) fn normalize_z_index(value: &SpecifiedZIndexValue) -> ZIndex {
     match value {
-        SpecifiedZIndexValue::Auto => ZIndex::Auto,
-        SpecifiedZIndexValue::Integer(value) => ZIndex::Integer(value),
+        SpecifiedZIndexValue::Auto { .. } => ZIndex::Auto,
+        SpecifiedZIndexValue::Integer(value) => ZIndex::Integer(value.value()),
     }
 }
 
 pub(super) fn normalize_length(
     property: PropertyId,
     length: &SpecifiedLength,
+) -> Result<Length, ComputedValueNormalizationError> {
+    normalize_css_length(property, length.value())
+}
+
+fn normalize_css_length(
+    property: PropertyId,
+    length: &CssLengthValue,
 ) -> Result<Length, ComputedValueNormalizationError> {
     let value = normalize_px_scalar(property, length.numeric_value())?;
 
@@ -119,19 +126,19 @@ pub(super) fn normalize_length_percentage(
     property: PropertyId,
     value: &SpecifiedLengthPercentage,
 ) -> Result<LengthPercentage, ComputedValueNormalizationError> {
-    match value {
-        SpecifiedLengthPercentage::Length(length) => {
-            normalize_length(property, length).map(LengthPercentage::Length)
+    match value.value() {
+        CssLengthPercentageValue::Length(length) => {
+            normalize_css_length(property, length).map(LengthPercentage::Length)
         }
-        SpecifiedLengthPercentage::Percentage(percentage) => {
-            normalize_percentage(property, percentage).map(LengthPercentage::Percentage)
+        CssLengthPercentageValue::Percentage(percentage) => {
+            normalize_css_percentage(property, percentage).map(LengthPercentage::Percentage)
         }
     }
 }
 
-pub(super) fn normalize_percentage(
+fn normalize_css_percentage(
     property: PropertyId,
-    percentage: &SpecifiedPercentage,
+    percentage: &CssPercentageValue,
 ) -> Result<Percentage, ComputedValueNormalizationError> {
     let percent = normalize_px_scalar(property, percentage.numeric_value())?;
     Percentage::from_percent(percent).ok_or_else(|| {

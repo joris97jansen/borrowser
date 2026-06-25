@@ -1,8 +1,8 @@
 use crate::{PropertyId, model::ValueComponent, syntax::CssSpan};
 
 use super::{
+    core::{keyword_value, unsupported_component_error},
     error::{SpecifiedValueParseError, SpecifiedValueParseErrorKind, error},
-    parse::ident_keyword,
     value::{SpecifiedTextDecorationLine, SpecifiedTextDecorationLineKeyword},
 };
 
@@ -10,14 +10,11 @@ pub(super) fn parse_text_decoration_line(
     property: PropertyId,
     component: &ValueComponent,
 ) -> Result<SpecifiedTextDecorationLine, SpecifiedValueParseError> {
-    let Some((keyword, span)) = ident_keyword(property, component)? else {
-        return Err(error(
-            property,
-            SpecifiedValueParseErrorKind::UnsupportedKeyword,
-        ));
+    let Some(keyword) = keyword_value(property, component)? else {
+        return Err(unsupported_component_error(property, component));
     };
 
-    let keyword = match keyword.as_str() {
+    let line_keyword = match keyword.canonical() {
         "none" => SpecifiedTextDecorationLineKeyword::None,
         "underline" => SpecifiedTextDecorationLineKeyword::Underline,
         _ => {
@@ -28,7 +25,10 @@ pub(super) fn parse_text_decoration_line(
         }
     };
 
-    Ok(SpecifiedTextDecorationLine { span, keyword })
+    Ok(SpecifiedTextDecorationLine {
+        span: keyword.span(),
+        keyword: line_keyword,
+    })
 }
 
 impl SpecifiedTextDecorationLineKeyword {

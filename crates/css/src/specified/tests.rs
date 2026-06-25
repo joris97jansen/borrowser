@@ -1,14 +1,14 @@
 use super::{
     SpecifiedBorderStyleKeyword, SpecifiedColorKeyword, SpecifiedColorSyntax,
-    SpecifiedDisplayKeyword, SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto,
-    SpecifiedLengthUnit, SpecifiedOutlineStyleKeyword, SpecifiedOverflowKeyword,
-    SpecifiedPositionKeyword, SpecifiedTextDecorationLineKeyword, SpecifiedValue,
-    SpecifiedValueLimits, SpecifiedValueParseErrorKind, SpecifiedZIndexValue,
-    parse_specified_value, parse_specified_value_with_limits,
+    SpecifiedDisplayKeyword, SpecifiedLengthPercentageOrAuto, SpecifiedLengthUnit,
+    SpecifiedOutlineStyleKeyword, SpecifiedOverflowKeyword, SpecifiedPositionKeyword,
+    SpecifiedTextDecorationLineKeyword, SpecifiedValue, SpecifiedValueLimits,
+    SpecifiedValueParseErrorKind, SpecifiedZIndexValue, parse_specified_value,
+    parse_specified_value_with_limits,
 };
 use crate::{
-    ParseOptions, PropertyId, PropertySpecifiedValueKind, Rule, parse_stylesheet_with_options,
-    property_registry,
+    CssLengthPercentageValue, ParseOptions, PropertyId, PropertySpecifiedValueKind, Rule,
+    parse_stylesheet_with_options, property_registry,
 };
 
 fn declaration_value(css_declaration: &str) -> crate::DeclarationValue {
@@ -120,7 +120,10 @@ fn parses_representative_property_aware_specified_values() {
     let SpecifiedValue::ZIndex(z_index) = z_index.value() else {
         panic!("expected z-index");
     };
-    assert_eq!(z_index.value(), SpecifiedZIndexValue::Integer(-3));
+    let SpecifiedZIndexValue::Integer(integer) = z_index.value() else {
+        panic!("expected integer z-index");
+    };
+    assert_eq!(integer.value(), -3);
     assert_eq!(z_index.to_css_text(), "-3");
 
     let z_index_auto = parse(PropertyId::ZIndex, "z-index: AUTO");
@@ -145,10 +148,13 @@ fn parses_representative_property_aware_specified_values() {
 fn parses_unitless_zero_as_specified_length_without_computing_it() {
     let width = parse(PropertyId::Width, "width: 0");
     let SpecifiedValue::LengthPercentageOrAuto(SpecifiedLengthPercentageOrAuto::LengthPercentage(
-        SpecifiedLengthPercentage::Length(length),
+        value,
     )) = width.value()
     else {
         panic!("expected length-percentage-or-auto length");
+    };
+    let CssLengthPercentageValue::Length(length) = value.value() else {
+        panic!("expected length core value");
     };
 
     assert_eq!(length.number(), "0");
@@ -161,10 +167,13 @@ fn parses_unitless_zero_as_specified_length_without_computing_it() {
 fn parses_percentages_for_supported_sizing_properties_without_resolving_them() {
     let width = parse(PropertyId::Width, "width: 50%");
     let SpecifiedValue::LengthPercentageOrAuto(SpecifiedLengthPercentageOrAuto::LengthPercentage(
-        SpecifiedLengthPercentage::Percentage(percentage),
+        value,
     )) = width.value()
     else {
         panic!("expected width percentage");
+    };
+    let CssLengthPercentageValue::Percentage(percentage) = value.value() else {
+        panic!("expected percentage core value");
     };
 
     assert_eq!(percentage.number(), "50");
@@ -219,7 +228,7 @@ fn rejects_values_that_do_not_match_the_property_specified_shape() {
     );
     assert_eq!(
         parse_error(PropertyId::Color, "color: rgb(1, 2, 3)"),
-        SpecifiedValueParseErrorKind::UnsupportedComponent
+        SpecifiedValueParseErrorKind::UnsupportedFunction
     );
     assert_eq!(
         parse_error(PropertyId::Color, "color: #abcd"),
@@ -262,6 +271,30 @@ fn rejects_values_that_do_not_match_the_property_specified_shape() {
             "text-decoration-line: underline overline"
         ),
         SpecifiedValueParseErrorKind::UnexpectedComponentCount
+    );
+}
+
+#[test]
+fn rejects_unsupported_or_malformed_core_value_categories_deterministically() {
+    assert_eq!(
+        parse_error(PropertyId::Width, "width: calc(1px + 2px)"),
+        SpecifiedValueParseErrorKind::UnsupportedFunction
+    );
+    assert_eq!(
+        parse_error(PropertyId::Color, "color: url(foo)"),
+        SpecifiedValueParseErrorKind::UnsupportedUrl
+    );
+    assert_eq!(
+        parse_error(PropertyId::Color, "color: \"red\""),
+        SpecifiedValueParseErrorKind::UnsupportedString
+    );
+    assert_eq!(
+        parse_error(PropertyId::Width, "width: 1em"),
+        SpecifiedValueParseErrorKind::UnsupportedLengthUnit
+    );
+    assert_eq!(
+        parse_error(PropertyId::ZIndex, "z-index: 2147483648"),
+        SpecifiedValueParseErrorKind::IntegerOutOfRange
     );
 }
 

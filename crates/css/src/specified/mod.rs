@@ -8,6 +8,7 @@
 
 mod border;
 mod color;
+mod core;
 mod display;
 mod error;
 mod length;
