@@ -45,6 +45,17 @@ Notes:
 
 Current supported property set is intentionally small. Major missing families:
 
+Architecture status:
+
+- AD1 defines the CSS-owned value/property architecture and subsystem
+  boundaries for future property work; see
+  `docs/css/ad1-css-value-property-ownership-architecture.md`.
+- AD1 is architecture-only. It does not add broad property coverage, CSS-wide
+  keyword support, shorthand support, registry-backed invalidation impact
+  metadata, or new Browser/runtime impact APIs.
+- Concrete CSS-owned invalidation impact classification for supported
+  properties remains future AD7 work.
+
 - borders:
   - full `border` shorthand support
   - `border-width`, `border-style`, and `border-color` shorthands
