@@ -349,6 +349,48 @@ fn cascade_winner_resolution_prefers_later_declaration_order_within_one_rule() {
 }
 
 #[test]
+fn cascade_winner_resolution_orders_css_wide_keywords_like_other_supported_values() {
+    let rule = CascadeRuleInput::from_stylesheet_match(
+        &matched_rule(0, 0, &[Specificity::TYPE]),
+        CascadeOrigin::Author,
+        0,
+        vec![
+            CascadeDeclarationInput::supported(
+                stylesheet_declaration_source(0, 0, 0),
+                0,
+                CascadeImportance::Normal,
+                CascadePropertyId::Color,
+                parsed_value("color: red"),
+            ),
+            CascadeDeclarationInput::supported(
+                stylesheet_declaration_source(0, 0, 1),
+                1,
+                CascadeImportance::Normal,
+                CascadePropertyId::Color,
+                parsed_value("color: initial"),
+            ),
+        ],
+    )
+    .expect("valid rule")
+    .expect("matching rule");
+
+    let winners = resolve_cascade_winners_from_rule_inputs(&[rule]);
+    let winner = winners.get(CascadePropertyId::Color).expect("color winner");
+
+    assert_eq!(winner.value.to_css_text().as_deref(), Some("initial"));
+    assert_eq!(
+        winner
+            .value
+            .css_wide_keyword()
+            .expect("css-wide winner")
+            .keyword()
+            .as_css_keyword(),
+        "initial"
+    );
+    assert_eq!(winner.priority.declaration_order, 1);
+}
+
+#[test]
 fn cascade_winner_resolution_ignores_unsupported_custom_and_invalid_declarations() {
     let inline_style = InlineStyleRuleRef::new(12);
     let rule = CascadeRuleInput::from_inline_style(

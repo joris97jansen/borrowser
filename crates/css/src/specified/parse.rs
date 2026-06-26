@@ -6,6 +6,7 @@ use crate::{
 use super::{
     border::parse_border_style,
     color::parse_color,
+    css_wide::parse_supported_css_wide_keyword,
     display::parse_display,
     error::{SpecifiedValueParseError, SpecifiedValueParseErrorKind, error},
     length::{parse_length, parse_length_percentage_or_auto, parse_length_percentage_or_none},
@@ -13,9 +14,33 @@ use super::{
     overflow::parse_overflow,
     position::parse_position,
     text_decoration::parse_text_decoration_line,
-    value::{SpecifiedPropertyValue, SpecifiedValue},
+    value::{SpecifiedDeclarationValue, SpecifiedPropertyValue, SpecifiedValue},
     z_index::parse_z_index,
 };
+
+/// Parses one model-layer declaration value into a declaration-level specified
+/// value, including CSS-wide keywords.
+pub fn parse_specified_declaration_value(
+    property: PropertyId,
+    value: &DeclarationValue,
+) -> Result<SpecifiedDeclarationValue, SpecifiedValueParseError> {
+    parse_specified_declaration_value_with_limits(property, value, &SpecifiedValueLimits::default())
+}
+
+pub fn parse_specified_declaration_value_with_limits(
+    property: PropertyId,
+    value: &DeclarationValue,
+    limits: &SpecifiedValueLimits,
+) -> Result<SpecifiedDeclarationValue, SpecifiedValueParseError> {
+    let component = sole_non_trivia_component(property, value, limits)?;
+    if let Some(value) = parse_supported_css_wide_keyword(property, component)? {
+        return Ok(SpecifiedDeclarationValue::CssWideKeyword { property, value });
+    }
+
+    parse_specified_value_component(property, component).map(|value| {
+        SpecifiedDeclarationValue::Property(SpecifiedPropertyValue { property, value })
+    })
+}
 
 /// Parses one model-layer declaration value into a property-aware specified
 /// value.
@@ -32,6 +57,24 @@ pub fn parse_specified_value_with_limits(
     limits: &SpecifiedValueLimits,
 ) -> Result<SpecifiedPropertyValue, SpecifiedValueParseError> {
     let component = sole_non_trivia_component(property, value, limits)?;
+    let specified = parse_specified_value_component(property, component)?;
+
+    debug_assert_eq!(
+        specified.kind(),
+        property.metadata().specified_value,
+        "specified parser emitted a value kind that does not match property metadata"
+    );
+
+    Ok(SpecifiedPropertyValue {
+        property,
+        value: specified,
+    })
+}
+
+fn parse_specified_value_component(
+    property: PropertyId,
+    component: &ValueComponent,
+) -> Result<SpecifiedValue, SpecifiedValueParseError> {
     let specified = match property.metadata().specified_value {
         PropertySpecifiedValueKind::BorderStyleKeyword => {
             SpecifiedValue::BorderStyle(parse_border_style(property, component)?)
@@ -78,10 +121,7 @@ pub fn parse_specified_value_with_limits(
         "specified parser emitted a value kind that does not match property metadata"
     );
 
-    Ok(SpecifiedPropertyValue {
-        property,
-        value: specified,
-    })
+    Ok(specified)
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]

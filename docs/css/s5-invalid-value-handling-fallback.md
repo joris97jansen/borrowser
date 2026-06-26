@@ -136,6 +136,12 @@ S5 does not implement:
   function values
 - full retirement of the legacy `compute_style(...)` compatibility bridge
 
+Later AD3 adds the current CSS-wide keyword handling contract for supported
+properties. In that contract, supported CSS-wide keywords participate in
+cascade winner selection, while unsupported CSS-wide keywords such as `revert`
+and `revert-layer` are rejected with a dedicated recognized-but-unsupported
+error.
+
 ## Test Surface
 
 S5 adds and relies on tests for:

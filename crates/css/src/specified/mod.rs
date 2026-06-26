@@ -9,6 +9,7 @@
 mod border;
 mod color;
 mod core;
+mod css_wide;
 mod display;
 mod error;
 mod length;
@@ -21,11 +22,15 @@ mod value;
 mod z_index;
 
 pub use error::{SpecifiedValueParseError, SpecifiedValueParseErrorKind};
-pub use parse::{SpecifiedValueLimits, parse_specified_value, parse_specified_value_with_limits};
+pub use parse::{
+    SpecifiedValueLimits, parse_specified_declaration_value,
+    parse_specified_declaration_value_with_limits, parse_specified_value,
+    parse_specified_value_with_limits,
+};
 pub use value::{
     SpecifiedBorderStyle, SpecifiedBorderStyleKeyword, SpecifiedColor, SpecifiedColorKeyword,
-    SpecifiedColorSyntax, SpecifiedDisplay, SpecifiedDisplayKeyword, SpecifiedHexColor,
-    SpecifiedLength, SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto,
+    SpecifiedColorSyntax, SpecifiedDeclarationValue, SpecifiedDisplay, SpecifiedDisplayKeyword,
+    SpecifiedHexColor, SpecifiedLength, SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto,
     SpecifiedLengthPercentageOrNone, SpecifiedLengthUnit, SpecifiedOutlineStyle,
     SpecifiedOutlineStyleKeyword, SpecifiedOverflow, SpecifiedOverflowKeyword, SpecifiedPercentage,
     SpecifiedPosition, SpecifiedPositionKeyword, SpecifiedPropertyValue,

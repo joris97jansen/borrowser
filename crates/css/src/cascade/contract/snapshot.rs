@@ -4,7 +4,7 @@ use super::declarations::{
     CascadeDeclarationApplicability, CascadeDeclarationProperty, CascadeSpecifiedValue,
 };
 use super::priority::{CascadeImportance, CascadeOrigin, CascadeSpecificity};
-use super::resolved_style::{ResolvedStyle, ResolvedValueSource};
+use super::resolved_style::{CssWideResolvedSource, ResolvedStyle, ResolvedValueSource};
 use super::rules::CascadeRuleInput;
 use super::sources::{CascadeDeclarationSource, CascadeRuleSource};
 use super::winners::{
@@ -149,6 +149,27 @@ fn source_snapshot_label(source: &ResolvedValueSource) -> String {
         ResolvedValueSource::Initial(initial) => {
             format!("initial({})", initial.as_debug_label())
         }
+        ResolvedValueSource::CssWideKeyword(source) => css_wide_source_snapshot_label(source),
+    }
+}
+
+fn css_wide_source_snapshot_label(source: &CssWideResolvedSource) -> String {
+    match source {
+        CssWideResolvedSource::Initial {
+            keyword,
+            winner,
+            initial,
+        } => format!(
+            "css-wide-initial(keyword={}, {}, initial={})",
+            keyword.as_css_keyword(),
+            winner_snapshot_label(winner),
+            initial.as_debug_label(),
+        ),
+        CssWideResolvedSource::Inherited { keyword, winner } => format!(
+            "css-wide-inherited(keyword={}, {})",
+            keyword.as_css_keyword(),
+            winner_snapshot_label(winner),
+        ),
     }
 }
 

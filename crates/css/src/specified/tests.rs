@@ -3,12 +3,12 @@ use super::{
     SpecifiedDisplayKeyword, SpecifiedLengthPercentageOrAuto, SpecifiedLengthUnit,
     SpecifiedOutlineStyleKeyword, SpecifiedOverflowKeyword, SpecifiedPositionKeyword,
     SpecifiedTextDecorationLineKeyword, SpecifiedValue, SpecifiedValueLimits,
-    SpecifiedValueParseErrorKind, SpecifiedZIndexValue, parse_specified_value,
-    parse_specified_value_with_limits,
+    SpecifiedValueParseErrorKind, SpecifiedZIndexValue, parse_specified_declaration_value,
+    parse_specified_value, parse_specified_value_with_limits,
 };
 use crate::{
-    CssLengthPercentageValue, ParseOptions, PropertyId, PropertySpecifiedValueKind, Rule,
-    parse_stylesheet_with_options, property_registry,
+    CssLengthPercentageValue, CssWideKeyword, ParseOptions, PropertyId, PropertySpecifiedValueKind,
+    Rule, parse_stylesheet_with_options, property_registry,
 };
 
 fn declaration_value(css_declaration: &str) -> crate::DeclarationValue {
@@ -28,9 +28,26 @@ fn parse(property: PropertyId, css_declaration: &str) -> super::SpecifiedPropert
         .unwrap_or_else(|error| panic!("failed to parse {css_declaration:?}: {error}"))
 }
 
+fn parse_declaration(
+    property: PropertyId,
+    css_declaration: &str,
+) -> super::SpecifiedDeclarationValue {
+    parse_specified_declaration_value(property, &declaration_value(css_declaration))
+        .unwrap_or_else(|error| panic!("failed to parse {css_declaration:?}: {error}"))
+}
+
 fn parse_error(property: PropertyId, css_declaration: &str) -> SpecifiedValueParseErrorKind {
     parse_specified_value(property, &declaration_value(css_declaration))
         .expect_err("specified value must be rejected")
+        .kind()
+}
+
+fn parse_declaration_error(
+    property: PropertyId,
+    css_declaration: &str,
+) -> SpecifiedValueParseErrorKind {
+    parse_specified_declaration_value(property, &declaration_value(css_declaration))
+        .expect_err("specified declaration value must be rejected")
         .kind()
 }
 
@@ -142,6 +159,41 @@ fn parses_representative_property_aware_specified_values() {
         SpecifiedTextDecorationLineKeyword::Underline
     );
     assert_eq!(text_decoration_line.to_css_text(), "underline");
+}
+
+#[test]
+fn parses_supported_css_wide_keywords_through_shared_declaration_parser() {
+    for (property, declaration, expected) in [
+        (PropertyId::Color, "color: initial", CssWideKeyword::Initial),
+        (
+            PropertyId::Display,
+            "display: INHERIT",
+            CssWideKeyword::Inherit,
+        ),
+        (PropertyId::Width, "width: unset", CssWideKeyword::Unset),
+    ] {
+        let parsed = parse_declaration(property, declaration);
+        let keyword = parsed
+            .css_wide_keyword()
+            .unwrap_or_else(|| panic!("expected CSS-wide keyword for {declaration}"));
+
+        assert_eq!(parsed.property(), property);
+        assert_eq!(keyword.keyword(), expected);
+        assert_eq!(parsed.to_css_text(), expected.as_css_keyword());
+        assert!(parsed.property_value().is_none());
+    }
+}
+
+#[test]
+fn rejects_unsupported_css_wide_keywords_with_dedicated_error() {
+    assert_eq!(
+        parse_declaration_error(PropertyId::Color, "color: revert"),
+        SpecifiedValueParseErrorKind::UnsupportedCssWideKeyword
+    );
+    assert_eq!(
+        parse_declaration_error(PropertyId::Display, "display: revert-layer"),
+        SpecifiedValueParseErrorKind::UnsupportedCssWideKeyword
+    );
 }
 
 #[test]

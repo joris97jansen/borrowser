@@ -22,9 +22,9 @@ pub use properties::{
     InitialStyleValue, cascade_property_registry,
 };
 pub use resolved_style::{
-    ResolvedStyle, ResolvedStyleBuildError, ResolvedStyleBuilder, ResolvedStyleEntry,
-    ResolvedValueSource, resolve_cascade_style, resolve_cascade_style_from_rule_inputs,
-    resolve_initial_style,
+    CssWideResolvedSource, ResolvedStyle, ResolvedStyleBuildError, ResolvedStyleBuilder,
+    ResolvedStyleEntry, ResolvedValueSource, resolve_cascade_style,
+    resolve_cascade_style_from_rule_inputs, resolve_initial_style,
 };
 pub use rules::{CascadeRuleInput, CascadeRuleInputBuildError};
 pub use snapshot::cascade_evaluation_debug_snapshot;

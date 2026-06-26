@@ -39,7 +39,7 @@ pub use cascade::{
     CascadePropertyRegistration, CascadePropertyRegistry, CascadeRuleContext, CascadeRuleInput,
     CascadeRuleInputBuildError, CascadeRuleMatch, CascadeRuleSource, CascadeSpecificity,
     CascadeSpecifiedValue, CascadeWinner, CascadeWinnerEntry, CascadeWinnerSet,
-    CurrentScopeCascadePriorityBand, IncrementalResolvedDocumentStyle,
+    CssWideResolvedSource, CurrentScopeCascadePriorityBand, IncrementalResolvedDocumentStyle,
     IncrementalStyleResolutionStats, InitialStyleValue, InlineStyleDeclarationRef,
     InlineStyleRuleRef, ResolvedDocumentStyle, ResolvedElementStyle, ResolvedStyle,
     ResolvedStyleBuildError, ResolvedStyleBuilder, ResolvedStyleEntry, ResolvedValueSource,
@@ -99,14 +99,16 @@ pub use selectors::{
 };
 pub use specified::{
     SpecifiedBorderStyle, SpecifiedBorderStyleKeyword, SpecifiedColor, SpecifiedColorKeyword,
-    SpecifiedColorSyntax, SpecifiedDisplay, SpecifiedDisplayKeyword, SpecifiedHexColor,
-    SpecifiedLength, SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto,
+    SpecifiedColorSyntax, SpecifiedDeclarationValue, SpecifiedDisplay, SpecifiedDisplayKeyword,
+    SpecifiedHexColor, SpecifiedLength, SpecifiedLengthPercentage, SpecifiedLengthPercentageOrAuto,
     SpecifiedLengthPercentageOrNone, SpecifiedLengthUnit, SpecifiedOutlineStyle,
     SpecifiedOutlineStyleKeyword, SpecifiedOverflow, SpecifiedOverflowKeyword, SpecifiedPercentage,
     SpecifiedPosition, SpecifiedPositionKeyword, SpecifiedPropertyValue,
     SpecifiedTextDecorationLine, SpecifiedTextDecorationLineKeyword, SpecifiedValue,
     SpecifiedValueLimits, SpecifiedValueParseError, SpecifiedValueParseErrorKind, SpecifiedZIndex,
-    SpecifiedZIndexValue, parse_specified_value, parse_specified_value_with_limits,
+    SpecifiedZIndexValue, parse_specified_declaration_value,
+    parse_specified_declaration_value_with_limits, parse_specified_value,
+    parse_specified_value_with_limits,
 };
 
 // Explicit syntax-layer surface for parser/tokenizer work and syntax tests.
@@ -152,7 +154,7 @@ pub use syntax::serialize_compat_stylesheet_for_snapshot;
 pub use values::{
     BorderStyle, CssColorKeyword, CssColorSyntax, CssColorValue, CssFunctionValue, CssHexColor,
     CssIntegerValue, CssKeywordValue, CssLengthPercentageValue, CssLengthUnit, CssLengthValue,
-    CssNumberScalar, CssNumberValue, CssPercentageValue, CssStringValue, CssUrlValue, Display,
-    Length, LengthPercentage, OutlineStyle, Overflow, Percentage, Position, TextDecorationLine,
-    ZIndex, parse_color, parse_length,
+    CssNumberScalar, CssNumberValue, CssPercentageValue, CssStringValue, CssUrlValue,
+    CssWideKeyword, CssWideKeywordValue, Display, Length, LengthPercentage, OutlineStyle, Overflow,
+    Percentage, Position, TextDecorationLine, ZIndex, parse_color, parse_length,
 };

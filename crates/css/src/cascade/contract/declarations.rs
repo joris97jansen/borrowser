@@ -1,5 +1,8 @@
 use crate::model::DeclarationValue;
-use crate::specified::{SpecifiedPropertyValue, SpecifiedValueParseError};
+use crate::specified::{
+    SpecifiedDeclarationValue, SpecifiedPropertyValue, SpecifiedValueParseError,
+};
+use crate::values::CssWideKeywordValue;
 
 use super::priority::CascadeImportance;
 use super::properties::CascadePropertyId;
@@ -94,11 +97,17 @@ impl CascadeSpecifiedValue {
         property: CascadePropertyId,
         value: &DeclarationValue,
     ) -> Result<Self, SpecifiedValueParseError> {
-        Ok(Self {
-            value: CascadeSpecifiedValueRepr::Parsed(SpecifiedPropertyValue::parse(
-                property, value,
-            )?),
-        })
+        match SpecifiedDeclarationValue::parse(property, value)? {
+            SpecifiedDeclarationValue::Property(value) => Ok(Self {
+                value: CascadeSpecifiedValueRepr::Parsed(value),
+            }),
+            SpecifiedDeclarationValue::CssWideKeyword { property, value } => Ok(Self {
+                value: CascadeSpecifiedValueRepr::CssWideKeyword(CascadeCssWideSpecifiedValue {
+                    property,
+                    value,
+                }),
+            }),
+        }
     }
 
     /// Preserves declaration value text for declarations that are not eligible
@@ -115,17 +124,33 @@ impl CascadeSpecifiedValue {
     pub fn parsed(&self) -> Option<&SpecifiedPropertyValue> {
         match &self.value {
             CascadeSpecifiedValueRepr::Parsed(value) => Some(value),
+            CascadeSpecifiedValueRepr::CssWideKeyword(_) => None,
+            CascadeSpecifiedValueRepr::Preserved(_) => None,
+        }
+    }
+
+    pub fn css_wide_keyword(&self) -> Option<CssWideKeywordValue> {
+        match &self.value {
+            CascadeSpecifiedValueRepr::Parsed(_) => None,
+            CascadeSpecifiedValueRepr::CssWideKeyword(value) => Some(value.value),
             CascadeSpecifiedValueRepr::Preserved(_) => None,
         }
     }
 
     pub fn property(&self) -> Option<CascadePropertyId> {
-        self.parsed().map(SpecifiedPropertyValue::property)
+        match &self.value {
+            CascadeSpecifiedValueRepr::Parsed(value) => Some(value.property()),
+            CascadeSpecifiedValueRepr::CssWideKeyword(value) => Some(value.property),
+            CascadeSpecifiedValueRepr::Preserved(_) => None,
+        }
     }
 
     pub fn to_css_text(&self) -> Option<String> {
         match &self.value {
             CascadeSpecifiedValueRepr::Parsed(value) => Some(value.to_css_text()),
+            CascadeSpecifiedValueRepr::CssWideKeyword(value) => {
+                Some(value.value.to_css_text().to_string())
+            }
             CascadeSpecifiedValueRepr::Preserved(value) => value.css_text.clone(),
         }
     }
@@ -134,7 +159,14 @@ impl CascadeSpecifiedValue {
 #[derive(Clone, Debug, PartialEq, Eq)]
 enum CascadeSpecifiedValueRepr {
     Parsed(SpecifiedPropertyValue),
+    CssWideKeyword(CascadeCssWideSpecifiedValue),
     Preserved(PreservedCascadeSpecifiedValue),
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct CascadeCssWideSpecifiedValue {
+    property: CascadePropertyId,
+    value: CssWideKeywordValue,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
