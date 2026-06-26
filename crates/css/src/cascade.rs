@@ -52,9 +52,9 @@ pub use contract::{
 
 // Resolved-style contract
 pub use contract::{
-    ResolvedStyle, ResolvedStyleBuildError, ResolvedStyleBuilder, ResolvedStyleEntry,
-    ResolvedValueSource, resolve_cascade_style, resolve_cascade_style_from_rule_inputs,
-    resolve_initial_style,
+    CssWideResolvedSource, ResolvedStyle, ResolvedStyleBuildError, ResolvedStyleBuilder,
+    ResolvedStyleEntry, ResolvedValueSource, resolve_cascade_style,
+    resolve_cascade_style_from_rule_inputs, resolve_initial_style,
 };
 
 // Document-level structured output

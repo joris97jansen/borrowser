@@ -150,3 +150,6 @@ syntax, or function grammars. Those issues must extend the CSS-owned core
 value model, property specified values, computed normalization, docs, and tests
 together. They must not move CSS value parsing into layout, paint, GFX, or
 browser/runtime.
+
+AD3 adds the current CSS-wide keyword representation and handling contract for
+supported properties. See `docs/css/ad3-css-wide-keyword-handling.md`.

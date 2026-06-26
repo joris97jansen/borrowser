@@ -5,10 +5,65 @@ use crate::{
     values::{
         CssColorKeyword, CssColorSyntax, CssColorValue, CssHexColor, CssIntegerValue,
         CssLengthPercentageValue, CssLengthUnit, CssLengthValue, CssPercentageValue,
+        CssWideKeywordValue,
     },
 };
 
-use super::{error::SpecifiedValueParseError, parse::parse_specified_value};
+use super::{
+    error::SpecifiedValueParseError,
+    parse::{parse_specified_declaration_value, parse_specified_value},
+};
+
+/// One supported declaration value after property-aware specified parsing.
+///
+/// CSS-wide keywords are represented here as declaration values rather than
+/// property-specific values because cascade winner resolution must compare
+/// them before resolving their inheritance/defaulting behavior.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SpecifiedDeclarationValue {
+    Property(SpecifiedPropertyValue),
+    CssWideKeyword {
+        property: PropertyId,
+        value: CssWideKeywordValue,
+    },
+}
+
+impl SpecifiedDeclarationValue {
+    pub fn parse(
+        property: PropertyId,
+        value: &DeclarationValue,
+    ) -> Result<Self, SpecifiedValueParseError> {
+        parse_specified_declaration_value(property, value)
+    }
+
+    pub fn property(&self) -> PropertyId {
+        match self {
+            Self::Property(value) => value.property(),
+            Self::CssWideKeyword { property, .. } => *property,
+        }
+    }
+
+    pub fn property_value(&self) -> Option<&SpecifiedPropertyValue> {
+        match self {
+            Self::Property(value) => Some(value),
+            Self::CssWideKeyword { .. } => None,
+        }
+    }
+
+    pub fn css_wide_keyword(&self) -> Option<CssWideKeywordValue> {
+        match self {
+            Self::Property(_) => None,
+            Self::CssWideKeyword { value, .. } => Some(*value),
+        }
+    }
+
+    pub fn to_css_text(&self) -> String {
+        match self {
+            Self::Property(value) => value.to_css_text(),
+            Self::CssWideKeyword { value, .. } => value.to_css_text().to_string(),
+        }
+    }
+}
 
 /// One parsed specified value for one supported property.
 ///

@@ -171,3 +171,22 @@ fn document_style_resolution_debug_snapshot_covers_override_inheritance_and_defa
         )
     );
 }
+
+#[test]
+fn document_style_resolution_keeps_unknown_properties_with_css_wide_values_unsupported() {
+    let stylesheets = vec![stylesheet("div { zoom: initial; color: red; }")];
+    let dom = element("div", Vec::new(), Vec::new());
+
+    let snapshot = resolve_document_styles_debug_snapshot(&dom, &stylesheets);
+
+    assert!(
+        snapshot.contains(
+            "property=unsupported(\"zoom\") applicability=unsupported-property value=\"initial\""
+        ),
+        "{snapshot}"
+    );
+    assert!(
+        snapshot.contains("color: winner("),
+        "known supported declarations should still resolve: {snapshot}"
+    );
+}

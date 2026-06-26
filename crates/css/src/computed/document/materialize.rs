@@ -2,7 +2,7 @@
 
 use crate::{
     PropertyId, PropertyInheritance,
-    cascade::{ResolvedStyle, ResolvedValueSource},
+    cascade::{CssWideResolvedSource, ResolvedStyle, ResolvedValueSource},
     property_registry,
 };
 
@@ -82,6 +82,35 @@ fn computed_value_from_resolved_source(
             }
 
             Ok(ComputedValue::from_initial(property))
+        }
+        ResolvedValueSource::CssWideKeyword(source) => {
+            computed_value_from_resolved_css_wide_source(property, source, parent_style)
+        }
+    }
+}
+
+fn computed_value_from_resolved_css_wide_source(
+    property: PropertyId,
+    source: &CssWideResolvedSource,
+    parent_style: Option<&ComputedStyle>,
+) -> Result<ComputedValue, ComputedStyleResolutionError> {
+    match source {
+        CssWideResolvedSource::Initial { initial, .. } => {
+            let expected = property.initial_value();
+            if *initial != expected {
+                return Err(ComputedStyleResolutionError::InitialValueMismatch {
+                    property,
+                    expected,
+                    actual: *initial,
+                });
+            }
+
+            Ok(ComputedValue::from_initial(property))
+        }
+        CssWideResolvedSource::Inherited { .. } => {
+            let parent = parent_style
+                .ok_or(ComputedStyleResolutionError::MissingInheritedParent { property })?;
+            Ok(parent.get(property).value())
         }
     }
 }

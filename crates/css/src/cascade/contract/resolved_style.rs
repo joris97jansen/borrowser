@@ -1,6 +1,7 @@
 use std::collections::BTreeMap;
 
 use crate::property_registry;
+use crate::values::CssWideKeyword;
 
 use super::properties::{CascadeInheritance, CascadePropertyId, InitialStyleValue};
 use super::rules::CascadeRuleInput;
@@ -21,6 +22,45 @@ pub enum ResolvedValueSource {
     /// for inherited properties resolves through `Initial(...)` instead.
     Inherited,
     Initial(InitialStyleValue),
+    CssWideKeyword(CssWideResolvedSource),
+}
+
+/// Resolved behavior for one explicit winning CSS-wide keyword declaration.
+///
+/// This preserves authored winner provenance while making the cascade-owned
+/// semantic decision explicit before computed-style materialization.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum CssWideResolvedSource {
+    Initial {
+        keyword: CssWideKeyword,
+        winner: CascadeWinner,
+        initial: InitialStyleValue,
+    },
+    Inherited {
+        keyword: CssWideKeyword,
+        winner: CascadeWinner,
+    },
+}
+
+impl CssWideResolvedSource {
+    pub fn keyword(&self) -> CssWideKeyword {
+        match self {
+            Self::Initial { keyword, .. } | Self::Inherited { keyword, .. } => *keyword,
+        }
+    }
+
+    pub fn winner(&self) -> &CascadeWinner {
+        match self {
+            Self::Initial { winner, .. } | Self::Inherited { winner, .. } => winner,
+        }
+    }
+
+    pub fn initial(&self) -> Option<InitialStyleValue> {
+        match self {
+            Self::Initial { initial, .. } => Some(*initial),
+            Self::Inherited { .. } => None,
+        }
+    }
 }
 
 /// One supported property in a resolved style object.
@@ -42,7 +82,9 @@ impl ResolvedStyleEntry {
     pub fn winner(&self) -> Option<&CascadeWinner> {
         match &self.source {
             ResolvedValueSource::Winner(winner) => Some(winner),
-            ResolvedValueSource::Inherited | ResolvedValueSource::Initial(_) => None,
+            ResolvedValueSource::Inherited
+            | ResolvedValueSource::Initial(_)
+            | ResolvedValueSource::CssWideKeyword(_) => None,
         }
     }
 }
@@ -108,7 +150,15 @@ pub fn resolve_cascade_style(
 
     for property in property_registry().ids() {
         if let Some(winner) = winners.get(property) {
-            builder.record_winner(property, winner.clone());
+            match winner.value.css_wide_keyword() {
+                Some(keyword) => builder.record_css_wide_keyword(
+                    property,
+                    winner.clone(),
+                    keyword.keyword(),
+                    parent_style.is_some(),
+                ),
+                None => builder.record_winner(property, winner.clone()),
+            }
             continue;
         }
 
@@ -214,6 +264,43 @@ impl ResolvedStyleBuilder {
         );
     }
 
+    pub fn record_css_wide_keyword(
+        &mut self,
+        property: CascadePropertyId,
+        winner: CascadeWinner,
+        keyword: CssWideKeyword,
+        has_parent_style: bool,
+    ) {
+        let source = match keyword {
+            CssWideKeyword::Initial => css_wide_initial_source(property, keyword, winner),
+            CssWideKeyword::Inherit if has_parent_style => {
+                css_wide_inherited_source(keyword, winner)
+            }
+            CssWideKeyword::Inherit => css_wide_initial_source(property, keyword, winner),
+            CssWideKeyword::Unset
+                if property.metadata().inheritance == CascadeInheritance::Inherited
+                    && has_parent_style =>
+            {
+                css_wide_inherited_source(keyword, winner)
+            }
+            CssWideKeyword::Unset => css_wide_initial_source(property, keyword, winner),
+            CssWideKeyword::Revert | CssWideKeyword::RevertLayer => {
+                panic!(
+                    "unsupported CSS-wide keyword '{}' must be rejected before resolved style",
+                    keyword.as_css_keyword()
+                )
+            }
+        };
+
+        let previous = self
+            .entries
+            .insert(property, ResolvedValueSource::CssWideKeyword(source));
+        assert!(
+            previous.is_none(),
+            "resolved style must not record the same property twice"
+        );
+    }
+
     pub fn build(self) -> Result<ResolvedStyle, ResolvedStyleBuildError> {
         let missing_properties = property_registry()
             .ids()
@@ -232,4 +319,23 @@ impl ResolvedStyleBuilder {
                 .collect(),
         })
     }
+}
+
+fn css_wide_initial_source(
+    property: CascadePropertyId,
+    keyword: CssWideKeyword,
+    winner: CascadeWinner,
+) -> CssWideResolvedSource {
+    CssWideResolvedSource::Initial {
+        keyword,
+        winner,
+        initial: property.initial_value(),
+    }
+}
+
+fn css_wide_inherited_source(
+    keyword: CssWideKeyword,
+    winner: CascadeWinner,
+) -> CssWideResolvedSource {
+    CssWideResolvedSource::Inherited { keyword, winner }
 }

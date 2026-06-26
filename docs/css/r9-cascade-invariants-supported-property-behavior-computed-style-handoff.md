@@ -326,7 +326,15 @@ integration settles.
 
 Milestone R does not require pruning that surface preemptively.
 
-### 7. Exact debug snapshots are intentionally high-discipline maintenance surfaces
+### 7. Later AD3 CSS-wide keyword handling
+
+Milestone R did not implement CSS-wide keywords. Milestone AD3 later adds a
+CSS-owned shared representation and parser for CSS-wide keywords on supported
+properties. In the current AD3 contract, `initial`, `inherit`, and `unset`
+participate in cascade winner selection before being resolved through property
+metadata, while `revert` and `revert-layer` remain recognized but unsupported.
+
+### 8. Exact debug snapshots are intentionally high-discipline maintenance surfaces
 
 Milestone R's snapshot surfaces are versioned, deterministic, and treated as
 contract-quality regression outputs. That is the right choice, but it creates a

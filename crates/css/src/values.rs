@@ -29,6 +29,72 @@ impl CssKeywordValue {
     }
 }
 
+/// CSS-wide keyword recognized before property-specific value parsing.
+///
+/// These keywords are declaration-level CSS semantics. They are not ordinary
+/// property-specific keyword values and must be resolved by cascade/defaulting
+/// code after winner selection.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum CssWideKeyword {
+    Initial,
+    Inherit,
+    Unset,
+    Revert,
+    RevertLayer,
+}
+
+impl CssWideKeyword {
+    pub fn from_canonical(keyword: &str) -> Option<Self> {
+        match keyword {
+            "initial" => Some(Self::Initial),
+            "inherit" => Some(Self::Inherit),
+            "unset" => Some(Self::Unset),
+            "revert" => Some(Self::Revert),
+            "revert-layer" => Some(Self::RevertLayer),
+            _ => None,
+        }
+    }
+
+    pub fn as_css_keyword(self) -> &'static str {
+        match self {
+            Self::Initial => "initial",
+            Self::Inherit => "inherit",
+            Self::Unset => "unset",
+            Self::Revert => "revert",
+            Self::RevertLayer => "revert-layer",
+        }
+    }
+
+    pub fn is_supported_for_current_cascade(self) -> bool {
+        matches!(self, Self::Initial | Self::Inherit | Self::Unset)
+    }
+}
+
+/// One recognized CSS-wide keyword with its authored span.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct CssWideKeywordValue {
+    span: CssSpan,
+    keyword: CssWideKeyword,
+}
+
+impl CssWideKeywordValue {
+    pub fn new(span: CssSpan, keyword: CssWideKeyword) -> Self {
+        Self { span, keyword }
+    }
+
+    pub fn span(self) -> CssSpan {
+        self.span
+    }
+
+    pub fn keyword(self) -> CssWideKeyword {
+        self.keyword
+    }
+
+    pub fn to_css_text(self) -> &'static str {
+        self.keyword.as_css_keyword()
+    }
+}
+
 /// Finite CSS number scalar.
 ///
 /// The authored number representation remains separate from this scalar so

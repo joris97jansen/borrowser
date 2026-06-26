@@ -58,6 +58,7 @@ pub enum SpecifiedValueParseErrorKind {
     NegativeLengthNotAllowed,
     InvariantViolation,
     UnsupportedKeyword,
+    UnsupportedCssWideKeyword,
 }
 
 impl SpecifiedValueParseErrorKind {
@@ -84,6 +85,7 @@ impl SpecifiedValueParseErrorKind {
             Self::NegativeLengthNotAllowed => "negative-length-not-allowed",
             Self::InvariantViolation => "invariant-violation",
             Self::UnsupportedKeyword => "unsupported-keyword",
+            Self::UnsupportedCssWideKeyword => "unsupported-css-wide-keyword",
         }
     }
 }

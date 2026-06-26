@@ -72,6 +72,52 @@ fn compute_document_styles_integrates_cascade_inheritance_defaults_and_computati
 }
 
 #[test]
+fn compute_document_styles_materializes_resolved_css_wide_keywords() {
+    let stylesheets = vec![stylesheet(concat!(
+        "section { color: red; font-size: 20px; width: 40px; display: block; }",
+        "span { color: unset; font-size: inherit; width: inherit; display: initial; }",
+    ))];
+    let dom = element(
+        "section",
+        Vec::new(),
+        vec![element("span", Vec::new(), Vec::new())],
+    );
+
+    let computed = compute_document_styles(&dom, &stylesheets).expect("computed document");
+    let section = computed.entries()[0].style();
+    let span = computed.entries()[1].style();
+
+    assert_eq!(section.color(), (255, 0, 0, 255));
+    assert_eq!(section.font_size(), Length::Px(20.0));
+    assert_eq!(
+        section.width(),
+        Some(LengthPercentage::Length(Length::Px(40.0)))
+    );
+    assert_eq!(section.display(), Display::Block);
+
+    assert_eq!(span.color(), section.color());
+    assert_eq!(span.font_size(), section.font_size());
+    assert_eq!(span.width(), section.width());
+    assert_eq!(span.display(), Display::Inline);
+}
+
+#[test]
+fn compute_document_styles_materializes_root_css_wide_fallbacks_to_initial() {
+    let stylesheets = vec![stylesheet(
+        "div { color: inherit; font-size: unset; width: inherit; display: unset; }",
+    )];
+    let dom = element("div", Vec::new(), Vec::new());
+
+    let computed = compute_document_styles(&dom, &stylesheets).expect("computed document");
+    let style = computed.entries()[0].style();
+
+    assert_eq!(style.color(), (0, 0, 0, 255));
+    assert_eq!(style.font_size(), Length::Px(16.0));
+    assert_eq!(style.width(), None);
+    assert_eq!(style.display(), Display::Inline);
+}
+
+#[test]
 fn computed_document_style_layout_impact_distinguishes_paint_layout_and_unknown() {
     let dom = element(
         "section",

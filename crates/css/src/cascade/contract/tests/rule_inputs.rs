@@ -7,8 +7,8 @@ use super::support::{
     inline_declaration_source, matched_rule, parse_error, parsed_value, preserved_value,
     stylesheet_declaration_source,
 };
-use crate::SpecifiedValueParseErrorKind;
 use crate::selectors::Specificity;
+use crate::{CssWideKeyword, SpecifiedValueParseErrorKind};
 
 #[test]
 fn cascade_rule_match_uses_highest_selector_specificity() {
@@ -192,6 +192,61 @@ fn cascade_rule_input_keeps_declaration_filter_state_explicit() {
     assert_eq!(
         candidates[0].priority(),
         context.priority_for_declaration(CascadeImportance::Normal, 0)
+    );
+}
+
+#[test]
+fn cascade_rule_input_keeps_supported_css_wide_keywords_as_candidates() {
+    let inline_style = InlineStyleRuleRef::new(9);
+    let rule = CascadeRuleInput::from_inline_style(
+        inline_style,
+        0,
+        vec![
+            CascadeDeclarationInput::supported(
+                inline_declaration_source(inline_style, 0),
+                0,
+                CascadeImportance::Normal,
+                CascadePropertyId::Color,
+                parsed_value("color: initial"),
+            ),
+            CascadeDeclarationInput::invalid_value(
+                inline_declaration_source(inline_style, 1),
+                1,
+                CascadeImportance::Normal,
+                CascadePropertyId::Color,
+                parse_error(CascadePropertyId::Color, "color: revert"),
+                preserved_value("color: revert"),
+            ),
+        ],
+    )
+    .expect("valid inline style rule");
+
+    assert_eq!(
+        rule.declarations()[0].applicability(),
+        CascadeDeclarationApplicability::Supported(CascadePropertyId::Color)
+    );
+    assert_eq!(
+        rule.declarations()[0]
+            .value()
+            .css_wide_keyword()
+            .expect("css-wide keyword")
+            .keyword(),
+        CssWideKeyword::Initial
+    );
+    assert_eq!(
+        rule.declarations()[1]
+            .invalid_value_error()
+            .expect("invalid value error")
+            .kind(),
+        SpecifiedValueParseErrorKind::UnsupportedCssWideKeyword
+    );
+
+    let candidates = rule.candidates();
+    assert_eq!(candidates.len(), 1);
+    assert_eq!(candidates[0].property(), CascadePropertyId::Color);
+    assert_eq!(
+        candidates[0].value().to_css_text().as_deref(),
+        Some("initial")
     );
 }
 

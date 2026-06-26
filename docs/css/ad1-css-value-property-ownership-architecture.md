@@ -154,6 +154,9 @@ AD1 does not implement CSS-wide keywords. Later AD work must define how these
 keywords are represented before and after cascade, how they interact with
 inheritance/defaulting, and which subset is supported.
 
+AD3 implements the current shared CSS-wide keyword contract for supported
+properties. See `docs/css/ad3-css-wide-keyword-handling.md`.
+
 ## Shorthand Expansion
 
 Shorthand expansion is CSS-owned. A supported shorthand declaration must expand

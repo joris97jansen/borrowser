@@ -59,6 +59,11 @@ Architecture status:
 - AD2 does not add broad CSS Values and Units coverage, new property families,
   URL/resource loading, broad function support, CSS-wide keywords, shorthands,
   or invalidation impact classification.
+- AD3 adds shared CSS-wide keyword handling for supported properties; see
+  `docs/css/ad3-css-wide-keyword-handling.md`. `initial`, `inherit`, and
+  `unset` are supported through cascade winner selection and CSS-owned
+  resolved-style materialization. `revert` and `revert-layer` are recognized
+  but unsupported until cascade origin/layer support exists.
 - Concrete CSS-owned invalidation impact classification for supported
   properties remains future AD7 work.
 

@@ -1,7 +1,7 @@
 use super::super::{
     CascadeDeclarationInput, CascadeDeclarationSource, CascadeImportance, CascadeOrigin,
     CascadeOriginBand, CascadePriority, CascadePropertyId, CascadeRuleContext, CascadeRuleInput,
-    CascadeSpecificity, CascadeWinner, CascadeWinnerSet, InitialStyleValue,
+    CascadeSpecificity, CascadeWinner, CascadeWinnerSet, CssWideResolvedSource, InitialStyleValue,
     InlineStyleDeclarationRef, InlineStyleRuleRef, ResolvedStyleBuilder, ResolvedValueSource,
     StylesheetDeclarationRef, resolve_cascade_style, resolve_cascade_style_from_rule_inputs,
     resolve_cascade_winners, resolve_initial_style,
@@ -215,6 +215,186 @@ fn resolve_cascade_style_defaults_missing_properties_to_the_initial_contract() {
             .source(),
         &ResolvedValueSource::Initial(InitialStyleValue::NoneKeyword)
     );
+}
+
+#[test]
+fn resolve_cascade_style_resolves_explicit_css_wide_keywords_after_winner_selection() {
+    let mut parent_builder =
+        builder_with_initials_except(&[CascadePropertyId::Color, CascadePropertyId::Display]);
+    parent_builder.record_winner(
+        CascadePropertyId::Color,
+        CascadeWinner {
+            source: stylesheet_declaration_source(0, 0, 0),
+            priority: CascadePriority::new(
+                CascadeOriginBand::AuthorNormal,
+                CascadeSpecificity::Selector(Specificity::TYPE),
+                0,
+                0,
+            ),
+            value: parsed_value("color: red"),
+        },
+    );
+    parent_builder.record_winner(
+        CascadePropertyId::Display,
+        CascadeWinner {
+            source: stylesheet_declaration_source(0, 0, 1),
+            priority: CascadePriority::new(
+                CascadeOriginBand::AuthorNormal,
+                CascadeSpecificity::Selector(Specificity::TYPE),
+                0,
+                1,
+            ),
+            value: parsed_value("display: block"),
+        },
+    );
+    let parent_style = parent_builder.build().expect("total parent style");
+    let child_winners = resolve_cascade_winners(&[
+        CascadeDeclarationInput::supported(
+            stylesheet_declaration_source(0, 1, 0),
+            0,
+            CascadeImportance::Normal,
+            CascadePropertyId::Color,
+            parsed_value("color: unset"),
+        )
+        .candidate(CascadeRuleContext::new(
+            CascadeOrigin::Author,
+            CascadeSpecificity::Selector(Specificity::TYPE),
+            1,
+        ))
+        .expect("color unset candidate"),
+        CascadeDeclarationInput::supported(
+            stylesheet_declaration_source(0, 1, 1),
+            1,
+            CascadeImportance::Normal,
+            CascadePropertyId::Display,
+            parsed_value("display: inherit"),
+        )
+        .candidate(CascadeRuleContext::new(
+            CascadeOrigin::Author,
+            CascadeSpecificity::Selector(Specificity::TYPE),
+            1,
+        ))
+        .expect("display inherit candidate"),
+        CascadeDeclarationInput::supported(
+            stylesheet_declaration_source(0, 1, 2),
+            2,
+            CascadeImportance::Normal,
+            CascadePropertyId::Width,
+            parsed_value("width: unset"),
+        )
+        .candidate(CascadeRuleContext::new(
+            CascadeOrigin::Author,
+            CascadeSpecificity::Selector(Specificity::TYPE),
+            1,
+        ))
+        .expect("width unset candidate"),
+    ]);
+
+    let child = resolve_cascade_style(&child_winners, Some(&parent_style));
+
+    let ResolvedValueSource::CssWideKeyword(CssWideResolvedSource::Inherited {
+        keyword: color_keyword,
+        ..
+    }) = child.get(CascadePropertyId::Color).expect("color").source()
+    else {
+        panic!("color unset should resolve to explicit CSS-wide inheritance");
+    };
+    assert_eq!(color_keyword.as_css_keyword(), "unset");
+
+    let ResolvedValueSource::CssWideKeyword(CssWideResolvedSource::Inherited {
+        keyword: display_keyword,
+        ..
+    }) = child
+        .get(CascadePropertyId::Display)
+        .expect("display")
+        .source()
+    else {
+        panic!("display inherit should resolve to explicit CSS-wide inheritance");
+    };
+    assert_eq!(display_keyword.as_css_keyword(), "inherit");
+
+    let ResolvedValueSource::CssWideKeyword(CssWideResolvedSource::Initial {
+        keyword: width_keyword,
+        initial,
+        ..
+    }) = child.get(CascadePropertyId::Width).expect("width").source()
+    else {
+        panic!("width unset should resolve to explicit CSS-wide initial");
+    };
+    assert_eq!(width_keyword.as_css_keyword(), "unset");
+    assert_eq!(*initial, InitialStyleValue::AutoKeyword);
+    assert!(
+        child
+            .get(CascadePropertyId::Width)
+            .expect("width")
+            .winner()
+            .is_none(),
+        "explicit CSS-wide source must not look like an ordinary authored winner"
+    );
+
+    let snapshot = child.to_debug_snapshot();
+    assert!(snapshot.contains("color: css-wide-inherited(keyword=unset, winner("));
+    assert!(snapshot.contains("display: css-wide-inherited(keyword=inherit, winner("));
+    assert!(snapshot.contains("width: css-wide-initial(keyword=unset, winner("));
+}
+
+#[test]
+fn resolve_cascade_style_resolves_root_css_wide_inherit_and_unset_to_initial() {
+    let root_winners = resolve_cascade_winners(&[
+        CascadeDeclarationInput::supported(
+            stylesheet_declaration_source(0, 0, 0),
+            0,
+            CascadeImportance::Normal,
+            CascadePropertyId::Color,
+            parsed_value("color: inherit"),
+        )
+        .candidate(CascadeRuleContext::new(
+            CascadeOrigin::Author,
+            CascadeSpecificity::Selector(Specificity::TYPE),
+            0,
+        ))
+        .expect("color inherit candidate"),
+        CascadeDeclarationInput::supported(
+            stylesheet_declaration_source(0, 0, 1),
+            1,
+            CascadeImportance::Normal,
+            CascadePropertyId::FontSize,
+            parsed_value("font-size: unset"),
+        )
+        .candidate(CascadeRuleContext::new(
+            CascadeOrigin::Author,
+            CascadeSpecificity::Selector(Specificity::TYPE),
+            0,
+        ))
+        .expect("font-size unset candidate"),
+    ]);
+
+    let root = resolve_cascade_style(&root_winners, None);
+
+    let ResolvedValueSource::CssWideKeyword(CssWideResolvedSource::Initial {
+        keyword: color_keyword,
+        initial: color_initial,
+        ..
+    }) = root.get(CascadePropertyId::Color).expect("color").source()
+    else {
+        panic!("root color inherit should resolve to explicit CSS-wide initial");
+    };
+    assert_eq!(color_keyword.as_css_keyword(), "inherit");
+    assert_eq!(*color_initial, InitialStyleValue::ColorBlack);
+
+    let ResolvedValueSource::CssWideKeyword(CssWideResolvedSource::Initial {
+        keyword: font_keyword,
+        initial: font_initial,
+        ..
+    }) = root
+        .get(CascadePropertyId::FontSize)
+        .expect("font-size")
+        .source()
+    else {
+        panic!("root font-size unset should resolve to explicit CSS-wide initial");
+    };
+    assert_eq!(font_keyword.as_css_keyword(), "unset");
+    assert_eq!(*font_initial, InitialStyleValue::FontSizePx16);
 }
 
 #[test]
