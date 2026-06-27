@@ -2,6 +2,7 @@ use super::{
     data::{PROPERTY_LOOKUP_BY_NAME, PROPERTY_REGISTRATION_DATA},
     types::{PropertyId, PropertyMetadata},
 };
+use std::fmt::Write;
 
 /// One registry entry describing a supported property.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -108,6 +109,66 @@ impl PropertyRegistry {
 /// Returns the shared supported-property registry.
 pub fn property_registry() -> &'static PropertyRegistry {
     &PROPERTY_REGISTRY
+}
+
+/// Deterministic debug snapshot for the supported longhand registry metadata.
+///
+/// This is an internal regression surface. It intentionally follows registry
+/// canonical order and does not expose map iteration order or parser internals.
+pub fn property_registry_metadata_debug_snapshot() -> String {
+    let registry = property_registry();
+    let mut output = String::from("version: 1\nproperty-registry-metadata\n");
+    writeln!(&mut output, "properties: {}", registry.entries().len()).expect("write snapshot");
+
+    for (index, registration) in registry.entries().iter().enumerate() {
+        let metadata = registration.metadata();
+        writeln!(&mut output, "property[{index}]: {}", registration.name())
+            .expect("write snapshot");
+        writeln!(
+            &mut output,
+            "  inheritance: {}",
+            metadata.inheritance.as_debug_label()
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut output,
+            "  initial: {}",
+            metadata.initial.as_debug_label()
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut output,
+            "  specified-value: {}",
+            metadata.specified_value.as_debug_label()
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut output,
+            "  computed-value: {}",
+            metadata.computed_value.as_debug_label()
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut output,
+            "  invalid-value-policy: {}",
+            metadata.invalid_value_policy.as_debug_label()
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut output,
+            "  length-sign: {}",
+            metadata.length_sign.as_debug_label()
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut output,
+            "  invalidation-impact: {}",
+            metadata.invalidation_impact.as_debug_label()
+        )
+        .expect("write snapshot");
+    }
+
+    output
 }
 
 static PROPERTY_REGISTRY: PropertyRegistry =

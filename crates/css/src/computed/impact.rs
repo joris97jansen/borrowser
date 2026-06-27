@@ -1,4 +1,4 @@
-use crate::properties::PropertyId;
+use crate::properties::{PropertyId, PropertyInvalidationImpact};
 
 use super::document::ComputedDocumentStyle;
 use super::style::ComputedStyle;
@@ -54,41 +54,10 @@ impl ComputedDocumentStyle {
 }
 
 fn property_layout_impact(property: PropertyId) -> ComputedStyleLayoutImpact {
-    match property {
-        PropertyId::BackgroundColor
-        | PropertyId::BorderBottomColor
-        | PropertyId::BorderLeftColor
-        | PropertyId::BorderRightColor
-        | PropertyId::BorderTopColor
-        | PropertyId::Color
-        | PropertyId::OutlineColor
-        | PropertyId::OutlineStyle
-        | PropertyId::OutlineWidth
-        | PropertyId::TextDecorationLine => ComputedStyleLayoutImpact::PaintOnly,
-        PropertyId::BorderBottomStyle
-        | PropertyId::BorderBottomWidth
-        | PropertyId::BorderLeftStyle
-        | PropertyId::BorderLeftWidth
-        | PropertyId::BorderRightStyle
-        | PropertyId::BorderRightWidth
-        | PropertyId::BorderTopStyle
-        | PropertyId::BorderTopWidth
-        | PropertyId::Display
-        | PropertyId::FontSize
-        | PropertyId::Height
-        | PropertyId::MarginBottom
-        | PropertyId::MarginLeft
-        | PropertyId::MarginRight
-        | PropertyId::MarginTop
-        | PropertyId::MaxWidth
-        | PropertyId::MinWidth
-        | PropertyId::Overflow
-        | PropertyId::PaddingBottom
-        | PropertyId::PaddingLeft
-        | PropertyId::PaddingRight
-        | PropertyId::PaddingTop
-        | PropertyId::Position
-        | PropertyId::Width
-        | PropertyId::ZIndex => ComputedStyleLayoutImpact::LayoutAffecting,
+    match property.metadata().invalidation_impact {
+        PropertyInvalidationImpact::RepaintOnly => ComputedStyleLayoutImpact::PaintOnly,
+        PropertyInvalidationImpact::RelayoutAndRepaint => {
+            ComputedStyleLayoutImpact::LayoutAffecting
+        }
     }
 }

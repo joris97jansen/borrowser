@@ -9,12 +9,13 @@
 //!   values
 //! - property-owned value-range metadata for specified-value validation
 //! - the current-scope invalid-value handling rule
+//! - the current narrow CSS-owned invalidation impact classification
 //!
 //! `PropertyId` is the stable identity for one supported property.
 //! `PropertyId::metadata()` is the normative source for inheritance,
 //! initial/default, specified-value-shape, computed-value-shape, and
-//! invalid-value and value-range facts. Downstream code must not re-encode
-//! those facts in separate match tables.
+//! invalid-value, value-range, and invalidation-impact facts. Downstream code
+//! must not re-encode those facts in separate match tables.
 //!
 //! This module deliberately does not own cascade precedence, selector
 //! matching, property-specific parsers, or layout-facing interpretation.
@@ -23,11 +24,14 @@ mod data;
 mod registry;
 mod types;
 
-pub use registry::{PropertyRegistration, PropertyRegistry, property_registry};
+pub use registry::{
+    PropertyRegistration, PropertyRegistry, property_registry,
+    property_registry_metadata_debug_snapshot,
+};
 pub use types::{
     InitialStyleValue, PropertyComputedValueKind, PropertyId, PropertyInheritance,
-    PropertyInvalidValuePolicy, PropertyLengthSignPolicy, PropertyMetadata,
-    PropertySpecifiedValueKind,
+    PropertyInvalidValuePolicy, PropertyInvalidationImpact, PropertyLengthSignPolicy,
+    PropertyMetadata, PropertySpecifiedValueKind,
 };
 
 #[cfg(test)]
