@@ -64,8 +64,14 @@ Architecture status:
   `unset` are supported through cascade winner selection and CSS-owned
   resolved-style materialization. `revert` and `revert-layer` are recognized
   but unsupported until cascade origin/layer support exists.
-- Concrete CSS-owned invalidation impact classification for supported
-  properties remains future AD7 work.
+- AD4 formalizes the CSS-owned supported longhand registry and metadata model;
+  see `docs/css/ad4-css-property-registry-longhand-metadata.md`. Supported
+  longhands now expose explicit registry metadata, deterministic metadata
+  debug output, and a narrow CSS-owned impact hook for `repaint-only` versus
+  `relayout-and-repaint`. AD4 does not add broad property coverage,
+  shorthand support, or the full AD7 invalidation taxonomy.
+- Richer CSS-owned invalidation impact classification beyond the current
+  narrow longhand hook remains future AD7 work.
 
 - borders:
   - full `border` shorthand support

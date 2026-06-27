@@ -163,6 +163,7 @@ pub struct PropertyMetadata {
     pub computed_value: PropertyComputedValueKind,
     pub invalid_value_policy: PropertyInvalidValuePolicy,
     pub length_sign: PropertyLengthSignPolicy,
+    pub invalidation_impact: PropertyInvalidationImpact,
 }
 
 impl PropertyMetadata {
@@ -170,6 +171,7 @@ impl PropertyMetadata {
         initial: InitialStyleValue,
         specified_value: PropertySpecifiedValueKind,
         computed_value: PropertyComputedValueKind,
+        invalidation_impact: PropertyInvalidationImpact,
     ) -> Self {
         Self {
             inheritance: PropertyInheritance::Inherited,
@@ -178,6 +180,7 @@ impl PropertyMetadata {
             computed_value,
             invalid_value_policy: PropertyInvalidValuePolicy::RejectDeclaration,
             length_sign: default_length_sign_policy(specified_value),
+            invalidation_impact,
         }
     }
 
@@ -185,6 +188,7 @@ impl PropertyMetadata {
         initial: InitialStyleValue,
         specified_value: PropertySpecifiedValueKind,
         computed_value: PropertyComputedValueKind,
+        invalidation_impact: PropertyInvalidationImpact,
     ) -> Self {
         Self {
             inheritance: PropertyInheritance::NotInherited,
@@ -193,6 +197,7 @@ impl PropertyMetadata {
             computed_value,
             invalid_value_policy: PropertyInvalidValuePolicy::RejectDeclaration,
             length_sign: default_length_sign_policy(specified_value),
+            invalidation_impact,
         }
     }
 
@@ -227,6 +232,15 @@ const fn default_length_sign_policy(
 pub enum PropertyInheritance {
     Inherited,
     NotInherited,
+}
+
+impl PropertyInheritance {
+    pub fn as_debug_label(self) -> &'static str {
+        match self {
+            Self::Inherited => "inherited",
+            Self::NotInherited => "not-inherited",
+        }
+    }
 }
 
 /// Typed specified-value shape the property parser is expected to emit.
@@ -318,6 +332,14 @@ pub enum PropertyInvalidValuePolicy {
     RejectDeclaration,
 }
 
+impl PropertyInvalidValuePolicy {
+    pub fn as_debug_label(self) -> &'static str {
+        match self {
+            Self::RejectDeclaration => "reject-declaration",
+        }
+    }
+}
+
 /// Sign policy for length branches accepted by a supported property.
 ///
 /// This lives in property metadata so specified-value parsers do not keep a
@@ -327,6 +349,36 @@ pub enum PropertyLengthSignPolicy {
     NotLength,
     AllowNegative,
     NonNegative,
+}
+
+impl PropertyLengthSignPolicy {
+    pub fn as_debug_label(self) -> &'static str {
+        match self {
+            Self::NotLength => "not-length",
+            Self::AllowNegative => "allow-negative",
+            Self::NonNegative => "non-negative",
+        }
+    }
+}
+
+/// Current narrow CSS-owned invalidation impact for one supported longhand.
+///
+/// This is intentionally smaller than the future AD7 taxonomy. The registry
+/// must classify every supported longhand explicitly so incomplete impact
+/// modeling cannot hide behind a constructor default.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum PropertyInvalidationImpact {
+    RepaintOnly,
+    RelayoutAndRepaint,
+}
+
+impl PropertyInvalidationImpact {
+    pub fn as_debug_label(self) -> &'static str {
+        match self {
+            Self::RepaintOnly => "repaint-only",
+            Self::RelayoutAndRepaint => "relayout-and-repaint",
+        }
+    }
 }
 
 /// Cascade-owned initial/default values for the current property subset.

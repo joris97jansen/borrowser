@@ -1,0 +1,283 @@
+version: 1
+property-registry-metadata
+properties: 35
+property[0]: background-color
+  inheritance: not-inherited
+  initial: transparent
+  specified-value: color
+  computed-value: absolute-color
+  invalid-value-policy: reject-declaration
+  length-sign: not-length
+  invalidation-impact: repaint-only
+property[1]: border-bottom-color
+  inheritance: not-inherited
+  initial: transparent
+  specified-value: color
+  computed-value: absolute-color
+  invalid-value-policy: reject-declaration
+  length-sign: not-length
+  invalidation-impact: repaint-only
+property[2]: border-bottom-style
+  inheritance: not-inherited
+  initial: none
+  specified-value: border-style-keyword
+  computed-value: border-style-keyword
+  invalid-value-policy: reject-declaration
+  length-sign: not-length
+  invalidation-impact: relayout-and-repaint
+property[3]: border-bottom-width
+  inheritance: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalid-value-policy: reject-declaration
+  length-sign: non-negative
+  invalidation-impact: relayout-and-repaint
+property[4]: border-left-color
+  inheritance: not-inherited
+  initial: transparent
+  specified-value: color
+  computed-value: absolute-color
+  invalid-value-policy: reject-declaration
+  length-sign: not-length
+  invalidation-impact: repaint-only
+property[5]: border-left-style
+  inheritance: not-inherited
+  initial: none
+  specified-value: border-style-keyword
+  computed-value: border-style-keyword
+  invalid-value-policy: reject-declaration
+  length-sign: not-length
+  invalidation-impact: relayout-and-repaint
+property[6]: border-left-width
+  inheritance: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalid-value-policy: reject-declaration
+  length-sign: non-negative
+  invalidation-impact: relayout-and-repaint
+property[7]: border-right-color
+  inheritance: not-inherited
+  initial: transparent
+  specified-value: color
+  computed-value: absolute-color
+  invalid-value-policy: reject-declaration
+  length-sign: not-length
+  invalidation-impact: repaint-only
+property[8]: border-right-style
+  inheritance: not-inherited
+  initial: none
+  specified-value: border-style-keyword
+  computed-value: border-style-keyword
+  invalid-value-policy: reject-declaration
+  length-sign: not-length
+  invalidation-impact: relayout-and-repaint
+property[9]: border-right-width
+  inheritance: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalid-value-policy: reject-declaration
+  length-sign: non-negative
+  invalidation-impact: relayout-and-repaint
+property[10]: border-top-color
+  inheritance: not-inherited
+  initial: transparent
+  specified-value: color
+  computed-value: absolute-color
+  invalid-value-policy: reject-declaration
+  length-sign: not-length
+  invalidation-impact: repaint-only
+property[11]: border-top-style
+  inheritance: not-inherited
+  initial: none
+  specified-value: border-style-keyword
+  computed-value: border-style-keyword
+  invalid-value-policy: reject-declaration
+  length-sign: not-length
+  invalidation-impact: relayout-and-repaint
+property[12]: border-top-width
+  inheritance: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalid-value-policy: reject-declaration
+  length-sign: non-negative
+  invalidation-impact: relayout-and-repaint
+property[13]: color
+  inheritance: inherited
+  initial: black
+  specified-value: color
+  computed-value: absolute-color
+  invalid-value-policy: reject-declaration
+  length-sign: not-length
+  invalidation-impact: repaint-only
+property[14]: display
+  inheritance: not-inherited
+  initial: inline
+  specified-value: display-keyword
+  computed-value: display-keyword
+  invalid-value-policy: reject-declaration
+  length-sign: not-length
+  invalidation-impact: relayout-and-repaint
+property[15]: font-size
+  inheritance: inherited
+  initial: 16px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalid-value-policy: reject-declaration
+  length-sign: non-negative
+  invalidation-impact: relayout-and-repaint
+property[16]: height
+  inheritance: not-inherited
+  initial: auto
+  specified-value: length-percentage-or-auto
+  computed-value: length-percentage-or-auto
+  invalid-value-policy: reject-declaration
+  length-sign: non-negative
+  invalidation-impact: relayout-and-repaint
+property[17]: margin-bottom
+  inheritance: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalid-value-policy: reject-declaration
+  length-sign: allow-negative
+  invalidation-impact: relayout-and-repaint
+property[18]: margin-left
+  inheritance: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalid-value-policy: reject-declaration
+  length-sign: allow-negative
+  invalidation-impact: relayout-and-repaint
+property[19]: margin-right
+  inheritance: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalid-value-policy: reject-declaration
+  length-sign: allow-negative
+  invalidation-impact: relayout-and-repaint
+property[20]: margin-top
+  inheritance: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalid-value-policy: reject-declaration
+  length-sign: allow-negative
+  invalidation-impact: relayout-and-repaint
+property[21]: max-width
+  inheritance: not-inherited
+  initial: none
+  specified-value: length-percentage-or-none
+  computed-value: length-percentage-or-none
+  invalid-value-policy: reject-declaration
+  length-sign: non-negative
+  invalidation-impact: relayout-and-repaint
+property[22]: min-width
+  inheritance: not-inherited
+  initial: auto
+  specified-value: length-percentage-or-auto
+  computed-value: length-percentage-or-auto
+  invalid-value-policy: reject-declaration
+  length-sign: non-negative
+  invalidation-impact: relayout-and-repaint
+property[23]: overflow
+  inheritance: not-inherited
+  initial: visible
+  specified-value: overflow-keyword
+  computed-value: overflow-keyword
+  invalid-value-policy: reject-declaration
+  length-sign: not-length
+  invalidation-impact: relayout-and-repaint
+property[24]: outline-color
+  inheritance: not-inherited
+  initial: transparent
+  specified-value: color
+  computed-value: absolute-color
+  invalid-value-policy: reject-declaration
+  length-sign: not-length
+  invalidation-impact: repaint-only
+property[25]: outline-style
+  inheritance: not-inherited
+  initial: none
+  specified-value: outline-style-keyword
+  computed-value: outline-style-keyword
+  invalid-value-policy: reject-declaration
+  length-sign: not-length
+  invalidation-impact: repaint-only
+property[26]: outline-width
+  inheritance: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalid-value-policy: reject-declaration
+  length-sign: non-negative
+  invalidation-impact: repaint-only
+property[27]: padding-bottom
+  inheritance: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalid-value-policy: reject-declaration
+  length-sign: non-negative
+  invalidation-impact: relayout-and-repaint
+property[28]: padding-left
+  inheritance: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalid-value-policy: reject-declaration
+  length-sign: non-negative
+  invalidation-impact: relayout-and-repaint
+property[29]: padding-right
+  inheritance: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalid-value-policy: reject-declaration
+  length-sign: non-negative
+  invalidation-impact: relayout-and-repaint
+property[30]: padding-top
+  inheritance: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalid-value-policy: reject-declaration
+  length-sign: non-negative
+  invalidation-impact: relayout-and-repaint
+property[31]: position
+  inheritance: not-inherited
+  initial: static
+  specified-value: position-keyword
+  computed-value: position-keyword
+  invalid-value-policy: reject-declaration
+  length-sign: not-length
+  invalidation-impact: relayout-and-repaint
+property[32]: text-decoration-line
+  inheritance: not-inherited
+  initial: none
+  specified-value: text-decoration-line-keyword
+  computed-value: text-decoration-line-keyword
+  invalid-value-policy: reject-declaration
+  length-sign: not-length
+  invalidation-impact: repaint-only
+property[33]: width
+  inheritance: not-inherited
+  initial: auto
+  specified-value: length-percentage-or-auto
+  computed-value: length-percentage-or-auto
+  invalid-value-policy: reject-declaration
+  length-sign: non-negative
+  invalidation-impact: relayout-and-repaint
+property[34]: z-index
+  inheritance: not-inherited
+  initial: auto
+  specified-value: z-index
+  computed-value: z-index
+  invalid-value-policy: reject-declaration
+  length-sign: not-length
+  invalidation-impact: relayout-and-repaint

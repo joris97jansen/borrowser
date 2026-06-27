@@ -1,7 +1,7 @@
 use super::{
     InitialStyleValue, PropertyComputedValueKind, PropertyId, PropertyInheritance,
-    PropertyInvalidValuePolicy, PropertyLengthSignPolicy, PropertySpecifiedValueKind,
-    data::PROPERTY_LOOKUP_BY_NAME, property_registry,
+    PropertyInvalidValuePolicy, PropertyInvalidationImpact, PropertyLengthSignPolicy,
+    PropertySpecifiedValueKind, data::PROPERTY_LOOKUP_BY_NAME, property_registry,
 };
 
 #[test]
@@ -14,6 +14,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::Color,
             PropertyComputedValueKind::AbsoluteColor,
             PropertyLengthSignPolicy::NotLength,
+            PropertyInvalidationImpact::RepaintOnly,
         ),
         (
             PropertyId::BorderBottomColor,
@@ -22,6 +23,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::Color,
             PropertyComputedValueKind::AbsoluteColor,
             PropertyLengthSignPolicy::NotLength,
+            PropertyInvalidationImpact::RepaintOnly,
         ),
         (
             PropertyId::BorderBottomStyle,
@@ -30,6 +32,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::BorderStyleKeyword,
             PropertyComputedValueKind::BorderStyleKeyword,
             PropertyLengthSignPolicy::NotLength,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
         (
             PropertyId::BorderBottomWidth,
@@ -38,6 +41,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
             PropertyLengthSignPolicy::NonNegative,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
         (
             PropertyId::BorderLeftColor,
@@ -46,6 +50,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::Color,
             PropertyComputedValueKind::AbsoluteColor,
             PropertyLengthSignPolicy::NotLength,
+            PropertyInvalidationImpact::RepaintOnly,
         ),
         (
             PropertyId::BorderLeftStyle,
@@ -54,6 +59,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::BorderStyleKeyword,
             PropertyComputedValueKind::BorderStyleKeyword,
             PropertyLengthSignPolicy::NotLength,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
         (
             PropertyId::BorderLeftWidth,
@@ -62,6 +68,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
             PropertyLengthSignPolicy::NonNegative,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
         (
             PropertyId::BorderRightColor,
@@ -70,6 +77,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::Color,
             PropertyComputedValueKind::AbsoluteColor,
             PropertyLengthSignPolicy::NotLength,
+            PropertyInvalidationImpact::RepaintOnly,
         ),
         (
             PropertyId::BorderRightStyle,
@@ -78,6 +86,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::BorderStyleKeyword,
             PropertyComputedValueKind::BorderStyleKeyword,
             PropertyLengthSignPolicy::NotLength,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
         (
             PropertyId::BorderRightWidth,
@@ -86,6 +95,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
             PropertyLengthSignPolicy::NonNegative,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
         (
             PropertyId::BorderTopColor,
@@ -94,6 +104,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::Color,
             PropertyComputedValueKind::AbsoluteColor,
             PropertyLengthSignPolicy::NotLength,
+            PropertyInvalidationImpact::RepaintOnly,
         ),
         (
             PropertyId::BorderTopStyle,
@@ -102,6 +113,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::BorderStyleKeyword,
             PropertyComputedValueKind::BorderStyleKeyword,
             PropertyLengthSignPolicy::NotLength,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
         (
             PropertyId::BorderTopWidth,
@@ -110,6 +122,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
             PropertyLengthSignPolicy::NonNegative,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
         (
             PropertyId::Color,
@@ -118,6 +131,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::Color,
             PropertyComputedValueKind::AbsoluteColor,
             PropertyLengthSignPolicy::NotLength,
+            PropertyInvalidationImpact::RepaintOnly,
         ),
         (
             PropertyId::Display,
@@ -126,6 +140,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::DisplayKeyword,
             PropertyComputedValueKind::DisplayKeyword,
             PropertyLengthSignPolicy::NotLength,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
         (
             PropertyId::FontSize,
@@ -134,6 +149,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
             PropertyLengthSignPolicy::NonNegative,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
         (
             PropertyId::Height,
@@ -142,6 +158,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::LengthPercentageOrAuto,
             PropertyComputedValueKind::LengthPercentageOrAuto,
             PropertyLengthSignPolicy::NonNegative,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
         (
             PropertyId::MarginBottom,
@@ -150,6 +167,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
             PropertyLengthSignPolicy::AllowNegative,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
         (
             PropertyId::MarginLeft,
@@ -158,6 +176,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
             PropertyLengthSignPolicy::AllowNegative,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
         (
             PropertyId::MarginRight,
@@ -166,6 +185,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
             PropertyLengthSignPolicy::AllowNegative,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
         (
             PropertyId::MarginTop,
@@ -174,6 +194,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
             PropertyLengthSignPolicy::AllowNegative,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
         (
             PropertyId::MaxWidth,
@@ -182,6 +203,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::LengthPercentageOrNone,
             PropertyComputedValueKind::LengthPercentageOrNone,
             PropertyLengthSignPolicy::NonNegative,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
         (
             PropertyId::MinWidth,
@@ -190,6 +212,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::LengthPercentageOrAuto,
             PropertyComputedValueKind::LengthPercentageOrAuto,
             PropertyLengthSignPolicy::NonNegative,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
         (
             PropertyId::Overflow,
@@ -198,6 +221,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::OverflowKeyword,
             PropertyComputedValueKind::OverflowKeyword,
             PropertyLengthSignPolicy::NotLength,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
         (
             PropertyId::OutlineColor,
@@ -206,6 +230,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::Color,
             PropertyComputedValueKind::AbsoluteColor,
             PropertyLengthSignPolicy::NotLength,
+            PropertyInvalidationImpact::RepaintOnly,
         ),
         (
             PropertyId::OutlineStyle,
@@ -214,6 +239,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::OutlineStyleKeyword,
             PropertyComputedValueKind::OutlineStyleKeyword,
             PropertyLengthSignPolicy::NotLength,
+            PropertyInvalidationImpact::RepaintOnly,
         ),
         (
             PropertyId::OutlineWidth,
@@ -222,6 +248,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
             PropertyLengthSignPolicy::NonNegative,
+            PropertyInvalidationImpact::RepaintOnly,
         ),
         (
             PropertyId::PaddingBottom,
@@ -230,6 +257,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
             PropertyLengthSignPolicy::NonNegative,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
         (
             PropertyId::PaddingLeft,
@@ -238,6 +266,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
             PropertyLengthSignPolicy::NonNegative,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
         (
             PropertyId::PaddingRight,
@@ -246,6 +275,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
             PropertyLengthSignPolicy::NonNegative,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
         (
             PropertyId::PaddingTop,
@@ -254,6 +284,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
             PropertyLengthSignPolicy::NonNegative,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
         (
             PropertyId::Position,
@@ -262,6 +293,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::PositionKeyword,
             PropertyComputedValueKind::PositionKeyword,
             PropertyLengthSignPolicy::NotLength,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
         (
             PropertyId::TextDecorationLine,
@@ -270,6 +302,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::TextDecorationLineKeyword,
             PropertyComputedValueKind::TextDecorationLineKeyword,
             PropertyLengthSignPolicy::NotLength,
+            PropertyInvalidationImpact::RepaintOnly,
         ),
         (
             PropertyId::Width,
@@ -278,6 +311,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::LengthPercentageOrAuto,
             PropertyComputedValueKind::LengthPercentageOrAuto,
             PropertyLengthSignPolicy::NonNegative,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
         (
             PropertyId::ZIndex,
@@ -286,6 +320,7 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             PropertySpecifiedValueKind::ZIndex,
             PropertyComputedValueKind::ZIndex,
             PropertyLengthSignPolicy::NotLength,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
         ),
     ];
 
@@ -293,8 +328,18 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
     assert_eq!(registry.entries().len(), expected.len());
     assert_eq!(PropertyId::ALL.len(), expected.len());
 
-    for (index, (property, inheritance, initial, specified_value, computed_value, length_sign)) in
-        expected.into_iter().enumerate()
+    for (
+        index,
+        (
+            property,
+            inheritance,
+            initial,
+            specified_value,
+            computed_value,
+            length_sign,
+            invalidation_impact,
+        ),
+    ) in expected.into_iter().enumerate()
     {
         assert_eq!(PropertyId::ALL[index], property);
 
@@ -326,6 +371,12 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
             property.name()
         );
         assert_eq!(metadata.length_sign, length_sign, "{}", property.name());
+        assert_eq!(
+            metadata.invalidation_impact,
+            invalidation_impact,
+            "{}",
+            property.name()
+        );
         assert_eq!(property.initial_value(), initial, "{}", property.name());
     }
 }
@@ -373,6 +424,105 @@ fn property_registry_lookup_is_deterministic_for_representative_property_names()
 }
 
 #[test]
+fn property_registry_invalidation_impact_is_explicit_for_every_supported_longhand() {
+    let repaint_only = [
+        PropertyId::BackgroundColor,
+        PropertyId::BorderBottomColor,
+        PropertyId::BorderLeftColor,
+        PropertyId::BorderRightColor,
+        PropertyId::BorderTopColor,
+        PropertyId::Color,
+        PropertyId::OutlineColor,
+        PropertyId::OutlineStyle,
+        PropertyId::OutlineWidth,
+        PropertyId::TextDecorationLine,
+    ];
+    let relayout_and_repaint = [
+        PropertyId::BorderBottomStyle,
+        PropertyId::BorderBottomWidth,
+        PropertyId::BorderLeftStyle,
+        PropertyId::BorderLeftWidth,
+        PropertyId::BorderRightStyle,
+        PropertyId::BorderRightWidth,
+        PropertyId::BorderTopStyle,
+        PropertyId::BorderTopWidth,
+        PropertyId::Display,
+        PropertyId::FontSize,
+        PropertyId::Height,
+        PropertyId::MarginBottom,
+        PropertyId::MarginLeft,
+        PropertyId::MarginRight,
+        PropertyId::MarginTop,
+        PropertyId::MaxWidth,
+        PropertyId::MinWidth,
+        PropertyId::Overflow,
+        PropertyId::PaddingBottom,
+        PropertyId::PaddingLeft,
+        PropertyId::PaddingRight,
+        PropertyId::PaddingTop,
+        PropertyId::Position,
+        PropertyId::Width,
+        PropertyId::ZIndex,
+    ];
+
+    assert_eq!(
+        repaint_only.len() + relayout_and_repaint.len(),
+        property_registry().entries().len()
+    );
+
+    for property in repaint_only {
+        assert_eq!(
+            property.metadata().invalidation_impact,
+            PropertyInvalidationImpact::RepaintOnly,
+            "{}",
+            property.name()
+        );
+    }
+
+    for property in relayout_and_repaint {
+        assert_eq!(
+            property.metadata().invalidation_impact,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
+            "{}",
+            property.name()
+        );
+    }
+}
+
+#[test]
+fn property_registry_classifies_representative_paint_and_layout_impact() {
+    for property in [
+        PropertyId::Color,
+        PropertyId::BackgroundColor,
+        PropertyId::OutlineWidth,
+        PropertyId::TextDecorationLine,
+    ] {
+        assert_eq!(
+            property.metadata().invalidation_impact,
+            PropertyInvalidationImpact::RepaintOnly,
+            "{}",
+            property.name()
+        );
+    }
+
+    for property in [
+        PropertyId::Display,
+        PropertyId::FontSize,
+        PropertyId::Width,
+        PropertyId::PaddingLeft,
+        PropertyId::BorderTopWidth,
+        PropertyId::Overflow,
+    ] {
+        assert_eq!(
+            property.metadata().invalidation_impact,
+            PropertyInvalidationImpact::RelayoutAndRepaint,
+            "{}",
+            property.name()
+        );
+    }
+}
+
+#[test]
 fn unsupported_flex_properties_are_not_registered_for_cascade_or_computed_style() {
     let registry = property_registry();
     let unsupported_flex_properties = [
@@ -394,6 +544,34 @@ fn unsupported_flex_properties_are_not_registered_for_cascade_or_computed_style(
     ];
 
     for name in unsupported_flex_properties {
+        assert_eq!(PropertyId::from_name(name), None, "{name}");
+        assert_eq!(registry.lookup(name), None, "{name}");
+        assert!(
+            PropertyId::ALL
+                .iter()
+                .all(|property| property.name() != name),
+            "{name}"
+        );
+    }
+}
+
+#[test]
+fn unsupported_shorthands_are_not_registered_for_cascade_or_computed_style() {
+    let registry = property_registry();
+    let unsupported_shorthand_properties = [
+        "background",
+        "border",
+        "border-color",
+        "border-style",
+        "border-width",
+        "font",
+        "margin",
+        "outline",
+        "padding",
+        "text-decoration",
+    ];
+
+    for name in unsupported_shorthand_properties {
         assert_eq!(PropertyId::from_name(name), None, "{name}");
         assert_eq!(registry.lookup(name), None, "{name}");
         assert!(

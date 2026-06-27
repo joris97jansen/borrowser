@@ -17,9 +17,10 @@ pub use priority::{
     CascadePriority, CascadeSpecificity, CurrentScopeCascadePriorityBand,
 };
 pub use properties::{
-    CascadeInheritance, CascadePropertyId, CascadePropertyLengthSignPolicy,
-    CascadePropertyMetadata, CascadePropertyRegistration, CascadePropertyRegistry,
-    InitialStyleValue, cascade_property_registry,
+    CascadeInheritance, CascadePropertyId, CascadePropertyInvalidationImpact,
+    CascadePropertyLengthSignPolicy, CascadePropertyMetadata, CascadePropertyRegistration,
+    CascadePropertyRegistry, InitialStyleValue, cascade_property_registry,
+    cascade_property_registry_metadata_debug_snapshot,
 };
 pub use resolved_style::{
     CssWideResolvedSource, ResolvedStyle, ResolvedStyleBuildError, ResolvedStyleBuilder,
