@@ -72,6 +72,57 @@ fn compute_document_styles_integrates_cascade_inheritance_defaults_and_computati
 }
 
 #[test]
+fn compute_document_styles_materializes_ad5_initial_and_inherited_boundaries() {
+    let stylesheets = vec![stylesheet(concat!(
+        "section { color: #0f0; font-size: 20px; width: 40px; background-color: red; display: block; }",
+        "span { background-color: #00f; }",
+    ))];
+    let dom = element(
+        "section",
+        Vec::new(),
+        vec![element("span", Vec::new(), Vec::new())],
+    );
+
+    let computed = compute_document_styles(&dom, &stylesheets).expect("computed document");
+    let section = computed.entries()[0].style();
+    let span = computed.entries()[1].style();
+
+    assert_eq!(
+        section.get(PropertyId::Color).value(),
+        ComputedValue::Color((0, 255, 0, 255))
+    );
+    assert_eq!(
+        section.get(PropertyId::Width).value(),
+        ComputedValue::LengthPercentageOrAuto(Some(LengthPercentage::Length(Length::Px(40.0))))
+    );
+    assert_eq!(
+        span.get(PropertyId::Color).value(),
+        section.get(PropertyId::Color).value(),
+        "color is inherited by default through CSS-owned computed materialization"
+    );
+    assert_eq!(
+        span.get(PropertyId::FontSize).value(),
+        section.get(PropertyId::FontSize).value(),
+        "font-size is inherited by default through CSS-owned computed materialization"
+    );
+    assert_eq!(
+        span.get(PropertyId::Width).value(),
+        ComputedValue::LengthPercentageOrAuto(None),
+        "non-inherited width falls back to the CSS initial auto value"
+    );
+    assert_eq!(
+        span.get(PropertyId::Display).value(),
+        ComputedValue::Display(Display::Inline),
+        "non-inherited display falls back to the CSS initial inline value"
+    );
+    assert_eq!(
+        span.get(PropertyId::BackgroundColor).value(),
+        ComputedValue::Color((0, 0, 255, 255)),
+        "paint-relevant declarations materialize as typed computed color values"
+    );
+}
+
+#[test]
 fn compute_document_styles_materializes_resolved_css_wide_keywords() {
     let stylesheets = vec![stylesheet(concat!(
         "section { color: red; font-size: 20px; width: 40px; display: block; }",

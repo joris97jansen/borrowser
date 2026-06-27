@@ -1,7 +1,8 @@
 use super::{
     InitialStyleValue, PropertyComputedValueKind, PropertyId, PropertyInheritance,
     PropertyInvalidValuePolicy, PropertyInvalidationImpact, PropertyLengthSignPolicy,
-    PropertySpecifiedValueKind, data::PROPERTY_LOOKUP_BY_NAME, property_registry,
+    PropertySpecifiedValueKind, SpecifiedToComputedConversionRule, data::PROPERTY_LOOKUP_BY_NAME,
+    property_registry, property_value_boundaries, property_value_boundary_debug_snapshot,
 };
 
 #[test]
@@ -487,6 +488,70 @@ fn property_registry_invalidation_impact_is_explicit_for_every_supported_longhan
             property.name()
         );
     }
+}
+
+#[test]
+fn property_value_boundaries_are_total_canonical_and_registry_derived() {
+    let boundaries = property_value_boundaries().collect::<Vec<_>>();
+    assert_eq!(boundaries.len(), PropertyId::ALL.len());
+    assert_eq!(boundaries.len(), property_registry().entries().len());
+
+    for (index, boundary) in boundaries.iter().enumerate() {
+        let property = PropertyId::ALL[index];
+        let metadata = property.metadata();
+
+        assert_eq!(boundary.property, property);
+        assert_eq!(boundary.name, property.name());
+        assert_eq!(boundary.specified_value, metadata.specified_value);
+        assert_eq!(boundary.computed_value, metadata.computed_value);
+        assert_eq!(boundary.inheritance, metadata.inheritance);
+        assert_eq!(boundary.initial, metadata.initial);
+    }
+}
+
+#[test]
+fn property_value_boundaries_classify_representative_conversion_rules() {
+    let boundaries = property_value_boundaries().collect::<Vec<_>>();
+    let conversion_for = |property| {
+        boundaries
+            .iter()
+            .find(|boundary| boundary.property == property)
+            .unwrap_or_else(|| panic!("missing boundary for {}", property.name()))
+            .conversion
+    };
+
+    assert_eq!(
+        conversion_for(PropertyId::Color),
+        SpecifiedToComputedConversionRule::ColorToRgba
+    );
+    assert_eq!(
+        conversion_for(PropertyId::Display),
+        SpecifiedToComputedConversionRule::KeywordToComputedEnum
+    );
+    assert_eq!(
+        conversion_for(PropertyId::FontSize),
+        SpecifiedToComputedConversionRule::AbsoluteLengthToCssPx
+    );
+    assert_eq!(
+        conversion_for(PropertyId::Width),
+        SpecifiedToComputedConversionRule::LengthPercentageOrAutoPreservingPercentages
+    );
+    assert_eq!(
+        conversion_for(PropertyId::MaxWidth),
+        SpecifiedToComputedConversionRule::LengthPercentageOrNonePreservingPercentages
+    );
+    assert_eq!(
+        conversion_for(PropertyId::ZIndex),
+        SpecifiedToComputedConversionRule::ZIndexAutoOrInteger
+    );
+}
+
+#[test]
+fn property_value_boundary_snapshot_is_deterministic() {
+    assert_eq!(
+        property_value_boundary_debug_snapshot(),
+        include_str!("../../tests/fixtures/properties/value_boundaries.snap")
+    );
 }
 
 #[test]

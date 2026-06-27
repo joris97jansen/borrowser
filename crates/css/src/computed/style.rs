@@ -35,7 +35,8 @@ pub struct BoxMetrics {
     pub padding_bottom: f32,
     pub padding_left: f32,
 
-    // Used physical border widths in CSS px for the supported subset.
+    // Computed border contribution in CSS px for the supported subset. This
+    // is a lossless computed-style projection, not layout-owned used geometry.
     pub border_top: f32,
     pub border_right: f32,
     pub border_bottom: f32,
@@ -84,6 +85,11 @@ impl BorderSide {
         }
     }
 
+    /// Returns the computed border width contribution for the current
+    /// supported solid-or-none subset.
+    ///
+    /// This remains a computed-style projection for layout and paint
+    /// consumers. Full used-value resolution belongs to layout.
     pub fn used_width(self) -> f32 {
         if self.has_used_width() {
             self.width

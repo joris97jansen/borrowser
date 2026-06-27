@@ -10,9 +10,9 @@ use super::{
 };
 use crate::{
     InitialStyleValue, ParseOptions, PropertyComputedValueKind, PropertyId, Rule,
-    SpecifiedPropertyValue, parse_specified_value, parse_stylesheet_with_options,
-    property_registry, resolve_cascade_style_from_rule_inputs, resolve_document_styles,
-    resolve_initial_style,
+    SpecifiedPropertyValue, SpecifiedToComputedConversionRule, parse_specified_value,
+    parse_stylesheet_with_options, property_registry, property_value_boundary,
+    resolve_cascade_style_from_rule_inputs, resolve_document_styles, resolve_initial_style,
     values::{
         BorderStyle, Display, Length, LengthPercentage, OutlineStyle, Overflow, Percentage,
         Position, TextDecorationLine, ZIndex,

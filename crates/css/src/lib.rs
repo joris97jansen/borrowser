@@ -83,8 +83,10 @@ pub use model::{
 pub use properties::{
     PropertyComputedValueKind, PropertyId, PropertyInheritance, PropertyInvalidValuePolicy,
     PropertyInvalidationImpact, PropertyLengthSignPolicy, PropertyMetadata, PropertyRegistration,
-    PropertyRegistry, PropertySpecifiedValueKind, property_registry,
-    property_registry_metadata_debug_snapshot,
+    PropertyRegistry, PropertySpecifiedValueKind, PropertyValueBoundary,
+    SpecifiedToComputedConversionRule, property_registry,
+    property_registry_metadata_debug_snapshot, property_value_boundaries, property_value_boundary,
+    property_value_boundary_debug_snapshot,
 };
 pub use selectors::{
     AncestorElements, AttributeExistsSelector, AttributeMatchSelector, AttributeMatcher,

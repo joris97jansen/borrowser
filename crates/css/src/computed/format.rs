@@ -3,6 +3,7 @@ use std::fmt::Write;
 use crate::{
     PropertyId,
     model::DeclarationValue,
+    property_value_boundary,
     specified::parse_specified_value,
     values::{Display, Length},
 };
@@ -41,6 +42,14 @@ fn write_computed_value_debug_snapshot_body(
         out,
         "{indent}computed-contract: {}",
         property.metadata().computed_value.as_debug_label()
+    )
+    .expect("write snapshot");
+    writeln!(
+        out,
+        "{indent}conversion: {}",
+        property_value_boundary(property)
+            .conversion
+            .as_debug_label()
     )
     .expect("write snapshot");
 
