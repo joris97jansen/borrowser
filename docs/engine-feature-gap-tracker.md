@@ -70,6 +70,14 @@ Architecture status:
   debug output, and a narrow CSS-owned impact hook for `repaint-only` versus
   `relayout-and-repaint`. AD4 does not add broad property coverage,
   shorthand support, or the full AD7 invalidation taxonomy.
+- AD5 defines the specified-value and computed-value boundaries for every
+  currently supported longhand; see
+  `docs/css/ad5-specified-computed-value-boundaries.md`. The boundary
+  inventory is registry-derived and deterministic, and representative tests
+  cover specified-to-computed conversion, initial values, and inherited values.
+  AD5 does not add used-value resolution, actual-value resolution,
+  layout-dependent percentage resolution, shorthand expansion, or broader CSS
+  property coverage.
 - Richer CSS-owned invalidation impact classification beyond the current
   narrow longhand hook remains future AD7 work.
 

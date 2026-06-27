@@ -4,6 +4,7 @@ case[0]: color
   property: color
   specified-contract: color
   computed-contract: absolute-color
+  conversion: color-to-rgba
   specified-kind: color
   specified: red
   computed-kind: color
@@ -12,64 +13,145 @@ case[1]: background-color
   property: background-color
   specified-contract: color
   computed-contract: absolute-color
+  conversion: color-to-rgba
   specified-kind: color
   specified: #0fa
   computed-kind: color
   computed: rgba(0, 255, 170, 255)
-case[2]: width
-  property: width
-  specified-contract: length-percentage-or-auto
-  computed-contract: length-percentage-or-auto
-  specified-kind: length-percentage-or-auto
-  specified: 25px
-  computed-kind: length-percentage-or-auto
-  computed: 25px
-case[3]: height
-  property: height
-  specified-contract: length-percentage-or-auto
-  computed-contract: length-percentage-or-auto
-  specified-kind: length-percentage-or-auto
-  specified: auto
-  computed-kind: length-percentage-or-auto
-  computed: auto
-case[4]: max-width
-  property: max-width
-  specified-contract: length-percentage-or-none
-  computed-contract: length-percentage-or-none
-  specified-kind: length-percentage-or-none
-  specified: none
-  computed-kind: length-percentage-or-none
-  computed: none
-case[5]: margin-left
-  property: margin-left
+case[2]: outline-style
+  property: outline-style
+  specified-contract: outline-style-keyword
+  computed-contract: outline-style-keyword
+  conversion: keyword-to-computed-enum
+  specified-kind: outline-style-keyword
+  specified: solid
+  computed-kind: outline-style
+  computed: solid
+case[3]: text-decoration-line
+  property: text-decoration-line
+  specified-contract: text-decoration-line-keyword
+  computed-contract: text-decoration-line-keyword
+  conversion: keyword-to-computed-enum
+  specified-kind: text-decoration-line-keyword
+  specified: underline
+  computed-kind: text-decoration-line
+  computed: underline
+case[4]: overflow
+  property: overflow
+  specified-contract: overflow-keyword
+  computed-contract: overflow-keyword
+  conversion: keyword-to-computed-enum
+  specified-kind: overflow-keyword
+  specified: hidden
+  computed-kind: overflow
+  computed: hidden
+case[5]: position
+  property: position
+  specified-contract: position-keyword
+  computed-contract: position-keyword
+  conversion: keyword-to-computed-enum
+  specified-kind: position-keyword
+  specified: relative
+  computed-kind: position
+  computed: relative
+case[6]: z-index
+  property: z-index
+  specified-contract: z-index
+  computed-contract: z-index
+  conversion: z-index-auto-or-integer
+  specified-kind: z-index
+  specified: -4
+  computed-kind: z-index
+  computed: -4
+case[7]: font-size
+  property: font-size
   specified-contract: absolute-length
   computed-contract: absolute-length
+  conversion: absolute-length-to-css-px
   specified-kind: absolute-length
-  specified: -3px
+  specified: 20px
   computed-kind: length
-  computed: -3px
-case[6]: padding-left
-  property: padding-left
-  specified-contract: absolute-length
-  computed-contract: absolute-length
-  specified-error: negative-length-not-allowed
-  computed: not-computed
-case[7]: width
-  property: width
-  specified-contract: length-percentage-or-auto
-  computed-contract: length-percentage-or-auto
-  specified-error: negative-length-not-allowed
-  computed: not-computed
+  computed: 20px
 case[8]: width
   property: width
   specified-contract: length-percentage-or-auto
   computed-contract: length-percentage-or-auto
+  conversion: length-percentage-or-auto-preserving-percentages
+  specified-kind: length-percentage-or-auto
+  specified: 25px
+  computed-kind: length-percentage-or-auto
+  computed: 25px
+case[9]: width
+  property: width
+  specified-contract: length-percentage-or-auto
+  computed-contract: length-percentage-or-auto
+  conversion: length-percentage-or-auto-preserving-percentages
+  specified-kind: length-percentage-or-auto
+  specified: 50%
+  computed-kind: length-percentage-or-auto
+  computed: 50%
+case[10]: height
+  property: height
+  specified-contract: length-percentage-or-auto
+  computed-contract: length-percentage-or-auto
+  conversion: length-percentage-or-auto-preserving-percentages
+  specified-kind: length-percentage-or-auto
+  specified: auto
+  computed-kind: length-percentage-or-auto
+  computed: auto
+case[11]: max-width
+  property: max-width
+  specified-contract: length-percentage-or-none
+  computed-contract: length-percentage-or-none
+  conversion: length-percentage-or-none-preserving-percentages
+  specified-kind: length-percentage-or-none
+  specified: none
+  computed-kind: length-percentage-or-none
+  computed: none
+case[12]: max-width
+  property: max-width
+  specified-contract: length-percentage-or-none
+  computed-contract: length-percentage-or-none
+  conversion: length-percentage-or-none-preserving-percentages
+  specified-kind: length-percentage-or-none
+  specified: 25%
+  computed-kind: length-percentage-or-none
+  computed: 25%
+case[13]: margin-left
+  property: margin-left
+  specified-contract: absolute-length
+  computed-contract: absolute-length
+  conversion: absolute-length-to-css-px
+  specified-kind: absolute-length
+  specified: -3px
+  computed-kind: length
+  computed: -3px
+case[14]: padding-left
+  property: padding-left
+  specified-contract: absolute-length
+  computed-contract: absolute-length
+  conversion: absolute-length-to-css-px
+  specified-error: negative-length-not-allowed
+  computed: not-computed
+case[15]: width
+  property: width
+  specified-contract: length-percentage-or-auto
+  computed-contract: length-percentage-or-auto
+  conversion: length-percentage-or-auto-preserving-percentages
+  specified-error: negative-length-not-allowed
+  computed: not-computed
+case[16]: width
+  property: width
+  specified-contract: length-percentage-or-auto
+  computed-contract: length-percentage-or-auto
+  conversion: length-percentage-or-auto-preserving-percentages
   specified-kind: length-percentage-or-auto
   specified: 1e39px
   computed-error: length-out-of-range
-case[9]: display
+case[17]: display
   property: display
   specified-contract: display-keyword
   computed-contract: display-keyword
+  conversion: keyword-to-computed-enum
   specified-error: unsupported-display-keyword
   computed: not-computed

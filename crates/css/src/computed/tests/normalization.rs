@@ -157,6 +157,101 @@ fn computed_value_preserves_length_percentages_for_layout_resolution() {
 }
 
 #[test]
+fn computed_value_normalization_preserves_ad5_representative_boundaries() {
+    let cases = [
+        (
+            PropertyId::Color,
+            "color: #0f0",
+            PropertyComputedValueKind::AbsoluteColor,
+            SpecifiedToComputedConversionRule::ColorToRgba,
+            ComputedValue::Color((0, 255, 0, 255)),
+        ),
+        (
+            PropertyId::BackgroundColor,
+            "background-color: red",
+            PropertyComputedValueKind::AbsoluteColor,
+            SpecifiedToComputedConversionRule::ColorToRgba,
+            ComputedValue::Color((255, 0, 0, 255)),
+        ),
+        (
+            PropertyId::Display,
+            "display: block",
+            PropertyComputedValueKind::DisplayKeyword,
+            SpecifiedToComputedConversionRule::KeywordToComputedEnum,
+            ComputedValue::Display(Display::Block),
+        ),
+        (
+            PropertyId::Overflow,
+            "overflow: hidden",
+            PropertyComputedValueKind::OverflowKeyword,
+            SpecifiedToComputedConversionRule::KeywordToComputedEnum,
+            ComputedValue::Overflow(Overflow::Hidden),
+        ),
+        (
+            PropertyId::Width,
+            "width: 50%",
+            PropertyComputedValueKind::LengthPercentageOrAuto,
+            SpecifiedToComputedConversionRule::LengthPercentageOrAutoPreservingPercentages,
+            ComputedValue::LengthPercentageOrAuto(Some(LengthPercentage::Percentage(
+                Percentage::from_percent(50.0).expect("finite percentage"),
+            ))),
+        ),
+        (
+            PropertyId::MaxWidth,
+            "max-width: 25%",
+            PropertyComputedValueKind::LengthPercentageOrNone,
+            SpecifiedToComputedConversionRule::LengthPercentageOrNonePreservingPercentages,
+            ComputedValue::LengthPercentageOrNone(Some(LengthPercentage::Percentage(
+                Percentage::from_percent(25.0).expect("finite percentage"),
+            ))),
+        ),
+        (
+            PropertyId::FontSize,
+            "font-size: 20px",
+            PropertyComputedValueKind::AbsoluteLength,
+            SpecifiedToComputedConversionRule::AbsoluteLengthToCssPx,
+            ComputedValue::Length(Length::Px(20.0)),
+        ),
+        (
+            PropertyId::TextDecorationLine,
+            "text-decoration-line: underline",
+            PropertyComputedValueKind::TextDecorationLineKeyword,
+            SpecifiedToComputedConversionRule::KeywordToComputedEnum,
+            ComputedValue::TextDecorationLine(TextDecorationLine::Underline),
+        ),
+        (
+            PropertyId::ZIndex,
+            "z-index: -4",
+            PropertyComputedValueKind::ZIndex,
+            SpecifiedToComputedConversionRule::ZIndexAutoOrInteger,
+            ComputedValue::ZIndex(ZIndex::Integer(-4)),
+        ),
+    ];
+
+    for (property, declaration, computed_kind, conversion, expected) in cases {
+        let specified = specified_value(property, declaration);
+        let boundary = property_value_boundary(property);
+        assert_eq!(
+            specified.kind(),
+            property.metadata().specified_value,
+            "{}",
+            property.name()
+        );
+        assert_eq!(
+            boundary.computed_value,
+            computed_kind,
+            "{}",
+            property.name()
+        );
+        assert_eq!(boundary.conversion, conversion, "{}", property.name());
+
+        let computed = normalize_specified_value(&specified)
+            .unwrap_or_else(|error| panic!("failed to normalize {declaration}: {error}"));
+        assert_eq!(computed, expected, "{}", property.name());
+    }
+}
+
+#[test]
 fn computed_value_normalization_matches_property_metadata_for_supported_subset() {
     let representative = [
         (PropertyId::BackgroundColor, "background-color: transparent"),

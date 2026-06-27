@@ -17,13 +17,22 @@
 //! invalid-value, value-range, and invalidation-impact facts. Downstream code
 //! must not re-encode those facts in separate match tables.
 //!
+//! AD5 exposes a derived value-boundary inventory for docs and tests. That
+//! inventory is not a second property registry; it reports the
+//! specified/computed value facts already owned by `PropertyMetadata`.
+//!
 //! This module deliberately does not own cascade precedence, selector
 //! matching, property-specific parsers, or layout-facing interpretation.
 
+mod boundary;
 mod data;
 mod registry;
 mod types;
 
+pub use boundary::{
+    PropertyValueBoundary, SpecifiedToComputedConversionRule, property_value_boundaries,
+    property_value_boundary, property_value_boundary_debug_snapshot,
+};
 pub use registry::{
     PropertyRegistration, PropertyRegistry, property_registry,
     property_registry_metadata_debug_snapshot,
