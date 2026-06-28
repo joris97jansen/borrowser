@@ -52,16 +52,18 @@ Supported values are:
 - rectangular physical borders
 
 The initial border state is transparent, `none`, and `0px`. A side has a
-layout-used border width when its computed width is greater than zero and its
-style is `solid`. Color alpha does not affect layout-used border width. A side
-is paint-visible only when it has a layout-used border width and its color has
-nonzero alpha.
+computed border width contribution when its computed width is greater than zero
+and its style is `solid`. Color alpha does not affect this computed
+contribution. A side is paint-visible only when it has a computed border width
+contribution and its color has nonzero alpha.
 
 ## Ownership
 
 CSS owns parsing, cascade, and computed border data. Supported border longhands
 enter the same property registry, specified-value parser, cascade, and
-computed-style builder as the rest of the supported property set.
+computed-style builder as the rest of the supported property set. CSS may
+expose computed border contributions for downstream consumers, but it does not
+resolve layout-owned used geometry.
 
 Layout owns used border widths as part of box metrics. Content boxes are
 computed from the final border box by subtracting used border widths and
@@ -113,7 +115,7 @@ For a fixed DOM, style tree, viewport, text measurer, resource state, and input
 state:
 
 - supported border properties are resolved through the property registry;
-- used border widths are deterministic computed-style output;
+- computed border width contributions are deterministic computed-style output;
 - layout debug snapshots expose border metrics separately from padding;
 - paint input snapshots expose border primitives after backgrounds;
 - backend drawing consumes the same border primitive used by the semantic paint

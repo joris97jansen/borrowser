@@ -90,20 +90,20 @@ impl BorderSide {
     ///
     /// This remains a computed-style projection for layout and paint
     /// consumers. Full used-value resolution belongs to layout.
-    pub fn used_width(self) -> f32 {
-        if self.has_used_width() {
+    pub fn computed_width_contribution(self) -> f32 {
+        if self.has_computed_width_contribution() {
             self.width
         } else {
             0.0
         }
     }
 
-    pub fn has_used_width(self) -> bool {
+    pub fn has_computed_width_contribution(self) -> bool {
         self.width > 0.0 && matches!(self.style, BorderStyle::Solid)
     }
 
     pub fn is_paint_visible(self) -> bool {
-        self.has_used_width() && self.color.3 > 0
+        self.has_computed_width_contribution() && self.color.3 > 0
     }
 }
 
@@ -124,12 +124,12 @@ impl Outline {
         }
     }
 
-    pub fn has_used_width(self) -> bool {
+    pub fn has_computed_width_contribution(self) -> bool {
         self.width > 0.0 && matches!(self.style, OutlineStyle::Solid)
     }
 
     pub fn is_paint_visible(self) -> bool {
-        self.has_used_width() && self.color.3 > 0
+        self.has_computed_width_contribution() && self.color.3 > 0
     }
 }
 

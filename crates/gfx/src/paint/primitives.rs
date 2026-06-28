@@ -914,7 +914,7 @@ impl PaintBorderSide {
 fn paint_border_side(side: css::BorderSide) -> PaintBorderSide {
     PaintBorderSide {
         width: if side.is_paint_visible() {
-            side.used_width()
+            side.computed_width_contribution()
         } else {
             0.0
         },
