@@ -1,6 +1,6 @@
 use super::support::*;
 use super::*;
-use crate::ComputedStyleLayoutImpact;
+use crate::{BorderSide, ComputedStyleLayoutImpact, computed::Outline};
 
 #[test]
 fn computed_style_initial_snapshot_is_total_and_canonical() {
@@ -54,6 +54,61 @@ fn computed_style_initial_snapshot_is_total_and_canonical() {
             "  z-index: auto\n",
         )
     );
+}
+
+#[test]
+fn border_and_outline_helpers_expose_computed_width_contribution_semantics() {
+    let transparent_solid_border = BorderSide {
+        width: 4.0,
+        style: BorderStyle::Solid,
+        color: (10, 20, 30, 0),
+    };
+    assert!(transparent_solid_border.has_computed_width_contribution());
+    assert_eq!(transparent_solid_border.computed_width_contribution(), 4.0);
+    assert!(!transparent_solid_border.is_paint_visible());
+
+    let opaque_solid_border = BorderSide {
+        width: 4.0,
+        style: BorderStyle::Solid,
+        color: (10, 20, 30, 255),
+    };
+    assert!(opaque_solid_border.has_computed_width_contribution());
+    assert_eq!(opaque_solid_border.computed_width_contribution(), 4.0);
+    assert!(opaque_solid_border.is_paint_visible());
+
+    let none_border = BorderSide {
+        width: 4.0,
+        style: BorderStyle::None,
+        color: (10, 20, 30, 255),
+    };
+    assert!(!none_border.has_computed_width_contribution());
+    assert_eq!(none_border.computed_width_contribution(), 0.0);
+    assert!(!none_border.is_paint_visible());
+
+    let zero_solid_border = BorderSide {
+        width: 0.0,
+        style: BorderStyle::Solid,
+        color: (10, 20, 30, 255),
+    };
+    assert!(!zero_solid_border.has_computed_width_contribution());
+    assert_eq!(zero_solid_border.computed_width_contribution(), 0.0);
+    assert!(!zero_solid_border.is_paint_visible());
+
+    let transparent_solid_outline = Outline {
+        width: 3.0,
+        style: OutlineStyle::Solid,
+        color: (40, 50, 60, 0),
+    };
+    assert!(transparent_solid_outline.has_computed_width_contribution());
+    assert!(!transparent_solid_outline.is_paint_visible());
+
+    let none_outline = Outline {
+        width: 3.0,
+        style: OutlineStyle::None,
+        color: (40, 50, 60, 255),
+    };
+    assert!(!none_outline.has_computed_width_contribution());
+    assert!(!none_outline.is_paint_visible());
 }
 
 #[test]
