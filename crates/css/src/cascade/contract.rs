@@ -19,8 +19,9 @@ pub use priority::{
 pub use properties::{
     CascadeInheritance, CascadePropertyId, CascadePropertyInvalidationImpact,
     CascadePropertyLengthSignPolicy, CascadePropertyMetadata, CascadePropertyRegistration,
-    CascadePropertyRegistry, InitialStyleValue, cascade_property_registry,
-    cascade_property_registry_metadata_debug_snapshot,
+    CascadePropertyRegistry, CascadeShorthandId, CascadeShorthandRegistration,
+    CascadeShorthandRegistry, InitialStyleValue, cascade_property_registry,
+    cascade_property_registry_metadata_debug_snapshot, cascade_shorthand_registry,
 };
 pub use resolved_style::{
     CssWideResolvedSource, ResolvedStyle, ResolvedStyleBuildError, ResolvedStyleBuilder,

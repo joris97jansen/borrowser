@@ -153,6 +153,48 @@ fn compute_document_styles_materializes_resolved_css_wide_keywords() {
 }
 
 #[test]
+fn compute_document_styles_materializes_outline_shorthand_through_longhand_pipeline() {
+    let stylesheets = vec![stylesheet("div { outline: 2px solid red; }")];
+    let dom = element("div", Vec::new(), Vec::new());
+
+    let computed = compute_document_styles(&dom, &stylesheets).expect("computed document");
+    let outline = computed.entries()[0].style().outline();
+
+    assert_eq!(outline.color, (255, 0, 0, 255));
+    assert_eq!(outline.style, OutlineStyle::Solid);
+    assert_eq!(outline.width, 2.0);
+}
+
+#[test]
+fn compute_document_styles_preserves_authored_order_around_outline_shorthand_resets() {
+    let dom = element("div", Vec::new(), Vec::new());
+    let longhand_then_shorthand = compute_document_styles(
+        &dom,
+        &[stylesheet("div { outline-width: 4px; outline: solid; }")],
+    )
+    .expect("computed document");
+    let shorthand_then_longhand = compute_document_styles(
+        &dom,
+        &[stylesheet("div { outline: solid; outline-width: 4px; }")],
+    )
+    .expect("computed document");
+
+    let reset_outline = longhand_then_shorthand.entries()[0].style().outline();
+    assert_eq!(reset_outline.style, OutlineStyle::Solid);
+    assert_eq!(
+        reset_outline.width, 0.0,
+        "later shorthand omitted width resets through internal initial expansion"
+    );
+
+    let overridden_outline = shorthand_then_longhand.entries()[0].style().outline();
+    assert_eq!(overridden_outline.style, OutlineStyle::Solid);
+    assert_eq!(
+        overridden_outline.width, 4.0,
+        "later authored longhand still wins by declaration order"
+    );
+}
+
+#[test]
 fn compute_document_styles_materializes_root_css_wide_fallbacks_to_initial() {
     let stylesheets = vec![stylesheet(
         "div { color: inherit; font-size: unset; width: inherit; display: unset; }",

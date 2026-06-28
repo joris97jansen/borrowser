@@ -190,3 +190,36 @@ fn document_style_resolution_keeps_unknown_properties_with_css_wide_values_unsup
         "known supported declarations should still resolve: {snapshot}"
     );
 }
+
+#[test]
+fn document_style_resolution_debug_snapshot_shows_outline_shorthand_expansion_order() {
+    let stylesheets = vec![stylesheet("div { outline: 2px solid red; }")];
+    let dom = element("div", Vec::new(), Vec::new());
+
+    let snapshot = resolve_document_styles_debug_snapshot(&dom, &stylesheets);
+
+    assert!(
+        snapshot.contains(
+            "rule-input[0]: source=stylesheet[0/0] origin=author specificity=selector(0,0,1) rule-order=0 declarations=3"
+        ),
+        "{snapshot}"
+    );
+    assert!(
+        snapshot.contains(
+            "declaration[0]: source=stylesheet[0/0]/declaration[0] declaration-order=0 importance=normal property=supported(outline-color) applicability=supported(outline-color) value=\"red\""
+        ),
+        "{snapshot}"
+    );
+    assert!(
+        snapshot.contains(
+            "declaration[1]: source=stylesheet[0/0]/declaration[0] declaration-order=0 expansion-order=1 importance=normal property=supported(outline-style) applicability=supported(outline-style) value=\"solid\""
+        ),
+        "{snapshot}"
+    );
+    assert!(
+        snapshot.contains(
+            "declaration[2]: source=stylesheet[0/0]/declaration[0] declaration-order=0 expansion-order=2 importance=normal property=supported(outline-width) applicability=supported(outline-width) value=\"2px\""
+        ),
+        "{snapshot}"
+    );
+}

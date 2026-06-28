@@ -2,7 +2,9 @@ use super::super::contract::{
     CascadeDeclarationInput, CascadeDeclarationSource, CascadeRuleInput, CascadeRuleMatch,
     InlineStyleDeclarationRef, InlineStyleRuleRef,
 };
-use super::declarations::{declaration_input_from_model, stylesheet_declaration_inputs, u32_index};
+use super::declarations::{
+    declaration_inputs_from_model, stylesheet_declaration_inputs, u32_index,
+};
 use super::limits::{StyleResolutionError, StyleResolutionLimit, StyleResolutionLimits};
 use super::source::StylesheetCascadeInput;
 use crate::model;
@@ -167,9 +169,9 @@ fn inline_style_declaration_inputs(
         .declarations
         .iter()
         .enumerate()
-        .map(|(declaration_index, declaration)| {
+        .flat_map(|(declaration_index, declaration)| {
             let declaration_index = u32_index(declaration_index);
-            declaration_input_from_model(
+            declaration_inputs_from_model(
                 CascadeDeclarationSource::InlineStyle(InlineStyleDeclarationRef {
                     inline_style,
                     declaration_index,

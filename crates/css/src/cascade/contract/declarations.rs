@@ -1,6 +1,8 @@
 use crate::model::DeclarationValue;
+use crate::properties::ShorthandId;
 use crate::specified::{
-    SpecifiedDeclarationValue, SpecifiedPropertyValue, SpecifiedValueParseError,
+    ShorthandExpansionError, SpecifiedDeclarationValue, SpecifiedPropertyValue,
+    SpecifiedValueParseError,
 };
 use crate::values::CssWideKeywordValue;
 
@@ -19,6 +21,7 @@ use super::winners::CascadeDeclarationCandidate;
 pub enum CascadeDeclarationProperty {
     Supported(CascadePropertyId),
     InvalidValue(CascadePropertyId),
+    InvalidShorthandValue(ShorthandId),
     Unsupported(String),
     Custom(String),
     Invalid,
@@ -31,6 +34,9 @@ impl CascadeDeclarationProperty {
             Self::InvalidValue(property) => {
                 CascadeDeclarationApplicability::InvalidValue(*property)
             }
+            Self::InvalidShorthandValue(shorthand) => {
+                CascadeDeclarationApplicability::InvalidShorthandValue(*shorthand)
+            }
             Self::Unsupported(_) => CascadeDeclarationApplicability::UnsupportedProperty,
             Self::Custom(_) => CascadeDeclarationApplicability::CustomProperty,
             Self::Invalid => CascadeDeclarationApplicability::InvalidPropertyName,
@@ -40,6 +46,7 @@ impl CascadeDeclarationProperty {
     pub fn name(&self) -> Option<&str> {
         match self {
             Self::Supported(property) | Self::InvalidValue(property) => Some(property.name()),
+            Self::InvalidShorthandValue(shorthand) => Some(shorthand.name()),
             Self::Unsupported(name) | Self::Custom(name) => Some(name.as_str()),
             Self::Invalid => None,
         }
@@ -48,7 +55,11 @@ impl CascadeDeclarationProperty {
     pub fn supported_property(&self) -> Option<CascadePropertyId> {
         match self {
             Self::Supported(property) => Some(*property),
-            Self::InvalidValue(_) | Self::Unsupported(_) | Self::Custom(_) | Self::Invalid => None,
+            Self::InvalidValue(_)
+            | Self::InvalidShorthandValue(_)
+            | Self::Unsupported(_)
+            | Self::Custom(_)
+            | Self::Invalid => None,
         }
     }
 }
@@ -61,6 +72,7 @@ impl CascadeDeclarationProperty {
 pub enum CascadeDeclarationApplicability {
     Supported(CascadePropertyId),
     InvalidValue(CascadePropertyId),
+    InvalidShorthandValue(ShorthandId),
     UnsupportedProperty,
     CustomProperty,
     InvalidPropertyName,
@@ -71,6 +83,7 @@ impl CascadeDeclarationApplicability {
         match self {
             Self::Supported(property) => Some(property),
             Self::InvalidValue(_)
+            | Self::InvalidShorthandValue(_)
             | Self::UnsupportedProperty
             | Self::CustomProperty
             | Self::InvalidPropertyName => None,
@@ -186,13 +199,33 @@ pub struct CascadeDeclarationInput {
     importance: CascadeImportance,
     property: CascadeDeclarationProperty,
     value: CascadeSpecifiedValue,
+    expansion_order: u16,
     invalid_value_error: Option<SpecifiedValueParseError>,
+    invalid_shorthand_error: Option<ShorthandExpansionError>,
 }
 
 impl CascadeDeclarationInput {
     pub fn supported(
         source: CascadeDeclarationSource,
         declaration_order: u32,
+        importance: CascadeImportance,
+        property: CascadePropertyId,
+        value: CascadeSpecifiedValue,
+    ) -> Self {
+        Self::supported_with_expansion_order(
+            source,
+            declaration_order,
+            0,
+            importance,
+            property,
+            value,
+        )
+    }
+
+    pub fn supported_with_expansion_order(
+        source: CascadeDeclarationSource,
+        declaration_order: u32,
+        expansion_order: u16,
         importance: CascadeImportance,
         property: CascadePropertyId,
         value: CascadeSpecifiedValue,
@@ -209,7 +242,9 @@ impl CascadeDeclarationInput {
             importance,
             property: CascadeDeclarationProperty::Supported(property),
             value,
+            expansion_order,
             invalid_value_error: None,
+            invalid_shorthand_error: None,
         }
     }
 
@@ -237,7 +272,39 @@ impl CascadeDeclarationInput {
             importance,
             property: CascadeDeclarationProperty::InvalidValue(property),
             value,
+            expansion_order: 0,
             invalid_value_error: Some(error),
+            invalid_shorthand_error: None,
+        }
+    }
+
+    pub fn invalid_shorthand_value(
+        source: CascadeDeclarationSource,
+        declaration_order: u32,
+        importance: CascadeImportance,
+        shorthand: ShorthandId,
+        error: ShorthandExpansionError,
+        value: CascadeSpecifiedValue,
+    ) -> Self {
+        assert_eq!(
+            error.shorthand(),
+            shorthand,
+            "invalid-shorthand cascade declaration error must describe the same shorthand"
+        );
+        assert!(
+            value.parsed().is_none(),
+            "invalid-shorthand cascade declaration '{}' must preserve rejected text, not carry a parsed specified value",
+            shorthand.name()
+        );
+        Self {
+            source,
+            declaration_order,
+            importance,
+            property: CascadeDeclarationProperty::InvalidShorthandValue(shorthand),
+            value,
+            expansion_order: 0,
+            invalid_value_error: None,
+            invalid_shorthand_error: Some(error),
         }
     }
 
@@ -255,7 +322,9 @@ impl CascadeDeclarationInput {
             importance,
             property: CascadeDeclarationProperty::Unsupported(property_name.into()),
             value,
+            expansion_order: 0,
             invalid_value_error: None,
+            invalid_shorthand_error: None,
         }
     }
 
@@ -273,7 +342,9 @@ impl CascadeDeclarationInput {
             importance,
             property: CascadeDeclarationProperty::Custom(property_name.into()),
             value,
+            expansion_order: 0,
             invalid_value_error: None,
+            invalid_shorthand_error: None,
         }
     }
 
@@ -290,7 +361,9 @@ impl CascadeDeclarationInput {
             importance,
             property: CascadeDeclarationProperty::Invalid,
             value,
+            expansion_order: 0,
             invalid_value_error: None,
+            invalid_shorthand_error: None,
         }
     }
 
@@ -300,6 +373,14 @@ impl CascadeDeclarationInput {
 
     pub fn declaration_order(&self) -> u32 {
         self.declaration_order
+    }
+
+    /// Deterministic order among longhands emitted by one shorthand.
+    ///
+    /// This is a debug/source-order fact only. Cascade precedence continues to
+    /// use authored declaration order, not shorthand expansion order.
+    pub fn expansion_order(&self) -> u16 {
+        self.expansion_order
     }
 
     pub fn importance(&self) -> CascadeImportance {
@@ -324,6 +405,10 @@ impl CascadeDeclarationInput {
 
     pub fn invalid_value_error(&self) -> Option<&SpecifiedValueParseError> {
         self.invalid_value_error.as_ref()
+    }
+
+    pub fn invalid_shorthand_error(&self) -> Option<&ShorthandExpansionError> {
+        self.invalid_shorthand_error.as_ref()
     }
 
     pub fn candidate(&self, context: CascadeRuleContext) -> Option<CascadeDeclarationCandidate> {
