@@ -27,6 +27,7 @@
 mod boundary;
 mod data;
 mod registry;
+mod shorthand;
 mod types;
 
 pub use boundary::{
@@ -37,6 +38,7 @@ pub use registry::{
     PropertyRegistration, PropertyRegistry, property_registry,
     property_registry_metadata_debug_snapshot,
 };
+pub use shorthand::{ShorthandId, ShorthandRegistration, ShorthandRegistry, shorthand_registry};
 pub use types::{
     InitialStyleValue, PropertyComputedValueKind, PropertyId, PropertyInheritance,
     PropertyInvalidValuePolicy, PropertyInvalidationImpact, PropertyLengthSignPolicy,

@@ -164,6 +164,73 @@ fn resolve_document_styles_rejects_invalid_supported_values_before_winner_resolu
 }
 
 #[test]
+fn resolve_document_styles_rejects_invalid_outline_shorthand_atomically() {
+    let stylesheets = vec![stylesheet(
+        "div { outline-color: red; outline-style: solid; outline: 1px 2px; }",
+    )];
+    let dom = element("div", Vec::new(), Vec::new());
+
+    let resolved = resolve_document_styles(&dom, &stylesheets).expect("resolved document style");
+    let style = resolved.entries()[0].style();
+
+    assert_eq!(
+        style
+            .get(CascadePropertyId::OutlineColor)
+            .and_then(|entry| entry.winner())
+            .and_then(|winner| winner.value.to_css_text())
+            .as_deref(),
+        Some("red")
+    );
+    assert_eq!(
+        style
+            .get(CascadePropertyId::OutlineStyle)
+            .and_then(|entry| entry.winner())
+            .and_then(|winner| winner.value.to_css_text())
+            .as_deref(),
+        Some("solid")
+    );
+    assert_eq!(
+        style
+            .get(CascadePropertyId::OutlineWidth)
+            .expect("outline-width")
+            .source(),
+        &ResolvedValueSource::Initial(crate::InitialStyleValue::ZeroPx),
+        "invalid shorthand must not partially emit an outline-width candidate"
+    );
+}
+
+#[test]
+fn resolve_document_styles_keeps_border_shorthand_unsupported() {
+    let stylesheets = vec![stylesheet("div { border: 1px solid red; }")];
+    let dom = element("div", Vec::new(), Vec::new());
+
+    let resolved = resolve_document_styles(&dom, &stylesheets).expect("resolved document style");
+    let style = resolved.entries()[0].style();
+
+    assert_eq!(
+        style
+            .get(CascadePropertyId::BorderTopColor)
+            .expect("border-top-color")
+            .source(),
+        &ResolvedValueSource::Initial(crate::InitialStyleValue::TransparentColor)
+    );
+    assert_eq!(
+        style
+            .get(CascadePropertyId::BorderTopStyle)
+            .expect("border-top-style")
+            .source(),
+        &ResolvedValueSource::Initial(crate::InitialStyleValue::BorderStyleNone)
+    );
+    assert_eq!(
+        style
+            .get(CascadePropertyId::BorderTopWidth)
+            .expect("border-top-width")
+            .source(),
+        &ResolvedValueSource::Initial(crate::InitialStyleValue::ZeroPx)
+    );
+}
+
+#[test]
 fn resolve_document_styles_falls_back_after_invalid_supported_values() {
     let stylesheets = vec![stylesheet(concat!(
         "section { color: red; }",

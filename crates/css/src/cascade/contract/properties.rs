@@ -10,6 +10,9 @@ pub use crate::properties::{
     PropertyLengthSignPolicy as CascadePropertyLengthSignPolicy,
     PropertyMetadata as CascadePropertyMetadata,
     PropertyRegistration as CascadePropertyRegistration,
-    PropertyRegistry as CascadePropertyRegistry, property_registry as cascade_property_registry,
+    PropertyRegistry as CascadePropertyRegistry, ShorthandId as CascadeShorthandId,
+    ShorthandRegistration as CascadeShorthandRegistration,
+    ShorthandRegistry as CascadeShorthandRegistry, property_registry as cascade_property_registry,
     property_registry_metadata_debug_snapshot as cascade_property_registry_metadata_debug_snapshot,
+    shorthand_registry as cascade_shorthand_registry,
 };

@@ -17,6 +17,7 @@ mod outline;
 mod overflow;
 mod parse;
 mod position;
+mod shorthand;
 mod text_decoration;
 mod value;
 mod z_index;
@@ -26,6 +27,10 @@ pub use parse::{
     SpecifiedValueLimits, parse_specified_declaration_value,
     parse_specified_declaration_value_with_limits, parse_specified_value,
     parse_specified_value_with_limits,
+};
+pub use shorthand::{
+    ExpandedLonghandDeclaration, ShorthandExpansion, ShorthandExpansionError,
+    ShorthandExpansionErrorKind, expand_shorthand_declaration,
 };
 pub use value::{
     SpecifiedBorderStyle, SpecifiedBorderStyleKeyword, SpecifiedColor, SpecifiedColorKeyword,

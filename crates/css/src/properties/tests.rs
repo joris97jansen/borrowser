@@ -1,8 +1,9 @@
 use super::{
     InitialStyleValue, PropertyComputedValueKind, PropertyId, PropertyInheritance,
     PropertyInvalidValuePolicy, PropertyInvalidationImpact, PropertyLengthSignPolicy,
-    PropertySpecifiedValueKind, SpecifiedToComputedConversionRule, data::PROPERTY_LOOKUP_BY_NAME,
-    property_registry, property_value_boundaries, property_value_boundary_debug_snapshot,
+    PropertySpecifiedValueKind, ShorthandId, SpecifiedToComputedConversionRule,
+    data::PROPERTY_LOOKUP_BY_NAME, property_registry, property_value_boundaries,
+    property_value_boundary_debug_snapshot, shorthand_registry,
 };
 
 #[test]
@@ -631,7 +632,6 @@ fn unsupported_shorthands_are_not_registered_for_cascade_or_computed_style() {
         "border-width",
         "font",
         "margin",
-        "outline",
         "padding",
         "text-decoration",
     ];
@@ -646,6 +646,32 @@ fn unsupported_shorthands_are_not_registered_for_cascade_or_computed_style() {
             "{name}"
         );
     }
+}
+
+#[test]
+fn shorthand_registry_keeps_outline_separate_from_supported_longhands() {
+    let registry = shorthand_registry();
+    let outline = registry
+        .lookup("outline")
+        .expect("outline shorthand registration");
+
+    assert_eq!(outline.id(), ShorthandId::Outline);
+    assert_eq!(outline.name(), "outline");
+    assert_eq!(
+        outline.longhands(),
+        &[
+            PropertyId::OutlineColor,
+            PropertyId::OutlineStyle,
+            PropertyId::OutlineWidth,
+        ]
+    );
+    assert_eq!(
+        ShorthandId::from_name("outline"),
+        Some(ShorthandId::Outline)
+    );
+    assert_eq!(PropertyId::from_name("outline"), None);
+    assert_eq!(property_registry().lookup("outline"), None);
+    assert_eq!(registry.lookup("border"), None);
 }
 
 #[test]

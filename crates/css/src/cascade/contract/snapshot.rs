@@ -57,7 +57,7 @@ pub(crate) fn append_cascade_evaluation_debug_snapshot(
                 out,
                 "    declaration[{declaration_index}]: source={} declaration-order={} importance={} property={} applicability={} value={}",
                 declaration_source_label(declaration.source()),
-                declaration.declaration_order(),
+                declaration_order_label(declaration.declaration_order(), declaration.expansion_order()),
                 importance_label(declaration.importance()),
                 declaration_property_label(declaration.property()),
                 applicability_label(declaration.applicability()),
@@ -208,6 +208,9 @@ fn declaration_property_label(property: &CascadeDeclarationProperty) -> String {
         CascadeDeclarationProperty::InvalidValue(property) => {
             format!("invalid-value({})", property.name())
         }
+        CascadeDeclarationProperty::InvalidShorthandValue(shorthand) => {
+            format!("invalid-shorthand-value({})", shorthand.name())
+        }
         CascadeDeclarationProperty::Unsupported(name) => {
             format!("unsupported({})", quoted_snapshot_text(name))
         }
@@ -226,9 +229,20 @@ fn applicability_label(applicability: CascadeDeclarationApplicability) -> String
         CascadeDeclarationApplicability::InvalidValue(property) => {
             format!("invalid-value({})", property.name())
         }
+        CascadeDeclarationApplicability::InvalidShorthandValue(shorthand) => {
+            format!("invalid-shorthand-value({})", shorthand.name())
+        }
         CascadeDeclarationApplicability::UnsupportedProperty => "unsupported-property".to_string(),
         CascadeDeclarationApplicability::CustomProperty => "custom-property".to_string(),
         CascadeDeclarationApplicability::InvalidPropertyName => "invalid-property-name".to_string(),
+    }
+}
+
+fn declaration_order_label(declaration_order: u32, expansion_order: u16) -> String {
+    if expansion_order == 0 {
+        declaration_order.to_string()
+    } else {
+        format!("{declaration_order} expansion-order={expansion_order}")
     }
 }
 

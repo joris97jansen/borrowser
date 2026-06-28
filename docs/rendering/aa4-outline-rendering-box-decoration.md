@@ -11,7 +11,9 @@ behavior.
 Related code:
 - `crates/css/src/properties/types.rs`
 - `crates/css/src/properties/data.rs`
+- `crates/css/src/properties/shorthand.rs`
 - `crates/css/src/specified/outline.rs`
+- `crates/css/src/specified/shorthand.rs`
 - `crates/css/src/computed/style.rs`
 - `crates/gfx/src/paint/primitives.rs`
 - `crates/gfx/src/paint/mod.rs`
@@ -22,17 +24,22 @@ Related documents:
 - `docs/rendering/aa1-paint-model-architecture-ordering-contracts.md`
 - `docs/rendering/aa2-paint-primitives-input-model.md`
 - `docs/rendering/aa3-border-rendering-box-decoration.md`
+- `docs/css/ad6-shorthand-expansion-foundation.md`
 - `docs/rendering/x1-sizing-architecture-flow-correctness-contract.md`
 - `docs/rendering/y4-overflow-semantics-supported-subset.md`
 - `docs/css/s9-property-system-computed-style-runtime-contract.md`
 
 ## Supported CSS Surface
 
-AA4 supports only explicit outline longhands:
+AA4 introduced explicit outline longhands:
 
 - `outline-width`
 - `outline-style`
 - `outline-color`
+
+AD6 later adds narrow CSS-owned `outline` shorthand expansion into those
+longhands. Rendering behavior remains based only on computed longhand outline
+data.
 
 Supported values are:
 
@@ -123,7 +130,6 @@ state:
 
 AA4 deliberately does not implement:
 
-- `outline` shorthand expansion;
 - `outline-offset`;
 - `auto`, dashed, dotted, double, inset, outset, groove, or ridge outline
   styles;

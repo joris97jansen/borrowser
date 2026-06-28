@@ -78,6 +78,12 @@ Architecture status:
   AD5 does not add used-value resolution, actual-value resolution,
   layout-dependent percentage resolution, shorthand expansion, or broader CSS
   property coverage.
+- AD6 adds a CSS-owned shorthand expansion foundation and the narrow
+  `outline` shorthand subset; see
+  `docs/css/ad6-shorthand-expansion-foundation.md`. Expanded longhands flow
+  through the existing longhand registry, specified-value parser, CSS-wide
+  keyword handling, computed-value normalization, and invalidation metadata.
+  Broad shorthand coverage remains missing.
 - Richer CSS-owned invalidation impact classification beyond the current
   narrow longhand hook remains future AD7 work.
 
@@ -89,13 +95,13 @@ Architecture status:
   - border images
   - logical border properties
 - outlines:
-  - `outline` shorthand support
   - `outline-offset`
   - `auto` and additional outline styles beyond the supported subset
   - rounded outline geometry
 - CSS shorthand and multi-component declaration expansion:
+  - foundation exists for CSS-owned shorthand expansion
+  - only the narrow `outline` shorthand subset is currently supported
   - broad shorthand parsing is not yet supported
-  - declarations that expand into multiple longhands are intentionally limited
   - current feature work should prefer explicit longhands unless shorthand
     support is part of the issue scope
 - fonts: `font-family`, `font-weight`, `font-style`, line-height variants

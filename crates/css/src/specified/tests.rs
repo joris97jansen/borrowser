@@ -3,12 +3,13 @@ use super::{
     SpecifiedDisplayKeyword, SpecifiedLengthPercentageOrAuto, SpecifiedLengthUnit,
     SpecifiedOutlineStyleKeyword, SpecifiedOverflowKeyword, SpecifiedPositionKeyword,
     SpecifiedTextDecorationLineKeyword, SpecifiedValue, SpecifiedValueLimits,
-    SpecifiedValueParseErrorKind, SpecifiedZIndexValue, parse_specified_declaration_value,
-    parse_specified_value, parse_specified_value_with_limits,
+    SpecifiedValueParseErrorKind, SpecifiedZIndexValue, expand_shorthand_declaration,
+    parse_specified_declaration_value, parse_specified_value, parse_specified_value_with_limits,
 };
 use crate::{
     CssLengthPercentageValue, CssWideKeyword, ParseOptions, PropertyId, PropertySpecifiedValueKind,
-    Rule, parse_stylesheet_with_options, property_registry,
+    Rule, ShorthandExpansionErrorKind, ShorthandId, parse_stylesheet_with_options,
+    property_registry,
 };
 
 fn declaration_value(css_declaration: &str) -> crate::DeclarationValue {
@@ -49,6 +50,12 @@ fn parse_declaration_error(
     parse_specified_declaration_value(property, &declaration_value(css_declaration))
         .expect_err("specified declaration value must be rejected")
         .kind()
+}
+
+fn expanded_value_css_text(longhand: &super::ExpandedLonghandDeclaration) -> String {
+    parse_specified_declaration_value(longhand.property(), longhand.value())
+        .unwrap_or_else(|error| panic!("expanded longhand failed to parse: {error}"))
+        .to_css_text()
 }
 
 #[test]
@@ -193,6 +200,96 @@ fn rejects_unsupported_css_wide_keywords_with_dedicated_error() {
     assert_eq!(
         parse_declaration_error(PropertyId::Display, "display: revert-layer"),
         SpecifiedValueParseErrorKind::UnsupportedCssWideKeyword
+    );
+}
+
+#[test]
+fn expands_outline_shorthand_into_deterministic_longhand_order() {
+    let value = declaration_value("outline: 2px solid red");
+    let expansion = expand_shorthand_declaration(ShorthandId::Outline, &value)
+        .expect("outline shorthand expansion");
+    let longhands = expansion.longhands();
+
+    assert_eq!(expansion.shorthand(), ShorthandId::Outline);
+    assert_eq!(longhands.len(), 3);
+    assert_eq!(longhands[0].property(), PropertyId::OutlineColor);
+    assert_eq!(longhands[0].expansion_order(), 0);
+    assert_eq!(longhands[1].property(), PropertyId::OutlineStyle);
+    assert_eq!(longhands[1].expansion_order(), 1);
+    assert_eq!(longhands[2].property(), PropertyId::OutlineWidth);
+    assert_eq!(longhands[2].expansion_order(), 2);
+
+    assert_eq!(expanded_value_css_text(&longhands[0]), "red");
+    assert_eq!(expanded_value_css_text(&longhands[1]), "solid");
+    assert_eq!(expanded_value_css_text(&longhands[2]), "2px");
+}
+
+#[test]
+fn expands_outline_shorthand_components_in_mixed_authored_order() {
+    let value = declaration_value("outline: #0Fa 3px solid");
+    let expansion = expand_shorthand_declaration(ShorthandId::Outline, &value)
+        .expect("outline shorthand expansion");
+    let longhands = expansion.longhands();
+
+    assert_eq!(expanded_value_css_text(&longhands[0]), "#0fa");
+    assert_eq!(expanded_value_css_text(&longhands[1]), "solid");
+    assert_eq!(expanded_value_css_text(&longhands[2]), "3px");
+}
+
+#[test]
+fn expands_omitted_outline_shorthand_components_as_internal_initial_resets() {
+    let value = declaration_value("outline: solid");
+    let expansion = expand_shorthand_declaration(ShorthandId::Outline, &value)
+        .expect("outline shorthand expansion");
+    let longhands = expansion.longhands();
+
+    assert_eq!(expanded_value_css_text(&longhands[0]), "initial");
+    assert_eq!(expanded_value_css_text(&longhands[1]), "solid");
+    assert_eq!(expanded_value_css_text(&longhands[2]), "initial");
+}
+
+#[test]
+fn expands_supported_css_wide_outline_shorthand_to_all_longhands() {
+    let value = declaration_value("outline: inherit");
+    let expansion = expand_shorthand_declaration(ShorthandId::Outline, &value)
+        .expect("outline shorthand expansion");
+
+    for longhand in expansion.longhands() {
+        let parsed = parse_specified_declaration_value(longhand.property(), longhand.value())
+            .expect("expanded CSS-wide longhand must parse");
+        assert_eq!(parsed.to_css_text(), "inherit");
+        assert!(parsed.css_wide_keyword().is_some());
+    }
+}
+
+#[test]
+fn rejects_invalid_outline_shorthand_atomically_before_expansion() {
+    for declaration in [
+        "outline: 1px 2px",
+        "outline: dashed",
+        "outline: rgb(1, 2, 3)",
+    ] {
+        let error = match expand_shorthand_declaration(
+            ShorthandId::Outline,
+            &declaration_value(declaration),
+        ) {
+            Ok(_) => panic!("expected shorthand rejection for {declaration}"),
+            Err(error) => error,
+        };
+
+        assert_eq!(error.shorthand(), ShorthandId::Outline);
+    }
+}
+
+#[test]
+fn rejects_unsupported_css_wide_outline_shorthand_with_dedicated_error() {
+    let error =
+        expand_shorthand_declaration(ShorthandId::Outline, &declaration_value("outline: revert"))
+            .expect_err("unsupported CSS-wide shorthand must be rejected");
+
+    assert_eq!(
+        error.kind(),
+        &ShorthandExpansionErrorKind::UnsupportedCssWideKeyword
     );
 }
 
