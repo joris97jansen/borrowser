@@ -104,7 +104,7 @@ The CSS subsystem is layered, but the semantic ownership stays inside CSS:
      `ComputedStyle`, `ComputedDocumentStyle`, and `StyledNode` construction;
    - exposes the typed runtime handoff consumed by layout, paint, and browser
      orchestration;
-   - currently owns computed-style layout-impact comparison in
+   - owns computed-style invalidation-impact projection in
      `crates/css/src/computed/impact.rs`.
 
 ## Value Lifecycle Terminology
@@ -185,20 +185,16 @@ or duplicated property metadata.
 Current behavior:
 
 - `crates/css/src/computed/impact.rs` contains the current CSS-owned
-  computed-style layout-impact comparison.
+  computed-style invalidation-impact comparison.
 - Browser/runtime consumes the resulting computed-document impact through the
   retained rendering path.
-- This current implementation is acceptable as CSS-owned current behavior for
-  AD1.
+- AD7 defines the richer CSS-owned invalidation impact classification model,
+  including the concrete taxonomy, registry-backed impact metadata, the
+  narrow Browser/runtime consumption API, and the focused CSS and
+  Browser/runtime tests for that behavior.
 
-AD1 does not make `computed/impact.rs` the final AD architecture. AD7 will
-introduce the richer CSS-owned invalidation impact classification model,
-including the concrete taxonomy, registry-backed impact metadata where
-appropriate, the narrow Browser/runtime consumption API, and the focused CSS
-and Browser/runtime tests for that behavior.
-
-Until AD7 lands, contributors must not move CSS property impact classification
-into browser/runtime. If a style change cannot be safely classified through
+Contributors must not move CSS property impact classification into
+browser/runtime. If a style change cannot be safely classified through
 CSS-owned behavior, runtime must use an explicit conservative fallback.
 
 ## Browser/runtime Consumption Boundary
@@ -280,17 +276,17 @@ AD1 implements:
 - explicit CSS/browser/runtime/layout/paint ownership boundaries;
 - terminology for parsed component values, declared values, specified values,
   computed values, and future used/actual values;
-- documentation that current impact comparison remains CSS-owned behavior until
-  AD7;
+- documentation that current impact comparison remains CSS-owned behavior;
 - a feature gap tracker update that records AD1 as architecture-only progress.
 
 AD1 does not implement:
 
 - new supported properties;
-- new typed Rust property impact categories;
-- registry-backed invalidation impact metadata;
-- a Browser/runtime impact API;
-- Browser/runtime integration tests for paint-only style changes;
+- new typed Rust property impact categories beyond the architecture boundary;
+- registry-backed invalidation impact metadata; AD7 implements this separately;
+- a Browser/runtime impact API; AD7 implements this separately;
+- Browser/runtime integration tests for paint-only style changes; AD7 adds
+  these separately;
 - shorthand completeness;
 - CSS-wide keyword parsing;
 - full selectors, full cascade, media queries, custom properties, animations,
@@ -300,7 +296,7 @@ AD1 does not implement:
 ## AD7 Handoff
 
 AD7 is the implementation issue for concrete CSS-owned invalidation impact
-classification. AD7 should define:
+classification. AD7 defines:
 
 - the typed impact taxonomy for supported properties;
 - whether impact is represented directly as registry metadata, derived from
@@ -310,7 +306,9 @@ classification. AD7 should define:
 - Browser/runtime tests proving runtime consumes CSS-owned impact without
   owning property semantics.
 
-AD1 intentionally stops before those choices become Rust APIs.
+AD1 intentionally stops before those choices become Rust APIs. See
+`docs/css/ad7-css-owned-invalidation-impact-classification.md` for the
+implemented contract.
 
 ## Invariants
 

@@ -8,7 +8,7 @@ property[0]: background-color
   computed-value: absolute-color
   invalid-value-policy: reject-declaration
   length-sign: not-length
-  invalidation-impact: repaint-only
+  invalidation-impact: paint
 property[1]: border-bottom-color
   inheritance: not-inherited
   initial: transparent
@@ -16,7 +16,7 @@ property[1]: border-bottom-color
   computed-value: absolute-color
   invalid-value-policy: reject-declaration
   length-sign: not-length
-  invalidation-impact: repaint-only
+  invalidation-impact: paint
 property[2]: border-bottom-style
   inheritance: not-inherited
   initial: none
@@ -24,7 +24,7 @@ property[2]: border-bottom-style
   computed-value: border-style-keyword
   invalid-value-policy: reject-declaration
   length-sign: not-length
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: layout+paint
 property[3]: border-bottom-width
   inheritance: not-inherited
   initial: 0px
@@ -32,7 +32,7 @@ property[3]: border-bottom-width
   computed-value: absolute-length
   invalid-value-policy: reject-declaration
   length-sign: non-negative
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: layout+paint
 property[4]: border-left-color
   inheritance: not-inherited
   initial: transparent
@@ -40,7 +40,7 @@ property[4]: border-left-color
   computed-value: absolute-color
   invalid-value-policy: reject-declaration
   length-sign: not-length
-  invalidation-impact: repaint-only
+  invalidation-impact: paint
 property[5]: border-left-style
   inheritance: not-inherited
   initial: none
@@ -48,7 +48,7 @@ property[5]: border-left-style
   computed-value: border-style-keyword
   invalid-value-policy: reject-declaration
   length-sign: not-length
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: layout+paint
 property[6]: border-left-width
   inheritance: not-inherited
   initial: 0px
@@ -56,7 +56,7 @@ property[6]: border-left-width
   computed-value: absolute-length
   invalid-value-policy: reject-declaration
   length-sign: non-negative
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: layout+paint
 property[7]: border-right-color
   inheritance: not-inherited
   initial: transparent
@@ -64,7 +64,7 @@ property[7]: border-right-color
   computed-value: absolute-color
   invalid-value-policy: reject-declaration
   length-sign: not-length
-  invalidation-impact: repaint-only
+  invalidation-impact: paint
 property[8]: border-right-style
   inheritance: not-inherited
   initial: none
@@ -72,7 +72,7 @@ property[8]: border-right-style
   computed-value: border-style-keyword
   invalid-value-policy: reject-declaration
   length-sign: not-length
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: layout+paint
 property[9]: border-right-width
   inheritance: not-inherited
   initial: 0px
@@ -80,7 +80,7 @@ property[9]: border-right-width
   computed-value: absolute-length
   invalid-value-policy: reject-declaration
   length-sign: non-negative
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: layout+paint
 property[10]: border-top-color
   inheritance: not-inherited
   initial: transparent
@@ -88,7 +88,7 @@ property[10]: border-top-color
   computed-value: absolute-color
   invalid-value-policy: reject-declaration
   length-sign: not-length
-  invalidation-impact: repaint-only
+  invalidation-impact: paint
 property[11]: border-top-style
   inheritance: not-inherited
   initial: none
@@ -96,7 +96,7 @@ property[11]: border-top-style
   computed-value: border-style-keyword
   invalid-value-policy: reject-declaration
   length-sign: not-length
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: layout+paint
 property[12]: border-top-width
   inheritance: not-inherited
   initial: 0px
@@ -104,7 +104,7 @@ property[12]: border-top-width
   computed-value: absolute-length
   invalid-value-policy: reject-declaration
   length-sign: non-negative
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: layout+paint
 property[13]: color
   inheritance: inherited
   initial: black
@@ -112,7 +112,7 @@ property[13]: color
   computed-value: absolute-color
   invalid-value-policy: reject-declaration
   length-sign: not-length
-  invalidation-impact: repaint-only
+  invalidation-impact: inherited-style+paint
 property[14]: display
   inheritance: not-inherited
   initial: inline
@@ -120,7 +120,7 @@ property[14]: display
   computed-value: display-keyword
   invalid-value-policy: reject-declaration
   length-sign: not-length
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: box-tree+layout+paint
 property[15]: font-size
   inheritance: inherited
   initial: 16px
@@ -128,7 +128,7 @@ property[15]: font-size
   computed-value: absolute-length
   invalid-value-policy: reject-declaration
   length-sign: non-negative
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: inherited-style+layout+text-metrics+paint
 property[16]: height
   inheritance: not-inherited
   initial: auto
@@ -136,7 +136,7 @@ property[16]: height
   computed-value: length-percentage-or-auto
   invalid-value-policy: reject-declaration
   length-sign: non-negative
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: layout+paint
 property[17]: margin-bottom
   inheritance: not-inherited
   initial: 0px
@@ -144,7 +144,7 @@ property[17]: margin-bottom
   computed-value: absolute-length
   invalid-value-policy: reject-declaration
   length-sign: allow-negative
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: layout+paint
 property[18]: margin-left
   inheritance: not-inherited
   initial: 0px
@@ -152,7 +152,7 @@ property[18]: margin-left
   computed-value: absolute-length
   invalid-value-policy: reject-declaration
   length-sign: allow-negative
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: layout+paint
 property[19]: margin-right
   inheritance: not-inherited
   initial: 0px
@@ -160,7 +160,7 @@ property[19]: margin-right
   computed-value: absolute-length
   invalid-value-policy: reject-declaration
   length-sign: allow-negative
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: layout+paint
 property[20]: margin-top
   inheritance: not-inherited
   initial: 0px
@@ -168,7 +168,7 @@ property[20]: margin-top
   computed-value: absolute-length
   invalid-value-policy: reject-declaration
   length-sign: allow-negative
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: layout+paint
 property[21]: max-width
   inheritance: not-inherited
   initial: none
@@ -176,7 +176,7 @@ property[21]: max-width
   computed-value: length-percentage-or-none
   invalid-value-policy: reject-declaration
   length-sign: non-negative
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: layout+paint
 property[22]: min-width
   inheritance: not-inherited
   initial: auto
@@ -184,7 +184,7 @@ property[22]: min-width
   computed-value: length-percentage-or-auto
   invalid-value-policy: reject-declaration
   length-sign: non-negative
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: layout+paint
 property[23]: overflow
   inheritance: not-inherited
   initial: visible
@@ -192,7 +192,7 @@ property[23]: overflow
   computed-value: overflow-keyword
   invalid-value-policy: reject-declaration
   length-sign: not-length
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: layout+paint+overflow-clip
 property[24]: outline-color
   inheritance: not-inherited
   initial: transparent
@@ -200,7 +200,7 @@ property[24]: outline-color
   computed-value: absolute-color
   invalid-value-policy: reject-declaration
   length-sign: not-length
-  invalidation-impact: repaint-only
+  invalidation-impact: paint
 property[25]: outline-style
   inheritance: not-inherited
   initial: none
@@ -208,7 +208,7 @@ property[25]: outline-style
   computed-value: outline-style-keyword
   invalid-value-policy: reject-declaration
   length-sign: not-length
-  invalidation-impact: repaint-only
+  invalidation-impact: paint
 property[26]: outline-width
   inheritance: not-inherited
   initial: 0px
@@ -216,7 +216,7 @@ property[26]: outline-width
   computed-value: absolute-length
   invalid-value-policy: reject-declaration
   length-sign: non-negative
-  invalidation-impact: repaint-only
+  invalidation-impact: paint
 property[27]: padding-bottom
   inheritance: not-inherited
   initial: 0px
@@ -224,7 +224,7 @@ property[27]: padding-bottom
   computed-value: absolute-length
   invalid-value-policy: reject-declaration
   length-sign: non-negative
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: layout+paint
 property[28]: padding-left
   inheritance: not-inherited
   initial: 0px
@@ -232,7 +232,7 @@ property[28]: padding-left
   computed-value: absolute-length
   invalid-value-policy: reject-declaration
   length-sign: non-negative
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: layout+paint
 property[29]: padding-right
   inheritance: not-inherited
   initial: 0px
@@ -240,7 +240,7 @@ property[29]: padding-right
   computed-value: absolute-length
   invalid-value-policy: reject-declaration
   length-sign: non-negative
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: layout+paint
 property[30]: padding-top
   inheritance: not-inherited
   initial: 0px
@@ -248,7 +248,7 @@ property[30]: padding-top
   computed-value: absolute-length
   invalid-value-policy: reject-declaration
   length-sign: non-negative
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: layout+paint
 property[31]: position
   inheritance: not-inherited
   initial: static
@@ -256,7 +256,7 @@ property[31]: position
   computed-value: position-keyword
   invalid-value-policy: reject-declaration
   length-sign: not-length
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: layout+paint+paint-order
 property[32]: text-decoration-line
   inheritance: not-inherited
   initial: none
@@ -264,7 +264,7 @@ property[32]: text-decoration-line
   computed-value: text-decoration-line-keyword
   invalid-value-policy: reject-declaration
   length-sign: not-length
-  invalidation-impact: repaint-only
+  invalidation-impact: paint
 property[33]: width
   inheritance: not-inherited
   initial: auto
@@ -272,7 +272,7 @@ property[33]: width
   computed-value: length-percentage-or-auto
   invalid-value-policy: reject-declaration
   length-sign: non-negative
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: layout+paint
 property[34]: z-index
   inheritance: not-inherited
   initial: auto
@@ -280,4 +280,4 @@ property[34]: z-index
   computed-value: z-index
   invalid-value-policy: reject-declaration
   length-sign: not-length
-  invalidation-impact: relayout-and-repaint
+  invalidation-impact: layout+paint+paint-order+conservative

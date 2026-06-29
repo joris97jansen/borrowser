@@ -66,10 +66,9 @@ Architecture status:
   but unsupported until cascade origin/layer support exists.
 - AD4 formalizes the CSS-owned supported longhand registry and metadata model;
   see `docs/css/ad4-css-property-registry-longhand-metadata.md`. Supported
-  longhands now expose explicit registry metadata, deterministic metadata
-  debug output, and a narrow CSS-owned impact hook for `repaint-only` versus
-  `relayout-and-repaint`. AD4 does not add broad property coverage,
-  shorthand support, or the full AD7 invalidation taxonomy.
+  longhands now expose explicit registry metadata and deterministic metadata
+  debug output. AD4 does not add broad property coverage, shorthand support,
+  or the full AD7 invalidation taxonomy.
 - AD5 defines the specified-value and computed-value boundaries for every
   currently supported longhand; see
   `docs/css/ad5-specified-computed-value-boundaries.md`. The boundary
@@ -84,8 +83,11 @@ Architecture status:
   through the existing longhand registry, specified-value parser, CSS-wide
   keyword handling, computed-value normalization, and invalidation metadata.
   Broad shorthand coverage remains missing.
-- Richer CSS-owned invalidation impact classification beyond the current
-  narrow longhand hook remains future AD7 work.
+- AD7 replaces the old two-bucket longhand impact hook with CSS-owned
+  composable invalidation impact flags for currently supported longhands; see
+  `docs/css/ad7-css-owned-invalidation-impact-classification.md`.
+  Browser/runtime consumes a narrow CSS-owned projection for retained dirty
+  state and work planning without owning CSS property semantics.
 
 - borders:
   - full `border` shorthand support

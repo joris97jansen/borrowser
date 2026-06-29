@@ -163,7 +163,7 @@ pub fn property_registry_metadata_debug_snapshot() -> String {
         writeln!(
             &mut output,
             "  invalidation-impact: {}",
-            metadata.invalidation_impact.as_debug_label()
+            metadata.invalidation_impact.to_debug_label()
         )
         .expect("write snapshot");
     }

@@ -11,7 +11,7 @@ use crate::rendering::{
     RetainedStyleArtifactDebugSnapshot, RetainedStyleArtifactKey, RetainedStyleArtifactState,
     RetainedStyleArtifactStats, StyleInvalidationState, dirty_request_for_entry_point,
 };
-use css::{ComputedDocumentStyleLayoutImpact, ComputedStyleReuseStats};
+use css::{ComputedDocumentStyleInvalidationImpact, ComputedStyleReuseStats};
 use gfx::paint::PaintArtifact;
 use html::Node;
 use layout::{
@@ -234,12 +234,21 @@ impl RetainedRenderState {
         self.last_style_artifact_action = RetainedStyleArtifactAction::DiscardedForFullInvalidation;
     }
 
-    pub(super) fn record_computed_style_layout_impact(
+    pub(super) fn record_computed_style_invalidation_impact(
         &mut self,
-        impact: ComputedDocumentStyleLayoutImpact,
+        impact: ComputedDocumentStyleInvalidationImpact,
     ) {
         match impact {
-            ComputedDocumentStyleLayoutImpact::PaintOnly => {
+            ComputedDocumentStyleInvalidationImpact::NoVisualImpact
+            | ComputedDocumentStyleInvalidationImpact::StyleOnly => {
+                self.dirty_state
+                    .remove_phase_reason(DirtyPhase::Layout, DirtyReason::CascadedFromStyle);
+                if !self.layout_dirty() {
+                    self.dirty_state
+                        .remove_phase_reason(DirtyPhase::Paint, DirtyReason::CascadedFromLayout);
+                }
+            }
+            ComputedDocumentStyleInvalidationImpact::PaintOnly => {
                 self.generations.paint_style = self
                     .generations
                     .paint_style
@@ -257,8 +266,8 @@ impl RetainedRenderState {
                     DirtyScope::Document,
                 ));
             }
-            ComputedDocumentStyleLayoutImpact::LayoutAffecting
-            | ComputedDocumentStyleLayoutImpact::Unknown => {
+            ComputedDocumentStyleInvalidationImpact::LayoutAffecting
+            | ComputedDocumentStyleInvalidationImpact::Unknown => {
                 self.generations.layout_style = self
                     .generations
                     .layout_style
