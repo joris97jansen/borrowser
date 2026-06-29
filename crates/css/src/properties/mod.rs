@@ -9,7 +9,7 @@
 //!   values
 //! - property-owned value-range metadata for specified-value validation
 //! - the current-scope invalid-value handling rule
-//! - the current narrow CSS-owned invalidation impact classification
+//! - CSS-owned invalidation impact classification for supported longhands
 //!
 //! `PropertyId` is the stable identity for one supported property.
 //! `PropertyId::metadata()` is the normative source for inheritance,

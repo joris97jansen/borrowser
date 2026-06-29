@@ -1,6 +1,6 @@
 use super::support::*;
 use super::*;
-use crate::{BorderSide, ComputedStyleLayoutImpact, computed::Outline};
+use crate::{BorderSide, ComputedStyleInvalidationImpact, computed::Outline};
 
 #[test]
 fn computed_style_initial_snapshot_is_total_and_canonical() {
@@ -331,7 +331,7 @@ fn computed_style_accessors_match_property_entries() {
 }
 
 #[test]
-fn computed_style_layout_impact_is_owned_by_computed_style() {
+fn computed_style_invalidation_impact_is_owned_by_computed_style() {
     let base = ComputedStyle::initial();
     let paint_only = base
         .with_property(
@@ -342,14 +342,25 @@ fn computed_style_layout_impact_is_owned_by_computed_style() {
     let layout_affecting = base
         .with_property(PropertyId::Width, length_percentage_or_auto_px(120.0))
         .expect("width update");
+    let paint_order_affecting = base
+        .with_property(
+            PropertyId::ZIndex,
+            ComputedValue::ZIndex(ZIndex::Integer(2)),
+        )
+        .expect("z-index update");
 
     assert_eq!(
-        paint_only.layout_impact_against(&base),
-        ComputedStyleLayoutImpact::PaintOnly
+        paint_only.invalidation_impact_against(&base),
+        ComputedStyleInvalidationImpact::PaintOnly
     );
     assert_eq!(
-        layout_affecting.layout_impact_against(&base),
-        ComputedStyleLayoutImpact::LayoutAffecting
+        layout_affecting.invalidation_impact_against(&base),
+        ComputedStyleInvalidationImpact::LayoutAffecting
+    );
+    assert_eq!(
+        paint_order_affecting.invalidation_impact_against(&base),
+        ComputedStyleInvalidationImpact::LayoutAffecting,
+        "z-index remains conservatively layout-affecting until retained paint-order invalidation is narrower"
     );
 }
 

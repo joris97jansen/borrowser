@@ -26,6 +26,7 @@ Related documents:
 - `docs/css/ad1-css-value-property-ownership-architecture.md`
 - `docs/css/ad2-typed-core-css-value-model.md`
 - `docs/css/ad3-css-wide-keyword-handling.md`
+- `docs/css/ad7-css-owned-invalidation-impact-classification.md`
 - `docs/css/s1-property-system-architecture-computed-style-contract.md`
 - `docs/css/s2-property-identifiers-property-registry.md`
 - `docs/css/s3-parsed-specified-value-representations.md`
@@ -94,47 +95,41 @@ path.
 
 ## Explicit Invalidation Impact
 
-AD4 adds a narrow CSS-owned property impact metadata field:
+AD4 introduced the first narrow CSS-owned property impact metadata field for
+the supported longhand registry. AD7 later replaced that two-category model
+with a composable `PropertyInvalidationImpact` flags struct while preserving
+the same ownership rule: every supported longhand registration must pass an
+explicit impact value, and `PropertyMetadata` constructors do not provide a
+default impact category.
 
-```rust
-pub enum PropertyInvalidationImpact {
-    RepaintOnly,
-    RelayoutAndRepaint,
-}
-```
-
-Every supported longhand registration must pass an explicit impact value.
-`PropertyMetadata` constructors do not provide a default impact category.
 This prevents incomplete property classification from hiding behind a silent
-conservative fallback.
-
-`RepaintOnly` means a computed value change can keep retained layout valid in
-the current supported model and requires paint work. `RelayoutAndRepaint`
-means a computed value change may affect layout inputs or downstream geometry,
-so retained layout must be dirtied conservatively and paint follows layout.
-
-This is not the final invalidation taxonomy. AD7 remains the extension point
-for richer CSS-owned impact categories such as stacking, overflow, text,
-fonts, selector dependencies, containment, compositor-relevant behavior, or
-more precise dirty scopes.
+conservative fallback. The current AD7 taxonomy is documented in
+`docs/css/ad7-css-owned-invalidation-impact-classification.md`.
 
 ## Runtime Consumption Boundary
 
-`crates/css/src/computed/impact.rs` maps registry metadata into the existing
-runtime-facing computed-style impact API:
+`crates/css/src/computed/impact.rs` maps registry metadata into the
+runtime-facing computed-style invalidation API:
 
 ```text
-PropertyInvalidationImpact::RepaintOnly
-  -> ComputedStyleLayoutImpact::PaintOnly
-
-PropertyInvalidationImpact::RelayoutAndRepaint
-  -> ComputedStyleLayoutImpact::LayoutAffecting
+ComputedDocumentStyle::invalidation_impact_against(previous)
 ```
 
-Browser/runtime continues to consume
-`ComputedDocumentStyle::layout_impact_against(...)` through retained rendering
+The runtime-facing projection is intentionally narrow:
+
+- `NoVisualImpact`
+- `StyleOnly`
+- `PaintOnly`
+- `LayoutAffecting`
+- `Unknown`
+
+`NoVisualImpact` and `StyleOnly` are derived projection categories, not raw
+registry metadata flags. Raw `PropertyInvalidationImpact` metadata records
+positive CSS impact facts only.
+
+Browser/runtime consumes this CSS-owned result through retained rendering
 state. Browser/runtime does not inspect declaration names, parse CSS values,
-or maintain a CSS property-impact table.
+inspect registry flags, or maintain a CSS property-impact table.
 
 ## Unknown And Unsupported Properties
 
@@ -213,5 +208,6 @@ AD4 deliberately excludes:
 - custom properties and `var(...)`;
 - animations and transitions;
 - compositor/GPU behavior;
-- full AD7 invalidation taxonomy;
+- full AD7 invalidation taxonomy; AD7 now documents and implements that
+  taxonomy for the current supported longhand subset;
 - public CSSOM metadata APIs.

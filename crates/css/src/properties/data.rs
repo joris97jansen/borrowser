@@ -14,7 +14,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::TransparentColor,
             PropertySpecifiedValueKind::Color,
             PropertyComputedValueKind::AbsoluteColor,
-            PropertyInvalidationImpact::RepaintOnly,
+            PropertyInvalidationImpact::paint_only(),
         ),
     ),
     PropertyRegistration::new(
@@ -24,7 +24,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::TransparentColor,
             PropertySpecifiedValueKind::Color,
             PropertyComputedValueKind::AbsoluteColor,
-            PropertyInvalidationImpact::RepaintOnly,
+            PropertyInvalidationImpact::paint_only(),
         ),
     ),
     PropertyRegistration::new(
@@ -34,7 +34,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::BorderStyleNone,
             PropertySpecifiedValueKind::BorderStyleKeyword,
             PropertyComputedValueKind::BorderStyleKeyword,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::layout_and_paint(),
         ),
     ),
     PropertyRegistration::new(
@@ -44,7 +44,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::ZeroPx,
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::layout_and_paint(),
         ),
     ),
     PropertyRegistration::new(
@@ -54,7 +54,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::TransparentColor,
             PropertySpecifiedValueKind::Color,
             PropertyComputedValueKind::AbsoluteColor,
-            PropertyInvalidationImpact::RepaintOnly,
+            PropertyInvalidationImpact::paint_only(),
         ),
     ),
     PropertyRegistration::new(
@@ -64,7 +64,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::BorderStyleNone,
             PropertySpecifiedValueKind::BorderStyleKeyword,
             PropertyComputedValueKind::BorderStyleKeyword,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::layout_and_paint(),
         ),
     ),
     PropertyRegistration::new(
@@ -74,7 +74,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::ZeroPx,
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::layout_and_paint(),
         ),
     ),
     PropertyRegistration::new(
@@ -84,7 +84,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::TransparentColor,
             PropertySpecifiedValueKind::Color,
             PropertyComputedValueKind::AbsoluteColor,
-            PropertyInvalidationImpact::RepaintOnly,
+            PropertyInvalidationImpact::paint_only(),
         ),
     ),
     PropertyRegistration::new(
@@ -94,7 +94,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::BorderStyleNone,
             PropertySpecifiedValueKind::BorderStyleKeyword,
             PropertyComputedValueKind::BorderStyleKeyword,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::layout_and_paint(),
         ),
     ),
     PropertyRegistration::new(
@@ -104,7 +104,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::ZeroPx,
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::layout_and_paint(),
         ),
     ),
     PropertyRegistration::new(
@@ -114,7 +114,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::TransparentColor,
             PropertySpecifiedValueKind::Color,
             PropertyComputedValueKind::AbsoluteColor,
-            PropertyInvalidationImpact::RepaintOnly,
+            PropertyInvalidationImpact::paint_only(),
         ),
     ),
     PropertyRegistration::new(
@@ -124,7 +124,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::BorderStyleNone,
             PropertySpecifiedValueKind::BorderStyleKeyword,
             PropertyComputedValueKind::BorderStyleKeyword,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::layout_and_paint(),
         ),
     ),
     PropertyRegistration::new(
@@ -134,7 +134,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::ZeroPx,
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::layout_and_paint(),
         ),
     ),
     PropertyRegistration::new(
@@ -144,7 +144,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::ColorBlack,
             PropertySpecifiedValueKind::Color,
             PropertyComputedValueKind::AbsoluteColor,
-            PropertyInvalidationImpact::RepaintOnly,
+            PropertyInvalidationImpact::inherited_paint(),
         ),
     ),
     PropertyRegistration::new(
@@ -154,7 +154,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::DisplayInline,
             PropertySpecifiedValueKind::DisplayKeyword,
             PropertyComputedValueKind::DisplayKeyword,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::box_tree_layout_paint(),
         ),
     ),
     PropertyRegistration::new(
@@ -164,7 +164,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::FontSizePx16,
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::inherited_text_metrics_layout_paint(),
         ),
     ),
     PropertyRegistration::new(
@@ -174,7 +174,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::AutoKeyword,
             PropertySpecifiedValueKind::LengthPercentageOrAuto,
             PropertyComputedValueKind::LengthPercentageOrAuto,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::layout_and_paint(),
         ),
     ),
     PropertyRegistration::new(
@@ -184,7 +184,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::ZeroPx,
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::layout_and_paint(),
         )
         .with_length_sign(PropertyLengthSignPolicy::AllowNegative),
     ),
@@ -195,7 +195,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::ZeroPx,
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::layout_and_paint(),
         )
         .with_length_sign(PropertyLengthSignPolicy::AllowNegative),
     ),
@@ -206,7 +206,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::ZeroPx,
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::layout_and_paint(),
         )
         .with_length_sign(PropertyLengthSignPolicy::AllowNegative),
     ),
@@ -217,7 +217,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::ZeroPx,
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::layout_and_paint(),
         )
         .with_length_sign(PropertyLengthSignPolicy::AllowNegative),
     ),
@@ -228,7 +228,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::NoneKeyword,
             PropertySpecifiedValueKind::LengthPercentageOrNone,
             PropertyComputedValueKind::LengthPercentageOrNone,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::layout_and_paint(),
         ),
     ),
     PropertyRegistration::new(
@@ -238,7 +238,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::AutoKeyword,
             PropertySpecifiedValueKind::LengthPercentageOrAuto,
             PropertyComputedValueKind::LengthPercentageOrAuto,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::layout_and_paint(),
         ),
     ),
     PropertyRegistration::new(
@@ -248,7 +248,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::OverflowVisible,
             PropertySpecifiedValueKind::OverflowKeyword,
             PropertyComputedValueKind::OverflowKeyword,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::overflow_clip_layout_paint(),
         ),
     ),
     PropertyRegistration::new(
@@ -258,7 +258,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::TransparentColor,
             PropertySpecifiedValueKind::Color,
             PropertyComputedValueKind::AbsoluteColor,
-            PropertyInvalidationImpact::RepaintOnly,
+            PropertyInvalidationImpact::paint_only(),
         ),
     ),
     PropertyRegistration::new(
@@ -268,7 +268,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::OutlineStyleNone,
             PropertySpecifiedValueKind::OutlineStyleKeyword,
             PropertyComputedValueKind::OutlineStyleKeyword,
-            PropertyInvalidationImpact::RepaintOnly,
+            PropertyInvalidationImpact::paint_only(),
         ),
     ),
     PropertyRegistration::new(
@@ -278,7 +278,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::ZeroPx,
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
-            PropertyInvalidationImpact::RepaintOnly,
+            PropertyInvalidationImpact::paint_only(),
         ),
     ),
     PropertyRegistration::new(
@@ -288,7 +288,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::ZeroPx,
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::layout_and_paint(),
         ),
     ),
     PropertyRegistration::new(
@@ -298,7 +298,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::ZeroPx,
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::layout_and_paint(),
         ),
     ),
     PropertyRegistration::new(
@@ -308,7 +308,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::ZeroPx,
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::layout_and_paint(),
         ),
     ),
     PropertyRegistration::new(
@@ -318,7 +318,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::ZeroPx,
             PropertySpecifiedValueKind::AbsoluteLength,
             PropertyComputedValueKind::AbsoluteLength,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::layout_and_paint(),
         ),
     ),
     PropertyRegistration::new(
@@ -328,7 +328,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::PositionStatic,
             PropertySpecifiedValueKind::PositionKeyword,
             PropertyComputedValueKind::PositionKeyword,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::layout_paint_order_paint(),
         ),
     ),
     PropertyRegistration::new(
@@ -338,7 +338,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::TextDecorationLineNone,
             PropertySpecifiedValueKind::TextDecorationLineKeyword,
             PropertyComputedValueKind::TextDecorationLineKeyword,
-            PropertyInvalidationImpact::RepaintOnly,
+            PropertyInvalidationImpact::paint_only(),
         ),
     ),
     PropertyRegistration::new(
@@ -348,7 +348,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::AutoKeyword,
             PropertySpecifiedValueKind::LengthPercentageOrAuto,
             PropertyComputedValueKind::LengthPercentageOrAuto,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::layout_and_paint(),
         ),
     ),
     PropertyRegistration::new(
@@ -358,7 +358,7 @@ pub(super) const PROPERTY_REGISTRATION_DATA: [PropertyRegistration; 35] = [
             InitialStyleValue::ZIndexAuto,
             PropertySpecifiedValueKind::ZIndex,
             PropertyComputedValueKind::ZIndex,
-            PropertyInvalidationImpact::RelayoutAndRepaint,
+            PropertyInvalidationImpact::conservative_layout_paint_order_paint(),
         ),
     ),
 ];

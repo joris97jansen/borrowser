@@ -579,6 +579,17 @@ fn stacking_order_affecting_style_change_invalidates_retained_paint() {
         .prepare_style_phase_for_frame(&PendingRenderWork::default())
         .expect("frame preparation should succeed")
         .expect("document should produce a frame");
+    assert!(
+        prepared
+            .work_plan
+            .dirty_state
+            .is_phase_dirty(DirtyPhase::Layout),
+        "paint-order style changes remain conservatively layout-affecting until runtime has narrower retained paint-order invalidation"
+    );
+    assert_eq!(
+        prepared.work_plan.relayout.decision,
+        RenderWorkDecision::Relayout
+    );
     assert_eq!(
         prepared.work_plan.repaint.decision,
         RenderWorkDecision::Repaint

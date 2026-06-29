@@ -1,5 +1,5 @@
 use css::{
-    ComputedDocumentStyleLayoutImpact, ComputedStyleResolutionError, ComputedStyleReuseStats,
+    ComputedDocumentStyleInvalidationImpact, ComputedStyleResolutionError, ComputedStyleReuseStats,
     StylePhaseOutput, build_style_tree_from_computed_styles,
 };
 use gfx::paint::PaintArtifact;
@@ -127,12 +127,12 @@ impl PageState {
             if let Some(previous) = previous_computed.as_ref()
                 && let Some(current) = retained.style_cache.as_ref()
             {
-                retained.record_computed_style_layout_impact(
-                    current.computed.layout_impact_against(previous),
+                retained.record_computed_style_invalidation_impact(
+                    current.computed.invalidation_impact_against(previous),
                 );
             } else if had_cache_before {
-                retained.record_computed_style_layout_impact(
-                    ComputedDocumentStyleLayoutImpact::Unknown,
+                retained.record_computed_style_invalidation_impact(
+                    ComputedDocumentStyleInvalidationImpact::Unknown,
                 );
             }
             retained.record_style_artifact_recompute(style_artifact_action_for_recompute(

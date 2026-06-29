@@ -214,8 +214,8 @@ Layout may:
 - perform layout-dependent geometry decisions from already-computed values
 - define layout-specific algorithms for block, inline, replaced, and text
   behavior
-- consume CSS-owned computed-style layout-impact classification when deciding
-  whether style changes affect layout
+- consume CSS-owned computed-style invalidation-impact classification when
+  deciding whether style changes affect layout or paint
 
 Layout must not:
 
@@ -238,23 +238,38 @@ Paint and `gfx` must not:
 - recover from invalid declarations
 - mutate `ComputedStyle`
 
-## Layout-Impact Classification
+## Invalidation-Impact Classification
 
-AC6 adds CSS-owned computed-style layout-impact classification:
+AC6 added the first CSS-owned computed-style layout-impact comparison. AD7
+extends that into a CSS-owned invalidation-impact projection:
 
-- `ComputedStyle::layout_impact_against(...)`
-- `ComputedDocumentStyle::layout_impact_against(...)`
+- `ComputedStyle::invalidation_impact_against(...)`
+- `ComputedDocumentStyle::invalidation_impact_against(...)`
 
 The classifier compares computed-style outputs and returns a conservative
-impact result for the currently supported property subset. Paint-only
-properties such as color, background color, outline, and text decoration may
-preserve retained layout. Display, font metrics, box metrics, sizing,
-positioning, overflow, z-index, and unknown document-shape changes are
-layout-affecting or unknown and must conservatively dirty layout.
+runtime-facing result for the currently supported property subset:
+
+- `NoVisualImpact`
+- `StyleOnly`
+- `PaintOnly`
+- `LayoutAffecting`
+- `Unknown`
+
+`NoVisualImpact` and `StyleOnly` are derived runtime-facing results. They are
+not stored as raw supported-longhand registry flags. Raw property metadata
+records positive CSS impact facts, and the computed-style classifier derives
+the narrow runtime category from those facts.
+
+Paint-only properties such as background color, outline, text decoration, and
+inherited `color` may preserve retained layout. Display, text metrics, box
+metrics, sizing, positioning, overflow, conservative paint-order impact such
+as `z-index`, and unknown document-shape changes are layout-affecting or
+unknown and must conservatively dirty layout.
 
 Browser/runtime may consume the classification result to decide retained
-layout reuse. Browser/runtime must not duplicate the property table or infer
-CSS property impact by inspecting declarations.
+layout reuse and paint dirtiness. Browser/runtime must not duplicate the
+property table, inspect registry flags, or infer CSS property impact by
+inspecting declarations.
 
 ## Legacy Compatibility Boundary
 

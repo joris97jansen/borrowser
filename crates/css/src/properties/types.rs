@@ -361,23 +361,162 @@ impl PropertyLengthSignPolicy {
     }
 }
 
-/// Current narrow CSS-owned invalidation impact for one supported longhand.
+/// CSS-owned invalidation impact flags for one supported longhand.
 ///
-/// This is intentionally smaller than the future AD7 taxonomy. The registry
-/// must classify every supported longhand explicitly so incomplete impact
-/// modeling cannot hide behind a constructor default.
+/// AD7 keeps property invalidation semantics in the CSS property registry.
+/// The flags are composable positive CSS facts because one property can affect
+/// multiple engine concerns at once, such as inherited style, text metrics,
+/// layout, paint order, and overflow clipping. Browser/runtime consumes only a
+/// derived CSS-owned runtime projection; it must not inspect these flags to
+/// define CSS property meaning.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PropertyInvalidationImpact {
-    RepaintOnly,
-    RelayoutAndRepaint,
+pub struct PropertyInvalidationImpact {
+    flags: u16,
+    conservative: bool,
 }
 
 impl PropertyInvalidationImpact {
-    pub fn as_debug_label(self) -> &'static str {
-        match self {
-            Self::RepaintOnly => "repaint-only",
-            Self::RelayoutAndRepaint => "relayout-and-repaint",
+    const INHERITED_STYLE: u16 = 1 << 0;
+    const BOX_TREE: u16 = 1 << 1;
+    const LAYOUT: u16 = 1 << 2;
+    const TEXT_METRICS: u16 = 1 << 3;
+    const PAINT: u16 = 1 << 4;
+    const PAINT_ORDER: u16 = 1 << 5;
+    const OVERFLOW_CLIP: u16 = 1 << 6;
+    const FUTURE_COMPOSITOR: u16 = 1 << 7;
+
+    const fn new(flags: u16, conservative: bool) -> Self {
+        Self {
+            flags,
+            conservative,
         }
+    }
+
+    pub const fn paint_only() -> Self {
+        Self::new(Self::PAINT, false)
+    }
+
+    pub const fn inherited_paint() -> Self {
+        Self::new(Self::INHERITED_STYLE | Self::PAINT, false)
+    }
+
+    pub const fn layout_and_paint() -> Self {
+        Self::new(Self::LAYOUT | Self::PAINT, false)
+    }
+
+    pub const fn box_tree_layout_paint() -> Self {
+        Self::new(Self::BOX_TREE | Self::LAYOUT | Self::PAINT, false)
+    }
+
+    pub const fn inherited_text_metrics_layout_paint() -> Self {
+        Self::new(
+            Self::INHERITED_STYLE | Self::TEXT_METRICS | Self::LAYOUT | Self::PAINT,
+            false,
+        )
+    }
+
+    pub const fn overflow_clip_layout_paint() -> Self {
+        Self::new(Self::OVERFLOW_CLIP | Self::LAYOUT | Self::PAINT, false)
+    }
+
+    pub const fn layout_paint_order_paint() -> Self {
+        Self::new(Self::LAYOUT | Self::PAINT_ORDER | Self::PAINT, false)
+    }
+
+    pub const fn conservative_layout_paint_order_paint() -> Self {
+        Self::new(Self::LAYOUT | Self::PAINT_ORDER | Self::PAINT, true)
+    }
+
+    pub const fn future_compositor_metadata() -> Self {
+        Self::new(Self::FUTURE_COMPOSITOR, false)
+    }
+
+    pub const fn is_conservative(self) -> bool {
+        self.conservative
+    }
+
+    pub const fn affects_inherited_style(self) -> bool {
+        self.has_flag(Self::INHERITED_STYLE)
+    }
+
+    pub const fn affects_box_tree(self) -> bool {
+        self.has_flag(Self::BOX_TREE)
+    }
+
+    pub const fn affects_layout(self) -> bool {
+        self.has_flag(Self::LAYOUT)
+    }
+
+    pub const fn affects_text_metrics(self) -> bool {
+        self.has_flag(Self::TEXT_METRICS)
+    }
+
+    pub const fn affects_paint(self) -> bool {
+        self.has_flag(Self::PAINT)
+    }
+
+    pub const fn affects_paint_order(self) -> bool {
+        self.has_flag(Self::PAINT_ORDER)
+    }
+
+    pub const fn affects_overflow_clip(self) -> bool {
+        self.has_flag(Self::OVERFLOW_CLIP)
+    }
+
+    pub const fn affects_future_compositor(self) -> bool {
+        self.has_flag(Self::FUTURE_COMPOSITOR)
+    }
+
+    pub const fn requires_runtime_layout(self) -> bool {
+        self.affects_box_tree()
+            || self.affects_layout()
+            || self.affects_text_metrics()
+            || self.affects_overflow_clip()
+    }
+
+    pub const fn requires_runtime_paint(self) -> bool {
+        self.affects_paint() || self.affects_paint_order() || self.affects_overflow_clip()
+    }
+
+    pub fn to_debug_label(self) -> String {
+        let mut labels = Vec::new();
+        if self.affects_inherited_style() {
+            labels.push("inherited-style");
+        }
+        if self.affects_box_tree() {
+            labels.push("box-tree");
+        }
+        if self.affects_layout() {
+            labels.push("layout");
+        }
+        if self.affects_text_metrics() {
+            labels.push("text-metrics");
+        }
+        if self.affects_paint() {
+            labels.push("paint");
+        }
+        if self.affects_paint_order() {
+            labels.push("paint-order");
+        }
+        if self.affects_overflow_clip() {
+            labels.push("overflow-clip");
+        }
+        if self.affects_future_compositor() {
+            labels.push("future-compositor");
+        }
+
+        let mut label = labels.join("+");
+        if self.conservative {
+            if !label.is_empty() {
+                label.push('+');
+            }
+            label.push_str("conservative");
+        }
+        label
+    }
+
+    const fn has_flag(self, flag: u16) -> bool {
+        self.flags & flag != 0
     }
 }
 

@@ -1,7 +1,7 @@
 use super::support::*;
 use super::*;
 use crate::{
-    ComputedDocumentStyleLayoutImpact, StyleResolutionError, StyleResolutionLimit,
+    ComputedDocumentStyleInvalidationImpact, StyleResolutionError, StyleResolutionLimit,
     StyleResolutionLimits,
 };
 
@@ -211,7 +211,7 @@ fn compute_document_styles_materializes_root_css_wide_fallbacks_to_initial() {
 }
 
 #[test]
-fn computed_document_style_layout_impact_distinguishes_paint_layout_and_unknown() {
+fn computed_document_style_invalidation_impact_distinguishes_paint_layout_and_unknown() {
     let dom = element(
         "section",
         Vec::new(),
@@ -230,16 +230,16 @@ fn computed_document_style_layout_impact_distinguishes_paint_layout_and_unknown(
     .expect("different shape computed document");
 
     assert_eq!(
-        paint_only.layout_impact_against(&base),
-        ComputedDocumentStyleLayoutImpact::PaintOnly
+        paint_only.invalidation_impact_against(&base),
+        ComputedDocumentStyleInvalidationImpact::PaintOnly
     );
     assert_eq!(
-        layout_affecting.layout_impact_against(&base),
-        ComputedDocumentStyleLayoutImpact::LayoutAffecting
+        layout_affecting.invalidation_impact_against(&base),
+        ComputedDocumentStyleInvalidationImpact::LayoutAffecting
     );
     assert_eq!(
-        different_shape.layout_impact_against(&base),
-        ComputedDocumentStyleLayoutImpact::Unknown
+        different_shape.invalidation_impact_against(&base),
+        ComputedDocumentStyleInvalidationImpact::Unknown
     );
 }
 
