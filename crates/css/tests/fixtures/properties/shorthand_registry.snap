@@ -1,0 +1,8 @@
+version: 1
+shorthand-registry
+shorthands: 1
+shorthand[0]: outline
+  longhands: 3
+  longhand[0]: outline-color
+  longhand[1]: outline-style
+  longhand[2]: outline-width

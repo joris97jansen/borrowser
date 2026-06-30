@@ -35,10 +35,13 @@ pub use boundary::{
     property_value_boundary, property_value_boundary_debug_snapshot,
 };
 pub use registry::{
-    PropertyRegistration, PropertyRegistry, property_registry,
+    PropertyRegistration, PropertyRegistry, property_coverage_debug_snapshot, property_registry,
     property_registry_metadata_debug_snapshot,
 };
-pub use shorthand::{ShorthandId, ShorthandRegistration, ShorthandRegistry, shorthand_registry};
+pub use shorthand::{
+    ShorthandId, ShorthandRegistration, ShorthandRegistry, shorthand_registry,
+    shorthand_registry_debug_snapshot,
+};
 pub use types::{
     InitialStyleValue, PropertyComputedValueKind, PropertyId, PropertyInheritance,
     PropertyInvalidValuePolicy, PropertyInvalidationImpact, PropertyLengthSignPolicy,

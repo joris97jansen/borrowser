@@ -95,6 +95,13 @@ Architecture status:
   synthetic stylesheet wrapper. Unsupported standard properties remain generic
   unsupported declarations unless future issues add real supported property or
   shorthand contracts.
+- AD9 adds deterministic CSS-owned property coverage and metadata debug
+  snapshots for the current supported subset; see
+  `docs/css/ad9-css-property-coverage-metadata-debug-snapshots.md`. The
+  snapshots expose current longhand coverage, registry metadata, representative
+  value parsing, supported shorthand registration and expansion, and
+  invalidation classification. AD9 does not add broad property coverage or new
+  CSS semantics.
 
 - borders:
   - full `border` shorthand support

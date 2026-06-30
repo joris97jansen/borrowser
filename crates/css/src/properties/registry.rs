@@ -1,5 +1,6 @@
 use super::{
     data::{PROPERTY_LOOKUP_BY_NAME, PROPERTY_REGISTRATION_DATA},
+    shorthand_registry,
     types::{PropertyId, PropertyMetadata},
 };
 use std::fmt::Write;
@@ -169,6 +170,82 @@ pub fn property_registry_metadata_debug_snapshot() -> String {
     }
 
     output
+}
+
+/// Deterministic debug snapshot for current supported longhand coverage.
+///
+/// This is derived from the supported longhand registry and supported
+/// shorthand registry. It is not a complete known-CSS-property inventory and
+/// must not be extended with unsupported placeholder properties.
+pub fn property_coverage_debug_snapshot() -> String {
+    let registry = property_registry();
+    let mut output = String::from("version: 1\nproperty-coverage\n");
+    writeln!(&mut output, "properties: {}", registry.entries().len()).expect("write snapshot");
+
+    for (index, registration) in registry.entries().iter().enumerate() {
+        let metadata = registration.metadata();
+        writeln!(&mut output, "property[{index}]: {}", registration.name())
+            .expect("write snapshot");
+        writeln!(&mut output, "  supported: yes").expect("write snapshot");
+        writeln!(
+            &mut output,
+            "  inherited-by-default: {}",
+            metadata.inheritance.as_debug_label()
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut output,
+            "  initial: {}",
+            metadata.initial.as_debug_label()
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut output,
+            "  specified-value: {}",
+            metadata.specified_value.as_debug_label()
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut output,
+            "  computed-value: {}",
+            metadata.computed_value.as_debug_label()
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut output,
+            "  invalidation-impact: {}",
+            metadata.invalidation_impact.to_debug_label()
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut output,
+            "  shorthand-membership: {}",
+            shorthand_membership_debug_label(registration.id())
+        )
+        .expect("write snapshot");
+    }
+
+    output
+}
+
+fn shorthand_membership_debug_label(property: PropertyId) -> String {
+    let memberships = shorthand_registry()
+        .entries()
+        .iter()
+        .filter_map(|shorthand| {
+            shorthand
+                .longhands()
+                .iter()
+                .position(|&longhand| longhand == property)
+                .map(|index| format!("{}[{index}]", shorthand.name()))
+        })
+        .collect::<Vec<_>>();
+
+    if memberships.is_empty() {
+        "none".to_string()
+    } else {
+        memberships.join(", ")
+    }
 }
 
 static PROPERTY_REGISTRY: PropertyRegistry =

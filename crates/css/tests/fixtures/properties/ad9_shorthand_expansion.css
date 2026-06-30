@@ -1,0 +1,8 @@
+.ad9 {
+  outline: 2px solid red;
+  outline: solid;
+  outline: inherit;
+  outline: 1px 2px;
+  outline: dashed;
+  outline: revert;
+}

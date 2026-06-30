@@ -1,0 +1,37 @@
+.ad9 {
+  background-color: red;
+  border-bottom-color: red;
+  border-bottom-style: solid;
+  border-bottom-width: 2px;
+  border-left-color: red;
+  border-left-style: solid;
+  border-left-width: 3px;
+  border-right-color: red;
+  border-right-style: solid;
+  border-right-width: 4px;
+  border-top-color: red;
+  border-top-style: solid;
+  border-top-width: 5px;
+  color: blue;
+  display: block;
+  font-size: 20px;
+  height: 40px;
+  margin-bottom: -2px;
+  margin-left: 6px;
+  margin-right: 7px;
+  margin-top: 8px;
+  max-width: 80%;
+  min-width: 10px;
+  overflow: hidden;
+  outline-color: #0fa;
+  outline-style: solid;
+  outline-width: 1px;
+  padding-bottom: 2px;
+  padding-left: 3px;
+  padding-right: 4px;
+  padding-top: 5px;
+  position: relative;
+  text-decoration-line: underline;
+  width: 50%;
+  z-index: -4;
+}
