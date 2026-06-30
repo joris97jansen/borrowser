@@ -43,9 +43,13 @@ Notes:
 
 ## CSS Property Coverage
 
-Current supported property set is intentionally small. Major missing families:
+Current supported property set is intentionally small. Milestone AD is complete
+only as a CSS value/property foundation milestone. It does not mean broad CSS
+property coverage, selector conformance, cascade conformance, media queries,
+custom properties, animations, layout behavior, paint behavior, or WPT-backed
+CSS compatibility are complete.
 
-Architecture status:
+Architecture and foundation status:
 
 - AD1 defines the CSS-owned value/property architecture and subsystem
   boundaries for future property work; see
@@ -102,6 +106,14 @@ Architecture status:
   value parsing, supported shorthand registration and expansion, and
   invalidation classification. AD9 does not add broad property coverage or new
   CSS semantics.
+- AD10 closes Milestone AD as a CSS value/property foundation milestone; see
+  `docs/css/ad10-css-value-property-foundation-closeout.md`. The closeout
+  summarizes the value model, property registry, CSS-wide keyword support,
+  specified/computed boundaries, shorthand foundation, invalidation
+  classification, declaration parsing, unsupported behavior, and future
+  extension points. AD10 does not add or imply broad CSS property coverage.
+
+Major missing families remain:
 
 - borders:
   - full `border` shorthand support
@@ -144,10 +156,13 @@ Architecture status:
 - sizing: full intrinsic sizing keywords and browser-compatible min/max nuance
 - overflow: scrollbars, scroll containers, scroll offsets, overflow-x/y split
   behavior, viewport/body overflow propagation
-- selectors/media: broad selector coverage, media queries, pseudo-classes,
-  pseudo-elements
+- selectors and media: broad selector coverage, pseudo-classes,
+  pseudo-elements, selector invalidation, media queries, and container queries
 - custom properties and variables
 - animations and transitions
+- CSS Values and Units beyond the current narrow subset
+- CSS Color beyond the current narrow keyword and hex subset
+- WPT-backed broad CSS conformance
 
 ## Layout
 
