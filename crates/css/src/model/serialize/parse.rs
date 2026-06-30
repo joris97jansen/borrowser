@@ -1,10 +1,21 @@
-use super::super::StylesheetParse;
-use super::stylesheet::serialize_stylesheet_for_snapshot;
+use super::super::{DeclarationListParse, StylesheetParse};
+use super::stylesheet::{
+    serialize_declaration_list_for_snapshot, serialize_stylesheet_for_snapshot,
+};
 use crate::syntax::{ParseStats, SyntaxDiagnostic};
 use std::fmt::Write;
 
 pub fn serialize_stylesheet_parse_for_snapshot(parse: &StylesheetParse) -> String {
     let mut out = serialize_stylesheet_for_snapshot(&parse.input, &parse.stylesheet);
+    serialize_diagnostics_for_snapshot(&mut out, &parse.diagnostics);
+    serialize_stats_for_snapshot(&mut out, &parse.stats);
+    out
+}
+
+pub(crate) fn serialize_declaration_list_parse_for_snapshot(
+    parse: &DeclarationListParse,
+) -> String {
+    let mut out = serialize_declaration_list_for_snapshot(&parse.input, &parse.declarations);
     serialize_diagnostics_for_snapshot(&mut out, &parse.diagnostics);
     serialize_stats_for_snapshot(&mut out, &parse.stats);
     out

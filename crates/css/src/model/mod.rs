@@ -29,7 +29,9 @@ use crate::syntax::{
     CssSpan, CssUnicodeRange, ParseStats, SyntaxDiagnostic,
 };
 
+pub(crate) use self::entry::parse_declaration_list_with_options;
 pub use self::entry::{parse_stylesheet, parse_stylesheet_with_options};
+pub(crate) use self::serialize::serialize_declaration_list_parse_for_snapshot;
 pub use self::serialize::{
     serialize_declaration_for_snapshot, serialize_rule_for_snapshot,
     serialize_stylesheet_for_snapshot, serialize_stylesheet_parse_for_snapshot,
@@ -424,5 +426,20 @@ pub struct StylesheetParse {
 impl StylesheetParse {
     pub fn to_debug_snapshot(&self) -> String {
         serialize_stylesheet_parse_for_snapshot(self)
+    }
+}
+
+/// Parsed declaration-list result for engine-facing model declarations.
+#[derive(Clone, Debug)]
+pub(crate) struct DeclarationListParse {
+    pub input: CssInput,
+    pub declarations: Vec<Declaration>,
+    pub diagnostics: Vec<SyntaxDiagnostic>,
+    pub stats: ParseStats,
+}
+
+impl DeclarationListParse {
+    pub(crate) fn to_debug_snapshot(&self) -> String {
+        serialize_declaration_list_parse_for_snapshot(self)
     }
 }

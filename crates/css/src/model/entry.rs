@@ -1,8 +1,8 @@
 use super::{
-    AtRule, AtRuleBlock, Declaration, DeclarationBlock, DeclarationValue, ImportantAnnotation,
-    PreservedBlock, PreservedComponentList, PropertyName, PropertyNameKind, Rule, StyleRule,
-    Stylesheet, StylesheetParse, ValueBlock, ValueComponent, ValueFunction, ValueSymbol, ValueText,
-    ValueToken,
+    AtRule, AtRuleBlock, Declaration, DeclarationBlock, DeclarationListParse, DeclarationValue,
+    ImportantAnnotation, PreservedBlock, PreservedComponentList, PropertyName, PropertyNameKind,
+    Rule, StyleRule, Stylesheet, StylesheetParse, ValueBlock, ValueComponent, ValueFunction,
+    ValueSymbol, ValueText, ValueToken,
 };
 use crate::selectors::parse_selector_list_with_limits;
 use crate::syntax::{
@@ -29,6 +29,29 @@ pub fn parse_stylesheet_with_options(input: &str, options: &ParseOptions) -> Sty
         stylesheet,
         diagnostics: parse.diagnostics,
         stats: parse.stats,
+    }
+}
+
+pub(crate) fn parse_declaration_list_with_options(
+    input: &str,
+    options: &ParseOptions,
+) -> DeclarationListParse {
+    let syntax::StructuredDeclarationListParse {
+        input,
+        declarations,
+        diagnostics,
+        stats,
+    } = syntax::parse_declaration_list_structured(input, 0, options);
+    let declarations = declarations
+        .iter()
+        .map(|declaration| build_declaration(&input, declaration))
+        .collect();
+
+    DeclarationListParse {
+        input,
+        declarations,
+        diagnostics,
+        stats,
     }
 }
 

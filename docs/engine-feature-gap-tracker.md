@@ -88,6 +88,13 @@ Architecture status:
   `docs/css/ad7-css-owned-invalidation-impact-classification.md`.
   Browser/runtime consumes a narrow CSS-owned projection for retained dirty
   state and work planning without owning CSS property semantics.
+- AD8 adds deterministic declaration-list parsing and diagnostics coverage for
+  declaration classification; see
+  `docs/css/ad8-deterministic-declaration-parsing-diagnostics.md`. Inline
+  style attributes now use the model declaration-list parser instead of a
+  synthetic stylesheet wrapper. Unsupported standard properties remain generic
+  unsupported declarations unless future issues add real supported property or
+  shorthand contracts.
 
 - borders:
   - full `border` shorthand support

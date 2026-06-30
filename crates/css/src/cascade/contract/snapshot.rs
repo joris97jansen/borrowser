@@ -1,7 +1,8 @@
 use std::fmt::Write;
 
 use super::declarations::{
-    CascadeDeclarationApplicability, CascadeDeclarationProperty, CascadeSpecifiedValue,
+    CascadeDeclarationApplicability, CascadeDeclarationInput, CascadeDeclarationProperty,
+    CascadeSpecifiedValue,
 };
 use super::priority::{CascadeImportance, CascadeOrigin, CascadeSpecificity};
 use super::resolved_style::{CssWideResolvedSource, ResolvedStyle, ResolvedValueSource};
@@ -55,13 +56,14 @@ pub(crate) fn append_cascade_evaluation_debug_snapshot(
         for (declaration_index, declaration) in rule_input.declarations().iter().enumerate() {
             writeln!(
                 out,
-                "    declaration[{declaration_index}]: source={} declaration-order={} importance={} property={} applicability={} value={}",
+                "    declaration[{declaration_index}]: source={} declaration-order={} importance={} property={} applicability={} value={}{}",
                 declaration_source_label(declaration.source()),
                 declaration_order_label(declaration.declaration_order(), declaration.expansion_order()),
                 importance_label(declaration.importance()),
                 declaration_property_label(declaration.property()),
                 applicability_label(declaration.applicability()),
                 specified_value_label(declaration.value()),
+                declaration_error_label(declaration),
             )
             .expect("write snapshot");
         }
@@ -289,6 +291,16 @@ fn specified_value_label(value: &CascadeSpecifiedValue) -> String {
         .to_css_text()
         .unwrap_or_else(|| "<unresolved-value>".to_string());
     quoted_snapshot_text(&value)
+}
+
+fn declaration_error_label(declaration: &CascadeDeclarationInput) -> String {
+    if let Some(error) = declaration.invalid_value_error() {
+        return format!(" invalid-reason={}", error.kind().as_debug_label());
+    }
+    if let Some(error) = declaration.invalid_shorthand_error() {
+        return format!(" invalid-reason={}", error.kind().as_debug_label());
+    }
+    String::new()
 }
 
 fn specificity_label(specificity: CascadeSpecificity) -> String {

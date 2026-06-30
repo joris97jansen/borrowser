@@ -164,6 +164,36 @@ fn resolve_document_styles_rejects_invalid_supported_values_before_winner_resolu
 }
 
 #[test]
+fn resolve_document_styles_recovers_malformed_inline_declaration_list() {
+    let stylesheets = Vec::new();
+    let dom = element(
+        "div",
+        vec![("style", Some("color red width: 10px; color: blue;"))],
+        Vec::new(),
+    );
+
+    let resolved = resolve_document_styles(&dom, &stylesheets).expect("resolved document style");
+    let style = resolved.entries()[0].style();
+
+    assert_eq!(
+        style
+            .get(CascadePropertyId::Width)
+            .and_then(|entry| entry.winner())
+            .and_then(|winner| winner.value.to_css_text())
+            .as_deref(),
+        Some("10px")
+    );
+    assert_eq!(
+        style
+            .get(CascadePropertyId::Color)
+            .and_then(|entry| entry.winner())
+            .and_then(|winner| winner.value.to_css_text())
+            .as_deref(),
+        Some("blue")
+    );
+}
+
+#[test]
 fn resolve_document_styles_rejects_invalid_outline_shorthand_atomically() {
     let stylesheets = vec![stylesheet(
         "div { outline-color: red; outline-style: solid; outline: 1px 2px; }",

@@ -1,0 +1,11 @@
+color red width: 10px;
+zoom: 2;
+border: 1px solid red;
+--brand: teal;
+color: red;
+color: nonsense;
+color: blue;
+display: grid;
+outline: 2px solid red;
+outline: 1px 2px;
+width: 5px;

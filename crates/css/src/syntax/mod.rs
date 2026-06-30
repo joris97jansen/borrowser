@@ -58,6 +58,7 @@ pub use parser::{
     CssAtRule, CssBlockKind, CssComponentValue, CssDeclaration, CssDeclarationBlock, CssFunction,
     CssQualifiedRule, CssRule, CssSimpleBlock, CssStylesheet,
 };
+pub(crate) use parser::{StructuredDeclarationListParse, parse_declaration_list_structured};
 pub use results::{Declaration, DeclarationListParse, ParseStats, StylesheetParse};
 pub use serialize::{
     serialize_compat_stylesheet_for_snapshot, serialize_declaration_list_parse_for_snapshot,
