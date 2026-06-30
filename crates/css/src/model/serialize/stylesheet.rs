@@ -13,6 +13,7 @@ use std::fmt::Write;
 
 const SNAPSHOT_VERSION: u32 = 1;
 const SNAPSHOT_KIND_STYLESHEET: &str = "model-stylesheet";
+const SNAPSHOT_KIND_DECLARATION_LIST: &str = "model-declaration-list";
 
 pub fn serialize_stylesheet_for_snapshot(input: &CssInput, sheet: &Stylesheet) -> String {
     let mut out = String::new();
@@ -39,6 +40,22 @@ pub fn serialize_rule_for_snapshot(input: &CssInput, rule: &Rule) -> String {
 pub fn serialize_declaration_for_snapshot(input: &CssInput, declaration: &Declaration) -> String {
     let mut out = String::new();
     write_declaration(&mut out, input, declaration, None, 0);
+    out
+}
+
+/// Serialize engine-facing declarations using the stable model snapshot grammar.
+pub fn serialize_declaration_list_for_snapshot(
+    input: &CssInput,
+    declarations: &[Declaration],
+) -> String {
+    let mut out = String::new();
+    writeln!(out, "version: {SNAPSHOT_VERSION}").expect("write snapshot version");
+    writeln!(out, "{SNAPSHOT_KIND_DECLARATION_LIST}").expect("write snapshot kind");
+
+    for (declaration_index, declaration) in declarations.iter().enumerate() {
+        write_declaration(&mut out, input, declaration, Some(declaration_index), 0);
+    }
+
     out
 }
 

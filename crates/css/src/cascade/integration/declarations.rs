@@ -1,6 +1,6 @@
 use super::super::contract::{
     CascadeDeclarationInput, CascadeDeclarationSource, CascadeImportance, CascadeSpecifiedValue,
-    StylesheetDeclarationRef,
+    InlineStyleDeclarationRef, InlineStyleRuleRef, StylesheetDeclarationRef,
 };
 use crate::model::{self, PropertyNameKind};
 use crate::specified::{ShorthandExpansionError, ShorthandExpansionErrorKind};
@@ -23,6 +23,27 @@ pub(super) fn stylesheet_declaration_inputs(
                 CascadeDeclarationSource::Stylesheet(StylesheetDeclarationRef {
                     stylesheet_index,
                     rule_index,
+                    declaration_index,
+                }),
+                declaration_index,
+                declaration,
+            )
+        })
+        .collect()
+}
+
+pub(super) fn inline_style_declaration_inputs_from_model(
+    inline_style: InlineStyleRuleRef,
+    declarations: &[model::Declaration],
+) -> Vec<CascadeDeclarationInput> {
+    declarations
+        .iter()
+        .enumerate()
+        .flat_map(|(declaration_index, declaration)| {
+            let declaration_index = u32_index(declaration_index);
+            declaration_inputs_from_model(
+                CascadeDeclarationSource::InlineStyle(InlineStyleDeclarationRef {
+                    inline_style,
                     declaration_index,
                 }),
                 declaration_index,

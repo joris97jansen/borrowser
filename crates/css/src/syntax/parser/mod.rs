@@ -13,6 +13,7 @@ mod tests;
 
 use super::{ParseOptions, StylesheetParse};
 
+pub(crate) use self::model::StructuredDeclarationListParse;
 pub use self::model::{
     CssAtRule, CssBlockKind, CssComponentValue, CssDeclaration, CssDeclarationBlock, CssFunction,
     CssQualifiedRule, CssRule, CssSimpleBlock, CssStylesheet,
@@ -24,7 +25,7 @@ pub(super) fn parse_stylesheet_structured(input: &str, options: &ParseOptions) -
     entry::parse_stylesheet_structured(input, options)
 }
 
-pub(super) fn parse_declaration_list_structured(
+pub(crate) fn parse_declaration_list_structured(
     input: &str,
     base_offset: usize,
     options: &ParseOptions,

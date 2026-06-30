@@ -46,6 +46,8 @@ It records:
 - rule source, origin, specificity, and rule order
 - declaration source, declaration order, importance, property category,
   applicability, and specified value
+- stable invalid-reason labels for invalid supported values and invalid
+  shorthand declarations
 - source-order candidates
 - cascade-order candidates
 - final authored winners
@@ -87,6 +89,8 @@ R8 establishes these snapshot invariants:
 - declaration values are serialized through the structured model value surface
 - unsupported/custom/invalid declarations remain visible in evaluation traces
   but do not produce candidates
+- invalid declaration reason labels use stable CSS-owned parser/expansion
+  reason codes and are debug information only
 - inherited and initial/default entries are explicit in resolved-style output
 - document-level traces do not mutate the DOM
 - snapshot label grammar is a maintained contract; changes to labels such as

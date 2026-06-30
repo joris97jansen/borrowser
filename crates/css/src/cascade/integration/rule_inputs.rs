@@ -1,9 +1,6 @@
-use super::super::contract::{
-    CascadeDeclarationInput, CascadeDeclarationSource, CascadeRuleInput, CascadeRuleMatch,
-    InlineStyleDeclarationRef, InlineStyleRuleRef,
-};
+use super::super::contract::{CascadeRuleInput, CascadeRuleMatch, InlineStyleRuleRef};
 use super::declarations::{
-    declaration_inputs_from_model, stylesheet_declaration_inputs, u32_index,
+    inline_style_declaration_inputs_from_model, stylesheet_declaration_inputs, u32_index,
 };
 use super::limits::{StyleResolutionError, StyleResolutionLimit, StyleResolutionLimits};
 use super::source::StylesheetCascadeInput;
@@ -153,32 +150,10 @@ fn inline_style_rule_input(
 fn inline_style_declaration_inputs(
     inline_style: InlineStyleRuleRef,
     inline_style_text: &str,
-) -> Vec<CascadeDeclarationInput> {
-    // The model layer does not yet expose a first-class declaration-list parse
-    // entrypoint. Keep the wrapper localized here so inline style attributes
-    // still flow through structured model declarations rather than the legacy
-    // string-vector projection.
-    let wrapped_rule = format!("* {{ {inline_style_text} }}");
-    let parse = model::parse_stylesheet_with_options(&wrapped_rule, &ParseOptions::stylesheet());
-
-    let Some(model::Rule::Style(rule)) = parse.stylesheet.rules.first() else {
-        return Vec::new();
-    };
-
-    rule.declarations
-        .declarations
-        .iter()
-        .enumerate()
-        .flat_map(|(declaration_index, declaration)| {
-            let declaration_index = u32_index(declaration_index);
-            declaration_inputs_from_model(
-                CascadeDeclarationSource::InlineStyle(InlineStyleDeclarationRef {
-                    inline_style,
-                    declaration_index,
-                }),
-                declaration_index,
-                declaration,
-            )
-        })
-        .collect()
+) -> Vec<super::super::contract::CascadeDeclarationInput> {
+    let parse = model::parse_declaration_list_with_options(
+        inline_style_text,
+        &ParseOptions::style_attribute(),
+    );
+    inline_style_declaration_inputs_from_model(inline_style, &parse.declarations)
 }

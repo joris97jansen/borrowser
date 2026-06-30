@@ -72,7 +72,7 @@ fn cascade_evaluation_debug_snapshot_covers_filtering_ordering_and_winners() {
             "    declaration[0]: source=stylesheet[0/0]/declaration[0] declaration-order=0 importance=normal property=supported(color) applicability=supported(color) value=\"red\"\n",
             "    declaration[1]: source=stylesheet[0/0]/declaration[1] declaration-order=1 importance=normal property=unsupported(\"zoom\") applicability=unsupported-property value=\"2\"\n",
             "    declaration[2]: source=stylesheet[0/0]/declaration[2] declaration-order=2 importance=important property=supported(color) applicability=supported(color) value=\"blue\"\n",
-            "    declaration[3]: source=stylesheet[0/0]/declaration[3] declaration-order=3 importance=normal property=invalid-value(display) applicability=invalid-value(display) value=\"grid\"\n",
+            "    declaration[3]: source=stylesheet[0/0]/declaration[3] declaration-order=3 importance=normal property=invalid-value(display) applicability=invalid-value(display) value=\"grid\" invalid-reason=unsupported-display-keyword\n",
             "  rule-input[1]: source=inline-style[3] origin=author specificity=inline-style rule-order=1 declarations=1\n",
             "    declaration[0]: source=inline-style[3]/declaration[0] declaration-order=0 importance=normal property=supported(width) applicability=supported(width) value=\"20px\"\n",
             "candidates-source-order: 3\n",

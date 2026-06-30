@@ -1,0 +1,128 @@
+version: 1
+declaration-list-pipeline
+model-parse
+  version: 1
+  model-declaration-list
+  declaration[0] @10..22
+    name(kind=standard, text="width") @10..15
+    value @16..21
+      - whitespace @16..17
+      - dimension(kind=integer, number="10", unit="px") @17..21
+    important @<none>
+  declaration[1] @23..31
+    name(kind=standard, text="zoom") @23..27
+    value @28..30
+      - whitespace @28..29
+      - number(kind=integer, text="2") @29..30
+    important @<none>
+  declaration[2] @32..54
+    name(kind=standard, text="border") @32..38
+    value @39..53
+      - whitespace @39..40
+      - dimension(kind=integer, number="1", unit="px") @40..43
+      - whitespace @43..44
+      - ident("solid") @44..49
+      - whitespace @49..50
+      - ident("red") @50..53
+    important @<none>
+  declaration[3] @55..69
+    name(kind=custom, text="--brand") @55..62
+    value @63..68
+      - whitespace @63..64
+      - ident("teal") @64..68
+    important @<none>
+  declaration[4] @70..81
+    name(kind=standard, text="color") @70..75
+    value @76..80
+      - whitespace @76..77
+      - ident("red") @77..80
+    important @<none>
+  declaration[5] @82..98
+    name(kind=standard, text="color") @82..87
+    value @88..97
+      - whitespace @88..89
+      - ident("nonsense") @89..97
+    important @<none>
+  declaration[6] @99..111
+    name(kind=standard, text="color") @99..104
+    value @105..110
+      - whitespace @105..106
+      - ident("blue") @106..110
+    important @<none>
+  declaration[7] @112..126
+    name(kind=standard, text="display") @112..119
+    value @120..125
+      - whitespace @120..121
+      - ident("grid") @121..125
+    important @<none>
+  declaration[8] @127..150
+    name(kind=standard, text="outline") @127..134
+    value @135..149
+      - whitespace @135..136
+      - dimension(kind=integer, number="2", unit="px") @136..139
+      - whitespace @139..140
+      - ident("solid") @140..145
+      - whitespace @145..146
+      - ident("red") @146..149
+    important @<none>
+  declaration[9] @151..168
+    name(kind=standard, text="outline") @151..158
+    value @159..167
+      - whitespace @159..160
+      - dimension(kind=integer, number="1", unit="px") @160..163
+      - whitespace @163..164
+      - dimension(kind=integer, number="2", unit="px") @164..167
+    important @<none>
+  declaration[10] @169..180
+    name(kind=standard, text="width") @169..174
+    value @175..179
+      - whitespace @175..176
+      - dimension(kind=integer, number="5", unit="px") @176..179
+    important @<none>
+  diagnostics
+    - warning invalid-declaration @0
+  stats
+    input_bytes: 180
+    rules_emitted: 0
+    declarations_emitted: 11
+    diagnostics_emitted: 1
+    hit_limit: false
+cascade
+  cascade-evaluation
+  rule-inputs: 1
+    rule-input[0]: source=inline-style[0] origin=author specificity=inline-style rule-order=0 declarations=13
+      declaration[0]: source=inline-style[0]/declaration[0] declaration-order=0 importance=normal property=supported(width) applicability=supported(width) value="10px"
+      declaration[1]: source=inline-style[0]/declaration[1] declaration-order=1 importance=normal property=unsupported("zoom") applicability=unsupported-property value="2"
+      declaration[2]: source=inline-style[0]/declaration[2] declaration-order=2 importance=normal property=unsupported("border") applicability=unsupported-property value="1px solid red"
+      declaration[3]: source=inline-style[0]/declaration[3] declaration-order=3 importance=normal property=custom("--brand") applicability=custom-property value="teal"
+      declaration[4]: source=inline-style[0]/declaration[4] declaration-order=4 importance=normal property=supported(color) applicability=supported(color) value="red"
+      declaration[5]: source=inline-style[0]/declaration[5] declaration-order=5 importance=normal property=invalid-value(color) applicability=invalid-value(color) value="nonsense" invalid-reason=unsupported-color-keyword
+      declaration[6]: source=inline-style[0]/declaration[6] declaration-order=6 importance=normal property=supported(color) applicability=supported(color) value="blue"
+      declaration[7]: source=inline-style[0]/declaration[7] declaration-order=7 importance=normal property=invalid-value(display) applicability=invalid-value(display) value="grid" invalid-reason=unsupported-display-keyword
+      declaration[8]: source=inline-style[0]/declaration[8] declaration-order=8 importance=normal property=supported(outline-color) applicability=supported(outline-color) value="red"
+      declaration[9]: source=inline-style[0]/declaration[8] declaration-order=8 expansion-order=1 importance=normal property=supported(outline-style) applicability=supported(outline-style) value="solid"
+      declaration[10]: source=inline-style[0]/declaration[8] declaration-order=8 expansion-order=2 importance=normal property=supported(outline-width) applicability=supported(outline-width) value="2px"
+      declaration[11]: source=inline-style[0]/declaration[9] declaration-order=9 importance=normal property=invalid-shorthand-value(outline) applicability=invalid-shorthand-value(outline) value="1px 2px" invalid-reason=duplicate-component
+      declaration[12]: source=inline-style[0]/declaration[10] declaration-order=10 importance=normal property=supported(width) applicability=supported(width) value="5px"
+  candidates-source-order: 7
+    candidate[0]: property=width source=inline-style[0]/declaration[0] band=author-normal specificity=inline-style rule-order=0 declaration-order=0 value="10px"
+    candidate[1]: property=color source=inline-style[0]/declaration[4] band=author-normal specificity=inline-style rule-order=0 declaration-order=4 value="red"
+    candidate[2]: property=color source=inline-style[0]/declaration[6] band=author-normal specificity=inline-style rule-order=0 declaration-order=6 value="blue"
+    candidate[3]: property=outline-color source=inline-style[0]/declaration[8] band=author-normal specificity=inline-style rule-order=0 declaration-order=8 value="red"
+    candidate[4]: property=outline-style source=inline-style[0]/declaration[8] band=author-normal specificity=inline-style rule-order=0 declaration-order=8 value="solid"
+    candidate[5]: property=outline-width source=inline-style[0]/declaration[8] band=author-normal specificity=inline-style rule-order=0 declaration-order=8 value="2px"
+    candidate[6]: property=width source=inline-style[0]/declaration[10] band=author-normal specificity=inline-style rule-order=0 declaration-order=10 value="5px"
+  candidates-cascade-order: 7
+    candidate[0]: property=color source=inline-style[0]/declaration[4] band=author-normal specificity=inline-style rule-order=0 declaration-order=4 value="red"
+    candidate[1]: property=color source=inline-style[0]/declaration[6] band=author-normal specificity=inline-style rule-order=0 declaration-order=6 value="blue"
+    candidate[2]: property=outline-color source=inline-style[0]/declaration[8] band=author-normal specificity=inline-style rule-order=0 declaration-order=8 value="red"
+    candidate[3]: property=outline-style source=inline-style[0]/declaration[8] band=author-normal specificity=inline-style rule-order=0 declaration-order=8 value="solid"
+    candidate[4]: property=outline-width source=inline-style[0]/declaration[8] band=author-normal specificity=inline-style rule-order=0 declaration-order=8 value="2px"
+    candidate[5]: property=width source=inline-style[0]/declaration[0] band=author-normal specificity=inline-style rule-order=0 declaration-order=0 value="10px"
+    candidate[6]: property=width source=inline-style[0]/declaration[10] band=author-normal specificity=inline-style rule-order=0 declaration-order=10 value="5px"
+  winners: 5
+    color: winner(source=inline-style[0]/declaration[6], band=author-normal, specificity=inline-style, rule-order=0, declaration-order=6, value="blue")
+    outline-color: winner(source=inline-style[0]/declaration[8], band=author-normal, specificity=inline-style, rule-order=0, declaration-order=8, value="red")
+    outline-style: winner(source=inline-style[0]/declaration[8], band=author-normal, specificity=inline-style, rule-order=0, declaration-order=8, value="solid")
+    outline-width: winner(source=inline-style[0]/declaration[8], band=author-normal, specificity=inline-style, rule-order=0, declaration-order=8, value="2px")
+    width: winner(source=inline-style[0]/declaration[10], band=author-normal, specificity=inline-style, rule-order=0, declaration-order=10, value="5px")

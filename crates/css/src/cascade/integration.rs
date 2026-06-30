@@ -4,7 +4,9 @@ mod limits;
 mod rule_inputs;
 mod source;
 
-pub use self::debug_snapshot::resolve_document_styles_debug_snapshot;
+pub use self::debug_snapshot::{
+    declaration_list_pipeline_debug_snapshot, resolve_document_styles_debug_snapshot,
+};
 pub use self::limits::{StyleResolutionError, StyleResolutionLimit, StyleResolutionLimits};
 pub use self::source::{StylesheetCascadeInput, get_inline_style, is_css};
 

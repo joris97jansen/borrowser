@@ -65,9 +65,9 @@ pub use document::{ResolvedDocumentStyle, ResolvedElementStyle};
 // Document-resolution integration path
 pub use integration::{
     IncrementalResolvedDocumentStyle, IncrementalStyleResolutionStats, StyleResolutionError,
-    StyleResolutionLimit, StyleResolutionLimits, StylesheetCascadeInput, get_inline_style, is_css,
-    resolve_document_styles, resolve_document_styles_debug_snapshot,
-    resolve_document_styles_from_cascade_inputs,
+    StyleResolutionLimit, StyleResolutionLimits, StylesheetCascadeInput,
+    declaration_list_pipeline_debug_snapshot, get_inline_style, is_css, resolve_document_styles,
+    resolve_document_styles_debug_snapshot, resolve_document_styles_from_cascade_inputs,
     try_resolve_document_styles_from_cascade_inputs_with_limits,
     try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_limits,
     try_resolve_document_styles_incremental_suffix_with_limits,
