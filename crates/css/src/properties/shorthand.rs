@@ -1,4 +1,5 @@
 use super::types::PropertyId;
+use std::fmt::Write;
 
 /// Engine-owned identifier for one supported CSS shorthand property.
 ///
@@ -131,6 +132,32 @@ impl ShorthandRegistry {
 
 pub fn shorthand_registry() -> &'static ShorthandRegistry {
     &SHORTHAND_REGISTRY
+}
+
+/// Deterministic debug snapshot for supported shorthand registrations.
+///
+/// This reports only implemented shorthand support. Unsupported shorthands
+/// remain absent until their grammar and expansion behavior are implemented.
+pub fn shorthand_registry_debug_snapshot() -> String {
+    let registry = shorthand_registry();
+    let mut output = String::from("version: 1\nshorthand-registry\n");
+    writeln!(&mut output, "shorthands: {}", registry.entries().len()).expect("write snapshot");
+
+    for (index, shorthand) in registry.entries().iter().enumerate() {
+        writeln!(&mut output, "shorthand[{index}]: {}", shorthand.name()).expect("write snapshot");
+        writeln!(&mut output, "  longhands: {}", shorthand.longhands().len())
+            .expect("write snapshot");
+        for (longhand_index, longhand) in shorthand.longhands().iter().enumerate() {
+            writeln!(
+                &mut output,
+                "  longhand[{longhand_index}]: {}",
+                longhand.name()
+            )
+            .expect("write snapshot");
+        }
+    }
+
+    output
 }
 
 const OUTLINE_LONGHANDS: [PropertyId; 3] = [

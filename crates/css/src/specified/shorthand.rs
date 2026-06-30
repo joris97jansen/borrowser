@@ -3,9 +3,12 @@ use crate::{
     properties::{PropertyId, ShorthandId},
     values::CssWideKeyword,
 };
+use std::fmt::Write;
 
 use super::{
-    SpecifiedValueLimits, error::SpecifiedValueParseErrorKind, parse::parse_specified_value,
+    SpecifiedValueLimits,
+    error::SpecifiedValueParseErrorKind,
+    parse::{parse_specified_declaration_value, parse_specified_value},
 };
 
 const DEFAULT_EXPANSION_ORDER: u16 = 0;
@@ -131,6 +134,87 @@ pub fn expand_shorthand_declaration(
 ) -> Result<ShorthandExpansion, ShorthandExpansionError> {
     match shorthand {
         ShorthandId::Outline => expand_outline(value),
+    }
+}
+
+/// Deterministic debug snapshot for one supported shorthand expansion attempt.
+///
+/// This uses the real shorthand expansion path and then validates every emitted
+/// longhand through the real property-aware specified-value parser.
+pub fn shorthand_expansion_debug_snapshot(
+    shorthand: ShorthandId,
+    value: &DeclarationValue,
+) -> String {
+    let mut output = String::from("version: 1\nshorthand-expansion\n");
+    writeln!(&mut output, "shorthand: {}", shorthand.name()).expect("write snapshot");
+
+    let expansion = match expand_shorthand_declaration(shorthand, value) {
+        Ok(expansion) => expansion,
+        Err(error) => {
+            writeln!(&mut output, "result: rejected").expect("write snapshot");
+            append_shorthand_expansion_error(&mut output, &error);
+            return output;
+        }
+    };
+
+    writeln!(&mut output, "result: expanded").expect("write snapshot");
+    writeln!(&mut output, "longhands: {}", expansion.longhands().len()).expect("write snapshot");
+    for (index, longhand) in expansion.longhands().iter().enumerate() {
+        writeln!(
+            &mut output,
+            "longhand[{index}]: {}",
+            longhand.property().name()
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut output,
+            "  expansion-order: {}",
+            longhand.expansion_order()
+        )
+        .expect("write snapshot");
+
+        match parse_specified_declaration_value(longhand.property(), longhand.value()) {
+            Ok(specified) => {
+                writeln!(&mut output, "  longhand-parse: accepted").expect("write snapshot");
+                let specified_kind = specified
+                    .property_value()
+                    .map(|value| value.kind().as_debug_label())
+                    .unwrap_or("css-wide-keyword");
+                writeln!(&mut output, "  specified-kind: {specified_kind}")
+                    .expect("write snapshot");
+                writeln!(&mut output, "  specified: {}", specified.to_css_text())
+                    .expect("write snapshot");
+            }
+            Err(error) => {
+                writeln!(&mut output, "  longhand-parse: rejected").expect("write snapshot");
+                writeln!(
+                    &mut output,
+                    "  specified-error: {}",
+                    error.kind().as_debug_label()
+                )
+                .expect("write snapshot");
+            }
+        }
+    }
+
+    output
+}
+
+fn append_shorthand_expansion_error(output: &mut String, error: &ShorthandExpansionError) {
+    writeln!(output, "error: {}", error.kind().as_debug_label()).expect("write snapshot");
+    match error.kind() {
+        ShorthandExpansionErrorKind::DuplicateComponent { property } => {
+            writeln!(output, "error-property: {}", property.name()).expect("write snapshot");
+        }
+        ShorthandExpansionErrorKind::LonghandValueRejected { property, kind } => {
+            writeln!(output, "error-property: {}", property.name()).expect("write snapshot");
+            writeln!(output, "longhand-error: {}", kind.as_debug_label()).expect("write snapshot");
+        }
+        ShorthandExpansionErrorKind::ResourceLimitExceeded
+        | ShorthandExpansionErrorKind::EmptyValue
+        | ShorthandExpansionErrorKind::UnsupportedComponent
+        | ShorthandExpansionErrorKind::AmbiguousComponent
+        | ShorthandExpansionErrorKind::UnsupportedCssWideKeyword => {}
     }
 }
 

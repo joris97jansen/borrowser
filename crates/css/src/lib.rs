@@ -70,6 +70,7 @@ pub use computed::{
     compute_document_styles_incremental_suffix_from_cascade_inputs_with_limits,
     compute_document_styles_incremental_suffix_with_limits, compute_document_styles_with_limits,
     compute_style_from_resolved_style, computed_value_debug_snapshot, normalize_specified_value,
+    property_invalidation_classification_debug_snapshot,
 };
 pub use computed::{ComputedStyle, StyledNode, build_style_tree, compute_style};
 pub use model::{
@@ -85,9 +86,10 @@ pub use properties::{
     PropertyComputedValueKind, PropertyId, PropertyInheritance, PropertyInvalidValuePolicy,
     PropertyInvalidationImpact, PropertyLengthSignPolicy, PropertyMetadata, PropertyRegistration,
     PropertyRegistry, PropertySpecifiedValueKind, PropertyValueBoundary, ShorthandId,
-    ShorthandRegistration, ShorthandRegistry, SpecifiedToComputedConversionRule, property_registry,
-    property_registry_metadata_debug_snapshot, property_value_boundaries, property_value_boundary,
-    property_value_boundary_debug_snapshot, shorthand_registry,
+    ShorthandRegistration, ShorthandRegistry, SpecifiedToComputedConversionRule,
+    property_coverage_debug_snapshot, property_registry, property_registry_metadata_debug_snapshot,
+    property_value_boundaries, property_value_boundary, property_value_boundary_debug_snapshot,
+    shorthand_registry, shorthand_registry_debug_snapshot,
 };
 pub use selectors::{
     AncestorElements, AttributeExistsSelector, AttributeMatchSelector, AttributeMatcher,
@@ -114,7 +116,7 @@ pub use specified::{
     SpecifiedValue, SpecifiedValueLimits, SpecifiedValueParseError, SpecifiedValueParseErrorKind,
     SpecifiedZIndex, SpecifiedZIndexValue, expand_shorthand_declaration,
     parse_specified_declaration_value, parse_specified_declaration_value_with_limits,
-    parse_specified_value, parse_specified_value_with_limits,
+    parse_specified_value, parse_specified_value_with_limits, shorthand_expansion_debug_snapshot,
 };
 
 // Explicit syntax-layer surface for parser/tokenizer work and syntax tests.

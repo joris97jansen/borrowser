@@ -30,7 +30,7 @@ pub use parse::{
 };
 pub use shorthand::{
     ExpandedLonghandDeclaration, ShorthandExpansion, ShorthandExpansionError,
-    ShorthandExpansionErrorKind, expand_shorthand_declaration,
+    ShorthandExpansionErrorKind, expand_shorthand_declaration, shorthand_expansion_debug_snapshot,
 };
 pub use value::{
     SpecifiedBorderStyle, SpecifiedBorderStyleKeyword, SpecifiedColor, SpecifiedColorKeyword,

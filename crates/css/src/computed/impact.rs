@@ -1,4 +1,5 @@
-use crate::properties::PropertyId;
+use crate::properties::{PropertyId, property_registry};
+use std::fmt::Write;
 
 use super::document::ComputedDocumentStyle;
 use super::style::ComputedStyle;
@@ -72,6 +73,15 @@ impl ComputedDocumentStyle {
 }
 
 impl ComputedStyleInvalidationImpact {
+    pub fn as_debug_label(self) -> &'static str {
+        match self {
+            Self::NoVisualImpact => "no-visual-impact",
+            Self::StyleOnly => "style-only",
+            Self::PaintOnly => "paint-only",
+            Self::LayoutAffecting => "layout-affecting",
+        }
+    }
+
     fn combine(self, next: Self) -> Self {
         use ComputedStyleInvalidationImpact::{
             LayoutAffecting, NoVisualImpact, PaintOnly, StyleOnly,
@@ -87,6 +97,16 @@ impl ComputedStyleInvalidationImpact {
 }
 
 impl ComputedDocumentStyleInvalidationImpact {
+    pub fn as_debug_label(&self) -> &'static str {
+        match self {
+            Self::NoVisualImpact => "no-visual-impact",
+            Self::StyleOnly => "style-only",
+            Self::PaintOnly => "paint-only",
+            Self::LayoutAffecting => "layout-affecting",
+            Self::Unknown => "unknown",
+        }
+    }
+
     fn combine(self, next: ComputedStyleInvalidationImpact) -> Self {
         use ComputedDocumentStyleInvalidationImpact::{
             LayoutAffecting, NoVisualImpact, PaintOnly, StyleOnly, Unknown,
@@ -116,4 +136,86 @@ fn property_invalidation_impact(property: PropertyId) -> ComputedStyleInvalidati
     } else {
         ComputedStyleInvalidationImpact::NoVisualImpact
     }
+}
+
+/// Deterministic debug snapshot for CSS-owned invalidation classification.
+///
+/// This is derived from the property registry metadata and the computed-style
+/// projection used by runtime consumers. It does not introduce a Browser-owned
+/// property impact table or new runtime-facing semantics.
+pub fn property_invalidation_classification_debug_snapshot() -> String {
+    let registry = property_registry();
+    let mut output = String::from("version: 1\nproperty-invalidation-classification\n");
+    writeln!(&mut output, "properties: {}", registry.entries().len()).expect("write snapshot");
+
+    for (index, registration) in registry.entries().iter().enumerate() {
+        let impact = registration.metadata().invalidation_impact;
+        let projection = property_invalidation_impact(registration.id());
+
+        writeln!(&mut output, "property[{index}]: {}", registration.name())
+            .expect("write snapshot");
+        writeln!(&mut output, "  css-impact: {}", impact.to_debug_label()).expect("write snapshot");
+        writeln!(
+            &mut output,
+            "  computed-style-projection: {}",
+            projection.as_debug_label()
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut output,
+            "  affects-inherited-style: {}",
+            impact.affects_inherited_style()
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut output,
+            "  affects-box-tree: {}",
+            impact.affects_box_tree()
+        )
+        .expect("write snapshot");
+        writeln!(&mut output, "  affects-layout: {}", impact.affects_layout())
+            .expect("write snapshot");
+        writeln!(
+            &mut output,
+            "  affects-text-metrics: {}",
+            impact.affects_text_metrics()
+        )
+        .expect("write snapshot");
+        writeln!(&mut output, "  affects-paint: {}", impact.affects_paint())
+            .expect("write snapshot");
+        writeln!(
+            &mut output,
+            "  affects-paint-order: {}",
+            impact.affects_paint_order()
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut output,
+            "  affects-overflow-clip: {}",
+            impact.affects_overflow_clip()
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut output,
+            "  affects-future-compositor: {}",
+            impact.affects_future_compositor()
+        )
+        .expect("write snapshot");
+        writeln!(&mut output, "  conservative: {}", impact.is_conservative())
+            .expect("write snapshot");
+        writeln!(
+            &mut output,
+            "  runtime-requires-layout: {}",
+            impact.requires_runtime_layout()
+        )
+        .expect("write snapshot");
+        writeln!(
+            &mut output,
+            "  runtime-requires-paint: {}",
+            impact.requires_runtime_paint()
+        )
+        .expect("write snapshot");
+    }
+
+    output
 }

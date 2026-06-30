@@ -1,0 +1,318 @@
+version: 1
+property-value-parsing
+properties: 35
+property[0]: background-color
+  property: background-color
+  specified-contract: color
+  computed-contract: absolute-color
+  conversion: color-to-rgba
+  specified-kind: color
+  specified: red
+  computed-kind: color
+  computed: rgba(255, 0, 0, 255)
+property[1]: border-bottom-color
+  property: border-bottom-color
+  specified-contract: color
+  computed-contract: absolute-color
+  conversion: color-to-rgba
+  specified-kind: color
+  specified: red
+  computed-kind: color
+  computed: rgba(255, 0, 0, 255)
+property[2]: border-bottom-style
+  property: border-bottom-style
+  specified-contract: border-style-keyword
+  computed-contract: border-style-keyword
+  conversion: keyword-to-computed-enum
+  specified-kind: border-style-keyword
+  specified: solid
+  computed-kind: border-style
+  computed: solid
+property[3]: border-bottom-width
+  property: border-bottom-width
+  specified-contract: absolute-length
+  computed-contract: absolute-length
+  conversion: absolute-length-to-css-px
+  specified-kind: absolute-length
+  specified: 2px
+  computed-kind: length
+  computed: 2px
+property[4]: border-left-color
+  property: border-left-color
+  specified-contract: color
+  computed-contract: absolute-color
+  conversion: color-to-rgba
+  specified-kind: color
+  specified: red
+  computed-kind: color
+  computed: rgba(255, 0, 0, 255)
+property[5]: border-left-style
+  property: border-left-style
+  specified-contract: border-style-keyword
+  computed-contract: border-style-keyword
+  conversion: keyword-to-computed-enum
+  specified-kind: border-style-keyword
+  specified: solid
+  computed-kind: border-style
+  computed: solid
+property[6]: border-left-width
+  property: border-left-width
+  specified-contract: absolute-length
+  computed-contract: absolute-length
+  conversion: absolute-length-to-css-px
+  specified-kind: absolute-length
+  specified: 3px
+  computed-kind: length
+  computed: 3px
+property[7]: border-right-color
+  property: border-right-color
+  specified-contract: color
+  computed-contract: absolute-color
+  conversion: color-to-rgba
+  specified-kind: color
+  specified: red
+  computed-kind: color
+  computed: rgba(255, 0, 0, 255)
+property[8]: border-right-style
+  property: border-right-style
+  specified-contract: border-style-keyword
+  computed-contract: border-style-keyword
+  conversion: keyword-to-computed-enum
+  specified-kind: border-style-keyword
+  specified: solid
+  computed-kind: border-style
+  computed: solid
+property[9]: border-right-width
+  property: border-right-width
+  specified-contract: absolute-length
+  computed-contract: absolute-length
+  conversion: absolute-length-to-css-px
+  specified-kind: absolute-length
+  specified: 4px
+  computed-kind: length
+  computed: 4px
+property[10]: border-top-color
+  property: border-top-color
+  specified-contract: color
+  computed-contract: absolute-color
+  conversion: color-to-rgba
+  specified-kind: color
+  specified: red
+  computed-kind: color
+  computed: rgba(255, 0, 0, 255)
+property[11]: border-top-style
+  property: border-top-style
+  specified-contract: border-style-keyword
+  computed-contract: border-style-keyword
+  conversion: keyword-to-computed-enum
+  specified-kind: border-style-keyword
+  specified: solid
+  computed-kind: border-style
+  computed: solid
+property[12]: border-top-width
+  property: border-top-width
+  specified-contract: absolute-length
+  computed-contract: absolute-length
+  conversion: absolute-length-to-css-px
+  specified-kind: absolute-length
+  specified: 5px
+  computed-kind: length
+  computed: 5px
+property[13]: color
+  property: color
+  specified-contract: color
+  computed-contract: absolute-color
+  conversion: color-to-rgba
+  specified-kind: color
+  specified: blue
+  computed-kind: color
+  computed: rgba(0, 0, 255, 255)
+property[14]: display
+  property: display
+  specified-contract: display-keyword
+  computed-contract: display-keyword
+  conversion: keyword-to-computed-enum
+  specified-kind: display-keyword
+  specified: block
+  computed-kind: display
+  computed: block
+property[15]: font-size
+  property: font-size
+  specified-contract: absolute-length
+  computed-contract: absolute-length
+  conversion: absolute-length-to-css-px
+  specified-kind: absolute-length
+  specified: 20px
+  computed-kind: length
+  computed: 20px
+property[16]: height
+  property: height
+  specified-contract: length-percentage-or-auto
+  computed-contract: length-percentage-or-auto
+  conversion: length-percentage-or-auto-preserving-percentages
+  specified-kind: length-percentage-or-auto
+  specified: 40px
+  computed-kind: length-percentage-or-auto
+  computed: 40px
+property[17]: margin-bottom
+  property: margin-bottom
+  specified-contract: absolute-length
+  computed-contract: absolute-length
+  conversion: absolute-length-to-css-px
+  specified-kind: absolute-length
+  specified: -2px
+  computed-kind: length
+  computed: -2px
+property[18]: margin-left
+  property: margin-left
+  specified-contract: absolute-length
+  computed-contract: absolute-length
+  conversion: absolute-length-to-css-px
+  specified-kind: absolute-length
+  specified: 6px
+  computed-kind: length
+  computed: 6px
+property[19]: margin-right
+  property: margin-right
+  specified-contract: absolute-length
+  computed-contract: absolute-length
+  conversion: absolute-length-to-css-px
+  specified-kind: absolute-length
+  specified: 7px
+  computed-kind: length
+  computed: 7px
+property[20]: margin-top
+  property: margin-top
+  specified-contract: absolute-length
+  computed-contract: absolute-length
+  conversion: absolute-length-to-css-px
+  specified-kind: absolute-length
+  specified: 8px
+  computed-kind: length
+  computed: 8px
+property[21]: max-width
+  property: max-width
+  specified-contract: length-percentage-or-none
+  computed-contract: length-percentage-or-none
+  conversion: length-percentage-or-none-preserving-percentages
+  specified-kind: length-percentage-or-none
+  specified: 80%
+  computed-kind: length-percentage-or-none
+  computed: 80%
+property[22]: min-width
+  property: min-width
+  specified-contract: length-percentage-or-auto
+  computed-contract: length-percentage-or-auto
+  conversion: length-percentage-or-auto-preserving-percentages
+  specified-kind: length-percentage-or-auto
+  specified: 10px
+  computed-kind: length-percentage-or-auto
+  computed: 10px
+property[23]: overflow
+  property: overflow
+  specified-contract: overflow-keyword
+  computed-contract: overflow-keyword
+  conversion: keyword-to-computed-enum
+  specified-kind: overflow-keyword
+  specified: hidden
+  computed-kind: overflow
+  computed: hidden
+property[24]: outline-color
+  property: outline-color
+  specified-contract: color
+  computed-contract: absolute-color
+  conversion: color-to-rgba
+  specified-kind: color
+  specified: #0fa
+  computed-kind: color
+  computed: rgba(0, 255, 170, 255)
+property[25]: outline-style
+  property: outline-style
+  specified-contract: outline-style-keyword
+  computed-contract: outline-style-keyword
+  conversion: keyword-to-computed-enum
+  specified-kind: outline-style-keyword
+  specified: solid
+  computed-kind: outline-style
+  computed: solid
+property[26]: outline-width
+  property: outline-width
+  specified-contract: absolute-length
+  computed-contract: absolute-length
+  conversion: absolute-length-to-css-px
+  specified-kind: absolute-length
+  specified: 1px
+  computed-kind: length
+  computed: 1px
+property[27]: padding-bottom
+  property: padding-bottom
+  specified-contract: absolute-length
+  computed-contract: absolute-length
+  conversion: absolute-length-to-css-px
+  specified-kind: absolute-length
+  specified: 2px
+  computed-kind: length
+  computed: 2px
+property[28]: padding-left
+  property: padding-left
+  specified-contract: absolute-length
+  computed-contract: absolute-length
+  conversion: absolute-length-to-css-px
+  specified-kind: absolute-length
+  specified: 3px
+  computed-kind: length
+  computed: 3px
+property[29]: padding-right
+  property: padding-right
+  specified-contract: absolute-length
+  computed-contract: absolute-length
+  conversion: absolute-length-to-css-px
+  specified-kind: absolute-length
+  specified: 4px
+  computed-kind: length
+  computed: 4px
+property[30]: padding-top
+  property: padding-top
+  specified-contract: absolute-length
+  computed-contract: absolute-length
+  conversion: absolute-length-to-css-px
+  specified-kind: absolute-length
+  specified: 5px
+  computed-kind: length
+  computed: 5px
+property[31]: position
+  property: position
+  specified-contract: position-keyword
+  computed-contract: position-keyword
+  conversion: keyword-to-computed-enum
+  specified-kind: position-keyword
+  specified: relative
+  computed-kind: position
+  computed: relative
+property[32]: text-decoration-line
+  property: text-decoration-line
+  specified-contract: text-decoration-line-keyword
+  computed-contract: text-decoration-line-keyword
+  conversion: keyword-to-computed-enum
+  specified-kind: text-decoration-line-keyword
+  specified: underline
+  computed-kind: text-decoration-line
+  computed: underline
+property[33]: width
+  property: width
+  specified-contract: length-percentage-or-auto
+  computed-contract: length-percentage-or-auto
+  conversion: length-percentage-or-auto-preserving-percentages
+  specified-kind: length-percentage-or-auto
+  specified: 50%
+  computed-kind: length-percentage-or-auto
+  computed: 50%
+property[34]: z-index
+  property: z-index
+  specified-contract: z-index
+  computed-contract: z-index
+  conversion: z-index-auto-or-integer
+  specified-kind: z-index
+  specified: -4
+  computed-kind: z-index
+  computed: -4

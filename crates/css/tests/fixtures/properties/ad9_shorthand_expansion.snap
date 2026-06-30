@@ -1,0 +1,73 @@
+version: 1
+shorthand-expansion-cases
+cases: 6
+case[0]: outline
+  shorthand: outline
+  result: expanded
+  longhands: 3
+  longhand[0]: outline-color
+    expansion-order: 0
+    longhand-parse: accepted
+    specified-kind: color
+    specified: red
+  longhand[1]: outline-style
+    expansion-order: 1
+    longhand-parse: accepted
+    specified-kind: outline-style-keyword
+    specified: solid
+  longhand[2]: outline-width
+    expansion-order: 2
+    longhand-parse: accepted
+    specified-kind: absolute-length
+    specified: 2px
+case[1]: outline
+  shorthand: outline
+  result: expanded
+  longhands: 3
+  longhand[0]: outline-color
+    expansion-order: 0
+    longhand-parse: accepted
+    specified-kind: css-wide-keyword
+    specified: initial
+  longhand[1]: outline-style
+    expansion-order: 1
+    longhand-parse: accepted
+    specified-kind: outline-style-keyword
+    specified: solid
+  longhand[2]: outline-width
+    expansion-order: 2
+    longhand-parse: accepted
+    specified-kind: css-wide-keyword
+    specified: initial
+case[2]: outline
+  shorthand: outline
+  result: expanded
+  longhands: 3
+  longhand[0]: outline-color
+    expansion-order: 0
+    longhand-parse: accepted
+    specified-kind: css-wide-keyword
+    specified: inherit
+  longhand[1]: outline-style
+    expansion-order: 1
+    longhand-parse: accepted
+    specified-kind: css-wide-keyword
+    specified: inherit
+  longhand[2]: outline-width
+    expansion-order: 2
+    longhand-parse: accepted
+    specified-kind: css-wide-keyword
+    specified: inherit
+case[3]: outline
+  shorthand: outline
+  result: rejected
+  error: duplicate-component
+  error-property: outline-width
+case[4]: outline
+  shorthand: outline
+  result: rejected
+  error: unsupported-component
+case[5]: outline
+  shorthand: outline
+  result: rejected
+  error: unsupported-css-wide-keyword

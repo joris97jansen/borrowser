@@ -1,0 +1,283 @@
+version: 1
+property-coverage
+properties: 35
+property[0]: background-color
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: transparent
+  specified-value: color
+  computed-value: absolute-color
+  invalidation-impact: paint
+  shorthand-membership: none
+property[1]: border-bottom-color
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: transparent
+  specified-value: color
+  computed-value: absolute-color
+  invalidation-impact: paint
+  shorthand-membership: none
+property[2]: border-bottom-style
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: none
+  specified-value: border-style-keyword
+  computed-value: border-style-keyword
+  invalidation-impact: layout+paint
+  shorthand-membership: none
+property[3]: border-bottom-width
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalidation-impact: layout+paint
+  shorthand-membership: none
+property[4]: border-left-color
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: transparent
+  specified-value: color
+  computed-value: absolute-color
+  invalidation-impact: paint
+  shorthand-membership: none
+property[5]: border-left-style
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: none
+  specified-value: border-style-keyword
+  computed-value: border-style-keyword
+  invalidation-impact: layout+paint
+  shorthand-membership: none
+property[6]: border-left-width
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalidation-impact: layout+paint
+  shorthand-membership: none
+property[7]: border-right-color
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: transparent
+  specified-value: color
+  computed-value: absolute-color
+  invalidation-impact: paint
+  shorthand-membership: none
+property[8]: border-right-style
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: none
+  specified-value: border-style-keyword
+  computed-value: border-style-keyword
+  invalidation-impact: layout+paint
+  shorthand-membership: none
+property[9]: border-right-width
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalidation-impact: layout+paint
+  shorthand-membership: none
+property[10]: border-top-color
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: transparent
+  specified-value: color
+  computed-value: absolute-color
+  invalidation-impact: paint
+  shorthand-membership: none
+property[11]: border-top-style
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: none
+  specified-value: border-style-keyword
+  computed-value: border-style-keyword
+  invalidation-impact: layout+paint
+  shorthand-membership: none
+property[12]: border-top-width
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalidation-impact: layout+paint
+  shorthand-membership: none
+property[13]: color
+  supported: yes
+  inherited-by-default: inherited
+  initial: black
+  specified-value: color
+  computed-value: absolute-color
+  invalidation-impact: inherited-style+paint
+  shorthand-membership: none
+property[14]: display
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: inline
+  specified-value: display-keyword
+  computed-value: display-keyword
+  invalidation-impact: box-tree+layout+paint
+  shorthand-membership: none
+property[15]: font-size
+  supported: yes
+  inherited-by-default: inherited
+  initial: 16px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalidation-impact: inherited-style+layout+text-metrics+paint
+  shorthand-membership: none
+property[16]: height
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: auto
+  specified-value: length-percentage-or-auto
+  computed-value: length-percentage-or-auto
+  invalidation-impact: layout+paint
+  shorthand-membership: none
+property[17]: margin-bottom
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalidation-impact: layout+paint
+  shorthand-membership: none
+property[18]: margin-left
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalidation-impact: layout+paint
+  shorthand-membership: none
+property[19]: margin-right
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalidation-impact: layout+paint
+  shorthand-membership: none
+property[20]: margin-top
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalidation-impact: layout+paint
+  shorthand-membership: none
+property[21]: max-width
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: none
+  specified-value: length-percentage-or-none
+  computed-value: length-percentage-or-none
+  invalidation-impact: layout+paint
+  shorthand-membership: none
+property[22]: min-width
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: auto
+  specified-value: length-percentage-or-auto
+  computed-value: length-percentage-or-auto
+  invalidation-impact: layout+paint
+  shorthand-membership: none
+property[23]: overflow
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: visible
+  specified-value: overflow-keyword
+  computed-value: overflow-keyword
+  invalidation-impact: layout+paint+overflow-clip
+  shorthand-membership: none
+property[24]: outline-color
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: transparent
+  specified-value: color
+  computed-value: absolute-color
+  invalidation-impact: paint
+  shorthand-membership: outline[0]
+property[25]: outline-style
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: none
+  specified-value: outline-style-keyword
+  computed-value: outline-style-keyword
+  invalidation-impact: paint
+  shorthand-membership: outline[1]
+property[26]: outline-width
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalidation-impact: paint
+  shorthand-membership: outline[2]
+property[27]: padding-bottom
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalidation-impact: layout+paint
+  shorthand-membership: none
+property[28]: padding-left
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalidation-impact: layout+paint
+  shorthand-membership: none
+property[29]: padding-right
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalidation-impact: layout+paint
+  shorthand-membership: none
+property[30]: padding-top
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: 0px
+  specified-value: absolute-length
+  computed-value: absolute-length
+  invalidation-impact: layout+paint
+  shorthand-membership: none
+property[31]: position
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: static
+  specified-value: position-keyword
+  computed-value: position-keyword
+  invalidation-impact: layout+paint+paint-order
+  shorthand-membership: none
+property[32]: text-decoration-line
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: none
+  specified-value: text-decoration-line-keyword
+  computed-value: text-decoration-line-keyword
+  invalidation-impact: paint
+  shorthand-membership: none
+property[33]: width
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: auto
+  specified-value: length-percentage-or-auto
+  computed-value: length-percentage-or-auto
+  invalidation-impact: layout+paint
+  shorthand-membership: none
+property[34]: z-index
+  supported: yes
+  inherited-by-default: not-inherited
+  initial: auto
+  specified-value: z-index
+  computed-value: z-index
+  invalidation-impact: layout+paint+paint-order+conservative
+  shorthand-membership: none
