@@ -179,6 +179,12 @@ Adding a supported longhand requires:
 7. Update docs and the feature gap tracker when the supported feature set or
    extension point changes.
 
+The supported-longhand coverage tests intentionally cross-check
+`PropertyId::ALL`, registry entries, lookup data, shorthand longhand outputs,
+and registry metadata snapshots. A new supported longhand is incomplete until
+it appears in all required registry surfaces and exposes a non-empty explicit
+invalidation impact label in the debug snapshot.
+
 Do not add property behavior directly to Browser/runtime, Layout, Paint, or
 GFX. If a downstream subsystem needs a new CSS fact, model it in CSS metadata
 or computed values first.

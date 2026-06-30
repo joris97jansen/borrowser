@@ -148,6 +148,18 @@ Targeted CSS tests verify:
 - computed-style comparison projects property flags deterministically;
 - unknown document shape stays conservative.
 
+AD7 follow-up coverage treats the supported longhand source of truth as the
+relationship between `PropertyId::ALL`, `property_registry().entries()`,
+registry lookup data, and supported shorthand outputs. Tests must fail when a
+supported longhand is added without a registry registration, lookup entry,
+explicit `PropertyInvalidationImpact`, or deterministic debug snapshot impact
+label.
+
+Shorthands remain outside the supported longhand registry. A supported
+shorthand is valid only by expanding into registered longhands, and those
+longhands must carry the same explicit impact metadata as directly authored
+longhand declarations.
+
 Browser/runtime tests verify:
 
 - paint-only CSS-owned impact can avoid relayout through the real retained

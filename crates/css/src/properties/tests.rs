@@ -5,6 +5,28 @@ use super::{
     data::PROPERTY_LOOKUP_BY_NAME, property_registry, property_value_boundaries,
     property_value_boundary_debug_snapshot, shorthand_registry,
 };
+use std::collections::BTreeSet;
+
+fn assert_explicit_invalidation_impact(property: PropertyId) {
+    let impact = property.metadata().invalidation_impact;
+    assert!(
+        impact.affects_inherited_style()
+            || impact.affects_box_tree()
+            || impact.affects_layout()
+            || impact.affects_text_metrics()
+            || impact.affects_paint()
+            || impact.affects_paint_order()
+            || impact.affects_overflow_clip()
+            || impact.affects_future_compositor(),
+        "{} must expose explicit invalidation impact metadata",
+        property.name()
+    );
+    assert!(
+        !impact.to_debug_label().is_empty(),
+        "{} must expose a deterministic invalidation impact debug label",
+        property.name()
+    );
+}
 
 #[test]
 fn property_registry_entries_are_total_canonical_and_metadata_backed() {
@@ -384,6 +406,66 @@ fn property_registry_entries_are_total_canonical_and_metadata_backed() {
 }
 
 #[test]
+fn supported_longhand_source_of_truth_is_registry_lookup_and_metadata_backed() {
+    let registry = property_registry();
+    let supported_ids = PropertyId::ALL.into_iter().collect::<BTreeSet<_>>();
+
+    assert_eq!(registry.entries().len(), supported_ids.len());
+    assert_eq!(PROPERTY_LOOKUP_BY_NAME.len(), supported_ids.len());
+
+    let mut entry_ids = BTreeSet::new();
+    let mut entry_names = BTreeSet::new();
+    for (index, property) in PropertyId::ALL.into_iter().enumerate() {
+        let registration = &registry.entries()[index];
+
+        assert_eq!(registration.id(), property, "registry order drifted");
+        assert_eq!(registration.name(), property.name(), "{}", property.name());
+        assert!(entry_ids.insert(registration.id()), "duplicate property id");
+        assert!(
+            entry_names.insert(registration.name()),
+            "duplicate property name {}",
+            registration.name()
+        );
+        assert_eq!(
+            registry.lookup_id(registration.name()),
+            Some(property),
+            "{} lookup must route through the registry",
+            registration.name()
+        );
+        assert_eq!(
+            PropertyId::from_name(registration.name()),
+            Some(property),
+            "{} must resolve through PropertyId::from_name",
+            registration.name()
+        );
+        assert_eq!(
+            registration.metadata(),
+            property.metadata(),
+            "{} must use registry-backed metadata",
+            property.name()
+        );
+        assert_explicit_invalidation_impact(property);
+    }
+
+    assert_eq!(entry_ids, supported_ids);
+    assert_eq!(entry_names.len(), supported_ids.len());
+
+    for lookup in PROPERTY_LOOKUP_BY_NAME {
+        assert!(
+            supported_ids.contains(&lookup.id),
+            "{} lookup must point to a supported longhand",
+            lookup.name
+        );
+        assert_eq!(
+            registry.get(lookup.id).name(),
+            lookup.name,
+            "{} lookup must agree with the registry registration",
+            lookup.name
+        );
+    }
+}
+
+#[test]
 fn property_registry_lookup_is_deterministic_for_representative_property_names() {
     let registry = property_registry();
 
@@ -467,6 +549,7 @@ fn property_registry_invalidation_impact_is_explicit_for_every_supported_longhan
     );
 
     for property in paint_only {
+        assert_explicit_invalidation_impact(property);
         assert_eq!(
             property.metadata().invalidation_impact,
             PropertyInvalidationImpact::paint_only(),
@@ -500,7 +583,15 @@ fn property_registry_invalidation_impact_is_explicit_for_every_supported_longhan
         PropertyInvalidationImpact::conservative_layout_paint_order_paint()
     );
 
+    assert_explicit_invalidation_impact(PropertyId::Color);
+    assert_explicit_invalidation_impact(PropertyId::Display);
+    assert_explicit_invalidation_impact(PropertyId::FontSize);
+    assert_explicit_invalidation_impact(PropertyId::Overflow);
+    assert_explicit_invalidation_impact(PropertyId::Position);
+    assert_explicit_invalidation_impact(PropertyId::ZIndex);
+
     for property in layout_and_paint {
+        assert_explicit_invalidation_impact(property);
         assert_eq!(
             property.metadata().invalidation_impact,
             PropertyInvalidationImpact::layout_and_paint(),
@@ -719,6 +810,54 @@ fn shorthand_registry_keeps_outline_separate_from_supported_longhands() {
     assert_eq!(PropertyId::from_name("outline"), None);
     assert_eq!(property_registry().lookup("outline"), None);
     assert_eq!(registry.lookup("border"), None);
+}
+
+#[test]
+fn supported_shorthand_outputs_are_registered_impact_backed_longhands() {
+    let longhand_universe = PropertyId::ALL.into_iter().collect::<BTreeSet<_>>();
+
+    for shorthand in shorthand_registry().entries() {
+        assert_eq!(
+            PropertyId::from_name(shorthand.name()),
+            None,
+            "{} must remain a shorthand, not a supported longhand",
+            shorthand.name()
+        );
+        assert_eq!(
+            property_registry().lookup(shorthand.name()),
+            None,
+            "{} must not enter the longhand registry",
+            shorthand.name()
+        );
+        assert!(
+            !shorthand.longhands().is_empty(),
+            "{} shorthand must expand into registered longhands",
+            shorthand.name()
+        );
+
+        let mut expansion_ids = BTreeSet::new();
+        for &property in shorthand.longhands() {
+            assert!(
+                longhand_universe.contains(&property),
+                "{} shorthand emitted unsupported longhand {}",
+                shorthand.name(),
+                property.name()
+            );
+            assert_eq!(
+                property_registry().lookup_id(property.name()),
+                Some(property),
+                "{} shorthand emitted a longhand missing registry lookup",
+                shorthand.name()
+            );
+            assert!(
+                expansion_ids.insert(property),
+                "{} shorthand emitted duplicate longhand {}",
+                shorthand.name(),
+                property.name()
+            );
+            assert_explicit_invalidation_impact(property);
+        }
+    }
 }
 
 #[test]
