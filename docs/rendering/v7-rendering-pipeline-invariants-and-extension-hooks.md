@@ -47,6 +47,7 @@ Related documents:
 - `docs/rendering/x10-sizing-invariants-extension-hooks.md`
 - `docs/architecture/ARCHITECTURE.md`
 - `docs/css/u8-runtime-integration-contracts-extension-points.md`
+- `docs/html5/ae1-html-parser-dom-ownership-contract.md`
 
 ## Purpose
 
@@ -97,6 +98,11 @@ them.
 - Browser runtime owns DOM lifetime, stylesheet attachment order, retained
   style lifecycle state, invalidation requests, queued render work, and frame
   scheduling/orchestration state.
+- HTML/parser owns parser-created DOM construction semantics before the active
+  DOM reaches browser/runtime. Rendering phases consume materialized DOM,
+  styled trees, layout outputs, and paint inputs; they must not depend on HTML
+  tokenizer states, insertion modes, parse-error recovery, or malformed-markup
+  parser rules.
 - `crates/css` owns style semantics, including parsing handoff consumption,
   selector matching, cascade, computed-style assembly, and styled-tree
   construction.

@@ -31,6 +31,7 @@ Related documents:
 - `docs/rendering/v5-explicit-runtime-render-orchestration-path.md`
 - `docs/rendering/v6-deterministic-debug-surfaces-and-phase-regression-coverage.md`
 - `docs/html5/node-identity-contract.md`
+- `docs/html5/ae1-html-parser-dom-ownership-contract.md`
 
 ## Purpose
 
@@ -67,6 +68,12 @@ DOM identity is represented by `html::internal::Id`.
 Within a live document, DOM IDs identify DOM nodes and may be used as
 provenance anchors for the minimal AC2 retained identity map. DOM IDs are not
 retained render IDs.
+
+Parser-created DOM identity and materialized DOM identity are also not retained
+render identity. HTML parser `PatchKey` values belong to the parser output
+protocol. The browser `DomStore` may materialize live patch keys as
+`html::internal::Id` values, but that materialization bridge remains separate
+from `RetainedRenderId` allocation and reconciliation.
 
 DOM identity by itself does not prove render-artifact continuity across full
 document replacement or reparse. A newly parsed document may assign the same

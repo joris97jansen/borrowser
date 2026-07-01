@@ -7,6 +7,7 @@ Normative matrix sources:
 - `docs/html5/spec-matrix-treebuilder.md`
 - `docs/html5/dompatch-contract.md`
 - `docs/html5/node-identity-contract.md`
+- `docs/html5/ae1-html-parser-dom-ownership-contract.md`
 
 Related text-mode hardening note:
 - `docs/html5/rawtext-script-stability.md`
@@ -45,6 +46,10 @@ Any behavior not listed as supported here is non-contractual and must not be rel
 - Tokenizer (`html5/tokenizer`) owns tokenization state machines, token emission, tokenizer-level normalization, and parse-error recovery.
 - Tree builder (`html5/tree_builder`) owns insertion modes, SOE/AFE structures, tree-construction algorithms in scope, and `DomPatch` emission.
 - Session (`html5/session`) owns streaming orchestration, pumping, and policy-level test classification integration.
+- AE1 defines the broader parser-created DOM and downstream-consumer boundary:
+  browser/runtime, CSS, Layout, and Paint consume documented parser output and
+  must not depend on tokenizer states, insertion modes, parse-error recovery
+  internals, or parser-created identity as retained render identity.
 
 ## Guaranteed Support In Core v0
 

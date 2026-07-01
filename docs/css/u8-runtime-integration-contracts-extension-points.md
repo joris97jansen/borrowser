@@ -34,6 +34,7 @@ Related documents:
 - `docs/rendering/v7-rendering-pipeline-invariants-and-extension-hooks.md`
 - `docs/security/css-hardening.md`
 - `docs/architecture/ARCHITECTURE.md`
+- `docs/html5/ae1-html-parser-dom-ownership-contract.md`
 
 ## Integration Ownership
 
@@ -61,6 +62,10 @@ Ownership is split as follows:
   loaded `StylesheetParse` artifacts in cascade order.
 - `crates/css` owns parsing semantics, selector matching, cascade, computed
   style materialization, diagnostics, and hardening limits.
+- `crates/css` may consume DOM element names, attributes, relationships, and
+  stylesheet text exposed by the active DOM. It must not depend on HTML
+  tokenizer states, tree-builder insertion modes, parse errors, or
+  malformed-markup recovery internals.
 - `layout`, `gfx`, and `view` consume `StyledNode` or `ComputedStyle`; they do
   not parse CSS, inspect cascade winners, or recover from invalid declarations.
 
@@ -141,6 +146,9 @@ For a navigation:
    `PageState`.
 2. HTML network events stream to the parse runtime and return DOM snapshots or
    DOM patch events.
+   HTML/parser owns tokenizer, tree-builder, parser-created DOM, and
+   parse-error semantics; browser/page state consumes the resulting document
+   output through the AE1 ownership boundary.
 3. `Tab::on_core_event(...)` filters every event by `(tab_id, request_id)`.
    Stale events cannot mutate active page state.
 4. DOM snapshots use `RestyleHint::document_replaced()`.

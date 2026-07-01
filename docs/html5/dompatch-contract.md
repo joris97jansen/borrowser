@@ -8,12 +8,27 @@ This document is the normative contract for patch emission from the HTML5 tokeni
 Related identity contract:
 - [`docs/html5/node-identity-contract.md`](node-identity-contract.md)
 
+Related ownership contract:
+- [`docs/html5/ae1-html-parser-dom-ownership-contract.md`](ae1-html-parser-dom-ownership-contract.md)
+
 ## Goals
 
 - Make `DomPatch` the first-class parser output.
 - Keep patch ordering deterministic and replayable.
 - Define atomic batch and version transition rules for runtime consumers.
 - Keep Core v0 behavior explicit while leaving room for future patch variants.
+
+## Ownership Boundary
+
+`DomPatch` is the documented parser output protocol between the HTML tree
+builder and runtime consumers. It carries parser-created document/node
+construction effects, but it does not expose tokenizer states, insertion modes,
+SOE/AFE internals, parse-error recovery decisions, or parser debug counters as
+runtime, CSS, Layout, or Paint semantics.
+
+Runtime materializers such as `DomStore` may validate and apply patch batches
+atomically. They must not reinterpret malformed-markup recovery, choose
+document mode, or treat `PatchKey` identity as retained render identity.
 
 ## Patch Types (Core v0 Contract Surface)
 
