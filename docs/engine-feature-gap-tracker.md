@@ -399,6 +399,21 @@ Missing or incomplete:
 
 ## HTML / DOM
 
+Current supported subset:
+
+- AE1 HTML parser ownership architecture: HTML/parser owns tokenizer input
+  preprocessing, tokenizer states, typed tokens, parse errors,
+  tree-construction state, insertion modes, stack of open elements, active
+  formatting elements where supported, parser-created DOM construction
+  semantics, document-mode ownership in the currently documented scope, and
+  parser debug output. Browser/runtime, CSS, Layout, and Paint are documented
+  consumers of parser-created document output and must not reinterpret parser
+  internals. `PatchKey`, materialized `html::internal::Id`, and retained
+  render identity remain separate identity domains; see
+  `docs/html5/ae1-html-parser-dom-ownership-contract.md`. This is an
+  architecture contract only and does not claim broad AE tokenizer,
+  tree-builder, or parser conformance completion.
+
 Missing or incomplete:
 
 - full DOM API surface

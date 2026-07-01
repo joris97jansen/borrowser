@@ -9,6 +9,11 @@ This document defines how node identity maps across:
 - patch protocol identities,
 - runtime document handles and versioning.
 
+Related contracts:
+
+- [`docs/html5/ae1-html-parser-dom-ownership-contract.md`](ae1-html-parser-dom-ownership-contract.md)
+- [`docs/rendering/ac2-retained-render-identities.md`](../rendering/ac2-retained-render-identities.md)
+
 ## Identity Domains
 
 ### `DomHandle` (runtime document identity)
@@ -36,6 +41,27 @@ This document defines how node identity maps across:
   - identity-preserving move/reattach is represented by `AppendChild` /
     `InsertBefore` under the HTML5 move-semantics contract,
   - document/document-root moves remain illegal.
+
+### `html::internal::Id` (materialized DOM identity)
+
+- Exposed by materialized `html::Node` values consumed by browser/runtime, CSS,
+  Layout, and Paint-facing handoffs.
+- Today, browser `DomStore` materialization maps live `PatchKey(n)` to
+  `Id(n)`.
+- That numeric bridge is owned by DOM materialization. It is not a license for
+  CSS, Layout, Paint, or retained-rendering code to depend on patch-layer
+  allocation policy.
+- Matching numeric IDs across separate parser runs or full document
+  replacement do not prove DOM continuity or retained render continuity.
+
+### `RetainedRenderId` (browser/runtime render identity)
+
+- Owned by browser/runtime retained rendering, not by HTML/parser or
+  `DomStore`.
+- Anchored to live materialized DOM provenance where currently representable,
+  but separate from `PatchKey` and `html::internal::Id`.
+- Full document replacement starts a new retained render identity domain even
+  when fresh parser output produces matching numeric patch keys or DOM IDs.
 
 ## Lifetime and Stability Rules
 
@@ -77,3 +103,5 @@ For the HTML5 runtime path:
 
 - Global cross-session key uniqueness.
 - Persisted identity across handle replacement strategies.
+- Treating `PatchKey`, `html::internal::Id`, or `RetainedRenderId` as
+  interchangeable identity domains.
