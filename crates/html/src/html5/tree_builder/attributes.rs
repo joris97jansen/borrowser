@@ -5,11 +5,14 @@ use crate::html5::tree_builder::formatting::AfeAttributeSnapshot;
 use crate::html5::tree_builder::resolve::{resolve_atom_arc, resolve_attribute_value};
 use std::sync::Arc;
 
+pub(in crate::html5::tree_builder) type ParserCreatedAttribute = (Arc<str>, Option<String>);
+pub(in crate::html5::tree_builder) type ParserCreatedAttributes = Vec<ParserCreatedAttribute>;
+
 pub(in crate::html5::tree_builder) fn resolve_token_attributes_first_wins(
     attrs: &[Attribute],
     atoms: &AtomTable,
     text: &dyn TextResolver,
-) -> Result<Vec<(Arc<str>, Option<String>)>, TreeBuilderError> {
+) -> Result<ParserCreatedAttributes, TreeBuilderError> {
     let mut seen = Vec::new();
     let mut attributes = Vec::with_capacity(attrs.len());
     for attr in attrs {
@@ -47,7 +50,7 @@ pub(in crate::html5::tree_builder) fn snapshot_token_attributes_first_wins(
 pub(in crate::html5::tree_builder) fn resolve_afe_attributes_first_wins(
     attrs: &[AfeAttributeSnapshot],
     atoms: &AtomTable,
-) -> Result<Vec<(Arc<str>, Option<String>)>, TreeBuilderError> {
+) -> Result<ParserCreatedAttributes, TreeBuilderError> {
     let mut seen: Vec<AtomId> = Vec::new();
     let mut attributes = Vec::with_capacity(attrs.len());
     for attr in attrs {

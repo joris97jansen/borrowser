@@ -3,7 +3,7 @@ use crate::dom_patch::PatchKey;
 use crate::html5::shared::{AtomId, AtomTable, Attribute, TextValue};
 use crate::html5::tokenizer::TextResolver;
 use crate::html5::tree_builder::attributes::{
-    resolve_afe_attributes_first_wins, resolve_token_attributes_first_wins,
+    ParserCreatedAttribute, resolve_afe_attributes_first_wins, resolve_token_attributes_first_wins,
     snapshot_token_attributes_first_wins,
 };
 use crate::html5::tree_builder::formatting::{AfeAttributeSnapshot, AfeElementEntry};
@@ -15,7 +15,7 @@ impl Html5TreeBuilder {
     pub(in crate::html5::tree_builder) fn create_detached_element(
         &mut self,
         name: AtomId,
-        attrs: &[(std::sync::Arc<str>, Option<String>)],
+        attrs: &[ParserCreatedAttribute],
         atoms: &AtomTable,
     ) -> Result<Option<PatchKey>, TreeBuilderError> {
         if !self.allow_node_creation(Some(name)) {
