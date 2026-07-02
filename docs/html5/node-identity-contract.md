@@ -12,6 +12,7 @@ This document defines how node identity maps across:
 Related contracts:
 
 - [`docs/html5/ae1-html-parser-dom-ownership-contract.md`](ae1-html-parser-dom-ownership-contract.md)
+- [`docs/html5/ae2-parser-created-dom-node-model.md`](ae2-parser-created-dom-node-model.md)
 - [`docs/rendering/ac2-retained-render-identities.md`](../rendering/ac2-retained-render-identities.md)
 
 ## Identity Domains
@@ -35,6 +36,8 @@ Related contracts:
 - Non-zero only (`PatchKey::INVALID` is forbidden in emitted patches).
 - References in non-create patches MUST point to live/known nodes.
 - `Create*` introduces a key before first use by structure/content patches.
+- Parser-created `DocumentType` nodes receive ordinary `PatchKey` identity in
+  the patch stream.
 - Parenting invariants:
   - a node has at most one parent,
   - cycles are forbidden,
@@ -46,6 +49,7 @@ Related contracts:
 
 - Exposed by materialized `html::Node` values consumed by browser/runtime, CSS,
   Layout, and Paint-facing handoffs.
+- `DocumentType` is part of this materialized DOM identity domain when present.
 - Today, browser `DomStore` materialization maps live `PatchKey(n)` to
   `Id(n)`.
 - That numeric bridge is owned by DOM materialization. It is not a license for
@@ -60,6 +64,8 @@ Related contracts:
   `DomStore`.
 - Anchored to live materialized DOM provenance where currently representable,
   but separate from `PatchKey` and `html::internal::Id`.
+- Non-rendering parser-created nodes such as `DocumentType` do not create
+  retained render identity anchors.
 - Full document replacement starts a new retained render identity domain even
   when fresh parser output produces matching numeric patch keys or DOM IDs.
 

@@ -56,6 +56,7 @@ fn summarize(node: &crate::Node, out: &mut Vec<String>) {
                 summarize(child, out);
             }
         }
+        crate::Node::DocumentType { name, .. } => out.push(format!("doctype:{name:?}")),
         crate::Node::Text { text, .. } => out.push(format!("text:{text}")),
         crate::Node::Comment { text, .. } => out.push(format!("comment:{text}")),
     }

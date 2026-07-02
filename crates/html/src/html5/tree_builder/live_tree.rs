@@ -18,6 +18,7 @@ use crate::html5::tree_builder::invariants::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LiveNodeKind {
     Document,
+    DocumentType,
     Element,
     Text,
     Comment,
@@ -58,6 +59,9 @@ impl LiveTree {
     pub(in crate::html5::tree_builder) fn apply_structural_patch(&mut self, patch: &DomPatch) {
         match patch {
             DomPatch::CreateDocument { key, .. } => self.insert_node(*key, LiveNodeKind::Document),
+            DomPatch::CreateDocumentType { key, .. } => {
+                self.insert_node(*key, LiveNodeKind::DocumentType)
+            }
             DomPatch::CreateElement { key, .. } => self.insert_node(*key, LiveNodeKind::Element),
             DomPatch::CreateText { key, .. } => self.insert_node(*key, LiveNodeKind::Text),
             DomPatch::CreateComment { key, .. } => self.insert_node(*key, LiveNodeKind::Comment),
@@ -83,6 +87,13 @@ impl LiveTree {
         self.node(key).children.len()
     }
 
+    pub(in crate::html5::tree_builder) fn has_document_type_child(&self, key: PatchKey) -> bool {
+        self.node(key)
+            .children
+            .iter()
+            .any(|child| matches!(self.node(*child).kind, LiveNodeKind::DocumentType))
+    }
+
     pub(in crate::html5::tree_builder) fn children_snapshot(&self, key: PatchKey) -> Vec<PatchKey> {
         self.node(key).children.clone()
     }
@@ -99,6 +110,7 @@ impl LiveTree {
             state.nodes[index] = Some(DomInvariantNode {
                 kind: match node.kind {
                     LiveNodeKind::Document => DomInvariantNodeKind::Document,
+                    LiveNodeKind::DocumentType => DomInvariantNodeKind::DocumentType,
                     LiveNodeKind::Element => DomInvariantNodeKind::Element,
                     LiveNodeKind::Text => DomInvariantNodeKind::Text,
                     LiveNodeKind::Comment => DomInvariantNodeKind::Comment,

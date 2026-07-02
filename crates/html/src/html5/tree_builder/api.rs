@@ -1,7 +1,7 @@
 use crate::dom_patch::{DomPatch, PatchKey};
 use crate::html5::shared::{AtomId, AtomTable, DocumentParseContext, EngineInvariantError, Token};
 use crate::html5::tokenizer::{TextModeSpec, TextResolver, TokenizerControl};
-use crate::html5::tree_builder::document::DocumentState;
+use crate::html5::tree_builder::document::{DocumentState, PendingDoctype};
 use crate::html5::tree_builder::formatting::ActiveFormattingList;
 use crate::html5::tree_builder::invariants::DomInvariantState;
 use crate::html5::tree_builder::known_tags::KnownTagIds;
@@ -132,7 +132,7 @@ pub struct Html5TreeBuilder {
     pub(in crate::html5::tree_builder) active_formatting: ActiveFormattingList,
     pub(in crate::html5::tree_builder) document_key: Option<PatchKey>,
     pub(in crate::html5::tree_builder) next_patch_key: NonZeroU32,
-    pub(in crate::html5::tree_builder) pending_doctype: Option<String>,
+    pub(in crate::html5::tree_builder) pending_doctype: Option<PendingDoctype>,
     pub(in crate::html5::tree_builder) document_state: DocumentState,
     pub(in crate::html5::tree_builder) non_document_nodes_created: usize,
     // Do not push structural patches directly to `patches`.

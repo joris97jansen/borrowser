@@ -173,7 +173,7 @@ fn collect_retained_render_identity_keys(node: &Node, keys: &mut Vec<RetainedRen
             }
         }
         Node::Text { id, .. } => push_live_anchor(*id, keys),
-        Node::Comment { .. } => {}
+        Node::Comment { .. } | Node::DocumentType { .. } => {}
     }
 }
 

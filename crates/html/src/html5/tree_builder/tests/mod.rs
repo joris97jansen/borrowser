@@ -1,8 +1,10 @@
 mod aaa;
 mod aaa_integration;
 mod api;
+mod attributes;
 mod coalescing;
 mod determinism;
+mod dom_model;
 mod formatting;
 mod helpers;
 mod insertion_modes;

@@ -33,6 +33,7 @@ pub enum DisplayBoxGeneration {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BoxSuppressionReason {
     CommentNode,
+    DocumentTypeNode,
     DisplayNone,
 }
 
@@ -83,6 +84,10 @@ pub(super) fn display_box_generation(
         return DisplayBoxGeneration::SuppressSubtree(BoxSuppressionReason::CommentNode);
     }
 
+    if matches!(styled.node, Node::DocumentType { .. }) {
+        return DisplayBoxGeneration::SuppressSubtree(BoxSuppressionReason::DocumentTypeNode);
+    }
+
     if matches!(styled.node, Node::Element { .. }) && styled.style.display() == Display::None {
         return DisplayBoxGeneration::SuppressSubtree(BoxSuppressionReason::DisplayNone);
     }
@@ -110,6 +115,7 @@ fn box_generation_role(
         }
         Node::Text { .. } => BoxGenerationRole::TextRun,
         Node::Comment { .. } => unreachable!("comments do not generate boxes"),
+        Node::DocumentType { .. } => unreachable!("document types do not generate boxes"),
     }
 }
 

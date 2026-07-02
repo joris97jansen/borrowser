@@ -8,7 +8,8 @@ fn in_table_text_non_space_is_foster_parented_before_table() {
     assert_eq!(
         dom,
         vec![
-            "#document doctype=\"html\"".to_string(),
+            "#document".to_string(),
+            "  <!doctype html>".to_string(),
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),
@@ -24,7 +25,8 @@ fn in_table_text_whitespace_stays_inside_table_and_is_chunk_invariant() {
     let chunked = materialized_dom_lines(&["<!doctype html><table>", " \n", "\t</table>"]);
 
     let expected = vec![
-        "#document doctype=\"html\"".to_string(),
+        "#document".to_string(),
+        "  <!doctype html>".to_string(),
         "  <html>".to_string(),
         "    <head>".to_string(),
         "    <body>".to_string(),
@@ -51,7 +53,7 @@ fn in_table_anything_else_uses_canonical_insert_before_without_remove_node() {
                     parent,
                     child: _,
                     before,
-                } if parent.0 == 4 && before.0 == 5
+                } if parent.0 == 5 && before.0 == 6
             )
         }),
         "misplaced table content should be foster-parented with InsertBefore relative to the live <table>"

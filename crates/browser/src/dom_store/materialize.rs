@@ -30,6 +30,16 @@ impl DomArena {
                 doctype: doctype.clone(),
                 children,
             },
+            NodeKind::DocumentType {
+                name,
+                public_id,
+                system_id,
+            } => Node::DocumentType {
+                id,
+                name: name.clone(),
+                public_id: public_id.clone(),
+                system_id: system_id.clone(),
+            },
             NodeKind::Element { name, attributes } => Node::Element {
                 id,
                 name: Arc::clone(name),

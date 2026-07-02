@@ -104,6 +104,10 @@ fn styled_node_kind_debug_label(node: &Node) -> String {
         Node::Element { name, .. } => format!("kind=element name=\"{name}\""),
         Node::Text { text, .. } => format!("kind=text text=\"{}\"", text.escape_default()),
         Node::Comment { text, .. } => format!("kind=comment text=\"{}\"", text.escape_default()),
+        Node::DocumentType { name, .. } => match name {
+            Some(name) => format!("kind=doctype name=\"{}\"", name.escape_default()),
+            None => "kind=doctype".to_string(),
+        },
     }
 }
 
@@ -161,6 +165,9 @@ fn build_style_tree_from_computed_entries<'a, 'b>(
 
             let mut styled_children = Vec::new();
             for child in children {
+                if matches!(child, Node::DocumentType { .. }) {
+                    continue;
+                }
                 styled_children.push(build_style_tree_from_computed_entries(
                     child,
                     Some(&base),
@@ -214,6 +221,9 @@ fn build_style_tree_from_computed_entries<'a, 'b>(
             let computed = *entry.style();
             let mut styled_children = Vec::new();
             for child in children {
+                if matches!(child, Node::DocumentType { .. }) {
+                    continue;
+                }
                 styled_children.push(build_style_tree_from_computed_entries(
                     child,
                     Some(&computed),
@@ -231,7 +241,7 @@ fn build_style_tree_from_computed_entries<'a, 'b>(
             })
         }
 
-        Node::Text { .. } | Node::Comment { .. } => {
+        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => {
             let inherited = parent_style.copied().unwrap_or_else(ComputedStyle::initial);
 
             Ok(StyledNode {

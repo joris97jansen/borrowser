@@ -23,6 +23,7 @@ pub fn check_dom_invariants(dom: &DomInvariantState) -> Result<(), DomInvariantE
                 actual: root_node.kind,
             });
         }
+        check_document_child_kind_invariants(dom, root, root_node.children())?;
     }
 
     for (index, maybe_node) in dom.nodes.iter().enumerate() {
@@ -33,6 +34,19 @@ pub fn check_dom_invariants(dom: &DomInvariantState) -> Result<(), DomInvariantE
 
         if matches!(node.kind, DomInvariantNodeKind::Document) && dom.root != Some(key) {
             return Err(DomInvariantError::DocumentNodeNotRoot {
+                key,
+                actual_parent: node.parent,
+            });
+        }
+        if !node.kind.is_container() && !node.children.is_empty() {
+            return Err(DomInvariantError::NonContainerHasChildren {
+                key,
+                kind: node.kind,
+                child_count: node.children.len(),
+            });
+        }
+        if matches!(node.kind, DomInvariantNodeKind::DocumentType) && node.parent != dom.root {
+            return Err(DomInvariantError::DocumentTypeNotDocumentChild {
                 key,
                 actual_parent: node.parent,
             });
@@ -98,6 +112,42 @@ pub fn check_dom_invariants(dom: &DomInvariantState) -> Result<(), DomInvariantE
     Ok(())
 }
 
+fn check_document_child_kind_invariants(
+    dom: &DomInvariantState,
+    _root: PatchKey,
+    children: &[PatchKey],
+) -> Result<(), DomInvariantError> {
+    let mut doctype = None;
+    let mut first_element = None;
+    for child in children {
+        let Some(child_node) = dom.node(*child) else {
+            continue;
+        };
+        match child_node.kind {
+            DomInvariantNodeKind::DocumentType => {
+                if let Some(existing) = doctype {
+                    return Err(DomInvariantError::DuplicateDocumentType {
+                        existing,
+                        duplicate: *child,
+                    });
+                }
+                if let Some(element) = first_element {
+                    return Err(DomInvariantError::DocumentTypeAfterDocumentElement {
+                        doctype: *child,
+                        element,
+                    });
+                }
+                doctype = Some(*child);
+            }
+            DomInvariantNodeKind::Element if first_element.is_none() => {
+                first_element = Some(*child);
+            }
+            _ => {}
+        }
+    }
+    Ok(())
+}
+
 pub fn check_patch_invariants(
     patches: &[DomPatch],
     dom_state: &DomInvariantState,
@@ -117,6 +167,13 @@ pub fn check_patch_invariants(
             }
             DomPatch::CreateDocument { key, .. } => {
                 staged.insert_created_node(*key, DomInvariantNodeKind::Document, patch_index)?;
+            }
+            DomPatch::CreateDocumentType { key, .. } => {
+                staged.insert_created_node(
+                    *key,
+                    DomInvariantNodeKind::DocumentType,
+                    patch_index,
+                )?;
             }
             DomPatch::CreateElement { key, .. } => {
                 staged.insert_created_node(*key, DomInvariantNodeKind::Element, patch_index)?;

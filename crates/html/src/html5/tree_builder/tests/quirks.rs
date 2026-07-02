@@ -114,6 +114,57 @@ fn duplicate_doctype_after_initial_handoff_does_not_mutate_document_mode() {
 }
 
 #[test]
+fn doctype_after_body_started_remains_late_and_does_not_create_node() {
+    use super::helpers::{EmptyResolver, enter_in_body};
+    use crate::dom_patch::DomPatch;
+    use crate::html5::shared::Token;
+
+    let resolver = EmptyResolver;
+    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+    let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
+    let foo = ctx
+        .atoms
+        .intern_ascii_folded("foo")
+        .expect("atom interning");
+
+    let _ = builder
+        .process(
+            &Token::Doctype {
+                name: Some(foo),
+                public_id: None,
+                system_id: None,
+                force_quirks: false,
+            },
+            &ctx.atoms,
+            &resolver,
+        )
+        .expect("late in-body doctype should remain recoverable");
+
+    assert_eq!(
+        builder.state_snapshot().quirks_mode,
+        QuirksMode::NoQuirks,
+        "late in-body doctype must not mutate document mode"
+    );
+    assert_eq!(
+        builder.take_parse_error_kinds_for_test(),
+        vec!["in-body-doctype"],
+        "late in-body doctype should remain an in-body parse error"
+    );
+    assert!(
+        builder
+            .drain_patches()
+            .iter()
+            .all(|patch| !matches!(patch, DomPatch::CreateDocumentType { .. })),
+        "late in-body doctype must not create another doctype node"
+    );
+}
+
+#[test]
 fn table_start_marks_frameset_not_ok() {
     use super::helpers::{EmptyResolver, enter_in_body};
     use crate::html5::shared::Token;
@@ -162,8 +213,18 @@ fn table_start_closes_open_p_in_no_quirks_and_limited_quirks() {
         "<!DOCTYPE html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\" \"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\"><p><table>",
     ]);
 
-    let expected = vec![
-        "#document doctype=\"html\"".to_string(),
+    let no_quirks_expected = vec![
+        "#document".to_string(),
+        "  <!doctype html>".to_string(),
+        "  <html>".to_string(),
+        "    <head>".to_string(),
+        "    <body>".to_string(),
+        "      <p>".to_string(),
+        "      <table>".to_string(),
+    ];
+    let limited_quirks_expected = vec![
+        "#document".to_string(),
+        "  <!doctype html public-id=\"-//W3C//DTD XHTML 1.0 Transitional//EN\" system-id=\"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">".to_string(),
         "  <html>".to_string(),
         "    <head>".to_string(),
         "    <body>".to_string(),
@@ -171,8 +232,8 @@ fn table_start_closes_open_p_in_no_quirks_and_limited_quirks() {
         "      <table>".to_string(),
     ];
 
-    assert_eq!(no_quirks, expected);
-    assert_eq!(limited_quirks, expected);
+    assert_eq!(no_quirks, no_quirks_expected);
+    assert_eq!(limited_quirks, limited_quirks_expected);
 }
 
 #[test]
@@ -182,7 +243,8 @@ fn table_start_keeps_open_p_in_quirks_mode() {
     assert_eq!(
         dom,
         vec![
-            "#document doctype=\"foo\"".to_string(),
+            "#document".to_string(),
+            "  <!doctype foo>".to_string(),
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),
@@ -198,7 +260,8 @@ fn table_start_does_not_reconstruct_formatting_elements_before_table() {
     let chunked = materialized_dom_lines(&["<!doctype html><p><b>x</p>", "<table>"]);
 
     let expected = vec![
-        "#document doctype=\"html\"".to_string(),
+        "#document".to_string(),
+        "  <!doctype html>".to_string(),
         "  <html>".to_string(),
         "    <head>".to_string(),
         "    <body>".to_string(),

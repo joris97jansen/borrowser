@@ -31,6 +31,7 @@ behavior, resource loading, navigation behavior, or runtime lifecycle behavior.
 
 - [`docs/adr/001-html5-parsing-architecture.md`](../adr/001-html5-parsing-architecture.md)
 - [`docs/html5/html5-core-v0.md`](html5-core-v0.md)
+- [`docs/html5/ae2-parser-created-dom-node-model.md`](ae2-parser-created-dom-node-model.md)
 - [`docs/html5/spec-matrix-tokenizer.md`](spec-matrix-tokenizer.md)
 - [`docs/html5/spec-matrix-treebuilder.md`](spec-matrix-treebuilder.md)
 - [`docs/html5/dompatch-contract.md`](dompatch-contract.md)
@@ -123,11 +124,20 @@ recovery decisions as runtime semantics.
 The DOM/document model owns node structure and invariants:
 
 - a rooted document state where required by the patch contract;
+- explicit parser-created node kinds for document, doctype, element, text,
+  and comment nodes;
+- doctype as a `DocumentType` node in HTML5 parser-created output, not merely
+  document-level metadata;
 - acyclic parent/child structure;
 - at most one parent per node;
 - explicit sibling order;
 - deterministic node creation and movement semantics;
 - parser-created node identity within its own identity domain.
+
+Element and attribute canonicalization also happens before downstream
+consumers. Parser-created attributes use tokenizer-normalized names,
+first-wins duplicate handling by normalized name, and stored encounter order
+after duplicate removal.
 
 ## Browser Runtime Consumption Boundary
 
@@ -208,9 +218,10 @@ builder/document parse state chooses document mode from those fields in the
 supported scope documented by the HTML5 Core v0 and tree-builder matrix
 contracts.
 
-Document mode remains parser-owned state unless a future issue introduces a
-dedicated, deterministic document-level signal. AE1 does not claim broad
-document-mode conformance beyond already documented supported behavior.
+Document mode remains parser-owned state and is separate from parser-created
+`DocumentType` node identity. The doctype node records doctype payload for the
+tree; it does not encode quirks mode. AE1 does not claim broad document-mode
+conformance beyond already documented supported behavior.
 
 ## No-JavaScript Scope
 

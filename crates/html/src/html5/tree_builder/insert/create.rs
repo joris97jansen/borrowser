@@ -2,10 +2,12 @@ use crate::dom_patch::DomPatch;
 use crate::dom_patch::PatchKey;
 use crate::html5::shared::{AtomId, AtomTable, Attribute, TextValue};
 use crate::html5::tokenizer::TextResolver;
-use crate::html5::tree_builder::formatting::{AfeAttributeSnapshot, AfeElementEntry};
-use crate::html5::tree_builder::resolve::{
-    resolve_atom_arc, resolve_attribute_value, resolve_text_value,
+use crate::html5::tree_builder::attributes::{
+    ParserCreatedAttribute, resolve_afe_attributes_first_wins, resolve_token_attributes_first_wins,
+    snapshot_token_attributes_first_wins,
 };
+use crate::html5::tree_builder::formatting::{AfeAttributeSnapshot, AfeElementEntry};
+use crate::html5::tree_builder::resolve::{resolve_atom_arc, resolve_text_value};
 use crate::html5::tree_builder::stack::OpenElement;
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
 
@@ -13,7 +15,7 @@ impl Html5TreeBuilder {
     pub(in crate::html5::tree_builder) fn create_detached_element(
         &mut self,
         name: AtomId,
-        attrs: &[(std::sync::Arc<str>, Option<String>)],
+        attrs: &[ParserCreatedAttribute],
         atoms: &AtomTable,
     ) -> Result<Option<PatchKey>, TreeBuilderError> {
         if !self.allow_node_creation(Some(name)) {
@@ -36,12 +38,7 @@ impl Html5TreeBuilder {
         atoms: &AtomTable,
         text: &dyn TextResolver,
     ) -> Result<Option<PatchKey>, TreeBuilderError> {
-        let mut attributes = Vec::with_capacity(attrs.len());
-        for attr in attrs {
-            let attr_name = resolve_atom_arc(atoms, attr.name)?;
-            let attr_value = resolve_attribute_value(attr, text)?;
-            attributes.push((attr_name, attr_value));
-        }
+        let attributes = resolve_token_attributes_first_wins(attrs, atoms, text)?;
         self.create_detached_element(name, &attributes, atoms)
     }
 
@@ -50,11 +47,7 @@ impl Html5TreeBuilder {
         entry: &AfeElementEntry,
         atoms: &AtomTable,
     ) -> Result<Option<PatchKey>, TreeBuilderError> {
-        let mut attributes = Vec::with_capacity(entry.attrs.len());
-        for attr in &entry.attrs {
-            let attr_name = resolve_atom_arc(atoms, attr.name)?;
-            attributes.push((attr_name, attr.value.clone()));
-        }
+        let attributes = resolve_afe_attributes_first_wins(&entry.attrs, atoms)?;
         self.create_detached_element(entry.name, &attributes, atoms)
     }
 
@@ -125,14 +118,7 @@ impl Html5TreeBuilder {
         attrs: &[Attribute],
         text: &dyn TextResolver,
     ) -> Result<Vec<AfeAttributeSnapshot>, TreeBuilderError> {
-        let mut snapshot = Vec::with_capacity(attrs.len());
-        for attr in attrs {
-            snapshot.push(AfeAttributeSnapshot::new(
-                attr.name,
-                resolve_attribute_value(attr, text)?,
-            ));
-        }
-        Ok(snapshot)
+        snapshot_token_attributes_first_wins(attrs, text)
     }
 
     pub(in crate::html5::tree_builder) fn insert_comment(
@@ -148,21 +134,38 @@ impl Html5TreeBuilder {
                 .current()
                 .map(OpenElement::key)
                 .unwrap_or(document_key);
-            if !this.allow_new_child(parent, None) || !this.allow_node_creation(None) {
-                return Ok(());
-            }
-            let key = this.alloc_patch_key()?;
-            this.push_structural_patch(DomPatch::CreateComment {
-                key,
-                text: resolved,
-            });
-            this.note_node_created();
-            let inserted = this.append_existing_child(parent, key);
-            debug_assert!(
-                inserted,
-                "newly created comment insertion must succeed after precheck"
-            );
-            Ok(())
+            this.append_comment_child(parent, resolved)
         })
+    }
+
+    pub(in crate::html5::tree_builder) fn insert_initial_comment(
+        &mut self,
+        token_text: &TextValue,
+        text: &dyn TextResolver,
+    ) -> Result<(), TreeBuilderError> {
+        self.with_structural_mutation(|this| {
+            let resolved = resolve_text_value(token_text, text)?;
+            let document_key = this.ensure_document_created_for_initial_comment()?;
+            this.append_comment_child(document_key, resolved)
+        })
+    }
+
+    fn append_comment_child(
+        &mut self,
+        parent: PatchKey,
+        text: String,
+    ) -> Result<(), TreeBuilderError> {
+        if !self.allow_new_child(parent, None) || !self.allow_node_creation(None) {
+            return Ok(());
+        }
+        let key = self.alloc_patch_key()?;
+        self.push_structural_patch(DomPatch::CreateComment { key, text });
+        self.note_node_created();
+        let inserted = self.append_existing_child(parent, key);
+        debug_assert!(
+            inserted,
+            "newly created comment insertion must succeed after precheck"
+        );
+        Ok(())
     }
 }

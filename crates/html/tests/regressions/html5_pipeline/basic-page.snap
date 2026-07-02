@@ -8,12 +8,13 @@ chunk_count: 11
 saw_one_byte_chunk: true
 tokens_streamed: 19
 span_resolve_count: 5
-patches_emitted: 23
+patches_emitted: 25
 tokenizer_controls_applied: 2
-digest: 1956705449378876545
+digest: 6581980648392813409
 
 dom:
-#document doctype="html"
+#document
+  <!doctype html>
   <html>
     <head>
       <title>

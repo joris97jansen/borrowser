@@ -209,7 +209,7 @@ fn default_display_for(tag: &str) -> Display {
 ///
 /// We:
 /// - Create a `StyledNode` for Document + Element nodes
-/// - Skip Text/Comment nodes for now (can be added later for inline layout)
+/// - Skip parser-created doctype children because they are not style inputs
 pub fn build_style_tree<'a>(
     root: &'a html::Node,
     parent_style: Option<&ComputedStyle>,
@@ -220,6 +220,9 @@ pub fn build_style_tree<'a>(
 
             let mut styled_children = Vec::new();
             for child in children {
+                if matches!(child, Node::DocumentType { .. }) {
+                    continue;
+                }
                 // Include *all* node types so we see Text nodes here too
                 styled_children.push(build_style_tree(child, Some(&base)));
             }
@@ -264,6 +267,9 @@ pub fn build_style_tree<'a>(
             // 4) Recurse into children with this as the parent computed style
             let mut styled_children = Vec::new();
             for child in children {
+                if matches!(child, Node::DocumentType { .. }) {
+                    continue;
+                }
                 styled_children.push(build_style_tree(child, Some(&computed)));
             }
 
@@ -275,7 +281,7 @@ pub fn build_style_tree<'a>(
             }
         }
 
-        Node::Text { .. } | Node::Comment { .. } => {
+        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => {
             // Inherit everything from parent
             let inherited = parent_style.copied().unwrap_or_else(ComputedStyle::initial);
 

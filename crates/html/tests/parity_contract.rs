@@ -13,7 +13,8 @@ fn parity_contract_no_quirks_table_closes_open_p() {
     assert_eq!(
         dom_lines("<!doctype html><p><table>"),
         vec![
-            "#document doctype=\"html\"".to_string(),
+            "#document".to_string(),
+            "  <!doctype html>".to_string(),
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),
@@ -28,7 +29,8 @@ fn parity_contract_quirks_table_keeps_open_p() {
     assert_eq!(
         dom_lines("<!doctype foo><p><table>"),
         vec![
-            "#document doctype=\"foo\"".to_string(),
+            "#document".to_string(),
+            "  <!doctype foo>".to_string(),
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),

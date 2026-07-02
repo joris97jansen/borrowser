@@ -31,7 +31,7 @@ impl Html5TreeBuilder {
                 Ok(DispatchOutcome::Done)
             }
             Token::Comment { text: token_text } => {
-                self.insert_comment(token_text, text)?;
+                self.insert_initial_comment(token_text, text)?;
                 Ok(DispatchOutcome::Done)
             }
             Token::Text { text: token_text } => {
@@ -43,7 +43,11 @@ impl Html5TreeBuilder {
                 }
             }
             Token::Eof => {
+                let had_bootstrap_document = self.document_key.is_some();
                 let _ = self.ensure_document_created()?;
+                if had_bootstrap_document {
+                    return Ok(DispatchOutcome::Reprocess(InsertionMode::BeforeHtml));
+                }
                 Ok(DispatchOutcome::Done)
             }
             _ => {

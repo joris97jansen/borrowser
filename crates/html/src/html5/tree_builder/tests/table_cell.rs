@@ -77,7 +77,8 @@ fn implied_cell_close_on_new_cell_keeps_nested_formatting_and_is_chunk_invariant
     ]);
 
     let expected = vec![
-        "#document doctype=\"html\"".to_string(),
+        "#document".to_string(),
+        "  <!doctype html>".to_string(),
         "  <html>".to_string(),
         "    <head>".to_string(),
         "    <body>".to_string(),
@@ -125,7 +126,8 @@ fn malformed_cell_end_tag_with_nested_formatting_materializes_without_invariant_
     assert_eq!(
         dom,
         vec![
-            "#document doctype=\"html\"".to_string(),
+            "#document".to_string(),
+            "  <!doctype html>".to_string(),
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),
@@ -149,7 +151,8 @@ fn row_end_tag_implies_cell_close_with_nested_formatting() {
     assert_eq!(
         dom,
         vec![
-            "#document doctype=\"html\"".to_string(),
+            "#document".to_string(),
+            "  <!doctype html>".to_string(),
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),
@@ -171,7 +174,8 @@ fn table_end_tag_implies_cell_close_with_nested_formatting_and_is_chunk_invarian
         materialized_dom_lines(&["<!doctype html><table><tbody><tr><td><b>x", "</table>"]);
 
     let expected = vec![
-        "#document doctype=\"html\"".to_string(),
+        "#document".to_string(),
+        "  <!doctype html>".to_string(),
         "  <html>".to_string(),
         "    <head>".to_string(),
         "    <body>".to_string(),
@@ -201,7 +205,8 @@ fn nested_table_inside_cell_uses_real_inner_table_modes_and_is_chunk_invariant()
     ]);
 
     let expected = vec![
-        "#document doctype=\"html\"".to_string(),
+        "#document".to_string(),
+        "  <!doctype html>".to_string(),
         "  <html>".to_string(),
         "    <head>".to_string(),
         "    <body>".to_string(),

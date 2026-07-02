@@ -150,6 +150,24 @@ fn dom_snapshot_lines(node: &Node) -> Vec<String> {
             Node::Comment { text, .. } => {
                 out.push(format!("{indent}comment=\"{}\"", escape(text)));
             }
+            Node::DocumentType {
+                name,
+                public_id,
+                system_id,
+                ..
+            } => {
+                let mut line = match name {
+                    Some(name) => format!("{indent}<!doctype {}>", escape(name)),
+                    None => format!("{indent}<!doctype>"),
+                };
+                if let Some(public_id) = public_id {
+                    line.push_str(&format!(" public-id=\"{}\"", escape(public_id)));
+                }
+                if let Some(system_id) = system_id {
+                    line.push_str(&format!(" system-id=\"{}\"", escape(system_id)));
+                }
+                out.push(line);
+            }
         }
     }
 

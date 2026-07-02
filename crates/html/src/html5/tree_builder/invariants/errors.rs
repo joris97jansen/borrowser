@@ -20,6 +20,23 @@ pub enum DomInvariantError {
         key: PatchKey,
         actual_parent: Option<PatchKey>,
     },
+    NonContainerHasChildren {
+        key: PatchKey,
+        kind: DomInvariantNodeKind,
+        child_count: usize,
+    },
+    DocumentTypeNotDocumentChild {
+        key: PatchKey,
+        actual_parent: Option<PatchKey>,
+    },
+    DuplicateDocumentType {
+        existing: PatchKey,
+        duplicate: PatchKey,
+    },
+    DocumentTypeAfterDocumentElement {
+        doctype: PatchKey,
+        element: PatchKey,
+    },
     DetachedNonRootNode {
         key: PatchKey,
     },
@@ -71,6 +88,30 @@ impl std::fmt::Display for DomInvariantError {
             Self::DocumentNodeNotRoot { key, actual_parent } => write!(
                 f,
                 "DOM invariant failed: document node {key:?} is not the declared root (parent={actual_parent:?})"
+            ),
+            Self::NonContainerHasChildren {
+                key,
+                kind,
+                child_count,
+            } => write!(
+                f,
+                "DOM invariant failed: non-container node {key:?} ({}) has {child_count} children",
+                kind.as_str()
+            ),
+            Self::DocumentTypeNotDocumentChild { key, actual_parent } => write!(
+                f,
+                "DOM invariant failed: doctype node {key:?} must be a document child (parent={actual_parent:?})"
+            ),
+            Self::DuplicateDocumentType {
+                existing,
+                duplicate,
+            } => write!(
+                f,
+                "DOM invariant failed: duplicate doctype nodes {existing:?} and {duplicate:?}"
+            ),
+            Self::DocumentTypeAfterDocumentElement { doctype, element } => write!(
+                f,
+                "DOM invariant failed: doctype node {doctype:?} appears after document element {element:?}"
             ),
             Self::DetachedNonRootNode { key } => {
                 write!(

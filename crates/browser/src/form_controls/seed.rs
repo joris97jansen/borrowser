@@ -61,7 +61,7 @@ fn walk(
             );
         }
 
-        Node::Text { .. } | Node::Comment { .. } => {}
+        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => {}
     }
 }
 

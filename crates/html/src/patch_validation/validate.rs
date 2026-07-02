@@ -41,12 +41,25 @@ impl PatchValidationArena {
                 "root node must not have a parent",
             ));
         }
+        self.assert_document_child_kind_invariants(root, root_node)?;
 
         for (key, node) in &self.nodes {
             if matches!(node.kind, PatchKind::Document { .. }) && *key != root {
                 return Err(PatchValidationError::new(
                     "post-apply invariants",
                     format!("document node {key:?} must be the declared root {root:?}"),
+                ));
+            }
+            if !node.allows_children() && !node.children.is_empty() {
+                return Err(PatchValidationError::new(
+                    "post-apply invariants",
+                    format!("non-container node {key:?} has children"),
+                ));
+            }
+            if matches!(node.kind, PatchKind::DocumentType { .. }) && node.parent != Some(root) {
+                return Err(PatchValidationError::new(
+                    "post-apply invariants",
+                    format!("doctype node {key:?} must be a document child"),
                 ));
             }
 
@@ -123,6 +136,44 @@ impl PatchValidationArena {
             self.assert_acyclic_from(key, &mut visited, &mut visiting)?;
         }
 
+        Ok(())
+    }
+
+    fn assert_document_child_kind_invariants(
+        &self,
+        _root: PatchKey,
+        root_node: &super::model::PatchNode,
+    ) -> ArenaResult<()> {
+        let mut doctype = None;
+        let mut first_element = None;
+        for child in &root_node.children {
+            let Some(child_node) = self.nodes.get(child) else {
+                continue;
+            };
+            match child_node.kind {
+                PatchKind::DocumentType { .. } => {
+                    if let Some(existing) = doctype {
+                        return Err(PatchValidationError::new(
+                            "post-apply invariants",
+                            format!("duplicate doctype nodes {existing:?} and {child:?}"),
+                        ));
+                    }
+                    if let Some(element) = first_element {
+                        return Err(PatchValidationError::new(
+                            "post-apply invariants",
+                            format!(
+                                "doctype node {child:?} appears after document element {element:?}"
+                            ),
+                        ));
+                    }
+                    doctype = Some(*child);
+                }
+                PatchKind::Element { .. } if first_element.is_none() => {
+                    first_element = Some(*child);
+                }
+                _ => {}
+            }
+        }
         Ok(())
     }
 

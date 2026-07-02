@@ -59,13 +59,15 @@ Core F11 coverage baseline:
 
 - implicit document shell insertion (`html/head/body`) for fragment-like inputs,
 - comment handling (before root and inside body subtrees),
-- doctype propagation to document snapshots,
+- doctype propagation as a parser-created `DocumentType` child in document
+  snapshots,
 - nested element structure and in-body ordering,
 - text coalescing semantics under whole + chunked + seeded-fuzz input delivery.
 
 Node line grammar (examples):
 
-- Document: `#document` or `#document doctype="html"`
+- Document: `#document`
+- DocumentType: `<!doctype html>`
 - Element: `<div class="a" disabled>`
 - Text: `"hello"`
 - Comment: `<!-- comment -->`

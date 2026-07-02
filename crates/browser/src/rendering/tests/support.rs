@@ -148,7 +148,9 @@ pub(super) fn set_first_element_attr(
                     .expect("target element should exist")
             }
         }
-        Node::Text { .. } | Node::Comment { .. } => panic!("target element should exist"),
+        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => {
+            panic!("target element should exist")
+        }
     }
 }
 
@@ -185,7 +187,7 @@ pub(super) fn set_first_element_attr_optional(
                 })
             }
         }
-        Node::Text { .. } | Node::Comment { .. } => None,
+        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => None,
     }
 }
 
@@ -206,7 +208,7 @@ pub(super) fn replace_first_text_optional(
             *text = after.to_string();
             Some(*id)
         }
-        Node::Text { .. } | Node::Comment { .. } => None,
+        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => None,
     }
 }
 
@@ -230,7 +232,7 @@ pub(super) fn remove_first_element_optional(
                 .iter_mut()
                 .find_map(|child| remove_first_element_optional(child, want_name))
         }
-        Node::Text { .. } | Node::Comment { .. } => None,
+        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => None,
     }
 }
 
@@ -267,7 +269,7 @@ pub(super) fn replace_first_element_optional(
             }
             None
         }
-        Node::Text { .. } | Node::Comment { .. } => None,
+        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => None,
     }
 }
 
@@ -302,6 +304,17 @@ fn replacement_node(node: &Node) -> Node {
         Node::Comment { id, text } => Node::Comment {
             id: *id,
             text: text.clone(),
+        },
+        Node::DocumentType {
+            id,
+            name,
+            public_id,
+            system_id,
+        } => Node::DocumentType {
+            id: *id,
+            name: name.clone(),
+            public_id: public_id.clone(),
+            system_id: system_id.clone(),
         },
     }
 }

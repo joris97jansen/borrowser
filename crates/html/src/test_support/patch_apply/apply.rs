@@ -39,6 +39,29 @@ impl TestPatchArena {
                     self.allocated.insert(*key);
                     self.root = Some(*key);
                 }
+                DomPatch::CreateDocumentType {
+                    key,
+                    name,
+                    public_id,
+                    system_id,
+                } => {
+                    if self.allocated.contains(key) {
+                        return Err("duplicate key".to_string());
+                    }
+                    self.nodes.insert(
+                        *key,
+                        TestNode {
+                            kind: TestKind::DocumentType {
+                                name: name.clone(),
+                                public_id: public_id.clone(),
+                                system_id: system_id.clone(),
+                            },
+                            parent: None,
+                            children: Vec::new(),
+                        },
+                    );
+                    self.allocated.insert(*key);
+                }
                 DomPatch::CreateElement {
                     key,
                     name,
@@ -120,6 +143,7 @@ impl TestPatchArena {
                         TestKind::Text { text: existing } => *existing = text.clone(),
                         TestKind::Comment { .. }
                         | TestKind::Document { .. }
+                        | TestKind::DocumentType { .. }
                         | TestKind::Element { .. } => {
                             return Err("SetText applied to non-text node".to_string());
                         }
@@ -133,6 +157,7 @@ impl TestPatchArena {
                         TestKind::Text { text: existing } => existing.push_str(text),
                         TestKind::Comment { .. }
                         | TestKind::Document { .. }
+                        | TestKind::DocumentType { .. }
                         | TestKind::Element { .. } => {
                             return Err("AppendText applied to non-text node".to_string());
                         }

@@ -29,7 +29,8 @@ fn session_integrated_aaa_misnested_formatting_is_chunk_equivalent() {
         let whole_lines = crate::html5::serialize_dom_for_test(&whole_dom);
         let chunked_lines = crate::html5::serialize_dom_for_test(&chunked_dom);
         let expected_lines = vec![
-            "#document doctype=\"html\"".to_string(),
+            "#document".to_string(),
+            "  <!doctype html>".to_string(),
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),
@@ -70,19 +71,19 @@ fn session_aaa_furthest_block_reparenting_is_chunk_equivalent() {
     let create_counts = create_count_by_key(&whole);
     assert_no_remove_node_moves(&whole, "AAA furthest-block reparenting");
     assert_eq!(
-        create_counts.get(&PatchKey(6)),
+        create_counts.get(&PatchKey(7)),
         Some(&1),
         "moved furthest block should retain its original PatchKey"
     );
     assert_eq!(
-        create_counts.get(&PatchKey(7)),
+        create_counts.get(&PatchKey(8)),
         Some(&1),
         "moved text should retain its original PatchKey"
     );
     assert!(
         whole.contains(&DomPatch::AppendChild {
-            parent: PatchKey(4),
-            child: PatchKey(6),
+            parent: PatchKey(5),
+            child: PatchKey(7),
         }),
         "AAA furthest-block reparenting must emit the canonical AppendChild move"
     );
@@ -97,7 +98,8 @@ fn session_aaa_furthest_block_reparenting_is_chunk_equivalent() {
                 .expect("chunked AAA furthest-block patches should materialize");
 
         let expected_lines = vec![
-            "#document doctype=\"html\"".to_string(),
+            "#document".to_string(),
+            "  <!doctype html>".to_string(),
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),
@@ -139,20 +141,20 @@ fn session_aaa_foster_parent_insert_before_is_chunk_equivalent() {
     let create_counts = create_count_by_key(&whole);
     assert_no_remove_node_moves(&whole, "AAA foster-parent reparenting");
     assert_eq!(
-        create_counts.get(&PatchKey(9)),
+        create_counts.get(&PatchKey(10)),
         Some(&1),
         "foster-parented node should retain its original PatchKey"
     );
     assert_eq!(
-        create_counts.get(&PatchKey(10)),
+        create_counts.get(&PatchKey(11)),
         Some(&1),
         "moved text should retain its original PatchKey"
     );
     assert!(
         whole.contains(&DomPatch::InsertBefore {
-            parent: PatchKey(4),
-            child: PatchKey(9),
-            before: PatchKey(5),
+            parent: PatchKey(5),
+            child: PatchKey(10),
+            before: PatchKey(6),
         }),
         "AAA foster-parent reparenting must emit the canonical InsertBefore move"
     );
@@ -167,7 +169,8 @@ fn session_aaa_foster_parent_insert_before_is_chunk_equivalent() {
                 .expect("chunked AAA foster-parent patches should materialize");
 
         let expected_lines = vec![
-            "#document doctype=\"html\"".to_string(),
+            "#document".to_string(),
+            "  <!doctype html>".to_string(),
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),

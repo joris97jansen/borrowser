@@ -1,7 +1,9 @@
 # format: html5-dom-v1
 # status: active
 
-#document doctype="html"
+#document
+
+  <!doctype html public-id="-//W3C//DTD XHTML 1.0 Transitional//EN" system-id="http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd">
   <html>
     <head>
     <body>

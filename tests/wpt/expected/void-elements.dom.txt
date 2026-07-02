@@ -1,5 +1,6 @@
 # format: html5-dom-v1
-#document doctype="html"
+#document
+  <!doctype html>
   <html>
     <head>
     <body>

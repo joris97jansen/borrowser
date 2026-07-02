@@ -5,6 +5,7 @@ use super::errors::PatchInvariantError;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum DomInvariantNodeKind {
     Document,
+    DocumentType,
     Element,
     Text,
     Comment,
@@ -20,6 +21,7 @@ impl DomInvariantNodeKind {
     pub fn as_str(self) -> &'static str {
         match self {
             Self::Document => "document",
+            Self::DocumentType => "doctype",
             Self::Element => "element",
             Self::Text => "text",
             Self::Comment => "comment",
@@ -489,6 +491,7 @@ impl DomInvariantState {
 fn create_operation_name(kind: DomInvariantNodeKind) -> &'static str {
     match kind {
         DomInvariantNodeKind::Document => "CreateDocument",
+        DomInvariantNodeKind::DocumentType => "CreateDocumentType",
         DomInvariantNodeKind::Element => "CreateElement",
         DomInvariantNodeKind::Text => "CreateText",
         DomInvariantNodeKind::Comment => "CreateComment",
