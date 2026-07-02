@@ -413,10 +413,18 @@ Current supported subset:
   `docs/html5/ae1-html-parser-dom-ownership-contract.md`. This is an
   architecture contract only and does not claim broad AE tokenizer,
   tree-builder, or parser conformance completion.
+- AE2 parser-created DOM node model: HTML5 parser-created output has explicit
+  document, doctype, element, text, and comment nodes; accepted initial
+  doctypes materialize as `DocumentType` document children before the document
+  element; document mode remains parser metadata; parser-created attributes are
+  first-wins duplicate-free by normalized name while preserving stored
+  encounter order and missing-vs-empty value distinction. See
+  `docs/html5/ae2-parser-created-dom-node-model.md`.
 
 Missing or incomplete:
 
 - full DOM API surface
+- public DOM `DocumentType` API exposure
 - script integration
 - form algorithms beyond current control-state support
 - full editing/contenteditable behavior

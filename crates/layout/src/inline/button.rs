@@ -5,7 +5,10 @@ use crate::LayoutBox;
 fn collect_text_content(node: &LayoutBox<'_, '_>, out: &mut String) {
     match node.node.node {
         Node::Text { text, .. } => out.push_str(text),
-        Node::Element { .. } | Node::Document { .. } | Node::Comment { .. } => {
+        Node::Element { .. }
+        | Node::Document { .. }
+        | Node::Comment { .. }
+        | Node::DocumentType { .. } => {
             for c in &node.children {
                 collect_text_content(c, out);
             }

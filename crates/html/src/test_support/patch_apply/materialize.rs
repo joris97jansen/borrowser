@@ -17,6 +17,16 @@ impl TestPatchArena {
             Node::Document { doctype, .. } => TestKind::Document {
                 doctype: doctype.clone(),
             },
+            Node::DocumentType {
+                name,
+                public_id,
+                system_id,
+                ..
+            } => TestKind::DocumentType {
+                name: name.clone(),
+                public_id: public_id.clone(),
+                system_id: system_id.clone(),
+            },
             Node::Element {
                 name, attributes, ..
             } => TestKind::Element {
@@ -50,7 +60,7 @@ impl TestPatchArena {
                     }
                 }
             }
-            Node::Text { .. } | Node::Comment { .. } => {}
+            Node::DocumentType { .. } | Node::Text { .. } | Node::Comment { .. } => {}
         }
         Ok(())
     }
@@ -75,6 +85,16 @@ impl TestPatchArena {
                 id,
                 doctype: doctype.clone(),
                 children,
+            },
+            TestKind::DocumentType {
+                name,
+                public_id,
+                system_id,
+            } => Node::DocumentType {
+                id,
+                name: name.clone(),
+                public_id: public_id.clone(),
+                system_id: system_id.clone(),
             },
             TestKind::Element { name, attributes } => Node::Element {
                 id,

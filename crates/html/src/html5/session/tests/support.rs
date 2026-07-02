@@ -41,6 +41,7 @@ pub(super) fn create_count_by_key(patches: &[DomPatch]) -> BTreeMap<PatchKey, us
     for patch in patches {
         let key = match patch {
             DomPatch::CreateDocument { key, .. }
+            | DomPatch::CreateDocumentType { key, .. }
             | DomPatch::CreateElement { key, .. }
             | DomPatch::CreateText { key, .. }
             | DomPatch::CreateComment { key, .. } => *key,

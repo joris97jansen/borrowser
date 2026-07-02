@@ -20,7 +20,9 @@
 //! - Element and attribute names are expected to be canonical ASCII-lowercase.
 //! - All `PatchKey` values used in patches must be non-zero (`PatchKey::INVALID`
 //!   is never valid in a patch stream).
-//! - Attribute order and duplicates are preserved; appliers must not dedupe.
+//! - Attribute vectors are applied exactly as emitted. HTML5 parser-created
+//!   output canonicalizes attributes before emission; appliers must not dedupe
+//!   or reorder attributes downstream.
 //! - Operations must not create cycles; a node may have at most one parent.
 //! - Batches are atomic: apply all patches in order or apply none.
 //! - Batch version transitions are monotonic and exactly +1 per non-empty batch.
@@ -88,7 +90,19 @@ pub enum DomPatch {
     /// Create a document root node.
     CreateDocument {
         key: PatchKey,
+        /// Legacy document-level doctype metadata.
+        ///
+        /// HTML5 parser-created output emits `CreateDocumentType` plus
+        /// `AppendChild` for the accepted doctype node. Consumers must not
+        /// treat this field as a doctype node identity.
         doctype: Option<String>,
+    },
+    /// Create a parser-created document type node.
+    CreateDocumentType {
+        key: PatchKey,
+        name: Option<String>,
+        public_id: Option<String>,
+        system_id: Option<String>,
     },
     /// Create an element node with initial attributes.
     CreateElement {

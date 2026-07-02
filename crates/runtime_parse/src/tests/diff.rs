@@ -39,6 +39,11 @@ enum PrevNodeInfo {
         doctype: Option<String>,
         children: Vec<Id>,
     },
+    DocumentType {
+        name: Option<String>,
+        public_id: Option<String>,
+        system_id: Option<String>,
+    },
     Element {
         name: Arc<str>,
         attributes: Vec<(Arc<str>, Option<String>)>,
@@ -145,6 +150,21 @@ fn build_prev_map(node: &Node, map: &mut HashMap<Id, PrevNodeInfo>) {
                 build_prev_map(child, map);
             }
         }
+        Node::DocumentType {
+            id,
+            name,
+            public_id,
+            system_id,
+        } => {
+            map.insert(
+                *id,
+                PrevNodeInfo::DocumentType {
+                    name: name.clone(),
+                    public_id: public_id.clone(),
+                    system_id: system_id.clone(),
+                },
+            );
+        }
         Node::Text { id, text } => {
             map.insert(*id, PrevNodeInfo::Text { text: text.clone() });
         }
@@ -162,7 +182,7 @@ fn collect_ids(node: &Node, out: &mut HashSet<Id>) {
                 collect_ids(child, out);
             }
         }
-        Node::Text { .. } | Node::Comment { .. } => {}
+        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => {}
     }
 }
 
@@ -200,7 +220,7 @@ fn emit_removals(
                 }
             }
         }
-        Node::Text { .. } | Node::Comment { .. } => {}
+        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => {}
     }
 }
 
@@ -274,6 +294,24 @@ fn emit_updates(
                 }
             }
             (
+                PrevNodeInfo::DocumentType {
+                    name,
+                    public_id,
+                    system_id,
+                },
+                Node::DocumentType {
+                    name: next_name,
+                    public_id: next_public_id,
+                    system_id: next_system_id,
+                    ..
+                },
+            ) => {
+                if name != next_name || public_id != next_public_id || system_id != next_system_id {
+                    *need_reset = true;
+                    return;
+                }
+            }
+            (
                 PrevNodeInfo::Text { text },
                 Node::Text {
                     text: next_text, ..
@@ -341,7 +379,7 @@ fn emit_updates(
                 }
             }
         }
-        Node::Text { .. } | Node::Comment { .. } => {}
+        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => {}
     }
 }
 
@@ -374,6 +412,19 @@ fn emit_create_node(node: &Node, key: PatchKey, patches: &mut Vec<DomPatch>) {
                 text: text.clone(),
             });
         }
+        Node::DocumentType {
+            name,
+            public_id,
+            system_id,
+            ..
+        } => {
+            patches.push(DomPatch::CreateDocumentType {
+                key,
+                name: name.clone(),
+                public_id: public_id.clone(),
+                system_id: system_id.clone(),
+            });
+        }
     }
 }
 
@@ -404,7 +455,7 @@ fn emit_create_subtree(
                 }
             }
         }
-        Node::Text { .. } | Node::Comment { .. } => {}
+        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => {}
     }
 }
 
@@ -414,6 +465,7 @@ fn root_is_compatible(prev: &Node, next: &Node) -> bool {
         (Node::Element { name: a, .. }, Node::Element { name: b, .. }) => a == b,
         (Node::Text { .. }, Node::Text { .. }) => true,
         (Node::Comment { .. }, Node::Comment { .. }) => true,
+        (Node::DocumentType { name: a, .. }, Node::DocumentType { name: b, .. }) => a == b,
         _ => false,
     }
 }
@@ -508,6 +560,7 @@ fn patch_updates_do_not_resend_full_tree_each_tick() {
                     matches!(
                         p,
                         DomPatch::CreateDocument { .. }
+                            | DomPatch::CreateDocumentType { .. }
                             | DomPatch::CreateElement { .. }
                             | DomPatch::CreateText { .. }
                             | DomPatch::CreateComment { .. }
@@ -520,6 +573,7 @@ fn patch_updates_do_not_resend_full_tree_each_tick() {
                     matches!(
                         p,
                         DomPatch::CreateDocument { .. }
+                            | DomPatch::CreateDocumentType { .. }
                             | DomPatch::CreateElement { .. }
                             | DomPatch::CreateText { .. }
                             | DomPatch::CreateComment { .. }

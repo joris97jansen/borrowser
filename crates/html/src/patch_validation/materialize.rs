@@ -32,6 +32,16 @@ impl PatchValidationArena {
                 doctype: doctype.clone(),
                 children,
             },
+            PatchKind::DocumentType {
+                name,
+                public_id,
+                system_id,
+            } => Node::DocumentType {
+                id: Id::INVALID,
+                name: name.clone(),
+                public_id: public_id.clone(),
+                system_id: system_id.clone(),
+            },
             PatchKind::Element { name, attributes } => Node::Element {
                 id: Id::INVALID,
                 name: Arc::clone(name),

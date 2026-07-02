@@ -74,10 +74,12 @@ impl PatchValidationArena {
 
         match node.kind {
             PatchKind::Document { .. } | PatchKind::Element { .. } => Ok(()),
-            PatchKind::Text { .. } | PatchKind::Comment { .. } => Err(PatchValidationError::new(
-                context,
-                "target must be a container node",
-            )),
+            PatchKind::DocumentType { .. } | PatchKind::Text { .. } | PatchKind::Comment { .. } => {
+                Err(PatchValidationError::new(
+                    context,
+                    "target must be a container node",
+                ))
+            }
         }
     }
 
@@ -367,6 +369,25 @@ impl PatchValidationArena {
                         },
                     )?;
                     self.root = Some(*key);
+                }
+                DomPatch::CreateDocumentType {
+                    key,
+                    name,
+                    public_id,
+                    system_id,
+                } => {
+                    self.insert(
+                        *key,
+                        PatchNode {
+                            kind: PatchKind::DocumentType {
+                                name: name.clone(),
+                                public_id: public_id.clone(),
+                                system_id: system_id.clone(),
+                            },
+                            parent: None,
+                            children: Vec::new(),
+                        },
+                    )?;
                 }
                 DomPatch::CreateElement {
                     key,

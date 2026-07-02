@@ -10,7 +10,7 @@ impl TestPatchArena {
         };
         match node.kind {
             TestKind::Document { .. } | TestKind::Element { .. } => Ok(()),
-            TestKind::Text { .. } | TestKind::Comment { .. } => {
+            TestKind::DocumentType { .. } | TestKind::Text { .. } | TestKind::Comment { .. } => {
                 Err(format!("{context} must be a container"))
             }
         }
@@ -66,6 +66,16 @@ impl TestPatchArena {
         }
 
         for (key, node) in &self.nodes {
+            if !matches!(
+                node.kind,
+                TestKind::Document { .. } | TestKind::Element { .. }
+            ) && !node.children.is_empty()
+            {
+                return Err(format!("non-container node {key:?} has children"));
+            }
+            if matches!(node.kind, TestKind::DocumentType { .. }) && node.parent != self.root {
+                return Err(format!("doctype node {key:?} must be a document child"));
+            }
             if let Some(parent) = node.parent {
                 let Some(parent_node) = self.nodes.get(&parent) else {
                     return Err(format!("dangling parent reference for {key:?}"));

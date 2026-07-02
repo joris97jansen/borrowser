@@ -14,6 +14,9 @@ pub(super) fn compare_nodes<'a>(
         (Node::Document { .. }, Node::Document { .. }) => {
             compare_document(expected, actual, options, path)
         }
+        (Node::DocumentType { .. }, Node::DocumentType { .. }) => {
+            compare_document_type(expected, actual, options, path)
+        }
         (Node::Element { .. }, Node::Element { .. }) => {
             compare_element(expected, actual, options, path)
         }
@@ -29,6 +32,68 @@ pub(super) fn compare_nodes<'a>(
             options,
         ))),
     }
+}
+
+fn compare_document_type<'a>(
+    expected_node: &'a Node,
+    actual_node: &'a Node,
+    options: &DomSnapshotOptions,
+    path: &[String],
+) -> Result<(), Box<DomMismatch<'a>>> {
+    let (
+        Node::DocumentType {
+            id: expected_id,
+            name: expected_name,
+            public_id: expected_public_id,
+            system_id: expected_system_id,
+        },
+        Node::DocumentType {
+            id: actual_id,
+            name: actual_name,
+            public_id: actual_public_id,
+            system_id: actual_system_id,
+        },
+    ) = (expected_node, actual_node)
+    else {
+        unreachable!("compare_document_type called with non-doctype nodes");
+    };
+    if !options.ignore_ids && *expected_id != *actual_id {
+        return Err(Box::new(mismatch(
+            path,
+            "doctype id",
+            expected_node,
+            actual_node,
+            options,
+        )));
+    }
+    if expected_name != actual_name {
+        return Err(Box::new(mismatch(
+            path,
+            "doctype name",
+            expected_node,
+            actual_node,
+            options,
+        )));
+    }
+    if expected_public_id != actual_public_id {
+        return Err(Box::new(mismatch(
+            path,
+            "doctype public id",
+            expected_node,
+            actual_node,
+            options,
+        )));
+    }
+    if expected_system_id != actual_system_id {
+        return Err(Box::new(mismatch(
+            path,
+            "doctype system id",
+            expected_node,
+            actual_node,
+            options,
+        )));
+    }
+    Ok(())
 }
 
 fn compare_document<'a>(

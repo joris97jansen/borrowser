@@ -92,7 +92,10 @@ fn recompute_block_heights<'style_tree, 'dom>(
     node.rect.x = x;
     node.rect.y = y;
 
-    if matches!(node.node.node, Node::Text { .. } | Node::Comment { .. }) {
+    if matches!(
+        node.node.node,
+        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. }
+    ) {
         node.rect.width = 0.0;
         node.rect.height = 0.0;
         node.used_content_size = None;
@@ -311,8 +314,8 @@ fn recompute_block_heights<'style_tree, 'dom>(
             finish_resolved_size(node, inline_size, block_size)
         }
 
-        Node::Text { .. } | Node::Comment { .. } => unreachable!(
-            "text and comment boxes do not independently resolve normal-flow used sizes"
+        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => unreachable!(
+            "non-element leaf boxes do not independently resolve normal-flow used sizes"
         ),
     }
 }

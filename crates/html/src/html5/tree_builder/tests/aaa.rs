@@ -233,24 +233,24 @@ fn adoption_agency_furthest_block_recovery_emits_deterministic_move_sequence() {
     let patches = run_manual_aaa_chunks(&["<!doctype html><a><p>one</a>"]);
 
     assert_eq!(
-        patches[13..],
+        patches[15..],
         [
             DomPatch::AppendChild {
-                parent: PatchKey(4),
-                child: PatchKey(6),
+                parent: PatchKey(5),
+                child: PatchKey(7),
             },
             DomPatch::CreateElement {
-                key: PatchKey(8),
+                key: PatchKey(9),
                 name: std::sync::Arc::from("a"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
-                parent: PatchKey(8),
-                child: PatchKey(7),
+                parent: PatchKey(9),
+                child: PatchKey(8),
             },
             DomPatch::AppendChild {
-                parent: PatchKey(6),
-                child: PatchKey(8),
+                parent: PatchKey(7),
+                child: PatchKey(9),
             },
         ],
         "AAA furthest-block recovery should move existing nodes before creating the replacement formatting element"
@@ -269,20 +269,20 @@ fn adoption_agency_foster_parenting_uses_insert_before() {
     );
     assert!(
         patches.contains(&DomPatch::InsertBefore {
-            parent: PatchKey(4),
-            child: PatchKey(9),
-            before: PatchKey(5),
+            parent: PatchKey(5),
+            child: PatchKey(10),
+            before: PatchKey(6),
         }),
         "table-related AAA recovery must keep using InsertBefore when the foster-parented text moves before the live table"
     );
     assert!(
         patches.contains(&DomPatch::CreateElement {
-            key: PatchKey(8),
+            key: PatchKey(9),
             name: std::sync::Arc::from("tr"),
             attributes: Vec::new(),
         }) && patches.contains(&DomPatch::AppendChild {
-            parent: PatchKey(7),
-            child: PatchKey(8),
+            parent: PatchKey(8),
+            child: PatchKey(9),
         }),
         "table-related AAA recovery must preserve the synthesized tbody/tr structure inside the table"
     );
@@ -301,7 +301,7 @@ fn adoption_agency_tbody_foster_parenting_uses_insert_before() {
     assert!(
         patches
             .iter()
-            .any(|patch| matches!(patch, DomPatch::InsertBefore { parent, before, .. } if *parent == PatchKey(4) && *before == PatchKey(5))),
+            .any(|patch| matches!(patch, DomPatch::InsertBefore { parent, before, .. } if *parent == PatchKey(5) && *before == PatchKey(6))),
         "tbody-related AAA recovery must still foster-parent relative to the table element"
     );
     assert!(
@@ -325,7 +325,8 @@ fn adoption_agency_foster_parenting_builds_expected_dom() {
     assert_eq!(
         lines,
         vec![
-            "#document doctype=\"html\"".to_string(),
+            "#document".to_string(),
+            "  <!doctype html>".to_string(),
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),
@@ -348,7 +349,8 @@ fn adoption_agency_tbody_foster_parenting_builds_expected_dom() {
     assert_eq!(
         lines,
         vec![
-            "#document doctype=\"html\"".to_string(),
+            "#document".to_string(),
+            "  <!doctype html>".to_string(),
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),
@@ -371,7 +373,8 @@ fn adoption_agency_builds_expected_dom_for_misnested_inline_formatting() {
     assert_eq!(
         lines,
         vec![
-            "#document doctype=\"html\"".to_string(),
+            "#document".to_string(),
+            "  <!doctype html>".to_string(),
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),
@@ -391,7 +394,7 @@ fn adoption_agency_recreates_multiple_formatting_elements_with_fresh_monotonic_k
     let recreated: Vec<(PatchKey, &str)> = patches
         .iter()
         .filter_map(|patch| match patch {
-            DomPatch::CreateElement { key, name, .. } if key.0 >= 10 => Some((*key, name.as_ref())),
+            DomPatch::CreateElement { key, name, .. } if key.0 >= 11 => Some((*key, name.as_ref())),
             _ => None,
         })
         .collect();
@@ -399,9 +402,9 @@ fn adoption_agency_recreates_multiple_formatting_elements_with_fresh_monotonic_k
     assert_eq!(
         recreated,
         vec![
-            (PatchKey(10), "i"),
-            (PatchKey(11), "b"),
-            (PatchKey(12), "a"),
+            (PatchKey(11), "i"),
+            (PatchKey(12), "b"),
+            (PatchKey(13), "a"),
         ],
         "AAA inner-ancestor recreation should allocate fresh formatting elements in deterministic order"
     );

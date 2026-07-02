@@ -87,7 +87,8 @@ fn serialize_dom_for_test_emits_deterministic_html5_dom_v1_lines() {
     assert_eq!(
         lines,
         vec![
-            "#document doctype=\"html\"".to_string(),
+            "#document".to_string(),
+            "  <!doctype html>".to_string(),
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),

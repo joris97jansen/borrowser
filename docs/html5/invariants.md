@@ -10,6 +10,7 @@ drivers.
 Related contracts:
 - [`docs/html5/dompatch-contract.md`](dompatch-contract.md)
 - [`docs/html5/node-identity-contract.md`](node-identity-contract.md)
+- [`docs/html5/ae2-parser-created-dom-node-model.md`](ae2-parser-created-dom-node-model.md)
 
 ## Goals
 
@@ -36,6 +37,11 @@ Required invariants:
 - child lists contain no duplicate node references
 - every referenced parent and child exists
 - sibling order is explicit and preserved by the stored child vector
+- only document and element nodes may have children
+- doctype, text, and comment nodes are leaves
+- a doctype node, when present, is a direct child of the document
+- at most one doctype child is present
+- the doctype child appears before the first document element child
 
 Operational interpretation:
 - "children order is stable" means the DOM state carries one concrete child

@@ -70,7 +70,7 @@ fn intrinsic_contributions_for_layout_box(
 
     match node.node.node {
         Node::Text { text, .. } => text_intrinsic_contributions(measurer, text, node.style),
-        Node::Comment { .. } => InlineContributions::ZERO,
+        Node::Comment { .. } | Node::DocumentType { .. } => InlineContributions::ZERO,
         Node::Document { .. } | Node::Element { .. } => {
             if matches!(node.kind, BoxKind::ReplacedInline) {
                 return replaced_intrinsic_contributions(measurer, node);
@@ -127,7 +127,7 @@ fn collect_inline_contributions(
             );
             collector.push_text(measurer, text, node.style);
         }
-        Node::Comment { .. } => collector.reset_pending_space(),
+        Node::Comment { .. } | Node::DocumentType { .. } => collector.reset_pending_space(),
         Node::Document { .. } | Node::Element { .. } => {
             match node.inline_formatting_participation() {
                 InlineFormattingParticipation::InlineContainer => {

@@ -14,6 +14,7 @@ fn node_count(node: &Node) -> usize {
     match node {
         Node::Document { children, .. } => 1 + children.iter().map(node_count).sum::<usize>(),
         Node::Element { children, .. } => 1 + children.iter().map(node_count).sum::<usize>(),
+        Node::DocumentType { .. } => 1,
         Node::Text { .. } => 1,
         Node::Comment { .. } => 1,
     }

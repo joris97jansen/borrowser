@@ -87,7 +87,8 @@ fn omitted_tbody_is_synthesized_and_chunk_invariant() {
     ]);
 
     let expected = vec![
-        "#document doctype=\"html\"".to_string(),
+        "#document".to_string(),
+        "  <!doctype html>".to_string(),
         "  <html>".to_string(),
         "    <head>".to_string(),
         "    <body>".to_string(),
@@ -117,7 +118,8 @@ fn nested_table_sections_close_current_section_before_reprocessing() {
     assert_eq!(
         dom,
         vec![
-            "#document doctype=\"html\"".to_string(),
+            "#document".to_string(),
+            "  <!doctype html>".to_string(),
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),
@@ -162,7 +164,8 @@ fn stray_tr_start_tag_closes_current_row_and_keeps_patch_sequence_deterministic(
     assert_eq!(
         dom,
         vec![
-            "#document doctype=\"html\"".to_string(),
+            "#document".to_string(),
+            "  <!doctype html>".to_string(),
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),
@@ -187,7 +190,8 @@ fn in_cell_nested_section_start_closes_cell_row_and_body_before_reprocessing() {
     assert_eq!(
         dom,
         vec![
-            "#document doctype=\"html\"".to_string(),
+            "#document".to_string(),
+            "  <!doctype html>".to_string(),
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),
@@ -212,7 +216,8 @@ fn in_cell_table_end_tag_closes_cell_row_and_section_before_table_close() {
     assert_eq!(
         dom,
         vec![
-            "#document doctype=\"html\"".to_string(),
+            "#document".to_string(),
+            "  <!doctype html>".to_string(),
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),

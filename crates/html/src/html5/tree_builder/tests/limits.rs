@@ -58,7 +58,7 @@ fn tree_builder_depth_limit_ignores_excess_nesting_and_preserves_invariants() {
 #[test]
 fn tree_builder_node_limit_ignores_additional_text_nodes_and_preserves_invariants() {
     let (mut builder, mut ctx, resolver) = builder_with_limits(TreeBuilderLimits {
-        max_nodes_created: 3,
+        max_nodes_created: 4,
         ..TreeBuilderLimits::default()
     });
     let _ = enter_in_body(&mut builder, &mut ctx, &resolver);

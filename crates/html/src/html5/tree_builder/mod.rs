@@ -6,6 +6,7 @@
 
 mod adoption;
 pub(crate) mod api;
+mod attributes;
 mod coalescing;
 mod dispatch;
 pub(crate) mod document;

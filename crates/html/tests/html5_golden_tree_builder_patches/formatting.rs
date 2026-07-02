@@ -24,6 +24,20 @@ fn format_patch(patch: &html::DomPatch) -> String {
             }
             None => format!("CreateDocument key={} doctype=<none>", key.0),
         },
+        html::DomPatch::CreateDocumentType {
+            key,
+            name,
+            public_id,
+            system_id,
+        } => {
+            format!(
+                "CreateDocumentType key={} name={} public-id={} system-id={}",
+                key.0,
+                format_optional_text(name.as_deref()),
+                format_optional_text(public_id.as_deref()),
+                format_optional_text(system_id.as_deref())
+            )
+        }
         html::DomPatch::CreateElement {
             key,
             name,
@@ -66,6 +80,13 @@ fn format_patch(patch: &html::DomPatch) -> String {
             format!("AppendText key={} text=\"{}\"", key.0, escape_text(text))
         }
         other => panic!("unhandled DomPatch variant in golden formatter: {other:?}"),
+    }
+}
+
+fn format_optional_text(value: Option<&str>) -> String {
+    match value {
+        Some(value) => format!("\"{}\"", escape_text(value)),
+        None => "<none>".to_string(),
     }
 }
 

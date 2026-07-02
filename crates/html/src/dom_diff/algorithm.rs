@@ -11,6 +11,12 @@ enum PrevNodeInfo {
         children: Vec<Id>,
         parent: Option<Id>,
     },
+    DocumentType {
+        name: Option<String>,
+        public_id: Option<String>,
+        system_id: Option<String>,
+        parent: Option<Id>,
+    },
     Element {
         name: Arc<str>,
         attributes: Vec<(Arc<str>, Option<String>)>,
@@ -108,6 +114,22 @@ fn build_prev_map(node: &Node, parent: Option<Id>, map: &mut HashMap<Id, PrevNod
                 build_prev_map(child, Some(*id), map);
             }
         }
+        Node::DocumentType {
+            id,
+            name,
+            public_id,
+            system_id,
+        } => {
+            map.insert(
+                *id,
+                PrevNodeInfo::DocumentType {
+                    name: name.clone(),
+                    public_id: public_id.clone(),
+                    system_id: system_id.clone(),
+                    parent,
+                },
+            );
+        }
         Node::Element {
             id,
             name,
@@ -161,7 +183,7 @@ fn collect_ids(node: &Node, out: &mut HashSet<Id>) -> bool {
                 }
             }
         }
-        Node::Text { .. } | Node::Comment { .. } => {}
+        Node::DocumentType { .. } | Node::Text { .. } | Node::Comment { .. } => {}
     }
     true
 }
@@ -183,7 +205,7 @@ fn emit_removals(
                 emit_removals(child, next_ids, patches)?;
             }
         }
-        Node::Text { .. } | Node::Comment { .. } => {}
+        Node::DocumentType { .. } | Node::Text { .. } | Node::Comment { .. } => {}
     }
     Ok(())
 }
@@ -216,6 +238,7 @@ fn emit_updates(
         let expected_parent = parent_key.map(id_from_patch_key);
         let prev_parent = match prev {
             PrevNodeInfo::Document { parent, .. }
+            | PrevNodeInfo::DocumentType { parent, .. }
             | PrevNodeInfo::Element { parent, .. }
             | PrevNodeInfo::Text { parent, .. }
             | PrevNodeInfo::Comment { parent, .. } => *parent,
@@ -233,6 +256,25 @@ fn emit_updates(
                 },
             ) => {
                 if doctype != next_doctype {
+                    *need_reset = true;
+                    return Ok(());
+                }
+            }
+            (
+                PrevNodeInfo::DocumentType {
+                    name,
+                    public_id,
+                    system_id,
+                    ..
+                },
+                Node::DocumentType {
+                    name: next_name,
+                    public_id: next_public_id,
+                    system_id: next_system_id,
+                    ..
+                },
+            ) => {
+                if name != next_name || public_id != next_public_id || system_id != next_system_id {
                     *need_reset = true;
                     return Ok(());
                 }
@@ -326,7 +368,7 @@ fn emit_updates(
                 }
             }
         }
-        Node::Text { .. } | Node::Comment { .. } => {}
+        Node::DocumentType { .. } | Node::Text { .. } | Node::Comment { .. } => {}
     }
     Ok(())
 }
@@ -341,6 +383,19 @@ fn emit_create_node(
             patches.push(DomPatch::CreateDocument {
                 key,
                 doctype: doctype.clone(),
+            });
+        }
+        Node::DocumentType {
+            name,
+            public_id,
+            system_id,
+            ..
+        } => {
+            patches.push(DomPatch::CreateDocumentType {
+                key,
+                name: name.clone(),
+                public_id: public_id.clone(),
+                system_id: system_id.clone(),
             });
         }
         Node::Element {
@@ -384,7 +439,7 @@ fn emit_create_subtree(
                 emit_create_subtree(child, Some(key), patches)?;
             }
         }
-        Node::Text { .. } | Node::Comment { .. } => {}
+        Node::DocumentType { .. } | Node::Text { .. } | Node::Comment { .. } => {}
     }
     Ok(())
 }

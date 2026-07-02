@@ -585,6 +585,10 @@ pub(crate) fn node_debug_label(node: &Node) -> String {
         Node::Element { name, .. } => format!("element(\"{name}\")"),
         Node::Text { text, .. } => format!("text(\"{}\")", text.escape_default()),
         Node::Comment { text, .. } => format!("comment(\"{}\")", text.escape_default()),
+        Node::DocumentType { name, .. } => match name {
+            Some(name) => format!("doctype(\"{}\")", name.escape_default()),
+            None => "doctype".to_string(),
+        },
     }
 }
 

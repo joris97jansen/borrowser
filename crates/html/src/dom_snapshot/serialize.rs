@@ -29,7 +29,7 @@ pub(super) fn walk_snapshot(
             );
             *indent_level -= 1;
         }
-        Node::Text { .. } | Node::Comment { .. } => {}
+        Node::DocumentType { .. } | Node::Text { .. } | Node::Comment { .. } => {}
     }
 }
 
@@ -42,6 +42,14 @@ pub(super) fn format_node_line(node: &Node, options: &DomSnapshotOptions) -> Str
 pub(super) fn node_label(node: &Node) -> String {
     match node {
         Node::Document { .. } => "#document".to_string(),
+        Node::DocumentType { name, .. } => {
+            let mut label = String::from("#doctype");
+            if let Some(name) = name {
+                label.push(':');
+                write_escaped(&mut label, name);
+            }
+            label
+        }
         Node::Element {
             name, attributes, ..
         } => {
@@ -108,6 +116,33 @@ pub(super) fn write_node_line(out: &mut String, node: &Node, options: &DomSnapsh
             if !options.ignore_ids {
                 out.push_str(" id=");
                 let _ = write!(out, "{}", id.0);
+            }
+        }
+        Node::DocumentType {
+            id,
+            name,
+            public_id,
+            system_id,
+        } => {
+            out.push_str("<!doctype");
+            if let Some(name) = name {
+                out.push(' ');
+                write_escaped(out, name);
+            }
+            if let Some(public_id) = public_id {
+                out.push_str(" public-id=\"");
+                write_escaped(out, public_id);
+                out.push('"');
+            }
+            if let Some(system_id) = system_id {
+                out.push_str(" system-id=\"");
+                write_escaped(out, system_id);
+                out.push('"');
+            }
+            out.push('>');
+            if !options.ignore_ids {
+                out.push_str(" id=");
+                write!(out, "{}", id.0).ok();
             }
         }
         Node::Element {

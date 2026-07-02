@@ -60,7 +60,8 @@ fn in_caption_conflicting_colgroup_start_closes_caption_and_reprocesses() {
     assert_eq!(
         dom,
         vec![
-            "#document doctype=\"html\"".to_string(),
+            "#document".to_string(),
+            "  <!doctype html>".to_string(),
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),
@@ -130,7 +131,8 @@ fn in_column_group_missing_end_tag_reprocesses_table_end() {
     assert_eq!(
         dom,
         vec![
-            "#document doctype=\"html\"".to_string(),
+            "#document".to_string(),
+            "  <!doctype html>".to_string(),
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),
@@ -154,7 +156,7 @@ fn in_column_group_anything_else_closes_colgroup_and_foster_parents() {
                     parent,
                     child: _,
                     before,
-                } if parent.0 == 4 && before.0 == 5
+                } if parent.0 == 5 && before.0 == 6
             )
         }),
         "stray non-column content in a colgroup must close the colgroup and reprocess through the table foster-parent path"
@@ -173,7 +175,8 @@ fn in_table_col_implies_colgroup_and_stays_deterministic_across_chunking() {
     let chunked = materialized_dom_lines(&["<!doctype html><table><col>", "<col></table>"]);
 
     let expected = vec![
-        "#document doctype=\"html\"".to_string(),
+        "#document".to_string(),
+        "  <!doctype html>".to_string(),
         "  <html>".to_string(),
         "    <head>".to_string(),
         "    <body>".to_string(),

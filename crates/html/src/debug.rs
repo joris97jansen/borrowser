@@ -93,6 +93,17 @@ pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
                     walk(c, indent, out, left);
                 }
             }
+            Node::DocumentType { name, .. } => {
+                let mut line = String::with_capacity(indent.len() + LINE_SLACK);
+                line.push_str(indent);
+                line.push_str("<!DOCTYPE");
+                if let Some(name) = name {
+                    line.push(' ');
+                    line.push_str(name);
+                }
+                line.push('>');
+                out.push(line);
+            }
             Node::Element {
                 name,
                 children,

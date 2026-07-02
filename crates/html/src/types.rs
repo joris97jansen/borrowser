@@ -163,13 +163,28 @@ pub(crate) fn debug_assert_lowercase_atom(value: &str, what: &'static str) {
 pub enum Node {
     Document {
         id: Id,
+        /// Legacy document-level doctype metadata.
+        ///
+        /// HTML5 parser-created output represents doctypes as
+        /// `Node::DocumentType` children. This field remains for older
+        /// materialization/diff paths and must not be used as the parser-created
+        /// doctype node identity.
         doctype: Option<String>,
         children: Vec<Node>,
+    },
+    DocumentType {
+        id: Id,
+        name: Option<String>,
+        public_id: Option<String>,
+        system_id: Option<String>,
     },
     Element {
         id: Id,
         name: Arc<str>,
-        // Keep as Vec to preserve source order and allow duplicates; use helpers for lookups.
+        // HTML5 parser-created output stores first-wins, duplicate-free
+        // attributes in encounter order. Legacy callers may still construct
+        // duplicate entries; lookup helpers resolve deterministically by first
+        // matching attribute.
         attributes: Vec<(Arc<str>, Option<String>)>,
         style: Vec<(String, String)>,
         children: Vec<Node>,
@@ -188,6 +203,7 @@ impl Node {
     pub fn id(&self) -> Id {
         match self {
             Node::Document { id, .. } => *id,
+            Node::DocumentType { id, .. } => *id,
             Node::Element { id, .. } => *id,
             Node::Text { id, .. } => *id,
             Node::Comment { id, .. } => *id,
@@ -198,6 +214,7 @@ impl Node {
     pub fn set_id(&mut self, new_id: Id) {
         match self {
             Node::Document { id, .. } => *id = new_id,
+            Node::DocumentType { id, .. } => *id = new_id,
             Node::Element { id, .. } => *id = new_id,
             Node::Text { id, .. } => *id = new_id,
             Node::Comment { id, .. } => *id = new_id,

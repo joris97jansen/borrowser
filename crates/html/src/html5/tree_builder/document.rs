@@ -26,6 +26,13 @@ impl Default for DocumentState {
     }
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub(in crate::html5::tree_builder) struct PendingDoctype {
+    pub(in crate::html5::tree_builder) name: Option<String>,
+    pub(in crate::html5::tree_builder) public_id: Option<String>,
+    pub(in crate::html5::tree_builder) system_id: Option<String>,
+}
+
 impl Html5TreeBuilder {
     fn classify_doctype_quirks_mode(
         name: Option<&str>,
@@ -79,30 +86,27 @@ impl Html5TreeBuilder {
             return Ok(key);
         }
         self.with_structural_mutation(|this| {
-            let key = this.alloc_patch_key()?;
+            let key = this.create_document_node()?;
             let doctype = this.pending_doctype.take();
-            this.push_structural_patch(DomPatch::CreateDocument { key, doctype });
-            this.document_key = Some(key);
-            this.insertion_mode = InsertionMode::BeforeHtml;
-            debug_assert!(
-                this.open_elements.is_empty(),
-                "document creation expected empty SOE before bootstrap reset (len={})",
-                this.open_elements.len()
-            );
-            this.open_elements.clear();
-            debug_assert!(
-                this.active_formatting.is_empty(),
-                "document creation expected empty AFE before bootstrap reset (len={})",
-                this.active_formatting.len()
-            );
-            this.active_formatting.clear();
-            this.original_insertion_mode = None;
-            this.active_text_mode = None;
-            this.foster_parenting_enabled = false;
-            this.clear_pending_table_character_tokens();
-            this.document_state.frameset_ok = true;
+            if let Some(doctype) = doctype {
+                this.append_doctype_child(key, doctype)?;
+            }
+            this.finish_document_bootstrap();
             Ok(key)
         })
+    }
+
+    pub(in crate::html5::tree_builder) fn ensure_document_created_for_initial_comment(
+        &mut self,
+    ) -> Result<PatchKey, TreeBuilderError> {
+        if let Some(key) = self.document_key {
+            return Ok(key);
+        }
+        debug_assert!(
+            self.pending_doctype.is_none(),
+            "Initial comments should create a document before any pending doctype exists"
+        );
+        self.create_document_node()
     }
 
     pub(in crate::html5::tree_builder) fn handle_doctype(
@@ -114,19 +118,82 @@ impl Html5TreeBuilder {
         atoms: &AtomTable,
     ) -> Result<(), TreeBuilderError> {
         self.invalidate_text_coalescing();
-        if self.document_key.is_none() && self.pending_doctype.is_none() {
-            self.pending_doctype = match name {
-                Some(id) => Some(resolve_atom(atoms, *id)?.to_string()),
-                None => None,
-            };
-        }
         let resolved_name = match name {
             Some(id) => Some(resolve_atom(atoms, *id)?),
             None => None,
         };
+        let doctype = PendingDoctype {
+            name: resolved_name.map(str::to_string),
+            public_id: public_id.map(str::to_string),
+            system_id: system_id.map(str::to_string),
+        };
+
+        if self.document_key.is_none() && self.pending_doctype.is_none() {
+            self.pending_doctype = Some(doctype);
+        } else if let Some(document_key) = self.document_key
+            && self.insertion_mode == InsertionMode::Initial
+            && self.pending_doctype.is_none()
+            && !self.live_tree.has_document_type_child(document_key)
+        {
+            self.with_structural_mutation(|this| this.append_doctype_child(document_key, doctype))?;
+        }
+
         self.document_state.quirks_mode =
             Self::classify_doctype_quirks_mode(resolved_name, public_id, system_id, force_quirks);
         Ok(())
+    }
+
+    fn create_document_node(&mut self) -> Result<PatchKey, TreeBuilderError> {
+        let key = self.alloc_patch_key()?;
+        self.push_structural_patch(DomPatch::CreateDocument { key, doctype: None });
+        self.document_key = Some(key);
+        Ok(key)
+    }
+
+    fn append_doctype_child(
+        &mut self,
+        document_key: PatchKey,
+        doctype: PendingDoctype,
+    ) -> Result<(), TreeBuilderError> {
+        if !self.allow_node_creation(None) || !self.allow_new_child(document_key, None) {
+            return Ok(());
+        }
+
+        let doctype_key = self.alloc_patch_key()?;
+        self.push_structural_patch(DomPatch::CreateDocumentType {
+            key: doctype_key,
+            name: doctype.name,
+            public_id: doctype.public_id,
+            system_id: doctype.system_id,
+        });
+        self.note_node_created();
+        let inserted = self.append_existing_child(document_key, doctype_key);
+        debug_assert!(
+            inserted,
+            "newly created doctype insertion must succeed after precheck"
+        );
+        Ok(())
+    }
+
+    fn finish_document_bootstrap(&mut self) {
+        self.insertion_mode = InsertionMode::BeforeHtml;
+        debug_assert!(
+            self.open_elements.is_empty(),
+            "document creation expected empty SOE before bootstrap reset (len={})",
+            self.open_elements.len()
+        );
+        self.open_elements.clear();
+        debug_assert!(
+            self.active_formatting.is_empty(),
+            "document creation expected empty AFE before bootstrap reset (len={})",
+            self.active_formatting.len()
+        );
+        self.active_formatting.clear();
+        self.original_insertion_mode = None;
+        self.active_text_mode = None;
+        self.foster_parenting_enabled = false;
+        self.clear_pending_table_character_tokens();
+        self.document_state.frameset_ok = true;
     }
 }
 

@@ -415,6 +415,7 @@ impl NodeRecord {
     fn kind_name(&self) -> &'static str {
         match self.kind {
             NodeKind::Document { .. } => "Document",
+            NodeKind::DocumentType { .. } => "DocumentType",
             NodeKind::Element { .. } => "Element",
             NodeKind::Text { .. } => "Text",
             NodeKind::Comment { .. } => "Comment",
@@ -426,6 +427,11 @@ impl NodeRecord {
 pub(crate) enum NodeKind {
     Document {
         doctype: Option<String>,
+    },
+    DocumentType {
+        name: Option<String>,
+        public_id: Option<String>,
+        system_id: Option<String>,
     },
     Element {
         name: Arc<str>,

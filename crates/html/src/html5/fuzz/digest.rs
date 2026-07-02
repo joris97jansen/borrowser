@@ -53,6 +53,18 @@ impl PipelineFuzzDigest {
                     self.push_u32(key.0);
                     self.push_opt_str(doctype.as_deref());
                 }
+                DomPatch::CreateDocumentType {
+                    key,
+                    name,
+                    public_id,
+                    system_id,
+                } => {
+                    self.push_u8(21);
+                    self.push_u32(key.0);
+                    self.push_opt_str(name.as_deref());
+                    self.push_opt_str(public_id.as_deref());
+                    self.push_opt_str(system_id.as_deref());
+                }
                 DomPatch::CreateElement {
                     key,
                     name,

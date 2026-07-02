@@ -63,7 +63,7 @@ pub(super) fn collect_text(nodes: &[Node], out: &mut String) {
             Node::Element { children, .. } | Node::Document { children, .. } => {
                 collect_text(children, out);
             }
-            Node::Comment { .. } => {}
+            Node::Comment { .. } | Node::DocumentType { .. } => {}
         }
     }
 }

@@ -71,7 +71,7 @@ impl<'a> SelectorDomIndex<'a> {
                     propagate_last_child_to_parent: false,
                 });
             }
-            Node::Text { .. } | Node::Comment { .. } => {}
+            Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => {}
         }
 
         while let Some(mut frame) = stack.pop() {
@@ -122,7 +122,7 @@ impl<'a> SelectorDomIndex<'a> {
                     // current parent/previous-element-sibling context.
                     push_frame = Some(normalized_document_children_frame(&frame, children));
                 }
-                Node::Text { .. } | Node::Comment { .. } => {}
+                Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => {}
             }
 
             stack.push(frame);

@@ -82,6 +82,7 @@ impl PatchSink for PatchEmitterAdapter {
 fn created_key(patch: &DomPatch) -> Option<PatchKey> {
     match patch {
         DomPatch::CreateDocument { key, .. }
+        | DomPatch::CreateDocumentType { key, .. }
         | DomPatch::CreateElement { key, .. }
         | DomPatch::CreateText { key, .. }
         | DomPatch::CreateComment { key, .. } => Some(*key),

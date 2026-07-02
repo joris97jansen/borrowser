@@ -33,7 +33,8 @@ fn session_reconstruction_is_chunk_equivalent_after_generic_ancestor_pop() {
         let whole_lines = crate::html5::serialize_dom_for_test(&whole_dom);
         let chunked_lines = crate::html5::serialize_dom_for_test(&chunked_dom);
         let expected_lines = vec![
-            "#document doctype=\"html\"".to_string(),
+            "#document".to_string(),
+            "  <!doctype html>".to_string(),
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),
@@ -88,7 +89,8 @@ fn session_reconstruction_of_multiple_missing_formatting_elements_is_chunk_equiv
         let whole_lines = crate::html5::serialize_dom_for_test(&whole_dom);
         let chunked_lines = crate::html5::serialize_dom_for_test(&chunked_dom);
         let expected_lines = vec![
-            "#document doctype=\"html\"".to_string(),
+            "#document".to_string(),
+            "  <!doctype html>".to_string(),
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),
@@ -135,7 +137,8 @@ fn session_special_anchor_recovery_is_chunk_equivalent() {
         let whole_lines = crate::html5::serialize_dom_for_test(&whole_dom);
         let chunked_lines = crate::html5::serialize_dom_for_test(&chunked_dom);
         let expected_lines = vec![
-            "#document doctype=\"html\"".to_string(),
+            "#document".to_string(),
+            "  <!doctype html>".to_string(),
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),
@@ -182,7 +185,8 @@ fn session_special_nobr_recovery_is_chunk_equivalent() {
         let whole_lines = crate::html5::serialize_dom_for_test(&whole_dom);
         let chunked_lines = crate::html5::serialize_dom_for_test(&chunked_dom);
         let expected_lines = vec![
-            "#document doctype=\"html\"".to_string(),
+            "#document".to_string(),
+            "  <!doctype html>".to_string(),
             "  <html>".to_string(),
             "    <head>".to_string(),
             "    <body>".to_string(),

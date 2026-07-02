@@ -353,7 +353,7 @@ fn count_dom_summary(root: &Node) -> SynthesizedDomSummary {
                     visit(child, summary);
                 }
             }
-            Node::Text { .. } | Node::Comment { .. } => {}
+            Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => {}
         }
     }
 

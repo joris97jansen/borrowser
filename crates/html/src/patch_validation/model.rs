@@ -7,6 +7,11 @@ pub(crate) enum PatchKind {
     Document {
         doctype: Option<String>,
     },
+    DocumentType {
+        name: Option<String>,
+        public_id: Option<String>,
+        system_id: Option<String>,
+    },
     Element {
         name: Arc<str>,
         attributes: Vec<(Arc<str>, Option<String>)>,
@@ -24,6 +29,15 @@ pub(crate) struct PatchNode {
     pub(crate) kind: PatchKind,
     pub(crate) parent: Option<PatchKey>,
     pub(crate) children: Vec<PatchKey>,
+}
+
+impl PatchNode {
+    pub(crate) fn allows_children(&self) -> bool {
+        matches!(
+            self.kind,
+            PatchKind::Document { .. } | PatchKind::Element { .. }
+        )
+    }
 }
 
 /// Minimal patch-applier/validator shared by runtime-facing parser APIs and

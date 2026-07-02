@@ -10,6 +10,7 @@ Related identity contract:
 
 Related ownership contract:
 - [`docs/html5/ae1-html-parser-dom-ownership-contract.md`](ae1-html-parser-dom-ownership-contract.md)
+- [`docs/html5/ae2-parser-created-dom-node-model.md`](ae2-parser-created-dom-node-model.md)
 
 ## Goals
 
@@ -36,6 +37,7 @@ Core v0 patch protocol is defined by [`DomPatch`](../../crates/html/src/dom_patc
 
 - Node creation:
   - `CreateDocument`
+  - `CreateDocumentType`
   - `CreateElement`
   - `CreateText`
   - `CreateComment`
@@ -83,10 +85,12 @@ For all patch streams:
 
 HTML5 tree-builder Core v0 emission profile:
 
-1. `CreateDocument` appears before any non-doctype-attached node emission.
-2. Element/text/comment insertion emits `Create*` followed by `AppendChild`.
-3. Coalesced adjacent text runs emit `AppendText` on the previously created text key.
-4. End-tag SOE pops do not directly emit close/remove patches.
+1. `CreateDocument` appears before any child node emission.
+2. An accepted initial doctype emits `CreateDocumentType` followed by
+   `AppendChild` to the document before the first document element.
+3. Element/text/comment insertion emits `Create*` followed by `AppendChild`.
+4. Coalesced adjacent text runs emit `AppendText` on the previously created text key.
+5. End-tag SOE pops do not directly emit close/remove patches.
 
 Structural move semantics for HTML5-capable appliers:
 
@@ -149,14 +153,22 @@ Contract:
 
 ## Deterministic Materialization Failures
 
-Patch materialization and strict runtime application MUST fail deterministically for protocol violations.
-At minimum, the following error classes are contractual:
+HTML patch validation and parser-owned materialization MUST fail
+deterministically for parser-created DOM protocol violations. Runtime appliers
+may also reject these shapes, but they do not own HTML semantics such as doctype
+placement or malformed-markup recovery. At minimum, the following error classes
+are contractual at the HTML validation/materialization boundary:
 
 - unknown/missing node references (`AppendChild`, `InsertBefore`, `RemoveNode`, `Set*`, `AppendText`),
 - invalid keys (`PatchKey::INVALID`),
 - duplicate key creation within one baseline,
 - invalid structural references (`InsertBefore` where `before` is not a child of `parent`),
 - invalid parent kind for child attachment (non-container parent),
+- invalid child kind for container-only operations (`DocumentType`, `Text`, and
+  `Comment` are leaves),
+- invalid document-child doctype shape (doctype not directly under document,
+  duplicate doctype children, or doctype appearing after the first document
+  element),
 - cycle/self-attachment attempts,
 - illegal move attempts (for example document/document-root moves, cycle
   creation, or move support disabled in a non-HTML5-capable applier)

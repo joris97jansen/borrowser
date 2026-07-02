@@ -65,15 +65,24 @@ pub(super) fn allowed_failure_reason(
 }
 
 fn check_doctype_token(ctx: &InvariantCtx<'_>) -> Result<(), String> {
-    let full_has = matches!(ctx.full_dom, Node::Document { doctype, .. } if doctype.is_some());
-    let chunked_has =
-        matches!(ctx.chunked_dom, Node::Document { doctype, .. } if doctype.is_some());
+    let full_has = has_doctype(ctx.full_dom);
+    let chunked_has = has_doctype(ctx.chunked_dom);
     if full_has && chunked_has {
         Ok(())
     } else {
         Err(format!(
             "doctype invariant failed: full={full_has} chunked={chunked_has}"
         ))
+    }
+}
+
+fn has_doctype(node: &Node) -> bool {
+    match node {
+        Node::Document { children, .. } | Node::Element { children, .. } => {
+            children.iter().any(has_doctype)
+        }
+        Node::DocumentType { .. } => true,
+        Node::Text { .. } | Node::Comment { .. } => false,
     }
 }
 
@@ -302,7 +311,7 @@ fn collect_text_into(node: &Node, out: &mut String) {
             }
         }
         Node::Text { text, .. } => out.push_str(text),
-        Node::Comment { .. } => {}
+        Node::DocumentType { .. } | Node::Comment { .. } => {}
     }
 }
 
@@ -312,7 +321,7 @@ fn has_comment(node: &Node) -> bool {
         Node::Document { children, .. } | Node::Element { children, .. } => {
             children.iter().any(has_comment)
         }
-        Node::Text { .. } => false,
+        Node::DocumentType { .. } | Node::Text { .. } => false,
     }
 }
 
@@ -333,7 +342,7 @@ fn find_element<'a>(node: &'a Node, name: &str) -> Option<&'a Node> {
         Node::Document { children, .. } => {
             children.iter().find_map(|child| find_element(child, name))
         }
-        Node::Text { .. } | Node::Comment { .. } => None,
+        Node::DocumentType { .. } | Node::Text { .. } | Node::Comment { .. } => None,
     }
 }
 
@@ -353,7 +362,7 @@ fn element_contains_tag(node: &Node, name: &str) -> bool {
         Node::Document { children, .. } => children
             .iter()
             .any(|child| element_contains_tag(child, name)),
-        Node::Text { .. } | Node::Comment { .. } => false,
+        Node::DocumentType { .. } | Node::Text { .. } | Node::Comment { .. } => false,
     }
 }
 
@@ -399,7 +408,7 @@ fn collect_element_names(node: &Node, out: &mut BTreeMap<String, usize>) {
                 collect_element_names(child, out);
             }
         }
-        Node::Text { .. } | Node::Comment { .. } => {}
+        Node::DocumentType { .. } | Node::Text { .. } | Node::Comment { .. } => {}
     }
 }
 
@@ -506,7 +515,10 @@ fn element_attributes<'a>(
 ) -> Option<&'a [(std::sync::Arc<str>, Option<String>)]> {
     match find_element(node, tag_name)? {
         Node::Element { attributes, .. } => Some(attributes.as_slice()),
-        Node::Document { .. } | Node::Text { .. } | Node::Comment { .. } => None,
+        Node::Document { .. }
+        | Node::DocumentType { .. }
+        | Node::Text { .. }
+        | Node::Comment { .. } => None,
     }
 }
 

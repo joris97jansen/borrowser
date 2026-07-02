@@ -21,6 +21,11 @@ pub(super) enum TestKind {
     Document {
         doctype: Option<String>,
     },
+    DocumentType {
+        name: Option<String>,
+        public_id: Option<String>,
+        system_id: Option<String>,
+    },
     Element {
         name: Arc<str>,
         attributes: Vec<(Arc<str>, Option<String>)>,

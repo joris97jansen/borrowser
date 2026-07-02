@@ -103,6 +103,22 @@ impl DomDoc {
                 )?;
                 self.root = Some(*key);
             }
+            DomPatch::CreateDocumentType {
+                key,
+                name,
+                public_id,
+                system_id,
+            } => {
+                self.ensure_key(*key)?;
+                self.arena.insert_node(
+                    *key,
+                    NodeKind::DocumentType {
+                        name: name.clone(),
+                        public_id: public_id.clone(),
+                        system_id: system_id.clone(),
+                    },
+                )?;
+            }
             DomPatch::CreateElement {
                 key,
                 name,

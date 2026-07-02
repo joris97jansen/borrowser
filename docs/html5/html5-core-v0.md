@@ -8,6 +8,7 @@ Normative matrix sources:
 - `docs/html5/dompatch-contract.md`
 - `docs/html5/node-identity-contract.md`
 - `docs/html5/ae1-html-parser-dom-ownership-contract.md`
+- `docs/html5/ae2-parser-created-dom-node-model.md`
 
 Related text-mode hardening note:
 - `docs/html5/rawtext-script-stability.md`
@@ -50,6 +51,8 @@ Any behavior not listed as supported here is non-contractual and must not be rel
   browser/runtime, CSS, Layout, and Paint consume documented parser output and
   must not depend on tokenizer states, insertion modes, parse-error recovery
   internals, or parser-created identity as retained render identity.
+- AE2 defines the parser-created DOM node model, including `DocumentType` as a
+  real internal node and first-wins deterministic attribute storage.
 
 ## Guaranteed Support In Core v0
 
@@ -179,8 +182,9 @@ This is a context-level baseline, not a full tag-by-tag HTML5 completion claim.
 Core v0 attribute behavior guarantees:
 
 - tag and attribute names are tokenizer-normalized per HTML tokenizer rules (ASCII case folding in relevant states).
-- attribute encounter order is preserved.
-- duplicate attributes are deduped at tokenization stage with first-wins semantics on tokenizer-normalized attribute names (for example `a` and `A` are treated as duplicates).
+- parser-created attribute storage preserves first-wins encounter order after duplicate removal.
+- duplicate attributes are removed before downstream consumers and snapshots with first-wins semantics on tokenizer-normalized attribute names (for example `a` and `A` are treated as duplicates).
+- missing attribute values are preserved as distinct from explicitly empty values: `disabled` stores no value, while `disabled=""` stores an empty string.
 - value forms supported: double-quoted, single-quoted, unquoted.
 - character references in attribute values follow Core v0 charref scope and delegate named reference table/validation to `crates/html/src/entities.rs`.
 
@@ -191,12 +195,16 @@ Core v0 guarantees:
 
 - tokenizer emits DOCTYPE token fields including `force_quirks`.
 - tree builder determines document mode from DOCTYPE during early bootstrap.
+- an accepted initial DOCTYPE creates a parser-created `DocumentType` node when
+  the document is materialized.
+- the `DocumentType` node is a document child and appears before the document
+  element in deterministic document-child order.
 - after accepting a DOCTYPE in `Initial`, tree builder control moves to
   `BeforeHtml` for subsequent tokens.
 - document mode MUST NOT change after the first non-DOCTYPE token that causes insertion of the root `html` element (implicit or explicit).
 - duplicate/late DOCTYPE tokens after the `Initial` handoff or after that
   boundary MUST NOT change document mode.
-- document mode is internal parser state in Core v0 (no dedicated `DomPatch` mode event).
+- document mode is internal parser state in Core v0 (no dedicated `DomPatch` mode event) and is not encoded in `DocumentType` node identity or payload.
 
 ### Script/RAWTEXT/RCDATA Stance
 
