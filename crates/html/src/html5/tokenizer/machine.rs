@@ -201,7 +201,7 @@ impl Html5Tokenizer {
         // Explicit dispatcher scaffold. New states should be implemented as
         // dedicated handlers that return `Step::Progress` or `Step::NeedMoreInput`.
         match self.state {
-            TokenizerState::Data => self.step_data(input),
+            TokenizerState::Data => self.step_data(input, ctx),
             TokenizerState::RawText => self.step_raw_text(input, ctx),
             TokenizerState::Rcdata => self.step_rcdata(input, ctx),
             TokenizerState::ScriptData => self.step_script_data(input, ctx),
@@ -264,12 +264,12 @@ impl Html5Tokenizer {
         }
     }
 
-    fn step_data(&mut self, input: &Input) -> Step {
+    fn step_data(&mut self, input: &Input, ctx: &mut DocumentParseContext) -> Step {
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
         }
         if self.peek(input) == Some('<') {
-            self.flush_pending_text(input);
+            self.flush_pending_text_with_context(input, ctx);
             self.transition_to(TokenizerState::TagOpen);
             return Step::Progress;
         }
@@ -285,7 +285,7 @@ impl Html5Tokenizer {
         if self.has_unconsumed_input(input) && self.peek(input) == Some('<') {
             // Flush the text run immediately when we encounter a delimiter so
             // token boundaries do not depend on pump scheduling granularity.
-            self.flush_pending_text(input);
+            self.flush_pending_text_with_context(input, ctx);
             self.transition_to(TokenizerState::TagOpen);
             Step::Progress
         } else {

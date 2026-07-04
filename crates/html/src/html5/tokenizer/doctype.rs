@@ -86,7 +86,13 @@ impl Html5Tokenizer {
             self.pending_doctype_name_start = Some(self.cursor);
         }
         let _ = self.consume_while(input, |ch| !is_html_space(ch) && ch != '>');
-        self.record_pending_doctype_limit_if_needed(ctx);
+        if self
+            .pending_doctype_name_start
+            .is_some_and(|start| self.cursor.saturating_sub(start) > self.max_doctype_bytes())
+        {
+            self.record_pending_doctype_limit_if_needed(ctx);
+            self.pending_doctype_force_quirks = true;
+        }
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
         }
@@ -132,7 +138,7 @@ impl Html5Tokenizer {
             self.transition_to(TokenizerState::Data);
             return Step::Progress;
         }
-        match self.parse_doctype_after_name_tail(input) {
+        match self.parse_doctype_after_name_tail(input, ctx) {
             DoctypeTailParse::NeedMoreInput => Step::NeedMoreInput,
             DoctypeTailParse::Malformed => {
                 self.pending_doctype_force_quirks = true;
@@ -205,7 +211,10 @@ impl Html5Tokenizer {
             self.record_pending_doctype_limit_if_needed(ctx);
             self.pending_doctype_force_quirks = true;
         }
-        self.pending_doctype_name = Some(self.intern_atom_or_invariant(ctx, raw, "doctype name"));
+        let normalized = self.replace_nulls_for_token_text(ctx, raw, start);
+        let atom_text = normalized.as_deref().unwrap_or(raw);
+        self.pending_doctype_name =
+            Some(self.intern_atom_or_invariant(ctx, atom_text, "doctype name"));
     }
 
     fn emit_pending_doctype(&mut self) {
@@ -235,6 +244,28 @@ impl Html5Tokenizer {
         self.emit_pending_doctype();
     }
 
+    pub(crate) fn flush_pending_doctype_eof_with_context(
+        &mut self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+        record_eof: bool,
+    ) {
+        if !self.in_doctype_family_state() {
+            return;
+        }
+        if record_eof {
+            self.record_tokenizer_parse_error(
+                ctx,
+                crate::html5::shared::ParseErrorCode::UnexpectedEof,
+                self.cursor.min(input.as_str().len()),
+                super::normalization::ERROR_DETAIL_EOF_IN_DOCTYPE,
+                None,
+            );
+        }
+        self.pending_doctype_force_quirks = true;
+        self.emit_pending_doctype();
+    }
+
     pub(crate) fn in_doctype_family_state(&self) -> bool {
         matches!(
             self.state,
@@ -246,7 +277,11 @@ impl Html5Tokenizer {
         )
     }
 
-    fn parse_doctype_after_name_tail(&self, input: &Input) -> DoctypeTailParse {
+    fn parse_doctype_after_name_tail(
+        &self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+    ) -> DoctypeTailParse {
         // Linear scan invariant: this parser advances a local cursor forward only.
         // Each quoted id is scanned once; public/system ids are allocated once per doctype.
         let text = input.as_str();
@@ -284,9 +319,13 @@ impl Html5Tokenizer {
         if cursor.saturating_sub(scan_start) > max_scan_bytes {
             return DoctypeTailParse::LimitExceeded;
         }
-        let (first_id, after_first) =
+        let (first_id, first_id_start, after_first) =
             match parse_quoted_slice_limited(text, cursor, scan_start, max_scan_bytes) {
-                QuotedParse::Complete(result) => result,
+                QuotedParse::Complete {
+                    value,
+                    value_start,
+                    cursor_after,
+                } => (value, value_start, cursor_after),
                 QuotedParse::NeedMoreInput => return DoctypeTailParse::NeedMoreInput,
                 QuotedParse::Malformed => return DoctypeTailParse::Malformed,
                 QuotedParse::LimitExceeded => return DoctypeTailParse::LimitExceeded,
@@ -300,7 +339,7 @@ impl Html5Tokenizer {
         let mut system_id = None;
         match kind {
             DoctypeKeywordKind::Public => {
-                public_id = Some(first_id.to_string());
+                public_id = Some(self.normalize_doctype_id(ctx, first_id, first_id_start));
                 while cursor < bytes.len() && is_html_space_byte(bytes[cursor]) {
                     cursor += 1;
                 }
@@ -311,23 +350,27 @@ impl Html5Tokenizer {
                     return DoctypeTailParse::NeedMoreInput;
                 }
                 if bytes[cursor] == b'"' || bytes[cursor] == b'\'' {
-                    let (value, after_second) = match parse_quoted_slice_limited(
+                    let (value, value_start, after_second) = match parse_quoted_slice_limited(
                         text,
                         cursor,
                         scan_start,
                         max_scan_bytes,
                     ) {
-                        QuotedParse::Complete(result) => result,
+                        QuotedParse::Complete {
+                            value,
+                            value_start,
+                            cursor_after,
+                        } => (value, value_start, cursor_after),
                         QuotedParse::NeedMoreInput => return DoctypeTailParse::NeedMoreInput,
                         QuotedParse::Malformed => return DoctypeTailParse::Malformed,
                         QuotedParse::LimitExceeded => return DoctypeTailParse::LimitExceeded,
                     };
-                    system_id = Some(value.to_string());
+                    system_id = Some(self.normalize_doctype_id(ctx, value, value_start));
                     cursor = after_second;
                 }
             }
             DoctypeKeywordKind::System => {
-                system_id = Some(first_id.to_string());
+                system_id = Some(self.normalize_doctype_id(ctx, first_id, first_id_start));
             }
         }
 
@@ -364,6 +407,16 @@ impl Html5Tokenizer {
             self.max_doctype_bytes(),
         );
     }
+
+    fn normalize_doctype_id(
+        &self,
+        ctx: &mut DocumentParseContext,
+        raw: &str,
+        value_start: usize,
+    ) -> String {
+        self.replace_nulls_for_token_text(ctx, raw, value_start)
+            .unwrap_or_else(|| raw.to_string())
+    }
 }
 
 fn parse_quoted_slice_limited<'a>(
@@ -399,5 +452,9 @@ fn parse_quoted_slice_limited<'a>(
     if !text.is_char_boundary(value_start) || !text.is_char_boundary(value_end) {
         return QuotedParse::Malformed;
     }
-    QuotedParse::Complete((&text[value_start..value_end], value_end + 1))
+    QuotedParse::Complete {
+        value: &text[value_start..value_end],
+        value_start,
+        cursor_after: value_end + 1,
+    }
 }

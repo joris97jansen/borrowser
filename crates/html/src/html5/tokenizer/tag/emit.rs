@@ -23,7 +23,9 @@ impl Html5Tokenizer {
         }
         // Canonicalization policy: HTML tag names are interned with ASCII
         // folding (`A-Z` -> `a-z`) and preserve non-ASCII bytes.
-        let name = self.intern_atom_or_invariant(ctx, raw, "tag name");
+        let normalized = self.replace_nulls_for_token_text(ctx, raw, name_start);
+        let atom_text = normalized.as_deref().unwrap_or(raw);
+        let name = self.intern_atom_or_invariant(ctx, atom_text, "tag name");
         if self.current_tag_is_end {
             self.current_tag_self_closing = false;
             self.current_tag_attrs.clear();

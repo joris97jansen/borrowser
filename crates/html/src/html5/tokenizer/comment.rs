@@ -24,7 +24,7 @@ impl Html5Tokenizer {
             Some('>') => {
                 let end = self.cursor;
                 let _ = self.consume_if(input, '>');
-                self.emit_pending_comment_range(input, end);
+                self.emit_pending_comment_range(input, end, ctx);
                 self.transition_to(TokenizerState::Data);
                 Step::Progress
             }
@@ -55,7 +55,7 @@ impl Html5Tokenizer {
             Some('>') => {
                 let end = self.cursor;
                 let _ = self.consume_if(input, '>');
-                self.emit_pending_comment_range(input, end);
+                self.emit_pending_comment_range(input, end, ctx);
                 self.transition_to(TokenizerState::Data);
                 Step::Progress
             }
@@ -130,7 +130,7 @@ impl Html5Tokenizer {
             Some('>') => {
                 let end = self.cursor.saturating_sub(2);
                 let _ = self.consume_if(input, '>');
-                self.emit_pending_comment_range(input, end);
+                self.emit_pending_comment_range(input, end, ctx);
                 self.transition_to(TokenizerState::Data);
                 Step::Progress
             }
@@ -167,7 +167,7 @@ impl Html5Tokenizer {
         }
         let end = self.cursor;
         if self.consume_if(input, '>') {
-            self.emit_pending_comment_range(input, end);
+            self.emit_pending_comment_range(input, end, ctx);
             self.transition_to(TokenizerState::Data);
             Step::Progress
         } else {
@@ -189,7 +189,12 @@ impl Html5Tokenizer {
         }
     }
 
-    fn emit_pending_comment_range(&mut self, input: &Input, end: usize) {
+    fn emit_pending_comment_range(
+        &mut self,
+        input: &Input,
+        end: usize,
+        ctx: &mut DocumentParseContext,
+    ) {
         let start = match self.pending_comment_start.take() {
             Some(start) => start,
             None => return,
@@ -212,9 +217,16 @@ impl Html5Tokenizer {
             });
             return;
         }
-        self.emit_token(Token::Comment {
-            text: TextValue::Span(TextSpan::new(start, bounded_end)),
-        });
+        let raw = &input.as_str()[start..bounded_end];
+        if let Some(text) = self.replace_nulls_for_token_text(ctx, raw, start) {
+            self.emit_token(Token::Comment {
+                text: TextValue::Owned(text),
+            });
+        } else {
+            self.emit_token(Token::Comment {
+                text: TextValue::Span(TextSpan::new(start, bounded_end)),
+            });
+        }
     }
 
     pub(crate) fn flush_pending_comment_eof(&mut self, input: &Input) {
@@ -256,5 +268,67 @@ impl Html5Tokenizer {
         self.emit_token(Token::Comment {
             text: TextValue::Span(TextSpan::new(start, bounded_end)),
         });
+    }
+
+    pub(crate) fn flush_pending_comment_eof_with_context(
+        &mut self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+        record_eof: bool,
+    ) {
+        let in_comment_family = matches!(
+            self.state,
+            TokenizerState::CommentStart
+                | TokenizerState::CommentStartDash
+                | TokenizerState::Comment
+                | TokenizerState::CommentEndDash
+                | TokenizerState::CommentEnd
+                | TokenizerState::BogusComment
+        );
+        if !in_comment_family {
+            return;
+        }
+        if record_eof {
+            self.record_tokenizer_parse_error(
+                ctx,
+                crate::html5::shared::ParseErrorCode::UnexpectedEof,
+                self.cursor.min(input.as_str().len()),
+                super::normalization::ERROR_DETAIL_EOF_IN_COMMENT,
+                None,
+            );
+        }
+        let Some(start) = self.pending_comment_start.take() else {
+            return;
+        };
+        let truncated =
+            self.truncate_input_range(input, start, self.cursor, self.max_comment_bytes());
+        self.pending_comment_limit_reported = false;
+        let Some((bounded_end, _was_truncated)) = truncated else {
+            self.emit_token(Token::Comment {
+                text: TextValue::Owned(String::new()),
+            });
+            return;
+        };
+        let end = self.cursor;
+        if !(start <= end
+            && end <= input.as_str().len()
+            && input.as_str().is_char_boundary(start)
+            && input.as_str().is_char_boundary(end))
+        {
+            self.emit_token(Token::Comment {
+                text: TextValue::Owned(String::new()),
+            });
+            return;
+        }
+        let raw = &input.as_str()[start..bounded_end];
+        if let Some(text) = self.replace_nulls_for_token_text(ctx, raw, start) {
+            self.emit_token(Token::Comment {
+                text: TextValue::Owned(text),
+            });
+        } else {
+            self.emit_token(Token::Comment {
+                text: TextValue::Span(TextSpan::new(start, bounded_end)),
+            });
+        }
     }
 }

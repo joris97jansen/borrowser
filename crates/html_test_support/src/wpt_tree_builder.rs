@@ -181,7 +181,17 @@ pub fn run_tree_builder_whole(
         &mut saw_eof_token,
     )?;
 
-    handle_tokenize_result(tokenizer.finish(&input), "finish")?;
+    let _ = input.finish_preprocessing();
+    pump_tokenizer_until_blocked(
+        &mut tokenizer,
+        &mut input,
+        &mut ctx,
+        &mut builder,
+        &mut patch_batches,
+        &mut saw_eof_token,
+    )?;
+
+    handle_tokenize_result(tokenizer.finish_with_context(&input, &mut ctx), "finish")?;
     drain_batches(
         &mut tokenizer,
         &mut input,
@@ -255,7 +265,17 @@ pub fn run_tree_builder_chunked(
         return Err(err);
     }
 
-    handle_tokenize_result(tokenizer.finish(&input), "finish")?;
+    let _ = input.finish_preprocessing();
+    pump_tokenizer_until_blocked(
+        &mut tokenizer,
+        &mut input,
+        &mut ctx,
+        &mut builder,
+        &mut patch_batches,
+        &mut saw_eof_token,
+    )?;
+
+    handle_tokenize_result(tokenizer.finish_with_context(&input, &mut ctx), "finish")?;
     drain_batches(
         &mut tokenizer,
         &mut input,

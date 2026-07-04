@@ -57,6 +57,7 @@ mod input;
 mod invariants;
 mod limits;
 mod machine;
+mod normalization;
 mod scan;
 mod stall;
 mod states;

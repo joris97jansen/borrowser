@@ -131,7 +131,26 @@ fn run_tree_builder_impl(
         return PatchRunResult::Err(err);
     }
 
-    let finish_result = tokenizer.finish(&input);
+    let _ = input.finish_preprocessing();
+    if let Err(err) = pump_tokenizer_until_blocked(
+        DrainBatchesCtx {
+            tokenizer: &mut tokenizer,
+            input: &mut input,
+            builder: &mut builder,
+            ctx: &mut ctx,
+            dom_state: &mut dom_state,
+            patch_batches: &mut patch_batches,
+            fixture_name: &fixture.name,
+            label,
+            saw_eof_token: &mut saw_eof_token,
+        },
+        fixture,
+        plan_label,
+    ) {
+        return PatchRunResult::Err(err);
+    }
+
+    let finish_result = tokenizer.finish_with_context(&input, &mut ctx);
     if let Err(err) = handle_tokenize_result(finish_result, fixture, plan_label, "finish") {
         return PatchRunResult::Err(err);
     }

@@ -1,7 +1,7 @@
 use super::super::Html5Tokenizer;
 use super::super::control::TextModeKind;
 use crate::entities::decode_entities;
-use crate::html5::shared::{Input, TextSpan, TextValue, Token};
+use crate::html5::shared::{DocumentParseContext, Input, TextSpan, TextValue, Token};
 
 impl Html5Tokenizer {
     pub(crate) fn emit_text_span(&mut self, start: usize, end: usize) {
@@ -23,6 +23,22 @@ impl Html5Tokenizer {
     }
 
     pub(crate) fn flush_pending_text(&mut self, input: &Input) {
+        self.flush_pending_text_impl(input, None);
+    }
+
+    pub(crate) fn flush_pending_text_with_context(
+        &mut self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+    ) {
+        self.flush_pending_text_impl(input, Some(ctx));
+    }
+
+    fn flush_pending_text_impl(
+        &mut self,
+        input: &Input,
+        mut ctx: Option<&mut DocumentParseContext>,
+    ) {
         let start = match self.pending_text_start.take() {
             Some(start) => start,
             None => return,
@@ -38,15 +54,30 @@ impl Html5Tokenizer {
             return;
         }
         let raw = &text[start..end];
-        if !self.should_decode_character_references_in_current_text()
-            || !raw.as_bytes().contains(&b'&')
-        {
+        let null_normalized = if let Some(ctx) = &mut ctx {
+            self.replace_nulls_for_token_text(ctx, raw, start)
+        } else if raw.contains('\0') {
+            Some(replace_nulls_without_reporting(raw))
+        } else {
+            None
+        };
+        let normalized = null_normalized.as_deref().unwrap_or(raw);
+        let should_decode = self.should_decode_character_references_in_current_text()
+            && normalized.as_bytes().contains(&b'&');
+        if !should_decode && null_normalized.is_none() {
             self.emit_text_span(start, end);
             return;
         }
-        let decoded = decode_entities(raw);
+        if !should_decode {
+            self.emit_text_owned(normalized);
+            return;
+        }
+        let decoded = decode_entities(normalized);
         match decoded {
-            std::borrow::Cow::Borrowed(_) => self.emit_text_span(start, end),
+            std::borrow::Cow::Borrowed(_) if null_normalized.is_none() => {
+                self.emit_text_span(start, end)
+            }
+            std::borrow::Cow::Borrowed(text) => self.emit_text_owned(text),
             std::borrow::Cow::Owned(text) => self.emit_text_owned(&text),
         }
     }
@@ -63,4 +94,10 @@ impl Html5Tokenizer {
             Some(TextModeKind::RawText | TextModeKind::ScriptData)
         )
     }
+}
+
+fn replace_nulls_without_reporting(raw: &str) -> String {
+    raw.chars()
+        .map(|ch| if ch == '\0' { '\u{FFFD}' } else { ch })
+        .collect()
 }

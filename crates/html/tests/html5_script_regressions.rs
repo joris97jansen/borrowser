@@ -276,8 +276,21 @@ where
         );
     }
 
+    let _ = buffer.finish_preprocessing();
+    pump_until_blocked(
+        fixture,
+        &mut tokenizer,
+        &mut buffer,
+        &mut ctx,
+        &mut out,
+        &mut text_mode_active,
+        script,
+        expect_token_granular_batches,
+        "finish-preprocessing",
+    );
+
     handle_tokenize_result(
-        tokenizer.finish(&buffer),
+        tokenizer.finish_with_context(&buffer, &mut ctx),
         fixture,
         if expect_token_granular_batches {
             "every-boundary"
