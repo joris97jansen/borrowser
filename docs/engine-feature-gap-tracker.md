@@ -420,9 +420,19 @@ Current supported subset:
   first-wins duplicate-free by normalized name while preserving stored
   encounter order and missing-vs-empty value distinction. See
   `docs/html5/ae2-parser-created-dom-node-model.md`.
+- AE3 tokenizer foundation: tokenizer input is explicit for the current
+  UTF-8/string-input scope; CRLF and lone-CR preprocessing is chunk-equivalent;
+  tokenizer state, typed tokens, supported `U+0000` replacement, recoverable
+  EOF diagnostics, and deterministic token debug snapshots are parser-owned
+  regression surfaces. See `docs/html5/spec-matrix-tokenizer.md` and
+  `docs/html5/html5-core-v0.md`. This does not claim full WHATWG tokenizer
+  conformance or full byte-stream encoding sniffing.
 
 Missing or incomplete:
 
+- full byte-stream encoding sniffing, charset detection, BOM switching, and
+  legacy encodings
+- full WHATWG tokenizer state coverage beyond the supported AE/Core-v0 subset
 - full DOM API surface
 - public DOM `DocumentType` API exposure
 - script integration

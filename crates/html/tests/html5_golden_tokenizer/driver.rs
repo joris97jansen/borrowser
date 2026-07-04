@@ -50,8 +50,21 @@ pub(crate) fn run_tokenizer_whole(fixture: &Fixture) -> Vec<String> {
             plan_label: None,
         },
     );
+    let _ = buffer.finish_preprocessing();
+    pump_until_blocked(
+        &mut drain_state,
+        &mut tokenizer,
+        &mut buffer,
+        &mut ctx,
+        &driver,
+        &PumpConfig {
+            fixture,
+            mode: ExecutionMode::WholeInput,
+            plan_label: None,
+        },
+    );
     handle_tokenize_result(
-        tokenizer.finish(&buffer),
+        tokenizer.finish_with_context(&buffer, &mut ctx),
         fixture,
         ExecutionMode::WholeInput,
         None,
@@ -132,8 +145,21 @@ pub(crate) fn run_tokenizer_chunked(
             },
         );
     });
+    let _ = buffer.finish_preprocessing();
+    pump_until_blocked(
+        &mut drain_state,
+        &mut tokenizer,
+        &mut buffer,
+        &mut ctx,
+        &driver,
+        &PumpConfig {
+            fixture,
+            mode: ExecutionMode::ChunkedInput,
+            plan_label: Some(plan_label),
+        },
+    );
     handle_tokenize_result(
-        tokenizer.finish(&buffer),
+        tokenizer.finish_with_context(&buffer, &mut ctx),
         fixture,
         ExecutionMode::ChunkedInput,
         Some(plan_label),

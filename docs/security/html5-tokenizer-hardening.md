@@ -18,6 +18,8 @@ The HTML5 tokenizer must treat document input as untrusted.
 Inputs in scope:
 - arbitrary network-provided HTML bytes
 - invalid UTF-8 byte streams before decoding
+- supported string/scalar input preprocessing, including CRLF normalization and
+  split CRLF across chunks
 - adversarial chunking, including 1-byte chunk boundaries
 - malformed markup intended to trigger parser edge cases
 - oversized constructs intended to drive pathological CPU or memory behavior
@@ -42,6 +44,10 @@ For Borrowser, "panic-free" means:
 - untrusted document bytes must not panic the tokenizer
 - invalid UTF-8, malformed markup, and adversarial chunking must be handled by
   deterministic recovery or parse errors
+- `U+0000` in currently supported tokenizer states must produce deterministic
+  replacement output plus `UnexpectedNullCharacter` diagnostics
+- supported malformed EOF recovery must produce deterministic `UnexpectedEof`
+  diagnostics and must not abort parsing
 - fuzzing and deterministic corpus replay should not discover panic paths from
   document input alone
 

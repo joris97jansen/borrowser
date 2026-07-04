@@ -1,6 +1,6 @@
 # HTML5 Tokenizer Spec Mapping Matrix (Milestone D1)
 
-Last updated: 2026-03-17
+Last updated: 2026-07-04
 Scope: `crates/html/src/html5/tokenizer` (feature `html5`)
 Spec source: WHATWG HTML, section `Tokenization` (`parsing.html#tokenization`)
 
@@ -28,6 +28,9 @@ It defines HTML5 Core v0 tokenizer scope, including explicit deferred and out-of
 ## Component Contracts (Hard Boundaries)
 
 - Tokenizer contract:
+  - Consumes preprocessed parser input. Current supported parser input is
+    decoded UTF-8/scalar text, with CRLF and lone CR normalized to LF by the
+    shared `Input` boundary.
   - Emits spec-shaped token stream and parse-error-tolerant recovery transitions.
   - Performs tokenizer-level normalization only (for example, tag/attribute ASCII case folding and U+0000 handling).
   - Preserves attribute encounter order and does not apply tree-builder duplicate-attribute semantics.
@@ -47,6 +50,35 @@ These invariants apply to every `TOK-STATE-*` row:
 2. `STREAM-INV-02`: partial UTF-8 scalar boundaries are preserved through `Input`; tokenizer state must not split or emit invalid scalar fragments.
 3. `STREAM-INV-03`: temporary buffers and reconsume semantics survive chunk boundaries exactly once (no duplicate consume, no skipped consume).
 4. `STREAM-INV-04`: EOF processing is deterministic and idempotent (`finish()` cannot double-emit semantic tokens).
+
+## AE3 Input And Parse-Error Foundation
+
+AE3 formalizes the tokenizer foundation without claiming full WHATWG tokenizer
+completion.
+
+Current input behavior:
+
+- `Input::push_str` accepts already-decoded Unicode scalar text and applies
+  HTML input preprocessing for newline handling in the supported scope.
+- `ByteStreamDecoder` assumes UTF-8 only. Invalid UTF-8 and incomplete final
+  UTF-8 prefixes are decoded with `U+FFFD`; full byte-stream encoding sniffing,
+  charset detection, BOM switching, and legacy encodings remain deferred.
+- CRLF and lone CR are normalized to LF before tokenization.
+- Split CRLF across chunks is chunk-equivalent: `"\r"` followed by `"\n"`
+  produces the same preprocessed input as `"\r\n"` in one chunk.
+
+Current parse-error behavior:
+
+- `ParseError` is deterministic parser diagnostic data owned by
+  HTML/parser. It does not automatically abort tokenization.
+- Supported tokenizer states that encounter `U+0000` record
+  `ParseErrorCode::UnexpectedNullCharacter` and emit the replacement character
+  in the affected token payload.
+- Supported malformed EOF recovery paths record
+  `ParseErrorCode::UnexpectedEof` and still emit deterministic recoverable
+  tokens where the current Core-v0 tokenizer supports recovery.
+- Parser diagnostics are test/debug surfaces and must not become rendering,
+  CSS, layout, or browser/runtime semantics.
 
 ## Current Repository Baseline (Before D1 Execution)
 

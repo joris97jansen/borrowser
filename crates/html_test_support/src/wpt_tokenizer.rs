@@ -206,7 +206,15 @@ pub fn run_tokenizer_whole(input_html: &str, case_id: &str) -> Result<Vec<String
         &mut ctx,
         &driver,
     )?;
-    handle_tokenize_result(tokenizer.finish(&input), "finish")?;
+    let _ = input.finish_preprocessing();
+    pump_until_blocked(
+        &mut drain_state,
+        &mut tokenizer,
+        &mut input,
+        &mut ctx,
+        &driver,
+    )?;
+    handle_tokenize_result(tokenizer.finish_with_context(&input, &mut ctx), "finish")?;
     let _ = drain_tokens(
         &mut drain_state,
         &mut tokenizer,
@@ -290,7 +298,15 @@ pub fn run_tokenizer_chunked(
         return Err(err);
     }
 
-    handle_tokenize_result(tokenizer.finish(&input), "finish")?;
+    let _ = input.finish_preprocessing();
+    pump_until_blocked(
+        &mut drain_state,
+        &mut tokenizer,
+        &mut input,
+        &mut ctx,
+        &driver,
+    )?;
+    handle_tokenize_result(tokenizer.finish_with_context(&input, &mut ctx), "finish")?;
     let _ = drain_tokens(
         &mut drain_state,
         &mut tokenizer,

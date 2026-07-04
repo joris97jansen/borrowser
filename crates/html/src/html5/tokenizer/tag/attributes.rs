@@ -405,7 +405,9 @@ impl Html5Tokenizer {
                 self.max_attribute_name_bytes(),
             );
         }
-        let name = self.intern_atom_or_invariant(ctx, raw_name, "attribute name");
+        let normalized_name = self.replace_nulls_for_token_text(ctx, raw_name, name_start);
+        let atom_text = normalized_name.as_deref().unwrap_or(raw_name);
+        let name = self.intern_atom_or_invariant(ctx, atom_text, "attribute name");
 
         // Duplicate attribute policy (Core v0): first-wins per start tag;
         // later duplicates are dropped to match HTML tokenizer semantics.
@@ -434,13 +436,20 @@ impl Html5Tokenizer {
                             self.max_attribute_value_bytes(),
                         );
                     }
-                    if !raw.as_bytes().contains(&b'&') {
+                    let null_normalized = self.replace_nulls_for_token_text(ctx, raw, start);
+                    let normalized = null_normalized.as_deref().unwrap_or(raw);
+                    if !normalized.as_bytes().contains(&b'&') && null_normalized.is_none() {
                         Some(AttributeValue::Span(TextSpan::new(start, truncated_end)))
+                    } else if !normalized.as_bytes().contains(&b'&') {
+                        Some(AttributeValue::Owned(normalized.to_string()))
                     } else {
-                        let decoded = decode_entities(raw);
+                        let decoded = decode_entities(normalized);
                         match decoded {
-                            std::borrow::Cow::Borrowed(_) => {
+                            std::borrow::Cow::Borrowed(_) if null_normalized.is_none() => {
                                 Some(AttributeValue::Span(TextSpan::new(start, truncated_end)))
+                            }
+                            std::borrow::Cow::Borrowed(value) => {
+                                Some(AttributeValue::Owned(value.to_string()))
                             }
                             std::borrow::Cow::Owned(value) => Some(AttributeValue::Owned(value)),
                         }

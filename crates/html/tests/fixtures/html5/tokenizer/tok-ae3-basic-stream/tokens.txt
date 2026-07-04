@@ -1,0 +1,10 @@
+# format: html5-token-v1
+# status: active
+# note: input.html intentionally ends with a trailing newline byte
+DOCTYPE name=html public_id=null system_id=null force_quirks=false
+START name=main attrs=[data-id="42"] self_closing=false
+CHAR text="Hi"
+COMMENT text="ok"
+END name=main
+CHAR text="\n"
+EOF

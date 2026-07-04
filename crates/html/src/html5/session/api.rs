@@ -82,7 +82,9 @@ impl Html5ParseSession {
         self.pump_live_input()?;
         let _ = self.decoder.finish(&mut self.input);
         self.pump_live_input()?;
-        let _ = self.tokenizer.finish(&self.input);
+        let _ = self
+            .tokenizer
+            .finish_with_context(&self.input, &mut self.ctx);
         self.drain_post_finish_batches(POST_FINISH_DRAIN_BUDGET)?;
         self.finalize_adapter_invariants()?;
         self.sync_debug_counters();

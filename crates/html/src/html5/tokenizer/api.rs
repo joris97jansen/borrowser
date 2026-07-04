@@ -5,6 +5,7 @@ use super::scan::IncrementalEndTagMatcher;
 use super::states::TokenizerState;
 use super::stats::TokenizerStats;
 use super::text_mode::PendingTextModeEndTag;
+use crate::html5::shared::ParseErrorCode;
 use crate::html5::shared::{Attribute, DocumentParseContext, Input, Token};
 
 /// Centralized tokenizer hardening/resource bounds.
@@ -283,6 +284,26 @@ impl Html5Tokenizer {
     ///   helpers so malformed-input finalization remains narrow and auditable.
     /// - After `finish()`, no further input may be pushed.
     pub fn finish(&mut self, input: &Input) -> TokenizeResult {
+        self.finish_internal(input, None)
+    }
+
+    pub fn finish_with_context(
+        &mut self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+    ) -> TokenizeResult {
+        self.finish_internal(input, Some(ctx))
+    }
+
+    fn finish_internal(
+        &mut self,
+        input: &Input,
+        mut ctx: Option<&mut DocumentParseContext>,
+    ) -> TokenizeResult {
+        assert!(
+            !input.has_pending_preprocessing(),
+            "Html5Tokenizer::finish called before input preprocessing was finalized"
+        );
         if let Some(id) = self.input_id {
             assert_eq!(
                 id,
@@ -293,8 +314,13 @@ impl Html5Tokenizer {
             self.input_id = Some(input.id());
         }
         let buffered_len = input.as_str().len();
+        let mut eof_tail_error_recorded = false;
         if self.cursor != buffered_len {
             if let Some(recovery) = self.classify_eof_tail_recovery(input) {
+                if let Some(ctx) = &mut ctx {
+                    self.record_eof_tail_parse_error(recovery, input, Some(&mut **ctx));
+                    eof_tail_error_recorded = true;
+                }
                 self.apply_eof_tail_recovery(recovery, input);
             } else {
                 panic!(
@@ -314,9 +340,24 @@ impl Html5Tokenizer {
             return TokenizeResult::EmittedEof;
         }
 
-        self.flush_pending_doctype_eof(input);
-        self.flush_pending_comment_eof(input);
-        self.flush_pending_text(input);
+        if let Some(ctx) = ctx {
+            self.flush_pending_doctype_eof_with_context(input, ctx, !eof_tail_error_recorded);
+            self.flush_pending_comment_eof_with_context(input, ctx, !eof_tail_error_recorded);
+            if self.active_text_mode.is_some() && !eof_tail_error_recorded {
+                self.record_tokenizer_parse_error(
+                    ctx,
+                    ParseErrorCode::UnexpectedEof,
+                    self.cursor.min(input.as_str().len()),
+                    super::normalization::ERROR_DETAIL_EOF_IN_TEXT_MODE,
+                    None,
+                );
+            }
+            self.flush_pending_text_with_context(input, ctx);
+        } else {
+            self.flush_pending_doctype_eof(input);
+            self.flush_pending_comment_eof(input);
+            self.flush_pending_text(input);
+        }
         if self.config.emit_eof {
             self.emit_token(Token::Eof);
         }
@@ -370,6 +411,31 @@ impl Html5Tokenizer {
                 self.consume_buffered_tail_at_eof(input);
             }
         }
+    }
+
+    fn record_eof_tail_parse_error(
+        &self,
+        recovery: EofTailRecovery,
+        input: &Input,
+        ctx: Option<&mut DocumentParseContext>,
+    ) {
+        let Some(ctx) = ctx else {
+            return;
+        };
+        let detail = match recovery {
+            EofTailRecovery::DoctypeTail => super::normalization::ERROR_DETAIL_EOF_IN_DOCTYPE,
+            EofTailRecovery::TextModeLiteralTail => {
+                super::normalization::ERROR_DETAIL_EOF_IN_TEXT_MODE
+            }
+            EofTailRecovery::LonelyTagOpen => super::normalization::ERROR_DETAIL_EOF_IN_TAG_OPEN,
+        };
+        self.record_tokenizer_parse_error(
+            ctx,
+            ParseErrorCode::UnexpectedEof,
+            self.cursor.min(input.as_str().len()),
+            detail,
+            None,
+        );
     }
 
     fn consume_buffered_tail_at_eof(&mut self, input: &Input) {

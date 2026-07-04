@@ -27,7 +27,11 @@ pub(crate) enum DoctypeKeywordKind {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum QuotedParse<'a> {
-    Complete((&'a str, usize)),
+    Complete {
+        value: &'a str,
+        value_start: usize,
+        cursor_after: usize,
+    },
     LimitExceeded,
     NeedMoreInput,
     Malformed,

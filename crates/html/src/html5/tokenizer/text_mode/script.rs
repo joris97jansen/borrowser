@@ -227,7 +227,7 @@ impl Html5Tokenizer {
                 {
                     self.pending_text_mode_end_tag =
                         Some(PendingTextModeEndTag { cursor_after, name });
-                    self.flush_pending_text(input);
+                    self.flush_pending_text_with_context(input, ctx);
                     Step::Progress
                 } else {
                     self.set_cursor(cursor_after);
@@ -291,7 +291,7 @@ impl Html5Tokenizer {
                 {
                     self.pending_text_mode_end_tag =
                         Some(PendingTextModeEndTag { cursor_after, name });
-                    self.flush_pending_text(input);
+                    self.flush_pending_text_with_context(input, ctx);
                     Step::Progress
                 } else {
                     self.set_cursor(cursor_after);

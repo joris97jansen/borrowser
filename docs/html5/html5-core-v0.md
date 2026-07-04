@@ -1,6 +1,6 @@
 # HTML5 Core v0 Supported Subset Contract (Milestone D3)
 
-Last updated: 2026-03-17
+Last updated: 2026-07-04
 Scope: `crates/html/src/html5` (feature `html5`)
 Normative matrix sources:
 - `docs/html5/spec-matrix-tokenizer.md`
@@ -61,9 +61,18 @@ Core v0 guarantees behavior for the following scope.
 <a id="input-and-streaming-model"></a>
 ### Input And Streaming Model
 
-- Input model is UTF-8 text streaming through session/tokenizer (`push_input` + `finish` flow).
+- Input model is UTF-8/scalar text streaming through session/tokenizer
+  (`push_input` + `finish` flow).
+- Current byte input assumes UTF-8. Invalid UTF-8 and incomplete final UTF-8
+  prefixes are replaced with `U+FFFD`; full byte-stream encoding sniffing,
+  charset detection, BOM switching, and legacy encodings are deferred.
+- Current string/scalar input preprocessing normalizes CRLF and lone CR to LF.
+  Split CRLF across chunks MUST be chunk-equivalent.
 - Whole-input and chunked-input execution MUST be semantically equivalent for all Core v0 gate tests.
 - Parser state machines MUST be resumable at chunk boundaries without token duplication or token loss.
+- Supported tokenizer states that encounter `U+0000` MUST record a tokenizer
+  `UnexpectedNullCharacter` parse error and emit deterministic replacement
+  text for the affected token payload.
 
 <a id="tokenizer-state-families"></a>
 ### Tokenizer State Families
@@ -205,6 +214,18 @@ Core v0 guarantees:
 - duplicate/late DOCTYPE tokens after the `Initial` handoff or after that
   boundary MUST NOT change document mode.
 - document mode is internal parser state in Core v0 (no dedicated `DomPatch` mode event) and is not encoded in `DocumentType` node identity or payload.
+
+### Parse-Error Diagnostics
+
+Core v0 parser diagnostics are deterministic internal regression/debug data:
+
+- tokenizer-origin malformed input records `ParseError` entries through
+  `DocumentParseContext`;
+- parse errors do not automatically abort tokenization or tree construction;
+- supported EOF recovery paths record `UnexpectedEof` while still emitting the
+  recoverable token stream defined by the current tokenizer state support;
+- downstream browser/runtime, CSS, Layout, and Paint code must not interpret
+  parse-error kinds as rendering semantics.
 
 ### Script/RAWTEXT/RCDATA Stance
 
