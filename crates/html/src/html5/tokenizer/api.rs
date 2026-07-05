@@ -100,6 +100,7 @@ pub enum TokenizeResult {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum EofTailRecovery {
     DoctypeTail,
+    MarkupDeclarationTail,
     TextModeLiteralTail,
     LonelyTagOpen,
 }
@@ -129,6 +130,7 @@ pub struct Html5Tokenizer {
     pub(in crate::html5::tokenizer) tag_name_complete: bool,
     pub(in crate::html5::tokenizer) current_tag_is_end: bool,
     pub(in crate::html5::tokenizer) current_tag_self_closing: bool,
+    pub(in crate::html5::tokenizer) current_end_tag_trailing_error_reported: bool,
     pub(in crate::html5::tokenizer) current_tag_attrs: Vec<Attribute>,
     pub(in crate::html5::tokenizer) current_attr_name_start: Option<usize>,
     pub(in crate::html5::tokenizer) current_attr_name_end: Option<usize>,
@@ -170,6 +172,7 @@ impl Html5Tokenizer {
             tag_name_complete: false,
             current_tag_is_end: false,
             current_tag_self_closing: false,
+            current_end_tag_trailing_error_reported: false,
             current_tag_attrs: Vec::new(),
             current_attr_name_start: None,
             current_attr_name_end: None,
@@ -341,6 +344,9 @@ impl Html5Tokenizer {
         }
 
         if let Some(ctx) = ctx {
+            if !eof_tail_error_recorded {
+                self.record_eof_in_current_state_if_needed(input, ctx);
+            }
             self.flush_pending_doctype_eof_with_context(input, ctx, !eof_tail_error_recorded);
             self.flush_pending_comment_eof_with_context(input, ctx, !eof_tail_error_recorded);
             if self.active_text_mode.is_some() && !eof_tail_error_recorded {
@@ -375,6 +381,10 @@ impl Html5Tokenizer {
         if self.in_doctype_family_state() {
             return Some(EofTailRecovery::DoctypeTail);
         }
+        if self.state == TokenizerState::MarkupDeclarationOpen && self.cursor < input.as_str().len()
+        {
+            return Some(EofTailRecovery::MarkupDeclarationTail);
+        }
         if self.active_text_mode.is_some_and(|mode| {
             matches!(
                 mode.kind,
@@ -395,6 +405,15 @@ impl Html5Tokenizer {
                 // Core v0 EOF policy: unfinished doctype tails are finalized as
                 // quirks doctype at EOF. We intentionally skip parsing the
                 // remaining doctype tail bytes and consume the buffered tail.
+                self.consume_buffered_tail_at_eof(input);
+            }
+            EofTailRecovery::MarkupDeclarationTail => {
+                // A partial `<!...` declaration that cannot be classified
+                // without more input recovers through the same bogus-comment
+                // path as unsupported declarations once EOF proves no more
+                // prefix bytes are coming.
+                self.pending_comment_start = Some(self.cursor);
+                self.transition_to(TokenizerState::BogusComment);
                 self.consume_buffered_tail_at_eof(input);
             }
             EofTailRecovery::TextModeLiteralTail => {
@@ -424,6 +443,9 @@ impl Html5Tokenizer {
         };
         let detail = match recovery {
             EofTailRecovery::DoctypeTail => super::normalization::ERROR_DETAIL_EOF_IN_DOCTYPE,
+            EofTailRecovery::MarkupDeclarationTail => {
+                super::normalization::ERROR_DETAIL_EOF_IN_MARKUP_DECLARATION
+            }
             EofTailRecovery::TextModeLiteralTail => {
                 super::normalization::ERROR_DETAIL_EOF_IN_TEXT_MODE
             }
@@ -451,6 +473,38 @@ impl Html5Tokenizer {
             return false;
         };
         remaining == "<"
+    }
+
+    fn record_eof_in_current_state_if_needed(&self, input: &Input, ctx: &mut DocumentParseContext) {
+        let detail = match self.state {
+            TokenizerState::EndTagOpen => super::normalization::ERROR_DETAIL_EOF_IN_END_TAG_OPEN,
+            TokenizerState::TagName => super::normalization::ERROR_DETAIL_EOF_IN_TAG_NAME,
+            TokenizerState::BeforeAttributeName
+            | TokenizerState::AttributeName
+            | TokenizerState::AfterAttributeName
+            | TokenizerState::BeforeAttributeValue
+            | TokenizerState::AttributeValueDoubleQuoted
+            | TokenizerState::AttributeValueSingleQuoted
+            | TokenizerState::AttributeValueUnquoted
+            | TokenizerState::AfterAttributeValueQuoted => {
+                super::normalization::ERROR_DETAIL_EOF_IN_ATTRIBUTE
+            }
+            TokenizerState::SelfClosingStartTag => {
+                super::normalization::ERROR_DETAIL_EOF_IN_SELF_CLOSING_START_TAG
+            }
+            TokenizerState::MarkupDeclarationOpen => {
+                super::normalization::ERROR_DETAIL_EOF_IN_MARKUP_DECLARATION
+            }
+            TokenizerState::TagOpen => super::normalization::ERROR_DETAIL_EOF_IN_TAG_OPEN,
+            _ => return,
+        };
+        self.record_tokenizer_parse_error(
+            ctx,
+            ParseErrorCode::UnexpectedEof,
+            self.cursor.min(input.as_str().len()),
+            detail,
+            None,
+        );
     }
 
     /// Drain the current batch of tokens and return a resolver bound to this epoch.

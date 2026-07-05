@@ -151,10 +151,35 @@ const TOKENIZER_ACCEPTANCE_CASES: &[AcceptanceCase] = &[
     ),
     tokenizer_case(
         "tok-malformed-recovery",
-        "tok-doctype-comment-smoke",
+        "tok-ae4-malformed-static",
         FixtureState::Existing,
         anchors::UNSPECIFIED_BEHAVIOR_HANDLING,
         None,
+    ),
+    tokenizer_case(
+        "tok-ae4-malformed-static",
+        "tok-ae4-malformed-static",
+        FixtureState::Existing,
+        anchors::UNSPECIFIED_BEHAVIOR_HANDLING,
+        Some(
+            "Exercises AE4 malformed static HTML recovery across tag, attribute, bogus comment, and doctype paths.",
+        ),
+    ),
+    tokenizer_case(
+        "tok-ae4-markup-eof-recovery",
+        "tok-ae4-markup-eof-recovery",
+        FixtureState::Existing,
+        anchors::UNSPECIFIED_BEHAVIOR_HANDLING,
+        Some(
+            "Exercises AE4 deterministic unfinished markup declaration recovery through bogus-comment EOF finalization.",
+        ),
+    ),
+    tokenizer_case(
+        "tok-ae4-malformed-comment",
+        "tok-ae4-malformed-comment",
+        FixtureState::Existing,
+        anchors::UNSPECIFIED_BEHAVIOR_HANDLING,
+        Some("Exercises AE4 deterministic malformed comment recovery."),
     ),
     tokenizer_case(
         "tok-output-format",

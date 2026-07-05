@@ -35,6 +35,7 @@ pub(crate) enum TokenizerState {
     Comment,
     CommentEndDash,
     CommentEnd,
+    CommentEndBang,
     BogusComment,
     Doctype,
     BeforeDoctypeName,

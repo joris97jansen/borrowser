@@ -2,7 +2,9 @@ use super::Html5Tokenizer;
 use super::limits::LIMIT_DETAIL_COMMENT;
 use super::machine::Step;
 use super::states::TokenizerState;
-use crate::html5::shared::{DocumentParseContext, Input, TextSpan, TextValue, Token};
+use crate::html5::shared::{
+    DocumentParseContext, Input, ParseErrorCode, TextSpan, TextValue, Token,
+};
 
 impl Html5Tokenizer {
     pub(crate) fn step_comment_start(
@@ -22,6 +24,13 @@ impl Html5Tokenizer {
                 Step::Progress
             }
             Some('>') => {
+                self.record_tokenizer_parse_error(
+                    ctx,
+                    ParseErrorCode::Other,
+                    self.cursor,
+                    super::normalization::ERROR_DETAIL_MALFORMED_COMMENT,
+                    Some('>' as u32),
+                );
                 let end = self.cursor;
                 let _ = self.consume_if(input, '>');
                 self.emit_pending_comment_range(input, end, ctx);
@@ -53,6 +62,13 @@ impl Html5Tokenizer {
                 Step::Progress
             }
             Some('>') => {
+                self.record_tokenizer_parse_error(
+                    ctx,
+                    ParseErrorCode::Other,
+                    self.cursor,
+                    super::normalization::ERROR_DETAIL_MALFORMED_COMMENT,
+                    Some('>' as u32),
+                );
                 let end = self.cursor;
                 let _ = self.consume_if(input, '>');
                 self.emit_pending_comment_range(input, end, ctx);
@@ -60,6 +76,13 @@ impl Html5Tokenizer {
                 Step::Progress
             }
             Some(_) => {
+                self.record_tokenizer_parse_error(
+                    ctx,
+                    ParseErrorCode::Other,
+                    self.cursor,
+                    super::normalization::ERROR_DETAIL_MALFORMED_COMMENT,
+                    self.peek(input).map(|ch| ch as u32),
+                );
                 self.transition_to(TokenizerState::Comment);
                 Step::Progress
             }
@@ -137,6 +160,57 @@ impl Html5Tokenizer {
             Some('-') => {
                 let _ = self.consume_if(input, '-');
                 self.check_pending_comment_limit(input, ctx);
+                Step::Progress
+            }
+            Some('!') => {
+                self.record_tokenizer_parse_error(
+                    ctx,
+                    ParseErrorCode::Other,
+                    self.cursor,
+                    super::normalization::ERROR_DETAIL_MALFORMED_COMMENT,
+                    Some('!' as u32),
+                );
+                let _ = self.consume_if(input, '!');
+                self.check_pending_comment_limit(input, ctx);
+                self.transition_to(TokenizerState::CommentEndBang);
+                Step::Progress
+            }
+            Some(_) => {
+                self.record_tokenizer_parse_error(
+                    ctx,
+                    ParseErrorCode::Other,
+                    self.cursor,
+                    super::normalization::ERROR_DETAIL_MALFORMED_COMMENT,
+                    self.peek(input).map(|ch| ch as u32),
+                );
+                self.transition_to(TokenizerState::Comment);
+                Step::Progress
+            }
+            None => Step::NeedMoreInput,
+        }
+    }
+
+    pub(crate) fn step_comment_end_bang(
+        &mut self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+    ) -> Step {
+        debug_assert_eq!(self.state, TokenizerState::CommentEndBang);
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        match self.peek(input) {
+            Some('>') => {
+                let end = self.cursor.saturating_sub(3);
+                let _ = self.consume_if(input, '>');
+                self.emit_pending_comment_range(input, end, ctx);
+                self.transition_to(TokenizerState::Data);
+                Step::Progress
+            }
+            Some('-') => {
+                let _ = self.consume_if(input, '-');
+                self.check_pending_comment_limit(input, ctx);
+                self.transition_to(TokenizerState::CommentEndDash);
                 Step::Progress
             }
             Some(_) => {
@@ -237,6 +311,7 @@ impl Html5Tokenizer {
                 | TokenizerState::Comment
                 | TokenizerState::CommentEndDash
                 | TokenizerState::CommentEnd
+                | TokenizerState::CommentEndBang
                 | TokenizerState::BogusComment
         );
         if !in_comment_family {
@@ -283,6 +358,7 @@ impl Html5Tokenizer {
                 | TokenizerState::Comment
                 | TokenizerState::CommentEndDash
                 | TokenizerState::CommentEnd
+                | TokenizerState::CommentEndBang
                 | TokenizerState::BogusComment
         );
         if !in_comment_family {

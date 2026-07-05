@@ -1,6 +1,6 @@
-# HTML5 Tokenizer Spec Mapping Matrix (Milestone D1)
+# HTML5 Tokenizer Spec Mapping Matrix (HTML5 Core v0)
 
-Last updated: 2026-07-04
+Last updated: 2026-07-05
 Scope: `crates/html/src/html5/tokenizer` (feature `html5`)
 Spec source: WHATWG HTML, section `Tokenization` (`parsing.html#tokenization`)
 
@@ -80,40 +80,61 @@ Current parse-error behavior:
 - Parser diagnostics are test/debug surfaces and must not become rendering,
   CSS, layout, or browser/runtime semantics.
 
-## Current Repository Baseline (Before D1 Execution)
+## Current Repository Baseline
 
-- `crates/html/src/html5/tokenizer/states.rs` defines only `TokenizerState::Data`.
-- `crates/html/src/html5/tokenizer/mod.rs` has scaffold behavior (`push_input()` unimplemented, `finish()` can emit `EOF`).
-- Existing tokenizer fixtures (renamed to acceptance-ID convention):
-  - `crates/html/tests/fixtures/html5/tokenizer/tok-empty-eof` (`active`)
-  - `crates/html/tests/fixtures/html5/tokenizer/tok-basic-text` (`xfail`)
-  - `crates/html/tests/fixtures/html5/tokenizer/tok-simple-tags` (`xfail`)
-  - `crates/html/tests/fixtures/html5/tokenizer/tok-doctype-comment-smoke` (`xfail`)
-- WPT manifest currently has tokenizer smoke case `tokenizer-basic` as `xfail`.
+AE4 formalizes the Core-v0 static-HTML tokenizer subset. The tokenizer now has
+explicit state handlers for data, tag open, end tag open, tag name, core
+attribute states, after-quoted-attribute-value, self-closing start tags, markup
+declarations, comments, bogus comments, and doctypes.
+
+Implementation entry points:
+
+- `crates/html/src/html5/tokenizer/api.rs`: streaming API, EOF recovery, token queueing.
+- `crates/html/src/html5/tokenizer/machine.rs`: state dispatch and data/markup-declaration dispatch.
+- `crates/html/src/html5/tokenizer/tag/open.rs`: tag-open and end-tag-open recovery.
+- `crates/html/src/html5/tokenizer/tag/name.rs`: tag-name transitions and end-tag trailing-content diagnostics.
+- `crates/html/src/html5/tokenizer/tag/attributes.rs`: attribute states and self-closing start tag handling.
+- `crates/html/src/html5/tokenizer/tag/emit.rs`: start/end tag finalization.
+- `crates/html/src/html5/tokenizer/comment.rs`: supported comment and bogus-comment states.
+- `crates/html/src/html5/tokenizer/doctype.rs`: supported doctype states.
+- `crates/html/src/html5/tokenizer/normalization.rs`: tokenizer-owned normalization and stable diagnostic detail strings.
+
+Boolean-style attributes remain represented as `Attribute { value: None }` in
+the typed token model. Token snapshots render that missing value as a bare
+attribute name, while explicitly empty values render as `name=""`. This keeps
+the tokenizer's missing-vs-empty distinction available to the tree builder and
+debug snapshots without inventing DOM-level boolean semantics in the tokenizer.
+
+Malformed tag, attribute, comment, doctype, declaration, and EOF recovery paths
+record deterministic tokenizer-owned parse errors where currently supported.
+This does not claim full WHATWG tokenizer parity; unsupported behavior must be
+kept documented as deferred, skipped, or outside the declared Core-v0 subset.
 
 ## State Matrix (Spec -> Files/Tests -> Status)
 
 | ID | Tier | Spec state name | Anchor | Implementation mapping | Test mapping (current + planned) | Streaming notes | Key edge cases | Rationale |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| `TOK-STATE-DATA` | MVP | `Data state` | `#data-state` | `crates/html/src/html5/tokenizer/states.rs`, `crates/html/src/html5/tokenizer/mod.rs`, `crates/html/src/html5/tokenizer/input.rs` | Current: `tok-empty-eof`, `tok-basic-text`. Planned WPT: `tokenizer-data-text`. | `STREAM-INV-01`, `STREAM-INV-02` are hard gates. | EOF-in-data, `<` and `&` dispatch, U+0000 handling. | Universal tokenizer baseline. |
-| `TOK-STATE-TAG-OPEN` | MVP | `Tag open state` | `#tag-open-state` | `states.rs`, `mod.rs` | Current: `tok-simple-tags`. Planned fixture: `tok-tag-open-recovery`; planned WPT: `tokenizer-tag-open`. | Must suspend cleanly when declaration prefix is partial at chunk end. | `<!`, `</`, `<?`, invalid next-char fallback. | Required for structural token emission. |
-| `TOK-STATE-END-TAG-OPEN` | MVP | `End tag open state` | `#end-tag-open-state` | `states.rs`, `mod.rs` | Current: `tok-simple-tags`. Planned WPT: `tokenizer-end-tag-open`. | Must preserve reconsume semantics across split `</`. | EOF after `</`, non-name after `</`, parse-error fallback path. | Required for balanced close-tag handling. |
-| `TOK-STATE-TAG-NAME` | MVP | `Tag name state` | `#tag-name-state` | `states.rs`, `emit.rs`, `mod.rs` | Current: `tok-simple-tags`, WPT `tokenizer-basic`. Planned fixture: `tok-tag-name-case-folding`. | Must not lose partial name token on chunk boundary before whitespace or `>`. | ASCII case folding, NUL replacement, `/` and `>` transitions. | Required for deterministic atomization. |
-| `TOK-STATE-BEFORE-ATTR-NAME` | MVP | `Before attribute name state` | `#before-attribute-name-state` | `states.rs`, `mod.rs` | Planned fixture: `tok-attrs-core`; planned WPT: `tokenizer-attrs-before-after-name`. | Whitespace runs may span chunks with no semantic drift. | whitespace skip, `/` self-closing handoff, `>` early close. | Core attribute parser entry. |
-| `TOK-STATE-ATTR-NAME` | MVP | `Attribute name state` | `#attribute-name-state` | `states.rs`, `emit.rs`, `mod.rs` | Planned fixture: `tok-attrs-core`; planned WPT: `tokenizer-attr-name`. | Partial attr names must persist until delimiter appears. | ASCII case fold, NUL replacement, parse-error chars (`"`, `'`, `<`, `=`). | Needed for stable attribute token shape. |
-| `TOK-STATE-AFTER-ATTR-NAME` | MVP | `After attribute name state` | `#after-attribute-name-state` | `states.rs`, `mod.rs` | Planned fixture: `tok-attrs-core`; planned WPT: `tokenizer-attrs-before-after-name`. | Must not consume `=`/`/`/`>` twice when chunk split lands on delimiter. | repeated separators, implicit empty attr values, close/self-close transitions. | Ensures deterministic attr finalization. |
-| `TOK-STATE-BEFORE-ATTR-VALUE` | MVP | `Before attribute value state` | `#before-attribute-value-state` | `states.rs`, `mod.rs` | Planned fixture: `tok-before-attr-value-transitions`; planned WPT: `tokenizer-before-attr-value`. | Transition dispatch must survive split quote characters. | quoted vs unquoted dispatch, `>` parse-error close. | Dispatch point for value semantics. |
-| `TOK-STATE-ATTR-VALUE-DQ` | MVP | `Attribute value (double-quoted) state` | `#attribute-value-double-quoted-state` | `states.rs`, `emit.rs`, `mod.rs` | Planned fixture: `tok-attr-value-quoted`; planned WPT: `tokenizer-attr-value-quoted`. | Unterminated quote at chunk end must yield `NeedMoreInput` with intact buffer. | `&` charref dispatch, quote close, embedded control handling. | Required for common attribute syntax. |
-| `TOK-STATE-ATTR-VALUE-SQ` | MVP | `Attribute value (single-quoted) state` | `#attribute-value-single-quoted-state` | `states.rs`, `emit.rs`, `mod.rs` | Planned fixture: `tok-attr-value-quoted`; planned WPT: `tokenizer-attr-value-quoted`. | Same as DQ; boundary behavior must be symmetric. | `&` charref dispatch, quote close, parse-error recovery. | Required for spec parity on quoted attrs. |
-| `TOK-STATE-ATTR-VALUE-UQ` | MVP | `Attribute value (unquoted) state` | `#attribute-value-unquoted-state` | `states.rs`, `emit.rs`, `mod.rs` | Planned fixture: `tok-attr-value-unquoted`; planned WPT: `tokenizer-attr-value-unquoted`. | Must preserve pending token when encountering split delimiter bytes. | parse-error chars (`"`, `'`, `<`, `=`, `` ` ``), whitespace/value termination. | Required for realistic HTML input tolerance. |
-| `TOK-STATE-MARKUP-DECL-OPEN` | MVP | `Markup declaration open state` | `#markup-declaration-open-state` | `states.rs`, `mod.rs` | Current: `tok-doctype-comment-smoke`. Planned fixtures: `tok-comment-core`, `tok-doctype-core`. | Declaration prefix matching cannot overconsume partial `<!-`/`<!D`. | comment vs doctype dispatch, unknown declaration fallback. | Root dispatch for comment/doctype flows. |
-| `TOK-STATE-COMMENT-CORE` | MVP | `Comment core states` | `#comment-start-state`, `#comment-start-dash-state`, `#comment-state`, `#comment-end-state` | `states.rs`, `emit.rs`, `mod.rs` | Current: `tok-doctype-comment-smoke`; planned fixtures: `tok-comment-core`, `tok-comment-weird-endings`; planned WPT: `tokenizer-comments`. | Comment temporary data must survive chunk splits around `--` and `>`. | EOF in comment, `--!>` handling, nested `<` comment sequences. | Required for web-compat error recovery. |
-| `TOK-STATE-BOGUS-COMMENT` | MVP | `Bogus comment state` | `#bogus-comment-state` | `states.rs`, `emit.rs`, `mod.rs` | Planned fixture: `tok-bogus-comment`; planned WPT: `tokenizer-bogus-comment`. | Must emit single comment token even when terminator arrives in later chunk. | `<?` and malformed declarations routed here. | Explicit parse-error recovery path. |
-| `TOK-STATE-DOCTYPE` | MVP | `DOCTYPE state` | `#doctype-state` | `states.rs`, `emit.rs`, `mod.rs` | Current: `tok-doctype-comment-smoke`; planned fixture: `tok-doctype-core`; planned WPT: `tokenizer-doctype-quirks`. | Partial `DOCTYPE` keyword must not mis-route to bogus comment. | case-insensitive keyword handling. | Entry point for standards/quirks tokenization. |
-| `TOK-STATE-BEFORE-DOCTYPE-NAME` | MVP | `Before DOCTYPE name state` | `#before-doctype-name-state` | `states.rs`, `mod.rs` | Planned fixture: `tok-doctype-core`. | Whitespace and EOF boundary behavior must be deterministic. | missing name triggers quirks path. | Needed for correct token fields. |
-| `TOK-STATE-DOCTYPE-NAME` | MVP | `DOCTYPE name state` | `#doctype-name-state` | `states.rs`, `emit.rs`, `mod.rs` | Planned fixture: `tok-doctype-core`; WPT reuse: `tokenizer-basic`. | Name accumulation must survive boundary before close quote/`>`. | case fold, NUL replacement, EOF mid-name. | Core doctype payload correctness. |
-| `TOK-STATE-AFTER-DOCTYPE-NAME` | MVP | `After DOCTYPE name state` | `#after-doctype-name-state` | `states.rs`, `mod.rs` | Planned fixture: `tok-doctype-core`, `tok-doctype-public-system`. | Keyword dispatch (`PUBLIC`/`SYSTEM`) must not overconsume on short chunk. | public/system keyword recognition and recovery. | Required for public/system field parsing. |
-| `TOK-STATE-BOGUS-DOCTYPE` | MVP | `Bogus DOCTYPE state` | `#bogus-doctype-state` | `states.rs`, `emit.rs`, `mod.rs` | Planned fixture: `tok-doctype-quirks-missing-name`; planned WPT: `tokenizer-doctype-quirks`. | Must preserve `force_quirks=true` through chunked malformed inputs. | malformed public/system IDs, EOF before `>`. | Needed for standards vs quirks token correctness. |
+| `TOK-STATE-DATA` | MVP | `Data state` | `#data-state` | `states.rs`, `machine.rs`, `api.rs`, `input.rs` | Current: `tok-empty-eof`, `tok-basic-text`, `tok-ae3-basic-stream`. Planned WPT: `tokenizer-data-text`. | `STREAM-INV-01`, `STREAM-INV-02` are hard gates. | EOF-in-data, `<` and `&` dispatch, U+0000 handling. | Universal tokenizer baseline. |
+| `TOK-STATE-TAG-OPEN` | MVP | `Tag open state` | `#tag-open-state` | `states.rs`, `machine.rs`, `tag/open.rs`, `normalization.rs` | Current: `tok-simple-tags`, `tok-bogus-comment`, `tok-ae4-malformed-static`. Planned WPT: `tokenizer-tag-open`. | Must suspend cleanly when declaration prefix is partial at chunk end. | `<!`, `</`, `<?`, invalid next-char fallback. | Required for structural token emission. |
+| `TOK-STATE-END-TAG-OPEN` | MVP | `End tag open state` | `#end-tag-open-state` | `states.rs`, `machine.rs`, `tag/open.rs`, `api.rs` | Current: `tok-simple-tags`, `tok-ae4-malformed-static`. Planned WPT: `tokenizer-end-tag-open`. | Must preserve reconsume semantics across split `</`. | EOF after `</`, non-name after `</`, parse-error fallback path. | Required for balanced close-tag handling. |
+| `TOK-STATE-TAG-NAME` | MVP | `Tag name state` | `#tag-name-state` | `states.rs`, `machine.rs`, `tag/name.rs`, `tag/emit.rs`, `api.rs` | Current: `tok-simple-tags`, `tok-ae4-malformed-static`, WPT `tokenizer-basic`. Planned fixture: `tok-tag-name-case-folding`. | Must not lose partial name token on chunk boundary before whitespace or `>`. | ASCII case folding, NUL replacement, `/` and `>` transitions. | Required for deterministic atomization. |
+| `TOK-STATE-BEFORE-ATTR-NAME` | MVP | `Before attribute name state` | `#before-attribute-name-state` | `states.rs`, `machine.rs`, `tag/attributes.rs` | Current: `tok-attrs-core`, `tok-before-attr-value-transitions`, `tok-ae4-malformed-static`; planned WPT: `tokenizer-attrs-before-after-name`. | Whitespace runs may span chunks with no semantic drift. | whitespace skip, `/` self-closing handoff, `>` early close. | Core attribute parser entry. |
+| `TOK-STATE-ATTR-NAME` | MVP | `Attribute name state` | `#attribute-name-state` | `states.rs`, `machine.rs`, `tag/attributes.rs`, `tag/emit.rs`, `normalization.rs` | Current: `tok-attrs-core`, `tok-ae4-malformed-static`; planned WPT: `tokenizer-attr-name`. | Partial attr names must persist until delimiter appears. | ASCII case fold, NUL replacement, parse-error chars (`"`, `'`, `<`, `=`). | Needed for stable attribute token shape. |
+| `TOK-STATE-AFTER-ATTR-NAME` | MVP | `After attribute name state` | `#after-attribute-name-state` | `states.rs`, `machine.rs`, `tag/attributes.rs`, `api.rs` | Current: `tok-attrs-core`, `tok-before-attr-value-transitions`; planned WPT: `tokenizer-attrs-before-after-name`. | Must not consume `=`/`/`/`>` twice when chunk split lands on delimiter. | repeated separators, implicit missing attr values, close/self-close transitions. | Ensures deterministic attr finalization. |
+| `TOK-STATE-BEFORE-ATTR-VALUE` | MVP | `Before attribute value state` | `#before-attribute-value-state` | `states.rs`, `machine.rs`, `tag/attributes.rs`, `api.rs` | Current: `tok-before-attr-value-transitions`, `tok-ae4-malformed-static`; planned WPT: `tokenizer-before-attr-value`. | Transition dispatch must survive split quote characters. | quoted vs unquoted dispatch, `>` parse-error close. | Dispatch point for value semantics. |
+| `TOK-STATE-ATTR-VALUE-DQ` | MVP | `Attribute value (double-quoted) state` | `#attribute-value-double-quoted-state` | `states.rs`, `machine.rs`, `tag/attributes.rs`, `api.rs` | Current: `tok-attr-value-quoted`; planned WPT: `tokenizer-attr-value-quoted`. | Unterminated quote at chunk end must yield `NeedMoreInput` with intact buffer. | `&` charref dispatch, quote close, embedded control handling. | Required for common attribute syntax. |
+| `TOK-STATE-ATTR-VALUE-SQ` | MVP | `Attribute value (single-quoted) state` | `#attribute-value-single-quoted-state` | `states.rs`, `machine.rs`, `tag/attributes.rs`, `api.rs` | Current: `tok-attr-value-quoted`; planned WPT: `tokenizer-attr-value-quoted`. | Same as DQ; boundary behavior must be symmetric. | `&` charref dispatch, quote close, parse-error recovery. | Required for spec parity on quoted attrs. |
+| `TOK-STATE-ATTR-VALUE-UQ` | MVP | `Attribute value (unquoted) state` | `#attribute-value-unquoted-state` | `states.rs`, `machine.rs`, `tag/attributes.rs`, `normalization.rs` | Current: `tok-attr-value-unquoted`, `tok-ae4-malformed-static`; planned WPT: `tokenizer-attr-value-unquoted`. | Must preserve pending token when encountering split delimiter bytes. | parse-error chars (`"`, `'`, `<`, `=`, `` ` ``), whitespace/value termination. | Required for realistic HTML input tolerance. |
+| `TOK-STATE-AFTER-ATTR-VALUE-QUOTED` | MVP | `After attribute value (quoted) state` | `#after-attribute-value-quoted-state` | `states.rs`, `machine.rs`, `tag/attributes.rs`, `api.rs` | Current: `tok-attr-value-quoted`, `tok-ae4-malformed-static`; planned WPT: `tokenizer-attr-value-quoted`. | Must preserve just-closed attribute state when chunk split lands before whitespace, `/`, or `>`. | missing whitespace between attributes, `/` self-closing handoff, `>` close, EOF. | Required for deterministic quoted-attribute recovery. |
+| `TOK-STATE-SELF-CLOSING-START-TAG` | MVP | `Self-closing start tag state` | `#self-closing-start-tag-state` | `states.rs`, `machine.rs`, `tag/attributes.rs`, `tag/emit.rs`, `api.rs` | Current: `tok-attrs-core`, `tok-ae4-malformed-static`; planned WPT: `tokenizer-self-closing-start-tag`. | Must preserve pending start tag and self-closing flag across split `/>`. | `/>` emission, invalid non-`>` recovery, EOF after `/`. | Required for self-closing flag emission. |
+| `TOK-STATE-MARKUP-DECL-OPEN` | MVP | `Markup declaration open state` | `#markup-declaration-open-state` | `states.rs`, `machine.rs`, `api.rs`, `normalization.rs` | Current: `tok-doctype-comment-smoke`, `tok-comment-core`, `tok-doctype-core`, `tok-ae4-markup-eof-recovery`. | Declaration prefix matching cannot overconsume partial `<!-`/`<!D`. | comment vs doctype dispatch, unknown declaration fallback. | Root dispatch for comment/doctype flows. |
+| `TOK-STATE-COMMENT-CORE` | MVP | `Comment core states` | `#comment-start-state`, `#comment-start-dash-state`, `#comment-state`, `#comment-end-state`, `#comment-end-bang-state` | `states.rs`, `machine.rs`, `comment.rs`, `emit.rs`, `normalization.rs` | Current: `tok-doctype-comment-smoke`, `tok-comment-core`, `tok-ae4-malformed-comment`; planned WPT: `tokenizer-comments`. | Comment temporary data must survive chunk splits around `--`, `!`, and `>`. | EOF in comment, `--!>` malformed close recovery, nested `<` comment sequences. | Required for web-compat error recovery. |
+| `TOK-STATE-BOGUS-COMMENT` | MVP | `Bogus comment state` | `#bogus-comment-state` | `states.rs`, `machine.rs`, `comment.rs`, `emit.rs` | Current: `tok-bogus-comment`, `tok-ae4-malformed-static`, `tok-ae4-markup-eof-recovery`; planned WPT: `tokenizer-bogus-comment`. | Must emit single comment token even when terminator arrives in later chunk. | `<?` and malformed declarations routed here. | Explicit parse-error recovery path. |
+| `TOK-STATE-DOCTYPE` | MVP | `DOCTYPE state` | `#doctype-state` | `states.rs`, `machine.rs`, `doctype.rs`, `normalization.rs` | Current: `tok-doctype-comment-smoke`, `tok-doctype-core`, `tok-ae4-malformed-static`; planned WPT: `tokenizer-doctype-quirks`. | Partial `DOCTYPE` keyword must not mis-route to bogus comment. | case-insensitive keyword handling. | Entry point for standards/quirks tokenization. |
+| `TOK-STATE-BEFORE-DOCTYPE-NAME` | MVP | `Before DOCTYPE name state` | `#before-doctype-name-state` | `states.rs`, `machine.rs`, `doctype.rs`, `api.rs` | Current: `tok-doctype-core`, `tok-doctype-quirks-missing-name`, `tok-ae4-malformed-static`. | Whitespace and EOF boundary behavior must be deterministic. | missing name triggers quirks path. | Needed for correct token fields. |
+| `TOK-STATE-DOCTYPE-NAME` | MVP | `DOCTYPE name state` | `#doctype-name-state` | `states.rs`, `machine.rs`, `doctype.rs`, `emit.rs`, `api.rs` | Current: `tok-doctype-core`, WPT reuse: `tokenizer-basic`. | Name accumulation must survive boundary before close quote/`>`. | case fold, NUL replacement, EOF mid-name. | Core doctype payload correctness. |
+| `TOK-STATE-AFTER-DOCTYPE-NAME` | MVP | `After DOCTYPE name state` | `#after-doctype-name-state` | `states.rs`, `machine.rs`, `doctype.rs` | Current: `tok-doctype-core`, `tok-doctype-public-system`. | Keyword dispatch (`PUBLIC`/`SYSTEM`) must not overconsume on short chunk. | public/system keyword recognition and recovery. | Required for public/system field parsing. |
+| `TOK-STATE-BOGUS-DOCTYPE` | MVP | `Bogus DOCTYPE state` | `#bogus-doctype-state` | `states.rs`, `machine.rs`, `doctype.rs`, `emit.rs` | Current: `tok-doctype-quirks-missing-name`, `tok-ae4-malformed-static`; planned WPT: `tokenizer-doctype-quirks`. | Must preserve `force_quirks=true` through chunked malformed inputs. | malformed public/system IDs, EOF before `>`. | Needed for standards vs quirks token correctness. |
 | `TOK-STATE-CHARREF-ENTRY` | MVP_PARTIAL | `Character reference state` | `#character-reference-state` | `states.rs`, `mod.rs`; delegated table/validation in `crates/html/src/entities.rs` | Planned fixtures: `tok-charrefs-text`, `tok-charrefs-attr`; planned WPT: `tokenizer-charrefs-text`, `tokenizer-charrefs-attr`. | Must checkpoint return state and resume correctly across chunk boundary. | context return rules (data vs attr value). | Charref dispatcher for all supported contexts. |
 | `TOK-STATE-CHARREF-NAMED` | MVP_PARTIAL | `Named character reference state` | `#named-character-reference-state` | `states.rs`, `mod.rs`, `crates/html/src/entities.rs` | Existing hardening tests in `entities.rs` (`html5-entities` feature); planned fixtures above. | Longest-match scan must suspend without data loss on partial name tail. | semicolon rules, legacy forms, attribute restrictions. | Core named reference behavior. |
 | `TOK-STATE-CHARREF-AMBIGUOUS-AMP` | MVP_PARTIAL | `Ambiguous ampersand state` | `#ambiguous-ampersand-state` | `states.rs`, `mod.rs`, `entities.rs` | Planned fixture: `tok-charrefs-attr`. | Return-to-state behavior must be stable under split alnum runs. | text vs attr handling differences. | Needed for spec-correct fallback behavior. |
@@ -139,6 +160,10 @@ Required in Core v0:
 
 ### Character References Scope For Core v0 (`MVP_PARTIAL`)
 
+The active `tok-charrefs-text` and `tok-charrefs-attr` fixtures are
+pre-existing Core-v0 `MVP_PARTIAL` evidence. AE4 does not expand character
+reference support or claim full WHATWG character-reference parity.
+
 - Included contexts:
   - Data text.
   - Attribute value states (`DQ`, `SQ`, `UQ`).
@@ -160,20 +185,23 @@ Status source of truth:
 | Acceptance ID | Core v0 gate | Canonical fixture dir | Status now | WPT reference |
 | --- | --- | --- | --- | --- |
 | `tok-empty-eof` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-empty-eof` | Active | `tokenizer-basic` (EOF) |
-| `tok-basic-text` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-basic-text` | XFail | planned `tokenizer-data-text` |
-| `tok-simple-tags` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-simple-tags` | XFail | `tokenizer-basic` |
-| `tok-doctype-comment-smoke` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-doctype-comment-smoke` | XFail | `tokenizer-basic`, `comments-and-text` proxy |
-| `tok-attrs-core` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-attrs-core` | XFail | `tokenizer-attrs-before-after-name`, `tokenizer-attr-name` |
-| `tok-before-attr-value-transitions` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-before-attr-value-transitions` | XFail | `tokenizer-before-attr-value` |
-| `tok-attr-value-quoted` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-attr-value-quoted` | XFail | `tokenizer-attr-value-quoted` |
-| `tok-attr-value-unquoted` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-attr-value-unquoted` | XFail | `tokenizer-attr-value-unquoted` |
-| `tok-comment-core` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-comment-core` | XFail | `tokenizer-comments` |
-| `tok-bogus-comment` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-bogus-comment` | XFail | `tokenizer-bogus-comment` |
-| `tok-doctype-core` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-doctype-core` | XFail | `tokenizer-doctype-quirks` |
-| `tok-doctype-public-system` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-doctype-public-system` | XFail | `tokenizer-doctype-quirks` |
-| `tok-doctype-quirks-missing-name` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-doctype-quirks-missing-name` | XFail | `tokenizer-doctype-quirks` |
-| `tok-charrefs-text` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-charrefs-text` | XFail | `tokenizer-charrefs-text` |
-| `tok-charrefs-attr` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-charrefs-attr` | XFail | `tokenizer-charrefs-attr` |
+| `tok-basic-text` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-basic-text` | Active | planned `tokenizer-data-text` |
+| `tok-simple-tags` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-simple-tags` | Active | `tokenizer-basic` |
+| `tok-doctype-comment-smoke` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-doctype-comment-smoke` | Active | `tokenizer-basic`, `comments-and-text` proxy |
+| `tok-attrs-core` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-attrs-core` | Active | `tokenizer-attrs-before-after-name`, `tokenizer-attr-name` |
+| `tok-before-attr-value-transitions` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-before-attr-value-transitions` | Active | `tokenizer-before-attr-value` |
+| `tok-attr-value-quoted` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-attr-value-quoted` | Active | `tokenizer-attr-value-quoted` |
+| `tok-attr-value-unquoted` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-attr-value-unquoted` | Active | `tokenizer-attr-value-unquoted` |
+| `tok-comment-core` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-comment-core` | Active | `tokenizer-comments` |
+| `tok-bogus-comment` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-bogus-comment` | Active | `tokenizer-bogus-comment` |
+| `tok-doctype-core` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-doctype-core` | Active | `tokenizer-doctype-quirks` |
+| `tok-doctype-public-system` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-doctype-public-system` | Active | `tokenizer-doctype-quirks` |
+| `tok-doctype-quirks-missing-name` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-doctype-quirks-missing-name` | Active | `tokenizer-doctype-quirks` |
+| `tok-charrefs-text` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-charrefs-text` | Active | `tokenizer-charrefs-text` |
+| `tok-charrefs-attr` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-charrefs-attr` | Active | `tokenizer-charrefs-attr` |
+| `tok-ae4-malformed-static` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-ae4-malformed-static` | Active | none currently vendored |
+| `tok-ae4-markup-eof-recovery` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-ae4-markup-eof-recovery` | Active | none currently vendored |
+| `tok-ae4-malformed-comment` | Yes | `crates/html/tests/fixtures/html5/tokenizer/tok-ae4-malformed-comment` | Active | none currently vendored |
 | `tok-rawtext-style` | Yes (`MVP_PARTIAL`) | `crates/html/tests/fixtures/html5/tokenizer/tok-rawtext-style` | Active | none currently vendored |
 | `tok-rawtext-style-end-tag-attrs-close` | Yes (`MVP_PARTIAL`) | `crates/html/tests/fixtures/html5/tokenizer/tok-rawtext-style-end-tag-attrs-close` | Active | none currently vendored |
 | `tok-rawtext-style-end-tag-slash-close` | Yes (`MVP_PARTIAL`) | `crates/html/tests/fixtures/html5/tokenizer/tok-rawtext-style-end-tag-slash-close` | Active | none currently vendored |
@@ -213,5 +241,8 @@ For HTML5 Core v0:
 - Core-v0 supports RAWTEXT, RCDATA, and the dedicated script tokenizer family (`TOK-STATE-SCRIPT-DATA`, `TOK-STATE-SCRIPT-DATA-ESCAPED`) as `MVP_PARTIAL`.
 - Core-v0 shared text-mode close-tag recognition now includes HTML-space-led attribute tails and `/` self-closing tails for the bounded RAWTEXT/RCDATA/script subset.
 - Script-data escaped and double-escaped families are in scope for Core v0; parser execution/pause semantics remain out of scope.
+- AE4's static-HTML tokenizer work does not promote unsupported tokenizer
+  behavior to full WHATWG parity. Behavior outside the rows and fixtures above
+  remains deferred until explicitly classified and covered.
 - Deferred/out-of-scope WPT cases must not contribute to Core v0 pass/fail gate counts.
 - Any tier changes require an explicit update to this matrix and acceptance table.

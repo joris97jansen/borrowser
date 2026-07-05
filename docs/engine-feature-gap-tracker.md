@@ -427,12 +427,27 @@ Current supported subset:
   regression surfaces. See `docs/html5/spec-matrix-tokenizer.md` and
   `docs/html5/html5-core-v0.md`. This does not claim full WHATWG tokenizer
   conformance or full byte-stream encoding sniffing.
+- AE4 core static-HTML tokenizer states: data, tag open, end tag open, tag
+  name, core attribute states, after quoted attribute value, self-closing start
+  tag, markup declaration open, supported comments, bogus comments, and
+  supported doctypes are implemented/formalized for the declared Core-v0
+  subset. Boolean-style attributes remain missing-value tokenizer attributes,
+  self-closing flags are emitted, malformed common markup records deterministic
+  tokenizer-owned parse-error details, EOF recovery is deterministic, and
+  representative whole-input/chunked tokenizer snapshots cover the supported
+  subset. See `docs/html5/spec-matrix-tokenizer.md` and
+  `docs/html5/html5-core-v0.md`. This does not claim full WHATWG tokenizer
+  parity, JavaScript/script execution semantics, resource loading, or full DOM
+  APIs.
 
 Missing or incomplete:
 
 - full byte-stream encoding sniffing, charset detection, BOM switching, and
   legacy encodings
-- full WHATWG tokenizer state coverage beyond the supported AE/Core-v0 subset
+- full WHATWG character-reference edge parity beyond the existing Core-v0
+  `MVP_PARTIAL` fixture coverage
+- full WHATWG tokenizer state coverage and edge-case parity beyond the
+  supported AE/Core-v0 tokenizer subset
 - full DOM API surface
 - public DOM `DocumentType` API exposure
 - script integration

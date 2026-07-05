@@ -28,6 +28,7 @@ impl Html5Tokenizer {
         let name = self.intern_atom_or_invariant(ctx, atom_text, "tag name");
         if self.current_tag_is_end {
             self.current_tag_self_closing = false;
+            self.current_end_tag_trailing_error_reported = false;
             self.current_tag_attrs.clear();
             self.clear_current_attribute();
             self.emit_token(Token::EndTag { name });
@@ -35,6 +36,7 @@ impl Html5Tokenizer {
             let attrs = std::mem::take(&mut self.current_tag_attrs);
             let self_closing = self.current_tag_self_closing;
             self.current_tag_self_closing = false;
+            self.current_end_tag_trailing_error_reported = false;
             self.clear_current_attribute();
             self.emit_token(Token::StartTag {
                 name,
