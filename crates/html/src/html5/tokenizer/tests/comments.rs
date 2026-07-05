@@ -1,5 +1,8 @@
-use super::helpers::{assert_push_ok, drain_all_fmt, run_chunks, run_chunks_raw_tokens};
-use crate::html5::shared::{DocumentParseContext, Input, Token};
+use super::helpers::{
+    assert_push_ok, drain_all_fmt, run_chunks, run_chunks_raw_tokens,
+    run_chunks_with_config_and_errors,
+};
+use crate::html5::shared::{DocumentParseContext, ErrorOrigin, Input, ParseErrorCode, Token};
 use crate::html5::tokenizer::{Html5Tokenizer, TokenizeResult, TokenizerConfig};
 
 #[test]
@@ -122,7 +125,24 @@ fn malformed_comment_terminator_dash_variants_are_stable() {
     );
     assert_eq!(
         bang_variant,
-        vec!["COMMENT text=\"a--!>\"".to_string(), "EOF".to_string()]
+        vec!["COMMENT text=\"a\"".to_string(), "EOF".to_string()]
+    );
+}
+
+#[test]
+fn malformed_comment_terminator_reports_stable_parse_error() {
+    let (tokens, errors) =
+        run_chunks_with_config_and_errors(TokenizerConfig::default(), &["<!--a--!>"]);
+    assert_eq!(
+        tokens,
+        vec!["COMMENT text=\"a\"".to_string(), "EOF".to_string()]
+    );
+    assert_eq!(errors.len(), 1);
+    assert_eq!(errors[0].origin, ErrorOrigin::Tokenizer);
+    assert_eq!(errors[0].code, ParseErrorCode::Other);
+    assert_eq!(
+        errors[0].detail,
+        Some(super::super::normalization::ERROR_DETAIL_MALFORMED_COMMENT)
     );
 }
 

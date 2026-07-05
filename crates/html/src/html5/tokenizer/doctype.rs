@@ -6,7 +6,7 @@ use super::scan::{
     DoctypeKeywordKind, QuotedParse, is_html_space, is_html_space_byte, match_ascii_prefix_ci_at,
 };
 use super::states::TokenizerState;
-use crate::html5::shared::{DocumentParseContext, Input, Token};
+use crate::html5::shared::{DocumentParseContext, Input, ParseErrorCode, Token};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum DoctypeTailParse {
@@ -21,7 +21,7 @@ pub(crate) enum DoctypeTailParse {
 }
 
 impl Html5Tokenizer {
-    pub(crate) fn step_doctype(&mut self, input: &Input) -> Step {
+    pub(crate) fn step_doctype(&mut self, input: &Input, ctx: &mut DocumentParseContext) -> Step {
         debug_assert_eq!(self.state, TokenizerState::Doctype);
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
@@ -33,6 +33,7 @@ impl Html5Tokenizer {
                 Step::Progress
             }
             Some('>') => {
+                self.record_malformed_doctype(ctx, self.cursor, Some('>' as u32));
                 self.pending_doctype_force_quirks = true;
                 let _ = self.consume_if(input, '>');
                 self.emit_pending_doctype();
@@ -41,6 +42,11 @@ impl Html5Tokenizer {
             }
             Some(_) => {
                 // Core v0 recovery: tolerate missing space before name.
+                self.record_malformed_doctype(
+                    ctx,
+                    self.cursor,
+                    self.peek(input).map(|ch| ch as u32),
+                );
                 self.transition_to(TokenizerState::BeforeDoctypeName);
                 Step::Progress
             }
@@ -48,7 +54,11 @@ impl Html5Tokenizer {
         }
     }
 
-    pub(crate) fn step_before_doctype_name(&mut self, input: &Input) -> Step {
+    pub(crate) fn step_before_doctype_name(
+        &mut self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+    ) -> Step {
         debug_assert_eq!(self.state, TokenizerState::BeforeDoctypeName);
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
@@ -59,6 +69,7 @@ impl Html5Tokenizer {
         }
         match self.peek(input) {
             Some('>') => {
+                self.record_malformed_doctype(ctx, self.cursor, Some('>' as u32));
                 self.pending_doctype_force_quirks = true;
                 let _ = self.consume_if(input, '>');
                 self.emit_pending_doctype();
@@ -141,6 +152,11 @@ impl Html5Tokenizer {
         match self.parse_doctype_after_name_tail(input, ctx) {
             DoctypeTailParse::NeedMoreInput => Step::NeedMoreInput,
             DoctypeTailParse::Malformed => {
+                self.record_malformed_doctype(
+                    ctx,
+                    self.cursor,
+                    self.peek(input).map(|ch| ch as u32),
+                );
                 self.pending_doctype_force_quirks = true;
                 self.transition_to(TokenizerState::BogusDoctype);
                 Step::Progress
@@ -405,6 +421,21 @@ impl Html5Tokenizer {
             position,
             LIMIT_DETAIL_DOCTYPE,
             self.max_doctype_bytes(),
+        );
+    }
+
+    fn record_malformed_doctype(
+        &self,
+        ctx: &mut DocumentParseContext,
+        position: usize,
+        aux: Option<u32>,
+    ) {
+        self.record_tokenizer_parse_error(
+            ctx,
+            ParseErrorCode::Other,
+            position,
+            super::normalization::ERROR_DETAIL_MALFORMED_DOCTYPE,
+            aux,
         );
     }
 

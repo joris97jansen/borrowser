@@ -2,7 +2,7 @@ use super::super::Html5Tokenizer;
 use super::super::machine::Step;
 use super::super::scan::is_tag_name_stop;
 use super::super::states::TokenizerState;
-use crate::html5::shared::{DocumentParseContext, Input};
+use crate::html5::shared::{DocumentParseContext, Input, ParseErrorCode};
 
 impl Html5Tokenizer {
     pub(crate) fn step_tag_name(&mut self, input: &Input, ctx: &mut DocumentParseContext) -> Step {
@@ -46,6 +46,16 @@ impl Html5Tokenizer {
                 }
                 Some(_) => {
                     // End tags do not carry attributes in Core v0; skip until close.
+                    if !self.current_end_tag_trailing_error_reported {
+                        self.record_tokenizer_parse_error(
+                            ctx,
+                            ParseErrorCode::Other,
+                            self.cursor,
+                            super::super::normalization::ERROR_DETAIL_INVALID_END_TAG_TRAILING_CONTENT,
+                            self.peek(input).map(|ch| ch as u32),
+                        );
+                        self.current_end_tag_trailing_error_reported = true;
+                    }
                     let _ = self.consume(input);
                     Step::Progress
                 }

@@ -6,7 +6,9 @@ use super::super::machine::Step;
 use super::super::scan::{is_attribute_name_stop, is_unquoted_attr_value_stop};
 use super::super::states::TokenizerState;
 use crate::entities::decode_entities;
-use crate::html5::shared::{Attribute, AttributeValue, DocumentParseContext, Input, TextSpan};
+use crate::html5::shared::{
+    Attribute, AttributeValue, DocumentParseContext, Input, ParseErrorCode, TextSpan,
+};
 
 impl Html5Tokenizer {
     pub(crate) fn step_before_attribute_name(
@@ -40,6 +42,13 @@ impl Html5Tokenizer {
                 // starts, regardless of how we entered this state (including, but
                 // not limited to, unquoted-value recovery). This keeps name
                 // tokenization deterministic under malformed input.
+                self.record_tokenizer_parse_error(
+                    ctx,
+                    ParseErrorCode::Other,
+                    self.cursor,
+                    super::super::normalization::ERROR_DETAIL_INVALID_ATTRIBUTE_NAME,
+                    self.peek(input).map(|ch| ch as u32),
+                );
                 let _ = self.consume(input);
                 Step::Progress
             }
@@ -176,6 +185,13 @@ impl Html5Tokenizer {
                 Step::Progress
             }
             Some('>') => {
+                self.record_tokenizer_parse_error(
+                    ctx,
+                    ParseErrorCode::Other,
+                    self.cursor,
+                    super::super::normalization::ERROR_DETAIL_INVALID_ATTRIBUTE_VALUE,
+                    Some('>' as u32),
+                );
                 self.begin_current_attribute_value_at_cursor();
                 self.finalize_current_attribute(input, ctx);
                 let _ = self.consume_if(input, '>');
@@ -275,6 +291,13 @@ impl Html5Tokenizer {
             Some('"') | Some('\'') | Some('<') | Some('=') | Some('`') | Some('?') => {
                 // Core v0 recovery: terminate current unquoted value and
                 // reconsume the delimiter in BeforeAttributeName.
+                self.record_tokenizer_parse_error(
+                    ctx,
+                    ParseErrorCode::Other,
+                    self.cursor,
+                    super::super::normalization::ERROR_DETAIL_INVALID_ATTRIBUTE_VALUE,
+                    self.peek(input).map(|ch| ch as u32),
+                );
                 self.finalize_current_attribute(input, ctx);
                 self.transition_to(TokenizerState::BeforeAttributeName);
                 Step::Progress
@@ -318,6 +341,13 @@ impl Html5Tokenizer {
                 Step::Progress
             }
             Some(_) => {
+                self.record_tokenizer_parse_error(
+                    ctx,
+                    ParseErrorCode::Other,
+                    self.cursor,
+                    super::super::normalization::ERROR_DETAIL_MISSING_WHITESPACE_BETWEEN_ATTRIBUTES,
+                    self.peek(input).map(|ch| ch as u32),
+                );
                 self.finalize_current_attribute(input, ctx);
                 self.transition_to(TokenizerState::BeforeAttributeName);
                 Step::Progress
@@ -341,6 +371,13 @@ impl Html5Tokenizer {
             self.transition_to(TokenizerState::Data);
             return Step::Progress;
         }
+        self.record_tokenizer_parse_error(
+            ctx,
+            ParseErrorCode::Other,
+            self.cursor,
+            super::super::normalization::ERROR_DETAIL_INVALID_SELF_CLOSING_START_TAG,
+            self.peek(input).map(|ch| ch as u32),
+        );
         self.transition_to(TokenizerState::BeforeAttributeName);
         Step::Progress
     }
@@ -405,6 +442,7 @@ impl Html5Tokenizer {
                 self.max_attribute_name_bytes(),
             );
         }
+        self.record_attribute_name_parse_errors(ctx, raw_name, name_start);
         let normalized_name = self.replace_nulls_for_token_text(ctx, raw_name, name_start);
         let atom_text = normalized_name.as_deref().unwrap_or(raw_name);
         let name = self.intern_atom_or_invariant(ctx, atom_text, "attribute name");
@@ -463,5 +501,24 @@ impl Html5Tokenizer {
 
         self.current_tag_attrs.push(Attribute { name, value });
         self.clear_current_attribute();
+    }
+
+    fn record_attribute_name_parse_errors(
+        &self,
+        ctx: &mut DocumentParseContext,
+        raw_name: &str,
+        base_position: usize,
+    ) {
+        for (offset, ch) in raw_name.char_indices() {
+            if matches!(ch, '"' | '\'' | '<' | '`') {
+                self.record_tokenizer_parse_error(
+                    ctx,
+                    ParseErrorCode::Other,
+                    base_position + offset,
+                    super::super::normalization::ERROR_DETAIL_INVALID_ATTRIBUTE_NAME,
+                    Some(ch as u32),
+                );
+            }
+        }
     }
 }

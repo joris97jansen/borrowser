@@ -45,6 +45,25 @@ fn core_v0_attribute_states_parse_expected_forms() {
 }
 
 #[test]
+fn boolean_style_attributes_are_snapshot_as_missing_values() {
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<input disabled empty=\"\">");
+
+    assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+    assert_eq!(tokenizer.finish(&input), TokenizeResult::EmittedEof);
+    let tokens = drain_all_fmt(&mut tokenizer, &mut input, &ctx);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=input attrs=[disabled empty=\"\"] self_closing=false".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+}
+
+#[test]
 fn duplicate_attributes_are_dropped_first_wins() {
     let mut ctx = DocumentParseContext::new();
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);

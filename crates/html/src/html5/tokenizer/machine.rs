@@ -217,8 +217,8 @@ impl Html5Tokenizer {
             TokenizerState::ScriptDataDoubleEscapedDashDash => {
                 self.step_script_data_double_escaped_dash_dash(input)
             }
-            TokenizerState::TagOpen => self.step_tag_open(input),
-            TokenizerState::EndTagOpen => self.step_end_tag_open(input),
+            TokenizerState::TagOpen => self.step_tag_open(input, ctx),
+            TokenizerState::EndTagOpen => self.step_end_tag_open(input, ctx),
             TokenizerState::TagName => self.step_tag_name(input, ctx),
             TokenizerState::BeforeAttributeName => self.step_before_attribute_name(input, ctx),
             TokenizerState::AttributeName => self.step_attribute_name(input, ctx),
@@ -243,9 +243,10 @@ impl Html5Tokenizer {
             TokenizerState::Comment => self.step_comment(input, ctx),
             TokenizerState::CommentEndDash => self.step_comment_end_dash(input, ctx),
             TokenizerState::CommentEnd => self.step_comment_end(input, ctx),
+            TokenizerState::CommentEndBang => self.step_comment_end_bang(input, ctx),
             TokenizerState::BogusComment => self.step_bogus_comment(input, ctx),
-            TokenizerState::Doctype => self.step_doctype(input),
-            TokenizerState::BeforeDoctypeName => self.step_before_doctype_name(input),
+            TokenizerState::Doctype => self.step_doctype(input, ctx),
+            TokenizerState::BeforeDoctypeName => self.step_before_doctype_name(input, ctx),
             TokenizerState::DoctypeName => self.step_doctype_name(input, ctx),
             TokenizerState::AfterDoctypeName => self.step_after_doctype_name(input, ctx),
             TokenizerState::BogusDoctype => self.step_bogus_doctype(input),
@@ -296,7 +297,7 @@ impl Html5Tokenizer {
     fn step_markup_declaration_open(
         &mut self,
         input: &Input,
-        _ctx: &mut DocumentParseContext,
+        ctx: &mut DocumentParseContext,
     ) -> Step {
         debug_assert_eq!(self.state, TokenizerState::MarkupDeclarationOpen);
         if !self.has_unconsumed_input(input) {
@@ -334,6 +335,13 @@ impl Html5Tokenizer {
         }
 
         // Core v0: unsupported `<!...` declarations enter bogus comment mode.
+        self.record_tokenizer_parse_error(
+            ctx,
+            crate::html5::shared::ParseErrorCode::Other,
+            self.cursor,
+            super::normalization::ERROR_DETAIL_INVALID_MARKUP_DECLARATION,
+            self.peek(input).map(|ch| ch as u32),
+        );
         self.pending_comment_start = Some(self.cursor);
         self.transition_to(TokenizerState::BogusComment);
         Step::Progress

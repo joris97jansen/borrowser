@@ -10,6 +10,34 @@ fn tokenizer_two_chunks_match_single_chunk_sequence() {
 }
 
 #[test]
+fn ae4_static_html_recovery_cases_are_chunk_invariant() {
+    let samples = [
+        "<!doctype html><p class=\"x\" disabled>Hi</p>",
+        "<input a=1 b='two' c=\"three\"/>",
+        "<!--ok--><p>text</p>",
+        "<!--a--!>tail",
+        "<?bogus?>tail",
+        "<div a=foo\"bar></div>",
+        "<!DOCTYPE>",
+        "<!D",
+        "<div a=\"unfinished",
+    ];
+    for sample in samples {
+        let whole = run_chunks(&[sample]);
+        for split in 1..sample.len() {
+            if !sample.is_char_boundary(split) {
+                continue;
+            }
+            let chunked = run_chunks(&[&sample[..split], &sample[split..]]);
+            assert_eq!(
+                chunked, whole,
+                "token sequence must be chunk-invariant for sample={sample:?} split={split}"
+            );
+        }
+    }
+}
+
+#[test]
 fn tag_open_holds_on_lonely_lt_until_more_input() {
     let mut ctx = DocumentParseContext::new();
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);

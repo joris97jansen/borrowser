@@ -2,10 +2,10 @@ use super::super::Html5Tokenizer;
 use super::super::input::MatchResult;
 use super::super::machine::Step;
 use super::super::states::TokenizerState;
-use crate::html5::shared::Input;
+use crate::html5::shared::{DocumentParseContext, Input, ParseErrorCode};
 
 impl Html5Tokenizer {
-    pub(crate) fn step_tag_open(&mut self, input: &Input) -> Step {
+    pub(crate) fn step_tag_open(&mut self, input: &Input, ctx: &mut DocumentParseContext) -> Step {
         debug_assert_eq!(self.state, TokenizerState::TagOpen);
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
@@ -65,13 +65,36 @@ impl Html5Tokenizer {
                 self.tag_name_complete = false;
                 self.current_tag_is_end = false;
                 self.current_tag_self_closing = false;
+                self.current_end_tag_trailing_error_reported = false;
                 self.current_tag_attrs.clear();
                 self.clear_current_attribute();
                 self.transition_to(TokenizerState::TagName);
                 Step::Progress
             }
+            Some('?') => {
+                self.record_tokenizer_parse_error(
+                    ctx,
+                    ParseErrorCode::Other,
+                    self.cursor,
+                    super::super::normalization::ERROR_DETAIL_INVALID_TAG_OPEN,
+                    Some('?' as u32),
+                );
+                if !self.consume_if(input, '<') {
+                    return Step::NeedMoreInput;
+                }
+                self.pending_comment_start = Some(self.cursor);
+                self.transition_to(TokenizerState::BogusComment);
+                Step::Progress
+            }
             Some(_) => {
                 // Recovery: not a valid tag opener for Core v0, emit `<` as text.
+                self.record_tokenizer_parse_error(
+                    ctx,
+                    ParseErrorCode::Other,
+                    self.cursor,
+                    super::super::normalization::ERROR_DETAIL_INVALID_TAG_OPEN,
+                    self.peek_next_char(input).map(|ch| ch as u32),
+                );
                 if !self.consume_if(input, '<') {
                     return Step::NeedMoreInput;
                 }
@@ -82,7 +105,11 @@ impl Html5Tokenizer {
         }
     }
 
-    pub(crate) fn step_end_tag_open(&mut self, input: &Input) -> Step {
+    pub(crate) fn step_end_tag_open(
+        &mut self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+    ) -> Step {
         debug_assert_eq!(self.state, TokenizerState::EndTagOpen);
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
@@ -94,6 +121,7 @@ impl Html5Tokenizer {
                 self.tag_name_complete = false;
                 self.current_tag_is_end = true;
                 self.current_tag_self_closing = false;
+                self.current_end_tag_trailing_error_reported = false;
                 self.current_tag_attrs.clear();
                 self.clear_current_attribute();
                 self.end_tag_prefix_consumed = false;
@@ -102,6 +130,13 @@ impl Html5Tokenizer {
             }
             Some('>') => {
                 // Recovery for `</>` style malformed end tags.
+                self.record_tokenizer_parse_error(
+                    ctx,
+                    ParseErrorCode::Other,
+                    self.cursor,
+                    super::super::normalization::ERROR_DETAIL_INVALID_END_TAG_OPEN,
+                    Some('>' as u32),
+                );
                 let _ = self.consume_if(input, '>');
                 self.end_tag_prefix_consumed = false;
                 self.transition_to(TokenizerState::Data);
@@ -111,6 +146,13 @@ impl Html5Tokenizer {
                 // Recovery per Core v0: emit consumed `</` as owned text and
                 // reprocess the current non-alpha byte in Data (we do not consume
                 // it here, so Data observes it on the next step).
+                self.record_tokenizer_parse_error(
+                    ctx,
+                    ParseErrorCode::Other,
+                    self.cursor,
+                    super::super::normalization::ERROR_DETAIL_INVALID_END_TAG_OPEN,
+                    self.peek(input).map(|ch| ch as u32),
+                );
                 if self.end_tag_prefix_consumed {
                     self.emit_text_owned("</");
                 } else {

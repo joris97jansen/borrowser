@@ -48,6 +48,10 @@ For Borrowser, "panic-free" means:
   replacement output plus `UnexpectedNullCharacter` diagnostics
 - supported malformed EOF recovery must produce deterministic `UnexpectedEof`
   diagnostics and must not abort parsing
+- supported malformed tag, attribute, markup declaration, comment, and doctype
+  recovery must use deterministic tokenizer-owned diagnostic details such as
+  `invalid-tag-open`, `invalid-attribute-value`, `malformed-comment`, and
+  `malformed-doctype`
 - fuzzing and deterministic corpus replay should not discover panic paths from
   document input alone
 
@@ -80,6 +84,12 @@ Current default limits:
 
 Limit hits record `ParseErrorCode::ResourceLimit` with limit-specific detail
 strings from `crates/html/src/html5/tokenizer/limits.rs`.
+
+Malformed-input recovery that is not a resource-limit hit records stable
+tokenizer-owned diagnostic detail strings from
+`crates/html/src/html5/tokenizer/normalization.rs`. These diagnostics are test
+and debug surfaces; they do not transfer tokenizer recovery ownership to tree
+construction or downstream rendering subsystems.
 
 These limits intentionally prefer:
 - boundedness

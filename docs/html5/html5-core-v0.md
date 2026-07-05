@@ -1,6 +1,6 @@
 # HTML5 Core v0 Supported Subset Contract (Milestone D3)
 
-Last updated: 2026-07-04
+Last updated: 2026-07-05
 Scope: `crates/html/src/html5` (feature `html5`)
 Normative matrix sources:
 - `docs/html5/spec-matrix-tokenizer.md`
@@ -92,6 +92,8 @@ Core v0 tokenizer support includes:
   - `TOK-STATE-ATTR-VALUE-DQ`
   - `TOK-STATE-ATTR-VALUE-SQ`
   - `TOK-STATE-ATTR-VALUE-UQ`
+  - `TOK-STATE-AFTER-ATTR-VALUE-QUOTED`
+  - `TOK-STATE-SELF-CLOSING-START-TAG`
 - Comments and declarations:
   - `TOK-STATE-MARKUP-DECL-OPEN`
   - `TOK-STATE-COMMENT-CORE`
@@ -118,6 +120,9 @@ Character references are guaranteed only in:
 
 - Data text context.
 - Attribute value contexts (`DQ`, `SQ`, `UQ`).
+- This character-reference scope predates AE4 and remains `MVP_PARTIAL`;
+  AE4 does not broaden character-reference behavior or claim full WHATWG
+  character-reference parity.
 - For those contexts, Core v0 guarantees named and numeric decoding behavior exactly as implemented by `crates/html/src/entities.rs`; divergence from that module behavior is an in-scope Core v0 bug.
 - Legacy semicolon-less behavior is contractual only to the extent currently implemented in `entities.rs` for the supported contexts above.
 - Deferred/explicitly out of Core v0 charref parity (unless already covered by `entities.rs` behavior):
@@ -194,6 +199,8 @@ Core v0 attribute behavior guarantees:
 - parser-created attribute storage preserves first-wins encounter order after duplicate removal.
 - duplicate attributes are removed before downstream consumers and snapshots with first-wins semantics on tokenizer-normalized attribute names (for example `a` and `A` are treated as duplicates).
 - missing attribute values are preserved as distinct from explicitly empty values: `disabled` stores no value, while `disabled=""` stores an empty string.
+- tokenizer token snapshots render missing values as bare attributes, for
+  example `disabled`, and explicitly empty values as `disabled=""`.
 - value forms supported: double-quoted, single-quoted, unquoted.
 - character references in attribute values follow Core v0 charref scope and delegate named reference table/validation to `crates/html/src/entities.rs`.
 
@@ -224,6 +231,14 @@ Core v0 parser diagnostics are deterministic internal regression/debug data:
 - parse errors do not automatically abort tokenization or tree construction;
 - supported EOF recovery paths record `UnexpectedEof` while still emitting the
   recoverable token stream defined by the current tokenizer state support;
+- tokenizer-origin malformed tag, attribute, comment, doctype, and declaration
+  recovery may record `ParseErrorCode::Other` with tokenizer-owned stable
+  detail strings such as `invalid-tag-open`, `invalid-attribute-value`,
+  `malformed-comment`, or `malformed-doctype`;
+- unfinished tags, attributes, markup declarations, comments, and doctypes
+  record deterministic EOF diagnostics and do not emit partial start/end tag
+  tokens unless the current state has already reached a complete token
+  boundary;
 - downstream browser/runtime, CSS, Layout, and Paint code must not interpret
   parse-error kinds as rendering semantics.
 
@@ -269,6 +284,8 @@ The following are intentionally not part of the Core v0 guarantee:
 - `OUT_OF_SCOPE`:
   - template insertion mode stack (`TB-ALGO-TEMPLATE-MODES`)
 - `DEFERRED`:
+  - full WHATWG tokenizer behavior outside the tokenizer state families and
+    fixtures explicitly listed in this contract and the tokenizer matrix
   - adoption agency algorithm (`TB-ALGO-AAA`)
   - foster parenting (`TB-ALGO-FOSTER`)
   - full table insertion-mode set (see tree-builder matrix `Early Table Stance`)
