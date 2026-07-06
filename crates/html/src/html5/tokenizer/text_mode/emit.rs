@@ -1,6 +1,6 @@
 use super::super::Html5Tokenizer;
 use super::super::control::TextModeKind;
-use crate::entities::decode_entities;
+use crate::entities::{CharacterReferenceContext, decode_character_references};
 use crate::html5::shared::{DocumentParseContext, Input, TextSpan, TextValue, Token};
 
 impl Html5Tokenizer {
@@ -62,8 +62,9 @@ impl Html5Tokenizer {
             None
         };
         let normalized = null_normalized.as_deref().unwrap_or(raw);
-        let should_decode = self.should_decode_character_references_in_current_text()
-            && normalized.as_bytes().contains(&b'&');
+        let character_reference_context = self.character_reference_context_for_current_text();
+        let should_decode =
+            character_reference_context.is_some() && normalized.as_bytes().contains(&b'&');
         if !should_decode && null_normalized.is_none() {
             self.emit_text_span(start, end);
             return;
@@ -72,8 +73,11 @@ impl Html5Tokenizer {
             self.emit_text_owned(normalized);
             return;
         }
-        let decoded = decode_entities(normalized);
-        match decoded {
+        let decoded = decode_character_references(normalized, character_reference_context.unwrap());
+        if let Some(ctx) = &mut ctx {
+            self.record_character_reference_parse_errors(ctx, start, &decoded.diagnostics);
+        }
+        match decoded.text {
             std::borrow::Cow::Borrowed(_) if null_normalized.is_none() => {
                 self.emit_text_span(start, end)
             }
@@ -88,11 +92,12 @@ impl Html5Tokenizer {
         }
     }
 
-    fn should_decode_character_references_in_current_text(&self) -> bool {
-        !matches!(
-            self.active_text_mode.map(|mode| mode.kind),
-            Some(TextModeKind::RawText | TextModeKind::ScriptData)
-        )
+    fn character_reference_context_for_current_text(&self) -> Option<CharacterReferenceContext> {
+        match self.active_text_mode.map(|mode| mode.kind) {
+            None => Some(CharacterReferenceContext::DataText),
+            Some(TextModeKind::Rcdata) => Some(CharacterReferenceContext::RcdataText),
+            Some(TextModeKind::RawText | TextModeKind::ScriptData) => None,
+        }
     }
 }
 

@@ -439,13 +439,25 @@ Current supported subset:
   `docs/html5/html5-core-v0.md`. This does not claim full WHATWG tokenizer
   parity, JavaScript/script execution semantics, resource loading, or full DOM
   APIs.
+- AE5 character references and special text parsing modes: tokenizer-owned
+  character-reference decoding now has explicit Data text, AttributeValue, and
+  RCDATA contexts for the declared Core-v0 subset. Supported named references
+  are limited to the active minimal semicolon-terminated set, numeric decimal
+  and hexadecimal references recover deterministically, unsupported or malformed
+  references remain literal with tokenizer-owned diagnostics, and RAWTEXT plus
+  script-data preserve entity-looking text literally. `title`, `textarea`,
+  `style`, and inert `script` text modes remain integrated with tokenizer
+  controls, text-mode close matching, EOF recovery, and parser-created DOM text
+  nodes. Script content is represented as inert text only; AE5 does not add
+  JavaScript execution, parser blocking, external script loading,
+  `document.write`, event loop behavior, DOM runtime APIs, or resource loading.
 
 Missing or incomplete:
 
 - full byte-stream encoding sniffing, charset detection, BOM switching, and
   legacy encodings
-- full WHATWG character-reference edge parity beyond the existing Core-v0
-  `MVP_PARTIAL` fixture coverage
+- full WHATWG character-reference edge parity and default full named-entity
+  table activation beyond the active Core-v0 `MVP_PARTIAL` subset
 - full WHATWG tokenizer state coverage and edge-case parity beyond the
   supported AE/Core-v0 tokenizer subset
 - full DOM API surface

@@ -2,6 +2,9 @@ use std::borrow::Cow;
 
 use super::decode_entities;
 use super::numeric::scan_numeric_entity;
+use super::policy::{
+    CharacterReferenceContext, CharacterReferenceDiagnosticKind, decode_character_references,
+};
 
 #[cfg(feature = "html5-entities")]
 use super::html5::HTML5_ENTITIES;
@@ -43,6 +46,19 @@ fn decode_entities_decodes_common_entities() {
     assert_eq!(decode_entities("&quot;hi&quot;").as_ref(), "\"hi\"");
     assert_eq!(decode_entities("&apos;x&apos;").as_ref(), "'x'");
     assert_eq!(decode_entities("a&nbsp;b").as_ref(), "a\u{00A0}b");
+}
+
+#[test]
+fn decode_character_references_uses_explicit_core_v0_contexts() {
+    for context in [
+        CharacterReferenceContext::DataText,
+        CharacterReferenceContext::AttributeValue,
+        CharacterReferenceContext::RcdataText,
+    ] {
+        let decoded = decode_character_references("&amp; &#65; &#x41;", context);
+        assert_eq!(decoded.text.as_ref(), "& A A");
+        assert!(decoded.diagnostics.is_empty());
+    }
 }
 
 #[cfg(feature = "html5-entities")]
@@ -110,6 +126,36 @@ fn decode_entities_passes_through_unknown_and_missing_semicolon() {
 }
 
 #[test]
+fn decode_character_references_reports_unknown_and_missing_named_references() {
+    let decoded = decode_character_references(
+        "&unknown; &amp &notanentity;",
+        CharacterReferenceContext::DataText,
+    );
+    assert_eq!(decoded.text.as_ref(), "&unknown; &amp &notanentity;");
+    let kinds = decoded
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.kind)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        kinds,
+        vec![
+            CharacterReferenceDiagnosticKind::UnknownNamed,
+            CharacterReferenceDiagnosticKind::MissingNamedSemicolon,
+            CharacterReferenceDiagnosticKind::UnknownNamed,
+        ]
+    );
+    assert_eq!(decoded.diagnostics[0].offset, 0);
+    assert_eq!(decoded.diagnostics[1].offset, 10);
+    assert_eq!(decoded.diagnostics[2].offset, 15);
+
+    let ambiguous =
+        decode_character_references("AT&ampT &ampx", CharacterReferenceContext::DataText);
+    assert_eq!(ambiguous.text.as_ref(), "AT&ampT &ampx");
+    assert!(ambiguous.diagnostics.is_empty());
+}
+
+#[test]
 fn decode_entities_passes_through_malformed_numeric() {
     assert_eq!(decode_entities("&#xZZ;").as_ref(), "&#xZZ;");
     assert_eq!(decode_entities("&#99999999;").as_ref(), "&#99999999;");
@@ -121,6 +167,33 @@ fn decode_entities_passes_through_malformed_numeric() {
     assert_eq!(decode_entities("&#123").as_ref(), "&#123");
     assert_eq!(decode_entities("&#;").as_ref(), "&#;");
     assert_eq!(decode_entities("&#x;").as_ref(), "&#x;");
+}
+
+#[test]
+fn decode_character_references_reports_numeric_malformed_recovery() {
+    let decoded = decode_character_references(
+        "&#xZZ; &#12345678; &#xD800; &#65 &#x;",
+        CharacterReferenceContext::DataText,
+    );
+    assert_eq!(
+        decoded.text.as_ref(),
+        "&#xZZ; &#12345678; &#xD800; &#65 &#x;"
+    );
+    let kinds = decoded
+        .diagnostics
+        .iter()
+        .map(|diagnostic| diagnostic.kind)
+        .collect::<Vec<_>>();
+    assert_eq!(
+        kinds,
+        vec![
+            CharacterReferenceDiagnosticKind::MissingNumericDigits,
+            CharacterReferenceDiagnosticKind::NumericTooLong,
+            CharacterReferenceDiagnosticKind::InvalidNumericScalar,
+            CharacterReferenceDiagnosticKind::MissingNumericSemicolon,
+            CharacterReferenceDiagnosticKind::MissingNumericDigits,
+        ]
+    );
 }
 
 #[test]

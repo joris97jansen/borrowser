@@ -5,7 +5,7 @@ use super::super::limits::{
 use super::super::machine::Step;
 use super::super::scan::{is_attribute_name_stop, is_unquoted_attr_value_stop};
 use super::super::states::TokenizerState;
-use crate::entities::decode_entities;
+use crate::entities::{CharacterReferenceContext, decode_character_references};
 use crate::html5::shared::{
     Attribute, AttributeValue, DocumentParseContext, Input, ParseErrorCode, TextSpan,
 };
@@ -481,8 +481,16 @@ impl Html5Tokenizer {
                     } else if !normalized.as_bytes().contains(&b'&') {
                         Some(AttributeValue::Owned(normalized.to_string()))
                     } else {
-                        let decoded = decode_entities(normalized);
-                        match decoded {
+                        let decoded = decode_character_references(
+                            normalized,
+                            CharacterReferenceContext::AttributeValue,
+                        );
+                        self.record_character_reference_parse_errors(
+                            ctx,
+                            start,
+                            &decoded.diagnostics,
+                        );
+                        match decoded.text {
                             std::borrow::Cow::Borrowed(_) if null_normalized.is_none() => {
                                 Some(AttributeValue::Span(TextSpan::new(start, truncated_end)))
                             }

@@ -57,7 +57,9 @@ RAWTEXT, RCDATA, and script:
 - pending text-mode state is fixed-size matcher metadata plus span/index
   bookkeeping into shared decoded input; there is no separately copied
   close-tag-prefix buffer and no copied RAWTEXT/script text buffer
-- RCDATA performs character-reference decoding; RAWTEXT and script do not
+- RCDATA performs tokenizer-context-aware character-reference decoding for the
+  active Core-v0 subset; RAWTEXT and script preserve entity-looking text
+  literally and do not report character-reference parse errors
 - debug / test / `parser_invariants` builds fail fast on tokenizer invariant
   breaches and stall-guardrail violations
 
@@ -73,10 +75,13 @@ for stability are:
 - RAWTEXT is supported for HTML RAWTEXT containers through the shared text-mode
   matcher
 - RCDATA is supported for `title` / `textarea`, including current tokenizer
-  character-reference decoding behavior
+  character-reference decoding behavior for the active Core-v0 subset
 - script uses a dedicated script-data state family, including escaped and
   double-escaped comment-like branches, while still using the shared script
   close-tag matcher
+- script contents are represented as parser-created inert text; this stability
+  contract does not introduce script execution, parser blocking, resource
+  loading, `document.write`, event loop behavior, or DOM runtime APIs
 - close-tag recognition is ASCII case-insensitive on the expected tag name
 - after the matched name, `>`, HTML-space-led attribute continuations, and `/`
   self-closing continuations are treated as real end-tag tails

@@ -1,4 +1,5 @@
 use super::Html5Tokenizer;
+use crate::entities::CharacterReferenceDiagnostic;
 use crate::html5::shared::{DocumentParseContext, ErrorOrigin, ParseError, ParseErrorCode};
 
 pub(super) const ERROR_DETAIL_UNEXPECTED_NULL_CHARACTER: &str = "unexpected-null-character";
@@ -41,6 +42,23 @@ impl Html5Tokenizer {
             detail: Some(detail),
             aux,
         });
+    }
+
+    pub(in crate::html5::tokenizer) fn record_character_reference_parse_errors(
+        &self,
+        ctx: &mut DocumentParseContext,
+        base_position: usize,
+        diagnostics: &[CharacterReferenceDiagnostic],
+    ) {
+        for diagnostic in diagnostics {
+            self.record_tokenizer_parse_error(
+                ctx,
+                ParseErrorCode::InvalidCharacterReference,
+                base_position + diagnostic.offset,
+                diagnostic.kind.detail(),
+                diagnostic.aux,
+            );
+        }
     }
 
     pub(in crate::html5::tokenizer) fn replace_nulls_for_token_text(

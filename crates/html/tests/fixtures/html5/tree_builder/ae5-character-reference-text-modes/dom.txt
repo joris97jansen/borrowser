@@ -1,0 +1,14 @@
+# format: html5-dom-v1
+# status: active
+#document
+  <html>
+    <head>
+      <title>
+        "&unknown; &#xD800; &amp"
+      <style>
+        "&amp; &#xD800;"
+      <script>
+        "&amp; &#xD800;"
+    <body>
+      <p title="&unknown; &#xD800; &amp">
+        "ok"
