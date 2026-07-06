@@ -1,5 +1,9 @@
-use super::helpers::{assert_push_ok, drain_all_fmt, run_chunks};
-use crate::html5::shared::{DocumentParseContext, Input, TextValue, Token};
+use super::helpers::{
+    assert_push_ok, drain_all_fmt, run_chunks, run_chunks_with_config_and_errors,
+};
+use crate::html5::shared::{
+    DocumentParseContext, ErrorOrigin, Input, ParseError, ParseErrorCode, TextValue, Token,
+};
 use crate::html5::tokenizer::{
     Html5Tokenizer, TextResolveError, TextResolver, TokenFmt, TokenizeResult, TokenizerConfig,
 };
@@ -40,6 +44,29 @@ fn data_text_missing_semicolon_entities_remain_literal() {
             "EOF".to_string()
         ]
     );
+}
+
+#[test]
+fn data_text_invalid_character_references_record_parse_errors() {
+    let (tokens, errors) =
+        run_chunks_with_config_and_errors(TokenizerConfig::default(), &["&unknown; &#xZZ; &amp"]);
+    assert_eq!(
+        tokens,
+        vec![
+            "CHAR text=\"&unknown; &#xZZ; &amp\"".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+    assert_invalid_character_reference_details(
+        &errors,
+        &[
+            "unknown-named-character-reference",
+            "missing-digits-in-numeric-character-reference",
+            "missing-semicolon-after-named-character-reference",
+        ],
+    );
+    let positions = invalid_character_reference_positions(&errors);
+    assert_eq!(positions, vec![0, 10, 17]);
 }
 
 #[test]
@@ -106,6 +133,31 @@ fn attribute_values_decode_minimal_character_references() {
 }
 
 #[test]
+fn attribute_invalid_character_references_record_parse_errors() {
+    let (tokens, errors) = run_chunks_with_config_and_errors(
+        TokenizerConfig::default(),
+        &["<p a=\"&unknown;\" b='&#xD800;' c=&amp></p>"],
+    );
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=p attrs=[a=\"&unknown;\" b=\"&#xD800;\" c=\"&amp\"] self_closing=false"
+                .to_string(),
+            "END name=p".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+    assert_invalid_character_reference_details(
+        &errors,
+        &[
+            "unknown-named-character-reference",
+            "invalid-numeric-character-reference",
+            "missing-semicolon-after-named-character-reference",
+        ],
+    );
+}
+
+#[test]
 fn attribute_entity_chunk_split_is_invariant() {
     let whole = run_chunks(&["<p a=\"Tom&amp;Jerry\" b=&#x41;></p>"]);
     let split = run_chunks(&["<p a=\"Tom&am", "p;Jerry\" b=&#x4", "1;></p>"]);
@@ -118,4 +170,29 @@ fn attribute_entity_chunk_split_is_invariant() {
             "EOF".to_string(),
         ]
     );
+}
+
+fn assert_invalid_character_reference_details(
+    errors: &[ParseError],
+    expected_details: &[&'static str],
+) {
+    let details = errors
+        .iter()
+        .filter(|error| error.code == ParseErrorCode::InvalidCharacterReference)
+        .inspect(|error| assert_eq!(error.origin, ErrorOrigin::Tokenizer))
+        .map(|error| {
+            error
+                .detail
+                .expect("character reference errors carry detail")
+        })
+        .collect::<Vec<_>>();
+    assert_eq!(details, expected_details);
+}
+
+fn invalid_character_reference_positions(errors: &[ParseError]) -> Vec<usize> {
+    errors
+        .iter()
+        .filter(|error| error.code == ParseErrorCode::InvalidCharacterReference)
+        .map(|error| error.position)
+        .collect()
 }

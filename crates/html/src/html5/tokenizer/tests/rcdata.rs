@@ -4,6 +4,7 @@ use super::helpers::{
     run_textarea_rcdata_chunks_with_errors, run_title_rcdata_chunks,
     run_title_rcdata_chunks_with_errors,
 };
+use crate::html5::shared::ParseErrorCode;
 
 #[test]
 fn rcdata_title_split_end_tag_is_chunk_invariant_at_every_boundary() {
@@ -129,6 +130,44 @@ fn rcdata_textarea_handles_character_reference_split_across_chunks() {
             "EOF".to_string(),
         ]
     );
+}
+
+#[test]
+fn rcdata_reports_invalid_character_references_in_text_mode() {
+    let (tokens, _, errors) =
+        run_title_rcdata_chunks_with_errors(&["<title>&unknown; &#x110000; &amp</title>"]);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=title attrs=[] self_closing=false".to_string(),
+            "CHAR text=\"&unknown; &#x110000; &amp\"".to_string(),
+            "END name=title".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+    let details = invalid_character_reference_details(&errors);
+    assert_eq!(
+        details,
+        vec![
+            "unknown-named-character-reference",
+            "invalid-numeric-character-reference",
+            "missing-semicolon-after-named-character-reference",
+        ]
+    );
+}
+
+fn invalid_character_reference_details(
+    errors: &[crate::html5::shared::ParseError],
+) -> Vec<&'static str> {
+    errors
+        .iter()
+        .filter(|error| error.code == ParseErrorCode::InvalidCharacterReference)
+        .map(|error| {
+            error
+                .detail
+                .expect("character reference errors carry detail")
+        })
+        .collect()
 }
 
 #[test]

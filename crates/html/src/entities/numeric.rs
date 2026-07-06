@@ -1,6 +1,7 @@
 pub(super) const MAX_HEX_DIGITS: usize = 6; // 0x10FFFF
 pub(super) const MAX_DEC_DIGITS: usize = 7; // 1114111
 
+#[cfg(feature = "html5-entities")]
 pub(super) fn emit_malformed_entity(
     out: &mut String,
     s: &str,
@@ -29,6 +30,7 @@ pub(super) fn emit_malformed_entity(
 }
 
 // Bounded scan to avoid quadratic behavior on adversarial input.
+#[cfg(any(test, feature = "html5-entities"))]
 pub(super) fn scan_numeric_entity(
     bytes: &[u8],
     start: usize,
@@ -65,6 +67,7 @@ pub(super) fn match_bytes(bytes: &[u8], i: usize, pat: &[u8]) -> bool {
     bytes.get(i..i + pat.len()) == Some(pat)
 }
 
+#[cfg(feature = "html5-entities")]
 pub(super) fn decode_numeric_entity(
     bytes: &[u8],
     s: &str,

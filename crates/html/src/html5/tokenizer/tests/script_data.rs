@@ -2,6 +2,7 @@ use super::helpers::{
     assert_script_data_chunk_invariant, assert_text_mode_split_close_tag_regression,
     run_script_data_chunks, run_script_data_chunks_with_errors,
 };
+use crate::html5::shared::ParseErrorCode;
 
 const ESCAPED_SCRIPT_SAMPLE: &str = "<script><!--\nif (window.x) {\n  document.write(\"<script>nested</script>\");\n}\n//--></script>";
 
@@ -113,6 +114,28 @@ fn script_data_mismatched_end_tag_is_emitted_as_text_until_matching_close() {
             "END name=script".to_string(),
             "EOF".to_string(),
         ]
+    );
+}
+
+#[test]
+fn script_data_preserves_reference_looking_text_without_entity_errors() {
+    let input = "<script>const s='&unknown;'; const n='&#xD800;';</script>";
+    assert_script_data_chunk_invariant(input);
+    let (tokens, _, errors) = run_script_data_chunks_with_errors(&[input]);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=script attrs=[] self_closing=false".to_string(),
+            "CHAR text=\"const s='&unknown;'; const n='&#xD800;';\"".to_string(),
+            "END name=script".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+    assert!(
+        errors
+            .iter()
+            .all(|error| error.code != ParseErrorCode::InvalidCharacterReference),
+        "script-data must not report entity parse errors: {errors:?}"
     );
 }
 

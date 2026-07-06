@@ -1,4 +1,4 @@
 # format: html5-token-v1
-CHAR text="& < A A &amp &unknown;\n"
+CHAR text="& < A A &amp &unknown; &#xD800; &#xZZ;\n"
 
 EOF

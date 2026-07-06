@@ -2,6 +2,7 @@ use super::helpers::{
     assert_style_rawtext_chunk_invariant, assert_text_mode_split_close_tag_regression,
     run_style_rawtext_chunks, run_style_rawtext_chunks_with_errors,
 };
+use crate::html5::shared::ParseErrorCode;
 
 #[test]
 fn rawtext_style_split_end_tag_is_chunk_invariant_at_every_boundary() {
@@ -37,6 +38,27 @@ fn rawtext_style_preserves_character_references_literally() {
             "END name=style".to_string(),
             "EOF".to_string(),
         ]
+    );
+}
+
+#[test]
+fn rawtext_style_preserves_invalid_reference_looking_text_without_entity_errors() {
+    let (tokens, _, errors) =
+        run_style_rawtext_chunks_with_errors(&["<style>&unknown; &#xD800; &amp;</style>"]);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=style attrs=[] self_closing=false".to_string(),
+            "CHAR text=\"&unknown; &#xD800; &amp;\"".to_string(),
+            "END name=style".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+    assert!(
+        errors
+            .iter()
+            .all(|error| error.code != ParseErrorCode::InvalidCharacterReference),
+        "RAWTEXT must not report entity parse errors: {errors:?}"
     );
 }
 

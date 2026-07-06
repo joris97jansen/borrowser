@@ -135,10 +135,10 @@ kept documented as deferred, skipped, or outside the declared Core-v0 subset.
 | `TOK-STATE-DOCTYPE-NAME` | MVP | `DOCTYPE name state` | `#doctype-name-state` | `states.rs`, `machine.rs`, `doctype.rs`, `emit.rs`, `api.rs` | Current: `tok-doctype-core`, WPT reuse: `tokenizer-basic`. | Name accumulation must survive boundary before close quote/`>`. | case fold, NUL replacement, EOF mid-name. | Core doctype payload correctness. |
 | `TOK-STATE-AFTER-DOCTYPE-NAME` | MVP | `After DOCTYPE name state` | `#after-doctype-name-state` | `states.rs`, `machine.rs`, `doctype.rs` | Current: `tok-doctype-core`, `tok-doctype-public-system`. | Keyword dispatch (`PUBLIC`/`SYSTEM`) must not overconsume on short chunk. | public/system keyword recognition and recovery. | Required for public/system field parsing. |
 | `TOK-STATE-BOGUS-DOCTYPE` | MVP | `Bogus DOCTYPE state` | `#bogus-doctype-state` | `states.rs`, `machine.rs`, `doctype.rs`, `emit.rs` | Current: `tok-doctype-quirks-missing-name`, `tok-ae4-malformed-static`; planned WPT: `tokenizer-doctype-quirks`. | Must preserve `force_quirks=true` through chunked malformed inputs. | malformed public/system IDs, EOF before `>`. | Needed for standards vs quirks token correctness. |
-| `TOK-STATE-CHARREF-ENTRY` | MVP_PARTIAL | `Character reference state` | `#character-reference-state` | `states.rs`, `mod.rs`; delegated table/validation in `crates/html/src/entities.rs` | Planned fixtures: `tok-charrefs-text`, `tok-charrefs-attr`; planned WPT: `tokenizer-charrefs-text`, `tokenizer-charrefs-attr`. | Must checkpoint return state and resume correctly across chunk boundary. | context return rules (data vs attr value). | Charref dispatcher for all supported contexts. |
-| `TOK-STATE-CHARREF-NAMED` | MVP_PARTIAL | `Named character reference state` | `#named-character-reference-state` | `states.rs`, `mod.rs`, `crates/html/src/entities.rs` | Existing hardening tests in `entities.rs` (`html5-entities` feature); planned fixtures above. | Longest-match scan must suspend without data loss on partial name tail. | semicolon rules, legacy forms, attribute restrictions. | Core named reference behavior. |
-| `TOK-STATE-CHARREF-AMBIGUOUS-AMP` | MVP_PARTIAL | `Ambiguous ampersand state` | `#ambiguous-ampersand-state` | `states.rs`, `mod.rs`, `entities.rs` | Planned fixture: `tok-charrefs-attr`. | Return-to-state behavior must be stable under split alnum runs. | text vs attr handling differences. | Needed for spec-correct fallback behavior. |
-| `TOK-STATE-CHARREF-NUMERIC` | MVP_PARTIAL | `Numeric character reference state family` | `#numeric-character-reference-state`, `#hexadecimal-character-reference-state`, `#decimal-character-reference-state`, `#numeric-character-reference-end-state` | `states.rs`, `mod.rs`, `entities.rs` | Existing numeric hardening in `entities.rs`; planned fixture: `tok-charrefs-text`. | Numeric parse state must hold partial digit runs across chunks. | overflow, surrogate, invalid scalar replacement behavior. | Core numeric reference correctness. |
+| `TOK-STATE-CHARREF-ENTRY` | MVP_PARTIAL | `Character reference state` | `#character-reference-state` | `states.rs`, `mod.rs`; delegated table/validation in `crates/html/src/entities.rs` | Current: `tok-charrefs-text`, `tok-charrefs-attr`, entity unit tests; planned WPT: `tokenizer-charrefs-text`, `tokenizer-charrefs-attr`. | Supported references must remain chunk-equivalent because text/attribute/RCDATA emission uses tokenizer-owned pending spans. | explicit tokenizer contexts: data text, attribute value, and RCDATA; RAWTEXT/script bypass decoding. | Charref dispatcher for all supported contexts. |
+| `TOK-STATE-CHARREF-NAMED` | MVP_PARTIAL | `Named character reference state` | `#named-character-reference-state` | `states.rs`, `mod.rs`, `crates/html/src/entities.rs` | Current: `tok-charrefs-text`, `tok-charrefs-attr`, entity unit tests; existing generated full-table tests remain behind `html5-entities`. | Minimal active named subset is semicolon-terminated and deterministic; unsupported semicolon-terminated names stay literal and report tokenizer-owned diagnostics. | supported names: `amp`, `lt`, `gt`, `quot`, `apos`, `nbsp`; full legacy named-reference table is not active by default. | Core named reference behavior without full WHATWG named-entity parity claims. |
+| `TOK-STATE-CHARREF-AMBIGUOUS-AMP` | MVP_PARTIAL | `Ambiguous ampersand state` | `#ambiguous-ampersand-state` | `states.rs`, `mod.rs`, `entities.rs` | Current: `tok-charrefs-attr`, tokenizer attribute diagnostics. | Return-to-state behavior must be stable under split alnum runs. | attribute context is explicit; AE5 deliberately keeps the minimal semicolon-required policy rather than legacy semicolonless attribute rules. | Needed for deterministic fallback behavior in supported contexts. |
+| `TOK-STATE-CHARREF-NUMERIC` | MVP_PARTIAL | `Numeric character reference state family` | `#numeric-character-reference-state`, `#hexadecimal-character-reference-state`, `#decimal-character-reference-state`, `#numeric-character-reference-end-state` | `states.rs`, `mod.rs`, `entities.rs` | Current: `tok-charrefs-text`, `tok-charrefs-attr`, entity/tokenizer invalid-reference tests. | Numeric parse state must remain chunk-equivalent through pending text/attribute spans. | valid decimal/hex scalar values decode; missing digits, missing semicolons, overlong digit runs, malformed digits, surrogates, and out-of-range scalars stay literal and report deterministic diagnostics. | Core numeric reference correctness. |
 | `TOK-STATE-RAWTEXT` | MVP_PARTIAL | `RAWTEXT state` | `#rawtext-state` | `states.rs`, `text_mode.rs`, `api.rs` | Current fixtures: `tok-rawtext-style`; no WPT slice currently vendored. | Appropriate end-tag buffer must persist across chunked `</sty` + `le>`. | mismatched end-tag fallback to text. | Core-v0 text-mode subset for HTML RAWTEXT containers. |
 | `TOK-STATE-RAWTEXT-END-TAG` | MVP_PARTIAL | `RAWTEXT end tag detection` | `#rawtext-end-tag-open-state`, `#rawtext-end-tag-name-state` | `text_mode.rs`, `scan.rs` | Current fixtures: `tok-rawtext-style`, `tok-rawtext-style-end-tag-attrs-close`, `tok-rawtext-style-end-tag-slash-close`. | Temporary end-tag buffer must be chunk-safe and reset-safe. | ASCII-case-insensitive match; `>`, HTML-space-led attribute tails, and `/` self-closing tails all close in Core v0 once the expected name matches; any other continuation literalizes the candidate. | Required for production-safe RAWTEXT close recognition. |
 | `TOK-STATE-RCDATA` | MVP_PARTIAL | `RCDATA state` | `#rcdata-state` | `states.rs`, `text_mode.rs`, `api.rs` | Current fixtures: `tok-rcdata-title`, `tok-rcdata-textarea`; no WPT slice currently vendored. | Must combine charrefs + appropriate-end-tag logic under chunking. | charrefs in rcdata text, fallback behavior. | Core-v0 text-mode subset for `title`/`textarea`. |
@@ -160,20 +160,36 @@ Required in Core v0:
 
 ### Character References Scope For Core v0 (`MVP_PARTIAL`)
 
-The active `tok-charrefs-text` and `tok-charrefs-attr` fixtures are
-pre-existing Core-v0 `MVP_PARTIAL` evidence. AE4 does not expand character
-reference support or claim full WHATWG character-reference parity.
+AE5 makes the active Core-v0 character-reference behavior explicit without
+claiming full WHATWG character-reference parity.
 
 - Included contexts:
   - Data text.
   - Attribute value states (`DQ`, `SQ`, `UQ`).
+  - RCDATA text for supported `title` and `textarea` text-mode containers.
 - Included forms:
-  - Named references (longest match).
-  - Decimal and hexadecimal numeric references.
+  - Semicolon-terminated named references in the active minimal subset:
+    `amp`, `lt`, `gt`, `quot`, `apos`, and `nbsp`.
+  - Decimal and hexadecimal numeric references for valid Unicode scalar values
+    within the active digit bounds.
+- Recovery and diagnostics:
+  - Unknown semicolon-terminated named references remain literal and record
+    `unknown-named-character-reference`.
+  - Supported names without semicolons remain literal and record
+    `missing-semicolon-after-named-character-reference`.
+  - Malformed numeric references remain literal and record deterministic
+    tokenizer-owned `InvalidCharacterReference` details for missing digits,
+    missing semicolons, malformed digits, overlong digit runs, or invalid
+    scalar values.
 - Delegation contract:
-  - Tokenizer delegates named-reference table and scalar validation behavior to `crates/html/src/entities.rs` and must match that behavior.
+  - Tokenizer delegates named-reference table, numeric validation, and
+    diagnostic classification to `crates/html/src/entities.rs` through explicit
+    tokenizer contexts. Data text, attribute values, and RCDATA call into that
+    API; RAWTEXT and script-data do not.
 - Deferred inside charrefs:
-  - Full legacy named-reference edge matrix beyond the hardened `entities.rs` behavior in current scope.
+  - Full legacy named-reference edge matrix beyond the active minimal subset.
+  - Activating the generated full WHATWG named-entity table for the default
+    tokenizer policy.
 
 ## Acceptance Inventory (Deterministic ID <-> Fixture Mapping)
 

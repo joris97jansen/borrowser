@@ -120,15 +120,30 @@ Character references are guaranteed only in:
 
 - Data text context.
 - Attribute value contexts (`DQ`, `SQ`, `UQ`).
-- This character-reference scope predates AE4 and remains `MVP_PARTIAL`;
-  AE4 does not broaden character-reference behavior or claim full WHATWG
-  character-reference parity.
-- For those contexts, Core v0 guarantees named and numeric decoding behavior exactly as implemented by `crates/html/src/entities.rs`; divergence from that module behavior is an in-scope Core v0 bug.
-- Legacy semicolon-less behavior is contractual only to the extent currently implemented in `entities.rs` for the supported contexts above.
+- RCDATA text for supported `title` and `textarea` text-mode containers.
+- This character-reference scope is `MVP_PARTIAL`; AE5 makes the active
+  behavior deterministic without claiming full WHATWG character-reference
+  parity.
+- For those contexts, Core v0 guarantees named and numeric decoding behavior
+  exactly as implemented by the explicit tokenizer-context API in
+  `crates/html/src/entities.rs`; divergence from that module behavior is an
+  in-scope Core v0 bug.
+- The active named subset is semicolon-terminated `amp`, `lt`, `gt`, `quot`,
+  `apos`, and `nbsp`.
+- Unknown semicolon-terminated named references, supported names missing their
+  semicolon, malformed numeric references, overlong numeric references, and
+  invalid numeric scalar values remain literal and record deterministic
+  tokenizer-owned `InvalidCharacterReference` diagnostics.
+- RAWTEXT and script-data contexts preserve entity-looking text literally and
+  must not call the character-reference decoder.
+- Legacy semicolon-less behavior is not part of the active default tokenizer
+  policy except for deterministic literal recovery diagnostics for supported
+  names missing a semicolon.
 - Deferred/explicitly out of Core v0 charref parity (unless already covered by `entities.rs` behavior):
   - full WHATWG context-sensitive semicolonless named-reference rules in every edge context,
   - attribute-specific ambiguous-ampersand branches beyond the implemented subset,
-  - guaranteed full named-entity table parity beyond the currently shipped decoder behavior.
+  - guaranteed full named-entity table parity beyond the currently active
+    minimal decoder behavior.
 
 <a id="tree-builder-modes-and-algorithms"></a>
 ### Tree Builder Modes And Algorithms
