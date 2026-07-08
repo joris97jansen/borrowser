@@ -10,7 +10,7 @@ tokens_streamed: 19
 span_resolve_count: 5
 patches_emitted: 25
 tokenizer_controls_applied: 2
-digest: 6581980648392813409
+digest: 8005939426465365881
 
 dom:
 #document
@@ -25,4 +25,4 @@ dom:
         <b>
           "world"
         "."
-  "\n"
+    "\n"

@@ -155,7 +155,7 @@ pub struct Html5TreeBuilder {
     pub(in crate::html5::tree_builder) foster_parenting_enabled: bool,
     pub(in crate::html5::tree_builder) pending_table_character_tokens: PendingTableCharacterTokens,
     pub(in crate::html5::tree_builder) pending_tokenizer_control: Option<TokenizerControl>,
-    #[cfg(any(test, feature = "internal-api"))]
+    #[cfg(any(test, feature = "dom-snapshot", feature = "internal-api"))]
     pub(in crate::html5::tree_builder) parse_error_kinds: Vec<&'static str>,
 }
 
@@ -246,7 +246,7 @@ impl Html5TreeBuilder {
             foster_parenting_enabled: false,
             pending_table_character_tokens: PendingTableCharacterTokens::default(),
             pending_tokenizer_control: None,
-            #[cfg(any(test, feature = "internal-api"))]
+            #[cfg(any(test, feature = "dom-snapshot", feature = "internal-api"))]
             parse_error_kinds: Vec::new(),
         })
     }
@@ -411,7 +411,7 @@ impl Html5TreeBuilder {
         }
     }
 
-    #[cfg(any(test, feature = "internal-api"))]
+    #[cfg(any(test, feature = "dom-snapshot", feature = "internal-api"))]
     pub fn take_parse_error_kinds_for_test(&mut self) -> Vec<&'static str> {
         std::mem::take(&mut self.parse_error_kinds)
     }
@@ -433,9 +433,9 @@ impl Html5TreeBuilder {
         _tag: Option<AtomId>,
         _mode: Option<InsertionMode>,
     ) {
-        #[cfg(any(test, feature = "internal-api"))]
+        #[cfg(any(test, feature = "dom-snapshot", feature = "internal-api"))]
         self.parse_error_kinds.push(kind);
-        #[cfg(not(any(test, feature = "internal-api")))]
+        #[cfg(not(any(test, feature = "dom-snapshot", feature = "internal-api")))]
         {
             let _ = kind;
         }

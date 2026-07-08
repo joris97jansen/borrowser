@@ -2,10 +2,11 @@
 # status: active
 # include_parse_errors: true
 #document
+  <!doctype html>
   <html>
     <head>
     <body>
+      <p>
+        "ok"
 parse-errors:
   tree-builder: before-html-implicit-html
-  tree-builder: before-head-implicit-head
-  tree-builder: after-head-implicit-body

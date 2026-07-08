@@ -192,6 +192,55 @@ const TOKENIZER_ACCEPTANCE_CASES: &[AcceptanceCase] = &[
 
 const TREE_BUILDER_ACCEPTANCE_CASES: &[AcceptanceCase] = &[
     tree_builder_case(
+        "tb-ae6-complete-document",
+        "ae6-complete-document",
+        FixtureState::Existing,
+        anchors::TREE_BUILDER_MODES_AND_ALGORITHMS,
+        Some("AE6 complete normal static document fixture."),
+    ),
+    tree_builder_case(
+        "tb-ae6-missing-html",
+        "ae6-missing-html-tag",
+        FixtureState::Existing,
+        anchors::SUPPORTED_TAGS_AND_CONTEXTS_BASELINE,
+        Some("AE6 implicit html creation with parse-error output."),
+    ),
+    tree_builder_case(
+        "tb-ae6-missing-head",
+        "ae6-missing-head-tag",
+        FixtureState::Existing,
+        anchors::SUPPORTED_TAGS_AND_CONTEXTS_BASELINE,
+        Some("AE6 implicit head creation with parse-error output."),
+    ),
+    tree_builder_case(
+        "tb-ae6-missing-body",
+        "ae6-missing-body-tag",
+        FixtureState::Existing,
+        anchors::SUPPORTED_TAGS_AND_CONTEXTS_BASELINE,
+        Some("AE6 implicit body creation with parse-error output."),
+    ),
+    tree_builder_case(
+        "tb-ae6-comments-document-structure",
+        "ae6-comments-document-structure",
+        FixtureState::Existing,
+        anchors::TREE_BUILDER_MODES_AND_ALGORITHMS,
+        Some("AE6 comments across initial, head, body, after-body, and after-after-body modes."),
+    ),
+    tree_builder_case(
+        "tb-ae6-text-before-body",
+        "ae6-text-before-body",
+        FixtureState::Existing,
+        anchors::TREE_BUILDER_MODES_AND_ALGORITHMS,
+        Some("AE6 text before body reprocessed into the implicit body."),
+    ),
+    tree_builder_case(
+        "tb-ae6-eof-in-head",
+        "ae6-eof-in-head",
+        FixtureState::Existing,
+        anchors::TREE_BUILDER_MODES_AND_ALGORITHMS,
+        Some("AE6 EOF recovery through head and body bootstrap."),
+    ),
+    tree_builder_case(
         "tb-initial-doctype",
         "tb-initial-doctype",
         FixtureState::MissingByDesign,

@@ -80,8 +80,9 @@ fn tree_builder_mode_dispatch_transitions_for_representative_sequence() {
             InsertionMode::Text,
         ),
         (Token::EndTag { name: textarea }, InsertionMode::InBody),
-        (Token::EndTag { name: body }, InsertionMode::InBody),
-        (Token::Eof, InsertionMode::InBody),
+        (Token::EndTag { name: body }, InsertionMode::AfterBody),
+        (Token::EndTag { name: html }, InsertionMode::AfterAfterBody),
+        (Token::Eof, InsertionMode::AfterAfterBody),
     ];
 
     for (token, expected_mode) in &cases {
@@ -94,6 +95,114 @@ fn tree_builder_mode_dispatch_transitions_for_representative_sequence() {
             "unexpected insertion mode after token: {token:?}"
         );
     }
+}
+
+#[test]
+fn tree_builder_eof_from_initial_constructs_implicit_document_shell() {
+    use crate::dom_patch::DomPatch;
+    use crate::html5::shared::Token;
+    use crate::html5::tree_builder::modes::InsertionMode;
+
+    let resolver = EmptyResolver;
+    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+
+    let html = ctx
+        .atoms
+        .intern_ascii_folded("html")
+        .expect("atom interning");
+    let body = ctx
+        .atoms
+        .intern_ascii_folded("body")
+        .expect("atom interning");
+
+    let _ = builder
+        .process(&Token::Eof, &ctx.atoms, &resolver)
+        .expect("EOF from initial mode should process");
+
+    let state = builder.state_snapshot();
+    assert_eq!(
+        state.insertion_mode,
+        InsertionMode::InBody,
+        "EOF bootstrap should finish in the body insertion mode"
+    );
+    assert_eq!(
+        state.open_element_names,
+        vec![html, body],
+        "EOF bootstrap should leave implicit <html> and <body> on the SOE"
+    );
+
+    let patches = builder.drain_patches();
+    assert!(
+        patches
+            .iter()
+            .any(|patch| matches!(patch, DomPatch::CreateDocument { .. }))
+    );
+    assert!(patches.iter().any(
+        |patch| matches!(patch, DomPatch::CreateElement { name, .. } if name.as_ref() == "html")
+    ));
+    assert!(patches.iter().any(
+        |patch| matches!(patch, DomPatch::CreateElement { name, .. } if name.as_ref() == "head")
+    ));
+    assert!(patches.iter().any(
+        |patch| matches!(patch, DomPatch::CreateElement { name, .. } if name.as_ref() == "body")
+    ));
+}
+
+#[test]
+fn tree_builder_after_body_and_after_after_body_place_comments_by_mode() {
+    use crate::html5::shared::{TextValue, Token};
+
+    let lines = super::helpers::materialized_dom_lines(&[concat!(
+        "<!doctype html><html><head></head><body>body</body>",
+        "<!--after-body--></html><!--after-html-->"
+    )]);
+
+    assert_eq!(
+        lines,
+        vec![
+            "#document".to_string(),
+            "  <!doctype html>".to_string(),
+            "  <html>".to_string(),
+            "    <head>".to_string(),
+            "    <body>".to_string(),
+            "      \"body\"".to_string(),
+            "    <!-- after-body -->".to_string(),
+            "  <!-- after-html -->".to_string(),
+        ],
+        "after-body comments belong under <html>; after-after-body comments belong under #document"
+    );
+
+    let resolver = EmptyResolver;
+    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+    let body = ctx
+        .atoms
+        .intern_ascii_folded("body")
+        .expect("atom interning");
+
+    for token in [
+        Token::Text {
+            text: TextValue::Owned("x".to_string()),
+        },
+        Token::EndTag { name: body },
+    ] {
+        let _ = builder
+            .process(&token, &ctx.atoms, &resolver)
+            .expect("implicit body close sequence should process");
+    }
+    assert_eq!(
+        builder.state_snapshot().insertion_mode,
+        crate::html5::tree_builder::modes::InsertionMode::AfterBody
+    );
 }
 
 #[test]

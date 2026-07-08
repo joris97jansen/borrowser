@@ -48,7 +48,7 @@ It defines HTML5 Core v0 tree-builder scope and explicitly records deferred and 
   - Core v0: document mode is internal parser state (no dedicated `DomPatch` event).
   - If externalized later, it must be a single deterministic document-level signal.
 
-## Current Repository Baseline (Before D2 Execution)
+## Historical Repository Baseline (Before D2 Execution)
 
 - Tree-builder state is scaffolding only:
   - `crates/html/src/html5/tree_builder/mod.rs` has TODO implementation in `push_token_impl`.
@@ -70,6 +70,8 @@ It defines HTML5 Core v0 tree-builder scope and explicitly records deferred and 
 | `TB-MODE-IN-HEAD` | MVP_PARTIAL | `In head` | `#parsing-main-inhead` | `mod.rs`, `modes.rs` | Planned fixtures: `tb-in-head-meta-title`, `tb-in-head-misnested-head-content`. WPT proxy: `basic-structure`. | Proper handling of head-only tags vs body fallback; limited title/script handling in Core v0. | `tb-in-head-core` | Core head parsing needed; full script/template behavior deferred. |
 | `TB-MODE-AFTER-HEAD` | MVP | `After head` | `#parsing-main-afterhead` | `mod.rs`, `modes.rs` | Current proxy: `tree_builder/simple-element`, WPT `basic-structure`. Planned fixture: `tb-after-head-body-bootstrap`. | Implicit `<body>` insertion; mispositioned head tokens after head close. | `tb-after-head-body-bootstrap` | Required handoff into main body mode. |
 | `TB-MODE-IN-BODY` | MVP | `In body` | `#parsing-main-inbody` | `mod.rs`, `modes.rs`, `stack.rs`, `formatting.rs` | Current: `tree_builder/text`, `tree_builder/simple-element`; WPT: `comments-and-text`, `void-elements`. Planned fixture pack: `tb-in-body-core-inline-block`. | Character token insertion, end-tag matching via SOE, formatting elements hooks, comment insertion; unsupported table-family tags must follow deterministic fallback path without invariant breakage. | `tb-in-body-core` | Main workload mode; required for Core v0 semantics. |
+| `TB-MODE-AFTER-BODY` | MVP | `After body` | `#parsing-main-afterbody` | `mod.rs`, `modes.rs` | Current: `tree_builder/ae6-comments-document-structure`; unit: insertion-mode and SOE recovery tests. | Comments after body, `</html>` handoff, EOF after body, unexpected content reprocessing. | `tb-ae6-after-body` | Required for normal static-document closeout without collapsing back into `In body`. |
+| `TB-MODE-AFTER-AFTER-BODY` | MVP | `After after body` | `#the-after-after-body-insertion-mode` | `mod.rs`, `modes.rs` | Current: `tree_builder/ae6-comments-document-structure`; unit: insertion-mode and SOE recovery tests. | Comments after `</html>`, EOF after document structure, unexpected content reprocessing. | `tb-ae6-after-after-body` | Required for deterministic comments/EOF after the normal document element. |
 | `TB-MODE-TEXT` | MVP_PARTIAL | `Text` | `#the-text-insertion-mode` | `mod.rs`, `modes.rs`, `text_mode.rs` | Current coverage: `tree_builder/tests/text_mode.rs`; planned fixture umbrella: `tb-text-mode-core`. | Return-to-original-mode mechanics, mismatched end tags, and EOF in text mode. | `tb-text-mode-core` | Core-v0 text-mode routing for title/textarea/style and the dedicated script tokenizer family; parser execution/pause behavior remains out of scope. |
 
 ## `TB-MODE-IN-HEAD` Core v0 Partial Scope
@@ -157,7 +159,7 @@ Rationale:
 
 Core v0 tree-builder completion requires:
 
-1. `TB-MODE-INITIAL`, `TB-MODE-BEFORE-HTML`, `TB-MODE-BEFORE-HEAD`, `TB-MODE-AFTER-HEAD`, `TB-MODE-IN-BODY`.
+1. `TB-MODE-INITIAL`, `TB-MODE-BEFORE-HTML`, `TB-MODE-BEFORE-HEAD`, `TB-MODE-AFTER-HEAD`, `TB-MODE-IN-BODY`, `TB-MODE-AFTER-BODY`, and `TB-MODE-AFTER-AFTER-BODY`.
 2. `TB-MODE-IN-HEAD` at `MVP_PARTIAL` scope sufficient for basic document/head routing.
 3. `TB-ALGO-SOE` + `TB-ALGO-QUIRKS-DOCTYPE` + deterministic patch emission contract.
 4. `TB-ALGO-AFE` at `MVP_PARTIAL` scope (basic reconstruction/markers, without full AAA).
@@ -181,9 +183,16 @@ Status source of truth:
 
 | Acceptance ID | Core v0 gate | Canonical fixture dir (planned/current) | Status now | Notes |
 | --- | --- | --- | --- | --- |
-| `tb-empty-smoke` | Yes | current `crates/html/tests/fixtures/html5/tree_builder/empty` | XFail | Document bootstrap smoke. |
-| `tb-text-smoke` | Yes | current `crates/html/tests/fixtures/html5/tree_builder/text` | XFail | Character insertion smoke in body. |
-| `tb-simple-element-smoke` | Yes | current `crates/html/tests/fixtures/html5/tree_builder/simple-element` | XFail | Basic start/end/comment structure. |
+| `tb-empty-smoke` | Yes | current `crates/html/tests/fixtures/html5/tree_builder/empty` | Active | Document bootstrap smoke with implicit shell and parse-error output. |
+| `tb-text-smoke` | Yes | current `crates/html/tests/fixtures/html5/tree_builder/text` | Active | Character insertion smoke in an implicit body with parse-error output. |
+| `tb-simple-element-smoke` | Yes | current `crates/html/tests/fixtures/html5/tree_builder/simple-element` | Active | Basic start/end/comment structure under the implicit shell. |
+| `tb-ae6-complete-document` | Yes | current `crates/html/tests/fixtures/html5/tree_builder/ae6-complete-document` | Active | Complete explicit doctype/html/head/body/content document. |
+| `tb-ae6-missing-html` | Yes | current `crates/html/tests/fixtures/html5/tree_builder/ae6-missing-html-tag` | Active | Implicit html creation with visible parse-error output. |
+| `tb-ae6-missing-head` | Yes | current `crates/html/tests/fixtures/html5/tree_builder/ae6-missing-head-tag` | Active | Implicit head creation with visible parse-error output. |
+| `tb-ae6-missing-body` | Yes | current `crates/html/tests/fixtures/html5/tree_builder/ae6-missing-body-tag` | Active | Implicit body creation with visible parse-error output. |
+| `tb-ae6-comments-document-structure` | Yes | current `crates/html/tests/fixtures/html5/tree_builder/ae6-comments-document-structure` | Active | Comments before, inside, after body, and after html. |
+| `tb-ae6-text-before-body` | Yes | current `crates/html/tests/fixtures/html5/tree_builder/ae6-text-before-body` | Active | Text before body reprocessed into implicit body. |
+| `tb-ae6-eof-in-head` | Yes | current `crates/html/tests/fixtures/html5/tree_builder/ae6-eof-in-head` | Active | EOF recovery from head into deterministic implicit body. |
 | `tb-initial-doctype` | Yes | planned `crates/html/tests/fixtures/html5/tree_builder/tb-initial-doctype` | Planned | Initial mode + doctype routing. |
 | `tb-before-html-implicit-root` | Yes | planned `.../tb-before-html-implicit-root` | Planned | Implicit html element creation. |
 | `tb-before-head-implicit-head` | Yes | planned `.../tb-before-head-implicit-head` | Planned | Implicit head insertion. |
@@ -204,8 +213,6 @@ Status source of truth:
 
 These spec insertion modes exist but are intentionally not Core v0 targets yet:
 
-- `After body`
-- `After after body`
 - `In frameset`
 - `After frameset`
 - `After after frameset`

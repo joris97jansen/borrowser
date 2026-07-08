@@ -14,6 +14,8 @@ pub(crate) enum InsertionMode {
     InHead,
     AfterHead,
     InBody,
+    AfterBody,
+    AfterAfterBody,
     InTable,
     InTableText,
     InCaption,

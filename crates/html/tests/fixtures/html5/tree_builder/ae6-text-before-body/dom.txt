@@ -2,12 +2,14 @@
 # status: active
 # include_parse_errors: true
 #document
+  <!doctype html>
   <html>
     <head>
     <body>
-      "Hello"
+      "lead"
+      <p>
+        "ok"
 parse-errors:
-  tree-builder: initial-unexpected-token
   tree-builder: before-html-implicit-html
   tree-builder: before-head-implicit-head
   tree-builder: in-head-non-whitespace-text-reprocessed

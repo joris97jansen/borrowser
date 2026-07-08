@@ -150,6 +150,18 @@ impl Html5TreeBuilder {
         })
     }
 
+    pub(in crate::html5::tree_builder) fn insert_document_comment(
+        &mut self,
+        token_text: &TextValue,
+        text: &dyn TextResolver,
+    ) -> Result<(), TreeBuilderError> {
+        self.with_structural_mutation(|this| {
+            let resolved = resolve_text_value(token_text, text)?;
+            let document_key = this.ensure_document_created()?;
+            this.append_comment_child(document_key, resolved)
+        })
+    }
+
     fn append_comment_child(
         &mut self,
         parent: PatchKey,

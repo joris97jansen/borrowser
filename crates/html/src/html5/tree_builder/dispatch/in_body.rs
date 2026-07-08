@@ -158,6 +158,13 @@ impl Html5TreeBuilder {
                     );
                 }
             }
+            Token::StartTag { name, .. } if *name == self.known_tags.head => {
+                self.record_parse_error(
+                    "in-body-unexpected-head-start-tag",
+                    Some(*name),
+                    Some(InsertionMode::InBody),
+                );
+            }
             Token::StartTag {
                 name,
                 attrs,
@@ -258,6 +265,45 @@ impl Html5TreeBuilder {
             }
             Token::EndTag { name } if self.known_tags.is_formatting_tag(*name) => {
                 self.handle_in_body_formatting_end_tag(*name, atoms)?;
+            }
+            Token::EndTag { name } if *name == self.known_tags.body => {
+                if self.open_elements.has_in_scope(
+                    self.known_tags.body,
+                    ScopeKind::InScope,
+                    &self.scope_tags,
+                ) {
+                    let _ = self.close_element_in_scope(self.known_tags.body, ScopeKind::InScope);
+                    self.insertion_mode = InsertionMode::AfterBody;
+                } else {
+                    self.record_parse_error(
+                        "in-body-body-end-tag-not-in-scope",
+                        Some(*name),
+                        Some(InsertionMode::InBody),
+                    );
+                }
+            }
+            Token::EndTag { name } if *name == self.known_tags.html => {
+                if self.open_elements.has_in_scope(
+                    self.known_tags.body,
+                    ScopeKind::InScope,
+                    &self.scope_tags,
+                ) {
+                    let _ = self.close_element_in_scope(self.known_tags.body, ScopeKind::InScope);
+                    self.insertion_mode = InsertionMode::AfterBody;
+                    return Ok(DispatchOutcome::Reprocess(InsertionMode::AfterBody));
+                }
+                self.record_parse_error(
+                    "in-body-html-end-tag-without-body",
+                    Some(*name),
+                    Some(InsertionMode::InBody),
+                );
+            }
+            Token::EndTag { name } if *name == self.known_tags.head => {
+                self.record_parse_error(
+                    "in-body-unexpected-head-end-tag",
+                    Some(*name),
+                    Some(InsertionMode::InBody),
+                );
             }
             Token::EndTag { name } => {
                 self.handle_in_body_generic_end_tag(*name);

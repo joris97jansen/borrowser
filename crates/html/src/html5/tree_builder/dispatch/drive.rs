@@ -30,6 +30,10 @@ impl Html5TreeBuilder {
                 InsertionMode::InHead => self.handle_in_head(token, atoms, text)?,
                 InsertionMode::AfterHead => self.handle_after_head(token, atoms, text)?,
                 InsertionMode::InBody => self.handle_in_body(token, atoms, text)?,
+                InsertionMode::AfterBody => self.handle_after_body(token, atoms, text)?,
+                InsertionMode::AfterAfterBody => {
+                    self.handle_after_after_body(token, atoms, text)?
+                }
                 InsertionMode::InTable => self.handle_in_table(token, atoms, text)?,
                 InsertionMode::InTableText => self.handle_in_table_text(token, atoms, text)?,
                 InsertionMode::InCaption => self.handle_in_caption(token, atoms, text)?,

@@ -168,10 +168,22 @@ fn run_tree_builder_impl(
         Ok(dom) => dom,
         Err(err) => return RunOutput::Err(err),
     };
-    RunOutput::Ok(serialize_dom_for_test_with_options(
-        &dom,
-        fixture.expected.options,
-    ))
+    let mut lines = serialize_dom_for_test_with_options(&dom, fixture.expected.options);
+    if fixture.expected.include_parse_errors {
+        append_parse_error_lines(&mut lines, builder.take_parse_error_kinds_for_test());
+    }
+    RunOutput::Ok(lines)
+}
+
+fn append_parse_error_lines(lines: &mut Vec<String>, errors: Vec<&'static str>) {
+    if errors.is_empty() {
+        lines.push("parse-errors: none".to_string());
+        return;
+    }
+    lines.push("parse-errors:".to_string());
+    for error in errors {
+        lines.push(format!("  tree-builder: {error}"));
+    }
 }
 
 fn pump_tokenizer_until_blocked(

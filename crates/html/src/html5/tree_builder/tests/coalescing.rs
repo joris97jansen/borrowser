@@ -136,6 +136,85 @@ fn tree_builder_coalescing_merges_adjacent_text_tokens_under_same_parent() {
 }
 
 #[test]
+fn tree_builder_coalescing_merges_text_reprocessed_into_implicit_body() {
+    use crate::dom_patch::DomPatch;
+    use crate::html5::shared::{TextValue, Token};
+
+    let resolver = EmptyResolver;
+    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig {
+            coalesce_text: true,
+            ..crate::html5::tree_builder::TreeBuilderConfig::default()
+        },
+        &mut ctx,
+    )
+    .expect("tree builder init");
+
+    for token in [
+        Token::Text {
+            text: TextValue::Owned("a".to_string()),
+        },
+        Token::Text {
+            text: TextValue::Owned("b".to_string()),
+        },
+        Token::Eof,
+    ] {
+        let _ = builder
+            .process(&token, &ctx.atoms, &resolver)
+            .expect("implicit body coalescing sequence should process");
+    }
+
+    let patches = builder.drain_patches();
+    let text_values: Vec<_> = patches
+        .iter()
+        .filter_map(|patch| match patch {
+            DomPatch::CreateText { text, .. } => Some(text.clone()),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        text_values,
+        vec!["a".to_string()],
+        "initial text should be reprocessed into the implicit body once"
+    );
+
+    let append_values: Vec<_> = patches
+        .into_iter()
+        .filter_map(|patch| match patch {
+            DomPatch::AppendText { text, .. } => Some(text),
+            _ => None,
+        })
+        .collect();
+    assert_eq!(
+        append_values,
+        vec!["b".to_string()],
+        "adjacent text after implicit body creation should preserve coalescing"
+    );
+}
+
+#[test]
+fn tree_builder_implicit_body_text_is_chunk_equivalent() {
+    let whole = super::helpers::materialized_dom_lines(&["ab"]);
+    let chunked = super::helpers::materialized_dom_lines(&["a", "b"]);
+
+    assert_eq!(
+        whole, chunked,
+        "implicit body text must produce the same DOM for whole and chunked input"
+    );
+    assert_eq!(
+        whole,
+        vec![
+            "#document".to_string(),
+            "  <html>".to_string(),
+            "    <head>".to_string(),
+            "    <body>".to_string(),
+            "      \"ab\"".to_string(),
+        ]
+    );
+}
+
+#[test]
 fn tree_builder_coalescing_does_not_cross_parent_change_after_pop() {
     use crate::dom_patch::DomPatch;
     use crate::html5::shared::{TextValue, Token};

@@ -1,0 +1,13 @@
+# format: html5-dom-v1
+# status: active
+# include_parse_errors: true
+#document
+  <!doctype html>
+  <html>
+    <head>
+    <body>
+      <main>
+        <p>
+          "Hello"
+        <!-- body -->
+parse-errors: none
