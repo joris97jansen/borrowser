@@ -157,6 +157,8 @@ Core v0 tree-builder support includes:
   - `TB-MODE-IN-HEAD` (`MVP_PARTIAL`)
   - `TB-MODE-AFTER-HEAD`
   - `TB-MODE-IN-BODY`
+  - `TB-MODE-AFTER-BODY`
+  - `TB-MODE-AFTER-AFTER-BODY`
 - Algorithms/invariants:
   - `TB-ALGO-REPROCESS`
   - `TB-ALGO-SOE`
@@ -193,12 +195,20 @@ Core v0 guarantees the following tag/context baseline:
 
 - Document bootstrap context:
   - implicit or explicit `html`, `head`, and `body` routing in early insertion modes.
+  - EOF in `Initial`, `Before html`, `Before head`, `In head`, and `After head`
+    creates the supported implicit document shell deterministically.
+  - missing `html`, `head`, and `body` shell construction records
+    deterministic tree-builder diagnostics in debug fixture output.
 - Head context (`TB-MODE-IN-HEAD`, partial):
   - guaranteed routing for `meta`, `link`, `base`.
   - guaranteed minimal `title` routing behavior.
   - comments and whitespace handling in head flow.
 - Body context (`TB-MODE-IN-BODY`):
   - character insertion, comment insertion, and generic element insertion path for non-deferred constructs.
+  - supported `body`/`html` end-tag handling transitions through explicit
+    `After body` and `After after body` modes for normal static documents.
+  - comments after `</body>` are inserted under the `html` element; comments
+    after `</html>` are inserted under the document node.
   - deterministic fallback behavior for unsupported table-family tags (robustness contract).
   - unknown or unsupported elements outside table-family MUST follow the generic element insertion path defined by `TB-MODE-IN-BODY`.
   - this unknown/unsupported-element rule applies only when the behavior is not explicitly marked `OUT_OF_SCOPE` with `skip` policy semantics (for example, template insertion mode stack behavior).
@@ -256,6 +266,9 @@ Core v0 parser diagnostics are deterministic internal regression/debug data:
   boundary;
 - downstream browser/runtime, CSS, Layout, and Paint code must not interpret
   parse-error kinds as rendering semantics.
+- DOM golden fixtures may opt into tree-builder parse-error output with
+  `# include_parse_errors: true`; this is a deterministic regression/debug
+  surface and not a public runtime diagnostics API.
 
 ### Script/RAWTEXT/RCDATA Stance
 

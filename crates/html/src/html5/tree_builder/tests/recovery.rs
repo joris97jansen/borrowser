@@ -291,6 +291,72 @@ fn tree_builder_in_body_stray_end_tag_does_not_mutate_open_elements_stack() {
 }
 
 #[test]
+fn tree_builder_body_and_html_end_tags_advance_after_body_modes_via_soe() {
+    use crate::html5::shared::Token;
+    use crate::html5::tree_builder::modes::InsertionMode;
+
+    let resolver = EmptyResolver;
+    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+
+    let _ = super::helpers::enter_in_body(&mut builder, &mut ctx, &resolver);
+    let html = ctx
+        .atoms
+        .intern_ascii_folded("html")
+        .expect("atom interning");
+    let body = ctx
+        .atoms
+        .intern_ascii_folded("body")
+        .expect("atom interning");
+    let div = ctx
+        .atoms
+        .intern_ascii_folded("div")
+        .expect("atom interning");
+
+    let _ = builder
+        .process(
+            &Token::StartTag {
+                name: div,
+                attrs: Vec::new(),
+                self_closing: false,
+            },
+            &ctx.atoms,
+            &resolver,
+        )
+        .expect("nested body element should process");
+    assert_eq!(
+        builder.state_snapshot().open_element_names,
+        vec![html, body, div]
+    );
+
+    let _ = builder
+        .process(&Token::EndTag { name: body }, &ctx.atoms, &resolver)
+        .expect("</body> should close body scope");
+    let after_body = builder.state_snapshot();
+    assert_eq!(after_body.insertion_mode, InsertionMode::AfterBody);
+    assert_eq!(
+        after_body.open_element_names,
+        vec![html],
+        "</body> should pop nested body content and body, leaving html open"
+    );
+
+    let _ = builder
+        .process(&Token::EndTag { name: html }, &ctx.atoms, &resolver)
+        .expect("</html> should enter AfterAfterBody from AfterBody");
+    let after_html = builder.state_snapshot();
+    assert_eq!(after_html.insertion_mode, InsertionMode::AfterAfterBody);
+    assert_eq!(
+        after_html.open_element_names,
+        vec![html],
+        "</html> switches insertion mode but does not create a second SOE"
+    );
+}
+
+#[test]
 fn tree_builder_after_head_stray_end_tag_reports_error_without_forcing_body() {
     use crate::html5::shared::Token;
 

@@ -451,6 +451,18 @@ Current supported subset:
   nodes. Script content is represented as inert text only; AE5 does not add
   JavaScript execution, parser blocking, external script loading,
   `document.write`, event loop behavior, DOM runtime APIs, or resource loading.
+- AE6 core tree construction: the HTML tree builder now has explicit
+  `Initial`, `Before html`, `Before head`, `In head`, `After head`, `In body`,
+  `After body`, and `After after body` insertion-mode handling for the normal
+  static-document subset. Parser-created document, doctype, `html`, `head`,
+  `body`, generic body elements, text, and comments are constructed through the
+  existing tree-builder state machine and stack of open elements. Missing
+  `html`/`head`/`body` shell structure recovers deterministically with
+  regression-visible parser diagnostics in fixtures, and comments/text around
+  document structure are covered by stable DOM snapshots. AE6 does not claim
+  full tree-construction conformance, tables/foster parenting, templates,
+  framesets, foreign content, scripting, DOM APIs, navigation, resource
+  loading, CSS/layout/paint behavior, or rendering integration changes.
 
 Missing or incomplete:
 
@@ -460,6 +472,9 @@ Missing or incomplete:
   table activation beyond the active Core-v0 `MVP_PARTIAL` subset
 - full WHATWG tokenizer state coverage and edge-case parity beyond the
   supported AE/Core-v0 tokenizer subset
+- full WHATWG tree-construction coverage beyond the AE6 normal static-document
+  subset, including advanced insertion modes and malformed-markup recovery
+  outside the documented Core-v0 scope
 - full DOM API surface
 - public DOM `DocumentType` API exposure
 - script integration

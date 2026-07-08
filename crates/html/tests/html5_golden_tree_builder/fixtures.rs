@@ -13,6 +13,7 @@ pub(super) struct ExpectedDom {
     pub(super) status: FixtureStatus,
     pub(super) reason: Option<String>,
     pub(super) options: DomSnapshotOptions,
+    pub(super) include_parse_errors: bool,
     pub(super) lines: Vec<String>,
 }
 
@@ -135,7 +136,12 @@ fn parse_dom_file(path: &Path) -> ExpectedDom {
                 let value = value.trim().to_string();
                 if !matches!(
                     key.as_str(),
-                    "format" | "status" | "reason" | "ignore_ids" | "ignore_empty_style"
+                    "format"
+                        | "status"
+                        | "reason"
+                        | "ignore_ids"
+                        | "ignore_empty_style"
+                        | "include_parse_errors"
                 ) {
                     panic!("unknown header '{key}' in {path:?}");
                 }
@@ -169,6 +175,7 @@ fn parse_dom_file(path: &Path) -> ExpectedDom {
         ignore_ids: header_bool(&headers, "ignore_ids", true, path),
         ignore_empty_style: header_bool(&headers, "ignore_empty_style", true, path),
     };
+    let include_parse_errors = header_bool(&headers, "include_parse_errors", false, path);
 
     if lines.is_empty() {
         panic!("dom file {path:?} has no snapshot lines");
@@ -188,6 +195,7 @@ fn parse_dom_file(path: &Path) -> ExpectedDom {
         status,
         reason,
         options,
+        include_parse_errors,
         lines,
     }
 }

@@ -14,6 +14,7 @@ Each fixture is a directory containing:
 - Optional headers:
   - `# ignore_ids: true | false` (default `true`)
   - `# ignore_empty_style: true | false` (default `true`)
+  - `# include_parse_errors: true | false` (default `false`)
 
 Snapshot lines:
 
@@ -64,6 +65,15 @@ Core F11 coverage baseline:
 - nested element structure and in-body ordering,
 - text coalescing semantics under whole + chunked + seeded-fuzz input delivery.
 
+AE6 coverage baseline:
+
+- explicit document, `html`, `head`, `body`, comment, text, and normal generic
+  body element construction,
+- implicit `html`, `head`, and `body` recovery with visible parse-error output,
+- explicit `After body` and `After after body` comment placement,
+- EOF recovery in common document-shell states,
+- text before body reprocessed into the implicit body.
+
 Node line grammar (examples):
 
 - Document: `#document`
@@ -75,6 +85,17 @@ Node line grammar (examples):
 Comment serialization rule:
 
 - Comments are serialized as `<!-- {text} -->` with single surrounding spaces.
+
+Parse-error output:
+
+- Fixtures that set `# include_parse_errors: true` append deterministic
+  tree-builder diagnostic lines after the DOM snapshot.
+- No-error fixtures append `parse-errors: none`.
+- Error fixtures append:
+  - `parse-errors:`
+  - one `  tree-builder: <kind>` line per diagnostic, in parser-observed order.
+- This is a regression/debug surface for parser recovery behavior, not a public
+  runtime diagnostics API.
 
 Escaping rules (for doctype/text/attributes/comments):
 

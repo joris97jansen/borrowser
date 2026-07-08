@@ -43,12 +43,8 @@ impl Html5TreeBuilder {
                 }
             }
             Token::Eof => {
-                let had_bootstrap_document = self.document_key.is_some();
                 let _ = self.ensure_document_created()?;
-                if had_bootstrap_document {
-                    return Ok(DispatchOutcome::Reprocess(InsertionMode::BeforeHtml));
-                }
-                Ok(DispatchOutcome::Done)
+                Ok(DispatchOutcome::Reprocess(InsertionMode::BeforeHtml))
             }
             _ => {
                 self.record_parse_error("initial-unexpected-token", None, None);
@@ -96,11 +92,21 @@ impl Html5TreeBuilder {
                 Ok(DispatchOutcome::Done)
             }
             Token::Eof => {
+                self.record_parse_error(
+                    "before-html-implicit-html",
+                    None,
+                    Some(InsertionMode::BeforeHtml),
+                );
                 let _ = self.insert_element(self.known_tags.html, &[], false, atoms, text)?;
                 self.insertion_mode = InsertionMode::BeforeHead;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::BeforeHead))
             }
             _ => {
+                self.record_parse_error(
+                    "before-html-implicit-html",
+                    None,
+                    Some(InsertionMode::BeforeHtml),
+                );
                 let _ = self.insert_element(self.known_tags.html, &[], false, atoms, text)?;
                 self.insertion_mode = InsertionMode::BeforeHead;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::BeforeHead))
@@ -147,11 +153,21 @@ impl Html5TreeBuilder {
                 Ok(DispatchOutcome::Done)
             }
             Token::Eof => {
+                self.record_parse_error(
+                    "before-head-implicit-head",
+                    None,
+                    Some(InsertionMode::BeforeHead),
+                );
                 let _ = self.insert_element(self.known_tags.head, &[], false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InHead;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InHead))
             }
             _ => {
+                self.record_parse_error(
+                    "before-head-implicit-head",
+                    None,
+                    Some(InsertionMode::BeforeHead),
+                );
                 let _ = self.insert_element(self.known_tags.head, &[], false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InHead;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InHead))
@@ -291,6 +307,40 @@ impl Html5TreeBuilder {
                 self.insertion_mode = InsertionMode::InBody;
                 Ok(DispatchOutcome::Done)
             }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } if *name == self.known_tags.html => {
+                self.record_parse_error(
+                    "after-head-unexpected-html-start-tag",
+                    Some(*name),
+                    Some(InsertionMode::AfterHead),
+                );
+                if !attrs.is_empty() {
+                    self.record_parse_error(
+                        "html-start-tag-attributes-ignored",
+                        Some(*name),
+                        Some(InsertionMode::AfterHead),
+                    );
+                }
+                if *self_closing {
+                    self.record_parse_error(
+                        "html-start-tag-self-closing-ignored",
+                        Some(*name),
+                        Some(InsertionMode::AfterHead),
+                    );
+                }
+                Ok(DispatchOutcome::Done)
+            }
+            Token::StartTag { name, .. } if *name == self.known_tags.head => {
+                self.record_parse_error(
+                    "after-head-unexpected-head-start-tag",
+                    Some(*name),
+                    Some(InsertionMode::AfterHead),
+                );
+                Ok(DispatchOutcome::Done)
+            }
             Token::Doctype { .. } => {
                 self.record_parse_error("after-head-doctype", None, Some(InsertionMode::AfterHead));
                 Ok(DispatchOutcome::Done)
@@ -306,6 +356,18 @@ impl Html5TreeBuilder {
                 );
                 Ok(DispatchOutcome::Done)
             }
+            Token::EndTag { name }
+                if *name == self.known_tags.body || *name == self.known_tags.html =>
+            {
+                self.record_parse_error(
+                    "after-head-implicit-body",
+                    None,
+                    Some(InsertionMode::AfterHead),
+                );
+                let _ = self.insert_element(self.known_tags.body, &[], false, atoms, text)?;
+                self.insertion_mode = InsertionMode::InBody;
+                Ok(DispatchOutcome::Reprocess(InsertionMode::InBody))
+            }
             Token::EndTag { name } => {
                 self.record_parse_error(
                     "after-head-unexpected-end-tag",
@@ -315,12 +377,120 @@ impl Html5TreeBuilder {
                 Ok(DispatchOutcome::Done)
             }
             Token::Eof => {
+                self.record_parse_error(
+                    "after-head-implicit-body",
+                    None,
+                    Some(InsertionMode::AfterHead),
+                );
                 let _ = self.insert_element(self.known_tags.body, &[], false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InBody;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InBody))
             }
             _ => {
+                self.record_parse_error(
+                    "after-head-implicit-body",
+                    None,
+                    Some(InsertionMode::AfterHead),
+                );
                 let _ = self.insert_element(self.known_tags.body, &[], false, atoms, text)?;
+                self.insertion_mode = InsertionMode::InBody;
+                Ok(DispatchOutcome::Reprocess(InsertionMode::InBody))
+            }
+        }
+    }
+
+    pub(in crate::html5::tree_builder) fn handle_after_body(
+        &mut self,
+        token: &Token,
+        _atoms: &AtomTable,
+        text: &dyn TextResolver,
+    ) -> Result<DispatchOutcome, TreeBuilderError> {
+        match token {
+            Token::Text { text: token_text } if is_html_whitespace_text(token_text, text)? => {
+                self.insert_text(token_text, text)?;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::Comment { text: token_text } => {
+                self.insert_comment(token_text, text)?;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::Doctype { .. } => {
+                self.record_parse_error("after-body-doctype", None, Some(InsertionMode::AfterBody));
+                Ok(DispatchOutcome::Done)
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } if *name == self.known_tags.html => {
+                self.record_parse_error(
+                    "after-body-unexpected-html-start-tag",
+                    Some(*name),
+                    Some(InsertionMode::AfterBody),
+                );
+                if !attrs.is_empty() {
+                    self.record_parse_error(
+                        "html-start-tag-attributes-ignored",
+                        Some(*name),
+                        Some(InsertionMode::AfterBody),
+                    );
+                }
+                if *self_closing {
+                    self.record_parse_error(
+                        "html-start-tag-self-closing-ignored",
+                        Some(*name),
+                        Some(InsertionMode::AfterBody),
+                    );
+                }
+                Ok(DispatchOutcome::Done)
+            }
+            Token::EndTag { name } if *name == self.known_tags.html => {
+                self.insertion_mode = InsertionMode::AfterAfterBody;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::Eof => Ok(DispatchOutcome::Done),
+            _ => {
+                self.record_parse_error("after-body-unexpected-token", None, None);
+                self.insertion_mode = InsertionMode::InBody;
+                Ok(DispatchOutcome::Reprocess(InsertionMode::InBody))
+            }
+        }
+    }
+
+    pub(in crate::html5::tree_builder) fn handle_after_after_body(
+        &mut self,
+        token: &Token,
+        _atoms: &AtomTable,
+        text: &dyn TextResolver,
+    ) -> Result<DispatchOutcome, TreeBuilderError> {
+        match token {
+            Token::Comment { text: token_text } => {
+                self.insert_document_comment(token_text, text)?;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::Text { text: token_text } if is_html_whitespace_text(token_text, text)? => {
+                self.insert_text(token_text, text)?;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::Doctype { .. } => {
+                self.record_parse_error(
+                    "after-after-body-doctype",
+                    None,
+                    Some(InsertionMode::AfterAfterBody),
+                );
+                Ok(DispatchOutcome::Done)
+            }
+            Token::StartTag { name, .. } if *name == self.known_tags.html => {
+                self.record_parse_error(
+                    "after-after-body-unexpected-html-start-tag",
+                    Some(*name),
+                    Some(InsertionMode::AfterAfterBody),
+                );
+                Ok(DispatchOutcome::Done)
+            }
+            Token::Eof => Ok(DispatchOutcome::Done),
+            _ => {
+                self.record_parse_error("after-after-body-unexpected-token", None, None);
                 self.insertion_mode = InsertionMode::InBody;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InBody))
             }

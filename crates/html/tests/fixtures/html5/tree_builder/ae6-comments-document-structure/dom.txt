@@ -1,0 +1,14 @@
+# format: html5-dom-v1
+# status: active
+# include_parse_errors: true
+#document
+  <!-- before -->
+  <!doctype html>
+  <html>
+    <head>
+      <!-- head -->
+    <body>
+      <!-- body -->
+    <!-- after-body -->
+  <!-- after-html -->
+parse-errors: none

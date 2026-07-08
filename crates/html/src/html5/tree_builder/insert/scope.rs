@@ -62,7 +62,7 @@ impl Html5TreeBuilder {
         self.insertion_mode = if name == self.known_tags.head {
             InsertionMode::AfterHead
         } else if name == self.known_tags.body {
-            InsertionMode::InBody
+            InsertionMode::AfterBody
         } else {
             self.insertion_mode
         };
