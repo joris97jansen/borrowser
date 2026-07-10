@@ -39,6 +39,69 @@ impl Html5TreeBuilder {
         self.insert_in_body_formatting_element(name, attrs, self_closing, atoms, text)
     }
 
+    fn insert_in_body_plain_element(
+        &mut self,
+        name: AtomId,
+        attrs: &[crate::html5::shared::Attribute],
+        self_closing: bool,
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
+    ) -> Result<(), TreeBuilderError> {
+        let inserted = self.insert_element(name, attrs, self_closing, atoms, text)?;
+        if inserted.is_some() {
+            self.update_mode_for_start_tag(name);
+        }
+        Ok(())
+    }
+
+    fn handle_in_body_hr_start_tag(
+        &mut self,
+        name: AtomId,
+        attrs: &[crate::html5::shared::Attribute],
+        self_closing: bool,
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
+    ) -> Result<(), TreeBuilderError> {
+        let _ = self.close_p_before_ae7_block_start();
+        self.insert_in_body_plain_element(name, attrs, self_closing, atoms, text)
+    }
+
+    fn handle_in_body_pre_start_tag(
+        &mut self,
+        name: AtomId,
+        attrs: &[crate::html5::shared::Attribute],
+        self_closing: bool,
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
+    ) -> Result<(), TreeBuilderError> {
+        let _ = self.close_p_before_ae7_block_start();
+        self.insert_in_body_plain_element(name, attrs, self_closing, atoms, text)
+    }
+
+    fn handle_in_body_heading_start_tag(
+        &mut self,
+        name: AtomId,
+        attrs: &[crate::html5::shared::Attribute],
+        self_closing: bool,
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
+    ) -> Result<(), TreeBuilderError> {
+        let _ = self.close_p_before_ae7_block_start();
+        self.insert_in_body_plain_element(name, attrs, self_closing, atoms, text)
+    }
+
+    fn handle_in_body_ae7_plain_block_start_tag(
+        &mut self,
+        name: AtomId,
+        attrs: &[crate::html5::shared::Attribute],
+        self_closing: bool,
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
+    ) -> Result<(), TreeBuilderError> {
+        let _ = self.close_p_before_ae7_block_start();
+        self.insert_in_body_plain_element(name, attrs, self_closing, atoms, text)
+    }
+
     // HTML5's repeated-`a` start-tag recovery explicitly removes the earlier
     // anchor from AFE and SOE if AAA left that identity behind. This is not a
     // generic SOE mutation primitive; it is limited to stale anchor cleanup.
@@ -65,17 +128,7 @@ impl Html5TreeBuilder {
     }
 
     fn handle_in_body_generic_end_tag(&mut self, name: AtomId) {
-        let scope = self.scope_kind_for_in_body_end_tag(name);
-        let popped = self.pop_element_in_scope_with_reporting(name, scope, true);
-        if let Some(popped) = popped {
-            if self.known_tags.is_formatting_tag(popped.name()) {
-                let _ = self.active_formatting.remove(popped.key());
-            }
-            if self.known_tags.is_marker_tag(popped.name()) {
-                let _ = self.active_formatting.clear_to_last_marker();
-            }
-            self.update_mode_for_end_tag(name);
-        }
+        self.handle_in_body_generic_end_tag_with_implied_tags(name);
     }
 
     fn handle_in_body_formatting_end_tag(
@@ -194,6 +247,54 @@ impl Html5TreeBuilder {
                 name,
                 attrs,
                 self_closing,
+            } if *name == self.known_tags.p => {
+                self.handle_in_body_p_start_tag(attrs, *self_closing, atoms, text)?;
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } if *name == self.known_tags.li => {
+                self.handle_in_body_li_start_tag(attrs, *self_closing, atoms, text)?;
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } if *name == self.known_tags.hr => {
+                self.handle_in_body_hr_start_tag(*name, attrs, *self_closing, atoms, text)?;
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } if *name == self.known_tags.pre => {
+                self.handle_in_body_pre_start_tag(*name, attrs, *self_closing, atoms, text)?;
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } if self.known_tags.is_heading_tag(*name) => {
+                self.handle_in_body_heading_start_tag(*name, attrs, *self_closing, atoms, text)?;
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } if self.known_tags.is_ae7_p_closing_block_start(*name) => {
+                self.handle_in_body_ae7_plain_block_start_tag(
+                    *name,
+                    attrs,
+                    *self_closing,
+                    atoms,
+                    text,
+                )?;
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
             } if self.known_tags.is_marker_tag(*name) => {
                 let _ = self.reconstruct_active_formatting_elements(atoms)?;
                 let _ = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
@@ -265,6 +366,12 @@ impl Html5TreeBuilder {
             }
             Token::EndTag { name } if self.known_tags.is_formatting_tag(*name) => {
                 self.handle_in_body_formatting_end_tag(*name, atoms)?;
+            }
+            Token::EndTag { name } if *name == self.known_tags.p => {
+                self.handle_in_body_p_end_tag(atoms, text)?;
+            }
+            Token::EndTag { name } if *name == self.known_tags.li => {
+                self.handle_in_body_li_end_tag();
             }
             Token::EndTag { name } if *name == self.known_tags.body => {
                 if self.open_elements.has_in_scope(

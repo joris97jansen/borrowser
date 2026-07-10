@@ -1,0 +1,17 @@
+# format: html5-dom-v1
+# status: active
+# include_parse_errors: true
+#document
+  <!doctype html>
+  <html>
+    <head>
+    <body>
+      <p>
+        "one"
+      <div>
+        "two"
+parse-errors:
+  tree-builder: before-html-implicit-html
+  tree-builder: before-head-implicit-head
+  tree-builder: after-head-implicit-body
+  tree-builder: in-body-block-start-tag-closes-open-p

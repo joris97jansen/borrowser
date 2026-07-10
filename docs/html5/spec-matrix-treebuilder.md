@@ -95,8 +95,9 @@ Explicitly deferred from Core v0 `In head`:
 | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | `TB-ALGO-REPROCESS` | MVP | Token reprocessing semantics | `#tree-construction`, `#parsing-main-inbody` | `tree_builder/mod.rs`, `tree_builder/modes.rs` | Planned fixtures: `tb-reprocess-mode-switch`, `tb-reprocess-no-duplicate-patch`. | Reprocess current token after insertion-mode switch without losing token identity and without duplicate patch emission. | `tb-reprocess-core` | Required for spec-faithful mode transitions and deterministic emission. |
 | `TB-ALGO-SOE` | MVP | Stack of open elements (SOE) | `#stack-of-open-elements` | `tree_builder/stack.rs`, `tree_builder/mod.rs` | Current proxy: `tree_builder/simple-element`. Planned fixtures: `tb-soe-nested-pop`, `tb-soe-implied-end-tags`. | Correct push/pop ordering, implied end tags, scope checks for end-tag processing. | `tb-soe-core` | Foundational invariant for all insertion modes. |
-| `TB-ALGO-AFE` | MVP_PARTIAL | Active formatting elements (AFE) | `#the-list-of-active-formatting-elements` | `tree_builder/formatting.rs`, `mod.rs` | Planned fixtures: `tb-afe-reconstruction-basic`, `tb-afe-marker-boundary`. | Reconstruction triggers, marker boundaries, duplicate formatting entries. | `tb-afe-core` | Needed for in-body formatting fidelity; full AAA interaction staged. |
-| `TB-ALGO-AAA` | DEFERRED | Adoption agency algorithm (AAA) | `#adoption-agency-algorithm` | `tree_builder/formatting.rs`, `mod.rs` | Planned fixtures: `tb-aaa-misnested-b-i`, `tb-aaa-misnested-nesting-depth`. | Misnested formatting tags and reparenting complexity. | `tb-aaa-core` | High complexity; defer until SOE/AFE core is stable. |
+| `TB-ALGO-BODY-RECOVERY` | MVP_PARTIAL | Body-mode malformed-content recovery | `#parsing-main-inbody`, implied end tags | `tree_builder/body_recovery.rs`, `tree_builder/dispatch/in_body.rs`, `tree_builder/known_tags.rs` | Current fixtures: `ae7-*`, `f7-in-body-stray-end-tags`. | Paragraph auto-close, unmatched `</p>` synthesis, list-item sibling recovery, supported implied end tags. | `tb-ae7-body-recovery` | AE7-supported subset only; not full `In body` conformance. |
+| `TB-ALGO-AFE` | MVP_PARTIAL | Active formatting elements (AFE) | `#the-list-of-active-formatting-elements` | `tree_builder/formatting.rs`, `mod.rs` | Current fixtures: `h8-*`, `f13-*`; unit/session reconstruction tests. | Reconstruction triggers, marker boundaries, duplicate formatting entries. | `tb-afe-core` | Needed for supported in-body formatting fidelity; full formatting conformance remains out of scope. |
+| `TB-ALGO-AAA` | MVP_PARTIAL | Adoption agency algorithm (AAA) | `#adoption-agency-algorithm` | `tree_builder/adoption.rs`, `tree_builder/formatting.rs`, `dispatch/in_body.rs` | Current fixtures: `h8-aaa-*`, `h10-aaa-*`; unit/integration AAA tests. | Misnested supported formatting tags, deterministic moves, AFE/SOE synchronization. | `tb-aaa-core` | Implemented for Borrowser's supported formatting-element subset only; not full WHATWG AAA conformance. |
 | `TB-ALGO-FOSTER` | DEFERRED | Foster parenting | `#foster-parenting` | `tree_builder/mod.rs`, planned table-mode helpers | Planned fixtures: `tb-foster-text-in-table`, `tb-foster-misnested-phrasing`. | Text/phrasing content in table contexts requiring foster insertion location. | `tb-foster-core` | Coupled to table insertion modes; defer with tables. |
 | `TB-ALGO-TABLE-ROBUSTNESS` | MVP_PARTIAL | Unsupported table-tag robustness in Core v0 | `#parsing-main-intable`, `#parsing-main-inbody` | `tree_builder/mod.rs`, `tree_builder/modes.rs`, `tree_builder/stack.rs` | Planned fixture: `tb-table-tags-dont-explode`. | Encountering `<table>`-family tags must not panic, corrupt SOE invariants, or emit nondeterministic patches when table modes are deferred. | `tb-table-tags-dont-explode` | Ensures production robustness under unsupported constructs. |
 | `TB-ALGO-TEMPLATE-MODES` | OUT_OF_SCOPE | Template insertion modes stack | `#parsing-main-intemplate`, `#stack-of-template-insertion-modes` | planned `tree_builder/modes.rs` | Planned policy fixture: `tb-template-out-of-scope` (`skip`). | Template mode push/pop and reprocessing semantics. | `tb-template-out-of-scope` | Excluded from Core v0 for complexity/runway reasons. |
@@ -162,17 +163,21 @@ Core v0 tree-builder completion requires:
 1. `TB-MODE-INITIAL`, `TB-MODE-BEFORE-HTML`, `TB-MODE-BEFORE-HEAD`, `TB-MODE-AFTER-HEAD`, `TB-MODE-IN-BODY`, `TB-MODE-AFTER-BODY`, and `TB-MODE-AFTER-AFTER-BODY`.
 2. `TB-MODE-IN-HEAD` at `MVP_PARTIAL` scope sufficient for basic document/head routing.
 3. `TB-ALGO-SOE` + `TB-ALGO-QUIRKS-DOCTYPE` + deterministic patch emission contract.
-4. `TB-ALGO-AFE` at `MVP_PARTIAL` scope (basic reconstruction/markers, without full AAA).
-5. `TB-ALGO-REPROCESS` behavior across mode transitions.
-6. `TB-ALGO-TABLE-ROBUSTNESS` for deterministic unsupported-table handling.
+4. `TB-ALGO-BODY-RECOVERY` at `MVP_PARTIAL` scope for the AE7 subset.
+5. `TB-ALGO-AFE` and `TB-ALGO-AAA` at `MVP_PARTIAL` scope for the
+   documented supported formatting-element subset.
+6. `TB-ALGO-REPROCESS` behavior across mode transitions.
+7. `TB-ALGO-TABLE-ROBUSTNESS` for deterministic unsupported-table handling.
 
 Deferred/out-of-scope algorithms do not gate Core v0 exit criteria.
 
-### No Partial AAA Guard (Core v0)
+### Partial AAA Guard (Core v0)
 
-- Core v0 must not implement a partial subset of the adoption agency algorithm.
-- Until `TB-ALGO-AAA` is promoted from `DEFERRED`, misnested formatting end-tag handling must follow a single documented fallback path covered by fixtures.
-- Any AAA introduction must be explicit and gated with dedicated acceptance fixtures.
+- Core v0 supports AAA only for Borrowser's documented formatting-element set.
+- This is not a claim of full WHATWG adoption-agency conformance.
+- Any expansion of the supported formatting tag set, marker behavior, or
+  table/template interaction must update `docs/html5/afe-aaa-contract.md` and
+  add dedicated DOM/patch/whole-vs-chunked evidence.
 
 ## Acceptance Inventory Placeholder (Tree Builder)
 
@@ -200,11 +205,12 @@ Status source of truth:
 | `tb-after-head-body-bootstrap` | Yes | planned `.../tb-after-head-body-bootstrap` | Planned | Transition into body mode. |
 | `tb-in-body-core` | Yes | planned `.../tb-in-body-core` | Planned | Core body algorithm surface. |
 | `tb-soe-core` | Yes | planned `.../tb-soe-core` | Planned | SOE push/pop/scope behavior. |
-| `tb-afe-core` | Yes (Partial) | planned `.../tb-afe-core` | Planned | AFE reconstruction/markers basic behavior. |
+| `tb-ae7-body-recovery` | Yes (Partial) | current `crates/html/tests/fixtures/html5/tree_builder/ae7-*` and matching patch fixtures | Active | AE7 supported body-mode recovery subset for `p`, `li`, and representative malformed body content. |
+| `tb-afe-core` | Yes (Partial) | current `h8-*`, `f13-*`, and AFE unit/session tests | Active | AFE reconstruction/markers for the supported formatting subset. |
 | `tb-reprocess-core` | Yes | planned `.../tb-reprocess-core` | Planned | Mode-switch token reprocessing invariants. |
 | `tb-quirks-from-doctype` | Yes | planned `.../tb-quirks-from-doctype` | Planned | force_quirks propagation to document mode. |
 | `tb-table-tags-dont-explode` | Yes (Partial) | planned `.../tb-table-tags-dont-explode` | Planned | Unsupported table tags keep parser deterministic and invariant-safe. |
-| `tb-aaa-core` | No | planned `.../tb-aaa-core` | Planned | Deferred: adoption agency algorithm coverage. |
+| `tb-aaa-core` | Yes (Partial) | current `h8-aaa-*`, `h10-aaa-*`, and AAA unit/integration tests | Active | Supported formatting-element subset only; not full WHATWG AAA. |
 | `tb-foster-core` | No | planned `.../tb-foster-core` | Planned | Deferred: foster parenting in table contexts. |
 | `tb-text-mode-core` | Yes (Partial) | planned `.../tb-text-mode-core` | Planned | Current unit coverage exists; fixture umbrella can promote later. |
 | `tb-template-out-of-scope` | No | planned `.../tb-template-out-of-scope` | Planned (`skip`) | Out-of-scope: template insertion modes stack excluded. |
@@ -224,5 +230,6 @@ For HTML5 Core v0 tree builder:
 
 - Table insertion modes and foster parenting are `DEFERRED`.
 - Template insertion modes are `OUT_OF_SCOPE` and should be `skip` in policy-driven manifests.
-- Adoption agency algorithm is `DEFERRED` and not a Core v0 gate.
+- Full WHATWG adoption-agency conformance remains `DEFERRED`; Borrowser's
+  supported formatting-element subset is tracked as `MVP_PARTIAL`.
 - Any status promotion requires explicit matrix update and acceptance plan update.

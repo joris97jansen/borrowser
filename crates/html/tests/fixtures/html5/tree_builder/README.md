@@ -74,6 +74,13 @@ AE6 coverage baseline:
 - EOF recovery in common document-shell states,
 - text before body reprocessed into the implicit body.
 
+AE7 coverage baseline:
+
+- supported body-mode recovery for nested/open paragraphs, unmatched `</p>`
+  synthesis, supported block-start paragraph closure, sibling `li` recovery,
+  unexpected `li`/generic body end tags, and AFE reconstruction after paragraph
+  auto-close.
+
 Node line grammar (examples):
 
 - Document: `#document`

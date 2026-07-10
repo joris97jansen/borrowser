@@ -463,6 +463,17 @@ Current supported subset:
   full tree-construction conformance, tables/foster parenting, templates,
   framesets, foreign content, scripting, DOM APIs, navigation, resource
   loading, CSS/layout/paint behavior, or rendering integration changes.
+- AE7 body-mode recovery: `In body` now has a documented parser-owned recovery
+  subset for common malformed body content. Supported behavior includes
+  implied-end-tag generation for `p` and `li`, paragraph auto-close before the
+  documented block-start set, nested/open `p` recovery, unmatched `</p>`
+  recovery by inserting and closing a parser-created missing `p`, sibling
+  `li` recovery, deterministic parse-error diagnostics, and preserved
+  supported AFE/AAA interaction for the existing formatting-element set. See
+  `docs/html5/ae7-body-mode-recovery-contract.md`. AE7 does not claim full
+  WHATWG `In body` conformance, full implied-end-tag coverage, full list
+  parsing, table/select/template expansion, visual formatting behavior, or
+  CSS/layout/paint changes.
 
 Missing or incomplete:
 
@@ -472,9 +483,9 @@ Missing or incomplete:
   table activation beyond the active Core-v0 `MVP_PARTIAL` subset
 - full WHATWG tokenizer state coverage and edge-case parity beyond the
   supported AE/Core-v0 tokenizer subset
-- full WHATWG tree-construction coverage beyond the AE6 normal static-document
-  subset, including advanced insertion modes and malformed-markup recovery
-  outside the documented Core-v0 scope
+- full WHATWG tree-construction coverage beyond the AE6/AE7 documented
+  static-document and body-recovery subsets, including advanced insertion modes
+  and malformed-markup recovery outside the documented Core-v0 scope
 - full DOM API surface
 - public DOM `DocumentType` API exposure
 - script integration

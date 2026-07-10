@@ -40,6 +40,9 @@ impl OpenElementsStack {
     ) -> bool {
         // Probe-only check: no stack mutation, but contributes to scan counters.
         self.scope_scan_calls = self.scope_scan_calls.saturating_add(1);
+        if !self.has_name_count(target) {
+            return false;
+        }
         self.find_in_scope_match_index(target, kind, tags).is_some()
     }
 
@@ -53,24 +56,26 @@ impl OpenElementsStack {
         tags: &ScopeTagSet,
     ) -> Option<OpenElement> {
         self.scope_scan_calls = self.scope_scan_calls.saturating_add(1);
+        if !self.has_name_count(target) {
+            return None;
+        }
         let match_index = self.find_in_scope_match_index(target, kind, tags)?;
         debug_assert!(match_index < self.items.len());
+        let old_len = self.items.len();
         self.foster_parenting_cache
-            .note_suffix_removal(match_index, self.items.len());
-        let removed = self.items.len() - match_index;
-        // Keep elements up to and including the matched entry, then pop it.
-        self.items.truncate(match_index + 1);
-        let popped = self.items.pop();
-        if popped.is_some() {
-            self.pop_ops = self.pop_ops.saturating_add(removed as u64);
+            .note_suffix_removal(match_index, old_len);
+        let removed = old_len - match_index;
+        let mut matched = None;
+        while self.items.len() > match_index {
+            let popped = self
+                .items
+                .pop()
+                .expect("match_index is inside SOE so suffix pop must succeed");
+            self.note_name_pop(popped.name());
+            matched = Some(popped);
         }
-        if let Some(entry) = popped {
-            self.foster_parenting_cache
-                .note_pop(self.items.len(), entry.name());
-            Some(entry)
-        } else {
-            None
-        }
+        self.pop_ops = self.pop_ops.saturating_add(removed as u64);
+        matched
     }
 
     pub(crate) fn classify_key_in_scope(
@@ -118,6 +123,7 @@ impl OpenElementsStack {
                 .pop()
                 .expect("current() returned Some so pop() must succeed");
             debug_assert_eq!(popped, current);
+            self.note_name_pop(popped.name());
             self.pop_ops = self.pop_ops.saturating_add(1);
             self.foster_parenting_cache
                 .note_pop(self.items.len(), popped.name());
@@ -153,6 +159,7 @@ impl OpenElementsStack {
                 .pop()
                 .expect("current() returned Some so pop() must succeed");
             debug_assert_eq!(popped, current);
+            self.note_name_pop(popped.name());
             self.pop_ops = self.pop_ops.saturating_add(1);
             self.foster_parenting_cache
                 .note_pop(self.items.len(), popped.name());
@@ -177,6 +184,7 @@ impl OpenElementsStack {
                 .pop()
                 .expect("current() returned Some so pop() must succeed");
             debug_assert_eq!(popped, current);
+            self.note_name_pop(popped.name());
             self.pop_ops = self.pop_ops.saturating_add(1);
             self.foster_parenting_cache
                 .note_pop(self.items.len(), popped.name());

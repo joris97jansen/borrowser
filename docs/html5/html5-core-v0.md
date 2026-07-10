@@ -9,6 +9,7 @@ Normative matrix sources:
 - `docs/html5/node-identity-contract.md`
 - `docs/html5/ae1-html-parser-dom-ownership-contract.md`
 - `docs/html5/ae2-parser-created-dom-node-model.md`
+- `docs/html5/ae7-body-mode-recovery-contract.md`
 
 Related text-mode hardening note:
 - `docs/html5/rawtext-script-stability.md`
@@ -163,13 +164,18 @@ Core v0 tree-builder support includes:
   - `TB-ALGO-REPROCESS`
   - `TB-ALGO-SOE`
   - `TB-ALGO-AFE` (`MVP_PARTIAL`)
+  - `TB-ALGO-AAA` (`MVP_PARTIAL`, supported formatting-element subset only)
   - `TB-ALGO-QUIRKS-DOCTYPE`
   - `TB-ALGO-PATCH-SINK`
   - `TB-ALGO-TABLE-ROBUSTNESS` (`MVP_PARTIAL`)
 
 Core v0 tree-builder partial-scope guards:
 
-- `TB-ALGO-AFE` (`MVP_PARTIAL`) guarantees basic AFE marker handling and reconstruction for simple inline formatting cases; full adoption-agency behavior remains deferred to `TB-ALGO-AAA`.
+- `TB-ALGO-AFE` (`MVP_PARTIAL`) guarantees basic AFE marker handling and
+  reconstruction for the supported formatting-element subset.
+- `TB-ALGO-AAA` (`MVP_PARTIAL`) is limited to Borrowser's supported
+  formatting-element set and representative deterministic recovery fixtures.
+  This does not claim full WHATWG adoption-agency conformance.
 - `TB-ALGO-REPROCESS` guarantees that reprocessing reuses the same token instance and does not emit duplicate patches for a single logical token unless explicitly required by the spec algorithm.
 
 ### Text Coalescing Policy (Core v0)
@@ -205,6 +211,12 @@ Core v0 guarantees the following tag/context baseline:
   - comments and whitespace handling in head flow.
 - Body context (`TB-MODE-IN-BODY`):
   - character insertion, comment insertion, and generic element insertion path for non-deferred constructs.
+  - AE7 supported body-mode malformed-content recovery for the narrow subset
+    defined in `docs/html5/ae7-body-mode-recovery-contract.md`:
+    supported implied-end-tag generation for `p` and `li`, paragraph
+    auto-close before supported block starts, nested/open `p` recovery,
+    unmatched `</p>` synthesis through normal parser-created element insertion,
+    and sibling `li` recovery.
   - supported `body`/`html` end-tag handling transitions through explicit
     `After body` and `After after body` modes for normal static documents.
   - comments after `</body>` are inserted under the `html` element; comments

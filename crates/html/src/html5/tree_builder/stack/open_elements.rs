@@ -7,6 +7,7 @@ use crate::html5::shared::AtomId;
 #[derive(Clone, Debug, Default)]
 pub(crate) struct OpenElementsStack {
     pub(super) items: Vec<OpenElement>,
+    pub(super) name_counts: Vec<(AtomId, usize)>,
     pub(super) max_depth: u32,
     pub(super) push_ops: u64,
     pub(super) pop_ops: u64,
@@ -31,6 +32,7 @@ impl OpenElementsStack {
         // - does not reset max_depth (high-water mark metric),
         // - does not increment pop_ops (clear is modeled as a reset, not N pops).
         self.items.clear();
+        self.name_counts.clear();
         self.foster_parenting_cache.invalidate();
     }
 
@@ -38,6 +40,7 @@ impl OpenElementsStack {
     pub(crate) fn push(&mut self, entry: OpenElement) {
         let new_index = self.items.len();
         self.items.push(entry);
+        self.note_name_push(entry.name());
         self.push_ops = self.push_ops.saturating_add(1);
         self.max_depth = self.max_depth.max(self.items.len() as u32);
         self.foster_parenting_cache
@@ -51,7 +54,7 @@ impl OpenElementsStack {
 
     #[inline]
     pub(crate) fn contains_name(&self, target: AtomId) -> bool {
-        self.items.iter().any(|entry| entry.name() == target)
+        self.has_name_count(target)
     }
 
     #[inline]
@@ -92,6 +95,7 @@ impl OpenElementsStack {
             self.pop_ops = self.pop_ops.saturating_add(1);
         }
         if let Some(entry) = popped {
+            self.note_name_pop(entry.name());
             self.foster_parenting_cache
                 .note_pop(self.items.len(), entry.name());
             Some(entry)
@@ -159,6 +163,7 @@ impl OpenElementsStack {
         let _ = index;
         self.foster_parenting_cache.invalidate();
         let removed = self.items.remove(index);
+        self.note_name_pop(removed.name());
         self.pop_ops = self.pop_ops.saturating_add(1);
         removed
     }
@@ -167,6 +172,7 @@ impl OpenElementsStack {
         let _ = index;
         self.foster_parenting_cache.invalidate();
         self.items.insert(index, entry);
+        self.note_name_push(entry.name());
         self.push_ops = self.push_ops.saturating_add(1);
         self.max_depth = self.max_depth.max(self.items.len() as u32);
     }
@@ -174,6 +180,44 @@ impl OpenElementsStack {
     pub(crate) fn replace_at(&mut self, index: usize, entry: OpenElement) -> OpenElement {
         let _ = index;
         self.foster_parenting_cache.invalidate();
-        std::mem::replace(&mut self.items[index], entry)
+        let previous = std::mem::replace(&mut self.items[index], entry);
+        self.note_name_pop(previous.name());
+        self.note_name_push(entry.name());
+        previous
+    }
+
+    pub(super) fn has_name_count(&self, target: AtomId) -> bool {
+        self.name_counts
+            .iter()
+            .any(|(name, count)| *name == target && *count > 0)
+    }
+
+    pub(super) fn note_name_push(&mut self, name: AtomId) {
+        if let Some((_, count)) = self
+            .name_counts
+            .iter_mut()
+            .find(|(tracked, _)| *tracked == name)
+        {
+            *count = count.saturating_add(1);
+            return;
+        }
+        self.name_counts.push((name, 1));
+    }
+
+    pub(super) fn note_name_pop(&mut self, name: AtomId) {
+        let Some(index) = self
+            .name_counts
+            .iter()
+            .position(|(tracked, _)| *tracked == name)
+        else {
+            debug_assert!(false, "SOE name count missing for popped element");
+            return;
+        };
+        let count = &mut self.name_counts[index].1;
+        debug_assert!(*count > 0, "SOE name count underflow");
+        *count = count.saturating_sub(1);
+        if *count == 0 {
+            let _ = self.name_counts.remove(index);
+        }
     }
 }
