@@ -44,6 +44,12 @@ Milestone H corpus:
 - `i8-move-*`: issue-explicit move-contract evidence for `AppendChild` reparenting and `InsertBefore` foster-parent moves using existing node ids.
 - `i9-*-quirks-*`: patch-level evidence that document mode changes the `table` insertion parentage contract.
 
+Milestone AE corpus:
+
+- `ae7-*`: patch sequencing for supported body-mode recovery, including
+  paragraph auto-close before block insertion, sibling `li` recovery, and AFE
+  reconstruction after paragraph auto-close.
+
 Dedicated table-heavy corpus:
 
 - `../tables/patches/i10-table-*`: I10 patch goldens for normal tables, implied

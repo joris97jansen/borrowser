@@ -4,11 +4,24 @@ use crate::html5::tree_builder::stack::ScopeTagSet;
 #[derive(Clone, Copy, Debug)]
 pub(in crate::html5::tree_builder) struct KnownTagIds {
     pub(in crate::html5::tree_builder) a: AtomId,
+    pub(in crate::html5::tree_builder) address: AtomId,
+    pub(in crate::html5::tree_builder) article: AtomId,
+    pub(in crate::html5::tree_builder) aside: AtomId,
     pub(in crate::html5::tree_builder) b: AtomId,
     pub(in crate::html5::tree_builder) big: AtomId,
+    pub(in crate::html5::tree_builder) blockquote: AtomId,
     pub(in crate::html5::tree_builder) code: AtomId,
+    pub(in crate::html5::tree_builder) div: AtomId,
     pub(in crate::html5::tree_builder) em: AtomId,
+    pub(in crate::html5::tree_builder) footer: AtomId,
     pub(in crate::html5::tree_builder) font: AtomId,
+    pub(in crate::html5::tree_builder) h1: AtomId,
+    pub(in crate::html5::tree_builder) h2: AtomId,
+    pub(in crate::html5::tree_builder) h3: AtomId,
+    pub(in crate::html5::tree_builder) h4: AtomId,
+    pub(in crate::html5::tree_builder) h5: AtomId,
+    pub(in crate::html5::tree_builder) h6: AtomId,
+    pub(in crate::html5::tree_builder) header: AtomId,
     pub(in crate::html5::tree_builder) html: AtomId,
     pub(in crate::html5::tree_builder) head: AtomId,
     pub(in crate::html5::tree_builder) body: AtomId,
@@ -58,7 +71,11 @@ pub(in crate::html5::tree_builder) struct KnownTagIds {
     pub(in crate::html5::tree_builder) object: AtomId,
     pub(in crate::html5::tree_builder) applet: AtomId,
     pub(in crate::html5::tree_builder) button: AtomId,
+    pub(in crate::html5::tree_builder) main: AtomId,
+    pub(in crate::html5::tree_builder) nav: AtomId,
     pub(in crate::html5::tree_builder) ol: AtomId,
+    pub(in crate::html5::tree_builder) pre: AtomId,
+    pub(in crate::html5::tree_builder) section: AtomId,
     pub(in crate::html5::tree_builder) u: AtomId,
     pub(in crate::html5::tree_builder) ul: AtomId,
     pub(in crate::html5::tree_builder) li: AtomId,
@@ -69,11 +86,24 @@ impl KnownTagIds {
     pub(in crate::html5::tree_builder) fn intern(atoms: &mut AtomTable) -> Result<Self, AtomError> {
         Ok(Self {
             a: atoms.intern_ascii_folded("a")?,
+            address: atoms.intern_ascii_folded("address")?,
+            article: atoms.intern_ascii_folded("article")?,
+            aside: atoms.intern_ascii_folded("aside")?,
             b: atoms.intern_ascii_folded("b")?,
             big: atoms.intern_ascii_folded("big")?,
+            blockquote: atoms.intern_ascii_folded("blockquote")?,
             code: atoms.intern_ascii_folded("code")?,
+            div: atoms.intern_ascii_folded("div")?,
             em: atoms.intern_ascii_folded("em")?,
+            footer: atoms.intern_ascii_folded("footer")?,
             font: atoms.intern_ascii_folded("font")?,
+            h1: atoms.intern_ascii_folded("h1")?,
+            h2: atoms.intern_ascii_folded("h2")?,
+            h3: atoms.intern_ascii_folded("h3")?,
+            h4: atoms.intern_ascii_folded("h4")?,
+            h5: atoms.intern_ascii_folded("h5")?,
+            h6: atoms.intern_ascii_folded("h6")?,
+            header: atoms.intern_ascii_folded("header")?,
             html: atoms.intern_ascii_folded("html")?,
             head: atoms.intern_ascii_folded("head")?,
             body: atoms.intern_ascii_folded("body")?,
@@ -115,7 +145,11 @@ impl KnownTagIds {
             object: atoms.intern_ascii_folded("object")?,
             applet: atoms.intern_ascii_folded("applet")?,
             button: atoms.intern_ascii_folded("button")?,
+            main: atoms.intern_ascii_folded("main")?,
+            nav: atoms.intern_ascii_folded("nav")?,
             ol: atoms.intern_ascii_folded("ol")?,
+            pre: atoms.intern_ascii_folded("pre")?,
+            section: atoms.intern_ascii_folded("section")?,
             u: atoms.intern_ascii_folded("u")?,
             ul: atoms.intern_ascii_folded("ul")?,
             li: atoms.intern_ascii_folded("li")?,
@@ -144,6 +178,48 @@ impl KnownTagIds {
     #[inline]
     pub(in crate::html5::tree_builder) fn is_marker_tag(&self, name: AtomId) -> bool {
         name == self.applet || name == self.marquee || name == self.object
+    }
+
+    #[inline]
+    pub(in crate::html5::tree_builder) fn is_supported_implied_end_tag(
+        &self,
+        name: AtomId,
+    ) -> bool {
+        name == self.p || name == self.li
+    }
+
+    #[inline]
+    pub(in crate::html5::tree_builder) fn is_heading_tag(&self, name: AtomId) -> bool {
+        name == self.h1
+            || name == self.h2
+            || name == self.h3
+            || name == self.h4
+            || name == self.h5
+            || name == self.h6
+    }
+
+    #[inline]
+    pub(in crate::html5::tree_builder) fn is_ae7_p_closing_block_start(
+        &self,
+        name: AtomId,
+    ) -> bool {
+        name == self.address
+            || name == self.article
+            || name == self.aside
+            || name == self.blockquote
+            || name == self.div
+            || name == self.footer
+            || name == self.header
+            || name == self.hr
+            || name == self.li
+            || name == self.main
+            || name == self.nav
+            || name == self.ol
+            || name == self.p
+            || name == self.pre
+            || name == self.section
+            || name == self.ul
+            || self.is_heading_tag(name)
     }
 
     #[inline]
@@ -221,5 +297,45 @@ mod tests {
         assert!(known.is_marker_tag(known.marquee));
         assert!(known.is_marker_tag(known.object));
         assert!(!known.is_marker_tag(known.b));
+    }
+
+    #[test]
+    fn known_tag_helpers_classify_ae7_body_recovery_tags() {
+        let mut ctx = crate::html5::shared::DocumentParseContext::new();
+        let known = KnownTagIds::intern(&mut ctx.atoms).expect("known tags");
+
+        assert!(known.is_supported_implied_end_tag(known.p));
+        assert!(known.is_supported_implied_end_tag(known.li));
+        assert!(!known.is_supported_implied_end_tag(known.div));
+
+        for name in [
+            known.address,
+            known.article,
+            known.aside,
+            known.blockquote,
+            known.div,
+            known.footer,
+            known.header,
+            known.h1,
+            known.h6,
+            known.hr,
+            known.li,
+            known.main,
+            known.nav,
+            known.ol,
+            known.p,
+            known.pre,
+            known.section,
+            known.ul,
+        ] {
+            assert!(
+                known.is_ae7_p_closing_block_start(name),
+                "expected AE7 p-closing block-start tag"
+            );
+        }
+
+        let span = ctx.atoms.intern_ascii_folded("span").expect("span atom");
+        assert!(!known.is_ae7_p_closing_block_start(span));
+        assert!(!known.is_ae7_p_closing_block_start(known.table));
     }
 }

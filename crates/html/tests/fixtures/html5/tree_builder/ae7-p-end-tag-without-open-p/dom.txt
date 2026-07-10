@@ -1,0 +1,11 @@
+# format: html5-dom-v1
+# status: active
+# include_parse_errors: true
+#document
+  <!doctype html>
+  <html>
+    <head>
+    <body>
+      <p>
+parse-errors:
+  tree-builder: in-body-p-end-tag-missing-p

@@ -7,6 +7,7 @@
 mod adoption;
 pub(crate) mod api;
 mod attributes;
+mod body_recovery;
 mod coalescing;
 mod dispatch;
 pub(crate) mod document;

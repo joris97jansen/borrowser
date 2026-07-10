@@ -527,3 +527,368 @@ fn tree_builder_recovers_when_head_end_tag_seen_before_head_opened() {
         "early </head> recovery path should still materialize a document"
     );
 }
+
+#[test]
+fn tree_builder_unmatched_p_end_tag_synthesizes_and_closes_empty_p() {
+    use crate::dom_patch::DomPatch;
+    use crate::html5::shared::Token;
+
+    let resolver = EmptyResolver;
+    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+    let _ = super::helpers::enter_in_body(&mut builder, &mut ctx, &resolver);
+
+    let p = ctx.atoms.intern_ascii_folded("p").expect("atom interning");
+    let body = ctx
+        .atoms
+        .intern_ascii_folded("body")
+        .expect("atom interning");
+
+    let before = builder.state_snapshot();
+    let body_key = before
+        .open_element_keys
+        .last()
+        .copied()
+        .expect("body should be current");
+    assert_eq!(before.open_element_names.last().copied(), Some(body));
+
+    let _ = builder
+        .process(&Token::EndTag { name: p }, &ctx.atoms, &resolver)
+        .expect("unmatched </p> should synthesize and close a parser-created p");
+    let after = builder.state_snapshot();
+    let errors = builder.take_parse_error_kinds_for_test();
+    let patches = builder.drain_patches();
+
+    assert_eq!(
+        errors,
+        vec!["in-body-p-end-tag-missing-p"],
+        "unmatched </p> must not fall through to generic end-tag recovery"
+    );
+    assert_eq!(
+        after.open_element_names, before.open_element_names,
+        "synthetic <p> should be closed and removed from SOE"
+    );
+    let synthetic_p_key = patches
+        .iter()
+        .find_map(|patch| match patch {
+            DomPatch::CreateElement { key, name, .. } if name.as_ref() == "p" => Some(*key),
+            _ => None,
+        })
+        .expect("unmatched </p> should create a parser-owned <p> element");
+    assert!(
+        patches.contains(&DomPatch::AppendChild {
+            parent: body_key,
+            child: synthetic_p_key,
+        }),
+        "synthetic <p> should be appended under the current body insertion parent"
+    );
+}
+
+#[test]
+fn tree_builder_nested_p_start_tag_closes_open_p_before_inserting_next_p() {
+    use crate::html5::shared::Token;
+
+    let resolver = EmptyResolver;
+    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+    let _ = super::helpers::enter_in_body(&mut builder, &mut ctx, &resolver);
+
+    let p = ctx.atoms.intern_ascii_folded("p").expect("atom interning");
+    for _ in 0..2 {
+        let _ = builder
+            .process(
+                &Token::StartTag {
+                    name: p,
+                    attrs: Vec::new(),
+                    self_closing: false,
+                },
+                &ctx.atoms,
+                &resolver,
+            )
+            .expect("p start tag should remain recoverable");
+    }
+
+    let state = builder.state_snapshot();
+    let errors = builder.take_parse_error_kinds_for_test();
+    assert_eq!(
+        errors,
+        vec!["in-body-p-start-tag-closes-open-p"],
+        "nested <p> should report the deterministic AE7 auto-close diagnostic"
+    );
+    assert_eq!(
+        state.open_element_names,
+        vec![builder.known_tags.html, builder.known_tags.body, p],
+        "only the second <p> should remain open"
+    );
+}
+
+#[test]
+fn tree_builder_block_start_tag_closes_open_p_before_existing_insertion_path() {
+    use crate::html5::shared::Token;
+
+    let resolver = EmptyResolver;
+    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+    let _ = super::helpers::enter_in_body(&mut builder, &mut ctx, &resolver);
+
+    let p = ctx.atoms.intern_ascii_folded("p").expect("atom interning");
+    let div = ctx
+        .atoms
+        .intern_ascii_folded("div")
+        .expect("atom interning");
+    for name in [p, div] {
+        let _ = builder
+            .process(
+                &Token::StartTag {
+                    name,
+                    attrs: Vec::new(),
+                    self_closing: false,
+                },
+                &ctx.atoms,
+                &resolver,
+            )
+            .expect("block recovery start tag should remain recoverable");
+    }
+
+    let state = builder.state_snapshot();
+    let errors = builder.take_parse_error_kinds_for_test();
+    assert_eq!(errors, vec!["in-body-block-start-tag-closes-open-p"]);
+    assert_eq!(
+        state.open_element_names,
+        vec![builder.known_tags.html, builder.known_tags.body, div],
+        "<div> should be inserted after the open <p> is closed"
+    );
+}
+
+#[test]
+fn tree_builder_hr_block_start_closes_p_and_stays_void_on_soe() {
+    use crate::html5::shared::Token;
+
+    let resolver = EmptyResolver;
+    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+    let _ = super::helpers::enter_in_body(&mut builder, &mut ctx, &resolver);
+
+    let p = ctx.atoms.intern_ascii_folded("p").expect("atom interning");
+    let hr = ctx.atoms.intern_ascii_folded("hr").expect("atom interning");
+
+    for name in [p, hr] {
+        let _ = builder
+            .process(
+                &Token::StartTag {
+                    name,
+                    attrs: Vec::new(),
+                    self_closing: false,
+                },
+                &ctx.atoms,
+                &resolver,
+            )
+            .expect("hr block-start recovery should remain recoverable");
+    }
+
+    let state = builder.state_snapshot();
+    let errors = builder.take_parse_error_kinds_for_test();
+    assert_eq!(errors, vec!["in-body-block-start-tag-closes-open-p"]);
+    assert_eq!(
+        state.open_element_names,
+        vec![builder.known_tags.html, builder.known_tags.body],
+        "<hr> should close the open <p> and stay off SOE as a void element"
+    );
+}
+
+#[test]
+fn tree_builder_pre_block_start_keeps_deferred_frameset_behavior_unchanged() {
+    use crate::html5::shared::Token;
+
+    let resolver = EmptyResolver;
+    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+    let _ = super::helpers::enter_in_body(&mut builder, &mut ctx, &resolver);
+
+    let p = ctx.atoms.intern_ascii_folded("p").expect("atom interning");
+    let pre = ctx
+        .atoms
+        .intern_ascii_folded("pre")
+        .expect("atom interning");
+
+    for name in [p, pre] {
+        let _ = builder
+            .process(
+                &Token::StartTag {
+                    name,
+                    attrs: Vec::new(),
+                    self_closing: false,
+                },
+                &ctx.atoms,
+                &resolver,
+            )
+            .expect("pre block-start recovery should remain recoverable");
+    }
+
+    let state = builder.state_snapshot();
+    let errors = builder.take_parse_error_kinds_for_test();
+    assert_eq!(errors, vec!["in-body-block-start-tag-closes-open-p"]);
+    assert!(
+        state.frameset_ok,
+        "AE7 should not add deferred pre/listing frameset behavior"
+    );
+    assert_eq!(
+        state.open_element_names,
+        vec![builder.known_tags.html, builder.known_tags.body, pre],
+        "<pre> should use the supported plain insertion path after p-close"
+    );
+}
+
+#[test]
+fn tree_builder_heading_start_does_not_auto_close_existing_heading() {
+    use crate::html5::shared::Token;
+
+    let resolver = EmptyResolver;
+    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+    let _ = super::helpers::enter_in_body(&mut builder, &mut ctx, &resolver);
+
+    let h1 = ctx.atoms.intern_ascii_folded("h1").expect("atom interning");
+    let h2 = ctx.atoms.intern_ascii_folded("h2").expect("atom interning");
+
+    for name in [h1, h2] {
+        let _ = builder
+            .process(
+                &Token::StartTag {
+                    name,
+                    attrs: Vec::new(),
+                    self_closing: false,
+                },
+                &ctx.atoms,
+                &resolver,
+            )
+            .expect("heading block-start handling should remain recoverable");
+    }
+
+    let state = builder.state_snapshot();
+    let errors = builder.take_parse_error_kinds_for_test();
+    assert!(
+        errors.is_empty(),
+        "AE7 should not add deferred heading auto-close diagnostics"
+    );
+    assert_eq!(
+        state.open_element_names,
+        vec![builder.known_tags.html, builder.known_tags.body, h1, h2],
+        "AE7 heading handling is limited to paragraph-close classification"
+    );
+}
+
+#[test]
+fn tree_builder_li_start_tag_closes_previous_li_and_open_p() {
+    use crate::html5::shared::Token;
+
+    let resolver = EmptyResolver;
+    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+    let _ = super::helpers::enter_in_body(&mut builder, &mut ctx, &resolver);
+
+    let ul = ctx.atoms.intern_ascii_folded("ul").expect("atom interning");
+    let li = ctx.atoms.intern_ascii_folded("li").expect("atom interning");
+    let p = ctx.atoms.intern_ascii_folded("p").expect("atom interning");
+
+    for name in [ul, li, p, li] {
+        let _ = builder
+            .process(
+                &Token::StartTag {
+                    name,
+                    attrs: Vec::new(),
+                    self_closing: false,
+                },
+                &ctx.atoms,
+                &resolver,
+            )
+            .expect("list-item recovery should remain recoverable");
+    }
+
+    let state = builder.state_snapshot();
+    let errors = builder.take_parse_error_kinds_for_test();
+    assert_eq!(errors, vec!["in-body-li-start-tag-closes-previous-li"]);
+    assert_eq!(
+        state.open_element_names,
+        vec![builder.known_tags.html, builder.known_tags.body, ul, li],
+        "second <li> should close the open <p> and previous <li>"
+    );
+}
+
+#[test]
+fn tree_builder_unexpected_li_end_tag_reports_dedicated_ae7_error() {
+    use crate::html5::shared::Token;
+
+    let resolver = EmptyResolver;
+    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+    let _ = super::helpers::enter_in_body(&mut builder, &mut ctx, &resolver);
+
+    let li = ctx.atoms.intern_ascii_folded("li").expect("atom interning");
+    let _ = builder
+        .process(&Token::EndTag { name: li }, &ctx.atoms, &resolver)
+        .expect("unexpected </li> should remain recoverable");
+
+    let errors = builder.take_parse_error_kinds_for_test();
+    assert_eq!(
+        errors,
+        vec!["in-body-li-end-tag-missing-li"],
+        "unexpected </li> should not use the generic end-tag-not-in-scope diagnostic"
+    );
+}
+
+#[cfg(feature = "dom-snapshot")]
+#[test]
+fn tree_builder_reconstructs_active_formatting_after_paragraph_auto_close() {
+    let lines = super::helpers::materialized_dom_lines(&["<!doctype html><p><b>one<div>two"]);
+
+    assert_eq!(
+        lines,
+        vec![
+            "#document".to_string(),
+            "  <!doctype html>".to_string(),
+            "  <html>".to_string(),
+            "    <head>".to_string(),
+            "    <body>".to_string(),
+            "      <p>".to_string(),
+            "        <b>".to_string(),
+            "          \"one\"".to_string(),
+            "      <div>".to_string(),
+            "        <b>".to_string(),
+            "          \"two\"".to_string(),
+        ],
+        "active formatting should reconstruct inside the block after p auto-close"
+    );
+}
