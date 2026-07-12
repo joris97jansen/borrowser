@@ -18,8 +18,8 @@ mod runner;
 
 use assertions::enforce_expected;
 use fixture_bands::{
-    H8_FIXTURE_BAND, H8_FIXTURE_NAMES, H10_FIXTURE_BAND, H10_FIXTURE_NAMES, I10_TABLE_FIXTURE_BAND,
-    I10_TABLE_FIXTURE_NAMES,
+    AE8_TABLE_FIXTURE_BAND, AE8_TABLE_FIXTURE_NAMES, H8_FIXTURE_BAND, H8_FIXTURE_NAMES,
+    H10_FIXTURE_BAND, H10_FIXTURE_NAMES, I10_TABLE_FIXTURE_BAND, I10_TABLE_FIXTURE_NAMES,
 };
 use fixtures::{FixtureStatus, load_fixtures, normalize_fixture_input};
 use html::chunker::{ChunkerConfig, build_chunk_plans};
@@ -283,6 +283,48 @@ fn i10_table_dom_fixture_band_runs_in_whole_and_chunked_modes() {
                 assert_eq!(
                     actual_lines, whole_lines,
                     "I10 table DOM fixture '{}' diverged under chunk plan '{}'",
+                    fixture.name, plan.label
+                );
+            }
+            enforce_expected(fixture, &actual, Mode::ChunkedInput, Some(&plan.label));
+        }
+    }
+}
+
+#[test]
+fn ae8_table_dom_fixture_band_members_are_registered() {
+    let fixtures = load_fixtures();
+    for name in AE8_TABLE_FIXTURE_NAMES {
+        let fixture = fixtures
+            .iter()
+            .find(|fixture| fixture.name == *name)
+            .unwrap_or_else(|| panic!("missing AE8 table DOM fixture '{name}'"));
+        assert_eq!(
+            fixture.expected.status,
+            FixtureStatus::Active,
+            "AE8 table DOM fixture '{name}' must participate in the active golden corpus"
+        );
+    }
+}
+
+#[test]
+fn ae8_table_dom_fixture_band_runs_in_whole_and_chunked_modes() {
+    let fixtures = load_fixtures();
+    for name in AE8_TABLE_FIXTURE_BAND.names {
+        let fixture = fixtures
+            .iter()
+            .find(|fixture| fixture.name == *name)
+            .unwrap_or_else(|| panic!("missing AE8 table DOM fixture '{name}'"));
+        let whole = run_tree_builder_whole(fixture);
+        enforce_expected(fixture, &whole, Mode::WholeInput, None);
+
+        let plans = AE8_TABLE_FIXTURE_BAND.chunk_plans(&fixture.input);
+        for plan in plans {
+            let actual = run_tree_builder_chunked(fixture, &plan.plan, &plan.label);
+            if let (Some(whole_lines), Some(actual_lines)) = (whole.lines(), actual.lines()) {
+                assert_eq!(
+                    actual_lines, whole_lines,
+                    "AE8 table DOM fixture '{}' diverged under chunk plan '{}'",
                     fixture.name, plan.label
                 );
             }

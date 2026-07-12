@@ -1,0 +1,16 @@
+# format: html5-dom-v1
+# status: active
+# include_parse_errors: true
+#document
+  <!doctype html>
+  <html>
+    <head>
+    <body>
+      "x"
+      <div>
+        "y"
+      <table>
+parse-errors:
+  tree-builder: in-table-text-non-space-foster-parented
+  tree-builder: in-table-anything-else-reprocess-in-body
+  tree-builder: in-table-anything-else-reprocess-in-body

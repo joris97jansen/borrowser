@@ -100,3 +100,54 @@ Contract:
 - a `LiveTree` panic indicates a Borrowser tree-builder bug, not malformed HTML
 - fuzzers and invariant-aware tests should rely on `check_dom_invariants` and
   `check_patch_invariants` for typed failure reporting
+
+## AE8 Table Parser-State Invariants
+
+AE8 adds parser-state invariants for the supported table tree-construction
+subset. These invariants are internal regression contracts, not public runtime
+APIs.
+
+Pending table-character state:
+
+- `InTableText` owns one pending table-text state containing both the
+  table-character buffer and recorded original table-family insertion mode.
+- the recorded mode inside that state must be one of `InTable`, `InTableBody`,
+  or `InRow`;
+- entering `InTableText` while pending table-text state already exists is an
+  internal invariant violation and must not replace or discard the active state;
+- an `InTableText` mode without pending table-text state is an internal
+  invariant violation, not a recoverable HTML parse error;
+- leaving `InTableText` through a non-character token or EOF must flush the
+  buffer and take the return mode before reprocessing that token;
+- the pending buffer and recorded return mode must both be clear together after
+  the flush;
+- parser finalization through EOF must not leave pending table-character state.
+
+Foster-parenting state:
+
+- foster parenting resolves an `InsertionLocation` before text or element
+  insertion;
+- the location is either append-to-parent or insert-before-anchor;
+- when the relevant table has a live parent, the emitted structural patch for a
+  newly created foster-parented node must use that parent and the table as the
+  `InsertBefore.before` anchor;
+- when the relevant table has no live parent, the fallback parent is the stack
+  entry immediately above the table;
+- foster parenting must not use `RemoveNode`, DOM rebuilding, post-parse
+  normalization, runtime repair, or layout ancestry.
+
+Table stack operations:
+
+- table-scope checks are read-only stack probes;
+- table-context, table-body-context, and table-row-context clearing pop parser
+  stack entries only;
+- stack clearing does not remove, detach, or reorder DOM nodes;
+- implied table wrappers are real parser-created DOM nodes with fresh
+  `PatchKey` identities.
+
+Table cell and AFE interaction:
+
+- entering `td` or `th` pushes an AFE marker after inserting the cell;
+- closing a cell, explicit or implied, clears AFE entries back to the last
+  marker;
+- cell close recovery must not expand into unrelated adoption-agency behavior.

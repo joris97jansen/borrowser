@@ -100,8 +100,13 @@ In Milestone H they are inserted for the supported `In body` marker-producing pa
 
 Deferred marker-producing contexts:
 
-- table-cell related markers (`td`, `th`) because table insertion modes remain deferred
 - template-related boundaries because template insertion modes remain out of scope
+
+AE8 marker-producing contexts:
+
+- table-cell related markers (`td`, `th`) are inserted and cleared by the
+  parser-owned table-cell handling defined in
+  `docs/html5/ae8-specialized-table-tree-construction-contract.md`
 
 Marker contract:
 

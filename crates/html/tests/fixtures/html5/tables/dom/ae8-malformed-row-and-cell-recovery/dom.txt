@@ -1,0 +1,19 @@
+# format: html5-dom-v1
+# status: active
+# include_parse_errors: true
+#document
+  <!doctype html>
+  <html>
+    <head>
+    <body>
+      <table>
+        <tbody>
+          <tr>
+            <td>
+              "a"
+          <tr>
+            <td>
+              "b"
+            <td>
+              "c"
+parse-errors: none

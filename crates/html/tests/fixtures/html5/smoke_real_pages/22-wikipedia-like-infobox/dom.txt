@@ -1,7 +1,6 @@
 # format: html5-dom-v1
 
 #document
-
   <!doctype html>
   <html>
     <head>
@@ -16,14 +15,12 @@
             <th colspan="2">
               "River Delta"
           "\n  "
-        <tbody>
           <tr>
             <td>
               "Length"
             <td>
               "320 km"
           "\n  "
-        <tbody>
           <tr>
             <td>
               "Basin"
@@ -45,20 +42,18 @@
         "\n  "
         <tbody>
           "\n    "
-        <tbody>
           <tr>
             <td>
               "1990"
             <td>
               "120000"
           "\n    "
-        <tbody>
           <tr>
             <td>
               "2020"
             <td>
               "175000"
           "\n  "
-          "\n"
+        "\n"
       "\n"
     "\n"

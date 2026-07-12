@@ -1,4 +1,5 @@
 use super::helpers::{EmptyResolver, enter_in_body};
+use crate::html5::tree_builder::modes::InsertionMode;
 
 #[test]
 fn table_state_snapshot_tracks_current_table_and_pending_character_buffer() {
@@ -44,8 +45,15 @@ fn table_state_snapshot_tracks_current_table_and_pending_character_buffer() {
         .expect("inner table insertion")
         .expect("inner table insertion should not hit resource limits");
 
-    builder.buffer_pending_table_character_tokens(" \t");
-    builder.buffer_pending_table_character_tokens("x");
+    builder
+        .enter_in_table_text_mode(InsertionMode::InRow)
+        .expect("test should enter table text mode");
+    builder
+        .buffer_pending_table_character_tokens(" \t")
+        .expect("active table text state should accept whitespace");
+    builder
+        .buffer_pending_table_character_tokens("x")
+        .expect("active table text state should accept text");
 
     let state = builder.state_snapshot();
     assert_eq!(
@@ -68,14 +76,88 @@ fn table_state_snapshot_tracks_current_table_and_pending_character_buffer() {
         "nested tables must not leave the outer table as the current table"
     );
 
-    let drained = builder.take_pending_table_character_tokens();
-    assert_eq!(drained.chunks(), [" \t", "x"]);
-    assert!(drained.contains_non_space());
+    let drained = builder
+        .take_pending_table_text_state()
+        .expect("active table text state should drain");
+    assert_eq!(drained.original_insertion_mode(), InsertionMode::InRow);
+    assert_eq!(drained.tokens().chunks(), [" \t", "x"]);
+    assert!(drained.tokens().contains_non_space());
     assert!(
         builder
             .state_snapshot()
             .pending_table_character_tokens
             .is_empty()
+    );
+}
+
+#[test]
+fn in_table_text_without_pending_state_is_internal_invariant_error() {
+    use crate::html5::shared::Token;
+
+    let resolver = EmptyResolver;
+    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+
+    builder.insertion_mode = InsertionMode::InTableText;
+    builder.pending_table_text = None;
+
+    let result = builder.process(&Token::Eof, &ctx.atoms, &resolver);
+
+    assert!(
+        result.is_err(),
+        "an impossible InTableText state without pending table-text state must be an internal invariant error"
+    );
+    assert!(
+        builder.take_parse_error_kinds_for_test().is_empty(),
+        "internal table-text state corruption must not be reported as malformed HTML"
+    );
+}
+
+#[test]
+fn entering_in_table_text_twice_is_non_destructive_internal_invariant_error() {
+    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+
+    builder
+        .enter_in_table_text_mode(InsertionMode::InTable)
+        .expect("first table-text entry should succeed");
+    builder
+        .buffer_pending_table_character_tokens("x")
+        .expect("active table-text state should accept text");
+
+    let before = builder.state_snapshot();
+    let result = builder.enter_in_table_text_mode(InsertionMode::InRow);
+    let after = builder.state_snapshot();
+
+    assert!(
+        result.is_err(),
+        "entering table-text mode while pending table-text state is active must be an internal invariant error"
+    );
+    assert!(
+        builder.take_parse_error_kinds_for_test().is_empty(),
+        "internal table-text lifecycle violations must not be reported as malformed HTML"
+    );
+    assert_eq!(
+        after, before,
+        "failed table-text re-entry must not mutate the active pending state"
+    );
+    assert_eq!(after.insertion_mode, InsertionMode::InTableText);
+    assert_eq!(
+        after.table_text_original_insertion_mode,
+        Some(InsertionMode::InTable)
+    );
+    assert_eq!(after.pending_table_character_tokens, vec!["x".to_string()]);
+    assert!(
+        after.pending_table_character_tokens_contains_non_space,
+        "failed re-entry must preserve non-space classification"
     );
 }
 

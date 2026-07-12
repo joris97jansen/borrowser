@@ -55,6 +55,9 @@ Dedicated table-heavy corpus:
   foster parenting, malformed recovery, and basic nested tables. These fixtures
   are loaded by the same DOM golden harness and run under whole, deterministic
   chunked, and seeded fuzz-chunk execution.
+- `../tables/dom/ae8-*`: AE8 table-construction goldens for the supported
+  static parser-owned table subset, including table-text EOF flushing and
+  deterministic parse-error output for selected malformed branches.
 
 Core F11 coverage baseline:
 

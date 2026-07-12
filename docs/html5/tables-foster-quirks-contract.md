@@ -2,18 +2,25 @@
 
 Last updated: 2026-03-24
 Scope: `crates/html/src/html5/tree_builder` (`feature = "html5"`)  
-Status: normative implementation contract for Milestone I; current repository code may still be partial
+Status: superseded for table tree-construction details by AE8; retained as
+historical Milestone I context and quirks/foster-parenting background
 
 Related contracts:
+- [`docs/html5/ae8-specialized-table-tree-construction-contract.md`](ae8-specialized-table-tree-construction-contract.md)
 - [`docs/html5/spec-matrix-treebuilder.md`](spec-matrix-treebuilder.md)
 - [`docs/html5/dompatch-contract.md`](dompatch-contract.md)
 - [`docs/html5/node-identity-contract.md`](node-identity-contract.md)
 - [`docs/html5/afe-aaa-contract.md`](afe-aaa-contract.md)
 - [`docs/html5/adr/ADR-002-runtime-patch-move-semantics.md`](adr/ADR-002-runtime-patch-move-semantics.md)
 
-This document defines Borrowser's implementation contract for HTML5 table-family
-insertion modes, foster parenting, and tri-state document mode handling as they
-apply to parser behavior in Milestone I.
+This document originally defined Borrowser's implementation contract for HTML5
+table-family insertion modes, foster parenting, and tri-state document mode
+handling as they applied to parser behavior in Milestone I.
+
+AE8 is now the normative contract for the supported static table
+tree-construction subset. If this document and the AE8 contract disagree about
+table insertion modes, pending table text, implied wrappers, malformed table
+recovery, or foster-parent insertion locations, AE8 is authoritative.
 
 It is the implementation target for landing table parsing in the current
 HTML5 tree builder without weakening the existing `DomPatch`, identity, or

@@ -22,8 +22,7 @@ impl Html5TreeBuilder {
                 Ok(DispatchOutcome::Done)
             }
             Token::Text { .. } if self.current_node_uses_in_table_text_mode() => {
-                self.clear_pending_table_character_tokens();
-                self.insertion_mode = InsertionMode::InTableText;
+                self.enter_in_table_text_mode(self.insertion_mode)?;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InTableText))
             }
             Token::Text { .. } => {

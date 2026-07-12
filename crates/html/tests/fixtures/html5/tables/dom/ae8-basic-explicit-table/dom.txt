@@ -1,0 +1,18 @@
+# format: html5-dom-v1
+# status: active
+# include_parse_errors: true
+#document
+  <!doctype html>
+  <html>
+    <head>
+    <body>
+      <table>
+        <caption>
+          "cap"
+        <colgroup>
+          <col>
+        <tbody>
+          <tr>
+            <td>
+              "a"
+parse-errors: none

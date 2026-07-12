@@ -4,6 +4,82 @@ use super::helpers::{
 use crate::dom_patch::DomPatch;
 
 #[test]
+fn cell_start_directly_under_table_synthesizes_tbody_and_row_with_bounded_reprocessing() {
+    use crate::html5::shared::Token;
+    use crate::html5::tree_builder::modes::InsertionMode;
+
+    let resolver = EmptyResolver;
+    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+
+    let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
+
+    let table = ctx
+        .atoms
+        .intern_ascii_folded("table")
+        .expect("atom interning");
+    let td = ctx.atoms.intern_ascii_folded("td").expect("atom interning");
+
+    for token in [
+        Token::StartTag {
+            name: table,
+            attrs: Vec::new(),
+            self_closing: false,
+        },
+        Token::StartTag {
+            name: td,
+            attrs: Vec::new(),
+            self_closing: false,
+        },
+    ] {
+        let _ = builder
+            .process(&token, &ctx.atoms, &resolver)
+            .expect("direct cell recovery should remain recoverable");
+    }
+
+    let tbody = ctx
+        .atoms
+        .intern_ascii_folded("tbody")
+        .expect("atom interning");
+    let tr = ctx.atoms.intern_ascii_folded("tr").expect("atom interning");
+    let state = builder.state_snapshot();
+    assert_eq!(state.insertion_mode, InsertionMode::InCell);
+    assert_eq!(
+        state.open_element_names,
+        vec![
+            ctx.atoms
+                .intern_ascii_folded("html")
+                .expect("atom interning"),
+            ctx.atoms
+                .intern_ascii_folded("body")
+                .expect("atom interning"),
+            table,
+            tbody,
+            tr,
+            td,
+        ],
+        "direct cells must be recovered by parser-created implied tbody/tr elements"
+    );
+    let errors = builder.take_parse_error_kinds_for_test();
+    assert!(
+        errors.contains(&"in-table-cell-start-tag-implies-row-group"),
+        "direct cell under table must report implied row-group recovery"
+    );
+    assert!(
+        errors.contains(&"in-table-body-cell-start-tag-implies-tr"),
+        "direct cell under table must report implied row recovery"
+    );
+    assert!(
+        !errors.contains(&"mode-reprocess-budget-exhausted"),
+        "table implied-wrapper recovery must complete within the bounded dispatch loop"
+    );
+}
+
+#[test]
 fn in_row_cell_start_tag_switches_to_in_cell_and_pushes_afe_marker() {
     use crate::html5::shared::Token;
     use crate::html5::tree_builder::formatting::AfeEntry;
