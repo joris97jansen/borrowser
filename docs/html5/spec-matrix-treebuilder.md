@@ -73,6 +73,13 @@ It defines HTML5 Core v0 tree-builder scope and explicitly records deferred and 
 | `TB-MODE-AFTER-BODY` | MVP | `After body` | `#parsing-main-afterbody` | `mod.rs`, `modes.rs` | Current: `tree_builder/ae6-comments-document-structure`; unit: insertion-mode and SOE recovery tests. | Comments after body, `</html>` handoff, EOF after body, unexpected content reprocessing. | `tb-ae6-after-body` | Required for normal static-document closeout without collapsing back into `In body`. |
 | `TB-MODE-AFTER-AFTER-BODY` | MVP | `After after body` | `#the-after-after-body-insertion-mode` | `mod.rs`, `modes.rs` | Current: `tree_builder/ae6-comments-document-structure`; unit: insertion-mode and SOE recovery tests. | Comments after `</html>`, EOF after document structure, unexpected content reprocessing. | `tb-ae6-after-after-body` | Required for deterministic comments/EOF after the normal document element. |
 | `TB-MODE-TEXT` | MVP_PARTIAL | `Text` | `#the-text-insertion-mode` | `mod.rs`, `modes.rs`, `text_mode.rs` | Current coverage: `tree_builder/tests/text_mode.rs`; planned fixture umbrella: `tb-text-mode-core`. | Return-to-original-mode mechanics, mismatched end tags, and EOF in text mode. | `tb-text-mode-core` | Core-v0 text-mode routing for title/textarea/style and the dedicated script tokenizer family; parser execution/pause behavior remains out of scope. |
+| `TB-MODE-IN-TABLE` | MVP_PARTIAL | `In table` | `#parsing-main-intable` | `tree_builder/table/in_table.rs`, `insert/location.rs`, `stack/foster.rs` | Current: `ae8-*`, `i10-table-*`, `i3-in-table-*`; unit: `table_modes.rs`. | caption/colgroup/row-group/row/cell dispatch, implied wrappers, nested table recovery, foster-parented non-table content. | `tb-ae8-in-table` | AE8 supported static table construction routes table tokens through explicit table mode instead of generic in-body nesting. |
+| `TB-MODE-IN-TABLE-TEXT` | MVP_PARTIAL | `In table text` | `#parsing-main-intabletext` | `tree_builder/table/in_table_text.rs`, `table/state.rs`, `table/delegation.rs` | Current: `ae8-pending-table-text-eof`, `ae8-foster-text-and-element`; unit: table-text return-mode tests. | Chunk-safe pending character buffering, return-mode restoration, EOF flush, foster-parenting non-space runs. | `tb-ae8-in-table-text` | Needed so table whitespace and non-space table text are processed through parser-owned pending state. |
+| `TB-MODE-IN-CAPTION` | MVP_PARTIAL | `In caption` | `#parsing-main-incaption` | `tree_builder/table/in_caption.rs`, `table/close.rs` | Current: `i4-caption-colgroup-transition`; unit: `table_caption_colgroup.rs`. | Caption close, conflicting table-structure tokens, AFE marker cleanup. | `tb-ae8-in-caption` | Caption content delegates to body rules until a table-structure token closes and reprocesses. |
+| `TB-MODE-IN-COLUMN-GROUP` | MVP_PARTIAL | `In column group` | `#parsing-main-incolgroup` | `tree_builder/table/in_column_group.rs`, `table/close.rs` | Current: `ae8-basic-explicit-table`, `i4-colgroup-*`; unit: `table_caption_colgroup.rs`. | `col` insertion, missing `</colgroup>`, non-space recovery into table foster-parenting. | `tb-ae8-in-column-group` | Required for deterministic parser-created `colgroup`/`col` structure. |
+| `TB-MODE-IN-TABLE-BODY` | MVP_PARTIAL | `In table body` | `#parsing-main-intbody` | `tree_builder/table/in_table_body.rs`, `table/scope.rs`, `table/close.rs` | Current: `ae8-multiple-bodies`, `ae8-implied-row-direct-cell`; unit: `table_body_row.rs`. | row insertion, implied row for cells, row-group transitions, table end recovery. | `tb-ae8-in-table-body` | Owns row-group context instead of encoding row-group behavior in generic element insertion. |
+| `TB-MODE-IN-ROW` | MVP_PARTIAL | `In row` | `#parsing-main-intr` | `tree_builder/table/in_row.rs`, `table/close.rs` | Current: `ae8-malformed-row-and-cell-recovery`, `i5-stray-tr`; unit: `table_body_row.rs`. | cell insertion, conflicting row starts, row closure, row-group/table boundaries. | `tb-ae8-in-row` | Owns row context and cell transition behavior. |
+| `TB-MODE-IN-CELL` | MVP_PARTIAL | `In cell` | `#parsing-main-intd` | `tree_builder/table/in_cell.rs`, `table/close.rs` | Current: `ae8-malformed-row-and-cell-recovery`, `i6-*`; unit: `table_cell.rs`. | explicit/mismatched cell end tags, implied cell close, AFE marker clearing, nested table support. | `tb-ae8-in-cell` | Owns table-cell recovery without introducing layout-cell concepts. |
 
 ## `TB-MODE-IN-HEAD` Core v0 Partial Scope
 
@@ -98,8 +105,8 @@ Explicitly deferred from Core v0 `In head`:
 | `TB-ALGO-BODY-RECOVERY` | MVP_PARTIAL | Body-mode malformed-content recovery | `#parsing-main-inbody`, implied end tags | `tree_builder/body_recovery.rs`, `tree_builder/dispatch/in_body.rs`, `tree_builder/known_tags.rs` | Current fixtures: `ae7-*`, `f7-in-body-stray-end-tags`. | Paragraph auto-close, unmatched `</p>` synthesis, list-item sibling recovery, supported implied end tags. | `tb-ae7-body-recovery` | AE7-supported subset only; not full `In body` conformance. |
 | `TB-ALGO-AFE` | MVP_PARTIAL | Active formatting elements (AFE) | `#the-list-of-active-formatting-elements` | `tree_builder/formatting.rs`, `mod.rs` | Current fixtures: `h8-*`, `f13-*`; unit/session reconstruction tests. | Reconstruction triggers, marker boundaries, duplicate formatting entries. | `tb-afe-core` | Needed for supported in-body formatting fidelity; full formatting conformance remains out of scope. |
 | `TB-ALGO-AAA` | MVP_PARTIAL | Adoption agency algorithm (AAA) | `#adoption-agency-algorithm` | `tree_builder/adoption.rs`, `tree_builder/formatting.rs`, `dispatch/in_body.rs` | Current fixtures: `h8-aaa-*`, `h10-aaa-*`; unit/integration AAA tests. | Misnested supported formatting tags, deterministic moves, AFE/SOE synchronization. | `tb-aaa-core` | Implemented for Borrowser's supported formatting-element subset only; not full WHATWG AAA conformance. |
-| `TB-ALGO-FOSTER` | DEFERRED | Foster parenting | `#foster-parenting` | `tree_builder/mod.rs`, planned table-mode helpers | Planned fixtures: `tb-foster-text-in-table`, `tb-foster-misnested-phrasing`. | Text/phrasing content in table contexts requiring foster insertion location. | `tb-foster-core` | Coupled to table insertion modes; defer with tables. |
-| `TB-ALGO-TABLE-ROBUSTNESS` | MVP_PARTIAL | Unsupported table-tag robustness in Core v0 | `#parsing-main-intable`, `#parsing-main-inbody` | `tree_builder/mod.rs`, `tree_builder/modes.rs`, `tree_builder/stack.rs` | Planned fixture: `tb-table-tags-dont-explode`. | Encountering `<table>`-family tags must not panic, corrupt SOE invariants, or emit nondeterministic patches when table modes are deferred. | `tb-table-tags-dont-explode` | Ensures production robustness under unsupported constructs. |
+| `TB-ALGO-FOSTER` | MVP_PARTIAL | Foster parenting | `#foster-parenting` | `tree_builder/insert/location.rs`, `tree_builder/stack/foster.rs`, `tree_builder/table/delegation.rs` | Current fixtures: `ae8-foster-text-and-element`, `ae8-pending-table-text-eof`, `i7-foster-parent-*`, `i10-table-stray-*`; unit: `insert/tests/foster.rs`. | Text and elements in table contexts requiring `InsertBefore` or stack fallback insertion locations. | `tb-ae8-foster-core` | AE8 implements foster parenting as adjusted insertion-location selection before insertion, not post-processing. |
+| `TB-ALGO-TABLE-CONSTRUCTION` | MVP_PARTIAL | Supported table tree construction | `#parsing-main-intable`, `#parsing-main-intbody`, `#parsing-main-intr`, `#parsing-main-intd` | `tree_builder/table/*`, `tree_builder/stack/*`, `tree_builder/insert/*` | Current fixtures: `ae8-*`, `i10-table-*`; unit: `table_*.rs`. | implied row groups/rows, row/cell close recovery, pending table text, deterministic parse errors, chunk parity. | `tb-ae8-table-construction` | AE8 supported static table parsing subset; does not claim full WHATWG table conformance. |
 | `TB-ALGO-TEMPLATE-MODES` | OUT_OF_SCOPE | Template insertion modes stack | `#parsing-main-intemplate`, `#stack-of-template-insertion-modes` | planned `tree_builder/modes.rs` | Planned policy fixture: `tb-template-out-of-scope` (`skip`). | Template mode push/pop and reprocessing semantics. | `tb-template-out-of-scope` | Excluded from Core v0 for complexity/runway reasons. |
 | `TB-ALGO-QUIRKS-DOCTYPE` | MVP | Quirks mode + doctype effects | `#the-initial-insertion-mode`, `#the-before-html-insertion-mode` | `tree_builder/mod.rs`, `html5/shared/context.rs` (mode/counters), tokenizer doctype token handoff | Current tokenizer proxy: `tok-doctype-quirks-missing-name`. Planned tree fixture: `tb-quirks-from-doctype`. | Document mode decision from DOCTYPE token (`force_quirks` true/false), deterministic propagation and immutability boundary. | `tb-quirks-from-doctype` | Required for standards/quirks compatibility boundary. |
 | `TB-ALGO-PATCH-SINK` | MVP | Deterministic patch emission contract | engine contract (`docs/html5/dompatch-contract.md`) | `tree_builder/mod.rs`, `session.rs`, `dom_patch.rs` | Current harness path: `html5_golden_tree_builder_patches.rs`. | Stable ordering, deterministic document bootstrap, no invalid patch sequencing. | `tb-patch-order-stability` | Runtime consumes patches incrementally; determinism is non-negotiable. |
@@ -140,21 +147,29 @@ Explicitly deferred from Core v0 `In head`:
 - Streaming objective:
   - avoid unbounded cross-token buffering and keep memory growth proportional to current-token work.
 
-## Early Table Stance (Core v0 Decision)
+## AE8 Table Stance (Core v0 Decision)
 
-Tables are `DEFERRED` for Core v0.
+Tables are `MVP_PARTIAL` for Core v0 after AE8.
 
 Scope consequence:
 
-- `In table`, `In table text`, `In caption`, `In column group`, `In table body`, `In row`, `In cell`, `In select in table` insertion modes are deferred.
-- Foster parenting is deferred with table-mode implementation.
-- WPT/table-heavy cases must not be Core v0 gates until this status is promoted.
-- Robustness requirement still applies (`TB-ALGO-TABLE-ROBUSTNESS`): unsupported table tags must not break parser invariants.
+- `In table`, `In table text`, `In caption`, `In column group`, `In table
+  body`, `In row`, and `In cell` are supported for the AE8 declared subset.
+- Foster parenting is supported as adjusted insertion-location selection for
+  supported table-misplaced text and element tokens.
+- `In select in table`, template insertion-mode stack interactions,
+  fragment-context table bootstrapping, and foreign-content table integration
+  remain deferred or out of scope.
+- Unsupported table branches must still preserve parser invariants and fail
+  safe deterministically.
 
 Rationale:
 
-- Table insertion + foster parenting materially increases algorithm complexity and misnested-content surface area.
-- Core v0 value is higher by stabilizing Initial/Head/Body + SOE/AFE core first.
+- AE8 has production table-mode handlers, stack/scope helpers, foster
+  insertion-location code, DOM/patch goldens, and chunk-parity coverage for
+  supported static table parsing.
+- The promoted scope remains declared and partial so Borrowser does not claim
+  full WHATWG table conformance.
 
 ## Core v0 Tree Builder Subset
 
@@ -167,7 +182,8 @@ Core v0 tree-builder completion requires:
 5. `TB-ALGO-AFE` and `TB-ALGO-AAA` at `MVP_PARTIAL` scope for the
    documented supported formatting-element subset.
 6. `TB-ALGO-REPROCESS` behavior across mode transitions.
-7. `TB-ALGO-TABLE-ROBUSTNESS` for deterministic unsupported-table handling.
+7. `TB-ALGO-FOSTER` and `TB-ALGO-TABLE-CONSTRUCTION` at `MVP_PARTIAL` scope
+   for the AE8 supported table subset.
 
 Deferred/out-of-scope algorithms do not gate Core v0 exit criteria.
 
@@ -209,9 +225,9 @@ Status source of truth:
 | `tb-afe-core` | Yes (Partial) | current `h8-*`, `f13-*`, and AFE unit/session tests | Active | AFE reconstruction/markers for the supported formatting subset. |
 | `tb-reprocess-core` | Yes | planned `.../tb-reprocess-core` | Planned | Mode-switch token reprocessing invariants. |
 | `tb-quirks-from-doctype` | Yes | planned `.../tb-quirks-from-doctype` | Planned | force_quirks propagation to document mode. |
-| `tb-table-tags-dont-explode` | Yes (Partial) | planned `.../tb-table-tags-dont-explode` | Planned | Unsupported table tags keep parser deterministic and invariant-safe. |
+| `tb-ae8-table-construction` | Yes (Partial) | current `crates/html/tests/fixtures/html5/tables/dom/ae8-*` and matching patch fixtures | Active | Supported table insertion modes, implied wrappers, malformed recovery, foster parenting, EOF table-text flush, and whole/chunked parity. |
 | `tb-aaa-core` | Yes (Partial) | current `h8-aaa-*`, `h10-aaa-*`, and AAA unit/integration tests | Active | Supported formatting-element subset only; not full WHATWG AAA. |
-| `tb-foster-core` | No | planned `.../tb-foster-core` | Planned | Deferred: foster parenting in table contexts. |
+| `tb-ae8-foster-core` | Yes (Partial) | current `ae8-foster-*`, `i7-foster-parent-*`, and `i10-table-stray-*` | Active | Supported foster parenting in table contexts with adjusted insertion locations and patch evidence. |
 | `tb-text-mode-core` | Yes (Partial) | planned `.../tb-text-mode-core` | Planned | Current unit coverage exists; fixture umbrella can promote later. |
 | `tb-template-out-of-scope` | No | planned `.../tb-template-out-of-scope` | Planned (`skip`) | Out-of-scope: template insertion modes stack excluded. |
 
@@ -222,13 +238,13 @@ These spec insertion modes exist but are intentionally not Core v0 targets yet:
 - `In frameset`
 - `After frameset`
 - `After after frameset`
-- table-family insertion modes listed in `Early Table Stance`
+- `In select in table`
 
 ## Out-Of-Scope / Deferred Contract
 
 For HTML5 Core v0 tree builder:
 
-- Table insertion modes and foster parenting are `DEFERRED`.
+- Full WHATWG table conformance beyond AE8 remains `DEFERRED`.
 - Template insertion modes are `OUT_OF_SCOPE` and should be `skip` in policy-driven manifests.
 - Full WHATWG adoption-agency conformance remains `DEFERRED`; Borrowser's
   supported formatting-element subset is tracked as `MVP_PARTIAL`.

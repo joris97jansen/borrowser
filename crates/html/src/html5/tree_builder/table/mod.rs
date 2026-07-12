@@ -15,4 +15,4 @@ mod in_table_text;
 mod scope;
 mod state;
 
-pub(in crate::html5::tree_builder) use state::PendingTableCharacterTokens;
+pub(in crate::html5::tree_builder) use state::PendingTableTextState;

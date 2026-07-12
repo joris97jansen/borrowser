@@ -10,6 +10,7 @@ Normative matrix sources:
 - `docs/html5/ae1-html-parser-dom-ownership-contract.md`
 - `docs/html5/ae2-parser-created-dom-node-model.md`
 - `docs/html5/ae7-body-mode-recovery-contract.md`
+- `docs/html5/ae8-specialized-table-tree-construction-contract.md`
 
 Related text-mode hardening note:
 - `docs/html5/rawtext-script-stability.md`
@@ -160,6 +161,13 @@ Core v0 tree-builder support includes:
   - `TB-MODE-IN-BODY`
   - `TB-MODE-AFTER-BODY`
   - `TB-MODE-AFTER-AFTER-BODY`
+  - `TB-MODE-IN-TABLE` (`MVP_PARTIAL`)
+  - `TB-MODE-IN-TABLE-TEXT` (`MVP_PARTIAL`)
+  - `TB-MODE-IN-CAPTION` (`MVP_PARTIAL`)
+  - `TB-MODE-IN-COLUMN-GROUP` (`MVP_PARTIAL`)
+  - `TB-MODE-IN-TABLE-BODY` (`MVP_PARTIAL`)
+  - `TB-MODE-IN-ROW` (`MVP_PARTIAL`)
+  - `TB-MODE-IN-CELL` (`MVP_PARTIAL`)
 - Algorithms/invariants:
   - `TB-ALGO-REPROCESS`
   - `TB-ALGO-SOE`
@@ -167,7 +175,8 @@ Core v0 tree-builder support includes:
   - `TB-ALGO-AAA` (`MVP_PARTIAL`, supported formatting-element subset only)
   - `TB-ALGO-QUIRKS-DOCTYPE`
   - `TB-ALGO-PATCH-SINK`
-  - `TB-ALGO-TABLE-ROBUSTNESS` (`MVP_PARTIAL`)
+  - `TB-ALGO-FOSTER` (`MVP_PARTIAL`)
+  - `TB-ALGO-TABLE-CONSTRUCTION` (`MVP_PARTIAL`)
 
 Core v0 tree-builder partial-scope guards:
 
@@ -221,7 +230,11 @@ Core v0 guarantees the following tag/context baseline:
     `After body` and `After after body` modes for normal static documents.
   - comments after `</body>` are inserted under the `html` element; comments
     after `</html>` are inserted under the document node.
-  - deterministic fallback behavior for unsupported table-family tags (robustness contract).
+  - AE8 supported table-family insertion-mode behavior for `table`,
+    `caption`, `colgroup`, `col`, `tbody`, `thead`, `tfoot`, `tr`, `td`,
+    and `th`, including supported implied wrappers, table-text buffering,
+    malformed table recovery, and foster parenting as defined by
+    `docs/html5/ae8-specialized-table-tree-construction-contract.md`.
   - unknown or unsupported elements outside table-family MUST follow the generic element insertion path defined by `TB-MODE-IN-BODY`.
   - this unknown/unsupported-element rule applies only when the behavior is not explicitly marked `OUT_OF_SCOPE` with `skip` policy semantics (for example, template insertion mode stack behavior).
 
@@ -304,17 +317,20 @@ Core v0 stance:
 
 Core v0 stance:
 
-- table insertion modes are `DEFERRED`.
-- foster parenting is `DEFERRED`.
-- robust unsupported-table behavior is required:
+- AE8 promotes the supported static table tree-construction subset into
+  Core-v0 `MVP_PARTIAL` scope.
+- supported insertion modes are `InTable`, `InTableText`, `InCaption`,
+  `InColumnGroup`, `InTableBody`, `InRow`, and `InCell`.
+- supported table elements are `table`, `caption`, `colgroup`, `col`, `tbody`,
+  `thead`, `tfoot`, `tr`, `td`, and `th`.
+- supported omitted wrappers, malformed row/cell/body recovery, pending
+  table-character-token handling, and foster-parent insertion locations are
+  parser-owned behavior.
+- unsupported table interactions still require robust fallback:
   - parser MUST remain deterministic,
   - parser MUST preserve core invariants (SOE/patch ordering),
   - parser MUST NOT panic on table-family tags.
-- deterministic fallback semantics for Core v0:
-  - table-family start/end tags are processed via the generic element path in `TB-MODE-IN-BODY`,
-  - generic element path here means normal `In body` insertion flow (create element, push to SOE, emit deterministic patch sequence) without table-specific adjustments,
-  - parser does not switch to table insertion modes,
-  - foster parenting is not performed.
+- AE8 does not claim full WHATWG table parsing conformance.
 
 <a id="explicitly-unsupported-or-deferred-in-core-v0"></a>
 ## Explicitly Unsupported Or Deferred In Core v0
@@ -326,9 +342,10 @@ The following are intentionally not part of the Core v0 guarantee:
 - `DEFERRED`:
   - full WHATWG tokenizer behavior outside the tokenizer state families and
     fixtures explicitly listed in this contract and the tokenizer matrix
-  - adoption agency algorithm (`TB-ALGO-AAA`)
-  - foster parenting (`TB-ALGO-FOSTER`)
-  - full table insertion-mode set (see tree-builder matrix `Early Table Stance`)
+  - full WHATWG table insertion-mode conformance beyond the AE8 supported
+    subset
+  - `InSelectInTable`
+  - table interactions with template insertion-mode stacks
 
 Policy classification requirements:
 
@@ -366,8 +383,8 @@ This contract prevents accidental reliance on unspecified behavior.
 
 - parser pause/suspension and script execution integration for `<script>`.
 - Template insertion mode stack.
-- Table insertion modes and foster parenting semantics.
-- Adoption agency algorithm (`TB-ALGO-AAA`).
+- Full WHATWG table insertion-mode conformance beyond AE8.
+- `InSelectInTable` and template-specific table interactions.
 - Full tree-builder text mode parity (`TB-MODE-TEXT`), including deferred RAWTEXT/RCDATA coupling.
 
 <a id="core-v0-gate-and-evidence-model"></a>

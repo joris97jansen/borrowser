@@ -54,16 +54,18 @@ impl Html5TreeBuilder {
         &mut self,
         atoms: &AtomTable,
         text: &dyn TextResolver,
-    ) -> Result<(), TreeBuilderError> {
-        let pending = self.take_pending_table_character_tokens();
-        if pending.is_empty() {
-            return Ok(());
+    ) -> Result<InsertionMode, TreeBuilderError> {
+        let pending = self.take_pending_table_text_state()?;
+        let return_mode = pending.original_insertion_mode();
+        let tokens = pending.tokens();
+        if tokens.is_empty() {
+            return Ok(return_mode);
         }
         let mut merged = String::new();
-        for chunk in pending.chunks() {
+        for chunk in tokens.chunks() {
             merged.push_str(chunk);
         }
-        if pending.contains_non_space() {
+        if tokens.contains_non_space() {
             self.record_parse_error(
                 "in-table-text-non-space-foster-parented",
                 None,
@@ -80,7 +82,7 @@ impl Html5TreeBuilder {
         } else {
             self.insert_resolved_text(&merged)?;
         }
-        Ok(())
+        Ok(return_mode)
     }
 
     pub(super) fn handle_in_table_anything_else(

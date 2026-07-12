@@ -56,6 +56,9 @@ Dedicated table-heavy corpus:
   closes, foster parenting, malformed recovery, and basic nested tables. These
   fixtures are loaded by the same patch golden harness and run under whole,
   deterministic chunked, and seeded fuzz-chunk execution.
+- `../tables/patches/ae8-*`: AE8 patch goldens for supported table
+  tree-construction behavior, including implied wrappers, foster-parent
+  `InsertBefore` placement, and pending table-text EOF flushing.
 
 
 Regenerate expected outputs:

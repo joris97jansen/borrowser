@@ -460,9 +460,9 @@ Current supported subset:
   `html`/`head`/`body` shell structure recovers deterministically with
   regression-visible parser diagnostics in fixtures, and comments/text around
   document structure are covered by stable DOM snapshots. AE6 does not claim
-  full tree-construction conformance, tables/foster parenting, templates,
-  framesets, foreign content, scripting, DOM APIs, navigation, resource
-  loading, CSS/layout/paint behavior, or rendering integration changes.
+  full tree-construction conformance, table-family modes, templates, framesets,
+  foreign content, scripting, DOM APIs, navigation, resource loading,
+  CSS/layout/paint behavior, or rendering integration changes.
 - AE7 body-mode recovery: `In body` now has a documented parser-owned recovery
   subset for common malformed body content. Supported behavior includes
   implied-end-tag generation for `p` and `li`, paragraph auto-close before the
@@ -474,6 +474,20 @@ Current supported subset:
   WHATWG `In body` conformance, full implied-end-tag coverage, full list
   parsing, table/select/template expansion, visual formatting behavior, or
   CSS/layout/paint changes.
+- AE8 specialized table tree construction: the HTML tree builder now has a
+  documented parser-owned table construction subset for supported static table
+  markup. Supported behavior includes explicit `InTable`, `InTableText`,
+  `InCaption`, `InColumnGroup`, `InTableBody`, `InRow`, and `InCell` modes;
+  parser-created `table`, `caption`, `colgroup`, `col`, `tbody`, `thead`,
+  `tfoot`, `tr`, `td`, and `th` nodes; implied `tbody`/`tr`/`colgroup`
+  construction; table-specific scope and stack-clearing helpers; table-cell
+  AFE markers; pending table-character-token buffering and EOF flushing; and
+  foster parenting as adjusted insertion-location selection before insertion.
+  See `docs/html5/ae8-specialized-table-tree-construction-contract.md`.
+  AE8 does not claim full WHATWG table conformance, table layout, CSS table
+  formatting, select/template table branches, foreign-content table behavior,
+  form behavior, accessibility table semantics, JavaScript, resource loading,
+  or full DOM APIs.
 
 Missing or incomplete:
 
@@ -483,9 +497,10 @@ Missing or incomplete:
   table activation beyond the active Core-v0 `MVP_PARTIAL` subset
 - full WHATWG tokenizer state coverage and edge-case parity beyond the
   supported AE/Core-v0 tokenizer subset
-- full WHATWG tree-construction coverage beyond the AE6/AE7 documented
-  static-document and body-recovery subsets, including advanced insertion modes
-  and malformed-markup recovery outside the documented Core-v0 scope
+- full WHATWG tree-construction coverage beyond the AE6/AE7/AE8 documented
+  static-document, body-recovery, and table-construction subsets, including
+  advanced insertion modes and malformed-markup recovery outside the documented
+  Core-v0 scope
 - full DOM API surface
 - public DOM `DocumentType` API exposure
 - script integration

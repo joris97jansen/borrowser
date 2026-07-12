@@ -39,6 +39,15 @@ pub(crate) const I10_TABLE_FIXTURE_NAMES: &[&str] = &[
     "i10-table-nested-basic",
 ];
 
+pub(crate) const AE8_TABLE_FIXTURE_NAMES: &[&str] = &[
+    "ae8-basic-explicit-table",
+    "ae8-implied-row-direct-cell",
+    "ae8-multiple-bodies",
+    "ae8-malformed-row-and-cell-recovery",
+    "ae8-foster-text-and-element",
+    "ae8-pending-table-text-eof",
+];
+
 pub(crate) const H8_FIXTURE_BAND: FixtureBand = FixtureBand {
     names: H8_FIXTURE_NAMES,
     fuzz_runs: 1,
@@ -55,4 +64,10 @@ pub(crate) const I10_TABLE_FIXTURE_BAND: FixtureBand = FixtureBand {
     names: I10_TABLE_FIXTURE_NAMES,
     fuzz_runs: 4,
     fuzz_seed: 0x10C0DE,
+};
+
+pub(crate) const AE8_TABLE_FIXTURE_BAND: FixtureBand = FixtureBand {
+    names: AE8_TABLE_FIXTURE_NAMES,
+    fuzz_runs: 4,
+    fuzz_seed: 0xAE8,
 };

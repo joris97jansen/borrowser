@@ -192,7 +192,7 @@ impl Html5TreeBuilder {
         self.original_insertion_mode = None;
         self.active_text_mode = None;
         self.foster_parenting_enabled = false;
-        self.clear_pending_table_character_tokens();
+        self.clear_pending_table_text_state();
         self.document_state.frameset_ok = true;
     }
 }

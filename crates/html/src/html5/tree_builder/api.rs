@@ -9,7 +9,7 @@ use crate::html5::tree_builder::live_tree::LiveTree;
 use crate::html5::tree_builder::modes::InsertionMode;
 use crate::html5::tree_builder::patch_sink::PatchSink;
 use crate::html5::tree_builder::stack::{OpenElementsStack, ScopeTagSet};
-use crate::html5::tree_builder::table::PendingTableCharacterTokens;
+use crate::html5::tree_builder::table::PendingTableTextState;
 use std::num::NonZeroU32;
 
 /// Centralized tree-builder hardening/resource bounds.
@@ -153,7 +153,7 @@ pub struct Html5TreeBuilder {
     pub(in crate::html5::tree_builder) perf_text_coalescing_invalidations: u64,
     pub(in crate::html5::tree_builder) active_text_mode: Option<TextModeSpec>,
     pub(in crate::html5::tree_builder) foster_parenting_enabled: bool,
-    pub(in crate::html5::tree_builder) pending_table_character_tokens: PendingTableCharacterTokens,
+    pub(in crate::html5::tree_builder) pending_table_text: Option<PendingTableTextState>,
     pub(in crate::html5::tree_builder) pending_tokenizer_control: Option<TokenizerControl>,
     #[cfg(any(test, feature = "dom-snapshot", feature = "internal-api"))]
     pub(in crate::html5::tree_builder) parse_error_kinds: Vec<&'static str>,
@@ -182,6 +182,7 @@ pub struct TreeBuilderPerfStats {
 pub(crate) struct TreeBuilderProgressWitness {
     pub(crate) insertion_mode: InsertionMode,
     pub(crate) original_insertion_mode: Option<InsertionMode>,
+    pub(crate) table_text_original_insertion_mode: Option<InsertionMode>,
     pub(crate) active_text_mode: Option<TextModeSpec>,
     pub(crate) open_element_keys: Vec<PatchKey>,
     pub(crate) current_table_key: Option<PatchKey>,
@@ -197,6 +198,7 @@ pub(crate) struct TreeBuilderProgressWitness {
 pub struct TreeBuilderStateSnapshot {
     pub(crate) insertion_mode: InsertionMode,
     pub(crate) original_insertion_mode: Option<InsertionMode>,
+    pub(crate) table_text_original_insertion_mode: Option<InsertionMode>,
     pub(crate) active_text_mode: Option<TextModeSpec>,
     pub(crate) open_element_names: Vec<AtomId>,
     pub(crate) open_element_keys: Vec<PatchKey>,
@@ -244,7 +246,7 @@ impl Html5TreeBuilder {
             perf_text_coalescing_invalidations: 0,
             active_text_mode: None,
             foster_parenting_enabled: false,
-            pending_table_character_tokens: PendingTableCharacterTokens::default(),
+            pending_table_text: None,
             pending_tokenizer_control: None,
             #[cfg(any(test, feature = "dom-snapshot", feature = "internal-api"))]
             parse_error_kinds: Vec::new(),
@@ -321,16 +323,25 @@ impl Html5TreeBuilder {
         TreeBuilderProgressWitness {
             insertion_mode: self.insertion_mode,
             original_insertion_mode: self.original_insertion_mode,
+            table_text_original_insertion_mode: self
+                .pending_table_text
+                .as_ref()
+                .map(PendingTableTextState::original_insertion_mode),
             active_text_mode: self.active_text_mode,
             open_element_keys: (0..self.open_elements.len())
                 .filter_map(|index| self.open_elements.get(index))
                 .map(|entry| entry.key())
                 .collect(),
             current_table_key: self.current_table_key(),
-            pending_table_character_tokens: self.pending_table_character_tokens.chunks().to_vec(),
+            pending_table_character_tokens: self
+                .pending_table_text
+                .as_ref()
+                .map(|state| state.tokens().chunks().to_vec())
+                .unwrap_or_default(),
             pending_table_character_tokens_contains_non_space: self
-                .pending_table_character_tokens
-                .contains_non_space(),
+                .pending_table_text
+                .as_ref()
+                .is_some_and(|state| state.tokens().contains_non_space()),
             quirks_mode: self.document_state.quirks_mode,
             frameset_ok: self.document_state.frameset_ok,
             foster_parenting_enabled: self.foster_parenting_enabled,
@@ -398,14 +409,23 @@ impl Html5TreeBuilder {
         TreeBuilderStateSnapshot {
             insertion_mode: self.insertion_mode,
             original_insertion_mode: self.original_insertion_mode,
+            table_text_original_insertion_mode: self
+                .pending_table_text
+                .as_ref()
+                .map(PendingTableTextState::original_insertion_mode),
             active_text_mode: self.active_text_mode,
             open_element_names: self.open_elements.iter_names().collect(),
             open_element_keys: self.open_elements.iter_keys().collect(),
             current_table_key: self.current_table_key(),
-            pending_table_character_tokens: self.pending_table_character_tokens.chunks().to_vec(),
+            pending_table_character_tokens: self
+                .pending_table_text
+                .as_ref()
+                .map(|state| state.tokens().chunks().to_vec())
+                .unwrap_or_default(),
             pending_table_character_tokens_contains_non_space: self
-                .pending_table_character_tokens
-                .contains_non_space(),
+                .pending_table_text
+                .as_ref()
+                .is_some_and(|state| state.tokens().contains_non_space()),
             quirks_mode: self.document_state.quirks_mode,
             frameset_ok: self.document_state.frameset_ok,
         }

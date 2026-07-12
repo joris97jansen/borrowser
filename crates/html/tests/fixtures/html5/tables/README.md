@@ -18,6 +18,13 @@ Scope:
 - foster-parenting behavior
 - basic nested tables
 
+AE8 fixture band:
+
+- `ae8-*` fixtures are the Milestone AE table-construction contract band. They
+  cover explicit table modes, implied row/body construction, multiple table
+  bodies, malformed row/cell recovery, foster-parented text/elements, and EOF
+  flushing of pending table text.
+
 Execution policy:
 
 - whole-input execution is golden-checked

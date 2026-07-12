@@ -1,0 +1,16 @@
+# format: html5-dom-v1
+# status: active
+# include_parse_errors: true
+#document
+  <!doctype html>
+  <html>
+    <head>
+    <body>
+      <table>
+        <tbody>
+          <tr>
+            <td>
+              "a"
+parse-errors:
+  tree-builder: in-table-cell-start-tag-implies-row-group
+  tree-builder: in-table-body-cell-start-tag-implies-tr
