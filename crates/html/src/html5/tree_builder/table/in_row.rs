@@ -30,6 +30,10 @@ impl Html5TreeBuilder {
                 self_closing: _,
             } if *name == self.known_tags.td || *name == self.known_tags.th => {
                 self.clear_stack_to_table_row_context();
+                #[expect(
+                    deprecated,
+                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                )]
                 let _ = self.insert_element(*name, attrs, false, atoms, text)?;
                 self.active_formatting.push_marker();
                 self.insertion_mode = InsertionMode::InCell;

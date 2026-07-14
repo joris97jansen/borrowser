@@ -51,6 +51,10 @@ impl Html5TreeBuilder {
                 attrs,
                 self_closing: _,
             } if *name == self.known_tags.col => {
+                #[expect(
+                    deprecated,
+                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                )]
                 let _ = self.insert_element(*name, attrs, true, atoms, text)?;
                 Ok(DispatchOutcome::Done)
             }

@@ -84,6 +84,18 @@ AE7 coverage baseline:
   unexpected `li`/generic body end tags, and AFE reconstruction after paragraph
   auto-close.
 
+AE9a coverage baseline:
+
+- parser-owned form DOM construction with input, textarea, and button;
+- duplicate/unmatched/non-current form recovery with deterministic errors;
+- textarea zero/one/two-leading-LF DOM output;
+- fieldset paragraph recovery and legacy parser-only `keygen` DOM shape;
+- nested button recovery and deterministic parse-error output;
+- supported InTable form and hidden-input handling;
+- patch-level proof that form stack removal never emits `RemoveNode`.
+- self-closing finalization after normal and ignored AE9 form processing,
+  including whole/chunked parse-error parity.
+
 Node line grammar (examples):
 
 - Document: `#document`

@@ -1,8 +1,8 @@
 # HTML5 Tree Builder Spec Mapping Matrix (Milestone D2)
 
-Last updated: 2026-03-17
+Last updated: 2026-07-13
 Scope: `crates/html/src/html5/tree_builder` (feature `html5`)
-Spec source: WHATWG HTML, section `Tree construction` (`parsing.html#tree-construction`)
+Spec source: WHATWG HTML repository commit `88ae68cb961651f0f92c5d2046049f53ecdfc6cf` (2026-07-11), `source`; live parsing URL is convenience-only.
 
 ## Purpose
 

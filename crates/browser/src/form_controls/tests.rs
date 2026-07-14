@@ -41,6 +41,19 @@ fn text(id: u32, text: &str) -> Node {
     }
 }
 
+fn find_element<'a>(node: &'a Node, name: &str) -> Option<&'a Node> {
+    match node {
+        Node::Document { children, .. } | Node::Element { children, .. } => {
+            if matches!(node, Node::Element { name: node_name, .. } if node_name.eq_ignore_ascii_case(name))
+            {
+                return Some(node);
+            }
+            children.iter().find_map(|child| find_element(child, name))
+        }
+        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => None,
+    }
+}
+
 #[test]
 fn seeds_checkbox_checked_state() {
     let dom = doc(vec![elem(
@@ -391,7 +404,7 @@ fn moving_radio_between_groups_removes_stale_membership() {
 }
 
 #[test]
-fn seeds_textarea_initial_value_strips_one_leading_newline() {
+fn seeds_manually_constructed_textarea_initial_value_preserves_leading_newline() {
     let dom = doc(vec![elem(
         1,
         "textarea",
@@ -402,7 +415,7 @@ fn seeds_textarea_initial_value_strips_one_leading_newline() {
     let mut store = InputValueStore::new();
     let _ = seed_input_state_from_dom(&mut store, &dom);
 
-    assert_eq!(store.get(Id(1)), Some("abc"));
+    assert_eq!(store.get(Id(1)), Some("\nabc"));
 }
 
 #[test]
@@ -418,4 +431,26 @@ fn seeds_textarea_initial_value_normalizes_crlf_and_cr_to_lf() {
     let _ = seed_input_state_from_dom(&mut store, &dom);
 
     assert_eq!(store.get(Id(1)), Some("a\nb\nc"));
+}
+
+#[test]
+fn seeds_parser_created_textarea_without_double_initial_lf_suppression() {
+    let parsed = html::parse_document(
+        "<!doctype html><textarea>\n\nvalue</textarea>",
+        html::HtmlParseOptions::default(),
+    )
+    .expect("parser-created textarea DOM");
+
+    let mut store = InputValueStore::new();
+    let _ = seed_input_state_from_dom(&mut store, &parsed.document);
+
+    let textarea_id = find_element(&parsed.document, "textarea")
+        .expect("parsed textarea node")
+        .id();
+
+    assert_eq!(
+        store.get(textarea_id),
+        Some("\nvalue"),
+        "parser removes one source LF; runtime must not remove a second"
+    );
 }

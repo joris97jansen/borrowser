@@ -17,6 +17,14 @@ pub(crate) struct OpenElement {
     pub(crate) identity: ElementIdentity,
 }
 
+/// Result of a semantic stack removal by stable parser identity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct ExactOpenElementRemoval {
+    pub(crate) removed: OpenElement,
+    pub(crate) index: usize,
+    pub(crate) was_current: bool,
+}
+
 impl OpenElement {
     pub(crate) fn new(key: PatchKey, name: AtomId) -> Self {
         Self {

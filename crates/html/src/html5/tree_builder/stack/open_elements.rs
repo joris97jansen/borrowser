@@ -1,5 +1,5 @@
 use super::foster::FosterParentingIndexCache;
-use super::types::OpenElement;
+use super::types::{ExactOpenElementRemoval, OpenElement};
 use crate::dom_patch::PatchKey;
 use crate::html5::shared::AtomId;
 
@@ -166,6 +166,50 @@ impl OpenElementsStack {
         self.note_name_pop(removed.name());
         self.pop_ops = self.pop_ops.saturating_add(1);
         removed
+    }
+
+    /// Removes one exact parser-created identity without touching DOM state.
+    ///
+    /// This is intentionally identity-based rather than tag-name-based so
+    /// recovery cannot remove a different element with the same name.
+    pub(crate) fn remove_exact_key(&mut self, key: PatchKey) -> Option<ExactOpenElementRemoval> {
+        let index = self.find_index_by_key(key)?;
+        let was_current = index + 1 == self.items.len();
+        self.foster_parenting_cache.invalidate();
+        let removed = self.items.remove(index);
+        assert_eq!(
+            removed.key(),
+            key,
+            "exact-key removal must remove its target"
+        );
+        self.note_name_pop(removed.name());
+        self.pop_ops = self.pop_ops.saturating_add(1);
+        Some(ExactOpenElementRemoval {
+            removed,
+            index,
+            was_current,
+        })
+    }
+
+    /// Pops only when the current entry has the requested stable identity.
+    pub(crate) fn pop_current_exact_key(
+        &mut self,
+        key: PatchKey,
+    ) -> Option<ExactOpenElementRemoval> {
+        let current = self.current()?;
+        if current.key() != key {
+            return None;
+        }
+        let index = self.items.len() - 1;
+        let removed = self
+            .pop()
+            .expect("current open element must have a matching pop");
+        assert_eq!(removed.key(), key, "current-key pop must remove its target");
+        Some(ExactOpenElementRemoval {
+            removed,
+            index,
+            was_current: true,
+        })
     }
 
     pub(crate) fn insert_at(&mut self, index: usize, entry: OpenElement) {

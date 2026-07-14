@@ -1,0 +1,23 @@
+# format: html5-dom-v1
+# status: active
+# include_parse_errors: true
+#document
+  <!doctype html>
+  <html>
+    <head>
+    <body>
+      <table>
+        <form>
+        <input type="hidden">
+        <tbody>
+          <tr>
+            <td>
+              "x"
+parse-errors:
+  tree-builder: before-html-implicit-html
+  tree-builder: before-head-implicit-head
+  tree-builder: after-head-implicit-body
+  tree-builder: in-table-form-start-tag
+  tree-builder: in-table-hidden-input-start-tag
+  tree-builder: in-table-anything-else-reprocess-in-body
+  tree-builder: in-body-form-end-tag-pointer-not-in-scope

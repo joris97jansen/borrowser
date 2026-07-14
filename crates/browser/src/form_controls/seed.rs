@@ -130,12 +130,10 @@ fn handle_textarea(store: &mut InputValueStore, node: &Node, children: &[Node]) 
 
     let mut initial = String::new();
     collect_text(children, &mut initial);
-    let mut initial = normalize_textarea_newlines(&initial);
-
-    // HTML textarea parsing: if the first character is a newline, strip it.
-    if initial.starts_with('\n') {
-        initial.remove(0);
-    }
+    // Parser-defined initial-LF suppression belongs to HTML tree construction.
+    // Runtime seeding only preserves the supplied DOM text while performing
+    // independent newline-representation normalization.
+    let initial = normalize_textarea_newlines(&initial);
 
     store.ensure_initial(id, initial);
 }

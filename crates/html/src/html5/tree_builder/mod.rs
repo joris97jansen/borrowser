@@ -4,6 +4,8 @@
 //! tree-construction state (insertion modes, stack of open elements, active
 //! formatting list, etc.) and is resumable across token boundaries.
 
+#![deny(deprecated)]
+
 mod adoption;
 pub(crate) mod api;
 mod attributes;

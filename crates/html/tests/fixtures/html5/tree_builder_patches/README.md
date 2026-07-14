@@ -49,6 +49,11 @@ Milestone AE corpus:
 - `ae7-*`: patch sequencing for supported body-mode recovery, including
   paragraph auto-close before block insertion, sibling `li` recovery, and AFE
   reconstruction after paragraph auto-close.
+- `ae9-*`: form-stack recovery and textarea/button sequencing, including
+  stack-only non-current form removal with no destructive `RemoveNode` patch
+  and parser-owned initial-LF suppression, plus InTable form insertion whose
+  immediate stack removal leaves the parser-created DOM node and patch stream
+  intact.
 
 Dedicated table-heavy corpus:
 

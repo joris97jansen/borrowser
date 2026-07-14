@@ -34,6 +34,10 @@ impl Html5TreeBuilder {
                 self_closing: _,
             } if *name == self.known_tags.tr => {
                 self.clear_stack_to_table_body_context();
+                #[expect(
+                    deprecated,
+                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                )]
                 let _ = self.insert_element(*name, attrs, false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InRow;
                 Ok(DispatchOutcome::Done)
@@ -47,6 +51,10 @@ impl Html5TreeBuilder {
                     Some(InsertionMode::InTableBody),
                 );
                 self.clear_stack_to_table_body_context();
+                #[expect(
+                    deprecated,
+                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                )]
                 let _ = self.insert_element(self.known_tags.tr, &[], false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InRow;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InRow))

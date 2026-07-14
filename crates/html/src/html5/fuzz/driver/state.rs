@@ -180,6 +180,8 @@ impl PipelineRunState {
         }
 
         let after_builder_progress = builder.progress_witness();
+        self.digest
+            .record_future_affecting_builder_state(&after_builder_progress);
         let made_builder_progress =
             !patches.is_empty() || after_builder_progress != before_builder_progress;
 
