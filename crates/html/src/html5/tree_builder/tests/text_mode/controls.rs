@@ -122,7 +122,7 @@ fn tree_builder_emits_controls_for_all_supported_text_mode_containers() {
 }
 
 #[test]
-fn tree_builder_self_closing_text_mode_container_does_not_enter_text_mode() {
+fn tree_builder_self_closing_textarea_remains_non_void_and_enters_text_mode() {
     use crate::html5::shared::Token;
     use crate::html5::tree_builder::modes::InsertionMode;
 
@@ -137,21 +137,27 @@ fn tree_builder_self_closing_text_mode_container_does_not_enter_text_mode() {
     });
     let state = h.state();
     assert_eq!(
-        step.tokenizer_control, None,
-        "self-closing syntax must not enter text mode without a corresponding open element"
+        step.tokenizer_control,
+        Some(crate::html5::tokenizer::TokenizerControl::EnterTextMode(
+            crate::html5::tokenizer::TextModeSpec::rcdata_textarea(textarea),
+        )),
+        "trailing-solidus textarea syntax must still enter textarea RCDATA mode"
     );
     assert_eq!(
         state.insertion_mode,
-        InsertionMode::InBody,
-        "self-closing text-mode containers must leave the builder in the surrounding insertion mode"
+        InsertionMode::Text,
+        "trailing-solidus textarea syntax must retain the textarea text-mode insertion state"
     );
     assert_eq!(
-        state.active_text_mode, None,
-        "self-closing text-mode containers must not become the active text-mode element"
+        state.active_text_mode,
+        Some(crate::html5::tokenizer::TextModeSpec::rcdata_textarea(
+            textarea
+        )),
+        "trailing-solidus textarea syntax must become the active text-mode element"
     );
-    assert_ne!(
+    assert_eq!(
         state.open_element_names.last().copied(),
         Some(textarea),
-        "self-closing text-mode container syntax must not leave an open element on the stack"
+        "trailing-solidus textarea syntax must retain an open element on the stack"
     );
 }

@@ -239,7 +239,7 @@ fn session_exits_text_mode_on_eof_recovery() {
 
 #[cfg(feature = "dom-snapshot")]
 #[test]
-fn session_self_closing_text_container_does_not_enter_text_mode() {
+fn session_self_closing_textarea_remains_non_void_and_enters_text_mode() {
     let ctx = DocumentParseContext::new();
     let mut session = Html5ParseSession::new(
         TokenizerConfig::default(),
@@ -255,17 +255,29 @@ fn session_self_closing_text_container_does_not_enter_text_mode() {
     let builder_state = session.tree_builder_state_snapshot_for_test();
     assert_eq!(
         session.tokenizer_active_text_mode_for_test(),
-        None,
-        "self-closing text container syntax must not enter tokenizer text mode"
+        Some(TextModeSpec::rcdata_textarea(
+            session
+                .tree_builder_state_snapshot_for_test()
+                .active_text_mode
+                .expect("textarea text mode")
+                .end_tag_name,
+        )),
+        "trailing-solidus textarea syntax must still enter tokenizer text mode"
     );
     assert_eq!(
-        builder_state.active_text_mode, None,
-        "self-closing text container syntax must not enter builder text mode"
+        builder_state.active_text_mode,
+        Some(TextModeSpec::rcdata_textarea(
+            builder_state
+                .active_text_mode
+                .expect("textarea text mode")
+                .end_tag_name,
+        )),
+        "trailing-solidus textarea syntax must remain a textarea text-mode element"
     );
     assert_eq!(
         builder_state.insertion_mode,
-        InsertionMode::InBody,
-        "self-closing text container syntax must leave the builder in surrounding body mode"
+        InsertionMode::Text,
+        "trailing-solidus textarea syntax must stay in Text mode until recovery or an end tag"
     );
 
     let lines = finish_session_to_dom_lines(&mut session);
@@ -277,7 +289,7 @@ fn session_self_closing_text_container_does_not_enter_text_mode() {
             "    <head>".to_string(),
             "    <body>".to_string(),
             "      <textarea>".to_string(),
-            "      \"ok\"".to_string(),
+            "        \"ok\"".to_string(),
         ]
     );
 }

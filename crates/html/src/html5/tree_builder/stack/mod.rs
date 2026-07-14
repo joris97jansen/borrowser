@@ -9,7 +9,9 @@ mod types;
 mod tests;
 
 pub(crate) use open_elements::OpenElementsStack;
-pub(crate) use types::{OpenElement, ScopeKeyMatch, ScopeKind, ScopeTagSet};
+pub(crate) use types::{
+    ExactOpenElementRemoval, OpenElement, ScopeKeyMatch, ScopeKind, ScopeTagSet,
+};
 
 #[cfg(test)]
 pub(crate) use types::FosterParentingAnchorIndices;

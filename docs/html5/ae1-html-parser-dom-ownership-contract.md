@@ -77,6 +77,10 @@ may reinterpret the internal semantics of an earlier stage.
 | Layout | box generation, formatting behavior, layout structures, geometry | styled tree, computed style, explicit layout environment inputs | HTML parser behavior, malformed-markup recovery rules, CSS parsing/cascade, paint ordering |
 | Paint | paint primitives, stacking, semantic paint ordering, current-frame paint output | layout output, runtime paint inputs, resource/input state | HTML parser behavior, malformed-markup recovery rules, CSS parsing/cascade, layout geometry ownership |
 
+AE9a clarification: parser-owned form pointers and textarea source-character
+suppression are tree-construction state. Browser/runtime may seed state from the
+resulting DOM but must not reconstruct parser form ownership or strip source LFs.
+
 ## HTML Parser Ownership
 
 HTML/parser owns the complete parser semantics boundary:

@@ -114,6 +114,8 @@ fn run_decoded_tokens(
             });
         }
 
+        digest.record_future_affecting_state(&builder.progress_witness());
+
         let patches = builder.drain_patches();
         if !patches.is_empty() {
             dom_state = check_patch_invariants(&patches, &dom_state).map_err(|err| {

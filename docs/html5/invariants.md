@@ -151,3 +151,20 @@ Table cell and AFE interaction:
 - closing a cell, explicit or implied, clears AFE entries back to the last
   marker;
 - cell close recovery must not expand into unrelated adoption-agency behavior.
+
+## AE9a Form And Void-Insertion Invariants
+
+- A form pointer is absent or identifies one successfully parser-created form
+  `PatchKey`; clearing it never removes a DOM node.
+- Form end processing clears the pointer before scope validation and exact stack
+  removal; a failed validation leaves it clear.
+- Exact-key stack removal preserves other entry order, counts, caches, and DOM.
+- Pending textarea initial-LF state is valid only for the active textarea RCDATA
+  entry and is cleared by first text consumption, non-text handling, or text-mode exit.
+- A void insertion restores retained stack length/order after one real push/pop;
+  high-water records the transient observed depth.
+- AE9 start-tag dispatch finalizes every original self-closing flag exactly once:
+  an unacknowledged AE9 non-void flag records its trailing-solidus error after
+  the tag-specific recovery error, including a recoverably ignored token.
+- The frozen deprecated insertion helper retains pre-AE9 skip-stack behavior;
+  only AE9 semantic void insertion changes stack-transition observability.

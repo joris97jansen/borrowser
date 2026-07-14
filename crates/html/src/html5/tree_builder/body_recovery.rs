@@ -65,6 +65,10 @@ impl Html5TreeBuilder {
         text: &dyn TextResolver,
     ) -> Result<(), TreeBuilderError> {
         let _ = self.close_p_if_in_button_scope("in-body-p-start-tag-closes-open-p");
+        #[expect(
+            deprecated,
+            reason = "frozen legacy insertion call; removal owned by AE9b"
+        )]
         let inserted = self.insert_element(self.known_tags.p, attrs, self_closing, atoms, text)?;
         if inserted.is_some() {
             self.update_mode_for_start_tag(self.known_tags.p);
@@ -86,6 +90,10 @@ impl Html5TreeBuilder {
                 Some(self.known_tags.p),
                 Some(InsertionMode::InBody),
             );
+            #[expect(
+                deprecated,
+                reason = "frozen legacy insertion call; removal owned by AE9b"
+            )]
             let inserted = self.insert_element(self.known_tags.p, &[], false, atoms, text)?;
             if inserted.is_some() {
                 let _ = self.close_p_in_button_scope_after_implied_tags();
@@ -126,6 +134,10 @@ impl Html5TreeBuilder {
         }
 
         let _ = self.close_p_if_in_button_scope("in-body-li-start-tag-closes-open-p");
+        #[expect(
+            deprecated,
+            reason = "frozen legacy insertion call; removal owned by AE9b"
+        )]
         let inserted = self.insert_element(self.known_tags.li, attrs, self_closing, atoms, text)?;
         if inserted.is_some() {
             self.update_mode_for_start_tag(self.known_tags.li);

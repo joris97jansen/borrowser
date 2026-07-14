@@ -11,6 +11,18 @@ use crate::html5::tree_builder::resolve::{resolve_atom_arc, resolve_text_value};
 use crate::html5::tree_builder::stack::OpenElement;
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
 
+/// Stack disposition is deliberately private to the insertion layer. Tree
+/// construction dispatch chooses only semantic normal or void insertion.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum StackDisposition {
+    Push,
+    PopImmediately,
+    /// Preserves pre-AE9 behavior for the deprecated helper only: attach the
+    /// node without a stack transition. AE9b removes this disposition with the
+    /// helper and its frozen call sites.
+    LegacySkipPush,
+}
+
 impl Html5TreeBuilder {
     pub(in crate::html5::tree_builder) fn create_detached_element(
         &mut self,
@@ -51,6 +63,12 @@ impl Html5TreeBuilder {
         self.create_detached_element(entry.name, &attributes, atoms)
     }
 
+    /// Temporary compatibility path for pre-AE9 call sites.
+    ///
+    /// New parser code must use `insert_normal_html_element` or
+    /// `insert_void_html_element`. AE9b removes this helper and the frozen
+    /// call-site expectations that still reference it.
+    #[deprecated(note = "frozen legacy insertion helper; removal owned by AE9b")]
     pub(in crate::html5::tree_builder) fn insert_element(
         &mut self,
         name: AtomId,
@@ -59,11 +77,73 @@ impl Html5TreeBuilder {
         atoms: &AtomTable,
         text: &dyn TextResolver,
     ) -> Result<Option<PatchKey>, TreeBuilderError> {
+        let disposition = if self_closing || self.known_tags.is_void_tag(name) {
+            StackDisposition::LegacySkipPush
+        } else {
+            StackDisposition::Push
+        };
+        self.insert_html_element_with_private_disposition(name, attrs, atoms, text, disposition)
+    }
+
+    /// Inserts an implemented non-void HTML element and retains it on the
+    /// stack of open elements.
+    pub(in crate::html5::tree_builder) fn insert_normal_html_element(
+        &mut self,
+        name: AtomId,
+        attrs: &[Attribute],
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
+    ) -> Result<Option<PatchKey>, TreeBuilderError> {
+        assert!(
+            !self.known_tags.is_void_tag(name),
+            "normal insertion received parser-classified void HTML element"
+        );
+        self.insert_html_element_with_private_disposition(
+            name,
+            attrs,
+            atoms,
+            text,
+            StackDisposition::Push,
+        )
+    }
+
+    /// Inserts an implemented void HTML element through a bounded, real stack
+    /// push/pop transition. The transient entry is never observable outside
+    /// this insertion operation.
+    pub(in crate::html5::tree_builder) fn insert_void_html_element(
+        &mut self,
+        name: AtomId,
+        attrs: &[Attribute],
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
+    ) -> Result<Option<PatchKey>, TreeBuilderError> {
+        assert!(
+            self.known_tags.is_void_tag(name),
+            "void insertion received non-void HTML element"
+        );
+        self.insert_html_element_with_private_disposition(
+            name,
+            attrs,
+            atoms,
+            text,
+            StackDisposition::PopImmediately,
+        )
+    }
+
+    fn insert_html_element_with_private_disposition(
+        &mut self,
+        name: AtomId,
+        attrs: &[Attribute],
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
+        disposition: StackDisposition,
+    ) -> Result<Option<PatchKey>, TreeBuilderError> {
         self.with_structural_mutation(|this| {
-            let effective_self_closing = self_closing || this.known_tags.is_void_tag(name);
-            if !effective_self_closing && !this.allow_non_self_closing_element(name) {
+            if disposition == StackDisposition::Push && !this.allow_non_self_closing_element(name) {
                 return Ok(None);
             }
+
+            // All fallible resource checks complete before a stack transition.
             let _ = this.ensure_document_created()?;
             let location = this.element_or_text_insertion_location()?;
             if !this.allow_new_child(location.parent, Some(name)) {
@@ -79,8 +159,25 @@ impl Html5TreeBuilder {
                 inserted,
                 "newly created element insertion must succeed after precheck"
             );
-            if !effective_self_closing {
-                this.open_elements.push(OpenElement::new(key, name));
+
+            let entry = OpenElement::new(key, name);
+            match disposition {
+                StackDisposition::Push => this.open_elements.push(entry),
+                StackDisposition::PopImmediately => {
+                    let length_before = this.open_elements.len();
+                    this.open_elements.push(entry);
+                    let popped = this
+                        .open_elements
+                        .pop()
+                        .expect("void insertion push must have a matching pop");
+                    assert_eq!(popped, entry, "void insertion must pop its exact entry");
+                    assert_eq!(
+                        this.open_elements.len(),
+                        length_before,
+                        "void insertion must restore retained stack depth"
+                    );
+                }
+                StackDisposition::LegacySkipPush => {}
             }
             Ok(Some(key))
         })

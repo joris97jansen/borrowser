@@ -489,6 +489,14 @@ Current supported subset:
   form behavior, accessibility table semantics, JavaScript, resource loading,
   or full DOM APIs.
 
+- AE9a parser-owned form tree construction: the supported HTML tree builder
+  owns stable form-pointer state, exact stack-only form removal, current
+  InBody/InTable form recovery, parser-created input/textarea/button/fieldset/
+  keygen behavior, and textarea initial-LF suppression. Browser textarea
+  seeding no longer repeats parser source-character normalization. Submission,
+  validation, focus, events, accessibility, layout, paint, and global
+  self-closing conformance remain deferred; AE9b owns the latter migration.
+
 Missing or incomplete:
 
 - full byte-stream encoding sniffing, charset detection, BOM switching, and

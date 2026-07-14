@@ -332,6 +332,11 @@ Core v0 stance:
   - parser MUST NOT panic on table-family tags.
 - AE8 does not claim full WHATWG table parsing conformance.
 
+- AE9a adds declared-scope parser-owned form tree construction: stable form
+  pointers, exact stack-only form removal, specialized input/textarea/button/
+  fieldset/keygen handling, and parser-owned textarea initial-LF suppression.
+  It does not add interactive form platform behavior.
+
 <a id="explicitly-unsupported-or-deferred-in-core-v0"></a>
 ## Explicitly Unsupported Or Deferred In Core v0
 

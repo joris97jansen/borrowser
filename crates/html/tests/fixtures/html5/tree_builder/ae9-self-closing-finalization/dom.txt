@@ -1,0 +1,16 @@
+# format: html5-dom-v1
+# status: active
+# include_parse_errors: true
+#document
+  <!doctype html>
+  <html>
+    <head>
+    <body>
+      <form>
+parse-errors:
+  tree-builder: before-html-implicit-html
+  tree-builder: before-head-implicit-head
+  tree-builder: after-head-implicit-body
+  tree-builder: non-void-html-element-start-tag-with-trailing-solidus
+  tree-builder: in-body-form-start-tag-with-active-form-pointer
+  tree-builder: non-void-html-element-start-tag-with-trailing-solidus

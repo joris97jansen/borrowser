@@ -88,6 +88,12 @@ These are normal parser-created DOM elements with ordinary `PatchKey`
 identity, first-wins attribute handling, live-tree state, and structural
 patches.
 
+AE9a adds the supported full-document `InTable` special paths for `form` and
+hidden `input`. The parser owns form-pointer state: InTable form insertion sets
+the pointer only after successful normal insertion, then removes that exact
+current stack entry without DOM removal. Hidden input is a parser-created void
+element. Template-specific branches remain deferred with deterministic fallback.
+
 ## Implied Element Construction
 
 Supported implied table construction is parser-owned and uses the normal

@@ -1,0 +1,18 @@
+# format: html5-dom-v1
+# status: active
+# include_parse_errors: true
+#document
+  <!doctype html>
+  <html>
+    <head>
+    <body>
+      <textarea>
+        "zero"
+      <textarea>
+        "one"
+      <textarea>
+        "\ntwo"
+parse-errors:
+  tree-builder: before-html-implicit-html
+  tree-builder: before-head-implicit-head
+  tree-builder: after-head-implicit-body

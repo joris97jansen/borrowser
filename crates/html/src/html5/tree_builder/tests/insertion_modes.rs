@@ -260,8 +260,8 @@ fn tree_builder_text_mode_successful_close_restores_mode_and_clears_original_mod
     assert_eq!(in_text.insertion_mode, InsertionMode::Text);
     assert_eq!(
         in_text.original_insertion_mode,
-        Some(InsertionMode::InHead),
-        "entering Text from InHead should store original insertion mode"
+        Some(InsertionMode::InBody),
+        "textarea is recovered into InBody before entering Text and stores that mode"
     );
     assert_eq!(in_text.open_element_names.last().copied(), Some(textarea));
 
@@ -271,7 +271,7 @@ fn tree_builder_text_mode_successful_close_restores_mode_and_clears_original_mod
     let after_close = builder.state_snapshot();
     assert_eq!(
         after_close.insertion_mode,
-        InsertionMode::InHead,
+        InsertionMode::InBody,
         "successful text-mode close should restore prior insertion mode"
     );
     assert_eq!(

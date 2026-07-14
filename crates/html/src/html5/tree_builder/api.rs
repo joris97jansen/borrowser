@@ -15,8 +15,11 @@ use std::num::NonZeroU32;
 /// Centralized tree-builder hardening/resource bounds.
 ///
 /// Recovery policy:
-/// - a non-self-closing start tag that would exceed `max_open_elements_depth`
-///   is ignored;
+/// - a retained non-void start tag that would exceed
+///   `max_open_elements_depth` is ignored;
+/// - a void element may perform one bounded internal push/pop while retained
+///   depth equals this limit; the observed high-water metric records that real
+///   transient depth;
 /// - creating an element/text/comment node after `max_nodes_created` is reached
 ///   is ignored;
 /// - inserting another child under a full parent is ignored.
@@ -104,6 +107,39 @@ pub enum SuspendReason {
 pub type TreeBuilderInternalError = EngineInvariantError;
 pub type TreeBuilderError = TreeBuilderInternalError;
 
+/// Stable parser-owned identity of the current form element.
+///
+/// This deliberately stores a parser `PatchKey`, never a borrowed DOM node or
+/// browser/runtime identity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::html5::tree_builder) struct FormElementPointer(PatchKey);
+
+impl FormElementPointer {
+    pub(in crate::html5::tree_builder) fn new(key: PatchKey) -> Self {
+        Self(key)
+    }
+
+    pub(in crate::html5::tree_builder) fn key(self) -> PatchKey {
+        self.0
+    }
+}
+
+/// Pending parser-only suppression of the first textarea line feed.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::html5::tree_builder) struct PendingTextareaInitialLf {
+    textarea: PatchKey,
+}
+
+impl PendingTextareaInitialLf {
+    pub(in crate::html5::tree_builder) fn new(textarea: PatchKey) -> Self {
+        Self { textarea }
+    }
+
+    pub(in crate::html5::tree_builder) fn textarea(self) -> PatchKey {
+        self.textarea
+    }
+}
+
 /// HTML5 tree builder.
 ///
 /// Invariants:
@@ -152,6 +188,9 @@ pub struct Html5TreeBuilder {
     pub(in crate::html5::tree_builder) perf_text_appends: u64,
     pub(in crate::html5::tree_builder) perf_text_coalescing_invalidations: u64,
     pub(in crate::html5::tree_builder) active_text_mode: Option<TextModeSpec>,
+    pub(in crate::html5::tree_builder) form_element_pointer: Option<FormElementPointer>,
+    pub(in crate::html5::tree_builder) pending_textarea_initial_lf:
+        Option<PendingTextareaInitialLf>,
     pub(in crate::html5::tree_builder) foster_parenting_enabled: bool,
     pub(in crate::html5::tree_builder) pending_table_text: Option<PendingTableTextState>,
     pub(in crate::html5::tree_builder) pending_tokenizer_control: Option<TokenizerControl>,
@@ -184,6 +223,8 @@ pub(crate) struct TreeBuilderProgressWitness {
     pub(crate) original_insertion_mode: Option<InsertionMode>,
     pub(crate) table_text_original_insertion_mode: Option<InsertionMode>,
     pub(crate) active_text_mode: Option<TextModeSpec>,
+    pub(crate) form_element_pointer: Option<PatchKey>,
+    pub(crate) pending_textarea_initial_lf: Option<PatchKey>,
     pub(crate) open_element_keys: Vec<PatchKey>,
     pub(crate) current_table_key: Option<PatchKey>,
     pub(crate) pending_table_character_tokens: Vec<String>,
@@ -200,6 +241,8 @@ pub struct TreeBuilderStateSnapshot {
     pub(crate) original_insertion_mode: Option<InsertionMode>,
     pub(crate) table_text_original_insertion_mode: Option<InsertionMode>,
     pub(crate) active_text_mode: Option<TextModeSpec>,
+    pub(crate) form_element_pointer: Option<PatchKey>,
+    pub(crate) pending_textarea_initial_lf: Option<PatchKey>,
     pub(crate) open_element_names: Vec<AtomId>,
     pub(crate) open_element_keys: Vec<PatchKey>,
     pub(crate) current_table_key: Option<PatchKey>,
@@ -245,6 +288,8 @@ impl Html5TreeBuilder {
             perf_text_appends: 0,
             perf_text_coalescing_invalidations: 0,
             active_text_mode: None,
+            form_element_pointer: None,
+            pending_textarea_initial_lf: None,
             foster_parenting_enabled: false,
             pending_table_text: None,
             pending_tokenizer_control: None,
@@ -328,6 +373,10 @@ impl Html5TreeBuilder {
                 .as_ref()
                 .map(PendingTableTextState::original_insertion_mode),
             active_text_mode: self.active_text_mode,
+            form_element_pointer: self.form_element_pointer.map(FormElementPointer::key),
+            pending_textarea_initial_lf: self
+                .pending_textarea_initial_lf
+                .map(PendingTextareaInitialLf::textarea),
             open_element_keys: (0..self.open_elements.len())
                 .filter_map(|index| self.open_elements.get(index))
                 .map(|entry| entry.key())
@@ -414,6 +463,10 @@ impl Html5TreeBuilder {
                 .as_ref()
                 .map(PendingTableTextState::original_insertion_mode),
             active_text_mode: self.active_text_mode,
+            form_element_pointer: self.form_element_pointer.map(FormElementPointer::key),
+            pending_textarea_initial_lf: self
+                .pending_textarea_initial_lf
+                .map(PendingTextareaInitialLf::textarea),
             open_element_names: self.open_elements.iter_names().collect(),
             open_element_keys: self.open_elements.iter_keys().collect(),
             current_table_key: self.current_table_key(),

@@ -50,6 +50,10 @@ AE7 supports paragraph auto-close before these body start tags:
 - `section`
 - `ul`
 
+AE9a additionally places `fieldset` in the supported paragraph-closing block
+start classification. Its generic block-end behavior remains ordinary InBody
+scope recovery; this is not form runtime semantics.
+
 `table` keeps its existing quirks-aware path and is not part of this shared
 AE7 block-start helper.
 

@@ -139,7 +139,7 @@ fn foster_parenting_element_insertion_uses_insert_before_for_live_table() {
     let div = ctx.atoms.intern_ascii_folded("div").expect("atom");
 
     let inserted = builder
-        .insert_element(div, &[], false, &ctx.atoms, &resolver)
+        .insert_normal_html_element(div, &[], &ctx.atoms, &resolver)
         .expect("foster-parent element insertion should remain recoverable")
         .expect("foster-parent element insertion should not hit resource limits");
     let patches = builder.drain_patches();

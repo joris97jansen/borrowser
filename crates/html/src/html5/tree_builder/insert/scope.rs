@@ -1,9 +1,33 @@
+use crate::dom_patch::PatchKey;
 use crate::html5::shared::AtomId;
 use crate::html5::tree_builder::Html5TreeBuilder;
 use crate::html5::tree_builder::modes::InsertionMode;
-use crate::html5::tree_builder::stack::{OpenElement, ScopeKind};
+use crate::html5::tree_builder::stack::{ExactOpenElementRemoval, OpenElement, ScopeKind};
 
 impl Html5TreeBuilder {
+    /// Removes an open element by exact parser identity. This changes only the
+    /// stack; it never detaches a parser-created DOM node or emits a patch.
+    pub(in crate::html5::tree_builder) fn remove_open_element_exact(
+        &mut self,
+        key: PatchKey,
+    ) -> Option<ExactOpenElementRemoval> {
+        let removed = self.open_elements.remove_exact_key(key)?;
+        assert_eq!(removed.removed.key(), key);
+        self.invalidate_text_coalescing();
+        Some(removed)
+    }
+
+    /// Pops the current element only when it has the requested stable identity.
+    pub(in crate::html5::tree_builder) fn pop_current_open_element_exact(
+        &mut self,
+        key: PatchKey,
+    ) -> Option<ExactOpenElementRemoval> {
+        let removed = self.open_elements.pop_current_exact_key(key)?;
+        assert_eq!(removed.removed.key(), key);
+        self.invalidate_text_coalescing();
+        Some(removed)
+    }
+
     pub(in crate::html5::tree_builder) fn close_element_in_scope(
         &mut self,
         name: AtomId,

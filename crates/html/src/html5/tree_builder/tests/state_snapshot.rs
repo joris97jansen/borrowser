@@ -39,6 +39,8 @@ fn tree_builder_state_snapshot_exposes_core_v0_internal_model() {
     assert_eq!(state.open_element_names, vec![html]);
     assert_eq!(state.open_element_keys.len(), 1);
     assert_eq!(state.current_table_key, None);
+    assert_eq!(state.form_element_pointer, None);
+    assert_eq!(state.pending_textarea_initial_lf, None);
     assert!(state.pending_table_character_tokens.is_empty());
     assert!(!state.pending_table_character_tokens_contains_non_space);
     assert_eq!(

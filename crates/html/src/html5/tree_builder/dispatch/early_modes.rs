@@ -87,6 +87,10 @@ impl Html5TreeBuilder {
                         Some(InsertionMode::BeforeHtml),
                     );
                 }
+                #[expect(
+                    deprecated,
+                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                )]
                 let _ = self.insert_element(*name, attrs, false, atoms, text)?;
                 self.insertion_mode = InsertionMode::BeforeHead;
                 Ok(DispatchOutcome::Done)
@@ -97,6 +101,10 @@ impl Html5TreeBuilder {
                     None,
                     Some(InsertionMode::BeforeHtml),
                 );
+                #[expect(
+                    deprecated,
+                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                )]
                 let _ = self.insert_element(self.known_tags.html, &[], false, atoms, text)?;
                 self.insertion_mode = InsertionMode::BeforeHead;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::BeforeHead))
@@ -107,6 +115,10 @@ impl Html5TreeBuilder {
                     None,
                     Some(InsertionMode::BeforeHtml),
                 );
+                #[expect(
+                    deprecated,
+                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                )]
                 let _ = self.insert_element(self.known_tags.html, &[], false, atoms, text)?;
                 self.insertion_mode = InsertionMode::BeforeHead;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::BeforeHead))
@@ -148,6 +160,10 @@ impl Html5TreeBuilder {
                         Some(InsertionMode::BeforeHead),
                     );
                 }
+                #[expect(
+                    deprecated,
+                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                )]
                 let _ = self.insert_element(*name, attrs, false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InHead;
                 Ok(DispatchOutcome::Done)
@@ -158,6 +174,10 @@ impl Html5TreeBuilder {
                     None,
                     Some(InsertionMode::BeforeHead),
                 );
+                #[expect(
+                    deprecated,
+                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                )]
                 let _ = self.insert_element(self.known_tags.head, &[], false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InHead;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InHead))
@@ -168,6 +188,10 @@ impl Html5TreeBuilder {
                     None,
                     Some(InsertionMode::BeforeHead),
                 );
+                #[expect(
+                    deprecated,
+                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                )]
                 let _ = self.insert_element(self.known_tags.head, &[], false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InHead;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InHead))
@@ -234,7 +258,14 @@ impl Html5TreeBuilder {
                 name,
                 attrs,
                 self_closing,
-            } if self.is_text_mode_container_tag(*name) => {
+            } if *name == self.known_tags.style
+                || *name == self.known_tags.title
+                || *name == self.known_tags.script =>
+            {
+                #[expect(
+                    deprecated,
+                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                )]
                 let inserted = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
                 if !self_closing && inserted.is_some() {
                     self.enter_text_mode_for_element(*name);
@@ -249,6 +280,10 @@ impl Html5TreeBuilder {
                 || *name == self.known_tags.link
                 || *name == self.known_tags.meta =>
             {
+                #[expect(
+                    deprecated,
+                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                )]
                 let _ = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
                 Ok(DispatchOutcome::Done)
             }
@@ -303,6 +338,10 @@ impl Html5TreeBuilder {
                         Some(InsertionMode::AfterHead),
                     );
                 }
+                #[expect(
+                    deprecated,
+                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                )]
                 let _ = self.insert_element(*name, attrs, false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InBody;
                 Ok(DispatchOutcome::Done)
@@ -364,6 +403,10 @@ impl Html5TreeBuilder {
                     None,
                     Some(InsertionMode::AfterHead),
                 );
+                #[expect(
+                    deprecated,
+                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                )]
                 let _ = self.insert_element(self.known_tags.body, &[], false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InBody;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InBody))
@@ -382,6 +425,10 @@ impl Html5TreeBuilder {
                     None,
                     Some(InsertionMode::AfterHead),
                 );
+                #[expect(
+                    deprecated,
+                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                )]
                 let _ = self.insert_element(self.known_tags.body, &[], false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InBody;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InBody))
@@ -392,6 +439,10 @@ impl Html5TreeBuilder {
                     None,
                     Some(InsertionMode::AfterHead),
                 );
+                #[expect(
+                    deprecated,
+                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                )]
                 let _ = self.insert_element(self.known_tags.body, &[], false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InBody;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InBody))

@@ -15,6 +15,8 @@ pub(in crate::html5::tree_builder) struct KnownTagIds {
     pub(in crate::html5::tree_builder) em: AtomId,
     pub(in crate::html5::tree_builder) footer: AtomId,
     pub(in crate::html5::tree_builder) font: AtomId,
+    pub(in crate::html5::tree_builder) form: AtomId,
+    pub(in crate::html5::tree_builder) fieldset: AtomId,
     pub(in crate::html5::tree_builder) h1: AtomId,
     pub(in crate::html5::tree_builder) h2: AtomId,
     pub(in crate::html5::tree_builder) h3: AtomId,
@@ -31,6 +33,7 @@ pub(in crate::html5::tree_builder) struct KnownTagIds {
     pub(in crate::html5::tree_builder) hr: AtomId,
     pub(in crate::html5::tree_builder) img: AtomId,
     pub(in crate::html5::tree_builder) input: AtomId,
+    pub(in crate::html5::tree_builder) keygen: AtomId,
     pub(in crate::html5::tree_builder) link: AtomId,
     pub(in crate::html5::tree_builder) meta: AtomId,
     pub(in crate::html5::tree_builder) param: AtomId,
@@ -97,6 +100,8 @@ impl KnownTagIds {
             em: atoms.intern_ascii_folded("em")?,
             footer: atoms.intern_ascii_folded("footer")?,
             font: atoms.intern_ascii_folded("font")?,
+            form: atoms.intern_ascii_folded("form")?,
+            fieldset: atoms.intern_ascii_folded("fieldset")?,
             h1: atoms.intern_ascii_folded("h1")?,
             h2: atoms.intern_ascii_folded("h2")?,
             h3: atoms.intern_ascii_folded("h3")?,
@@ -113,6 +118,7 @@ impl KnownTagIds {
             hr: atoms.intern_ascii_folded("hr")?,
             img: atoms.intern_ascii_folded("img")?,
             input: atoms.intern_ascii_folded("input")?,
+            keygen: atoms.intern_ascii_folded("keygen")?,
             link: atoms.intern_ascii_folded("link")?,
             meta: atoms.intern_ascii_folded("meta")?,
             param: atoms.intern_ascii_folded("param")?,
@@ -209,6 +215,7 @@ impl KnownTagIds {
             || name == self.blockquote
             || name == self.div
             || name == self.footer
+            || name == self.fieldset
             || name == self.header
             || name == self.hr
             || name == self.li
@@ -231,6 +238,7 @@ impl KnownTagIds {
             || name == self.hr
             || name == self.img
             || name == self.input
+            || name == self.keygen
             || name == self.link
             || name == self.meta
             || name == self.param
@@ -315,6 +323,7 @@ mod tests {
             known.blockquote,
             known.div,
             known.footer,
+            known.fieldset,
             known.header,
             known.h1,
             known.h6,
@@ -337,5 +346,18 @@ mod tests {
         let span = ctx.atoms.intern_ascii_folded("span").expect("span atom");
         assert!(!known.is_ae7_p_closing_block_start(span));
         assert!(!known.is_ae7_p_closing_block_start(known.table));
+    }
+
+    #[test]
+    fn known_tag_helpers_classify_ae9_void_tags() {
+        let mut ctx = crate::html5::shared::DocumentParseContext::new();
+        let known = KnownTagIds::intern(&mut ctx.atoms).expect("known tags");
+
+        assert!(known.is_void_tag(known.input));
+        assert!(known.is_void_tag(known.keygen));
+        assert!(!known.is_void_tag(known.form));
+        assert!(!known.is_void_tag(known.textarea));
+        assert!(!known.is_void_tag(known.button));
+        assert!(!known.is_void_tag(known.fieldset));
     }
 }

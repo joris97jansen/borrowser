@@ -1,5 +1,6 @@
 use crate::dom_patch::DomPatch;
 use crate::html5::tokenizer::{TextModeKind, TokenizerControl};
+use crate::html5::tree_builder::TreeBuilderProgressWitness;
 
 #[derive(Clone, Copy)]
 pub(super) struct PipelineFuzzDigest(u64);
@@ -131,6 +132,15 @@ impl PipelineFuzzDigest {
         }
     }
 
+    pub(super) fn record_future_affecting_builder_state(
+        &mut self,
+        witness: &TreeBuilderProgressWitness,
+    ) {
+        self.push_u8(5);
+        self.push_opt_key(witness.form_element_pointer);
+        self.push_opt_key(witness.pending_textarea_initial_lf);
+    }
+
     pub(super) fn finish(mut self, tail: PipelineDigestTail) -> u64 {
         self.push_u8(4);
         self.push_u64(tail.token_digest);
@@ -163,6 +173,13 @@ impl PipelineFuzzDigest {
 
     fn push_u32(&mut self, value: u32) {
         self.push_u64(u64::from(value));
+    }
+
+    fn push_opt_key(&mut self, value: Option<crate::dom_patch::PatchKey>) {
+        self.push_u8(u8::from(value.is_some()));
+        if let Some(key) = value {
+            self.push_u32(key.0);
+        }
     }
 
     fn push_u8(&mut self, value: u8) {

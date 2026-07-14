@@ -1,6 +1,6 @@
 use crate::html5::shared::{AtomTable, Token};
 use crate::html5::tokenizer::TextResolver;
-use crate::html5::tree_builder::dispatch::DispatchOutcome;
+use crate::html5::tree_builder::dispatch::{DispatchOutcome, SelfClosingFlagDisposition};
 use crate::html5::tree_builder::modes::InsertionMode;
 use crate::html5::tree_builder::stack::ScopeKind;
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
@@ -32,9 +32,45 @@ impl Html5TreeBuilder {
             Token::StartTag {
                 name,
                 attrs,
+                self_closing,
+            } if *name == self.known_tags.form => {
+                self.handle_in_table_form_start_tag(attrs, atoms, text)?;
+                self.finalize_ae9_start_tag_self_closing(
+                    *name,
+                    *self_closing,
+                    SelfClosingFlagDisposition::LeaveUnacknowledged,
+                    InsertionMode::InTable,
+                );
+                Ok(DispatchOutcome::Done)
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } if *name == self.known_tags.input => {
+                if self.input_type_is_hidden(attrs, atoms, text)? {
+                    self.handle_in_table_hidden_input_start_tag(attrs, atoms, text)?;
+                    self.finalize_ae9_start_tag_self_closing(
+                        *name,
+                        *self_closing,
+                        SelfClosingFlagDisposition::Acknowledge,
+                        InsertionMode::InTable,
+                    );
+                    Ok(DispatchOutcome::Done)
+                } else {
+                    self.handle_in_table_anything_else(token, atoms, text)
+                }
+            }
+            Token::StartTag {
+                name,
+                attrs,
                 self_closing: _,
             } if *name == self.known_tags.caption => {
                 self.clear_stack_to_table_context();
+                #[expect(
+                    deprecated,
+                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                )]
                 let _ = self.insert_element(*name, attrs, false, atoms, text)?;
                 self.active_formatting.push_marker();
                 self.insertion_mode = InsertionMode::InCaption;
@@ -46,12 +82,20 @@ impl Html5TreeBuilder {
                 self_closing: _,
             } if *name == self.known_tags.colgroup => {
                 self.clear_stack_to_table_context();
+                #[expect(
+                    deprecated,
+                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                )]
                 let _ = self.insert_element(*name, attrs, false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InColumnGroup;
                 Ok(DispatchOutcome::Done)
             }
             Token::StartTag { name, .. } if *name == self.known_tags.col => {
                 self.clear_stack_to_table_context();
+                #[expect(
+                    deprecated,
+                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                )]
                 let _ = self.insert_element(self.known_tags.colgroup, &[], false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InColumnGroup;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InColumnGroup))
@@ -65,12 +109,20 @@ impl Html5TreeBuilder {
                 || *name == self.known_tags.tfoot =>
             {
                 self.clear_stack_to_table_context();
+                #[expect(
+                    deprecated,
+                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                )]
                 let _ = self.insert_element(*name, attrs, false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InTableBody;
                 Ok(DispatchOutcome::Done)
             }
             Token::StartTag { name, .. } if *name == self.known_tags.tr => {
                 self.clear_stack_to_table_context();
+                #[expect(
+                    deprecated,
+                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                )]
                 let _ = self.insert_element(self.known_tags.tbody, &[], false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InTableBody;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InTableBody))
@@ -84,6 +136,10 @@ impl Html5TreeBuilder {
                     Some(InsertionMode::InTable),
                 );
                 self.clear_stack_to_table_context();
+                #[expect(
+                    deprecated,
+                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                )]
                 let _ = self.insert_element(self.known_tags.tbody, &[], false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InTableBody;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InTableBody))

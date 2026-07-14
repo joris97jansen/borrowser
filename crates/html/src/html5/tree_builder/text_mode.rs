@@ -1,8 +1,9 @@
 use crate::html5::shared::{AtomId, AtomTable, Token};
 use crate::html5::tokenizer::{TextModeSpec, TextResolver, TokenizerControl};
+use crate::html5::tree_builder::api::PendingTextareaInitialLf;
 use crate::html5::tree_builder::dispatch::DispatchOutcome;
 use crate::html5::tree_builder::modes::InsertionMode;
-use crate::html5::tree_builder::resolve::resolve_atom;
+use crate::html5::tree_builder::resolve::{resolve_atom, resolve_text_value};
 use crate::html5::tree_builder::stack::OpenElement;
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
 
@@ -13,9 +14,12 @@ impl Html5TreeBuilder {
         atoms: &AtomTable,
         text: &dyn TextResolver,
     ) -> Result<DispatchOutcome, TreeBuilderError> {
+        if !matches!(token, Token::Text { .. }) {
+            self.clear_pending_textarea_initial_lf_before_non_text_token();
+        }
         match token {
             Token::Text { text: token_text } => {
-                self.insert_text(token_text, text)?;
+                self.insert_text_mode_text(token_text, text)?;
             }
             Token::Comment { text: token_text } => {
                 self.insert_comment(token_text, text)?;
@@ -123,9 +127,36 @@ impl Html5TreeBuilder {
         self.queue_tokenizer_control(TokenizerControl::EnterTextMode(text_mode));
     }
 
+    pub(in crate::html5::tree_builder) fn enter_text_mode_for_textarea(
+        &mut self,
+        key: crate::dom_patch::PatchKey,
+    ) {
+        assert_eq!(
+            self.open_elements.current().map(OpenElement::key),
+            Some(key),
+            "textarea text mode must begin for the current parser-created element"
+        );
+        self.enter_text_mode_for_element(self.known_tags.textarea);
+        assert_eq!(
+            self.active_text_mode_end_tag_name(),
+            Some(self.known_tags.textarea),
+            "textarea entry must select textarea RCDATA text mode"
+        );
+        assert!(self.pending_textarea_initial_lf.is_none());
+        self.pending_textarea_initial_lf = Some(PendingTextareaInitialLf::new(key));
+    }
+
     pub(in crate::html5::tree_builder) fn exit_text_mode(&mut self) {
         debug_assert!(self.original_insertion_mode.is_some());
         debug_assert!(self.active_text_mode.is_some());
+        if let Some(pending) = self.pending_textarea_initial_lf.take() {
+            assert_eq!(
+                self.active_text_mode_end_tag_name(),
+                Some(self.known_tags.textarea),
+                "pending textarea LF state requires textarea text mode"
+            );
+            assert!(pending.textarea() != crate::dom_patch::PatchKey::INVALID);
+        }
         self.active_text_mode = None;
         self.insertion_mode = self
             .original_insertion_mode
@@ -136,6 +167,50 @@ impl Html5TreeBuilder {
 
     pub(in crate::html5::tree_builder) fn active_text_mode_end_tag_name(&self) -> Option<AtomId> {
         self.active_text_mode.map(|mode| mode.end_tag_name)
+    }
+
+    fn insert_text_mode_text(
+        &mut self,
+        token_text: &crate::html5::shared::TextValue,
+        text: &dyn TextResolver,
+    ) -> Result<(), TreeBuilderError> {
+        let resolved = resolve_text_value(token_text, text)?;
+        let Some(pending) = self.pending_textarea_initial_lf else {
+            return self.insert_resolved_text(&resolved);
+        };
+
+        assert_eq!(
+            self.active_text_mode_end_tag_name(),
+            Some(self.known_tags.textarea),
+            "pending textarea LF state requires textarea RCDATA mode"
+        );
+        assert_eq!(
+            self.open_elements.current().map(OpenElement::key),
+            Some(pending.textarea()),
+            "pending textarea LF state must target the current textarea"
+        );
+        if resolved.is_empty() {
+            return Ok(());
+        }
+
+        self.pending_textarea_initial_lf = None;
+        let remainder = resolved.strip_prefix('\n').unwrap_or(&resolved);
+        self.insert_resolved_text(remainder)
+    }
+
+    fn clear_pending_textarea_initial_lf_before_non_text_token(&mut self) {
+        if let Some(pending) = self.pending_textarea_initial_lf.take() {
+            assert_eq!(
+                self.active_text_mode_end_tag_name(),
+                Some(self.known_tags.textarea),
+                "pending textarea LF state requires textarea RCDATA mode"
+            );
+            assert_eq!(
+                self.open_elements.current().map(OpenElement::key),
+                Some(pending.textarea()),
+                "pending textarea LF state must target the current textarea"
+            );
+        }
     }
 
     pub(in crate::html5::tree_builder) fn close_active_text_mode_element(&mut self) -> bool {
