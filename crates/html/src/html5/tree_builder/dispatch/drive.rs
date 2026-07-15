@@ -66,6 +66,8 @@ impl Html5TreeBuilder {
         self.perf_soe_pop_ops = self.open_elements.pop_ops();
         self.perf_soe_scope_scan_calls = self.open_elements.scope_scan_calls();
         self.perf_soe_scope_scan_steps = self.open_elements.scope_scan_steps();
+        self.perf_soe_end_tag_scan_calls = self.open_elements.end_tag_scan_calls();
+        self.perf_soe_end_tag_scan_steps = self.open_elements.end_tag_scan_steps();
         Ok(TreeBuilderStepResult::continue_with(
             self.pending_tokenizer_control.take(),
         ))

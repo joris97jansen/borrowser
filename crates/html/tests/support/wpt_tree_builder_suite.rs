@@ -15,6 +15,9 @@ use std::path::{Path, PathBuf};
 
 use super::wpt_manifest::{CaseKind, FixtureStatus, WptCase, load_manifest};
 
+#[path = "wpt_case_provenance.rs"]
+mod wpt_case_provenance;
+
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct TreeBuilderSuiteSpec {
     suite_name: &'static str,
@@ -61,6 +64,20 @@ impl TreeBuilderSuiteSpec {
                 "tables-stray-text-foster-parent",
                 "tables-stray-tag-foster-parent",
                 "tables-nested-basic",
+            ],
+        }
+    }
+
+    pub(crate) const fn select() -> Self {
+        Self {
+            suite_name: "WPT tree-builder current select",
+            required_ids: &[
+                "select-nested-formatting",
+                "select-input-recovery",
+                "select-nested-simple",
+                "select-table-foster-option",
+                "select-table-token-open",
+                "select-table-row-recovery",
             ],
         }
     }
@@ -124,6 +141,10 @@ pub(crate) fn run(spec: TreeBuilderSuiteSpec) {
         if case.status == FixtureStatus::Skip {
             skipped += 1;
             continue;
+        }
+
+        if wpt_case_provenance::is_ae10_select_case(&case.id) {
+            wpt_case_provenance::validate_ae10_select_case(&case);
         }
 
         // WPT inputs are consumed exactly as vendored. Unlike the internal

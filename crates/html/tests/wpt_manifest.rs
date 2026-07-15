@@ -29,6 +29,7 @@ pub struct WptCase {
     pub id: String,
     pub path: PathBuf,
     pub expected: PathBuf,
+    pub provenance: Option<PathBuf>,
     pub status: FixtureStatus,
     pub reason: Option<String>,
     pub kind: CaseKind,
@@ -56,6 +57,7 @@ pub fn load_manifest(path: &Path) -> Vec<WptCase> {
         let expected = current
             .remove("expected")
             .unwrap_or_else(|| panic!("missing expected for '{id}' in WPT manifest {path:?}"));
+        let provenance = current.remove("provenance");
         let kind = match current.remove("kind").as_deref() {
             Some("tokens") => CaseKind::Tokens,
             Some("dom") | None => CaseKind::Dom,
@@ -97,11 +99,17 @@ pub fn load_manifest(path: &Path) -> Vec<WptCase> {
             .unwrap_or_else(|| panic!("manifest has no parent directory"));
         let input_path = root.join(rel_path);
         let expected_path = root.join(expected);
+        let provenance_path = provenance.map(|provenance| root.join(provenance));
         if !input_path.is_file() {
             panic!("WPT input file missing for '{id}': {input_path:?}");
         }
         if !expected_path.is_file() {
             panic!("WPT expected file missing for '{id}': {expected_path:?}");
+        }
+        if let Some(provenance_path) = provenance_path.as_ref()
+            && !provenance_path.is_file()
+        {
+            panic!("WPT provenance file missing for '{id}': {provenance_path:?}");
         }
         let expected_name = expected_path
             .file_name()
@@ -127,6 +135,7 @@ pub fn load_manifest(path: &Path) -> Vec<WptCase> {
             id,
             path: input_path,
             expected: expected_path,
+            provenance: provenance_path,
             status,
             reason,
             kind,

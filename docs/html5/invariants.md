@@ -163,8 +163,31 @@ Table cell and AFE interaction:
   entry and is cleared by first text consumption, non-text handling, or text-mode exit.
 - A void insertion restores retained stack length/order after one real push/pop;
   high-water records the transient observed depth.
-- AE9 start-tag dispatch finalizes every original self-closing flag exactly once:
+- start-tag dispatch finalizes every original self-closing flag exactly once
+  for the AE9/AE10 semantic-insertion paths:
   an unacknowledged AE9 non-void flag records its trailing-solidus error after
   the tag-specific recovery error, including a recoverably ignored token.
 - The frozen deprecated insertion helper retains pre-AE9 skip-stack behavior;
   only AE9 semantic void insertion changes stack-transition observability.
+
+## AE10 Current Select Invariants
+
+- `select` is a shared general-scope boundary; button/list-item scope inherit
+  it and table scope remains unchanged.
+- supported implied-end tags are exactly `p`, `li`, `option`, and `optgroup`;
+  exception handling is shared rather than handler-local popping.
+- generic InBody end tags perform one reverse SOE scan. Normal outcomes are a
+  stable matched entry or an earlier HTML special barrier; exhausting a rooted
+  full-document SOE is `EngineInvariantError`.
+- generic end-tag scan calls/steps use dedicated counters and do not increment
+  scope-scan counters.
+- one HTML-namespace 83-name special-category taxonomy serves AAA and generic
+  end-tag scanning. Foreign namespaces remain unsupported.
+- foster parenting changes the adjusted insertion location only while enabled
+  and the current target is `table`, `tbody`, `tfoot`, `thead`, or `tr`.
+- select/input/HR and generic-end recovery mutates SOE only; it never emits
+  `RemoveNode` or repairs the materialized DOM.
+- mandatory stack recovery remains committed when a later semantic insertion
+  is rejected by resource limits.
+- state snapshots and progress witnesses contain no select insertion mode,
+  return mode, remembered select flag, or runtime select-control state.

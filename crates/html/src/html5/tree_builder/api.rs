@@ -183,6 +183,8 @@ pub struct Html5TreeBuilder {
     pub(in crate::html5::tree_builder) perf_soe_pop_ops: u64,
     pub(in crate::html5::tree_builder) perf_soe_scope_scan_calls: u64,
     pub(in crate::html5::tree_builder) perf_soe_scope_scan_steps: u64,
+    pub(in crate::html5::tree_builder) perf_soe_end_tag_scan_calls: u64,
+    pub(in crate::html5::tree_builder) perf_soe_end_tag_scan_steps: u64,
     pub(in crate::html5::tree_builder) perf_patches_emitted: u64,
     pub(in crate::html5::tree_builder) perf_text_nodes_created: u64,
     pub(in crate::html5::tree_builder) perf_text_appends: u64,
@@ -210,6 +212,11 @@ pub struct TreeBuilderPerfStats {
     pub soe_scope_scan_calls: u64,
     /// Total SOE entries inspected while performing scope scans.
     pub soe_scope_scan_steps: u64,
+    /// Reverse SOE scans for the InBody "any other end tag" algorithm.
+    /// These are deliberately separate from scope scans.
+    pub soe_end_tag_scan_calls: u64,
+    /// Total SOE entries inspected by generic end-tag scans.
+    pub soe_end_tag_scan_steps: u64,
     pub patches_emitted: u64,
     pub text_nodes_created: u64,
     pub text_appends: u64,
@@ -283,6 +290,8 @@ impl Html5TreeBuilder {
             perf_soe_pop_ops: 0,
             perf_soe_scope_scan_calls: 0,
             perf_soe_scope_scan_steps: 0,
+            perf_soe_end_tag_scan_calls: 0,
+            perf_soe_end_tag_scan_steps: 0,
             perf_patches_emitted: 0,
             perf_text_nodes_created: 0,
             perf_text_appends: 0,
@@ -446,6 +455,8 @@ impl Html5TreeBuilder {
             soe_pop_ops: self.perf_soe_pop_ops,
             soe_scope_scan_calls: self.perf_soe_scope_scan_calls,
             soe_scope_scan_steps: self.perf_soe_scope_scan_steps,
+            soe_end_tag_scan_calls: self.perf_soe_end_tag_scan_calls,
+            soe_end_tag_scan_steps: self.perf_soe_end_tag_scan_steps,
             patches_emitted: self.perf_patches_emitted,
             text_nodes_created: self.perf_text_nodes_created,
             text_appends: self.perf_text_appends,

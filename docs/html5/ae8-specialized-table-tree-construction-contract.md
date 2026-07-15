@@ -69,6 +69,11 @@ tree-builder invariant violation, not malformed HTML recovery.
 Entering `InTableText` while pending table-text state already exists is also an
 internal invariant violation; it must not replace or discard the active state.
 
+Closing a nested table resets the supported insertion mode from current SOE
+context (`InCell`, row, row-group, caption, colgroup, table, head, or body)
+rather than unconditionally selecting InBody. This is stack-derived and does
+not add remembered return-mode state.
+
 ## Supported Table Elements
 
 AE8 supports parser-created construction for:
@@ -198,6 +203,13 @@ For supported foster-parenting cases:
 Foster parenting applies to supported non-space table text and generic
 non-table content routed through the `InTable` "anything else" branch.
 
+AE10 clarifies adjusted-location use within that delegated body processing:
+foster placement applies only while foster parenting is enabled and the
+current insertion target is `table`, `tbody`, `tfoot`, `thead`, or `tr`. Once
+delegated insertion makes an ordinary element such as `select` current, later
+ordinary descendants use that current element. This is why a fostered select
+is inserted before the table while its option remains its child.
+
 The parser must not implement foster parenting by append-then-move,
 insert-then-reparent, DOM rebuilding, runtime correction, layout ancestry, or
 snapshot-only repair.
@@ -278,7 +290,8 @@ AE8 does not implement:
 - accessibility table semantics;
 - interactive DOM mutation;
 - form behavior;
-- select-specific insertion modes;
+- select-specific insertion modes (historical select modes are not current
+  deferred work; AE10 handles select-family tokens through InBody);
 - template insertion modes;
 - SVG or MathML parsing;
 - JavaScript;

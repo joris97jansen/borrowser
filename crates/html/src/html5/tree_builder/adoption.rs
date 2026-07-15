@@ -14,7 +14,7 @@
 use crate::dom_patch::PatchKey;
 use crate::html5::shared::{AtomId, AtomTable};
 use crate::html5::tree_builder::formatting::AfeElementEntry;
-use crate::html5::tree_builder::resolve::resolve_atom;
+use crate::html5::tree_builder::html_semantics::is_special_html_element;
 use crate::html5::tree_builder::stack::{OpenElement, ScopeKeyMatch};
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
 
@@ -107,7 +107,7 @@ impl Html5TreeBuilder {
                 .open_elements
                 .get(soe_index)
                 .expect("furthest-block scan index must remain in bounds");
-            if is_special_html_tag(element.name(), atoms)? {
+            if is_special_html_element(element.name(), atoms)? {
                 return Ok(Some(FurthestBlockCandidate { soe_index, element }));
             }
         }
@@ -355,21 +355,13 @@ fn adjust_bookmark_for_removed_index(bookmark: &mut usize, removed_index: usize)
     }
 }
 
-fn requires_foster_parenting(builder: &Html5TreeBuilder, name: AtomId) -> bool {
-    name == builder.known_tags.table
-        || name == builder.known_tags.tbody
-        || name == builder.known_tags.tfoot
-        || name == builder.known_tags.thead
-        || name == builder.known_tags.tr
-}
-
 impl Html5TreeBuilder {
     fn adoption_agency_insert_last_node(
         &mut self,
         common_ancestor: OpenElement,
         last_node: PatchKey,
     ) -> Result<(), TreeBuilderError> {
-        if !requires_foster_parenting(self, common_ancestor.name()) {
+        if !self.is_table_foster_target_name(common_ancestor.name()) {
             self.append_existing_child(common_ancestor.key(), last_node);
             return Ok(());
         }
@@ -377,92 +369,6 @@ impl Html5TreeBuilder {
         self.insert_existing_child_using_foster_parenting_location(last_node)?;
         Ok(())
     }
-}
-
-fn is_special_html_tag(name: AtomId, atoms: &AtomTable) -> Result<bool, TreeBuilderError> {
-    Ok(matches!(
-        resolve_atom(atoms, name)?,
-        "address"
-            | "applet"
-            | "area"
-            | "article"
-            | "aside"
-            | "base"
-            | "basefont"
-            | "bgsound"
-            | "blockquote"
-            | "body"
-            | "br"
-            | "button"
-            | "caption"
-            | "center"
-            | "col"
-            | "colgroup"
-            | "dd"
-            | "details"
-            | "dir"
-            | "div"
-            | "dl"
-            | "dt"
-            | "embed"
-            | "fieldset"
-            | "figcaption"
-            | "figure"
-            | "footer"
-            | "form"
-            | "frame"
-            | "frameset"
-            | "h1"
-            | "h2"
-            | "h3"
-            | "h4"
-            | "h5"
-            | "h6"
-            | "head"
-            | "header"
-            | "hgroup"
-            | "hr"
-            | "html"
-            | "iframe"
-            | "img"
-            | "input"
-            | "li"
-            | "link"
-            | "listing"
-            | "main"
-            | "marquee"
-            | "menu"
-            | "meta"
-            | "nav"
-            | "noembed"
-            | "noframes"
-            | "ol"
-            | "p"
-            | "param"
-            | "plaintext"
-            | "pre"
-            | "script"
-            | "search"
-            | "section"
-            | "select"
-            | "source"
-            | "style"
-            | "summary"
-            | "table"
-            | "tbody"
-            | "td"
-            | "template"
-            | "textarea"
-            | "tfoot"
-            | "th"
-            | "thead"
-            | "title"
-            | "tr"
-            | "track"
-            | "ul"
-            | "wbr"
-            | "xmp"
-    ))
 }
 
 #[cfg(test)]

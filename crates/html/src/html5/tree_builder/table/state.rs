@@ -124,15 +124,60 @@ impl Html5TreeBuilder {
         self.open_elements.current().map(OpenElement::name)
     }
 
-    pub(super) fn current_node_uses_in_table_text_mode(&self) -> bool {
-        let Some(current) = self.open_elements.current() else {
-            return false;
-        };
-        let name = current.name();
+    pub(in crate::html5::tree_builder) fn is_table_foster_target_name(&self, name: AtomId) -> bool {
         name == self.known_tags.table
             || name == self.known_tags.tbody
             || name == self.known_tags.tfoot
             || name == self.known_tags.thead
             || name == self.known_tags.tr
+    }
+
+    pub(in crate::html5::tree_builder) fn current_node_is_table_foster_target(&self) -> bool {
+        self.open_elements
+            .current()
+            .is_some_and(|current| self.is_table_foster_target_name(current.name()))
+    }
+
+    pub(super) fn current_node_uses_in_table_text_mode(&self) -> bool {
+        self.current_node_is_table_foster_target()
+    }
+
+    /// Restores the insertion mode represented by the supported full-document
+    /// SOE subset after closing a nested table. This is stack-derived state,
+    /// not a remembered return mode.
+    pub(in crate::html5::tree_builder) fn reset_supported_insertion_mode_from_soe(
+        &mut self,
+    ) -> Result<(), TreeBuilderError> {
+        for index in (0..self.open_elements.len()).rev() {
+            let entry = self.open_elements.get(index).ok_or(EngineInvariantError)?;
+            let name = entry.name();
+            let mode = if name == self.known_tags.td || name == self.known_tags.th {
+                Some(InsertionMode::InCell)
+            } else if name == self.known_tags.tr {
+                Some(InsertionMode::InRow)
+            } else if name == self.known_tags.tbody
+                || name == self.known_tags.thead
+                || name == self.known_tags.tfoot
+            {
+                Some(InsertionMode::InTableBody)
+            } else if name == self.known_tags.caption {
+                Some(InsertionMode::InCaption)
+            } else if name == self.known_tags.colgroup {
+                Some(InsertionMode::InColumnGroup)
+            } else if name == self.known_tags.table {
+                Some(InsertionMode::InTable)
+            } else if name == self.known_tags.head {
+                Some(InsertionMode::InHead)
+            } else if name == self.known_tags.body || name == self.known_tags.html {
+                Some(InsertionMode::InBody)
+            } else {
+                None
+            };
+            if let Some(mode) = mode {
+                self.insertion_mode = mode;
+                return Ok(());
+            }
+        }
+        Err(EngineInvariantError)
     }
 }

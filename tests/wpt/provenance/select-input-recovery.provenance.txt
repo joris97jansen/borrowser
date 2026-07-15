@@ -1,0 +1,21 @@
+format: wpt-dat-case-provenance-v1
+wpt-commit: 2c705104a295c48053eeddf7fe0170d790a4e853
+source: html/syntax/parsing/resources/tests7.dat
+case-identity: source path plus exact #data and SHA-256
+context: full-document
+scripting: not-applicable
+data-sha256: 44c9d0ea49afb6e5b42d61af6bc8dcd77e168c46b5dff45aab2f701894c42226
+adaptation: exact #data bytes extracted without a terminal newline; upstream #document translated only into html5-dom-v1 representation
+upstream-errors-policy: provenance only; Borrowser parse-error kinds are asserted separately
+#data
+<!doctype html><select><input>X
+#errors
+1:32: ERROR: Premature end of file. Currently open tags: html, body, select.
+#document
+| <!DOCTYPE html>
+| <html>
+|   <head>
+|   <body>
+|     <select>
+|     <input>
+|     "X"

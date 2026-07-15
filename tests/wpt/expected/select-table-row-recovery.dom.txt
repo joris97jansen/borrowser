@@ -1,0 +1,13 @@
+# format: html5-dom-v1
+#document
+  <html>
+    <head>
+    <body>
+      <select>
+        <option>
+          "A"
+      <table>
+        <tbody>
+          <tr>
+            <td>
+              "B"

@@ -1,4 +1,4 @@
-use crate::html5::shared::{AtomId, AtomTable, Attribute};
+use crate::html5::shared::{AtomTable, Attribute};
 use crate::html5::tokenizer::TextResolver;
 use crate::html5::tree_builder::api::FormElementPointer;
 use crate::html5::tree_builder::modes::InsertionMode;
@@ -6,37 +6,7 @@ use crate::html5::tree_builder::resolve::{resolve_atom, resolve_attribute_value}
 use crate::html5::tree_builder::stack::{ScopeKeyMatch, ScopeKind};
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
 
-/// Parser-algorithm outcome for a tokenizer self-closing flag.
-///
-/// This is intentionally distinct from element insertion/stack mechanics: a
-/// trailing solidus on a non-void HTML element does not make that element
-/// void, but an HTML parser algorithm can still leave its flag unacknowledged.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(in crate::html5::tree_builder) enum SelfClosingFlagDisposition {
-    Acknowledge,
-    LeaveUnacknowledged,
-}
-
 impl Html5TreeBuilder {
-    /// Finalizes the original tokenizer self-closing flag after an AE9 start
-    /// tag algorithm has completed, including an intentional ignored-token
-    /// recovery path.
-    pub(in crate::html5::tree_builder) fn finalize_ae9_start_tag_self_closing(
-        &mut self,
-        name: AtomId,
-        self_closing: bool,
-        disposition: SelfClosingFlagDisposition,
-        processed_insertion_mode: InsertionMode,
-    ) {
-        if self_closing && disposition == SelfClosingFlagDisposition::LeaveUnacknowledged {
-            self.record_parse_error(
-                "non-void-html-element-start-tag-with-trailing-solidus",
-                Some(name),
-                Some(processed_insertion_mode),
-            );
-        }
-    }
-
     pub(in crate::html5::tree_builder) fn input_type_is_hidden(
         &self,
         attrs: &[Attribute],
@@ -127,6 +97,18 @@ impl Html5TreeBuilder {
         atoms: &AtomTable,
         text: &dyn TextResolver,
     ) -> Result<(), TreeBuilderError> {
+        if self.open_elements.has_in_scope(
+            self.known_tags.select,
+            ScopeKind::InScope,
+            &self.scope_tags,
+        ) {
+            self.record_parse_error(
+                "in-body-input-start-tag-closes-select",
+                Some(self.known_tags.input),
+                Some(InsertionMode::InBody),
+            );
+            let _ = self.close_element_in_scope(self.known_tags.select, ScopeKind::InScope);
+        }
         let _ = self.reconstruct_active_formatting_elements(atoms)?;
         let hidden = self.input_type_is_hidden(attrs, atoms, text)?;
         let _ = self.insert_void_html_element(self.known_tags.input, attrs, atoms, text)?;

@@ -16,6 +16,7 @@ pub(crate) mod document;
 mod formatting;
 #[cfg(any(test, feature = "html5-fuzzing"))]
 mod fuzz;
+mod html_semantics;
 mod insert;
 mod invariants;
 mod known_tags;

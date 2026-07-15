@@ -43,7 +43,8 @@ determinism contracts.
 ## Non-Goals
 
 - This contract does not add template insertion-mode stack behavior.
-- This contract does not add `InSelectInTable`.
+- This contract does not add the historical `InSelectInTable`; AE10 documents
+  why it is not a current insertion mode.
 - This contract does not add fragment-context-specific table bootstrap rules.
 - This contract does not add foreign-content integration-point behavior inside
   table modes.
@@ -128,7 +129,6 @@ Synthesized elements are real DOM nodes and must follow the normal
 
 The following remain deferred even after this contract lands:
 
-- `InSelectInTable`
 - template insertion modes and template table interactions
 - fragment parsing that starts in a table-family context
 - foreign-content parsing inside table-family modes
@@ -136,6 +136,10 @@ The following remain deferred even after this contract lands:
 
 No implementation may silently treat these deferred areas as contractual by
 reusing table-mode logic opportunistically.
+
+`InSelectInTable` is historical, not deferred current behavior. Current select
+tokens compose with `InTable` delegation and ordinary `InBody` rules under the
+AE10 contract.
 
 ## Foster Parenting Contract
 
@@ -166,6 +170,11 @@ Milestone I requires foster-parenting behavior for:
 - generic end tags processed by the `InTable` "anything else" branch
 - any equivalent reprocessed body-flow token path entered with foster parenting
   enabled
+
+Adjusted foster placement on a delegated body-flow path additionally requires
+the current target to be `table`, `tbody`, `tfoot`, `thead`, or `tr`. Once an
+ordinary delegated element is current, its descendants use normal current-node
+insertion even while the bounded delegation guard remains enabled.
 
 Whitespace-only character runs handled by the dedicated table-text whitespace
 path are not foster-parented unless the spec path for that token requires it.

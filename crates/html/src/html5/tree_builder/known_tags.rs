@@ -45,6 +45,9 @@ pub(in crate::html5::tree_builder) struct KnownTagIds {
     pub(in crate::html5::tree_builder) nobr: AtomId,
     pub(in crate::html5::tree_builder) s: AtomId,
     pub(in crate::html5::tree_builder) script: AtomId,
+    pub(in crate::html5::tree_builder) select: AtomId,
+    pub(in crate::html5::tree_builder) option: AtomId,
+    pub(in crate::html5::tree_builder) optgroup: AtomId,
     pub(in crate::html5::tree_builder) small: AtomId,
     pub(in crate::html5::tree_builder) strike: AtomId,
     pub(in crate::html5::tree_builder) strong: AtomId,
@@ -130,6 +133,9 @@ impl KnownTagIds {
             nobr: atoms.intern_ascii_folded("nobr")?,
             s: atoms.intern_ascii_folded("s")?,
             script: atoms.intern_ascii_folded("script")?,
+            select: atoms.intern_ascii_folded("select")?,
+            option: atoms.intern_ascii_folded("option")?,
+            optgroup: atoms.intern_ascii_folded("optgroup")?,
             small: atoms.intern_ascii_folded("small")?,
             strike: atoms.intern_ascii_folded("strike")?,
             strong: atoms.intern_ascii_folded("strong")?,
@@ -191,7 +197,7 @@ impl KnownTagIds {
         &self,
         name: AtomId,
     ) -> bool {
-        name == self.p || name == self.li
+        name == self.p || name == self.li || name == self.option || name == self.optgroup
     }
 
     #[inline]
@@ -259,6 +265,7 @@ impl KnownTagIds {
             marquee: self.marquee,
             object: self.object,
             applet: self.applet,
+            select: self.select,
             button: self.button,
             ol: self.ol,
             ul: self.ul,
@@ -286,6 +293,7 @@ mod tests {
         assert_eq!(scope.marquee, known.marquee);
         assert_eq!(scope.object, known.object);
         assert_eq!(scope.applet, known.applet);
+        assert_eq!(scope.select, known.select);
         assert_eq!(scope.button, known.button);
         assert_eq!(scope.ol, known.ol);
         assert_eq!(scope.ul, known.ul);
@@ -308,12 +316,14 @@ mod tests {
     }
 
     #[test]
-    fn known_tag_helpers_classify_ae7_body_recovery_tags() {
+    fn known_tag_helpers_classify_supported_body_recovery_tags() {
         let mut ctx = crate::html5::shared::DocumentParseContext::new();
         let known = KnownTagIds::intern(&mut ctx.atoms).expect("known tags");
 
         assert!(known.is_supported_implied_end_tag(known.p));
         assert!(known.is_supported_implied_end_tag(known.li));
+        assert!(known.is_supported_implied_end_tag(known.option));
+        assert!(known.is_supported_implied_end_tag(known.optgroup));
         assert!(!known.is_supported_implied_end_tag(known.div));
 
         for name in [

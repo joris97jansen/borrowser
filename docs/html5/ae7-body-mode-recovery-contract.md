@@ -1,6 +1,6 @@
 # AE7: Body-Mode Recovery, Implied End Tags, And Formatting Foundation
 
-Last updated: 2026-07-10
+Last updated: 2026-07-15
 Status: Milestone AE implementation contract
 Scope: `crates/html/src/html5/tree_builder`, `InBody` only
 
@@ -25,6 +25,11 @@ AE7 supports implied-end-tag generation for:
 
 - `p`
 - `li`
+
+AE10 extends the same deliberately bounded helper with `option` and
+`optgroup`, including its existing exception parameter. That extension is
+defined by the AE10 contract and does not broaden support to other implied-end
+members.
 
 The supported implied-end-tag helper is deliberately subset-scoped. It accepts
 an optional excluded tag and pops only supported implied tags from the current
@@ -79,7 +84,7 @@ When an end tag `</p>` is seen and no `p` element is in button scope, AE7:
 4. does not fall through to generic end-tag handling.
 
 This means unmatched `</p>` is not silently ignored and does not emit the
-generic `end-tag-not-in-scope` diagnostic.
+generic `in-body-any-other-end-tag-blocked-by-special` diagnostic.
 
 If normal resource-limit checks prevent synthetic `p` insertion, the parser
 records the relevant resource-limit diagnostic and does not attempt a fake
@@ -126,8 +131,22 @@ cases:
 - `in-body-li-end-tag-missing-li`
 - `in-body-li-end-tag-implied-close-mismatch`
 - `in-body-end-tag-implied-close-mismatch`
-- existing `end-tag-not-in-scope` for generic end tags outside the AE7
-  dedicated `p`/`li` paths
+- `in-body-any-other-end-tag-blocked-by-special`
+
+Outside the dedicated AE7 `p` and `li` paths, the current InBody “any other
+end tag” algorithm performs one reverse SOE scan. This is not a scope lookup.
+If the scan encounters a special HTML element before the requested target, it
+records `in-body-any-other-end-tag-blocked-by-special` and ignores the token.
+An absent target in the supported rooted full-document parser normally reaches
+the special `html` root and takes that same malformed-input path. Exhausting
+SOE instead is `EngineInvariantError`, not a parse error. If the target is
+matched but is not the current node after supported implied-end processing,
+`in-body-end-tag-implied-close-mismatch` remains the deterministic diagnostic.
+
+`applet`, `marquee`, and `object` end tags do not use this generic algorithm.
+They retain dedicated marker-end handling and the dedicated
+`in-body-marker-end-tag-not-in-scope` and
+`in-body-marker-end-tag-implied-close-mismatch` diagnostics.
 
 Parse errors are regression/debug signals. They are not public runtime APIs.
 
@@ -155,6 +174,7 @@ AE7 does not implement:
 - missing list container synthesis;
 - heading auto-close behavior beyond paragraph-close classification;
 - `pre` newline handling or frameset behavior;
-- table/select/template/body/head mode expansion;
+- table/template/body/head mode expansion beyond later AE contracts; current
+  select handling is owned by AE10 and does not add a select mode;
 - broad WPT status promotion;
 - CSS, Layout, Paint, Browser/runtime, or DOM post-processing recovery.

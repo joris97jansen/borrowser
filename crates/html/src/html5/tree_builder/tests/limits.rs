@@ -259,3 +259,157 @@ fn void_element_resource_failures_do_not_begin_stack_transition() {
             .contains(&"resource-limit-children-per-node")
     );
 }
+
+#[test]
+fn select_family_recovery_remains_committed_when_following_insertions_hit_node_limit() {
+    use crate::html5::shared::Token;
+
+    for inserted_name in ["option", "input", "hr"] {
+        let (mut builder, mut ctx, resolver) = builder_with_limits(TreeBuilderLimits::default());
+        let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
+        let select = ctx.atoms.intern_ascii_folded("select").expect("select");
+        let option = ctx.atoms.intern_ascii_folded("option").expect("option");
+        let inserted = ctx
+            .atoms
+            .intern_ascii_folded(inserted_name)
+            .expect("inserted tag");
+        for name in [select, option] {
+            let _ = builder
+                .process(
+                    &Token::StartTag {
+                        name,
+                        attrs: Vec::new(),
+                        self_closing: false,
+                    },
+                    &ctx.atoms,
+                    &resolver,
+                )
+                .expect("select setup should process");
+        }
+        builder.config.limits.max_nodes_created = 5;
+        let _ = builder.drain_patches();
+
+        let _ = builder
+            .process(
+                &Token::StartTag {
+                    name: inserted,
+                    attrs: Vec::new(),
+                    self_closing: false,
+                },
+                &ctx.atoms,
+                &resolver,
+            )
+            .expect("resource-limited recovery remains recoverable");
+
+        let state = builder.state_snapshot();
+        match inserted_name {
+            "option" => assert_eq!(
+                state.open_element_names,
+                vec![builder.known_tags.html, builder.known_tags.body, select]
+            ),
+            "input" => assert_eq!(
+                state.open_element_names,
+                vec![builder.known_tags.html, builder.known_tags.body]
+            ),
+            "hr" => assert_eq!(
+                state.open_element_names,
+                vec![builder.known_tags.html, builder.known_tags.body, select]
+            ),
+            _ => unreachable!(),
+        }
+        let errors = builder.take_parse_error_kinds_for_test();
+        assert_eq!(errors.last(), Some(&"resource-limit-node-count"));
+        assert!(
+            builder.drain_patches().is_empty(),
+            "rejected {inserted_name} must not emit detached structural patches"
+        );
+    }
+}
+
+#[test]
+fn fostered_select_resource_failure_keeps_table_stack_and_cache_consistent() {
+    use crate::html5::shared::Token;
+    use crate::html5::tree_builder::modes::InsertionMode;
+
+    let (mut builder, mut ctx, resolver) = builder_with_limits(TreeBuilderLimits::default());
+    let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
+    let table = ctx.atoms.intern_ascii_folded("table").expect("table");
+    let select = ctx.atoms.intern_ascii_folded("select").expect("select");
+    let _ = builder
+        .process(
+            &Token::StartTag {
+                name: table,
+                attrs: Vec::new(),
+                self_closing: false,
+            },
+            &ctx.atoms,
+            &resolver,
+        )
+        .expect("table setup");
+    builder.config.limits.max_nodes_created = 4;
+    let before = builder.state_snapshot();
+    let _ = builder.drain_patches();
+
+    let _ = builder
+        .process(
+            &Token::StartTag {
+                name: select,
+                attrs: Vec::new(),
+                self_closing: false,
+            },
+            &ctx.atoms,
+            &resolver,
+        )
+        .expect("fostered select limit rejection remains recoverable");
+
+    let after = builder.state_snapshot();
+    assert_eq!(after.open_element_keys, before.open_element_keys);
+    assert_eq!(after.current_table_key, before.current_table_key);
+    assert_eq!(after.insertion_mode, InsertionMode::InTable);
+    assert!(!builder.progress_witness().foster_parenting_enabled);
+    assert_eq!(
+        builder.take_parse_error_kinds_for_test(),
+        vec![
+            "in-table-anything-else-reprocess-in-body",
+            "resource-limit-node-count"
+        ]
+    );
+    assert!(builder.drain_patches().is_empty());
+}
+
+#[test]
+fn resource_rejected_non_void_select_start_still_finalizes_self_closing_once() {
+    use crate::html5::shared::Token;
+
+    let (mut builder, mut ctx, resolver) = builder_with_limits(TreeBuilderLimits::default());
+    let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
+    let _ = builder.take_parse_error_kinds_for_test();
+    builder.config.limits.max_nodes_created = 3;
+    let select = ctx.atoms.intern_ascii_folded("select").expect("select");
+
+    let _ = builder
+        .process(
+            &Token::StartTag {
+                name: select,
+                attrs: Vec::new(),
+                self_closing: true,
+            },
+            &ctx.atoms,
+            &resolver,
+        )
+        .expect("resource-rejected select remains recoverable");
+
+    assert_eq!(
+        builder.take_parse_error_kinds_for_test(),
+        vec![
+            "resource-limit-node-count",
+            "non-void-html-element-start-tag-with-trailing-solidus",
+        ],
+        "dispatch must finalize the original flag once after recoverable insertion rejection"
+    );
+    assert_eq!(
+        builder.state_snapshot().open_element_names,
+        vec![builder.known_tags.html, builder.known_tags.body]
+    );
+    assert!(builder.drain_patches().is_empty());
+}

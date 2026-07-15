@@ -35,7 +35,7 @@ impl Html5TreeBuilder {
                 self_closing,
             } if *name == self.known_tags.form => {
                 self.handle_in_table_form_start_tag(attrs, atoms, text)?;
-                self.finalize_ae9_start_tag_self_closing(
+                self.finalize_html_start_tag_self_closing_flag(
                     *name,
                     *self_closing,
                     SelfClosingFlagDisposition::LeaveUnacknowledged,
@@ -50,7 +50,7 @@ impl Html5TreeBuilder {
             } if *name == self.known_tags.input => {
                 if self.input_type_is_hidden(attrs, atoms, text)? {
                     self.handle_in_table_hidden_input_start_tag(attrs, atoms, text)?;
-                    self.finalize_ae9_start_tag_self_closing(
+                    self.finalize_html_start_tag_self_closing_flag(
                         *name,
                         *self_closing,
                         SelfClosingFlagDisposition::Acknowledge,
@@ -154,8 +154,8 @@ impl Html5TreeBuilder {
                     return Ok(DispatchOutcome::Done);
                 }
                 let _ = self.close_element_in_scope(self.known_tags.table, ScopeKind::Table);
-                self.insertion_mode = InsertionMode::InBody;
-                Ok(DispatchOutcome::Reprocess(InsertionMode::InBody))
+                self.reset_supported_insertion_mode_from_soe()?;
+                Ok(DispatchOutcome::Reprocess(self.insertion_mode))
             }
             Token::EndTag { name } if *name == self.known_tags.table => {
                 if !self.has_in_table_scope(*name) {
@@ -167,7 +167,7 @@ impl Html5TreeBuilder {
                     return Ok(DispatchOutcome::Done);
                 }
                 let _ = self.close_element_in_scope(*name, ScopeKind::Table);
-                self.insertion_mode = InsertionMode::InBody;
+                self.reset_supported_insertion_mode_from_soe()?;
                 Ok(DispatchOutcome::Done)
             }
             Token::EndTag { name }

@@ -1,0 +1,20 @@
+format: wpt-dat-case-provenance-v1
+wpt-commit: 2c705104a295c48053eeddf7fe0170d790a4e853
+source: html/syntax/parsing/resources/tests7.dat
+case-identity: source path plus exact #data and SHA-256
+context: full-document
+scripting: not-applicable
+data-sha256: 81fa58555ea62a7dc493cfaab2931ddc191fd8192a8eae46e93bef04d9ceafd3
+adaptation: exact #data bytes extracted without a terminal newline; upstream #document translated only into html5-dom-v1 representation
+upstream-errors-policy: provenance only; Borrowser parse-error kinds are asserted separately
+#data
+<!doctype html><select><select>X
+#errors
+1:24: ERROR: Start tag 'select' isn't allowed here. Currently open tags: html, body, select.
+#document
+| <!DOCTYPE html>
+| <html>
+|   <head>
+|   <body>
+|     <select>
+|     "X"

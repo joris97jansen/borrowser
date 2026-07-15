@@ -11,6 +11,7 @@ tools = { path = "../tools" }
 [dev-dependencies]
 criterion = "0.5"
 html-test-support = { path = "../html_test_support", features = ["html5", "dom-snapshot"] }
+ring = "0.17.14"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 toml = "0.8"
@@ -62,6 +63,11 @@ required-features = ["html5", "dom-snapshot"]
 [[test]]
 name = "wpt_html5_formatting"
 path = "tests/wpt_html5_formatting.rs"
+required-features = ["html5", "dom-snapshot"]
+
+[[test]]
+name = "wpt_html5_select"
+path = "tests/wpt_html5_select.rs"
 required-features = ["html5", "dom-snapshot"]
 
 [[test]]

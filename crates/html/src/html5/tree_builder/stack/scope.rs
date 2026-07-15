@@ -226,6 +226,7 @@ fn is_in_scope_boundary(name: AtomId, tags: &ScopeTagSet) -> bool {
         || name == tags.marquee
         || name == tags.object
         || name == tags.applet
+        || name == tags.select
 }
 
 #[inline]

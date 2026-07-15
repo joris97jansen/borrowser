@@ -1,7 +1,7 @@
 use crate::html5::shared::{AtomId, AtomTable, Attribute};
 use crate::html5::tokenizer::TextResolver;
 use crate::html5::tree_builder::modes::InsertionMode;
-use crate::html5::tree_builder::stack::ScopeKind;
+use crate::html5::tree_builder::stack::{InBodyEndTagScan, ScopeKind};
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
 
 impl Html5TreeBuilder {
@@ -173,37 +173,58 @@ impl Html5TreeBuilder {
     pub(in crate::html5::tree_builder) fn handle_in_body_generic_end_tag_with_implied_tags(
         &mut self,
         name: AtomId,
-    ) {
-        let scope = self.scope_kind_for_in_body_end_tag(name);
-        if !self
+        atoms: &AtomTable,
+    ) -> Result<(), TreeBuilderError> {
+        let matched = match self
             .open_elements
-            .has_in_scope(name, scope, &self.scope_tags)
+            .scan_in_body_any_other_end_tag(name, atoms)?
         {
-            self.record_parse_error(
-                "end-tag-not-in-scope",
-                Some(name),
-                Some(InsertionMode::InBody),
-            );
-            return;
-        }
+            InBodyEndTagScan::Matched(matched) => matched,
+            InBodyEndTagScan::BlockedBySpecial { .. } => {
+                self.record_parse_error(
+                    "in-body-any-other-end-tag-blocked-by-special",
+                    Some(name),
+                    Some(InsertionMode::InBody),
+                );
+                return Ok(());
+            }
+        };
 
         self.generate_supported_implied_end_tags_except(Some(name));
-        if !self.current_node_is(name) {
+        if self.open_elements.current().map(|entry| entry.key()) != Some(matched.element.key()) {
             self.record_parse_error(
                 "in-body-end-tag-implied-close-mismatch",
                 Some(name),
                 Some(InsertionMode::InBody),
             );
         }
-        let popped = self.pop_element_in_scope_with_reporting(name, scope, false);
-        if let Some(popped) = popped {
-            if self.known_tags.is_formatting_tag(popped.name()) {
-                let _ = self.active_formatting.remove(popped.key());
-            }
-            if self.known_tags.is_marker_tag(popped.name()) {
-                let _ = self.active_formatting.clear_to_last_marker();
-            }
-            self.update_mode_for_end_tag(name);
+        let popped = self.open_elements.pop_suffix_from_match(matched)?;
+        debug_assert_eq!(popped.name(), name);
+        self.invalidate_text_coalescing();
+        Ok(())
+    }
+
+    pub(in crate::html5::tree_builder) fn handle_in_body_marker_end_tag(&mut self, name: AtomId) {
+        if !self
+            .open_elements
+            .has_in_scope(name, ScopeKind::InScope, &self.scope_tags)
+        {
+            self.record_parse_error(
+                "in-body-marker-end-tag-not-in-scope",
+                Some(name),
+                Some(InsertionMode::InBody),
+            );
+            return;
         }
+        self.generate_supported_implied_end_tags_except(None);
+        if !self.current_node_is(name) {
+            self.record_parse_error(
+                "in-body-marker-end-tag-implied-close-mismatch",
+                Some(name),
+                Some(InsertionMode::InBody),
+            );
+        }
+        let _ = self.close_element_in_scope(name, ScopeKind::InScope);
+        let _ = self.active_formatting.clear_to_last_marker();
     }
 }

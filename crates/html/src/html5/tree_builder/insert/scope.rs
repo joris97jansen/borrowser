@@ -81,29 +81,4 @@ impl Html5TreeBuilder {
             InsertionMode::InBody
         };
     }
-
-    pub(in crate::html5::tree_builder) fn update_mode_for_end_tag(&mut self, name: AtomId) {
-        self.insertion_mode = if name == self.known_tags.head {
-            InsertionMode::AfterHead
-        } else if name == self.known_tags.body {
-            InsertionMode::AfterBody
-        } else {
-            self.insertion_mode
-        };
-    }
-
-    pub(in crate::html5::tree_builder) fn scope_kind_for_in_body_end_tag(
-        &self,
-        name: AtomId,
-    ) -> ScopeKind {
-        if name == self.known_tags.button {
-            ScopeKind::Button
-        } else if name == self.known_tags.li {
-            ScopeKind::ListItem
-        } else if name == self.known_tags.table {
-            ScopeKind::Table
-        } else {
-            ScopeKind::InScope
-        }
-    }
 }

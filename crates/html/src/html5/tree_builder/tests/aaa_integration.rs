@@ -240,12 +240,12 @@ fn aaa_foster_parent_recovery_keeps_row_structure_and_foster_parented_content_st
             "    <body>".to_string(),
             "      <a>".to_string(),
             "      <a>".to_string(),
-            "      \"x\"".to_string(),
+            "        \"x\"".to_string(),
             "      <table>".to_string(),
             "        <tbody>".to_string(),
             "          <tr>".to_string(),
         ],
-        "AAA foster-parent recovery should keep the synthesized table row structure while leaving foster-parented formatting/text before the table"
+        "AAA foster-parent recovery should keep text under the reconstructed non-table current node"
     );
     assert!(
         patches.contains(&DomPatch::InsertBefore {
@@ -256,12 +256,35 @@ fn aaa_foster_parent_recovery_keeps_row_structure_and_foster_parented_content_st
         "the foster-parented formatting element should be inserted before the live table"
     );
     assert!(
-        patches.contains(&DomPatch::InsertBefore {
-            parent: PatchKey(5),
+        patches.contains(&DomPatch::AppendChild {
+            parent: PatchKey(10),
             child: PatchKey(11),
-            before: PatchKey(6),
         }),
-        "the foster-parented text node should remain identity-preserving and move before the live table"
+        "adjusted foster placement must stop once the current target is the reconstructed non-table element"
+    );
+}
+
+#[cfg(feature = "dom-snapshot")]
+#[test]
+fn corrected_noscript_special_entry_drives_integrated_aaa_furthest_block_recovery() {
+    let patches = run_tree_builder_chunks(&["<!doctype html><b><noscript>x</b>"]);
+    assert_no_remove_node_moves(&patches, "noscript");
+    let dom = crate::test_harness::materialize_patch_batches(&[patches])
+        .expect("materialize corrected-special AAA DOM");
+    assert_eq!(
+        crate::html5::serialize_dom_for_test(&dom),
+        vec![
+            "#document".to_string(),
+            "  <!doctype html>".to_string(),
+            "  <html>".to_string(),
+            "    <head>".to_string(),
+            "    <body>".to_string(),
+            "      <b>".to_string(),
+            "      <noscript>".to_string(),
+            "        <b>".to_string(),
+            "          \"x\"".to_string(),
+        ],
+        "noscript must be discovered as the integrated AAA furthest block"
     );
 }
 

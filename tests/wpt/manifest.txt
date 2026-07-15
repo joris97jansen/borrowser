@@ -118,6 +118,44 @@ path: vendor/html/syntax/parsing/tables/nested-basic.html
 expected: expected/tables-nested-basic.dom.txt
 status: active
 
+# AE10 exact case adaptations from pinned WPT .dat tree-construction data.
+
+id: select-nested-formatting
+path: vendor/html/syntax/parsing/select/nested-formatting.html
+expected: expected/select-nested-formatting.dom.txt
+provenance: provenance/select-nested-formatting.provenance.txt
+status: active
+
+id: select-input-recovery
+path: vendor/html/syntax/parsing/select/input-recovery.html
+expected: expected/select-input-recovery.dom.txt
+provenance: provenance/select-input-recovery.provenance.txt
+status: active
+
+id: select-nested-simple
+path: vendor/html/syntax/parsing/select/nested-simple.html
+expected: expected/select-nested-simple.dom.txt
+provenance: provenance/select-nested-simple.provenance.txt
+status: active
+
+id: select-table-foster-option
+path: vendor/html/syntax/parsing/select/table-foster-option.html
+expected: expected/select-table-foster-option.dom.txt
+provenance: provenance/select-table-foster-option.provenance.txt
+status: active
+
+id: select-table-token-open
+path: vendor/html/syntax/parsing/select/table-token-open.html
+expected: expected/select-table-token-open.dom.txt
+provenance: provenance/select-table-token-open.provenance.txt
+status: active
+
+id: select-table-row-recovery
+path: vendor/html/syntax/parsing/select/table-row-recovery.html
+expected: expected/select-table-row-recovery.dom.txt
+provenance: provenance/select-table-row-recovery.provenance.txt
+status: active
+
 id: tokenizer-basic
 kind: tokens
 path: vendor/html/syntax/parsing/tokenizer-basic.html

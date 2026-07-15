@@ -57,6 +57,34 @@ fn open_elements_target_before_boundary_is_visible() {
 }
 
 #[test]
+fn select_is_a_general_scope_boundary_inherited_by_button_and_list_item_scope() {
+    let mut ctx = DocumentParseContext::new();
+    let tags = make_scope_tags(&mut ctx);
+    let target = ctx.atoms.intern_ascii_folded("p").expect("atom");
+    for kind in [ScopeKind::InScope, ScopeKind::Button, ScopeKind::ListItem] {
+        let mut visible = OpenElementsStack::default();
+        visible.push(OpenElement::new(PatchKey(1), tags.html));
+        visible.push(OpenElement::new(PatchKey(2), target));
+        assert!(visible.has_in_scope(target, kind, &tags));
+
+        visible.push(OpenElement::new(PatchKey(3), tags.select));
+        assert!(
+            !visible.has_in_scope(target, kind, &tags),
+            "select must block {kind:?}"
+        );
+    }
+
+    let mut table = OpenElementsStack::default();
+    table.push(OpenElement::new(PatchKey(1), tags.html));
+    table.push(OpenElement::new(PatchKey(2), target));
+    table.push(OpenElement::new(PatchKey(3), tags.select));
+    assert!(
+        table.has_in_scope(target, ScopeKind::Table, &tags),
+        "select is not a table-scope boundary"
+    );
+}
+
+#[test]
 fn pop_until_including_in_scope_returns_matched_element() {
     let mut ctx = DocumentParseContext::new();
     let tags = make_scope_tags(&mut ctx);
