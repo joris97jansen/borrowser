@@ -1050,6 +1050,7 @@ dependencies = [
  "html-test-support",
  "log",
  "memchr",
+ "ring",
  "serde",
  "serde_json",
  "toml 0.8.23",

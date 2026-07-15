@@ -121,7 +121,7 @@ impl Html5TreeBuilder {
     pub(super) fn element_or_text_insertion_location(
         &mut self,
     ) -> Result<InsertionLocation, TreeBuilderError> {
-        if self.foster_parenting_enabled {
+        if self.foster_parenting_enabled && self.current_node_is_table_foster_target() {
             self.foster_parenting_insertion_location()
         } else {
             self.current_insertion_location()

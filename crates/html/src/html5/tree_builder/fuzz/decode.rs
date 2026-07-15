@@ -9,11 +9,23 @@
 use super::config::{TreeBuilderFuzzConfig, TreeBuilderFuzzError, TreeBuilderFuzzTermination};
 use crate::html5::shared::{AtomTable, Attribute, AttributeValue, TextValue, Token};
 
-const TAG_NAME_CATALOG: &[&str] = &[
+/// Synthetic token decoder V2 marker. An exact full-prefix match opts into V2;
+/// every other input, including truncated or unknown marker-like prefixes,
+/// remains V1 and treats all bytes as token data.
+pub(super) const SYNTHETIC_TOKEN_DECODER_V2_MARKER: &[u8] = b"TB-FUZZ-V2\n";
+
+/// Exact pre-AE10 tag catalog. Its order, length, and modulo mapping are part
+/// of the deterministic V1 byte-format contract.
+pub(super) const TAG_NAME_CATALOG_V1: &[&str; 30] = &[
     "html", "head", "body", "title", "textarea", "style", "script", "table", "tbody", "thead",
     "tfoot", "tr", "td", "th", "caption", "colgroup", "col", "template", "p", "div", "span", "a",
     "b", "i", "nobr", "applet", "object", "form", "frameset", "br",
 ];
+
+/// AE10 additions available only to explicitly versioned V2 inputs. V2 keeps
+/// the V1 prefix order and appends these names, preserving a simple bounded
+/// modulo-selection format without changing legacy bytes.
+const TAG_NAME_CATALOG_V2_ADDITIONS: &[&str; 5] = &["select", "option", "optgroup", "input", "hr"];
 
 const ATTR_NAME_CATALOG: &[&str] = &[
     "id",
@@ -33,6 +45,7 @@ const ATTR_NAME_CATALOG: &[&str] = &[
     "role",
 ];
 
+#[derive(Debug, PartialEq, Eq)]
 pub(super) struct DecodedTokenStream {
     pub(super) tokens: Vec<Token>,
     pub(super) tokens_generated: usize,
@@ -41,14 +54,34 @@ pub(super) struct DecodedTokenStream {
     pub(super) termination: Option<TreeBuilderFuzzTermination>,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(super) enum SyntheticTokenDecoderVersion {
+    V1,
+    V2,
+}
+
+pub(super) fn decoder_version_for_input(bytes: &[u8]) -> SyntheticTokenDecoderVersion {
+    if bytes.starts_with(SYNTHETIC_TOKEN_DECODER_V2_MARKER) {
+        SyntheticTokenDecoderVersion::V2
+    } else {
+        SyntheticTokenDecoderVersion::V1
+    }
+}
+
 pub(super) fn decode_token_stream(
     bytes: &[u8],
     atoms: &mut AtomTable,
     config: TreeBuilderFuzzConfig,
 ) -> Result<DecodedTokenStream, TreeBuilderFuzzError> {
+    let version = decoder_version_for_input(bytes);
+    let token_bytes = match version {
+        SyntheticTokenDecoderVersion::V1 => bytes,
+        SyntheticTokenDecoderVersion::V2 => &bytes[SYNTHETIC_TOKEN_DECODER_V2_MARKER.len()..],
+    };
     let mut decoder = SyntheticTokenDecoder {
-        bytes,
+        bytes: token_bytes,
         cursor: 0,
+        version,
         tokens: Vec::new(),
         tokens_generated: 0,
         attrs_generated: 0,
@@ -77,6 +110,7 @@ pub(super) fn decode_token_stream(
 struct SyntheticTokenDecoder<'a> {
     bytes: &'a [u8],
     cursor: usize,
+    version: SyntheticTokenDecoderVersion,
     tokens: Vec<Token>,
     tokens_generated: usize,
     attrs_generated: usize,
@@ -131,7 +165,7 @@ impl<'a> SyntheticTokenDecoder<'a> {
         atoms: &mut AtomTable,
     ) -> Result<Token, TreeBuilderFuzzError> {
         let name = if header & 0x10 != 0 {
-            Some(self.take_atom(token_index, atoms, "doctype.name", TAG_NAME_CATALOG)?)
+            Some(self.take_tag_atom(token_index, atoms, "doctype.name")?)
         } else {
             None
         };
@@ -159,7 +193,7 @@ impl<'a> SyntheticTokenDecoder<'a> {
         token_index: usize,
         atoms: &mut AtomTable,
     ) -> Result<Token, TreeBuilderFuzzError> {
-        let name = self.take_atom(token_index, atoms, "start_tag.name", TAG_NAME_CATALOG)?;
+        let name = self.take_tag_atom(token_index, atoms, "start_tag.name")?;
         let attr_count = self.take_count(self.config.max_attrs_per_tag);
         if self.attrs_generated.saturating_add(attr_count) > self.config.max_total_attrs {
             self.attrs_generated = self.attrs_generated.saturating_add(attr_count);
@@ -203,7 +237,7 @@ impl<'a> SyntheticTokenDecoder<'a> {
         atoms: &mut AtomTable,
     ) -> Result<Token, TreeBuilderFuzzError> {
         Ok(Token::EndTag {
-            name: self.take_atom(token_index, atoms, "end_tag.name", TAG_NAME_CATALOG)?,
+            name: self.take_tag_atom(token_index, atoms, "end_tag.name")?,
         })
     }
 
@@ -229,6 +263,26 @@ impl<'a> SyntheticTokenDecoder<'a> {
         let selector = self.next_optional_byte().unwrap_or(0);
         let name = if selector & 1 == 0 {
             catalog[selector as usize % catalog.len()].to_string()
+        } else {
+            self.take_fuzz_string(token_index, field)?
+        };
+        atoms.intern_ascii_folded(name.as_str()).map_err(|err| {
+            TreeBuilderFuzzError::DecodeFailure {
+                token_index,
+                detail: format!("{field} atom interning failed: {err:?}"),
+            }
+        })
+    }
+
+    fn take_tag_atom(
+        &mut self,
+        token_index: usize,
+        atoms: &mut AtomTable,
+        field: &'static str,
+    ) -> Result<crate::html5::shared::AtomId, TreeBuilderFuzzError> {
+        let selector = self.next_optional_byte().unwrap_or(0);
+        let name = if selector & 1 == 0 {
+            tag_catalog_name(self.version, selector).to_string()
         } else {
             self.take_fuzz_string(token_index, field)?
         };
@@ -286,6 +340,21 @@ impl<'a> SyntheticTokenDecoder<'a> {
 
     fn next_byte(&mut self) -> u8 {
         self.next_optional_byte().unwrap_or(0)
+    }
+}
+
+fn tag_catalog_name(version: SyntheticTokenDecoderVersion, selector: u8) -> &'static str {
+    let catalog_len = match version {
+        SyntheticTokenDecoderVersion::V1 => TAG_NAME_CATALOG_V1.len(),
+        SyntheticTokenDecoderVersion::V2 => {
+            TAG_NAME_CATALOG_V1.len() + TAG_NAME_CATALOG_V2_ADDITIONS.len()
+        }
+    };
+    let index = selector as usize % catalog_len;
+    if index < TAG_NAME_CATALOG_V1.len() {
+        TAG_NAME_CATALOG_V1[index]
+    } else {
+        TAG_NAME_CATALOG_V2_ADDITIONS[index - TAG_NAME_CATALOG_V1.len()]
     }
 }
 

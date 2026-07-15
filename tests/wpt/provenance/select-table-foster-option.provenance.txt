@@ -1,0 +1,25 @@
+format: wpt-dat-case-provenance-v1
+wpt-commit: 2c705104a295c48053eeddf7fe0170d790a4e853
+source: html/syntax/parsing/resources/tables01.dat
+case-identity: source path plus exact #data and SHA-256
+context: full-document
+scripting: not-applicable
+data-sha256: 2540a8c59f9046301e1483f5458a7a44b96a72a1bd16947d9451142c4713994e
+adaptation: exact #data bytes extracted without a terminal newline; upstream #document translated only into html5-dom-v1 representation
+upstream-errors-policy: provenance only; Borrowser parse-error kinds are asserted separately
+#data
+<table><select><option>3</select></table>
+#errors
+1:1: ERROR: Expected a doctype token
+1:8: ERROR: Start tag 'select' isn't allowed here. Currently open tags: html, body, table.
+1:16: ERROR: Start tag 'option' isn't allowed here. Currently open tags: html, body, table, select.
+1:24: ERROR: Character tokens aren't legal here
+1:25: ERROR: End tag 'select' isn't allowed here. Currently open tags: html, body, table, select, option.
+#document
+| <html>
+|   <head>
+|   <body>
+|     <select>
+|       <option>
+|         "3"
+|     <table>

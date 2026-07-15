@@ -31,6 +31,22 @@ text, and doctypes. The harness appends `EOF` itself so replay remains
 deterministic and the token-stream contract stays focused on tree-builder
 recovery semantics rather than tokenizer fidelity.
 
+That synthetic byte format is versioned. Unmarked inputs use the frozen
+pre-AE10 V1 tag catalog and modulo mapping; the exact `TB-FUZZ-V2\n` metadata
+prefix selects the expanded V2 catalog and is not decoded as a token. Decoder
+versioning preserves corpus-byte meaning and is independent of the global
+tree-builder fuzz digest schema. See
+`fuzz/regressions/html5_tree_builder_tokens/README.md` for the detailed
+compatibility contract.
+
+The prefix remains part of the raw fuzz input: it counts toward
+`max_input_bytes`, is included in `TreeBuilderFuzzSummary::input_bytes`, and
+participates in raw-input seed derivation. After framing is recognized, the
+prefix is excluded from the emitted synthetic token stream and therefore from
+generated-token, generated-attribute, generated-string-byte, and decoded-token
+processing-step accounting. This preserves a strict raw byte cap while giving
+V1 and V2 byte inputs distinct seed identities.
+
 The end-to-end pipeline harness is the realistic attacker-model lane: it feeds
 arbitrary bytes through the UTF-8 decoder and tokenizer with seeded chunking,
 streams emitted tokens into the tree builder one token at a time, applies

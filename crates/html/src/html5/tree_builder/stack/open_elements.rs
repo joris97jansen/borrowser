@@ -13,6 +13,8 @@ pub(crate) struct OpenElementsStack {
     pub(super) pop_ops: u64,
     pub(super) scope_scan_calls: u64,
     pub(super) scope_scan_steps: u64,
+    pub(super) end_tag_scan_calls: u64,
+    pub(super) end_tag_scan_steps: u64,
     pub(super) foster_parenting_cache: FosterParentingIndexCache,
 }
 
@@ -129,6 +131,16 @@ impl OpenElementsStack {
     pub(crate) fn scope_scan_steps(&self) -> u64 {
         // Total entries inspected while evaluating scope checks.
         self.scope_scan_steps
+    }
+
+    #[inline]
+    pub(crate) fn end_tag_scan_calls(&self) -> u64 {
+        self.end_tag_scan_calls
+    }
+
+    #[inline]
+    pub(crate) fn end_tag_scan_steps(&self) -> u64 {
+        self.end_tag_scan_steps
     }
 
     #[inline]

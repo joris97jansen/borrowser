@@ -1,0 +1,17 @@
+# format: html5-dom-v1
+# status: active
+#document
+  <!doctype html>
+  <html>
+    <head>
+    <body>
+      <select>
+        <button>
+          "B"
+        <div>
+          "D"
+        <hr>
+        <!-- c -->
+        <script>
+          "x"
+        "T"

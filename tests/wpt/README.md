@@ -26,6 +26,11 @@ CI fast and deterministic.
     `cargo test -p html --features html5,dom-snapshot --test wpt_html5_formatting`.
   - Includes a dedicated Milestone I tables/foster-parenting suite exposed via
     `cargo test -p html --features html5,dom-snapshot --test wpt_html5_tables`.
+  - Includes a fixed AE10 select review suite exposed via
+    `cargo test -p html --features html5,dom-snapshot --test wpt_html5_select`.
+    Its six active manifest entries are also executed by the authoritative
+    all-cases `wpt_html5_tree_builder` CI lane; CI does not invoke the focused
+    binary a redundant second time.
   - Policy: tokenizer `manifest.txt` entries stay `active` by default; temporary
     and policy exclusions are applied via `tokenizer/skips.*`.
   - Policy: tree-construction `manifest.txt` entries stay `active` by default;
@@ -37,6 +42,9 @@ CI fast and deterministic.
 - `expected`: relative path to the expected snapshot file.
 - `kind`: optional (`dom` default, or `tokens` for tokenizer snapshots).
 - `status`: optional (`active` default, `xfail` for expected failures, `skip` for policy-excluded cases). Kept for schema compatibility.
+- `provenance`: optional path to a case-adaptation provenance sidecar. It is
+  required and strictly validated for the fixed AE10 select suite; existing
+  entries without it remain backward-compatible.
 - `reason`: required when `status` is `xfail` or `skip` when manifest status is used.
 - Policy: tokenizer out-of-scope/temporary exclusions are tracked in
   `tokenizer/skips.toml` + `tokenizer/skips.json` with reason + tracking issue.
@@ -54,6 +62,7 @@ CI fast and deterministic.
 7. Run `cargo test -p html --features html5,dom-snapshot --test wpt_html5_tree_builder` for the tree-construction slice.
 8. Run `cargo test -p html --features html5,dom-snapshot --test wpt_html5_formatting` for the curated formatting/adoption-agency tree-construction slice.
 9. Run `cargo test -p html --features html5,dom-snapshot --test wpt_html5_tables` for the curated tables/foster-parenting tree-construction slice.
+10. Run `cargo test -p html --features html5,dom-snapshot --test wpt_html5_select` for the focused AE10 select review slice; set `WPT_CHUNKED=1` for chunked execution.
 
 ## Source / Upstream
 
@@ -83,6 +92,17 @@ Milestone I tables note:
 - When an upstream WPT case later supersedes one of these local table cases,
   prefer replacing the local file with the upstream-derived fixture and record
   that provenance here or in a nearby note.
+
+AE10 select note:
+
+- The six `vendor/html/syntax/parsing/select/` files are exact case
+  adaptations extracted from `.dat` files at WPT commit
+  `2c705104a295c48053eeddf7fe0170d790a4e853`, not verbatim upstream HTML files.
+- Each manifest `provenance` sidecar records source path, exact input and
+  SHA-256, full upstream errors, full upstream document tree, context,
+  scripting stance, and the `html5-dom-v1` representation translation.
+- Upstream errors are provenance only; Borrowser parse-error kinds are local
+  deterministic regression contracts.
 
 ## Notes
 

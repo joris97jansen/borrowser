@@ -1,5 +1,6 @@
 //! Stack of open elements helpers.
 
+mod end_tag;
 mod foster;
 mod open_elements;
 mod scope;
@@ -10,7 +11,7 @@ mod tests;
 
 pub(crate) use open_elements::OpenElementsStack;
 pub(crate) use types::{
-    ExactOpenElementRemoval, OpenElement, ScopeKeyMatch, ScopeKind, ScopeTagSet,
+    ExactOpenElementRemoval, InBodyEndTagScan, OpenElement, ScopeKeyMatch, ScopeKind, ScopeTagSet,
 };
 
 #[cfg(test)]

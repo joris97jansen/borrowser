@@ -1,5 +1,5 @@
 use super::DispatchOutcome;
-use super::form_controls::SelfClosingFlagDisposition;
+use super::start_tag::SelfClosingFlagDisposition;
 use crate::dom_patch::PatchKey;
 use crate::html5::shared::{AtomId, AtomTable, Token};
 use crate::html5::tokenizer::TextResolver;
@@ -65,14 +65,36 @@ impl Html5TreeBuilder {
 
     fn handle_in_body_hr_start_tag(
         &mut self,
-        name: AtomId,
         attrs: &[crate::html5::shared::Attribute],
-        self_closing: bool,
         atoms: &AtomTable,
         text: &dyn TextResolver,
     ) -> Result<(), TreeBuilderError> {
         let _ = self.close_p_before_ae7_block_start();
-        self.insert_in_body_plain_element(name, attrs, self_closing, atoms, text)
+        if self.open_elements.has_in_scope(
+            self.known_tags.select,
+            ScopeKind::InScope,
+            &self.scope_tags,
+        ) {
+            self.generate_supported_implied_end_tags_except(None);
+            if self.open_elements.has_in_scope(
+                self.known_tags.option,
+                ScopeKind::InScope,
+                &self.scope_tags,
+            ) || self.open_elements.has_in_scope(
+                self.known_tags.optgroup,
+                ScopeKind::InScope,
+                &self.scope_tags,
+            ) {
+                self.record_parse_error(
+                    "in-body-hr-start-tag-open-select-family-remains",
+                    Some(self.known_tags.hr),
+                    Some(InsertionMode::InBody),
+                );
+            }
+        }
+        let _ = self.insert_void_html_element(self.known_tags.hr, attrs, atoms, text)?;
+        self.document_state.frameset_ok = false;
+        Ok(())
     }
 
     fn handle_in_body_pre_start_tag(
@@ -136,8 +158,12 @@ impl Html5TreeBuilder {
         }
     }
 
-    fn handle_in_body_generic_end_tag(&mut self, name: AtomId) {
-        self.handle_in_body_generic_end_tag_with_implied_tags(name);
+    fn handle_in_body_generic_end_tag(
+        &mut self,
+        name: AtomId,
+        atoms: &AtomTable,
+    ) -> Result<(), TreeBuilderError> {
+        self.handle_in_body_generic_end_tag_with_implied_tags(name, atoms)
     }
 
     fn handle_in_body_formatting_end_tag(
@@ -150,7 +176,7 @@ impl Html5TreeBuilder {
             report.outcome,
             AdoptionAgencyOutcome::FallbackToGenericEndTag
         ) {
-            self.handle_in_body_generic_end_tag(name);
+            self.handle_in_body_generic_end_tag(name, atoms)?;
         }
         Ok(())
     }
@@ -233,7 +259,7 @@ impl Html5TreeBuilder {
                 self_closing,
             } if *name == self.known_tags.form => {
                 self.handle_in_body_form_start_tag(attrs, atoms, text)?;
-                self.finalize_ae9_start_tag_self_closing(
+                self.finalize_html_start_tag_self_closing_flag(
                     *name,
                     *self_closing,
                     SelfClosingFlagDisposition::LeaveUnacknowledged,
@@ -246,7 +272,7 @@ impl Html5TreeBuilder {
                 self_closing,
             } if *name == self.known_tags.input => {
                 self.handle_in_body_input_start_tag(attrs, atoms, text)?;
-                self.finalize_ae9_start_tag_self_closing(
+                self.finalize_html_start_tag_self_closing_flag(
                     *name,
                     *self_closing,
                     SelfClosingFlagDisposition::Acknowledge,
@@ -261,7 +287,7 @@ impl Html5TreeBuilder {
                 self.handle_in_body_textarea_start_tag(attrs, atoms, text)?;
                 // The textarea algorithm enters Text mode, but its source
                 // token was processed by the InBody algorithm.
-                self.finalize_ae9_start_tag_self_closing(
+                self.finalize_html_start_tag_self_closing_flag(
                     *name,
                     *self_closing,
                     SelfClosingFlagDisposition::LeaveUnacknowledged,
@@ -274,7 +300,7 @@ impl Html5TreeBuilder {
                 self_closing,
             } if *name == self.known_tags.button => {
                 self.handle_in_body_button_start_tag(attrs, atoms, text)?;
-                self.finalize_ae9_start_tag_self_closing(
+                self.finalize_html_start_tag_self_closing_flag(
                     *name,
                     *self_closing,
                     SelfClosingFlagDisposition::LeaveUnacknowledged,
@@ -287,7 +313,7 @@ impl Html5TreeBuilder {
                 self_closing,
             } if *name == self.known_tags.fieldset => {
                 self.handle_in_body_fieldset_start_tag(attrs, atoms, text)?;
-                self.finalize_ae9_start_tag_self_closing(
+                self.finalize_html_start_tag_self_closing_flag(
                     *name,
                     *self_closing,
                     SelfClosingFlagDisposition::LeaveUnacknowledged,
@@ -300,10 +326,49 @@ impl Html5TreeBuilder {
                 self_closing,
             } if *name == self.known_tags.keygen => {
                 self.handle_in_body_keygen_start_tag(attrs, atoms, text)?;
-                self.finalize_ae9_start_tag_self_closing(
+                self.finalize_html_start_tag_self_closing_flag(
                     *name,
                     *self_closing,
                     SelfClosingFlagDisposition::Acknowledge,
+                    InsertionMode::InBody,
+                );
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } if *name == self.known_tags.select => {
+                self.handle_in_body_select_start_tag(attrs, atoms, text)?;
+                self.finalize_html_start_tag_self_closing_flag(
+                    *name,
+                    *self_closing,
+                    SelfClosingFlagDisposition::LeaveUnacknowledged,
+                    InsertionMode::InBody,
+                );
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } if *name == self.known_tags.option => {
+                self.handle_in_body_option_start_tag(attrs, atoms, text)?;
+                self.finalize_html_start_tag_self_closing_flag(
+                    *name,
+                    *self_closing,
+                    SelfClosingFlagDisposition::LeaveUnacknowledged,
+                    InsertionMode::InBody,
+                );
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } if *name == self.known_tags.optgroup => {
+                self.handle_in_body_optgroup_start_tag(attrs, atoms, text)?;
+                self.finalize_html_start_tag_self_closing_flag(
+                    *name,
+                    *self_closing,
+                    SelfClosingFlagDisposition::LeaveUnacknowledged,
                     InsertionMode::InBody,
                 );
             }
@@ -355,7 +420,13 @@ impl Html5TreeBuilder {
                 attrs,
                 self_closing,
             } if *name == self.known_tags.hr => {
-                self.handle_in_body_hr_start_tag(*name, attrs, *self_closing, atoms, text)?;
+                self.handle_in_body_hr_start_tag(attrs, atoms, text)?;
+                self.finalize_html_start_tag_self_closing_flag(
+                    *name,
+                    *self_closing,
+                    SelfClosingFlagDisposition::Acknowledge,
+                    InsertionMode::InBody,
+                );
             }
             Token::StartTag {
                 name,
@@ -468,6 +539,9 @@ impl Html5TreeBuilder {
             Token::EndTag { name } if self.known_tags.is_formatting_tag(*name) => {
                 self.handle_in_body_formatting_end_tag(*name, atoms)?;
             }
+            Token::EndTag { name } if self.known_tags.is_marker_tag(*name) => {
+                self.handle_in_body_marker_end_tag(*name);
+            }
             Token::EndTag { name } if *name == self.known_tags.form => {
                 self.handle_in_body_form_end_tag();
             }
@@ -519,8 +593,11 @@ impl Html5TreeBuilder {
                     Some(InsertionMode::InBody),
                 );
             }
+            Token::EndTag { name } if *name == self.known_tags.select => {
+                self.handle_in_body_select_end_tag();
+            }
             Token::EndTag { name } => {
-                self.handle_in_body_generic_end_tag(*name);
+                self.handle_in_body_generic_end_tag(*name, atoms)?;
             }
             Token::Text { text: token_text } => {
                 let _ = self.reconstruct_active_formatting_elements(atoms)?;

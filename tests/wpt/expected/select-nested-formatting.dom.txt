@@ -1,0 +1,11 @@
+# format: html5-dom-v1
+#document
+  <html>
+    <head>
+    <body>
+      <select>
+        <b>
+          <option>
+      <b>
+        <option>
+      "X"

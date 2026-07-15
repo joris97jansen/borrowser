@@ -1,4 +1,5 @@
 mod basic;
+mod end_tag;
 mod foster;
 mod scope;
 mod table;
@@ -17,6 +18,7 @@ fn make_scope_tags(ctx: &mut DocumentParseContext) -> ScopeTagSet {
         marquee: ctx.atoms.intern_ascii_folded("marquee").expect("atom"),
         object: ctx.atoms.intern_ascii_folded("object").expect("atom"),
         applet: ctx.atoms.intern_ascii_folded("applet").expect("atom"),
+        select: ctx.atoms.intern_ascii_folded("select").expect("atom"),
         button: ctx.atoms.intern_ascii_folded("button").expect("atom"),
         ol: ctx.atoms.intern_ascii_folded("ol").expect("atom"),
         ul: ctx.atoms.intern_ascii_folded("ul").expect("atom"),

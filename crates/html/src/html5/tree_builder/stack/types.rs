@@ -25,6 +25,20 @@ pub(crate) struct ExactOpenElementRemoval {
     pub(crate) was_current: bool,
 }
 
+/// Stable result of the single reverse stack scan used by the InBody
+/// "any other end tag" algorithm.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct OpenElementMatch {
+    pub(crate) index: usize,
+    pub(crate) element: OpenElement,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum InBodyEndTagScan {
+    Matched(OpenElementMatch),
+    BlockedBySpecial { index: usize, element: OpenElement },
+}
+
 impl OpenElement {
     pub(crate) fn new(key: PatchKey, name: AtomId) -> Self {
         Self {
@@ -72,6 +86,7 @@ pub(crate) struct ScopeTagSet {
     pub(crate) marquee: AtomId,
     pub(crate) object: AtomId,
     pub(crate) applet: AtomId,
+    pub(crate) select: AtomId,
     pub(crate) button: AtomId,
     pub(crate) ol: AtomId,
     pub(crate) ul: AtomId,

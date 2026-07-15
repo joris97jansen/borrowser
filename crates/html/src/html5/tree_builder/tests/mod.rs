@@ -16,6 +16,7 @@ mod noahs_ark;
 mod perf;
 mod quirks;
 mod recovery;
+mod select;
 mod state_snapshot;
 mod table_body_row;
 mod table_caption_colgroup;

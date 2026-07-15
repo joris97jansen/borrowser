@@ -229,6 +229,43 @@ fn adoption_agency_selects_furthest_block_and_common_ancestor_deterministically(
 }
 
 #[test]
+fn adoption_agency_furthest_block_uses_corrected_shared_special_taxonomy() {
+    for special_name in ["keygen", "noscript", "object"] {
+        let resolver = EmptyResolver;
+        let mut ctx = DocumentParseContext::new();
+        let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+            crate::html5::tree_builder::TreeBuilderConfig::default(),
+            &mut ctx,
+        )
+        .expect("tree builder init");
+        let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
+        let b = ctx.atoms.intern_ascii_folded("b").expect("b");
+        let special = ctx
+            .atoms
+            .intern_ascii_folded(special_name)
+            .expect("special");
+        assert_start_tag(&mut builder, &ctx, &resolver, b);
+        let formatting = builder
+            .adoption_agency_lookup_formatting_element(b)
+            .expect("formatting entry");
+        let FormattingElementValidation::Eligible { soe_index, .. } =
+            builder.adoption_agency_validate_formatting_element(formatting)
+        else {
+            panic!("formatting element must remain eligible");
+        };
+        builder
+            .open_elements
+            .push(OpenElement::new(PatchKey(99), special));
+
+        let furthest = builder
+            .adoption_agency_find_furthest_block(soe_index, &ctx.atoms)
+            .expect("shared special scan")
+            .expect("corrected special entry must be found");
+        assert_eq!(furthest.element.name(), special, "{special_name}");
+    }
+}
+
+#[test]
 fn adoption_agency_furthest_block_recovery_emits_deterministic_move_sequence() {
     let patches = run_manual_aaa_chunks(&["<!doctype html><a><p>one</a>"]);
 
@@ -273,7 +310,7 @@ fn adoption_agency_foster_parenting_uses_insert_before() {
             child: PatchKey(10),
             before: PatchKey(6),
         }),
-        "table-related AAA recovery must keep using InsertBefore when the foster-parented text moves before the live table"
+        "table-related AAA recovery must keep using InsertBefore for the reconstructed formatting element"
     );
     assert!(
         patches.contains(&DomPatch::CreateElement {

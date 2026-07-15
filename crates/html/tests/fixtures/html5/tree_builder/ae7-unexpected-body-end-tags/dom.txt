@@ -8,4 +8,4 @@
     <body>
 parse-errors:
   tree-builder: in-body-li-end-tag-missing-li
-  tree-builder: end-tag-not-in-scope
+  tree-builder: in-body-any-other-end-tag-blocked-by-special

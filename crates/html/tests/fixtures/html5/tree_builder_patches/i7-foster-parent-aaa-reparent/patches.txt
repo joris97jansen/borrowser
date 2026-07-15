@@ -22,4 +22,4 @@ AppendChild parent=8 child=9
 CreateElement key=10 name=a attrs=[]
 InsertBefore parent=5 child=10 before=6
 CreateText key=11 text="x"
-InsertBefore parent=5 child=11 before=6
+AppendChild parent=10 child=11

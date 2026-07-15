@@ -1,0 +1,14 @@
+# format: html5-dom-v1
+# status: active
+#document
+  <!doctype html>
+  <html>
+    <head>
+    <body>
+      <select>
+        <optgroup>
+          <option>
+            "A"
+        <optgroup>
+          <option>
+            "B"

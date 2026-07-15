@@ -69,7 +69,7 @@ It defines HTML5 Core v0 tree-builder scope and explicitly records deferred and 
 | `TB-MODE-BEFORE-HEAD` | MVP | `Before head` | `#the-before-head-insertion-mode` | `mod.rs`, `modes.rs` | Current proxy: WPT `basic-structure`. Planned fixture: `tb-before-head-implicit-head`. | Implicit `<head>` insertion, head-element start/end transitions. | `tb-before-head-implicit-head` | Needed to route early metadata/body transitions correctly. |
 | `TB-MODE-IN-HEAD` | MVP_PARTIAL | `In head` | `#parsing-main-inhead` | `mod.rs`, `modes.rs` | Planned fixtures: `tb-in-head-meta-title`, `tb-in-head-misnested-head-content`. WPT proxy: `basic-structure`. | Proper handling of head-only tags vs body fallback; limited title/script handling in Core v0. | `tb-in-head-core` | Core head parsing needed; full script/template behavior deferred. |
 | `TB-MODE-AFTER-HEAD` | MVP | `After head` | `#parsing-main-afterhead` | `mod.rs`, `modes.rs` | Current proxy: `tree_builder/simple-element`, WPT `basic-structure`. Planned fixture: `tb-after-head-body-bootstrap`. | Implicit `<body>` insertion; mispositioned head tokens after head close. | `tb-after-head-body-bootstrap` | Required handoff into main body mode. |
-| `TB-MODE-IN-BODY` | MVP | `In body` | `#parsing-main-inbody` | `mod.rs`, `modes.rs`, `stack.rs`, `formatting.rs` | Current: `tree_builder/text`, `tree_builder/simple-element`; WPT: `comments-and-text`, `void-elements`. Planned fixture pack: `tb-in-body-core-inline-block`. | Character token insertion, end-tag matching via SOE, formatting elements hooks, comment insertion; unsupported table-family tags must follow deterministic fallback path without invariant breakage. | `tb-in-body-core` | Main workload mode; required for Core v0 semantics. |
+| `TB-MODE-IN-BODY` | MVP | `In body` | `#parsing-main-inbody` | `dispatch/in_body.rs`, `dispatch/select.rs`, `body_recovery.rs`, `html_semantics.rs`, `stack/end_tag.rs` | Current: `tree_builder/text`, `tree_builder/simple-element`, `ae10-*`; WPT: core cases plus the fixed AE10 select subset. | Character/comment/generic insertion, supported formatting hooks, current select-family rules, and one-pass generic end-tag special barriers. | `tb-in-body-core`, `tb-ae10-select` | Main workload mode; AE10 adds current select behavior without a select-specific mode. |
 | `TB-MODE-AFTER-BODY` | MVP | `After body` | `#parsing-main-afterbody` | `mod.rs`, `modes.rs` | Current: `tree_builder/ae6-comments-document-structure`; unit: insertion-mode and SOE recovery tests. | Comments after body, `</html>` handoff, EOF after body, unexpected content reprocessing. | `tb-ae6-after-body` | Required for normal static-document closeout without collapsing back into `In body`. |
 | `TB-MODE-AFTER-AFTER-BODY` | MVP | `After after body` | `#the-after-after-body-insertion-mode` | `mod.rs`, `modes.rs` | Current: `tree_builder/ae6-comments-document-structure`; unit: insertion-mode and SOE recovery tests. | Comments after `</html>`, EOF after document structure, unexpected content reprocessing. | `tb-ae6-after-after-body` | Required for deterministic comments/EOF after the normal document element. |
 | `TB-MODE-TEXT` | MVP_PARTIAL | `Text` | `#the-text-insertion-mode` | `mod.rs`, `modes.rs`, `text_mode.rs` | Current coverage: `tree_builder/tests/text_mode.rs`; planned fixture umbrella: `tb-text-mode-core`. | Return-to-original-mode mechanics, mismatched end tags, and EOF in text mode. | `tb-text-mode-core` | Core-v0 text-mode routing for title/textarea/style and the dedicated script tokenizer family; parser execution/pause behavior remains out of scope. |
@@ -157,7 +157,7 @@ Scope consequence:
   body`, `In row`, and `In cell` are supported for the AE8 declared subset.
 - Foster parenting is supported as adjusted insertion-location selection for
   supported table-misplaced text and element tokens.
-- `In select in table`, template insertion-mode stack interactions,
+- select fragment-context behavior, template insertion-mode stack interactions,
   fragment-context table bootstrapping, and foreign-content table integration
   remain deferred or out of scope.
 - Unsupported table branches must still preserve parser invariants and fail
@@ -228,17 +228,20 @@ Status source of truth:
 | `tb-ae8-table-construction` | Yes (Partial) | current `crates/html/tests/fixtures/html5/tables/dom/ae8-*` and matching patch fixtures | Active | Supported table insertion modes, implied wrappers, malformed recovery, foster parenting, EOF table-text flush, and whole/chunked parity. |
 | `tb-aaa-core` | Yes (Partial) | current `h8-aaa-*`, `h10-aaa-*`, and AAA unit/integration tests | Active | Supported formatting-element subset only; not full WHATWG AAA. |
 | `tb-ae8-foster-core` | Yes (Partial) | current `ae8-foster-*`, `i7-foster-parent-*`, and `i10-table-stray-*` | Active | Supported foster parenting in table contexts with adjusted insertion locations and patch evidence. |
+| `tb-ae10-select` | Yes (Partial) | current local `ae10-*` DOM/patch fixtures and pinned WPT `select-*` cases | Active | Current full-document select-family InBody rules, generic special-barrier end tags, input/HR recovery, and table composition without select modes. |
 | `tb-text-mode-core` | Yes (Partial) | planned `.../tb-text-mode-core` | Planned | Current unit coverage exists; fixture umbrella can promote later. |
 | `tb-template-out-of-scope` | No | planned `.../tb-template-out-of-scope` | Planned (`skip`) | Out-of-scope: template insertion modes stack excluded. |
 
 ## Spec Modes Not Yet In Core v0 Matrix
 
-These spec insertion modes exist but are intentionally not Core v0 targets yet:
+These current spec insertion modes exist but are intentionally not Core v0 targets yet:
 
 - `In frameset`
 - `After frameset`
 - `After after frameset`
-- `In select in table`
+
+Historical `InSelect` and `InSelectInTable` are not current insertion modes in
+the pinned Living Standard and are intentionally absent rather than deferred.
 
 ## Out-Of-Scope / Deferred Contract
 

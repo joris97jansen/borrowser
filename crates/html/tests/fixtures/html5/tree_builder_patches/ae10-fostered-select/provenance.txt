@@ -1,0 +1,3 @@
+Local WHATWG-derived fixture; not an upstream WPT or html5lib-tests import.
+WHATWG commit: 88ae68cb961651f0f92c5d2046049f53ecdfc6cf
+Evidence: final foster location emits InsertBefore and later option insertion stays under select.

@@ -235,6 +235,11 @@ Core v0 guarantees the following tag/context baseline:
     and `th`, including supported implied wrappers, table-text buffering,
     malformed table recovery, and foster parenting as defined by
     `docs/html5/ae8-specialized-table-tree-construction-contract.md`.
+  - AE10 current full-document `select`, `option`, and `optgroup` behavior runs
+    through shared `InBody` rules and existing table delegation. It includes
+    select scope boundaries, the supported select-family implied-end subset,
+    select-aware `input`/`hr` recovery, and the generic special-barrier end-tag
+    scan defined in `docs/html5/ae10-current-select-tree-construction-contract.md`.
   - unknown or unsupported elements outside table-family MUST follow the generic element insertion path defined by `TB-MODE-IN-BODY`.
   - this unknown/unsupported-element rule applies only when the behavior is not explicitly marked `OUT_OF_SCOPE` with `skip` policy semantics (for example, template insertion mode stack behavior).
 
@@ -331,6 +336,9 @@ Core v0 stance:
   - parser MUST preserve core invariants (SOE/patch ordering),
   - parser MUST NOT panic on table-family tags.
 - AE8 does not claim full WHATWG table parsing conformance.
+- AE10 composes select-family tokens with these table modes through the same
+  bounded delegation and adjusted insertion-location machinery. No select-
+  specific insertion mode is entered.
 
 - AE9a adds declared-scope parser-owned form tree construction: stable form
   pointers, exact stack-only form removal, specialized input/textarea/button/
@@ -349,7 +357,8 @@ The following are intentionally not part of the Core v0 guarantee:
     fixtures explicitly listed in this contract and the tokenizer matrix
   - full WHATWG table insertion-mode conformance beyond the AE8 supported
     subset
-  - `InSelectInTable`
+  - select fragment-context behavior; the historical `InSelectInTable` mode is
+    not a current Living Standard mode and is neither implemented nor deferred
   - table interactions with template insertion-mode stacks
 
 Policy classification requirements:
@@ -389,7 +398,8 @@ This contract prevents accidental reliance on unspecified behavior.
 - parser pause/suspension and script execution integration for `<script>`.
 - Template insertion mode stack.
 - Full WHATWG table insertion-mode conformance beyond AE8.
-- `InSelectInTable` and template-specific table interactions.
+- select fragment-context behavior and template-specific table interactions;
+  historical `InSelect`/`InSelectInTable` modes are intentionally not used.
 - Full tree-builder text mode parity (`TB-MODE-TEXT`), including deferred RAWTEXT/RCDATA coupling.
 
 <a id="core-v0-gate-and-evidence-model"></a>

@@ -152,7 +152,7 @@ fn run_tree_builder_input_for_perf(
 }
 
 #[test]
-fn tree_builder_perf_sanity_deep_nesting_scope_scan_is_linear_on_typical_path() {
+fn tree_builder_perf_sanity_deep_generic_end_tag_scan_is_linear_on_typical_path() {
     use crate::html5::shared::Token;
     use std::time::Instant;
 
@@ -183,6 +183,7 @@ fn tree_builder_perf_sanity_deep_nesting_scope_scan_is_linear_on_typical_path() 
             )
             .expect("start-tag should process");
     }
+    let before_end_stats = builder.debug_perf_stats();
     for _ in 0..depth {
         let _ = builder
             .process(&Token::EndTag { name: div }, &ctx.atoms, &resolver)
@@ -195,13 +196,18 @@ fn tree_builder_perf_sanity_deep_nesting_scope_scan_is_linear_on_typical_path() 
 
     let stats = builder.debug_perf_stats();
     assert!(
-        stats.soe_scope_scan_calls >= depth as u64,
-        "expected at least one scope-scan call per close on deep nesting"
+        stats.soe_end_tag_scan_calls - before_end_stats.soe_end_tag_scan_calls >= depth as u64,
+        "expected at least one generic end-tag scan per close on deep nesting"
     );
     assert!(
-        stats.soe_scope_scan_steps <= (depth as u64) * 3,
-        "common close-on-top path should stay near O(1) scan per end tag; steps={} depth={depth}",
-        stats.soe_scope_scan_steps
+        stats.soe_end_tag_scan_steps - before_end_stats.soe_end_tag_scan_steps
+            <= (depth as u64) * 3,
+        "common close-on-top path should stay near O(1) generic scan per end tag; steps={} depth={depth}",
+        stats.soe_end_tag_scan_steps - before_end_stats.soe_end_tag_scan_steps
+    );
+    assert_eq!(
+        stats.soe_scope_scan_calls, before_end_stats.soe_scope_scan_calls,
+        "generic end-tag processing must not add scope scans"
     );
     assert_wall_clock_sanity(elapsed, 3, "deep nesting stress parse");
 }

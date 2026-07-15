@@ -89,6 +89,17 @@ Notes:
 - `applet`, `marquee`, and `object` are not formatting elements, but they do participate in marker handling in `In body` and therefore affect AFE boundaries.
 - `font` is in scope only as an HTML5 tree-builder formatting element for AFE/AAA/reconstruction behavior. Legacy presentation semantics of `font` attributes are out of scope for Milestone H.
 
+### Shared HTML Special Category
+
+AE10 moves furthest-block classification onto the tree-builder's single
+HTML-namespace special-category source of truth. The table is the exact
+83-name set at WHATWG commit
+`88ae68cb961651f0f92c5d2046049f53ecdfc6cf` and corrects the former private
+AAA omissions `keygen`, `noscript`, and `object`. Generic InBody end-tag scans
+consume the same classifier. The lookup is allocation-free over borrowed atom
+resolution; `KnownTagIds` remains a bounded direct-dispatch/semantic set, not a
+complete element registry. SVG/MathML classification remains deferred.
+
 ## Marker Scope
 
 Markers are required sentinel entries in the AFE list.

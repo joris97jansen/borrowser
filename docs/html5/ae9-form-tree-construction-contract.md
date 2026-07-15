@@ -48,6 +48,12 @@ when an AE9 algorithm deterministically ignores a token, such as duplicate
 forms. Textarea supplies its originating `InBody` mode because the handler has
 already entered Text mode by finalization.
 
+AE10 generalizes the issue-specific helper name to
+`finalize_html_start_tag_self_closing_flag` without moving ownership out of
+dispatch. Existing AE9 callers and new select/input/HR callers still finalize
+the original flag exactly once. This localized semantic rename is not the
+repository-wide deprecated-insertion migration owned by AE9b.
+
 `max_open_elements_depth` limits retained non-void depth. A void transition may
 observe one temporary additional entry, and the high-water metric records that
 real depth. It cannot return, emit callbacks, process tokens, or expose a
@@ -65,7 +71,9 @@ unclosed pointer to `None`.
   special path. The latter is form-dispatch orchestration: normal insert, set
   pointer, then exact-current stack removal.
 - `input` is parser-created void insertion; only the `type=hidden` frameset
-  distinction is modeled.
+  distinction is modeled. AE10 adds the pinned full-document prelude: an
+  in-scope select is diagnosed and popped before AFE reconstruction and input
+  insertion. Direct-InTable hidden input remains its distinct table branch.
 - `textarea` enters RCDATA/Text with identity-bound pending initial-LF state.
   Exactly one leading U+000A is suppressed by tree construction across chunks.
 - `button` uses ordinary `ScopeKind::InScope`; button scope remains limited to
@@ -88,7 +96,8 @@ witnesses, and fuzz digests because they affect later token handling.
 AE9a excludes submission, reset, validation, form-owner reassociation beyond
 the parser pointer, parser control values/checked state, disabled propagation,
 focus, events, accessibility, layout, paint, JavaScript, `document.write`, full
-DOM APIs, fragments, templates, and unrelated select parsing.
+DOM APIs, fragments, templates, and runtime select behavior. Static select
+tree construction is defined separately by AE10.
 
 ## Self-closing follow-up
 
