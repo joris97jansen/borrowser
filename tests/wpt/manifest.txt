@@ -118,7 +118,7 @@ path: vendor/html/syntax/parsing/tables/nested-basic.html
 expected: expected/tables-nested-basic.dom.txt
 status: active
 
-# AE10 exact case adaptations from pinned WPT .dat tree-construction data.
+# AE9b exact case adaptations from pinned WPT .dat tree-construction data.
 
 id: select-nested-formatting
 path: vendor/html/syntax/parsing/select/nested-formatting.html

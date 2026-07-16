@@ -19,7 +19,7 @@ impl Html5TreeBuilder {
     ) -> Result<(), TreeBuilderError> {
         #[expect(
             deprecated,
-            reason = "frozen legacy insertion call; removal owned by AE9b"
+            reason = "frozen legacy insertion call; removal tracked separately"
         )]
         let key = self.insert_element(name, attrs, self_closing, atoms, text)?;
         let Some(key) = key else {
@@ -54,7 +54,7 @@ impl Html5TreeBuilder {
     ) -> Result<(), TreeBuilderError> {
         #[expect(
             deprecated,
-            reason = "frozen legacy insertion call; removal owned by AE9b"
+            reason = "frozen legacy insertion call; removal tracked separately"
         )]
         let inserted = self.insert_element(name, attrs, self_closing, atoms, text)?;
         if inserted.is_some() {
@@ -396,7 +396,7 @@ impl Html5TreeBuilder {
                 self.document_state.frameset_ok = false;
                 #[expect(
                     deprecated,
-                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                    reason = "frozen legacy insertion call; removal tracked separately"
                 )]
                 let _ = self.insert_element(*name, attrs, false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InTable;
@@ -463,7 +463,7 @@ impl Html5TreeBuilder {
                 let _ = self.reconstruct_active_formatting_elements(atoms)?;
                 #[expect(
                     deprecated,
-                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                    reason = "frozen legacy insertion call; removal tracked separately"
                 )]
                 let _ = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
                 if !self_closing {
@@ -527,7 +527,7 @@ impl Html5TreeBuilder {
                 let _ = self.reconstruct_active_formatting_elements(atoms)?;
                 #[expect(
                     deprecated,
-                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                    reason = "frozen legacy insertion call; removal tracked separately"
                 )]
                 let inserted = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
                 if self.is_text_mode_container_tag(*name) && !self_closing && inserted.is_some() {

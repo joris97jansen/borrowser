@@ -43,7 +43,7 @@ determinism contracts.
 ## Non-Goals
 
 - This contract does not add template insertion-mode stack behavior.
-- This contract does not add the historical `InSelectInTable`; AE10 documents
+- This contract does not add the historical `InSelectInTable`; AE9b documents
   why it is not a current insertion mode.
 - This contract does not add fragment-context-specific table bootstrap rules.
 - This contract does not add foreign-content integration-point behavior inside
@@ -139,7 +139,7 @@ reusing table-mode logic opportunistically.
 
 `InSelectInTable` is historical, not deferred current behavior. Current select
 tokens compose with `InTable` delegation and ordinary `InBody` rules under the
-AE10 contract.
+AE9b contract.
 
 ## Foster Parenting Contract
 

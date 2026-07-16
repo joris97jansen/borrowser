@@ -1,11 +1,11 @@
-# AE10: Current Select Tree-Construction Contract
+# AE9b: Current Select Tree-Construction Contract
 
-Last updated: 2026-07-14
+Last updated: 2026-07-16
 Scope: `crates/html/src/html5/tree_builder` and curated parser conformance evidence
 
 ## Normative acceptance sources
 
-AE10 is accepted against immutable WHATWG HTML repository revision
+AE9b is accepted against immutable WHATWG HTML repository revision
 `88ae68cb961651f0f92c5d2046049f53ecdfc6cf`, snapshot date **2026-07-11**.
 The normative source is that revision's `source`, specifically the stack of
 open elements, scope, implied-end-tag, appropriate-place-for-inserting-a-node,
@@ -18,7 +18,7 @@ representational adaptation. Upstream error strings are provenance only;
 Borrowser owns a separate deterministic parse-error taxonomy.
 
 The live specification and later WPT revisions are drift-detection aids only.
-They do not change AE10 acceptance.
+They do not change AE9b acceptance.
 
 ## Ownership and insertion-mode stance
 
@@ -29,7 +29,7 @@ repair these trees and owns any future selectedness, values, interaction, form,
 accessibility, layout, or paint behavior.
 
 Current full-document select handling runs through `InBody` and the existing
-table-family delegation architecture. AE10 introduces no `InSelect`,
+table-family delegation architecture. AE9b introduces no `InSelect`,
 `InSelectInTable`, remembered return mode, select flag, recursive redispatch,
 or post-parse repair state.
 
@@ -37,8 +37,8 @@ or post-parse repair state.
 
 AAA furthest-block discovery and the InBody "any other end tag" algorithm use
 one shared allocation-free HTML-namespace classifier derived from the pinned
-83-name special-element set. The pre-AE10 private AAA table was missing
-`keygen`, `noscript`, and `object`; AE10 corrects all three. `option`,
+83-name special-element set. The former private AAA table was missing
+`keygen`, `noscript`, and `object`; AE9b corrects all three. `option`,
 `optgroup`, ordinary inline names, and custom names are not special.
 
 This classification is HTML-only. MathML and SVG special-category membership
@@ -87,7 +87,7 @@ scope metrics.
 ## Supported implied end tags
 
 The supported subset is `p`, `li`, `option`, and `optgroup`. The shared helper
-accepts an exception target. AE10 does not claim support for other implied-end
+accepts an exception target. AE9b does not claim support for other implied-end
 members.
 
 ## Select-family and related InBody behavior
@@ -169,13 +169,14 @@ barriers, ordinary descendants, patches, limits, state parity, counters, and
 fuzz replay.
 
 Synthetic tree-builder fuzz inputs are an explicitly versioned deterministic
-byte format. Unmarked inputs use decoder V1, whose exact pre-AE10 30-name tag
-catalog and modulo mapping are frozen so legacy corpus bytes retain their
-meaning. The exact `TB-FUZZ-V2\n` metadata prefix selects decoder V2 and is
-consumed before token decoding; truncated or unknown marker-like prefixes are
-ordinary V1 token bytes. V2 preserves V1's catalog prefix and appends
-`select`, `option`, `optgroup`, `input`, and `hr`. The AE10
-regression at the exact path
+byte format. Unmarked inputs use decoder V1, whose exact 30-name tag catalog
+from before the AE9b select extension and modulo mapping are frozen so legacy
+corpus bytes retain their meaning. The exact `TB-FUZZ-V2\n` metadata prefix
+selects decoder V2 and is consumed before token decoding; truncated or unknown
+marker-like prefixes are ordinary V1 token bytes. V2 preserves V1's catalog
+prefix and appends
+`select`, `option`, `optgroup`, `input`, and `hr`. The AE9b select regression
+at the exact path
 `fuzz/regressions/html5_tree_builder_tokens/select-special-barrier` explicitly
 uses V2; it is the only committed V2 input, and every other committed
 tree-builder token corpus/regression input remains V1.
@@ -189,24 +190,25 @@ token decoding and contributes no generated token, generated attribute,
 generated string byte, decoded-token processing step, or emitted synthetic
 token.
 
-Decoder versioning is distinct from the global `FuzzDigest` schema. AE10 does
-not change `fuzz/digest.rs` or its compatibility schema. Comprehensive digest
-expansion remains the separate AE11 follow-up.
+Decoder versioning is distinct from the global `FuzzDigest` schema. The AE9b
+select work does not change `fuzz/digest.rs` or its compatibility schema.
+Comprehensive digest expansion remains the separate AE11 follow-up.
 
-The local DOM/error golden inventory is `ae10-basic-options`,
-`ae10-optgroup-transitions`, `ae10-generic-end-special-barrier`,
-`ae10-corrected-special-barriers`, `ae10-unmatched-select-family-ends`,
-`ae10-customizable-descendants`, `ae10-input-recovery`, and
-`ae10-option-outside-select`. The local patch inventory is
-`ae10-fostered-select`, `ae10-nested-select-parent`, `ae10-input-parent`,
-`ae10-implied-option-parent`, and `ae10-table-stack-clearing`. The golden
-loaders require the local provenance label for every `ae10-*` fixture.
+The local DOM/error golden inventory is `ae9b-basic-options`,
+`ae9b-optgroup-transitions`, `ae9b-generic-end-special-barrier`,
+`ae9b-corrected-special-barriers`, `ae9b-unmatched-select-family-ends`,
+`ae9b-customizable-descendants`, `ae9b-input-recovery`, and
+`ae9b-option-outside-select`. The local patch inventory is
+`ae9b-fostered-select`, `ae9b-nested-select-parent`, `ae9b-input-parent`,
+`ae9b-implied-option-parent`, and `ae9b-table-stack-clearing`. The golden
+loaders require the local provenance label for every `ae9b-*` fixture.
 
 ## Implementation boundaries and follow-ups
 
-AE10 uses semantic normal/void insertion only for handlers it directly owns or
-changes. The deprecated `insert_element` helper and unrelated call sites remain
-for AE9b; AE10 neither completes nor blocks on that repository-wide migration.
+The AE9b select implementation uses semantic normal/void insertion only for
+handlers it directly owns or changes. The deprecated `insert_element` helper
+and unrelated call sites remain separate follow-up work; this contract neither
+completes nor blocks on that repository-wide migration.
 
 AE11 — Complete deterministic tree-builder fuzz digest coverage — will encode
 all future-affecting parser state with stable explicit representations,
@@ -215,9 +217,9 @@ tests without introducing feature-specific remembered state.
 
 ## Deliberate exclusions
 
-AE10 excludes fragment parsing, template modes, foreign content, historical
+AE9b excludes fragment parsing, template modes, foreign content, historical
 select modes/filtering, selectedness, values, disabled propagation, option
 collections, popup/listbox behavior, form submission/reset, validation, focus,
 input interaction, events, accessibility semantics, layout, paint, JavaScript,
-full DOM APIs, repository-wide AE9b migration, and the AE11 global fuzz-digest
-expansion.
+full DOM APIs, the repository-wide deprecated-insertion migration, and the AE11
+global fuzz-digest expansion.

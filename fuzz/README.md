@@ -31,11 +31,11 @@ text, and doctypes. The harness appends `EOF` itself so replay remains
 deterministic and the token-stream contract stays focused on tree-builder
 recovery semantics rather than tokenizer fidelity.
 
-That synthetic byte format is versioned. Unmarked inputs use the frozen
-pre-AE10 V1 tag catalog and modulo mapping; the exact `TB-FUZZ-V2\n` metadata
-prefix selects the expanded V2 catalog and is not decoded as a token. Decoder
-versioning preserves corpus-byte meaning and is independent of the global
-tree-builder fuzz digest schema. See
+That synthetic byte format is versioned. Unmarked inputs use the frozen V1 tag
+catalog and modulo mapping from before the AE9b select extension; the exact
+`TB-FUZZ-V2\n` metadata prefix selects the expanded V2 catalog and is not
+decoded as a token. Decoder versioning preserves corpus-byte meaning and is
+independent of the global tree-builder fuzz digest schema. See
 `fuzz/regressions/html5_tree_builder_tokens/README.md` for the detailed
 compatibility contract.
 

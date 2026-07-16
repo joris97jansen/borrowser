@@ -67,7 +67,7 @@ impl Html5TreeBuilder {
         let _ = self.close_p_if_in_button_scope("in-body-p-start-tag-closes-open-p");
         #[expect(
             deprecated,
-            reason = "frozen legacy insertion call; removal owned by AE9b"
+            reason = "frozen legacy insertion call; removal tracked separately"
         )]
         let inserted = self.insert_element(self.known_tags.p, attrs, self_closing, atoms, text)?;
         if inserted.is_some() {
@@ -92,7 +92,7 @@ impl Html5TreeBuilder {
             );
             #[expect(
                 deprecated,
-                reason = "frozen legacy insertion call; removal owned by AE9b"
+                reason = "frozen legacy insertion call; removal tracked separately"
             )]
             let inserted = self.insert_element(self.known_tags.p, &[], false, atoms, text)?;
             if inserted.is_some() {
@@ -136,7 +136,7 @@ impl Html5TreeBuilder {
         let _ = self.close_p_if_in_button_scope("in-body-li-start-tag-closes-open-p");
         #[expect(
             deprecated,
-            reason = "frozen legacy insertion call; removal owned by AE9b"
+            reason = "frozen legacy insertion call; removal tracked separately"
         )]
         let inserted = self.insert_element(self.known_tags.li, attrs, self_closing, atoms, text)?;
         if inserted.is_some() {

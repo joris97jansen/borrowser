@@ -143,8 +143,8 @@ pub(crate) fn run(spec: TreeBuilderSuiteSpec) {
             continue;
         }
 
-        if wpt_case_provenance::is_ae10_select_case(&case.id) {
-            wpt_case_provenance::validate_ae10_select_case(&case);
+        if wpt_case_provenance::is_ae9b_select_case(&case.id) {
+            wpt_case_provenance::validate_ae9b_select_case(&case);
         }
 
         // WPT inputs are consumed exactly as vendored. Unlike the internal

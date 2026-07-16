@@ -26,7 +26,7 @@ CI fast and deterministic.
     `cargo test -p html --features html5,dom-snapshot --test wpt_html5_formatting`.
   - Includes a dedicated Milestone I tables/foster-parenting suite exposed via
     `cargo test -p html --features html5,dom-snapshot --test wpt_html5_tables`.
-  - Includes a fixed AE10 select review suite exposed via
+  - Includes a fixed AE9b select review suite exposed via
     `cargo test -p html --features html5,dom-snapshot --test wpt_html5_select`.
     Its six active manifest entries are also executed by the authoritative
     all-cases `wpt_html5_tree_builder` CI lane; CI does not invoke the focused
@@ -43,7 +43,7 @@ CI fast and deterministic.
 - `kind`: optional (`dom` default, or `tokens` for tokenizer snapshots).
 - `status`: optional (`active` default, `xfail` for expected failures, `skip` for policy-excluded cases). Kept for schema compatibility.
 - `provenance`: optional path to a case-adaptation provenance sidecar. It is
-  required and strictly validated for the fixed AE10 select suite; existing
+  required and strictly validated for the fixed AE9b select suite; existing
   entries without it remain backward-compatible.
 - `reason`: required when `status` is `xfail` or `skip` when manifest status is used.
 - Policy: tokenizer out-of-scope/temporary exclusions are tracked in
@@ -62,7 +62,7 @@ CI fast and deterministic.
 7. Run `cargo test -p html --features html5,dom-snapshot --test wpt_html5_tree_builder` for the tree-construction slice.
 8. Run `cargo test -p html --features html5,dom-snapshot --test wpt_html5_formatting` for the curated formatting/adoption-agency tree-construction slice.
 9. Run `cargo test -p html --features html5,dom-snapshot --test wpt_html5_tables` for the curated tables/foster-parenting tree-construction slice.
-10. Run `cargo test -p html --features html5,dom-snapshot --test wpt_html5_select` for the focused AE10 select review slice; set `WPT_CHUNKED=1` for chunked execution.
+10. Run `cargo test -p html --features html5,dom-snapshot --test wpt_html5_select` for the focused AE9b select review slice; set `WPT_CHUNKED=1` for chunked execution.
 
 ## Source / Upstream
 
@@ -93,7 +93,7 @@ Milestone I tables note:
   prefer replacing the local file with the upstream-derived fixture and record
   that provenance here or in a nearby note.
 
-AE10 select note:
+AE9b select note:
 
 - The six `vendor/html/syntax/parsing/select/` files are exact case
   adaptations extracted from `.dat` files at WPT commit

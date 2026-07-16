@@ -91,7 +91,7 @@ Notes:
 
 ### Shared HTML Special Category
 
-AE10 moves furthest-block classification onto the tree-builder's single
+AE9b moves furthest-block classification onto the tree-builder's single
 HTML-namespace special-category source of truth. The table is the exact
 83-name set at WHATWG commit
 `88ae68cb961651f0f92c5d2046049f53ecdfc6cf` and corrects the former private

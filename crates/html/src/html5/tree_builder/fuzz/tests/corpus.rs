@@ -70,12 +70,12 @@ fn replay_single_committed_tree_builder_seed_deterministically() {
 }
 
 #[test]
-fn committed_inputs_preserve_v1_except_the_documented_ae10_v2_regression() {
+fn committed_inputs_preserve_v1_except_the_documented_ae9b_select_v2_regression() {
     let entries = committed_input_entries();
     let documented_v2 = regressions_dir().join("select-special-barrier");
     assert!(
         entries.contains(&documented_v2),
-        "documented AE10 V2 regression must be enumerated at {}",
+        "documented AE9b select V2 regression must be enumerated at {}",
         documented_v2.display()
     );
 

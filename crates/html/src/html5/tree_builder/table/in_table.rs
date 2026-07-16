@@ -69,7 +69,7 @@ impl Html5TreeBuilder {
                 self.clear_stack_to_table_context();
                 #[expect(
                     deprecated,
-                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                    reason = "frozen legacy insertion call; removal tracked separately"
                 )]
                 let _ = self.insert_element(*name, attrs, false, atoms, text)?;
                 self.active_formatting.push_marker();
@@ -84,7 +84,7 @@ impl Html5TreeBuilder {
                 self.clear_stack_to_table_context();
                 #[expect(
                     deprecated,
-                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                    reason = "frozen legacy insertion call; removal tracked separately"
                 )]
                 let _ = self.insert_element(*name, attrs, false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InColumnGroup;
@@ -94,7 +94,7 @@ impl Html5TreeBuilder {
                 self.clear_stack_to_table_context();
                 #[expect(
                     deprecated,
-                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                    reason = "frozen legacy insertion call; removal tracked separately"
                 )]
                 let _ = self.insert_element(self.known_tags.colgroup, &[], false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InColumnGroup;
@@ -111,7 +111,7 @@ impl Html5TreeBuilder {
                 self.clear_stack_to_table_context();
                 #[expect(
                     deprecated,
-                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                    reason = "frozen legacy insertion call; removal tracked separately"
                 )]
                 let _ = self.insert_element(*name, attrs, false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InTableBody;
@@ -121,7 +121,7 @@ impl Html5TreeBuilder {
                 self.clear_stack_to_table_context();
                 #[expect(
                     deprecated,
-                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                    reason = "frozen legacy insertion call; removal tracked separately"
                 )]
                 let _ = self.insert_element(self.known_tags.tbody, &[], false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InTableBody;
@@ -138,7 +138,7 @@ impl Html5TreeBuilder {
                 self.clear_stack_to_table_context();
                 #[expect(
                     deprecated,
-                    reason = "frozen legacy insertion call; removal owned by AE9b"
+                    reason = "frozen legacy insertion call; removal tracked separately"
                 )]
                 let _ = self.insert_element(self.known_tags.tbody, &[], false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InTableBody;
