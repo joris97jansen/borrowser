@@ -82,8 +82,8 @@ pub(crate) fn load_fixtures() -> Vec<Fixture> {
             }
             let input_path = path.join("input.html");
             let patches_path = path.join("patches.txt");
-            if name.starts_with("ae10-") {
-                validate_ae10_local_provenance(&path, &name);
+            if name.starts_with("ae9b-") {
+                validate_ae9b_local_provenance(&path, &name);
             }
             let input = fs::read_to_string(&input_path)
                 .unwrap_or_else(|err| panic!("failed to read input {input_path:?}: {err}"));
@@ -101,16 +101,16 @@ pub(crate) fn load_fixtures() -> Vec<Fixture> {
     fixtures
 }
 
-fn validate_ae10_local_provenance(path: &Path, name: &str) {
+fn validate_ae9b_local_provenance(path: &Path, name: &str) {
     let provenance_path = path.join("provenance.txt");
     let provenance = fs::read_to_string(&provenance_path).unwrap_or_else(|err| {
-        panic!("AE10 local patch fixture '{name}' missing provenance {provenance_path:?}: {err}")
+        panic!("AE9b local patch fixture '{name}' missing provenance {provenance_path:?}: {err}")
     });
     assert!(
         provenance.contains(
             "Local WHATWG-derived fixture; not an upstream WPT or html5lib-tests import."
         ),
-        "AE10 local patch fixture '{name}' is mislabeled"
+        "AE9b local patch fixture '{name}' is mislabeled"
     );
 }
 

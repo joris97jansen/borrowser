@@ -14,17 +14,18 @@ use crate::html5::shared::{AtomTable, Attribute, AttributeValue, TextValue, Toke
 /// remains V1 and treats all bytes as token data.
 pub(super) const SYNTHETIC_TOKEN_DECODER_V2_MARKER: &[u8] = b"TB-FUZZ-V2\n";
 
-/// Exact pre-AE10 tag catalog. Its order, length, and modulo mapping are part
-/// of the deterministic V1 byte-format contract.
+/// Exact V1 tag catalog from before the AE9b select extension. Its order,
+/// length, and modulo mapping are part of the deterministic V1 byte-format
+/// contract.
 pub(super) const TAG_NAME_CATALOG_V1: &[&str; 30] = &[
     "html", "head", "body", "title", "textarea", "style", "script", "table", "tbody", "thead",
     "tfoot", "tr", "td", "th", "caption", "colgroup", "col", "template", "p", "div", "span", "a",
     "b", "i", "nobr", "applet", "object", "form", "frameset", "br",
 ];
 
-/// AE10 additions available only to explicitly versioned V2 inputs. V2 keeps
-/// the V1 prefix order and appends these names, preserving a simple bounded
-/// modulo-selection format without changing legacy bytes.
+/// AE9b select-extension additions available only to explicitly versioned V2
+/// inputs. V2 keeps the V1 prefix order and appends these names, preserving a
+/// simple bounded modulo-selection format without changing legacy bytes.
 const TAG_NAME_CATALOG_V2_ADDITIONS: &[&str; 5] = &["select", "option", "optgroup", "input", "hr"];
 
 const ATTR_NAME_CATALOG: &[&str] = &[

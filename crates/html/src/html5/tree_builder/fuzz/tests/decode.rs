@@ -8,9 +8,10 @@ use super::super::decode::{
 use super::super::driver::run_seeded_token_stream_fuzz_case;
 use crate::html5::shared::{AtomTable, Token};
 
-// Independent pre-AE10 oracle. Do not derive this from the production decoder
-// table: equality pins V1's exact order, length, and modulo mapping.
-const PRE_AE10_TAG_NAME_CATALOG: [&str; 30] = [
+// Independent oracle for the V1 catalog predating the AE9b select extension.
+// Do not derive this from the production decoder table: equality pins V1's
+// exact order, length, and modulo mapping.
+const PRE_AE9B_SELECT_TAG_NAME_CATALOG: [&str; 30] = [
     "html", "head", "body", "title", "textarea", "style", "script", "table", "tbody", "thead",
     "tfoot", "tr", "td", "th", "caption", "colgroup", "col", "template", "p", "div", "span", "a",
     "b", "i", "nobr", "applet", "object", "form", "frameset", "br",
@@ -42,20 +43,20 @@ fn decode(bytes: &[u8], config: TreeBuilderFuzzConfig) -> super::super::decode::
 }
 
 #[test]
-fn decoder_v1_catalog_is_the_exact_pre_ae10_catalog() {
+fn decoder_v1_catalog_is_the_exact_pre_ae9b_select_catalog() {
     assert_eq!(TAG_NAME_CATALOG_V1.len(), 30);
-    assert_eq!(*TAG_NAME_CATALOG_V1, PRE_AE10_TAG_NAME_CATALOG);
+    assert_eq!(*TAG_NAME_CATALOG_V1, PRE_AE9B_SELECT_TAG_NAME_CATALOG);
 }
 
 #[test]
-fn every_catalog_backed_selector_byte_keeps_its_pre_ae10_v1_mapping() {
+fn every_catalog_backed_selector_byte_keeps_its_pre_ae9b_select_v1_mapping() {
     for selector in (0_u8..=u8::MAX).filter(|selector| selector & 1 == 0) {
         // Start tag, catalog selector, zero attributes.
         let input = [1, selector, 0];
         let names = decoded_start_tag_names(&input);
         assert_eq!(
             names,
-            [PRE_AE10_TAG_NAME_CATALOG[selector as usize % 30]],
+            [PRE_AE9B_SELECT_TAG_NAME_CATALOG[selector as usize % 30]],
             "selector={selector}"
         );
     }
@@ -88,7 +89,7 @@ fn unmarked_and_marker_like_inputs_have_deterministic_version_selection() {
 }
 
 #[test]
-fn decoder_v2_marker_is_metadata_and_reaches_all_ae10_tags() {
+fn decoder_v2_marker_is_metadata_and_reaches_all_ae9b_select_extension_tags() {
     let marker_only = decode(
         SYNTHETIC_TOKEN_DECODER_V2_MARKER,
         TreeBuilderFuzzConfig::default(),

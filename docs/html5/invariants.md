@@ -164,13 +164,13 @@ Table cell and AFE interaction:
 - A void insertion restores retained stack length/order after one real push/pop;
   high-water records the transient observed depth.
 - start-tag dispatch finalizes every original self-closing flag exactly once
-  for the AE9/AE10 semantic-insertion paths:
+  for the AE9a/AE9b semantic-insertion paths:
   an unacknowledged AE9 non-void flag records its trailing-solidus error after
   the tag-specific recovery error, including a recoverably ignored token.
 - The frozen deprecated insertion helper retains pre-AE9 skip-stack behavior;
   only AE9 semantic void insertion changes stack-transition observability.
 
-## AE10 Current Select Invariants
+## AE9b Current Select Invariants
 
 - `select` is a shared general-scope boundary; button/list-item scope inherit
   it and table scope remains unchanged.

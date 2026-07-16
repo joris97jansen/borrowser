@@ -48,11 +48,12 @@ when an AE9 algorithm deterministically ignores a token, such as duplicate
 forms. Textarea supplies its originating `InBody` mode because the handler has
 already entered Text mode by finalization.
 
-AE10 generalizes the issue-specific helper name to
+The subsequent AE9b select work generalizes the issue-specific helper name to
 `finalize_html_start_tag_self_closing_flag` without moving ownership out of
 dispatch. Existing AE9 callers and new select/input/HR callers still finalize
 the original flag exactly once. This localized semantic rename is not the
-repository-wide deprecated-insertion migration owned by AE9b.
+repository-wide deprecated-insertion migration, which remains separate
+follow-up work.
 
 `max_open_elements_depth` limits retained non-void depth. A void transition may
 observe one temporary additional entry, and the high-water metric records that
@@ -71,7 +72,7 @@ unclosed pointer to `None`.
   special path. The latter is form-dispatch orchestration: normal insert, set
   pointer, then exact-current stack removal.
 - `input` is parser-created void insertion; only the `type=hidden` frameset
-  distinction is modeled. AE10 adds the pinned full-document prelude: an
+  distinction is modeled. AE9b adds the pinned full-document prelude: an
   in-scope select is diagnosed and popped before AFE reconstruction and input
   insertion. Direct-InTable hidden input remains its distinct table branch.
 - `textarea` enters RCDATA/Text with identity-bound pending initial-LF state.
@@ -97,7 +98,7 @@ AE9a excludes submission, reset, validation, form-owner reassociation beyond
 the parser pointer, parser control values/checked state, disabled propagation,
 focus, events, accessibility, layout, paint, JavaScript, `document.write`, full
 DOM APIs, fragments, templates, and runtime select behavior. Static select
-tree construction is defined separately by AE10.
+tree construction is defined separately by AE9b.
 
 ## Self-closing follow-up
 
@@ -107,5 +108,5 @@ insertion for its own paths only; it does not claim global self-closing
 conformance. Frozen legacy self-closing and known-void callers retain their
 pre-AE9 attach-without-stack-transition behavior: no push/pop, stack high-water
 change, or stack-cache transition. The AE9 real void transition applies only to
-the new semantic `input` and `keygen` paths. AE9b owns migration of all
-remaining calls and helper deletion.
+the new semantic `input` and `keygen` paths. Migration of all remaining calls
+and helper deletion remains separate follow-up work.

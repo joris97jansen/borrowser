@@ -235,11 +235,11 @@ Core v0 guarantees the following tag/context baseline:
     and `th`, including supported implied wrappers, table-text buffering,
     malformed table recovery, and foster parenting as defined by
     `docs/html5/ae8-specialized-table-tree-construction-contract.md`.
-  - AE10 current full-document `select`, `option`, and `optgroup` behavior runs
+  - AE9b current full-document `select`, `option`, and `optgroup` behavior runs
     through shared `InBody` rules and existing table delegation. It includes
     select scope boundaries, the supported select-family implied-end subset,
     select-aware `input`/`hr` recovery, and the generic special-barrier end-tag
-    scan defined in `docs/html5/ae10-current-select-tree-construction-contract.md`.
+    scan defined in `docs/html5/ae9b-current-select-tree-construction-contract.md`.
   - unknown or unsupported elements outside table-family MUST follow the generic element insertion path defined by `TB-MODE-IN-BODY`.
   - this unknown/unsupported-element rule applies only when the behavior is not explicitly marked `OUT_OF_SCOPE` with `skip` policy semantics (for example, template insertion mode stack behavior).
 
@@ -336,7 +336,7 @@ Core v0 stance:
   - parser MUST preserve core invariants (SOE/patch ordering),
   - parser MUST NOT panic on table-family tags.
 - AE8 does not claim full WHATWG table parsing conformance.
-- AE10 composes select-family tokens with these table modes through the same
+- AE9b composes select-family tokens with these table modes through the same
   bounded delegation and adjusted insertion-location machinery. No select-
   specific insertion mode is entered.
 

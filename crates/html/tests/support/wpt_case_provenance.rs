@@ -14,7 +14,7 @@ struct ExactDatCase {
     document: &'static str,
 }
 
-const AE10_SELECT_CASES: &[ExactDatCase] = &[
+const AE9B_SELECT_CASES: &[ExactDatCase] = &[
     ExactDatCase {
         id: "select-nested-formatting",
         source: "html/syntax/parsing/resources/tests1.dat",
@@ -65,33 +65,33 @@ const AE10_SELECT_CASES: &[ExactDatCase] = &[
     },
 ];
 
-pub(crate) fn validate_ae10_select_case(case: &WptCase) {
-    let exact = AE10_SELECT_CASES
+pub(crate) fn validate_ae9b_select_case(case: &WptCase) {
+    let exact = AE9B_SELECT_CASES
         .iter()
         .find(|exact| exact.id == case.id)
-        .unwrap_or_else(|| panic!("missing exact AE10 provenance oracle for '{}'", case.id));
+        .unwrap_or_else(|| panic!("missing exact AE9b provenance oracle for '{}'", case.id));
     let provenance_path = case
         .provenance
         .as_ref()
-        .unwrap_or_else(|| panic!("AE10 case '{}' requires provenance", case.id));
+        .unwrap_or_else(|| panic!("AE9b case '{}' requires provenance", case.id));
     let input = fs::read(&case.path)
-        .unwrap_or_else(|err| panic!("failed reading AE10 input {:?}: {err}", case.path));
+        .unwrap_or_else(|err| panic!("failed reading AE9b input {:?}: {err}", case.path));
     assert_eq!(
         input,
         exact.data.as_bytes(),
-        "AE10 adapted input '{}' differs from the exact pinned #data bytes",
+        "AE9b adapted input '{}' differs from the exact pinned #data bytes",
         case.id
     );
     assert_ne!(
         input.last(),
         Some(&b'\n'),
-        "AE10 input must not add a newline"
+        "AE9b input must not add a newline"
     );
-    assert_eq!(sha256_hex(&input), exact.sha256, "AE10 input SHA-256");
+    assert_eq!(sha256_hex(&input), exact.sha256, "AE9b input SHA-256");
 
     let provenance = fs::read_to_string(provenance_path).unwrap_or_else(|err| {
         panic!(
-            "failed reading AE10 provenance {:?}: {err}",
+            "failed reading AE9b provenance {:?}: {err}",
             provenance_path
         )
     });
@@ -105,38 +105,38 @@ pub(crate) fn validate_ae10_select_case(case: &WptCase) {
 
     let (_, sections) = provenance
         .split_once("#data\n")
-        .unwrap_or_else(|| panic!("AE10 provenance '{}' missing #data", case.id));
+        .unwrap_or_else(|| panic!("AE9b provenance '{}' missing #data", case.id));
     let (data, sections) = sections
         .split_once("\n#errors\n")
-        .unwrap_or_else(|| panic!("AE10 provenance '{}' missing #errors", case.id));
+        .unwrap_or_else(|| panic!("AE9b provenance '{}' missing #errors", case.id));
     let (errors, document) = sections
         .split_once("\n#document\n")
-        .unwrap_or_else(|| panic!("AE10 provenance '{}' missing #document", case.id));
-    assert_eq!(data, exact.data, "AE10 provenance #data for '{}'", case.id);
+        .unwrap_or_else(|| panic!("AE9b provenance '{}' missing #document", case.id));
+    assert_eq!(data, exact.data, "AE9b provenance #data for '{}'", case.id);
     assert_eq!(
         errors, exact.errors,
-        "AE10 provenance #errors for '{}'",
+        "AE9b provenance #errors for '{}'",
         case.id
     );
     assert_eq!(
         document.trim_end_matches('\n'),
         exact.document,
-        "AE10 provenance #document for '{}'",
+        "AE9b provenance #document for '{}'",
         case.id
     );
 
     let expected = fs::read_to_string(&case.expected)
-        .unwrap_or_else(|err| panic!("failed reading AE10 expected {:?}: {err}", case.expected));
+        .unwrap_or_else(|err| panic!("failed reading AE9b expected {:?}: {err}", case.expected));
     assert_eq!(
         expected.trim_end_matches('\n'),
         translate_upstream_document(exact.document),
-        "AE10 expected DOM '{}' must be only a representation translation of pinned WPT",
+        "AE9b expected DOM '{}' must be only a representation translation of pinned WPT",
         case.id
     );
 }
 
-pub(crate) fn is_ae10_select_case(id: &str) -> bool {
-    AE10_SELECT_CASES.iter().any(|exact| exact.id == id)
+pub(crate) fn is_ae9b_select_case(id: &str) -> bool {
+    AE9B_SELECT_CASES.iter().any(|exact| exact.id == id)
 }
 
 fn translate_upstream_document(document: &str) -> String {

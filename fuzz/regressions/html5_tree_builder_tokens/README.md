@@ -11,14 +11,14 @@ Workflow:
 
 Synthetic tree-builder inputs use an explicit decoder-version contract:
 
-- unmarked inputs are decoder V1 and retain the exact pre-AE10 30-name catalog
-  and modulo mapping;
+- unmarked inputs are decoder V1 and retain the exact 30-name catalog and
+  modulo mapping from before the AE9b select extension;
 - an exact `TB-FUZZ-V2\n` prefix is decoder metadata, is not emitted as a
-  token, and selects the V2 catalog containing the AE10 select-family names;
+  token, and selects the V2 catalog containing the AE9b select-family names;
 - truncated or unknown marker-like prefixes are V1 token bytes.
 
-All pre-AE10 committed corpus and regression entries remain unmodified V1
-inputs. The only committed V2 input is the exact path
+All committed corpus and regression entries predating the AE9b select extension
+remain unmodified V1 inputs. The only committed V2 input is the exact path
 `fuzz/regressions/html5_tree_builder_tokens/select-special-barrier`; a matching
 basename in any other directory is not the documented exception. It is a Local
 WHATWG-derived fixture; not an upstream WPT or html5lib-tests import. Its token

@@ -26,9 +26,9 @@ AE7 supports implied-end-tag generation for:
 - `p`
 - `li`
 
-AE10 extends the same deliberately bounded helper with `option` and
+AE9b extends the same deliberately bounded helper with `option` and
 `optgroup`, including its existing exception parameter. That extension is
-defined by the AE10 contract and does not broaden support to other implied-end
+defined by the AE9b contract and does not broaden support to other implied-end
 members.
 
 The supported implied-end-tag helper is deliberately subset-scoped. It accepts
@@ -175,6 +175,6 @@ AE7 does not implement:
 - heading auto-close behavior beyond paragraph-close classification;
 - `pre` newline handling or frameset behavior;
 - table/template/body/head mode expansion beyond later AE contracts; current
-  select handling is owned by AE10 and does not add a select mode;
+  select handling is owned by AE9b and does not add a select mode;
 - broad WPT status promotion;
 - CSS, Layout, Paint, Browser/runtime, or DOM post-processing recovery.

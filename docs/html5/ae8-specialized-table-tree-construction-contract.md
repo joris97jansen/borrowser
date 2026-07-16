@@ -203,7 +203,7 @@ For supported foster-parenting cases:
 Foster parenting applies to supported non-space table text and generic
 non-table content routed through the `InTable` "anything else" branch.
 
-AE10 clarifies adjusted-location use within that delegated body processing:
+AE9b clarifies adjusted-location use within that delegated body processing:
 foster placement applies only while foster parenting is enabled and the
 current insertion target is `table`, `tbody`, `tfoot`, `thead`, or `tr`. Once
 delegated insertion makes an ordinary element such as `select` current, later
@@ -291,7 +291,7 @@ AE8 does not implement:
 - interactive DOM mutation;
 - form behavior;
 - select-specific insertion modes (historical select modes are not current
-  deferred work; AE10 handles select-family tokens through InBody);
+  deferred work; AE9b handles select-family tokens through InBody);
 - template insertion modes;
 - SVG or MathML parsing;
 - JavaScript;

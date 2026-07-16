@@ -18,8 +18,8 @@ enum StackDisposition {
     Push,
     PopImmediately,
     /// Preserves pre-AE9 behavior for the deprecated helper only: attach the
-    /// node without a stack transition. AE9b removes this disposition with the
-    /// helper and its frozen call sites.
+    /// node without a stack transition. Separate follow-up work removes this
+    /// disposition with the helper and its frozen call sites.
     LegacySkipPush,
 }
 
@@ -66,9 +66,9 @@ impl Html5TreeBuilder {
     /// Temporary compatibility path for pre-AE9 call sites.
     ///
     /// New parser code must use `insert_normal_html_element` or
-    /// `insert_void_html_element`. AE9b removes this helper and the frozen
-    /// call-site expectations that still reference it.
-    #[deprecated(note = "frozen legacy insertion helper; removal owned by AE9b")]
+    /// `insert_void_html_element`. Separate follow-up work removes this helper
+    /// and the frozen call-site expectations that still reference it.
+    #[deprecated(note = "frozen legacy insertion helper; removal tracked separately")]
     pub(in crate::html5::tree_builder) fn insert_element(
         &mut self,
         name: AtomId,

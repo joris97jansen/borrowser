@@ -495,9 +495,10 @@ Current supported subset:
   keygen behavior, and textarea initial-LF suppression. Browser textarea
   seeding no longer repeats parser source-character normalization. Submission,
   validation, focus, events, accessibility, layout, paint, and global
-  self-closing conformance remain deferred; AE9b owns the latter migration.
+  self-closing conformance remain deferred; the latter migration remains
+  separate follow-up work.
 
-- AE10 current select tree construction: full-document `select`, `option`, and
+- AE9b current select tree construction: full-document `select`, `option`, and
   `optgroup` tokens now use current InBody rules and existing table delegation,
   with select as a general-scope boundary, option/optgroup in the supported
   implied-end subset, a corrected shared 83-name HTML special taxonomy, a
@@ -505,8 +506,8 @@ Current supported subset:
   and conditional adjusted foster locations. Exact pinned WPT `.dat` cases and
   local DOM/patch/error/state/limit/fuzz evidence cover the static parser tree.
   No historical select mode, runtime selectedness/value/control semantics, or
-  repository-wide AE9b migration is included. See
-  `docs/html5/ae10-current-select-tree-construction-contract.md`.
+  repository-wide deprecated-insertion migration is included. See
+  `docs/html5/ae9b-current-select-tree-construction-contract.md`.
 
 Missing or incomplete:
 
@@ -516,8 +517,9 @@ Missing or incomplete:
   table activation beyond the active Core-v0 `MVP_PARTIAL` subset
 - full WHATWG tokenizer state coverage and edge-case parity beyond the
   supported AE/Core-v0 tokenizer subset
-- full WHATWG tree-construction coverage beyond the AE6–AE10 documented
-  static-document, body-recovery, table, form, and current select subsets, including
+- full WHATWG tree-construction coverage beyond the documented AE6, AE7, AE8,
+  AE9a, and AE9b static-document, body-recovery, table, form, and current select
+  subsets, including
   advanced insertion modes and malformed-markup recovery outside the documented
   Core-v0 scope
 - full DOM API surface
