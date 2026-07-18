@@ -8,8 +8,8 @@ pub(super) fn find_styled_element<'a>(
     node: &'a StyledNode<'a>,
     want: &str,
 ) -> Option<&'a StyledNode<'a>> {
-    if let Node::Element { name, .. } = node.node
-        && name.as_ref() == want
+    if let Node::Element { element } = node.node
+        && element.name().as_ref() == want
     {
         return Some(node);
     }
@@ -194,11 +194,12 @@ pub(super) fn two_paragraph_patch_document(style_text: &str) -> Vec<DomPatch> {
 
 pub(super) fn find_dom_element<'a>(node: &'a Node, want: &str) -> Option<&'a Node> {
     match node {
-        Node::Element { name, children, .. } => {
-            if name.as_ref() == want {
+        Node::Element { element } => {
+            if element.name().as_ref() == want {
                 return Some(node);
             }
-            children
+            element
+                .children()
                 .iter()
                 .find_map(|child| find_dom_element(child, want))
         }

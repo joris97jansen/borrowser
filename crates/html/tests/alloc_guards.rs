@@ -94,7 +94,8 @@ impl Drop for AllocGuard {
 fn node_count(node: &Node) -> usize {
     match node {
         Node::Document { children, .. } => 1 + children.iter().map(node_count).sum::<usize>(),
-        Node::Element { children, .. } => 1 + children.iter().map(node_count).sum::<usize>(),
+        Node::Element { element } => 1 + element.children().iter().map(node_count).sum::<usize>(),
+        Node::DocumentType { .. } => 1,
         Node::Text { .. } => 1,
         Node::Comment { .. } => 1,
     }
@@ -102,21 +103,19 @@ fn node_count(node: &Node) -> usize {
 
 fn text_node_count(node: &Node) -> usize {
     match node {
-        Node::Document { children, .. } | Node::Element { children, .. } => {
-            children.iter().map(text_node_count).sum()
-        }
+        Node::Document { children, .. } => children.iter().map(text_node_count).sum(),
+        Node::Element { element } => element.children().iter().map(text_node_count).sum(),
         Node::Text { .. } => 1,
-        Node::Comment { .. } => 0,
+        Node::Comment { .. } | Node::DocumentType { .. } => 0,
     }
 }
 
 fn total_text_bytes(node: &Node) -> usize {
     match node {
-        Node::Document { children, .. } | Node::Element { children, .. } => {
-            children.iter().map(total_text_bytes).sum()
-        }
+        Node::Document { children, .. } => children.iter().map(total_text_bytes).sum(),
+        Node::Element { element } => element.children().iter().map(total_text_bytes).sum(),
         Node::Text { text, .. } => text.len(),
-        Node::Comment { .. } => 0,
+        Node::Comment { .. } | Node::DocumentType { .. } => 0,
     }
 }
 

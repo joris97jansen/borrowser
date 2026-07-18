@@ -84,6 +84,14 @@ Principal-box generation is deterministic for a fixed styled tree and layout
 environment. `display: none` and comments produce `SuppressSubtree` decisions
 instead of principal boxes.
 
+AE10 adds `ParserCreatedTemplateHost` as a typed non-rendering suppression
+reason. Layout recognizes the parser-created association, not the element name,
+and suppresses the host subtree before principal-box generation. Template
+contents are absent from the active styled tree because ordinary traversal does
+not cross the association. This is a narrow engine boundary, not a general UA
+stylesheet implementation; Paint needs no template rule because no artifact is
+produced.
+
 ## Unsupported And Deferred Display Values
 
 Unsupported CSS display keywords are not represented as deferred layout modes

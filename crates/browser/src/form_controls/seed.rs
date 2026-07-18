@@ -31,12 +31,12 @@ fn walk(
     radio_groups: &mut HashMap<usize, RadioGroupSelection>,
 ) {
     match node {
-        Node::Element { name, .. } if name.eq_ignore_ascii_case("input") => {
+        Node::Element { element } if element.name().eq_ignore_ascii_case("input") => {
             handle_input(store, node, scope_id, index, radio_groups);
         }
 
-        Node::Element { name, children, .. } if name.eq_ignore_ascii_case("textarea") => {
-            handle_textarea(store, node, children);
+        Node::Element { element } if element.name().eq_ignore_ascii_case("textarea") => {
+            handle_textarea(store, node, element.children());
         }
 
         Node::Document { children, .. } => {
@@ -49,12 +49,12 @@ fn walk(
             );
         }
 
-        Node::Element { children, .. } => {
+        Node::Element { element } => {
             // Radio groups are scoped to their "form owner" (roughly: the nearest `<form>`).
             // If there is no form ancestor, group by the document scope.
             walk_children(
                 store,
-                children,
+                element.children(),
                 next_scope_id(node, scope_id),
                 index,
                 radio_groups,
@@ -153,7 +153,7 @@ fn walk_children(
 fn next_scope_id(node: &Node, scope_id: Option<Id>) -> Option<Id> {
     match node {
         Node::Document { .. } => Some(DOCUMENT_SCOPE_ID),
-        Node::Element { name, .. } if name.eq_ignore_ascii_case("form") => Some(node.id()),
+        Node::Element { element } if element.name().eq_ignore_ascii_case("form") => Some(node.id()),
         _ => scope_id,
     }
 }

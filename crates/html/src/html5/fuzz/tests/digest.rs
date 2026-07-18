@@ -1,8 +1,11 @@
-use super::super::digest::{PipelineDigestTail, PipelineFuzzDigest};
+use super::super::digest::{PIPELINE_FUZZ_DIGEST_SCHEMA, PipelineDigestTail, PipelineFuzzDigest};
 use crate::dom_patch::PatchKey;
 use crate::html5::tree_builder::TreeBuilderProgressWitness;
 use crate::html5::tree_builder::document::QuirksMode;
 use crate::html5::tree_builder::modes::InsertionMode;
+use crate::html5::tree_builder::{
+    AfeDiagnosticEntry, AfeMarker, AfeMarkerKind, TemplateInsertionMode,
+};
 
 fn witness(
     form_element_pointer: Option<PatchKey>,
@@ -15,6 +18,9 @@ fn witness(
         active_text_mode: None,
         form_element_pointer,
         pending_textarea_initial_lf,
+        head_element_pointer: None,
+        template_modes: Vec::new(),
+        active_formatting_entries: Vec::new(),
         open_element_keys: vec![PatchKey(1), PatchKey(2)],
         current_table_key: None,
         pending_table_character_tokens: Vec::new(),
@@ -52,4 +58,26 @@ fn pipeline_digest_includes_form_pointer_and_pending_textarea_lf() {
         digest_for(&witness(None, Some(PatchKey(42)))),
         "pending textarea initial-LF state must participate in the pipeline fuzz digest"
     );
+}
+
+#[test]
+fn pipeline_digest_is_sensitive_to_template_state() {
+    assert_eq!(PIPELINE_FUZZ_DIGEST_SCHEMA, 3);
+    let baseline = witness(None, None);
+    let mut changed = baseline.clone();
+    changed.head_element_pointer = Some(PatchKey(9));
+    assert_ne!(digest_for(&baseline), digest_for(&changed));
+    changed = baseline.clone();
+    changed.template_modes = vec![(PatchKey(12), TemplateInsertionMode::InTemplate)];
+    assert_ne!(digest_for(&baseline), digest_for(&changed));
+    changed = baseline.clone();
+    changed.active_formatting_entries = vec![
+        AfeDiagnosticEntry::Marker(AfeMarker::new(AfeMarkerKind::Template, Some(PatchKey(12)))),
+        AfeDiagnosticEntry::Element(PatchKey(13)),
+    ];
+    assert_ne!(digest_for(&baseline), digest_for(&changed));
+    let mut marker_kind_changed = changed.clone();
+    marker_kind_changed.active_formatting_entries[0] =
+        AfeDiagnosticEntry::Marker(AfeMarker::new(AfeMarkerKind::Caption, Some(PatchKey(12))));
+    assert_ne!(digest_for(&changed), digest_for(&marker_kind_changed));
 }

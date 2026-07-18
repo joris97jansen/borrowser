@@ -8,7 +8,7 @@ fn active_formatting_entries(
         .entries()
         .iter()
         .map(|entry| match entry {
-            crate::html5::tree_builder::formatting::AfeEntry::Marker => None,
+            crate::html5::tree_builder::formatting::AfeEntry::Marker(_) => None,
             crate::html5::tree_builder::formatting::AfeEntry::Element(element) => {
                 Some(element.name)
             }

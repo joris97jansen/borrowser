@@ -1,4 +1,5 @@
 use crate::dom_patch::PatchKey;
+use crate::types::ParserCreatedFragmentKind;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -29,6 +30,11 @@ pub(super) enum TestKind {
     Element {
         name: Arc<str>,
         attributes: Vec<(Arc<str>, Option<String>)>,
+        template_contents: Option<PatchKey>,
+    },
+    DocumentFragment {
+        kind: ParserCreatedFragmentKind,
+        host: PatchKey,
     },
     Text {
         text: String,

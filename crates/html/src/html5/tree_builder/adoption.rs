@@ -374,7 +374,7 @@ impl Html5TreeBuilder {
 #[cfg(test)]
 mod tests {
     use super::Html5TreeBuilder;
-    use crate::dom_patch::PatchKey;
+    use crate::dom_patch::{DomPatch, PatchKey};
     use crate::html5::shared::DocumentParseContext;
     use crate::html5::tree_builder::stack::OpenElement;
 
@@ -453,6 +453,12 @@ mod tests {
                 let template = this
                     .create_detached_element(this.known_tags.template, &[], &ctx.atoms)?
                     .expect("template setup should not hit resource limits");
+                let contents = this.alloc_patch_key()?;
+                this.push_structural_patch(DomPatch::CreateTemplateContents {
+                    host: template,
+                    contents,
+                });
+                this.note_node_created();
                 let last_node = this
                     .create_detached_element(div, &[], &ctx.atoms)?
                     .expect("div setup should not hit resource limits");
@@ -464,7 +470,7 @@ mod tests {
                     OpenElement::new(PatchKey(999), this.known_tags.thead),
                     last_node,
                 )?;
-                assert_eq!(this.live_tree.parent(last_node), Some(template));
+                assert_eq!(this.live_tree.parent(last_node), Some(contents));
                 Ok(())
             })
             .expect("template-preferred foster parenting should remain recoverable");

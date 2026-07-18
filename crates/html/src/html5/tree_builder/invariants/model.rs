@@ -1,4 +1,5 @@
 use crate::dom_patch::PatchKey;
+use crate::types::ParserCreatedFragmentKind;
 
 use super::errors::PatchInvariantError;
 
@@ -7,6 +8,7 @@ pub enum DomInvariantNodeKind {
     Document,
     DocumentType,
     Element,
+    DocumentFragment(ParserCreatedFragmentKind),
     Text,
     Comment,
 }
@@ -14,7 +16,10 @@ pub enum DomInvariantNodeKind {
 impl DomInvariantNodeKind {
     #[must_use]
     pub fn is_container(self) -> bool {
-        matches!(self, Self::Document | Self::Element)
+        matches!(
+            self,
+            Self::Document | Self::Element | Self::DocumentFragment(_)
+        )
     }
 
     #[must_use]
@@ -23,6 +28,13 @@ impl DomInvariantNodeKind {
             Self::Document => "document",
             Self::DocumentType => "doctype",
             Self::Element => "element",
+            Self::DocumentFragment(ParserCreatedFragmentKind::TemplateContents) => {
+                "template-contents-fragment"
+            }
+            #[cfg(any(test, feature = "test-harness"))]
+            Self::DocumentFragment(ParserCreatedFragmentKind::TestOnlyUnsupported) => {
+                "unsupported-parser-created-fragment"
+            }
             Self::Text => "text",
             Self::Comment => "comment",
         }
@@ -34,6 +46,9 @@ pub struct DomInvariantNode {
     pub(in crate::html5::tree_builder) kind: DomInvariantNodeKind,
     pub(in crate::html5::tree_builder) parent: Option<PatchKey>,
     pub(in crate::html5::tree_builder) children: Vec<PatchKey>,
+    pub(in crate::html5::tree_builder) template_contents: Option<PatchKey>,
+    pub(in crate::html5::tree_builder) fragment_host: Option<PatchKey>,
+    pub(in crate::html5::tree_builder) is_template_element: bool,
 }
 
 impl DomInvariantNode {
@@ -50,6 +65,16 @@ impl DomInvariantNode {
     #[must_use]
     pub fn children(&self) -> &[PatchKey] {
         self.children.as_slice()
+    }
+
+    #[must_use]
+    pub fn template_contents(&self) -> Option<PatchKey> {
+        self.template_contents
+    }
+
+    #[must_use]
+    pub fn fragment_host(&self) -> Option<PatchKey> {
+        self.fragment_host
     }
 }
 
@@ -129,10 +154,80 @@ impl DomInvariantState {
             kind,
             parent: None,
             children: Vec::new(),
+            template_contents: None,
+            fragment_host: None,
+            is_template_element: false,
         });
         if matches!(kind, DomInvariantNodeKind::Document) {
             self.root = Some(key);
         }
+        Ok(())
+    }
+
+    pub(super) fn mark_element_name(
+        &mut self,
+        key: PatchKey,
+        is_template_element: bool,
+    ) -> Result<(), PatchInvariantError> {
+        let Some(node) = self.nodes.get_mut(key.0 as usize).and_then(Option::as_mut) else {
+            return Err(PatchInvariantError::Internal(
+                "CreateElement disappeared before name classification",
+            ));
+        };
+        node.is_template_element = is_template_element;
+        Ok(())
+    }
+
+    pub(super) fn apply_create_template_contents(
+        &mut self,
+        patch_index: usize,
+        host: PatchKey,
+        contents: PatchKey,
+    ) -> Result<(), PatchInvariantError> {
+        const OPERATION: &str = "CreateTemplateContents";
+        let host_kind = self.ensure_patch_node(host, patch_index, OPERATION, "host")?;
+        if host_kind != DomInvariantNodeKind::Element {
+            return Err(PatchInvariantError::TemplateAssociation {
+                patch_index,
+                detail: format!("host {host:?} must be an element"),
+            });
+        }
+        let host_node = self.node(host).ok_or(PatchInvariantError::Internal(
+            "CreateTemplateContents host disappeared",
+        ))?;
+        if !host_node.is_template_element {
+            return Err(PatchInvariantError::TemplateAssociation {
+                patch_index,
+                detail: format!("host {host:?} must be a canonical template element"),
+            });
+        }
+        if host_node.template_contents.is_some() {
+            return Err(PatchInvariantError::TemplateAssociation {
+                patch_index,
+                detail: format!("host {host:?} already has template contents"),
+            });
+        }
+        self.insert_created_node(
+            contents,
+            DomInvariantNodeKind::DocumentFragment(ParserCreatedFragmentKind::TemplateContents),
+            patch_index,
+        )?;
+        let contents_node = self
+            .nodes
+            .get_mut(contents.0 as usize)
+            .and_then(Option::as_mut)
+            .ok_or(PatchInvariantError::Internal(
+                "created template contents disappeared",
+            ))?;
+        contents_node.fragment_host = Some(host);
+        let host_node = self
+            .nodes
+            .get_mut(host.0 as usize)
+            .and_then(Option::as_mut)
+            .ok_or(PatchInvariantError::Internal(
+                "template host disappeared before association commit",
+            ))?;
+        host_node.template_contents = Some(contents);
         Ok(())
     }
 
@@ -194,12 +289,22 @@ impl DomInvariantState {
     }
 
     fn would_create_cycle(&self, parent: PatchKey, child: PatchKey) -> bool {
-        let mut cursor = Some(parent);
-        while let Some(current) = cursor {
-            if current == child {
+        let mut stack = vec![child];
+        let mut visited = std::collections::HashSet::new();
+        while let Some(current) = stack.pop() {
+            if !visited.insert(current) {
+                continue;
+            }
+            if current == parent {
                 return true;
             }
-            cursor = self.node_parent(current).flatten();
+            let Some(node) = self.node(current) else {
+                return true;
+            };
+            stack.extend(node.children.iter().copied());
+            if let Some(contents) = node.template_contents {
+                stack.push(contents);
+            }
         }
         false
     }
@@ -275,6 +380,15 @@ impl DomInvariantState {
                 patch_index,
                 operation: OPERATION,
                 key: child,
+            });
+        }
+        if matches!(
+            self.node_kind(child),
+            Some(DomInvariantNodeKind::DocumentFragment(_))
+        ) {
+            return Err(PatchInvariantError::TemplateAssociation {
+                patch_index,
+                detail: format!("{OPERATION} cannot ordinary-parent contents root {child:?}"),
             });
         }
         if self.is_document_root_element(child) {
@@ -356,6 +470,15 @@ impl DomInvariantState {
                 patch_index,
                 operation: OPERATION,
                 key: child,
+            });
+        }
+        if matches!(
+            self.node_kind(child),
+            Some(DomInvariantNodeKind::DocumentFragment(_))
+        ) {
+            return Err(PatchInvariantError::TemplateAssociation {
+                patch_index,
+                detail: format!("{OPERATION} cannot ordinary-parent contents root {child:?}"),
             });
         }
         if self.is_document_root_element(child) {
@@ -440,6 +563,15 @@ impl DomInvariantState {
         self.ensure_patch_node(key, patch_index, OPERATION, "key")?;
         let is_root = self.root == Some(key);
         let is_attached = self.node_parent(key).flatten().is_some();
+        if matches!(
+            self.node_kind(key),
+            Some(DomInvariantNodeKind::DocumentFragment(_))
+        ) {
+            return Err(PatchInvariantError::TemplateAssociation {
+                patch_index,
+                detail: format!("hosted contents root {key:?} cannot be removed directly"),
+            });
+        }
         if !is_root && !is_attached {
             return Err(PatchInvariantError::RemoveDetachedNode { patch_index, key });
         }
@@ -449,9 +581,13 @@ impl DomInvariantState {
 
         let mut stack = vec![key];
         while let Some(current) = stack.pop() {
-            let children = self.node(current).map(|node| node.children.clone()).ok_or(
-                PatchInvariantError::Internal("RemoveNode target disappeared during subtree walk"),
-            )?;
+            let node = self.node(current).ok_or(PatchInvariantError::Internal(
+                "RemoveNode target disappeared during subtree walk",
+            ))?;
+            let mut children = node.children.clone();
+            if let Some(contents) = node.template_contents {
+                children.push(contents);
+            }
             stack.extend(children.into_iter());
             if self.root == Some(current) {
                 self.root = None;
@@ -493,6 +629,7 @@ fn create_operation_name(kind: DomInvariantNodeKind) -> &'static str {
         DomInvariantNodeKind::Document => "CreateDocument",
         DomInvariantNodeKind::DocumentType => "CreateDocumentType",
         DomInvariantNodeKind::Element => "CreateElement",
+        DomInvariantNodeKind::DocumentFragment(_) => "CreateTemplateContents",
         DomInvariantNodeKind::Text => "CreateText",
         DomInvariantNodeKind::Comment => "CreateComment",
     }

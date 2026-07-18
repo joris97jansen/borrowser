@@ -5,7 +5,7 @@
 //! in tests without exposing internal implementation details.
 
 /// HTML5 tree-construction insertion mode.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash)]
 pub(crate) enum InsertionMode {
     #[default]
     Initial,
@@ -23,5 +23,30 @@ pub(crate) enum InsertionMode {
     InTableBody,
     InRow,
     InCell,
+    InTemplate,
     Text,
+}
+
+impl InsertionMode {
+    pub(crate) fn digest_tag(self) -> u8 {
+        match self {
+            Self::Initial => 0,
+            Self::BeforeHtml => 1,
+            Self::BeforeHead => 2,
+            Self::InHead => 3,
+            Self::AfterHead => 4,
+            Self::InBody => 5,
+            Self::AfterBody => 6,
+            Self::AfterAfterBody => 7,
+            Self::InTable => 8,
+            Self::InTableText => 9,
+            Self::InCaption => 10,
+            Self::InColumnGroup => 11,
+            Self::InTableBody => 12,
+            Self::InRow => 13,
+            Self::InCell => 14,
+            Self::InTemplate => 15,
+            Self::Text => 16,
+        }
+    }
 }

@@ -3,35 +3,24 @@ use super::{HtmlErrorPolicy, HtmlParseOptions, HtmlParser, parse_document};
 use crate::{DomPatch, Node, PatchKey};
 
 fn first_child_element_named<'a>(node: &'a Node, name: &str) -> Option<&'a Node> {
-    let children = match node {
-        Node::Document { children, .. } | Node::Element { children, .. } => children,
-        _ => return None,
-    };
+    let children = node.children()?;
     children.iter().find(|child| {
         matches!(
             child,
-            Node::Element {
-                name: child_name,
-                ..
-            } if child_name.eq_ignore_ascii_case(name)
+            Node::Element { element } if element.name().eq_ignore_ascii_case(name)
         )
     })
 }
 
 fn has_descendant_element_named(node: &Node, name: &str) -> bool {
-    match node {
-        Node::Document { children, .. } | Node::Element { children, .. } => {
-            children.iter().any(|child| {
-                matches!(
-                    child,
-                    Node::Element {
-                        name: child_name,
-                        ..
-                    } if child_name.eq_ignore_ascii_case(name)
-                ) || has_descendant_element_named(child, name)
-            })
-        }
-        _ => false,
+    match node.children() {
+        Some(children) => children.iter().any(|child| {
+            matches!(
+                child,
+                Node::Element { element } if element.name().eq_ignore_ascii_case(name)
+            ) || has_descendant_element_named(child, name)
+        }),
+        None => false,
     }
 }
 
@@ -45,14 +34,13 @@ fn summarize(node: &crate::Node, out: &mut Vec<String>) {
                 summarize(child, out);
             }
         }
-        crate::Node::Element {
-            name,
-            attributes,
-            children,
-            ..
-        } => {
-            out.push(format!("element:{name}:{}", attributes.len()));
-            for child in children {
+        crate::Node::Element { element } => {
+            out.push(format!(
+                "element:{}:{}",
+                element.name(),
+                element.attributes().len()
+            ));
+            for child in element.children() {
                 summarize(child, out);
             }
         }

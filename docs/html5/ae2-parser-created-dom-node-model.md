@@ -164,3 +164,37 @@ AE2 does not implement:
 - navigation;
 - full DOM `DocumentType` API exposure;
 - broad tree-construction conformance beyond the supported Milestone AE scope.
+
+## AE10 Typed Parser-Created Fragments
+
+AE10 extends the internal parser-created model with
+`DocumentFragmentNode { id, kind: TemplateContents, children }`, physically
+owned by the private `template_contents` field of the opaque `ElementNode`
+payload in `Node::Element { element }`. The slot cannot hold
+an arbitrary `Node`, has independent stable identity, and stores ordered normal
+child edges. It stores no host ID; recursive ownership is authoritative and
+prevents stale host references after `Node::set_id()`.
+
+Arena-shaped representations store host and contents records independently and
+therefore maintain validated bidirectional keys through one owning operation.
+The association is neither an ordinary parent edge nor a hidden child vector.
+Full-model traversal explicitly visits host, fragment and descendants, then
+ordinary host children. Ordinary `children()` traversal never enters the
+fragment. The internal type leaves room for later parser-created fragment kinds
+without implementing public `DocumentFragment`, template `.content`, owner-
+document/adoption, cloning, or mutation APIs.
+
+The stable ordinary Rust surface uses `Node`/`ElementNode` accessors for name,
+attributes, style, identity, and ordinary children. It cannot access or mutate
+the association. With `internal-api`, engine crates receive controlled
+canonical template construction and read-only fragment inspection only;
+fragment mutation remains in the `html` crate (apart from a test-harness-gated
+whole-model legacy ID transformation).
+
+Ordinary-child mutation on this surface is retained legacy structural
+behavior, not live DOM mutation or `HTMLTemplateElement.content`. Manually
+inserted ordinary host children remain on the ordinary active tree and cannot
+be converted into template contents through the public API. The controlled
+cross-crate template constructor preserves such children only for generic or
+legacy validated materialization; strict AE10 parser output supplies none and
+is checked by the separate parser-output validator.

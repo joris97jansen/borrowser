@@ -147,8 +147,12 @@ impl Html5TreeBuilder {
     /// not a remembered return mode.
     pub(in crate::html5::tree_builder) fn reset_supported_insertion_mode_from_soe(
         &mut self,
-    ) -> Result<(), TreeBuilderError> {
+    ) -> Result<InsertionMode, TreeBuilderError> {
+        self.perf_reset_insertion_mode_scan_calls =
+            self.perf_reset_insertion_mode_scan_calls.saturating_add(1);
         for index in (0..self.open_elements.len()).rev() {
+            self.perf_reset_insertion_mode_scan_steps =
+                self.perf_reset_insertion_mode_scan_steps.saturating_add(1);
             let entry = self.open_elements.get(index).ok_or(EngineInvariantError)?;
             let name = entry.name();
             let mode = if name == self.known_tags.td || name == self.known_tags.th {
@@ -166,16 +170,28 @@ impl Html5TreeBuilder {
                 Some(InsertionMode::InColumnGroup)
             } else if name == self.known_tags.table {
                 Some(InsertionMode::InTable)
+            } else if name == self.known_tags.template {
+                let current = self.template_modes.current().ok_or(EngineInvariantError)?;
+                if current.owner() != entry.key() {
+                    return Err(EngineInvariantError);
+                }
+                Some(current.mode().as_insertion_mode())
             } else if name == self.known_tags.head {
                 Some(InsertionMode::InHead)
-            } else if name == self.known_tags.body || name == self.known_tags.html {
+            } else if name == self.known_tags.body {
                 Some(InsertionMode::InBody)
+            } else if name == self.known_tags.html {
+                Some(if self.head_element_pointer.is_some() {
+                    InsertionMode::AfterHead
+                } else {
+                    InsertionMode::BeforeHead
+                })
             } else {
                 None
             };
             if let Some(mode) = mode {
                 self.insertion_mode = mode;
-                return Ok(());
+                return Ok(mode);
             }
         }
         Err(EngineInvariantError)

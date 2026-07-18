@@ -101,7 +101,7 @@ fn append_styled_node_snapshot(
 fn styled_node_kind_debug_label(node: &Node) -> String {
     match node {
         Node::Document { .. } => "kind=document".to_string(),
-        Node::Element { name, .. } => format!("kind=element name=\"{name}\""),
+        Node::Element { element } => format!("kind=element name=\"{}\"", element.name()),
         Node::Text { text, .. } => format!("kind=text text=\"{}\"", text.escape_default()),
         Node::Comment { text, .. } => format!("kind=comment text=\"{}\"", text.escape_default()),
         Node::DocumentType { name, .. } => match name {
@@ -185,7 +185,8 @@ fn build_style_tree_from_computed_entries<'a, 'b>(
             })
         }
 
-        Node::Element { name, children, .. } => {
+        Node::Element { element } => {
+            let name = element.name();
             let element_index = entries.next_index();
             let expected_selector_id = element_ids.next().ok_or_else(|| {
                 ComputedStyleResolutionError::MissingComputedElementStyle {
@@ -220,7 +221,7 @@ fn build_style_tree_from_computed_entries<'a, 'b>(
 
             let computed = *entry.style();
             let mut styled_children = Vec::new();
-            for child in children {
+            for child in element.children() {
                 if matches!(child, Node::DocumentType { .. }) {
                     continue;
                 }

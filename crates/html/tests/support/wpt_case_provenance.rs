@@ -65,6 +65,41 @@ const AE9B_SELECT_CASES: &[ExactDatCase] = &[
     },
 ];
 
+const AE10_TEMPLATE_CASES: &[ExactDatCase] = &[
+    ExactDatCase {
+        id: "template-body-text",
+        source: "html/syntax/parsing/resources/template.dat (#data case 1)",
+        data: "<body><template>Hello</template>",
+        sha256: "6dee18f5a6b18f342314c452bfaa35908a4fc2ec7bdf1f5c75fad83c87ae178f",
+        errors: "no doctype",
+        document: "| <html>\n|   <head>\n|   <body>\n|     <template>\n|       content\n|         \"Hello\"",
+    },
+    ExactDatCase {
+        id: "template-empty-followed-by-div",
+        source: "html/syntax/parsing/resources/template.dat (#data case 3)",
+        data: "<template></template><div></div>",
+        sha256: "41a6c6dacbaf8c950c6ef2139bf9593b13261aaff35757358b3ea8557f2a32da",
+        errors: "no doctype",
+        document: "| <html>\n|   <head>\n|     <template>\n|       content\n|   <body>\n|     <div>",
+    },
+    ExactDatCase {
+        id: "template-table-cell-marker-recovery",
+        source: "html/syntax/parsing/resources/template.dat (#data case 27)",
+        data: "<table><thead><template><td></template></table>",
+        sha256: "bc80482ac52c280e4e173fc0294cafebc658e8af6441f2ad63a6e23227ffb001",
+        errors: " * (1,8) missing DOCTYPE",
+        document: "| <html>\n|   <head>\n|   <body>\n|     <table>\n|       <thead>\n|         <template>\n|           content\n|             <td>",
+    },
+    ExactDatCase {
+        id: "template-nested-table-modes",
+        source: "html/syntax/parsing/resources/template.dat (#data case 38)",
+        data: "<body><template><template><tr></tr></template><td></td></template>",
+        sha256: "4ebc7135ecd05a948b91737b9e94884fa05af94727e0bcf454583cb87a434f4a",
+        errors: "no doctype",
+        document: "| <html>\n|   <head>\n|   <body>\n|     <template>\n|       content\n|         <template>\n|           content\n|             <tr>\n|         <td>",
+    },
+];
+
 pub(crate) fn validate_ae9b_select_case(case: &WptCase) {
     let exact = AE9B_SELECT_CASES
         .iter()
@@ -139,6 +174,58 @@ pub(crate) fn is_ae9b_select_case(id: &str) -> bool {
     AE9B_SELECT_CASES.iter().any(|exact| exact.id == id)
 }
 
+pub(crate) fn is_ae10_template_case(id: &str) -> bool {
+    AE10_TEMPLATE_CASES.iter().any(|exact| exact.id == id)
+}
+
+pub(crate) fn validate_ae10_template_case(case: &WptCase) {
+    let exact = AE10_TEMPLATE_CASES
+        .iter()
+        .find(|exact| exact.id == case.id)
+        .unwrap_or_else(|| panic!("missing exact AE10 provenance oracle for '{}'", case.id));
+    validate_exact_case(case, exact, "AE10");
+}
+
+fn validate_exact_case(case: &WptCase, exact: &ExactDatCase, label: &str) {
+    let provenance_path = case
+        .provenance
+        .as_ref()
+        .unwrap_or_else(|| panic!("{label} case '{}' requires provenance", case.id));
+    let input = fs::read(&case.path)
+        .unwrap_or_else(|err| panic!("failed reading {label} input {:?}: {err}", case.path));
+    assert_eq!(input, exact.data.as_bytes(), "{label} exact #data bytes");
+    assert_ne!(input.last(), Some(&b'\n'), "{label} input adds a newline");
+    assert_eq!(sha256_hex(&input), exact.sha256, "{label} input SHA-256");
+
+    let provenance = fs::read_to_string(provenance_path)
+        .unwrap_or_else(|err| panic!("failed reading {label} provenance: {err}"));
+    assert!(provenance.contains("format: wpt-dat-case-provenance-v1\n"));
+    assert!(provenance.contains(&format!("wpt-commit: {WPT_COMMIT}\n")));
+    assert!(provenance.contains(&format!("source: {}\n", exact.source)));
+    assert!(provenance.contains("context: full-document\n"));
+    assert!(provenance.contains("scripting: not-applicable\n"));
+    assert!(provenance.contains(&format!("data-sha256: {}\n", exact.sha256)));
+    assert!(provenance.contains("adaptation: exact #data bytes extracted without a terminal newline; upstream #document translated only into html5-dom-v1 with WPT template content boundaries represented as #template-contents\n"));
+
+    let (_, sections) = provenance.split_once("#data\n").expect("provenance #data");
+    let (data, sections) = sections
+        .split_once("\n#errors\n")
+        .expect("provenance #errors");
+    let (errors, document) = sections
+        .split_once("\n#document\n")
+        .expect("provenance #document");
+    assert_eq!(data, exact.data);
+    assert_eq!(errors, exact.errors);
+    assert_eq!(document.trim_end_matches('\n'), exact.document);
+
+    let expected = fs::read_to_string(&case.expected)
+        .unwrap_or_else(|err| panic!("failed reading {label} expected: {err}"));
+    assert_eq!(
+        expected.trim_end_matches('\n'),
+        translate_upstream_document(exact.document)
+    );
+}
+
 fn translate_upstream_document(document: &str) -> String {
     let mut translated = String::from("# format: html5-dom-v1\n#document");
     for line in document.lines() {
@@ -149,6 +236,9 @@ fn translate_upstream_document(document: &str) -> String {
         translated.push_str("  ");
         if line == "<!DOCTYPE html>" {
             translated.push_str("<!doctype html>");
+        } else if line.trim_start() == "content" {
+            translated.push_str(&line[..line.len() - line.trim_start().len()]);
+            translated.push_str("#template-contents");
         } else {
             translated.push_str(line);
         }

@@ -34,6 +34,7 @@ pub enum DisplayBoxGeneration {
 pub enum BoxSuppressionReason {
     CommentNode,
     DocumentTypeNode,
+    ParserCreatedTemplateHost,
     DisplayNone,
 }
 
@@ -86,6 +87,12 @@ pub(super) fn display_box_generation(
 
     if matches!(styled.node, Node::DocumentType { .. }) {
         return DisplayBoxGeneration::SuppressSubtree(BoxSuppressionReason::DocumentTypeNode);
+    }
+
+    if html::internal::template_contents(styled.node).is_some() {
+        return DisplayBoxGeneration::SuppressSubtree(
+            BoxSuppressionReason::ParserCreatedTemplateHost,
+        );
     }
 
     if matches!(styled.node, Node::Element { .. }) && styled.style.display() == Display::None {

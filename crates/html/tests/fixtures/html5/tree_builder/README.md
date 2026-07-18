@@ -96,6 +96,16 @@ AE9a coverage baseline:
 - self-closing finalization after normal and ignored AE9 form processing,
   including whole/chunked parse-error parity.
 
+AE10 coverage baseline:
+
+- `ae10-*` fixtures expose the template host, typed `#template-contents` root,
+  fragment descendants, nested templates, table markup, normal following
+  content, unmatched close diagnostics, and unclosed-template EOF recovery;
+- each fixture carries a provenance file labeling it as a local WHATWG-subset
+  test at commit `88ae68cb961651f0f92c5d2046049f53ecdfc6cf`, not a WPT import;
+- whole/chunked runs compare the full parser-created model, including fragment
+  identities and associations.
+
 Node line grammar (examples):
 
 - Document: `#document`
@@ -103,6 +113,7 @@ Node line grammar (examples):
 - Element: `<div class="a" disabled>`
 - Text: `"hello"`
 - Comment: `<!-- comment -->`
+- Template contents root: `#template-contents`
 
 Comment serialization rule:
 

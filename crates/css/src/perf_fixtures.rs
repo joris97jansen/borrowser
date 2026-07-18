@@ -84,14 +84,14 @@ fn representative_section(index: usize) -> Node {
 }
 
 fn element(name: &str, attributes: &[(&str, &str)], children: Vec<Node>) -> Node {
-    Node::Element {
-        id: Id::INVALID,
-        name: Arc::from(name),
-        attributes: attributes
+    html::internal::node_element_from_parts(
+        Id::INVALID,
+        Arc::from(name),
+        attributes
             .iter()
             .map(|(name, value)| (Arc::from(*name), Some((*value).to_string())))
             .collect(),
-        style: Vec::new(),
+        Vec::new(),
         children,
-    }
+    )
 }

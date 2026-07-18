@@ -13,13 +13,13 @@ fn fixture_input(text: &str) -> &str {
 }
 
 fn element(name: &str, children: Vec<Node>) -> Node {
-    Node::Element {
-        id: Id::INVALID,
-        name: Arc::from(name),
-        attributes: Vec::new(),
-        style: Vec::new(),
+    html::internal::node_element_from_parts(
+        Id::INVALID,
+        Arc::from(name),
+        Vec::new(),
+        Vec::new(),
         children,
-    }
+    )
 }
 
 fn property_values_snapshot(source: &str) -> String {

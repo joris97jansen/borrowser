@@ -1,7 +1,7 @@
 use super::arena::{TestKind, TestNode};
 use super::{ArenaResult, TestPatchArena};
 use crate::dom_patch::PatchKey;
-use crate::types::{Id, Node};
+use crate::types::{DocumentFragmentNode, Id, Node};
 use std::sync::Arc;
 
 impl TestPatchArena {
@@ -27,11 +27,13 @@ impl TestPatchArena {
                 public_id: public_id.clone(),
                 system_id: system_id.clone(),
             },
-            Node::Element {
-                name, attributes, ..
-            } => TestKind::Element {
-                name: Arc::clone(name),
-                attributes: attributes.clone(),
+            Node::Element { element } => TestKind::Element {
+                name: Arc::clone(element.name()),
+                attributes: element.attributes().to_vec(),
+                template_contents: element
+                    .template_contents()
+                    .map(|fragment| patch_key(fragment.id()))
+                    .transpose()?,
             },
             Node::Text { text, .. } => TestKind::Text { text: text.clone() },
             Node::Comment { text, .. } => TestKind::Comment { text: text.clone() },
@@ -51,16 +53,39 @@ impl TestPatchArena {
         if parent.is_none() {
             self.root = Some(key);
         }
-        match node {
-            Node::Document { children, .. } | Node::Element { children, .. } => {
-                for child in children {
-                    self.insert_from_dom(child, Some(key))?;
-                    if let Some(entry) = self.nodes.get_mut(&key) {
-                        entry.children.push(patch_key(child.id())?);
-                    }
+        if let Node::Element { element } = node
+            && let Some(fragment) = element.template_contents()
+        {
+            let contents = patch_key(fragment.id())?;
+            if self.nodes.contains_key(&contents) || self.allocated.contains(&contents) {
+                return Err("duplicate key".to_string());
+            }
+            self.nodes.insert(
+                contents,
+                TestNode {
+                    kind: TestKind::DocumentFragment {
+                        kind: fragment.kind(),
+                        host: key,
+                    },
+                    parent: None,
+                    children: Vec::new(),
+                },
+            );
+            self.allocated.insert(contents);
+            for child in fragment.children() {
+                self.insert_from_dom(child, Some(contents))?;
+                if let Some(entry) = self.nodes.get_mut(&contents) {
+                    entry.children.push(patch_key(child.id())?);
                 }
             }
-            Node::DocumentType { .. } | Node::Text { .. } | Node::Comment { .. } => {}
+        }
+        if let Some(children) = node.children() {
+            for child in children {
+                self.insert_from_dom(child, Some(key))?;
+                if let Some(entry) = self.nodes.get_mut(&key) {
+                    entry.children.push(patch_key(child.id())?);
+                }
+            }
         }
         Ok(())
     }
@@ -96,13 +121,24 @@ impl TestPatchArena {
                 public_id: public_id.clone(),
                 system_id: system_id.clone(),
             },
-            TestKind::Element { name, attributes } => Node::Element {
+            TestKind::Element {
+                name,
+                attributes,
+                template_contents,
+            } => crate::Node::from_element_parts(
                 id,
-                name: Arc::clone(name),
-                attributes: attributes.clone(),
-                style: Vec::new(),
+                Arc::clone(name),
+                attributes.clone(),
+                Vec::new(),
+                template_contents
+                    .map(|contents| self.materialize_fragment(contents))
+                    .transpose()?
+                    .map(Box::new),
                 children,
-            },
+            ),
+            TestKind::DocumentFragment { .. } => {
+                return Err("template contents must materialize through its host".to_string());
+            }
             TestKind::Text { text } => Node::Text {
                 id,
                 text: text.clone(),
@@ -113,6 +149,27 @@ impl TestPatchArena {
             },
         };
         Ok(result)
+    }
+
+    fn materialize_fragment(&self, key: PatchKey) -> ArenaResult<DocumentFragmentNode> {
+        let Some(node) = self.nodes.get(&key) else {
+            return Err("missing template contents".to_string());
+        };
+        let TestKind::DocumentFragment { kind, .. } = &node.kind else {
+            return Err("template contents association targets a non-fragment".to_string());
+        };
+        let children = node
+            .children
+            .iter()
+            .map(|child| self.materialize_node(*child))
+            .collect::<Result<Vec<_>, _>>()?;
+        if *kind != crate::types::ParserCreatedFragmentKind::TemplateContents {
+            return Err("unsupported parser-created fragment kind".to_string());
+        }
+        Ok(DocumentFragmentNode::new_template_contents(
+            Id::INVALID,
+            children,
+        ))
     }
 }
 

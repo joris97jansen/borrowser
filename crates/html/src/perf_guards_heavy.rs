@@ -34,32 +34,27 @@ fn make_rawtext_adversarial(bytes: usize) -> String {
 }
 
 fn node_count(node: &Node) -> usize {
-    match node {
-        Node::Document { children, .. } => 1 + children.iter().map(node_count).sum::<usize>(),
-        Node::Element { children, .. } => 1 + children.iter().map(node_count).sum::<usize>(),
-        Node::Text { .. } => 1,
-        Node::Comment { .. } => 1,
-    }
+    crate::traverse::full_model_node_count(node)
 }
 
 fn text_node_count(node: &Node) -> usize {
-    match node {
-        Node::Document { children, .. } | Node::Element { children, .. } => {
-            children.iter().map(text_node_count).sum()
-        }
-        Node::Text { .. } => 1,
-        Node::Comment { .. } => 0,
-    }
+    crate::traverse::full_model_preorder(node)
+        .filter(|visit| {
+            matches!(
+                visit.entry,
+                crate::traverse::FullModelNodeRef::Node(Node::Text { .. })
+            )
+        })
+        .count()
 }
 
 fn total_text_bytes(node: &Node) -> usize {
-    match node {
-        Node::Document { children, .. } | Node::Element { children, .. } => {
-            children.iter().map(total_text_bytes).sum()
-        }
-        Node::Text { text, .. } => text.len(),
-        Node::Comment { .. } => 0,
-    }
+    crate::traverse::full_model_preorder(node)
+        .filter_map(|visit| match visit.entry {
+            crate::traverse::FullModelNodeRef::Node(Node::Text { text, .. }) => Some(text.len()),
+            _ => None,
+        })
+        .sum()
 }
 
 fn assert_no_parse_errors(metrics: &ParseMetrics, label: &str) {

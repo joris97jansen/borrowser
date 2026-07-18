@@ -1,0 +1,14 @@
+# format: html5-dom-v1
+# status: active
+#document
+  <!doctype html>
+  <html>
+    <head>
+    <body>
+      <template>
+        #template-contents
+          "outer"
+          <template>
+            #template-contents
+              <b>
+                "inner"

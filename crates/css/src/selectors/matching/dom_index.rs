@@ -48,12 +48,9 @@ impl<'a> SelectorDomIndex<'a> {
                     propagate_last_child_to_parent: false,
                 });
             }
-            Node::Element {
-                name,
-                attributes,
-                children,
-                ..
-            } => {
+            Node::Element { element } => {
+                let name = element.name();
+                let attributes = element.attributes();
                 debug_assert_canonical_html_element_name(name);
                 let root_id = SelectorDomElementId(1);
                 elements.push(IndexedElement {
@@ -65,7 +62,7 @@ impl<'a> SelectorDomIndex<'a> {
                 });
                 stack.push(ChildFrame {
                     parent_element: Some(root_id),
-                    children,
+                    children: element.children(),
                     next_child_index: 0,
                     last_child_element: None,
                     propagate_last_child_to_parent: false,
@@ -89,12 +86,9 @@ impl<'a> SelectorDomIndex<'a> {
             let mut push_frame = None;
 
             match child {
-                Node::Element {
-                    name,
-                    attributes,
-                    children,
-                    ..
-                } => {
+                Node::Element { element } => {
+                    let name = element.name();
+                    let attributes = element.attributes();
                     debug_assert_canonical_html_element_name(name);
                     let element_id =
                         SelectorDomElementId((elements.len() + 1).try_into().expect("element id"));
@@ -108,7 +102,7 @@ impl<'a> SelectorDomIndex<'a> {
                     frame.last_child_element = Some(element_id);
                     push_frame = Some(ChildFrame {
                         parent_element: Some(element_id),
-                        children,
+                        children: element.children(),
                         next_child_index: 0,
                         last_child_element: None,
                         propagate_last_child_to_parent: false,

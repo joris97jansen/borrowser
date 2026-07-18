@@ -1,5 +1,6 @@
 use super::DomSnapshotOptions;
 use crate::Node;
+use crate::traverse::{FullModelNodeRef, full_model_preorder};
 use std::fmt::Write;
 use std::sync::Arc;
 
@@ -9,27 +10,19 @@ pub(super) fn walk_snapshot(
     indent_level: &mut usize,
     out: &mut Vec<String>,
 ) {
-    let mut line = String::new();
-    const INDENT_STEP: usize = 2;
-    let spaces = indent_level.saturating_mul(INDENT_STEP);
-    #[allow(clippy::manual_repeat_n)]
-    line.extend(std::iter::repeat(' ').take(spaces));
-    write_node_line(&mut line, node, options);
-    out.push(line);
-    match node {
-        Node::Document { children, .. } | Node::Element { children, .. } => {
-            *indent_level += 1;
-            for child in children {
-                walk_snapshot(child, options, indent_level, out);
+    let base_indent = *indent_level;
+    for visit in full_model_preorder(node) {
+        let mut line = "  ".repeat(base_indent.saturating_add(visit.depth));
+        match visit.entry {
+            FullModelNodeRef::Node(node) => write_node_line(&mut line, node, options),
+            FullModelNodeRef::DocumentFragment(fragment) => {
+                line.push_str("#template-contents");
+                if !options.ignore_ids {
+                    let _ = write!(&mut line, " id={}", fragment.id().0);
+                }
             }
-            debug_assert!(
-                *indent_level > 0,
-                "indent level underflow at {}",
-                node_label(node)
-            );
-            *indent_level -= 1;
         }
-        Node::DocumentType { .. } | Node::Text { .. } | Node::Comment { .. } => {}
+        out.push(line);
     }
 }
 
@@ -50,9 +43,9 @@ pub(super) fn node_label(node: &Node) -> String {
             }
             label
         }
-        Node::Element {
-            name, attributes, ..
-        } => {
+        Node::Element { element } => {
+            let name = element.name();
+            let attributes = element.attributes();
             let mut label = String::from(name.as_ref());
             // Pick id/class via canonical attribute order so duplicate attributes
             // produce deterministic labels in mismatch paths.
@@ -145,13 +138,11 @@ pub(super) fn write_node_line(out: &mut String, node: &Node, options: &DomSnapsh
                 write!(out, "{}", id.0).ok();
             }
         }
-        Node::Element {
-            id,
-            name,
-            attributes,
-            style,
-            ..
-        } => {
+        Node::Element { element } => {
+            let id = element.id();
+            let name = element.name();
+            let attributes = element.attributes();
+            let style = element.style();
             out.push('<');
             out.push_str(name);
             for index in canonical_attribute_order(attributes) {

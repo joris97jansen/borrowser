@@ -262,7 +262,12 @@ fn close_cell_pops_to_cell_boundary_clears_afe_and_switches_to_in_row() {
             .unwrap_or_else(|| panic!("{tag} insertion should not hit resource limits"));
     }
 
-    builder.active_formatting.push_marker();
+    builder
+        .active_formatting
+        .push_marker(crate::html5::tree_builder::formatting::AfeMarker::new(
+            crate::html5::tree_builder::formatting::AfeMarkerKind::FormattingBoundary,
+            None,
+        ));
 
     let b = ctx.atoms.intern_ascii_folded("b").expect("atom interning");
     let b_key = builder
@@ -311,5 +316,82 @@ fn close_cell_pops_to_cell_boundary_clears_afe_and_switches_to_in_row() {
     assert!(
         after_scope_scan_steps >= after_scope_scan_calls,
         "scope-scan steps should grow monotonically with scan calls"
+    );
+}
+
+#[test]
+fn caption_and_cell_markers_record_typed_diagnostic_owners() {
+    use crate::html5::shared::Token;
+    use crate::html5::tree_builder::{AfeDiagnosticEntry, AfeMarker, AfeMarkerKind};
+
+    let resolver = EmptyResolver;
+    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+    let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
+    let table = ctx.atoms.intern_ascii_folded("table").unwrap();
+    let caption = ctx.atoms.intern_ascii_folded("caption").unwrap();
+
+    for name in [table, caption] {
+        let _ = builder
+            .process(
+                &Token::StartTag {
+                    name,
+                    attrs: Vec::new(),
+                    self_closing: false,
+                },
+                &ctx.atoms,
+                &resolver,
+            )
+            .unwrap();
+    }
+    let caption_owner = builder
+        .state_snapshot()
+        .open_element_keys
+        .last()
+        .copied()
+        .unwrap();
+    assert_eq!(
+        builder.state_snapshot().active_formatting_entries,
+        vec![AfeDiagnosticEntry::Marker(AfeMarker::new(
+            AfeMarkerKind::Caption,
+            Some(caption_owner),
+        ))]
+    );
+
+    let _ = builder
+        .process(&Token::EndTag { name: caption }, &ctx.atoms, &resolver)
+        .unwrap();
+    let tbody = ctx.atoms.intern_ascii_folded("tbody").unwrap();
+    let tr = ctx.atoms.intern_ascii_folded("tr").unwrap();
+    let td = ctx.atoms.intern_ascii_folded("td").unwrap();
+    for name in [tbody, tr, td] {
+        let _ = builder
+            .process(
+                &Token::StartTag {
+                    name,
+                    attrs: Vec::new(),
+                    self_closing: false,
+                },
+                &ctx.atoms,
+                &resolver,
+            )
+            .unwrap();
+    }
+    let cell_owner = builder
+        .state_snapshot()
+        .open_element_keys
+        .last()
+        .copied()
+        .unwrap();
+    assert_eq!(
+        builder.state_snapshot().active_formatting_entries,
+        vec![AfeDiagnosticEntry::Marker(AfeMarker::new(
+            AfeMarkerKind::TableCell,
+            Some(cell_owner),
+        ))]
     );
 }

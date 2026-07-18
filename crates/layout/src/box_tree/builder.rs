@@ -443,7 +443,8 @@ fn supports_anonymous_block_children(node: &BoxNode<'_, '_>) -> bool {
 
 fn list_container_kind(node: &Node) -> (bool, bool) {
     match node {
-        Node::Element { name, .. } => {
+        Node::Element { element } => {
+            let name = element.name();
             let is_ul = name.eq_ignore_ascii_case("ul");
             let is_ol = name.eq_ignore_ascii_case("ol");
             (is_ul, is_ol)

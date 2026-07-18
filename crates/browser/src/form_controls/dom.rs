@@ -9,19 +9,16 @@ pub enum InputControlType {
 }
 
 pub fn input_control_type(node: &Node) -> InputControlType {
-    let Node::Element {
-        name, attributes, ..
-    } = node
-    else {
+    let Node::Element { element } = node else {
         return InputControlType::Other;
     };
 
-    if !name.eq_ignore_ascii_case("input") {
+    if !element.name().eq_ignore_ascii_case("input") {
         return InputControlType::Other;
     }
 
     let mut ty: Option<&str> = None;
-    for (k, v) in attributes {
+    for (k, v) in element.attributes() {
         if k.eq_ignore_ascii_case("type") {
             ty = v.as_deref().map(str::trim).filter(|s| !s.is_empty());
             break;
@@ -39,7 +36,8 @@ pub fn input_control_type(node: &Node) -> InputControlType {
 
 pub(super) fn attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
     match node {
-        Node::Element { attributes, .. } => attributes
+        Node::Element { element } => element
+            .attributes()
             .iter()
             .find(|(k, _)| k.eq_ignore_ascii_case(name))
             .and_then(|(_, v)| v.as_deref()),
@@ -49,9 +47,10 @@ pub(super) fn attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
 
 pub(super) fn has_attr(node: &Node, name: &str) -> bool {
     match node {
-        Node::Element { attributes, .. } => {
-            attributes.iter().any(|(k, _)| k.eq_ignore_ascii_case(name))
-        }
+        Node::Element { element } => element
+            .attributes()
+            .iter()
+            .any(|(k, _)| k.eq_ignore_ascii_case(name)),
         _ => false,
     }
 }
@@ -60,9 +59,8 @@ pub(super) fn collect_text(nodes: &[Node], out: &mut String) {
     for n in nodes {
         match n {
             Node::Text { text, .. } => out.push_str(text),
-            Node::Element { children, .. } | Node::Document { children, .. } => {
-                collect_text(children, out);
-            }
+            Node::Element { element } => collect_text(element.children(), out),
+            Node::Document { children, .. } => collect_text(children, out),
             Node::Comment { .. } | Node::DocumentType { .. } => {}
         }
     }

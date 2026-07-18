@@ -200,6 +200,9 @@ For a fixed sequence of same-document mutations and full document replacements:
 - `StackingContextId` values remain frame-local;
 - traversal/source-order indices remain frame-local;
 - no cache or artifact reuse behavior is implied by identity existence.
+- parser-created template hosts, their contents roots, and contents descendants
+  receive no retained render identity; their parser/debug DOM identities remain
+  available in the HTML full-model domain.
 
 ## Future Extension Points
 

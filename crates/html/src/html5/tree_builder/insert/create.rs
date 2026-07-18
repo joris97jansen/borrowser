@@ -231,6 +231,7 @@ impl Html5TreeBuilder {
                 .current()
                 .map(OpenElement::key)
                 .unwrap_or(document_key);
+            let parent = this.live_tree.template_contents(parent).unwrap_or(parent);
             this.append_comment_child(parent, resolved)
         })
     }

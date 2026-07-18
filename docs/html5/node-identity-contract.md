@@ -38,6 +38,9 @@ Related contracts:
 - `Create*` introduces a key before first use by structure/content patches.
 - Parser-created `DocumentType` nodes receive ordinary `PatchKey` identity in
   the patch stream.
+- Parser-created template hosts and template-contents roots receive separate,
+  stable `PatchKey` identities. The host/contents association is typed and is
+  not a parenting edge.
 - Parenting invariants:
   - a node has at most one parent,
   - cycles are forbidden,
@@ -50,6 +53,8 @@ Related contracts:
 - Exposed by materialized `html::Node` values consumed by browser/runtime, CSS,
   Layout, and Paint-facing handoffs.
 - `DocumentType` is part of this materialized DOM identity domain when present.
+- A typed template-contents fragment and all fragment descendants participate
+  in this identity domain even though ordinary traversal does not enter them.
 - Today, browser `DomStore` materialization maps live `PatchKey(n)` to
   `Id(n)`.
 - That numeric bridge is owned by DOM materialization. It is not a license for
@@ -66,6 +71,8 @@ Related contracts:
   but separate from `PatchKey` and `html::internal::Id`.
 - Non-rendering parser-created nodes such as `DocumentType` do not create
   retained render identity anchors.
+- A typed template host and its contents root/descendants create no retained
+  render identity anchors.
 - Full document replacement starts a new retained render identity domain even
   when fresh parser output produces matching numeric patch keys or DOM IDs.
 
@@ -92,6 +99,20 @@ Related contracts:
 - Maps internal `Node::id()` to `PatchKey` via `PatchState::id_to_key`.
 - Mapping is stable for a node while present.
 - Reset path (`Clear`) rebuilds baseline and resets id-to-key map state.
+
+### AE10 full-model identity
+
+The recursive materialized fragment stores no host ID; physical ownership by
+the template element's opaque `ElementNode` is authoritative. Receiver-only
+`Node::set_id()` therefore cannot stale an association, and ordinary callers
+cannot reach the private association slot. Crate-owned fragment ID mutation
+changes only the fragment identity and is used through a controlled
+test-harness whole-model transformation where cross-crate legacy tests require
+it. Full-model missing-ID assignment, lookup, snapshot traversal
+and diff collection use deterministic preorder: host, associated contents root
+and its descendants, then ordinary host children. Duplicate detection covers
+all ordinary and fragment identities, including nested templates. Ordinary-
+tree lookup intentionally does not cross the association.
 
 ## Integration Guarantees
 

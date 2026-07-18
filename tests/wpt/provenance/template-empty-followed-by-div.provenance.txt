@@ -1,0 +1,18 @@
+format: wpt-dat-case-provenance-v1
+wpt-commit: 2c705104a295c48053eeddf7fe0170d790a4e853
+source: html/syntax/parsing/resources/template.dat (#data case 3)
+context: full-document
+scripting: not-applicable
+data-sha256: 41a6c6dacbaf8c950c6ef2139bf9593b13261aaff35757358b3ea8557f2a32da
+adaptation: exact #data bytes extracted without a terminal newline; upstream #document translated only into html5-dom-v1 with WPT template content boundaries represented as #template-contents
+#data
+<template></template><div></div>
+#errors
+no doctype
+#document
+| <html>
+|   <head>
+|     <template>
+|       content
+|   <body>
+|     <div>

@@ -53,8 +53,58 @@ impl AfeElementEntry {
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) enum AfeEntry {
-    Marker,
+    Marker(AfeMarker),
     Element(AfeElementEntry),
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum AfeMarkerKind {
+    FormattingBoundary,
+    Caption,
+    TableCell,
+    Template,
+}
+
+impl AfeMarkerKind {
+    pub(crate) fn digest_tag(self) -> u8 {
+        match self {
+            Self::FormattingBoundary => 1,
+            Self::Caption => 2,
+            Self::TableCell => 3,
+            Self::Template => 4,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct AfeMarker {
+    pub(crate) kind: AfeMarkerKind,
+    pub(crate) owner: Option<PatchKey>,
+}
+
+/// Proof that the marker-bounded cleanup operation ran exactly once at a
+/// parser transition site. Marker ownership does not affect the cleanup.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) struct AfeMarkerClear {
+    removed: usize,
+}
+
+impl AfeMarkerClear {
+    pub(crate) fn removed(self) -> usize {
+        self.removed
+    }
+}
+
+impl AfeMarker {
+    pub(crate) fn new(kind: AfeMarkerKind, owner: Option<PatchKey>) -> Self {
+        Self { kind, owner }
+    }
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) enum AfeDiagnosticEntry {
+    Marker(AfeMarker),
+    Element(PatchKey),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -64,6 +114,10 @@ pub(crate) struct ActiveFormattingList {
 }
 
 impl ActiveFormattingList {
+    pub(crate) fn try_reserve_one(&mut self) -> Result<(), ()> {
+        self.items.try_reserve(1).map_err(|_| ())
+    }
+
     #[inline]
     pub(crate) fn is_empty(&self) -> bool {
         self.items.is_empty()
@@ -74,14 +128,42 @@ impl ActiveFormattingList {
         self.items.len()
     }
 
+    pub(crate) fn diagnostic_snapshot(&self) -> Vec<AfeDiagnosticEntry> {
+        self.diagnostic_entries().collect()
+    }
+
+    pub(crate) fn diagnostic_entries(&self) -> impl Iterator<Item = AfeDiagnosticEntry> + '_ {
+        self.items.iter().map(|entry| match entry {
+            AfeEntry::Marker(marker) => AfeDiagnosticEntry::Marker(*marker),
+            AfeEntry::Element(element) => AfeDiagnosticEntry::Element(element.key),
+        })
+    }
+
     pub(crate) fn clear(&mut self) {
         // Note: does not reset max_depth (high-water mark metric).
         self.items.clear();
     }
 
-    pub(crate) fn push_marker(&mut self) {
-        self.items.push(AfeEntry::Marker);
+    pub(crate) fn push_marker(&mut self, marker: AfeMarker) {
+        self.items.push(AfeEntry::Marker(marker));
         self.max_depth = self.max_depth.max(self.items.len() as u32);
+    }
+
+    #[cfg(test)]
+    pub(in crate::html5::tree_builder) fn corrupt_last_template_marker_owner_for_test(
+        &mut self,
+        owner: Option<PatchKey>,
+    ) {
+        let marker = self
+            .items
+            .iter_mut()
+            .rev()
+            .find_map(|entry| match entry {
+                AfeEntry::Marker(marker) if marker.kind == AfeMarkerKind::Template => Some(marker),
+                _ => None,
+            })
+            .expect("open template marker");
+        marker.owner = owner;
     }
 
     /// Pushes a formatting element entry while enforcing the HTML5 Noah's Ark
@@ -111,11 +193,11 @@ impl ActiveFormattingList {
     /// marker. If no marker exists, clears the entire list.
     ///
     /// Returns the number of removed entries.
-    pub(crate) fn clear_to_last_marker(&mut self) -> usize {
-        match self
+    pub(crate) fn clear_to_last_marker(&mut self) -> AfeMarkerClear {
+        let removed = match self
             .items
             .iter()
-            .rposition(|entry| *entry == AfeEntry::Marker)
+            .rposition(|entry| matches!(entry, AfeEntry::Marker(_)))
         {
             Some(marker_index) => {
                 let removed = self.items.len() - marker_index;
@@ -127,13 +209,14 @@ impl ActiveFormattingList {
                 self.items.clear();
                 removed
             }
-        }
+        };
+        AfeMarkerClear { removed }
     }
 
     pub(crate) fn remove(&mut self, key: PatchKey) -> Option<AfeElementEntry> {
         let index = self.find_index_by_key(key)?;
         match self.items.remove(index) {
-            AfeEntry::Marker => unreachable!("find_index_by_key() must return an element entry"),
+            AfeEntry::Marker(_) => unreachable!("find_index_by_key() must return an element entry"),
             AfeEntry::Element(entry) => Some(entry),
         }
     }
@@ -141,7 +224,7 @@ impl ActiveFormattingList {
     #[inline]
     pub(crate) fn find_by_key(&self, key: PatchKey) -> Option<&AfeElementEntry> {
         self.items.iter().find_map(|entry| match entry {
-            AfeEntry::Marker => None,
+            AfeEntry::Marker(_) => None,
             AfeEntry::Element(element) if element.key == key => Some(element),
             AfeEntry::Element(_) => None,
         })
@@ -155,9 +238,9 @@ impl ActiveFormattingList {
         self.items
             .iter()
             .rev()
-            .take_while(|entry| !matches!(entry, AfeEntry::Marker))
+            .take_while(|entry| !matches!(entry, AfeEntry::Marker(_)))
             .find_map(|entry| match entry {
-                AfeEntry::Marker => None,
+                AfeEntry::Marker(_) => None,
                 AfeEntry::Element(element) if element.name == name => Some(element),
                 AfeEntry::Element(_) => None,
             })
@@ -169,9 +252,9 @@ impl ActiveFormattingList {
             .iter()
             .enumerate()
             .rev()
-            .take_while(|(_, entry)| !matches!(entry, AfeEntry::Marker))
+            .take_while(|(_, entry)| !matches!(entry, AfeEntry::Marker(_)))
             .find_map(|(index, entry)| match entry {
-                AfeEntry::Marker => None,
+                AfeEntry::Marker(_) => None,
                 AfeEntry::Element(element) if element.name == name => Some(index),
                 AfeEntry::Element(_) => None,
             })
@@ -182,7 +265,6 @@ impl ActiveFormattingList {
         self.max_depth
     }
 
-    #[cfg(any(test, feature = "internal-api"))]
     pub(crate) fn entries(&self) -> &[AfeEntry] {
         &self.items
     }
@@ -190,14 +272,14 @@ impl ActiveFormattingList {
     #[inline]
     pub(crate) fn element_at(&self, index: usize) -> Option<&AfeElementEntry> {
         match self.items.get(index)? {
-            AfeEntry::Marker => None,
+            AfeEntry::Marker(_) => None,
             AfeEntry::Element(element) => Some(element),
         }
     }
 
     pub(crate) fn remove_element_at(&mut self, index: usize) -> AfeElementEntry {
         match self.items.remove(index) {
-            AfeEntry::Marker => unreachable!("AAA must not remove a marker as an element"),
+            AfeEntry::Marker(_) => unreachable!("AAA must not remove a marker as an element"),
             AfeEntry::Element(entry) => entry,
         }
     }
@@ -222,7 +304,7 @@ impl ActiveFormattingList {
             "AFE invariant violated: replacement PatchKey already present elsewhere in active formatting list"
         );
         match std::mem::replace(&mut self.items[index], AfeEntry::Element(entry)) {
-            AfeEntry::Marker => unreachable!("AAA must not replace a marker as an element"),
+            AfeEntry::Marker(_) => unreachable!("AAA must not replace a marker as an element"),
             AfeEntry::Element(previous) => previous,
         }
     }
@@ -230,13 +312,13 @@ impl ActiveFormattingList {
     fn reconstruction_start_index(&self, open_elements: &OpenElementsStack) -> Option<usize> {
         let mut index = self.items.len().checked_sub(1)?;
         match &self.items[index] {
-            AfeEntry::Marker => return None,
+            AfeEntry::Marker(_) => return None,
             AfeEntry::Element(entry) if open_elements.contains_key(entry.key) => return None,
             AfeEntry::Element(_) => {}
         }
         while index > 0 {
             match &self.items[index - 1] {
-                AfeEntry::Marker => break,
+                AfeEntry::Marker(_) => break,
                 AfeEntry::Element(entry) if open_elements.contains_key(entry.key) => break,
                 AfeEntry::Element(_) => index -= 1,
             }
@@ -246,7 +328,7 @@ impl ActiveFormattingList {
 
     fn replace_key_at(&mut self, index: usize, key: PatchKey) {
         match &mut self.items[index] {
-            AfeEntry::Marker => unreachable!("reconstruction key replacement targets elements"),
+            AfeEntry::Marker(_) => unreachable!("reconstruction key replacement targets elements"),
             AfeEntry::Element(entry) => entry.key = key,
         }
     }
@@ -259,7 +341,7 @@ impl ActiveFormattingList {
         let mut oldest_match_index = None;
         for index in (0..self.items.len()).rev() {
             match &self.items[index] {
-                AfeEntry::Marker => break,
+                AfeEntry::Marker(_) => break,
                 AfeEntry::Element(existing) if existing.same_name_and_attrs(candidate) => {
                     matching_entries += 1;
                     oldest_match_index = Some(index);
@@ -272,14 +354,14 @@ impl ActiveFormattingList {
         }
         let index = oldest_match_index.expect("matching_entries >= 3 implies an oldest match");
         match self.items.remove(index) {
-            AfeEntry::Marker => unreachable!("duplicate trimming must never target a marker"),
+            AfeEntry::Marker(_) => unreachable!("duplicate trimming must never target a marker"),
             AfeEntry::Element(entry) => Some(entry),
         }
     }
 
     pub(crate) fn find_index_by_key(&self, key: PatchKey) -> Option<usize> {
         self.items.iter().position(|entry| match entry {
-            AfeEntry::Marker => false,
+            AfeEntry::Marker(_) => false,
             AfeEntry::Element(element) => element.key == key,
         })
     }
@@ -314,7 +396,7 @@ impl Html5TreeBuilder {
         let mut reconstructed = 0usize;
         for index in start_index..self.active_formatting.items.len() {
             let entry = match &self.active_formatting.items[index] {
-                AfeEntry::Marker => {
+                AfeEntry::Marker(_) => {
                     unreachable!("reconstruction suffix must not contain markers")
                 }
                 AfeEntry::Element(entry) => entry.clone(),
@@ -331,7 +413,10 @@ impl Html5TreeBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::{ActiveFormattingList, AfeAttributeSnapshot, AfeElementEntry, AfeEntry};
+    use super::{
+        ActiveFormattingList, AfeAttributeSnapshot, AfeElementEntry, AfeEntry, AfeMarker,
+        AfeMarkerKind,
+    };
     use crate::dom_patch::PatchKey;
     use crate::html5::shared::AtomId;
 
@@ -351,11 +436,15 @@ mod tests {
         AfeElementEntry::new(key(id), tag(name), attrs)
     }
 
+    fn marker() -> AfeMarker {
+        AfeMarker::new(AfeMarkerKind::FormattingBoundary, None)
+    }
+
     fn keys(list: &ActiveFormattingList) -> Vec<Option<PatchKey>> {
         list.entries()
             .iter()
             .map(|entry| match entry {
-                AfeEntry::Marker => None,
+                AfeEntry::Marker(_) => None,
                 AfeEntry::Element(element) => Some(element.key),
             })
             .collect()
@@ -365,10 +454,10 @@ mod tests {
     fn push_marker_adds_marker_entry() {
         let mut list = ActiveFormattingList::default();
 
-        list.push_marker();
+        list.push_marker(marker());
 
         assert_eq!(list.len(), 1);
-        assert_eq!(list.entries(), &[AfeEntry::Marker]);
+        assert_eq!(list.entries(), &[AfeEntry::Marker(marker())]);
         assert_eq!(list.max_depth(), 1);
     }
 
@@ -392,7 +481,7 @@ mod tests {
         let first = element(10, 1, vec![]);
         let second = element(11, 2, vec![]);
         list.push_formatting_element(first.clone());
-        list.push_marker();
+        list.push_marker(marker());
         list.push_formatting_element(second.clone());
         let before = list.entries().to_vec();
 
@@ -406,7 +495,7 @@ mod tests {
     fn remove_preserves_marker_and_relative_order_of_remaining_entries() {
         let mut list = ActiveFormattingList::default();
         list.push_formatting_element(element(1, 1, vec![]));
-        list.push_marker();
+        list.push_marker(marker());
         let second = element(2, 2, vec![]);
         let third = element(3, 3, vec![]);
         list.push_formatting_element(second.clone());
@@ -422,11 +511,11 @@ mod tests {
     fn clear_to_last_marker_removes_suffix_and_marker_only() {
         let mut list = ActiveFormattingList::default();
         list.push_formatting_element(element(1, 1, vec![]));
-        list.push_marker();
+        list.push_marker(marker());
         list.push_formatting_element(element(2, 2, vec![]));
         list.push_formatting_element(element(3, 3, vec![]));
 
-        let removed = list.clear_to_last_marker();
+        let removed = list.clear_to_last_marker().removed();
 
         assert_eq!(removed, 3);
         assert_eq!(keys(&list), vec![Some(key(1))]);
@@ -438,7 +527,7 @@ mod tests {
         list.push_formatting_element(element(1, 1, vec![]));
         list.push_formatting_element(element(2, 2, vec![]));
 
-        let removed = list.clear_to_last_marker();
+        let removed = list.clear_to_last_marker().removed();
 
         assert_eq!(removed, 2);
         assert!(list.is_empty());
@@ -450,7 +539,7 @@ mod tests {
         let before_marker = element(1, 7, vec![]);
         let after_marker = element(2, 7, vec![]);
         list.push_formatting_element(before_marker);
-        list.push_marker();
+        list.push_marker(marker());
         list.push_formatting_element(after_marker.clone());
 
         let found = list.find_last_by_name_after_last_marker(tag(7));
@@ -485,7 +574,7 @@ mod tests {
         let after_marker_b = element(3, 7, attrs.clone());
         let after_marker_c = element(4, 7, attrs.clone());
         list.push_formatting_element(before_marker);
-        list.push_marker();
+        list.push_marker(marker());
         list.push_formatting_element(after_marker_a.clone());
         list.push_formatting_element(after_marker_b.clone());
         list.push_formatting_element(after_marker_c.clone());
@@ -522,7 +611,7 @@ mod tests {
     fn max_depth_tracks_high_water_mark_across_clear_operations() {
         let mut list = ActiveFormattingList::default();
         list.push_formatting_element(element(1, 1, vec![]));
-        list.push_marker();
+        list.push_marker(marker());
         list.push_formatting_element(element(2, 2, vec![]));
         assert_eq!(list.max_depth(), 3);
 

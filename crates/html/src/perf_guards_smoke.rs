@@ -11,13 +11,7 @@ const MAX_TOKENS_PER_BYTE_SMOKE: f64 = 0.25;
 const MAX_PATCHES_PER_BYTE_SMOKE: f64 = 0.35;
 
 fn node_count(node: &Node) -> usize {
-    match node {
-        Node::Document { children, .. } => 1 + children.iter().map(node_count).sum::<usize>(),
-        Node::Element { children, .. } => 1 + children.iter().map(node_count).sum::<usize>(),
-        Node::DocumentType { .. } => 1,
-        Node::Text { .. } => 1,
-        Node::Comment { .. } => 1,
-    }
+    crate::traverse::full_model_node_count(node)
 }
 
 fn assert_no_parse_errors(counters: &HtmlParseCounters, label: &str) {

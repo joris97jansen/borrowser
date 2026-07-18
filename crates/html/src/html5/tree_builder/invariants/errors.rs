@@ -65,6 +65,12 @@ pub enum DomInvariantError {
     CycleDetected {
         key: PatchKey,
     },
+    TemplateAssociation {
+        detail: String,
+    },
+    UnreachableNode {
+        key: PatchKey,
+    },
 }
 
 impl std::fmt::Display for DomInvariantError {
@@ -150,6 +156,13 @@ impl std::fmt::Display for DomInvariantError {
             Self::CycleDetected { key } => {
                 write!(f, "DOM invariant failed: cycle detected at node {key:?}")
             }
+            Self::TemplateAssociation { detail } => {
+                write!(f, "DOM invariant failed: template association: {detail}")
+            }
+            Self::UnreachableNode { key } => write!(
+                f,
+                "DOM invariant failed: node {key:?} is unreachable from the document full model"
+            ),
         }
     }
 }
@@ -234,6 +247,10 @@ pub enum PatchInvariantError {
     },
     ClearBatchMustReestablishDocument,
     FinalDomInvariantViolation(DomInvariantError),
+    TemplateAssociation {
+        patch_index: usize,
+        detail: String,
+    },
     Internal(&'static str),
 }
 
@@ -362,6 +379,13 @@ impl std::fmt::Display for PatchInvariantError {
                     "patch invariant failed: resulting DOM state is invalid: {source}"
                 )
             }
+            Self::TemplateAssociation {
+                patch_index,
+                detail,
+            } => write!(
+                f,
+                "patch invariant failed at patch #{patch_index} (template association): {detail}"
+            ),
             Self::Internal(message) => {
                 write!(f, "patch invariant checker internal failure: {message}")
             }

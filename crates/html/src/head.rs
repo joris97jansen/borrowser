@@ -40,14 +40,11 @@ fn find_head(dom: &Node) -> Option<&Node> {
     };
 
     for child in children {
-        let Node::Element {
-            name,
-            children: html_children,
-            ..
-        } = child
-        else {
+        let Node::Element { element } = child else {
             continue;
         };
+        let name = element.name();
+        let html_children = element.children();
 
         debug_assert_lowercase_atom(name, "head extraction tag");
         if name.as_ref() != "html" {
@@ -56,9 +53,10 @@ fn find_head(dom: &Node) -> Option<&Node> {
 
         // search inside <html> for <head>
         for hc in html_children {
-            let Node::Element { name, .. } = hc else {
+            let Node::Element { element } = hc else {
                 continue;
             };
+            let name = element.name();
 
             debug_assert_lowercase_atom(name, "head extraction tag");
             if name.as_ref() == "head" {
@@ -71,9 +69,11 @@ fn find_head(dom: &Node) -> Option<&Node> {
 }
 
 fn fill_head_metadata_from(head: &Node, out: &mut HeadMetadata) {
-    if let Node::Element { children, .. } = head {
-        for child in children {
-            if let Node::Element { name, children, .. } = child {
+    if let Node::Element { element } = head {
+        for child in element.children() {
+            if let Node::Element { element } = child {
+                let name = element.name();
+                let children = element.children();
                 debug_assert_lowercase_atom(name, "head extraction tag");
                 // <title>
                 if name.as_ref() == "title" && out.title.is_none() {
@@ -126,4 +126,91 @@ fn first_text_child(children: &[Node]) -> Option<String> {
         }
     }
     None
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use crate::types::{DocumentFragmentNode, Id};
+
+    use super::*;
+
+    fn element(id: u32, name: &str, attributes: &[(&str, &str)], children: Vec<Node>) -> Node {
+        crate::Node::from_element_parts(
+            Id(id),
+            Arc::from(name),
+            attributes
+                .iter()
+                .map(|(name, value)| (Arc::from(*name), Some((*value).to_string())))
+                .collect(),
+            Vec::new(),
+            None,
+            children,
+        )
+    }
+
+    #[test]
+    fn head_metadata_extraction_does_not_cross_template_contents() {
+        let template = crate::Node::from_element_parts(
+            Id(4),
+            Arc::from("template"),
+            Vec::new(),
+            Vec::new(),
+            Some(Box::new(DocumentFragmentNode::new_template_contents(
+                Id(5),
+                vec![
+                    element(6, "base", &[("href", "https://inert.example/")], Vec::new()),
+                    element(
+                        7,
+                        "meta",
+                        &[("name", "inert"), ("content", "x")],
+                        Vec::new(),
+                    ),
+                    element(
+                        8,
+                        "title",
+                        &[],
+                        vec![Node::Text {
+                            id: Id(9),
+                            text: "Inert title".to_string(),
+                        }],
+                    ),
+                ],
+            ))),
+            Vec::new(),
+        );
+        let document = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![element(
+                2,
+                "html",
+                &[],
+                vec![element(
+                    3,
+                    "head",
+                    &[],
+                    vec![
+                        template,
+                        element(
+                            10,
+                            "title",
+                            &[],
+                            vec![Node::Text {
+                                id: Id(11),
+                                text: "Active title".to_string(),
+                            }],
+                        ),
+                    ],
+                )],
+            )],
+        };
+
+        let metadata = extract_head_metadata(&document);
+        assert_eq!(metadata.title.as_deref(), Some("Active title"));
+        assert!(metadata.base_href.is_none());
+        assert!(metadata.meta.is_empty());
+        assert!(metadata.links.is_empty());
+    }
 }

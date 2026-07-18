@@ -465,9 +465,13 @@ impl Html5TreeBuilder {
                     deprecated,
                     reason = "frozen legacy insertion call; removal tracked separately"
                 )]
-                let _ = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
-                if !self_closing {
-                    self.active_formatting.push_marker();
+                let inserted = self.insert_element(*name, attrs, *self_closing, atoms, text)?;
+                if !self_closing && let Some(owner) = inserted {
+                    self.active_formatting
+                        .push_marker(crate::html5::tree_builder::formatting::AfeMarker::new(
+                        crate::html5::tree_builder::formatting::AfeMarkerKind::FormattingBoundary,
+                        Some(owner),
+                    ));
                 }
                 self.update_mode_for_start_tag(*name);
             }

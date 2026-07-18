@@ -3,7 +3,7 @@ use crate::dom_snapshot::{DomSnapshotOptions, assert_dom_eq};
 use crate::golden_corpus::fixtures;
 use crate::test_support::patch_apply::TestPatchArena;
 use crate::traverse::assign_missing_ids_allow_collisions;
-use crate::types::{Id, Node};
+use crate::types::{DocumentFragmentNode, Id, Node};
 use crate::{HtmlParseOptions, parse_document};
 use std::sync::Arc;
 
@@ -55,26 +55,29 @@ fn diff_resets_on_reparented_node() {
         id: Id(1),
         doctype: None,
         children: vec![
-            Node::Element {
-                id: Id(2),
-                name: Arc::from("div"),
-                attributes: Vec::new(),
-                style: Vec::new(),
-                children: vec![Node::Element {
-                    id: Id(3),
-                    name: Arc::from("span"),
-                    attributes: Vec::new(),
-                    style: Vec::new(),
-                    children: Vec::new(),
-                }],
-            },
-            Node::Element {
-                id: Id(4),
-                name: Arc::from("p"),
-                attributes: Vec::new(),
-                style: Vec::new(),
-                children: Vec::new(),
-            },
+            crate::Node::from_element_parts(
+                Id(2),
+                Arc::from("div"),
+                Vec::new(),
+                Vec::new(),
+                None,
+                vec![crate::Node::from_element_parts(
+                    Id(3),
+                    Arc::from("span"),
+                    Vec::new(),
+                    Vec::new(),
+                    None,
+                    Vec::new(),
+                )],
+            ),
+            crate::Node::from_element_parts(
+                Id(4),
+                Arc::from("p"),
+                Vec::new(),
+                Vec::new(),
+                None,
+                Vec::new(),
+            ),
         ],
     };
 
@@ -82,26 +85,29 @@ fn diff_resets_on_reparented_node() {
         id: Id(1),
         doctype: None,
         children: vec![
-            Node::Element {
-                id: Id(2),
-                name: Arc::from("div"),
-                attributes: Vec::new(),
-                style: Vec::new(),
-                children: Vec::new(),
-            },
-            Node::Element {
-                id: Id(4),
-                name: Arc::from("p"),
-                attributes: Vec::new(),
-                style: Vec::new(),
-                children: vec![Node::Element {
-                    id: Id(3),
-                    name: Arc::from("span"),
-                    attributes: Vec::new(),
-                    style: Vec::new(),
-                    children: Vec::new(),
-                }],
-            },
+            crate::Node::from_element_parts(
+                Id(2),
+                Arc::from("div"),
+                Vec::new(),
+                Vec::new(),
+                None,
+                Vec::new(),
+            ),
+            crate::Node::from_element_parts(
+                Id(4),
+                Arc::from("p"),
+                Vec::new(),
+                Vec::new(),
+                None,
+                vec![crate::Node::from_element_parts(
+                    Id(3),
+                    Arc::from("span"),
+                    Vec::new(),
+                    Vec::new(),
+                    None,
+                    Vec::new(),
+                )],
+            ),
         ],
     };
 
@@ -128,4 +134,95 @@ fn diff_reset_clears_allocation_state() {
             ignore_empty_style: true,
         },
     );
+}
+
+fn template_doc(fragment_id: Id, text_id: Id, text: &str) -> Node {
+    Node::Document {
+        id: Id(1),
+        doctype: None,
+        children: vec![crate::Node::from_element_parts(
+            Id(2),
+            Arc::from("template"),
+            Vec::new(),
+            Vec::new(),
+            Some(Box::new(DocumentFragmentNode::new_template_contents(
+                fragment_id,
+                vec![Node::Text {
+                    id: text_id,
+                    text: text.to_string(),
+                }],
+            ))),
+            Vec::new(),
+        )],
+    }
+}
+
+#[test]
+fn diff_emits_typed_template_association_and_fragment_child_edges() {
+    let prev = Node::Document {
+        id: Id(1),
+        doctype: None,
+        children: Vec::new(),
+    };
+    let next = template_doc(Id(3), Id(4), "inert");
+    let patches = diff_dom_stateless(&prev, &next).expect("template diff should succeed");
+    assert!(patches.iter().any(|patch| matches!(
+        patch,
+        DomPatch::CreateTemplateContents {
+            host: crate::dom_patch::PatchKey(2),
+            contents: crate::dom_patch::PatchKey(3)
+        }
+    )));
+    assert!(patches.iter().any(|patch| matches!(
+        patch,
+        DomPatch::AppendChild {
+            parent: crate::dom_patch::PatchKey(3),
+            child: crate::dom_patch::PatchKey(4)
+        }
+    )));
+
+    let mut arena = TestPatchArena::from_dom(&prev).expect("arena init failed");
+    arena
+        .apply(&patches)
+        .expect("template patches should apply");
+    let actual = arena
+        .materialize()
+        .expect("template DOM should materialize");
+    assert_dom_eq(
+        &next,
+        &actual,
+        DomSnapshotOptions {
+            ignore_ids: true,
+            ignore_empty_style: true,
+        },
+    );
+}
+
+#[test]
+fn changing_fragment_identity_beneath_a_surviving_host_forces_reset() {
+    let prev = template_doc(Id(3), Id(4), "inert");
+    let next = template_doc(Id(30), Id(4), "inert");
+    let patches = diff_dom_stateless(&prev, &next).expect("template diff should succeed");
+    assert!(
+        matches!(patches.first(), Some(DomPatch::Clear)),
+        "association replacement must reset instead of attempting live reassociation"
+    );
+}
+
+#[test]
+fn duplicate_identity_across_template_host_fragment_and_descendants_is_rejected() {
+    let previous = Node::Document {
+        id: Id(1),
+        doctype: None,
+        children: Vec::new(),
+    };
+    for invalid in [
+        template_doc(Id(2), Id(4), "fragment collides with host"),
+        template_doc(Id(3), Id(3), "descendant collides with fragment"),
+    ] {
+        assert!(
+            diff_dom_stateless(&previous, &invalid).is_err(),
+            "full-model identity collection must reject collisions"
+        );
+    }
 }

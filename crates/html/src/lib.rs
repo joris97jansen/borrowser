@@ -96,9 +96,82 @@ pub use crate::parser::{
     HtmlParser, HtmlTokenizerLimits, HtmlTokenizerOptions, HtmlTreeBuilderLimits,
     HtmlTreeBuilderOptions, ParseOutput, parse_document,
 };
-pub use crate::types::{AtomId, AtomTable, Node};
+pub use crate::types::{AtomId, AtomTable, ElementNode, Node};
 
 #[cfg(feature = "internal-api")]
 pub mod internal {
-    pub use super::types::{Id, NodeId, NodeKey};
+    use std::sync::Arc;
+
+    use super::Node;
+    pub use super::types::{DocumentFragmentNode, Id, NodeId, NodeKey, ParserCreatedFragmentKind};
+
+    #[must_use]
+    pub fn node_element_from_parts(
+        id: Id,
+        name: Arc<str>,
+        attributes: Vec<(Arc<str>, Option<String>)>,
+        style: Vec<(String, String)>,
+        children: Vec<Node>,
+    ) -> Node {
+        Node::from_element_parts(id, name, attributes, style, None, children)
+    }
+
+    /// Materializes one structurally validated generic/legacy template value.
+    ///
+    /// The result always has the canonical `template` host name, exactly one
+    /// typed `TemplateContents` fragment, and one recursive host-owned
+    /// association. This function cannot create a detached fragment, a
+    /// non-template host, or a fragment with another kind.
+    ///
+    /// `ordinary_children` preserves ordinary host children from generic or
+    /// legacy materialization. Those nodes remain ordinary active-tree
+    /// children; they are not template contents. Strict AE10 HTML5 parser
+    /// output always supplies an empty ordinary-child vector, with that
+    /// provenance guarantee enforced by parser-output validation rather than
+    /// inferred here from the element name.
+    #[must_use]
+    pub fn template_element_from_parts(
+        host_id: Id,
+        attributes: Vec<(Arc<str>, Option<String>)>,
+        style: Vec<(String, String)>,
+        contents_id: Id,
+        contents_children: Vec<Node>,
+        ordinary_children: Vec<Node>,
+    ) -> Node {
+        Node::from_element_parts(
+            host_id,
+            Arc::from("template"),
+            attributes,
+            style,
+            Some(Box::new(DocumentFragmentNode::new_template_contents(
+                contents_id,
+                contents_children,
+            ))),
+            ordinary_children,
+        )
+    }
+
+    #[must_use]
+    pub fn template_contents(node: &Node) -> Option<&DocumentFragmentNode> {
+        node.template_contents()
+    }
+    #[must_use]
+    pub fn fragment_id(fragment: &DocumentFragmentNode) -> Id {
+        fragment.id()
+    }
+    #[must_use]
+    pub fn fragment_kind(fragment: &DocumentFragmentNode) -> ParserCreatedFragmentKind {
+        fragment.kind()
+    }
+    #[must_use]
+    pub fn fragment_children(fragment: &DocumentFragmentNode) -> &[Node] {
+        fragment.children()
+    }
+
+    /// Test-harness-only legacy identity normalization. This deliberately does
+    /// not expose fragment mutation primitives to engine consumers.
+    #[cfg(feature = "test-harness")]
+    pub fn assign_missing_full_model_ids_for_test(root: &mut Node) {
+        crate::traverse::assign_missing_ids_allow_collisions(root);
+    }
 }

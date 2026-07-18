@@ -582,7 +582,7 @@ fn anonymous_box_kind_debug_label(kind: AnonymousBoxKind) -> &'static str {
 pub(crate) fn node_debug_label(node: &Node) -> String {
     match node {
         Node::Document { .. } => "document".to_string(),
-        Node::Element { name, .. } => format!("element(\"{name}\")"),
+        Node::Element { element } => format!("element(\"{}\")", element.name()),
         Node::Text { text, .. } => format!("text(\"{}\")", text.escape_default()),
         Node::Comment { text, .. } => format!("comment(\"{}\")", text.escape_default()),
         Node::DocumentType { name, .. } => match name {

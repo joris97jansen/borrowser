@@ -6,3 +6,4 @@ mod lifecycle;
 mod movement;
 mod protocol;
 mod structure;
+mod template;

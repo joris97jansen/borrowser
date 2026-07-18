@@ -81,7 +81,7 @@ fn active_formatting_names(
         .entries()
         .iter()
         .map(|entry| match entry {
-            crate::html5::tree_builder::formatting::AfeEntry::Marker => None,
+            crate::html5::tree_builder::formatting::AfeEntry::Marker(_) => None,
             crate::html5::tree_builder::formatting::AfeEntry::Element(element) => {
                 Some(element.name)
             }
@@ -97,7 +97,7 @@ fn active_formatting_keys(
         .entries()
         .iter()
         .map(|entry| match entry {
-            crate::html5::tree_builder::formatting::AfeEntry::Marker => None,
+            crate::html5::tree_builder::formatting::AfeEntry::Marker(_) => None,
             crate::html5::tree_builder::formatting::AfeEntry::Element(element) => Some(element.key),
         })
         .collect()
@@ -109,7 +109,7 @@ fn active_formatting_attrs(builder: &crate::html5::tree_builder::Html5TreeBuilde
         .entries()
         .iter()
         .map(|entry| match entry {
-            crate::html5::tree_builder::formatting::AfeEntry::Marker => None,
+            crate::html5::tree_builder::formatting::AfeEntry::Marker(_) => None,
             crate::html5::tree_builder::formatting::AfeEntry::Element(element) => Some(
                 element
                     .attrs

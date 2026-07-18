@@ -23,11 +23,13 @@ mod known_tags;
 mod limits;
 mod live_tree;
 pub(crate) mod modes;
+mod parser_validation;
 mod patch_sink;
 mod resolve;
 mod serialize;
 mod stack;
 mod table;
+mod template_state;
 mod text_mode;
 
 #[cfg(any(test, feature = "html5-fuzzing"))]
@@ -36,6 +38,10 @@ pub use api::{
     Html5TreeBuilder, SuspendReason, TreeBuilderConfig, TreeBuilderControlFlow, TreeBuilderError,
     TreeBuilderInternalError, TreeBuilderLimits, TreeBuilderStepResult,
 };
+#[cfg(any(test, feature = "html5-fuzzing"))]
+pub(crate) use formatting::AfeDiagnosticEntry;
+#[cfg(test)]
+pub(crate) use formatting::{AfeMarker, AfeMarkerKind};
 #[cfg(any(test, feature = "html5-fuzzing"))]
 pub use fuzz::{
     TreeBuilderFuzzConfig, TreeBuilderFuzzError, TreeBuilderFuzzSummary,
@@ -48,6 +54,8 @@ pub use invariants::{
 pub use patch_sink::{CallbackPatchSink, PatchSink, VecPatchSink};
 #[cfg(feature = "dom-snapshot")]
 pub use serialize::{serialize_dom_for_test, serialize_dom_for_test_with_options};
+#[cfg(test)]
+pub(crate) use template_state::TemplateInsertionMode;
 
 #[cfg(test)]
 mod tests;

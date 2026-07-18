@@ -77,16 +77,21 @@ fn ensure_paragraph_boundary_before_block(out: &mut String) {
 /// Collect concatenated text from <style> elements.
 pub fn collect_style_texts(node: &Node, out: &mut String) {
     match node {
-        Node::Element { name, children, .. } if name.as_ref() == "style" => {
-            debug_assert_lowercase_atom(name, "collect style tag");
-            for c in children {
+        Node::Element { element } if element.name().as_ref() == "style" => {
+            debug_assert_lowercase_atom(element.name(), "collect style tag");
+            for c in element.children() {
                 if let Node::Text { text, .. } = c {
                     out.push_str(text);
                     out.push('\n');
                 }
             }
         }
-        Node::Element { children, .. } | Node::Document { children, .. } => {
+        Node::Element { element } => {
+            for c in element.children() {
+                collect_style_texts(c, out);
+            }
+        }
+        Node::Document { children, .. } => {
             for c in children {
                 collect_style_texts(c, out);
             }
@@ -98,7 +103,8 @@ pub fn collect_style_texts(node: &Node, out: &mut String) {
 /// Collect <link rel="stylesheet" href="…"> href values.
 pub fn collect_stylesheet_hrefs(node: &Node, out: &mut Vec<String>) {
     match node {
-        Node::Element { name, children, .. } => {
+        Node::Element { element } => {
+            let name = element.name();
             debug_assert_lowercase_atom(name, "collect stylesheet tag");
             if name.as_ref() == "link"
                 && node.attr_has_token("rel", "stylesheet")
@@ -107,7 +113,7 @@ pub fn collect_stylesheet_hrefs(node: &Node, out: &mut Vec<String>) {
                 out.push(href.to_string());
             }
 
-            for c in children {
+            for c in element.children() {
                 collect_stylesheet_hrefs(c, out);
             }
         }
@@ -123,7 +129,8 @@ pub fn collect_stylesheet_hrefs(node: &Node, out: &mut Vec<String>) {
 /// Collect <img src="…"> src values.
 pub fn collect_img_srcs(node: &Node, out: &mut Vec<String>) {
     match node {
-        Node::Element { name, children, .. } => {
+        Node::Element { element } => {
+            let name = element.name();
             debug_assert_lowercase_atom(name, "collect img tag");
             if name.as_ref() == "img"
                 && let Some(src) = node.attr("src")
@@ -134,7 +141,7 @@ pub fn collect_img_srcs(node: &Node, out: &mut Vec<String>) {
                 }
             }
 
-            for c in children {
+            for c in element.children() {
                 collect_img_srcs(c, out);
             }
         }
@@ -185,7 +192,8 @@ pub fn collect_visible_text(node: &Node, out: &mut String) {
                 out.push_str(t);
             }
         }
-        Node::Element { name, children, .. } => {
+        Node::Element { element } => {
+            let name = element.name();
             debug_assert_lowercase_atom(name, "collect visible text tag");
             if name.as_ref() == "script" || name.as_ref() == "style" {
                 return; // skip
@@ -194,7 +202,7 @@ pub fn collect_visible_text(node: &Node, out: &mut String) {
             if let Some("\n\n") = break_kind(name.as_ref()) {
                 ensure_paragraph_boundary_before_block(out);
             }
-            for c in children {
+            for c in element.children() {
                 collect_visible_text(c, out);
             }
 
@@ -243,9 +251,12 @@ pub fn collect_visible_text_string(root: &Node) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::collect_visible_text_string;
+    use super::{
+        collect_img_srcs, collect_style_texts, collect_stylesheet_hrefs,
+        collect_visible_text_string,
+    };
     use crate::Node;
-    use crate::types::Id;
+    use crate::types::{DocumentFragmentNode, Id};
     use std::sync::Arc;
 
     fn text_node(text: &str) -> Node {
@@ -256,13 +267,28 @@ mod tests {
     }
 
     fn elem(name: &str, children: Vec<Node>) -> Node {
-        Node::Element {
-            id: Id(0),
-            name: Arc::<str>::from(name),
-            attributes: Vec::new(),
-            style: Vec::new(),
+        crate::Node::from_element_parts(
+            Id(0),
+            Arc::<str>::from(name),
+            Vec::new(),
+            Vec::new(),
+            None,
             children,
-        }
+        )
+    }
+
+    fn elem_with_attrs(name: &str, attributes: &[(&str, &str)]) -> Node {
+        crate::Node::from_element_parts(
+            Id(0),
+            Arc::from(name),
+            attributes
+                .iter()
+                .map(|(name, value)| (Arc::from(*name), Some((*value).to_string())))
+                .collect(),
+            Vec::new(),
+            None,
+            Vec::new(),
+        )
     }
 
     fn doc(children: Vec<Node>) -> Node {
@@ -317,6 +343,39 @@ mod tests {
 
         let out = collect_visible_text_string(&root);
         assert_eq!(out, "Visible Also");
+    }
+
+    #[test]
+    fn active_document_collectors_do_not_cross_template_contents_association() {
+        let template = crate::Node::from_element_parts(
+            Id(0),
+            Arc::from("template"),
+            Vec::new(),
+            Vec::new(),
+            Some(Box::new(DocumentFragmentNode::new_template_contents(
+                Id(2),
+                vec![
+                    elem("style", vec![text_node("p { color: red; }")]),
+                    elem_with_attrs("link", &[("rel", "stylesheet"), ("href", "inert.css")]),
+                    elem_with_attrs("img", &[("src", "inert.png")]),
+                    text_node("inert words"),
+                ],
+            ))),
+            Vec::new(),
+        );
+        let root = doc(vec![template, elem("p", vec![text_node("active words")])]);
+
+        let mut styles = String::new();
+        collect_style_texts(&root, &mut styles);
+        let mut stylesheets = Vec::new();
+        collect_stylesheet_hrefs(&root, &mut stylesheets);
+        let mut images = Vec::new();
+        collect_img_srcs(&root, &mut images);
+
+        assert!(styles.is_empty());
+        assert!(stylesheets.is_empty());
+        assert!(images.is_empty());
+        assert_eq!(collect_visible_text_string(&root), "active words");
     }
 
     #[test]

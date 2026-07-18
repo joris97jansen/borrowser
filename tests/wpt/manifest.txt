@@ -156,6 +156,32 @@ expected: expected/select-table-row-recovery.dom.txt
 provenance: provenance/select-table-row-recovery.provenance.txt
 status: active
 
+# AE10 exact case adaptations from the pinned WPT template.dat file.
+
+id: template-body-text
+path: vendor/html/syntax/parsing/template/body-text.html
+expected: expected/template-body-text.dom.txt
+provenance: provenance/template-body-text.provenance.txt
+status: active
+
+id: template-empty-followed-by-div
+path: vendor/html/syntax/parsing/template/empty-followed-by-div.html
+expected: expected/template-empty-followed-by-div.dom.txt
+provenance: provenance/template-empty-followed-by-div.provenance.txt
+status: active
+
+id: template-table-cell-marker-recovery
+path: vendor/html/syntax/parsing/template/table-cell-marker-recovery.html
+expected: expected/template-table-cell-marker-recovery.dom.txt
+provenance: provenance/template-table-cell-marker-recovery.provenance.txt
+status: active
+
+id: template-nested-table-modes
+path: vendor/html/syntax/parsing/template/nested-table-modes.html
+expected: expected/template-nested-table-modes.dom.txt
+provenance: provenance/template-nested-table-modes.provenance.txt
+status: active
+
 id: tokenizer-basic
 kind: tokens
 path: vendor/html/syntax/parsing/tokenizer-basic.html

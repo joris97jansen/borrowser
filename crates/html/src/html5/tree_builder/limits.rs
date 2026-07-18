@@ -33,6 +33,22 @@ impl Html5TreeBuilder {
         false
     }
 
+    pub(in crate::html5::tree_builder) fn allow_node_creation_count(
+        &mut self,
+        count: usize,
+        tag: Option<AtomId>,
+    ) -> bool {
+        if self
+            .non_document_nodes_created
+            .checked_add(count)
+            .is_some_and(|total| total <= self.config.limits.max_nodes_created)
+        {
+            return true;
+        }
+        self.record_parse_error(LIMIT_PARSE_ERROR_NODE_COUNT, tag, Some(self.insertion_mode));
+        false
+    }
+
     pub(in crate::html5::tree_builder) fn note_node_created(&mut self) {
         self.non_document_nodes_created = self.non_document_nodes_created.saturating_add(1);
     }

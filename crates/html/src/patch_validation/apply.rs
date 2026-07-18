@@ -1,9 +1,11 @@
+use std::collections::HashSet;
 use std::sync::Arc;
 
 use crate::dom_patch::{DomPatch, PatchKey};
 
 use super::error::{ArenaResult, PatchValidationError};
 use super::model::{PatchKind, PatchNode, PatchValidationArena};
+use crate::types::ParserCreatedFragmentKind;
 
 impl PatchValidationArena {
     pub fn apply_batch(&mut self, patches: &[DomPatch]) -> Result<(), PatchValidationError> {
@@ -73,7 +75,9 @@ impl PatchValidationArena {
         })?;
 
         match node.kind {
-            PatchKind::Document { .. } | PatchKind::Element { .. } => Ok(()),
+            PatchKind::Document { .. }
+            | PatchKind::Element { .. }
+            | PatchKind::DocumentFragment { .. } => Ok(()),
             PatchKind::DocumentType { .. } | PatchKind::Text { .. } | PatchKind::Comment { .. } => {
                 Err(PatchValidationError::new(
                     context,
@@ -112,14 +116,33 @@ impl PatchValidationArena {
     }
 
     fn would_create_cycle(&self, parent: PatchKey, child: PatchKey) -> ArenaResult<bool> {
-        let mut cursor = Some(parent);
-        while let Some(current) = cursor {
-            if current == child {
+        let mut stack = vec![child];
+        let mut visited = HashSet::new();
+        while let Some(current) = stack.pop() {
+            if !visited.insert(current) {
+                continue;
+            }
+            if current == parent {
                 return Ok(true);
             }
-            cursor = self.node_parent(current)?;
+            let node = self.nodes.get(&current).ok_or_else(|| {
+                PatchValidationError::new("cycle check", format!("missing node {current:?}"))
+            })?;
+            stack.extend(node.children.iter().copied());
+            if let Some(contents) = node.template_contents() {
+                stack.push(contents);
+            }
         }
         Ok(false)
+    }
+
+    fn is_document_fragment(&self, key: PatchKey) -> ArenaResult<bool> {
+        self.nodes
+            .get(&key)
+            .map(|node| matches!(node.kind, PatchKind::DocumentFragment { .. }))
+            .ok_or_else(|| {
+                PatchValidationError::new("fragment check", format!("missing node {key:?}"))
+            })
     }
 
     fn detach_child(&mut self, child: PatchKey) -> ArenaResult<()> {
@@ -158,6 +181,13 @@ impl PatchValidationArena {
             return Err(PatchValidationError::new(
                 "AppendChild child",
                 "cannot move a document node",
+            ));
+        }
+
+        if self.is_document_fragment(child)? {
+            return Err(PatchValidationError::new(
+                "AppendChild child",
+                "template contents roots cannot acquire ordinary parents",
             ));
         }
 
@@ -230,6 +260,13 @@ impl PatchValidationArena {
             ));
         }
 
+        if self.is_document_fragment(child)? {
+            return Err(PatchValidationError::new(
+                "InsertBefore child",
+                "template contents roots cannot acquire ordinary parents",
+            ));
+        }
+
         if self.is_document_root_element(child)? {
             return Err(PatchValidationError::new(
                 "InsertBefore child",
@@ -299,13 +336,28 @@ impl PatchValidationArena {
         Ok(())
     }
 
-    fn remove_subtree(&mut self, key: PatchKey) -> ArenaResult<()> {
-        let children = {
+    fn remove_subtree(&mut self, key: PatchKey, association_owned: bool) -> ArenaResult<()> {
+        let (children, template_contents, fragment_host) = {
             let node = self.nodes.get(&key).ok_or_else(|| {
                 PatchValidationError::new("RemoveNode", format!("missing node {key:?}"))
             })?;
-            node.children.clone()
+            let fragment_host = match node.kind {
+                PatchKind::DocumentFragment { host, .. } => Some(host),
+                _ => None,
+            };
+            (
+                node.children.clone(),
+                node.template_contents(),
+                fragment_host,
+            )
         };
+
+        if fragment_host.is_some() && !association_owned {
+            return Err(PatchValidationError::new(
+                "RemoveNode target",
+                "hosted template contents roots cannot be removed directly",
+            ));
+        }
 
         if let Some(parent) = self.nodes.get(&key).and_then(|node| node.parent)
             && let Some(parent_node) = self.nodes.get_mut(&parent)
@@ -314,7 +366,18 @@ impl PatchValidationArena {
         }
 
         for child in children {
-            self.remove_subtree(child)?;
+            self.remove_subtree(child, false)?;
+        }
+        if let Some(contents) = template_contents {
+            self.remove_subtree(contents, true)?;
+        }
+        if let Some(host) = fragment_host
+            && let Some(host_node) = self.nodes.get_mut(&host)
+            && let PatchKind::Element {
+                template_contents, ..
+            } = &mut host_node.kind
+        {
+            *template_contents = None;
         }
 
         self.nodes.remove(&key);
@@ -400,11 +463,84 @@ impl PatchValidationArena {
                             kind: PatchKind::Element {
                                 name: Arc::clone(name),
                                 attributes: attributes.clone(),
+                                template_contents: None,
                             },
                             parent: None,
                             children: Vec::new(),
                         },
                     )?;
+                }
+                DomPatch::CreateTemplateContents { host, contents } => {
+                    self.ensure_node(*host, "CreateTemplateContents host")?;
+                    if *contents == PatchKey::INVALID {
+                        return Err(PatchValidationError::new(
+                            "CreateTemplateContents contents",
+                            "patch key must be non-zero",
+                        ));
+                    }
+                    if self.allocated.contains(contents) {
+                        return Err(PatchValidationError::new(
+                            "CreateTemplateContents contents",
+                            format!("duplicate patch key {contents:?}"),
+                        ));
+                    }
+                    let host_node = self.nodes.get(host).ok_or_else(|| {
+                        PatchValidationError::new(
+                            "CreateTemplateContents host",
+                            "host disappeared during validation",
+                        )
+                    })?;
+                    match &host_node.kind {
+                        PatchKind::Element {
+                            name,
+                            template_contents: None,
+                            ..
+                        } if name.as_ref() == "template" => {}
+                        PatchKind::Element {
+                            template_contents: Some(_),
+                            ..
+                        } => {
+                            return Err(PatchValidationError::new(
+                                "CreateTemplateContents host",
+                                "template host already has contents",
+                            ));
+                        }
+                        PatchKind::Element { .. } => {
+                            return Err(PatchValidationError::new(
+                                "CreateTemplateContents host",
+                                "host must be a canonical template element",
+                            ));
+                        }
+                        _ => {
+                            return Err(PatchValidationError::new(
+                                "CreateTemplateContents host",
+                                "host must be an element",
+                            ));
+                        }
+                    }
+
+                    self.insert(
+                        *contents,
+                        PatchNode {
+                            kind: PatchKind::DocumentFragment {
+                                kind: ParserCreatedFragmentKind::TemplateContents,
+                                host: *host,
+                            },
+                            parent: None,
+                            children: Vec::new(),
+                        },
+                    )?;
+                    let host_node = self
+                        .nodes
+                        .get_mut(host)
+                        .expect("validated template host must remain present");
+                    let PatchKind::Element {
+                        template_contents, ..
+                    } = &mut host_node.kind
+                    else {
+                        unreachable!("validated template host kind changed during atomic apply")
+                    };
+                    *template_contents = Some(*contents);
                 }
                 DomPatch::CreateText { key, text } => {
                     self.insert(
@@ -438,6 +574,12 @@ impl PatchValidationArena {
                 }
                 DomPatch::RemoveNode { key } => {
                     self.ensure_node(*key, "RemoveNode target")?;
+                    if self.is_document_fragment(*key)? {
+                        return Err(PatchValidationError::new(
+                            "RemoveNode target",
+                            "hosted template contents roots cannot be removed directly",
+                        ));
+                    }
                     let is_root = self.root == Some(*key);
                     let is_attached = self.nodes.get(key).and_then(|node| node.parent).is_some();
                     if !is_root && !is_attached {
@@ -446,7 +588,7 @@ impl PatchValidationArena {
                             "cannot remove a detached node",
                         ));
                     }
-                    self.remove_subtree(*key)?;
+                    self.remove_subtree(*key, false)?;
                 }
                 DomPatch::SetAttributes { key, attributes } => {
                     self.ensure_node(*key, "SetAttributes target")?;

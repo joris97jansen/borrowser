@@ -91,13 +91,13 @@ fn legacy_compute_style_ignores_invalid_link_color_for_ua_fallback() {
 
 #[test]
 fn legacy_build_style_tree_ignores_invalid_display_for_default_bridge() {
-    let dom = Node::Element {
-        id: Id::INVALID,
-        name: Arc::from("div"),
-        attributes: Vec::new(),
-        style: vec![("display".to_string(), "nonsense".to_string())],
-        children: Vec::new(),
-    };
+    let dom = html::internal::node_element_from_parts(
+        Id::INVALID,
+        Arc::from("div"),
+        Vec::new(),
+        vec![("display".to_string(), "nonsense".to_string())],
+        Vec::new(),
+    );
 
     let styled = build_style_tree(&dom, None);
 

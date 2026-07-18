@@ -1,6 +1,9 @@
 use crate::dom_patch::DomPatch;
 use crate::html5::tokenizer::{TextModeKind, TokenizerControl};
+use crate::html5::tree_builder::AfeDiagnosticEntry;
 use crate::html5::tree_builder::TreeBuilderProgressWitness;
+
+pub(super) const PIPELINE_FUZZ_DIGEST_SCHEMA: u8 = 3;
 
 #[derive(Clone, Copy)]
 pub(super) struct PipelineFuzzDigest(u64);
@@ -17,7 +20,10 @@ pub(super) struct PipelineDigestTail {
 
 impl PipelineFuzzDigest {
     pub(super) fn new(seed: u64) -> Self {
-        Self(0xcbf29ce484222325u64 ^ seed.rotate_left(7))
+        let mut digest = Self(0xcbf29ce484222325u64 ^ seed.rotate_left(7));
+        digest.push_u8(0xfd);
+        digest.push_u8(PIPELINE_FUZZ_DIGEST_SCHEMA);
+        digest
     }
 
     pub(super) fn record_chunk_len(&mut self, len: usize) {
@@ -80,6 +86,11 @@ impl PipelineFuzzDigest {
                         self.push_opt_str(value.as_deref());
                     }
                 }
+                DomPatch::CreateTemplateContents { host, contents } => {
+                    self.push_u8(22);
+                    self.push_u32(host.0);
+                    self.push_u32(contents.0);
+                }
                 DomPatch::CreateText { key, text } => {
                     self.push_u8(13);
                     self.push_u32(key.0);
@@ -139,6 +150,26 @@ impl PipelineFuzzDigest {
         self.push_u8(5);
         self.push_opt_key(witness.form_element_pointer);
         self.push_opt_key(witness.pending_textarea_initial_lf);
+        self.push_opt_key(witness.head_element_pointer);
+        self.push_usize(witness.template_modes.len());
+        for (owner, mode) in &witness.template_modes {
+            self.push_u32(owner.0);
+            self.push_u8(mode.digest_tag());
+        }
+        self.push_usize(witness.active_formatting_entries.len());
+        for entry in &witness.active_formatting_entries {
+            match entry {
+                AfeDiagnosticEntry::Element(key) => {
+                    self.push_u8(1);
+                    self.push_u32(key.0);
+                }
+                AfeDiagnosticEntry::Marker(marker) => {
+                    self.push_u8(2);
+                    self.push_u8(marker.kind.digest_tag());
+                    self.push_opt_key(marker.owner);
+                }
+            }
+        }
     }
 
     pub(super) fn finish(mut self, tail: PipelineDigestTail) -> u64 {

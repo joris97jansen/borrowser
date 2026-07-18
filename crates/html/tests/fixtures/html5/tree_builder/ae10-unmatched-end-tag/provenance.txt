@@ -1,0 +1,3 @@
+Local WHATWG-derived normative fixture; not a WPT import.
+WHATWG commit: 88ae68cb961651f0f92c5d2046049f53ecdfc6cf
+Evidence: unmatched template end tags report and leave parser state unchanged.

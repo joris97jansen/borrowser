@@ -11,13 +11,13 @@ fn elem(
     attributes: Vec<(Arc<str>, Option<String>)>,
     children: Vec<Node>,
 ) -> Node {
-    Node::Element {
-        id: Id(id),
-        name: Arc::from(name),
+    html::internal::node_element_from_parts(
+        Id(id),
+        Arc::from(name),
         attributes,
-        style: Vec::new(),
+        Vec::new(),
         children,
-    }
+    )
 }
 
 fn input(id: u32, ty: &str, extra_attrs: Vec<(Arc<str>, Option<String>)>) -> Node {
@@ -42,16 +42,38 @@ fn text(id: u32, text: &str) -> Node {
 }
 
 fn find_element<'a>(node: &'a Node, name: &str) -> Option<&'a Node> {
-    match node {
-        Node::Document { children, .. } | Node::Element { children, .. } => {
-            if matches!(node, Node::Element { name: node_name, .. } if node_name.eq_ignore_ascii_case(name))
-            {
-                return Some(node);
-            }
-            children.iter().find_map(|child| find_element(child, name))
-        }
-        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => None,
+    if node
+        .element()
+        .is_some_and(|element| element.name().eq_ignore_ascii_case(name))
+    {
+        return Some(node);
     }
+    node.children()?
+        .iter()
+        .find_map(|child| find_element(child, name))
+}
+
+#[test]
+fn parser_created_template_contents_do_not_initialize_form_controls() {
+    let template = html::internal::template_element_from_parts(
+        Id(1),
+        Vec::new(),
+        Vec::new(),
+        Id(2),
+        vec![input(
+            3,
+            "text",
+            vec![(Arc::from("value"), Some("inert".to_string()))],
+        )],
+        Vec::new(),
+    );
+    let dom = doc(vec![template, input(4, "text", Vec::new())]);
+
+    let mut store = InputValueStore::new();
+    let _ = seed_input_state_from_dom(&mut store, &dom);
+
+    assert!(!store.has(Id(3)));
+    assert!(store.has(Id(4)));
 }
 
 #[test]

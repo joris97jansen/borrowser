@@ -281,3 +281,25 @@ For AE1 and future AE implementation issues:
 - `<script>` tokenization/tree construction support does not imply script
   execution or parser pause behavior.
 - Document mode remains parser-owned state in the current supported scope.
+
+## AE10 Template Boundary Refinement
+
+AE10 adds one parser-owned relationship that is not an ordinary DOM child
+edge: a parser-created template element is associated with its typed template-
+contents fragment. HTML owns creation, insertion-target redirection, template
+state, malformed recovery, and strict parser-output validation. Generic patch
+validation and Browser `DomStore` own structural association integrity and
+atomic materialization, but do not infer parser provenance from the tag name.
+
+Parser/debug/full-model traversal exposes the association. Ordinary document
+consumers do not cross it. CSS may see the host on normal element axes; Layout
+suppresses the typed host before box construction; Browser retained identity
+assigns no identity to host or contents; Paint receives no template artifact.
+This keeps template semantics out of CSS, Layout, Paint, and orchestration
+while preserving the complete parser-created model.
+
+The materialized `Node::Element` carries an opaque `ElementNode` payload. Its
+template-contents field is private, so the ordinary public Rust node surface
+cannot detach or replace the association. The feature-gated `html::internal`
+engine boundary provides controlled canonical construction and read-only
+fragment inspection; it is not a standards-facing DOM surface.

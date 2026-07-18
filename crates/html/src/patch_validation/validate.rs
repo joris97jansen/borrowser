@@ -63,6 +63,73 @@ impl PatchValidationArena {
                 ));
             }
 
+            match &node.kind {
+                PatchKind::Element {
+                    template_contents: Some(contents),
+                    ..
+                } => {
+                    let contents_node = self.nodes.get(contents).ok_or_else(|| {
+                        PatchValidationError::new(
+                            "post-apply invariants",
+                            format!("template host {key:?} has missing contents {contents:?}"),
+                        )
+                    })?;
+                    match contents_node.kind {
+                        PatchKind::DocumentFragment {
+                            kind: crate::types::ParserCreatedFragmentKind::TemplateContents,
+                            host,
+                        } if host == *key => {}
+                        PatchKind::DocumentFragment { kind, host } => {
+                            return Err(PatchValidationError::new(
+                                "post-apply invariants",
+                                format!(
+                                    "template contents {contents:?} association mismatch: expected TemplateContents hosted by {key:?}, found {kind:?} hosted by {host:?}"
+                                ),
+                            ));
+                        }
+                        _ => {
+                            return Err(PatchValidationError::new(
+                                "post-apply invariants",
+                                format!(
+                                    "template host {key:?} association targets non-fragment {contents:?}"
+                                ),
+                            ));
+                        }
+                    }
+                }
+                PatchKind::DocumentFragment { kind, host } => {
+                    if *kind != crate::types::ParserCreatedFragmentKind::TemplateContents {
+                        return Err(PatchValidationError::new(
+                            "post-apply invariants",
+                            format!(
+                                "template contents {key:?} has unsupported fragment kind {kind:?}"
+                            ),
+                        ));
+                    }
+                    if node.parent.is_some() {
+                        return Err(PatchValidationError::new(
+                            "post-apply invariants",
+                            format!("template contents {key:?} must not have an ordinary parent"),
+                        ));
+                    }
+                    let host_node = self.nodes.get(host).ok_or_else(|| {
+                        PatchValidationError::new(
+                            "post-apply invariants",
+                            format!("template contents {key:?} has missing host {host:?}"),
+                        )
+                    })?;
+                    if host_node.template_contents() != Some(*key) {
+                        return Err(PatchValidationError::new(
+                            "post-apply invariants",
+                            format!(
+                                "template contents {key:?} is not associated back from host {host:?}"
+                            ),
+                        ));
+                    }
+                }
+                _ => {}
+            }
+
             if let Some(parent) = node.parent {
                 let parent_node = self.nodes.get(&parent).ok_or_else(|| {
                     PatchValidationError::new(
@@ -85,7 +152,7 @@ impl PatchValidationArena {
                         ),
                     ));
                 }
-            } else if *key != root {
+            } else if *key != root && !matches!(node.kind, PatchKind::DocumentFragment { .. }) {
                 return Err(PatchValidationError::new(
                     "post-apply invariants",
                     format!("detached non-root node {key:?}"),
@@ -132,8 +199,19 @@ impl PatchValidationArena {
 
         let mut visited = HashSet::new();
         let mut visiting = HashSet::new();
-        for key in self.nodes.keys().copied() {
-            self.assert_acyclic_from(key, &mut visited, &mut visiting)?;
+        self.assert_acyclic_from(root, &mut visited, &mut visiting)?;
+        if visited.len() != self.nodes.len() {
+            let mut unreachable = self
+                .nodes
+                .keys()
+                .filter(|key| !visited.contains(key))
+                .copied()
+                .collect::<Vec<_>>();
+            unreachable.sort_unstable();
+            return Err(PatchValidationError::new(
+                "post-apply invariants",
+                format!("nodes are unreachable from the document full model: {unreachable:?}"),
+            ));
         }
 
         Ok(())
@@ -203,6 +281,9 @@ impl PatchValidationArena {
 
         for child in &node.children {
             self.assert_acyclic_from(*child, visited, visiting)?;
+        }
+        if let Some(contents) = node.template_contents() {
+            self.assert_acyclic_from(contents, visited, visiting)?;
         }
 
         visiting.remove(&key);

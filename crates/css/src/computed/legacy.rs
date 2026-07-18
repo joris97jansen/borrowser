@@ -235,12 +235,9 @@ pub fn build_style_tree<'a>(
             }
         }
 
-        Node::Element {
-            name,
-            style,
-            children,
-            ..
-        } => {
+        Node::Element { element } => {
+            let name = element.name();
+            let style = element.style();
             // 1) Check if there is a valid explicit `display:` declaration.
             // Invalid declarations are ignored, so they must not suppress the
             // temporary HTML/UA default-display bridge.
@@ -266,7 +263,7 @@ pub fn build_style_tree<'a>(
 
             // 4) Recurse into children with this as the parent computed style
             let mut styled_children = Vec::new();
-            for child in children {
+            for child in element.children() {
                 if matches!(child, Node::DocumentType { .. }) {
                     continue;
                 }

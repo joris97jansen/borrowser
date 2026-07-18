@@ -35,16 +35,16 @@ pub(super) fn element(
     attributes: Vec<(&str, Option<&str>)>,
     children: Vec<Node>,
 ) -> Node {
-    Node::Element {
-        id: Id::INVALID,
-        name: Arc::from(name),
-        attributes: attributes
+    html::internal::node_element_from_parts(
+        Id::INVALID,
+        Arc::from(name),
+        attributes
             .into_iter()
             .map(|(name, value)| (Arc::from(name), value.map(str::to_string)))
             .collect(),
-        style: Vec::new(),
+        Vec::new(),
         children,
-    }
+    )
 }
 
 pub(super) fn normalized_value(property: PropertyId, css_declaration: &str) -> ComputedValue {

@@ -217,7 +217,10 @@ tests without introducing feature-specific remembered state.
 
 ## Deliberate exclusions
 
-AE9b excludes fragment parsing, template modes, foreign content, historical
+AE9b itself excludes fragment parsing and does not introduce template modes;
+AE10 composes this existing InBody select-family subset inside ordinary
+template contents without adding `InSelect` or `InSelectInTable`. AE9b also
+excludes foreign content, historical
 select modes/filtering, selectedness, values, disabled propagation, option
 collections, popup/listbox behavior, form submission/reset, validation, focus,
 input interaction, events, accessibility semantics, layout, paint, JavaScript,

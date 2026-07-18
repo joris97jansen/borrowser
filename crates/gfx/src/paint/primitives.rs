@@ -1258,11 +1258,11 @@ mod tests {
     }
 
     fn positioned_block(id: Id, z_index: &str, color: &str, children: Vec<Node>) -> Node {
-        Node::Element {
+        html::internal::node_element_from_parts(
             id,
-            name: Arc::from("div"),
-            attributes: Vec::new(),
-            style: vec![
+            Arc::from("div"),
+            Vec::new(),
+            vec![
                 ("display".to_string(), "block".to_string()),
                 ("position".to_string(), "relative".to_string()),
                 ("z-index".to_string(), z_index.to_string()),
@@ -1271,7 +1271,7 @@ mod tests {
                 ("background-color".to_string(), color.to_string()),
             ],
             children,
-        }
+        )
     }
 
     fn child_context_node_ids(contexts: &StackingContextTree, layer: StackingLayerKind) -> Vec<Id> {
@@ -1357,13 +1357,13 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: Vec::new(),
-                children: Vec::new(),
-            }],
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                Vec::new(),
+                Vec::new(),
+            )],
         };
 
         let styled = build_style_tree(&dom);
@@ -1393,28 +1393,28 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![("display".to_string(), "block".to_string())],
-                children: vec![
-                    Node::Element {
-                        id: Id(3),
-                        name: Arc::from("div"),
-                        attributes: Vec::new(),
-                        style: vec![("display".to_string(), "block".to_string())],
-                        children: Vec::new(),
-                    },
-                    Node::Element {
-                        id: Id(4),
-                        name: Arc::from("aside"),
-                        attributes: Vec::new(),
-                        style: vec![("display".to_string(), "block".to_string())],
-                        children: Vec::new(),
-                    },
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![("display".to_string(), "block".to_string())],
+                vec![
+                    html::internal::node_element_from_parts(
+                        Id(3),
+                        Arc::from("div"),
+                        Vec::new(),
+                        vec![("display".to_string(), "block".to_string())],
+                        Vec::new(),
+                    ),
+                    html::internal::node_element_from_parts(
+                        Id(4),
+                        Arc::from("aside"),
+                        Vec::new(),
+                        vec![("display".to_string(), "block".to_string())],
+                        Vec::new(),
+                    ),
                 ],
-            }],
+            )],
         };
 
         let styled = build_style_tree(&dom);
@@ -1467,19 +1467,19 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: Vec::new(),
-                children: vec![Node::Element {
-                    id: Id(3),
-                    name: Arc::from("div"),
-                    attributes: Vec::new(),
-                    style: Vec::new(),
-                    children: Vec::new(),
-                }],
-            }],
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                Vec::new(),
+                vec![html::internal::node_element_from_parts(
+                    Id(3),
+                    Arc::from("div"),
+                    Vec::new(),
+                    Vec::new(),
+                    Vec::new(),
+                )],
+            )],
         };
 
         let first = build_stacking_context_snapshot(&dom);
@@ -1505,22 +1505,22 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![
                     ("display".to_string(), "block".to_string()),
                     ("width".to_string(), "120px".to_string()),
                     ("height".to_string(), "20px".to_string()),
                     ("background-color".to_string(), "#00aa00".to_string()),
                 ],
-                children: vec![
+                vec![
                     positioned_block(Id(3), "0", "#0000aa", Vec::new()),
                     positioned_block(Id(4), "-1", "#aa0000", Vec::new()),
                     positioned_block(Id(5), "2", "#aaaa00", Vec::new()),
                 ],
-            }],
+            )],
         };
 
         let snapshot = build_layering_snapshot(&dom);
@@ -1563,12 +1563,12 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![("display".to_string(), "block".to_string())],
-                children: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![("display".to_string(), "block".to_string())],
+                vec![
                     positioned_block(
                         Id(3),
                         "1",
@@ -1577,7 +1577,7 @@ mod tests {
                     ),
                     positioned_block(Id(5), "2", "#0000aa", Vec::new()),
                 ],
-            }],
+            )],
         };
 
         let snapshot = build_layering_snapshot(&dom);
@@ -1612,18 +1612,18 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![
                     ("display".to_string(), "block".to_string()),
                     ("width".to_string(), "120px".to_string()),
                     ("height".to_string(), "40px".to_string()),
                     ("overflow".to_string(), "clip".to_string()),
                 ],
-                children: Vec::new(),
-            }],
+                Vec::new(),
+            )],
         };
 
         let styled = build_style_tree(&dom);
@@ -1647,46 +1647,46 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![("display".to_string(), "block".to_string())],
-                children: vec![
-                    Node::Element {
-                        id: Id(3),
-                        name: Arc::from("div"),
-                        attributes: Vec::new(),
-                        style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![("display".to_string(), "block".to_string())],
+                vec![
+                    html::internal::node_element_from_parts(
+                        Id(3),
+                        Arc::from("div"),
+                        Vec::new(),
+                        vec![
                             ("display".to_string(), "block".to_string()),
                             ("position".to_string(), "relative".to_string()),
                             ("z-index".to_string(), "2".to_string()),
                         ],
-                        children: Vec::new(),
-                    },
-                    Node::Element {
-                        id: Id(4),
-                        name: Arc::from("div"),
-                        attributes: Vec::new(),
-                        style: vec![
+                        Vec::new(),
+                    ),
+                    html::internal::node_element_from_parts(
+                        Id(4),
+                        Arc::from("div"),
+                        Vec::new(),
+                        vec![
                             ("display".to_string(), "block".to_string()),
                             ("z-index".to_string(), "9".to_string()),
                         ],
-                        children: Vec::new(),
-                    },
-                    Node::Element {
-                        id: Id(5),
-                        name: Arc::from("div"),
-                        attributes: Vec::new(),
-                        style: vec![
+                        Vec::new(),
+                    ),
+                    html::internal::node_element_from_parts(
+                        Id(5),
+                        Arc::from("div"),
+                        Vec::new(),
+                        vec![
                             ("display".to_string(), "block".to_string()),
                             ("position".to_string(), "relative".to_string()),
                             ("z-index".to_string(), "auto".to_string()),
                         ],
-                        children: Vec::new(),
-                    },
+                        Vec::new(),
+                    ),
                 ],
-            }],
+            )],
         };
 
         let styled = build_style_tree(&dom);
@@ -1726,18 +1726,18 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![("display".to_string(), "block".to_string())],
-                children: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![("display".to_string(), "block".to_string())],
+                vec![
                     positioned_block(Id(3), "-1", "#111111", Vec::new()),
                     positioned_block(Id(4), "0", "#222222", Vec::new()),
                     positioned_block(Id(5), "2", "#333333", Vec::new()),
                     positioned_block(Id(6), "2", "#444444", Vec::new()),
                 ],
-            }],
+            )],
         };
 
         let styled = build_style_tree(&dom);
@@ -1764,18 +1764,18 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![("display".to_string(), "block".to_string())],
-                children: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![("display".to_string(), "block".to_string())],
+                vec![
                     positioned_block(Id(3), "0", "#111111", Vec::new()),
                     positioned_block(Id(4), "-2", "#222222", Vec::new()),
                     positioned_block(Id(5), "3", "#333333", Vec::new()),
                     positioned_block(Id(6), "3", "#444444", Vec::new()),
                 ],
-            }],
+            )],
         };
 
         let styled = build_style_tree(&dom);
@@ -1799,22 +1799,22 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![("display".to_string(), "block".to_string())],
-                children: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![("display".to_string(), "block".to_string())],
+                vec![
                     positioned_block(Id(3), "1", "#111111", Vec::new()),
-                    Node::Element {
-                        id: Id(4),
-                        name: Arc::from("div"),
-                        attributes: Vec::new(),
-                        style: vec![("display".to_string(), "block".to_string())],
-                        children: Vec::new(),
-                    },
+                    html::internal::node_element_from_parts(
+                        Id(4),
+                        Arc::from("div"),
+                        Vec::new(),
+                        vec![("display".to_string(), "block".to_string())],
+                        Vec::new(),
+                    ),
                 ],
-            }],
+            )],
         };
 
         let styled = build_style_tree(&dom);
@@ -1851,12 +1851,12 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![("display".to_string(), "block".to_string())],
-                children: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![("display".to_string(), "block".to_string())],
+                vec![
                     positioned_block(
                         Id(3),
                         "1",
@@ -1865,7 +1865,7 @@ mod tests {
                     ),
                     positioned_block(Id(5), "2", "#333333", Vec::new()),
                 ],
-            }],
+            )],
         };
 
         let styled = build_style_tree(&dom);
@@ -1905,11 +1905,11 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![
                     ("display".to_string(), "block".to_string()),
                     ("width".to_string(), "120px".to_string()),
                     ("height".to_string(), "40px".to_string()),
@@ -1919,11 +1919,11 @@ mod tests {
                     ("border-top-color".to_string(), "red".to_string()),
                     ("overflow".to_string(), "clip".to_string()),
                 ],
-                children: vec![Node::Text {
+                vec![Node::Text {
                     id: Id(3),
                     text: "Hello".to_string(),
                 }],
-            }],
+            )],
         };
 
         let styled = build_style_tree(&dom);
@@ -1958,11 +1958,11 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![
                     ("display".to_string(), "block".to_string()),
                     ("width".to_string(), "120px".to_string()),
                     ("height".to_string(), "40px".to_string()),
@@ -1975,11 +1975,11 @@ mod tests {
                     ("outline-style".to_string(), "solid".to_string()),
                     ("outline-color".to_string(), "#778899".to_string()),
                 ],
-                children: vec![Node::Text {
+                vec![Node::Text {
                     id: Id(3),
                     text: "Hello".to_string(),
                 }],
-            }],
+            )],
         };
 
         let snapshot = build_paint_order_snapshot(&dom);
@@ -2003,11 +2003,11 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![
                     ("display".to_string(), "block".to_string()),
                     ("width".to_string(), "120px".to_string()),
                     ("height".to_string(), "60px".to_string()),
@@ -2016,19 +2016,19 @@ mod tests {
                     ("border-top-style".to_string(), "solid".to_string()),
                     ("border-top-color".to_string(), "#405060".to_string()),
                 ],
-                children: vec![Node::Element {
-                    id: Id(3),
-                    name: Arc::from("div"),
-                    attributes: Vec::new(),
-                    style: vec![
+                vec![html::internal::node_element_from_parts(
+                    Id(3),
+                    Arc::from("div"),
+                    Vec::new(),
+                    vec![
                         ("display".to_string(), "block".to_string()),
                         ("width".to_string(), "40px".to_string()),
                         ("height".to_string(), "20px".to_string()),
                         ("background-color".to_string(), "#708090".to_string()),
                     ],
-                    children: Vec::new(),
-                }],
-            }],
+                    Vec::new(),
+                )],
+            )],
         };
 
         let styled = build_style_tree(&dom);
@@ -2052,18 +2052,18 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![
                     ("display".to_string(), "block".to_string()),
                     ("width".to_string(), "120px".to_string()),
                     ("height".to_string(), "40px".to_string()),
                     ("overflow".to_string(), "hidden".to_string()),
                 ],
-                children: Vec::new(),
-            }],
+                Vec::new(),
+            )],
         };
 
         let styled = build_style_tree(&dom);
@@ -2102,18 +2102,18 @@ mod tests {
             let dom = Node::Document {
                 id: Id(1),
                 doctype: None,
-                children: vec![Node::Element {
-                    id: Id(node_id),
-                    name: Arc::from("section"),
-                    attributes: Vec::new(),
-                    style: vec![
+                children: vec![html::internal::node_element_from_parts(
+                    Id(node_id),
+                    Arc::from("section"),
+                    Vec::new(),
+                    vec![
                         ("display".to_string(), "block".to_string()),
                         ("width".to_string(), "80px".to_string()),
                         ("height".to_string(), "30px".to_string()),
                         ("overflow".to_string(), overflow.to_string()),
                     ],
-                    children: Vec::new(),
-                }],
+                    Vec::new(),
+                )],
             };
 
             let styled = build_style_tree(&dom);
@@ -2133,18 +2133,18 @@ mod tests {
         let visible_dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(10),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(10),
+                Arc::from("section"),
+                Vec::new(),
+                vec![
                     ("display".to_string(), "block".to_string()),
                     ("width".to_string(), "80px".to_string()),
                     ("height".to_string(), "30px".to_string()),
                     ("overflow".to_string(), "visible".to_string()),
                 ],
-                children: Vec::new(),
-            }],
+                Vec::new(),
+            )],
         };
         let styled = build_style_tree(&visible_dom);
         let layout = build_layout_for(&styled);
@@ -2163,22 +2163,22 @@ mod tests {
         let inline_dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(20),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: Vec::new(),
-                children: vec![Node::Element {
-                    id: Id(21),
-                    name: Arc::from("span"),
-                    attributes: Vec::new(),
-                    style: vec![("overflow".to_string(), "hidden".to_string())],
-                    children: vec![Node::Text {
+            children: vec![html::internal::node_element_from_parts(
+                Id(20),
+                Arc::from("section"),
+                Vec::new(),
+                Vec::new(),
+                vec![html::internal::node_element_from_parts(
+                    Id(21),
+                    Arc::from("span"),
+                    Vec::new(),
+                    vec![("overflow".to_string(), "hidden".to_string())],
+                    vec![Node::Text {
                         id: Id(22),
                         text: "inline".to_string(),
                     }],
-                }],
-            }],
+                )],
+            )],
         };
         let styled = build_style_tree(&inline_dom);
         let layout = build_layout_for(&styled);
@@ -2199,22 +2199,22 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![
                     ("display".to_string(), "block".to_string()),
                     ("width".to_string(), "200px".to_string()),
                     ("font-size".to_string(), "20px".to_string()),
                     ("color".to_string(), "red".to_string()),
                     ("text-decoration-line".to_string(), "underline".to_string()),
                 ],
-                children: vec![Node::Text {
+                vec![Node::Text {
                     id: Id(3),
                     text: "Hello".to_string(),
                 }],
-            }],
+            )],
         };
 
         let styled = build_style_tree(&dom);
@@ -2270,31 +2270,31 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![
                     ("display".to_string(), "block".to_string()),
                     ("width".to_string(), "200px".to_string()),
                 ],
-                children: vec![
+                vec![
                     Node::Text {
                         id: Id(3),
                         text: "Hello".to_string(),
                     },
-                    Node::Element {
-                        id: Id(4),
-                        name: Arc::from("span"),
-                        attributes: Vec::new(),
-                        style: vec![("display".to_string(), "inline-block".to_string())],
-                        children: vec![Node::Text {
+                    html::internal::node_element_from_parts(
+                        Id(4),
+                        Arc::from("span"),
+                        Vec::new(),
+                        vec![("display".to_string(), "inline-block".to_string())],
+                        vec![Node::Text {
                             id: Id(5),
                             text: "Box".to_string(),
                         }],
-                    },
+                    ),
                 ],
-            }],
+            )],
         };
 
         let styled = build_style_tree(&dom);
@@ -2312,26 +2312,26 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![
                     ("display".to_string(), "block".to_string()),
                     ("width".to_string(), "200px".to_string()),
                     ("text-decoration-line".to_string(), "underline".to_string()),
                 ],
-                children: vec![Node::Element {
-                    id: Id(3),
-                    name: Arc::from("span"),
-                    attributes: Vec::new(),
-                    style: Vec::new(),
-                    children: vec![Node::Text {
+                vec![html::internal::node_element_from_parts(
+                    Id(3),
+                    Arc::from("span"),
+                    Vec::new(),
+                    Vec::new(),
+                    vec![Node::Text {
                         id: Id(4),
                         text: "Child".to_string(),
                     }],
-                }],
-            }],
+                )],
+            )],
         };
 
         let styled = build_style_tree(&dom);
@@ -2359,11 +2359,11 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![
                     ("display".to_string(), "block".to_string()),
                     ("width".to_string(), "120px".to_string()),
                     ("height".to_string(), "40px".to_string()),
@@ -2371,8 +2371,8 @@ mod tests {
                     ("outline-style".to_string(), "solid".to_string()),
                     ("outline-color".to_string(), "red".to_string()),
                 ],
-                children: Vec::new(),
-            }],
+                Vec::new(),
+            )],
         };
 
         let styled = build_style_tree(&dom);
@@ -2398,11 +2398,11 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![
                     ("display".to_string(), "block".to_string()),
                     ("width".to_string(), "120px".to_string()),
                     ("height".to_string(), "40px".to_string()),
@@ -2415,25 +2415,25 @@ mod tests {
                     ("outline-style".to_string(), "solid".to_string()),
                     ("outline-color".to_string(), "red".to_string()),
                 ],
-                children: vec![
+                vec![
                     Node::Text {
                         id: Id(3),
                         text: "Hello".to_string(),
                     },
-                    Node::Element {
-                        id: Id(4),
-                        name: Arc::from("div"),
-                        attributes: Vec::new(),
-                        style: vec![
+                    html::internal::node_element_from_parts(
+                        Id(4),
+                        Arc::from("div"),
+                        Vec::new(),
+                        vec![
                             ("display".to_string(), "block".to_string()),
                             ("width".to_string(), "20px".to_string()),
                             ("height".to_string(), "10px".to_string()),
                             ("background-color".to_string(), "green".to_string()),
                         ],
-                        children: Vec::new(),
-                    },
+                        Vec::new(),
+                    ),
                 ],
-            }],
+            )],
         };
 
         let styled = build_style_tree(&dom);
@@ -2482,41 +2482,41 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![
                     ("display".to_string(), "block".to_string()),
                     ("width".to_string(), "120px".to_string()),
                 ],
-                children: vec![
-                    Node::Element {
-                        id: Id(3),
-                        name: Arc::from("div"),
-                        attributes: Vec::new(),
-                        style: vec![
+                vec![
+                    html::internal::node_element_from_parts(
+                        Id(3),
+                        Arc::from("div"),
+                        Vec::new(),
+                        vec![
                             ("display".to_string(), "block".to_string()),
                             ("width".to_string(), "40px".to_string()),
                             ("height".to_string(), "10px".to_string()),
                             ("background-color".to_string(), "#010203".to_string()),
                         ],
-                        children: Vec::new(),
-                    },
-                    Node::Element {
-                        id: Id(4),
-                        name: Arc::from("div"),
-                        attributes: Vec::new(),
-                        style: vec![
+                        Vec::new(),
+                    ),
+                    html::internal::node_element_from_parts(
+                        Id(4),
+                        Arc::from("div"),
+                        Vec::new(),
+                        vec![
                             ("display".to_string(), "block".to_string()),
                             ("width".to_string(), "40px".to_string()),
                             ("height".to_string(), "10px".to_string()),
                             ("background-color".to_string(), "#040506".to_string()),
                         ],
-                        children: Vec::new(),
-                    },
+                        Vec::new(),
+                    ),
                 ],
-            }],
+            )],
         };
 
         let snapshot = build_paint_order_snapshot(&dom);
@@ -2542,22 +2542,22 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![
                     ("display".to_string(), "block".to_string()),
                     ("width".to_string(), "120px".to_string()),
                     ("height".to_string(), "20px".to_string()),
                     ("background-color".to_string(), "#00aa00".to_string()),
                 ],
-                children: vec![
+                vec![
                     positioned_block(Id(3), "0", "#0000aa", Vec::new()),
                     positioned_block(Id(4), "-1", "#aa0000", Vec::new()),
                     positioned_block(Id(5), "2", "#aaaa00", Vec::new()),
                 ],
-            }],
+            )],
         };
 
         let snapshot = build_paint_order_snapshot(&dom);
@@ -2597,22 +2597,22 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![
                     ("display".to_string(), "block".to_string()),
                     ("width".to_string(), "120px".to_string()),
                     ("height".to_string(), "20px".to_string()),
                     ("background-color".to_string(), "#00aa00".to_string()),
                 ],
-                children: vec![
+                vec![
                     positioned_block(Id(3), "0", "#0000aa", Vec::new()),
                     positioned_block(Id(4), "-1", "#aa0000", Vec::new()),
                     positioned_block(Id(5), "2", "#aaaa00", Vec::new()),
                 ],
-            }],
+            )],
         };
 
         let layering = build_layering_snapshot(&dom);
@@ -2649,11 +2649,11 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![
                     ("display".to_string(), "block".to_string()),
                     ("width".to_string(), "120px".to_string()),
                     ("height".to_string(), "40px".to_string()),
@@ -2666,11 +2666,11 @@ mod tests {
                     ("outline-style".to_string(), "solid".to_string()),
                     ("outline-color".to_string(), "#778899".to_string()),
                 ],
-                children: vec![Node::Text {
+                vec![Node::Text {
                     id: Id(3),
                     text: "Hello".to_string(),
                 }],
-            }],
+            )],
         };
 
         let styled = build_style_tree(&dom);
@@ -2707,11 +2707,11 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![
                     ("display".to_string(), "block".to_string()),
                     ("width".to_string(), "100px".to_string()),
                     ("height".to_string(), "20px".to_string()),
@@ -2719,8 +2719,8 @@ mod tests {
                     ("outline-style".to_string(), "solid".to_string()),
                     ("outline-color".to_string(), "red".to_string()),
                 ],
-                children: Vec::new(),
-            }],
+                Vec::new(),
+            )],
         };
 
         let styled = build_style_tree(&dom);
@@ -2764,47 +2764,47 @@ mod tests {
             id: Id(1),
             doctype: None,
             children: vec![
-                Node::Element {
-                    id: Id(2),
-                    name: Arc::from("section"),
-                    attributes: Vec::new(),
-                    style: vec![
+                html::internal::node_element_from_parts(
+                    Id(2),
+                    Arc::from("section"),
+                    Vec::new(),
+                    vec![
                         ("border-top-width".to_string(), "2px".to_string()),
                         ("border-top-style".to_string(), "solid".to_string()),
                     ],
-                    children: Vec::new(),
-                },
-                Node::Element {
-                    id: Id(3),
-                    name: Arc::from("section"),
-                    attributes: Vec::new(),
-                    style: vec![
+                    Vec::new(),
+                ),
+                html::internal::node_element_from_parts(
+                    Id(3),
+                    Arc::from("section"),
+                    Vec::new(),
+                    vec![
                         ("border-top-width".to_string(), "2px".to_string()),
                         ("border-top-color".to_string(), "red".to_string()),
                     ],
-                    children: Vec::new(),
-                },
-                Node::Element {
-                    id: Id(4),
-                    name: Arc::from("section"),
-                    attributes: Vec::new(),
-                    style: vec![
+                    Vec::new(),
+                ),
+                html::internal::node_element_from_parts(
+                    Id(4),
+                    Arc::from("section"),
+                    Vec::new(),
+                    vec![
                         ("border-top-style".to_string(), "solid".to_string()),
                         ("border-top-color".to_string(), "red".to_string()),
                     ],
-                    children: Vec::new(),
-                },
-                Node::Element {
-                    id: Id(5),
-                    name: Arc::from("section"),
-                    attributes: Vec::new(),
-                    style: vec![
+                    Vec::new(),
+                ),
+                html::internal::node_element_from_parts(
+                    Id(5),
+                    Arc::from("section"),
+                    Vec::new(),
+                    vec![
                         ("border-top-width".to_string(), "2px".to_string()),
                         ("border-top-style".to_string(), "solid".to_string()),
                         ("border-top-color".to_string(), "transparent".to_string()),
                     ],
-                    children: Vec::new(),
-                },
+                    Vec::new(),
+                ),
             ],
         };
 
@@ -2823,37 +2823,37 @@ mod tests {
             id: Id(1),
             doctype: None,
             children: vec![
-                Node::Element {
-                    id: Id(2),
-                    name: Arc::from("section"),
-                    attributes: Vec::new(),
-                    style: vec![
+                html::internal::node_element_from_parts(
+                    Id(2),
+                    Arc::from("section"),
+                    Vec::new(),
+                    vec![
                         ("outline-style".to_string(), "solid".to_string()),
                         ("outline-color".to_string(), "red".to_string()),
                     ],
-                    children: Vec::new(),
-                },
-                Node::Element {
-                    id: Id(3),
-                    name: Arc::from("section"),
-                    attributes: Vec::new(),
-                    style: vec![
+                    Vec::new(),
+                ),
+                html::internal::node_element_from_parts(
+                    Id(3),
+                    Arc::from("section"),
+                    Vec::new(),
+                    vec![
                         ("outline-width".to_string(), "2px".to_string()),
                         ("outline-color".to_string(), "red".to_string()),
                     ],
-                    children: Vec::new(),
-                },
-                Node::Element {
-                    id: Id(4),
-                    name: Arc::from("section"),
-                    attributes: Vec::new(),
-                    style: vec![
+                    Vec::new(),
+                ),
+                html::internal::node_element_from_parts(
+                    Id(4),
+                    Arc::from("section"),
+                    Vec::new(),
+                    vec![
                         ("outline-width".to_string(), "2px".to_string()),
                         ("outline-style".to_string(), "solid".to_string()),
                         ("outline-color".to_string(), "transparent".to_string()),
                     ],
-                    children: Vec::new(),
-                },
+                    Vec::new(),
+                ),
             ],
         };
 
@@ -2871,22 +2871,22 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("ul"),
-                attributes: Vec::new(),
-                style: Vec::new(),
-                children: vec![Node::Element {
-                    id: Id(3),
-                    name: Arc::from("li"),
-                    attributes: Vec::new(),
-                    style: Vec::new(),
-                    children: vec![Node::Text {
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("ul"),
+                Vec::new(),
+                Vec::new(),
+                vec![html::internal::node_element_from_parts(
+                    Id(3),
+                    Arc::from("li"),
+                    Vec::new(),
+                    Vec::new(),
+                    vec![Node::Text {
                         id: Id(4),
                         text: "Item".to_string(),
                     }],
-                }],
-            }],
+                )],
+            )],
         };
 
         let styled = build_style_tree(&dom);
@@ -2910,13 +2910,13 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![("background-color".to_string(), "#abcdef".to_string())],
-                children: Vec::new(),
-            }],
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![("background-color".to_string(), "#abcdef".to_string())],
+                Vec::new(),
+            )],
         };
 
         let first = build_paint_input_for_debug(&dom);

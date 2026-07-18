@@ -33,10 +33,10 @@ fn inline_styles_are_attached_and_computed_during_initial_document_load() {
     assert!(
         find_dom_element(dom, "p")
             .and_then(|node| match node {
-                Node::Element { style, .. } => Some(style),
+                Node::Element { element } => Some(element.style()),
                 _ => None,
             })
-            .is_some_and(Vec::is_empty),
+            .is_some_and(<[_]>::is_empty),
         "structured runtime style resolution must not write legacy Node::style"
     );
 }
@@ -49,23 +49,23 @@ fn split_text_style_element_is_concatenated_without_synthetic_newlines() {
     let dom = Box::new(Node::Document {
         id: Id(1),
         doctype: None,
-        children: vec![Node::Element {
-            id: Id(2),
-            name: Arc::from("html"),
-            attributes: Vec::new(),
-            style: Vec::new(),
-            children: vec![
-                Node::Element {
-                    id: Id(3),
-                    name: Arc::from("head"),
-                    attributes: Vec::new(),
-                    style: Vec::new(),
-                    children: vec![Node::Element {
-                        id: Id(4),
-                        name: Arc::from("style"),
-                        attributes: Vec::new(),
-                        style: Vec::new(),
-                        children: vec![
+        children: vec![html::internal::node_element_from_parts(
+            Id(2),
+            Arc::from("html"),
+            Vec::new(),
+            Vec::new(),
+            vec![
+                html::internal::node_element_from_parts(
+                    Id(3),
+                    Arc::from("head"),
+                    Vec::new(),
+                    Vec::new(),
+                    vec![html::internal::node_element_from_parts(
+                        Id(4),
+                        Arc::from("style"),
+                        Vec::new(),
+                        Vec::new(),
+                        vec![
                             Node::Text {
                                 id: Id(5),
                                 text: "p { co".to_string(),
@@ -75,26 +75,26 @@ fn split_text_style_element_is_concatenated_without_synthetic_newlines() {
                                 text: "lor: red; }".to_string(),
                             },
                         ],
-                    }],
-                },
-                Node::Element {
-                    id: Id(7),
-                    name: Arc::from("body"),
-                    attributes: Vec::new(),
-                    style: Vec::new(),
-                    children: vec![Node::Element {
-                        id: Id(8),
-                        name: Arc::from("p"),
-                        attributes: Vec::new(),
-                        style: Vec::new(),
-                        children: vec![Node::Text {
+                    )],
+                ),
+                html::internal::node_element_from_parts(
+                    Id(7),
+                    Arc::from("body"),
+                    Vec::new(),
+                    Vec::new(),
+                    vec![html::internal::node_element_from_parts(
+                        Id(8),
+                        Arc::from("p"),
+                        Vec::new(),
+                        Vec::new(),
+                        vec![Node::Text {
                             id: Id(9),
                             text: "Hello".to_string(),
                         }],
-                    }],
-                },
+                    )],
+                ),
             ],
-        }],
+        )],
     });
 
     tab.on_core_event(CoreEvent::DomUpdate {

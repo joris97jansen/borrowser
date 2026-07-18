@@ -32,7 +32,9 @@ It is the scope and invariants document to implement against before feature code
 ## Non-Goals
 
 - This contract does not change current shipping status by itself.
-- This contract does not add table insertion modes, foster parenting, or template insertion mode stack behavior.
+- This contract does not itself add table insertion modes, foster parenting,
+  or template insertion-mode behavior. AE8 and AE10 compose those algorithms
+  with this unchanged supported AFE/AAA subset.
 - This contract does not permit full-document rebuilds or `Clear`-based recovery for inline formatting errors.
 
 ## Supported Formatting Elements
@@ -109,19 +111,24 @@ In Milestone H they are inserted for the supported `In body` marker-producing pa
 - `marquee`
 - `object`
 
-Deferred marker-producing contexts:
-
-- template-related boundaries because template insertion modes remain out of scope
-
 AE8 marker-producing contexts:
 
 - table-cell related markers (`td`, `th`) are inserted and cleared by the
   parser-owned table-cell handling defined in
   `docs/html5/ae8-specialized-table-tree-construction-contract.md`
 
+AE10 marker-producing contexts:
+
+- accepted ordinary template starts insert a `Template` diagnostic marker
+  owned by the template host key;
+- caption and table-cell call sites record `Caption` and `TableCell` kinds;
+- the pinned last-marker algorithm is unchanged by this metadata.
+
 Marker contract:
 
-- markers have no `PatchKey`
+- markers are not DOM nodes and carry no independent DOM identity;
+- markers carry a typed diagnostic kind and may record the owner `PatchKey`
+  that caused insertion;
 - markers are never mirrored as DOM nodes or SOE entries
 - markers partition duplicate checks, reconstruction scans, and AAA searches
 - `clear-to-last-marker` removes entries after the last marker and then removes that marker
@@ -133,8 +140,20 @@ Milestone H AFE storage must use an explicit tagged entry model:
 
 ```rust
 enum AfeEntry {
-    Marker,
+    Marker(AfeMarker),
     Element(AfeElementEntry),
+}
+
+enum AfeMarkerKind {
+    FormattingBoundary,
+    Caption,
+    TableCell,
+    Template,
+}
+
+struct AfeMarker {
+    kind: AfeMarkerKind,
+    owner: Option<PatchKey>,
 }
 
 struct AfeElementEntry {
@@ -228,6 +247,12 @@ Any simplification weaker than "keep at most three matching entries after the la
 - Marker insertion and marker clearing are explicit operations, never inferred from tag names already on SOE.
 - Duplicate scans, reconstruction scans, and AAA searches never cross the most recent marker.
 - Marker behavior is deterministic even when malformed input creates repeated marker-producing elements.
+- Kind/owner metadata is diagnostic and invariant state only. Every marker is
+  an equivalent algorithmic stopping boundary.
+- `clear-to-last-marker` never searches by kind or owner and never repeats to
+  reach a preferred owner. Template closure and EOF invoke it exactly once per
+  pinned algorithm step, so residual closed-template marker metadata may remain
+  after a newer marker is cleared.
 
 ## Reconstruction Contract
 
@@ -256,7 +281,9 @@ Milestone H reconstruction call sites include the supported `In body` branches t
 - formatting-element start-tag paths
 - the special `a` and `nobr` start-tag paths
 
-Deferred reconstruction call sites remain deferred with their parent algorithms, notably table-family insertion modes and template modes.
+Reconstruction call sites remain governed by their parent algorithms. AE10
+routes template insertions and supported table/template paths through the
+existing reconstruction and AAA machinery without changing its tag subset.
 
 ## Adoption Agency Algorithm Contract
 

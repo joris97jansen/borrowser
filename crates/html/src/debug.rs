@@ -104,12 +104,10 @@ pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
                 line.push('>');
                 out.push(line);
             }
-            Node::Element {
-                name,
-                children,
-                style,
-                ..
-            } => {
+            Node::Element { element } => {
+                let name = element.name();
+                let children = element.children();
+                let style = element.style();
                 let id = node.attr("id").unwrap_or("");
                 let class = node.attr("class").unwrap_or("");
                 let styl = if style.is_empty() {

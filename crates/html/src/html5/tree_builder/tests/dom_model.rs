@@ -50,9 +50,9 @@ fn accepted_doctype_creates_document_type_node_before_document_element() {
                 system_id: None,
                 ..
             },
-            crate::Node::Element { name: html, .. },
+            crate::Node::Element { element: html },
             ..
-        ] if name == "html" && html.as_ref() == "html"
+        ] if name == "html" && html.name().as_ref() == "html"
     ));
 }
 
@@ -108,9 +108,9 @@ fn initial_comment_before_doctype_preserves_comment_doctype_html_order() {
                 system_id: None,
                 ..
             },
-            crate::Node::Element { name: html, .. },
+            crate::Node::Element { element: html },
             ..
-        ] if text == "pre" && name == "html" && html.as_ref() == "html"
+        ] if text == "pre" && name == "html" && html.name().as_ref() == "html"
     ));
 }
 

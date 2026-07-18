@@ -1,6 +1,7 @@
 use super::{DomDiffError, DomDiffState};
 use crate::dom_patch::{DomPatch, PatchKey};
-use crate::types::{Id, Node};
+use crate::traverse::full_model_preorder;
+use crate::types::{DocumentFragmentNode, Id, Node};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -21,7 +22,11 @@ enum PrevNodeInfo {
         name: Arc<str>,
         attributes: Vec<(Arc<str>, Option<String>)>,
         children: Vec<Id>,
+        template_contents: Option<Id>,
         parent: Option<Id>,
+    },
+    DocumentFragment {
+        children: Vec<Id>,
     },
     Text {
         text: String,
@@ -95,97 +100,60 @@ fn reset_stream(next: &Node) -> Result<Vec<DomPatch>, DomDiffError> {
     Ok(patches)
 }
 
-fn build_prev_map(node: &Node, parent: Option<Id>, map: &mut HashMap<Id, PrevNodeInfo>) {
-    match node {
-        Node::Document {
-            id,
-            doctype,
-            children,
-        } => {
-            map.insert(
-                *id,
-                PrevNodeInfo::Document {
-                    doctype: doctype.clone(),
-                    children: children.iter().map(Node::id).collect(),
-                    parent,
-                },
-            );
-            for child in children {
-                build_prev_map(child, Some(*id), map);
-            }
-        }
-        Node::DocumentType {
-            id,
-            name,
-            public_id,
-            system_id,
-        } => {
-            map.insert(
-                *id,
-                PrevNodeInfo::DocumentType {
-                    name: name.clone(),
-                    public_id: public_id.clone(),
-                    system_id: system_id.clone(),
-                    parent,
-                },
-            );
-        }
-        Node::Element {
-            id,
-            name,
-            attributes,
-            children,
-            ..
-        } => {
-            map.insert(
-                *id,
+fn build_prev_map(node: &Node, _parent: Option<Id>, map: &mut HashMap<Id, PrevNodeInfo>) {
+    for visit in full_model_preorder(node) {
+        let info = match visit.entry {
+            crate::traverse::FullModelNodeRef::Node(Node::Document {
+                doctype, children, ..
+            }) => PrevNodeInfo::Document {
+                doctype: doctype.clone(),
+                children: children.iter().map(Node::id).collect(),
+                parent: visit.container,
+            },
+            crate::traverse::FullModelNodeRef::Node(Node::DocumentType {
+                name,
+                public_id,
+                system_id,
+                ..
+            }) => PrevNodeInfo::DocumentType {
+                name: name.clone(),
+                public_id: public_id.clone(),
+                system_id: system_id.clone(),
+                parent: visit.container,
+            },
+            crate::traverse::FullModelNodeRef::Node(Node::Element { element }) => {
                 PrevNodeInfo::Element {
-                    name: Arc::clone(name),
-                    attributes: attributes.clone(),
-                    children: children.iter().map(Node::id).collect(),
-                    parent,
-                },
-            );
-            for child in children {
-                build_prev_map(child, Some(*id), map);
+                    name: Arc::clone(element.name()),
+                    attributes: element.attributes().to_vec(),
+                    children: element.children().iter().map(Node::id).collect(),
+                    template_contents: element.template_contents().map(DocumentFragmentNode::id),
+                    parent: visit.container,
+                }
             }
-        }
-        Node::Text { id, text } => {
-            map.insert(
-                *id,
+            crate::traverse::FullModelNodeRef::DocumentFragment(fragment) => {
+                PrevNodeInfo::DocumentFragment {
+                    children: fragment.children().iter().map(Node::id).collect(),
+                }
+            }
+            crate::traverse::FullModelNodeRef::Node(Node::Text { text, .. }) => {
                 PrevNodeInfo::Text {
                     text: text.clone(),
-                    parent,
-                },
-            );
-        }
-        Node::Comment { id, text } => {
-            map.insert(
-                *id,
+                    parent: visit.container,
+                }
+            }
+            crate::traverse::FullModelNodeRef::Node(Node::Comment { text, .. }) => {
                 PrevNodeInfo::Comment {
                     text: text.clone(),
-                    parent,
-                },
-            );
-        }
+                    parent: visit.container,
+                }
+            }
+        };
+        map.insert(visit.entry.id(), info);
     }
 }
 
 fn collect_ids(node: &Node, out: &mut HashSet<Id>) -> bool {
-    if !out.insert(node.id()) {
-        return false;
-    }
-    match node {
-        Node::Document { children, .. } | Node::Element { children, .. } => {
-            for child in children {
-                if !collect_ids(child, out) {
-                    return false;
-                }
-            }
-        }
-        Node::DocumentType { .. } | Node::Text { .. } | Node::Comment { .. } => {}
-    }
-    true
+    full_model_preorder(node).all(|visit| out.insert(visit.entry.id()))
 }
 
 fn emit_removals(
@@ -200,8 +168,18 @@ fn emit_removals(
         return Ok(());
     }
     match node {
-        Node::Document { children, .. } | Node::Element { children, .. } => {
+        Node::Document { children, .. } => {
             for child in children {
+                emit_removals(child, next_ids, patches)?;
+            }
+        }
+        Node::Element { element } => {
+            if let Some(contents) = element.template_contents() {
+                for child in contents.children() {
+                    emit_removals(child, next_ids, patches)?;
+                }
+            }
+            for child in element.children() {
                 emit_removals(child, next_ids, patches)?;
             }
         }
@@ -228,6 +206,13 @@ fn emit_updates(
             *need_reset = true;
             return Ok(());
         }
+        if let Node::Element { element } = node
+            && let Some(contents) = element.template_contents()
+            && allocated.contains(&contents.id())
+        {
+            *need_reset = true;
+            return Ok(());
+        }
         emit_create_node(node, key, patches)?;
         if let Some(parent) = parent_key {
             patches.push(DomPatch::AppendChild { parent, child: key });
@@ -242,6 +227,10 @@ fn emit_updates(
             | PrevNodeInfo::Element { parent, .. }
             | PrevNodeInfo::Text { parent, .. }
             | PrevNodeInfo::Comment { parent, .. } => *parent,
+            PrevNodeInfo::DocumentFragment { .. } => {
+                *need_reset = true;
+                return Ok(());
+            }
         };
         if prev_parent != expected_parent {
             *need_reset = true;
@@ -281,14 +270,16 @@ fn emit_updates(
             }
             (
                 PrevNodeInfo::Element {
-                    name, attributes, ..
-                },
-                Node::Element {
-                    name: next_name,
-                    attributes: next_attrs,
+                    name,
+                    attributes,
+                    template_contents,
                     ..
                 },
+                Node::Element { element },
             ) => {
+                let next_name = element.name();
+                let next_attrs = element.attributes();
+                let next_template_contents = element.template_contents();
                 if name != next_name {
                     *need_reset = true;
                     return Ok(());
@@ -296,8 +287,12 @@ fn emit_updates(
                 if attributes != next_attrs {
                     patches.push(DomPatch::SetAttributes {
                         key,
-                        attributes: next_attrs.clone(),
+                        attributes: next_attrs.to_vec(),
                     });
+                }
+                if *template_contents != next_template_contents.map(DocumentFragmentNode::id) {
+                    *need_reset = true;
+                    return Ok(());
                 }
             }
             (
@@ -332,11 +327,10 @@ fn emit_updates(
     }
 
     match node {
-        Node::Document { children, .. } | Node::Element { children, .. } => {
+        Node::Document { children, .. } => {
             if !is_new {
                 let prev_children_live = match prev_map.get(&id) {
-                    Some(PrevNodeInfo::Document { children, .. })
-                    | Some(PrevNodeInfo::Element { children, .. }) => children
+                    Some(PrevNodeInfo::Document { children, .. }) => children
                         .iter()
                         .copied()
                         .filter(|child| next_ids.contains(child))
@@ -368,7 +362,93 @@ fn emit_updates(
                 }
             }
         }
+        Node::Element { element } => {
+            if let Some(contents) = element.template_contents() {
+                emit_fragment_updates(
+                    contents, is_new, prev_map, next_ids, allocated, patches, need_reset,
+                )?;
+                if *need_reset {
+                    return Ok(());
+                }
+            }
+            if !is_new {
+                let prev_children_live = match prev_map.get(&id) {
+                    Some(PrevNodeInfo::Element { children, .. }) => children
+                        .iter()
+                        .copied()
+                        .filter(|child| next_ids.contains(child))
+                        .collect::<Vec<_>>(),
+                    _ => Vec::new(),
+                };
+                let next_children = element.children().iter().map(Node::id).collect::<Vec<_>>();
+                if next_children.len() < prev_children_live.len()
+                    || next_children[..prev_children_live.len()] != prev_children_live[..]
+                {
+                    *need_reset = true;
+                    return Ok(());
+                }
+            }
+            for child in element.children() {
+                emit_updates(
+                    child,
+                    Some(key),
+                    prev_map,
+                    next_ids,
+                    allocated,
+                    patches,
+                    need_reset,
+                )?;
+                if *need_reset {
+                    return Ok(());
+                }
+            }
+        }
         Node::DocumentType { .. } | Node::Text { .. } | Node::Comment { .. } => {}
+    }
+    Ok(())
+}
+
+#[allow(clippy::too_many_arguments)]
+fn emit_fragment_updates(
+    fragment: &DocumentFragmentNode,
+    host_is_new: bool,
+    prev_map: &HashMap<Id, PrevNodeInfo>,
+    next_ids: &HashSet<Id>,
+    allocated: &HashSet<Id>,
+    patches: &mut Vec<DomPatch>,
+    need_reset: &mut bool,
+) -> Result<(), DomDiffError> {
+    let fragment_id = fragment.id();
+    let fragment_key = patch_key(fragment_id)?;
+    if !host_is_new {
+        let Some(PrevNodeInfo::DocumentFragment { children }) = prev_map.get(&fragment_id) else {
+            *need_reset = true;
+            return Ok(());
+        };
+        let live = children
+            .iter()
+            .copied()
+            .filter(|child| next_ids.contains(child))
+            .collect::<Vec<_>>();
+        let next = fragment.children().iter().map(Node::id).collect::<Vec<_>>();
+        if next.len() < live.len() || next[..live.len()] != live[..] {
+            *need_reset = true;
+            return Ok(());
+        }
+    }
+    for child in fragment.children() {
+        emit_updates(
+            child,
+            Some(fragment_key),
+            prev_map,
+            next_ids,
+            allocated,
+            patches,
+            need_reset,
+        )?;
+        if *need_reset {
+            return Ok(());
+        }
     }
     Ok(())
 }
@@ -398,14 +478,18 @@ fn emit_create_node(
                 system_id: system_id.clone(),
             });
         }
-        Node::Element {
-            name, attributes, ..
-        } => {
+        Node::Element { element } => {
             patches.push(DomPatch::CreateElement {
                 key,
-                name: Arc::clone(name),
-                attributes: attributes.clone(),
+                name: Arc::clone(element.name()),
+                attributes: element.attributes().to_vec(),
             });
+            if let Some(contents) = element.template_contents() {
+                patches.push(DomPatch::CreateTemplateContents {
+                    host: key,
+                    contents: patch_key(contents.id())?,
+                });
+            }
         }
         Node::Text { text, .. } => {
             patches.push(DomPatch::CreateText {
@@ -434,8 +518,19 @@ fn emit_create_subtree(
         patches.push(DomPatch::AppendChild { parent, child: key });
     }
     match node {
-        Node::Document { children, .. } | Node::Element { children, .. } => {
+        Node::Document { children, .. } => {
             for child in children {
+                emit_create_subtree(child, Some(key), patches)?;
+            }
+        }
+        Node::Element { element } => {
+            if let Some(contents) = element.template_contents() {
+                let contents_key = patch_key(contents.id())?;
+                for child in contents.children() {
+                    emit_create_subtree(child, Some(contents_key), patches)?;
+                }
+            }
+            for child in element.children() {
                 emit_create_subtree(child, Some(key), patches)?;
             }
         }
