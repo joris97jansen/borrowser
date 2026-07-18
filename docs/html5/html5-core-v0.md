@@ -11,6 +11,9 @@ Normative matrix sources:
 - `docs/html5/ae2-parser-created-dom-node-model.md`
 - `docs/html5/ae7-body-mode-recovery-contract.md`
 - `docs/html5/ae8-specialized-table-tree-construction-contract.md`
+- `docs/html5/ae9-form-tree-construction-contract.md`
+- `docs/html5/ae9b-current-select-tree-construction-contract.md`
+- `docs/html5/ae10-template-tree-construction-contract.md`
 
 Related text-mode hardening note:
 - `docs/html5/rawtext-script-stability.md`
@@ -168,6 +171,7 @@ Core v0 tree-builder support includes:
   - `TB-MODE-IN-TABLE-BODY` (`MVP_PARTIAL`)
   - `TB-MODE-IN-ROW` (`MVP_PARTIAL`)
   - `TB-MODE-IN-CELL` (`MVP_PARTIAL`)
+  - `TB-MODE-IN-TEMPLATE` (`MVP_PARTIAL`)
 - Algorithms/invariants:
   - `TB-ALGO-REPROCESS`
   - `TB-ALGO-SOE`
@@ -177,6 +181,7 @@ Core v0 tree-builder support includes:
   - `TB-ALGO-PATCH-SINK`
   - `TB-ALGO-FOSTER` (`MVP_PARTIAL`)
   - `TB-ALGO-TABLE-CONSTRUCTION` (`MVP_PARTIAL`)
+  - `TB-ALGO-TEMPLATE-MODES` (`MVP_PARTIAL`)
 
 Core v0 tree-builder partial-scope guards:
 
@@ -241,7 +246,12 @@ Core v0 guarantees the following tag/context baseline:
     select-aware `input`/`hr` recovery, and the generic special-barrier end-tag
     scan defined in `docs/html5/ae9b-current-select-tree-construction-contract.md`.
   - unknown or unsupported elements outside table-family MUST follow the generic element insertion path defined by `TB-MODE-IN-BODY`.
-  - this unknown/unsupported-element rule applies only when the behavior is not explicitly marked `OUT_OF_SCOPE` with `skip` policy semantics (for example, template insertion mode stack behavior).
+  - AE10 `template` is not an unknown/generic element. It owns a typed
+    parser-created contents fragment and uses the explicit template insertion-
+    mode stack defined by
+    `docs/html5/ae10-template-tree-construction-contract.md`.
+  - the unknown/unsupported-element rule applies only where a later declared-
+    scope contract does not define specialized behavior.
 
 This is a context-level baseline, not a full tag-by-tag HTML5 completion claim.
 
@@ -345,13 +355,26 @@ Core v0 stance:
   fieldset/keygen handling, and parser-owned textarea initial-LF suppression.
   It does not add interactive form platform behavior.
 
+- AE10 adds ordinary full-document template tree construction: typed parser-
+  created contents roots, owner-aware template modes, shared dispatch,
+  template-aware adjusted/foster insertion, exact last-marker closure, semantic
+  reprocessing cycle/progress separation, and deterministic depth-decreasing
+  EOF unwind. Template starts reserve final parent-child storage before commit;
+  typed reservation errors distinguish resource denial from engine corruption.
+  Ordinary tokens use O(1) template-validation fast paths, and start/replace/
+  close validation is transition-local, while heavy full-model audits remain
+  test/fuzz/invariant work. Same-token fingerprints are only lookup keys for
+  exact collision-resolved state equality. Checked validation counters cannot
+  wrap, and counter-backed depth-16/depth-256 fixtures prove linear aggregate
+  EOF close/owner/reset work with O(1) auxiliary recovery memory. Contents are
+  preserved in the centralized full-model traversal and inert to active
+  consumers.
+
 <a id="explicitly-unsupported-or-deferred-in-core-v0"></a>
 ## Explicitly Unsupported Or Deferred In Core v0
 
 The following are intentionally not part of the Core v0 guarantee:
 
-- `OUT_OF_SCOPE`:
-  - template insertion mode stack (`TB-ALGO-TEMPLATE-MODES`)
 - `DEFERRED`:
   - full WHATWG tokenizer behavior outside the tokenizer state families and
     fixtures explicitly listed in this contract and the tokenizer matrix
@@ -359,7 +382,10 @@ The following are intentionally not part of the Core v0 guarantee:
     subset
   - select fragment-context behavior; the historical `InSelectInTable` mode is
     not a current Living Standard mode and is neither implemented nor deferred
-  - table interactions with template insertion-mode stacks
+  - table/template behavior beyond the composed AE8/AE10 supported subset
+  - public template/fragment DOM APIs, fragment parsing, cloning, adoption and
+    owner-document semantics, scripting, declarative shadow DOM, custom
+    elements, live mutation, and rendering/resource activation of contents
 
 Policy classification requirements:
 
@@ -396,9 +422,11 @@ This contract prevents accidental reliance on unspecified behavior.
 ## Non-Goals (Core v0)
 
 - parser pause/suspension and script execution integration for `<script>`.
-- Template insertion mode stack.
+- Public template/fragment APIs and behavior beyond the declared AE10 static
+  tree-construction subset.
 - Full WHATWG table insertion-mode conformance beyond AE8.
-- select fragment-context behavior and template-specific table interactions;
+- select fragment-context behavior and table/template interactions beyond the
+  AE8/AE10 composition;
   historical `InSelect`/`InSelectInTable` modes are intentionally not used.
 - Full tree-builder text mode parity (`TB-MODE-TEXT`), including deferred RAWTEXT/RCDATA coupling.
 

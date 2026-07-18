@@ -156,7 +156,8 @@ fn recompute_block_heights<'style_tree, 'dom>(
             finish_resolved_size(node, inline_size, block_size)
         }
 
-        Node::Element { name, .. } => {
+        Node::Element { element } => {
+            let name = element.name();
             // Transitional root-element handling.
             //
             // This is not a UA display-default shortcut. Ordinary element

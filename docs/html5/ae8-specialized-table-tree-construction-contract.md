@@ -136,7 +136,8 @@ Entering `td` or `th`:
 
 - inserts the cell through the normal parser-created element path;
 - pushes the cell on the stack of open elements;
-- pushes an active-formatting marker;
+- pushes a typed `TableCell` active-formatting marker with the cell key as
+  diagnostic owner;
 - switches to `InCell`.
 
 Closing a cell, whether explicit or parser-recovery-driven:
@@ -148,6 +149,8 @@ Closing a cell, whether explicit or parser-recovery-driven:
 - switches to `InRow`.
 
 AE8 does not introduce layout cell concepts into the parser.
+AE10 adds marker kind/owner diagnostics without changing AE8's last-marker
+boundary semantics.
 
 ## Pending Table Characters
 
@@ -193,7 +196,8 @@ struct InsertionLocation {
 For supported foster-parenting cases:
 
 1. compute anchors from the stack of open elements;
-2. if a template is above the relevant table, append inside that template;
+2. if an active template is above the relevant table, insert into its typed
+   template-contents root;
 3. otherwise find the last open `table`;
 4. if the table has a live DOM parent, insert immediately before the table;
 5. if the table has no live DOM parent, append to the element immediately above
@@ -292,7 +296,7 @@ AE8 does not implement:
 - form behavior;
 - select-specific insertion modes (historical select modes are not current
   deferred work; AE9b handles select-family tokens through InBody);
-- template insertion modes;
+- table/template behavior beyond AE10's declared static parsing composition;
 - SVG or MathML parsing;
 - JavaScript;
 - resource loading;

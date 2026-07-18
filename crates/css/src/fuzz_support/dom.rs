@@ -336,11 +336,17 @@ fn deep_descendant_chain(cursor: &mut ByteCursor<'_>, limits: &DomFuzzLimits) ->
 fn count_dom_summary(root: &Node) -> SynthesizedDomSummary {
     fn visit(node: &Node, summary: &mut SynthesizedDomSummary) {
         match node {
-            Node::Document { children, .. } | Node::Element { children, .. } => {
-                if let Node::Element { attributes, .. } = node {
+            Node::Document { children, .. } => {
+                for child in children {
+                    visit(child, summary);
+                }
+            }
+            Node::Element { element } => {
+                {
                     summary.element_count = summary.element_count.saturating_add(1);
 
-                    if attributes
+                    if element
+                        .attributes()
                         .iter()
                         .any(|(name, _)| name.eq_ignore_ascii_case("style"))
                     {
@@ -349,7 +355,7 @@ fn count_dom_summary(root: &Node) -> SynthesizedDomSummary {
                     }
                 }
 
-                for child in children {
+                for child in element.children() {
                     visit(child, summary);
                 }
             }
@@ -367,16 +373,16 @@ fn count_dom_summary(root: &Node) -> SynthesizedDomSummary {
 }
 
 fn element(name: &str, attributes: Vec<(&str, Option<String>)>, children: Vec<Node>) -> Node {
-    Node::Element {
-        id: Id::INVALID,
-        name: Arc::from(name),
-        attributes: attributes
+    html::internal::node_element_from_parts(
+        Id::INVALID,
+        Arc::from(name),
+        attributes
             .into_iter()
             .map(|(name, value)| (Arc::from(name), value))
             .collect(),
-        style: Vec::new(),
+        Vec::new(),
         children,
-    }
+    )
 }
 
 fn text_node(text: String) -> Node {

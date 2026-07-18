@@ -138,6 +138,44 @@ fn runtime_chunked_parsing_matches_single_chunk_materialization() {
 }
 
 #[test]
+fn runtime_template_patches_preserve_typed_contents_and_chunk_parity() {
+    let input = b"<template><div>inert<template>x</template></div></template><p>active</p>";
+    let whole_batches = assert_runtime_updates_are_well_formed(
+        collect_runtime_updates(&[input]),
+        true,
+        "whole template",
+    );
+    let chunked_batches = assert_runtime_updates_are_well_formed(
+        collect_runtime_updates(&[
+            b"<template><div>",
+            b"inert<template>x",
+            b"</template></div></template>",
+            b"<p>active</p>",
+        ]),
+        true,
+        "chunked template",
+    );
+
+    assert!(
+        whole_batches
+            .iter()
+            .flatten()
+            .any(|patch| matches!(patch, DomPatch::CreateTemplateContents { .. })),
+        "runtime parser must emit the typed template-contents operation"
+    );
+
+    let whole_dom =
+        html::test_harness::materialize_patch_batches(&whole_batches).expect("materialize whole");
+    let chunked_dom = html::test_harness::materialize_patch_batches(&chunked_batches)
+        .expect("materialize chunked");
+    assert_eq!(
+        serialize_dom_for_test(&whole_dom),
+        serialize_dom_for_test(&chunked_dom),
+        "template associations must be chunk-boundary invariant"
+    );
+}
+
+#[test]
 fn runtime_flushes_on_tick_without_sleeping() {
     #[derive(Clone)]
     struct ManualClock {

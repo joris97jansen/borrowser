@@ -36,13 +36,7 @@ pub(super) fn elem(
     style: Vec<(String, String)>,
     children: Vec<Node>,
 ) -> Node {
-    Node::Element {
-        id: Id(id),
-        name: Arc::from(name),
-        attributes,
-        style,
-        children,
-    }
+    html::internal::node_element_from_parts(Id(id), Arc::from(name), attributes, style, children)
 }
 
 pub(super) fn text(id: u32, value: &str) -> Node {

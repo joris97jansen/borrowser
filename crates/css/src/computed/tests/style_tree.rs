@@ -18,20 +18,14 @@ fn build_style_tree_with_stylesheets_uses_structured_pipeline_without_mutating_d
         styled.children[0].style.width(),
         Some(LengthPercentage::Length(Length::Px(5.0)))
     );
-    let Node::Element {
-        style, children, ..
-    } = &dom
-    else {
+    let Node::Element { element } = &dom else {
         panic!("expected element");
     };
-    assert!(style.is_empty());
-    let Node::Element {
-        style: child_style, ..
-    } = &children[0]
-    else {
+    assert!(element.style().is_empty());
+    let Node::Element { element: child } = &element.children()[0] else {
         panic!("expected child element");
     };
-    assert!(child_style.is_empty());
+    assert!(child.style().is_empty());
 }
 
 #[test]
@@ -79,5 +73,34 @@ fn build_style_tree_from_computed_styles_rejects_selector_identity_mismatch() {
             expected,
             actual,
         }
+    );
+}
+
+#[test]
+fn template_host_is_styled_while_template_contents_are_excluded() {
+    let inert_span = element("span", vec![("class", Some("inert"))], Vec::new());
+    let dom = html::internal::template_element_from_parts(
+        Id(1),
+        Vec::new(),
+        Vec::new(),
+        Id(2),
+        vec![inert_span],
+        Vec::new(),
+    );
+    let stylesheets = vec![stylesheet(
+        "template { color: blue; } span.inert { width: 99px; }",
+    )];
+
+    let computed = compute_document_styles(&dom, &stylesheets).expect("computed template host");
+    assert_eq!(
+        computed.entries.len(),
+        1,
+        "selector indexing must not cross the template-contents association"
+    );
+    let styled = build_style_tree_with_stylesheets(&dom, &stylesheets).expect("styled template");
+    assert_eq!(styled.style.color(), (0, 0, 255, 255));
+    assert!(
+        styled.children.is_empty(),
+        "active style-tree construction must exclude fragment descendants"
     );
 }

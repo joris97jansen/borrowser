@@ -166,9 +166,10 @@ fn collect_retained_render_identity_keys(node: &Node, keys: &mut Vec<RetainedRen
                 collect_retained_render_identity_keys(child, keys);
             }
         }
-        Node::Element { id, children, .. } => {
-            push_live_anchor(*id, keys);
-            for child in children {
+        Node::Element { .. } if html::internal::template_contents(node).is_some() => {}
+        Node::Element { element } => {
+            push_live_anchor(element.id(), keys);
+            for child in element.children() {
                 collect_retained_render_identity_keys(child, keys);
             }
         }
@@ -197,5 +198,59 @@ pub(crate) fn retained_render_artifact_kind_debug_label(
 pub(crate) fn retained_render_anchor_debug_label(anchor: RetainedRenderAnchor) -> String {
     match anchor {
         RetainedRenderAnchor::DomNode(id) => format!("dom-node({})", id.0),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::sync::Arc;
+
+    use super::*;
+
+    #[test]
+    fn parser_created_template_host_and_contents_receive_no_retained_identity() {
+        let template = html::internal::template_element_from_parts(
+            Id(4),
+            Vec::new(),
+            Vec::new(),
+            Id(5),
+            vec![Node::Text {
+                id: Id(6),
+                text: "inert".to_string(),
+            }],
+            Vec::new(),
+        );
+        let active = html::internal::node_element_from_parts(
+            Id(7),
+            Arc::from("p"),
+            Vec::new(),
+            Vec::new(),
+            vec![Node::Text {
+                id: Id(8),
+                text: "active".to_string(),
+            }],
+        );
+        let document = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![template, active],
+        };
+
+        let mut identities = RetainedRenderIdentityMap::new();
+        identities.reconcile_live_dom(&document);
+        let anchors = identities
+            .identities()
+            .into_iter()
+            .map(|identity| identity.anchor)
+            .collect::<Vec<_>>();
+
+        assert_eq!(
+            anchors,
+            vec![
+                RetainedRenderAnchor::DomNode(Id(1)),
+                RetainedRenderAnchor::DomNode(Id(7)),
+                RetainedRenderAnchor::DomNode(Id(8)),
+            ]
+        );
     }
 }

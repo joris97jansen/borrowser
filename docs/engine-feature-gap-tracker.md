@@ -509,6 +509,17 @@ Current supported subset:
   repository-wide deprecated-insertion migration is included. See
   `docs/html5/ae9b-current-select-tree-construction-contract.md`.
 
+- AE10 template tree construction: ordinary full-document `template` parsing
+  now uses typed parser-created `TemplateContents` fragments with stable
+  identity and an atomic host association, an owner-aware template insertion-
+  mode stack, shared start/end dispatch, template-aware adjusted/foster
+  insertion, semantic reprocessing progress, and depth-decreasing EOF
+  recovery. Parser/debug/materialization surfaces preserve contents while
+  active CSS/resource/text/form/layout/retained/Paint paths remain inert.
+  Exact pinned WPT `template.dat` adaptations and local DOM/patch/error/parity/
+  fuzz/pipeline evidence cover the declared static subset. See
+  `docs/html5/ae10-template-tree-construction-contract.md`.
+
 Missing or incomplete:
 
 - full byte-stream encoding sniffing, charset detection, BOM switching, and
@@ -518,7 +529,8 @@ Missing or incomplete:
 - full WHATWG tokenizer state coverage and edge-case parity beyond the
   supported AE/Core-v0 tokenizer subset
 - full WHATWG tree-construction coverage beyond the documented AE6, AE7, AE8,
-  AE9a, and AE9b static-document, body-recovery, table, form, and current select
+  AE9a, AE9b, and AE10 static-document, body-recovery, table, form, current select,
+  and ordinary template
   subsets, including
   advanced insertion modes and malformed-markup recovery outside the documented
   Core-v0 scope
@@ -527,7 +539,8 @@ Missing or incomplete:
 - script integration
 - form algorithms beyond current control-state support
 - full editing/contenteditable behavior
-- full custom element/template/shadow DOM behavior
+- public template DOM APIs, fragment parsing, cloning/adoption/owner-document
+  behavior, custom elements, declarative shadow DOM, and general shadow DOM
 
 ## How To Update
 

@@ -78,11 +78,10 @@ fn check_doctype_token(ctx: &InvariantCtx<'_>) -> Result<(), String> {
 
 fn has_doctype(node: &Node) -> bool {
     match node {
-        Node::Document { children, .. } | Node::Element { children, .. } => {
-            children.iter().any(has_doctype)
-        }
         Node::DocumentType { .. } => true,
-        Node::Text { .. } | Node::Comment { .. } => false,
+        _ => node
+            .children()
+            .is_some_and(|children| children.iter().any(has_doctype)),
     }
 }
 
@@ -305,8 +304,13 @@ fn collect_text(node: &Node) -> String {
 
 fn collect_text_into(node: &Node, out: &mut String) {
     match node {
-        Node::Document { children, .. } | Node::Element { children, .. } => {
+        Node::Document { children, .. } => {
             for child in children {
+                collect_text_into(child, out);
+            }
+        }
+        Node::Element { element } => {
+            for child in element.children() {
                 collect_text_into(child, out);
             }
         }
@@ -318,25 +322,24 @@ fn collect_text_into(node: &Node, out: &mut String) {
 fn has_comment(node: &Node) -> bool {
     match node {
         Node::Comment { .. } => true,
-        Node::Document { children, .. } | Node::Element { children, .. } => {
-            children.iter().any(has_comment)
-        }
+        Node::Document { children, .. } => children.iter().any(has_comment),
+        Node::Element { element } => element.children().iter().any(has_comment),
         Node::DocumentType { .. } | Node::Text { .. } => false,
     }
 }
 
 fn find_element<'a>(node: &'a Node, name: &str) -> Option<&'a Node> {
     match node {
-        Node::Element {
-            name: tag,
-            children,
-            ..
-        } => {
+        Node::Element { element } => {
+            let tag = element.name();
             crate::types::debug_assert_lowercase_atom(tag, "golden find_element tag");
             if tag.as_ref() == name {
                 Some(node)
             } else {
-                children.iter().find_map(|child| find_element(child, name))
+                element
+                    .children()
+                    .iter()
+                    .find_map(|child| find_element(child, name))
             }
         }
         Node::Document { children, .. } => {
@@ -348,14 +351,12 @@ fn find_element<'a>(node: &'a Node, name: &str) -> Option<&'a Node> {
 
 fn element_contains_tag(node: &Node, name: &str) -> bool {
     match node {
-        Node::Element {
-            name: tag,
-            children,
-            ..
-        } => {
+        Node::Element { element } => {
+            let tag = element.name();
             crate::types::debug_assert_lowercase_atom(tag, "golden contains-tag element");
             tag.as_ref() == name
-                || children
+                || element
+                    .children()
                     .iter()
                     .any(|child| element_contains_tag(child, name))
         }
@@ -368,11 +369,11 @@ fn element_contains_tag(node: &Node, name: &str) -> bool {
 
 fn script_text(node: &Node) -> Option<String> {
     let script = find_element(node, "script")?;
-    let Node::Element { children, .. } = script else {
+    let Node::Element { element } = script else {
         return None;
     };
     let mut out = String::new();
-    for child in children {
+    for child in element.children() {
         collect_text_into(child, &mut out);
     }
     Some(out)
@@ -396,10 +397,11 @@ fn element_name_counts(node: &Node) -> BTreeMap<String, usize> {
 
 fn collect_element_names(node: &Node, out: &mut BTreeMap<String, usize>) {
     match node {
-        Node::Element { name, children, .. } => {
+        Node::Element { element } => {
+            let name = element.name();
             crate::types::debug_assert_lowercase_atom(name, "golden element name");
             *out.entry(name.to_string()).or_insert(0) += 1;
-            for child in children {
+            for child in element.children() {
                 collect_element_names(child, out);
             }
         }
@@ -514,7 +516,7 @@ fn element_attributes<'a>(
     tag_name: &str,
 ) -> Option<&'a [(std::sync::Arc<str>, Option<String>)]> {
     match find_element(node, tag_name)? {
-        Node::Element { attributes, .. } => Some(attributes.as_slice()),
+        Node::Element { element } => Some(element.attributes()),
         Node::Document { .. }
         | Node::DocumentType { .. }
         | Node::Text { .. }

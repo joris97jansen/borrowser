@@ -18,20 +18,14 @@ fn resolve_document_styles_produces_structured_output_without_mutating_dom() {
 
     let resolved = resolve_document_styles(&dom, &stylesheets).expect("resolved document style");
 
-    let html::Node::Element {
-        style, children, ..
-    } = &dom
-    else {
+    let html::Node::Element { element } = &dom else {
         panic!("expected element");
     };
-    assert!(style.is_empty());
-    let html::Node::Element {
-        style: child_style, ..
-    } = &children[0]
-    else {
+    assert!(element.style().is_empty());
+    let html::Node::Element { element: child } = &element.children()[0] else {
         panic!("expected child element");
     };
-    assert!(child_style.is_empty());
+    assert!(child.style().is_empty());
 
     assert_eq!(resolved.entries().len(), 2);
     assert_eq!(resolved.entries()[0].element_name(), "main");

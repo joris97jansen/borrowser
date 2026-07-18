@@ -151,26 +151,12 @@ fn compare_element<'a>(
     options: &DomSnapshotOptions,
     path: &mut Vec<String>,
 ) -> Result<(), Box<DomMismatch<'a>>> {
-    let (
-        Node::Element {
-            id: expected_id,
-            name: expected_name,
-            attributes: expected_attrs,
-            style: expected_style,
-            children: expected_children,
-        },
-        Node::Element {
-            id: actual_id,
-            name: actual_name,
-            attributes: actual_attrs,
-            style: actual_style,
-            children: actual_children,
-        },
-    ) = (expected_node, actual_node)
+    let (Node::Element { element: expected }, Node::Element { element: actual }) =
+        (expected_node, actual_node)
     else {
         unreachable!("compare_element called with non-element nodes");
     };
-    if !options.ignore_ids && *expected_id != *actual_id {
+    if !options.ignore_ids && expected.id() != actual.id() {
         return Err(Box::new(mismatch(
             path,
             "element id",
@@ -179,7 +165,7 @@ fn compare_element<'a>(
             options,
         )));
     }
-    if expected_name != actual_name {
+    if expected.name() != actual.name() {
         return Err(Box::new(mismatch(
             path,
             "element name",
@@ -189,6 +175,8 @@ fn compare_element<'a>(
         )));
     }
 
+    let expected_attrs = expected.attributes();
+    let actual_attrs = actual.attributes();
     let expected_attr_order = canonical_attribute_order(expected_attrs);
     let actual_attr_order = canonical_attribute_order(actual_attrs);
     if expected_attr_order.len() != actual_attr_order.len() {
@@ -227,6 +215,8 @@ fn compare_element<'a>(
         }
     }
 
+    let expected_style = expected.style();
+    let actual_style = actual.style();
     let ignore_style =
         options.ignore_empty_style && expected_style.is_empty() && actual_style.is_empty();
     if !ignore_style {
@@ -254,11 +244,54 @@ fn compare_element<'a>(
         }
     }
 
+    match (expected.template_contents(), actual.template_contents()) {
+        (None, None) => {}
+        (Some(expected), Some(actual)) => {
+            if expected.kind() != actual.kind() {
+                return Err(Box::new(mismatch(
+                    path,
+                    "template contents kind",
+                    expected_node,
+                    actual_node,
+                    options,
+                )));
+            }
+            if !options.ignore_ids && expected.id() != actual.id() {
+                return Err(Box::new(mismatch(
+                    path,
+                    "template contents id",
+                    expected_node,
+                    actual_node,
+                    options,
+                )));
+            }
+            path.push("#template-contents".to_string());
+            compare_children(
+                expected_node,
+                actual_node,
+                expected.children(),
+                actual.children(),
+                options,
+                path,
+            )?;
+            path.pop();
+        }
+        _ => {
+            return Err(Box::new(mismatch(
+                path,
+                "template contents association",
+                expected_node,
+                actual_node,
+                options,
+            )));
+        }
+    }
+
     compare_children(
         expected_node,
         actual_node,
-        expected_children,
-        actual_children,
+        expected.children(),
+        actual.children(),
         options,
         path,
     )

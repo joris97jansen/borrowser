@@ -10,6 +10,9 @@ use crate::html5::tree_builder::modes::InsertionMode;
 use crate::html5::tree_builder::patch_sink::PatchSink;
 use crate::html5::tree_builder::stack::{OpenElementsStack, ScopeTagSet};
 use crate::html5::tree_builder::table::PendingTableTextState;
+#[cfg(any(test, feature = "html5-fuzzing", feature = "internal-api"))]
+use crate::html5::tree_builder::template_state::TemplateInsertionMode;
+use crate::html5::tree_builder::template_state::TemplateModeStack;
 use std::num::NonZeroU32;
 
 /// Centralized tree-builder hardening/resource bounds.
@@ -166,7 +169,11 @@ pub struct Html5TreeBuilder {
     pub(in crate::html5::tree_builder) live_tree: LiveTree,
     pub(in crate::html5::tree_builder) open_elements: OpenElementsStack,
     pub(in crate::html5::tree_builder) active_formatting: ActiveFormattingList,
+    pub(in crate::html5::tree_builder) template_modes: TemplateModeStack,
     pub(in crate::html5::tree_builder) document_key: Option<PatchKey>,
+    pub(in crate::html5::tree_builder) head_element_pointer: Option<PatchKey>,
+    pub(in crate::html5::tree_builder) template_state_epoch: u64,
+    pub(in crate::html5::tree_builder) accepted_template_count: u64,
     pub(in crate::html5::tree_builder) next_patch_key: NonZeroU32,
     pub(in crate::html5::tree_builder) pending_doctype: Option<PendingDoctype>,
     pub(in crate::html5::tree_builder) document_state: DocumentState,
@@ -189,6 +196,22 @@ pub struct Html5TreeBuilder {
     pub(in crate::html5::tree_builder) perf_text_nodes_created: u64,
     pub(in crate::html5::tree_builder) perf_text_appends: u64,
     pub(in crate::html5::tree_builder) perf_text_coalescing_invalidations: u64,
+    pub(in crate::html5::tree_builder) perf_template_validation_fast_path_tokens: u64,
+    pub(in crate::html5::tree_builder) perf_template_validation_transition_checks: u64,
+    pub(in crate::html5::tree_builder) perf_max_same_token_cycle_states: u64,
+    pub(in crate::html5::tree_builder) perf_template_close_ops: u64,
+    pub(in crate::html5::tree_builder) perf_template_eof_unwind_iterations: u64,
+    pub(in crate::html5::tree_builder) perf_reset_insertion_mode_scan_calls: u64,
+    pub(in crate::html5::tree_builder) perf_reset_insertion_mode_scan_steps: u64,
+    pub(in crate::html5::tree_builder) perf_template_recovery_owner_scan_calls: u64,
+    pub(in crate::html5::tree_builder) perf_template_recovery_owner_scan_steps: u64,
+    #[cfg(any(
+        test,
+        feature = "html5-fuzzing",
+        feature = "parser_invariants",
+        feature = "debug-stats"
+    ))]
+    pub(in crate::html5::tree_builder) perf_template_full_audit_host_visits: u64,
     pub(in crate::html5::tree_builder) active_text_mode: Option<TextModeSpec>,
     pub(in crate::html5::tree_builder) form_element_pointer: Option<FormElementPointer>,
     pub(in crate::html5::tree_builder) pending_textarea_initial_lf:
@@ -201,6 +224,10 @@ pub struct Html5TreeBuilder {
 }
 
 #[cfg(any(test, feature = "debug-stats"))]
+#[allow(
+    dead_code,
+    reason = "internal parser performance counters are consumed by test and debug-stat lanes"
+)]
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TreeBuilderPerfStats {
     pub soe_push_ops: u64,
@@ -221,6 +248,17 @@ pub struct TreeBuilderPerfStats {
     pub text_nodes_created: u64,
     pub text_appends: u64,
     pub text_coalescing_invalidations: u64,
+    pub template_validation_fast_path_tokens: u64,
+    pub template_validation_transition_checks: u64,
+    /// Peak exact semantic states retained while reprocessing one token.
+    pub max_same_token_cycle_states: u64,
+    pub template_close_ops: u64,
+    pub template_eof_unwind_iterations: u64,
+    pub reset_insertion_mode_scan_calls: u64,
+    pub reset_insertion_mode_scan_steps: u64,
+    pub template_recovery_owner_scan_calls: u64,
+    pub template_recovery_owner_scan_steps: u64,
+    pub template_full_audit_host_visits: u64,
 }
 
 #[cfg(any(test, feature = "html5-fuzzing"))]
@@ -232,6 +270,10 @@ pub(crate) struct TreeBuilderProgressWitness {
     pub(crate) active_text_mode: Option<TextModeSpec>,
     pub(crate) form_element_pointer: Option<PatchKey>,
     pub(crate) pending_textarea_initial_lf: Option<PatchKey>,
+    pub(crate) head_element_pointer: Option<PatchKey>,
+    pub(crate) template_modes: Vec<(PatchKey, TemplateInsertionMode)>,
+    pub(crate) active_formatting_entries:
+        Vec<crate::html5::tree_builder::formatting::AfeDiagnosticEntry>,
     pub(crate) open_element_keys: Vec<PatchKey>,
     pub(crate) current_table_key: Option<PatchKey>,
     pub(crate) pending_table_character_tokens: Vec<String>,
@@ -250,6 +292,10 @@ pub struct TreeBuilderStateSnapshot {
     pub(crate) active_text_mode: Option<TextModeSpec>,
     pub(crate) form_element_pointer: Option<PatchKey>,
     pub(crate) pending_textarea_initial_lf: Option<PatchKey>,
+    pub(crate) head_element_pointer: Option<PatchKey>,
+    pub(crate) template_modes: Vec<(PatchKey, TemplateInsertionMode)>,
+    pub(crate) active_formatting_entries:
+        Vec<crate::html5::tree_builder::formatting::AfeDiagnosticEntry>,
     pub(crate) open_element_names: Vec<AtomId>,
     pub(crate) open_element_keys: Vec<PatchKey>,
     pub(crate) current_table_key: Option<PatchKey>,
@@ -276,7 +322,11 @@ impl Html5TreeBuilder {
             live_tree: LiveTree::default(),
             open_elements: OpenElementsStack::default(),
             active_formatting: ActiveFormattingList::default(),
+            template_modes: TemplateModeStack::default(),
             document_key: None,
+            head_element_pointer: None,
+            template_state_epoch: 0,
+            accepted_template_count: 0,
             next_patch_key: NonZeroU32::MIN,
             pending_doctype: None,
             document_state: DocumentState::default(),
@@ -296,6 +346,22 @@ impl Html5TreeBuilder {
             perf_text_nodes_created: 0,
             perf_text_appends: 0,
             perf_text_coalescing_invalidations: 0,
+            perf_template_validation_fast_path_tokens: 0,
+            perf_template_validation_transition_checks: 0,
+            perf_max_same_token_cycle_states: 0,
+            perf_template_close_ops: 0,
+            perf_template_eof_unwind_iterations: 0,
+            perf_reset_insertion_mode_scan_calls: 0,
+            perf_reset_insertion_mode_scan_steps: 0,
+            perf_template_recovery_owner_scan_calls: 0,
+            perf_template_recovery_owner_scan_steps: 0,
+            #[cfg(any(
+                test,
+                feature = "html5-fuzzing",
+                feature = "parser_invariants",
+                feature = "debug-stats"
+            ))]
+            perf_template_full_audit_host_visits: 0,
             active_text_mode: None,
             form_element_pointer: None,
             pending_textarea_initial_lf: None,
@@ -386,6 +452,9 @@ impl Html5TreeBuilder {
             pending_textarea_initial_lf: self
                 .pending_textarea_initial_lf
                 .map(PendingTextareaInitialLf::textarea),
+            head_element_pointer: self.head_element_pointer,
+            template_modes: self.template_modes.snapshot(),
+            active_formatting_entries: self.active_formatting.diagnostic_snapshot(),
             open_element_keys: (0..self.open_elements.len())
                 .filter_map(|index| self.open_elements.get(index))
                 .map(|entry| entry.key())
@@ -449,6 +518,10 @@ impl Html5TreeBuilder {
     }
 
     #[cfg(any(test, feature = "debug-stats"))]
+    #[allow(
+        dead_code,
+        reason = "internal parser performance counters are consumed by test and debug-stat lanes"
+    )]
     pub(crate) fn debug_perf_stats(&self) -> TreeBuilderPerfStats {
         TreeBuilderPerfStats {
             soe_push_ops: self.perf_soe_push_ops,
@@ -461,6 +534,16 @@ impl Html5TreeBuilder {
             text_nodes_created: self.perf_text_nodes_created,
             text_appends: self.perf_text_appends,
             text_coalescing_invalidations: self.perf_text_coalescing_invalidations,
+            template_validation_fast_path_tokens: self.perf_template_validation_fast_path_tokens,
+            template_validation_transition_checks: self.perf_template_validation_transition_checks,
+            max_same_token_cycle_states: self.perf_max_same_token_cycle_states,
+            template_close_ops: self.perf_template_close_ops,
+            template_eof_unwind_iterations: self.perf_template_eof_unwind_iterations,
+            reset_insertion_mode_scan_calls: self.perf_reset_insertion_mode_scan_calls,
+            reset_insertion_mode_scan_steps: self.perf_reset_insertion_mode_scan_steps,
+            template_recovery_owner_scan_calls: self.perf_template_recovery_owner_scan_calls,
+            template_recovery_owner_scan_steps: self.perf_template_recovery_owner_scan_steps,
+            template_full_audit_host_visits: self.perf_template_full_audit_host_visits,
         }
     }
 
@@ -478,6 +561,9 @@ impl Html5TreeBuilder {
             pending_textarea_initial_lf: self
                 .pending_textarea_initial_lf
                 .map(PendingTextareaInitialLf::textarea),
+            head_element_pointer: self.head_element_pointer,
+            template_modes: self.template_modes.snapshot(),
+            active_formatting_entries: self.active_formatting.diagnostic_snapshot(),
             open_element_names: self.open_elements.iter_names().collect(),
             open_element_keys: self.open_elements.iter_keys().collect(),
             current_table_key: self.current_table_key(),

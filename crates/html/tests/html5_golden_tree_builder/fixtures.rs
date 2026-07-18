@@ -54,6 +54,9 @@ pub(super) fn load_fixtures() -> Vec<Fixture> {
             if name.starts_with("ae9b-") {
                 validate_ae9b_local_provenance(&path, &name);
             }
+            if name.starts_with("ae10-") {
+                validate_ae10_local_provenance(&path, &name);
+            }
             let input = fs::read_to_string(&input_path)
                 .unwrap_or_else(|err| panic!("failed to read input {input_path:?}: {err}"));
             let input = normalize_fixture_input(input);
@@ -68,6 +71,18 @@ pub(super) fn load_fixtures() -> Vec<Fixture> {
 
     fixtures.sort_by(|left, right| left.name.cmp(&right.name));
     fixtures
+}
+
+fn validate_ae10_local_provenance(path: &Path, name: &str) {
+    let provenance_path = path.join("provenance.txt");
+    let provenance = fs::read_to_string(&provenance_path).unwrap_or_else(|err| {
+        panic!("AE10 local DOM fixture '{name}' missing provenance {provenance_path:?}: {err}")
+    });
+    assert!(
+        provenance.contains("Local WHATWG-derived normative fixture; not a WPT import."),
+        "AE10 local DOM fixture '{name}' is mislabeled"
+    );
+    assert!(provenance.contains("88ae68cb961651f0f92c5d2046049f53ecdfc6cf"));
 }
 
 fn validate_ae9b_local_provenance(path: &Path, name: &str) {

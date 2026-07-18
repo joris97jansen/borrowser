@@ -1,5 +1,5 @@
 use super::foster::FosterParentingIndexCache;
-use super::types::{ExactOpenElementRemoval, OpenElement};
+use super::types::{ExactOpenElementRemoval, OpenElement, OpenElementMatch};
 use crate::dom_patch::PatchKey;
 use crate::html5::shared::AtomId;
 
@@ -15,10 +15,20 @@ pub(crate) struct OpenElementsStack {
     pub(super) scope_scan_steps: u64,
     pub(super) end_tag_scan_calls: u64,
     pub(super) end_tag_scan_steps: u64,
+    pub(super) template_recovery_owner_scan_calls: u64,
+    pub(super) template_recovery_owner_scan_steps: u64,
     pub(super) foster_parenting_cache: FosterParentingIndexCache,
 }
 
 impl OpenElementsStack {
+    pub(crate) fn try_reserve_push(&mut self, name: AtomId) -> Result<(), ()> {
+        self.items.try_reserve(1).map_err(|_| ())?;
+        if !self.name_counts.iter().any(|(tracked, _)| *tracked == name) {
+            self.name_counts.try_reserve(1).map_err(|_| ())?;
+        }
+        Ok(())
+    }
+
     #[inline]
     pub(crate) fn is_empty(&self) -> bool {
         self.items.is_empty()
@@ -87,6 +97,32 @@ impl OpenElementsStack {
             .copied()
     }
 
+    /// Parser-owned recovery pop that deliberately ignores scope boundaries.
+    /// Used by the pinned template EOF algorithm after the template context has
+    /// already been identified by parser state.
+    pub(crate) fn pop_until_including_key_unscoped(
+        &mut self,
+        target: PatchKey,
+    ) -> Result<Option<OpenElement>, crate::html5::tree_builder::TreeBuilderError> {
+        self.template_recovery_owner_scan_calls =
+            self.template_recovery_owner_scan_calls.saturating_add(1);
+        let mut matched_index = None;
+        for index in (0..self.items.len()).rev() {
+            self.template_recovery_owner_scan_steps =
+                self.template_recovery_owner_scan_steps.saturating_add(1);
+            if self.items[index].key() == target {
+                matched_index = Some(index);
+                break;
+            }
+        }
+        let Some(index) = matched_index else {
+            return Ok(None);
+        };
+        let element = self.items[index];
+        self.pop_suffix_from_match(OpenElementMatch { index, element })
+            .map(Some)
+    }
+
     #[allow(
         dead_code,
         reason = "part of Core-v0 SOE API; used in test/internal paths"
@@ -144,6 +180,16 @@ impl OpenElementsStack {
     }
 
     #[inline]
+    pub(crate) fn template_recovery_owner_scan_calls(&self) -> u64 {
+        self.template_recovery_owner_scan_calls
+    }
+
+    #[inline]
+    pub(crate) fn template_recovery_owner_scan_steps(&self) -> u64 {
+        self.template_recovery_owner_scan_steps
+    }
+
+    #[inline]
     #[allow(
         dead_code,
         reason = "internal perf stress tests inspect foster-parent scan counters directly"
@@ -166,7 +212,6 @@ impl OpenElementsStack {
         self.items.iter().map(|entry| entry.name())
     }
 
-    #[cfg(any(test, feature = "internal-api"))]
     pub(crate) fn iter_keys(&self) -> impl Iterator<Item = PatchKey> + '_ {
         self.items.iter().map(|entry| entry.key())
     }

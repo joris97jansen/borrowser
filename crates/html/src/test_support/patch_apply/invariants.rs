@@ -9,7 +9,9 @@ impl TestPatchArena {
             return Err(format!("missing node in {context}"));
         };
         match node.kind {
-            TestKind::Document { .. } | TestKind::Element { .. } => Ok(()),
+            TestKind::Document { .. }
+            | TestKind::Element { .. }
+            | TestKind::DocumentFragment { .. } => Ok(()),
             TestKind::DocumentType { .. } | TestKind::Text { .. } | TestKind::Comment { .. } => {
                 Err(format!("{context} must be a container"))
             }
@@ -45,14 +47,8 @@ impl TestPatchArena {
         parent: PatchKey,
         child: PatchKey,
     ) -> ArenaResult<bool> {
-        let mut cursor = Some(parent);
-        while let Some(current) = cursor {
-            if current == child {
-                return Ok(true);
-            }
-            cursor = self.node_parent(current)?;
-        }
-        Ok(false)
+        let mut visited = HashSet::new();
+        self.reaches(child, parent, &mut visited)
     }
 
     pub(super) fn assert_invariants(&self) -> ArenaResult<()> {
@@ -68,13 +64,60 @@ impl TestPatchArena {
         for (key, node) in &self.nodes {
             if !matches!(
                 node.kind,
-                TestKind::Document { .. } | TestKind::Element { .. }
+                TestKind::Document { .. }
+                    | TestKind::Element { .. }
+                    | TestKind::DocumentFragment { .. }
             ) && !node.children.is_empty()
             {
                 return Err(format!("non-container node {key:?} has children"));
             }
             if matches!(node.kind, TestKind::DocumentType { .. }) && node.parent != self.root {
                 return Err(format!("doctype node {key:?} must be a document child"));
+            }
+            match &node.kind {
+                TestKind::Element {
+                    name,
+                    template_contents: Some(contents),
+                    ..
+                } => {
+                    if name.as_ref() != "template" {
+                        return Err(format!(
+                            "non-template element {key:?} owns template contents"
+                        ));
+                    }
+                    let Some(contents_node) = self.nodes.get(contents) else {
+                        return Err(format!("dangling template contents {contents:?}"));
+                    };
+                    if !matches!(
+                        contents_node.kind,
+                        TestKind::DocumentFragment {
+                            kind: crate::types::ParserCreatedFragmentKind::TemplateContents,
+                            host,
+                        } if host == *key
+                    ) {
+                        return Err(format!("template association mismatch for {key:?}"));
+                    }
+                }
+                TestKind::DocumentFragment { kind, host } => {
+                    if *kind != crate::types::ParserCreatedFragmentKind::TemplateContents {
+                        return Err(format!(
+                            "template contents {key:?} has unsupported fragment kind {kind:?}"
+                        ));
+                    }
+                    if node.parent.is_some() {
+                        return Err(format!("template contents {key:?} has an ordinary parent"));
+                    }
+                    let Some(host_node) = self.nodes.get(host) else {
+                        return Err(format!("dangling template host {host:?}"));
+                    };
+                    if !matches!(host_node.kind, TestKind::Element { template_contents: Some(contents), .. } if contents == *key)
+                    {
+                        return Err(format!(
+                            "template contents back-reference mismatch for {key:?}"
+                        ));
+                    }
+                }
+                _ => {}
             }
             if let Some(parent) = node.parent {
                 let Some(parent_node) = self.nodes.get(&parent) else {
@@ -119,6 +162,16 @@ impl TestPatchArena {
             self.assert_acyclic_from(key, &mut visited, &mut visiting)?;
         }
 
+        if let Some(root) = self.root {
+            let mut reachable = HashSet::new();
+            self.collect_reachable(root, &mut reachable)?;
+            if reachable.len() != self.nodes.len() {
+                return Err("unreachable node in full patch model".to_string());
+            }
+        } else if !self.nodes.is_empty() {
+            return Err("non-empty patch model has no root".to_string());
+        }
+
         Ok(())
     }
 
@@ -141,8 +194,72 @@ impl TestPatchArena {
         for child in &node.children {
             self.assert_acyclic_from(*child, visited, visiting)?;
         }
+        if let TestKind::Element {
+            template_contents: Some(contents),
+            ..
+        } = node.kind
+        {
+            self.assert_acyclic_from(contents, visited, visiting)?;
+        }
         visiting.remove(&key);
         visited.insert(key);
+        Ok(())
+    }
+
+    fn reaches(
+        &self,
+        from: PatchKey,
+        target: PatchKey,
+        visited: &mut HashSet<PatchKey>,
+    ) -> ArenaResult<bool> {
+        if from == target {
+            return Ok(true);
+        }
+        if !visited.insert(from) {
+            return Ok(false);
+        }
+        let node = self
+            .nodes
+            .get(&from)
+            .ok_or_else(|| "missing node".to_string())?;
+        if let TestKind::Element {
+            template_contents: Some(contents),
+            ..
+        } = node.kind
+            && self.reaches(contents, target, visited)?
+        {
+            return Ok(true);
+        }
+        for child in &node.children {
+            if self.reaches(*child, target, visited)? {
+                return Ok(true);
+            }
+        }
+        Ok(false)
+    }
+
+    fn collect_reachable(
+        &self,
+        key: PatchKey,
+        reachable: &mut HashSet<PatchKey>,
+    ) -> ArenaResult<()> {
+        if !reachable.insert(key) {
+            return Ok(());
+        }
+        let node = self
+            .nodes
+            .get(&key)
+            .ok_or_else(|| "missing node".to_string())?;
+        if let TestKind::Element {
+            template_contents: Some(contents),
+            ..
+        } = node.kind
+        {
+            self.collect_reachable(contents, reachable)?;
+        }
+        for child in &node.children {
+            self.collect_reachable(*child, reachable)?;
+        }
         Ok(())
     }
 }

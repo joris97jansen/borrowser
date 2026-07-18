@@ -422,3 +422,12 @@ This issue does not introduce:
 
 Those belong to later rendering milestones once the ownership model defined
 here is being enforced consistently.
+
+## AE10 Parser-Created Template Boundary
+
+The HTML full model may contain a typed template-contents association, but the
+active rendering pipeline uses ordinary-tree traversal and never crosses it.
+Layout suppresses the typed template host before principal-box generation;
+retained rendering assigns no host or contents identity; Paint receives no
+corresponding input. HTML owns the semantics and Paint contains no tag-name
+special case.

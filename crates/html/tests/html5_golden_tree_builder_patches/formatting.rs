@@ -49,6 +49,12 @@ fn format_patch(patch: &html::DomPatch) -> String {
                 key.0, name, attrs
             )
         }
+        html::DomPatch::CreateTemplateContents { host, contents } => {
+            format!(
+                "CreateTemplateContents host={} contents={}",
+                host.0, contents.0
+            )
+        }
         html::DomPatch::CreateText { key, text } => {
             format!("CreateText key={} text=\"{}\"", key.0, escape_text(text))
         }

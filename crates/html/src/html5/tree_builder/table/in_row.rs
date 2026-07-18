@@ -34,8 +34,14 @@ impl Html5TreeBuilder {
                     deprecated,
                     reason = "frozen legacy insertion call; removal tracked separately"
                 )]
-                let _ = self.insert_element(*name, attrs, false, atoms, text)?;
-                self.active_formatting.push_marker();
+                if let Some(owner) = self.insert_element(*name, attrs, false, atoms, text)? {
+                    self.active_formatting.push_marker(
+                        crate::html5::tree_builder::formatting::AfeMarker::new(
+                            crate::html5::tree_builder::formatting::AfeMarkerKind::TableCell,
+                            Some(owner),
+                        ),
+                    );
+                }
                 self.insertion_mode = InsertionMode::InCell;
                 Ok(DispatchOutcome::Done)
             }

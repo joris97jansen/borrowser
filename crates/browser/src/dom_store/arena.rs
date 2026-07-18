@@ -1,6 +1,6 @@
 use super::error::DomPatchError;
 use html::PatchKey;
-use html::internal::Id;
+use html::internal::{Id, ParserCreatedFragmentKind};
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
@@ -43,6 +43,46 @@ impl DomArena {
         {
             for (&key, &index) in &self.live {
                 let node = &self.nodes[index];
+                match &node.kind {
+                    NodeKind::Element {
+                        name,
+                        template_contents: Some(contents),
+                        ..
+                    } => {
+                        debug_assert_eq!(name.as_ref(), "template");
+                        let &contents_index = self.live.get(contents).expect(
+                            "arena invariant violated: template contents key missing from live set",
+                        );
+                        debug_assert!(matches!(
+                            self.nodes[contents_index].kind,
+                            NodeKind::DocumentFragment {
+                                kind: ParserCreatedFragmentKind::TemplateContents,
+                                host,
+                            } if host == key
+                        ));
+                    }
+                    NodeKind::DocumentFragment { kind, host } => {
+                        debug_assert_eq!(
+                            *kind,
+                            ParserCreatedFragmentKind::TemplateContents,
+                            "arena invariant violated: unsupported template fragment kind"
+                        );
+                        debug_assert!(
+                            node.parent.is_none(),
+                            "arena invariant violated: template contents has ordinary parent"
+                        );
+                        let &host_index = self
+                            .live
+                            .get(host)
+                            .expect("arena invariant violated: template host missing");
+                        debug_assert!(matches!(
+                            self.nodes[host_index].kind,
+                            NodeKind::Element { template_contents: Some(contents), .. }
+                                if contents == key
+                        ));
+                    }
+                    _ => {}
+                }
                 if let Some(parent_key) = node.parent {
                     let &parent_index = self
                         .live
@@ -129,6 +169,84 @@ impl DomArena {
         Ok(())
     }
 
+    pub(crate) fn create_template_contents(
+        &mut self,
+        host: PatchKey,
+        contents: PatchKey,
+    ) -> Result<(), DomPatchError> {
+        self.debug_check_invariants();
+        if contents == PatchKey::INVALID {
+            return Err(DomPatchError::InvalidKey(contents));
+        }
+        if self.allocated.contains(&contents) {
+            return Err(DomPatchError::DuplicateKey(contents));
+        }
+        let host_index = *self
+            .live
+            .get(&host)
+            .ok_or(DomPatchError::MissingKey(host))?;
+        match &self.nodes[host_index].kind {
+            NodeKind::Element {
+                name,
+                template_contents: None,
+                ..
+            } if name.as_ref() == "template" => {}
+            NodeKind::Element {
+                template_contents: Some(_),
+                ..
+            } => {
+                return Err(DomPatchError::Protocol(
+                    "template host already has contents",
+                ));
+            }
+            NodeKind::Element { .. } => {
+                return Err(DomPatchError::Protocol(
+                    "template contents host must have canonical template name",
+                ));
+            }
+            _ => {
+                return Err(DomPatchError::WrongNodeKind {
+                    key: host,
+                    expected: "Element",
+                    actual: self.nodes[host_index].kind_name(),
+                });
+            }
+        }
+        self.insert_node(
+            contents,
+            NodeKind::DocumentFragment {
+                kind: ParserCreatedFragmentKind::TemplateContents,
+                host,
+            },
+        )?;
+        let NodeKind::Element {
+            template_contents, ..
+        } = &mut self.nodes[host_index].kind
+        else {
+            unreachable!("validated template host changed kind")
+        };
+        *template_contents = Some(contents);
+        self.debug_check_invariants();
+        Ok(())
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_fragment_kind_for_test(
+        &mut self,
+        key: PatchKey,
+        kind: ParserCreatedFragmentKind,
+    ) {
+        let index = *self.live.get(&key).expect("test fragment key must be live");
+        let NodeKind::DocumentFragment {
+            kind: fragment_kind,
+            ..
+        } = &mut self.nodes[index].kind
+        else {
+            panic!("test fragment-kind mutation requires a document fragment")
+        };
+        *fragment_kind = kind;
+    }
+
     pub(crate) fn append_child(
         &mut self,
         parent: PatchKey,
@@ -153,6 +271,15 @@ impl DomArena {
             return Err(DomPatchError::IllegalMove {
                 key: child,
                 reason: "document nodes cannot be moved",
+            });
+        }
+        if matches!(
+            self.nodes[child_index].kind,
+            NodeKind::DocumentFragment { .. }
+        ) {
+            return Err(DomPatchError::IllegalMove {
+                key: child,
+                reason: "template contents roots cannot acquire ordinary parents",
             });
         }
         if self.is_document_root_element(child_index) {
@@ -211,6 +338,15 @@ impl DomArena {
                 reason: "document nodes cannot be moved",
             });
         }
+        if matches!(
+            self.nodes[child_index].kind,
+            NodeKind::DocumentFragment { .. }
+        ) {
+            return Err(DomPatchError::IllegalMove {
+                key: child,
+                reason: "template contents roots cannot acquire ordinary parents",
+            });
+        }
         if self.is_document_root_element(child_index) {
             return Err(DomPatchError::IllegalMove {
                 key: child,
@@ -244,8 +380,33 @@ impl DomArena {
 
     #[allow(clippy::collapsible_if)]
     pub(crate) fn remove_subtree(&mut self, key: PatchKey) -> Result<(), DomPatchError> {
+        self.remove_subtree_owned(key, false)
+    }
+
+    #[allow(clippy::collapsible_if)]
+    fn remove_subtree_owned(
+        &mut self,
+        key: PatchKey,
+        association_owned: bool,
+    ) -> Result<(), DomPatchError> {
         self.debug_check_invariants();
         let index = *self.live.get(&key).ok_or(DomPatchError::MissingKey(key))?;
+        let fragment_host = match self.nodes[index].kind {
+            NodeKind::DocumentFragment { host, .. } => Some(host),
+            _ => None,
+        };
+        if fragment_host.is_some() && !association_owned {
+            return Err(DomPatchError::IllegalMove {
+                key,
+                reason: "hosted template contents roots cannot be removed directly",
+            });
+        }
+        let template_contents = match self.nodes[index].kind {
+            NodeKind::Element {
+                template_contents, ..
+            } => template_contents,
+            _ => None,
+        };
         if let Some(parent) = self.nodes[index].parent.take() {
             if let Some(parent_index) = self.live.get(&parent).copied() {
                 let siblings = &mut self.nodes[parent_index].children;
@@ -257,8 +418,21 @@ impl DomArena {
         self.live.remove(&key);
         for child in children {
             if self.live.contains_key(&child) {
-                self.remove_subtree(child)?;
+                self.remove_subtree_owned(child, false)?;
             }
+        }
+        if let Some(contents) = template_contents
+            && self.live.contains_key(&contents)
+        {
+            self.remove_subtree_owned(contents, true)?;
+        }
+        if let Some(host) = fragment_host
+            && let Some(&host_index) = self.live.get(&host)
+            && let NodeKind::Element {
+                template_contents, ..
+            } = &mut self.nodes[host_index].kind
+        {
+            *template_contents = None;
         }
         self.debug_check_invariants();
         Ok(())
@@ -360,12 +534,26 @@ impl DomArena {
         };
         let mut stack = Vec::new();
         stack.extend(self.nodes[index].children.iter().copied());
+        if let NodeKind::Element {
+            template_contents: Some(contents),
+            ..
+        } = self.nodes[index].kind
+        {
+            stack.push(contents);
+        }
         while let Some(current) = stack.pop() {
             if current == needle {
                 return true;
             }
             if let Some(&child_index) = self.live.get(&current) {
                 stack.extend(self.nodes[child_index].children.iter().copied());
+                if let NodeKind::Element {
+                    template_contents: Some(contents),
+                    ..
+                } = self.nodes[child_index].kind
+                {
+                    stack.push(contents);
+                }
             }
         }
         false
@@ -392,6 +580,13 @@ impl DomArena {
         for &child in &self.nodes[index].children {
             self.debug_assert_acyclic_from(child, visiting, visited);
         }
+        if let NodeKind::Element {
+            template_contents: Some(contents),
+            ..
+        } = self.nodes[index].kind
+        {
+            self.debug_assert_acyclic_from(contents, visiting, visited);
+        }
         visiting.remove(&key);
         visited.insert(key);
     }
@@ -408,15 +603,18 @@ impl NodeRecord {
     fn allows_children(&self) -> bool {
         matches!(
             self.kind,
-            NodeKind::Document { .. } | NodeKind::Element { .. }
+            NodeKind::Document { .. }
+                | NodeKind::Element { .. }
+                | NodeKind::DocumentFragment { .. }
         )
     }
 
-    fn kind_name(&self) -> &'static str {
+    pub(crate) fn kind_name(&self) -> &'static str {
         match self.kind {
             NodeKind::Document { .. } => "Document",
             NodeKind::DocumentType { .. } => "DocumentType",
             NodeKind::Element { .. } => "Element",
+            NodeKind::DocumentFragment { .. } => "DocumentFragment",
             NodeKind::Text { .. } => "Text",
             NodeKind::Comment { .. } => "Comment",
         }
@@ -436,6 +634,11 @@ pub(crate) enum NodeKind {
     Element {
         name: Arc<str>,
         attributes: Vec<(Arc<str>, Option<String>)>,
+        template_contents: Option<PatchKey>,
+    },
+    DocumentFragment {
+        kind: ParserCreatedFragmentKind,
+        host: PatchKey,
     },
     Text {
         text: String,

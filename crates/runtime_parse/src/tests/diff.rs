@@ -131,22 +131,16 @@ fn build_prev_map(node: &Node, map: &mut HashMap<Id, PrevNodeInfo>) {
                 build_prev_map(child, map);
             }
         }
-        Node::Element {
-            id,
-            name,
-            attributes,
-            children,
-            ..
-        } => {
+        Node::Element { element } => {
             map.insert(
-                *id,
+                element.id(),
                 PrevNodeInfo::Element {
-                    name: Arc::clone(name),
-                    attributes: attributes.clone(),
-                    children: children.iter().map(Node::id).collect(),
+                    name: Arc::clone(element.name()),
+                    attributes: element.attributes().to_vec(),
+                    children: element.children().iter().map(Node::id).collect(),
                 },
             );
-            for child in children {
+            for child in element.children() {
                 build_prev_map(child, map);
             }
         }
@@ -176,13 +170,10 @@ fn build_prev_map(node: &Node, map: &mut HashMap<Id, PrevNodeInfo>) {
 
 fn collect_ids(node: &Node, out: &mut HashSet<Id>) {
     out.insert(node.id());
-    match node {
-        Node::Document { children, .. } | Node::Element { children, .. } => {
-            for child in children {
-                collect_ids(child, out);
-            }
+    if let Some(children) = node.children() {
+        for child in children {
+            collect_ids(child, out);
         }
-        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => {}
     }
 }
 
@@ -204,23 +195,20 @@ fn emit_removals(
         collect_ids(node, removed_ids);
         return;
     }
-    match node {
-        Node::Document { children, .. } | Node::Element { children, .. } => {
-            for child in children {
-                emit_removals(
-                    child,
-                    next_ids,
-                    patch_state,
-                    patches,
-                    removed_ids,
-                    need_reset,
-                );
-                if *need_reset {
-                    return;
-                }
+    if let Some(children) = node.children() {
+        for child in children {
+            emit_removals(
+                child,
+                next_ids,
+                patch_state,
+                patches,
+                removed_ids,
+                need_reset,
+            );
+            if *need_reset {
+                return;
             }
         }
-        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => {}
     }
 }
 
@@ -276,12 +264,10 @@ fn emit_updates(
                 PrevNodeInfo::Element {
                     name, attributes, ..
                 },
-                Node::Element {
-                    name: next_name,
-                    attributes: next_attrs,
-                    ..
-                },
+                Node::Element { element },
             ) => {
+                let next_name = element.name();
+                let next_attrs = element.attributes();
                 if name != next_name {
                     *need_reset = true;
                     return;
@@ -289,7 +275,7 @@ fn emit_updates(
                 if attributes != next_attrs {
                     patches.push(DomPatch::SetAttributes {
                         key,
-                        attributes: next_attrs.clone(),
+                        attributes: next_attrs.to_vec(),
                     });
                 }
             }
@@ -343,7 +329,8 @@ fn emit_updates(
     }
 
     match node {
-        Node::Document { children, .. } | Node::Element { children, .. } => {
+        Node::Document { .. } | Node::Element { .. } => {
+            let children = node.children().expect("container children");
             if !is_new {
                 let prev_children_live = match prev_map.get(&id) {
                     Some(PrevNodeInfo::Document { children, .. })
@@ -391,13 +378,11 @@ fn emit_create_node(node: &Node, key: PatchKey, patches: &mut Vec<DomPatch>) {
                 doctype: doctype.clone(),
             });
         }
-        Node::Element {
-            name, attributes, ..
-        } => {
+        Node::Element { element } => {
             patches.push(DomPatch::CreateElement {
                 key,
-                name: Arc::clone(name),
-                attributes: attributes.clone(),
+                name: Arc::clone(element.name()),
+                attributes: element.attributes().to_vec(),
             });
         }
         Node::Text { text, .. } => {
@@ -447,7 +432,8 @@ fn emit_create_subtree(
         });
     }
     match node {
-        Node::Document { children, .. } | Node::Element { children, .. } => {
+        Node::Document { .. } | Node::Element { .. } => {
+            let children = node.children().expect("container children");
             for child in children {
                 emit_create_subtree(child, Some(key), patch_state, patches, need_reset);
                 if *need_reset {
@@ -462,7 +448,7 @@ fn emit_create_subtree(
 fn root_is_compatible(prev: &Node, next: &Node) -> bool {
     match (prev, next) {
         (Node::Document { .. }, Node::Document { .. }) => true,
-        (Node::Element { name: a, .. }, Node::Element { name: b, .. }) => a == b,
+        (Node::Element { element: a }, Node::Element { element: b }) => a.name() == b.name(),
         (Node::Text { .. }, Node::Text { .. }) => true,
         (Node::Comment { .. }, Node::Comment { .. }) => true,
         (Node::DocumentType { name: a, .. }, Node::DocumentType { name: b, .. }) => a == b,

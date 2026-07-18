@@ -110,6 +110,13 @@ pub enum DomPatch {
         name: Arc<str>,
         attributes: Vec<(Arc<str>, Option<String>)>,
     },
+    /// Create and atomically associate the parser-created contents root for an
+    /// existing canonical `template` element.
+    ///
+    /// `contents` is a fresh stable identity. The association is not an
+    /// ordinary parent/child edge and no detached-fragment create operation is
+    /// exposed by this protocol.
+    CreateTemplateContents { host: PatchKey, contents: PatchKey },
     /// Create a text node.
     CreateText { key: PatchKey, text: String },
     /// Create a comment node.

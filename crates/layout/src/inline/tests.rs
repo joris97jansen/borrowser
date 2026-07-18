@@ -412,28 +412,28 @@ fn drop_leading_space_before_first_content() {
     let doc = Node::Document {
         id: Id(1),
         doctype: None,
-        children: vec![Node::Element {
-            id: Id(2),
-            name: Arc::from("div"),
-            attributes: Vec::new(),
-            style: Vec::new(),
-            children: vec![
-                Node::Element {
-                    id: Id(3),
-                    name: Arc::from("span"),
-                    attributes: Vec::new(),
-                    style: Vec::new(),
-                    children: vec![Node::Text {
+        children: vec![html::internal::node_element_from_parts(
+            Id(2),
+            Arc::from("div"),
+            Vec::new(),
+            Vec::new(),
+            vec![
+                html::internal::node_element_from_parts(
+                    Id(3),
+                    Arc::from("span"),
+                    Vec::new(),
+                    Vec::new(),
+                    vec![Node::Text {
                         id: Id(4),
                         text: " ".to_string(),
                     }],
-                },
+                ),
                 Node::Text {
                     id: Id(5),
                     text: "word".to_string(),
                 },
             ],
-        }],
+        )],
     };
 
     let styled = css::build_style_tree(&doc, None);
@@ -453,32 +453,32 @@ fn collapse_space_after_empty_inline_run() {
     let doc = Node::Document {
         id: Id(1),
         doctype: None,
-        children: vec![Node::Element {
-            id: Id(2),
-            name: Arc::from("div"),
-            attributes: Vec::new(),
-            style: Vec::new(),
-            children: vec![
+        children: vec![html::internal::node_element_from_parts(
+            Id(2),
+            Arc::from("div"),
+            Vec::new(),
+            Vec::new(),
+            vec![
                 Node::Text {
                     id: Id(3),
                     text: "a".to_string(),
                 },
-                Node::Element {
-                    id: Id(4),
-                    name: Arc::from("span"),
-                    attributes: Vec::new(),
-                    style: Vec::new(),
-                    children: vec![Node::Text {
+                html::internal::node_element_from_parts(
+                    Id(4),
+                    Arc::from("span"),
+                    Vec::new(),
+                    Vec::new(),
+                    vec![Node::Text {
                         id: Id(5),
                         text: " ".to_string(),
                     }],
-                },
+                ),
                 Node::Text {
                     id: Id(6),
                     text: "word".to_string(),
                 },
             ],
-        }],
+        )],
     };
 
     let styled = css::build_style_tree(&doc, None);
@@ -503,32 +503,32 @@ fn pending_space_does_not_cross_block_boundary() {
     let doc = Node::Document {
         id: Id(1),
         doctype: None,
-        children: vec![Node::Element {
-            id: Id(2),
-            name: Arc::from("div"),
-            attributes: Vec::new(),
-            style: Vec::new(),
-            children: vec![
+        children: vec![html::internal::node_element_from_parts(
+            Id(2),
+            Arc::from("div"),
+            Vec::new(),
+            Vec::new(),
+            vec![
                 Node::Text {
                     id: Id(3),
                     text: "word ".to_string(),
                 },
-                Node::Element {
-                    id: Id(4),
-                    name: Arc::from("p"),
-                    attributes: Vec::new(),
-                    style: Vec::new(),
-                    children: vec![Node::Text {
+                html::internal::node_element_from_parts(
+                    Id(4),
+                    Arc::from("p"),
+                    Vec::new(),
+                    Vec::new(),
+                    vec![Node::Text {
                         id: Id(5),
                         text: "block".to_string(),
                     }],
-                },
+                ),
                 Node::Text {
                     id: Id(6),
                     text: "after".to_string(),
                 },
             ],
-        }],
+        )],
     };
 
     let styled = css::build_style_tree(&doc, None);
@@ -559,30 +559,30 @@ fn inline_block_margins_affect_wrapping() {
     let doc = Node::Document {
         id: Id(1),
         doctype: None,
-        children: vec![Node::Element {
-            id: Id(2),
-            name: Arc::from("div"),
-            attributes: Vec::new(),
-            style: Vec::new(),
-            children: vec![
+        children: vec![html::internal::node_element_from_parts(
+            Id(2),
+            Arc::from("div"),
+            Vec::new(),
+            Vec::new(),
+            vec![
                 Node::Text {
                     id: Id(3),
                     text: "a".to_string(),
                 },
-                Node::Element {
-                    id: Id(4),
-                    name: Arc::from("span"),
-                    attributes: Vec::new(),
-                    style: vec![
+                html::internal::node_element_from_parts(
+                    Id(4),
+                    Arc::from("span"),
+                    Vec::new(),
+                    vec![
                         ("display".to_string(), "inline-block".to_string()),
                         ("width".to_string(), "20px".to_string()),
                         ("margin-left".to_string(), "10px".to_string()),
                         ("margin-right".to_string(), "10px".to_string()),
                     ],
-                    children: Vec::new(),
-                },
+                    Vec::new(),
+                ),
             ],
-        }],
+        )],
     };
 
     let styled = css::build_style_tree(&doc, None);

@@ -140,3 +140,18 @@ When a new parity-sensitive fixture is added, it must declare:
 - which parity category it belongs to
 - whether it must match legacy or may differ intentionally
 - a reason when the difference is intentional
+
+### AE10 Typed Template Construction
+
+The `template_nested_patch_parity` corpus fixture is intentionally
+`LegacyParity::MayDiffer`: the retired generic-element approximation cannot
+represent the AE10 fragment boundary. Current HTML5 whole/chunked output and
+Browser patch materialization must agree on the typed association.
+
+Normative template conformance cases are pinned to WPT commit
+`2c705104a295c48053eeddf7fe0170d790a4e853`, source
+`html/syntax/parsing/resources/template.dat`. Adaptations are full-document,
+non-scripting cases only and carry exact-byte/SHA/source/error/tree translation
+provenance. Local `ae10-*` fixtures cite WHATWG commit
+`88ae68cb961651f0f92c5d2046049f53ecdfc6cf` and are not described as WPT
+imports.

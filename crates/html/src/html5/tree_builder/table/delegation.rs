@@ -5,7 +5,7 @@ use crate::html5::tree_builder::modes::InsertionMode;
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
 
 impl Html5TreeBuilder {
-    pub(super) fn process_using_in_body_rules(
+    pub(in crate::html5::tree_builder) fn process_using_in_body_rules(
         &mut self,
         token: &Token,
         atoms: &AtomTable,

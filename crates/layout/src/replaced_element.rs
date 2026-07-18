@@ -20,9 +20,9 @@ pub trait ReplacedElementInfoProvider {
 /// Classify replaced elements for layout purposes.
 pub(crate) fn classify_replaced_kind(node: &Node) -> Option<ReplacedKind> {
     match node {
-        Node::Element {
-            name, attributes, ..
-        } => {
+        Node::Element { element } => {
+            let name = element.name();
+            let attributes = element.attributes();
             if name.eq_ignore_ascii_case("img") {
                 return Some(ReplacedKind::Img);
             }

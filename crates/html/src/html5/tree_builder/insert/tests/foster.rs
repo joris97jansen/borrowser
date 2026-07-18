@@ -73,12 +73,18 @@ fn foster_parenting_location_prefers_template_above_table() {
             let template = this
                 .create_detached_element(this.known_tags.template, &[], &ctx.atoms)?
                 .expect("template setup should not hit resource limits");
+            let contents = this.alloc_patch_key()?;
+            this.push_structural_patch(DomPatch::CreateTemplateContents {
+                host: template,
+                contents,
+            });
+            this.note_node_created();
             this.open_elements
                 .push(OpenElement::new(template, this.known_tags.template));
             assert_eq!(
                 this.foster_parenting_insertion_location()?,
                 InsertionLocation {
-                    parent: template,
+                    parent: contents,
                     before: None,
                 }
             );

@@ -552,11 +552,11 @@ mod tests {
     }
 
     fn positioned_block(id: Id, z_index: &str, color: &str, children: Vec<Node>) -> Node {
-        Node::Element {
+        html::internal::node_element_from_parts(
             id,
-            name: Arc::from("div"),
-            attributes: Vec::new(),
-            style: vec![
+            Arc::from("div"),
+            Vec::new(),
+            vec![
                 ("display".to_string(), "block".to_string()),
                 ("position".to_string(), "relative".to_string()),
                 ("z-index".to_string(), z_index.to_string()),
@@ -565,7 +565,7 @@ mod tests {
                 ("background-color".to_string(), color.to_string()),
             ],
             children,
-        }
+        )
     }
 
     #[test]
@@ -573,11 +573,11 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![
                     ("display".to_string(), "block".to_string()),
                     ("width".to_string(), "120px".to_string()),
                     ("height".to_string(), "60px".to_string()),
@@ -593,25 +593,25 @@ mod tests {
                     ("color".to_string(), "#aabbcc".to_string()),
                     ("text-decoration-line".to_string(), "underline".to_string()),
                 ],
-                children: vec![
+                vec![
                     Node::Text {
                         id: Id(3),
                         text: "AA8".to_string(),
                     },
-                    Node::Element {
-                        id: Id(4),
-                        name: Arc::from("div"),
-                        attributes: Vec::new(),
-                        style: vec![
+                    html::internal::node_element_from_parts(
+                        Id(4),
+                        Arc::from("div"),
+                        Vec::new(),
+                        vec![
                             ("display".to_string(), "block".to_string()),
                             ("width".to_string(), "40px".to_string()),
                             ("height".to_string(), "20px".to_string()),
                             ("background-color".to_string(), "#708090".to_string()),
                         ],
-                        children: Vec::new(),
-                    },
+                        Vec::new(),
+                    ),
                 ],
-            }],
+            )],
         };
 
         let snapshot = build_paint_operation_snapshot(&dom);
@@ -648,22 +648,22 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![
                     ("display".to_string(), "block".to_string()),
                     ("width".to_string(), "120px".to_string()),
                     ("height".to_string(), "20px".to_string()),
                     ("background-color".to_string(), "#00aa00".to_string()),
                 ],
-                children: vec![
+                vec![
                     positioned_block(Id(3), "0", "#0000aa", Vec::new()),
                     positioned_block(Id(4), "-1", "#aa0000", Vec::new()),
                     positioned_block(Id(5), "2", "#aaaa00", Vec::new()),
                 ],
-            }],
+            )],
         };
 
         let snapshot = build_paint_operation_snapshot(&dom);
@@ -682,12 +682,12 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![("display".to_string(), "block".to_string())],
-                children: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![("display".to_string(), "block".to_string())],
+                vec![
                     positioned_block(
                         Id(3),
                         "1",
@@ -696,7 +696,7 @@ mod tests {
                     ),
                     positioned_block(Id(5), "2", "#0000aa", Vec::new()),
                 ],
-            }],
+            )],
         };
 
         let snapshot = build_paint_operation_snapshot(&dom);
@@ -713,18 +713,18 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![
                     ("display".to_string(), "block".to_string()),
                     ("width".to_string(), "40px".to_string()),
                     ("height".to_string(), "20px".to_string()),
                     ("overflow".to_string(), "clip".to_string()),
                 ],
-                children: vec![positioned_block(Id(3), "1", "#aa0000", Vec::new())],
-            }],
+                vec![positioned_block(Id(3), "1", "#aa0000", Vec::new())],
+            )],
         };
 
         let snapshot = build_paint_operation_snapshot(&dom);
@@ -758,18 +758,18 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![
                     ("display".to_string(), "block".to_string()),
                     ("width".to_string(), "120px".to_string()),
                     ("height".to_string(), "40px".to_string()),
                     ("background-color".to_string(), "#abcdef".to_string()),
                 ],
-                children: Vec::new(),
-            }],
+                Vec::new(),
+            )],
         };
 
         let first = build_paint_operation_snapshot(&dom);
@@ -800,11 +800,11 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![
                     ("display".to_string(), "block".to_string()),
                     ("width".to_string(), "160px".to_string()),
                     ("height".to_string(), "50px".to_string()),
@@ -819,11 +819,11 @@ mod tests {
                     ("color".to_string(), "#aabbcc".to_string()),
                     ("text-decoration-line".to_string(), "underline".to_string()),
                 ],
-                children: vec![Node::Text {
+                vec![Node::Text {
                     id: Id(3),
                     text: "Hello".to_string(),
                 }],
-            }],
+            )],
         };
 
         let snapshot = build_paint_operation_snapshot(&dom);
@@ -850,11 +850,11 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![
                     ("display".to_string(), "block".to_string()),
                     ("width".to_string(), "120px".to_string()),
                     ("height".to_string(), "60px".to_string()),
@@ -867,25 +867,25 @@ mod tests {
                     ("outline-style".to_string(), "solid".to_string()),
                     ("outline-color".to_string(), "#a0b0c0".to_string()),
                 ],
-                children: vec![
+                vec![
                     Node::Text {
                         id: Id(3),
                         text: "Clipped".to_string(),
                     },
-                    Node::Element {
-                        id: Id(4),
-                        name: Arc::from("div"),
-                        attributes: Vec::new(),
-                        style: vec![
+                    html::internal::node_element_from_parts(
+                        Id(4),
+                        Arc::from("div"),
+                        Vec::new(),
+                        vec![
                             ("display".to_string(), "block".to_string()),
                             ("width".to_string(), "150px".to_string()),
                             ("height".to_string(), "20px".to_string()),
                             ("background-color".to_string(), "#708090".to_string()),
                         ],
-                        children: Vec::new(),
-                    },
+                        Vec::new(),
+                    ),
                 ],
-            }],
+            )],
         };
 
         let snapshot = build_paint_operation_snapshot(&dom);
@@ -911,34 +911,34 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("ul"),
-                attributes: Vec::new(),
-                style: Vec::new(),
-                children: vec![Node::Element {
-                    id: Id(3),
-                    name: Arc::from("li"),
-                    attributes: Vec::new(),
-                    style: vec![("padding-left".to_string(), "20px".to_string())],
-                    children: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("ul"),
+                Vec::new(),
+                Vec::new(),
+                vec![html::internal::node_element_from_parts(
+                    Id(3),
+                    Arc::from("li"),
+                    Vec::new(),
+                    vec![("padding-left".to_string(), "20px".to_string())],
+                    vec![
                         Node::Text {
                             id: Id(4),
                             text: "Item ".to_string(),
                         },
-                        Node::Element {
-                            id: Id(5),
-                            name: Arc::from("span"),
-                            attributes: Vec::new(),
-                            style: vec![("display".to_string(), "inline-block".to_string())],
-                            children: vec![Node::Text {
+                        html::internal::node_element_from_parts(
+                            Id(5),
+                            Arc::from("span"),
+                            Vec::new(),
+                            vec![("display".to_string(), "inline-block".to_string())],
+                            vec![Node::Text {
                                 id: Id(6),
                                 text: "Box".to_string(),
                             }],
-                        },
+                        ),
                     ],
-                }],
-            }],
+                )],
+            )],
         };
 
         let snapshot = build_paint_operation_snapshot(&dom);
@@ -957,22 +957,22 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![("display".to_string(), "block".to_string())],
-                children: vec![Node::Element {
-                    id: Id(3),
-                    name: Arc::from("img"),
-                    attributes: vec![(Arc::from("src"), Some("image.png".to_string()))],
-                    style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![("display".to_string(), "block".to_string())],
+                vec![html::internal::node_element_from_parts(
+                    Id(3),
+                    Arc::from("img"),
+                    vec![(Arc::from("src"), Some("image.png".to_string()))],
+                    vec![
                         ("width".to_string(), "40px".to_string()),
                         ("height".to_string(), "20px".to_string()),
                     ],
-                    children: Vec::new(),
-                }],
-            }],
+                    Vec::new(),
+                )],
+            )],
         };
 
         let snapshot = build_paint_operation_snapshot(&dom);
@@ -989,11 +989,11 @@ mod tests {
         let dom = Node::Document {
             id: Id(1),
             doctype: None,
-            children: vec![Node::Element {
-                id: Id(2),
-                name: Arc::from("section"),
-                attributes: Vec::new(),
-                style: vec![
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                Arc::from("section"),
+                Vec::new(),
+                vec![
                     ("display".to_string(), "block".to_string()),
                     ("width".to_string(), "120px".to_string()),
                     ("height".to_string(), "60px".to_string()),
@@ -1005,19 +1005,19 @@ mod tests {
                     ("outline-style".to_string(), "solid".to_string()),
                     ("outline-color".to_string(), "#a0b0c0".to_string()),
                 ],
-                children: vec![Node::Element {
-                    id: Id(3),
-                    name: Arc::from("div"),
-                    attributes: Vec::new(),
-                    style: vec![
+                vec![html::internal::node_element_from_parts(
+                    Id(3),
+                    Arc::from("div"),
+                    Vec::new(),
+                    vec![
                         ("display".to_string(), "block".to_string()),
                         ("width".to_string(), "40px".to_string()),
                         ("height".to_string(), "20px".to_string()),
                         ("background-color".to_string(), "#708090".to_string()),
                     ],
-                    children: Vec::new(),
-                }],
-            }],
+                    Vec::new(),
+                )],
+            )],
         };
 
         let snapshot = build_paint_operation_snapshot(&dom);

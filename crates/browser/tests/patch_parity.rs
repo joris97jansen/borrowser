@@ -2,7 +2,6 @@ use browser::dom_store::DomStore;
 use core_types::{DomHandle, DomVersion};
 use html::dom_snapshot::{DomSnapshotOptions, compare_dom};
 use html::golden_corpus::fixtures;
-use html::internal::Id;
 use html::{DomDiffState, DomPatch, HtmlParseOptions, HtmlParser, Node, diff_dom_with_state};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -407,18 +406,8 @@ fn parse_html_document(input: &str) -> Node {
         .into_output()
         .expect("HTML5 parity output should materialize")
         .document;
-    assign_preorder_ids(&mut document, &mut 0);
+    html::internal::assign_missing_full_model_ids_for_test(&mut document);
     document
-}
-
-fn assign_preorder_ids(node: &mut Node, next: &mut u32) {
-    *next = next.saturating_add(1);
-    node.set_id(Id(*next));
-    if let Some(children) = node.children_mut() {
-        for child in children {
-            assign_preorder_ids(child, next);
-        }
-    }
 }
 
 fn plan_boundaries(input: &str, plan: &ChunkPlan) -> Vec<usize> {

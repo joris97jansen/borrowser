@@ -19,11 +19,12 @@ impl Html5TreeBuilder {
         let document_key = self
             .document_key
             .ok_or(crate::html5::shared::EngineInvariantError)?;
-        Ok(self
+        let current = self
             .open_elements
             .current()
             .map(OpenElement::key)
-            .unwrap_or(document_key))
+            .unwrap_or(document_key);
+        Ok(self.live_tree.template_contents(current).unwrap_or(current))
     }
 
     fn current_insertion_location(&self) -> Result<InsertionLocation, TreeBuilderError> {
@@ -41,8 +42,8 @@ impl Html5TreeBuilder {
         );
         let last_table_index = indices.table_index;
         let last_template_index = indices.template_index;
-        if let (Some(table_index), Some(template_index)) = (last_table_index, last_template_index)
-            && template_index > table_index
+        if let Some(template_index) = last_template_index
+            && last_table_index.is_none_or(|table_index| template_index > table_index)
         {
             let template = self
                 .open_elements
@@ -107,8 +108,11 @@ impl Html5TreeBuilder {
         &mut self,
     ) -> Result<InsertionLocation, TreeBuilderError> {
         match self.foster_parenting_anchor_from_soe() {
-            Some(FosterParentAnchor::Template(parent)) => Ok(InsertionLocation {
-                parent,
+            Some(FosterParentAnchor::Template(host)) => Ok(InsertionLocation {
+                parent: self
+                    .live_tree
+                    .template_contents(host)
+                    .ok_or(crate::html5::shared::EngineInvariantError)?,
                 before: None,
             }),
             Some(FosterParentAnchor::TableIndex(table_index)) => {
@@ -118,7 +122,7 @@ impl Html5TreeBuilder {
         }
     }
 
-    pub(super) fn element_or_text_insertion_location(
+    pub(in crate::html5::tree_builder) fn element_or_text_insertion_location(
         &mut self,
     ) -> Result<InsertionLocation, TreeBuilderError> {
         if self.foster_parenting_enabled && self.current_node_is_table_foster_target() {
@@ -128,7 +132,7 @@ impl Html5TreeBuilder {
         }
     }
 
-    pub(super) fn insert_existing_child_at(
+    pub(in crate::html5::tree_builder) fn insert_existing_child_at(
         &mut self,
         location: InsertionLocation,
         child: PatchKey,

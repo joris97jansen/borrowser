@@ -14,20 +14,34 @@ use crate::dom_patch::{DomPatch, PatchKey};
 use crate::html5::tree_builder::invariants::{
     DomInvariantNode, DomInvariantNodeKind, DomInvariantState,
 };
+use crate::types::ParserCreatedFragmentKind;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LiveNodeKind {
     Document,
     DocumentType,
     Element,
+    DocumentFragment(ParserCreatedFragmentKind),
     Text,
     Comment,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::html5::tree_builder) enum ChildInsertionReservationError {
+    InvalidParent,
+    InvalidBeforeSibling,
+    InvalidChild,
+    ArithmeticOverflow,
+    AllocationFailure,
 }
 
 impl LiveNodeKind {
     #[inline]
     fn is_container(self) -> bool {
-        matches!(self, Self::Document | Self::Element)
+        matches!(
+            self,
+            Self::Document | Self::Element | Self::DocumentFragment(_)
+        )
     }
 }
 
@@ -36,6 +50,9 @@ struct LiveNode {
     kind: LiveNodeKind,
     parent: Option<PatchKey>,
     children: Vec<PatchKey>,
+    template_contents: Option<PatchKey>,
+    fragment_host: Option<PatchKey>,
+    is_template_element: bool,
 }
 
 impl LiveNode {
@@ -45,6 +62,9 @@ impl LiveNode {
             kind,
             parent: None,
             children: Vec::new(),
+            template_contents: None,
+            fragment_host: None,
+            is_template_element: false,
         }
     }
 }
@@ -53,16 +73,100 @@ impl LiveNode {
 pub(in crate::html5::tree_builder) struct LiveTree {
     nodes: Vec<Option<LiveNode>>,
     root: Option<PatchKey>,
+    #[cfg(test)]
+    fail_next_child_reservation: Option<ChildInsertionReservationError>,
 }
 
 impl LiveTree {
+    pub(in crate::html5::tree_builder) fn try_reserve_through_key(
+        &mut self,
+        key: PatchKey,
+    ) -> Result<(), ()> {
+        let required_len = (key.0 as usize).checked_add(1).ok_or(())?;
+        if required_len > self.nodes.len() {
+            self.nodes
+                .try_reserve(required_len - self.nodes.len())
+                .map_err(|_| ())?;
+        }
+        Ok(())
+    }
+
+    /// Reserve the exact parent child-list capacity required by a future
+    /// insertion before a parser-owned structural transaction begins.
+    ///
+    /// `child` is `None` for a not-yet-created node. An existing child already
+    /// attached to `parent` does not increase the final child count, including
+    /// insert-before moves within the same parent.
+    pub(in crate::html5::tree_builder) fn try_reserve_child_insertion(
+        &mut self,
+        parent: PatchKey,
+        child: Option<PatchKey>,
+        before: Option<PatchKey>,
+    ) -> Result<(), ChildInsertionReservationError> {
+        let parent_node = self
+            .nodes
+            .get(parent.0 as usize)
+            .and_then(Option::as_ref)
+            .filter(|node| node.kind.is_container())
+            .ok_or(ChildInsertionReservationError::InvalidParent)?;
+        if let Some(before) = before {
+            let before_node = self
+                .nodes
+                .get(before.0 as usize)
+                .and_then(Option::as_ref)
+                .ok_or(ChildInsertionReservationError::InvalidBeforeSibling)?;
+            if before_node.parent != Some(parent) {
+                return Err(ChildInsertionReservationError::InvalidBeforeSibling);
+            }
+        }
+
+        let additional = match child {
+            Some(child) => {
+                let child_node = self
+                    .nodes
+                    .get(child.0 as usize)
+                    .and_then(Option::as_ref)
+                    .ok_or(ChildInsertionReservationError::InvalidChild)?;
+                usize::from(child_node.parent != Some(parent))
+            }
+            None => 1,
+        };
+        checked_child_insertion_len(parent_node.children.len(), additional)?;
+
+        #[cfg(test)]
+        if additional > 0
+            && let Some(error) = self.fail_next_child_reservation.take()
+        {
+            return Err(error);
+        }
+
+        self.node_mut(parent)
+            .children
+            .try_reserve(additional)
+            .map_err(|_| ChildInsertionReservationError::AllocationFailure)
+    }
+
+    #[cfg(test)]
+    pub(in crate::html5::tree_builder) fn fail_next_child_reservation_for_test(
+        &mut self,
+        error: ChildInsertionReservationError,
+    ) {
+        self.fail_next_child_reservation = Some(error);
+    }
+
     pub(in crate::html5::tree_builder) fn apply_structural_patch(&mut self, patch: &DomPatch) {
         match patch {
             DomPatch::CreateDocument { key, .. } => self.insert_node(*key, LiveNodeKind::Document),
             DomPatch::CreateDocumentType { key, .. } => {
                 self.insert_node(*key, LiveNodeKind::DocumentType)
             }
-            DomPatch::CreateElement { key, .. } => self.insert_node(*key, LiveNodeKind::Element),
+            DomPatch::CreateElement { key, name, .. } => {
+                self.insert_node(*key, LiveNodeKind::Element);
+                self.node_mut(*key).is_template_element = name.as_ref() == "template";
+            }
+            DomPatch::CreateTemplateContents { host, contents } => {
+                self.create_template_contents(*host, *contents);
+            }
             DomPatch::CreateText { key, .. } => self.insert_node(*key, LiveNodeKind::Text),
             DomPatch::CreateComment { key, .. } => self.insert_node(*key, LiveNodeKind::Comment),
             DomPatch::AppendChild { parent, child } => self.append_child(*parent, *child),
@@ -87,6 +191,29 @@ impl LiveTree {
         self.node(key).children.len()
     }
 
+    pub(in crate::html5::tree_builder) fn template_contents(
+        &self,
+        host: PatchKey,
+    ) -> Option<PatchKey> {
+        self.node(host).template_contents
+    }
+
+    #[cfg(test)]
+    pub(in crate::html5::tree_builder) fn corrupt_template_association_for_test(
+        &mut self,
+        host: PatchKey,
+    ) {
+        self.node_mut(host).template_contents = None;
+    }
+
+    pub(in crate::html5::tree_builder) fn is_template_element(&self, key: PatchKey) -> bool {
+        self.node(key).is_template_element
+    }
+
+    pub(in crate::html5::tree_builder) fn contains(&self, key: PatchKey) -> bool {
+        key != PatchKey::INVALID && self.nodes.get(key.0 as usize).is_some_and(Option::is_some)
+    }
+
     pub(in crate::html5::tree_builder) fn has_document_type_child(&self, key: PatchKey) -> bool {
         self.node(key)
             .children
@@ -96,6 +223,19 @@ impl LiveTree {
 
     pub(in crate::html5::tree_builder) fn children_snapshot(&self, key: PatchKey) -> Vec<PatchKey> {
         self.node(key).children.clone()
+    }
+
+    #[cfg(any(test, feature = "html5-fuzzing", feature = "parser_invariants"))]
+    pub(in crate::html5::tree_builder) fn template_hosts_for_full_audit(&self) -> Vec<PatchKey> {
+        self.nodes
+            .iter()
+            .enumerate()
+            .filter_map(|(index, node)| {
+                node.as_ref()
+                    .filter(|node| node.is_template_element)
+                    .map(|_| PatchKey(index as u32))
+            })
+            .collect()
     }
 
     pub(in crate::html5::tree_builder) fn invariant_state(&self) -> DomInvariantState {
@@ -112,11 +252,17 @@ impl LiveTree {
                     LiveNodeKind::Document => DomInvariantNodeKind::Document,
                     LiveNodeKind::DocumentType => DomInvariantNodeKind::DocumentType,
                     LiveNodeKind::Element => DomInvariantNodeKind::Element,
+                    LiveNodeKind::DocumentFragment(kind) => {
+                        DomInvariantNodeKind::DocumentFragment(kind)
+                    }
                     LiveNodeKind::Text => DomInvariantNodeKind::Text,
                     LiveNodeKind::Comment => DomInvariantNodeKind::Comment,
                 },
                 parent: node.parent,
                 children: node.children.clone(),
+                template_contents: node.template_contents,
+                fragment_host: node.fragment_host,
+                is_template_element: node.is_template_element,
             });
         }
         state
@@ -134,6 +280,20 @@ impl LiveTree {
             self.root = Some(key);
         }
         self.nodes[key.0 as usize] = Some(LiveNode::new(kind));
+    }
+
+    fn create_template_contents(&mut self, host: PatchKey, contents: PatchKey) {
+        self.ensure_node(host, "CreateTemplateContents host");
+        let host_node = self.node(host);
+        assert_eq!(host_node.kind, LiveNodeKind::Element);
+        assert!(host_node.is_template_element);
+        assert!(host_node.template_contents.is_none());
+        self.insert_node(
+            contents,
+            LiveNodeKind::DocumentFragment(ParserCreatedFragmentKind::TemplateContents),
+        );
+        self.node_mut(contents).fragment_host = Some(host);
+        self.node_mut(host).template_contents = Some(contents);
     }
 
     fn append_child(&mut self, parent: PatchKey, child: PatchKey) {
@@ -201,11 +361,19 @@ impl LiveTree {
 
     fn remove_node(&mut self, key: PatchKey) {
         self.ensure_node(key, "RemoveNode target");
+        assert!(
+            !matches!(self.node(key).kind, LiveNodeKind::DocumentFragment(_)),
+            "hosted template contents roots cannot be removed directly"
+        );
         self.detach_child(key);
 
         let mut stack = vec![key];
         while let Some(current) = stack.pop() {
-            let children = self.node(current).children.clone();
+            let node = self.node(current);
+            let mut children = node.children.clone();
+            if let Some(contents) = node.template_contents {
+                children.push(contents);
+            }
             for child in children {
                 stack.push(child);
             }
@@ -245,6 +413,10 @@ impl LiveTree {
             !matches!(node.kind, LiveNodeKind::Document),
             "{context}: cannot move a document node"
         );
+        assert!(
+            !matches!(node.kind, LiveNodeKind::DocumentFragment(_)),
+            "{context}: template contents roots cannot acquire ordinary parents"
+        );
         let is_root_element = matches!(node.kind, LiveNodeKind::Element)
             && self.root.is_some_and(|root| node.parent == Some(root));
         assert!(
@@ -254,10 +426,21 @@ impl LiveTree {
     }
 
     fn assert_no_cycle(&self, parent: PatchKey, child: PatchKey, context: &str) {
-        let mut cursor = Some(parent);
-        while let Some(current) = cursor {
-            assert_ne!(current, child, "{context}: cannot create an ancestor cycle");
-            cursor = self.parent(current);
+        let mut stack = vec![child];
+        let mut visited = std::collections::HashSet::new();
+        while let Some(current) = stack.pop() {
+            if !visited.insert(current) {
+                continue;
+            }
+            assert_ne!(
+                current, parent,
+                "{context}: cannot create an ancestor cycle"
+            );
+            let node = self.node(current);
+            stack.extend(node.children.iter().copied());
+            if let Some(contents) = node.template_contents {
+                stack.push(contents);
+            }
         }
     }
 
@@ -297,6 +480,96 @@ impl LiveTree {
             .get_mut(key.0 as usize)
             .and_then(Option::as_mut)
             .expect("live tree node missing")
+    }
+}
+
+fn checked_child_insertion_len(
+    len: usize,
+    additional: usize,
+) -> Result<usize, ChildInsertionReservationError> {
+    len.checked_add(additional)
+        .ok_or(ChildInsertionReservationError::ArithmeticOverflow)
+}
+
+#[cfg(test)]
+mod reservation_tests {
+    use super::{ChildInsertionReservationError, LiveTree, checked_child_insertion_len};
+    use crate::{DomPatch, PatchKey};
+
+    fn apply(tree: &mut LiveTree, patch: DomPatch) {
+        tree.apply_structural_patch(&patch);
+    }
+
+    #[test]
+    fn child_reservation_accounts_for_same_parent_insertions_and_fragment_parents() {
+        let mut tree = LiveTree::default();
+        for patch in [
+            DomPatch::CreateDocument {
+                key: PatchKey(1),
+                doctype: None,
+            },
+            DomPatch::CreateElement {
+                key: PatchKey(2),
+                name: "template".into(),
+                attributes: Vec::new(),
+            },
+            DomPatch::CreateTemplateContents {
+                host: PatchKey(2),
+                contents: PatchKey(3),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(1),
+                child: PatchKey(2),
+            },
+            DomPatch::CreateElement {
+                key: PatchKey(4),
+                name: "div".into(),
+                attributes: Vec::new(),
+            },
+            DomPatch::CreateElement {
+                key: PatchKey(5),
+                name: "span".into(),
+                attributes: Vec::new(),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(3),
+                child: PatchKey(4),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(3),
+                child: PatchKey(5),
+            },
+        ] {
+            apply(&mut tree, patch);
+        }
+
+        tree.fail_next_child_reservation_for_test(
+            ChildInsertionReservationError::AllocationFailure,
+        );
+        tree.try_reserve_child_insertion(PatchKey(3), Some(PatchKey(5)), Some(PatchKey(4)))
+            .expect("same-parent insert-before does not increase final child count");
+        assert!(
+            tree.try_reserve_child_insertion(PatchKey(3), None, Some(PatchKey(4)))
+                .is_err(),
+            "fresh insertion under a template fragment must consume the reservation seam"
+        );
+
+        assert_eq!(
+            tree.try_reserve_child_insertion(PatchKey(99), None, None),
+            Err(ChildInsertionReservationError::InvalidParent)
+        );
+        assert_eq!(
+            tree.try_reserve_child_insertion(PatchKey(3), None, Some(PatchKey(2))),
+            Err(ChildInsertionReservationError::InvalidBeforeSibling)
+        );
+        assert_eq!(
+            tree.try_reserve_child_insertion(PatchKey(3), Some(PatchKey(99)), None),
+            Err(ChildInsertionReservationError::InvalidChild)
+        );
+        assert_eq!(
+            checked_child_insertion_len(usize::MAX, 1),
+            Err(ChildInsertionReservationError::ArithmeticOverflow)
+        );
     }
 }
 
@@ -514,6 +787,9 @@ mod tests {
             kind: super::LiveNodeKind::Element,
             parent: Some(PatchKey(1)),
             children: vec![PatchKey(4), PatchKey(4)],
+            template_contents: None,
+            fragment_host: None,
+            is_template_element: false,
         });
         tree.nodes[4]
             .as_mut()

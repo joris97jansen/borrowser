@@ -40,18 +40,18 @@ fn attach_styles_accepts_model_parse_results_from_root_entrypoint() {
         parse_stylesheet_with_options("div { color: red; }", &ParseOptions::stylesheet()),
         parse_stylesheet_with_options(".hero { color: blue; }", &ParseOptions::stylesheet()),
     ];
-    let mut dom = Node::Element {
-        id: Id::INVALID,
-        name: Arc::from("div"),
-        attributes: vec![(Arc::from("class"), Some("hero".to_string()))],
-        style: Vec::new(),
-        children: Vec::new(),
-    };
+    let mut dom = html::internal::node_element_from_parts(
+        Id::INVALID,
+        Arc::from("div"),
+        vec![(Arc::from("class"), Some("hero".to_string()))],
+        Vec::new(),
+        Vec::new(),
+    );
 
     attach_styles(&mut dom, &stylesheets);
 
-    let Node::Element { style, .. } = dom else {
+    let Node::Element { element } = dom else {
         panic!("expected element");
     };
-    assert_eq!(style, vec![("color".to_string(), "blue".to_string())]);
+    assert_eq!(element.style(), [("color".to_string(), "blue".to_string())]);
 }

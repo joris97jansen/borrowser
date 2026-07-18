@@ -95,56 +95,27 @@ fn runtime_applier_supports_aaa_furthest_block_reparenting_preserving_identity()
         panic!("expected document root");
     };
     assert_eq!(id.0, 1);
-    let Node::Element {
-        id: html_id,
-        children: html_children,
-        ..
-    } = &children[0]
-    else {
-        panic!("expected html element");
-    };
-    assert_eq!(html_id.0, 2);
-    let Node::Element {
-        id: body_id,
-        children: body_children,
-        ..
-    } = &html_children[1]
-    else {
-        panic!("expected body element");
-    };
-    assert_eq!(body_id.0, 4);
-    let Node::Element {
-        id: outer_anchor_id,
-        children: outer_anchor_children,
-        ..
-    } = &body_children[0]
-    else {
-        panic!("expected original anchor");
-    };
-    assert_eq!(outer_anchor_id.0, 5);
+    let html = children[0].element().expect("expected html element");
+    assert_eq!(html.id().0, 2);
+    let body = html.children()[1].element().expect("expected body element");
+    assert_eq!(body.id().0, 4);
+    let outer_anchor = body.children()[0]
+        .element()
+        .expect("expected original anchor");
+    assert_eq!(outer_anchor.id().0, 5);
     assert!(
-        outer_anchor_children.is_empty(),
+        outer_anchor.children().is_empty(),
         "original anchor should stay live but empty after the reparenting move"
     );
-    let Node::Element {
-        id: paragraph_id,
-        children: paragraph_children,
-        ..
-    } = &body_children[1]
-    else {
-        panic!("expected moved paragraph");
-    };
-    assert_eq!(paragraph_id.0, 6);
-    let Node::Element {
-        id: recreated_anchor_id,
-        children: recreated_anchor_children,
-        ..
-    } = &paragraph_children[0]
-    else {
-        panic!("expected recreated anchor");
-    };
-    assert_eq!(recreated_anchor_id.0, 8);
-    let Node::Text { id: text_id, text } = &recreated_anchor_children[0] else {
+    let paragraph = body.children()[1]
+        .element()
+        .expect("expected moved paragraph");
+    assert_eq!(paragraph.id().0, 6);
+    let recreated_anchor = paragraph.children()[0]
+        .element()
+        .expect("expected recreated anchor");
+    assert_eq!(recreated_anchor.id().0, 8);
+    let Node::Text { id: text_id, text } = &recreated_anchor.children()[0] else {
         panic!("expected moved text child");
     };
     assert_eq!(text_id.0, 7);
@@ -255,62 +226,30 @@ fn runtime_applier_supports_aaa_foster_parent_insert_before_preserving_identity(
         panic!("expected document root");
     };
     assert_eq!(id.0, 1);
-    let Node::Element {
-        id: html_id,
-        children: html_children,
-        ..
-    } = &children[0]
-    else {
-        panic!("expected html element");
-    };
-    assert_eq!(html_id.0, 2);
-    let Node::Element {
-        id: body_id,
-        children: body_children,
-        ..
-    } = &html_children[1]
-    else {
-        panic!("expected body element");
-    };
-    assert_eq!(body_id.0, 4);
-    let Node::Element {
-        id: tr_id,
-        children: tr_children,
-        ..
-    } = &body_children[0]
-    else {
-        panic!("expected foster-parented tr element");
-    };
-    assert_eq!(tr_id.0, 7);
-    let Node::Element {
-        id: recreated_anchor_id,
-        children: recreated_anchor_children,
-        ..
-    } = &tr_children[0]
-    else {
-        panic!("expected recreated anchor under foster-parented tr");
-    };
-    assert_eq!(recreated_anchor_id.0, 9);
-    let Node::Text { id: text_id, text } = &recreated_anchor_children[0] else {
+    let html = children[0].element().expect("expected html element");
+    assert_eq!(html.id().0, 2);
+    let body = html.children()[1].element().expect("expected body element");
+    assert_eq!(body.id().0, 4);
+    let tr = body.children()[0]
+        .element()
+        .expect("expected foster-parented tr element");
+    assert_eq!(tr.id().0, 7);
+    let recreated_anchor = tr.children()[0]
+        .element()
+        .expect("expected recreated anchor under foster-parented tr");
+    assert_eq!(recreated_anchor.id().0, 9);
+    let Node::Text { id: text_id, text } = &recreated_anchor.children()[0] else {
         panic!("expected moved text node");
     };
     assert_eq!(text_id.0, 8);
     assert_eq!(text, "x");
 
-    let Node::Element {
-        id: table_id,
-        children: table_children,
-        ..
-    } = &body_children[1]
-    else {
-        panic!("expected table sibling");
-    };
-    assert_eq!(table_id.0, 5);
-    let Node::Element {
-        id: old_anchor_id, ..
-    } = &table_children[0]
-    else {
-        panic!("expected original anchor under table");
-    };
-    assert_eq!(old_anchor_id.0, 6);
+    let table = body.children()[1]
+        .element()
+        .expect("expected table sibling");
+    assert_eq!(table.id().0, 5);
+    let old_anchor = table.children()[0]
+        .element()
+        .expect("expected original anchor under table");
+    assert_eq!(old_anchor.id().0, 6);
 }

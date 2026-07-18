@@ -1,0 +1,12 @@
+# format: html5-dom-v1
+# status: active
+# include_parse_errors: true
+#document
+  <!doctype html>
+  <html>
+    <head>
+    <body>
+      <p>
+        "after"
+parse-errors:
+  tree-builder: template-end-tag-not-in-scope

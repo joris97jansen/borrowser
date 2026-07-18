@@ -29,7 +29,8 @@ impl Html5TreeBuilder {
         atoms: &AtomTable,
         text: &dyn TextResolver,
     ) -> Result<(), TreeBuilderError> {
-        if self.form_element_pointer.is_some() {
+        let has_open_template = self.open_elements.contains_name(self.known_tags.template);
+        if self.form_element_pointer.is_some() && !has_open_template {
             self.record_parse_error(
                 "in-body-form-start-tag-with-active-form-pointer",
                 Some(self.known_tags.form),
@@ -44,11 +45,43 @@ impl Html5TreeBuilder {
         else {
             return Ok(());
         };
-        self.form_element_pointer = Some(FormElementPointer::new(key));
+        if !has_open_template {
+            self.form_element_pointer = Some(FormElementPointer::new(key));
+        }
         Ok(())
     }
 
     pub(in crate::html5::tree_builder) fn handle_in_body_form_end_tag(&mut self) {
+        if self.open_elements.contains_name(self.known_tags.template) {
+            if !self.open_elements.has_in_scope(
+                self.known_tags.form,
+                ScopeKind::InScope,
+                &self.scope_tags,
+            ) {
+                self.record_parse_error(
+                    "in-body-form-end-tag-with-open-template-missing-form",
+                    Some(self.known_tags.form),
+                    Some(InsertionMode::InBody),
+                );
+                return;
+            }
+            self.generate_supported_implied_end_tags_except(None);
+            if self.open_elements.current().map(|entry| entry.name()) != Some(self.known_tags.form)
+            {
+                self.record_parse_error(
+                    "in-body-form-end-tag-with-open-template-non-current-form",
+                    Some(self.known_tags.form),
+                    Some(InsertionMode::InBody),
+                );
+            }
+            let _ = self.pop_element_in_scope_with_reporting(
+                self.known_tags.form,
+                ScopeKind::InScope,
+                false,
+            );
+            return;
+        }
+
         // Pointer clearing is intentionally independent from scope validation
         // and stack removal, matching the specified recovery order.
         let pointer = self.form_element_pointer.take();
@@ -229,7 +262,7 @@ impl Html5TreeBuilder {
         );
         if self.open_elements.contains_name(self.known_tags.template) {
             self.record_parse_error(
-                "in-table-form-template-fallback-ignored",
+                "in-table-form-start-tag-with-open-template",
                 Some(self.known_tags.form),
                 Some(InsertionMode::InTable),
             );

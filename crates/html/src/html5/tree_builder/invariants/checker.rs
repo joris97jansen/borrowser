@@ -52,6 +52,41 @@ pub fn check_dom_invariants(dom: &DomInvariantState) -> Result<(), DomInvariantE
             });
         }
 
+        if let Some(contents) = node.template_contents {
+            let Some(contents_node) = dom.node(contents) else {
+                return Err(DomInvariantError::TemplateAssociation {
+                    detail: format!("host {key:?} references missing contents {contents:?}"),
+                });
+            };
+            if contents_node.kind
+                != DomInvariantNodeKind::DocumentFragment(
+                    crate::types::ParserCreatedFragmentKind::TemplateContents,
+                )
+                || contents_node.fragment_host != Some(key)
+            {
+                return Err(DomInvariantError::TemplateAssociation {
+                    detail: format!("host {key:?} and contents {contents:?} disagree"),
+                });
+            }
+        }
+        if matches!(node.kind, DomInvariantNodeKind::DocumentFragment(_)) {
+            if node.parent.is_some() {
+                return Err(DomInvariantError::TemplateAssociation {
+                    detail: format!("contents root {key:?} has an ordinary parent"),
+                });
+            }
+            let Some(host) = node.fragment_host else {
+                return Err(DomInvariantError::TemplateAssociation {
+                    detail: format!("contents root {key:?} has no host"),
+                });
+            };
+            if dom.node(host).and_then(|node| node.template_contents()) != Some(key) {
+                return Err(DomInvariantError::TemplateAssociation {
+                    detail: format!("contents root {key:?} is not referenced by host {host:?}"),
+                });
+            }
+        }
+
         match node.parent {
             Some(parent) => {
                 let Some(parent_node) = dom.node(parent) else {
@@ -70,7 +105,9 @@ pub fn check_dom_invariants(dom: &DomInvariantState) -> Result<(), DomInvariantE
                     });
                 }
             }
-            None if dom.root != Some(key) => {
+            None if dom.root != Some(key)
+                && !matches!(node.kind, DomInvariantNodeKind::DocumentFragment(_)) =>
+            {
                 return Err(DomInvariantError::DetachedNonRootNode { key });
             }
             None => {}
@@ -102,11 +139,15 @@ pub fn check_dom_invariants(dom: &DomInvariantState) -> Result<(), DomInvariantE
 
     let mut visited = HashSet::new();
     let mut visiting = HashSet::new();
+    if let Some(root) = dom.root {
+        assert_acyclic_from(dom, root, &mut visited, &mut visiting)?;
+    }
     for (index, maybe_node) in dom.nodes.iter().enumerate() {
-        if maybe_node.is_none() {
-            continue;
+        if maybe_node.is_some() && !visited.contains(&PatchKey(index as u32)) {
+            return Err(DomInvariantError::UnreachableNode {
+                key: PatchKey(index as u32),
+            });
         }
-        assert_acyclic_from(dom, PatchKey(index as u32), &mut visited, &mut visiting)?;
     }
 
     Ok(())
@@ -175,8 +216,12 @@ pub fn check_patch_invariants(
                     patch_index,
                 )?;
             }
-            DomPatch::CreateElement { key, .. } => {
+            DomPatch::CreateElement { key, name, .. } => {
                 staged.insert_created_node(*key, DomInvariantNodeKind::Element, patch_index)?;
+                staged.mark_element_name(*key, name.as_ref() == "template")?;
+            }
+            DomPatch::CreateTemplateContents { host, contents } => {
+                staged.apply_create_template_contents(patch_index, *host, *contents)?;
             }
             DomPatch::CreateText { key, .. } => {
                 staged.insert_created_node(*key, DomInvariantNodeKind::Text, patch_index)?;
@@ -251,6 +296,9 @@ fn assert_acyclic_from(
     };
     for child in &node.children {
         assert_acyclic_from(dom, *child, visited, visiting)?;
+    }
+    if let Some(contents) = node.template_contents {
+        assert_acyclic_from(dom, contents, visited, visiting)?;
     }
     visiting.remove(&key);
     visited.insert(key);

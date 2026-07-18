@@ -93,6 +93,19 @@ impl DomStore {
             .ok_or(DomPatchError::UnknownHandle(handle))?;
         doc.resolve_live_node_ids(keys)
     }
+
+    #[cfg(test)]
+    pub(crate) fn set_fragment_kind_for_test(
+        &mut self,
+        handle: DomHandle,
+        key: PatchKey,
+        kind: html::internal::ParserCreatedFragmentKind,
+    ) {
+        self.docs
+            .get_mut(&handle)
+            .expect("test DOM handle must exist")
+            .set_fragment_kind_for_test(key, kind);
+    }
 }
 
 impl Default for DomStore {

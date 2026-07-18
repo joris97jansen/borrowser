@@ -229,7 +229,7 @@ pub(super) fn count_styled_elements_bounded(
             Node::Document { children, .. } => {
                 stack.extend(children.iter());
             }
-            Node::Element { children, .. } => {
+            Node::Element { element } => {
                 if count >= max_styled_elements {
                     return Err(StyleResolutionError::limit(
                         StyleResolutionLimit::StyledElementsPerDocument,
@@ -238,7 +238,7 @@ pub(super) fn count_styled_elements_bounded(
                 }
 
                 count += 1;
-                stack.extend(children.iter());
+                stack.extend(element.children().iter());
             }
             Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => {}
         }

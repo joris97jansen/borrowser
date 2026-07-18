@@ -2,13 +2,14 @@ use crate::types::{Id, Node};
 use std::sync::Arc;
 
 pub(super) fn element(name: &str, children: Vec<Node>) -> Node {
-    Node::Element {
-        id: Id::INVALID,
-        name: Arc::from(name),
-        attributes: Vec::new(),
-        style: Vec::new(),
+    crate::Node::from_element_parts(
+        Id::INVALID,
+        Arc::from(name),
+        Vec::new(),
+        Vec::new(),
+        None,
         children,
-    }
+    )
 }
 
 pub(super) fn text(value: &str) -> Node {

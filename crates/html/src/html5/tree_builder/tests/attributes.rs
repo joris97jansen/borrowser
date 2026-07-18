@@ -78,11 +78,12 @@ fn parser_created_attributes_are_first_wins_and_encounter_ordered() {
     let patches = builder.drain_patches();
     let dom = crate::test_harness::materialize_patch_batches(&[patches]).expect("materialize DOM");
     let div = find_element(&dom, "div").expect("div element should materialize");
-    let crate::Node::Element { attributes, .. } = div else {
+    let crate::Node::Element { element } = div else {
         panic!("expected div element");
     };
 
-    let actual = attributes
+    let actual = element
+        .attributes()
         .iter()
         .map(|(name, value)| (name.as_ref(), value.as_deref()))
         .collect::<Vec<_>>();
@@ -100,14 +101,14 @@ fn parser_created_attributes_are_first_wins_and_encounter_ordered() {
 
 fn find_element<'a>(node: &'a crate::Node, name: &str) -> Option<&'a crate::Node> {
     match node {
-        crate::Node::Element {
-            name: node_name,
-            children,
-            ..
-        } if node_name.as_ref() == name => Some(node),
-        crate::Node::Document { children, .. } | crate::Node::Element { children, .. } => {
+        crate::Node::Element { element } if element.name().as_ref() == name => Some(node),
+        crate::Node::Document { children, .. } => {
             children.iter().find_map(|child| find_element(child, name))
         }
+        crate::Node::Element { element } => element
+            .children()
+            .iter()
+            .find_map(|child| find_element(child, name)),
         crate::Node::DocumentType { .. }
         | crate::Node::Text { .. }
         | crate::Node::Comment { .. } => None,

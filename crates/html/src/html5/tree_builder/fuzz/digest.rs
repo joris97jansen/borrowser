@@ -1,12 +1,18 @@
 use crate::dom_patch::DomPatch;
 use crate::html5::shared::{AtomTable, AttributeValue, TextValue, Token};
+use crate::html5::tree_builder::AfeDiagnosticEntry;
 use crate::html5::tree_builder::TreeBuilderProgressWitness;
+
+pub(super) const TREE_BUILDER_FUZZ_DIGEST_SCHEMA: u8 = 3;
 
 pub(super) struct FuzzDigest(u64);
 
 impl FuzzDigest {
     pub(super) fn new(seed: u64) -> Self {
-        Self(0xcbf29ce484222325u64 ^ seed.rotate_left(13))
+        let mut digest = Self(0xcbf29ce484222325u64 ^ seed.rotate_left(13));
+        digest.push_u8(0xfd);
+        digest.push_u8(TREE_BUILDER_FUZZ_DIGEST_SCHEMA);
+        digest
     }
 
     pub(super) fn record_token(&mut self, token: &Token, atoms: &AtomTable) {
@@ -103,6 +109,11 @@ impl FuzzDigest {
                         self.push_opt_str(value.as_deref());
                     }
                 }
+                DomPatch::CreateTemplateContents { host, contents } => {
+                    self.push_u8(22);
+                    self.push_u32(host.0);
+                    self.push_u32(contents.0);
+                }
                 DomPatch::CreateText { key, text } => {
                     self.push_u8(13);
                     self.push_u32(key.0);
@@ -159,6 +170,26 @@ impl FuzzDigest {
         self.push_u8(6);
         self.push_opt_key(witness.form_element_pointer);
         self.push_opt_key(witness.pending_textarea_initial_lf);
+        self.push_opt_key(witness.head_element_pointer);
+        self.push_usize(witness.template_modes.len());
+        for (owner, mode) in &witness.template_modes {
+            self.push_u32(owner.0);
+            self.push_u8(mode.digest_tag());
+        }
+        self.push_usize(witness.active_formatting_entries.len());
+        for entry in &witness.active_formatting_entries {
+            match entry {
+                AfeDiagnosticEntry::Element(key) => {
+                    self.push_u8(1);
+                    self.push_u32(key.0);
+                }
+                AfeDiagnosticEntry::Marker(marker) => {
+                    self.push_u8(2);
+                    self.push_u8(marker.kind.digest_tag());
+                    self.push_opt_key(marker.owner);
+                }
+            }
+        }
     }
 
     pub(super) fn finish(self) -> u64 {

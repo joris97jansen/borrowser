@@ -1,6 +1,8 @@
 use super::arena::{TestKind, TestNode};
 use super::{ArenaResult, TestPatchArena};
 use crate::dom_patch::DomPatch;
+use crate::types::ParserCreatedFragmentKind;
+use std::sync::Arc;
 
 impl TestPatchArena {
     pub(crate) fn apply(&mut self, patches: &[DomPatch]) -> ArenaResult<()> {
@@ -76,12 +78,16 @@ impl TestPatchArena {
                             kind: TestKind::Element {
                                 name: Arc::clone(name),
                                 attributes: attributes.clone(),
+                                template_contents: None,
                             },
                             parent: None,
                             children: Vec::new(),
                         },
                     );
                     self.allocated.insert(*key);
+                }
+                DomPatch::CreateTemplateContents { host, contents } => {
+                    self.create_template_contents(*host, *contents)?;
                 }
                 DomPatch::CreateText { key, text } => {
                     if self.allocated.contains(key) {
@@ -122,7 +128,7 @@ impl TestPatchArena {
                     self.insert_before(*parent, *child, *before)?;
                 }
                 DomPatch::RemoveNode { key } => {
-                    self.remove_subtree(*key);
+                    self.remove_subtree(*key)?;
                 }
                 DomPatch::SetAttributes { key, attributes } => {
                     let Some(node) = self.nodes.get_mut(key) else {
@@ -144,7 +150,8 @@ impl TestPatchArena {
                         TestKind::Comment { .. }
                         | TestKind::Document { .. }
                         | TestKind::DocumentType { .. }
-                        | TestKind::Element { .. } => {
+                        | TestKind::Element { .. }
+                        | TestKind::DocumentFragment { .. } => {
                             return Err("SetText applied to non-text node".to_string());
                         }
                     }
@@ -158,7 +165,8 @@ impl TestPatchArena {
                         TestKind::Comment { .. }
                         | TestKind::Document { .. }
                         | TestKind::DocumentType { .. }
-                        | TestKind::Element { .. } => {
+                        | TestKind::Element { .. }
+                        | TestKind::DocumentFragment { .. } => {
                             return Err("AppendText applied to non-text node".to_string());
                         }
                     }
@@ -197,6 +205,12 @@ impl TestPatchArena {
         self.ensure_container(parent, "AppendChild parent")?;
         if !self.nodes.contains_key(&child) {
             return Err("missing child".to_string());
+        }
+        if matches!(
+            self.nodes.get(&child).map(|node| &node.kind),
+            Some(TestKind::DocumentFragment { .. })
+        ) {
+            return Err("template contents cannot acquire an ordinary parent".to_string());
         }
         if self.is_document_node(child)? {
             return Err("AppendChild cannot move a document node".to_string());
@@ -242,6 +256,12 @@ impl TestPatchArena {
         self.ensure_container(parent, "InsertBefore parent")?;
         if !self.nodes.contains_key(&child) {
             return Err("missing child".to_string());
+        }
+        if matches!(
+            self.nodes.get(&child).map(|node| &node.kind),
+            Some(TestKind::DocumentFragment { .. })
+        ) {
+            return Err("template contents cannot acquire an ordinary parent".to_string());
         }
         if !self.nodes.contains_key(&before) {
             return Err("missing before".to_string());
@@ -295,9 +315,73 @@ impl TestPatchArena {
         Ok(())
     }
 
-    fn remove_subtree(&mut self, key: crate::dom_patch::PatchKey) {
+    fn create_template_contents(
+        &mut self,
+        host: crate::dom_patch::PatchKey,
+        contents: crate::dom_patch::PatchKey,
+    ) -> ArenaResult<()> {
+        if host == contents || self.allocated.contains(&contents) {
+            return Err("template contents key must be fresh and distinct".to_string());
+        }
+        let Some(host_node) = self.nodes.get(&host) else {
+            return Err("missing template host".to_string());
+        };
+        match &host_node.kind {
+            TestKind::Element {
+                name,
+                template_contents: None,
+                ..
+            } if name.as_ref() == "template" => {}
+            TestKind::Element {
+                template_contents: Some(_),
+                ..
+            } => return Err("template host already has contents".to_string()),
+            _ => return Err("template contents host must be a template element".to_string()),
+        }
+
+        self.nodes.insert(
+            contents,
+            TestNode {
+                kind: TestKind::DocumentFragment {
+                    kind: ParserCreatedFragmentKind::TemplateContents,
+                    host,
+                },
+                parent: None,
+                children: Vec::new(),
+            },
+        );
+        self.allocated.insert(contents);
+        let Some(TestNode {
+            kind: TestKind::Element {
+                template_contents, ..
+            },
+            ..
+        }) = self.nodes.get_mut(&host)
+        else {
+            unreachable!("validated template host disappeared during atomic association")
+        };
+        *template_contents = Some(contents);
+        Ok(())
+    }
+
+    fn remove_subtree(&mut self, key: crate::dom_patch::PatchKey) -> ArenaResult<()> {
+        self.remove_subtree_owned(key, false)
+    }
+
+    fn remove_subtree_owned(
+        &mut self,
+        key: crate::dom_patch::PatchKey,
+        association_owned: bool,
+    ) -> ArenaResult<()> {
+        if matches!(
+            self.nodes.get(&key).map(|node| &node.kind),
+            Some(TestKind::DocumentFragment { .. })
+        ) && !association_owned
+        {
+            return Err("hosted template contents cannot be removed directly".to_string());
+        }
         let Some(node) = self.nodes.remove(&key) else {
-            return;
+            return Ok(());
         };
         if let Some(parent) = node.parent {
             if let Some(parent_node) = self.nodes.get_mut(&parent) {
@@ -306,10 +390,32 @@ impl TestPatchArena {
         } else if self.root == Some(key) {
             self.root = None;
         }
-        for child in node.children {
-            self.remove_subtree(child);
+        let associated = match node.kind {
+            TestKind::Element {
+                template_contents, ..
+            } => template_contents,
+            TestKind::DocumentFragment { host, .. } => {
+                if let Some(TestNode {
+                    kind:
+                        TestKind::Element {
+                            template_contents, ..
+                        },
+                    ..
+                }) = self.nodes.get_mut(&host)
+                    && *template_contents == Some(key)
+                {
+                    *template_contents = None;
+                }
+                None
+            }
+            _ => None,
+        };
+        if let Some(contents) = associated {
+            self.remove_subtree_owned(contents, true)?;
         }
+        for child in node.children {
+            self.remove_subtree_owned(child, false)?;
+        }
+        Ok(())
     }
 }
-
-use std::sync::Arc;

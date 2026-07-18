@@ -71,8 +71,8 @@ pub(super) fn find_styled_element<'a>(
     node: &'a css::StyledNode<'a>,
     want_name: &str,
 ) -> Option<&'a css::StyledNode<'a>> {
-    if let Node::Element { name, .. } = node.node
-        && name.as_ref() == want_name
+    if let Node::Element { element } = node.node
+        && element.name().as_ref() == want_name
     {
         return Some(node);
     }
@@ -122,25 +122,21 @@ pub(super) fn set_first_element_attr(
                 set_first_element_attr_optional(child, want_name, attr_name, value.clone())
             })
             .expect("target element should exist"),
-        Node::Element {
-            id,
-            name,
-            attributes,
-            children,
-            ..
-        } => {
-            if name.as_ref() == want_name {
-                if let Some(existing) = attributes
+        Node::Element { element } => {
+            if element.name().as_ref() == want_name {
+                if let Some(existing) = element
+                    .attributes_mut()
                     .iter_mut()
                     .find(|(name, _)| name.eq_ignore_ascii_case(attr_name))
                 {
                     existing.1 = value;
                 } else {
-                    attributes.push((Arc::from(attr_name), value));
+                    element.attributes_mut().push((Arc::from(attr_name), value));
                 }
-                *id
+                element.id()
             } else {
-                children
+                element
+                    .children_mut()
                     .iter_mut()
                     .find_map(|child| {
                         set_first_element_attr_optional(child, want_name, attr_name, value.clone())
@@ -164,25 +160,20 @@ pub(super) fn set_first_element_attr_optional(
         Node::Document { children, .. } => children.iter_mut().find_map(|child| {
             set_first_element_attr_optional(child, want_name, attr_name, value.clone())
         }),
-        Node::Element {
-            id,
-            name,
-            attributes,
-            children,
-            ..
-        } => {
-            if name.as_ref() == want_name {
-                if let Some(existing) = attributes
+        Node::Element { element } => {
+            if element.name().as_ref() == want_name {
+                if let Some(existing) = element
+                    .attributes_mut()
                     .iter_mut()
                     .find(|(name, _)| name.eq_ignore_ascii_case(attr_name))
                 {
                     existing.1 = value;
                 } else {
-                    attributes.push((Arc::from(attr_name), value));
+                    element.attributes_mut().push((Arc::from(attr_name), value));
                 }
-                Some(*id)
+                Some(element.id())
             } else {
-                children.iter_mut().find_map(|child| {
+                element.children_mut().iter_mut().find_map(|child| {
                     set_first_element_attr_optional(child, want_name, attr_name, value.clone())
                 })
             }
@@ -201,7 +192,11 @@ pub(super) fn replace_first_text_optional(
     after: &str,
 ) -> Option<html::internal::Id> {
     match node {
-        Node::Document { children, .. } | Node::Element { children, .. } => children
+        Node::Document { children, .. } => children
+            .iter_mut()
+            .find_map(|child| replace_first_text_optional(child, before, after)),
+        Node::Element { element } => element
+            .children_mut()
             .iter_mut()
             .find_map(|child| replace_first_text_optional(child, before, after)),
         Node::Text { id, text } if text == before => {
@@ -221,13 +216,28 @@ pub(super) fn remove_first_element_optional(
     want_name: &str,
 ) -> Option<html::internal::Id> {
     match node {
-        Node::Document { children, .. } | Node::Element { children, .. } => {
-            if let Some(index) = children.iter().position(
-                |child| matches!(child, Node::Element { name, .. } if name.as_ref() == want_name),
-            ) {
+        Node::Document { children, .. } => {
+            if let Some(index) = children.iter().position(|child| {
+                child
+                    .element()
+                    .is_some_and(|element| element.name().as_ref() == want_name)
+            }) {
                 return Some(children.remove(index).id());
             }
 
+            children
+                .iter_mut()
+                .find_map(|child| remove_first_element_optional(child, want_name))
+        }
+        Node::Element { element } => {
+            let children = element.children_mut();
+            if let Some(index) = children.iter().position(|child| {
+                child
+                    .element()
+                    .is_some_and(|element| element.name().as_ref() == want_name)
+            }) {
+                return Some(children.remove(index).id());
+            }
             children
                 .iter_mut()
                 .find_map(|child| remove_first_element_optional(child, want_name))
@@ -251,15 +261,37 @@ pub(super) fn replace_first_element_optional(
     replacement: Node,
 ) -> Option<html::internal::Id> {
     match node {
-        Node::Document { children, .. } | Node::Element { children, .. } => {
-            if let Some(index) = children.iter().position(
-                |child| matches!(child, Node::Element { name, .. } if name.as_ref() == want_name),
-            ) {
+        Node::Document { children, .. } => {
+            if let Some(index) = children.iter().position(|child| {
+                child
+                    .element()
+                    .is_some_and(|element| element.name().as_ref() == want_name)
+            }) {
                 let removed = children[index].id();
                 children[index] = replacement;
                 return Some(removed);
             }
 
+            for child in children {
+                if let Some(removed) =
+                    replace_first_element_optional(child, want_name, replacement_node(&replacement))
+                {
+                    return Some(removed);
+                }
+            }
+            None
+        }
+        Node::Element { element } => {
+            let children = element.children_mut();
+            if let Some(index) = children.iter().position(|child| {
+                child
+                    .element()
+                    .is_some_and(|element| element.name().as_ref() == want_name)
+            }) {
+                let removed = children[index].id();
+                children[index] = replacement;
+                return Some(removed);
+            }
             for child in children {
                 if let Some(removed) =
                     replace_first_element_optional(child, want_name, replacement_node(&replacement))
@@ -284,19 +316,30 @@ fn replacement_node(node: &Node) -> Node {
             doctype: doctype.clone(),
             children: children.iter().map(replacement_node).collect(),
         },
-        Node::Element {
-            id,
-            name,
-            attributes,
-            style,
-            children,
-        } => Node::Element {
-            id: *id,
-            name: Arc::clone(name),
-            attributes: attributes.clone(),
-            style: style.clone(),
-            children: children.iter().map(replacement_node).collect(),
-        },
+        Node::Element { element } => {
+            let ordinary_children = element.children().iter().map(replacement_node).collect();
+            if let Some(contents) = html::internal::template_contents(node) {
+                html::internal::template_element_from_parts(
+                    element.id(),
+                    element.attributes().to_vec(),
+                    element.style().to_vec(),
+                    html::internal::fragment_id(contents),
+                    html::internal::fragment_children(contents)
+                        .iter()
+                        .map(replacement_node)
+                        .collect(),
+                    ordinary_children,
+                )
+            } else {
+                html::internal::node_element_from_parts(
+                    element.id(),
+                    Arc::clone(element.name()),
+                    element.attributes().to_vec(),
+                    element.style().to_vec(),
+                    ordinary_children,
+                )
+            }
+        }
         Node::Text { id, text } => Node::Text {
             id: *id,
             text: text.clone(),
@@ -320,16 +363,16 @@ fn replacement_node(node: &Node) -> Node {
 }
 
 pub(super) fn paragraph_node(id: u32, text_id: u32, text: &str) -> Node {
-    Node::Element {
-        id: html::internal::Id(id),
-        name: Arc::from("p"),
-        attributes: Vec::new(),
-        style: Vec::new(),
-        children: vec![Node::Text {
+    html::internal::node_element_from_parts(
+        html::internal::Id(id),
+        Arc::from("p"),
+        Vec::new(),
+        Vec::new(),
+        vec![Node::Text {
             id: html::internal::Id(text_id),
             text: text.to_string(),
         }],
-    }
+    )
 }
 
 pub(super) struct FixedTextMeasurer;
@@ -378,27 +421,27 @@ pub(super) fn doc_with_explicit_ids() -> Node {
     Node::Document {
         id: html::internal::Id(1),
         doctype: None,
-        children: vec![Node::Element {
-            id: html::internal::Id(2),
-            name: Arc::from("html"),
-            attributes: Vec::new(),
-            style: Vec::new(),
-            children: vec![Node::Element {
-                id: html::internal::Id(3),
-                name: Arc::from("body"),
-                attributes: Vec::new(),
-                style: Vec::new(),
-                children: vec![Node::Element {
-                    id: html::internal::Id(4),
-                    name: Arc::from("p"),
-                    attributes: Vec::new(),
-                    style: Vec::new(),
-                    children: vec![Node::Text {
+        children: vec![html::internal::node_element_from_parts(
+            html::internal::Id(2),
+            Arc::from("html"),
+            Vec::new(),
+            Vec::new(),
+            vec![html::internal::node_element_from_parts(
+                html::internal::Id(3),
+                Arc::from("body"),
+                Vec::new(),
+                Vec::new(),
+                vec![html::internal::node_element_from_parts(
+                    html::internal::Id(4),
+                    Arc::from("p"),
+                    Vec::new(),
+                    Vec::new(),
+                    vec![Node::Text {
                         id: html::internal::Id(5),
                         text: "Hello".to_string(),
                     }],
-                }],
-            }],
-        }],
+                )],
+            )],
+        )],
     }
 }

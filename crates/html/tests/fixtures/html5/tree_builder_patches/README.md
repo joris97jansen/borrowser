@@ -54,6 +54,10 @@ Milestone AE corpus:
   and parser-owned initial-LF suppression, plus InTable form insertion whose
   immediate stack removal leaves the parser-created DOM node and patch stream
   intact.
+- `ae10-*`: atomic `CreateElement` + `CreateTemplateContents` + ordinary host
+  insertion, fragment child insertion, nested associations, table interaction,
+  close/EOF recovery, and whole/chunked materialization parity. Provenance files
+  label these as local WHATWG-subset evidence at the pinned AE revision.
 
 Dedicated table-heavy corpus:
 

@@ -310,6 +310,24 @@ const GOLDEN_CORPUS_V1: &[GoldenFixture] = &[
             reason: "HTML5 no-quirks table insertion follows the spec's paragraph-closing rules and may intentionally differ from legacy quirks handling.",
         },
     },
+    GoldenFixture {
+        name: "template_nested_patch_parity",
+        input: "<template><div>inert<template><span>nested</span></template></div></template><p>active</p>",
+        covers: "AE10 typed template-contents associations survive whole/chunked parsing and patch materialization.",
+        tags: &[
+            "template",
+            "tree-construction",
+            "patch",
+            "parity-may-differ",
+        ],
+        invariants: &[Invariant::FullEqualsChunkedDom],
+        expectation: Expectation::MustPass,
+        kind: FixtureKind::Recovery,
+        parity_category: ParityCategory::SupportedSubsetDom,
+        legacy_parity: LegacyParity::MayDiffer {
+            reason: "AE10 intentionally replaces the legacy generic-element template approximation with typed parser-created contents roots.",
+        },
+    },
 ];
 
 pub fn fixtures() -> &'static [GoldenFixture] {

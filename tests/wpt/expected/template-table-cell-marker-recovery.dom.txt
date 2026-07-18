@@ -1,0 +1,10 @@
+# format: html5-dom-v1
+#document
+  <html>
+    <head>
+    <body>
+      <table>
+        <thead>
+          <template>
+            #template-contents
+              <td>

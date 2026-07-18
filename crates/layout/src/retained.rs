@@ -498,16 +498,16 @@ mod tests {
     }
 
     fn element(id: u32, name: &str, style: Vec<(&str, &str)>, children: Vec<Node>) -> Node {
-        Node::Element {
-            id: Id(id),
-            name: Arc::from(name),
-            attributes: Vec::new(),
-            style: style
+        html::internal::node_element_from_parts(
+            Id(id),
+            Arc::from(name),
+            Vec::new(),
+            style
                 .into_iter()
                 .map(|(property, value)| (property.to_string(), value.to_string()))
                 .collect(),
             children,
-        }
+        )
     }
 
     fn text(id: u32, value: &str) -> Node {

@@ -319,7 +319,7 @@ fn collect_inline_tokens_from_layout_box<'style_tree, 'dom>(
             let mut next_ctx = ctx.clone();
             if matches!(
                 layout.node.node,
-                Node::Element { name, .. } if name.eq_ignore_ascii_case("a")
+                Node::Element { element } if element.name().eq_ignore_ascii_case("a")
             ) {
                 next_ctx.link_target = Some(layout.node_id());
                 next_ctx.link_href = get_attr(layout.node.node, "href").map(Arc::from);

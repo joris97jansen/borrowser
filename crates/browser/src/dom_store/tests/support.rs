@@ -120,13 +120,9 @@ fn dom_snapshot_lines(node: &Node) -> Vec<String> {
                     push_node(out, child, depth + 1);
                 }
             }
-            Node::Element {
-                name,
-                attributes,
-                children,
-                ..
-            } => {
-                let mut attrs = attributes
+            Node::Element { element } => {
+                let mut attrs = element
+                    .attributes()
                     .iter()
                     .map(|(key, value)| (key.as_ref(), value.as_deref()))
                     .collect::<Vec<_>>();
@@ -139,8 +135,18 @@ fn dom_snapshot_lines(node: &Node) -> Vec<String> {
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
-                out.push(format!("{indent}<{name} attrs=[{attrs}]>"));
-                for child in children {
+                out.push(format!("{indent}<{} attrs=[{attrs}]>", element.name()));
+                if let Some(contents) = html::internal::template_contents(node) {
+                    out.push(format!(
+                        "{}#template-contents id={}",
+                        "  ".repeat(depth + 1),
+                        html::internal::fragment_id(contents).0
+                    ));
+                    for child in html::internal::fragment_children(contents) {
+                        push_node(out, child, depth + 2);
+                    }
+                }
+                for child in element.children() {
                     push_node(out, child, depth + 1);
                 }
             }

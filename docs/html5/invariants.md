@@ -191,3 +191,62 @@ Table cell and AFE interaction:
   is rejected by resource limits.
 - state snapshots and progress witnesses contain no select insertion mode,
   return mode, remembered select flag, or runtime select-control state.
+
+## AE10 Template Invariants
+
+- A supported parser-created template host is an ordinary element with exactly
+  one typed `TemplateContents` fragment; it has no parser-created ordinary
+  children.
+- The association is one-to-one while live, is not an ordinary edge, and its
+  independently stored arena endpoints agree. A hosted fragment has no
+  ordinary parent.
+- Every independent live/validation/runtime arena records the explicit
+  `TemplateContents` fragment kind, and materialization rejects a kind mismatch.
+- Removing a host or ordinary ancestor removes the associated fragment
+  subgraph. Direct hosted-fragment removal, ordinary parenting, duplicate
+  association, and re-association are rejected atomically.
+- Open parser-created template keys, owner-aware template-mode entries, and
+  live contents associations have identical nesting order. The top template
+  mode belongs to the innermost open template.
+- Each accepted template start inserts one typed diagnostic AFE marker.
+  Formatting-boundary, caption, table-cell, and template markers are equivalent
+  algorithmic boundaries; kind/owner metadata never changes the exactly-once
+  last-marker clear performed by template close and each EOF unwind.
+- Reset-insertion-mode stops at the active template boundary and uses its
+  owner-matched current template mode rather than inferring state below the
+  boundary.
+- The exact final insertion parent's child vector is reserved before template
+  start commit. A rejected reservation or start changes no patch, key, counter,
+  live node, SOE,
+  AFE, template mode, insertion mode, frameset state, text-coalescing state, or
+  association.
+- Child-insertion reservation reports typed failures. Structural endpoint or
+  arithmetic failures are engine invariants; only allocation denial is handled
+  as the template-start resource-limit parse error.
+- Template validation epochs and accepted-template counts advance with checked
+  arithmetic before mutation. Overflow cannot wrap into an earlier fast-path
+  identity or partially commit a transition.
+- The template stack stores only the narrow `TemplateInsertionMode` set; a
+  general non-template mode cannot enter through its owning API.
+- Same-token compact fingerprints exclude patch history and only select a
+  collision bucket. Exact modes, SOE keys, typed AFE entries, template modes,
+  pointers, bounded allocation state, and pending-table state decide equality.
+  Fingerprint collision alone is never an invariant failure. An exactly
+  repeated state is an invariant failure even after patch emission or
+  idempotent mutation; a separate bounded progress measure must advance.
+  Dedicated EOF recovery retains no per-template exact snapshots, uses O(1)
+  auxiliary recovery memory, and decreases open-template depth exactly once per
+  iteration.
+- Per-token production validation is O(1) when template state is untouched and
+  transition-local otherwise: accepted start, mode replacement, close, and EOF
+  inspect only their bounded suffix/top/depth/reset evidence. Complete ordered
+  SOE/AFE/template/live-model audits are test/fuzz/invariant work, not
+  unconditional production work.
+- EOF counter tests at depths 16 and 256, including nested table/template state,
+  require one close and owner scan per template, owner-scan steps equal SOE
+  entries removed, no added scope scans, and linearly bounded reset scans.
+- Full-model traversal exposes fragment identity and children in host/fragment/
+  ordinary-child order through the centralized typed visitor. Active-document
+  traversal does not cross the
+  association; Layout and retained rendering suppress the typed host, and
+  Paint receives no artifact.

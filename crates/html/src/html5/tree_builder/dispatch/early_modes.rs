@@ -164,7 +164,8 @@ impl Html5TreeBuilder {
                     deprecated,
                     reason = "frozen legacy insertion call; removal tracked separately"
                 )]
-                let _ = self.insert_element(*name, attrs, false, atoms, text)?;
+                let inserted = self.insert_element(*name, attrs, false, atoms, text)?;
+                self.head_element_pointer = inserted;
                 self.insertion_mode = InsertionMode::InHead;
                 Ok(DispatchOutcome::Done)
             }
@@ -178,7 +179,9 @@ impl Html5TreeBuilder {
                     deprecated,
                     reason = "frozen legacy insertion call; removal tracked separately"
                 )]
-                let _ = self.insert_element(self.known_tags.head, &[], false, atoms, text)?;
+                let inserted =
+                    self.insert_element(self.known_tags.head, &[], false, atoms, text)?;
+                self.head_element_pointer = inserted;
                 self.insertion_mode = InsertionMode::InHead;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InHead))
             }
@@ -192,7 +195,9 @@ impl Html5TreeBuilder {
                     deprecated,
                     reason = "frozen legacy insertion call; removal tracked separately"
                 )]
-                let _ = self.insert_element(self.known_tags.head, &[], false, atoms, text)?;
+                let inserted =
+                    self.insert_element(self.known_tags.head, &[], false, atoms, text)?;
+                self.head_element_pointer = inserted;
                 self.insertion_mode = InsertionMode::InHead;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InHead))
             }
@@ -379,6 +384,24 @@ impl Html5TreeBuilder {
                     Some(InsertionMode::AfterHead),
                 );
                 Ok(DispatchOutcome::Done)
+            }
+            Token::StartTag { name, .. }
+                if *name == self.known_tags.base
+                    || *name == self.known_tags.link
+                    || *name == self.known_tags.meta
+                    || *name == self.known_tags.script
+                    || *name == self.known_tags.style
+                    || *name == self.known_tags.title =>
+            {
+                self.record_parse_error(
+                    "after-head-head-token-delegated-to-in-head",
+                    Some(*name),
+                    Some(InsertionMode::AfterHead),
+                );
+                let outcome = self
+                    .with_temporary_head_element(|this| this.handle_in_head(token, atoms, text))?
+                    .unwrap_or(DispatchOutcome::Done);
+                Ok(outcome)
             }
             Token::Doctype { .. } => {
                 self.record_parse_error("after-head-doctype", None, Some(InsertionMode::AfterHead));

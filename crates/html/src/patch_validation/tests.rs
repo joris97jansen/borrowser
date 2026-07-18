@@ -142,3 +142,248 @@ fn patch_validation_arena_preserves_key_freshness_across_clear() {
         "unexpected duplicate-key error after Clear: {err}"
     );
 }
+
+fn template_seed_batch() -> Vec<DomPatch> {
+    vec![
+        DomPatch::CreateDocument {
+            key: PatchKey(1),
+            doctype: None,
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(2),
+            name: "html".into(),
+            attributes: Vec::new(),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(1),
+            child: PatchKey(2),
+        },
+        DomPatch::CreateElement {
+            key: PatchKey(3),
+            name: "template".into(),
+            attributes: Vec::new(),
+        },
+        DomPatch::CreateTemplateContents {
+            host: PatchKey(3),
+            contents: PatchKey(4),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(2),
+            child: PatchKey(3),
+        },
+        DomPatch::CreateText {
+            key: PatchKey(5),
+            text: "inert".to_string(),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(4),
+            child: PatchKey(5),
+        },
+    ]
+}
+
+fn nested_template_seed_batch() -> Vec<DomPatch> {
+    let mut patches = template_seed_batch();
+    patches.extend([
+        DomPatch::CreateElement {
+            key: PatchKey(6),
+            name: "template".into(),
+            attributes: Vec::new(),
+        },
+        DomPatch::CreateTemplateContents {
+            host: PatchKey(6),
+            contents: PatchKey(7),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(4),
+            child: PatchKey(6),
+        },
+        DomPatch::CreateText {
+            key: PatchKey(8),
+            text: "nested inert".to_string(),
+        },
+        DomPatch::AppendChild {
+            parent: PatchKey(7),
+            child: PatchKey(8),
+        },
+    ]);
+    patches
+}
+
+#[test]
+fn typed_template_contents_materialize_through_the_host_association() {
+    let mut arena = PatchValidationArena::default();
+    arena
+        .apply_batch(&template_seed_batch())
+        .expect("typed template patch batch should apply");
+
+    let dom = arena
+        .materialize()
+        .expect("template DOM should materialize");
+    let crate::Node::Document { children, .. } = dom else {
+        panic!("expected document");
+    };
+    let crate::Node::Element { element: html } = &children[0] else {
+        panic!("expected html element");
+    };
+    let crate::Node::Element { element: template } = &html.children()[0] else {
+        panic!("expected associated template contents");
+    };
+    assert!(
+        template.children().is_empty(),
+        "template host must have no ordinary children"
+    );
+    let contents = template
+        .template_contents()
+        .expect("expected associated template contents");
+    assert_eq!(
+        contents.kind(),
+        crate::types::ParserCreatedFragmentKind::TemplateContents
+    );
+    assert_eq!(contents.children().len(), 1);
+}
+
+#[test]
+fn template_association_rejection_rolls_back_the_whole_batch() {
+    let mut arena = PatchValidationArena::default();
+    arena
+        .apply_batch(&template_seed_batch())
+        .expect("seed batch should apply");
+    let before = format!(
+        "{:?}",
+        arena.materialize().expect("seed should materialize")
+    );
+
+    let err = arena
+        .apply_batch(&[
+            DomPatch::CreateText {
+                key: PatchKey(6),
+                text: "must roll back".to_string(),
+            },
+            DomPatch::CreateTemplateContents {
+                host: PatchKey(3),
+                contents: PatchKey(7),
+            },
+        ])
+        .expect_err("duplicate association must fail");
+    assert!(err.to_string().contains("already has contents"));
+    assert_eq!(
+        format!(
+            "{:?}",
+            arena.materialize().expect("arena should remain valid")
+        ),
+        before
+    );
+
+    arena
+        .apply_batch(&[
+            DomPatch::CreateText {
+                key: PatchKey(6),
+                text: "key was not consumed".to_string(),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(4),
+                child: PatchKey(6),
+            },
+        ])
+        .expect("rollback must preserve key freshness state");
+}
+
+#[test]
+fn hosted_contents_cannot_be_parented_or_removed_directly() {
+    let mut arena = PatchValidationArena::default();
+    arena
+        .apply_batch(&template_seed_batch())
+        .expect("seed batch should apply");
+
+    let append_err = arena
+        .apply_batch(&[DomPatch::AppendChild {
+            parent: PatchKey(2),
+            child: PatchKey(4),
+        }])
+        .expect_err("fragment must not acquire an ordinary parent");
+    assert!(append_err.to_string().contains("ordinary parents"));
+
+    let remove_err = arena
+        .apply_batch(&[DomPatch::RemoveNode { key: PatchKey(4) }])
+        .expect_err("hosted fragment must not be removed directly");
+    assert!(
+        remove_err.to_string().contains("removed directly"),
+        "unexpected direct-removal error: {remove_err}"
+    );
+    arena.materialize().expect("failed batches must roll back");
+}
+
+#[test]
+fn host_and_ancestor_removal_cascade_through_template_contents() {
+    for removal_key in [PatchKey(3), PatchKey(2)] {
+        let mut arena = PatchValidationArena::default();
+        arena
+            .apply_batch(&nested_template_seed_batch())
+            .expect("seed batch should apply");
+        arena
+            .apply_batch(&[DomPatch::RemoveNode { key: removal_key }])
+            .expect("owner removal must remove its associated fragment graph");
+        for key in (3..=8).map(PatchKey) {
+            assert!(!arena.nodes.contains_key(&key), "stale nested node {key:?}");
+        }
+    }
+}
+
+#[test]
+fn generic_validation_allows_unassociated_legacy_template_elements() {
+    let mut arena = PatchValidationArena::default();
+    arena
+        .apply_batch(&[
+            DomPatch::CreateDocument {
+                key: PatchKey(1),
+                doctype: None,
+            },
+            DomPatch::CreateElement {
+                key: PatchKey(2),
+                name: "template".into(),
+                attributes: Vec::new(),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(1),
+                child: PatchKey(2),
+            },
+        ])
+        .expect("generic validation must not infer parser provenance from the name");
+}
+
+#[test]
+fn clear_removes_template_associations_and_nested_fragment_subgraphs() {
+    let mut arena = PatchValidationArena::default();
+    arena
+        .apply_batch(&nested_template_seed_batch())
+        .expect("template seed should apply");
+    arena
+        .apply_batch(&[DomPatch::Clear])
+        .expect("generic validator permits a cleared, rootless arena");
+
+    assert!(arena.nodes.is_empty());
+    assert!(arena.root.is_none());
+    assert!(
+        (3..=8).all(|key| arena.allocated.contains(&PatchKey(key))),
+        "Clear removes live association state without weakening session key freshness"
+    );
+}
+
+#[test]
+fn materialization_rejects_an_associated_fragment_kind_mismatch() {
+    let mut arena = PatchValidationArena::default();
+    arena
+        .apply_batch(&template_seed_batch())
+        .expect("template seed should apply");
+    let fragment = arena.nodes.get_mut(&PatchKey(4)).unwrap();
+    fragment.kind = super::model::PatchKind::DocumentFragment {
+        kind: crate::types::ParserCreatedFragmentKind::TestOnlyUnsupported,
+        host: PatchKey(3),
+    };
+
+    let error = arena
+        .materialize()
+        .expect_err("materialization must independently validate fragment kind");
+    assert!(error.to_string().contains("not template contents"));
+}

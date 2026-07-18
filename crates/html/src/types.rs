@@ -160,6 +160,144 @@ pub(crate) fn debug_assert_lowercase_atom(value: &str, what: &'static str) {
 }
 
 #[derive(Debug)]
+pub struct DocumentFragmentNode {
+    id: Id,
+    kind: ParserCreatedFragmentKind,
+    children: Vec<Node>,
+}
+
+impl DocumentFragmentNode {
+    #[must_use]
+    pub(crate) fn new_template_contents(id: Id, children: Vec<Node>) -> Self {
+        Self {
+            id,
+            kind: ParserCreatedFragmentKind::TemplateContents,
+            children,
+        }
+    }
+
+    #[must_use]
+    pub(crate) fn id(&self) -> Id {
+        self.id
+    }
+
+    #[cfg(any(test, all(feature = "test-harness", feature = "internal-api")))]
+    pub(crate) fn set_id(&mut self, new_id: Id) {
+        self.id = new_id;
+    }
+
+    #[must_use]
+    pub(crate) fn kind(&self) -> ParserCreatedFragmentKind {
+        self.kind
+    }
+
+    #[must_use]
+    pub(crate) fn children(&self) -> &[Node] {
+        &self.children
+    }
+
+    #[cfg(any(test, all(feature = "test-harness", feature = "internal-api")))]
+    pub(crate) fn children_mut(&mut self) -> &mut Vec<Node> {
+        &mut self.children
+    }
+}
+
+/// Internal parser-created document-fragment classification.
+///
+/// This is an engine representation, not a public `DocumentFragment` API.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub enum ParserCreatedFragmentKind {
+    TemplateContents,
+    #[cfg(any(test, all(feature = "test-harness", feature = "internal-api")))]
+    TestOnlyUnsupported,
+}
+
+/// Opaque payload for an ordinary element node.
+///
+/// The parser-created template-contents association is intentionally private.
+/// Moving this payload moves the complete host, including that association, as
+/// one value; callers cannot detach or exchange the association independently.
+#[derive(Debug)]
+pub struct ElementNode {
+    id: Id,
+    name: Arc<str>,
+    attributes: Vec<(Arc<str>, Option<String>)>,
+    style: Vec<(String, String)>,
+    children: Vec<Node>,
+    template_contents: Option<Box<DocumentFragmentNode>>,
+}
+
+impl ElementNode {
+    #[must_use]
+    pub fn new(
+        name: Arc<str>,
+        attributes: Vec<(Arc<str>, Option<String>)>,
+        style: Vec<(String, String)>,
+        children: Vec<Node>,
+    ) -> Self {
+        Self::from_parts(Id::INVALID, name, attributes, style, None, children)
+    }
+
+    pub fn id(&self) -> Id {
+        self.id
+    }
+    pub fn name(&self) -> &Arc<str> {
+        &self.name
+    }
+    pub fn attributes(&self) -> &[(Arc<str>, Option<String>)] {
+        &self.attributes
+    }
+    pub fn attributes_mut(&mut self) -> &mut Vec<(Arc<str>, Option<String>)> {
+        &mut self.attributes
+    }
+    pub fn style(&self) -> &[(String, String)] {
+        &self.style
+    }
+    pub fn style_mut(&mut self) -> &mut Vec<(String, String)> {
+        &mut self.style
+    }
+    pub fn children(&self) -> &[Node] {
+        &self.children
+    }
+    pub fn children_mut(&mut self) -> &mut Vec<Node> {
+        &mut self.children
+    }
+
+    pub(crate) fn from_parts(
+        id: Id,
+        name: Arc<str>,
+        attributes: Vec<(Arc<str>, Option<String>)>,
+        style: Vec<(String, String)>,
+        template_contents: Option<Box<DocumentFragmentNode>>,
+        children: Vec<Node>,
+    ) -> Self {
+        if let Some(contents) = template_contents.as_deref() {
+            assert_eq!(name.as_ref(), "template");
+            assert_eq!(contents.kind(), ParserCreatedFragmentKind::TemplateContents);
+        }
+        Self {
+            id,
+            name,
+            attributes,
+            style,
+            children,
+            template_contents,
+        }
+    }
+
+    pub(crate) fn set_id(&mut self, new_id: Id) {
+        self.id = new_id;
+    }
+    pub(crate) fn template_contents(&self) -> Option<&DocumentFragmentNode> {
+        self.template_contents.as_deref()
+    }
+    #[cfg(any(test, feature = "test-harness"))]
+    pub(crate) fn template_contents_mut(&mut self) -> Option<&mut DocumentFragmentNode> {
+        self.template_contents.as_deref_mut()
+    }
+}
+
+#[derive(Debug)]
 pub enum Node {
     Document {
         id: Id,
@@ -179,15 +317,7 @@ pub enum Node {
         system_id: Option<String>,
     },
     Element {
-        id: Id,
-        name: Arc<str>,
-        // HTML5 parser-created output stores first-wins, duplicate-free
-        // attributes in encounter order. Legacy callers may still construct
-        // duplicate entries; lookup helpers resolve deterministically by first
-        // matching attribute.
-        attributes: Vec<(Arc<str>, Option<String>)>,
-        style: Vec<(String, String)>,
-        children: Vec<Node>,
+        element: ElementNode,
     },
     Text {
         id: Id,
@@ -200,11 +330,43 @@ pub enum Node {
 }
 
 impl Node {
+    #[must_use]
+    pub fn new_element(
+        name: Arc<str>,
+        attributes: Vec<(Arc<str>, Option<String>)>,
+        style: Vec<(String, String)>,
+        children: Vec<Node>,
+    ) -> Self {
+        Self::Element {
+            element: ElementNode::new(name, attributes, style, children),
+        }
+    }
+
+    pub(crate) fn from_element_parts(
+        id: Id,
+        name: Arc<str>,
+        attributes: Vec<(Arc<str>, Option<String>)>,
+        style: Vec<(String, String)>,
+        template_contents: Option<Box<DocumentFragmentNode>>,
+        children: Vec<Node>,
+    ) -> Self {
+        Self::Element {
+            element: ElementNode::from_parts(
+                id,
+                name,
+                attributes,
+                style,
+                template_contents,
+                children,
+            ),
+        }
+    }
+
     pub fn id(&self) -> Id {
         match self {
             Node::Document { id, .. } => *id,
             Node::DocumentType { id, .. } => *id,
-            Node::Element { id, .. } => *id,
+            Node::Element { element } => element.id(),
             Node::Text { id, .. } => *id,
             Node::Comment { id, .. } => *id,
         }
@@ -215,7 +377,7 @@ impl Node {
         match self {
             Node::Document { id, .. } => *id = new_id,
             Node::DocumentType { id, .. } => *id = new_id,
-            Node::Element { id, .. } => *id = new_id,
+            Node::Element { element } => element.set_id(new_id),
             Node::Text { id, .. } => *id = new_id,
             Node::Comment { id, .. } => *id = new_id,
         }
@@ -224,16 +386,47 @@ impl Node {
     pub fn children_mut(&mut self) -> Option<&mut Vec<Node>> {
         match self {
             Node::Document { children, .. } => Some(children),
-            Node::Element { children, .. } => Some(children),
+            Node::Element { element } => Some(element.children_mut()),
             _ => None,
         }
+    }
+
+    pub fn children(&self) -> Option<&[Node]> {
+        match self {
+            Node::Document { children, .. } => Some(children),
+            Node::Element { element } => Some(element.children()),
+            _ => None,
+        }
+    }
+
+    pub fn element(&self) -> Option<&ElementNode> {
+        match self {
+            Node::Element { element } => Some(element),
+            _ => None,
+        }
+    }
+
+    pub fn element_mut(&mut self) -> Option<&mut ElementNode> {
+        match self {
+            Node::Element { element } => Some(element),
+            _ => None,
+        }
+    }
+
+    #[cfg(feature = "internal-api")]
+    pub(crate) fn template_contents(&self) -> Option<&DocumentFragmentNode> {
+        self.element().and_then(ElementNode::template_contents)
     }
 
     /// Returns true if an attribute with the given name exists.
     /// Attribute names are matched case-insensitively per HTML semantics.
     pub fn has_attr(&self, name: &str) -> bool {
-        matches!(self, Node::Element { attributes, .. }
-            if attributes.iter().any(|(k, _)| k.eq_ignore_ascii_case(name)))
+        self.element().is_some_and(|element| {
+            element
+                .attributes()
+                .iter()
+                .any(|(key, _)| key.eq_ignore_ascii_case(name))
+        })
     }
 
     /// Returns true if the attribute contains the given whitespace-separated token.
@@ -250,7 +443,8 @@ impl Node {
     /// Attribute names are matched case-insensitively per HTML semantics.
     pub fn attr(&self, name: &str) -> Option<&str> {
         match self {
-            Node::Element { attributes, .. } => attributes
+            Node::Element { element } => element
+                .attributes()
                 .iter()
                 .find(|(k, _)| k.eq_ignore_ascii_case(name))
                 .and_then(|(_, v)| v.as_deref()),

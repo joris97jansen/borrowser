@@ -81,6 +81,18 @@ impl TreeBuilderSuiteSpec {
             ],
         }
     }
+
+    pub(crate) const fn templates() -> Self {
+        Self {
+            suite_name: "WPT tree-builder templates",
+            required_ids: &[
+                "template-body-text",
+                "template-empty-followed-by-div",
+                "template-table-cell-marker-recovery",
+                "template-nested-table-modes",
+            ],
+        }
+    }
 }
 
 #[derive(Clone, Debug)]
@@ -145,6 +157,9 @@ pub(crate) fn run(spec: TreeBuilderSuiteSpec) {
 
         if wpt_case_provenance::is_ae9b_select_case(&case.id) {
             wpt_case_provenance::validate_ae9b_select_case(&case);
+        }
+        if wpt_case_provenance::is_ae10_template_case(&case.id) {
+            wpt_case_provenance::validate_ae10_template_case(&case);
         }
 
         // WPT inputs are consumed exactly as vendored. Unlike the internal

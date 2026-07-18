@@ -83,9 +83,12 @@ unclosed pointer to `None`.
 - `keygen` is obsolete legacy parser compatibility only, with no runtime control
   semantics.
 
-InTable template-specific behavior remains unsupported. The deterministic
-template fallback records an error and ignores that form token; AE9a makes no
-template or fragment parsing claim.
+AE10 supersedes AE9a's former no-template fallback. In a supported open
+template context, the pinned form rules allow a template-local form even when
+the outer document form pointer is non-null, while preserving that outer
+pointer. The `InTable` form branch remains deterministic and follows shared
+AE10 template dispatch where the pinned template path applies. AE9a still
+makes no public fragment or template API claim.
 
 ## State and fuzz observability
 
@@ -97,7 +100,7 @@ witnesses, and fuzz digests because they affect later token handling.
 AE9a excludes submission, reset, validation, form-owner reassociation beyond
 the parser pointer, parser control values/checked state, disabled propagation,
 focus, events, accessibility, layout, paint, JavaScript, `document.write`, full
-DOM APIs, fragments, templates, and runtime select behavior. Static select
+DOM APIs, public fragments/template APIs, and runtime select behavior. Static select
 tree construction is defined separately by AE9b.
 
 ## Self-closing follow-up

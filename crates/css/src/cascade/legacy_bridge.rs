@@ -55,14 +55,12 @@ fn project_resolved_styles_to_dom<'a>(
             }
             true
         }
-        Node::Element {
-            style, children, ..
-        } => {
+        Node::Element { element } => {
             let Some(resolved) = entries.next() else {
                 return false;
             };
-            project_resolved_style_to_legacy_vector(resolved.style(), style);
-            for child in children {
+            project_resolved_style_to_legacy_vector(resolved.style(), element.style_mut());
+            for child in element.children_mut() {
                 if !project_resolved_styles_to_dom(child, entries) {
                     return false;
                 }
@@ -80,11 +78,9 @@ fn clear_legacy_styles(node: &mut Node) {
                 clear_legacy_styles(child);
             }
         }
-        Node::Element {
-            style, children, ..
-        } => {
-            style.clear();
-            for child in children {
+        Node::Element { element } => {
+            element.style_mut().clear();
+            for child in element.children_mut() {
                 clear_legacy_styles(child);
             }
         }

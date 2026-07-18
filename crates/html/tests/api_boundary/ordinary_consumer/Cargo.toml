@@ -1,0 +1,10 @@
+[package]
+name = "html-ordinary-consumer-probe"
+version = "0.0.0"
+edition = "2024"
+publish = false
+
+[workspace]
+
+[dependencies]
+html = { path = "../../..", default-features = false, features = ["html5"] }

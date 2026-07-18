@@ -2,6 +2,8 @@ use crate::dom_patch::PatchKey;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
+use crate::types::ParserCreatedFragmentKind;
+
 #[derive(Clone, Debug)]
 pub(crate) enum PatchKind {
     Document {
@@ -15,6 +17,11 @@ pub(crate) enum PatchKind {
     Element {
         name: Arc<str>,
         attributes: Vec<(Arc<str>, Option<String>)>,
+        template_contents: Option<PatchKey>,
+    },
+    DocumentFragment {
+        kind: ParserCreatedFragmentKind,
+        host: PatchKey,
     },
     Text {
         text: String,
@@ -35,8 +42,19 @@ impl PatchNode {
     pub(crate) fn allows_children(&self) -> bool {
         matches!(
             self.kind,
-            PatchKind::Document { .. } | PatchKind::Element { .. }
+            PatchKind::Document { .. }
+                | PatchKind::Element { .. }
+                | PatchKind::DocumentFragment { .. }
         )
+    }
+
+    pub(crate) fn template_contents(&self) -> Option<PatchKey> {
+        match self.kind {
+            PatchKind::Element {
+                template_contents, ..
+            } => template_contents,
+            _ => None,
+        }
     }
 }
 

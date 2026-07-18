@@ -61,6 +61,7 @@ pub(crate) fn estimate_patch_bytes(patch: &DomPatch) -> usize {
         DomPatch::CreateText { text, .. } | DomPatch::CreateComment { text, .. } => {
             PATCH_OVERHEAD + text.len()
         }
+        DomPatch::CreateTemplateContents { .. } => PATCH_OVERHEAD,
         DomPatch::AppendChild { .. }
         | DomPatch::InsertBefore { .. }
         | DomPatch::RemoveNode { .. }
@@ -86,7 +87,8 @@ pub(crate) fn log_patch_stats(tab_id: TabId, request_id: RequestId, patches: &[D
             DomPatch::CreateDocument { .. }
             | DomPatch::CreateElement { .. }
             | DomPatch::CreateText { .. }
-            | DomPatch::CreateComment { .. } => {
+            | DomPatch::CreateComment { .. }
+            | DomPatch::CreateTemplateContents { .. } => {
                 created += 1;
             }
             DomPatch::RemoveNode { .. } => {

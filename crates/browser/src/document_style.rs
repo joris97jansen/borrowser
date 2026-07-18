@@ -302,7 +302,9 @@ fn collect_stylesheet_inputs(
                 collect_stylesheet_inputs(child, base_url, out);
             }
         }
-        Node::Element { name, children, .. } => {
+        Node::Element { element } => {
+            let name = element.name();
+            let children = element.children();
             if name.as_ref() == "link"
                 && node.attr_has_token("rel", "stylesheet")
                 && let Some(href) = node.attr("href")

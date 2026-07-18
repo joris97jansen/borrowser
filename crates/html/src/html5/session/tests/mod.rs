@@ -4,4 +4,5 @@ mod reconstruction;
 mod smoke;
 mod support;
 mod table;
+mod template;
 mod text_mode;

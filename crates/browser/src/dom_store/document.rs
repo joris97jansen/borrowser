@@ -130,8 +130,14 @@ impl DomDoc {
                     NodeKind::Element {
                         name: Arc::clone(name),
                         attributes: attributes.clone(),
+                        template_contents: None,
                     },
                 )?;
+            }
+            DomPatch::CreateTemplateContents { host, contents } => {
+                self.ensure_live(*host)?;
+                self.ensure_key(*contents)?;
+                self.arena.create_template_contents(*host, *contents)?;
             }
             DomPatch::CreateText { key, text } => {
                 self.ensure_key(*key)?;
@@ -237,6 +243,16 @@ impl DomDoc {
             }
         }
         Ok(node_ids)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_fragment_kind_for_test(
+        &mut self,
+        key: PatchKey,
+        kind: html::internal::ParserCreatedFragmentKind,
+    ) {
+        self.arena.set_fragment_kind_for_test(key, kind);
+        self.current = None;
     }
 
     #[inline]

@@ -1,17 +1,18 @@
 use super::{DomSnapshot, DomSnapshotOptions, assert_dom_eq, compare_dom};
 use crate::Node;
 use crate::dom_snapshot::serialize::truncate_line;
-use crate::types::Id;
+use crate::types::{DocumentFragmentNode, Id};
 use std::sync::Arc;
 
 fn elem(name: &str, children: Vec<Node>) -> Node {
-    Node::Element {
-        id: Id(0),
-        name: Arc::from(name),
-        attributes: vec![(Arc::from("class"), Some("a b".to_string()))],
-        style: Vec::new(),
+    crate::Node::from_element_parts(
+        Id(0),
+        Arc::from(name),
+        vec![(Arc::from("class"), Some("a b".to_string()))],
+        Vec::new(),
+        None,
         children,
-    }
+    )
 }
 
 #[test]
@@ -76,30 +77,32 @@ fn dom_mismatch_path_includes_id_label() {
     let expected = Node::Document {
         id: Id(0),
         doctype: None,
-        children: vec![Node::Element {
-            id: Id(0),
-            name: Arc::from("div"),
-            attributes: vec![(Arc::from("id"), Some("main".to_string()))],
-            style: Vec::new(),
-            children: vec![Node::Text {
+        children: vec![crate::Node::from_element_parts(
+            Id(0),
+            Arc::from("div"),
+            vec![(Arc::from("id"), Some("main".to_string()))],
+            Vec::new(),
+            None,
+            vec![Node::Text {
                 id: Id(0),
                 text: "a".to_string(),
             }],
-        }],
+        )],
     };
     let actual = Node::Document {
         id: Id(0),
         doctype: None,
-        children: vec![Node::Element {
-            id: Id(0),
-            name: Arc::from("div"),
-            attributes: vec![(Arc::from("id"), Some("main".to_string()))],
-            style: Vec::new(),
-            children: vec![Node::Text {
+        children: vec![crate::Node::from_element_parts(
+            Id(0),
+            Arc::from("div"),
+            vec![(Arc::from("id"), Some("main".to_string()))],
+            Vec::new(),
+            None,
+            vec![Node::Text {
                 id: Id(0),
                 text: "b".to_string(),
             }],
-        }],
+        )],
     };
     let err = compare_dom(&expected, &actual, DomSnapshotOptions::default())
         .expect_err("expected mismatch");
@@ -111,17 +114,18 @@ fn snapshot_serialization_sorts_attributes_lexically() {
     let doc = Node::Document {
         id: Id(0),
         doctype: None,
-        children: vec![Node::Element {
-            id: Id(0),
-            name: Arc::from("div"),
-            attributes: vec![
+        children: vec![crate::Node::from_element_parts(
+            Id(0),
+            Arc::from("div"),
+            vec![
                 (Arc::from("zeta"), Some("2".to_string())),
                 (Arc::from("alpha"), Some("1".to_string())),
                 (Arc::from("hidden"), None),
             ],
-            style: Vec::new(),
-            children: Vec::new(),
-        }],
+            Vec::new(),
+            None,
+            Vec::new(),
+        )],
     };
     let lines = DomSnapshot::new(&doc, DomSnapshotOptions::default())
         .as_lines()
@@ -134,30 +138,32 @@ fn dom_eq_ignores_attribute_storage_order() {
     let expected = Node::Document {
         id: Id(0),
         doctype: None,
-        children: vec![Node::Element {
-            id: Id(0),
-            name: Arc::from("div"),
-            attributes: vec![
+        children: vec![crate::Node::from_element_parts(
+            Id(0),
+            Arc::from("div"),
+            vec![
                 (Arc::from("a"), Some("1".to_string())),
                 (Arc::from("b"), Some("2".to_string())),
             ],
-            style: Vec::new(),
-            children: Vec::new(),
-        }],
+            Vec::new(),
+            None,
+            Vec::new(),
+        )],
     };
     let actual = Node::Document {
         id: Id(0),
         doctype: None,
-        children: vec![Node::Element {
-            id: Id(0),
-            name: Arc::from("div"),
-            attributes: vec![
+        children: vec![crate::Node::from_element_parts(
+            Id(0),
+            Arc::from("div"),
+            vec![
                 (Arc::from("b"), Some("2".to_string())),
                 (Arc::from("a"), Some("1".to_string())),
             ],
-            style: Vec::new(),
-            children: Vec::new(),
-        }],
+            Vec::new(),
+            None,
+            Vec::new(),
+        )],
     };
     assert_dom_eq(&expected, &actual, DomSnapshotOptions::default());
 }
@@ -167,13 +173,14 @@ fn snapshot_element_ids_are_suffix_not_synthetic_attribute() {
     let doc = Node::Document {
         id: Id(7),
         doctype: None,
-        children: vec![Node::Element {
-            id: Id(42),
-            name: Arc::from("div"),
-            attributes: vec![(Arc::from("class"), Some("x".to_string()))],
-            style: Vec::new(),
-            children: Vec::new(),
-        }],
+        children: vec![crate::Node::from_element_parts(
+            Id(42),
+            Arc::from("div"),
+            vec![(Arc::from("class"), Some("x".to_string()))],
+            Vec::new(),
+            None,
+            Vec::new(),
+        )],
     };
     let lines = DomSnapshot::new(
         &doc,
@@ -192,4 +199,48 @@ fn snapshot_element_ids_are_suffix_not_synthetic_attribute() {
 fn truncate_line_handles_multibyte_characters() {
     let line = "abc🙂def".to_string();
     assert_eq!(truncate_line(line, 6), "abc...");
+}
+
+#[test]
+fn snapshot_exposes_template_association_before_ordinary_host_children() {
+    let doc = Node::Document {
+        id: Id(1),
+        doctype: None,
+        children: vec![crate::Node::from_element_parts(
+            Id(2),
+            Arc::from("template"),
+            Vec::new(),
+            Vec::new(),
+            Some(Box::new(DocumentFragmentNode::new_template_contents(
+                Id(3),
+                vec![Node::Text {
+                    id: Id(4),
+                    text: "inert".to_string(),
+                }],
+            ))),
+            vec![Node::Comment {
+                id: Id(5),
+                text: "legacy ordinary child".to_string(),
+            }],
+        )],
+    };
+    let lines = DomSnapshot::new(
+        &doc,
+        DomSnapshotOptions {
+            ignore_ids: false,
+            ignore_empty_style: true,
+        },
+    )
+    .as_lines()
+    .to_vec();
+    assert_eq!(
+        lines,
+        vec![
+            "#document id=1",
+            "  <template> id=2",
+            "    #template-contents id=3",
+            "      \"inert\" id=4",
+            "    <!-- legacy ordinary child --> id=5",
+        ]
+    );
 }

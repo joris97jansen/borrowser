@@ -74,8 +74,8 @@ fn cell_start_directly_under_table_synthesizes_tbody_and_row_with_bounded_reproc
         "direct cell under table must report implied row recovery"
     );
     assert!(
-        !errors.contains(&"mode-reprocess-budget-exhausted"),
-        "table implied-wrapper recovery must complete within the bounded dispatch loop"
+        !errors.contains(&"same-token-reprocess-no-progress"),
+        "table implied-wrapper recovery must demonstrate semantic dispatch progress"
     );
 }
 
@@ -140,7 +140,7 @@ fn in_row_cell_start_tag_switches_to_in_cell_and_pushes_afe_marker() {
             .active_formatting
             .entries()
             .iter()
-            .filter(|entry| matches!(entry, AfeEntry::Marker))
+            .filter(|entry| matches!(entry, AfeEntry::Marker(_)))
             .count(),
         1,
         "entering a table cell should push a marker onto AFE"

@@ -80,6 +80,35 @@ fn supported_display_values_map_to_principal_box_behavior() {
 }
 
 #[test]
+fn parser_created_template_host_and_contents_generate_no_boxes() {
+    let template = html::internal::template_element_from_parts(
+        Id(4),
+        Vec::new(),
+        Vec::new(),
+        Id(5),
+        vec![element(6, "div", Vec::new(), vec![text(7, "inert")])],
+        Vec::new(),
+    );
+
+    let dom = doc_with_body(vec![
+        template,
+        element(8, "p", Vec::new(), vec![text(9, "active")]),
+    ]);
+    let styled = css::build_style_tree(&dom, None);
+    let tree = BoxTree::generate(&styled, None);
+
+    for inert_id in [Id(4), Id(5), Id(6), Id(7)] {
+        assert!(
+            tree.nodes()
+                .iter()
+                .all(|node| node.direct_node_id() != Some(inert_id)),
+            "parser-created template identity {inert_id:?} entered layout"
+        );
+    }
+    assert_eq!(box_by_node_id(&tree, Id(8)).kind(), BoxKind::Block);
+}
+
+#[test]
 fn unsupported_display_keywords_do_not_reach_box_generation_as_deferred_modes() {
     for (node_id, display) in [(4, "grid"), (5, "inline-flex")] {
         let dom = doc(vec![element(

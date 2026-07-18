@@ -41,6 +41,10 @@ Core v0 patch protocol is defined by [`DomPatch`](../../crates/html/src/dom_patc
   - `CreateElement`
   - `CreateText`
   - `CreateComment`
+  - `CreateTemplateContents { host, contents }`
+    - validates an existing canonical `template` host and a fresh contents key,
+      creates the typed parser-created fragment, and associates both endpoints
+      atomically; it is not an ordinary child edge
 - Tree shape / ordering:
   - `AppendChild`
     - defined as identity-preserving implicit reparenting when `child` is
@@ -91,6 +95,9 @@ HTML5 tree-builder Core v0 emission profile:
 3. Element/text/comment insertion emits `Create*` followed by `AppendChild`.
 4. Coalesced adjacent text runs emit `AppendText` on the previously created text key.
 5. End-tag SOE pops do not directly emit close/remove patches.
+6. An accepted template start emits `CreateElement`, then
+   `CreateTemplateContents`, then the host's ordinary structural insertion;
+   descendants attach beneath the contents key.
 
 Structural move semantics for HTML5-capable appliers:
 
@@ -109,6 +116,28 @@ Structural move semantics for HTML5-capable appliers:
   references, duplicate sibling references, or cycles in the materialized tree.
 - if a move attempt fails, atomic batch rollback means no partial detach or
   half-applied reparent is observable.
+- template contents roots cannot be attached or moved with `AppendChild` or
+  `InsertBefore`; direct removal while hosted is illegal.
+
+### AE10 Association Lifecycle
+
+There is no detached-fragment create opcode or independent association setter.
+Duplicate/re-association and wrong endpoint kinds are rejected. Removing a
+template host, or an ordinary ancestor containing it, recursively removes the
+associated fragment subgraph. `Clear` removes all associations. Association
+replacement beneath a surviving host is represented by reset/rebuild, not live
+re-association.
+
+Every independently stored patch/live/runtime/test arena records the fragment
+kind explicitly together with its host key. `TemplateContents` is validated at
+association creation and again during materialization; a generic fragment name
+must not imply template semantics.
+
+Generic `DomPatch` validation owns these structural rules and may validate the
+canonical host name. It does not require every manually created element named
+`template` to have an association. The HTML5 parser-output validator separately
+requires an association for every AE10-accepted template and checks coordinated
+parser state before a patch batch can drain.
 
 ## Atomic Batch Rules
 

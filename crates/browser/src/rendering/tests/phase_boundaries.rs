@@ -265,7 +265,7 @@ fn render_phase_boundary_debug_snapshot_preserves_non_zero_dom_identity_across_h
 
     let paragraph = find_styled_node_id(warm_style.root(), html::internal::Id(4))
         .expect("paragraph styled node");
-    assert!(matches!(paragraph.node, Node::Element { name, .. } if name.as_ref() == "p"));
+    assert!(matches!(paragraph.node, Node::Element { element } if element.name().as_ref() == "p"));
     drop(warm_style);
 
     let style_output = style_output_for_test(&mut page);
@@ -412,6 +412,82 @@ fn runtime_style_phase_applies_minimal_ua_display_defaults() {
     assert!(!layout_snapshot.contains("Hidden"));
     assert!(!layout_snapshot.contains("p { color: red; }"));
     assert!(!layout_snapshot.contains("hidden()"));
+}
+
+#[test]
+fn parser_created_template_contents_remain_materialized_but_inert_to_render_pipeline() {
+    let mut page = page_with_dom(
+        "<!doctype html><html><head></head><body><template><style>p { color: red; }</style><link rel=stylesheet href=inert.css><img src=inert.png><input value=inert><p>Inert words</p></template><p>Active words</p></body></html>",
+    );
+
+    let inert_node_count = {
+        fn find_template(node: &Node) -> Option<&Node> {
+            if node.element().is_some_and(|element| {
+                element.name().as_ref() == "template"
+                    && html::internal::template_contents(node).is_some()
+            }) {
+                return Some(node);
+            }
+            node.children()?.iter().find_map(find_template)
+        }
+
+        fn count_nodes(node: &Node) -> usize {
+            let mut count = 1;
+            if let Some(children) = node.children() {
+                for child in children {
+                    count += count_nodes(child);
+                }
+            }
+            count
+        }
+
+        let template = find_template(page.dom.as_deref().expect("materialized DOM"))
+            .expect("parser-created template host");
+        let contents = html::internal::template_contents(template).expect("template contents");
+        assert!(
+            template.children().expect("ordinary children").is_empty(),
+            "template host has no ordinary children"
+        );
+        assert_eq!(
+            html::internal::fragment_kind(contents),
+            html::internal::ParserCreatedFragmentKind::TemplateContents
+        );
+        1 + html::internal::fragment_children(contents)
+            .iter()
+            .map(count_nodes)
+            .sum::<usize>()
+    };
+
+    assert!(
+        inert_node_count >= 7,
+        "full template model should remain materialized"
+    );
+    assert_eq!(page.css_stylesheets().len(), 0);
+    page.update_visible_text_cache();
+    assert_eq!(page.visible_text_cache, "Active words\n\n");
+
+    let style_output = style_output_for_test(&mut page);
+    let style_snapshot = style_output.to_debug_snapshot();
+    assert!(style_snapshot.contains("name=\"template\""));
+    assert!(!style_snapshot.contains("Inert words"));
+    assert!(style_snapshot.contains("Active words"));
+
+    let measurer = FixedTextMeasurer;
+    let layout_output = layout_document(LayoutPhaseInput::from_style_output(
+        &style_output,
+        320.0,
+        &measurer,
+        None,
+    ));
+    let layout_snapshot = layout_output.to_debug_snapshot();
+    assert!(!layout_snapshot.contains("element(\"template\")"));
+    assert!(!layout_snapshot.contains("Inert words"));
+    assert!(layout_snapshot.contains("Active words"));
+
+    let paint_input_snapshot = PaintPhaseInput::new(&layout_output).to_debug_snapshot();
+    assert!(!paint_input_snapshot.contains("element(\"template\")"));
+    assert!(!paint_input_snapshot.contains("Inert words"));
+    assert!(paint_input_snapshot.contains("Active words"));
 }
 
 #[test]

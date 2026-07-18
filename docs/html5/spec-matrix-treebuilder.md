@@ -80,6 +80,7 @@ It defines HTML5 Core v0 tree-builder scope and explicitly records deferred and 
 | `TB-MODE-IN-TABLE-BODY` | MVP_PARTIAL | `In table body` | `#parsing-main-intbody` | `tree_builder/table/in_table_body.rs`, `table/scope.rs`, `table/close.rs` | Current: `ae8-multiple-bodies`, `ae8-implied-row-direct-cell`; unit: `table_body_row.rs`. | row insertion, implied row for cells, row-group transitions, table end recovery. | `tb-ae8-in-table-body` | Owns row-group context instead of encoding row-group behavior in generic element insertion. |
 | `TB-MODE-IN-ROW` | MVP_PARTIAL | `In row` | `#parsing-main-intr` | `tree_builder/table/in_row.rs`, `table/close.rs` | Current: `ae8-malformed-row-and-cell-recovery`, `i5-stray-tr`; unit: `table_body_row.rs`. | cell insertion, conflicting row starts, row closure, row-group/table boundaries. | `tb-ae8-in-row` | Owns row context and cell transition behavior. |
 | `TB-MODE-IN-CELL` | MVP_PARTIAL | `In cell` | `#parsing-main-intd` | `tree_builder/table/in_cell.rs`, `table/close.rs` | Current: `ae8-malformed-row-and-cell-recovery`, `i6-*`; unit: `table_cell.rs`. | explicit/mismatched cell end tags, implied cell close, AFE marker clearing, nested table support. | `tb-ae8-in-cell` | Owns table-cell recovery without introducing layout-cell concepts. |
+| `TB-MODE-IN-TEMPLATE` | MVP_PARTIAL | `In template` | `#parsing-main-intemplate` | `tree_builder/dispatch/template.rs`, `tree_builder/template_state.rs`, `tree_builder/modes.rs` | Current local `ae10-*`; pinned WPT `template-*`; unit/session template tests. | category delegation, owner-mode replacement, same-token reprocessing, nested close and EOF unwind. | `tb-ae10-template-construction` | AE10 static ordinary-template subset with typed contents; no declarative shadow DOM or public template APIs. |
 
 ## `TB-MODE-IN-HEAD` Core v0 Partial Scope
 
@@ -92,7 +93,8 @@ Included in `MVP_PARTIAL`:
 Explicitly deferred from Core v0 `In head`:
 
 - parser-scripting interaction beyond tokenizer/tree-builder text-mode switching.
-- `template` handling and template mode stack interaction.
+- template scripting/declarative-shadow-root behavior beyond AE10's ordinary
+  template start/end delegation.
 - `noscript` script-enabled parsing nuances.
 - parser execution/pause semantics for `<script>`.
 
@@ -107,7 +109,7 @@ Explicitly deferred from Core v0 `In head`:
 | `TB-ALGO-AAA` | MVP_PARTIAL | Adoption agency algorithm (AAA) | `#adoption-agency-algorithm` | `tree_builder/adoption.rs`, `tree_builder/formatting.rs`, `dispatch/in_body.rs` | Current fixtures: `h8-aaa-*`, `h10-aaa-*`; unit/integration AAA tests. | Misnested supported formatting tags, deterministic moves, AFE/SOE synchronization. | `tb-aaa-core` | Implemented for Borrowser's supported formatting-element subset only; not full WHATWG AAA conformance. |
 | `TB-ALGO-FOSTER` | MVP_PARTIAL | Foster parenting | `#foster-parenting` | `tree_builder/insert/location.rs`, `tree_builder/stack/foster.rs`, `tree_builder/table/delegation.rs` | Current fixtures: `ae8-foster-text-and-element`, `ae8-pending-table-text-eof`, `i7-foster-parent-*`, `i10-table-stray-*`; unit: `insert/tests/foster.rs`. | Text and elements in table contexts requiring `InsertBefore` or stack fallback insertion locations. | `tb-ae8-foster-core` | AE8 implements foster parenting as adjusted insertion-location selection before insertion, not post-processing. |
 | `TB-ALGO-TABLE-CONSTRUCTION` | MVP_PARTIAL | Supported table tree construction | `#parsing-main-intable`, `#parsing-main-intbody`, `#parsing-main-intr`, `#parsing-main-intd` | `tree_builder/table/*`, `tree_builder/stack/*`, `tree_builder/insert/*` | Current fixtures: `ae8-*`, `i10-table-*`; unit: `table_*.rs`. | implied row groups/rows, row/cell close recovery, pending table text, deterministic parse errors, chunk parity. | `tb-ae8-table-construction` | AE8 supported static table parsing subset; does not claim full WHATWG table conformance. |
-| `TB-ALGO-TEMPLATE-MODES` | OUT_OF_SCOPE | Template insertion modes stack | `#parsing-main-intemplate`, `#stack-of-template-insertion-modes` | planned `tree_builder/modes.rs` | Planned policy fixture: `tb-template-out-of-scope` (`skip`). | Template mode push/pop and reprocessing semantics. | `tb-template-out-of-scope` | Excluded from Core v0 for complexity/runway reasons. |
+| `TB-ALGO-TEMPLATE-MODES` | MVP_PARTIAL | Template insertion modes stack and parser-created contents | `#parsing-main-intemplate`, `#stack-of-template-insertion-modes` | `tree_builder/dispatch/template.rs`, `tree_builder/template_state.rs`, `tree_builder/parser_validation.rs`, `tree_builder/insert/location.rs` | Current local `ae10-*` DOM/patch/error/parity fixtures and pinned WPT `template-*` adaptations. | Full-document ordinary-template start/end dispatch, owner-aware mode stack, typed contents association, reset, bounded semantic reprocessing, and EOF unwind. | `tb-ae10-template-construction` | AE10 static parser subset; no public fragment/template APIs, declarative shadow DOM, scripting, live mutation, resource activation, or rendering. |
 | `TB-ALGO-QUIRKS-DOCTYPE` | MVP | Quirks mode + doctype effects | `#the-initial-insertion-mode`, `#the-before-html-insertion-mode` | `tree_builder/mod.rs`, `html5/shared/context.rs` (mode/counters), tokenizer doctype token handoff | Current tokenizer proxy: `tok-doctype-quirks-missing-name`. Planned tree fixture: `tb-quirks-from-doctype`. | Document mode decision from DOCTYPE token (`force_quirks` true/false), deterministic propagation and immutability boundary. | `tb-quirks-from-doctype` | Required for standards/quirks compatibility boundary. |
 | `TB-ALGO-PATCH-SINK` | MVP | Deterministic patch emission contract | engine contract (`docs/html5/dompatch-contract.md`) | `tree_builder/mod.rs`, `session.rs`, `dom_patch.rs` | Current harness path: `html5_golden_tree_builder_patches.rs`. | Stable ordering, deterministic document bootstrap, no invalid patch sequencing. | `tb-patch-order-stability` | Runtime consumes patches incrementally; determinism is non-negotiable. |
 | `TB-ALGO-NODE-IDENTITY` | MVP | Node identity and runtime mapping contract | engine contract (`docs/html5/node-identity-contract.md`) | `tree_builder/mod.rs`, `session.rs`, `runtime_parse/src/lib.rs`, `browser/src/dom_store.rs` | Current coverage: `html5_golden_tree_builder_patches.rs` incremental materialization checks; `runtime_parse::runtime_updates_are_well_formed_and_materializable_if_any`; `runtime_parse::runtime_emits_updates_for_simple_document_when_strict_enabled` (feature-gated); `browser::dom_store` strict applier tests. | Stable `PatchKey` references, per-handle version monotonicity, no unknown-node references across the HTML5 runtime path. | `tb-node-identity-stability` | Locks down identity semantics across parser, runtime, and applier boundaries. |
@@ -230,7 +232,7 @@ Status source of truth:
 | `tb-ae8-foster-core` | Yes (Partial) | current `ae8-foster-*`, `i7-foster-parent-*`, and `i10-table-stray-*` | Active | Supported foster parenting in table contexts with adjusted insertion locations and patch evidence. |
 | `tb-ae9b-select` | Yes (Partial) | current local `ae9b-*` DOM/patch fixtures and pinned WPT `select-*` cases | Active | Current full-document select-family InBody rules, generic special-barrier end tags, input/HR recovery, and table composition without select modes. |
 | `tb-text-mode-core` | Yes (Partial) | planned `.../tb-text-mode-core` | Planned | Current unit coverage exists; fixture umbrella can promote later. |
-| `tb-template-out-of-scope` | No | planned `.../tb-template-out-of-scope` | Planned (`skip`) | Out-of-scope: template insertion modes stack excluded. |
+| `tb-ae10-template-construction` | Yes (Partial) | current local `ae10-*` DOM/patch fixtures and pinned WPT `template-*` cases | Active | Typed parser-created contents, owner-aware template modes, exact last-marker close, table/form/select composition, EOF recovery, patch materialization, and inert pipeline evidence. |
 
 ## Spec Modes Not Yet In Core v0 Matrix
 
@@ -248,7 +250,10 @@ the pinned Living Standard and are intentionally absent rather than deferred.
 For HTML5 Core v0 tree builder:
 
 - Full WHATWG table conformance beyond AE8 remains `DEFERRED`.
-- Template insertion modes are `OUT_OF_SCOPE` and should be `skip` in policy-driven manifests.
+- Template insertion modes and ordinary full-document template parsing are
+  `MVP_PARTIAL` under AE10. Public template APIs, fragment parsing,
+  declarative shadow DOM, scripting, and behavior beyond the declared AE10
+  subset remain deferred or out of scope.
 - Full WHATWG adoption-agency conformance remains `DEFERRED`; Borrowser's
   supported formatting-element subset is tracked as `MVP_PARTIAL`.
 - Any status promotion requires explicit matrix update and acceptance plan update.
