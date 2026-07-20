@@ -59,9 +59,7 @@ impl TokenObserver {
                 self.digest = mix_u64(self.digest, u64::from(*self_closing));
                 for attr in attrs {
                     self.digest = mix_atom_name(self.digest, atoms, attr.name);
-                    if let Some(value) = &attr.value {
-                        self.observe_attr_value(value, resolver)?;
-                    }
+                    self.observe_attr_value(&attr.value, resolver)?;
                 }
             }
             Token::EndTag { name } => {
@@ -114,6 +112,9 @@ impl TokenObserver {
                 self.digest = mix_bytes(self.digest, text.as_bytes());
             }
             TextValue::Owned(text) => {
+                self.digest = mix_bytes(self.digest, text.as_bytes());
+            }
+            TextValue::NullNormalized { text, .. } => {
                 self.digest = mix_bytes(self.digest, text.as_bytes());
             }
         }

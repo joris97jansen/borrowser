@@ -45,8 +45,11 @@ fn format_patch(patch: &html::DomPatch) -> String {
         } => {
             let attrs = format_attributes(attributes);
             format!(
-                "CreateElement key={} name={} attrs=[{}]",
-                key.0, name, attrs
+                "CreateElement key={} ns={} local=\"{}\" attrs=[{}]",
+                key.0,
+                name.namespace().snapshot_name(),
+                escape_text(name.local_name_str()),
+                attrs
             )
         }
         html::DomPatch::CreateTemplateContents { host, contents } => {
@@ -96,32 +99,31 @@ fn format_optional_text(value: Option<&str>) -> String {
     }
 }
 
-fn format_attributes(attributes: &[(std::sync::Arc<str>, Option<String>)]) -> String {
+fn format_attributes(attributes: &[html::ParserCreatedAttribute]) -> String {
     if attributes.is_empty() {
         return String::new();
     }
 
-    let mut sorted = attributes
-        .iter()
-        .map(|(name, value)| (name.as_ref(), value.as_deref()))
-        .collect::<Vec<_>>();
-    sorted.sort_by(|a, b| a.0.cmp(b.0).then_with(|| a.1.cmp(&b.1)));
-
     let mut out = String::new();
-    for (index, (name, value)) in sorted.iter().enumerate() {
+    for (index, attribute) in attributes.iter().enumerate() {
         if index > 0 {
             out.push_str(", ");
         }
-        out.push_str(name);
-        out.push('=');
-        match value {
-            Some(value) => {
-                out.push('"');
-                out.push_str(&escape_text(value));
-                out.push('"');
-            }
-            None => out.push_str("<none>"),
+        out.push_str("{ns=");
+        out.push_str(attribute.namespace().snapshot_name());
+        out.push_str(" prefix=");
+        if let Some(prefix) = attribute.prefix() {
+            out.push('"');
+            out.push_str(prefix);
+            out.push('"');
+        } else {
+            out.push('-');
         }
+        out.push_str(" local=\"");
+        out.push_str(&escape_text(attribute.local_name()));
+        out.push_str("\" value=\"");
+        out.push_str(&escape_text(attribute.value()));
+        out.push_str("\"}");
     }
     out
 }

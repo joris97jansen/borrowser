@@ -3,9 +3,8 @@
 //! This module is not intended as the stable public API surface.
 //! Publicly supported types are re-exported from `html::lib.rs`.
 
-use std::borrow::Cow;
-use std::collections::HashMap;
-use std::sync::Arc;
+use crate::attributes::{AttributeNamespace, ParserCreatedAttribute};
+use crate::names::{ElementNamespace, ExpandedElementName};
 
 pub type NodeId = u32;
 
@@ -59,94 +58,6 @@ impl NodeKey {
 impl From<NodeKey> for Id {
     fn from(key: NodeKey) -> Self {
         Id(key.0)
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
-pub struct AtomId(pub u32);
-
-/// Interns ASCII, lowercase tag/attribute names with one allocation per distinct name.
-/// Invariants: stored names are canonical ASCII lowercase and interned once per table.
-/// Lookup by `&str` is allocation-free via `Borrow<str>` on `Arc<str>`.
-#[derive(Debug, Default)]
-pub struct AtomTable {
-    atoms: Vec<Arc<str>>,
-    map: HashMap<Arc<str>, AtomId>,
-}
-
-impl AtomTable {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    /// Interns ASCII-lowercased tag and attribute names to avoid per-token allocations.
-    /// Tradeoff: tokenization carries a per-document atom table for name resolution.
-    /// Caller must ensure the input is ASCII-only; non-ASCII is outside current invariants.
-    pub fn intern_ascii_lowercase(&mut self, value: &str) -> AtomId {
-        assert!(value.is_ascii(), "AtomTable only supports ASCII names");
-        let lookup = if value.bytes().any(|b| b.is_ascii_uppercase()) {
-            Cow::Owned(value.to_ascii_lowercase())
-        } else {
-            Cow::Borrowed(value)
-        };
-
-        if let Some(id) = self.map.get(lookup.as_ref()) {
-            return *id;
-        }
-
-        let atom = Arc::<str>::from(lookup.as_ref());
-        debug_assert!(
-            self.atoms.len() < u32::MAX as usize,
-            "atom table exceeded AtomId capacity"
-        );
-        let id = AtomId(self.atoms.len() as u32);
-        self.atoms.push(Arc::clone(&atom));
-        self.map.insert(atom, id);
-        id
-    }
-
-    pub fn resolve(&self, id: AtomId) -> &str {
-        self.atoms
-            .get(id.0 as usize)
-            .map(|s| s.as_ref())
-            .expect("atom id out of range")
-    }
-
-    pub fn resolve_arc(&self, id: AtomId) -> Arc<str> {
-        Arc::clone(self.atoms.get(id.0 as usize).expect("atom id out of range"))
-    }
-
-    pub fn len(&self) -> usize {
-        self.atoms.len()
-    }
-
-    pub fn is_empty(&self) -> bool {
-        self.atoms.is_empty()
-    }
-
-    #[cfg(feature = "debug-stats")]
-    pub(crate) fn debug_atom_count(&self) -> usize {
-        self.atoms.len()
-    }
-
-    #[cfg(any(test, debug_assertions))]
-    #[allow(dead_code)] // Debug-only invariant checker; may be called ad-hoc
-    pub(crate) fn debug_validate(&self) {
-        debug_assert_eq!(
-            self.atoms.len(),
-            self.map.len(),
-            "atom table map/vec size mismatch"
-        );
-        for (idx, atom) in self.atoms.iter().enumerate() {
-            let id = AtomId(idx as u32);
-            let mapped = self.map.get(atom).expect("atom table missing map entry");
-            debug_assert_eq!(*mapped, id, "atom table id mismatch");
-            debug_assert!(
-                atom.bytes()
-                    .all(|b| b.is_ascii() && !b.is_ascii_uppercase()),
-                "atom table contains non-ascii or non-lowercase value"
-            );
-        }
     }
 }
 
@@ -220,8 +131,8 @@ pub enum ParserCreatedFragmentKind {
 #[derive(Debug)]
 pub struct ElementNode {
     id: Id,
-    name: Arc<str>,
-    attributes: Vec<(Arc<str>, Option<String>)>,
+    expanded_name: ExpandedElementName,
+    attributes: Vec<ParserCreatedAttribute>,
     style: Vec<(String, String)>,
     children: Vec<Node>,
     template_contents: Option<Box<DocumentFragmentNode>>,
@@ -230,24 +141,37 @@ pub struct ElementNode {
 impl ElementNode {
     #[must_use]
     pub fn new(
-        name: Arc<str>,
-        attributes: Vec<(Arc<str>, Option<String>)>,
+        expanded_name: ExpandedElementName,
+        attributes: Vec<ParserCreatedAttribute>,
         style: Vec<(String, String)>,
         children: Vec<Node>,
     ) -> Self {
-        Self::from_parts(Id::INVALID, name, attributes, style, None, children)
+        Self::from_parts(
+            Id::INVALID,
+            expanded_name,
+            attributes,
+            style,
+            None,
+            children,
+        )
     }
 
     pub fn id(&self) -> Id {
         self.id
     }
-    pub fn name(&self) -> &Arc<str> {
-        &self.name
+    pub fn expanded_name(&self) -> &ExpandedElementName {
+        &self.expanded_name
     }
-    pub fn attributes(&self) -> &[(Arc<str>, Option<String>)] {
+    pub fn namespace(&self) -> ElementNamespace {
+        self.expanded_name.namespace()
+    }
+    pub fn name(&self) -> &str {
+        self.expanded_name.local_name().as_str()
+    }
+    pub fn attributes(&self) -> &[ParserCreatedAttribute] {
         &self.attributes
     }
-    pub fn attributes_mut(&mut self) -> &mut Vec<(Arc<str>, Option<String>)> {
+    pub fn attributes_mut(&mut self) -> &mut Vec<ParserCreatedAttribute> {
         &mut self.attributes
     }
     pub fn style(&self) -> &[(String, String)] {
@@ -265,19 +189,19 @@ impl ElementNode {
 
     pub(crate) fn from_parts(
         id: Id,
-        name: Arc<str>,
-        attributes: Vec<(Arc<str>, Option<String>)>,
+        expanded_name: ExpandedElementName,
+        attributes: Vec<ParserCreatedAttribute>,
         style: Vec<(String, String)>,
         template_contents: Option<Box<DocumentFragmentNode>>,
         children: Vec<Node>,
     ) -> Self {
         if let Some(contents) = template_contents.as_deref() {
-            assert_eq!(name.as_ref(), "template");
+            assert!(expanded_name.is(ElementNamespace::Html, "template"));
             assert_eq!(contents.kind(), ParserCreatedFragmentKind::TemplateContents);
         }
         Self {
             id,
-            name,
+            expanded_name,
             attributes,
             style,
             children,
@@ -332,20 +256,20 @@ pub enum Node {
 impl Node {
     #[must_use]
     pub fn new_element(
-        name: Arc<str>,
-        attributes: Vec<(Arc<str>, Option<String>)>,
+        expanded_name: ExpandedElementName,
+        attributes: Vec<ParserCreatedAttribute>,
         style: Vec<(String, String)>,
         children: Vec<Node>,
     ) -> Self {
         Self::Element {
-            element: ElementNode::new(name, attributes, style, children),
+            element: ElementNode::new(expanded_name, attributes, style, children),
         }
     }
 
     pub(crate) fn from_element_parts(
         id: Id,
-        name: Arc<str>,
-        attributes: Vec<(Arc<str>, Option<String>)>,
+        expanded_name: ExpandedElementName,
+        attributes: Vec<ParserCreatedAttribute>,
         style: Vec<(String, String)>,
         template_contents: Option<Box<DocumentFragmentNode>>,
         children: Vec<Node>,
@@ -353,7 +277,7 @@ impl Node {
         Self::Element {
             element: ElementNode::from_parts(
                 id,
-                name,
+                expanded_name,
                 attributes,
                 style,
                 template_contents,
@@ -419,13 +343,22 @@ impl Node {
     }
 
     /// Returns true if an attribute with the given name exists.
-    /// Attribute names are matched case-insensitively per HTML semantics.
+    /// HTML element attribute names are matched ASCII case-insensitively.
+    /// Foreign element attribute names retain their exact canonical spelling.
     pub fn has_attr(&self, name: &str) -> bool {
         self.element().is_some_and(|element| {
             element
                 .attributes()
                 .iter()
-                .any(|(key, _)| key.eq_ignore_ascii_case(name))
+                .filter(|attribute| attribute.name().namespace() == AttributeNamespace::None)
+                .any(|attribute| {
+                    let local = attribute.name().local_name();
+                    if element.namespace() == ElementNamespace::Html {
+                        local.eq_ignore_ascii_case(name)
+                    } else {
+                        local == name
+                    }
+                })
         })
     }
 
@@ -440,14 +373,21 @@ impl Node {
     }
 
     /// Returns the first matching attribute value, if any.
-    /// Attribute names are matched case-insensitively per HTML semantics.
+    /// Only unqualified attributes participate in this legacy convenience API.
     pub fn attr(&self, name: &str) -> Option<&str> {
         match self {
             Node::Element { element } => element
                 .attributes()
                 .iter()
-                .find(|(k, _)| k.eq_ignore_ascii_case(name))
-                .and_then(|(_, v)| v.as_deref()),
+                .find(|attribute| {
+                    attribute.name().namespace() == AttributeNamespace::None
+                        && if element.namespace() == ElementNamespace::Html {
+                            attribute.name().local_name().eq_ignore_ascii_case(name)
+                        } else {
+                            attribute.name().local_name() == name
+                        }
+                })
+                .map(ParserCreatedAttribute::value),
             _ => None,
         }
     }
@@ -455,7 +395,7 @@ impl Node {
 
 #[cfg(test)]
 mod tests {
-    use super::AtomTable;
+    use crate::names::NameInterner as AtomTable;
     use std::sync::Arc;
 
     #[test]
@@ -473,15 +413,15 @@ mod tests {
     fn intern_stores_canonical_lowercase_value() {
         let mut atoms = AtomTable::new();
         let id = atoms.intern_ascii_lowercase("DiV");
-        assert_eq!(atoms.resolve(id), "div");
+        assert_eq!(atoms.resolve(id), Some("div"));
     }
 
     #[test]
     fn resolve_arc_reuses_allocation() {
         let mut atoms = AtomTable::new();
         let id = atoms.intern_ascii_lowercase("div");
-        let a = atoms.resolve_arc(id);
-        let b = atoms.resolve_arc(id);
+        let a = atoms.resolve_arc(id).unwrap();
+        let b = atoms.resolve_arc(id).unwrap();
         assert!(Arc::ptr_eq(&a, &b));
     }
 
@@ -491,8 +431,8 @@ mod tests {
         let a_id = atoms.intern_ascii_lowercase("div");
         let b_id = atoms.intern_ascii_lowercase("span");
         assert_ne!(a_id, b_id);
-        let a = atoms.resolve_arc(a_id);
-        let b = atoms.resolve_arc(b_id);
+        let a = atoms.resolve_arc(a_id).unwrap();
+        let b = atoms.resolve_arc(b_id).unwrap();
         assert!(!Arc::ptr_eq(&a, &b));
     }
 
@@ -505,10 +445,9 @@ mod tests {
             let upper = name.to_ascii_uppercase();
             let id2 = atoms.intern_ascii_lowercase(&upper);
             assert_eq!(id, id2);
-            assert_eq!(atoms.resolve(id), name.as_str());
+            assert_eq!(atoms.resolve(id), Some(name.as_str()));
         }
-        assert_eq!(atoms.atoms.len(), 10_000);
-        assert_eq!(atoms.map.len(), 10_000);
+        assert_eq!(atoms.len(), 10_000);
         atoms.debug_validate();
     }
 }

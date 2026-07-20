@@ -1,49 +1,50 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 
+#dom-snapshot-v2
 #document
   <!doctype html>
-  <html>
-    <head>
-      <title>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+      element ns=html local="title" attrs=[]
         "Spring Deals"
-    <body>
+    element ns=html local="body" attrs=[]
       "\n"
-      <table cellpadding="0" cellspacing="0" role="presentation" width="600">
+      element ns=html local="table" attrs=[{ns=none prefix=- local="role" value="presentation"}, {ns=none prefix=- local="width" value="600"}, {ns=none prefix=- local="cellpadding" value="0"}, {ns=none prefix=- local="cellspacing" value="0"}]
         "\n  "
-        <tbody>
-          <tr>
-            <td>
+        element ns=html local="tbody" attrs=[]
+          element ns=html local="tr" attrs=[]
+            element ns=html local="td" attrs=[]
               "\n    "
-              <table role="presentation" width="100%">
+              element ns=html local="table" attrs=[{ns=none prefix=- local="role" value="presentation"}, {ns=none prefix=- local="width" value="100%"}]
                 "\n      "
-                <tbody>
-                  <tr>
-                    <td>
-                      <h1>
+                element ns=html local="tbody" attrs=[]
+                  element ns=html local="tr" attrs=[]
+                    element ns=html local="td" attrs=[]
+                      element ns=html local="h1" attrs=[]
                         "Spring Deals"
                   "\n      "
-                  <tr>
-                    <td>
-                      <p>
+                  element ns=html local="tr" attrs=[]
+                    element ns=html local="td" attrs=[]
+                      element ns=html local="p" attrs=[]
                         "Save on hosting and support bundles."
                   "\n      "
-                  <tr>
+                  element ns=html local="tr" attrs=[]
                     "\n        "
-                    <td>
+                    element ns=html local="td" attrs=[]
                       "\n          "
-                      <table role="presentation" width="100%">
+                      element ns=html local="table" attrs=[{ns=none prefix=- local="role" value="presentation"}, {ns=none prefix=- local="width" value="100%"}]
                         "\n            "
-                        <tbody>
-                          <tr>
-                            <td>
+                        element ns=html local="tbody" attrs=[]
+                          element ns=html local="tr" attrs=[]
+                            element ns=html local="td" attrs=[]
                               "Starter"
-                            <td>
+                            element ns=html local="td" attrs=[]
                               "$9"
                           "\n            "
-                          <tr>
-                            <td>
+                          element ns=html local="tr" attrs=[]
+                            element ns=html local="td" attrs=[]
                               "Growth"
-                            <td>
+                            element ns=html local="td" attrs=[]
                               "$29"
                           "\n          "
                       "\n        "

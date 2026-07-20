@@ -99,10 +99,11 @@ pub use selectors::{
     SelectorDomElementIter, SelectorDomIndex, SelectorIdent, SelectorList,
     SelectorListMatchBuilder, SelectorListMatchOutcome, SelectorListParseResult, SelectorMatchDom,
     SelectorMatchability, SelectorMatchingContext, SelectorMatchingLimitError,
-    SelectorMatchingLimits, SelectorString, SelectorStructureError, Specificity, SubclassSelector,
-    TypeSelector, UniversalSelector, UnsupportedSelectorFeature, UnsupportedSelectorHandling,
-    UnsupportedSelectorList, parse_selector_list, parse_selector_list_with_limits,
-    serialize_selector_list_for_snapshot, serialize_selector_parse_result_for_snapshot,
+    SelectorMatchingLimits, SelectorNamespaceConstraint, SelectorString, SelectorStructureError,
+    Specificity, SubclassSelector, TypeSelector, UniversalSelector, UnsupportedSelectorFeature,
+    UnsupportedSelectorHandling, UnsupportedSelectorList, parse_selector_list,
+    parse_selector_list_with_limits, serialize_selector_list_for_snapshot,
+    serialize_selector_parse_result_for_snapshot,
 };
 pub use specified::{
     ExpandedLonghandDeclaration, ShorthandExpansion, ShorthandExpansionError,

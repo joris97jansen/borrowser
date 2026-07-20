@@ -1,5 +1,5 @@
 use super::super::{SelectorDomIndex, SelectorMatchDom};
-use super::support::{comment, doc, element, text};
+use super::support::{comment, doc, element, namespaced_element, text};
 
 #[test]
 fn selector_dom_index_is_document_ordered_and_element_only() {
@@ -31,14 +31,14 @@ fn selector_dom_index_is_document_ordered_and_element_only() {
     assert_eq!(
         index.to_debug_snapshot(),
         concat!(
-            "version: 1\n",
+            "version: 2\n",
             "selector-dom\n",
             "elements: 5\n",
-            "element[0]: id=1 name=\"html\" parent=none prev-sibling=none\n",
-            "element[1]: id=2 name=\"body\" parent=1 prev-sibling=none\n",
-            "element[2]: id=3 name=\"div\" parent=2 prev-sibling=none\n",
-            "element[3]: id=4 name=\"span\" parent=3 prev-sibling=none\n",
-            "element[4]: id=5 name=\"p\" parent=2 prev-sibling=3\n",
+            "element[0]: id=1 namespace=html local=\"html\" parent=none prev-sibling=none\n",
+            "element[1]: id=2 namespace=html local=\"body\" parent=1 prev-sibling=none\n",
+            "element[2]: id=3 namespace=html local=\"div\" parent=2 prev-sibling=none\n",
+            "element[3]: id=4 namespace=html local=\"span\" parent=3 prev-sibling=none\n",
+            "element[4]: id=5 namespace=html local=\"p\" parent=2 prev-sibling=3\n",
         )
     );
 }
@@ -89,14 +89,52 @@ fn selector_dom_index_normalizes_nested_document_nodes_by_splicing_children() {
     assert_eq!(
         index.to_debug_snapshot(),
         concat!(
-            "version: 1\n",
+            "version: 2\n",
             "selector-dom\n",
             "elements: 5\n",
-            "element[0]: id=1 name=\"body\" parent=none prev-sibling=none\n",
-            "element[1]: id=2 name=\"div\" parent=1 prev-sibling=none\n",
-            "element[2]: id=3 name=\"span\" parent=1 prev-sibling=2\n",
-            "element[3]: id=4 name=\"p\" parent=1 prev-sibling=3\n",
-            "element[4]: id=5 name=\"section\" parent=1 prev-sibling=4\n",
+            "element[0]: id=1 namespace=html local=\"body\" parent=none prev-sibling=none\n",
+            "element[1]: id=2 namespace=html local=\"div\" parent=1 prev-sibling=none\n",
+            "element[2]: id=3 namespace=html local=\"span\" parent=1 prev-sibling=2\n",
+            "element[3]: id=4 namespace=html local=\"p\" parent=1 prev-sibling=3\n",
+            "element[4]: id=5 namespace=html local=\"section\" parent=1 prev-sibling=4\n",
+        )
+    );
+}
+
+#[test]
+fn selector_dom_snapshot_exposes_expanded_names_and_exact_foreign_case() {
+    let dom = doc(vec![
+        element("title", Vec::new(), Vec::new()),
+        namespaced_element(
+            html::ElementNamespace::Svg,
+            "title",
+            Vec::new(),
+            vec![namespaced_element(
+                html::ElementNamespace::Svg,
+                "foreignObject",
+                Vec::new(),
+                Vec::new(),
+            )],
+        ),
+        namespaced_element(
+            html::ElementNamespace::MathMl,
+            "title",
+            Vec::new(),
+            Vec::new(),
+        ),
+    ]);
+
+    let index = SelectorDomIndex::from_root(&dom);
+    assert_eq!(
+        index.to_debug_snapshot(),
+        concat!(
+            "version: 2\n",
+            "selector-dom\n",
+            "elements: 4\n",
+            "element[0]: id=1 namespace=html local=\"title\" parent=none prev-sibling=none\n",
+            "element[1]: id=2 namespace=svg local=\"title\" parent=none prev-sibling=1\n",
+            "element[2]: id=3 namespace=svg local=\"foreignObject\" parent=2 prev-sibling=none\n",
+            "element[3]: id=4 namespace=mathml local=\"title\" parent=none prev-sibling=2\n",
         )
     );
 }
@@ -126,11 +164,29 @@ fn selector_dom_index_attribute_lookup_is_case_insensitive_on_names_and_exact_on
     assert!(!index.element_has_class(element, "foo"));
 }
 
-#[cfg(debug_assertions)]
 #[test]
-#[should_panic(expected = "selector DOM element name must be canonical lowercase")]
-fn selector_dom_index_rejects_non_canonical_html_element_names() {
+fn synthetic_html_name_construction_canonicalizes_before_selector_indexing() {
     let dom = doc(vec![element("DIV", Vec::new(), Vec::new())]);
+    let index = SelectorDomIndex::from_root(&dom);
+    let element = index.elements().next().expect("indexed element");
+    assert_eq!(index.element_name(element), "div");
+}
 
-    let _ = SelectorDomIndex::from_root(&dom);
+#[test]
+fn unprefixed_attribute_queries_ignore_namespaced_xlink_attributes() {
+    let parsed = html::parse_document(
+        "<svg><a xlink:href='qualified'></a><a href='ordinary'></a></svg>",
+        html::HtmlParseOptions::default(),
+    )
+    .expect("foreign attribute parse");
+    let index = SelectorDomIndex::from_root(&parsed.document);
+    let anchors = index
+        .elements()
+        .filter(|element| index.element_name(*element) == "a")
+        .collect::<Vec<_>>();
+    assert_eq!(anchors.len(), 2);
+    assert!(!index.has_attribute(anchors[0], "href"));
+    assert_eq!(index.attribute_value(anchors[0], "href"), None);
+    assert!(index.has_attribute(anchors[1], "href"));
+    assert_eq!(index.attribute_value(anchors[1], "href"), Some("ordinary"));
 }

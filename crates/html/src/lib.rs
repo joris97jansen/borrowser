@@ -1,3 +1,4 @@
+pub mod attributes;
 #[cfg(feature = "html5")]
 pub mod chunker;
 pub mod collect;
@@ -8,6 +9,7 @@ pub mod dom_snapshot;
 pub mod dom_utils;
 pub mod golden_corpus;
 pub mod head;
+pub mod names;
 #[cfg(feature = "parse-guards")]
 pub mod parse_guards;
 #[cfg(any(test, feature = "test-harness", feature = "html5"))]
@@ -86,30 +88,79 @@ fn contains_ignore_ascii_case(haystack: &str, needle: &[u8]) -> bool {
     false
 }
 
+pub use crate::attributes::{
+    AttributeNamespace, ParserCreatedAttribute, QualifiedAttributeName,
+    parser_created_attribute_lists_equal_ordered,
+};
 pub use crate::dom_diff::{
     DomDiffState, diff_dom, diff_dom_stateless, diff_dom_with_state, diff_from_empty,
 };
 pub use crate::dom_patch::{DomPatch, DomPatchBatch, PatchKey};
+pub use crate::names::{
+    ElementNamespace, ExpandedElementName, InternedLocalName, NameAtomId as AtomId,
+    NameInterner as AtomTable,
+};
 #[cfg(feature = "html5")]
 pub use crate::parser::{
     HtmlErrorPolicy, HtmlParseCounters, HtmlParseError, HtmlParseEvent, HtmlParseOptions,
     HtmlParser, HtmlTokenizerLimits, HtmlTokenizerOptions, HtmlTreeBuilderLimits,
     HtmlTreeBuilderOptions, ParseOutput, parse_document,
 };
-pub use crate::types::{AtomId, AtomTable, ElementNode, Node};
+pub use crate::types::{ElementNode, Node};
 
 #[cfg(feature = "internal-api")]
 pub mod internal {
-    use std::sync::Arc;
-
-    use super::Node;
     pub use super::types::{DocumentFragmentNode, Id, NodeId, NodeKey, ParserCreatedFragmentKind};
+    use super::{ElementNamespace, ExpandedElementName, Node, ParserCreatedAttribute};
+    use std::sync::{Mutex, OnceLock};
+
+    fn synthetic_name_interner() -> &'static Mutex<super::AtomTable> {
+        static NAMES: OnceLock<Mutex<super::AtomTable>> = OnceLock::new();
+        NAMES.get_or_init(|| Mutex::new(super::AtomTable::new()))
+    }
+
+    /// Explicit synthetic-DOM name construction for engine tests and internal
+    /// fixtures. Equal local names reuse one canonical allocation.
+    #[must_use]
+    pub fn expanded_name(namespace: ElementNamespace, local_name: &str) -> ExpandedElementName {
+        let mut names = synthetic_name_interner()
+            .lock()
+            .expect("synthetic DOM name interner poisoned");
+        let atom = match namespace {
+            ElementNamespace::Html => names.intern_ascii_folded(local_name),
+            ElementNamespace::Svg | ElementNamespace::MathMl => names.intern_exact(local_name),
+        }
+        .expect("synthetic DOM name interner exhausted");
+        names
+            .expanded_name(namespace, atom)
+            .expect("synthetic local name missing after interning")
+    }
+
+    #[must_use]
+    pub fn html_name(local_name: &str) -> ExpandedElementName {
+        expanded_name(ElementNamespace::Html, local_name)
+    }
+
+    #[must_use]
+    pub fn unqualified_attribute(
+        local_name: &str,
+        value: impl Into<String>,
+    ) -> ParserCreatedAttribute {
+        let mut names = synthetic_name_interner()
+            .lock()
+            .expect("synthetic DOM name interner poisoned");
+        let atom = names
+            .intern_ascii_folded(local_name)
+            .expect("synthetic DOM attribute-name interner exhausted");
+        ParserCreatedAttribute::unqualified(&names, atom, value.into())
+            .expect("synthetic attribute name missing after interning")
+    }
 
     #[must_use]
     pub fn node_element_from_parts(
         id: Id,
-        name: Arc<str>,
-        attributes: Vec<(Arc<str>, Option<String>)>,
+        name: ExpandedElementName,
+        attributes: Vec<ParserCreatedAttribute>,
         style: Vec<(String, String)>,
         children: Vec<Node>,
     ) -> Node {
@@ -132,7 +183,8 @@ pub mod internal {
     #[must_use]
     pub fn template_element_from_parts(
         host_id: Id,
-        attributes: Vec<(Arc<str>, Option<String>)>,
+        name: ExpandedElementName,
+        attributes: Vec<ParserCreatedAttribute>,
         style: Vec<(String, String)>,
         contents_id: Id,
         contents_children: Vec<Node>,
@@ -140,7 +192,7 @@ pub mod internal {
     ) -> Node {
         Node::from_element_parts(
             host_id,
-            Arc::from("template"),
+            name,
             attributes,
             style,
             Some(Box::new(DocumentFragmentNode::new_template_contents(

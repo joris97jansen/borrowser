@@ -1,5 +1,4 @@
 use std::collections::HashSet;
-use std::sync::Arc;
 
 use crate::dom_patch::{DomPatch, PatchKey};
 
@@ -461,7 +460,7 @@ impl PatchValidationArena {
                         *key,
                         PatchNode {
                             kind: PatchKind::Element {
-                                name: Arc::clone(name),
+                                name: name.clone(),
                                 attributes: attributes.clone(),
                                 template_contents: None,
                             },
@@ -495,7 +494,7 @@ impl PatchValidationArena {
                             name,
                             template_contents: None,
                             ..
-                        } if name.as_ref() == "template" => {}
+                        } if name.is(crate::names::ElementNamespace::Html, "template") => {}
                         PatchKind::Element {
                             template_contents: Some(_),
                             ..

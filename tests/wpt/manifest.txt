@@ -2,6 +2,32 @@
 
 # Parsing-focused subset (WPT-derived, minimal vendored fixtures).
 
+# AE11 immutable foreign-content slice from tests10.dat at the provenance pin.
+
+id: ae11-basic-svg
+path: vendor/html/syntax/parsing/foreign/basic-svg.html
+expected: expected/ae11-basic-svg.dom.txt
+provenance: provenance/ae11-basic-svg.provenance.txt
+status: active
+
+id: ae11-qualified-xlink
+path: vendor/html/syntax/parsing/foreign/qualified-xlink.html
+expected: expected/ae11-qualified-xlink.dom.txt
+provenance: provenance/ae11-qualified-xlink.provenance.txt
+status: active
+
+id: ae11-svg-desc-html-integration
+path: vendor/html/syntax/parsing/foreign/svg-desc-html-integration.html
+expected: expected/ae11-svg-desc-html-integration.dom.txt
+provenance: provenance/ae11-svg-desc-html-integration.provenance.txt
+status: active
+
+id: ae11-annotation-xml-svg
+path: vendor/html/syntax/parsing/foreign/annotation-xml-svg.html
+expected: expected/ae11-annotation-xml-svg.dom.txt
+provenance: provenance/ae11-annotation-xml-svg.provenance.txt
+status: active
+
 id: basic-structure
 path: vendor/html/syntax/parsing/basic-structure.html
 expected: expected/basic-structure.dom.txt

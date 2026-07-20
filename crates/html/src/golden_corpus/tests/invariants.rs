@@ -333,7 +333,7 @@ fn find_element<'a>(node: &'a Node, name: &str) -> Option<&'a Node> {
         Node::Element { element } => {
             let tag = element.name();
             crate::types::debug_assert_lowercase_atom(tag, "golden find_element tag");
-            if tag.as_ref() == name {
+            if element.expanded_name().is_html(name) {
                 Some(node)
             } else {
                 element
@@ -354,7 +354,7 @@ fn element_contains_tag(node: &Node, name: &str) -> bool {
         Node::Element { element } => {
             let tag = element.name();
             crate::types::debug_assert_lowercase_atom(tag, "golden contains-tag element");
-            tag.as_ref() == name
+            element.expanded_name().is_html(name)
                 || element
                     .children()
                     .iter()
@@ -514,7 +514,7 @@ fn check_attribute_parsing(ctx: &InvariantCtx<'_>) -> Result<(), String> {
 fn element_attributes<'a>(
     node: &'a Node,
     tag_name: &str,
-) -> Option<&'a [(std::sync::Arc<str>, Option<String>)]> {
+) -> Option<&'a [crate::ParserCreatedAttribute]> {
     match find_element(node, tag_name)? {
         Node::Element { element } => Some(element.attributes()),
         Node::Document { .. }
@@ -524,23 +524,22 @@ fn element_attributes<'a>(
     }
 }
 
-fn find_attr<'a>(
-    attrs: &'a [(std::sync::Arc<str>, Option<String>)],
-    name: &str,
-) -> Option<&'a str> {
-    attrs.iter().find_map(|(key, value)| {
-        crate::types::debug_assert_lowercase_atom(key, "golden attribute name");
-        if key.as_ref() == name {
-            Some(value.as_deref().unwrap_or(""))
+fn find_attr<'a>(attrs: &'a [crate::ParserCreatedAttribute], name: &str) -> Option<&'a str> {
+    attrs.iter().find_map(|attribute| {
+        crate::types::debug_assert_lowercase_atom(attribute.local_name(), "golden attribute name");
+        if attribute.namespace() == crate::AttributeNamespace::None
+            && attribute.local_name() == name
+        {
+            Some(attribute.value())
         } else {
             None
         }
     })
 }
 
-fn has_attr(attrs: &[(std::sync::Arc<str>, Option<String>)], name: &str) -> bool {
-    attrs.iter().any(|(key, _)| {
-        crate::types::debug_assert_lowercase_atom(key, "golden attribute name");
-        key.as_ref() == name
+fn has_attr(attrs: &[crate::ParserCreatedAttribute], name: &str) -> bool {
+    attrs.iter().any(|attribute| {
+        crate::types::debug_assert_lowercase_atom(attribute.local_name(), "golden attribute name");
+        attribute.namespace() == crate::AttributeNamespace::None && attribute.local_name() == name
     })
 }

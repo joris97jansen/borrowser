@@ -6,7 +6,7 @@
 //! page.
 
 use html::{Node, internal::Id};
-use std::{fmt::Write, sync::Arc};
+use std::fmt::Write;
 
 const DECLARATIONS_PER_GENERATED_RULE: usize = 5;
 
@@ -86,10 +86,10 @@ fn representative_section(index: usize) -> Node {
 fn element(name: &str, attributes: &[(&str, &str)], children: Vec<Node>) -> Node {
     html::internal::node_element_from_parts(
         Id::INVALID,
-        Arc::from(name),
+        html::internal::html_name(name),
         attributes
             .iter()
-            .map(|(name, value)| (Arc::from(*name), Some((*value).to_string())))
+            .map(|(name, value)| html::internal::unqualified_attribute(name, *value))
             .collect(),
         Vec::new(),
         children,

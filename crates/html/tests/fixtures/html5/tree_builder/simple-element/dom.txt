@@ -1,11 +1,13 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 # status: active
 # include_parse_errors: true
+
+#dom-snapshot-v2
 #document
-  <html>
-    <head>
-    <body>
-      <div id="root">
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=html local="div" attrs=[{ns=none prefix=- local="id" value="root"}]
         "Hi"
         <!-- c -->
 parse-errors:

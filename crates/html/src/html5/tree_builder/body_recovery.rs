@@ -12,7 +12,10 @@ impl Html5TreeBuilder {
         let mut popped_any = false;
         while let Some(current) = self.open_elements.current() {
             let name = current.name();
-            if Some(name) == except || !self.known_tags.is_supported_implied_end_tag(name) {
+            if current.namespace() != crate::ElementNamespace::Html
+                || Some(name) == except
+                || !self.known_tags.is_supported_implied_end_tag(name)
+            {
                 break;
             }
             let _ = self.open_elements.pop();
@@ -25,9 +28,9 @@ impl Html5TreeBuilder {
     }
 
     fn current_node_is(&self, name: AtomId) -> bool {
-        self.open_elements
-            .current()
-            .is_some_and(|current| current.name() == name)
+        self.open_elements.current().is_some_and(|current| {
+            current.namespace() == crate::ElementNamespace::Html && current.name() == name
+        })
     }
 
     fn close_p_in_button_scope_after_implied_tags(&mut self) -> bool {

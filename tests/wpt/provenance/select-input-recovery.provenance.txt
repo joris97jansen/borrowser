@@ -5,7 +5,7 @@ case-identity: source path plus exact #data and SHA-256
 context: full-document
 scripting: not-applicable
 data-sha256: 44c9d0ea49afb6e5b42d61af6bc8dcd77e168c46b5dff45aab2f701894c42226
-adaptation: exact #data bytes extracted without a terminal newline; upstream #document translated only into html5-dom-v1 representation
+adaptation: exact #data bytes extracted without a terminal newline; upstream #document translated only into html5-dom-v2 representation
 upstream-errors-policy: provenance only; Borrowser parse-error kinds are asserted separately
 #data
 <!doctype html><select><input>X

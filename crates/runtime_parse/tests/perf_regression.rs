@@ -204,12 +204,11 @@ fn estimated_patch_bytes(patches: &[DomPatch]) -> usize {
             DomPatch::CreateElement {
                 name, attributes, ..
             } => {
-                total += 8 + name.len();
-                for (k, v) in attributes {
-                    total += k.len();
-                    if let Some(value) = v {
-                        total += value.len();
-                    }
+                total += 8 + name.local_name_str().len();
+                for attribute in attributes {
+                    total += attribute.local_name().len();
+                    total += attribute.prefix().map(str::len).unwrap_or(0);
+                    total += attribute.value().len();
                 }
             }
             DomPatch::CreateText { text, .. } | DomPatch::CreateComment { text, .. } => {

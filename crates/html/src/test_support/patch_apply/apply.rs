@@ -2,7 +2,6 @@ use super::arena::{TestKind, TestNode};
 use super::{ArenaResult, TestPatchArena};
 use crate::dom_patch::DomPatch;
 use crate::types::ParserCreatedFragmentKind;
-use std::sync::Arc;
 
 impl TestPatchArena {
     pub(crate) fn apply(&mut self, patches: &[DomPatch]) -> ArenaResult<()> {
@@ -76,7 +75,7 @@ impl TestPatchArena {
                         *key,
                         TestNode {
                             kind: TestKind::Element {
-                                name: Arc::clone(name),
+                                name: name.clone(),
                                 attributes: attributes.clone(),
                                 template_contents: None,
                             },
@@ -331,7 +330,7 @@ impl TestPatchArena {
                 name,
                 template_contents: None,
                 ..
-            } if name.as_ref() == "template" => {}
+            } if name.is(crate::ElementNamespace::Html, "template") => {}
             TestKind::Element {
                 template_contents: Some(_),
                 ..

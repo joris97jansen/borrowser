@@ -1,9 +1,20 @@
 use html::internal::{DocumentFragmentNode, Id, ParserCreatedFragmentKind};
 use html::{Node, internal};
 
+pub fn valid_unqualified_attribute() -> html::ParserCreatedAttribute {
+    let mut names = html::AtomTable::new();
+    let href = names.intern_exact("href").expect("href atom");
+    let local = names.resolve_local_name(href).expect("href local name");
+    html::ParserCreatedAttribute::new(
+        html::QualifiedAttributeName::unqualified(local),
+        "#valid".to_string(),
+    )
+}
+
 pub fn valid_template() -> Node {
     internal::template_element_from_parts(
         Id(1),
+        internal::html_name("template"),
         Vec::new(),
         Vec::new(),
         Id(2),

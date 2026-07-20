@@ -13,7 +13,7 @@ fn test_patch_arena_supports_aaa_furthest_block_move_sequence() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "html".into(),
+                name: crate::test_support::html_name("html"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -22,7 +22,7 @@ fn test_patch_arena_supports_aaa_furthest_block_move_sequence() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(3),
-                name: "head".into(),
+                name: crate::test_support::html_name("head"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -31,7 +31,7 @@ fn test_patch_arena_supports_aaa_furthest_block_move_sequence() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(4),
-                name: "body".into(),
+                name: crate::test_support::html_name("body"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -40,7 +40,7 @@ fn test_patch_arena_supports_aaa_furthest_block_move_sequence() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(5),
-                name: "a".into(),
+                name: crate::test_support::html_name("a"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -49,7 +49,7 @@ fn test_patch_arena_supports_aaa_furthest_block_move_sequence() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(6),
-                name: "p".into(),
+                name: crate::test_support::html_name("p"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -70,7 +70,7 @@ fn test_patch_arena_supports_aaa_furthest_block_move_sequence() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(8),
-                name: "a".into(),
+                name: crate::test_support::html_name("a"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -116,7 +116,7 @@ fn test_patch_arena_supports_aaa_foster_parent_insert_before_sequence() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "html".into(),
+                name: crate::test_support::html_name("html"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -125,7 +125,7 @@ fn test_patch_arena_supports_aaa_foster_parent_insert_before_sequence() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(3),
-                name: "head".into(),
+                name: crate::test_support::html_name("head"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -134,7 +134,7 @@ fn test_patch_arena_supports_aaa_foster_parent_insert_before_sequence() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(4),
-                name: "body".into(),
+                name: crate::test_support::html_name("body"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -143,7 +143,7 @@ fn test_patch_arena_supports_aaa_foster_parent_insert_before_sequence() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(5),
-                name: "table".into(),
+                name: crate::test_support::html_name("table"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -152,7 +152,7 @@ fn test_patch_arena_supports_aaa_foster_parent_insert_before_sequence() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(6),
-                name: "a".into(),
+                name: crate::test_support::html_name("a"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -161,7 +161,7 @@ fn test_patch_arena_supports_aaa_foster_parent_insert_before_sequence() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(7),
-                name: "tr".into(),
+                name: crate::test_support::html_name("tr"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -183,7 +183,7 @@ fn test_patch_arena_supports_aaa_foster_parent_insert_before_sequence() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(9),
-                name: "a".into(),
+                name: crate::test_support::html_name("a"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {

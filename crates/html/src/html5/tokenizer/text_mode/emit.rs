@@ -22,6 +22,21 @@ impl Html5Tokenizer {
         });
     }
 
+    fn emit_null_normalized_text(&mut self, text: &str, raw: &str) {
+        if text.is_empty() {
+            return;
+        }
+        self.emit_token(Token::Text {
+            text: TextValue::NullNormalized {
+                text: text.to_string(),
+                had_null: true,
+                had_non_whitespace_non_null: raw.chars().any(|character| {
+                    character != '\0' && !matches!(character, '\t' | '\n' | '\x0C' | '\r' | ' ')
+                }),
+            },
+        });
+    }
+
     pub(crate) fn flush_pending_text(&mut self, input: &Input) {
         self.flush_pending_text_impl(input, None);
     }
@@ -70,7 +85,11 @@ impl Html5Tokenizer {
             return;
         }
         if !should_decode {
-            self.emit_text_owned(normalized);
+            if null_normalized.is_some() {
+                self.emit_null_normalized_text(normalized, raw);
+            } else {
+                self.emit_text_owned(normalized);
+            }
             return;
         }
         let decoded = decode_character_references(normalized, character_reference_context.unwrap());
@@ -80,6 +99,12 @@ impl Html5Tokenizer {
         match decoded.text {
             std::borrow::Cow::Borrowed(_) if null_normalized.is_none() => {
                 self.emit_text_span(start, end)
+            }
+            std::borrow::Cow::Borrowed(text) if null_normalized.is_some() => {
+                self.emit_null_normalized_text(text, raw)
+            }
+            std::borrow::Cow::Owned(text) if null_normalized.is_some() => {
+                self.emit_null_normalized_text(&text, raw)
             }
             std::borrow::Cow::Borrowed(text) => self.emit_text_owned(text),
             std::borrow::Cow::Owned(text) => self.emit_text_owned(&text),

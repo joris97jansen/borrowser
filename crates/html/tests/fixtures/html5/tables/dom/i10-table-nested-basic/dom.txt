@@ -1,19 +1,19 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 # status: active
 
+#dom-snapshot-v2
 #document
-
   <!doctype html>
-  <html>
-    <head>
-    <body>
-      <table>
-        <tbody>
-          <tr>
-            <td>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=html local="table" attrs=[]
+        element ns=html local="tbody" attrs=[]
+          element ns=html local="tr" attrs=[]
+            element ns=html local="td" attrs=[]
               "outer"
-              <table>
-                <tbody>
-                  <tr>
-                    <td>
+              element ns=html local="table" attrs=[]
+                element ns=html local="tbody" attrs=[]
+                  element ns=html local="tr" attrs=[]
+                    element ns=html local="td" attrs=[]
                       "inner"

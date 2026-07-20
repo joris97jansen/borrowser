@@ -1,10 +1,13 @@
 use crate::types::{Id, Node};
-use std::sync::Arc;
+
+pub(super) fn html_name(name: &str) -> crate::ExpandedElementName {
+    crate::test_support::html_name(name)
+}
 
 pub(super) fn element(name: &str, children: Vec<Node>) -> Node {
     crate::Node::from_element_parts(
         Id::INVALID,
-        Arc::from(name),
+        html_name(name),
         Vec::new(),
         Vec::new(),
         None,

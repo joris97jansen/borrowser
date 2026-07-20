@@ -49,12 +49,11 @@ pub(crate) fn estimate_patch_bytes(patch: &DomPatch) -> usize {
         DomPatch::CreateElement {
             name, attributes, ..
         } => {
-            let mut total = PATCH_OVERHEAD + name.len();
-            for (k, v) in attributes {
-                total += k.len();
-                if let Some(value) = v {
-                    total += value.len();
-                }
+            let mut total = PATCH_OVERHEAD + name.local_name_str().len();
+            for attribute in attributes {
+                total += attribute.local_name().len();
+                total += attribute.prefix().map(str::len).unwrap_or(0);
+                total += attribute.value().len();
             }
             total
         }

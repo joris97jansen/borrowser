@@ -1,14 +1,16 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
+
+#dom-snapshot-v2
 #document
   <!doctype html>
-  <html>
-    <head>
-    <body>
-      <b>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=html local="b" attrs=[]
         "one"
-        <applet>
-          <b>
+        element ns=html local="applet" attrs=[]
+          element ns=html local="b" attrs=[]
             "two"
-        <i>
+        element ns=html local="i" attrs=[]
           "three"
         "\n"

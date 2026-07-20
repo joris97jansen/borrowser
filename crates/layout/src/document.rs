@@ -105,6 +105,7 @@ fn layout_box_from_generated_tree<'style_tree, 'dom>(
         flex_item_cross_axis: None,
         list_marker: box_node.list_marker(),
         replaced: box_node.replaced(),
+        replaced_presentation: box_node.replaced_presentation().cloned(),
         replaced_intrinsic: box_node.replaced_intrinsic(),
         used_content_size: None,
         block_flow_placement: None,

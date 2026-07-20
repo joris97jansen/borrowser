@@ -1,17 +1,19 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 # status: active
+
+#dom-snapshot-v2
 #document
   <!doctype html>
-  <html>
-    <head>
-    <body>
-      <select>
-        <button>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=html local="select" attrs=[]
+        element ns=html local="button" attrs=[]
           "B"
-        <div>
+        element ns=html local="div" attrs=[]
           "D"
-        <hr>
+        element ns=html local="hr" attrs=[]
         <!-- c -->
-        <script>
+        element ns=html local="script" attrs=[]
           "x"
         "T"

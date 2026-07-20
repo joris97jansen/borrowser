@@ -26,11 +26,16 @@ pub fn inherited_color(node: &Node, ancestors: &[Node]) -> (u8, u8, u8, u8) {
 pub fn page_background(dom: &Node) -> Option<(u8, u8, u8, u8)> {
     fn from_element(node: &Node, want: &str) -> Option<(u8, u8, u8, u8)> {
         match node {
-            Node::Element { element } if element.name().eq_ignore_ascii_case(want) => element
-                .style()
-                .iter()
-                .find(|(k, _)| k.eq_ignore_ascii_case("background-color"))
-                .and_then(|(_, v)| parse_color(v)),
+            Node::Element { element }
+                if element.namespace() == html::ElementNamespace::Html
+                    && element.name() == want =>
+            {
+                element
+                    .style()
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case("background-color"))
+                    .and_then(|(_, v)| parse_color(v))
+            }
             _ => None,
         }
     }

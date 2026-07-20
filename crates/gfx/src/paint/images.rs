@@ -1,4 +1,4 @@
-use crate::util::{ellipsize_to_width, get_attr, resolve_relative_url, wrap_text_to_width};
+use crate::util::{ellipsize_to_width, wrap_text_to_width};
 use css::{ComputedStyle, ComputedValue, Length, PropertyId};
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, StrokeKind, Vec2};
 use layout::{LayoutBox, TextMeasurer};
@@ -31,23 +31,17 @@ pub(super) fn paint_img_fragment(
     ctx: PaintCtx<'_>,
 ) {
     let painter = ctx.painter;
-    let base_url = ctx.base_url;
     let resources = ctx.resources;
     let measurer = ctx.measurer;
 
-    let alt = layout
-        .and_then(|lb| get_attr(lb.node.node, "alt"))
-        .map(str::trim)
-        .filter(|s| !s.is_empty());
-
-    let img_url = layout
-        .and_then(|lb| get_attr(lb.node.node, "src"))
-        .map(str::trim)
-        .filter(|s| !s.is_empty())
-        .and_then(|src| resolve_relative_url(base_url, src));
+    let presentation = layout.and_then(|layout| match layout.replaced_presentation() {
+        Some(layout::ReplacedElementPresentation::Image(image)) => Some(image),
+        _ => None,
+    });
+    let alt = presentation.and_then(layout::ImagePresentation::alternative_text);
+    let img_url = presentation.and_then(layout::ImagePresentation::resolved_source);
 
     let state = img_url
-        .as_deref()
         .map(|url| resources.image_state_by_url(url))
         .unwrap_or(ImageState::Missing);
 

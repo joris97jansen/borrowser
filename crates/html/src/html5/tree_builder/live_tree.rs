@@ -14,7 +14,9 @@ use crate::dom_patch::{DomPatch, PatchKey};
 use crate::html5::tree_builder::invariants::{
     DomInvariantNode, DomInvariantNodeKind, DomInvariantState,
 };
+use crate::names::ElementNamespace;
 use crate::types::ParserCreatedFragmentKind;
+use crate::{ExpandedElementName, ParserCreatedAttribute};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum LiveNodeKind {
@@ -53,6 +55,8 @@ struct LiveNode {
     template_contents: Option<PatchKey>,
     fragment_host: Option<PatchKey>,
     is_template_element: bool,
+    expanded_name: Option<ExpandedElementName>,
+    attributes: Vec<ParserCreatedAttribute>,
 }
 
 impl LiveNode {
@@ -65,6 +69,8 @@ impl LiveNode {
             template_contents: None,
             fragment_host: None,
             is_template_element: false,
+            expanded_name: None,
+            attributes: Vec::new(),
         }
     }
 }
@@ -160,9 +166,16 @@ impl LiveTree {
             DomPatch::CreateDocumentType { key, .. } => {
                 self.insert_node(*key, LiveNodeKind::DocumentType)
             }
-            DomPatch::CreateElement { key, name, .. } => {
+            DomPatch::CreateElement {
+                key,
+                name,
+                attributes,
+            } => {
                 self.insert_node(*key, LiveNodeKind::Element);
-                self.node_mut(*key).is_template_element = name.as_ref() == "template";
+                self.node_mut(*key).is_template_element =
+                    name.is(ElementNamespace::Html, "template");
+                self.node_mut(*key).expanded_name = Some(name.clone());
+                self.node_mut(*key).attributes.clone_from(attributes);
             }
             DomPatch::CreateTemplateContents { host, contents } => {
                 self.create_template_contents(*host, *contents);
@@ -208,6 +221,16 @@ impl LiveTree {
 
     pub(in crate::html5::tree_builder) fn is_template_element(&self, key: PatchKey) -> bool {
         self.node(key).is_template_element
+    }
+
+    pub(in crate::html5::tree_builder) fn element_semantics(
+        &self,
+        key: PatchKey,
+    ) -> Option<(&ExpandedElementName, &[ParserCreatedAttribute])> {
+        let node = self.node(key);
+        node.expanded_name
+            .as_ref()
+            .map(|name| (name, node.attributes.as_slice()))
     }
 
     pub(in crate::html5::tree_builder) fn contains(&self, key: PatchKey) -> bool {
@@ -510,7 +533,7 @@ mod reservation_tests {
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "template".into(),
+                name: crate::test_support::html_name("template"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateTemplateContents {
@@ -523,12 +546,12 @@ mod reservation_tests {
             },
             DomPatch::CreateElement {
                 key: PatchKey(4),
-                name: "div".into(),
+                name: crate::test_support::html_name("div"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(5),
-                name: "span".into(),
+                name: crate::test_support::html_name("span"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -588,7 +611,7 @@ mod tests {
     fn create_element(tree: &mut LiveTree, key: u32, name: &'static str) {
         tree.apply_structural_patch(&DomPatch::CreateElement {
             key: PatchKey(key),
-            name: std::sync::Arc::from(name),
+            name: crate::test_support::html_name(name),
             attributes: Vec::new(),
         });
     }
@@ -790,6 +813,8 @@ mod tests {
             template_contents: None,
             fragment_host: None,
             is_template_element: false,
+            expanded_name: Some(crate::test_support::html_name("div")),
+            attributes: Vec::new(),
         });
         tree.nodes[4]
             .as_mut()

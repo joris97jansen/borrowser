@@ -26,7 +26,7 @@ impl Html5TreeBuilder {
             return Ok(());
         };
         if !self_closing {
-            self.push_active_formatting_element(key, name, attrs, text)?;
+            self.push_active_formatting_element(key, name, attrs, atoms, text)?;
         }
         self.update_mode_for_start_tag(name);
         Ok(())
@@ -189,7 +189,7 @@ impl Html5TreeBuilder {
     ) -> Result<DispatchOutcome, TreeBuilderError> {
         debug_assert!(
             self.open_elements.current().is_none()
-                || self.open_elements.contains_name(self.known_tags.html),
+                || self.open_elements.contains_html_name(self.known_tags.html),
             "InBody invariant: non-empty SOE should include <html>"
         );
         match token {
@@ -400,6 +400,31 @@ impl Html5TreeBuilder {
                 )]
                 let _ = self.insert_element(*name, attrs, false, atoms, text)?;
                 self.insertion_mode = InsertionMode::InTable;
+            }
+            Token::StartTag {
+                name,
+                attrs,
+                self_closing,
+            } if *name == self.known_tags.svg || *name == self.known_tags.math => {
+                let _ = self.reconstruct_active_formatting_elements(atoms)?;
+                let namespace = if *name == self.known_tags.svg {
+                    crate::names::ElementNamespace::Svg
+                } else {
+                    crate::names::ElementNamespace::MathMl
+                };
+                let adjusted = crate::html5::tree_builder::foreign::adjust_foreign_attributes(
+                    namespace, attrs, atoms, text,
+                )?;
+                self.internal_post_adjustment_attribute_collisions = self
+                    .internal_post_adjustment_attribute_collisions
+                    .saturating_add(adjusted.post_adjustment_collisions as u64);
+                let _ = self.insert_foreign_element(
+                    namespace,
+                    *name,
+                    adjusted.attributes,
+                    *self_closing,
+                    atoms,
+                )?;
             }
             Token::StartTag {
                 name,

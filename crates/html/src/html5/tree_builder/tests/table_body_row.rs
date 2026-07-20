@@ -163,18 +163,19 @@ fn omitted_tbody_is_synthesized_and_chunk_invariant() {
     ]);
 
     let expected = vec![
+        "#dom-snapshot-v2".to_string(),
         "#document".to_string(),
         "  <!doctype html>".to_string(),
-        "  <html>".to_string(),
-        "    <head>".to_string(),
-        "    <body>".to_string(),
-        "      <table>".to_string(),
-        "        <tbody>".to_string(),
-        "          <tr>".to_string(),
-        "            <td>".to_string(),
+        "  element ns=html local=\"html\" attrs=[]".to_string(),
+        "    element ns=html local=\"head\" attrs=[]".to_string(),
+        "    element ns=html local=\"body\" attrs=[]".to_string(),
+        "      element ns=html local=\"table\" attrs=[]".to_string(),
+        "        element ns=html local=\"tbody\" attrs=[]".to_string(),
+        "          element ns=html local=\"tr\" attrs=[]".to_string(),
+        "            element ns=html local=\"td\" attrs=[]".to_string(),
         "              \"a\"".to_string(),
-        "          <tr>".to_string(),
-        "            <td>".to_string(),
+        "          element ns=html local=\"tr\" attrs=[]".to_string(),
+        "            element ns=html local=\"td\" attrs=[]".to_string(),
         "              \"b\"".to_string(),
     ];
 
@@ -194,19 +195,20 @@ fn nested_table_sections_close_current_section_before_reprocessing() {
     assert_eq!(
         dom,
         vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <table>".to_string(),
-            "        <tbody>".to_string(),
-            "          <tr>".to_string(),
-            "            <td>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"table\" attrs=[]".to_string(),
+            "        element ns=html local=\"tbody\" attrs=[]".to_string(),
+            "          element ns=html local=\"tr\" attrs=[]".to_string(),
+            "            element ns=html local=\"td\" attrs=[]".to_string(),
             "              \"a\"".to_string(),
-            "        <thead>".to_string(),
-            "          <tr>".to_string(),
-            "            <th>".to_string(),
+            "        element ns=html local=\"thead\" attrs=[]".to_string(),
+            "          element ns=html local=\"tr\" attrs=[]".to_string(),
+            "            element ns=html local=\"th\" attrs=[]".to_string(),
             "              \"b\"".to_string(),
         ]
     );
@@ -226,7 +228,13 @@ fn stray_tr_start_tag_closes_current_row_and_keeps_patch_sequence_deterministic(
         "chunk boundaries must not change deterministic patch emission for stray <tr> recovery"
     );
     assert!(
-        whole.iter().filter(|patch| matches!(patch, DomPatch::CreateElement { name, .. } if name.as_ref() == "tr")).count() == 2,
+        whole
+            .iter()
+            .filter(
+                |patch| matches!(patch, DomPatch::CreateElement { name, .. } if name.is_html("tr"))
+            )
+            .count()
+            == 2,
         "stray <tr> recovery should produce two row elements"
     );
     assert!(
@@ -240,18 +248,19 @@ fn stray_tr_start_tag_closes_current_row_and_keeps_patch_sequence_deterministic(
     assert_eq!(
         dom,
         vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <table>".to_string(),
-            "        <tbody>".to_string(),
-            "          <tr>".to_string(),
-            "            <td>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"table\" attrs=[]".to_string(),
+            "        element ns=html local=\"tbody\" attrs=[]".to_string(),
+            "          element ns=html local=\"tr\" attrs=[]".to_string(),
+            "            element ns=html local=\"td\" attrs=[]".to_string(),
             "              \"a\"".to_string(),
-            "          <tr>".to_string(),
-            "            <td>".to_string(),
+            "          element ns=html local=\"tr\" attrs=[]".to_string(),
+            "            element ns=html local=\"td\" attrs=[]".to_string(),
             "              \"b\"".to_string(),
         ]
     );
@@ -266,19 +275,20 @@ fn in_cell_nested_section_start_closes_cell_row_and_body_before_reprocessing() {
     assert_eq!(
         dom,
         vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <table>".to_string(),
-            "        <tbody>".to_string(),
-            "          <tr>".to_string(),
-            "            <td>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"table\" attrs=[]".to_string(),
+            "        element ns=html local=\"tbody\" attrs=[]".to_string(),
+            "          element ns=html local=\"tr\" attrs=[]".to_string(),
+            "            element ns=html local=\"td\" attrs=[]".to_string(),
             "              \"a\"".to_string(),
-            "        <thead>".to_string(),
-            "          <tr>".to_string(),
-            "            <th>".to_string(),
+            "        element ns=html local=\"thead\" attrs=[]".to_string(),
+            "          element ns=html local=\"tr\" attrs=[]".to_string(),
+            "            element ns=html local=\"th\" attrs=[]".to_string(),
             "              \"b\"".to_string(),
         ],
         "section starts inside a cell must close the cell, then the row/body section, before reprocessing"
@@ -292,15 +302,16 @@ fn in_cell_table_end_tag_closes_cell_row_and_section_before_table_close() {
     assert_eq!(
         dom,
         vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <table>".to_string(),
-            "        <tbody>".to_string(),
-            "          <tr>".to_string(),
-            "            <td>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"table\" attrs=[]".to_string(),
+            "        element ns=html local=\"tbody\" attrs=[]".to_string(),
+            "          element ns=html local=\"tr\" attrs=[]".to_string(),
+            "            element ns=html local=\"td\" attrs=[]".to_string(),
             "              \"a\"".to_string(),
         ],
         "table end tags seen in a cell must unwind the cell/row/section stack in order"

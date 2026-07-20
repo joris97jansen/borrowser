@@ -66,7 +66,8 @@ style result and the DOM tree in lockstep. It:
 
 - assigns computed styles to element nodes in selector document order
 - gives document/text/comment nodes inherited or initial style as appropriate
-- validates each computed entry's `SelectorDomElementId` and element name
+- validates each computed entry's `SelectorDomElementId`, element namespace,
+  and canonical local name
   against a fresh selector index for the target DOM
 - rejects mismatched DOM/style inputs instead of silently pairing styles with
   the wrong element
@@ -84,7 +85,8 @@ S6 preserves these invariants:
 - all computed styles are total over the supported property set
 - computed document snapshots are stable
 - malformed handoffs return `ComputedStyleResolutionError`
-- styled-tree construction validates element identity, not just element name
+- styled-tree construction validates numeric selector identity and expanded
+  element-name identity
 - browser rendering no longer depends on DOM-attached style mutation
 
 ## Legacy Boundary

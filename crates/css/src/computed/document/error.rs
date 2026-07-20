@@ -18,6 +18,11 @@ pub enum ComputedStyleResolutionError {
         expected: String,
         actual: String,
     },
+    ResolvedElementNamespaceMismatch {
+        element: SelectorDomElementId,
+        expected: html::ElementNamespace,
+        actual: html::ElementNamespace,
+    },
     MissingComputedParent {
         element: SelectorDomElementId,
         parent: SelectorDomElementId,
@@ -30,6 +35,11 @@ pub enum ComputedStyleResolutionError {
         element_index: usize,
         expected: String,
         actual: String,
+    },
+    ComputedElementNamespaceMismatch {
+        element_index: usize,
+        expected: html::ElementNamespace,
+        actual: html::ElementNamespace,
     },
     ComputedElementIdentityMismatch {
         element_index: usize,
@@ -84,6 +94,17 @@ impl std::fmt::Display for ComputedStyleResolutionError {
                 expected,
                 actual
             ),
+            Self::ResolvedElementNamespaceMismatch {
+                element,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "resolved document style element selector-id={} expected namespace {}, got {}",
+                element.get(),
+                expected.snapshot_name(),
+                actual.snapshot_name()
+            ),
             Self::MissingComputedParent { element, parent } => write!(
                 f,
                 "computed document style element selector-id={} is missing computed parent selector-id={}",
@@ -105,6 +126,16 @@ impl std::fmt::Display for ComputedStyleResolutionError {
                 f,
                 "computed document style element[{element_index}] expected name \"{}\", got \"{}\"",
                 expected, actual
+            ),
+            Self::ComputedElementNamespaceMismatch {
+                element_index,
+                expected,
+                actual,
+            } => write!(
+                f,
+                "computed document style element[{element_index}] expected namespace {}, got {}",
+                expected.snapshot_name(),
+                actual.snapshot_name()
             ),
             Self::ComputedElementIdentityMismatch {
                 element_index,
@@ -176,9 +207,11 @@ impl std::error::Error for ComputedStyleResolutionError {
             Self::StyleResolution(error) => Some(error),
             Self::MissingResolvedElement { .. }
             | Self::ResolvedElementNameMismatch { .. }
+            | Self::ResolvedElementNamespaceMismatch { .. }
             | Self::MissingComputedParent { .. }
             | Self::MissingComputedElementStyle { .. }
             | Self::ComputedElementNameMismatch { .. }
+            | Self::ComputedElementNamespaceMismatch { .. }
             | Self::ComputedElementIdentityMismatch { .. }
             | Self::ExtraComputedElementStyle { .. }
             | Self::MissingResolvedProperty { .. }

@@ -75,7 +75,9 @@ impl<'a> TokenFmt<'a> {
                 .resolve_span(*span)
                 .map(Cow::Borrowed)
                 .map_err(map_resolve_error),
-            TextValue::Owned(text) => Ok(Cow::Borrowed(text.as_str())),
+            TextValue::Owned(text) | TextValue::NullNormalized { text, .. } => {
+                Ok(Cow::Borrowed(text.as_str()))
+            }
         }
     }
 }
@@ -144,13 +146,10 @@ impl TokenTestFormatExt for Token {
 
 fn format_attr(attr: &Attribute, fmt: &TokenFmt<'_>) -> Result<String, TokenFmtError> {
     let name = fmt.resolve_atom(attr.name)?;
-    match &attr.value {
-        None => Ok(name.to_string()),
-        Some(value) => Ok(format!(
-            "{name}=\"{}\"",
-            escape_text(&fmt.resolve_attr_value(value)?)
-        )),
-    }
+    Ok(format!(
+        "{name}=\"{}\"",
+        escape_text(&fmt.resolve_attr_value(&attr.value)?)
+    ))
 }
 
 fn escape_text(text: &str) -> String {

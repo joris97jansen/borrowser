@@ -2,7 +2,7 @@ use std::collections::BTreeMap;
 use std::fs;
 use std::path::Path;
 
-use crate::wpt_formats::{EXPECTED_DOM_FORMAT_V1, EXPECTED_TOKEN_FORMAT_V1};
+use crate::wpt_formats::{EXPECTED_DOM_FORMAT_V2, EXPECTED_TOKEN_FORMAT_V1};
 
 pub struct ParsedExpectedDom {
     pub ignore_ids: bool,
@@ -42,7 +42,7 @@ pub fn parse_expected_dom(path: &Path) -> ParsedExpectedDom {
     );
     let format = headers.get("format").expect("format header validated");
     assert_eq!(
-        format, EXPECTED_DOM_FORMAT_V1,
+        format, EXPECTED_DOM_FORMAT_V2,
         "unsupported format in {path:?}"
     );
     assert!(
@@ -50,8 +50,9 @@ pub fn parse_expected_dom(path: &Path) -> ParsedExpectedDom {
         "expected DOM file {path:?} has no snapshot lines"
     );
     assert!(
-        is_document_root_line(&lines[0]),
-        "expected DOM file {path:?} must start with #document"
+        lines.first().map(String::as_str) == Some("#dom-snapshot-v2")
+            && lines.get(1).is_some_and(|line| is_document_root_line(line)),
+        "expected DOM file {path:?} must start with #dom-snapshot-v2 then #document"
     );
 
     ParsedExpectedDom {
@@ -80,7 +81,9 @@ fn parse_headers_and_lines(
         if line.is_empty() {
             continue;
         }
-        if matches!(kind, InputKind::DomSnapshot) && is_document_root_line(line) {
+        if matches!(kind, InputKind::DomSnapshot)
+            && (line == "#dom-snapshot-v2" || is_document_root_line(line))
+        {
             lines.push(line.to_string());
             continue;
         }

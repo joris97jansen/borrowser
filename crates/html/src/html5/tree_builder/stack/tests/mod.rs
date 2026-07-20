@@ -22,5 +22,14 @@ fn make_scope_tags(ctx: &mut DocumentParseContext) -> ScopeTagSet {
         button: ctx.atoms.intern_ascii_folded("button").expect("atom"),
         ol: ctx.atoms.intern_ascii_folded("ol").expect("atom"),
         ul: ctx.atoms.intern_ascii_folded("ul").expect("atom"),
+        math_mi: ctx.atoms.intern_exact("mi").expect("atom"),
+        math_mo: ctx.atoms.intern_exact("mo").expect("atom"),
+        math_mn: ctx.atoms.intern_exact("mn").expect("atom"),
+        math_ms: ctx.atoms.intern_exact("ms").expect("atom"),
+        math_mtext: ctx.atoms.intern_exact("mtext").expect("atom"),
+        math_annotation_xml: ctx.atoms.intern_exact("annotation-xml").expect("atom"),
+        svg_foreign_object: ctx.atoms.intern_exact("foreignObject").expect("atom"),
+        svg_desc: ctx.atoms.intern_exact("desc").expect("atom"),
+        svg_title: ctx.atoms.intern_exact("title").expect("atom"),
     }
 }

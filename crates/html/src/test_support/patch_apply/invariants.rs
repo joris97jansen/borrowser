@@ -80,7 +80,7 @@ impl TestPatchArena {
                     template_contents: Some(contents),
                     ..
                 } => {
-                    if name.as_ref() != "template" {
+                    if !name.is(crate::ElementNamespace::Html, "template") {
                         return Err(format!(
                             "non-template element {key:?} owns template contents"
                         ));

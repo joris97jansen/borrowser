@@ -218,3 +218,12 @@ Future retained rendering issues may extend this model by adding:
 Those extensions must preserve browser/runtime ownership of retained identity
 allocation and must not reinterpret frame-local layout, paint, stacking, or
 traversal IDs as retained identities.
+
+AE11 leaves retained render-identity reconciliation intentionally independent
+from Layout box participation. DOM-backed retained identities continue to
+cover the complete active mixed-namespace DOM, including SVG/MathML nodes and
+HTML integration-point descendants. Identity existence is not proof that a
+node generates a box. Layout alone suppresses unsupported foreign subtrees;
+Browser therefore does not duplicate Layout's namespace classification.
+Namespace and local name never become retained identity, and later SVG/MathML
+box support does not require a retained identity-domain redesign.

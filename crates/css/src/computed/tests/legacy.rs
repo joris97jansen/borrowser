@@ -1,3 +1,4 @@
+use super::support::namespaced_element;
 use super::*;
 
 #[test]
@@ -93,7 +94,7 @@ fn legacy_compute_style_ignores_invalid_link_color_for_ua_fallback() {
 fn legacy_build_style_tree_ignores_invalid_display_for_default_bridge() {
     let dom = html::internal::node_element_from_parts(
         Id::INVALID,
-        Arc::from("div"),
+        html::internal::html_name("div"),
         Vec::new(),
         vec![("display".to_string(), "nonsense".to_string())],
         Vec::new(),
@@ -102,4 +103,20 @@ fn legacy_build_style_tree_ignores_invalid_display_for_default_bridge() {
     let styled = build_style_tree(&dom, None);
 
     assert_eq!(styled.style.display(), Display::Block);
+}
+
+#[test]
+fn legacy_html_defaults_do_not_apply_to_foreign_local_name_lookalikes() {
+    let dom = namespaced_element(
+        html::ElementNamespace::Svg,
+        "button",
+        Vec::new(),
+        Vec::new(),
+    );
+
+    let styled = build_style_tree(&dom, None);
+
+    assert_eq!(styled.style.display(), Display::Inline);
+    assert_eq!(styled.style.background_color(), (0, 0, 0, 0));
+    assert_eq!(styled.style.box_metrics().padding_left, 0.0);
 }

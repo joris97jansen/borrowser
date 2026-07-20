@@ -7,6 +7,7 @@ use super::stats::TokenizerStats;
 use super::text_mode::PendingTextModeEndTag;
 use crate::html5::shared::ParseErrorCode;
 use crate::html5::shared::{Attribute, DocumentParseContext, Input, Token};
+use crate::names::ElementNamespace;
 
 /// Centralized tokenizer hardening/resource bounds.
 ///
@@ -142,6 +143,7 @@ pub struct Html5Tokenizer {
     pub(in crate::html5::tokenizer) end_of_stream: bool,
     pub(in crate::html5::tokenizer) eof_emitted: bool,
     pub(in crate::html5::tokenizer) progress_epoch: u64,
+    pub(in crate::html5::tokenizer) adjusted_current_node_namespace: Option<ElementNamespace>,
     pub(in crate::html5::tokenizer) stats: TokenizerStats,
     #[cfg(test)]
     pub(in crate::html5::tokenizer) test_forced_stall_steps_remaining: usize,
@@ -184,6 +186,7 @@ impl Html5Tokenizer {
             end_of_stream: false,
             eof_emitted: false,
             progress_epoch: 0,
+            adjusted_current_node_namespace: None,
             stats: TokenizerStats::default(),
             #[cfg(test)]
             test_forced_stall_steps_remaining: 0,
@@ -495,6 +498,9 @@ impl Html5Tokenizer {
             TokenizerState::MarkupDeclarationOpen => {
                 super::normalization::ERROR_DETAIL_EOF_IN_MARKUP_DECLARATION
             }
+            TokenizerState::CdataSection
+            | TokenizerState::CdataSectionBracket
+            | TokenizerState::CdataSectionEnd => super::normalization::ERROR_DETAIL_EOF_IN_CDATA,
             TokenizerState::TagOpen => super::normalization::ERROR_DETAIL_EOF_IN_TAG_OPEN,
             _ => return,
         };
@@ -556,6 +562,13 @@ impl Html5Tokenizer {
                 self.transition_to(TokenizerState::Data);
             }
         }
+    }
+
+    pub(in crate::html5) fn set_adjusted_current_node_namespace(
+        &mut self,
+        namespace: Option<ElementNamespace>,
+    ) {
+        self.adjusted_current_node_namespace = namespace;
     }
 
     /// Return a copy of current instrumentation counters.

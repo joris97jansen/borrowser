@@ -99,11 +99,10 @@ Implementation entry points:
 - `crates/html/src/html5/tokenizer/doctype.rs`: supported doctype states.
 - `crates/html/src/html5/tokenizer/normalization.rs`: tokenizer-owned normalization and stable diagnostic detail strings.
 
-Boolean-style attributes remain represented as `Attribute { value: None }` in
-the typed token model. Token snapshots render that missing value as a bare
-attribute name, while explicitly empty values render as `name=""`. This keeps
-the tokenizer's missing-vs-empty distinction available to the tree builder and
-debug snapshots without inventing DOM-level boolean semantics in the tokenizer.
+Every typed-token attribute has a string value (`Span` or owned storage is an
+internal lifetime choice). Valueless and explicitly empty syntax both resolve
+to `""`; tokenizer snapshots render both as `name=""`. Source spelling is not
+retained as token, DOM, patch, CSS, materialization, or snapshot semantics.
 
 Malformed tag, attribute, comment, doctype, declaration, and EOF recovery paths
 record deterministic tokenizer-owned parse errors where currently supported.

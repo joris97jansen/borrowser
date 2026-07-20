@@ -1,0 +1,21 @@
+# format: html5-dom-v2
+# status: active
+# include_parse_errors: true
+
+#dom-snapshot-v2
+#document
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+      element ns=html local="template" attrs=[]
+        #template-contents
+          element ns=svg local="svg" attrs=[]
+            "<g/>"
+            element ns=svg local="g" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=html local="p" attrs=[]
+        "after"
+parse-errors:
+  tree-builder: initial-unexpected-token
+  tree-builder: before-html-implicit-html
+  tree-builder: before-head-implicit-head
+  tree-builder: after-head-implicit-body

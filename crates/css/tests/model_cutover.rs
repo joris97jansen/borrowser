@@ -7,7 +7,6 @@ use css::{
     serialize_stylesheet_parse_for_snapshot,
 };
 use html::{Node, internal::Id};
-use std::sync::Arc;
 
 #[test]
 fn crate_root_stylesheet_parser_is_model_first() {
@@ -42,8 +41,8 @@ fn attach_styles_accepts_model_parse_results_from_root_entrypoint() {
     ];
     let mut dom = html::internal::node_element_from_parts(
         Id::INVALID,
-        Arc::from("div"),
-        vec![(Arc::from("class"), Some("hero".to_string()))],
+        html::internal::html_name("div"),
+        vec![html::internal::unqualified_attribute("class", "hero")],
         Vec::new(),
         Vec::new(),
     );

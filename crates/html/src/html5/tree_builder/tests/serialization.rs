@@ -1,7 +1,7 @@
 use super::helpers::EmptyResolver;
 
 #[test]
-fn serialize_dom_for_test_emits_deterministic_html5_dom_v1_lines() {
+fn serialize_dom_for_test_emits_deterministic_html5_dom_v2_lines() {
     use crate::dom_patch::DomPatch;
     use crate::dom_snapshot::DomSnapshotOptions;
     use crate::html5::shared::{Attribute, AttributeValue, Token};
@@ -44,11 +44,11 @@ fn serialize_dom_for_test_emits_deterministic_html5_dom_v1_lines() {
             attrs: vec![
                 Attribute {
                     name: class,
-                    value: Some(AttributeValue::Owned("x".to_string())),
+                    value: AttributeValue::Owned("x".to_string()),
                 },
                 Attribute {
                     name: hidden,
-                    value: None,
+                    value: AttributeValue::Owned(String::new()),
                 },
             ],
             self_closing: false,
@@ -87,12 +87,13 @@ fn serialize_dom_for_test_emits_deterministic_html5_dom_v1_lines() {
     assert_eq!(
         lines,
         vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <div class=\"x\" hidden>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"div\" attrs=[{ns=none prefix=- local=\"class\" value=\"x\"}, {ns=none prefix=- local=\"hidden\" value=\"\"}]".to_string(),
             "        \"a\\nb\"".to_string(),
             "        <!-- c -->".to_string(),
         ]

@@ -17,7 +17,7 @@
 //! - Child ordering is explicit and deterministic.
 //! - A patch stream must be self-contained for the transition `N -> N+1`.
 //! - Reset streams must begin with `DomPatch::Clear`.
-//! - Element and attribute names are expected to be canonical ASCII-lowercase.
+//! - Every element carries an explicit namespace and exact canonical local name.
 //! - All `PatchKey` values used in patches must be non-zero (`PatchKey::INVALID`
 //!   is never valid in a patch stream).
 //! - Attribute vectors are applied exactly as emitted. HTML5 parser-created
@@ -27,8 +27,9 @@
 //! - Batches are atomic: apply all patches in order or apply none.
 //! - Batch version transitions are monotonic and exactly +1 per non-empty batch.
 
+use crate::attributes::ParserCreatedAttribute;
+use crate::names::ExpandedElementName;
 use crate::types::{Id, NodeKey};
-use std::sync::Arc;
 
 /// Opaque patch-layer key for stable node identity within a document.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -107,8 +108,8 @@ pub enum DomPatch {
     /// Create an element node with initial attributes.
     CreateElement {
         key: PatchKey,
-        name: Arc<str>,
-        attributes: Vec<(Arc<str>, Option<String>)>,
+        name: ExpandedElementName,
+        attributes: Vec<ParserCreatedAttribute>,
     },
     /// Create and atomically associate the parser-created contents root for an
     /// existing canonical `template` element.
@@ -147,7 +148,7 @@ pub enum DomPatch {
     /// Applying this to a non-element node is a deterministic error.
     SetAttributes {
         key: PatchKey,
-        attributes: Vec<(Arc<str>, Option<String>)>,
+        attributes: Vec<ParserCreatedAttribute>,
     },
     /// Replace the text content of a text node.
     ///

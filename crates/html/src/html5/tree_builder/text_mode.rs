@@ -36,7 +36,16 @@ impl Html5TreeBuilder {
             } => {
                 self.record_parse_error("start-tag-in-text-mode", Some(*name), None);
                 let tag_name = resolve_atom(atoms, *name)?;
-                if attrs.iter().any(|attr| attr.value.is_some()) {
+                let mut has_nonempty_attribute_value = false;
+                for attr in attrs {
+                    if !crate::html5::tree_builder::resolve::resolve_attribute_value(attr, text)?
+                        .is_empty()
+                    {
+                        has_nonempty_attribute_value = true;
+                        break;
+                    }
+                }
+                if has_nonempty_attribute_value {
                     self.record_parse_error(
                         "text-mode-literalized-start-tag-attribute-values-dropped",
                         Some(*name),

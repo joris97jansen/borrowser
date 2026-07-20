@@ -78,7 +78,17 @@ pub(super) fn compute_document_styles_from_resolved_styles_pass(
         let resolved = resolved_styles
             .get(element)
             .ok_or(ComputedStyleResolutionError::MissingResolvedElement { element })?;
+        let expected_namespace = context.element_namespace(element);
         let expected_name = context.element_name(element);
+        if resolved.element_namespace() != expected_namespace {
+            return Err(
+                ComputedStyleResolutionError::ResolvedElementNamespaceMismatch {
+                    element,
+                    expected: expected_namespace,
+                    actual: resolved.element_namespace(),
+                },
+            );
+        }
         if resolved.element_name() != expected_name {
             return Err(ComputedStyleResolutionError::ResolvedElementNameMismatch {
                 element,
@@ -99,7 +109,9 @@ pub(super) fn compute_document_styles_from_resolved_styles_pass(
             let previous = previous_computed
                 .and_then(|computed| computed.entries().get(element_index))
                 .expect("validated previous computed prefix");
-            if previous.selector_element_id() != element || previous.element_name() != expected_name
+            if previous.selector_element_id() != element
+                || previous.element_name() != expected_name
+                || previous.element_namespace() != expected_namespace
             {
                 return Ok(None);
             }
@@ -115,6 +127,7 @@ pub(super) fn compute_document_styles_from_resolved_styles_pass(
         computed_by_element.insert(element, style);
         entries.push(ComputedElementStyle::new(
             element,
+            expected_namespace,
             expected_name.to_string(),
             style,
         ));

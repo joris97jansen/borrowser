@@ -230,6 +230,7 @@ fn pump_tokenizer_until_blocked(
 ) -> Result<(), String> {
     let mut pumped_patches = Vec::new();
     loop {
+        ctx.builder.prepare_tokenizer_pump(ctx.tokenizer);
         let result = ctx.tokenizer.push_input_until_token(ctx.input, ctx.ctx);
         handle_tokenize_result(result, fixture, plan_label, "push_input")?;
         drain_batches_into(ctx.reborrow(), true, &mut pumped_patches)?;

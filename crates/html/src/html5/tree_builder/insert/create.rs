@@ -1,15 +1,17 @@
+use crate::attributes::ParserCreatedAttribute;
 use crate::dom_patch::DomPatch;
 use crate::dom_patch::PatchKey;
-use crate::html5::shared::{AtomId, AtomTable, Attribute, TextValue};
+use crate::html5::shared::{AtomId, AtomTable, Attribute, EngineInvariantError, TextValue};
 use crate::html5::tokenizer::TextResolver;
 use crate::html5::tree_builder::attributes::{
-    ParserCreatedAttribute, resolve_afe_attributes_first_wins, resolve_token_attributes_first_wins,
+    resolve_afe_attributes_first_wins, resolve_token_attributes_first_wins,
     snapshot_token_attributes_first_wins,
 };
-use crate::html5::tree_builder::formatting::{AfeAttributeSnapshot, AfeElementEntry};
-use crate::html5::tree_builder::resolve::{resolve_atom_arc, resolve_text_value};
+use crate::html5::tree_builder::formatting::AfeElementEntry;
+use crate::html5::tree_builder::resolve::resolve_text_value;
 use crate::html5::tree_builder::stack::OpenElement;
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
+use crate::names::ElementNamespace;
 
 /// Stack disposition is deliberately private to the insertion layer. Tree
 /// construction dispatch chooses only semantic normal or void insertion.
@@ -24,6 +26,46 @@ enum StackDisposition {
 }
 
 impl Html5TreeBuilder {
+    pub(in crate::html5::tree_builder) fn insert_foreign_element(
+        &mut self,
+        namespace: ElementNamespace,
+        name: AtomId,
+        attributes: Vec<ParserCreatedAttribute>,
+        self_closing: bool,
+        atoms: &AtomTable,
+    ) -> Result<Option<PatchKey>, TreeBuilderError> {
+        debug_assert!(namespace != ElementNamespace::Html);
+        self.with_structural_mutation(|this| {
+            if !self_closing && !this.allow_non_self_closing_element(name) {
+                return Ok(None);
+            }
+            let _ = this.ensure_document_created()?;
+            let location = this.element_or_text_insertion_location()?;
+            if !this.allow_new_child(location.parent, Some(name)) {
+                return Ok(None);
+            }
+            let key = this.alloc_patch_key()?;
+            let expanded_name = atoms
+                .expanded_name(namespace, name)
+                .ok_or(EngineInvariantError)?;
+            this.push_structural_patch(DomPatch::CreateElement {
+                key,
+                name: expanded_name,
+                attributes,
+            });
+            this.note_node_created();
+            let inserted = this.insert_existing_child_at(location, key);
+            debug_assert!(inserted, "prechecked foreign insertion must succeed");
+            let entry = OpenElement::new_foreign(key, namespace, name);
+            this.open_elements.push(entry);
+            if self_closing {
+                let popped = this.open_elements.pop().ok_or(EngineInvariantError)?;
+                debug_assert_eq!(popped, entry);
+            }
+            Ok(Some(key))
+        })
+    }
+
     pub(in crate::html5::tree_builder) fn create_detached_element(
         &mut self,
         name: AtomId,
@@ -36,7 +78,9 @@ impl Html5TreeBuilder {
         let key = self.alloc_patch_key()?;
         self.push_structural_patch(DomPatch::CreateElement {
             key,
-            name: resolve_atom_arc(atoms, name)?,
+            name: atoms
+                .expanded_name(ElementNamespace::Html, name)
+                .ok_or(EngineInvariantError)?,
             attributes: attrs.to_vec(),
         });
         self.note_node_created();
@@ -59,7 +103,7 @@ impl Html5TreeBuilder {
         entry: &AfeElementEntry,
         atoms: &AtomTable,
     ) -> Result<Option<PatchKey>, TreeBuilderError> {
-        let attributes = resolve_afe_attributes_first_wins(&entry.attrs, atoms)?;
+        let attributes = resolve_afe_attributes_first_wins(&entry.attrs);
         self.create_detached_element(entry.name, &attributes, atoms)
     }
 
@@ -160,7 +204,7 @@ impl Html5TreeBuilder {
                 "newly created element insertion must succeed after precheck"
             );
 
-            let entry = OpenElement::new(key, name);
+            let entry = OpenElement::new_html(key, name);
             match disposition {
                 StackDisposition::Push => this.open_elements.push(entry),
                 StackDisposition::PopImmediately => {
@@ -205,7 +249,8 @@ impl Html5TreeBuilder {
                 inserted,
                 "newly created AFE element insertion must succeed after precheck"
             );
-            this.open_elements.push(OpenElement::new(key, entry.name));
+            this.open_elements
+                .push(OpenElement::new_html(key, entry.name));
             Ok(Some(key))
         })
     }
@@ -213,9 +258,10 @@ impl Html5TreeBuilder {
     pub(in crate::html5::tree_builder) fn snapshot_afe_attributes(
         &self,
         attrs: &[Attribute],
+        atoms: &AtomTable,
         text: &dyn TextResolver,
-    ) -> Result<Vec<AfeAttributeSnapshot>, TreeBuilderError> {
-        snapshot_token_attributes_first_wins(attrs, text)
+    ) -> Result<Vec<ParserCreatedAttribute>, TreeBuilderError> {
+        snapshot_token_attributes_first_wins(attrs, atoms, text)
     }
 
     pub(in crate::html5::tree_builder) fn insert_comment(

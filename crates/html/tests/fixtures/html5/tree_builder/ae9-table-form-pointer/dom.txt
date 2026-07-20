@@ -1,17 +1,19 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 # status: active
 # include_parse_errors: true
+
+#dom-snapshot-v2
 #document
   <!doctype html>
-  <html>
-    <head>
-    <body>
-      <table>
-        <form>
-        <input type="hidden">
-        <tbody>
-          <tr>
-            <td>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=html local="table" attrs=[]
+        element ns=html local="form" attrs=[]
+        element ns=html local="input" attrs=[{ns=none prefix=- local="type" value="hidden"}]
+        element ns=html local="tbody" attrs=[]
+          element ns=html local="tr" attrs=[]
+            element ns=html local="td" attrs=[]
               "x"
 parse-errors:
   tree-builder: before-html-implicit-html

@@ -6,7 +6,7 @@ HTML5 parsing smoke coverage.
 Each fixture directory contains:
 
 - `input.html`: the page/snippet input
-- `dom.txt`: expected DOM snapshot in `html5-dom-v1` format
+- `dom.txt`: expected DOM snapshot in `html5-dom-v2` format
 
 Purpose:
 

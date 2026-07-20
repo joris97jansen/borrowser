@@ -1,0 +1,21 @@
+format: wpt-dat-case-provenance-v1
+wpt-commit: e4ea1706fa708c3ac4523c534a65160d1ab20db8
+source: html/syntax/parsing/resources/tests10.dat (#data case 23)
+source-sha256: 2d2624a819c323661e396d864ac23440053127b5ea7adb44a5904f5ceee5fa64
+case-identity: source path plus one-based #data case, exact #data, and SHA-256
+context: full-document
+scripting: disabled
+data-sha256: 6af9e4b872898aa2c56ddc5154b1427ea7e79d8208933244f62621a04ceea689
+adaptation: exact #data bytes extracted without a terminal newline; upstream #document translated only into html5-dom-v2 namespace-explicit representation
+upstream-errors-policy: provenance only; Borrowser parse-error kinds are asserted separately
+#data
+<!DOCTYPE html><body xlink:href=foo><svg xlink:href=foo></svg>
+#errors
+#document
+| <!DOCTYPE html>
+| <html>
+|   <head>
+|   <body>
+|     xlink:href="foo"
+|     <svg svg>
+|       xlink href="foo"

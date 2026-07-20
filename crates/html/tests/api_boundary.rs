@@ -105,6 +105,76 @@ fn internal_test_harness_consumer_has_read_only_access() {
 }
 
 #[test]
+fn qualified_attribute_valid_public_construction_remains_available() {
+    let output = check_fixture("internal_read_only_boundary", "library", &["--lib"]);
+    assert!(
+        output.status.success(),
+        "valid unqualified construction must compile:\n{}",
+        String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn qualified_attribute_internal_state_is_not_constructible() {
+    assert_operation_specific_compile_failure(
+        check_bin("internal_read_only_boundary", "qualified_private_state"),
+        "qualified_private_state",
+        "error[E0451]",
+        "field `kind`",
+    );
+}
+
+#[test]
+fn qualified_attribute_foreign_smart_constructors_remain_parser_owned() {
+    assert_operation_specific_compile_failure(
+        check_bin("internal_read_only_boundary", "qualified_xml_constructor"),
+        "qualified_xml_constructor",
+        "error[E0624]",
+        "associated function `xml` is private",
+    );
+}
+
+#[test]
+fn qualified_attribute_raw_namespace_prefix_bypass_does_not_exist() {
+    assert_operation_specific_compile_failure(
+        check_bin("internal_read_only_boundary", "qualified_raw_bypass"),
+        "qualified_raw_bypass",
+        "error[E0599]",
+        "no function or associated item named `from_parts`",
+    );
+}
+
+#[test]
+fn qualified_attribute_no_namespace_prefix_shape_is_not_constructible() {
+    assert_operation_specific_compile_failure(
+        check_bin("internal_read_only_boundary", "qualified_none_with_prefix"),
+        "qualified_none_with_prefix",
+        "error[E0599]",
+        "no function or associated item named `from_parts`",
+    );
+}
+
+#[test]
+fn qualified_attribute_malformed_xmlns_shape_is_not_constructible() {
+    assert_operation_specific_compile_failure(
+        check_bin("internal_read_only_boundary", "qualified_malformed_xmlns"),
+        "qualified_malformed_xmlns",
+        "error[E0599]",
+        "no function or associated item named `from_parts`",
+    );
+}
+
+#[test]
+fn qualified_attribute_internal_state_cannot_be_mutated() {
+    assert_operation_specific_compile_failure(
+        check_bin("internal_read_only_boundary", "qualified_state_mutation"),
+        "qualified_state_mutation",
+        "error[E0616]",
+        "field `kind`",
+    );
+}
+
+#[test]
 fn internal_consumer_cannot_mutate_fragment_identity() {
     assert_operation_specific_compile_failure(
         check_bin("internal_read_only_boundary", "fragment_set_id"),

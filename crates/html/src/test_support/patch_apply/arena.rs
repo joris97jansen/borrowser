@@ -1,7 +1,7 @@
 use crate::dom_patch::PatchKey;
 use crate::types::ParserCreatedFragmentKind;
+use crate::{ExpandedElementName, ParserCreatedAttribute};
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 #[derive(Clone, Default)]
 pub(crate) struct TestPatchArena {
@@ -28,8 +28,8 @@ pub(super) enum TestKind {
         system_id: Option<String>,
     },
     Element {
-        name: Arc<str>,
-        attributes: Vec<(Arc<str>, Option<String>)>,
+        name: ExpandedElementName,
+        attributes: Vec<ParserCreatedAttribute>,
         template_contents: Option<PatchKey>,
     },
     DocumentFragment {

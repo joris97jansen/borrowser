@@ -143,13 +143,13 @@ fn tree_builder_eof_from_initial_constructs_implicit_document_shell() {
             .any(|patch| matches!(patch, DomPatch::CreateDocument { .. }))
     );
     assert!(patches.iter().any(
-        |patch| matches!(patch, DomPatch::CreateElement { name, .. } if name.as_ref() == "html")
+        |patch| matches!(patch, DomPatch::CreateElement { name, .. } if name.is_html("html"))
     ));
     assert!(patches.iter().any(
-        |patch| matches!(patch, DomPatch::CreateElement { name, .. } if name.as_ref() == "head")
+        |patch| matches!(patch, DomPatch::CreateElement { name, .. } if name.is_html("head"))
     ));
     assert!(patches.iter().any(
-        |patch| matches!(patch, DomPatch::CreateElement { name, .. } if name.as_ref() == "body")
+        |patch| matches!(patch, DomPatch::CreateElement { name, .. } if name.is_html("body"))
     ));
 }
 
@@ -165,11 +165,12 @@ fn tree_builder_after_body_and_after_after_body_place_comments_by_mode() {
     assert_eq!(
         lines,
         vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
             "      \"body\"".to_string(),
             "    <!-- after-body -->".to_string(),
             "  <!-- after-html -->".to_string(),

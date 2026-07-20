@@ -10,7 +10,6 @@ use core_types::{DomHandle, DomVersion};
 use css::Display;
 use html::{DomPatch, PatchKey, internal::Id};
 use layout::{LayoutPhaseInput, layout_document};
-use std::sync::Arc;
 
 #[test]
 fn dom_patch_attribute_change_triggers_restyle_through_computed_cache() {
@@ -44,7 +43,7 @@ fn dom_patch_attribute_change_triggers_restyle_through_computed_cache() {
         to: DomVersion(2),
         patches: vec![DomPatch::SetAttributes {
             key: PatchKey(7),
-            attributes: vec![(Arc::from("class"), Some("hot".to_string()))],
+            attributes: vec![html::internal::unqualified_attribute("class", "hot")],
         }],
     });
 
@@ -102,7 +101,7 @@ fn dom_patch_node_insertion_triggers_restyle_for_inserted_subtree() {
         patches: vec![
             DomPatch::CreateElement {
                 key: PatchKey(9),
-                name: Arc::from("span"),
+                name: html::internal::html_name("span"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateText {
@@ -294,7 +293,7 @@ fn dom_patch_attribute_change_incrementally_restyles_following_sibling_suffix() 
         to: DomVersion(2),
         patches: vec![DomPatch::SetAttributes {
             key: PatchKey(7),
-            attributes: vec![(Arc::from("class"), Some("hot".to_string()))],
+            attributes: vec![html::internal::unqualified_attribute("class", "hot")],
         }],
     });
 
@@ -359,7 +358,7 @@ fn queued_attribute_mutations_merge_to_earliest_dirty_suffix() {
         to: DomVersion(2),
         patches: vec![DomPatch::SetAttributes {
             key: PatchKey(7),
-            attributes: vec![(Arc::from("class"), Some("hot".to_string()))],
+            attributes: vec![html::internal::unqualified_attribute("class", "hot")],
         }],
     });
     tab.on_core_event(CoreEvent::DomPatchUpdate {
@@ -370,7 +369,7 @@ fn queued_attribute_mutations_merge_to_earliest_dirty_suffix() {
         to: DomVersion(3),
         patches: vec![DomPatch::SetAttributes {
             key: PatchKey(9),
-            attributes: vec![(Arc::from("class"), Some("cool".to_string()))],
+            attributes: vec![html::internal::unqualified_attribute("class", "cool")],
         }],
     });
 

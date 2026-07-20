@@ -1,33 +1,33 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 
+#dom-snapshot-v2
 #document
-
   <!doctype html>
-  <html>
-    <head>
-      <title>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+      element ns=html local="title" attrs=[]
         "Site"
-    <body>
+    element ns=html local="body" attrs=[]
       "\n"
-      <nav>
-        <ul>
-          <li>
-            <a href="/">
+      element ns=html local="nav" attrs=[]
+        element ns=html local="ul" attrs=[]
+          element ns=html local="li" attrs=[]
+            element ns=html local="a" attrs=[{ns=none prefix=- local="href" value="/"}]
               "Home"
-          <li>
-            <a href="/about">
+          element ns=html local="li" attrs=[]
+            element ns=html local="a" attrs=[{ns=none prefix=- local="href" value="/about"}]
               "About"
-          <li>
-            <a href="/contact">
+          element ns=html local="li" attrs=[]
+            element ns=html local="a" attrs=[{ns=none prefix=- local="href" value="/contact"}]
               "Contact"
       "\n"
-      <main>
-        <p>
+      element ns=html local="main" attrs=[]
+        element ns=html local="p" attrs=[]
           "Simple company page."
       "\n"
-      <footer>
-        <a href="/privacy">
+      element ns=html local="footer" attrs=[]
+        element ns=html local="a" attrs=[{ns=none prefix=- local="href" value="/privacy"}]
           "Privacy"
-        <a href="/terms">
+        element ns=html local="a" attrs=[{ns=none prefix=- local="href" value="/terms"}]
           "Terms"
       "\n"

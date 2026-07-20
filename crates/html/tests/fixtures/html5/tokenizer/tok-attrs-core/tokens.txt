@@ -1,5 +1,5 @@
 # format: html5-token-v1
-START name=p attrs=[class="a" disabled data-x="1"] self_closing=false
+START name=p attrs=[class="a" disabled="" data-x="1"] self_closing=false
 END name=p
 CHAR text="\n"
 EOF

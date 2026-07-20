@@ -284,11 +284,12 @@ fn session_self_closing_textarea_remains_non_void_and_enters_text_mode() {
     assert_eq!(
         lines,
         vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <textarea>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"textarea\" attrs=[]".to_string(),
             "        \"ok\"".to_string(),
         ]
     );
@@ -331,13 +332,14 @@ fn session_title_in_implicit_head_enters_rcdata_and_builds_expected_dom() {
     assert_eq!(
         lines,
         vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "      <title>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "      element ns=html local=\"title\" attrs=[]".to_string(),
             "        \"Hello & goodbye\"".to_string(),
-            "    <body>".to_string(),
-            "      <p>".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"p\" attrs=[]".to_string(),
             "        \"x\"".to_string(),
         ]
     );
@@ -389,12 +391,13 @@ fn session_style_rawtext_malformed_end_tag_does_not_get_stuck_and_builds_expecte
     assert_eq!(
         lines,
         vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "      <style>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "      element ns=html local=\"style\" attrs=[]".to_string(),
             "        \"a</title>b\"".to_string(),
-            "    <body>".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
             "      \"ok\"".to_string(),
         ]
     );

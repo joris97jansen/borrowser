@@ -1,8 +1,9 @@
-use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
-
 use html::internal::Id;
-use html::{DomPatch, HtmlParseOptions, HtmlParser, Node, PatchKey};
+use html::{
+    DomPatch, ExpandedElementName, HtmlParseOptions, HtmlParser, Node, ParserCreatedAttribute,
+    PatchKey,
+};
+use std::collections::{HashMap, HashSet};
 
 #[derive(Debug)]
 struct PatchState {
@@ -45,8 +46,8 @@ enum PrevNodeInfo {
         system_id: Option<String>,
     },
     Element {
-        name: Arc<str>,
-        attributes: Vec<(Arc<str>, Option<String>)>,
+        name: ExpandedElementName,
+        attributes: Vec<ParserCreatedAttribute>,
         children: Vec<Id>,
     },
     Text {
@@ -135,7 +136,7 @@ fn build_prev_map(node: &Node, map: &mut HashMap<Id, PrevNodeInfo>) {
             map.insert(
                 element.id(),
                 PrevNodeInfo::Element {
-                    name: Arc::clone(element.name()),
+                    name: element.expanded_name().clone(),
                     attributes: element.attributes().to_vec(),
                     children: element.children().iter().map(Node::id).collect(),
                 },
@@ -266,7 +267,7 @@ fn emit_updates(
                 },
                 Node::Element { element },
             ) => {
-                let next_name = element.name();
+                let next_name = element.expanded_name();
                 let next_attrs = element.attributes();
                 if name != next_name {
                     *need_reset = true;
@@ -381,7 +382,7 @@ fn emit_create_node(node: &Node, key: PatchKey, patches: &mut Vec<DomPatch>) {
         Node::Element { element } => {
             patches.push(DomPatch::CreateElement {
                 key,
-                name: Arc::clone(element.name()),
+                name: element.expanded_name().clone(),
                 attributes: element.attributes().to_vec(),
             });
         }
@@ -448,7 +449,9 @@ fn emit_create_subtree(
 fn root_is_compatible(prev: &Node, next: &Node) -> bool {
     match (prev, next) {
         (Node::Document { .. }, Node::Document { .. }) => true,
-        (Node::Element { element: a }, Node::Element { element: b }) => a.name() == b.name(),
+        (Node::Element { element: a }, Node::Element { element: b }) => {
+            a.expanded_name() == b.expanded_name()
+        }
         (Node::Text { .. }, Node::Text { .. }) => true,
         (Node::Comment { .. }, Node::Comment { .. }) => true,
         (Node::DocumentType { name: a, .. }, Node::DocumentType { name: b, .. }) => a == b,

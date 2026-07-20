@@ -1,5 +1,4 @@
-use html::{ElementNode, HtmlParseOptions, Node, parse_document};
-use std::sync::Arc;
+use html::{AtomTable, ElementNamespace, ElementNode, HtmlParseOptions, Node, parse_document};
 
 fn main() {
     let output = parse_document(
@@ -21,7 +20,14 @@ fn main() {
         }
     }
 
-    let ordinary = Node::new_element(Arc::from("section"), Vec::new(), Vec::new(), Vec::new());
+    let mut names = AtomTable::new();
+    let section = names
+        .intern_ascii_folded("section")
+        .expect("synthetic name interning");
+    let section = names
+        .expanded_name(ElementNamespace::Html, section)
+        .expect("synthetic expanded name");
+    let ordinary = Node::new_element(section, Vec::new(), Vec::new(), Vec::new());
     assert_eq!(
         ordinary.element().map(ElementNode::name).map(AsRef::as_ref),
         Some("section")

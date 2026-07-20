@@ -212,7 +212,7 @@ fn parse_patch_file(path: &Path) -> ExpectedPatches {
         .get("format")
         .unwrap_or_else(|| panic!("missing format header in {path:?}"));
     assert_eq!(
-        format, "html5-dompatch-v1",
+        format, "html5-dompatch-v2",
         "unsupported format in {path:?}"
     );
 
@@ -240,7 +240,7 @@ fn parse_patch_file(path: &Path) -> ExpectedPatches {
 pub(crate) fn write_expected_patch_file(fixture: &Fixture, lines: &[String]) {
     let path = fixture_dir(&fixture.name).join("patches.txt");
     let mut out = String::new();
-    out.push_str("# format: html5-dompatch-v1\n");
+    out.push_str("# format: html5-dompatch-v2\n");
     out.push_str("# status: active\n\n");
     for line in lines {
         out.push_str(line);

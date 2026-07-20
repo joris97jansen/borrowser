@@ -3,7 +3,7 @@ use crate::textarea::{
     TextareaCachedLine, TextareaSelectionPaintParams, layout_textarea_cached_lines,
     paint_textarea_selection, textarea_caret_geometry, textarea_text_height,
 };
-use crate::util::{clamp_to_char_boundary, get_attr, input_text_padding, truncate_to_fit};
+use crate::util::{clamp_to_char_boundary, input_text_padding, truncate_to_fit};
 use css::{ComputedStyle, Length};
 use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Stroke, StrokeKind, Vec2};
 use layout::{LayoutBox, TextMeasurer};
@@ -39,9 +39,7 @@ pub(super) fn paint_input_text(
         }
 
         placeholder = if value.is_empty() {
-            get_attr(lb.node.node, "placeholder")
-                .map(str::trim)
-                .filter(|ph| !ph.is_empty())
+            text_control_presentation(lb).and_then(layout::TextControlPresentation::placeholder)
         } else {
             None
         };
@@ -215,9 +213,7 @@ pub(super) fn paint_textarea(
         }
 
         placeholder = if value.is_empty() {
-            get_attr(lb.node.node, "placeholder")
-                .map(str::trim)
-                .filter(|ph| !ph.is_empty())
+            text_control_presentation(lb).and_then(layout::TextControlPresentation::placeholder)
         } else {
             None
         };
@@ -376,6 +372,15 @@ pub(super) fn paint_textarea(
             );
             clip_painter.rect_filled(caret_rect, 0.0, value_color);
         }
+    }
+}
+
+fn text_control_presentation<'a>(
+    layout: &'a LayoutBox<'_, '_>,
+) -> Option<&'a layout::TextControlPresentation> {
+    match layout.replaced_presentation() {
+        Some(layout::ReplacedElementPresentation::TextControl(presentation)) => Some(presentation),
+        _ => None,
     }
 }
 

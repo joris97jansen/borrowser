@@ -1,15 +1,17 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 # status: active
 # include_parse_errors: true
+
+#dom-snapshot-v2
 #document
   <!doctype html>
-  <html>
-    <head>
-    <body>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
       "x"
-      <div>
+      element ns=html local="div" attrs=[]
         "y"
-      <table>
+      element ns=html local="table" attrs=[]
 parse-errors:
   tree-builder: in-table-text-non-space-foster-parented
   tree-builder: in-table-anything-else-reprocess-in-body

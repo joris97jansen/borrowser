@@ -17,8 +17,7 @@ impl Html5TreeBuilder {
             if !resolve_atom(atoms, attr.name)?.eq_ignore_ascii_case("type") {
                 continue;
             }
-            return Ok(resolve_attribute_value(attr, text)?
-                .is_some_and(|value| value.eq_ignore_ascii_case("hidden")));
+            return Ok(resolve_attribute_value(attr, text)?.eq_ignore_ascii_case("hidden"));
         }
         Ok(false)
     }
@@ -29,7 +28,9 @@ impl Html5TreeBuilder {
         atoms: &AtomTable,
         text: &dyn TextResolver,
     ) -> Result<(), TreeBuilderError> {
-        let has_open_template = self.open_elements.contains_name(self.known_tags.template);
+        let has_open_template = self
+            .open_elements
+            .contains_html_name(self.known_tags.template);
         if self.form_element_pointer.is_some() && !has_open_template {
             self.record_parse_error(
                 "in-body-form-start-tag-with-active-form-pointer",
@@ -52,7 +53,10 @@ impl Html5TreeBuilder {
     }
 
     pub(in crate::html5::tree_builder) fn handle_in_body_form_end_tag(&mut self) {
-        if self.open_elements.contains_name(self.known_tags.template) {
+        if self
+            .open_elements
+            .contains_html_name(self.known_tags.template)
+        {
             if !self.open_elements.has_in_scope(
                 self.known_tags.form,
                 ScopeKind::InScope,
@@ -66,8 +70,7 @@ impl Html5TreeBuilder {
                 return;
             }
             self.generate_supported_implied_end_tags_except(None);
-            if self.open_elements.current().map(|entry| entry.name()) != Some(self.known_tags.form)
-            {
+            if !self.open_elements.current_is_html(self.known_tags.form) {
                 self.record_parse_error(
                     "in-body-form-end-tag-with-open-template-non-current-form",
                     Some(self.known_tags.form),
@@ -184,9 +187,7 @@ impl Html5TreeBuilder {
                 Some(InsertionMode::InBody),
             );
             self.generate_supported_implied_end_tags_except(None);
-            if self.open_elements.current().map(|entry| entry.name())
-                != Some(self.known_tags.button)
-            {
+            if !self.open_elements.current_is_html(self.known_tags.button) {
                 self.record_parse_error(
                     "in-body-button-start-tag-implied-close-mismatch",
                     Some(self.known_tags.button),
@@ -216,7 +217,7 @@ impl Html5TreeBuilder {
             return;
         }
         self.generate_supported_implied_end_tags_except(None);
-        if self.open_elements.current().map(|entry| entry.name()) != Some(self.known_tags.button) {
+        if !self.open_elements.current_is_html(self.known_tags.button) {
             self.record_parse_error(
                 "in-body-button-end-tag-implied-close-mismatch",
                 Some(self.known_tags.button),
@@ -260,7 +261,10 @@ impl Html5TreeBuilder {
             Some(self.known_tags.form),
             Some(InsertionMode::InTable),
         );
-        if self.open_elements.contains_name(self.known_tags.template) {
+        if self
+            .open_elements
+            .contains_html_name(self.known_tags.template)
+        {
             self.record_parse_error(
                 "in-table-form-start-tag-with-open-template",
                 Some(self.known_tags.form),

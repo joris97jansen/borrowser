@@ -8,6 +8,7 @@ use super::super::style::ComputedStyle;
 #[derive(Clone, Debug, PartialEq)]
 pub struct ComputedElementStyle {
     pub(in crate::computed) selector_element_id: SelectorDomElementId,
+    pub(in crate::computed) element_namespace: html::ElementNamespace,
     pub(in crate::computed) element_name: String,
     pub(in crate::computed) style: ComputedStyle,
 }
@@ -15,11 +16,13 @@ pub struct ComputedElementStyle {
 impl ComputedElementStyle {
     pub(super) fn new(
         selector_element_id: SelectorDomElementId,
+        element_namespace: html::ElementNamespace,
         element_name: String,
         style: ComputedStyle,
     ) -> Self {
         Self {
             selector_element_id,
+            element_namespace,
             element_name,
             style,
         }
@@ -31,6 +34,10 @@ impl ComputedElementStyle {
 
     pub fn element_name(&self) -> &str {
         &self.element_name
+    }
+
+    pub fn element_namespace(&self) -> html::ElementNamespace {
+        self.element_namespace
     }
 
     pub fn style(&self) -> &ComputedStyle {

@@ -1,0 +1,20 @@
+format: ae11-supported-profile-provenance-v1
+profile: AE11-WHATWG-supported-token-profile-v1
+whatwg-html-commit: 85b40db7c40436be8d459e8f4ca2120e823c34f0
+whatwg-html-source: source
+whatwg-html-source-sha256: 0f50cff6018d38cb8878a5610d9de1e49ae64e0047ab26e6e569562e1229059b
+wpt-commit: e4ea1706fa708c3ac4523c534a65160d1ab20db8
+wpt-tests10-source: html/syntax/parsing/resources/tests10.dat
+wpt-tests10-sha256: 2d2624a819c323661e396d864ac23440053127b5ea7adb44a5904f5ceee5fa64
+wpt-svg-source: html/syntax/parsing/resources/svg.dat
+wpt-svg-sha256: 4c819b8dbdfbd98cfbce9a535a304b0a16597eb29ccc04077131a62810f309cd
+wpt-math-source: html/syntax/parsing/resources/math.dat
+wpt-math-sha256: 3c2ecc07272c175676ecfafa0cf6e18e74c3293075703702a4b7929fcb0d07bd
+wpt-namespace-sensitivity-source: html/syntax/parsing/resources/namespace-sensitivity.dat
+wpt-namespace-sensitivity-sha256: 318fbc9926eddf5863524f1503c711ddaea93b55bcbd1eaab71b7e354ddfeb09
+tests10-imported-cases: 1,23,35,52
+tests10-reviewed-local-coverage-cases: 24-34,36-37,40,42-51,53-54
+adaptation: exact #data bytes; upstream #document is translated only into Borrowser's versioned namespace-explicit DOM snapshot; local patch, state, parity, and rendering assertions are additive
+deviation-processing-instructions: deferred to AE12
+deviation-svg-script: static namespace-correct tree and stack behavior only; no pausing, preparation, execution, fetching, or side effects
+deviation-fragment-parsing: deferred; fragment-only WPT cases are provenance references, not activated fixtures

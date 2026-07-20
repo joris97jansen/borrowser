@@ -14,7 +14,7 @@ fn template_batch() -> Vec<DomPatch> {
         },
         DomPatch::CreateElement {
             key: PatchKey(2),
-            name: "html".into(),
+            name: html::internal::html_name("html"),
             attributes: Vec::new(),
         },
         DomPatch::AppendChild {
@@ -23,7 +23,7 @@ fn template_batch() -> Vec<DomPatch> {
         },
         DomPatch::CreateElement {
             key: PatchKey(3),
-            name: "template".into(),
+            name: html::internal::html_name("template"),
             attributes: Vec::new(),
         },
         DomPatch::CreateTemplateContents {
@@ -50,7 +50,7 @@ fn nested_template_batch() -> Vec<DomPatch> {
     patches.extend([
         DomPatch::CreateElement {
             key: PatchKey(6),
-            name: "template".into(),
+            name: html::internal::html_name("template"),
             attributes: Vec::new(),
         },
         DomPatch::CreateTemplateContents {
@@ -88,8 +88,8 @@ fn runtime_arena_materializes_typed_template_contents_in_full_model_order() {
         materialized_dom_lines(&store, handle),
         vec![
             "#document doctype=<none>",
-            "  <html attrs=[]>",
-            "    <template attrs=[]>",
+            "  <ns=html local=\"html\" attrs=[]>",
+            "    <ns=html local=\"template\" attrs=[]>",
             "      #template-contents id=4",
             "        text=\"inert\"",
         ]

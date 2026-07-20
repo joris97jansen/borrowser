@@ -2,7 +2,7 @@
 
 use super::{AtomId, TextSpan};
 
-/// HTML attribute with interned name and optional value.
+/// HTML attribute with an interned name and DOM-string value.
 ///
 /// Determinism contract:
 /// - Attributes on a `StartTag` are stored in encounter order.
@@ -12,7 +12,7 @@ use super::{AtomId, TextSpan};
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Attribute {
     pub name: AtomId,
-    pub value: Option<AttributeValue>,
+    pub value: AttributeValue,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -30,6 +30,11 @@ pub enum TextValue {
     Span(TextSpan),
     /// Owned value (e.g., after decoding/replacement or compaction).
     Owned(String),
+    NullNormalized {
+        text: String,
+        had_null: bool,
+        had_non_whitespace_non_null: bool,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

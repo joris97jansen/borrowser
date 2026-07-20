@@ -16,9 +16,16 @@ impl<D: SelectorMatchDom> SelectorMatchingContext<'_, D> {
         element: D::ElementId,
         selector: &CompoundSelector,
     ) -> bool {
-        selector
-            .type_selector()
-            .is_none_or(|selector| self.matches_type_selector(element, selector))
+        let namespace_matches = match self.namespace_constraint() {
+            super::SelectorNamespaceConstraint::Unconstrained => true,
+            super::SelectorNamespaceConstraint::Exact(namespace) => {
+                self.element_namespace(element) == namespace
+            }
+        };
+        namespace_matches
+            && selector
+                .type_selector()
+                .is_none_or(|selector| self.matches_type_selector(element, selector))
             && selector
                 .subclasses()
                 .iter()
@@ -28,9 +35,14 @@ impl<D: SelectorMatchDom> SelectorMatchingContext<'_, D> {
     pub fn matches_type_selector(&self, element: D::ElementId, selector: &TypeSelector) -> bool {
         match selector {
             TypeSelector::Universal(_) => true,
-            TypeSelector::Named(selector) => self
-                .element_name(element)
-                .eq_ignore_ascii_case(selector.name().text()),
+            TypeSelector::Named(selector) => {
+                let actual = self.element_name(element);
+                if self.element_namespace(element) == html::ElementNamespace::Html {
+                    actual.eq_ignore_ascii_case(selector.name().text())
+                } else {
+                    actual == selector.name().text()
+                }
+            }
         }
     }
 

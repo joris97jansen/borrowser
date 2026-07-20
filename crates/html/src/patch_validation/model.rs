@@ -1,6 +1,7 @@
+use crate::attributes::ParserCreatedAttribute;
 use crate::dom_patch::PatchKey;
+use crate::names::ExpandedElementName;
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 use crate::types::ParserCreatedFragmentKind;
 
@@ -15,8 +16,8 @@ pub(crate) enum PatchKind {
         system_id: Option<String>,
     },
     Element {
-        name: Arc<str>,
-        attributes: Vec<(Arc<str>, Option<String>)>,
+        name: ExpandedElementName,
+        attributes: Vec<ParserCreatedAttribute>,
         template_contents: Option<PatchKey>,
     },
     DocumentFragment {

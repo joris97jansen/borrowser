@@ -1,10 +1,12 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
+
+#dom-snapshot-v2
 #document
-  <html>
-    <head>
-    <body>
-      <script>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=html local="script" attrs=[]
         "</scriX></scrip></scriptx><<<</scr!pt>"
-      <section>
-        <p>
+      element ns=html local="section" attrs=[]
+        element ns=html local="p" attrs=[]
           "ok"

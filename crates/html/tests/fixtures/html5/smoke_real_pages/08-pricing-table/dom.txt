@@ -1,36 +1,36 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 
+#dom-snapshot-v2
 #document
-
   <!doctype html>
-  <html>
-    <head>
-      <title>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+      element ns=html local="title" attrs=[]
         "Pricing"
-    <body>
+    element ns=html local="body" attrs=[]
       "\n"
-      <h1>
+      element ns=html local="h1" attrs=[]
         "Plans"
       "\n"
-      <table>
+      element ns=html local="table" attrs=[]
         "\n"
-        <thead>
-          <tr>
-            <th>
+        element ns=html local="thead" attrs=[]
+          element ns=html local="tr" attrs=[]
+            element ns=html local="th" attrs=[]
               "Plan"
-            <th>
+            element ns=html local="th" attrs=[]
               "Price"
         "\n"
-        <tbody>
-          <tr>
-            <td>
+        element ns=html local="tbody" attrs=[]
+          element ns=html local="tr" attrs=[]
+            element ns=html local="td" attrs=[]
               "Starter"
-            <td>
+            element ns=html local="td" attrs=[]
               "$0"
-          <tr>
-            <td>
+          element ns=html local="tr" attrs=[]
+            element ns=html local="td" attrs=[]
               "Pro"
-            <td>
+            element ns=html local="td" attrs=[]
               "$29"
         "\n"
       "\n"

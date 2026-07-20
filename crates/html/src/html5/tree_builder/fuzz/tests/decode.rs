@@ -42,6 +42,24 @@ fn decode(bytes: &[u8], config: TreeBuilderFuzzConfig) -> super::super::decode::
     decode_token_stream(bytes, &mut atoms, config).expect("synthetic token stream must decode")
 }
 
+fn decode_pair(
+    left: &[u8],
+    right: &[u8],
+    config: TreeBuilderFuzzConfig,
+) -> (
+    super::super::decode::DecodedTokenStream,
+    super::super::decode::DecodedTokenStream,
+) {
+    // Decoder equality is semantic within one atom domain. Independent atom
+    // domains deliberately do not compare raw handles as identities.
+    let mut atoms = AtomTable::new();
+    let left = decode_token_stream(left, &mut atoms, config)
+        .expect("left synthetic token stream must decode");
+    let right = decode_token_stream(right, &mut atoms, config)
+        .expect("right synthetic token stream must decode");
+    (left, right)
+}
+
 #[test]
 fn decoder_v1_catalog_is_the_exact_pre_ae9b_select_catalog() {
     assert_eq!(TAG_NAME_CATALOG_V1.len(), 30);
@@ -117,8 +135,8 @@ fn decoder_version_prefix_changes_only_version_and_prefix_accounting() {
     // One catalog-backed start tag with one owned-valued attribute. The tag
     // selector maps inside V1's shared prefix under both versions.
     let payload = [1, 2, 1, 0, 1, 3, 0, 1, 2];
-    let v1 = decode(&payload, TreeBuilderFuzzConfig::default());
-    let v2 = decode(&v2_input(&payload), TreeBuilderFuzzConfig::default());
+    let v2_input = v2_input(&payload);
+    let (v1, v2) = decode_pair(&payload, &v2_input, TreeBuilderFuzzConfig::default());
     assert_eq!(v2, v1);
     assert_eq!(v1.tokens_generated, 1);
     assert_eq!(v1.attrs_generated, 1);
@@ -139,10 +157,8 @@ fn decoder_version_prefix_changes_only_version_and_prefix_accounting() {
             ..TreeBuilderFuzzConfig::default()
         },
     ] {
-        assert_eq!(
-            decode(&v2_input(&payload), config),
-            decode(&payload, config)
-        );
+        let (v1, v2) = decode_pair(&payload, &v2_input, config);
+        assert_eq!(v2, v1);
     }
 
     assert_eq!(
@@ -237,9 +253,7 @@ fn replaying_v1_and_v2_decoder_inputs_is_deterministic() {
     let v2 = v2_input(&[1, 30, 0, 2, 30]);
 
     for bytes in [v1.as_slice(), v2.as_slice()] {
-        assert_eq!(
-            decode(bytes, TreeBuilderFuzzConfig::default()),
-            decode(bytes, TreeBuilderFuzzConfig::default())
-        );
+        let (first, second) = decode_pair(bytes, bytes, TreeBuilderFuzzConfig::default());
+        assert_eq!(first, second);
     }
 }

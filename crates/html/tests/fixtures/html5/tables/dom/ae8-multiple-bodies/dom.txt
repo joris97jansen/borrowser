@@ -1,22 +1,24 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 # status: active
 # include_parse_errors: true
+
+#dom-snapshot-v2
 #document
   <!doctype html>
-  <html>
-    <head>
-    <body>
-      <table>
-        <tbody>
-          <tr>
-            <td>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=html local="table" attrs=[]
+        element ns=html local="tbody" attrs=[]
+          element ns=html local="tr" attrs=[]
+            element ns=html local="td" attrs=[]
               "a"
-        <tbody>
-          <tr>
-            <td>
+        element ns=html local="tbody" attrs=[]
+          element ns=html local="tr" attrs=[]
+            element ns=html local="td" attrs=[]
               "b"
-        <tfoot>
-          <tr>
-            <td>
+        element ns=html local="tfoot" attrs=[]
+          element ns=html local="tr" attrs=[]
+            element ns=html local="td" attrs=[]
               "c"
 parse-errors: none

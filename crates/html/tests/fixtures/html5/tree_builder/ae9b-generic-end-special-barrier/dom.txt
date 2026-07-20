@@ -1,15 +1,17 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 # status: active
 # include_parse_errors: true
+
+#dom-snapshot-v2
 #document
   <!doctype html>
-  <html>
-    <head>
-    <body>
-      <select>
-        <option>
-          <div>
-            <span>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=html local="select" attrs=[]
+        element ns=html local="option" attrs=[]
+          element ns=html local="div" attrs=[]
+            element ns=html local="span" attrs=[]
               "x"
 parse-errors:
   tree-builder: before-html-implicit-html

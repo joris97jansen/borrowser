@@ -1,5 +1,6 @@
 use html::dom_snapshot::DomSnapshotOptions;
 use std::collections::BTreeMap;
+use std::env;
 use std::fs;
 use std::path::{Path, PathBuf};
 
@@ -71,6 +72,35 @@ pub(super) fn load_fixtures() -> Vec<Fixture> {
 
     fixtures.sort_by(|left, right| left.name.cmp(&right.name));
     fixtures
+}
+
+pub(super) fn update_mode() -> bool {
+    matches!(
+        env::var("BORROWSER_HTML5_DOM_FIXTURE_UPDATE").as_deref(),
+        Ok("1")
+    )
+}
+
+pub(super) fn write_expected_dom_file(fixture: &Fixture, lines: &[String]) {
+    let path = fixture_dir(&fixture.name).join("dom.txt");
+    let mut out = String::from("# format: html5-dom-v2\n");
+    out.push_str("# status: active\n");
+    if !fixture.expected.options.ignore_ids {
+        out.push_str("# ignore_ids: false\n");
+    }
+    if !fixture.expected.options.ignore_empty_style {
+        out.push_str("# ignore_empty_style: false\n");
+    }
+    if fixture.expected.include_parse_errors {
+        out.push_str("# include_parse_errors: true\n");
+    }
+    out.push('\n');
+    for line in lines {
+        out.push_str(line);
+        out.push('\n');
+    }
+    fs::write(&path, out)
+        .unwrap_or_else(|err| panic!("failed to write expected DOM {path:?}: {err}"));
 }
 
 fn validate_ae10_local_provenance(path: &Path, name: &str) {
@@ -190,7 +220,7 @@ fn parse_dom_file(path: &Path) -> ExpectedDom {
     let format = headers
         .get("format")
         .unwrap_or_else(|| panic!("missing format header in {path:?}"));
-    assert_eq!(format, "html5-dom-v1", "unsupported format in {path:?}");
+    assert_eq!(format, "html5-dom-v2", "unsupported format in {path:?}");
 
     let status = match headers.get("status").map(|s| s.as_str()) {
         Some("active") | None => FixtureStatus::Active,
@@ -211,13 +241,17 @@ fn parse_dom_file(path: &Path) -> ExpectedDom {
     if lines.is_empty() {
         panic!("dom file {path:?} has no snapshot lines");
     }
-    if !lines[0].starts_with("#document") {
-        panic!("dom file {path:?} must start with #document");
+    if lines.first().map(String::as_str) != Some("#dom-snapshot-v2")
+        || !lines
+            .get(1)
+            .is_some_and(|line| line.starts_with("#document"))
+    {
+        panic!("dom file {path:?} must start with #dom-snapshot-v2 then #document");
     }
-    for snapshot_line in &lines[1..] {
+    for snapshot_line in &lines[2..] {
         if snapshot_line.starts_with('#') {
             panic!(
-                "invalid snapshot line starting with '#' for format=html5-dom-v1: {snapshot_line:?} in {path:?}"
+                "invalid snapshot line starting with '#' for format=html5-dom-v2: {snapshot_line:?} in {path:?}"
             );
         }
     }

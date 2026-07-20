@@ -1,19 +1,17 @@
+use crate::attributes::ParserCreatedAttribute;
 use crate::dom_patch::{DomPatch, PatchKey};
 use crate::html5::shared::{AtomTable, EngineInvariantError, Token};
 use crate::html5::tokenizer::TextResolver;
-use crate::html5::tree_builder::attributes::{
-    ParserCreatedAttribute, resolve_token_attributes_first_wins,
-};
+use crate::html5::tree_builder::attributes::resolve_token_attributes_first_wins;
 use crate::html5::tree_builder::dispatch::DispatchOutcome;
 use crate::html5::tree_builder::insert::InsertionLocation;
 use crate::html5::tree_builder::live_tree::ChildInsertionReservationError;
 use crate::html5::tree_builder::modes::InsertionMode;
-use crate::html5::tree_builder::resolve::resolve_atom_arc;
 use crate::html5::tree_builder::stack::{OpenElement, ScopeKind};
 use crate::html5::tree_builder::template_state::TemplateInsertionMode;
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
+use crate::names::{ElementNamespace, ExpandedElementName};
 use std::num::NonZeroU32;
-use std::sync::Arc;
 
 struct TemplateStartPreflight {
     patch_start: usize,
@@ -22,7 +20,7 @@ struct TemplateStartPreflight {
     next_key: NonZeroU32,
     location: InsertionLocation,
     attributes: Vec<ParserCreatedAttribute>,
-    canonical_name: Arc<str>,
+    canonical_name: ExpandedElementName,
     accepted_template_count: u64,
     template_state_epoch: u64,
 }
@@ -96,10 +94,10 @@ impl Html5TreeBuilder {
             return Ok(None);
         }
         self.open_elements
-            .try_reserve_push(self.known_tags.head)
+            .try_reserve_push(crate::names::ElementNamespace::Html, self.known_tags.head)
             .map_err(|_| EngineInvariantError)?;
         self.open_elements
-            .push(OpenElement::new(head, self.known_tags.head));
+            .push(OpenElement::new_html(head, self.known_tags.head));
         let result = f(self);
         let removed = self
             .open_elements
@@ -121,7 +119,9 @@ impl Html5TreeBuilder {
         let (accepted_template_count, template_state_epoch) =
             self.checked_next_template_acceptance()?;
         let attributes = resolve_token_attributes_first_wins(attrs, atoms, text)?;
-        let canonical_name = resolve_atom_arc(atoms, self.known_tags.template)?;
+        let canonical_name = atoms
+            .expanded_name(ElementNamespace::Html, self.known_tags.template)
+            .ok_or(EngineInvariantError)?;
 
         if self.open_elements.len() >= self.config.limits.max_open_elements_depth {
             self.record_parse_error(
@@ -182,7 +182,10 @@ impl Html5TreeBuilder {
             ) => return Err(EngineInvariantError),
         }
         self.open_elements
-            .try_reserve_push(self.known_tags.template)
+            .try_reserve_push(
+                crate::names::ElementNamespace::Html,
+                self.known_tags.template,
+            )
             .map_err(|_| EngineInvariantError)?;
         self.active_formatting
             .try_reserve_one()
@@ -236,8 +239,10 @@ impl Html5TreeBuilder {
             this.note_node_created();
             let inserted = this.insert_existing_child_at(preflight.location, preflight.host);
             assert!(inserted, "preflighted template host insertion must commit");
-            this.open_elements
-                .push(OpenElement::new(preflight.host, this.known_tags.template));
+            this.open_elements.push(OpenElement::new_html(
+                preflight.host,
+                this.known_tags.template,
+            ));
             this.active_formatting.push_marker(
                 crate::html5::tree_builder::formatting::AfeMarker::new(
                     crate::html5::tree_builder::formatting::AfeMarkerKind::Template,
@@ -266,11 +271,10 @@ impl Html5TreeBuilder {
         let next_template_state_epoch = self.checked_next_template_state_epoch()?;
         if generate_implied {
             self.generate_supported_implied_end_tags_except(None);
-            if self
-                .open_elements
-                .current()
-                .is_some_and(|current| current.name() != self.known_tags.template)
-            {
+            if self.open_elements.current().is_some_and(|current| {
+                current.namespace() != crate::ElementNamespace::Html
+                    || current.name() != self.known_tags.template
+            }) {
                 self.record_parse_error(
                     "template-end-tag-implied-close-mismatch",
                     Some(self.known_tags.template),
@@ -295,7 +299,9 @@ impl Html5TreeBuilder {
                 .open_elements
                 .pop_until_including_key_unscoped(expected_owner)?
                 .ok_or(EngineInvariantError)?;
-            if closed.name() != self.known_tags.template {
+            if closed.namespace() != crate::ElementNamespace::Html
+                || closed.name() != self.known_tags.template
+            {
                 return Err(EngineInvariantError);
             }
             self.invalidate_text_coalescing();
@@ -358,7 +364,10 @@ impl Html5TreeBuilder {
                 return Err(EngineInvariantError);
             }
         }
-        if self.open_elements.contains_name(self.known_tags.template) {
+        if self
+            .open_elements
+            .contains_html_name(self.known_tags.template)
+        {
             return Err(EngineInvariantError);
         }
         Ok(())

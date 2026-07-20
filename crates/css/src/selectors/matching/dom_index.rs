@@ -1,7 +1,6 @@
 use super::context::SelectorMatchDom;
-use html::{Node, internal::Id};
+use html::{ElementNamespace, Node, ParserCreatedAttribute, internal::Id};
 use std::fmt::Write;
-use std::sync::Arc;
 
 /// Element identifier used by [`SelectorDomIndex`].
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, PartialOrd, Ord)]
@@ -16,7 +15,8 @@ impl SelectorDomElementId {
 struct IndexedElement<'a> {
     node_id: Id,
     name: &'a str,
-    attributes: &'a [(Arc<str>, Option<String>)],
+    namespace: ElementNamespace,
+    attributes: &'a [ParserCreatedAttribute],
     parent: Option<SelectorDomElementId>,
     previous_sibling: Option<SelectorDomElementId>,
 }
@@ -51,11 +51,12 @@ impl<'a> SelectorDomIndex<'a> {
             Node::Element { element } => {
                 let name = element.name();
                 let attributes = element.attributes();
-                debug_assert_canonical_html_element_name(name);
+                debug_assert_canonical_element_name(element.namespace(), name);
                 let root_id = SelectorDomElementId(1);
                 elements.push(IndexedElement {
                     node_id: root.id(),
                     name,
+                    namespace: element.namespace(),
                     attributes,
                     parent: None,
                     previous_sibling: None,
@@ -89,12 +90,13 @@ impl<'a> SelectorDomIndex<'a> {
                 Node::Element { element } => {
                     let name = element.name();
                     let attributes = element.attributes();
-                    debug_assert_canonical_html_element_name(name);
+                    debug_assert_canonical_element_name(element.namespace(), name);
                     let element_id =
                         SelectorDomElementId((elements.len() + 1).try_into().expect("element id"));
                     elements.push(IndexedElement {
                         node_id: child.id(),
                         name,
+                        namespace: element.namespace(),
                         attributes,
                         parent: frame.parent_element,
                         previous_sibling: frame.last_child_element,
@@ -152,7 +154,7 @@ impl<'a> SelectorDomIndex<'a> {
 
     pub fn to_debug_snapshot(&self) -> String {
         let mut out = String::new();
-        writeln!(&mut out, "version: 1").expect("write snapshot");
+        writeln!(&mut out, "version: 2").expect("write snapshot");
         writeln!(&mut out, "selector-dom").expect("write snapshot");
         write_selector_dom_snapshot_body(&mut out, self, 0);
         out
@@ -181,19 +183,34 @@ impl SelectorMatchDom for SelectorDomIndex<'_> {
         self.record(element).name
     }
 
+    fn element_namespace(&self, element: Self::ElementId) -> ElementNamespace {
+        self.record(element).namespace
+    }
+
     fn has_attribute(&self, element: Self::ElementId, name: &str) -> bool {
-        self.record(element)
-            .attributes
-            .iter()
-            .any(|(attribute_name, _)| attribute_name.eq_ignore_ascii_case(name))
+        self.record(element).attributes.iter().any(|attribute| {
+            attribute.namespace() == html::AttributeNamespace::None
+                && if self.record(element).namespace == ElementNamespace::Html {
+                    attribute.local_name().eq_ignore_ascii_case(name)
+                } else {
+                    attribute.local_name() == name
+                }
+        })
     }
 
     fn attribute_value(&self, element: Self::ElementId, name: &str) -> Option<&str> {
         self.record(element)
             .attributes
             .iter()
-            .find(|(attribute_name, _)| attribute_name.eq_ignore_ascii_case(name))
-            .and_then(|(_, value)| value.as_deref())
+            .find(|attribute| {
+                attribute.namespace() == html::AttributeNamespace::None
+                    && if self.record(element).namespace == ElementNamespace::Html {
+                        attribute.local_name().eq_ignore_ascii_case(name)
+                    } else {
+                        attribute.local_name() == name
+                    }
+            })
+            .map(ParserCreatedAttribute::value)
     }
 }
 
@@ -240,8 +257,9 @@ pub(crate) fn write_selector_dom_snapshot_body(
         let record = index.record(element_id);
         write!(
             out,
-            "{indent_str}element[{element_index}]: id={} name=\"{}\" parent=",
+            "{indent_str}element[{element_index}]: id={} namespace={} local=\"{}\" parent=",
             element_id.get(),
+            record.namespace.snapshot_name(),
             record.name
         )
         .expect("write snapshot");
@@ -279,13 +297,15 @@ fn normalized_document_children_frame<'a>(
     }
 }
 
-fn debug_assert_canonical_html_element_name(name: &str) {
+fn debug_assert_canonical_element_name(namespace: ElementNamespace, name: &str) {
     #[cfg(debug_assertions)]
     {
-        debug_assert!(name.is_ascii(), "selector DOM element name must be ASCII");
-        debug_assert!(
-            name.bytes().all(|byte| !byte.is_ascii_uppercase()),
-            "selector DOM element name must be canonical lowercase"
-        );
+        if namespace == ElementNamespace::Html {
+            debug_assert!(name.is_ascii(), "HTML selector name must be ASCII");
+            debug_assert!(
+                name.bytes().all(|byte| !byte.is_ascii_uppercase()),
+                "HTML selector name must be canonical lowercase"
+            );
+        }
     }
 }

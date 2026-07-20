@@ -1,13 +1,20 @@
 use super::foster::FosterParentingIndexCache;
-use super::types::{ExactOpenElementRemoval, OpenElement, OpenElementMatch};
+use super::types::{ExactOpenElementRemoval, ExpandedNameKey, OpenElement, OpenElementMatch};
 use crate::dom_patch::PatchKey;
 use crate::html5::shared::AtomId;
+use crate::names::ElementNamespace;
 
 /// Core-v0 stack of open elements with deterministic push/pop behavior.
 #[derive(Clone, Debug, Default)]
 pub(crate) struct OpenElementsStack {
+    pub(super) atom_table_id: Option<u32>,
     pub(super) items: Vec<OpenElement>,
-    pub(super) name_counts: Vec<(AtomId, usize)>,
+    pub(super) name_counts: Vec<(ExpandedNameKey, usize)>,
+    pub(super) name_count_lookup_calls: u64,
+    pub(super) name_count_lookup_steps: u64,
+    pub(super) name_count_update_calls: u64,
+    pub(super) name_count_update_steps: u64,
+    pub(super) distinct_name_high_water: u32,
     pub(super) max_depth: u32,
     pub(super) push_ops: u64,
     pub(super) pop_ops: u64,
@@ -21,9 +28,31 @@ pub(crate) struct OpenElementsStack {
 }
 
 impl OpenElementsStack {
-    pub(crate) fn try_reserve_push(&mut self, name: AtomId) -> Result<(), ()> {
+    pub(crate) fn new(atom_table_id: u64) -> Self {
+        Self {
+            atom_table_id: Some(u32::try_from(atom_table_id).expect("name interner id fits u32")),
+            ..Self::default()
+        }
+    }
+
+    pub(crate) fn try_reserve_push(
+        &mut self,
+        namespace: ElementNamespace,
+        name: AtomId,
+    ) -> Result<(), ()> {
+        self.assert_or_bind_atom_domain(name);
         self.items.try_reserve(1).map_err(|_| ())?;
-        if !self.name_counts.iter().any(|(tracked, _)| *tracked == name) {
+        let key = ExpandedNameKey::new(namespace, name);
+        self.name_count_lookup_calls = self.name_count_lookup_calls.saturating_add(1);
+        let mut present = false;
+        for (tracked, _) in &self.name_counts {
+            self.name_count_lookup_steps = self.name_count_lookup_steps.saturating_add(1);
+            if *tracked == key {
+                present = true;
+                break;
+            }
+        }
+        if !present {
             self.name_counts.try_reserve(1).map_err(|_| ())?;
         }
         Ok(())
@@ -50,13 +79,14 @@ impl OpenElementsStack {
 
     #[inline]
     pub(crate) fn push(&mut self, entry: OpenElement) {
+        self.assert_or_bind_atom_domain(entry.name());
         let new_index = self.items.len();
         self.items.push(entry);
-        self.note_name_push(entry.name());
+        self.note_name_push(entry.expanded_name_key());
         self.push_ops = self.push_ops.saturating_add(1);
         self.max_depth = self.max_depth.max(self.items.len() as u32);
         self.foster_parenting_cache
-            .note_push(new_index, entry.name());
+            .note_push(new_index, entry.namespace(), entry.name());
     }
 
     #[inline]
@@ -65,8 +95,15 @@ impl OpenElementsStack {
     }
 
     #[inline]
-    pub(crate) fn contains_name(&self, target: AtomId) -> bool {
-        self.has_name_count(target)
+    pub(crate) fn current_is_html(&self, target: AtomId) -> bool {
+        self.current().is_some_and(|entry| {
+            entry.namespace() == ElementNamespace::Html && entry.name() == target
+        })
+    }
+
+    #[inline]
+    pub(crate) fn contains_html_name(&mut self, target: AtomId) -> bool {
+        self.has_name_count(ElementNamespace::Html, target)
     }
 
     #[inline]
@@ -89,11 +126,11 @@ impl OpenElementsStack {
         dead_code,
         reason = "table helper wiring lands incrementally across Milestone I"
     )]
-    pub(crate) fn find_last_by_name(&self, target: AtomId) -> Option<OpenElement> {
+    pub(crate) fn find_last_html_by_name(&self, target: AtomId) -> Option<OpenElement> {
         self.items
             .iter()
             .rev()
-            .find(|entry| entry.name() == target)
+            .find(|entry| entry.namespace() == ElementNamespace::Html && entry.name() == target)
             .copied()
     }
 
@@ -133,9 +170,9 @@ impl OpenElementsStack {
             self.pop_ops = self.pop_ops.saturating_add(1);
         }
         if let Some(entry) = popped {
-            self.note_name_pop(entry.name());
+            self.note_name_pop(entry.expanded_name_key());
             self.foster_parenting_cache
-                .note_pop(self.items.len(), entry.name());
+                .note_pop(self.items.len(), entry.namespace(), entry.name());
             Some(entry)
         } else {
             None
@@ -155,6 +192,26 @@ impl OpenElementsStack {
     #[inline]
     pub(crate) fn pop_ops(&self) -> u64 {
         self.pop_ops
+    }
+
+    pub(crate) fn name_count_lookup_calls(&self) -> u64 {
+        self.name_count_lookup_calls
+    }
+
+    pub(crate) fn name_count_lookup_steps(&self) -> u64 {
+        self.name_count_lookup_steps
+    }
+
+    pub(crate) fn name_count_update_calls(&self) -> u64 {
+        self.name_count_update_calls
+    }
+
+    pub(crate) fn name_count_update_steps(&self) -> u64 {
+        self.name_count_update_steps
+    }
+
+    pub(crate) fn distinct_name_high_water(&self) -> u32 {
+        self.distinct_name_high_water
     }
 
     #[inline]
@@ -212,6 +269,30 @@ impl OpenElementsStack {
         self.items.iter().map(|entry| entry.name())
     }
 
+    #[cfg(any(test, feature = "parser_invariants", feature = "html5-fuzzing"))]
+    pub(crate) fn iter_entries(&self) -> impl Iterator<Item = OpenElement> + '_ {
+        self.items.iter().copied()
+    }
+
+    #[cfg(any(test, feature = "parser_invariants", feature = "html5-fuzzing"))]
+    pub(crate) fn name_cache_matches_stack(&self) -> bool {
+        let mut expected = Vec::<(ExpandedNameKey, usize)>::new();
+        for entry in &self.items {
+            let key = entry.expanded_name_key();
+            if let Some((_, count)) = expected.iter_mut().find(|(tracked, _)| *tracked == key) {
+                *count += 1;
+            } else {
+                expected.push((key, 1));
+            }
+        }
+        expected.len() == self.name_counts.len()
+            && expected.iter().all(|(key, count)| {
+                self.name_counts
+                    .iter()
+                    .any(|(tracked, tracked_count)| tracked == key && tracked_count == count)
+            })
+    }
+
     pub(crate) fn iter_keys(&self) -> impl Iterator<Item = PatchKey> + '_ {
         self.items.iter().map(|entry| entry.key())
     }
@@ -220,7 +301,7 @@ impl OpenElementsStack {
         let _ = index;
         self.foster_parenting_cache.invalidate();
         let removed = self.items.remove(index);
-        self.note_name_pop(removed.name());
+        self.note_name_pop(removed.expanded_name_key());
         self.pop_ops = self.pop_ops.saturating_add(1);
         removed
     }
@@ -239,7 +320,7 @@ impl OpenElementsStack {
             key,
             "exact-key removal must remove its target"
         );
-        self.note_name_pop(removed.name());
+        self.note_name_pop(removed.expanded_name_key());
         self.pop_ops = self.pop_ops.saturating_add(1);
         Some(ExactOpenElementRemoval {
             removed,
@@ -270,55 +351,82 @@ impl OpenElementsStack {
     }
 
     pub(crate) fn insert_at(&mut self, index: usize, entry: OpenElement) {
+        self.assert_or_bind_atom_domain(entry.name());
         let _ = index;
         self.foster_parenting_cache.invalidate();
         self.items.insert(index, entry);
-        self.note_name_push(entry.name());
+        self.note_name_push(entry.expanded_name_key());
         self.push_ops = self.push_ops.saturating_add(1);
         self.max_depth = self.max_depth.max(self.items.len() as u32);
     }
 
     pub(crate) fn replace_at(&mut self, index: usize, entry: OpenElement) -> OpenElement {
+        self.assert_or_bind_atom_domain(entry.name());
         let _ = index;
         self.foster_parenting_cache.invalidate();
         let previous = std::mem::replace(&mut self.items[index], entry);
-        self.note_name_pop(previous.name());
-        self.note_name_push(entry.name());
+        self.note_name_pop(previous.expanded_name_key());
+        self.note_name_push(entry.expanded_name_key());
         previous
     }
 
-    pub(super) fn has_name_count(&self, target: AtomId) -> bool {
-        self.name_counts
-            .iter()
-            .any(|(name, count)| *name == target && *count > 0)
-    }
-
-    pub(super) fn note_name_push(&mut self, name: AtomId) {
-        if let Some((_, count)) = self
-            .name_counts
-            .iter_mut()
-            .find(|(tracked, _)| *tracked == name)
-        {
-            *count = count.saturating_add(1);
-            return;
+    pub(super) fn has_name_count(&mut self, namespace: ElementNamespace, target: AtomId) -> bool {
+        self.assert_or_bind_atom_domain(target);
+        let key = ExpandedNameKey::new(namespace, target);
+        self.name_count_lookup_calls = self.name_count_lookup_calls.saturating_add(1);
+        for (name, count) in &self.name_counts {
+            self.name_count_lookup_steps = self.name_count_lookup_steps.saturating_add(1);
+            if *name == key {
+                return *count > 0;
+            }
         }
-        self.name_counts.push((name, 1));
+        false
     }
 
-    pub(super) fn note_name_pop(&mut self, name: AtomId) {
-        let Some(index) = self
-            .name_counts
-            .iter()
-            .position(|(tracked, _)| *tracked == name)
-        else {
-            debug_assert!(false, "SOE name count missing for popped element");
-            return;
-        };
+    pub(super) fn note_name_push(&mut self, key: ExpandedNameKey) {
+        self.assert_or_bind_atom_domain(key.local_name());
+        self.name_count_update_calls = self.name_count_update_calls.saturating_add(1);
+        for (tracked, count) in &mut self.name_counts {
+            self.name_count_update_steps = self.name_count_update_steps.saturating_add(1);
+            if *tracked == key {
+                *count = count.saturating_add(1);
+                return;
+            }
+        }
+        self.name_counts.push((key, 1));
+        self.distinct_name_high_water = self
+            .distinct_name_high_water
+            .max(self.name_counts.len() as u32);
+    }
+
+    pub(super) fn note_name_pop(&mut self, key: ExpandedNameKey) {
+        self.assert_or_bind_atom_domain(key.local_name());
+        self.name_count_update_calls = self.name_count_update_calls.saturating_add(1);
+        let mut found = None;
+        for (index, (tracked, _)) in self.name_counts.iter().enumerate() {
+            self.name_count_update_steps = self.name_count_update_steps.saturating_add(1);
+            if *tracked == key {
+                found = Some(index);
+                break;
+            }
+        }
+        let index = found.expect("SOE name count missing for popped element");
         let count = &mut self.name_counts[index].1;
-        debug_assert!(*count > 0, "SOE name count underflow");
-        *count = count.saturating_sub(1);
+        assert!(*count > 0, "SOE name count underflow");
+        *count -= 1;
         if *count == 0 {
             let _ = self.name_counts.remove(index);
+        }
+    }
+
+    fn assert_or_bind_atom_domain(&mut self, atom: AtomId) {
+        let actual = atom.interner_id();
+        match self.atom_table_id {
+            Some(expected) => assert_eq!(
+                actual, expected,
+                "SOE atom belongs to a different name-interner domain"
+            ),
+            None => self.atom_table_id = Some(actual),
         }
     }
 }

@@ -9,6 +9,7 @@ use log::error;
 impl Html5ParseSession {
     pub(super) fn pump_live_input(&mut self) -> Result<(), Html5SessionError> {
         loop {
+            self.builder.prepare_tokenizer_pump(&mut self.tokenizer);
             let tokenize_result = self
                 .tokenizer
                 .push_input_until_token(&mut self.input, &mut self.ctx);

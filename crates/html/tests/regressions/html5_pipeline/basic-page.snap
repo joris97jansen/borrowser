@@ -10,19 +10,20 @@ tokens_streamed: 19
 span_resolve_count: 5
 patches_emitted: 25
 tokenizer_controls_applied: 2
-digest: 8005939426465365881
+digest: 13181389943379396424
 
 dom:
+#dom-snapshot-v2
 #document
   <!doctype html>
-  <html>
-    <head>
-      <title>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+      element ns=html local="title" attrs=[]
         "basic"
-    <body>
-      <p>
+    element ns=html local="body" attrs=[]
+      element ns=html local="p" attrs=[]
         "Hello "
-        <b>
+        element ns=html local="b" attrs=[]
           "world"
         "."
     "\n"

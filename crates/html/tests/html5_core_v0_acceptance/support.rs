@@ -34,7 +34,7 @@ const KNOWN_CONTRACT_ANCHORS: &[&str] = &[
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum ExpectedOutput {
     TokensV1,
-    DomV1,
+    DomV2,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -63,7 +63,7 @@ pub(crate) struct AcceptanceCase {
 pub(crate) fn expected_format(output: ExpectedOutput) -> &'static str {
     match output {
         ExpectedOutput::TokensV1 => "html5-token-v1",
-        ExpectedOutput::DomV1 => "html5-dom-v1",
+        ExpectedOutput::DomV2 => "html5-dom-v2",
     }
 }
 
@@ -206,12 +206,12 @@ pub(crate) fn collect_matrix_ids(path: &Path) -> BTreeSet<String> {
 pub(crate) fn validate_kind_output(kind: AcceptanceKind, output: ExpectedOutput) {
     match (kind, output) {
         (AcceptanceKind::Tokenizer, ExpectedOutput::TokensV1)
-        | (AcceptanceKind::TreeBuilder, ExpectedOutput::DomV1) => {}
-        (AcceptanceKind::Tokenizer, ExpectedOutput::DomV1) => {
+        | (AcceptanceKind::TreeBuilder, ExpectedOutput::DomV2) => {}
+        (AcceptanceKind::Tokenizer, ExpectedOutput::DomV2) => {
             panic!("PENDING_ACCEPTANCE_CONFIG: tokenizer acceptance must use TokensV1 output")
         }
         (AcceptanceKind::TreeBuilder, ExpectedOutput::TokensV1) => {
-            panic!("PENDING_ACCEPTANCE_CONFIG: tree-builder acceptance must use DomV1 output")
+            panic!("PENDING_ACCEPTANCE_CONFIG: tree-builder acceptance must use DomV2 output")
         }
     }
 }

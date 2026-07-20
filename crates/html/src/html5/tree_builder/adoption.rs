@@ -14,7 +14,6 @@
 use crate::dom_patch::PatchKey;
 use crate::html5::shared::{AtomId, AtomTable};
 use crate::html5::tree_builder::formatting::AfeElementEntry;
-use crate::html5::tree_builder::html_semantics::is_special_html_element;
 use crate::html5::tree_builder::stack::{OpenElement, ScopeKeyMatch};
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
 
@@ -107,7 +106,7 @@ impl Html5TreeBuilder {
                 .open_elements
                 .get(soe_index)
                 .expect("furthest-block scan index must remain in bounds");
-            if is_special_html_element(element.name(), atoms)? {
+            if crate::html5::tree_builder::html_semantics::is_special_element(element, atoms)? {
                 return Ok(Some(FurthestBlockCandidate { soe_index, element }));
             }
         }
@@ -141,10 +140,10 @@ impl Html5TreeBuilder {
 
                 let candidate = match this.adoption_agency_lookup_formatting_element(subject) {
                     Some(candidate) => candidate,
-                    None if this
-                        .open_elements
-                        .current()
-                        .is_some_and(|current| current.name() == subject) =>
+                    None if this.open_elements.current().is_some_and(|current| {
+                        current.namespace() == crate::ElementNamespace::Html
+                            && current.name() == subject
+                    }) =>
                     {
                         let popped = this
                             .open_elements
@@ -293,7 +292,7 @@ impl Html5TreeBuilder {
                                 .replace_element_at(node_afe_index, replacement_entry);
                             let _ = this.open_elements.replace_at(
                                 node_index,
-                                OpenElement::new(replacement_key, node_entry.name),
+                                OpenElement::new_html(replacement_key, node_entry.name),
                             );
 
                             if last_node == furthest_block_key {
@@ -340,7 +339,7 @@ impl Html5TreeBuilder {
                             .expect("AAA furthest block must remain on SOE");
                         this.open_elements.insert_at(
                             furthest_block_index + 1,
-                            OpenElement::new(replacement_key, formatting_entry.name),
+                            OpenElement::new_html(replacement_key, formatting_entry.name),
                         );
                     }
                 }
@@ -390,14 +389,14 @@ mod tests {
                     .expect("html bootstrap should not hit resource limits");
                 this.append_existing_child(document, html);
                 this.open_elements
-                    .push(OpenElement::new(html, this.known_tags.html));
+                    .push(OpenElement::new_html(html, this.known_tags.html));
 
                 let body = this
                     .create_detached_element(this.known_tags.body, &[], &ctx.atoms)?
                     .expect("body bootstrap should not hit resource limits");
                 this.append_existing_child(html, body);
                 this.open_elements
-                    .push(OpenElement::new(body, this.known_tags.body));
+                    .push(OpenElement::new_html(body, this.known_tags.body));
                 Ok((html, body))
             })
             .expect("bootstrap should remain recoverable")
@@ -423,9 +422,9 @@ mod tests {
                     .create_detached_element(div, &[], &ctx.atoms)?
                     .expect("div setup should not hit resource limits");
                 this.open_elements
-                    .push(OpenElement::new(table, this.known_tags.table));
+                    .push(OpenElement::new_html(table, this.known_tags.table));
                 this.adoption_agency_insert_last_node(
-                    OpenElement::new(PatchKey(999), this.known_tags.tbody),
+                    OpenElement::new_html(PatchKey(999), this.known_tags.tbody),
                     last_node,
                 )?;
                 assert_eq!(this.live_tree.parent(last_node), Some(body));
@@ -463,11 +462,11 @@ mod tests {
                     .create_detached_element(div, &[], &ctx.atoms)?
                     .expect("div setup should not hit resource limits");
                 this.open_elements
-                    .push(OpenElement::new(table, this.known_tags.table));
+                    .push(OpenElement::new_html(table, this.known_tags.table));
                 this.open_elements
-                    .push(OpenElement::new(template, this.known_tags.template));
+                    .push(OpenElement::new_html(template, this.known_tags.template));
                 this.adoption_agency_insert_last_node(
-                    OpenElement::new(PatchKey(999), this.known_tags.thead),
+                    OpenElement::new_html(PatchKey(999), this.known_tags.thead),
                     last_node,
                 )?;
                 assert_eq!(this.live_tree.parent(last_node), Some(contents));

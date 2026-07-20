@@ -205,10 +205,11 @@ fn tree_builder_implicit_body_text_is_chunk_equivalent() {
     assert_eq!(
         whole,
         vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
             "      \"ab\"".to_string(),
         ]
     );

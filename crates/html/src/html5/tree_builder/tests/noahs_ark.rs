@@ -7,12 +7,12 @@ use crate::html5::tokenizer::{Html5Tokenizer, TokenizeResult, TokenizerConfig};
 #[derive(Debug)]
 struct NoahArkRun {
     patches: Vec<DomPatch>,
-    active_formatting_names: Vec<Option<AtomId>>,
+    active_formatting_names: Vec<Option<String>>,
     active_formatting_keys: Vec<Option<PatchKey>>,
     open_element_keys: Vec<PatchKey>,
 }
 
-type AfeAttributeSnapshot = Vec<(AtomId, Option<String>)>;
+type AfeAttributeSnapshot = Vec<(crate::AttributeNamespace, String, String)>;
 type AfeSnapshotEntry = Option<AfeAttributeSnapshot>;
 type AfeSnapshot = Vec<AfeSnapshotEntry>;
 
@@ -29,6 +29,7 @@ fn run_tree_builder_chunks(chunks: &[&str]) -> NoahArkRun {
     for chunk in chunks {
         input.push_str(chunk);
         loop {
+            builder.prepare_tokenizer_pump(&mut tokenizer);
             let result = tokenizer.push_input_until_token(&mut input, &mut ctx);
             let batch = tokenizer.next_batch(&mut input);
             if batch.tokens().is_empty() {
@@ -67,7 +68,10 @@ fn run_tree_builder_chunks(chunks: &[&str]) -> NoahArkRun {
     let state = builder.state_snapshot();
     NoahArkRun {
         patches: builder.drain_patches(),
-        active_formatting_names: active_formatting_names(&builder),
+        active_formatting_names: active_formatting_names(&builder)
+            .into_iter()
+            .map(|name| name.map(|name| ctx.atoms.resolve(name).expect("live AFE atom").to_owned()))
+            .collect(),
         active_formatting_keys: active_formatting_keys(&builder),
         open_element_keys: state.open_element_keys,
     }
@@ -114,7 +118,13 @@ fn active_formatting_attrs(builder: &crate::html5::tree_builder::Html5TreeBuilde
                 element
                     .attrs
                     .iter()
-                    .map(|attr| (attr.name, attr.value.clone()))
+                    .map(|attr| {
+                        (
+                            attr.namespace(),
+                            attr.local_name().to_string(),
+                            attr.value().to_string(),
+                        )
+                    })
                     .collect(),
             ),
         })
@@ -159,7 +169,7 @@ fn tree_builder_in_body_noahs_ark_limits_duplicate_formatting_entries_to_three()
     let state = builder.state_snapshot();
     assert_eq!(
         active_formatting_keys(&builder),
-        state.open_element_keys[3..]
+        state.open_element_keys[state.open_element_keys.len() - 3..]
             .iter()
             .copied()
             .map(Some)
@@ -194,31 +204,31 @@ fn tree_builder_in_body_noahs_ark_preserves_non_matching_attribute_variants() {
     let attrs_a = vec![
         Attribute {
             name: class,
-            value: Some(AttributeValue::Owned("x".to_string())),
+            value: AttributeValue::Owned("x".to_string()),
         },
         Attribute {
             name: title,
-            value: Some(AttributeValue::Owned("y".to_string())),
+            value: AttributeValue::Owned("y".to_string()),
         },
     ];
     let attrs_b = vec![
         Attribute {
             name: title,
-            value: Some(AttributeValue::Owned("y".to_string())),
+            value: AttributeValue::Owned("y".to_string()),
         },
         Attribute {
             name: class,
-            value: Some(AttributeValue::Owned("x".to_string())),
+            value: AttributeValue::Owned("x".to_string()),
         },
     ];
     let attrs_c = vec![
         Attribute {
             name: class,
-            value: Some(AttributeValue::Owned("x".to_string())),
+            value: AttributeValue::Owned("x".to_string()),
         },
         Attribute {
             name: title,
-            value: Some(AttributeValue::Owned(String::new())),
+            value: AttributeValue::Owned(String::new()),
         },
     ];
 
@@ -244,36 +254,50 @@ fn tree_builder_in_body_noahs_ark_preserves_non_matching_attribute_variants() {
     }
 
     let attrs_a_snapshot = vec![
-        (class, Some("x".to_string())),
-        (title, Some("y".to_string())),
+        (
+            crate::AttributeNamespace::None,
+            "class".to_string(),
+            "x".to_string(),
+        ),
+        (
+            crate::AttributeNamespace::None,
+            "title".to_string(),
+            "y".to_string(),
+        ),
     ];
-    let attrs_b_snapshot = vec![
-        (title, Some("y".to_string())),
-        (class, Some("x".to_string())),
+    let attrs_c_snapshot = vec![
+        (
+            crate::AttributeNamespace::None,
+            "class".to_string(),
+            "x".to_string(),
+        ),
+        (
+            crate::AttributeNamespace::None,
+            "title".to_string(),
+            String::new(),
+        ),
     ];
-    let attrs_c_snapshot = vec![(class, Some("x".to_string())), (title, Some(String::new()))];
 
     assert_eq!(
         active_formatting_attrs(&builder),
         vec![
-            Some(attrs_b_snapshot),
             Some(attrs_c_snapshot),
             Some(attrs_a_snapshot.clone()),
             Some(attrs_a_snapshot.clone()),
             Some(attrs_a_snapshot),
         ],
-        "attribute-order and value variants must remain in AFE while only the oldest exact-match snapshot is evicted"
+        "attribute order must not split a Noah's Ark family, while value variants remain distinct"
     );
 
     let state = builder.state_snapshot();
     assert_eq!(
         active_formatting_keys(&builder),
-        state.open_element_keys[3..]
+        state.open_element_keys[state.open_element_keys.len() - 4..]
             .iter()
             .copied()
             .map(Some)
             .collect::<Vec<_>>(),
-        "attribute-order and value variants must remain in AFE while only the oldest exact match is evicted"
+        "order-equivalent entries share one family; the surviving variant and newest three family members remain"
     );
 }
 

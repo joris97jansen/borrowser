@@ -3,7 +3,6 @@ use super::error::DomPatchError;
 use core_types::DomVersion;
 use html::{DomPatch, Node, PatchKey, internal::Id};
 use std::collections::HashSet;
-use std::sync::Arc;
 
 pub(crate) struct DomDoc {
     pub(crate) version: DomVersion,
@@ -128,7 +127,7 @@ impl DomDoc {
                 self.arena.insert_node(
                     *key,
                     NodeKind::Element {
-                        name: Arc::clone(name),
+                        name: name.clone(),
                         attributes: attributes.clone(),
                         template_contents: None,
                     },

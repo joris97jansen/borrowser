@@ -35,12 +35,23 @@ pub(super) fn element(
     attributes: Vec<(&str, Option<&str>)>,
     children: Vec<Node>,
 ) -> Node {
+    namespaced_element(html::ElementNamespace::Html, name, attributes, children)
+}
+
+pub(super) fn namespaced_element(
+    namespace: html::ElementNamespace,
+    name: &str,
+    attributes: Vec<(&str, Option<&str>)>,
+    children: Vec<Node>,
+) -> Node {
     html::internal::node_element_from_parts(
         Id::INVALID,
-        Arc::from(name),
+        html::internal::expanded_name(namespace, name),
         attributes
             .into_iter()
-            .map(|(name, value)| (Arc::from(name), value.map(str::to_string)))
+            .map(|(name, value)| {
+                html::internal::unqualified_attribute(name, value.unwrap_or_default())
+            })
             .collect(),
         Vec::new(),
         children,

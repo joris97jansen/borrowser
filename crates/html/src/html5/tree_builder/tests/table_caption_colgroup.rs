@@ -60,16 +60,17 @@ fn in_caption_conflicting_colgroup_start_closes_caption_and_reprocesses() {
     assert_eq!(
         dom,
         vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <table>".to_string(),
-            "        <caption>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"table\" attrs=[]".to_string(),
+            "        element ns=html local=\"caption\" attrs=[]".to_string(),
             "          \"x\"".to_string(),
-            "        <colgroup>".to_string(),
-            "          <col>".to_string(),
+            "        element ns=html local=\"colgroup\" attrs=[]".to_string(),
+            "          element ns=html local=\"col\" attrs=[]".to_string(),
         ]
     );
 }
@@ -131,14 +132,15 @@ fn in_column_group_missing_end_tag_reprocesses_table_end() {
     assert_eq!(
         dom,
         vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <table>".to_string(),
-            "        <colgroup>".to_string(),
-            "          <col>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"table\" attrs=[]".to_string(),
+            "        element ns=html local=\"colgroup\" attrs=[]".to_string(),
+            "          element ns=html local=\"col\" attrs=[]".to_string(),
         ]
     );
 }
@@ -175,15 +177,16 @@ fn in_table_col_implies_colgroup_and_stays_deterministic_across_chunking() {
     let chunked = materialized_dom_lines(&["<!doctype html><table><col>", "<col></table>"]);
 
     let expected = vec![
+        "#dom-snapshot-v2".to_string(),
         "#document".to_string(),
         "  <!doctype html>".to_string(),
-        "  <html>".to_string(),
-        "    <head>".to_string(),
-        "    <body>".to_string(),
-        "      <table>".to_string(),
-        "        <colgroup>".to_string(),
-        "          <col>".to_string(),
-        "          <col>".to_string(),
+        "  element ns=html local=\"html\" attrs=[]".to_string(),
+        "    element ns=html local=\"head\" attrs=[]".to_string(),
+        "    element ns=html local=\"body\" attrs=[]".to_string(),
+        "      element ns=html local=\"table\" attrs=[]".to_string(),
+        "        element ns=html local=\"colgroup\" attrs=[]".to_string(),
+        "          element ns=html local=\"col\" attrs=[]".to_string(),
+        "          element ns=html local=\"col\" attrs=[]".to_string(),
     ];
 
     assert_eq!(whole, expected);

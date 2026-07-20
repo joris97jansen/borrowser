@@ -6,9 +6,7 @@ fn first_created_element_key(patches: &[DomPatch], expected_name: &str) -> Patch
     patches
         .iter()
         .find_map(|patch| match patch {
-            DomPatch::CreateElement { key, name, .. } if name.as_ref() == expected_name => {
-                Some(*key)
-            }
+            DomPatch::CreateElement { key, name, .. } if name.is_html(expected_name) => Some(*key),
             _ => None,
         })
         .unwrap_or_else(|| panic!("expected CreateElement patch for <{expected_name}>"))
@@ -241,13 +239,14 @@ fn in_table_text_non_space_is_foster_parented_before_table() {
     assert_eq!(
         dom,
         vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
             "      \"a\"".to_string(),
-            "      <table>".to_string(),
+            "      element ns=html local=\"table\" attrs=[]".to_string(),
         ]
     );
 }
@@ -258,12 +257,13 @@ fn in_table_text_whitespace_stays_inside_table_and_is_chunk_invariant() {
     let chunked = materialized_dom_lines(&["<!doctype html><table>", " \n", "\t</table>"]);
 
     let expected = vec![
+        "#dom-snapshot-v2".to_string(),
         "#document".to_string(),
         "  <!doctype html>".to_string(),
-        "  <html>".to_string(),
-        "    <head>".to_string(),
-        "    <body>".to_string(),
-        "      <table>".to_string(),
+        "  element ns=html local=\"html\" attrs=[]".to_string(),
+        "    element ns=html local=\"head\" attrs=[]".to_string(),
+        "    element ns=html local=\"body\" attrs=[]".to_string(),
+        "      element ns=html local=\"table\" attrs=[]".to_string(),
         "        \" \\n\\t\"".to_string(),
     ];
 

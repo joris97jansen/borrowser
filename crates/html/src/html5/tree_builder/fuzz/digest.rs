@@ -44,14 +44,12 @@ impl FuzzDigest {
                 for attr in attrs {
                     self.push_str(atoms.resolve(attr.name).unwrap_or("<invalid-atom>"));
                     match &attr.value {
-                        Some(AttributeValue::Owned(value)) => {
-                            self.push_bool(true);
+                        AttributeValue::Owned(value) => {
                             self.push_str(value);
                         }
-                        Some(AttributeValue::Span(_)) => {
+                        AttributeValue::Span(_) => {
                             self.push_str("<span>");
                         }
-                        None => self.push_bool(false),
                     }
                 }
             }
@@ -102,11 +100,14 @@ impl FuzzDigest {
                 } => {
                     self.push_u8(12);
                     self.push_u32(key.0);
-                    self.push_str(name);
+                    self.push_str(name.namespace().snapshot_name());
+                    self.push_str(name.local_name_str());
                     self.push_usize(attributes.len());
-                    for (name, value) in attributes {
-                        self.push_str(name);
-                        self.push_opt_str(value.as_deref());
+                    for attribute in attributes {
+                        self.push_str(attribute.namespace().snapshot_name());
+                        self.push_opt_str(attribute.prefix());
+                        self.push_str(attribute.local_name());
+                        self.push_str(attribute.value());
                     }
                 }
                 DomPatch::CreateTemplateContents { host, contents } => {
@@ -147,9 +148,11 @@ impl FuzzDigest {
                     self.push_u8(18);
                     self.push_u32(key.0);
                     self.push_usize(attributes.len());
-                    for (name, value) in attributes {
-                        self.push_str(name);
-                        self.push_opt_str(value.as_deref());
+                    for attribute in attributes {
+                        self.push_str(attribute.namespace().snapshot_name());
+                        self.push_opt_str(attribute.prefix());
+                        self.push_str(attribute.local_name());
+                        self.push_str(attribute.value());
                     }
                 }
                 DomPatch::SetText { key, text } => {
@@ -200,6 +203,15 @@ impl FuzzDigest {
         match text {
             TextValue::Owned(value) => self.push_str(value),
             TextValue::Span(_) => self.push_str("<span>"),
+            TextValue::NullNormalized {
+                text,
+                had_null,
+                had_non_whitespace_non_null,
+            } => {
+                self.push_str(text);
+                self.push_bool(*had_null);
+                self.push_bool(*had_non_whitespace_non_null);
+            }
         }
     }
 

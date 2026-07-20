@@ -20,7 +20,7 @@ fn apply_is_atomic_on_mid_batch_error() {
         &[
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "div".into(),
+                name: html::internal::html_name("div"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -62,12 +62,12 @@ fn duplicate_key_is_rejected_and_atomic() {
         &[
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "div".into(),
+                name: html::internal::html_name("div"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "span".into(),
+                name: html::internal::html_name("span"),
                 attributes: Vec::new(),
             },
         ],
@@ -101,7 +101,7 @@ fn missing_key_is_rejected_and_atomic() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "div".into(),
+                name: html::internal::html_name("div"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -152,17 +152,17 @@ fn cycle_detection_rejects_back_edge_and_is_atomic() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(4),
-                name: "root".into(),
+                name: html::internal::html_name("root"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "a".into(),
+                name: html::internal::html_name("a"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(3),
-                name: "b".into(),
+                name: html::internal::html_name("b"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -274,22 +274,22 @@ fn insert_before_move_batch_rolls_back_atomically_on_later_failure() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "left".into(),
+                name: html::internal::html_name("left"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(3),
-                name: "right".into(),
+                name: html::internal::html_name("right"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(4),
-                name: "child".into(),
+                name: html::internal::html_name("child"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(5),
-                name: "anchor".into(),
+                name: html::internal::html_name("anchor"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -336,10 +336,10 @@ fn insert_before_move_batch_rolls_back_atomically_on_later_failure() {
         materialized_dom_lines(&store, h),
         vec![
             "#document doctype=<none>".to_string(),
-            "  <left attrs=[]>".to_string(),
-            "    <child attrs=[]>".to_string(),
-            "  <right attrs=[]>".to_string(),
-            "    <anchor attrs=[]>".to_string(),
+            "  <ns=html local=\"left\" attrs=[]>".to_string(),
+            "    <ns=html local=\"child\" attrs=[]>".to_string(),
+            "  <ns=html local=\"right\" attrs=[]>".to_string(),
+            "    <ns=html local=\"anchor\" attrs=[]>".to_string(),
         ],
         "failed batch must leave the original pre-move structure intact"
     );

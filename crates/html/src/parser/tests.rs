@@ -67,7 +67,7 @@ fn parse_document_materializes_html5_dom_and_patch_stream() {
     assert!(
         output.patches.iter().any(|patch| matches!(
             patch,
-            crate::DomPatch::CreateElement { name, .. } if name.as_ref() == "div"
+            crate::DomPatch::CreateElement { name, .. } if name.is_html("div")
         )),
         "expected a div create patch"
     );

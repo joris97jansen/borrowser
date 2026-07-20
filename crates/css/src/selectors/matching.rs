@@ -28,7 +28,7 @@ mod tests;
 
 pub use context::{
     AncestorElements, PreviousSiblingElements, SelectorMatchDom, SelectorMatchingContext,
-    SelectorMatchingLimitError, SelectorMatchingLimits,
+    SelectorMatchingLimitError, SelectorMatchingLimits, SelectorNamespaceConstraint,
 };
 pub use dom_index::{SelectorDomElementId, SelectorDomElementIter, SelectorDomIndex};
 pub use result::{

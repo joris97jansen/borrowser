@@ -1,4 +1,5 @@
 use crate::Node;
+use crate::names::ElementNamespace;
 use crate::types::debug_assert_lowercase_atom;
 
 #[derive(Debug, Clone, Default)]
@@ -46,10 +47,10 @@ fn find_head(dom: &Node) -> Option<&Node> {
         let name = element.name();
         let html_children = element.children();
 
-        debug_assert_lowercase_atom(name, "head extraction tag");
-        if name.as_ref() != "html" {
+        if !element.expanded_name().is(ElementNamespace::Html, "html") {
             continue;
         }
+        debug_assert_lowercase_atom(name, "head extraction tag");
 
         // search inside <html> for <head>
         for hc in html_children {
@@ -58,8 +59,8 @@ fn find_head(dom: &Node) -> Option<&Node> {
             };
             let name = element.name();
 
-            debug_assert_lowercase_atom(name, "head extraction tag");
-            if name.as_ref() == "head" {
+            if element.expanded_name().is(ElementNamespace::Html, "head") {
+                debug_assert_lowercase_atom(name, "head extraction tag");
                 return Some(hc);
             }
         }
@@ -74,14 +75,19 @@ fn fill_head_metadata_from(head: &Node, out: &mut HeadMetadata) {
             if let Node::Element { element } = child {
                 let name = element.name();
                 let children = element.children();
-                debug_assert_lowercase_atom(name, "head extraction tag");
+                if element.namespace() == ElementNamespace::Html {
+                    debug_assert_lowercase_atom(name, "head extraction tag");
+                }
                 // <title>
-                if name.as_ref() == "title" && out.title.is_none() {
+                if element.namespace() == ElementNamespace::Html
+                    && name == "title"
+                    && out.title.is_none()
+                {
                     out.title = first_text_child(children);
                 }
 
                 // <meta>
-                if name.as_ref() == "meta" {
+                if element.namespace() == ElementNamespace::Html && name == "meta" {
                     let tag = MetaTag {
                         name: child.attr("name").map(|s| s.to_string()),
                         property: child.attr("property").map(|s| s.to_string()),
@@ -93,7 +99,7 @@ fn fill_head_metadata_from(head: &Node, out: &mut HeadMetadata) {
                 }
 
                 // <link>
-                if name.as_ref() == "link" {
+                if element.namespace() == ElementNamespace::Html && name == "link" {
                     let rel_raw = child.attr("rel").unwrap_or("");
                     let rels = rel_raw
                         .split_whitespace()
@@ -108,7 +114,10 @@ fn fill_head_metadata_from(head: &Node, out: &mut HeadMetadata) {
                 }
 
                 // <base>
-                if name.as_ref() == "base" && out.base_href.is_none() {
+                if element.namespace() == ElementNamespace::Html
+                    && name == "base"
+                    && out.base_href.is_none()
+                {
                     out.base_href = child.attr("href").map(|h| h.to_string());
                 }
             }
@@ -130,8 +139,7 @@ fn first_text_child(children: &[Node]) -> Option<String> {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
+    use crate::test_support::{html_attribute, html_name};
     use crate::types::{DocumentFragmentNode, Id};
 
     use super::*;
@@ -139,10 +147,10 @@ mod tests {
     fn element(id: u32, name: &str, attributes: &[(&str, &str)], children: Vec<Node>) -> Node {
         crate::Node::from_element_parts(
             Id(id),
-            Arc::from(name),
+            html_name(name),
             attributes
                 .iter()
-                .map(|(name, value)| (Arc::from(*name), Some((*value).to_string())))
+                .map(|(name, value)| html_attribute(name, Some(value)))
                 .collect(),
             Vec::new(),
             None,
@@ -154,7 +162,7 @@ mod tests {
     fn head_metadata_extraction_does_not_cross_template_contents() {
         let template = crate::Node::from_element_parts(
             Id(4),
-            Arc::from("template"),
+            html_name("template"),
             Vec::new(),
             Vec::new(),
             Some(Box::new(DocumentFragmentNode::new_template_contents(

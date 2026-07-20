@@ -5,9 +5,14 @@ use crate::replaced::intrinsic::IntrinsicSize;
 pub(crate) fn get_attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
     match node {
         Node::Element { element } => {
-            for (k, v) in element.attributes() {
-                if k.eq_ignore_ascii_case(name) {
-                    return v.as_deref();
+            if element.namespace() != html::ElementNamespace::Html {
+                return None;
+            }
+            for attribute in element.attributes() {
+                if attribute.namespace() == html::AttributeNamespace::None
+                    && attribute.local_name().eq_ignore_ascii_case(name)
+                {
+                    return Some(attribute.value());
                 }
             }
             None

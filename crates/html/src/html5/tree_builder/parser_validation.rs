@@ -74,7 +74,9 @@ impl Html5TreeBuilder {
                 .saturating_add(1);
             if matches!(completed_token, Token::Eof)
                 && (!self.template_modes.is_empty()
-                    || self.open_elements.contains_name(self.known_tags.template))
+                    || self
+                        .open_elements
+                        .contains_html_name(self.known_tags.template))
             {
                 return Err(EngineInvariantError);
             }
@@ -87,7 +89,9 @@ impl Html5TreeBuilder {
 
         if matches!(completed_token, Token::Eof)
             && (!self.template_modes.is_empty()
-                || self.open_elements.contains_name(self.known_tags.template))
+                || self
+                    .open_elements
+                    .contains_html_name(self.known_tags.template))
         {
             return Err(EngineInvariantError);
         }
@@ -184,7 +188,10 @@ impl Html5TreeBuilder {
         let mut last_open_template = None;
         for host in (0..self.open_elements.len())
             .filter_map(|index| self.open_elements.get(index))
-            .filter(|entry| entry.name() == self.known_tags.template)
+            .filter(|entry| {
+                entry.namespace() == crate::ElementNamespace::Html
+                    && entry.name() == self.known_tags.template
+            })
             .map(|entry| entry.key())
         {
             if template_modes.next().map(|entry| entry.owner()) != Some(host)
@@ -202,7 +209,10 @@ impl Html5TreeBuilder {
 
         let mut open_templates_for_markers = (0..self.open_elements.len())
             .filter_map(|index| self.open_elements.get(index))
-            .filter(|entry| entry.name() == self.known_tags.template)
+            .filter(|entry| {
+                entry.namespace() == crate::ElementNamespace::Html
+                    && entry.name() == self.known_tags.template
+            })
             .map(|entry| entry.key());
         let mut expected_marker_owner = open_templates_for_markers.next();
         for entry in self.active_formatting.entries() {

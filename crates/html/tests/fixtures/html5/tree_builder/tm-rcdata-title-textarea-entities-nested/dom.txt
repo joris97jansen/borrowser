@@ -1,14 +1,16 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 # status: active
+
+#dom-snapshot-v2
 #document
-  <html>
-    <head>
-      <title>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+      element ns=html local="title" attrs=[]
         "Tom & Jerry <b>"
-    <body>
-      <section>
-        <textarea>
+    element ns=html local="body" attrs=[]
+      element ns=html local="section" attrs=[]
+        element ns=html local="textarea" attrs=[]
           "A&B<x>"
-        <p>
-          <em>
+        element ns=html local="p" attrs=[]
+          element ns=html local="em" attrs=[]
             "ok"

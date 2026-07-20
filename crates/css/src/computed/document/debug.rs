@@ -12,8 +12,9 @@ impl ComputedDocumentStyle {
         for (index, entry) in self.entries.iter().enumerate() {
             writeln!(
                 &mut out,
-                "element[{index}]: selector-id={} name=\"{}\"",
+                "element[{index}]: selector-id={} namespace={} name=\"{}\"",
                 entry.selector_element_id.get(),
+                entry.element_namespace.snapshot_name(),
                 entry.element_name
             )
             .expect("write snapshot");

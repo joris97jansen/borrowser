@@ -2,14 +2,16 @@
 
 use crate::{
     BoxKind, FlowParticipation, ListMarker, PositionedContainingBlockStrategy, PositioningScheme,
-    ReplacedElementInfoProvider, ReplacedKind, classify_replaced_kind,
+    ReplacedElementInfoProvider, ReplacedElementPresentation, ReplacedKind, classify_replaced_kind,
+    replaced_element_presentation,
 };
 use css::{Display, StyledNode};
 use html::Node;
 
 use super::display::{
-    AnonymousBoxKind, BoxGenerationRole, DisplayBoxBehavior, DisplayBoxGeneration, PrincipalBox,
-    display_box_generation, principal_participates_inline,
+    AnonymousBoxKind, BoxGenerationDecision, BoxGenerationRole, DisplayBoxBehavior,
+    DisplayBoxGeneration, PrincipalBox, display_box_generation, namespace_box_generation_decision,
+    principal_participates_inline,
 };
 use super::formatting::{
     BlockFormattingParticipation, FlexFormattingParticipation, FormattingContextKind,
@@ -54,6 +56,10 @@ impl<'style_tree, 'dom> BoxTreeBuilder<'style_tree, 'dom> {
         parent: Option<BoxId>,
         replaced_info: Option<&dyn ReplacedElementInfoProvider>,
     ) -> Option<BoxId> {
+        if let BoxGenerationDecision::SuppressSubtree(_) = namespace_box_generation_decision(styled)
+        {
+            return None;
+        }
         let replaced_kind = classify_replaced_kind(styled.node);
         let generation =
             display_box_generation(styled, parent.map(|id| self.node(id).role()), replaced_kind);
@@ -152,6 +158,10 @@ impl<'style_tree, 'dom> BoxTreeBuilder<'style_tree, 'dom> {
         child: &'style_tree StyledNode<'dom>,
         parent_id: BoxId,
     ) -> Option<AnonymousChildClass> {
+        if let BoxGenerationDecision::SuppressSubtree(_) = namespace_box_generation_decision(child)
+        {
+            return None;
+        }
         let replaced_kind = classify_replaced_kind(child.node);
         let generation =
             display_box_generation(child, Some(self.node(parent_id).role()), replaced_kind);
@@ -183,8 +193,12 @@ impl<'style_tree, 'dom> BoxTreeBuilder<'style_tree, 'dom> {
         } else {
             None
         };
-        let replaced_intrinsic = match replaced_kind {
-            Some(ReplacedKind::Img) => replaced_info.and_then(|p| p.intrinsic_for_img(styled.node)),
+        let replaced_presentation = replaced_kind
+            .and_then(|kind| replaced_element_presentation(styled.node, kind, replaced_info));
+        let replaced_intrinsic = match replaced_presentation.as_ref() {
+            Some(ReplacedElementPresentation::Image(image)) => {
+                replaced_info.and_then(|provider| provider.intrinsic_for_img(image))
+            }
             _ => None,
         };
 
@@ -230,6 +244,7 @@ impl<'style_tree, 'dom> BoxTreeBuilder<'style_tree, 'dom> {
             inline_formatting_participation: principal_inline_formatting_participation(principal),
             list_marker: None,
             replaced,
+            replaced_presentation,
             replaced_intrinsic,
         });
         id
@@ -278,6 +293,7 @@ impl<'style_tree, 'dom> BoxTreeBuilder<'style_tree, 'dom> {
             inline_formatting_participation: InlineFormattingParticipation::None,
             list_marker: None,
             replaced: None,
+            replaced_presentation: None,
             replaced_intrinsic: None,
         });
         self.node_mut(parent).children.push(id);
@@ -311,6 +327,7 @@ impl<'style_tree, 'dom> BoxTreeBuilder<'style_tree, 'dom> {
             inline_formatting_participation: InlineFormattingParticipation::None,
             list_marker: None,
             replaced: None,
+            replaced_presentation: None,
             replaced_intrinsic: None,
         });
         id
@@ -445,8 +462,9 @@ fn list_container_kind(node: &Node) -> (bool, bool) {
     match node {
         Node::Element { element } => {
             let name = element.name();
-            let is_ul = name.eq_ignore_ascii_case("ul");
-            let is_ol = name.eq_ignore_ascii_case("ol");
+            let is_html = element.namespace() == html::ElementNamespace::Html;
+            let is_ul = is_html && name == "ul";
+            let is_ol = is_html && name == "ol";
             (is_ul, is_ol)
         }
         _ => (false, false),

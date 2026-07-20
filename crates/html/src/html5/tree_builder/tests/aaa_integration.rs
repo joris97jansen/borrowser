@@ -16,6 +16,7 @@ fn run_tree_builder_chunks(chunks: &[&str]) -> Vec<DomPatch> {
     for chunk in chunks {
         input.push_str(chunk);
         loop {
+            builder.prepare_tokenizer_pump(&mut tokenizer);
             let result = tokenizer.push_input_until_token(&mut input, &mut ctx);
             let batch = tokenizer.next_batch(&mut input);
             if batch.tokens().is_empty() {
@@ -99,7 +100,7 @@ fn in_body_formatting_end_tags_emit_aaa_patch_sequence_in_production_dispatch() 
             },
             DomPatch::CreateElement {
                 key: PatchKey(9),
-                name: std::sync::Arc::from("a"),
+                name: crate::test_support::html_name("a"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -183,15 +184,16 @@ fn in_body_formatting_end_tags_build_expected_dom_for_misnested_inline_formattin
     assert_eq!(
         lines,
         vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <b>".to_string(),
-            "        <i>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"b\" attrs=[]".to_string(),
+            "        element ns=html local=\"i\" attrs=[]".to_string(),
             "          \"one\"".to_string(),
-            "      <i>".to_string(),
+            "      element ns=html local=\"i\" attrs=[]".to_string(),
             "        \"two\"".to_string(),
         ]
     );
@@ -207,16 +209,17 @@ fn special_anchor_start_tag_recovery_reconstructs_after_aaa() {
     assert_eq!(
         lines,
         vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <a>".to_string(),
-            "        <b>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"a\" attrs=[]".to_string(),
+            "        element ns=html local=\"b\" attrs=[]".to_string(),
             "          \"one\"".to_string(),
-            "      <b>".to_string(),
-            "        <a>".to_string(),
+            "      element ns=html local=\"b\" attrs=[]".to_string(),
+            "        element ns=html local=\"a\" attrs=[]".to_string(),
             "          \"two\"".to_string(),
         ],
         "special <a> recovery should run AAA, then reconstruct surviving formatting before inserting the replacement anchor"
@@ -234,17 +237,18 @@ fn aaa_foster_parent_recovery_keeps_row_structure_and_foster_parented_content_st
     assert_eq!(
         lines,
         vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <a>".to_string(),
-            "      <a>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"a\" attrs=[]".to_string(),
+            "      element ns=html local=\"a\" attrs=[]".to_string(),
             "        \"x\"".to_string(),
-            "      <table>".to_string(),
-            "        <tbody>".to_string(),
-            "          <tr>".to_string(),
+            "      element ns=html local=\"table\" attrs=[]".to_string(),
+            "        element ns=html local=\"tbody\" attrs=[]".to_string(),
+            "          element ns=html local=\"tr\" attrs=[]".to_string(),
         ],
         "AAA foster-parent recovery should keep text under the reconstructed non-table current node"
     );
@@ -275,14 +279,15 @@ fn corrected_noscript_special_entry_drives_integrated_aaa_furthest_block_recover
     assert_eq!(
         crate::html5::serialize_dom_for_test(&dom),
         vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <b>".to_string(),
-            "      <noscript>".to_string(),
-            "        <b>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"b\" attrs=[]".to_string(),
+            "      element ns=html local=\"noscript\" attrs=[]".to_string(),
+            "        element ns=html local=\"b\" attrs=[]".to_string(),
             "          \"x\"".to_string(),
         ],
         "noscript must be discovered as the integrated AAA furthest block"
@@ -299,16 +304,17 @@ fn special_nobr_start_tag_recovery_reconstructs_after_aaa() {
     assert_eq!(
         lines,
         vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <nobr>".to_string(),
-            "        <b>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"nobr\" attrs=[]".to_string(),
+            "        element ns=html local=\"b\" attrs=[]".to_string(),
             "          \"one\"".to_string(),
-            "      <b>".to_string(),
-            "        <nobr>".to_string(),
+            "      element ns=html local=\"b\" attrs=[]".to_string(),
+            "        element ns=html local=\"nobr\" attrs=[]".to_string(),
             "          \"two\"".to_string(),
         ],
         "special <nobr> recovery should run AAA, then reconstruct surviving formatting before reinserting nobr"

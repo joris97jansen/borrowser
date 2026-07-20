@@ -17,6 +17,7 @@ fn run_tree_builder_chunks(chunks: &[&str]) -> Vec<crate::dom_patch::DomPatch> {
     for chunk in chunks {
         input.push_str(chunk);
         loop {
+            builder.prepare_tokenizer_pump(&mut tokenizer);
             let result = tokenizer.push_input_until_token(&mut input, &mut ctx);
             let batch = tokenizer.next_batch(&mut input);
             if batch.tokens().is_empty() {
@@ -114,6 +115,7 @@ fn run_tree_builder_input_for_perf(
     input.push_str(input_html);
 
     loop {
+        builder.prepare_tokenizer_pump(&mut tokenizer);
         let result = tokenizer.push_input_until_token(&mut input, &mut ctx);
         let batch = tokenizer.next_batch(&mut input);
         if batch.tokens().is_empty() {
@@ -403,4 +405,71 @@ fn tree_builder_perf_sanity_deep_table_foster_parenting_uses_amortized_anchor_sc
     let patches = builder.drain_patches();
     assert_no_remove_node_moves(&patches, "deep table foster-parenting stress");
     assert_wall_clock_sanity(elapsed, 5, "deep table foster-parenting stress");
+}
+
+#[test]
+fn ae11_deep_ordinary_and_mixed_namespace_stacks_meet_additional_sanity_limits() {
+    use std::time::Instant;
+
+    const DEPTH: usize = 1_000;
+    fn nested(open: &str, close: &str, depth: usize, wrapper: Option<(&str, &str)>) -> String {
+        let mut source = String::new();
+        if let Some((start, _)) = wrapper {
+            source.push_str(start);
+        }
+        for _ in 0..depth {
+            source.push_str(open);
+        }
+        for _ in 0..depth {
+            source.push_str(close);
+        }
+        if let Some((_, end)) = wrapper {
+            source.push_str(end);
+        }
+        source
+    }
+
+    let ordinary = nested("<div>", "</div>", DEPTH, None);
+    let mixed = nested("<g>", "</g>", DEPTH, Some(("<svg>", "</svg>")));
+
+    let ordinary_started = Instant::now();
+    let ordinary_builder = run_tree_builder_input_for_perf(&ordinary);
+    let ordinary_elapsed = ordinary_started.elapsed();
+    let mixed_started = Instant::now();
+    let mixed_builder = run_tree_builder_input_for_perf(&mixed);
+    let mixed_elapsed = mixed_started.elapsed();
+
+    let ordinary_stats = ordinary_builder.debug_perf_stats();
+    let mixed_stats = mixed_builder.debug_perf_stats();
+    eprintln!(
+        "AE11 stack perf: ordinary={ordinary_elapsed:?} mixed={mixed_elapsed:?} ordinary_states={} mixed_states={} ordinary_push={} mixed_push={}",
+        ordinary_stats.max_same_token_cycle_states,
+        mixed_stats.max_same_token_cycle_states,
+        ordinary_stats.soe_push_ops,
+        mixed_stats.soe_push_ops,
+    );
+    let operation_budget = (DEPTH as u64)..=(DEPTH as u64 + 4);
+    assert!(operation_budget.contains(&ordinary_stats.soe_push_ops));
+    assert!(operation_budget.contains(&ordinary_stats.soe_pop_ops));
+    assert!(operation_budget.contains(&mixed_stats.soe_push_ops));
+    assert!(operation_budget.contains(&mixed_stats.soe_pop_ops));
+    assert!(
+        mixed_stats.max_same_token_cycle_states <= ordinary_stats.max_same_token_cycle_states + 1,
+        "mixed namespace same-token reprocessing retained {} states versus ordinary baseline {} (allowed delta 1)",
+        mixed_stats.max_same_token_cycle_states,
+        ordinary_stats.max_same_token_cycle_states,
+    );
+    assert_wall_clock_sanity(ordinary_elapsed, 3, "AE11 deep ordinary HTML stack");
+    assert_wall_clock_sanity(mixed_elapsed, 3, "AE11 deep mixed-namespace stack");
+
+    // This is an additional resource/scheduler sanity guard only. The AE11
+    // performance gate is the separately recorded, sequential comparison
+    // against the immutable pre-AE11 commit on identical inputs and profile.
+    let mixed_budget = ordinary_elapsed
+        .saturating_mul(4)
+        .saturating_add(Duration::from_millis(100));
+    assert!(
+        mixed_elapsed <= mixed_budget,
+        "AE11 mixed stack sanity limit exceeded: ordinary={ordinary_elapsed:?} mixed={mixed_elapsed:?} budget={mixed_budget:?}"
+    );
 }

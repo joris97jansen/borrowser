@@ -13,17 +13,17 @@ fn test_patch_arena_rolls_back_failed_batches() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "div".into(),
+                name: crate::test_support::html_name("div"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(3),
-                name: "p".into(),
+                name: crate::test_support::html_name("p"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(4),
-                name: "span".into(),
+                name: crate::test_support::html_name("span"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {

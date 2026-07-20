@@ -1,8 +1,8 @@
 use super::DomSnapshotOptions;
 use crate::Node;
+use crate::attributes::AttributeNamespace;
 use crate::traverse::{FullModelNodeRef, full_model_preorder};
 use std::fmt::Write;
-use std::sync::Arc;
 
 pub(super) fn walk_snapshot(
     node: &Node,
@@ -46,21 +46,22 @@ pub(super) fn node_label(node: &Node) -> String {
         Node::Element { element } => {
             let name = element.name();
             let attributes = element.attributes();
-            let mut label = String::from(name.as_ref());
-            // Pick id/class via canonical attribute order so duplicate attributes
-            // produce deterministic labels in mismatch paths.
-            let canonical_indices = canonical_attribute_order(attributes);
-            let id_attr = canonical_indices
+            let mut label = format!("{}:{}", element.namespace().snapshot_name(), name);
+            let id_attr = attributes
                 .iter()
-                .map(|index| &attributes[*index])
-                .find(|(key, _)| key.as_ref() == "id")
-                .and_then(|(_, value)| value.as_deref())
+                .find(|attribute| {
+                    attribute.namespace() == AttributeNamespace::None
+                        && attribute.local_name() == "id"
+                })
+                .map(|attribute| attribute.value())
                 .filter(|value| !value.is_empty());
-            let class_attr = canonical_indices
+            let class_attr = attributes
                 .iter()
-                .map(|index| &attributes[*index])
-                .find(|(key, _)| key.as_ref() == "class")
-                .and_then(|(_, value)| value.as_deref())
+                .find(|attribute| {
+                    attribute.namespace() == AttributeNamespace::None
+                        && attribute.local_name() == "class"
+                })
+                .map(|attribute| attribute.value())
                 .filter(|value| !value.is_empty());
             if let Some(id_value) = id_attr {
                 label.push('#');
@@ -143,19 +144,32 @@ pub(super) fn write_node_line(out: &mut String, node: &Node, options: &DomSnapsh
             let name = element.name();
             let attributes = element.attributes();
             let style = element.style();
-            out.push('<');
-            out.push_str(name);
-            for index in canonical_attribute_order(attributes) {
-                let (attribute, value) = &attributes[index];
-                out.push(' ');
-                out.push_str(attribute);
-                if let Some(value) = value {
-                    out.push('=');
-                    out.push('"');
-                    write_escaped(out, value);
-                    out.push('"');
+            out.push_str("element ns=");
+            out.push_str(element.namespace().snapshot_name());
+            out.push_str(" local=\"");
+            write_escaped(out, name);
+            out.push_str("\" attrs=[");
+            for (index, attribute) in attributes.iter().enumerate() {
+                if index != 0 {
+                    out.push_str(", ");
                 }
+                out.push_str("{ns=");
+                out.push_str(attribute.namespace().snapshot_name());
+                out.push_str(" prefix=");
+                if let Some(prefix) = attribute.prefix() {
+                    out.push('"');
+                    out.push_str(prefix);
+                    out.push('"');
+                } else {
+                    out.push('-');
+                }
+                out.push_str(" local=\"");
+                write_escaped(out, attribute.local_name());
+                out.push_str("\" value=\"");
+                write_escaped(out, attribute.value());
+                out.push_str("\"}");
             }
+            out.push(']');
             let include_style = !(options.ignore_empty_style && style.is_empty());
             if include_style {
                 out.push_str(" style=[");
@@ -169,7 +183,6 @@ pub(super) fn write_node_line(out: &mut String, node: &Node, options: &DomSnapsh
                 }
                 out.push(']');
             }
-            out.push('>');
             if !options.ignore_ids {
                 out.push_str(" id=");
                 write!(out, "{}", id.0).ok();
@@ -210,31 +223,4 @@ pub(super) fn write_escaped(out: &mut String, value: &str) {
             }
         }
     }
-}
-
-pub(super) fn canonical_attribute_order(attributes: &[(Arc<str>, Option<String>)]) -> Vec<usize> {
-    let mut indexed: Vec<_> = attributes
-        .iter()
-        .enumerate()
-        .map(|(index, _)| index)
-        .collect();
-    indexed.sort_by(|ia, ib| {
-        let (name_a, value_a) = (&attributes[*ia].0, &attributes[*ia].1);
-        let (name_b, value_b) = (&attributes[*ib].0, &attributes[*ib].1);
-        let kind_a = if value_a.is_some() { 1u8 } else { 0u8 };
-        let kind_b = if value_b.is_some() { 1u8 } else { 0u8 };
-        (
-            name_a.as_ref(),
-            kind_a,
-            value_a.as_deref().unwrap_or(""),
-            *ia,
-        )
-            .cmp(&(
-                name_b.as_ref(),
-                kind_b,
-                value_b.as_deref().unwrap_or(""),
-                *ib,
-            ))
-    });
-    indexed
 }

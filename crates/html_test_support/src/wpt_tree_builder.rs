@@ -356,6 +356,7 @@ fn pump_tokenizer_until_blocked(
     saw_eof_token: &mut bool,
 ) -> Result<(), String> {
     loop {
+        builder.prepare_tokenizer_pump(tokenizer);
         let result = tokenizer.push_input_until_token(input, ctx);
         handle_tokenize_result(result, "push_input")?;
         drain_batches(

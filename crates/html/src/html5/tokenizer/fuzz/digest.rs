@@ -30,5 +30,5 @@ pub(super) fn mix_atom_name(hash: u64, atoms: &AtomTable, id: AtomId) -> u64 {
     if let Some(name) = atoms.resolve(id) {
         return mix_bytes(hash, name.as_bytes());
     }
-    mix_u64(hash, u64::from(id.0))
+    mix_u64(hash, u64::from(id.index()))
 }

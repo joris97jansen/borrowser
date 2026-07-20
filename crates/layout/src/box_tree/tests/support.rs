@@ -1,7 +1,6 @@
 use crate::{BoxNode, BoxTree};
 use css::{ComputedStyle, Length};
 use html::{Node, internal::Id};
-use std::sync::Arc;
 
 use super::super::{
     BoxGenerationRole, BoxId, ContainingBlockId, FormattingContextId, InlineFormattingContextId,
@@ -23,9 +22,42 @@ impl crate::TextMeasurer for TestMeasurer {
 }
 
 pub(super) fn element(id: u32, name: &str, style: Vec<(&str, &str)>, children: Vec<Node>) -> Node {
+    namespaced_element(id, html::ElementNamespace::Html, name, style, children)
+}
+
+pub(super) fn element_with_attributes(
+    id: u32,
+    namespace: html::ElementNamespace,
+    name: &str,
+    attributes: Vec<(&str, &str)>,
+    style: Vec<(&str, &str)>,
+    children: Vec<Node>,
+) -> Node {
     html::internal::node_element_from_parts(
         Id(id),
-        Arc::from(name),
+        html::internal::expanded_name(namespace, name),
+        attributes
+            .into_iter()
+            .map(|(name, value)| html::internal::unqualified_attribute(name, value))
+            .collect(),
+        style
+            .into_iter()
+            .map(|(property, value)| (property.to_string(), value.to_string()))
+            .collect(),
+        children,
+    )
+}
+
+pub(super) fn namespaced_element(
+    id: u32,
+    namespace: html::ElementNamespace,
+    name: &str,
+    style: Vec<(&str, &str)>,
+    children: Vec<Node>,
+) -> Node {
+    html::internal::node_element_from_parts(
+        Id(id),
+        html::internal::expanded_name(namespace, name),
         Vec::new(),
         style
             .into_iter()

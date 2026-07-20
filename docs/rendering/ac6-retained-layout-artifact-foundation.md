@@ -202,3 +202,22 @@ AC6 does not introduce:
 - browser-owned CSS property-impact tables;
 - retained paint artifact reuse; AC7 adds that later as a separate
   browser/runtime-retained, paint-owned semantic artifact contract.
+
+AE11 adds a Layout-owned `BoxGenerationDecision`: `Generate` or
+`SuppressSubtree(BoxSuppressionReason::UnsupportedForeignNamespace(_))`.
+Suppressed SVG/MathML nodes and their integration-point HTML descendants remain
+in DOM and style trees but contribute no layout boxes, retained layout anchors,
+or Paint input. Browser and Paint do not repeat this classification. A later
+supported SVG/MathML subset can return `Generate` without changing this API's
+meaning or the retained-layout key model.
+
+AE11 also retains Layout-owned `ReplacedElementPresentation` alongside the box
+that consumes it. Layout extracts exact stored `src`, `alt`, and `placeholder`
+DOM strings after HTML-namespace and no-attribute-namespace checks. It passes
+the exact `src` string to the Browser-owned resolver, which strips only
+surrounding HTML ASCII whitespace before URL parsing and base joining.
+Present-empty and absent `alt`/`placeholder` attributes remain distinct.
+Retained materialization copies this typed presentation unchanged. Reuse
+therefore does not cause Paint/GFX to revisit or normalize DOM namespaces or
+attributes, and unsupported foreign subtrees still have no retained Layout
+participation.

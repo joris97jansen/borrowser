@@ -192,6 +192,7 @@ fn pump_tokenizer_until_blocked(
     plan_label: Option<&str>,
 ) -> Result<(), String> {
     loop {
+        d.builder.prepare_tokenizer_pump(d.tokenizer);
         let result = d.tokenizer.push_input_until_token(d.input, d.ctx);
         handle_tokenize_result(result, fixture, plan_label, "push_input")?;
         drain_batches(d.reborrow(), true)?;

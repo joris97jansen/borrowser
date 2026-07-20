@@ -1,6 +1,7 @@
 use super::PatchValidationArena;
 use crate::DomPatch;
 use crate::dom_patch::PatchKey;
+use crate::test_support::html_name;
 
 #[test]
 fn patch_validation_arena_accepts_valid_batches_and_materializes() {
@@ -13,7 +14,7 @@ fn patch_validation_arena_accepts_valid_batches_and_materializes() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "html".into(),
+                name: html_name("html"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -92,7 +93,7 @@ fn patch_validation_arena_rejects_detached_non_root_nodes() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "html".into(),
+                name: html_name("html"),
                 attributes: Vec::new(),
             },
         ])
@@ -116,7 +117,7 @@ fn patch_validation_arena_preserves_key_freshness_across_clear() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "html".into(),
+                name: html_name("html"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -151,7 +152,7 @@ fn template_seed_batch() -> Vec<DomPatch> {
         },
         DomPatch::CreateElement {
             key: PatchKey(2),
-            name: "html".into(),
+            name: html_name("html"),
             attributes: Vec::new(),
         },
         DomPatch::AppendChild {
@@ -160,7 +161,7 @@ fn template_seed_batch() -> Vec<DomPatch> {
         },
         DomPatch::CreateElement {
             key: PatchKey(3),
-            name: "template".into(),
+            name: html_name("template"),
             attributes: Vec::new(),
         },
         DomPatch::CreateTemplateContents {
@@ -187,7 +188,7 @@ fn nested_template_seed_batch() -> Vec<DomPatch> {
     patches.extend([
         DomPatch::CreateElement {
             key: PatchKey(6),
-            name: "template".into(),
+            name: html_name("template"),
             attributes: Vec::new(),
         },
         DomPatch::CreateTemplateContents {
@@ -341,7 +342,7 @@ fn generic_validation_allows_unassociated_legacy_template_elements() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "template".into(),
+                name: html_name("template"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {

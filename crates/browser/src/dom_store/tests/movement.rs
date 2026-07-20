@@ -16,17 +16,17 @@ fn reattaching_parented_node_reparents_preserving_identity() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "a".into(),
+                name: html::internal::html_name("a"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(3),
-                name: "b".into(),
+                name: html::internal::html_name("b"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(4),
-                name: "root".into(),
+                name: html::internal::html_name("root"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -59,9 +59,9 @@ fn reattaching_parented_node_reparents_preserving_identity() {
         materialized_dom_lines(&store, h),
         vec![
             "#document doctype=<none>".to_string(),
-            "  <root attrs=[]>".to_string(),
-            "    <b attrs=[]>".to_string(),
-            "    <a attrs=[]>".to_string(),
+            "  <ns=html local=\"root\" attrs=[]>".to_string(),
+            "    <ns=html local=\"b\" attrs=[]>".to_string(),
+            "    <ns=html local=\"a\" attrs=[]>".to_string(),
         ]
     );
 }
@@ -81,22 +81,22 @@ fn insert_before_with_parented_node_reorders_and_noops() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(5),
-                name: "root".into(),
+                name: html::internal::html_name("root"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "a".into(),
+                name: html::internal::html_name("a"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(3),
-                name: "b".into(),
+                name: html::internal::html_name("b"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(4),
-                name: "c".into(),
+                name: html::internal::html_name("c"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -134,10 +134,10 @@ fn insert_before_with_parented_node_reorders_and_noops() {
         materialized_dom_lines(&store, h),
         vec![
             "#document doctype=<none>".to_string(),
-            "  <root attrs=[]>".to_string(),
-            "    <c attrs=[]>".to_string(),
-            "    <a attrs=[]>".to_string(),
-            "    <b attrs=[]>".to_string(),
+            "  <ns=html local=\"root\" attrs=[]>".to_string(),
+            "    <ns=html local=\"c\" attrs=[]>".to_string(),
+            "    <ns=html local=\"a\" attrs=[]>".to_string(),
+            "    <ns=html local=\"b\" attrs=[]>".to_string(),
         ]
     );
 
@@ -156,10 +156,10 @@ fn insert_before_with_parented_node_reorders_and_noops() {
         materialized_dom_lines(&store, h),
         vec![
             "#document doctype=<none>".to_string(),
-            "  <root attrs=[]>".to_string(),
-            "    <c attrs=[]>".to_string(),
-            "    <a attrs=[]>".to_string(),
-            "    <b attrs=[]>".to_string(),
+            "  <ns=html local=\"root\" attrs=[]>".to_string(),
+            "    <ns=html local=\"c\" attrs=[]>".to_string(),
+            "    <ns=html local=\"a\" attrs=[]>".to_string(),
+            "    <ns=html local=\"b\" attrs=[]>".to_string(),
         ]
     );
 }
@@ -179,22 +179,22 @@ fn append_child_with_same_parent_moves_node_to_end() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(5),
-                name: "root".into(),
+                name: html::internal::html_name("root"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "a".into(),
+                name: html::internal::html_name("a"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(3),
-                name: "b".into(),
+                name: html::internal::html_name("b"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(4),
-                name: "c".into(),
+                name: html::internal::html_name("c"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -231,10 +231,10 @@ fn append_child_with_same_parent_moves_node_to_end() {
         materialized_dom_lines(&store, h),
         vec![
             "#document doctype=<none>".to_string(),
-            "  <root attrs=[]>".to_string(),
-            "    <b attrs=[]>".to_string(),
-            "    <c attrs=[]>".to_string(),
-            "    <a attrs=[]>".to_string(),
+            "  <ns=html local=\"root\" attrs=[]>".to_string(),
+            "    <ns=html local=\"b\" attrs=[]>".to_string(),
+            "    <ns=html local=\"c\" attrs=[]>".to_string(),
+            "    <ns=html local=\"a\" attrs=[]>".to_string(),
         ]
     );
 }
@@ -254,22 +254,22 @@ fn insert_before_supports_cross_parent_reparenting() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "left".into(),
+                name: html::internal::html_name("left"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(3),
-                name: "right".into(),
+                name: html::internal::html_name("right"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(4),
-                name: "child".into(),
+                name: html::internal::html_name("child"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(5),
-                name: "anchor".into(),
+                name: html::internal::html_name("anchor"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -307,10 +307,10 @@ fn insert_before_supports_cross_parent_reparenting() {
         materialized_dom_lines(&store, h),
         vec![
             "#document doctype=<none>".to_string(),
-            "  <left attrs=[]>".to_string(),
-            "  <right attrs=[]>".to_string(),
-            "    <child attrs=[]>".to_string(),
-            "    <anchor attrs=[]>".to_string(),
+            "  <ns=html local=\"left\" attrs=[]>".to_string(),
+            "  <ns=html local=\"right\" attrs=[]>".to_string(),
+            "    <ns=html local=\"child\" attrs=[]>".to_string(),
+            "    <ns=html local=\"anchor\" attrs=[]>".to_string(),
         ]
     );
 }

@@ -13,12 +13,12 @@ fn test_patch_arena_rejects_moves_of_removed_nodes_as_dangling_references() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "div".into(),
+                name: crate::test_support::html_name("div"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(3),
-                name: "span".into(),
+                name: crate::test_support::html_name("span"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -53,17 +53,17 @@ fn test_patch_arena_rejects_moves_of_removed_subtree_descendants() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "div".into(),
+                name: crate::test_support::html_name("div"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(3),
-                name: "section".into(),
+                name: crate::test_support::html_name("section"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(4),
-                name: "span".into(),
+                name: crate::test_support::html_name("span"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -99,17 +99,17 @@ fn nested_template_batch() -> Vec<DomPatch> {
         },
         DomPatch::CreateElement {
             key: PatchKey(2),
-            name: "div".into(),
+            name: crate::test_support::html_name("div"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(3),
-            name: "section".into(),
+            name: crate::test_support::html_name("section"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(4),
-            name: "template".into(),
+            name: crate::test_support::html_name("template"),
             attributes: Vec::new(),
         },
         DomPatch::CreateTemplateContents {
@@ -122,7 +122,7 @@ fn nested_template_batch() -> Vec<DomPatch> {
         },
         DomPatch::CreateElement {
             key: PatchKey(7),
-            name: "template".into(),
+            name: crate::test_support::html_name("template"),
             attributes: Vec::new(),
         },
         DomPatch::CreateTemplateContents {

@@ -8,7 +8,8 @@ use crate::{
     ContainingBlockId, DisplayBoxBehavior, FlexFormattingParticipation, FlowParticipation,
     FormattingContextId, FormattingContextKind, InlineFormattingContextId,
     InlineFormattingParticipation, LayoutBox, LayoutPhaseOutput, ListMarker, OverflowPolicy,
-    PositionedContainingBlockId, PositioningScheme, Rectangle, ReplacedKind, UsedContentSize,
+    PositionedContainingBlockId, PositioningScheme, Rectangle, ReplacedElementPresentation,
+    ReplacedKind, UsedContentSize,
     flex::{
         FlexContainerCrossAxisLayout, FlexContainerMainAxisLayout, FlexItemCrossAxisLayout,
         FlexItemMainAxisLayout,
@@ -159,6 +160,7 @@ struct RetainedLayoutBox {
     flex_item_cross_axis: Option<FlexItemCrossAxisLayout>,
     list_marker: Option<ListMarker>,
     replaced: Option<ReplacedKind>,
+    replaced_presentation: Option<ReplacedElementPresentation>,
     replaced_intrinsic: Option<IntrinsicSize>,
     used_content_size: Option<UsedContentSize>,
     block_flow_placement: Option<BlockFlowBlockPlacement>,
@@ -203,6 +205,7 @@ impl RetainedLayoutBox {
             flex_item_cross_axis: layout.flex_item_cross_axis,
             list_marker: layout.list_marker,
             replaced: layout.replaced,
+            replaced_presentation: layout.replaced_presentation.clone(),
             replaced_intrinsic: layout.replaced_intrinsic,
             used_content_size: layout.used_content_size,
             block_flow_placement: layout.block_flow_placement,
@@ -262,6 +265,7 @@ impl RetainedLayoutBox {
             flex_item_cross_axis: self.flex_item_cross_axis,
             list_marker: self.list_marker,
             replaced: self.replaced,
+            replaced_presentation: self.replaced_presentation.clone(),
             replaced_intrinsic: self.replaced_intrinsic,
             used_content_size: self.used_content_size,
             block_flow_placement: self.block_flow_placement,
@@ -405,13 +409,15 @@ fn collect_styled_nodes<'style_tree, 'dom>(
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
 
     use css::{ComputedStyle, Length, build_style_tree};
     use html::{Node, internal::Id};
 
     use super::*;
-    use crate::{LayoutPhaseInput, TextMeasurer, layout_document};
+    use crate::{
+        ImagePresentation, LayoutPhaseInput, ReplacedElementInfoProvider,
+        ReplacedElementPresentation, TextMeasurer, layout_document,
+    };
 
     struct TestMeasurer;
 
@@ -424,6 +430,19 @@ mod tests {
         fn line_height(&self, style: &ComputedStyle) -> f32 {
             let Length::Px(font_px) = style.font_size();
             font_px * 1.2
+        }
+    }
+
+    struct TestReplacedInfo;
+
+    impl ReplacedElementInfoProvider for TestReplacedInfo {
+        fn resolve_image_source(&self, source: &str) -> Option<String> {
+            assert_eq!(source, " hero.png ");
+            Some("https://example.test/assets/hero.png".to_string())
+        }
+
+        fn intrinsic_for_img(&self, _image: &ImagePresentation) -> Option<IntrinsicSize> {
+            Some(IntrinsicSize::from_w_h(Some(80.0), Some(40.0)))
         }
     }
 
@@ -497,10 +516,98 @@ mod tests {
         );
     }
 
+    #[test]
+    fn retained_layout_preserves_resolved_replaced_presentation() {
+        for alternative_text in [Some(" Hero "), Some(""), None] {
+            let mut attributes = vec![html::internal::unqualified_attribute("src", " hero.png ")];
+            if let Some(value) = alternative_text {
+                attributes.push(html::internal::unqualified_attribute("alt", value));
+            }
+            let dom = html::internal::node_element_from_parts(
+                Id(1),
+                html::internal::html_name("img"),
+                attributes,
+                Vec::new(),
+                Vec::new(),
+            );
+            let styled = build_style_tree(&dom, None);
+            let layout = layout_document(LayoutPhaseInput::new(
+                &styled,
+                320.0,
+                &TestMeasurer,
+                Some(&TestReplacedInfo),
+            ));
+            let key = RetainedLayoutKeySeed {
+                identity_domain: 1,
+                layout_input_generation: 1,
+                layout_style_generation: 1,
+                text_measurement_generation: 0,
+                replaced_metadata_generation: 1,
+            }
+            .for_viewport_width(320.0);
+            let artifact = RetainedLayoutArtifact::from_layout_output(key, &layout);
+            let materialized = artifact
+                .materialize(&styled)
+                .expect("retained image layout should materialize");
+
+            let Some(ReplacedElementPresentation::Image(image)) =
+                materialized.root().replaced_presentation()
+            else {
+                panic!("retained image box must preserve typed presentation");
+            };
+            assert_eq!(
+                image.resolved_source(),
+                Some("https://example.test/assets/hero.png")
+            );
+            assert_eq!(image.alternative_text(), alternative_text);
+        }
+    }
+
+    #[test]
+    fn retained_layout_preserves_exact_text_control_presentation_strings() {
+        for name in ["input", "textarea"] {
+            for placeholder in [Some(" Multi word "), Some(""), None] {
+                let attributes = placeholder
+                    .map(|value| html::internal::unqualified_attribute("placeholder", value))
+                    .into_iter()
+                    .collect();
+                let dom = html::internal::node_element_from_parts(
+                    Id(1),
+                    html::internal::html_name(name),
+                    attributes,
+                    Vec::new(),
+                    Vec::new(),
+                );
+                let styled = build_style_tree(&dom, None);
+                let layout =
+                    layout_document(LayoutPhaseInput::new(&styled, 320.0, &TestMeasurer, None));
+                let key = RetainedLayoutKeySeed {
+                    identity_domain: 1,
+                    layout_input_generation: 1,
+                    layout_style_generation: 1,
+                    text_measurement_generation: 0,
+                    replaced_metadata_generation: 1,
+                }
+                .for_viewport_width(320.0);
+                let artifact = RetainedLayoutArtifact::from_layout_output(key, &layout);
+                let materialized = artifact
+                    .materialize(&styled)
+                    .expect("retained text-control layout should materialize");
+
+                let Some(ReplacedElementPresentation::TextControl(presentation)) =
+                    materialized.root().replaced_presentation()
+                else {
+                    panic!("retained {name} box must preserve typed presentation");
+                };
+                assert_eq!(presentation.placeholder(), placeholder, "{name}");
+            }
+        }
+    }
+
     fn element(id: u32, name: &str, style: Vec<(&str, &str)>, children: Vec<Node>) -> Node {
         html::internal::node_element_from_parts(
             Id(id),
-            Arc::from(name),
+            html::internal::html_name(name),
             Vec::new(),
             style
                 .into_iter()

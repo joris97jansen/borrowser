@@ -5,7 +5,6 @@ use super::types::InlineFragment;
 use crate::{Rectangle, ReplacedKind, TextMeasurer};
 use css::{ComputedStyle, ComputedValue, Length, PropertyId, TextDecorationLine};
 use html::{Node, internal::Id};
-use std::sync::Arc;
 
 struct TestMeasurer;
 
@@ -414,13 +413,13 @@ fn drop_leading_space_before_first_content() {
         doctype: None,
         children: vec![html::internal::node_element_from_parts(
             Id(2),
-            Arc::from("div"),
+            html::internal::html_name("div"),
             Vec::new(),
             Vec::new(),
             vec![
                 html::internal::node_element_from_parts(
                     Id(3),
-                    Arc::from("span"),
+                    html::internal::html_name("span"),
                     Vec::new(),
                     Vec::new(),
                     vec![Node::Text {
@@ -455,7 +454,7 @@ fn collapse_space_after_empty_inline_run() {
         doctype: None,
         children: vec![html::internal::node_element_from_parts(
             Id(2),
-            Arc::from("div"),
+            html::internal::html_name("div"),
             Vec::new(),
             Vec::new(),
             vec![
@@ -465,7 +464,7 @@ fn collapse_space_after_empty_inline_run() {
                 },
                 html::internal::node_element_from_parts(
                     Id(4),
-                    Arc::from("span"),
+                    html::internal::html_name("span"),
                     Vec::new(),
                     Vec::new(),
                     vec![Node::Text {
@@ -505,7 +504,7 @@ fn pending_space_does_not_cross_block_boundary() {
         doctype: None,
         children: vec![html::internal::node_element_from_parts(
             Id(2),
-            Arc::from("div"),
+            html::internal::html_name("div"),
             Vec::new(),
             Vec::new(),
             vec![
@@ -515,7 +514,7 @@ fn pending_space_does_not_cross_block_boundary() {
                 },
                 html::internal::node_element_from_parts(
                     Id(4),
-                    Arc::from("p"),
+                    html::internal::html_name("p"),
                     Vec::new(),
                     Vec::new(),
                     vec![Node::Text {
@@ -561,7 +560,7 @@ fn inline_block_margins_affect_wrapping() {
         doctype: None,
         children: vec![html::internal::node_element_from_parts(
             Id(2),
-            Arc::from("div"),
+            html::internal::html_name("div"),
             Vec::new(),
             Vec::new(),
             vec![
@@ -571,7 +570,7 @@ fn inline_block_margins_affect_wrapping() {
                 },
                 html::internal::node_element_from_parts(
                     Id(4),
-                    Arc::from("span"),
+                    html::internal::html_name("span"),
                     Vec::new(),
                     vec![
                         ("display".to_string(), "inline-block".to_string()),

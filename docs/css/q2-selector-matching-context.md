@@ -282,3 +282,24 @@ Repository status:
   closed
 - later matcher implementation should be written against
   `SelectorMatchingContext` plus `SelectorListMatchBuilder`
+## AE11 namespace context
+
+`SelectorMatchingContext` carries an optional typed
+`SelectorNamespaceConstraint`. Author rule inputs use `Unconstrained`; HTML UA
+rule groups use `Exact(ElementNamespace::Html)`. The constraint is evaluated
+at every compound reached during right-to-left combinator traversal, not only
+for the original candidate. Consequently foreign lookalikes cannot satisfy
+HTML-only UA compounds in selectors such as `html body`, `html .notice`,
+`body > *`, or `.notice`. Type matching remains ASCII-insensitive for HTML and
+case-sensitive for canonical foreign local names. Unprefixed attribute queries
+remain limited to `AttributeNamespace::None`.
+
+This internal context does not implement CSS `@namespace`, prefixed selectors,
+or a public namespace-aware selector API.
+
+The deterministic selector-DOM debug surface is `version: 2`. Each indexed
+element records its selector identity as `namespace=<html|svg|mathml>` plus the
+exact canonical `local` name, followed by its existing index, parent, and
+previous-element-sibling fields. This prevents HTML, SVG, and MathML
+lookalikes from becoming indistinguishable in matching diagnostics; adjusted
+SVG case such as `foreignObject` is preserved exactly.

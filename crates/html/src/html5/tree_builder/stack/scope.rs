@@ -2,6 +2,7 @@ use super::open_elements::OpenElementsStack;
 use super::types::{OpenElement, ScopeKeyMatch, ScopeKind, ScopeTagSet};
 use crate::dom_patch::PatchKey;
 use crate::html5::shared::AtomId;
+use crate::names::ElementNamespace;
 
 impl OpenElementsStack {
     #[allow(
@@ -18,10 +19,12 @@ impl OpenElementsStack {
         for entry in self.items.iter().rev() {
             self.scope_scan_steps = self.scope_scan_steps.saturating_add(1);
             let name = entry.name();
-            if name == td || name == th {
+            if entry.namespace() == ElementNamespace::Html && (name == td || name == th) {
                 return Some(*entry);
             }
-            if name == tags.html || name == tags.table || name == tags.template {
+            if entry.namespace() == ElementNamespace::Html
+                && (name == tags.html || name == tags.table || name == tags.template)
+            {
                 return None;
             }
         }
@@ -40,7 +43,7 @@ impl OpenElementsStack {
     ) -> bool {
         // Probe-only check: no stack mutation, but contributes to scan counters.
         self.scope_scan_calls = self.scope_scan_calls.saturating_add(1);
-        if !self.has_name_count(target) {
+        if !self.has_name_count(ElementNamespace::Html, target) {
             return false;
         }
         self.find_in_scope_match_index(target, kind, tags).is_some()
@@ -56,7 +59,7 @@ impl OpenElementsStack {
         tags: &ScopeTagSet,
     ) -> Option<OpenElement> {
         self.scope_scan_calls = self.scope_scan_calls.saturating_add(1);
-        if !self.has_name_count(target) {
+        if !self.has_name_count(ElementNamespace::Html, target) {
             return None;
         }
         let match_index = self.find_in_scope_match_index(target, kind, tags)?;
@@ -71,7 +74,7 @@ impl OpenElementsStack {
                 .items
                 .pop()
                 .expect("match_index is inside SOE so suffix pop must succeed");
-            self.note_name_pop(popped.name());
+            self.note_name_pop(popped.expanded_name_key());
             matched = Some(popped);
         }
         self.pop_ops = self.pop_ops.saturating_add(removed as u64);
@@ -96,7 +99,7 @@ impl OpenElementsStack {
                     ScopeKeyMatch::InScope(index)
                 };
             }
-            if !crossed_boundary && is_scope_boundary(entry.name(), kind, tags) {
+            if !crossed_boundary && is_scope_boundary(entry, kind, tags) {
                 crossed_boundary = true;
             }
         }
@@ -115,7 +118,9 @@ impl OpenElementsStack {
         let mut removed = 0usize;
         while let Some(current) = self.current() {
             let name = current.name();
-            if name == tags.html || name == tags.table || name == tags.template {
+            if current.namespace() == ElementNamespace::Html
+                && (name == tags.html || name == tags.table || name == tags.template)
+            {
                 break;
             }
             let popped = self
@@ -123,10 +128,13 @@ impl OpenElementsStack {
                 .pop()
                 .expect("current() returned Some so pop() must succeed");
             debug_assert_eq!(popped, current);
-            self.note_name_pop(popped.name());
+            self.note_name_pop(popped.expanded_name_key());
             self.pop_ops = self.pop_ops.saturating_add(1);
-            self.foster_parenting_cache
-                .note_pop(self.items.len(), popped.name());
+            self.foster_parenting_cache.note_pop(
+                self.items.len(),
+                popped.namespace(),
+                popped.name(),
+            );
             removed += 1;
         }
         removed
@@ -146,11 +154,12 @@ impl OpenElementsStack {
         let mut removed = 0usize;
         while let Some(current) = self.current() {
             let name = current.name();
-            if name == tbody
-                || name == thead
-                || name == tfoot
-                || name == tags.html
-                || name == tags.template
+            if current.namespace() == ElementNamespace::Html
+                && (name == tbody
+                    || name == thead
+                    || name == tfoot
+                    || name == tags.html
+                    || name == tags.template)
             {
                 break;
             }
@@ -159,10 +168,13 @@ impl OpenElementsStack {
                 .pop()
                 .expect("current() returned Some so pop() must succeed");
             debug_assert_eq!(popped, current);
-            self.note_name_pop(popped.name());
+            self.note_name_pop(popped.expanded_name_key());
             self.pop_ops = self.pop_ops.saturating_add(1);
-            self.foster_parenting_cache
-                .note_pop(self.items.len(), popped.name());
+            self.foster_parenting_cache.note_pop(
+                self.items.len(),
+                popped.namespace(),
+                popped.name(),
+            );
             removed += 1;
         }
         removed
@@ -176,7 +188,9 @@ impl OpenElementsStack {
         let mut removed = 0usize;
         while let Some(current) = self.current() {
             let name = current.name();
-            if name == tr || name == tags.html || name == tags.template {
+            if current.namespace() == ElementNamespace::Html
+                && (name == tr || name == tags.html || name == tags.template)
+            {
                 break;
             }
             let popped = self
@@ -184,10 +198,13 @@ impl OpenElementsStack {
                 .pop()
                 .expect("current() returned Some so pop() must succeed");
             debug_assert_eq!(popped, current);
-            self.note_name_pop(popped.name());
+            self.note_name_pop(popped.expanded_name_key());
             self.pop_ops = self.pop_ops.saturating_add(1);
-            self.foster_parenting_cache
-                .note_pop(self.items.len(), popped.name());
+            self.foster_parenting_cache.note_pop(
+                self.items.len(),
+                popped.namespace(),
+                popped.name(),
+            );
             removed += 1;
         }
         removed
@@ -204,10 +221,10 @@ impl OpenElementsStack {
         for index in (0..self.items.len()).rev() {
             self.scope_scan_steps = self.scope_scan_steps.saturating_add(1);
             let name = self.items[index].name();
-            if name == target {
+            if self.items[index].namespace() == ElementNamespace::Html && name == target {
                 return Some(index);
             }
-            if is_scope_boundary(name, kind, tags) {
+            if is_scope_boundary(self.items[index], kind, tags) {
                 return None;
             }
         }
@@ -216,27 +233,52 @@ impl OpenElementsStack {
 }
 
 #[inline]
-fn is_in_scope_boundary(name: AtomId, tags: &ScopeTagSet) -> bool {
-    name == tags.html
-        || name == tags.table
-        || name == tags.template
-        || name == tags.td
-        || name == tags.th
-        || name == tags.caption
-        || name == tags.marquee
-        || name == tags.object
-        || name == tags.applet
-        || name == tags.select
+fn is_in_scope_boundary(entry: OpenElement, tags: &ScopeTagSet) -> bool {
+    let name = entry.name();
+    match entry.namespace() {
+        ElementNamespace::Html => {
+            name == tags.html
+                || name == tags.table
+                || name == tags.template
+                || name == tags.td
+                || name == tags.th
+                || name == tags.caption
+                || name == tags.marquee
+                || name == tags.object
+                || name == tags.applet
+                || name == tags.select
+        }
+        ElementNamespace::MathMl => {
+            name == tags.math_mi
+                || name == tags.math_mo
+                || name == tags.math_mn
+                || name == tags.math_ms
+                || name == tags.math_mtext
+                || name == tags.math_annotation_xml
+        }
+        ElementNamespace::Svg => {
+            name == tags.svg_foreign_object || name == tags.svg_desc || name == tags.svg_title
+        }
+    }
 }
 
 #[inline]
-fn is_scope_boundary(name: AtomId, kind: ScopeKind, tags: &ScopeTagSet) -> bool {
+fn is_scope_boundary(entry: OpenElement, kind: ScopeKind, tags: &ScopeTagSet) -> bool {
+    let name = entry.name();
     match kind {
-        ScopeKind::InScope => is_in_scope_boundary(name, tags),
-        ScopeKind::Button => is_in_scope_boundary(name, tags) || name == tags.button,
-        ScopeKind::ListItem => {
-            is_in_scope_boundary(name, tags) || name == tags.ol || name == tags.ul
+        ScopeKind::InScope => is_in_scope_boundary(entry, tags),
+        ScopeKind::Button => {
+            is_in_scope_boundary(entry, tags)
+                || (entry.namespace() == ElementNamespace::Html && name == tags.button)
         }
-        ScopeKind::Table => name == tags.html || name == tags.table || name == tags.template,
+        ScopeKind::ListItem => {
+            is_in_scope_boundary(entry, tags)
+                || (entry.namespace() == ElementNamespace::Html
+                    && (name == tags.ol || name == tags.ul))
+        }
+        ScopeKind::Table => {
+            entry.namespace() == ElementNamespace::Html
+                && (name == tags.html || name == tags.table || name == tags.template)
+        }
     }
 }

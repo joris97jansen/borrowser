@@ -1,7 +1,7 @@
 use super::super::materialize_patch_batches;
+use super::support::html_name;
 use crate::DomPatch;
 use crate::dom_patch::PatchKey;
-use std::sync::Arc;
 
 #[test]
 fn materialize_patch_batches_rejects_moves_of_removed_nodes() {
@@ -12,12 +12,12 @@ fn materialize_patch_batches_rejects_moves_of_removed_nodes() {
         },
         DomPatch::CreateElement {
             key: PatchKey(2),
-            name: Arc::from("div"),
+            name: html_name("div"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(3),
-            name: Arc::from("span"),
+            name: html_name("span"),
             attributes: Vec::new(),
         },
         DomPatch::AppendChild {
@@ -50,17 +50,17 @@ fn materialize_patch_batches_rejects_moves_of_removed_subtree_descendants() {
         },
         DomPatch::CreateElement {
             key: PatchKey(2),
-            name: Arc::from("div"),
+            name: html_name("div"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(3),
-            name: Arc::from("section"),
+            name: html_name("section"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(4),
-            name: Arc::from("span"),
+            name: html_name("span"),
             attributes: Vec::new(),
         },
         DomPatch::AppendChild {
@@ -97,7 +97,7 @@ fn materialize_patch_batches_rejects_detached_non_root_nodes() {
         },
         DomPatch::CreateElement {
             key: PatchKey(2),
-            name: Arc::from("html"),
+            name: html_name("html"),
             attributes: Vec::new(),
         },
     ]])
@@ -119,7 +119,7 @@ fn materialize_patch_batches_rejects_key_reuse_across_clear() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: Arc::from("html"),
+                name: html_name("html"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -152,12 +152,12 @@ fn materialize_patch_batches_rejects_document_and_root_element_moves() {
         },
         DomPatch::CreateElement {
             key: PatchKey(2),
-            name: Arc::from("html"),
+            name: html_name("html"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(3),
-            name: Arc::from("body"),
+            name: html_name("body"),
             attributes: Vec::new(),
         },
         DomPatch::AppendChild {
@@ -187,12 +187,12 @@ fn materialize_patch_batches_rejects_document_and_root_element_moves() {
         },
         DomPatch::CreateElement {
             key: PatchKey(2),
-            name: Arc::from("html"),
+            name: html_name("html"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(3),
-            name: Arc::from("body"),
+            name: html_name("body"),
             attributes: Vec::new(),
         },
         DomPatch::AppendChild {
@@ -221,17 +221,17 @@ fn materialize_patch_batches_rejects_document_and_root_element_moves() {
         },
         DomPatch::CreateElement {
             key: PatchKey(2),
-            name: Arc::from("html"),
+            name: html_name("html"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(3),
-            name: Arc::from("body"),
+            name: html_name("body"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(4),
-            name: Arc::from("anchor"),
+            name: html_name("anchor"),
             attributes: Vec::new(),
         },
         DomPatch::AppendChild {
@@ -265,17 +265,17 @@ fn materialize_patch_batches_rejects_document_and_root_element_moves() {
         },
         DomPatch::CreateElement {
             key: PatchKey(2),
-            name: Arc::from("html"),
+            name: html_name("html"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(3),
-            name: Arc::from("body"),
+            name: html_name("body"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(4),
-            name: Arc::from("anchor"),
+            name: html_name("anchor"),
             attributes: Vec::new(),
         },
         DomPatch::AppendChild {

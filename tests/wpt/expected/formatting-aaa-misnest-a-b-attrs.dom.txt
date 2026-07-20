@@ -1,12 +1,14 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
+
+#dom-snapshot-v2
 #document
   <!doctype html>
-  <html>
-    <head>
-    <body>
-      <a href="/x">
-        <b>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=html local="a" attrs=[{ns=none prefix=- local="href" value="/x"}]
+        element ns=html local="b" attrs=[]
           "x"
-      <b>
+      element ns=html local="b" attrs=[]
         "y"
       "\n"

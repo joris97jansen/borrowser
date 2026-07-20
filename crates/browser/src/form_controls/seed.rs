@@ -31,11 +31,16 @@ fn walk(
     radio_groups: &mut HashMap<usize, RadioGroupSelection>,
 ) {
     match node {
-        Node::Element { element } if element.name().eq_ignore_ascii_case("input") => {
+        Node::Element { element }
+            if element.namespace() == html::ElementNamespace::Html && element.name() == "input" =>
+        {
             handle_input(store, node, scope_id, index, radio_groups);
         }
 
-        Node::Element { element } if element.name().eq_ignore_ascii_case("textarea") => {
+        Node::Element { element }
+            if element.namespace() == html::ElementNamespace::Html
+                && element.name() == "textarea" =>
+        {
             handle_textarea(store, node, element.children());
         }
 
@@ -153,7 +158,11 @@ fn walk_children(
 fn next_scope_id(node: &Node, scope_id: Option<Id>) -> Option<Id> {
     match node {
         Node::Document { .. } => Some(DOCUMENT_SCOPE_ID),
-        Node::Element { element } if element.name().eq_ignore_ascii_case("form") => Some(node.id()),
+        Node::Element { element }
+            if element.namespace() == html::ElementNamespace::Html && element.name() == "form" =>
+        {
+            Some(node.id())
+        }
         _ => scope_id,
     }
 }

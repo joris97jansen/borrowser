@@ -195,7 +195,8 @@ is the document-order collection of computed element styles. `StyledNode` is
 the tree consumed by layout and paint.
 
 `build_style_tree_from_computed_styles(...)` validates that the computed
-document style matches the target DOM by selector identity and element name.
+document style matches the target DOM by selector identity, element namespace,
+and canonical local name.
 It rejects mismatched handoffs instead of pairing styles by shape alone.
 
 Document, text, and comment nodes receive inherited or initial styles as

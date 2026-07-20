@@ -21,7 +21,9 @@ use fixture_bands::{
     AE8_TABLE_FIXTURE_BAND, AE8_TABLE_FIXTURE_NAMES, H8_FIXTURE_BAND, H8_FIXTURE_NAMES,
     H10_FIXTURE_BAND, H10_FIXTURE_NAMES, I10_TABLE_FIXTURE_BAND, I10_TABLE_FIXTURE_NAMES,
 };
-use fixtures::{FixtureStatus, load_fixtures, normalize_fixture_input};
+use fixtures::{
+    FixtureStatus, load_fixtures, normalize_fixture_input, update_mode, write_expected_dom_file,
+};
 use html::chunker::{ChunkerConfig, build_chunk_plans};
 use html::test_harness::shrink_chunk_plan_with_stats;
 use html_test_support::diff_lines;
@@ -32,6 +34,7 @@ use std::env;
 fn html5_golden_tree_builder_whole_input() {
     let fixtures = load_fixtures();
     let filter = fixture_filter();
+    let update = update_mode();
     let mut ran = 0usize;
     for fixture in fixtures {
         if !filter.matches(&fixture.name) {
@@ -39,6 +42,13 @@ fn html5_golden_tree_builder_whole_input() {
         }
         ran += 1;
         let actual = run_tree_builder_whole(&fixture);
+        if update {
+            let lines = actual
+                .lines()
+                .unwrap_or_else(|| panic!("cannot update failed DOM fixture '{}'", fixture.name));
+            write_expected_dom_file(&fixture, lines);
+            continue;
+        }
         enforce_expected(&fixture, &actual, Mode::WholeInput, None);
     }
     assert!(ran > 0, "no fixtures matched filter");

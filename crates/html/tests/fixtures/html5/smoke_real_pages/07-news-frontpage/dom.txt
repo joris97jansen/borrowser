@@ -1,33 +1,33 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 
+#dom-snapshot-v2
 #document
-
   <!doctype html>
-  <html>
-    <head>
-      <title>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+      element ns=html local="title" attrs=[]
         "Daily Wire"
-    <body>
+    element ns=html local="body" attrs=[]
       "\n"
-      <header>
-        <h1>
+      element ns=html local="header" attrs=[]
+        element ns=html local="h1" attrs=[]
           "Daily Wire"
       "\n"
-      <main>
+      element ns=html local="main" attrs=[]
         "\n"
-        <section>
-          <h2>
+        element ns=html local="section" attrs=[]
+          element ns=html local="h2" attrs=[]
             "Top stories"
-          <ul>
-            <li>
+          element ns=html local="ul" attrs=[]
+            element ns=html local="li" attrs=[]
               "Markets rise"
-            <li>
+            element ns=html local="li" attrs=[]
               "New satellite launch"
         "\n"
-        <section>
-          <h2>
+        element ns=html local="section" attrs=[]
+          element ns=html local="h2" attrs=[]
             "World"
-          <p>
+          element ns=html local="p" attrs=[]
             "Regional updates continue."
         "\n"
       "\n"

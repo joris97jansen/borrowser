@@ -159,7 +159,7 @@ adaptations from WPT commit `2c705104a295c48053eeddf7fe0170d790a4e853`:
 
 Each input has no added terminal newline. Its provenance sidecar retains the
 complete upstream `#errors` and `#document` sections. The runner recomputes the
-SHA-256 and proves the committed `html5-dom-v1` expectation is only the
+SHA-256 and proves the committed `html5-dom-v2` expectation is only the
 approved representation translation of the upstream tree. Upstream error
 strings remain provenance; local fixtures own Borrowser error ordering.
 

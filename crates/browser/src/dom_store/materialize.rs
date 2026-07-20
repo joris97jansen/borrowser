@@ -2,7 +2,6 @@ use super::arena::{DomArena, NodeKind};
 use super::error::DomPatchError;
 use html::internal::ParserCreatedFragmentKind;
 use html::{Node, PatchKey};
-use std::sync::Arc;
 
 impl DomArena {
     pub(crate) fn materialize(&self, root: PatchKey) -> Result<Node, DomPatchError> {
@@ -48,13 +47,14 @@ impl DomArena {
             } => {
                 if let Some(contents) = template_contents {
                     let (contents_id, contents_children) = self.materialize_fragment(*contents)?;
-                    if name.as_ref() != "template" {
+                    if !name.is(html::ElementNamespace::Html, "template") {
                         return Err(DomPatchError::Protocol(
                             "template contents association targeted a non-template host",
                         ));
                     }
                     html::internal::template_element_from_parts(
                         id,
+                        name.clone(),
                         attributes.clone(),
                         Vec::new(),
                         contents_id,
@@ -64,7 +64,7 @@ impl DomArena {
                 } else {
                     html::internal::node_element_from_parts(
                         id,
-                        Arc::clone(name),
+                        name.clone(),
                         attributes.clone(),
                         Vec::new(),
                         children,

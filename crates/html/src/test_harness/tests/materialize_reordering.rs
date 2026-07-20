@@ -1,10 +1,9 @@
 use super::super::materialize_patch_batches;
-use super::support::{element, text};
+use super::support::{element, html_name, text};
 use crate::DomPatch;
 use crate::dom_patch::PatchKey;
 use crate::dom_snapshot::{DomSnapshotOptions, assert_dom_eq};
 use crate::types::{Id, Node};
-use std::sync::Arc;
 
 #[test]
 fn materialize_patch_batches_supports_same_parent_reordering_and_noops() {
@@ -15,22 +14,22 @@ fn materialize_patch_batches_supports_same_parent_reordering_and_noops() {
         },
         DomPatch::CreateElement {
             key: PatchKey(2),
-            name: Arc::from("ul"),
+            name: html_name("ul"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(3),
-            name: Arc::from("li"),
+            name: html_name("li"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(4),
-            name: Arc::from("li"),
+            name: html_name("li"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(5),
-            name: Arc::from("li"),
+            name: html_name("li"),
             attributes: Vec::new(),
         },
         DomPatch::CreateText {

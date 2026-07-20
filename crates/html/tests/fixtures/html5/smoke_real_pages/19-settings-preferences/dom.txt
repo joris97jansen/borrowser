@@ -1,33 +1,33 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 
+#dom-snapshot-v2
 #document
-
   <!doctype html>
-  <html>
-    <head>
-      <title>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+      element ns=html local="title" attrs=[]
         "Settings"
-    <body>
+    element ns=html local="body" attrs=[]
       "\n"
-      <h1>
+      element ns=html local="h1" attrs=[]
         "Preferences"
       "\n"
-      <form>
+      element ns=html local="form" attrs=[]
         "\n"
-        <label>
-          <input checked type="checkbox">
+        element ns=html local="label" attrs=[]
+          element ns=html local="input" attrs=[{ns=none prefix=- local="type" value="checkbox"}, {ns=none prefix=- local="checked" value=""}]
           " Email notifications"
         "\n"
-        <label>
-          <input type="checkbox">
+        element ns=html local="label" attrs=[]
+          element ns=html local="input" attrs=[{ns=none prefix=- local="type" value="checkbox"}]
           " Product updates"
         "\n"
-        <label>
+        element ns=html local="label" attrs=[]
           "Language"
-          <select>
-            <option>
+          element ns=html local="select" attrs=[]
+            element ns=html local="option" attrs=[]
               "English"
-            <option>
+            element ns=html local="option" attrs=[]
               "Nederlands"
         "\n"
       "\n"

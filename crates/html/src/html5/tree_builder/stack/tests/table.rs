@@ -14,11 +14,11 @@ fn clear_to_table_body_context_stops_at_row_group_root() {
     let td = ctx.atoms.intern_ascii_folded("td").expect("atom");
 
     let mut stack = OpenElementsStack::default();
-    stack.push(OpenElement::new(PatchKey(1), tags.html));
-    stack.push(OpenElement::new(PatchKey(2), tags.table));
-    stack.push(OpenElement::new(PatchKey(3), tbody));
-    stack.push(OpenElement::new(PatchKey(4), tr));
-    stack.push(OpenElement::new(PatchKey(5), td));
+    stack.push(OpenElement::new_html(PatchKey(1), tags.html));
+    stack.push(OpenElement::new_html(PatchKey(2), tags.table));
+    stack.push(OpenElement::new_html(PatchKey(3), tbody));
+    stack.push(OpenElement::new_html(PatchKey(4), tr));
+    stack.push(OpenElement::new_html(PatchKey(5), td));
 
     let removed = stack.clear_to_table_body_context(tbody, thead, tfoot, &tags);
     assert_eq!(removed, 2);
@@ -35,12 +35,12 @@ fn clear_to_table_row_context_stops_at_row_root() {
     let b = ctx.atoms.intern_ascii_folded("b").expect("atom");
 
     let mut stack = OpenElementsStack::default();
-    stack.push(OpenElement::new(PatchKey(1), tags.html));
-    stack.push(OpenElement::new(PatchKey(2), tags.table));
-    stack.push(OpenElement::new(PatchKey(3), tbody));
-    stack.push(OpenElement::new(PatchKey(4), tr));
-    stack.push(OpenElement::new(PatchKey(5), td));
-    stack.push(OpenElement::new(PatchKey(6), b));
+    stack.push(OpenElement::new_html(PatchKey(1), tags.html));
+    stack.push(OpenElement::new_html(PatchKey(2), tags.table));
+    stack.push(OpenElement::new_html(PatchKey(3), tbody));
+    stack.push(OpenElement::new_html(PatchKey(4), tr));
+    stack.push(OpenElement::new_html(PatchKey(5), td));
+    stack.push(OpenElement::new_html(PatchKey(6), b));
 
     let removed = stack.clear_to_table_row_context(tr, &tags);
     assert_eq!(removed, 2);

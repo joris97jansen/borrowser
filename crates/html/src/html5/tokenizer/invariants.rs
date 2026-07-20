@@ -294,7 +294,7 @@ impl Html5Tokenizer {
                 Token::Doctype { .. } | Token::EndTag { .. } => {}
                 Token::StartTag { attrs, .. } => {
                     for attr in attrs {
-                        if let Some(AttributeValue::Span(span)) = &attr.value {
+                        if let AttributeValue::Span(span) = &attr.value {
                             check_span(input, "start_tag.attr_value", *span)?;
                         }
                     }
