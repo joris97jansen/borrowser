@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use super::{
     DomInvariantError, DomInvariantNode, DomInvariantNodeKind, DomInvariantState,
     PatchInvariantError, check_dom_invariants, check_patch_invariants,
@@ -9,7 +7,7 @@ use crate::dom_patch::{DomPatch, PatchKey};
 fn element(name: &'static str, key: u32) -> DomPatch {
     DomPatch::CreateElement {
         key: PatchKey(key),
-        name: Arc::from(name),
+        name: crate::test_support::html_name(name),
         attributes: Vec::new(),
     }
 }

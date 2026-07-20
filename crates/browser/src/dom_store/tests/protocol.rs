@@ -108,7 +108,7 @@ fn key_reuse_is_rejected_until_clear_then_allowed() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "div".into(),
+                name: html::internal::html_name("div"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -135,7 +135,7 @@ fn key_reuse_is_rejected_until_clear_then_allowed() {
             to,
             &[DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "span".into(),
+                name: html::internal::html_name("span"),
                 attributes: Vec::new(),
             }],
         )
@@ -189,7 +189,7 @@ fn key_reuse_is_rejected_until_clear_then_allowed() {
         &mut versions,
         &[DomPatch::CreateElement {
             key: PatchKey(2),
-            name: "span".into(),
+            name: html::internal::html_name("span"),
             attributes: Vec::new(),
         }],
         "key reuse should be allowed after Clear",
@@ -205,4 +205,43 @@ fn key_reuse_is_rejected_until_clear_then_allowed() {
         }],
         "reused key should be attachable after Clear",
     );
+}
+
+#[test]
+fn parser_patch_dom_store_materialization_preserves_namespace_and_attribute_order() {
+    let parsed = html::parse_document(
+        "<svg><lineargradient xml:lang='en' viewbox='0 0 1 1' xlink:href='#a' xmlns:xlink></lineargradient></svg>",
+        html::HtmlParseOptions::default(),
+    )
+    .expect("foreign document parse");
+    assert!(parsed.contains_full_patch_history);
+    let patches = parsed.patches;
+    let (mut store, h) = new_store_with_handle(41);
+    let mut versions = VersionSteps::new();
+    apply_ok(
+        &mut store,
+        h,
+        &mut versions,
+        &patches,
+        "parser create stream should apply",
+    );
+
+    let lines = materialized_dom_lines(&store, h);
+    let adjusted = lines
+        .iter()
+        .find(|line| line.contains("ns=svg local=\"linearGradient\""))
+        .expect("adjusted SVG element in materialized DomStore");
+    let xml = adjusted
+        .find("ns=xml prefix=xml local=\"lang\" value=\"en\"")
+        .unwrap();
+    let view_box = adjusted
+        .find("ns=none prefix=none local=\"viewBox\" value=\"0 0 1 1\"")
+        .unwrap();
+    let xlink = adjusted
+        .find("ns=xlink prefix=xlink local=\"href\" value=\"#a\"")
+        .unwrap();
+    let xmlns = adjusted
+        .find("ns=xmlns prefix=xmlns local=\"xlink\" value=\"\"")
+        .unwrap();
+    assert!(xml < view_box && view_box < xlink && xlink < xmlns);
 }

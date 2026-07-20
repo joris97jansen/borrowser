@@ -19,6 +19,16 @@ impl Html5ParseSession {
         self.ctx.counters.soe_pop_ops = self.builder.perf_soe_pop_ops();
         self.ctx.counters.soe_scope_scan_calls = self.builder.perf_soe_scope_scan_calls();
         self.ctx.counters.soe_scope_scan_steps = self.builder.perf_soe_scope_scan_steps();
+        self.ctx.counters.soe_name_count_lookup_calls =
+            self.builder.perf_soe_name_count_lookup_calls();
+        self.ctx.counters.soe_name_count_lookup_steps =
+            self.builder.perf_soe_name_count_lookup_steps();
+        self.ctx.counters.soe_name_count_update_calls =
+            self.builder.perf_soe_name_count_update_calls();
+        self.ctx.counters.soe_name_count_update_steps =
+            self.builder.perf_soe_name_count_update_steps();
+        self.ctx.counters.soe_distinct_name_high_water =
+            self.builder.perf_soe_distinct_name_high_water();
         self.ctx.counters.tree_builder_patches_emitted = self.builder.perf_patches_emitted();
         self.ctx.counters.tree_builder_text_nodes_created = self.builder.perf_text_nodes_created();
         self.ctx.counters.tree_builder_text_appends = self.builder.perf_text_appends();

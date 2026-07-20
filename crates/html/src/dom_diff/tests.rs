@@ -1,11 +1,10 @@
 use super::{DomPatch, diff_dom_stateless};
 use crate::dom_snapshot::{DomSnapshotOptions, assert_dom_eq};
 use crate::golden_corpus::fixtures;
-use crate::test_support::patch_apply::TestPatchArena;
+use crate::test_support::{html_name, patch_apply::TestPatchArena};
 use crate::traverse::assign_missing_ids_allow_collisions;
 use crate::types::{DocumentFragmentNode, Id, Node};
 use crate::{HtmlParseOptions, parse_document};
-use std::sync::Arc;
 
 fn build(input: &str) -> Node {
     let mut dom = parse_document(input, HtmlParseOptions::default())
@@ -42,6 +41,59 @@ fn diff_is_deterministic() {
 }
 
 #[test]
+fn diff_treats_namespace_as_element_identity_and_attribute_order_as_structure() {
+    fn document_with_element(
+        namespace: crate::ElementNamespace,
+        attributes: Vec<crate::ParserCreatedAttribute>,
+    ) -> Node {
+        let mut names = crate::AtomTable::new();
+        let local = match namespace {
+            crate::ElementNamespace::Html => names.intern_ascii_folded("div"),
+            crate::ElementNamespace::Svg | crate::ElementNamespace::MathMl => {
+                names.intern_exact("div")
+            }
+        }
+        .expect("test name");
+        let expanded_name = names
+            .expanded_name(namespace, local)
+            .expect("expanded name");
+        Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![crate::Node::from_element_parts(
+                Id(2),
+                expanded_name,
+                attributes,
+                Vec::new(),
+                None,
+                Vec::new(),
+            )],
+        }
+    }
+
+    let ordered = vec![
+        crate::test_support::html_attribute("a", Some("1")),
+        crate::test_support::html_attribute("b", Some("2")),
+    ];
+    let reversed = vec![ordered[1].clone(), ordered[0].clone()];
+    let html = document_with_element(crate::ElementNamespace::Html, ordered.clone());
+    let reordered = document_with_element(crate::ElementNamespace::Html, reversed.clone());
+    let patches = diff_dom_stateless(&html, &reordered).expect("ordered attribute diff");
+    assert!(matches!(
+        patches.as_slice(),
+        [DomPatch::SetAttributes { key, attributes }]
+            if *key == crate::PatchKey(2) && attributes == &reversed
+    ));
+
+    let svg = document_with_element(crate::ElementNamespace::Svg, ordered);
+    let namespace_change = diff_dom_stateless(&html, &svg).expect("namespace replacement diff");
+    assert!(
+        matches!(namespace_change.first(), Some(DomPatch::Clear)),
+        "an element namespace change cannot be transported as an attribute update"
+    );
+}
+
+#[test]
 fn diff_triggers_reset_on_midlist_insert() {
     let prev = build("<div><span>hi</span></div>");
     let next = build("<div><em>yo</em><span>hi</span></div>");
@@ -57,13 +109,13 @@ fn diff_resets_on_reparented_node() {
         children: vec![
             crate::Node::from_element_parts(
                 Id(2),
-                Arc::from("div"),
+                html_name("div"),
                 Vec::new(),
                 Vec::new(),
                 None,
                 vec![crate::Node::from_element_parts(
                     Id(3),
-                    Arc::from("span"),
+                    html_name("span"),
                     Vec::new(),
                     Vec::new(),
                     None,
@@ -72,7 +124,7 @@ fn diff_resets_on_reparented_node() {
             ),
             crate::Node::from_element_parts(
                 Id(4),
-                Arc::from("p"),
+                html_name("p"),
                 Vec::new(),
                 Vec::new(),
                 None,
@@ -87,7 +139,7 @@ fn diff_resets_on_reparented_node() {
         children: vec![
             crate::Node::from_element_parts(
                 Id(2),
-                Arc::from("div"),
+                html_name("div"),
                 Vec::new(),
                 Vec::new(),
                 None,
@@ -95,13 +147,13 @@ fn diff_resets_on_reparented_node() {
             ),
             crate::Node::from_element_parts(
                 Id(4),
-                Arc::from("p"),
+                html_name("p"),
                 Vec::new(),
                 Vec::new(),
                 None,
                 vec![crate::Node::from_element_parts(
                     Id(3),
-                    Arc::from("span"),
+                    html_name("span"),
                     Vec::new(),
                     Vec::new(),
                     None,
@@ -142,7 +194,7 @@ fn template_doc(fragment_id: Id, text_id: Id, text: &str) -> Node {
         doctype: None,
         children: vec![crate::Node::from_element_parts(
             Id(2),
-            Arc::from("template"),
+            html_name("template"),
             Vec::new(),
             Vec::new(),
             Some(Box::new(DocumentFragmentNode::new_template_contents(

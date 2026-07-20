@@ -263,11 +263,20 @@ Core v0 attribute behavior guarantees:
 - tag and attribute names are tokenizer-normalized per HTML tokenizer rules (ASCII case folding in relevant states).
 - parser-created attribute storage preserves first-wins encounter order after duplicate removal.
 - duplicate attributes are removed before downstream consumers and snapshots with first-wins semantics on tokenizer-normalized attribute names (for example `a` and `A` are treated as duplicates).
-- missing attribute values are preserved as distinct from explicitly empty values: `disabled` stores no value, while `disabled=""` stores an empty string.
-- tokenizer token snapshots render missing values as bare attributes, for
-  example `disabled`, and explicitly empty values as `disabled=""`.
+- valueless and explicitly empty syntax both materialize with DOM string value
+  `""`; any source-spelling distinction is tokenizer diagnostic information,
+  not parser-created DOM, patch, CSS, or snapshot state.
+- tokenizer, DOM, and patch snapshots serialize the normalized string value;
+  the current tokenizer retains no missing-versus-empty source-syntax bit.
 - value forms supported: double-quoted, single-quoted, unquoted.
 - character references in attribute values follow Core v0 charref scope and delegate named reference table/validation to `crates/html/src/entities.rs`.
+
+AE11 adds typed HTML, SVG, and MathML parser namespaces; per-token foreign
+dispatch while retaining the active HTML insertion mode; complete pinned SVG
+tag/attribute and XML/XMLNS/XLink adjustment tables; integration points;
+breakout/reprocessing; foreign self-closing and end-tag recovery; and the
+tree-builder-controlled CDATA tokenizer boundary. See
+`ae11-foreign-content-tree-construction-contract.md`.
 
 <a id="doctype-and-quirks-stance"></a>
 ### DOCTYPE And Quirks Stance

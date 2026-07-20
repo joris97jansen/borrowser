@@ -57,6 +57,10 @@ impl<'a, D: SelectorMatchDom> SelectorMatchingContext<'a, D> {
         self.dom.element_name(element)
     }
 
+    pub fn element_namespace(&self, element: D::ElementId) -> html::ElementNamespace {
+        self.dom.element_namespace(element)
+    }
+
     pub fn has_attribute(&self, element: D::ElementId, name: &str) -> bool {
         self.dom.has_attribute(element, name)
     }

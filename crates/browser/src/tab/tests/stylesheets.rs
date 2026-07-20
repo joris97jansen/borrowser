@@ -4,7 +4,7 @@ use bus::{CoreCommand, CoreEvent};
 use core_types::ResourceKind;
 use css::build_style_tree_with_stylesheets;
 use html::{HtmlParseOptions, Node, internal::Id, parse_document};
-use std::sync::{Arc, mpsc};
+use std::sync::mpsc;
 
 #[test]
 fn inline_styles_are_attached_and_computed_during_initial_document_load() {
@@ -51,18 +51,18 @@ fn split_text_style_element_is_concatenated_without_synthetic_newlines() {
         doctype: None,
         children: vec![html::internal::node_element_from_parts(
             Id(2),
-            Arc::from("html"),
+            html::internal::html_name("html"),
             Vec::new(),
             Vec::new(),
             vec![
                 html::internal::node_element_from_parts(
                     Id(3),
-                    Arc::from("head"),
+                    html::internal::html_name("head"),
                     Vec::new(),
                     Vec::new(),
                     vec![html::internal::node_element_from_parts(
                         Id(4),
-                        Arc::from("style"),
+                        html::internal::html_name("style"),
                         Vec::new(),
                         Vec::new(),
                         vec![
@@ -79,12 +79,12 @@ fn split_text_style_element_is_concatenated_without_synthetic_newlines() {
                 ),
                 html::internal::node_element_from_parts(
                     Id(7),
-                    Arc::from("body"),
+                    html::internal::html_name("body"),
                     Vec::new(),
                     Vec::new(),
                     vec![html::internal::node_element_from_parts(
                         Id(8),
-                        Arc::from("p"),
+                        html::internal::html_name("p"),
                         Vec::new(),
                         Vec::new(),
                         vec![Node::Text {

@@ -15,7 +15,7 @@ CI fast and deterministic.
 
 - `manifest.txt`: list of curated tests and their expected snapshots.
 - `vendor/`: vendored WPT HTML files (minimal subset).
-- `expected/`: expected DOM snapshots in `html5-dom-v1` format.
+- `expected/`: expected DOM snapshots in `html5-dom-v2` format.
   - Tokenizer cases use `html5-token-v1` with `kind: tokens` in the manifest.
 - `tokenizer/skips.toml` + `tokenizer/skips.json`: tokenizer-only skip/xfail manifest
   with explicit reason and tracking issue reference; both files must stay in sync.
@@ -100,7 +100,7 @@ AE9b select note:
   `2c705104a295c48053eeddf7fe0170d790a4e853`, not verbatim upstream HTML files.
 - Each manifest `provenance` sidecar records source path, exact input and
   SHA-256, full upstream errors, full upstream document tree, context,
-  scripting stance, and the `html5-dom-v1` representation translation.
+  scripting stance, and the `html5-dom-v2` representation translation.
 - Upstream errors are provenance only; Borrowser parse-error kinds are local
   deterministic regression contracts.
 

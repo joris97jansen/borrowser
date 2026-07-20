@@ -237,6 +237,8 @@ pub fn build_style_tree<'a>(
 
         Node::Element { element } => {
             let name = element.name();
+            let html_tag_name =
+                (element.namespace() == html::ElementNamespace::Html).then_some(name);
             let style = element.style();
             // 1) Check if there is a valid explicit `display:` declaration.
             // Invalid declarations are ignored, so they must not suppress the
@@ -249,11 +251,11 @@ pub fn build_style_tree<'a>(
             });
 
             // 2) Compute the base style (inherits, applies declarations, etc.)
-            let mut computed = compute_style(Some(name), style, parent_style);
+            let mut computed = compute_style(html_tag_name, style, parent_style);
 
             // 3) If no explicit `display:` was specified, apply the temporary
             //    HTML/UA default-display bridge for this element type.
-            if !has_display_decl {
+            if !has_display_decl && html_tag_name.is_some() {
                 computed = replace_computed_property(
                     computed,
                     PropertyId::Display,

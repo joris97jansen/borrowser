@@ -118,6 +118,20 @@ fn err_kind(err: &str) -> &str {
         .unwrap_or(err)
 }
 
+fn update_dom_snapshots() -> bool {
+    matches!(env::var("BORROWSER_WPT_DOM_UPDATE").as_deref(), Ok("1"))
+}
+
+fn write_expected_dom(path: &Path, lines: &[String]) {
+    let mut out = String::from("# format: html5-dom-v2\n\n");
+    for line in lines {
+        out.push_str(line);
+        out.push('\n');
+    }
+    fs::write(path, out)
+        .unwrap_or_else(|err| panic!("failed to update WPT DOM snapshot {path:?}: {err}"));
+}
+
 pub(crate) fn run(spec: TreeBuilderSuiteSpec) {
     let manifest_path = wpt_root().join("manifest.txt");
     let cases = load_manifest(&manifest_path);
@@ -147,6 +161,7 @@ pub(crate) fn run(spec: TreeBuilderSuiteSpec) {
     let mut skipped = 0usize;
     let mut xfailed = 0usize;
     let mut xpass = 0usize;
+    let update = update_dom_snapshots();
 
     for case in cases {
         total += 1;
@@ -160,6 +175,9 @@ pub(crate) fn run(spec: TreeBuilderSuiteSpec) {
         }
         if wpt_case_provenance::is_ae10_template_case(&case.id) {
             wpt_case_provenance::validate_ae10_template_case(&case);
+        }
+        if wpt_case_provenance::is_ae11_foreign_case(&case.id) {
+            wpt_case_provenance::validate_ae11_foreign_case(&case);
         }
 
         // WPT inputs are consumed exactly as vendored. Unlike the internal
@@ -188,7 +206,10 @@ pub(crate) fn run(spec: TreeBuilderSuiteSpec) {
 
         match run_tree_builder_whole(&input, &case.id, options) {
             Ok(lines) => {
-                if lines.as_slice() != expected.lines.as_slice() {
+                if update {
+                    write_expected_dom(&case.expected, &lines);
+                    whole_lines = Some(lines);
+                } else if lines.as_slice() != expected.lines.as_slice() {
                     failure = Some(format!(
                         "WPT DOM mismatch for '{}' ({})\n{}\nexpected file: {:?}\ninput file: {:?}",
                         case.id,

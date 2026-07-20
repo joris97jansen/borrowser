@@ -258,6 +258,7 @@ fn pump_until_blocked_collect(
     patch_arena: &mut PatchValidationArena,
 ) -> Result<(), Html5PipelineRegressionError> {
     loop {
+        builder.prepare_tokenizer_pump(tokenizer);
         let result = tokenizer.push_input_until_token(input, ctx);
         let batch = tokenizer.next_batch(input);
         if batch.tokens().is_empty() {

@@ -17,10 +17,10 @@ It is the scope and invariants document to implement against before feature code
 - "Present on SOE" means there is a live stack-of-open-elements entry whose element identity references the same live DOM node as the AFE entry's `PatchKey`.
 - SOE presence is identity-based, not tag-name-based. A matching tag name with a different `PatchKey` does not satisfy "present on SOE".
 - "Attribute-equal" means:
-  - attribute names compare by `AtomId` equality
+  - expanded attribute names compare by namespace plus local name
   - attribute values compare by exact string equality
-  - `None` is distinct from `Some("")`
-  - attribute lists must have the same length and the same encounter-order sequence
+  - attribute lists have the same length and can be paired one-to-one without
+    using encounter order or prefix
 
 ## Goals
 
@@ -159,21 +159,20 @@ struct AfeMarker {
 struct AfeElementEntry {
     key: PatchKey,
     name: AtomId,
-    attrs: Vec<AfeAttributeSnapshot>,
-}
-
-struct AfeAttributeSnapshot {
-    name: AtomId,
-    value: Option<String>,
+    attrs: Vec<ParserCreatedAttribute>,
 }
 ```
 
 Representation requirements:
 
 - `key` is the live DOM/tree-builder identity for the element node referenced by the AFE entry.
-- `name` is the HTML tag atom stored redundantly with `key` so AFE comparisons do not depend on DOM lookups.
+- `name` is the HTML local-name atom stored redundantly with `key`. AFE entries
+  are valid only for HTML-namespace formatting elements, so their semantic
+  expanded name is `(ElementNamespace::Html, name)`; namespace-gated insertion
+  prevents foreign lookalikes from entering AFE.
 - `attrs` is an owned snapshot of tokenizer-normalized attributes.
-- attribute names stay atomized (`AtomId`); attribute values must be owned strings or `None`.
+- attribute names are valid-by-construction `QualifiedAttributeName` values and
+  attribute values are owned strings; valueless syntax has value `""`.
 - `TextSpan`-backed or resolver-epoch-backed attribute storage is forbidden in AFE entries.
 
 Rationale:
@@ -189,22 +188,25 @@ Attribute snapshots used by AFE must preserve:
 - tokenizer-normalized attribute names
 - encounter order as delivered by the tokenizer
 - first-wins duplicate-attribute semantics already applied by the tokenizer
-- exact optional-value semantics (`None` vs empty string)
+- exact DOM-string values
 
 Duplicate matching for Noah's Ark uses:
 
 - same tag name, and
-- same attribute list length, order, names, and values
+- same attribute list length and a one-to-one, order-insensitive pairing by
+  expanded name and value
 
 Formal comparison rules:
 
-- tag name equality is `AtomId` equality
-- attribute name equality is `AtomId` equality
+- tag identity is HTML namespace plus `AtomId` local-name equality
+- attribute semantic equality is namespace plus local-name equality
 - attribute value equality is exact string equality on owned values
-- `None` and empty-string values are never interchangeable
+- attribute prefix and storage order do not participate in Noah's Ark equality
 
-Borrowser Milestone H does not use hash-map equality for duplicate matching.
-Comparison order must be linear and deterministic.
+Borrowser does not use hash-map iteration for duplicate matching. Since
+parser-created lists contain no duplicate expanded names, deterministic linear
+one-to-one matching is sufficient. DOM, patch, materialization, and snapshot
+comparison remain separately order-sensitive.
 
 ## Noah's Ark Rule
 

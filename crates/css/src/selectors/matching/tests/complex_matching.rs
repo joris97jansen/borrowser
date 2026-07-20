@@ -2,6 +2,7 @@ use super::super::{
     MatchedSelector, SelectorDomIndex, SelectorMatchability, SelectorMatchingContext,
     SelectorMatchingLimitError, SelectorMatchingLimits,
 };
+use super::support::namespaced_element;
 use super::support::{comment, doc, element, parse_selector_result, parsed_single_selector, text};
 use crate::selectors::Specificity;
 
@@ -88,6 +89,98 @@ fn matching_context_matches_complex_selectors_with_supported_combinators() {
         !context
             .matches_complex_selector(link, &parsed_single_selector("footer a.link"))
             .expect("complex selector match")
+    );
+}
+
+#[test]
+fn ua_namespace_constraint_propagates_through_every_complex_selector_compound() {
+    use crate::selectors::SelectorNamespaceConstraint;
+    use html::ElementNamespace;
+
+    let dom = doc(vec![element(
+        "html",
+        Vec::new(),
+        vec![element(
+            "body",
+            Vec::new(),
+            vec![
+                element("div", vec![("class", Some("notice"))], Vec::new()),
+                namespaced_element(
+                    ElementNamespace::Svg,
+                    "svg",
+                    Vec::new(),
+                    vec![namespaced_element(
+                        ElementNamespace::Svg,
+                        "html",
+                        Vec::new(),
+                        vec![element("div", vec![("class", Some("notice"))], Vec::new())],
+                    )],
+                ),
+                namespaced_element(
+                    ElementNamespace::Svg,
+                    "div",
+                    vec![("class", Some("notice"))],
+                    Vec::new(),
+                ),
+            ],
+        )],
+    )]);
+    let index = SelectorDomIndex::from_root(&dom);
+    let elements = index.elements().collect::<Vec<_>>();
+    let html_notice = elements[2];
+    let html_below_foreign_lookalike = elements[5];
+    let foreign_notice = elements[6];
+    let author = SelectorMatchingContext::new(&index);
+    let ua = author
+        .with_namespace_constraint(SelectorNamespaceConstraint::Exact(ElementNamespace::Html));
+
+    for selector in ["html body", "html .notice", "body > *", ".notice"] {
+        let parsed = parsed_single_selector(selector);
+        let target = if selector == "html body" {
+            elements[1]
+        } else {
+            html_notice
+        };
+        assert!(
+            ua.matches_complex_selector(target, &parsed).unwrap(),
+            "{selector}"
+        );
+    }
+    assert!(
+        !ua.matches_complex_selector(
+            html_below_foreign_lookalike,
+            &parsed_single_selector("html > .notice"),
+        )
+        .unwrap()
+    );
+    assert!(
+        author
+            .matches_complex_selector(
+                html_below_foreign_lookalike,
+                &parsed_single_selector("html > .notice"),
+            )
+            .unwrap(),
+        "author matching can select the foreign lookalike ancestor"
+    );
+    assert!(
+        ua.matches_complex_selector(
+            html_below_foreign_lookalike,
+            &parsed_single_selector(".notice"),
+        )
+        .unwrap()
+    );
+    for selector in ["body > *", ".notice", "*"] {
+        assert!(
+            !ua.matches_complex_selector(foreign_notice, &parsed_single_selector(selector))
+                .unwrap(),
+            "{selector} must constrain the foreign candidate"
+        );
+    }
+    assert!(
+        author
+            .matches_complex_selector(foreign_notice, &parsed_single_selector(".notice"))
+            .unwrap(),
+        "author typeless selectors retain their current unconstrained namespace semantics"
     );
 }
 

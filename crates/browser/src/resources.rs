@@ -5,6 +5,7 @@ use app_api::RepaintHandle;
 use egui::{ColorImage, TextureHandle, TextureId, TextureOptions};
 use gfx::paint::ImageProvider;
 use tools::common::MAX_IMAGE_BYTES;
+use url::Url;
 
 const MAX_IMAGE_PIXELS: usize = 16_777_216; // 4096 * 4096
 
@@ -322,10 +323,81 @@ impl ImageProvider for ResourceManager {
     }
 }
 
+pub(crate) fn resolve_image_source(base_url: Option<&str>, source: &str) -> Option<String> {
+    let source = strip_surrounding_html_ascii_whitespace(source);
+    if source.is_empty() {
+        return None;
+    }
+    if let Ok(url) = Url::parse(source) {
+        return Some(url.to_string());
+    }
+    Url::parse(base_url?)
+        .ok()?
+        .join(source)
+        .ok()
+        .map(Into::into)
+}
+
+fn strip_surrounding_html_ascii_whitespace(value: &str) -> &str {
+    value.trim_matches(|character| {
+        matches!(
+            character,
+            '\u{0009}' | '\u{000A}' | '\u{000C}' | '\u{000D}' | '\u{0020}'
+        )
+    })
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{EntryState, ImageState, ResourceManager};
+    use super::{
+        EntryState, ImageState, ResourceManager, resolve_image_source,
+        strip_surrounding_html_ascii_whitespace,
+    };
     use tools::common::MAX_IMAGE_BYTES;
+
+    #[test]
+    fn browser_resource_provider_resolves_typed_image_sources() {
+        assert_eq!(
+            resolve_image_source(
+                Some("https://example.com/docs/page.html"),
+                "\t\n\u{000C}\r ../hero.png \t\n\u{000C}\r"
+            )
+            .as_deref(),
+            Some("https://example.com/hero.png")
+        );
+        assert_eq!(
+            resolve_image_source(
+                Some("https://ignored.example/"),
+                " \thttps://cdn.example/hero.png\r\n"
+            )
+            .as_deref(),
+            Some("https://cdn.example/hero.png")
+        );
+        assert_eq!(resolve_image_source(Some("https://example.com/"), ""), None);
+        assert_eq!(
+            resolve_image_source(Some("https://example.com/"), " \t\n\u{000C}\r"),
+            None
+        );
+        assert_eq!(resolve_image_source(None, "relative.png"), None);
+        assert_eq!(
+            resolve_image_source(
+                Some("https://ignored.example/base/"),
+                "https://cdn.example/hero.png"
+            )
+            .as_deref(),
+            Some("https://cdn.example/hero.png")
+        );
+    }
+
+    #[test]
+    fn image_source_preprocessing_strips_only_html_ascii_whitespace() {
+        let non_ascii_whitespace = "\u{00A0}https://cdn.example/hero.png\u{00A0}";
+        assert_eq!(
+            strip_surrounding_html_ascii_whitespace(non_ascii_whitespace),
+            non_ascii_whitespace
+        );
+        assert_eq!(resolve_image_source(None, non_ascii_whitespace), None);
+    }
 
     #[test]
     fn resource_limit_error_discards_buffered_image_bytes_and_blocks_decode() {

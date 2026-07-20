@@ -35,6 +35,7 @@ pub(super) fn rule_inputs_for_element_from_cascade_inputs_with_limits(
     for (stylesheet_index, input) in sheets.iter().enumerate() {
         let stylesheet_index = u32_index(stylesheet_index);
         let sheet = input.stylesheet();
+        let selector_context = context.with_namespace_constraint(input.namespace_constraint());
 
         for (rule_index, rule) in sheet.stylesheet.rules.iter().enumerate() {
             let rule_index = u32_index(rule_index);
@@ -48,7 +49,7 @@ pub(super) fn rule_inputs_for_element_from_cascade_inputs_with_limits(
             let rule_match = CascadeRuleMatch {
                 stylesheet_index,
                 rule_index,
-                outcome: context
+                outcome: selector_context
                     .match_selector_list_checked(element, &rule.selectors)
                     .map_err(StyleResolutionError::SelectorMatching)?,
             };

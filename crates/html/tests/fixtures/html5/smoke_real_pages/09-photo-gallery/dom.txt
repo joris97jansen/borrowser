@@ -1,27 +1,27 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 
+#dom-snapshot-v2
 #document
-
   <!doctype html>
-  <html>
-    <head>
-      <title>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+      element ns=html local="title" attrs=[]
         "Gallery"
-    <body>
+    element ns=html local="body" attrs=[]
       "\n"
-      <main>
+      element ns=html local="main" attrs=[]
         "\n"
-        <h1>
+        element ns=html local="h1" attrs=[]
           "Summer photos"
         "\n"
-        <figure>
-          <img alt="beach" src="1.jpg">
-          <figcaption>
+        element ns=html local="figure" attrs=[]
+          element ns=html local="img" attrs=[{ns=none prefix=- local="src" value="1.jpg"}, {ns=none prefix=- local="alt" value="beach"}]
+          element ns=html local="figcaption" attrs=[]
             "Beach"
         "\n"
-        <figure>
-          <img alt="mountain" src="2.jpg">
-          <figcaption>
+        element ns=html local="figure" attrs=[]
+          element ns=html local="img" attrs=[{ns=none prefix=- local="src" value="2.jpg"}, {ns=none prefix=- local="alt" value="mountain"}]
+          element ns=html local="figcaption" attrs=[]
             "Mountain"
         "\n"
       "\n"

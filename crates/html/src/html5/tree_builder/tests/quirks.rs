@@ -214,22 +214,24 @@ fn table_start_closes_open_p_in_no_quirks_and_limited_quirks() {
     ]);
 
     let no_quirks_expected = vec![
+        "#dom-snapshot-v2".to_string(),
         "#document".to_string(),
         "  <!doctype html>".to_string(),
-        "  <html>".to_string(),
-        "    <head>".to_string(),
-        "    <body>".to_string(),
-        "      <p>".to_string(),
-        "      <table>".to_string(),
+        "  element ns=html local=\"html\" attrs=[]".to_string(),
+        "    element ns=html local=\"head\" attrs=[]".to_string(),
+        "    element ns=html local=\"body\" attrs=[]".to_string(),
+        "      element ns=html local=\"p\" attrs=[]".to_string(),
+        "      element ns=html local=\"table\" attrs=[]".to_string(),
     ];
     let limited_quirks_expected = vec![
+        "#dom-snapshot-v2".to_string(),
         "#document".to_string(),
         "  <!doctype html public-id=\"-//W3C//DTD XHTML 1.0 Transitional//EN\" system-id=\"http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd\">".to_string(),
-        "  <html>".to_string(),
-        "    <head>".to_string(),
-        "    <body>".to_string(),
-        "      <p>".to_string(),
-        "      <table>".to_string(),
+        "  element ns=html local=\"html\" attrs=[]".to_string(),
+        "    element ns=html local=\"head\" attrs=[]".to_string(),
+        "    element ns=html local=\"body\" attrs=[]".to_string(),
+        "      element ns=html local=\"p\" attrs=[]".to_string(),
+        "      element ns=html local=\"table\" attrs=[]".to_string(),
     ];
 
     assert_eq!(no_quirks, no_quirks_expected);
@@ -243,13 +245,14 @@ fn table_start_keeps_open_p_in_quirks_mode() {
     assert_eq!(
         dom,
         vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype foo>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <p>".to_string(),
-            "        <table>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"p\" attrs=[]".to_string(),
+            "        element ns=html local=\"table\" attrs=[]".to_string(),
         ]
     );
 }
@@ -260,15 +263,16 @@ fn table_start_does_not_reconstruct_formatting_elements_before_table() {
     let chunked = materialized_dom_lines(&["<!doctype html><p><b>x</p>", "<table>"]);
 
     let expected = vec![
+        "#dom-snapshot-v2".to_string(),
         "#document".to_string(),
         "  <!doctype html>".to_string(),
-        "  <html>".to_string(),
-        "    <head>".to_string(),
-        "    <body>".to_string(),
-        "      <p>".to_string(),
-        "        <b>".to_string(),
+        "  element ns=html local=\"html\" attrs=[]".to_string(),
+        "    element ns=html local=\"head\" attrs=[]".to_string(),
+        "    element ns=html local=\"body\" attrs=[]".to_string(),
+        "      element ns=html local=\"p\" attrs=[]".to_string(),
+        "        element ns=html local=\"b\" attrs=[]".to_string(),
         "          \"x\"".to_string(),
-        "      <table>".to_string(),
+        "      element ns=html local=\"table\" attrs=[]".to_string(),
     ];
 
     assert_eq!(

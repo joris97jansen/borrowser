@@ -1,23 +1,23 @@
-# format: html5-dompatch-v1
+# format: html5-dompatch-v2
 # status: active
 
 Batch index=0 size=17
 CreateDocument key=1 doctype=<none>
 CreateDocumentType key=2 name="html" public-id=<none> system-id=<none>
 AppendChild parent=1 child=2
-CreateElement key=3 name=html attrs=[]
+CreateElement key=3 ns=html local="html" attrs=[]
 AppendChild parent=1 child=3
-CreateElement key=4 name=head attrs=[]
+CreateElement key=4 ns=html local="head" attrs=[]
 AppendChild parent=3 child=4
-CreateElement key=5 name=body attrs=[]
+CreateElement key=5 ns=html local="body" attrs=[]
 AppendChild parent=3 child=5
-CreateElement key=6 name=a attrs=[class="one"]
+CreateElement key=6 ns=html local="a" attrs=[{ns=none prefix=- local="class" value="one"}]
 AppendChild parent=5 child=6
 CreateText key=7 text="one"
 AppendChild parent=6 child=7
 CreateComment key=8 text="gap"
 AppendChild parent=6 child=8
-CreateElement key=9 name=a attrs=[class="two"]
+CreateElement key=9 ns=html local="a" attrs=[{ns=none prefix=- local="class" value="two"}]
 AppendChild parent=5 child=9
 Batch index=1 size=2
 CreateText key=10 text="two"

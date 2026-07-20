@@ -2,7 +2,7 @@ use super::open_elements::OpenElementsStack;
 use super::types::{InBodyEndTagScan, OpenElement, OpenElementMatch};
 use crate::html5::shared::{AtomId, AtomTable, EngineInvariantError};
 use crate::html5::tree_builder::TreeBuilderError;
-use crate::html5::tree_builder::html_semantics::is_special_html_element;
+use crate::html5::tree_builder::html_semantics::is_special_element;
 
 impl OpenElementsStack {
     /// Performs the single probe-only reverse scan required by the InBody
@@ -16,13 +16,15 @@ impl OpenElementsStack {
         for index in (0..self.items.len()).rev() {
             self.end_tag_scan_steps = self.end_tag_scan_steps.saturating_add(1);
             let element = self.items[index];
-            if element.name() == target {
+            if element.namespace() == crate::names::ElementNamespace::Html
+                && element.name() == target
+            {
                 return Ok(InBodyEndTagScan::Matched(OpenElementMatch {
                     index,
                     element,
                 }));
             }
-            if is_special_html_element(element.name(), atoms)? {
+            if is_special_element(element, atoms)? {
                 return Ok(InBodyEndTagScan::BlockedBySpecial { index, element });
             }
         }
@@ -47,13 +49,13 @@ impl OpenElementsStack {
             .note_suffix_removal(matched.index, old_len);
         while self.items.len() > matched.index + 1 {
             let popped = self.items.pop().ok_or(EngineInvariantError)?;
-            self.note_name_pop(popped.name());
+            self.note_name_pop(popped.expanded_name_key());
         }
         let target = self.items.pop().ok_or(EngineInvariantError)?;
         if target != matched.element {
             return Err(EngineInvariantError);
         }
-        self.note_name_pop(target.name());
+        self.note_name_pop(target.expanded_name_key());
         self.pop_ops = self
             .pop_ops
             .saturating_add((old_len - matched.index) as u64);

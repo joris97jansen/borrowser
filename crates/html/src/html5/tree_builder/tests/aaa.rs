@@ -54,6 +54,7 @@ fn run_manual_aaa_chunks(chunks: &[&str]) -> Vec<DomPatch> {
     for chunk in chunks {
         input.push_str(chunk);
         loop {
+            builder.prepare_tokenizer_pump(&mut tokenizer);
             let result = tokenizer.push_input_until_token(&mut input, &mut ctx);
             let batch = tokenizer.next_batch(&mut input);
             if batch.tokens().is_empty() {
@@ -180,7 +181,7 @@ fn adoption_agency_presence_and_scope_checks_are_identity_based() {
     assert_start_tag(&mut scoped_builder, &ctx, &resolver, b);
     scoped_builder
         .open_elements
-        .push(OpenElement::new(PatchKey(99), object));
+        .push(OpenElement::new_html(PatchKey(99), object));
     let candidate = scoped_builder
         .adoption_agency_lookup_formatting_element(b)
         .expect("formatting element should stay in AFE across scope boundary");
@@ -255,7 +256,7 @@ fn adoption_agency_furthest_block_uses_corrected_shared_special_taxonomy() {
         };
         builder
             .open_elements
-            .push(OpenElement::new(PatchKey(99), special));
+            .push(OpenElement::new_html(PatchKey(99), special));
 
         let furthest = builder
             .adoption_agency_find_furthest_block(soe_index, &ctx.atoms)
@@ -263,6 +264,77 @@ fn adoption_agency_furthest_block_uses_corrected_shared_special_taxonomy() {
             .expect("corrected special entry must be found");
         assert_eq!(furthest.element.name(), special, "{special_name}");
     }
+}
+
+#[test]
+fn adoption_agency_furthest_block_uses_foreign_expanded_name_taxonomy() {
+    let cases = [
+        (crate::ElementNamespace::Svg, "foreignObject"),
+        (crate::ElementNamespace::MathMl, "mi"),
+    ];
+    for (namespace, local) in cases {
+        let resolver = EmptyResolver;
+        let mut ctx = DocumentParseContext::new();
+        let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+            crate::html5::tree_builder::TreeBuilderConfig::default(),
+            &mut ctx,
+        )
+        .expect("tree builder init");
+        let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
+        let b = ctx.atoms.intern_ascii_folded("b").expect("b");
+        let special = ctx.atoms.intern_exact(local).expect("foreign special");
+        assert_start_tag(&mut builder, &ctx, &resolver, b);
+        let formatting = builder
+            .adoption_agency_lookup_formatting_element(b)
+            .expect("formatting entry");
+        let FormattingElementValidation::Eligible { soe_index, .. } =
+            builder.adoption_agency_validate_formatting_element(formatting)
+        else {
+            panic!("formatting element must remain eligible");
+        };
+        builder
+            .open_elements
+            .push(OpenElement::new_foreign(PatchKey(99), namespace, special));
+
+        let furthest = builder
+            .adoption_agency_find_furthest_block(soe_index, &ctx.atoms)
+            .expect("foreign special scan")
+            .expect("foreign special entry must be found");
+        assert_eq!(furthest.element.namespace(), namespace);
+        assert_eq!(furthest.element.name(), special);
+    }
+
+    let resolver = EmptyResolver;
+    let mut ctx = DocumentParseContext::new();
+    let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
+        crate::html5::tree_builder::TreeBuilderConfig::default(),
+        &mut ctx,
+    )
+    .expect("tree builder init");
+    let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
+    let b = ctx.atoms.intern_ascii_folded("b").expect("b");
+    let mi = ctx.atoms.intern_exact("mi").expect("mi lookalike");
+    assert_start_tag(&mut builder, &ctx, &resolver, b);
+    let formatting = builder
+        .adoption_agency_lookup_formatting_element(b)
+        .expect("formatting entry");
+    let FormattingElementValidation::Eligible { soe_index, .. } =
+        builder.adoption_agency_validate_formatting_element(formatting)
+    else {
+        panic!("formatting element must remain eligible");
+    };
+    builder.open_elements.push(OpenElement::new_foreign(
+        PatchKey(100),
+        crate::ElementNamespace::Svg,
+        mi,
+    ));
+    assert_eq!(
+        builder
+            .adoption_agency_find_furthest_block(soe_index, &ctx.atoms)
+            .expect("wrong-namespace lookalike scan"),
+        None,
+        "SVG mi must not inherit MathML special-element behavior"
+    );
 }
 
 #[test]
@@ -278,7 +350,7 @@ fn adoption_agency_furthest_block_recovery_emits_deterministic_move_sequence() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(9),
-                name: std::sync::Arc::from("a"),
+                name: crate::test_support::html_name("a"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -315,7 +387,7 @@ fn adoption_agency_foster_parenting_uses_insert_before() {
     assert!(
         patches.contains(&DomPatch::CreateElement {
             key: PatchKey(9),
-            name: std::sync::Arc::from("tr"),
+            name: crate::test_support::html_name("tr"),
             attributes: Vec::new(),
         }) && patches.contains(&DomPatch::AppendChild {
             parent: PatchKey(8),
@@ -345,7 +417,7 @@ fn adoption_agency_tbody_foster_parenting_uses_insert_before() {
         patches.iter().any(|patch| {
             matches!(
                 patch,
-                DomPatch::CreateElement { name, .. } if name.as_ref() == "tr"
+                DomPatch::CreateElement { name, .. } if name.is_html("tr")
             )
         }),
         "tbody-related AAA recovery must still synthesize a table row inside the existing tbody"
@@ -362,16 +434,17 @@ fn adoption_agency_foster_parenting_builds_expected_dom() {
     assert_eq!(
         lines,
         vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <a>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"a\" attrs=[]".to_string(),
             "      \"x\"".to_string(),
-            "      <table>".to_string(),
-            "        <tbody>".to_string(),
-            "          <tr>".to_string(),
+            "      element ns=html local=\"table\" attrs=[]".to_string(),
+            "        element ns=html local=\"tbody\" attrs=[]".to_string(),
+            "          element ns=html local=\"tr\" attrs=[]".to_string(),
         ]
     );
 }
@@ -386,16 +459,17 @@ fn adoption_agency_tbody_foster_parenting_builds_expected_dom() {
     assert_eq!(
         lines,
         vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <a>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"a\" attrs=[]".to_string(),
             "      \"x\"".to_string(),
-            "      <table>".to_string(),
-            "        <tbody>".to_string(),
-            "          <tr>".to_string(),
+            "      element ns=html local=\"table\" attrs=[]".to_string(),
+            "        element ns=html local=\"tbody\" attrs=[]".to_string(),
+            "          element ns=html local=\"tr\" attrs=[]".to_string(),
         ]
     );
 }
@@ -410,15 +484,16 @@ fn adoption_agency_builds_expected_dom_for_misnested_inline_formatting() {
     assert_eq!(
         lines,
         vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <b>".to_string(),
-            "        <i>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"b\" attrs=[]".to_string(),
+            "        element ns=html local=\"i\" attrs=[]".to_string(),
             "          \"one\"".to_string(),
-            "      <i>".to_string(),
+            "      element ns=html local=\"i\" attrs=[]".to_string(),
             "        \"two\"".to_string(),
         ]
     );
@@ -431,7 +506,9 @@ fn adoption_agency_recreates_multiple_formatting_elements_with_fresh_monotonic_k
     let recreated: Vec<(PatchKey, &str)> = patches
         .iter()
         .filter_map(|patch| match patch {
-            DomPatch::CreateElement { key, name, .. } if key.0 >= 11 => Some((*key, name.as_ref())),
+            DomPatch::CreateElement { key, name, .. } if key.0 >= 11 => {
+                Some((*key, name.local_name_str()))
+            }
             _ => None,
         })
         .collect();

@@ -1,6 +1,7 @@
 use super::open_elements::OpenElementsStack;
 use super::types::FosterParentingAnchorIndices;
 use crate::html5::shared::AtomId;
+use crate::names::ElementNamespace;
 
 impl OpenElementsStack {
     pub(crate) fn foster_parenting_anchor_indices(
@@ -23,6 +24,9 @@ impl OpenElementsStack {
             self.foster_parenting_cache.scan_steps =
                 self.foster_parenting_cache.scan_steps.saturating_add(1);
             let name = self.items[index].name();
+            if self.items[index].namespace() != ElementNamespace::Html {
+                continue;
+            }
             if indices.table_index.is_none() && name == table {
                 indices.table_index = Some(index);
             } else if indices.template_index.is_none() && name == template {
@@ -90,8 +94,11 @@ impl FosterParentingIndexCache {
         self.valid = true;
     }
 
-    pub(super) fn note_push(&mut self, index: usize, name: AtomId) {
+    pub(super) fn note_push(&mut self, index: usize, namespace: ElementNamespace, name: AtomId) {
         if !self.valid {
+            return;
+        }
+        if namespace != ElementNamespace::Html {
             return;
         }
         if Some(name) == self.html {
@@ -103,13 +110,20 @@ impl FosterParentingIndexCache {
         }
     }
 
-    pub(super) fn note_pop(&mut self, removed_index: usize, name: AtomId) {
+    pub(super) fn note_pop(
+        &mut self,
+        removed_index: usize,
+        namespace: ElementNamespace,
+        name: AtomId,
+    ) {
         if !self.valid {
             return;
         }
-        if (Some(name) == self.html && self.indices.html_index == Some(removed_index))
-            || (Some(name) == self.table && self.indices.table_index == Some(removed_index))
-            || (Some(name) == self.template && self.indices.template_index == Some(removed_index))
+        if namespace == ElementNamespace::Html
+            && ((Some(name) == self.html && self.indices.html_index == Some(removed_index))
+                || (Some(name) == self.table && self.indices.table_index == Some(removed_index))
+                || (Some(name) == self.template
+                    && self.indices.template_index == Some(removed_index)))
         {
             self.invalidate();
         }

@@ -15,7 +15,10 @@ pub(crate) fn find_page_background_color(
 
     fn from_elem(node: &StyledNode<'_>, want: &str) -> Option<(u8, u8, u8, u8)> {
         match node.node {
-            Node::Element { element } if element.name().eq_ignore_ascii_case(want) => {
+            Node::Element { element }
+                if element.namespace() == html::ElementNamespace::Html
+                    && element.name() == want =>
+            {
                 let rgba = node.style.background_color();
                 if is_non_transparent_rgba(rgba) {
                     Some(rgba)

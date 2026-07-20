@@ -1,9 +1,11 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 # status: active
+
+#dom-snapshot-v2
 #document
   <!-- pre -->
-  <html>
-    <head>
-    <body>
-      <div>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=html local="div" attrs=[]
         "Hi"

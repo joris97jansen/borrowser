@@ -8,7 +8,7 @@ Layout per fixture:
 - `meta.txt`: required provenance + intent metadata
 - `input.html`: minimized stable HTML input
 - `tokens.txt`: optional tokenizer oracle in `html5-token-v1` format
-- `dom.txt`: optional DOM oracle in `html5-dom-v1` format
+- `dom.txt`: optional DOM oracle in `html5-dom-v2` format
 
 At least one of `tokens.txt` or `dom.txt` must exist. A fixture may carry both
 when the fuzz finding should be locked at tokenizer and semantic DOM levels.

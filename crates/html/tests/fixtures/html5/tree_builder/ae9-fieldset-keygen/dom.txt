@@ -1,17 +1,19 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 # status: active
 # include_parse_errors: true
+
+#dom-snapshot-v2
 #document
   <!doctype html>
-  <html>
-    <head>
-    <body>
-      <p>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=html local="p" attrs=[]
         "before"
-      <fieldset>
+      element ns=html local="fieldset" attrs=[]
         "inside"
-      <keygen>
-      <input>
+      element ns=html local="keygen" attrs=[]
+      element ns=html local="input" attrs=[]
 parse-errors:
   tree-builder: before-html-implicit-html
   tree-builder: before-head-implicit-head

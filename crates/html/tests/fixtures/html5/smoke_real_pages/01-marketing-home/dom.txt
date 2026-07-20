@@ -1,35 +1,35 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 
+#dom-snapshot-v2
 #document
-
   <!doctype html>
-  <html lang="en">
-    <head>
-      <meta charset="utf-8">
-      <title>
+  element ns=html local="html" attrs=[{ns=none prefix=- local="lang" value="en"}]
+    element ns=html local="head" attrs=[]
+      element ns=html local="meta" attrs=[{ns=none prefix=- local="charset" value="utf-8"}]
+      element ns=html local="title" attrs=[]
         "Acme Cloud"
-    <body>
+    element ns=html local="body" attrs=[]
       "\n"
-      <header>
-        <h1>
+      element ns=html local="header" attrs=[]
+        element ns=html local="h1" attrs=[]
           "Acme Cloud"
-        <nav>
-          <a href="/features">
+        element ns=html local="nav" attrs=[]
+          element ns=html local="a" attrs=[{ns=none prefix=- local="href" value="/features"}]
             "Features"
-          <a href="/pricing">
+          element ns=html local="a" attrs=[{ns=none prefix=- local="href" value="/pricing"}]
             "Pricing"
       "\n"
-      <main>
-        <section>
-          <h2>
+      element ns=html local="main" attrs=[]
+        element ns=html local="section" attrs=[]
+          element ns=html local="h2" attrs=[]
             "Ship faster"
-          <p>
+          element ns=html local="p" attrs=[]
             "Deploy globally in minutes."
-          <button>
+          element ns=html local="button" attrs=[]
             "Start free"
       "\n"
-      <footer>
-        <small>
+      element ns=html local="footer" attrs=[]
+        element ns=html local="small" attrs=[]
           "\u{A9} 2026 Acme"
       "\n"
     "\n"

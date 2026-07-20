@@ -218,7 +218,10 @@ pub fn check_patch_invariants(
             }
             DomPatch::CreateElement { key, name, .. } => {
                 staged.insert_created_node(*key, DomInvariantNodeKind::Element, patch_index)?;
-                staged.mark_element_name(*key, name.as_ref() == "template")?;
+                staged.mark_element_name(
+                    *key,
+                    name.is(crate::names::ElementNamespace::Html, "template"),
+                )?;
             }
             DomPatch::CreateTemplateContents { host, contents } => {
                 staged.apply_create_template_contents(patch_index, *host, *contents)?;

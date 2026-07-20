@@ -12,7 +12,6 @@ pub(crate) struct PaintCtx<'a> {
     pub(crate) painter: &'a Painter,
     pub(crate) origin: Pos2,
     pub(crate) measurer: &'a EguiTextMeasurer,
-    pub(crate) base_url: Option<&'a str>,
     pub(crate) resources: &'a dyn super::ImageProvider,
     pub(crate) input_values: &'a InputValueStore,
     pub(crate) focused: Option<Id>,

@@ -1,26 +1,26 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 
+#dom-snapshot-v2
 #document
-
   <!doctype html>
-  <html>
-    <head>
-      <title>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+      element ns=html local="title" attrs=[]
         "FAQ"
-    <body>
+    element ns=html local="body" attrs=[]
       "\n"
-      <h1>
+      element ns=html local="h1" attrs=[]
         "FAQ"
       "\n"
-      <details>
-        <summary>
+      element ns=html local="details" attrs=[]
+        element ns=html local="summary" attrs=[]
           "Can I export data?"
-        <p>
+        element ns=html local="p" attrs=[]
           "Yes, from account settings."
       "\n"
-      <details>
-        <summary>
+      element ns=html local="details" attrs=[]
+        element ns=html local="summary" attrs=[]
           "Do you support SSO?"
-        <p>
+        element ns=html local="p" attrs=[]
           "Available on enterprise plans."
       "\n"

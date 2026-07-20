@@ -9,7 +9,7 @@ use gfx::input::PageAction;
 use gfx::paint::{ImageProvider, PaintArtifact};
 use gfx::viewport::{
     ViewportCtx, ViewportPaintArtifactAction, ViewportRepaintPolicy, ViewportRepaintScope,
-    ViewportRetainedLayout, ViewportRetainedPaint, execute_viewport_frame,
+    ViewportResourceInputs, ViewportRetainedLayout, ViewportRetainedPaint, execute_viewport_frame,
 };
 use layout::{RetainedLayoutArtifact, RetainedLayoutFrameResult, RetainedLayoutKeySeed};
 
@@ -96,6 +96,29 @@ pub(crate) fn prepare_page_frame(
     }))
 }
 
+struct BrowserReplacedElementInfo<'a, R> {
+    base_url: Option<&'a str>,
+    resources: &'a R,
+}
+
+impl<R: ImageProvider> layout::ReplacedElementInfoProvider for BrowserReplacedElementInfo<'_, R> {
+    fn resolve_image_source(&self, source: &str) -> Option<String> {
+        crate::resources::resolve_image_source(self.base_url, source)
+    }
+
+    fn intrinsic_for_img(
+        &self,
+        image: &layout::ImagePresentation,
+    ) -> Option<layout::replaced::intrinsic::IntrinsicSize> {
+        let url = image.resolved_source()?;
+        let (width, height) = self.resources.image_intrinsic_size_px(url)?;
+        Some(layout::replaced::intrinsic::IntrinsicSize::from_w_h(
+            Some(width as f32),
+            Some(height as f32),
+        ))
+    }
+}
+
 pub(crate) fn execute_prepared_page_frame<R: ImageProvider>(
     ui: &mut Ui,
     prepared: PreparedPageFrame<'_>,
@@ -115,13 +138,17 @@ pub(crate) fn execute_prepared_page_frame<R: ImageProvider>(
         base_url,
         form_controls,
     } = prepared;
+    let replaced_info = BrowserReplacedElementInfo {
+        base_url: base_url.as_deref(),
+        resources,
+    };
     let repaint_policy = viewport_repaint_policy(&pending_work);
     let viewport_result = execute_viewport_frame(
         ViewportCtx::new(
             ui,
             &style_output,
             base_url.as_deref(),
-            resources,
+            ViewportResourceInputs::new(resources, &replaced_info),
             &mut input_state.input_values,
             &form_controls,
             &mut input_state.interaction,

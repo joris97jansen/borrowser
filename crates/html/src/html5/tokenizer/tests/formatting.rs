@@ -30,11 +30,11 @@ fn token_fmt_is_deterministic_and_preserves_attribute_order() {
         attrs: vec![
             Attribute {
                 name: attr_z,
-                value: Some(AttributeValue::Owned("1".to_string())),
+                value: AttributeValue::Owned("1".to_string()),
             },
             Attribute {
                 name: attr_a,
-                value: Some(AttributeValue::Owned("2".to_string())),
+                value: AttributeValue::Owned("2".to_string()),
             },
         ],
         self_closing: false,

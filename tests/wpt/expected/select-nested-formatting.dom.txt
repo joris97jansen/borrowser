@@ -1,11 +1,13 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
+
+#dom-snapshot-v2
 #document
-  <html>
-    <head>
-    <body>
-      <select>
-        <b>
-          <option>
-      <b>
-        <option>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=html local="select" attrs=[]
+        element ns=html local="b" attrs=[]
+          element ns=html local="option" attrs=[]
+      element ns=html local="b" attrs=[]
+        element ns=html local="option" attrs=[]
       "X"

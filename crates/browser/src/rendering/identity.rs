@@ -203,14 +203,13 @@ pub(crate) fn retained_render_anchor_debug_label(anchor: RetainedRenderAnchor) -
 
 #[cfg(test)]
 mod tests {
-    use std::sync::Arc;
-
     use super::*;
 
     #[test]
     fn parser_created_template_host_and_contents_receive_no_retained_identity() {
         let template = html::internal::template_element_from_parts(
             Id(4),
+            html::internal::html_name("template"),
             Vec::new(),
             Vec::new(),
             Id(5),
@@ -222,7 +221,7 @@ mod tests {
         );
         let active = html::internal::node_element_from_parts(
             Id(7),
-            Arc::from("p"),
+            html::internal::html_name("p"),
             Vec::new(),
             Vec::new(),
             vec![Node::Text {
@@ -251,6 +250,63 @@ mod tests {
                 RetainedRenderAnchor::DomNode(Id(7)),
                 RetainedRenderAnchor::DomNode(Id(8)),
             ]
+        );
+    }
+
+    #[test]
+    fn mixed_namespace_dom_keeps_retained_identity_independent_from_layout_participation() {
+        let foreign_html_child = html::internal::node_element_from_parts(
+            Id(6),
+            html::internal::html_name("div"),
+            Vec::new(),
+            Vec::new(),
+            Vec::new(),
+        );
+        let foreign_object = html::internal::node_element_from_parts(
+            Id(5),
+            html::internal::expanded_name(html::ElementNamespace::Svg, "foreignObject"),
+            Vec::new(),
+            Vec::new(),
+            vec![foreign_html_child],
+        );
+        let svg = html::internal::node_element_from_parts(
+            Id(4),
+            html::internal::expanded_name(html::ElementNamespace::Svg, "svg"),
+            Vec::new(),
+            Vec::new(),
+            vec![foreign_object],
+        );
+        let document = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                html::internal::html_name("html"),
+                Vec::new(),
+                Vec::new(),
+                vec![html::internal::node_element_from_parts(
+                    Id(3),
+                    html::internal::html_name("body"),
+                    Vec::new(),
+                    Vec::new(),
+                    vec![svg],
+                )],
+            )],
+        };
+        let mut identities = RetainedRenderIdentityMap::new();
+
+        identities.reconcile_live_dom(&document);
+
+        let anchors = identities
+            .identities()
+            .into_iter()
+            .map(|identity| identity.anchor)
+            .collect::<Vec<_>>();
+        assert_eq!(
+            anchors,
+            (1..=6)
+                .map(|id| RetainedRenderAnchor::DomNode(Id(id)))
+                .collect::<Vec<_>>()
         );
     }
 }

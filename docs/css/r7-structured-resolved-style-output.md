@@ -56,8 +56,13 @@ element.
 Each element entry records:
 
 - stable selector-DOM element id for the style pass
+- canonical parser-created element namespace
 - canonical element name
 - total per-element `ResolvedStyle`
+
+The namespace and local name form the semantic element identity carried by
+the retained CSS artifact. A same-spelled element in another namespace is not
+eligible for incremental resolved-style reuse.
 
 The per-element `ResolvedStyle` remains the R1-R6 contract object:
 

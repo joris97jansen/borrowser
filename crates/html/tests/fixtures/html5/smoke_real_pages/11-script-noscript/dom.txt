@@ -1,19 +1,19 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 
+#dom-snapshot-v2
 #document
-
   <!doctype html>
-  <html>
-    <head>
-      <title>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+      element ns=html local="title" attrs=[]
         "App shell"
-      <script>
+      element ns=html local="script" attrs=[]
         "window.APP=true;"
-    <body>
+    element ns=html local="body" attrs=[]
       "\n"
-      <noscript>
+      element ns=html local="noscript" attrs=[]
         "Please enable JavaScript."
       "\n"
-      <div id="app">
+      element ns=html local="div" attrs=[{ns=none prefix=- local="id" value="app"}]
         "Loading\u{2026}"
       "\n"

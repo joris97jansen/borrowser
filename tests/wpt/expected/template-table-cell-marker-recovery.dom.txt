@@ -1,10 +1,12 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
+
+#dom-snapshot-v2
 #document
-  <html>
-    <head>
-    <body>
-      <table>
-        <thead>
-          <template>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=html local="table" attrs=[]
+        element ns=html local="thead" attrs=[]
+          element ns=html local="template" attrs=[]
             #template-contents
-              <td>
+              element ns=html local="td" attrs=[]

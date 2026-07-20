@@ -6,7 +6,8 @@ use crate::{
     ContainingBlockId, DisplayBoxBehavior, FlexFormattingParticipation, FlowMargins,
     FlowParticipation, FormattingContextId, FormattingContextKind, InlineFormattingContextId,
     InlineFormattingParticipation, ListMarker, OverflowClip, OverflowKeyword, OverflowPolicy,
-    PositionedContainingBlockId, PositioningScheme, Rectangle, ReplacedKind, UsedContentSize,
+    PositionedContainingBlockId, PositioningScheme, Rectangle, ReplacedElementPresentation,
+    ReplacedKind, UsedContentSize,
     flex::{
         FlexContainerCrossAxisLayout, FlexContainerMainAxisLayout, FlexItemCrossAxisLayout,
         FlexItemMainAxisLayout,
@@ -48,6 +49,7 @@ pub struct LayoutBox<'style_tree, 'dom> {
     pub flex_item_cross_axis: Option<FlexItemCrossAxisLayout>,
     pub list_marker: Option<ListMarker>,
     pub replaced: Option<ReplacedKind>,
+    pub replaced_presentation: Option<ReplacedElementPresentation>,
     pub replaced_intrinsic: Option<IntrinsicSize>,
     pub used_content_size: Option<UsedContentSize>,
     pub block_flow_placement: Option<BlockFlowBlockPlacement>,
@@ -71,6 +73,10 @@ impl<'style_tree, 'dom> LayoutBox<'style_tree, 'dom> {
 
     pub fn direct_node_id(&self) -> Option<Id> {
         self.source.direct_node_id()
+    }
+
+    pub fn replaced_presentation(&self) -> Option<&ReplacedElementPresentation> {
+        self.replaced_presentation.as_ref()
     }
 
     pub fn display_behavior(&self) -> DisplayBoxBehavior {

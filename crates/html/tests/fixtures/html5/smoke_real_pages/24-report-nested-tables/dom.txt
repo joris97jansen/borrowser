@@ -1,61 +1,62 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 
+#dom-snapshot-v2
 #document
   <!doctype html>
-  <html>
-    <head>
-      <title>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+      element ns=html local="title" attrs=[]
         "Quarterly Report"
-    <body>
+    element ns=html local="body" attrs=[]
       "\n"
-      <table class="report">
+      element ns=html local="table" attrs=[{ns=none prefix=- local="class" value="report"}]
         "\n  "
-        <tbody>
-          <tr>
+        element ns=html local="tbody" attrs=[]
+          element ns=html local="tr" attrs=[]
             "\n    "
-            <td>
+            element ns=html local="td" attrs=[]
               "\n      "
-              <h1>
+              element ns=html local="h1" attrs=[]
                 "Quarterly Report"
               "\n      "
-              <table class="inner">
+              element ns=html local="table" attrs=[{ns=none prefix=- local="class" value="inner"}]
                 "\n        "
-                <tbody>
-                  <tr>
-                    <th>
+                element ns=html local="tbody" attrs=[]
+                  element ns=html local="tr" attrs=[]
+                    element ns=html local="th" attrs=[]
                       "Region"
-                    <th>
+                    element ns=html local="th" attrs=[]
                       "Revenue"
                   "\n        "
-                  <tr>
-                    <td>
+                  element ns=html local="tr" attrs=[]
+                    element ns=html local="td" attrs=[]
                       "EMEA"
-                    <td>
+                    element ns=html local="td" attrs=[]
                       "$1.2M"
                   "\n        "
-                  <tr>
-                    <td>
+                  element ns=html local="tr" attrs=[]
+                    element ns=html local="td" attrs=[]
                       "APAC"
-                    <td>
+                    element ns=html local="td" attrs=[]
                       "$980k"
                   "\n      "
               "\n    "
             "\n    "
-            <td>
+            element ns=html local="td" attrs=[]
               "\n      "
-              <table class="summary">
+              element ns=html local="table" attrs=[{ns=none prefix=- local="class" value="summary"}]
                 "\n        "
-                <tbody>
-                  <tr>
-                    <td>
+                element ns=html local="tbody" attrs=[]
+                  element ns=html local="tr" attrs=[]
+                    element ns=html local="td" attrs=[]
                       "Margin"
-                    <td>
+                    element ns=html local="td" attrs=[]
                       "18%"
                   "\n        "
-                  <tr>
-                    <td>
+                  element ns=html local="tr" attrs=[]
+                    element ns=html local="td" attrs=[]
                       "Growth"
-                    <td>
+                    element ns=html local="td" attrs=[]
                       "11%"
                   "\n      "
               "\n    "

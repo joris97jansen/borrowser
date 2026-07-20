@@ -1,5 +1,34 @@
 use crate::dom_patch::PatchKey;
 use crate::html5::shared::AtomId;
+use crate::names::ElementNamespace;
+
+/// Opaque semantic cache key for one expanded element name.
+///
+/// `AtomId` is already bound to its exact-name interner domain, so this is the
+/// compact stack/cache projection of `ExpandedElementName`, not a second name
+/// identity.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
+pub(crate) struct ExpandedNameKey {
+    namespace: ElementNamespace,
+    local_name: AtomId,
+}
+
+impl ExpandedNameKey {
+    pub(crate) fn new(namespace: ElementNamespace, local_name: AtomId) -> Self {
+        Self {
+            namespace,
+            local_name,
+        }
+    }
+
+    pub(crate) fn namespace(self) -> ElementNamespace {
+        self.namespace
+    }
+
+    pub(crate) fn local_name(self) -> AtomId {
+        self.local_name
+    }
+}
 
 /// Stable element identity used by Core-v0 tree-builder state.
 ///
@@ -8,7 +37,7 @@ use crate::html5::shared::AtomId;
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct ElementIdentity {
     pub(crate) key: PatchKey,
-    pub(crate) name: AtomId,
+    pub(crate) expanded_name: ExpandedNameKey,
 }
 
 /// Entry in the stack of open elements.
@@ -40,9 +69,22 @@ pub(crate) enum InBodyEndTagScan {
 }
 
 impl OpenElement {
-    pub(crate) fn new(key: PatchKey, name: AtomId) -> Self {
+    pub(crate) fn new_html(key: PatchKey, name: AtomId) -> Self {
         Self {
-            identity: ElementIdentity { key, name },
+            identity: ElementIdentity {
+                key,
+                expanded_name: ExpandedNameKey::new(ElementNamespace::Html, name),
+            },
+        }
+    }
+
+    pub(crate) fn new_foreign(key: PatchKey, namespace: ElementNamespace, name: AtomId) -> Self {
+        debug_assert!(namespace != ElementNamespace::Html);
+        Self {
+            identity: ElementIdentity {
+                key,
+                expanded_name: ExpandedNameKey::new(namespace, name),
+            },
         }
     }
 
@@ -51,7 +93,15 @@ impl OpenElement {
     }
 
     pub(crate) fn name(self) -> AtomId {
-        self.identity.name
+        self.identity.expanded_name.local_name()
+    }
+
+    pub(crate) fn namespace(self) -> ElementNamespace {
+        self.identity.expanded_name.namespace()
+    }
+
+    pub(crate) fn expanded_name_key(self) -> ExpandedNameKey {
+        self.identity.expanded_name
     }
 }
 
@@ -73,8 +123,7 @@ pub(crate) enum ScopeKind {
 
 /// Atom IDs used to evaluate Core-v0 scope boundaries.
 ///
-/// Core v0 note: this boundary set is intentionally incomplete relative to the
-/// full WHATWG algorithm and will be expanded in follow-up milestones.
+/// AE11 namespace-aware scope boundary set from the pinned WHATWG profile.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ScopeTagSet {
     pub(crate) html: AtomId,
@@ -90,6 +139,15 @@ pub(crate) struct ScopeTagSet {
     pub(crate) button: AtomId,
     pub(crate) ol: AtomId,
     pub(crate) ul: AtomId,
+    pub(crate) math_mi: AtomId,
+    pub(crate) math_mo: AtomId,
+    pub(crate) math_mn: AtomId,
+    pub(crate) math_ms: AtomId,
+    pub(crate) math_mtext: AtomId,
+    pub(crate) math_annotation_xml: AtomId,
+    pub(crate) svg_foreign_object: AtomId,
+    pub(crate) svg_desc: AtomId,
+    pub(crate) svg_title: AtomId,
 }
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]

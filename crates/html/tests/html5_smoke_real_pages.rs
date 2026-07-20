@@ -184,7 +184,7 @@ fn assert_fixture_matches(fixture: &Fixture, update: bool) {
 
 fn write_expected_dom(path: &Path, lines: &[String]) {
     let mut out = String::new();
-    out.push_str("# format: html5-dom-v1\n\n");
+    out.push_str("# format: html5-dom-v2\n\n");
     for line in lines {
         out.push_str(line);
         out.push('\n');

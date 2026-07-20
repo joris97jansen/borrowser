@@ -4,7 +4,7 @@ source: html/syntax/parsing/resources/template.dat (#data case 27)
 context: full-document
 scripting: not-applicable
 data-sha256: bc80482ac52c280e4e173fc0294cafebc658e8af6441f2ad63a6e23227ffb001
-adaptation: exact #data bytes extracted without a terminal newline; upstream #document translated only into html5-dom-v1 with WPT template content boundaries represented as #template-contents
+adaptation: exact #data bytes extracted without a terminal newline; upstream #document translated only into html5-dom-v2 with WPT template content boundaries represented as #template-contents
 #data
 <table><thead><template><td></template></table>
 #errors

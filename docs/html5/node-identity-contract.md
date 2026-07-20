@@ -132,3 +132,13 @@ For the HTML5 runtime path:
 - Persisted identity across handle replacement strategies.
 - Treating `PatchKey`, `html::internal::Id`, or `RetainedRenderId` as
   interchangeable identity domains.
+
+## AE11 semantic-name separation
+
+Namespace-aware parsing does not change identity allocation. `PatchKey` and
+materialized `Id` remain stable numeric identities independent of an element's
+`ExpandedElementName`. Stack, scope, special-element, selector, and HTML
+semantic classification use expanded names; identity-preserving moves retain
+the same numeric key. A namespace/name change in diff input requires the
+existing structural replacement/reset policy and never a synthesized identity
+derived from a namespace URI or local name.

@@ -101,7 +101,11 @@ fn append_styled_node_snapshot(
 fn styled_node_kind_debug_label(node: &Node) -> String {
     match node {
         Node::Document { .. } => "kind=document".to_string(),
-        Node::Element { element } => format!("kind=element name=\"{}\"", element.name()),
+        Node::Element { element } => format!(
+            "kind=element namespace={} name=\"{}\"",
+            element.namespace().snapshot_name(),
+            element.name()
+        ),
         Node::Text { text, .. } => format!("kind=text text=\"{}\"", text.escape_default()),
         Node::Comment { text, .. } => format!("kind=comment text=\"{}\"", text.escape_default()),
         Node::DocumentType { name, .. } => match name {
@@ -211,7 +215,20 @@ fn build_style_tree_from_computed_entries<'a, 'b>(
             }
 
             let expected_name = context.element_name(expected_selector_id);
-            if expected_name != name.as_ref() || entry.element_name() != expected_name {
+            let expected_namespace = context.element_namespace(expected_selector_id);
+            if entry.element_namespace() != expected_namespace {
+                return Err(
+                    ComputedStyleResolutionError::ComputedElementNamespaceMismatch {
+                        element_index,
+                        expected: expected_namespace,
+                        actual: entry.element_namespace(),
+                    },
+                );
+            }
+            if expected_namespace != element.namespace()
+                || expected_name != name
+                || entry.element_name() != expected_name
+            {
                 return Err(ComputedStyleResolutionError::ComputedElementNameMismatch {
                     element_index,
                     expected: expected_name.to_string(),

@@ -1,11 +1,13 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 # status: active
 # include_parse_errors: true
+
+#dom-snapshot-v2
 #document
   <!doctype html>
-  <html>
-    <head>
-    <body>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
 parse-errors:
   tree-builder: in-body-li-end-tag-missing-li
   tree-builder: in-body-any-other-end-tag-blocked-by-special

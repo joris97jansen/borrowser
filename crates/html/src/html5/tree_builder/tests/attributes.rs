@@ -46,23 +46,23 @@ fn parser_created_attributes_are_first_wins_and_encounter_ordered() {
                 attrs: vec![
                     Attribute {
                         name: first,
-                        value: Some(AttributeValue::Owned("1".to_string())),
+                        value: AttributeValue::Owned("1".to_string()),
                     },
                     Attribute {
                         name: duplicated,
-                        value: Some(AttributeValue::Owned("keep".to_string())),
+                        value: AttributeValue::Owned("keep".to_string()),
                     },
                     Attribute {
                         name: empty,
-                        value: Some(AttributeValue::Owned(String::new())),
+                        value: AttributeValue::Owned(String::new()),
                     },
                     Attribute {
                         name: duplicated_lower,
-                        value: Some(AttributeValue::Owned("drop".to_string())),
+                        value: AttributeValue::Owned("drop".to_string()),
                     },
                     Attribute {
                         name: boolean,
-                        value: None,
+                        value: AttributeValue::Owned(String::new()),
                     },
                 ],
                 self_closing: false,
@@ -85,15 +85,15 @@ fn parser_created_attributes_are_first_wins_and_encounter_ordered() {
     let actual = element
         .attributes()
         .iter()
-        .map(|(name, value)| (name.as_ref(), value.as_deref()))
+        .map(|attribute| (attribute.local_name(), attribute.value()))
         .collect::<Vec<_>>();
     assert_eq!(
         actual,
         vec![
-            ("data-first", Some("1")),
-            ("data-dup", Some("keep")),
-            ("data-empty", Some("")),
-            ("disabled", None),
+            ("data-first", "1"),
+            ("data-dup", "keep"),
+            ("data-empty", ""),
+            ("disabled", ""),
         ],
         "stored parser-created attributes should be first-wins and encounter ordered"
     );
@@ -101,7 +101,7 @@ fn parser_created_attributes_are_first_wins_and_encounter_ordered() {
 
 fn find_element<'a>(node: &'a crate::Node, name: &str) -> Option<&'a crate::Node> {
     match node {
-        crate::Node::Element { element } if element.name().as_ref() == name => Some(node),
+        crate::Node::Element { element } if element.expanded_name().is_html(name) => Some(node),
         crate::Node::Document { children, .. } => {
             children.iter().find_map(|child| find_element(child, name))
         }

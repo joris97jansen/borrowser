@@ -1,14 +1,16 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 # status: active
 # include_parse_errors: true
+
+#dom-snapshot-v2
 #document
   <!doctype html>
-  <html>
-    <head>
-    <body>
-      <button>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=html local="button" attrs=[]
         "one"
-      <button>
+      element ns=html local="button" attrs=[]
         "two"
 parse-errors:
   tree-builder: before-html-implicit-html

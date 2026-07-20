@@ -1,5 +1,3 @@
-use std::sync::Arc;
-
 use crate::Node;
 use crate::dom_patch::PatchKey;
 use crate::types::{DocumentFragmentNode, Id, ParserCreatedFragmentKind};
@@ -48,7 +46,7 @@ impl PatchValidationArena {
                 template_contents,
             } => crate::Node::from_element_parts(
                 Id::INVALID,
-                Arc::clone(name),
+                name.clone(),
                 attributes.clone(),
                 Vec::new(),
                 template_contents

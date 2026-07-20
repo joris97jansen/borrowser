@@ -164,7 +164,10 @@ fn recompute_block_heights<'style_tree, 'dom>(
             // display behavior must come from computed style. Until Milestone W
             // introduces an explicit box-tree/root-box model, the document
             // element acts as the top-level layout container here.
-            if !node.is_anonymous() && name.eq_ignore_ascii_case("html") {
+            if !node.is_anonymous()
+                && element.namespace() == html::ElementNamespace::Html
+                && name.eq_ignore_ascii_case("html")
+            {
                 // Inline elements: height is 0 at block level.
                 if matches!(node.style.display(), Display::Inline) {
                     let (content_x, content_width) =

@@ -238,6 +238,9 @@ impl Html5Tokenizer {
             }
             TokenizerState::SelfClosingStartTag => self.step_self_closing_start_tag(input, ctx),
             TokenizerState::MarkupDeclarationOpen => self.step_markup_declaration_open(input, ctx),
+            TokenizerState::CdataSection => self.step_cdata_section(input, ctx),
+            TokenizerState::CdataSectionBracket => self.step_cdata_section_bracket(input),
+            TokenizerState::CdataSectionEnd => self.step_cdata_section_end(input, ctx),
             TokenizerState::CommentStart => self.step_comment_start(input, ctx),
             TokenizerState::CommentStartDash => self.step_comment_start_dash(input, ctx),
             TokenizerState::Comment => self.step_comment(input, ctx),
@@ -304,10 +307,12 @@ impl Html5Tokenizer {
             return Step::NeedMoreInput;
         }
 
-        // Core v0 comment/markup simplifications:
-        // - Recognize only DOCTYPE and `<!--` entry points.
-        // - All other `<!...` forms enter BogusComment.
-        // - Fine-grained WHATWG parse-error branches are deferred.
+        // Supported markup-declaration boundary:
+        // - recognize DOCTYPE and `<!--` entry points;
+        // - recognize `[CDATA[` only when tree construction reports a
+        //   non-HTML adjusted current node;
+        // - route all other `<!...` forms to BogusComment.
+        // Processing-instruction tokenization remains the explicit AE12 gap.
         //
         // We enter this state after consuming "<!", so cursor is at declaration body.
         match self.match_ascii_prefix_ci(input, b"DOCTYPE") {
@@ -334,6 +339,23 @@ impl Html5Tokenizer {
             MatchResult::NoMatch => {}
         }
 
+        match self.match_ascii_prefix(input, b"[CDATA[") {
+            MatchResult::Matched
+                if self
+                    .adjusted_current_node_namespace
+                    .is_some_and(|namespace| namespace != crate::names::ElementNamespace::Html) =>
+            {
+                let did_consume = self.consume_ascii_sequence(input, b"[CDATA[");
+                debug_assert!(did_consume);
+                self.pending_text_start = Some(self.cursor);
+                self.transition_to(TokenizerState::CdataSection);
+                return Step::Progress;
+            }
+            MatchResult::Matched => {}
+            MatchResult::NeedMoreInput => return Step::NeedMoreInput,
+            MatchResult::NoMatch => {}
+        }
+
         // Core v0: unsupported `<!...` declarations enter bogus comment mode.
         self.record_tokenizer_parse_error(
             ctx,
@@ -344,6 +366,60 @@ impl Html5Tokenizer {
         );
         self.pending_comment_start = Some(self.cursor);
         self.transition_to(TokenizerState::BogusComment);
+        Step::Progress
+    }
+
+    fn step_cdata_section(&mut self, input: &Input, _ctx: &mut DocumentParseContext) -> Step {
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        let consumed = self.consume_while(input, |ch| ch != ']');
+        if consumed > 0 {
+            return Step::Progress;
+        }
+        let _ = self.consume(input);
+        self.transition_to(TokenizerState::CdataSectionBracket);
+        Step::Progress
+    }
+
+    fn step_cdata_section_bracket(&mut self, input: &Input) -> Step {
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        if self.peek(input) == Some(']') {
+            let _ = self.consume(input);
+            self.transition_to(TokenizerState::CdataSectionEnd);
+        } else {
+            self.transition_to(TokenizerState::CdataSection);
+        }
+        Step::Progress
+    }
+
+    fn step_cdata_section_end(&mut self, input: &Input, ctx: &mut DocumentParseContext) -> Step {
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        match self.peek(input) {
+            Some('>') => {
+                let end = self.cursor.saturating_sub(2);
+                if let Some(start) = self.pending_text_start.take()
+                    && start < end
+                {
+                    let saved_cursor = self.cursor;
+                    self.cursor = end;
+                    self.pending_text_start = Some(start);
+                    self.flush_pending_text_with_context(input, ctx);
+                    self.cursor = saved_cursor;
+                }
+                let _ = self.consume(input);
+                self.transition_to(TokenizerState::Data);
+            }
+            Some(']') => {
+                let _ = self.consume(input);
+            }
+            Some(_) => self.transition_to(TokenizerState::CdataSection),
+            None => return Step::NeedMoreInput,
+        }
         Step::Progress
     }
 

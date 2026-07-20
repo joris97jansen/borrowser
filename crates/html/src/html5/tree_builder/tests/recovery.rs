@@ -438,7 +438,7 @@ fn tree_builder_after_head_non_whitespace_text_forces_body_and_enters_in_body() 
         patches.iter().any(|patch| {
             matches!(
                 patch,
-                DomPatch::CreateElement { name, .. } if name.as_ref() == "body"
+                DomPatch::CreateElement { name, .. } if name.is_html("body")
             )
         }),
         "after-head non-whitespace text should force implicit body insertion"
@@ -483,7 +483,7 @@ fn tree_builder_after_head_whitespace_text_does_not_force_body_or_emit_patches()
     assert!(
         !patches.iter().any(|patch| matches!(
             patch,
-            DomPatch::CreateElement { name, .. } if name.as_ref() == "body"
+            DomPatch::CreateElement { name, .. } if name.is_html("body")
         )),
         "AfterHead whitespace must not force implicit body insertion"
     );
@@ -575,7 +575,7 @@ fn tree_builder_unmatched_p_end_tag_synthesizes_and_closes_empty_p() {
     let synthetic_p_key = patches
         .iter()
         .find_map(|patch| match patch {
-            DomPatch::CreateElement { key, name, .. } if name.as_ref() == "p" => Some(*key),
+            DomPatch::CreateElement { key, name, .. } if name.is_html("p") => Some(*key),
             _ => None,
         })
         .expect("unmatched </p> should create a parser-owned <p> element");
@@ -877,16 +877,17 @@ fn tree_builder_reconstructs_active_formatting_after_paragraph_auto_close() {
     assert_eq!(
         lines,
         vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <p>".to_string(),
-            "        <b>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"p\" attrs=[]".to_string(),
+            "        element ns=html local=\"b\" attrs=[]".to_string(),
             "          \"one\"".to_string(),
-            "      <div>".to_string(),
-            "        <b>".to_string(),
+            "      element ns=html local=\"div\" attrs=[]".to_string(),
+            "        element ns=html local=\"b\" attrs=[]".to_string(),
             "          \"two\"".to_string(),
         ],
         "active formatting should reconstruct inside the block after p auto-close"

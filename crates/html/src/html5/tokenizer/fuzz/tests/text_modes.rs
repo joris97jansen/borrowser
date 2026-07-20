@@ -245,6 +245,7 @@ fn resolve_text_value(text: &TextValue, resolver: &dyn TextResolver) -> String {
             .expect("text probe spans must resolve")
             .to_string(),
         TextValue::Owned(text) => text.clone(),
+        TextValue::NullNormalized { text, .. } => text.clone(),
     }
 }
 

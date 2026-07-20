@@ -2,7 +2,6 @@ use super::arena::{TestKind, TestNode};
 use super::{ArenaResult, TestPatchArena};
 use crate::dom_patch::PatchKey;
 use crate::types::{DocumentFragmentNode, Id, Node};
-use std::sync::Arc;
 
 impl TestPatchArena {
     pub(crate) fn from_dom(root: &Node) -> ArenaResult<Self> {
@@ -28,7 +27,7 @@ impl TestPatchArena {
                 system_id: system_id.clone(),
             },
             Node::Element { element } => TestKind::Element {
-                name: Arc::clone(element.name()),
+                name: element.expanded_name().clone(),
                 attributes: element.attributes().to_vec(),
                 template_contents: element
                     .template_contents()
@@ -127,7 +126,7 @@ impl TestPatchArena {
                 template_contents,
             } => crate::Node::from_element_parts(
                 id,
-                Arc::clone(name),
+                name.clone(),
                 attributes.clone(),
                 Vec::new(),
                 template_contents

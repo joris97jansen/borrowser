@@ -1,0 +1,9 @@
+# format: html5-dom-v2
+
+#dom-snapshot-v2
+#document
+  <!doctype html>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[{ns=none prefix=- local="xlink:href" value="foo"}]
+      element ns=svg local="svg" attrs=[{ns=xlink prefix="xlink" local="href" value="foo"}]

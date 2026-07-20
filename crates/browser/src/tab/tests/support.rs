@@ -2,14 +2,13 @@ use super::super::Tab;
 use css::StyledNode;
 use html::{DomPatch, Node, PatchKey, internal::Id};
 use layout::TextMeasurer;
-use std::sync::Arc;
 
 pub(super) fn find_styled_element<'a>(
     node: &'a StyledNode<'a>,
     want: &str,
 ) -> Option<&'a StyledNode<'a>> {
     if let Node::Element { element } = node.node
-        && element.name().as_ref() == want
+        && element.name() == want
     {
         return Some(node);
     }
@@ -82,7 +81,7 @@ pub(super) fn initial_patch_document(
         },
         DomPatch::CreateElement {
             key: PatchKey(2),
-            name: Arc::from("html"),
+            name: html::internal::html_name("html"),
             attributes: Vec::new(),
         },
         DomPatch::AppendChild {
@@ -91,7 +90,7 @@ pub(super) fn initial_patch_document(
         },
         DomPatch::CreateElement {
             key: PatchKey(3),
-            name: Arc::from("head"),
+            name: html::internal::html_name("head"),
             attributes: Vec::new(),
         },
         DomPatch::AppendChild {
@@ -100,7 +99,7 @@ pub(super) fn initial_patch_document(
         },
         DomPatch::CreateElement {
             key: PatchKey(4),
-            name: Arc::from("style"),
+            name: html::internal::html_name("style"),
             attributes: Vec::new(),
         },
         DomPatch::AppendChild {
@@ -117,7 +116,7 @@ pub(super) fn initial_patch_document(
         },
         DomPatch::CreateElement {
             key: PatchKey(6),
-            name: Arc::from("body"),
+            name: html::internal::html_name("body"),
             attributes: Vec::new(),
         },
         DomPatch::AppendChild {
@@ -130,7 +129,7 @@ pub(super) fn initial_patch_document(
         patches.extend([
             DomPatch::CreateElement {
                 key: PatchKey(7),
-                name: Arc::from(name),
+                name: html::internal::html_name(name),
                 attributes: Vec::new(),
             },
             DomPatch::CreateText {
@@ -156,7 +155,7 @@ pub(super) fn two_paragraph_patch_document(style_text: &str) -> Vec<DomPatch> {
     patches.extend([
         DomPatch::CreateElement {
             key: PatchKey(7),
-            name: Arc::from("p"),
+            name: html::internal::html_name("p"),
             attributes: Vec::new(),
         },
         DomPatch::CreateText {
@@ -173,7 +172,7 @@ pub(super) fn two_paragraph_patch_document(style_text: &str) -> Vec<DomPatch> {
         },
         DomPatch::CreateElement {
             key: PatchKey(9),
-            name: Arc::from("p"),
+            name: html::internal::html_name("p"),
             attributes: Vec::new(),
         },
         DomPatch::CreateText {
@@ -195,7 +194,7 @@ pub(super) fn two_paragraph_patch_document(style_text: &str) -> Vec<DomPatch> {
 pub(super) fn find_dom_element<'a>(node: &'a Node, want: &str) -> Option<&'a Node> {
     match node {
         Node::Element { element } => {
-            if element.name().as_ref() == want {
+            if element.name() == want {
                 return Some(node);
             }
             element

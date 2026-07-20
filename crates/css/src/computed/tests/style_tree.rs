@@ -77,10 +77,32 @@ fn build_style_tree_from_computed_styles_rejects_selector_identity_mismatch() {
 }
 
 #[test]
+fn build_style_tree_from_computed_styles_rejects_namespace_mismatch() {
+    let source_dom = element("div", Vec::new(), Vec::new());
+    let target_dom = namespaced_element(html::ElementNamespace::Svg, "div", Vec::new(), Vec::new());
+    let computed = compute_document_styles(&source_dom, &[]).expect("computed document");
+
+    let error = match build_style_tree_from_computed_styles(&target_dom, &computed) {
+        Ok(_) => panic!("namespace-mismatched computed document style must be rejected"),
+        Err(error) => error,
+    };
+
+    assert_eq!(
+        error,
+        ComputedStyleResolutionError::ComputedElementNamespaceMismatch {
+            element_index: 0,
+            expected: html::ElementNamespace::Svg,
+            actual: html::ElementNamespace::Html,
+        }
+    );
+}
+
+#[test]
 fn template_host_is_styled_while_template_contents_are_excluded() {
     let inert_span = element("span", vec![("class", Some("inert"))], Vec::new());
     let dom = html::internal::template_element_from_parts(
         Id(1),
+        html::internal::html_name("template"),
         Vec::new(),
         Vec::new(),
         Id(2),

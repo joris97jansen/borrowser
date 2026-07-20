@@ -101,6 +101,31 @@ Contract:
 - fuzzers and invariant-aware tests should rely on `check_dom_invariants` and
   `check_patch_invariants` for typed failure reporting
 
+## AE11 Expanded-Name Stack Cache
+
+- the stack of open elements is bound to one `NameInterner` domain;
+- `ExpandedNameKey` is an opaque `(ElementNamespace, NameAtomId)` projection of
+  the canonical `ExpandedElementName`, never an independent semantic identity;
+- stack entries, cache updates, and exact-name lookups must use atoms from that
+  bound domain, and cross-domain input is rejected before mutation;
+- `name_counts` is a `Vec<(ExpandedNameKey, usize)>`, so lookup and update are
+  linear in the number of distinct expanded names currently on the stack;
+- missing entries and count underflow are engine invariant failures;
+- cache-assisted and scan-based scope answers must agree after push, pop,
+  replacement, suffix removal, table clearing, adoption-agency mutation, and
+  malformed recovery;
+- the accepted representative mixed-content measurement is 5.490707 scan steps
+  per operation against an approved maximum of 32;
+- the deep-distinct adversarial measurement is approximately 384.751460 scan
+  steps per operation at distinct-name/depth 770, honestly reflecting the
+  linear representation, but it did not regress against the immutable baseline;
+- `max_open_elements_depth = 1024` is the default parser resource ceiling.
+
+Crossing the representative scan threshold or the approved ordinary/mixed
+baseline-regression limits is a mandatory architecture-review stop. A later
+indexed implementation must retain the one canonical expanded-name/interner
+identity rather than introduce a second semantic key.
+
 ## AE8 Table Parser-State Invariants
 
 AE8 adds parser-state invariants for the supported table tree-construction
@@ -250,3 +275,31 @@ Table cell and AFE interaction:
   traversal does not cross the
   association; Layout and retained rendering suppress the typed host, and
   Paint receives no artifact.
+
+## AE11 namespace and foreign-content invariants
+
+- `NodeId`/materialized `Id` and `PatchKey` are stable numeric identity domains;
+  neither encodes namespace or local name.
+- Every parser-created element has one typed `ElementNamespace`; semantic
+  element comparison uses namespace plus exact interned local name.
+- Stack expanded-name cache keys contain namespace and a domain-bound exact
+  name atom. The stack rejects a foreign interner domain before mutation, and
+  invariant/fuzz lanes prove cached counts agree with live stack entries and
+  live-tree expanded names after replacement, removal, and recovery.
+- Parser-created attributes are valid by construction. Semantic identity is
+  namespace plus local name; prefix is serialization information; every value
+  is a string; stored encounter order is preserved end to end.
+- Exact DOM/patch/snapshot equality is attribute-order-sensitive. Noah's Ark
+  attribute equality is order- and prefix-insensitive but namespace-, local-
+  name-, and value-sensitive.
+- Foreign dispatch is a per-token decision over a semantic adjusted-current-
+  node view. The active insertion mode remains HTML-owned. The tokenizer may
+  query only that view's namespace for the CDATA markup-declaration boundary.
+- Namespace selection precedes and is independent of template contents,
+  foster parenting, and other adjusted insertion locations.
+- Breakout reprocesses the exact token only after a stack change establishes
+  progress. Foreign end-tag scanning never corrupts stack caches.
+- Unknown foreign elements retain their inherited foreign namespace. Results,
+  patches, errors, and attribute order do not depend on chunk boundaries.
+- Layout inability cannot alter DOM/style truth; unsupported SVG/MathML roots
+  suppress complete box subtrees at the centralized Layout decision boundary.

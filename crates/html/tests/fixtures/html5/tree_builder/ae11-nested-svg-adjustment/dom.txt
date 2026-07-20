@@ -1,0 +1,12 @@
+# format: html5-dom-v2
+# status: active
+
+#dom-snapshot-v2
+#document
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=svg local="svg" attrs=[]
+        element ns=svg local="svg" attrs=[]
+          element ns=svg local="linearGradient" attrs=[]
+            element ns=svg local="feGaussianBlur" attrs=[]

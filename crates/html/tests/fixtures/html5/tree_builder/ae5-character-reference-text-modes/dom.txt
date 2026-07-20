@@ -1,14 +1,16 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 # status: active
+
+#dom-snapshot-v2
 #document
-  <html>
-    <head>
-      <title>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+      element ns=html local="title" attrs=[]
         "&unknown; &#xD800; &amp"
-      <style>
+      element ns=html local="style" attrs=[]
         "&amp; &#xD800;"
-      <script>
+      element ns=html local="script" attrs=[]
         "&amp; &#xD800;"
-    <body>
-      <p title="&unknown; &#xD800; &amp">
+    element ns=html local="body" attrs=[]
+      element ns=html local="p" attrs=[{ns=none prefix=- local="title" value="&unknown; &#xD800; &amp"}]
         "ok"

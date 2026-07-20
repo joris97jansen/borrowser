@@ -1,0 +1,10 @@
+# format: html5-dom-v2
+# status: active
+
+#dom-snapshot-v2
+#document
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=svg local="svg" attrs=[{ns=none prefix=- local="viewBox" value="0 0 1 1"}, {ns=xlink prefix="xlink" local="href" value="outer"}, {ns=xml prefix="xml" local="lang" value="en"}, {ns=xmlns prefix=- local="xmlns" value="http://www.w3.org/2000/svg"}, {ns=xmlns prefix="xmlns" local="xlink" value="http://www.w3.org/1999/xlink"}]
+        element ns=svg local="path" attrs=[{ns=none prefix=- local="attributeName" value="d"}, {ns=none prefix=- local="href" value="plain"}, {ns=xlink prefix="xlink" local="href" value="qualified"}]

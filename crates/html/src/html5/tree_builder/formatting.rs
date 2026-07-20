@@ -13,6 +13,7 @@
     )
 )]
 
+use crate::attributes::ParserCreatedAttribute;
 use crate::dom_patch::PatchKey;
 use crate::html5::shared::{AtomId, AtomTable, Attribute};
 use crate::html5::tokenizer::TextResolver;
@@ -20,34 +21,25 @@ use crate::html5::tree_builder::stack::OpenElementsStack;
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
 
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub(crate) struct AfeAttributeSnapshot {
-    pub(crate) name: AtomId,
-    pub(crate) value: Option<String>,
-}
-
-impl AfeAttributeSnapshot {
-    #[inline]
-    pub(crate) fn new(name: AtomId, value: Option<String>) -> Self {
-        Self { name, value }
-    }
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
 pub(crate) struct AfeElementEntry {
     pub(crate) key: PatchKey,
     pub(crate) name: AtomId,
-    pub(crate) attrs: Vec<AfeAttributeSnapshot>,
+    pub(crate) attrs: Vec<ParserCreatedAttribute>,
 }
 
 impl AfeElementEntry {
     #[inline]
-    pub(crate) fn new(key: PatchKey, name: AtomId, attrs: Vec<AfeAttributeSnapshot>) -> Self {
+    pub(crate) fn new(key: PatchKey, name: AtomId, attrs: Vec<ParserCreatedAttribute>) -> Self {
         Self { key, name, attrs }
     }
 
     #[inline]
     fn same_name_and_attrs(&self, other: &Self) -> bool {
-        self.name == other.name && self.attrs == other.attrs
+        self.name == other.name
+            && crate::html5::tree_builder::attributes::same_attributes_for_html_parser(
+                &self.attrs,
+                &other.attrs,
+            )
     }
 }
 
@@ -373,9 +365,10 @@ impl Html5TreeBuilder {
         key: PatchKey,
         name: AtomId,
         attrs: &[Attribute],
+        atoms: &AtomTable,
         text: &dyn TextResolver,
     ) -> Result<(), TreeBuilderError> {
-        let snapshot = self.snapshot_afe_attributes(attrs, text)?;
+        let snapshot = self.snapshot_afe_attributes(attrs, atoms, text)?;
         let _ = self
             .active_formatting
             .push_formatting_element(AfeElementEntry::new(key, name, snapshot));
@@ -413,26 +406,29 @@ impl Html5TreeBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::{
-        ActiveFormattingList, AfeAttributeSnapshot, AfeElementEntry, AfeEntry, AfeMarker,
-        AfeMarkerKind,
-    };
+    use super::{ActiveFormattingList, AfeElementEntry, AfeEntry, AfeMarker, AfeMarkerKind};
+    use crate::attributes::{ParserCreatedAttribute, QualifiedAttributeName};
     use crate::dom_patch::PatchKey;
     use crate::html5::shared::AtomId;
 
     fn tag(id: u32) -> AtomId {
-        AtomId(id)
+        AtomId::for_test(1, id)
     }
 
     fn key(id: u32) -> PatchKey {
         PatchKey(id)
     }
 
-    fn attr(name: u32, value: Option<&str>) -> AfeAttributeSnapshot {
-        AfeAttributeSnapshot::new(tag(name), value.map(str::to_string))
+    fn attr(name: u32, value: Option<&str>) -> ParserCreatedAttribute {
+        let mut names = crate::names::NameInterner::new();
+        let name = names.intern_exact(&format!("attr-{name}")).unwrap();
+        ParserCreatedAttribute::new(
+            QualifiedAttributeName::unqualified(names.resolve_local_name(name).unwrap()),
+            value.unwrap_or_default().to_string(),
+        )
     }
 
-    fn element(id: u32, name: u32, attrs: Vec<AfeAttributeSnapshot>) -> AfeElementEntry {
+    fn element(id: u32, name: u32, attrs: Vec<ParserCreatedAttribute>) -> AfeElementEntry {
         AfeElementEntry::new(key(id), tag(name), attrs)
     }
 
@@ -589,7 +585,7 @@ mod tests {
     }
 
     #[test]
-    fn noahs_ark_compares_full_attribute_sequence() {
+    fn noahs_ark_compares_attribute_sets_without_using_storage_order() {
         let mut list = ActiveFormattingList::default();
         let attrs_a = vec![attr(100, Some("x")), attr(101, Some("y"))];
         let attrs_b = vec![attr(101, Some("y")), attr(100, Some("x"))];

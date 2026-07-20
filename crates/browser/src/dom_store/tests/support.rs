@@ -121,21 +121,25 @@ fn dom_snapshot_lines(node: &Node) -> Vec<String> {
                 }
             }
             Node::Element { element } => {
-                let mut attrs = element
+                let attrs = element
                     .attributes()
                     .iter()
-                    .map(|(key, value)| (key.as_ref(), value.as_deref()))
-                    .collect::<Vec<_>>();
-                attrs.sort_by(|a, b| a.0.cmp(b.0).then_with(|| a.1.cmp(&b.1)));
-                let attrs = attrs
-                    .into_iter()
-                    .map(|(key, value)| match value {
-                        Some(value) => format!("{key}=\"{}\"", escape(value)),
-                        None => format!("{key}=<none>"),
+                    .map(|attribute| {
+                        format!(
+                            "ns={} prefix={} local=\"{}\" value=\"{}\"",
+                            attribute.namespace().snapshot_name(),
+                            attribute.prefix().unwrap_or("none"),
+                            escape(attribute.local_name()),
+                            escape(attribute.value()),
+                        )
                     })
                     .collect::<Vec<_>>()
                     .join(", ");
-                out.push(format!("{indent}<{} attrs=[{attrs}]>", element.name()));
+                out.push(format!(
+                    "{indent}<ns={} local=\"{}\" attrs=[{attrs}]>",
+                    element.namespace().snapshot_name(),
+                    escape(element.name())
+                ));
                 if let Some(contents) = html::internal::template_contents(node) {
                     out.push(format!(
                         "{}#template-contents id={}",

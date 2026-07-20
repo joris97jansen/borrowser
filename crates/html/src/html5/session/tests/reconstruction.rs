@@ -33,15 +33,16 @@ fn session_reconstruction_is_chunk_equivalent_after_generic_ancestor_pop() {
         let whole_lines = crate::html5::serialize_dom_for_test(&whole_dom);
         let chunked_lines = crate::html5::serialize_dom_for_test(&chunked_dom);
         let expected_lines = vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <div>".to_string(),
-            "        <b class=\"x\">".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"div\" attrs=[]".to_string(),
+            "        element ns=html local=\"b\" attrs=[{ns=none prefix=- local=\"class\" value=\"x\"}]".to_string(),
             "          \"one\"".to_string(),
-            "      <b class=\"x\">".to_string(),
+            "      element ns=html local=\"b\" attrs=[{ns=none prefix=- local=\"class\" value=\"x\"}]".to_string(),
             "        \"two\"".to_string(),
         ];
 
@@ -89,17 +90,18 @@ fn session_reconstruction_of_multiple_missing_formatting_elements_is_chunk_equiv
         let whole_lines = crate::html5::serialize_dom_for_test(&whole_dom);
         let chunked_lines = crate::html5::serialize_dom_for_test(&chunked_dom);
         let expected_lines = vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <div>".to_string(),
-            "        <b class=\"x\">".to_string(),
-            "          <i class=\"y\">".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"div\" attrs=[]".to_string(),
+            "        element ns=html local=\"b\" attrs=[{ns=none prefix=- local=\"class\" value=\"x\"}]".to_string(),
+            "          element ns=html local=\"i\" attrs=[{ns=none prefix=- local=\"class\" value=\"y\"}]".to_string(),
             "            \"one\"".to_string(),
-            "      <b class=\"x\">".to_string(),
-            "        <i class=\"y\">".to_string(),
+            "      element ns=html local=\"b\" attrs=[{ns=none prefix=- local=\"class\" value=\"x\"}]".to_string(),
+            "        element ns=html local=\"i\" attrs=[{ns=none prefix=- local=\"class\" value=\"y\"}]".to_string(),
             "          \"two\"".to_string(),
         ];
 
@@ -137,14 +139,15 @@ fn session_special_anchor_recovery_is_chunk_equivalent() {
         let whole_lines = crate::html5::serialize_dom_for_test(&whole_dom);
         let chunked_lines = crate::html5::serialize_dom_for_test(&chunked_dom);
         let expected_lines = vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <a>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"a\" attrs=[]".to_string(),
             "        \"one\"".to_string(),
-            "      <a>".to_string(),
+            "      element ns=html local=\"a\" attrs=[]".to_string(),
             "        \"two\"".to_string(),
         ];
 
@@ -185,14 +188,15 @@ fn session_special_nobr_recovery_is_chunk_equivalent() {
         let whole_lines = crate::html5::serialize_dom_for_test(&whole_dom);
         let chunked_lines = crate::html5::serialize_dom_for_test(&chunked_dom);
         let expected_lines = vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <nobr>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"nobr\" attrs=[]".to_string(),
             "        \"one\"".to_string(),
-            "      <nobr>".to_string(),
+            "      element ns=html local=\"nobr\" attrs=[]".to_string(),
             "        \"two\"".to_string(),
         ];
 

@@ -1,0 +1,15 @@
+# format: html5-dompatch-v2
+# status: active
+
+Batch index=0 size=11
+CreateDocument key=1 doctype=<none>
+CreateElement key=2 ns=html local="html" attrs=[]
+AppendChild parent=1 child=2
+CreateElement key=3 ns=html local="head" attrs=[]
+AppendChild parent=2 child=3
+CreateElement key=4 ns=html local="body" attrs=[]
+AppendChild parent=2 child=4
+CreateElement key=5 ns=svg local="svg" attrs=[{ns=none prefix=- local="viewBox" value="0 0 1 1"}, {ns=xlink prefix="xlink" local="href" value="outer"}, {ns=xml prefix="xml" local="lang" value="en"}]
+AppendChild parent=4 child=5
+CreateElement key=6 ns=svg local="path" attrs=[{ns=none prefix=- local="href" value="plain"}, {ns=xlink prefix="xlink" local="href" value="qualified"}]
+AppendChild parent=5 child=6

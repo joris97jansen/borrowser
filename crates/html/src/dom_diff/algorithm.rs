@@ -1,9 +1,10 @@
 use super::{DomDiffError, DomDiffState};
+use crate::attributes::ParserCreatedAttribute;
 use crate::dom_patch::{DomPatch, PatchKey};
+use crate::names::ExpandedElementName;
 use crate::traverse::full_model_preorder;
 use crate::types::{DocumentFragmentNode, Id, Node};
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 #[derive(Clone, Debug)]
 enum PrevNodeInfo {
@@ -19,8 +20,8 @@ enum PrevNodeInfo {
         parent: Option<Id>,
     },
     Element {
-        name: Arc<str>,
-        attributes: Vec<(Arc<str>, Option<String>)>,
+        name: ExpandedElementName,
+        attributes: Vec<ParserCreatedAttribute>,
         children: Vec<Id>,
         template_contents: Option<Id>,
         parent: Option<Id>,
@@ -123,7 +124,7 @@ fn build_prev_map(node: &Node, _parent: Option<Id>, map: &mut HashMap<Id, PrevNo
             },
             crate::traverse::FullModelNodeRef::Node(Node::Element { element }) => {
                 PrevNodeInfo::Element {
-                    name: Arc::clone(element.name()),
+                    name: element.expanded_name().clone(),
                     attributes: element.attributes().to_vec(),
                     children: element.children().iter().map(Node::id).collect(),
                     template_contents: element.template_contents().map(DocumentFragmentNode::id),
@@ -277,7 +278,7 @@ fn emit_updates(
                 },
                 Node::Element { element },
             ) => {
-                let next_name = element.name();
+                let next_name = element.expanded_name();
                 let next_attrs = element.attributes();
                 let next_template_contents = element.template_contents();
                 if name != next_name {
@@ -481,7 +482,7 @@ fn emit_create_node(
         Node::Element { element } => {
             patches.push(DomPatch::CreateElement {
                 key,
-                name: Arc::clone(element.name()),
+                name: element.expanded_name().clone(),
                 attributes: element.attributes().to_vec(),
             });
             if let Some(contents) = element.template_contents() {

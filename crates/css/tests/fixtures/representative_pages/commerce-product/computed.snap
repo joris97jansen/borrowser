@@ -6,7 +6,7 @@ elements: 18
 
 version: 1
 computed-document-style
-element[0]: selector-id=1 name="html"
+element[0]: selector-id=1 namespace=html name="html"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
   border-bottom-style: none
@@ -42,7 +42,7 @@ element[0]: selector-id=1 name="html"
   text-decoration-line: none
   width: auto
   z-index: auto
-element[1]: selector-id=2 name="head"
+element[1]: selector-id=2 namespace=html name="head"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
   border-bottom-style: none
@@ -78,7 +78,7 @@ element[1]: selector-id=2 name="head"
   text-decoration-line: none
   width: auto
   z-index: auto
-element[2]: selector-id=3 name="title"
+element[2]: selector-id=3 namespace=html name="title"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
   border-bottom-style: none
@@ -114,7 +114,7 @@ element[2]: selector-id=3 name="title"
   text-decoration-line: none
   width: auto
   z-index: auto
-element[3]: selector-id=4 name="body"
+element[3]: selector-id=4 namespace=html name="body"
   background-color: rgba(250, 250, 250, 255)
   border-bottom-color: rgba(0, 0, 0, 0)
   border-bottom-style: none
@@ -150,7 +150,7 @@ element[3]: selector-id=4 name="body"
   text-decoration-line: none
   width: auto
   z-index: auto
-element[4]: selector-id=5 name="main"
+element[4]: selector-id=5 namespace=html name="main"
   background-color: rgba(255, 255, 255, 255)
   border-bottom-color: rgba(0, 0, 0, 0)
   border-bottom-style: none
@@ -186,7 +186,7 @@ element[4]: selector-id=5 name="main"
   text-decoration-line: none
   width: auto
   z-index: auto
-element[5]: selector-id=6 name="section"
+element[5]: selector-id=6 namespace=html name="section"
   background-color: rgba(238, 238, 238, 255)
   border-bottom-color: rgba(0, 0, 0, 0)
   border-bottom-style: none
@@ -222,7 +222,7 @@ element[5]: selector-id=6 name="section"
   text-decoration-line: none
   width: 320px
   z-index: auto
-element[6]: selector-id=7 name="img"
+element[6]: selector-id=7 namespace=html name="img"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
   border-bottom-style: none
@@ -258,7 +258,7 @@ element[6]: selector-id=7 name="img"
   text-decoration-line: none
   width: 300px
   z-index: auto
-element[7]: selector-id=8 name="section"
+element[7]: selector-id=8 namespace=html name="section"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
   border-bottom-style: none
@@ -294,7 +294,7 @@ element[7]: selector-id=8 name="section"
   text-decoration-line: none
   width: auto
   z-index: auto
-element[8]: selector-id=9 name="h1"
+element[8]: selector-id=9 namespace=html name="h1"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
   border-bottom-style: none
@@ -330,7 +330,7 @@ element[8]: selector-id=9 name="h1"
   text-decoration-line: none
   width: auto
   z-index: auto
-element[9]: selector-id=10 name="p"
+element[9]: selector-id=10 namespace=html name="p"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
   border-bottom-style: none
@@ -366,7 +366,7 @@ element[9]: selector-id=10 name="p"
   text-decoration-line: none
   width: auto
   z-index: auto
-element[10]: selector-id=11 name="p"
+element[10]: selector-id=11 namespace=html name="p"
   background-color: rgba(255, 255, 238, 255)
   border-bottom-color: rgba(0, 0, 0, 0)
   border-bottom-style: none
@@ -402,7 +402,7 @@ element[10]: selector-id=11 name="p"
   text-decoration-line: none
   width: auto
   z-index: auto
-element[11]: selector-id=12 name="form"
+element[11]: selector-id=12 namespace=html name="form"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
   border-bottom-style: none
@@ -438,7 +438,7 @@ element[11]: selector-id=12 name="form"
   text-decoration-line: none
   width: auto
   z-index: auto
-element[12]: selector-id=13 name="label"
+element[12]: selector-id=13 namespace=html name="label"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
   border-bottom-style: none
@@ -474,7 +474,7 @@ element[12]: selector-id=13 name="label"
   text-decoration-line: none
   width: auto
   z-index: auto
-element[13]: selector-id=14 name="select"
+element[13]: selector-id=14 namespace=html name="select"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
   border-bottom-style: none
@@ -510,7 +510,7 @@ element[13]: selector-id=14 name="select"
   text-decoration-line: none
   width: auto
   z-index: auto
-element[14]: selector-id=15 name="option"
+element[14]: selector-id=15 namespace=html name="option"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
   border-bottom-style: none
@@ -546,7 +546,7 @@ element[14]: selector-id=15 name="option"
   text-decoration-line: none
   width: auto
   z-index: auto
-element[15]: selector-id=16 name="option"
+element[15]: selector-id=16 namespace=html name="option"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
   border-bottom-style: none
@@ -582,7 +582,7 @@ element[15]: selector-id=16 name="option"
   text-decoration-line: none
   width: auto
   z-index: auto
-element[16]: selector-id=17 name="input"
+element[16]: selector-id=17 namespace=html name="input"
   background-color: rgba(238, 238, 255, 255)
   border-bottom-color: rgba(0, 0, 0, 0)
   border-bottom-style: none
@@ -618,7 +618,7 @@ element[16]: selector-id=17 name="input"
   text-decoration-line: none
   width: 260px
   z-index: auto
-element[17]: selector-id=18 name="button"
+element[17]: selector-id=18 namespace=html name="button"
   background-color: rgba(0, 128, 0, 255)
   border-bottom-color: rgba(0, 0, 0, 0)
   border-bottom-style: none

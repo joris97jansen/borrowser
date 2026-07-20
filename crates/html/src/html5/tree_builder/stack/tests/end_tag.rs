@@ -5,7 +5,7 @@ use crate::html5::tree_builder::stack::types::OpenElementMatch;
 use crate::html5::tree_builder::stack::{InBodyEndTagScan, OpenElement, OpenElementsStack};
 
 fn push(stack: &mut OpenElementsStack, key: u32, name: crate::html5::shared::AtomId) {
-    stack.push(OpenElement::new(PatchKey(key), name));
+    stack.push(OpenElement::new_html(PatchKey(key), name));
 }
 
 #[test]
@@ -28,7 +28,7 @@ fn generic_end_scan_matches_through_non_special_without_scope_metrics() {
         result,
         InBodyEndTagScan::Matched(OpenElementMatch {
             index: 1,
-            element: OpenElement::new(PatchKey(2), option),
+            element: OpenElement::new_html(PatchKey(2), option),
         })
     );
     assert_eq!(stack.end_tag_scan_calls(), 1);
@@ -64,7 +64,7 @@ fn generic_end_scan_is_blocked_by_corrected_special_names() {
                 .expect("rooted stack"),
             InBodyEndTagScan::BlockedBySpecial {
                 index: 2,
-                element: OpenElement::new(PatchKey(3), blocker),
+                element: OpenElement::new_html(PatchKey(3), blocker),
             },
             "{blocker_name} must block the target"
         );
@@ -87,7 +87,7 @@ fn missing_target_is_normally_blocked_by_html_root() {
             .expect("rooted stack"),
         InBodyEndTagScan::BlockedBySpecial {
             index: 0,
-            element: OpenElement::new(PatchKey(1), tags.html),
+            element: OpenElement::new_html(PatchKey(1), tags.html),
         }
     );
 }
@@ -127,7 +127,7 @@ fn stale_generic_end_match_fails_before_mutating_the_stack_suffix() {
 
     assert_eq!(stack.pop().map(OpenElement::key), Some(PatchKey(3)));
     assert_eq!(stack.pop().map(OpenElement::key), Some(PatchKey(2)));
-    stack.push(OpenElement::new(PatchKey(4), div));
+    stack.push(OpenElement::new_html(PatchKey(4), div));
     let before_items = stack.items.clone();
     let before_name_counts = stack.name_counts.clone();
     let before_pop_ops = stack.pop_ops();

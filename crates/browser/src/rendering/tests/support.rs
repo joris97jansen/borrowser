@@ -7,7 +7,6 @@ use css::Display;
 use html::{HtmlParseOptions, Node, parse_document};
 use layout::replaced::intrinsic::IntrinsicSize;
 use layout::{LayoutBox, ReplacedElementInfoProvider, TextMeasurer};
-use std::sync::Arc;
 
 pub(super) struct TestMeasurer;
 
@@ -72,7 +71,7 @@ pub(super) fn find_styled_element<'a>(
     want_name: &str,
 ) -> Option<&'a css::StyledNode<'a>> {
     if let Node::Element { element } = node.node
-        && element.name().as_ref() == want_name
+        && element.name() == want_name
     {
         return Some(node);
     }
@@ -123,15 +122,22 @@ pub(super) fn set_first_element_attr(
             })
             .expect("target element should exist"),
         Node::Element { element } => {
-            if element.name().as_ref() == want_name {
-                if let Some(existing) = element
-                    .attributes_mut()
-                    .iter_mut()
-                    .find(|(name, _)| name.eq_ignore_ascii_case(attr_name))
-                {
-                    existing.1 = value;
+            if element.namespace() == html::ElementNamespace::Html && element.name() == want_name {
+                if let Some(existing) = element.attributes_mut().iter_mut().find(|attribute| {
+                    attribute.namespace() == html::AttributeNamespace::None
+                        && attribute.local_name().eq_ignore_ascii_case(attr_name)
+                }) {
+                    *existing = html::internal::unqualified_attribute(
+                        attr_name,
+                        value.clone().unwrap_or_default(),
+                    );
                 } else {
-                    element.attributes_mut().push((Arc::from(attr_name), value));
+                    element
+                        .attributes_mut()
+                        .push(html::internal::unqualified_attribute(
+                            attr_name,
+                            value.unwrap_or_default(),
+                        ));
                 }
                 element.id()
             } else {
@@ -161,15 +167,22 @@ pub(super) fn set_first_element_attr_optional(
             set_first_element_attr_optional(child, want_name, attr_name, value.clone())
         }),
         Node::Element { element } => {
-            if element.name().as_ref() == want_name {
-                if let Some(existing) = element
-                    .attributes_mut()
-                    .iter_mut()
-                    .find(|(name, _)| name.eq_ignore_ascii_case(attr_name))
-                {
-                    existing.1 = value;
+            if element.namespace() == html::ElementNamespace::Html && element.name() == want_name {
+                if let Some(existing) = element.attributes_mut().iter_mut().find(|attribute| {
+                    attribute.namespace() == html::AttributeNamespace::None
+                        && attribute.local_name().eq_ignore_ascii_case(attr_name)
+                }) {
+                    *existing = html::internal::unqualified_attribute(
+                        attr_name,
+                        value.clone().unwrap_or_default(),
+                    );
                 } else {
-                    element.attributes_mut().push((Arc::from(attr_name), value));
+                    element
+                        .attributes_mut()
+                        .push(html::internal::unqualified_attribute(
+                            attr_name,
+                            value.unwrap_or_default(),
+                        ));
                 }
                 Some(element.id())
             } else {
@@ -220,7 +233,7 @@ pub(super) fn remove_first_element_optional(
             if let Some(index) = children.iter().position(|child| {
                 child
                     .element()
-                    .is_some_and(|element| element.name().as_ref() == want_name)
+                    .is_some_and(|element| element.name() == want_name)
             }) {
                 return Some(children.remove(index).id());
             }
@@ -234,7 +247,7 @@ pub(super) fn remove_first_element_optional(
             if let Some(index) = children.iter().position(|child| {
                 child
                     .element()
-                    .is_some_and(|element| element.name().as_ref() == want_name)
+                    .is_some_and(|element| element.name() == want_name)
             }) {
                 return Some(children.remove(index).id());
             }
@@ -265,7 +278,7 @@ pub(super) fn replace_first_element_optional(
             if let Some(index) = children.iter().position(|child| {
                 child
                     .element()
-                    .is_some_and(|element| element.name().as_ref() == want_name)
+                    .is_some_and(|element| element.name() == want_name)
             }) {
                 let removed = children[index].id();
                 children[index] = replacement;
@@ -286,7 +299,7 @@ pub(super) fn replace_first_element_optional(
             if let Some(index) = children.iter().position(|child| {
                 child
                     .element()
-                    .is_some_and(|element| element.name().as_ref() == want_name)
+                    .is_some_and(|element| element.name() == want_name)
             }) {
                 let removed = children[index].id();
                 children[index] = replacement;
@@ -321,6 +334,7 @@ fn replacement_node(node: &Node) -> Node {
             if let Some(contents) = html::internal::template_contents(node) {
                 html::internal::template_element_from_parts(
                     element.id(),
+                    element.expanded_name().clone(),
                     element.attributes().to_vec(),
                     element.style().to_vec(),
                     html::internal::fragment_id(contents),
@@ -333,7 +347,7 @@ fn replacement_node(node: &Node) -> Node {
             } else {
                 html::internal::node_element_from_parts(
                     element.id(),
-                    Arc::clone(element.name()),
+                    element.expanded_name().clone(),
                     element.attributes().to_vec(),
                     element.style().to_vec(),
                     ordinary_children,
@@ -365,7 +379,7 @@ fn replacement_node(node: &Node) -> Node {
 pub(super) fn paragraph_node(id: u32, text_id: u32, text: &str) -> Node {
     html::internal::node_element_from_parts(
         html::internal::Id(id),
-        Arc::from("p"),
+        html::internal::html_name("p"),
         Vec::new(),
         Vec::new(),
         vec![Node::Text {
@@ -412,7 +426,11 @@ pub(super) fn pending_for_replaced_element_flow() -> PendingRenderWork {
 pub(super) struct FixedReplacedInfo;
 
 impl ReplacedElementInfoProvider for FixedReplacedInfo {
-    fn intrinsic_for_img(&self, _node: &html::Node) -> Option<IntrinsicSize> {
+    fn resolve_image_source(&self, source: &str) -> Option<String> {
+        Some(format!("https://example.test/{source}"))
+    }
+
+    fn intrinsic_for_img(&self, _image: &layout::ImagePresentation) -> Option<IntrinsicSize> {
         Some(IntrinsicSize::from_w_h(Some(64.0), Some(32.0)))
     }
 }
@@ -423,17 +441,17 @@ pub(super) fn doc_with_explicit_ids() -> Node {
         doctype: None,
         children: vec![html::internal::node_element_from_parts(
             html::internal::Id(2),
-            Arc::from("html"),
+            html::internal::html_name("html"),
             Vec::new(),
             Vec::new(),
             vec![html::internal::node_element_from_parts(
                 html::internal::Id(3),
-                Arc::from("body"),
+                html::internal::html_name("body"),
                 Vec::new(),
                 Vec::new(),
                 vec![html::internal::node_element_from_parts(
                     html::internal::Id(4),
-                    Arc::from("p"),
+                    html::internal::html_name("p"),
                     Vec::new(),
                     Vec::new(),
                     vec![Node::Text {

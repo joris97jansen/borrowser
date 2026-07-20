@@ -9,7 +9,6 @@ use bus::CoreEvent;
 use core_types::{DomHandle, DomVersion};
 use css::ComputedStyleReuseStats;
 use html::{DomPatch, PatchKey, internal::Id};
-use std::sync::Arc;
 
 #[test]
 fn attribute_mutation_without_existing_style_cache_falls_back_to_full_recompute() {
@@ -35,7 +34,7 @@ fn attribute_mutation_without_existing_style_cache_falls_back_to_full_recompute(
         to: DomVersion(2),
         patches: vec![DomPatch::SetAttributes {
             key: PatchKey(7),
-            attributes: vec![(Arc::from("class"), Some("hot".to_string()))],
+            attributes: vec![html::internal::unqualified_attribute("class", "hot")],
         }],
     });
 

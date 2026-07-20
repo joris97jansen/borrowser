@@ -510,7 +510,6 @@ mod tests {
     use css::{ComputedStyle, Length};
     use html::{Node, internal::Id};
     use layout::LayoutPhaseInput;
-    use std::sync::Arc;
 
     struct TestMeasurer;
 
@@ -554,7 +553,7 @@ mod tests {
     fn positioned_block(id: Id, z_index: &str, color: &str, children: Vec<Node>) -> Node {
         html::internal::node_element_from_parts(
             id,
-            Arc::from("div"),
+            html::internal::html_name("div"),
             Vec::new(),
             vec![
                 ("display".to_string(), "block".to_string()),
@@ -575,7 +574,7 @@ mod tests {
             doctype: None,
             children: vec![html::internal::node_element_from_parts(
                 Id(2),
-                Arc::from("section"),
+                html::internal::html_name("section"),
                 Vec::new(),
                 vec![
                     ("display".to_string(), "block".to_string()),
@@ -600,7 +599,7 @@ mod tests {
                     },
                     html::internal::node_element_from_parts(
                         Id(4),
-                        Arc::from("div"),
+                        html::internal::html_name("div"),
                         Vec::new(),
                         vec![
                             ("display".to_string(), "block".to_string()),
@@ -650,7 +649,7 @@ mod tests {
             doctype: None,
             children: vec![html::internal::node_element_from_parts(
                 Id(2),
-                Arc::from("section"),
+                html::internal::html_name("section"),
                 Vec::new(),
                 vec![
                     ("display".to_string(), "block".to_string()),
@@ -684,7 +683,7 @@ mod tests {
             doctype: None,
             children: vec![html::internal::node_element_from_parts(
                 Id(2),
-                Arc::from("section"),
+                html::internal::html_name("section"),
                 Vec::new(),
                 vec![("display".to_string(), "block".to_string())],
                 vec![
@@ -715,7 +714,7 @@ mod tests {
             doctype: None,
             children: vec![html::internal::node_element_from_parts(
                 Id(2),
-                Arc::from("section"),
+                html::internal::html_name("section"),
                 Vec::new(),
                 vec![
                     ("display".to_string(), "block".to_string()),
@@ -760,7 +759,7 @@ mod tests {
             doctype: None,
             children: vec![html::internal::node_element_from_parts(
                 Id(2),
-                Arc::from("section"),
+                html::internal::html_name("section"),
                 Vec::new(),
                 vec![
                     ("display".to_string(), "block".to_string()),
@@ -802,7 +801,7 @@ mod tests {
             doctype: None,
             children: vec![html::internal::node_element_from_parts(
                 Id(2),
-                Arc::from("section"),
+                html::internal::html_name("section"),
                 Vec::new(),
                 vec![
                     ("display".to_string(), "block".to_string()),
@@ -852,7 +851,7 @@ mod tests {
             doctype: None,
             children: vec![html::internal::node_element_from_parts(
                 Id(2),
-                Arc::from("section"),
+                html::internal::html_name("section"),
                 Vec::new(),
                 vec![
                     ("display".to_string(), "block".to_string()),
@@ -874,7 +873,7 @@ mod tests {
                     },
                     html::internal::node_element_from_parts(
                         Id(4),
-                        Arc::from("div"),
+                        html::internal::html_name("div"),
                         Vec::new(),
                         vec![
                             ("display".to_string(), "block".to_string()),
@@ -913,12 +912,12 @@ mod tests {
             doctype: None,
             children: vec![html::internal::node_element_from_parts(
                 Id(2),
-                Arc::from("ul"),
+                html::internal::html_name("ul"),
                 Vec::new(),
                 Vec::new(),
                 vec![html::internal::node_element_from_parts(
                     Id(3),
-                    Arc::from("li"),
+                    html::internal::html_name("li"),
                     Vec::new(),
                     vec![("padding-left".to_string(), "20px".to_string())],
                     vec![
@@ -928,7 +927,7 @@ mod tests {
                         },
                         html::internal::node_element_from_parts(
                             Id(5),
-                            Arc::from("span"),
+                            html::internal::html_name("span"),
                             Vec::new(),
                             vec![("display".to_string(), "inline-block".to_string())],
                             vec![Node::Text {
@@ -959,13 +958,13 @@ mod tests {
             doctype: None,
             children: vec![html::internal::node_element_from_parts(
                 Id(2),
-                Arc::from("section"),
+                html::internal::html_name("section"),
                 Vec::new(),
                 vec![("display".to_string(), "block".to_string())],
                 vec![html::internal::node_element_from_parts(
                     Id(3),
-                    Arc::from("img"),
-                    vec![(Arc::from("src"), Some("image.png".to_string()))],
+                    html::internal::html_name("img"),
+                    vec![html::internal::unqualified_attribute("src", "image.png")],
                     vec![
                         ("width".to_string(), "40px".to_string()),
                         ("height".to_string(), "20px".to_string()),
@@ -991,7 +990,7 @@ mod tests {
             doctype: None,
             children: vec![html::internal::node_element_from_parts(
                 Id(2),
-                Arc::from("section"),
+                html::internal::html_name("section"),
                 Vec::new(),
                 vec![
                     ("display".to_string(), "block".to_string()),
@@ -1007,7 +1006,7 @@ mod tests {
                 ],
                 vec![html::internal::node_element_from_parts(
                     Id(3),
-                    Arc::from("div"),
+                    html::internal::html_name("div"),
                     Vec::new(),
                     vec![
                         ("display".to_string(), "block".to_string()),

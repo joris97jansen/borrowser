@@ -44,7 +44,7 @@ fn foster_parenting_location_uses_previous_soe_entry_for_detached_table() {
                 .create_detached_element(this.known_tags.table, &[], &ctx.atoms)?
                 .expect("table setup should not hit resource limits");
             this.open_elements
-                .push(OpenElement::new(table, this.known_tags.table));
+                .push(OpenElement::new_html(table, this.known_tags.table));
             assert_eq!(
                 this.foster_parenting_insertion_location()?,
                 InsertionLocation {
@@ -80,7 +80,7 @@ fn foster_parenting_location_prefers_template_above_table() {
             });
             this.note_node_created();
             this.open_elements
-                .push(OpenElement::new(template, this.known_tags.template));
+                .push(OpenElement::new_html(template, this.known_tags.template));
             assert_eq!(
                 this.foster_parenting_insertion_location()?,
                 InsertionLocation {
@@ -156,7 +156,7 @@ fn foster_parenting_element_insertion_uses_insert_before_for_live_table() {
         vec![
             DomPatch::CreateElement {
                 key: PatchKey(5),
-                name: std::sync::Arc::from("div"),
+                name: crate::test_support::html_name("div"),
                 attributes: Vec::new(),
             },
             DomPatch::InsertBefore {

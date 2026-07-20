@@ -87,6 +87,7 @@ pub fn try_resolve_document_styles_with_limits(
         styles_by_element.insert(element, style.clone());
         entries.push(ResolvedElementStyle::new(
             element,
+            context.element_namespace(element),
             context.element_name(element).to_string(),
             style,
         ));
@@ -122,6 +123,7 @@ pub fn try_resolve_document_styles_from_cascade_inputs_with_limits(
         styles_by_element.insert(element, style.clone());
         entries.push(ResolvedElementStyle::new(
             element,
+            context.element_namespace(element),
             context.element_name(element).to_string(),
             style,
         ));
@@ -184,6 +186,7 @@ pub fn try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_l
                 return Ok(None);
             };
             if previous_entry.selector_element_id() != element
+                || previous_entry.element_namespace() != context.element_namespace(element)
                 || previous_entry.element_name() != context.element_name(element)
             {
                 return Ok(None);
@@ -206,6 +209,7 @@ pub fn try_resolve_document_styles_incremental_suffix_from_cascade_inputs_with_l
         styles_by_element.insert(element, style.clone());
         entries.push(ResolvedElementStyle::new(
             element,
+            context.element_namespace(element),
             context.element_name(element).to_string(),
             style,
         ));

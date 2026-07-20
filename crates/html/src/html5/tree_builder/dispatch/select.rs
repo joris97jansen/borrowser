@@ -45,7 +45,7 @@ impl Html5TreeBuilder {
             return;
         }
         self.generate_supported_implied_end_tags_except(None);
-        if self.open_elements.current().map(|entry| entry.name()) != Some(self.known_tags.select) {
+        if !self.open_elements.current_is_html(self.known_tags.select) {
             self.record_parse_error(
                 "in-body-select-end-tag-implied-close-mismatch",
                 Some(self.known_tags.select),
@@ -78,9 +78,7 @@ impl Html5TreeBuilder {
                     Some(InsertionMode::InBody),
                 );
             }
-        } else if self.open_elements.current().map(|entry| entry.name())
-            == Some(self.known_tags.option)
-        {
+        } else if self.open_elements.current_is_html(self.known_tags.option) {
             let _ = self.open_elements.pop();
             self.invalidate_text_coalescing();
         }
@@ -117,9 +115,7 @@ impl Html5TreeBuilder {
                     Some(InsertionMode::InBody),
                 );
             }
-        } else if self.open_elements.current().map(|entry| entry.name())
-            == Some(self.known_tags.option)
-        {
+        } else if self.open_elements.current_is_html(self.known_tags.option) {
             let _ = self.open_elements.pop();
             self.invalidate_text_coalescing();
         }

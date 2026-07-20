@@ -23,12 +23,12 @@ fn template_start_creates_atomic_typed_contents_and_uses_it_as_insertion_target(
     assert!(
         patches
             .iter()
-            .any(|patch| matches!(patch, DomPatch::CreateElement { key, name, .. } if *key == host && name.as_ref() == "template"))
+            .any(|patch| matches!(patch, DomPatch::CreateElement { key, name, .. } if *key == host && name.is_html("template")))
     );
     let div = patches
         .iter()
         .find_map(|patch| match patch {
-            DomPatch::CreateElement { key, name, .. } if name.as_ref() == "div" => Some(*key),
+            DomPatch::CreateElement { key, name, .. } if name.is_html("div") => Some(*key),
             _ => None,
         })
         .expect("div key");
@@ -44,11 +44,11 @@ fn template_start_creates_atomic_typed_contents_and_uses_it_as_insertion_target(
     let lines = materialized_dom_lines(&["<template><div>x</div></template><p>after"]);
     let template_index = lines
         .iter()
-        .position(|line| line.contains("<template"))
+        .position(|line| line.contains("local=\"template\""))
         .expect("template snapshot line");
     assert_eq!(lines[template_index + 1].trim(), "#template-contents");
-    assert!(lines[template_index + 2].contains("<div"));
-    assert!(lines.iter().any(|line| line.contains("<p")));
+    assert!(lines[template_index + 2].contains("local=\"div\""));
+    assert!(lines.iter().any(|line| line.contains("local=\"p\"")));
 }
 
 #[test]
@@ -631,7 +631,7 @@ fn unmatched_template_end_tag_is_ignored_without_state_corruption() {
     assert!(
         materialized_dom_lines(&["</template><p>ok"])
             .iter()
-            .any(|line| line.contains("<p"))
+            .any(|line| line.contains("local=\"p\""))
     );
 }
 
@@ -659,10 +659,10 @@ fn table_markup_inside_template_remains_beneath_the_contents_root() {
         .expect("template contents boundary");
     let table = lines
         .iter()
-        .position(|line| line.contains("<table"))
+        .position(|line| line.contains("local=\"table\""))
         .expect("table in template contents");
     assert!(table > contents);
-    assert!(lines.iter().any(|line| line.contains("<td")));
+    assert!(lines.iter().any(|line| line.contains("local=\"td\"")));
 }
 
 #[test]
@@ -675,11 +675,14 @@ fn select_family_subset_inside_template_stays_in_the_fragment() {
         .expect("template contents boundary");
     let select = lines
         .iter()
-        .position(|line| line.contains("<select"))
+        .position(|line| line.contains("local=\"select\""))
         .expect("select in template contents");
     assert!(select > contents);
     assert_eq!(
-        lines.iter().filter(|line| line.contains("<option")).count(),
+        lines
+            .iter()
+            .filter(|line| line.contains("local=\"option\""))
+            .count(),
         2
     );
 }
@@ -697,7 +700,7 @@ fn template_foster_parenting_targets_the_contents_root_not_the_host() {
     let div = patches
         .iter()
         .find_map(|patch| match patch {
-            DomPatch::CreateElement { key, name, .. } if name.as_ref() == "div" => Some(*key),
+            DomPatch::CreateElement { key, name, .. } if name.is_html("div") => Some(*key),
             _ => None,
         })
         .expect("foster-parented div");
@@ -917,7 +920,7 @@ fn two_node_resource_rejection_is_atomic_across_all_template_parser_state() {
     assert!(builder.drain_patches().iter().any(|patch| matches!(
         patch,
         DomPatch::CreateElement { key, name, .. }
-            if *key == PatchKey(next_key_before.get()) && name.as_ref() == "p"
+            if *key == PatchKey(next_key_before.get()) && name.is_html("p")
     )));
 }
 

@@ -29,6 +29,7 @@ pub(super) fn run_tree_builder_chunks(chunks: &[&str]) -> Vec<crate::dom_patch::
     for chunk in chunks {
         input.push_str(chunk);
         loop {
+            builder.prepare_tokenizer_pump(&mut tokenizer);
             let result = tokenizer.push_input_until_token(&mut input, &mut ctx);
             let batch = tokenizer.next_batch(&mut input);
             if batch.tokens().is_empty() {

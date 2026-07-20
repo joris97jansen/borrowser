@@ -36,7 +36,7 @@ const fn tree_builder_case(
         kind: AcceptanceKind::TreeBuilder,
         fixture_state,
         contract_anchor,
-        output: ExpectedOutput::DomV1,
+        output: ExpectedOutput::DomV2,
         note,
     }
 }

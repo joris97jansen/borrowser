@@ -19,7 +19,6 @@ use crate::{
     },
 };
 use html::{Node, internal::Id};
-use std::sync::Arc;
 
 use super::value::computed_value_discriminant;
 

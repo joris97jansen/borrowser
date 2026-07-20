@@ -221,7 +221,15 @@ impl DocumentStyleSet {
         // does not.
         self.cascade_stylesheets
             .iter()
-            .map(|entry| StylesheetCascadeInput::new(entry.origin, &entry.stylesheet))
+            .map(|entry| match entry.origin {
+                CascadeOrigin::UserAgent => StylesheetCascadeInput::user_agent_for_namespace(
+                    &entry.stylesheet,
+                    html::ElementNamespace::Html,
+                ),
+                CascadeOrigin::User | CascadeOrigin::Author => {
+                    StylesheetCascadeInput::new(entry.origin, &entry.stylesheet)
+                }
+            })
             .collect()
     }
 
@@ -305,13 +313,14 @@ fn collect_stylesheet_inputs(
         Node::Element { element } => {
             let name = element.name();
             let children = element.children();
-            if name.as_ref() == "link"
+            if element.namespace() == html::ElementNamespace::Html
+                && name == "link"
                 && node.attr_has_token("rel", "stylesheet")
                 && let Some(href) = node.attr("href")
                 && let Some(url) = resolve_url(base_url, href)
             {
                 out.push(StylesheetSlotKey::External(url));
-            } else if name.as_ref() == "style" {
+            } else if element.namespace() == html::ElementNamespace::Html && name == "style" {
                 let mut text = String::new();
                 for child in children {
                     if let Node::Text {
@@ -339,4 +348,60 @@ fn resolve_url(base_url: Option<&str>, href: &str) -> Option<String> {
     }
     let base = Url::parse(base_url?).ok()?;
     base.join(href).ok().map(|url| url.to_string())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::DocumentStyleSet;
+    use html::internal::Id;
+
+    fn element(
+        id: u32,
+        namespace: html::ElementNamespace,
+        local_name: &str,
+        attributes: Vec<(&str, &str)>,
+        children: Vec<html::Node>,
+    ) -> html::Node {
+        html::internal::node_element_from_parts(
+            Id(id),
+            html::internal::expanded_name(namespace, local_name),
+            attributes
+                .into_iter()
+                .map(|(name, value)| html::internal::unqualified_attribute(name, value))
+                .collect(),
+            Vec::new(),
+            children,
+        )
+    }
+
+    #[test]
+    fn foreign_style_and_link_lookalikes_are_not_document_stylesheet_inputs() {
+        let dom = html::Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![
+                element(
+                    2,
+                    html::ElementNamespace::Svg,
+                    "style",
+                    Vec::new(),
+                    vec![html::Node::Text {
+                        id: Id(3),
+                        text: "p { color: red; }".to_string(),
+                    }],
+                ),
+                element(
+                    4,
+                    html::ElementNamespace::MathMl,
+                    "link",
+                    vec![("rel", "stylesheet"), ("href", "foreign.css")],
+                    Vec::new(),
+                ),
+            ],
+        };
+        let mut set = DocumentStyleSet::default();
+        let result = set.reconcile_from_dom(&dom, Some("https://example.test/"));
+        assert!(result.fetches.is_empty());
+        assert!(set.stylesheets().is_empty());
+    }
 }

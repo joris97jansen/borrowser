@@ -1,12 +1,14 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 # status: active
+
+#dom-snapshot-v2
 #document
   <!doctype html>
-  <html>
-    <head>
-    <body>
-      <a class="one">
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=html local="a" attrs=[{ns=none prefix=- local="class" value="one"}]
         "one"
         <!-- gap -->
-      <a class="two">
+      element ns=html local="a" attrs=[{ns=none prefix=- local="class" value="two"}]
         "two"

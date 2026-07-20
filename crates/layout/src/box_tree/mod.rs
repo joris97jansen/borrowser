@@ -14,8 +14,8 @@ mod model;
 mod source;
 
 pub use display::{
-    AnonymousBoxKind, BoxGenerationRole, BoxSuppressionReason, DisplayBoxBehavior,
-    DisplayBoxGeneration, PrincipalBox,
+    AnonymousBoxKind, BoxGenerationDecision, BoxGenerationRole, BoxSuppressionReason,
+    DisplayBoxBehavior, DisplayBoxGeneration, PrincipalBox,
 };
 pub use formatting::{
     BlockFormattingParticipation, FlexFormattingParticipation, FormattingContextKind,

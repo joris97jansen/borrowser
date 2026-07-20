@@ -56,12 +56,12 @@ style-output:
   root-id: 0
   styled-nodes: 8
   node[0]: id=0 kind=document children=1 style=display=inline overflow=visible position=static z-index=auto color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
-    node[1]: id=0 kind=element name="html" children=2 style=display=inline overflow=visible position=static z-index=auto color=rgba(0,0,0,255) background=rgba(255,255,255,255) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
-      node[2]: id=0 kind=element name="head" children=1 style=display=inline overflow=visible position=static z-index=auto color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
-        node[3]: id=0 kind=element name="style" children=1 style=display=inline overflow=visible position=static z-index=auto color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
+    node[1]: id=0 kind=element namespace=html name="html" children=2 style=display=inline overflow=visible position=static z-index=auto color=rgba(0,0,0,255) background=rgba(255,255,255,255) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
+      node[2]: id=0 kind=element namespace=html name="head" children=1 style=display=inline overflow=visible position=static z-index=auto color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
+        node[3]: id=0 kind=element namespace=html name="style" children=1 style=display=inline overflow=visible position=static z-index=auto color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
           node[4]: id=0 kind=text text="html { background-color: white; } p { color: red; }" children=0 style=display=inline overflow=visible position=static z-index=auto color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
-      node[5]: id=0 kind=element name="body" children=1 style=display=inline overflow=visible position=static z-index=auto color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
-        node[6]: id=0 kind=element name="p" children=1 style=display=inline overflow=visible position=static z-index=auto color=rgba(255,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
+      node[5]: id=0 kind=element namespace=html name="body" children=1 style=display=inline overflow=visible position=static z-index=auto color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
+        node[6]: id=0 kind=element namespace=html name="p" children=1 style=display=inline overflow=visible position=static z-index=auto color=rgba(255,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
           node[7]: id=0 kind=text text="Hello" children=0 style=display=inline overflow=visible position=static z-index=auto color=rgba(255,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
 layout-input:
   version: 1
@@ -182,12 +182,12 @@ style-output:
   root-id: 0
   styled-nodes: 7
   node[0]: id=0 kind=document children=1 style=display=inline overflow=visible position=static z-index=auto color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
-    node[1]: id=0 kind=element name="html" children=2 style=display=inline overflow=visible position=static z-index=auto color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
-      node[2]: id=0 kind=element name="head" children=1 style=display=inline overflow=visible position=static z-index=auto color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
-        node[3]: id=0 kind=element name="style" children=1 style=display=inline overflow=visible position=static z-index=auto color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
+    node[1]: id=0 kind=element namespace=html name="html" children=2 style=display=inline overflow=visible position=static z-index=auto color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
+      node[2]: id=0 kind=element namespace=html name="head" children=1 style=display=inline overflow=visible position=static z-index=auto color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
+        node[3]: id=0 kind=element namespace=html name="style" children=1 style=display=inline overflow=visible position=static z-index=auto color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
           node[4]: id=0 kind=text text="img { display: inline-block; }" children=0 style=display=inline overflow=visible position=static z-index=auto color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
-      node[5]: id=0 kind=element name="body" children=1 style=display=inline overflow=visible position=static z-index=auto color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
-        node[6]: id=0 kind=element name="img" children=0 style=display=inline-block overflow=visible position=static z-index=auto color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
+      node[5]: id=0 kind=element namespace=html name="body" children=1 style=display=inline overflow=visible position=static z-index=auto color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
+        node[6]: id=0 kind=element namespace=html name="img" children=0 style=display=inline-block overflow=visible position=static z-index=auto color=rgba(0,0,0,255) background=rgba(0,0,0,0) font-size=16.00px width=auto height=auto margin=[0.00,0.00,0.00,0.00] padding=[0.00,0.00,0.00,0.00] border=[0.00,0.00,0.00,0.00]
 layout-input:
   version: 1
   layout-phase-input
@@ -265,7 +265,7 @@ fn render_phase_boundary_debug_snapshot_preserves_non_zero_dom_identity_across_h
 
     let paragraph = find_styled_node_id(warm_style.root(), html::internal::Id(4))
         .expect("paragraph styled node");
-    assert!(matches!(paragraph.node, Node::Element { element } if element.name().as_ref() == "p"));
+    assert!(matches!(paragraph.node, Node::Element { element } if element.name() == "p"));
     drop(warm_style);
 
     let style_output = style_output_for_test(&mut page);
@@ -298,7 +298,7 @@ fn render_phase_boundary_debug_snapshot_preserves_non_zero_dom_identity_across_h
     assert!(snapshot.contains("root-id: 1"));
     assert!(snapshot.contains("style-root-id: 1"));
     assert!(snapshot.contains("layout-root-id: 1"));
-    assert!(snapshot.contains("id=4 kind=element name=\"p\""));
+    assert!(snapshot.contains("id=4 kind=element namespace=html name=\"p\""));
     assert!(snapshot.contains("anchor-id=4 source=dom(4) node=element(\"p\")"));
 }
 
@@ -423,8 +423,7 @@ fn parser_created_template_contents_remain_materialized_but_inert_to_render_pipe
     let inert_node_count = {
         fn find_template(node: &Node) -> Option<&Node> {
             if node.element().is_some_and(|element| {
-                element.name().as_ref() == "template"
-                    && html::internal::template_contents(node).is_some()
+                element.name() == "template" && html::internal::template_contents(node).is_some()
             }) {
                 return Some(node);
             }

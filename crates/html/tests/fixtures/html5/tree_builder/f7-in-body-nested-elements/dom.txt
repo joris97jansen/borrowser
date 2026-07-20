@@ -1,11 +1,13 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 # status: active
+
+#dom-snapshot-v2
 #document
-  <html>
-    <head>
-    <body>
-      <div>
-        <p>
-          <span>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=html local="div" attrs=[]
+        element ns=html local="p" attrs=[]
+          element ns=html local="span" attrs=[]
             "hi"
           "there"

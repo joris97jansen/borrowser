@@ -27,14 +27,14 @@ fn bootstrap_html_body(
                 .expect("html bootstrap should not hit resource limits");
             this.append_existing_child(document, html);
             this.open_elements
-                .push(OpenElement::new(html, this.known_tags.html));
+                .push(OpenElement::new_html(html, this.known_tags.html));
 
             let body = this
                 .create_detached_element(this.known_tags.body, &[], &ctx.atoms)?
                 .expect("body bootstrap should not hit resource limits");
             this.append_existing_child(html, body);
             this.open_elements
-                .push(OpenElement::new(body, this.known_tags.body));
+                .push(OpenElement::new_html(body, this.known_tags.body));
             Ok((html, body))
         })
         .expect("bootstrap should remain recoverable")
@@ -52,7 +52,7 @@ fn attach_live_table(
                 .expect("table setup should not hit resource limits");
             this.append_existing_child(body, table);
             this.open_elements
-                .push(OpenElement::new(table, this.known_tags.table));
+                .push(OpenElement::new_html(table, this.known_tags.table));
             Ok(table)
         })
         .expect("live table attach should remain recoverable")

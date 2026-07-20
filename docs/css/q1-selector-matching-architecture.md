@@ -298,7 +298,7 @@ Out of scope for Q1 and still deferred beyond this issue:
 - pseudo-classes
 - functional pseudo-classes
 - pseudo-elements
-- namespaces
+- CSS `@namespace` and namespace-selector syntax
 - relative selectors
 - nesting selector `&`
 - forgiving selector lists
@@ -341,13 +341,29 @@ needs parent/sibling traversal and attribute/name queries.
 Later selector classes may extend matching through additional DOM-side
 contracts, for example:
 
-- namespace resolution
+- CSS namespace-prefix/default-namespace resolution beyond AE11's typed DOM
+  namespace query
 - structural pseudo-class predicates
 - stateful pseudo-classes
 - shadow-DOM or scoped-tree boundaries later if Borrowser grows them
 
 Those additions must extend the DOM contract explicitly. They must not smuggle
 new dependencies in through unrelated cascade or layout APIs.
+
+### AE11 namespace refinement
+
+AE11 adds `element_namespace` to `SelectorMatchDom` and carries the canonical
+HTML/SVG/MathML namespace through `SelectorDomIndex`. HTML type names retain
+ASCII-insensitive matching; foreign canonical names are case-sensitive.
+Unprefixed attribute selectors query only no-namespace attributes.
+
+Author selectors remain unconstrained under the currently supported
+no-default-namespace semantics. Internal UA rule groups may provide
+`SelectorNamespaceConstraint::Exact(Html)`. The context propagates that
+constraint through selector lists, combinators, and every visited compound,
+including universal and typeless compounds. Supported nested selector-bearing
+pseudo-classes do not exist yet, so there is no additional recursion entry
+point to constrain. Full namespace-selector syntax remains deferred.
 
 ### Selector Evaluation Extension
 

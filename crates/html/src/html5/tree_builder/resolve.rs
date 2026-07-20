@@ -10,23 +10,15 @@ pub(in crate::html5::tree_builder) fn resolve_atom(
     atoms.resolve(id).ok_or(EngineInvariantError)
 }
 
-pub(in crate::html5::tree_builder) fn resolve_atom_arc(
-    atoms: &AtomTable,
-    id: AtomId,
-) -> Result<std::sync::Arc<str>, TreeBuilderError> {
-    atoms.resolve_arc(id).ok_or(EngineInvariantError)
-}
-
 pub(in crate::html5::tree_builder) fn resolve_attribute_value(
     attribute: &Attribute,
     text: &dyn TextResolver,
-) -> Result<Option<String>, TreeBuilderError> {
+) -> Result<String, TreeBuilderError> {
     match &attribute.value {
-        None => Ok(None),
-        Some(AttributeValue::Owned(value)) => Ok(Some(value.clone())),
-        Some(AttributeValue::Span(span)) => text
+        AttributeValue::Owned(value) => Ok(value.clone()),
+        AttributeValue::Span(span) => text
             .resolve_span(*span)
-            .map(|value| Some(value.to_string()))
+            .map(str::to_string)
             .map_err(|_| EngineInvariantError),
     }
 }
@@ -36,7 +28,9 @@ pub(in crate::html5::tree_builder) fn resolve_text_value(
     text: &dyn TextResolver,
 ) -> Result<String, TreeBuilderError> {
     match value {
-        TextValue::Owned(value) => Ok(value.clone()),
+        TextValue::Owned(value) | TextValue::NullNormalized { text: value, .. } => {
+            Ok(value.clone())
+        }
         TextValue::Span(span) => text
             .resolve_span(*span)
             .map(|value| value.to_string())
@@ -49,7 +43,9 @@ pub(in crate::html5::tree_builder) fn is_html_whitespace_text(
     text: &dyn TextResolver,
 ) -> Result<bool, TreeBuilderError> {
     match value {
-        TextValue::Owned(value) => Ok(is_html_whitespace_str(value)),
+        TextValue::Owned(value) | TextValue::NullNormalized { text: value, .. } => {
+            Ok(is_html_whitespace_str(value))
+        }
         TextValue::Span(span) => text
             .resolve_span(*span)
             .map(is_html_whitespace_str)

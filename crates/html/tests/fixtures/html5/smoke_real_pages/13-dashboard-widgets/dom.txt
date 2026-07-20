@@ -1,32 +1,32 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 
+#dom-snapshot-v2
 #document
-
   <!doctype html>
-  <html>
-    <head>
-      <title>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+      element ns=html local="title" attrs=[]
         "Dashboard"
-    <body>
+    element ns=html local="body" attrs=[]
       "\n"
-      <main>
+      element ns=html local="main" attrs=[]
         "\n"
-        <section>
-          <h2>
+        element ns=html local="section" attrs=[]
+          element ns=html local="h2" attrs=[]
             "Revenue"
-          <p>
+          element ns=html local="p" attrs=[]
             "$128,430"
         "\n"
-        <section>
-          <h2>
+        element ns=html local="section" attrs=[]
+          element ns=html local="h2" attrs=[]
             "Active users"
-          <p>
+          element ns=html local="p" attrs=[]
             "3,492"
         "\n"
-        <section>
-          <h2>
+        element ns=html local="section" attrs=[]
+          element ns=html local="h2" attrs=[]
             "Incidents"
-          <p>
+          element ns=html local="p" attrs=[]
             "0 open"
         "\n"
       "\n"

@@ -36,7 +36,7 @@ fn core_v0_attribute_states_parse_expected_forms() {
     assert_eq!(
         tokens,
         vec![
-            "START name=div attrs=[a b=\"foo\" c=\"\" d=\"\" e=\"\"] self_closing=false"
+            "START name=div attrs=[a=\"\" b=\"foo\" c=\"\" d=\"\" e=\"\"] self_closing=false"
                 .to_string(),
             "END name=div".to_string(),
             "EOF".to_string(),
@@ -45,7 +45,7 @@ fn core_v0_attribute_states_parse_expected_forms() {
 }
 
 #[test]
-fn boolean_style_attributes_are_snapshot_as_missing_values() {
+fn valueless_attributes_are_snapshot_as_empty_dom_strings() {
     let mut ctx = DocumentParseContext::new();
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
     let mut input = Input::new();
@@ -57,7 +57,7 @@ fn boolean_style_attributes_are_snapshot_as_missing_values() {
     assert_eq!(
         tokens,
         vec![
-            "START name=input attrs=[disabled empty=\"\"] self_closing=false".to_string(),
+            "START name=input attrs=[disabled=\"\" empty=\"\"] self_closing=false".to_string(),
             "EOF".to_string(),
         ]
     );
@@ -155,7 +155,7 @@ fn unquoted_attribute_value_terminates_on_invalid_delimiters() {
     assert_eq!(
         tokens,
         vec![
-            "START name=div attrs=[a=\"foo\" bar] self_closing=false".to_string(),
+            "START name=div attrs=[a=\"foo\" bar=\"\"] self_closing=false".to_string(),
             "END name=div".to_string(),
             "EOF".to_string(),
         ]
@@ -170,7 +170,7 @@ fn unquoted_invalid_delimiter_split_is_invariant() {
     assert_eq!(
         whole,
         vec![
-            "START name=div attrs=[a=\"foo\" bar] self_closing=false".to_string(),
+            "START name=div attrs=[a=\"foo\" bar=\"\"] self_closing=false".to_string(),
             "END name=div".to_string(),
             "EOF".to_string(),
         ]
@@ -190,7 +190,7 @@ fn unquoted_attribute_value_terminates_on_question_mark() {
     assert_eq!(
         tokens,
         vec![
-            "START name=div attrs=[a=\"foo\" bar] self_closing=false".to_string(),
+            "START name=div attrs=[a=\"foo\" bar=\"\"] self_closing=false".to_string(),
             "END name=div".to_string(),
             "EOF".to_string(),
         ]

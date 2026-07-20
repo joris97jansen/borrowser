@@ -31,6 +31,7 @@ pub(super) fn pump_until_blocked(
             return Ok(Some(termination));
         }
         let before = tokenizer.capture_invariant_snapshot();
+        builder.prepare_tokenizer_pump(tokenizer);
         let result = tokenizer.push_input_until_token(input, ctx);
         let drain =
             drain_streaming_batch(tokenizer, input, ctx, builder, state, phase, pump_index)?;

@@ -1,9 +1,11 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
+
+#dom-snapshot-v2
 #document
-  <html>
-    <head>
-    <body>
-      <select>
-        <option>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=html local="select" attrs=[]
+        element ns=html local="option" attrs=[]
           "3"
-      <table>
+      element ns=html local="table" attrs=[]

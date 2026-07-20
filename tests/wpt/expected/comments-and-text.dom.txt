@@ -1,9 +1,11 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
+
+#dom-snapshot-v2
 #document
   <!doctype html>
-  <html>
-    <head>
-    <body>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
       <!-- c -->
-      <div id="a">
+      element ns=html local="div" attrs=[{ns=none prefix=- local="id" value="a"}]
         "X"

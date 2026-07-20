@@ -212,11 +212,9 @@ impl<'a> SyntheticTokenDecoder<'a> {
                 self.take_atom(token_index, atoms, "start_tag.attr_name", ATTR_NAME_CATALOG)?;
             let value_selector = self.next_optional_byte().unwrap_or(0);
             let value = if value_selector & 1 == 0 {
-                None
+                AttributeValue::Owned(String::new())
             } else {
-                Some(AttributeValue::Owned(
-                    self.take_fuzz_string(token_index, "start_tag.attr_value")?,
-                ))
+                AttributeValue::Owned(self.take_fuzz_string(token_index, "start_tag.attr_value")?)
             };
             attrs.push(Attribute {
                 name: attr_name,

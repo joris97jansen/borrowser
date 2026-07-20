@@ -19,17 +19,17 @@ fn illegal_document_and_root_element_moves_are_rejected() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "html".into(),
+                name: html::internal::html_name("html"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(3),
-                name: "body".into(),
+                name: html::internal::html_name("body"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(4),
-                name: "anchor".into(),
+                name: html::internal::html_name("anchor"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {

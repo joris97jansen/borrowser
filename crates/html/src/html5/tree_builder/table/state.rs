@@ -71,7 +71,7 @@ impl PendingTableTextState {
 impl Html5TreeBuilder {
     pub(in crate::html5::tree_builder) fn current_table_key(&self) -> Option<PatchKey> {
         self.open_elements
-            .find_last_by_name(self.known_tags.table)
+            .find_last_html_by_name(self.known_tags.table)
             .map(OpenElement::key)
     }
 
@@ -133,9 +133,10 @@ impl Html5TreeBuilder {
     }
 
     pub(in crate::html5::tree_builder) fn current_node_is_table_foster_target(&self) -> bool {
-        self.open_elements
-            .current()
-            .is_some_and(|current| self.is_table_foster_target_name(current.name()))
+        self.open_elements.current().is_some_and(|current| {
+            current.namespace() == crate::ElementNamespace::Html
+                && self.is_table_foster_target_name(current.name())
+        })
     }
 
     pub(super) fn current_node_uses_in_table_text_mode(&self) -> bool {
@@ -154,6 +155,9 @@ impl Html5TreeBuilder {
             self.perf_reset_insertion_mode_scan_steps =
                 self.perf_reset_insertion_mode_scan_steps.saturating_add(1);
             let entry = self.open_elements.get(index).ok_or(EngineInvariantError)?;
+            if entry.namespace() != crate::ElementNamespace::Html {
+                continue;
+            }
             let name = entry.name();
             let mode = if name == self.known_tags.td || name == self.known_tags.th {
                 Some(InsertionMode::InCell)

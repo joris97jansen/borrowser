@@ -9,7 +9,6 @@ use layout::inline::{InlineAction, InlineActionKind, InlineFragment};
 use layout::{LayoutBox, Rectangle, TextMeasurer, content_height, content_x_and_width, content_y};
 use std::cell::RefCell;
 use std::collections::HashMap;
-use std::sync::Arc;
 
 pub(super) use crate::input::to_input_id;
 
@@ -32,11 +31,22 @@ pub(super) fn doc(children: Vec<Node>) -> Node {
 pub(super) fn elem(
     id: u32,
     name: &str,
-    attributes: Vec<(Arc<str>, Option<String>)>,
+    attributes: Vec<(&str, Option<&str>)>,
     style: Vec<(String, String)>,
     children: Vec<Node>,
 ) -> Node {
-    html::internal::node_element_from_parts(Id(id), Arc::from(name), attributes, style, children)
+    html::internal::node_element_from_parts(
+        Id(id),
+        html::internal::html_name(name),
+        attributes
+            .into_iter()
+            .map(|(name, value)| {
+                html::internal::unqualified_attribute(name, value.unwrap_or_default())
+            })
+            .collect(),
+        style,
+        children,
+    )
 }
 
 pub(super) fn text(id: u32, value: &str) -> Node {
@@ -58,7 +68,7 @@ pub(super) fn input_text(id: u32) -> Node {
     elem(
         id,
         "input",
-        vec![(Arc::from("type"), Some("text".to_string()))],
+        vec![("type", Some("text"))],
         style_inline_block(),
         Vec::new(),
     )
@@ -68,7 +78,7 @@ pub(super) fn input_checkbox(id: u32) -> Node {
     elem(
         id,
         "input",
-        vec![(Arc::from("type"), Some("checkbox".to_string()))],
+        vec![("type", Some("checkbox"))],
         style_inline_block(),
         Vec::new(),
     )
@@ -78,7 +88,7 @@ pub(super) fn input_radio(id: u32) -> Node {
     elem(
         id,
         "input",
-        vec![(Arc::from("type"), Some("radio".to_string()))],
+        vec![("type", Some("radio"))],
         style_inline_block(),
         Vec::new(),
     )
@@ -88,7 +98,7 @@ pub(super) fn link(id: u32, href: &str, children: Vec<Node>) -> Node {
     elem(
         id,
         "a",
-        vec![(Arc::from("href"), Some(href.to_string()))],
+        vec![("href", Some(href))],
         style_inline(),
         children,
     )

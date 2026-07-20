@@ -450,6 +450,13 @@ impl Html5Tokenizer {
         // Duplicate attribute policy (Core v0): first-wins per start tag;
         // later duplicates are dropped to match HTML tokenizer semantics.
         if self.current_tag_attrs.iter().any(|attr| attr.name == name) {
+            self.record_tokenizer_parse_error(
+                ctx,
+                ParseErrorCode::Other,
+                name_start,
+                super::super::normalization::ERROR_DETAIL_DUPLICATE_ATTRIBUTE,
+                None,
+            );
             self.clear_current_attribute();
             return;
         }
@@ -477,9 +484,9 @@ impl Html5Tokenizer {
                     let null_normalized = self.replace_nulls_for_token_text(ctx, raw, start);
                     let normalized = null_normalized.as_deref().unwrap_or(raw);
                     if !normalized.as_bytes().contains(&b'&') && null_normalized.is_none() {
-                        Some(AttributeValue::Span(TextSpan::new(start, truncated_end)))
+                        AttributeValue::Span(TextSpan::new(start, truncated_end))
                     } else if !normalized.as_bytes().contains(&b'&') {
-                        Some(AttributeValue::Owned(normalized.to_string()))
+                        AttributeValue::Owned(normalized.to_string())
                     } else {
                         let decoded = decode_character_references(
                             normalized,
@@ -492,19 +499,19 @@ impl Html5Tokenizer {
                         );
                         match decoded.text {
                             std::borrow::Cow::Borrowed(_) if null_normalized.is_none() => {
-                                Some(AttributeValue::Span(TextSpan::new(start, truncated_end)))
+                                AttributeValue::Span(TextSpan::new(start, truncated_end))
                             }
                             std::borrow::Cow::Borrowed(value) => {
-                                Some(AttributeValue::Owned(value.to_string()))
+                                AttributeValue::Owned(value.to_string())
                             }
-                            std::borrow::Cow::Owned(value) => Some(AttributeValue::Owned(value)),
+                            std::borrow::Cow::Owned(value) => AttributeValue::Owned(value),
                         }
                     }
                 }
-                _ => Some(AttributeValue::Owned(String::new())),
+                _ => AttributeValue::Owned(String::new()),
             }
         } else {
-            None
+            AttributeValue::Owned(String::new())
         };
 
         self.current_tag_attrs.push(Attribute { name, value });

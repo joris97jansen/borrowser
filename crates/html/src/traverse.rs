@@ -235,13 +235,14 @@ pub fn is_non_rendering_element(node: &Node) -> bool {
     match node {
         Node::Element { element } => {
             let name = element.name();
+            if element.namespace() != crate::names::ElementNamespace::Html {
+                return false;
+            }
             debug_assert_lowercase_atom(name, "non-rendering tag");
-            name.as_ref() == "head"
-                || name.as_ref() == "style"
-                || name.as_ref() == "script"
-                || name.as_ref() == "title"
-                || name.as_ref() == "meta"
-                || name.as_ref() == "link"
+            matches!(
+                name,
+                "head" | "style" | "script" | "title" | "meta" | "link"
+            )
         }
         _ => false,
     }
@@ -254,13 +255,14 @@ mod tests {
         find_node_by_id, full_model_preorder,
     };
     use crate::Node;
+    use crate::names::{ElementNamespace, ExpandedElementName, NameInterner};
+    use crate::test_support::html_name;
     use crate::types::{DocumentFragmentNode, Id};
-    use std::sync::Arc;
 
     fn deep_document(depth: usize) -> Node {
         let mut current = crate::Node::from_element_parts(
             Id::INVALID,
-            Arc::<str>::from("div"),
+            html_name("div"),
             Vec::new(),
             Vec::new(),
             None,
@@ -270,7 +272,7 @@ mod tests {
         for _ in 1..depth {
             current = crate::Node::from_element_parts(
                 Id::INVALID,
-                Arc::<str>::from("div"),
+                html_name("div"),
                 Vec::new(),
                 Vec::new(),
                 None,
@@ -288,12 +290,29 @@ mod tests {
     fn template_element(id: Id, contents: DocumentFragmentNode, children: Vec<Node>) -> Node {
         crate::Node::from_element_parts(
             id,
-            Arc::from("template"),
+            html_name("template"),
             Vec::new(),
             Vec::new(),
             Some(Box::new(contents)),
             children,
         )
+    }
+
+    #[test]
+    fn foreign_html_lookalike_is_not_non_rendering() {
+        let mut names = NameInterner::new();
+        let local_name = names.intern_exact("style").unwrap();
+        let local_name = names.resolve_local_name(local_name).unwrap();
+        let node = crate::Node::from_element_parts(
+            Id(1),
+            ExpandedElementName::new(ElementNamespace::Svg, local_name),
+            Vec::new(),
+            Vec::new(),
+            None,
+            Vec::new(),
+        );
+
+        assert!(!super::is_non_rendering_element(&node));
     }
 
     #[test]
@@ -349,7 +368,7 @@ mod tests {
             children: vec![
                 crate::Node::from_element_parts(
                     Id::INVALID,
-                    Arc::<str>::from("a"),
+                    html_name("a"),
                     Vec::new(),
                     Vec::new(),
                     None,
@@ -357,7 +376,7 @@ mod tests {
                 ),
                 crate::Node::from_element_parts(
                     Id::INVALID,
-                    Arc::<str>::from("b"),
+                    html_name("b"),
                     Vec::new(),
                     Vec::new(),
                     None,
@@ -365,7 +384,7 @@ mod tests {
                 ),
                 crate::Node::from_element_parts(
                     Id::INVALID,
-                    Arc::<str>::from("c"),
+                    html_name("c"),
                     Vec::new(),
                     Vec::new(),
                     None,
@@ -394,7 +413,7 @@ mod tests {
             children: vec![
                 crate::Node::from_element_parts(
                     Id(42),
-                    Arc::<str>::from("div"),
+                    html_name("div"),
                     Vec::new(),
                     Vec::new(),
                     None,
@@ -405,7 +424,7 @@ mod tests {
                 ),
                 crate::Node::from_element_parts(
                     Id::INVALID,
-                    Arc::<str>::from("span"),
+                    html_name("span"),
                     Vec::new(),
                     Vec::new(),
                     None,
@@ -435,7 +454,7 @@ mod tests {
             doctype: None,
             children: vec![crate::Node::from_element_parts(
                 Id::INVALID,
-                Arc::<str>::from("div"),
+                html_name("div"),
                 Vec::new(),
                 Vec::new(),
                 None,
@@ -477,7 +496,7 @@ mod tests {
                     Id::INVALID,
                     vec![crate::Node::from_element_parts(
                         Id::INVALID,
-                        Arc::from("div"),
+                        html_name("div"),
                         Vec::new(),
                         Vec::new(),
                         None,

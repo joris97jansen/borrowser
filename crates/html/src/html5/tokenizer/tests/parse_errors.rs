@@ -3,6 +3,26 @@ use crate::html5::shared::{ErrorOrigin, ParseErrorCode};
 use crate::html5::tokenizer::TokenizerConfig;
 
 #[test]
+fn duplicate_attribute_is_a_tokenizer_parse_error_and_remains_first_wins() {
+    let (tokens, errors) =
+        run_chunks_with_config_and_errors(TokenizerConfig::default(), &["<div a=1 A=2 b>"]);
+    assert_eq!(
+        tokens,
+        vec![
+            "START name=div attrs=[a=\"1\" b=\"\"] self_closing=false".to_string(),
+            "EOF".to_string(),
+        ]
+    );
+    assert_eq!(
+        errors
+            .iter()
+            .filter(|error| error.detail == Some("duplicate-attribute"))
+            .count(),
+        1
+    );
+}
+
+#[test]
 fn null_in_data_state_is_replaced_and_reported() {
     let (tokens, errors) = run_chunks_with_config_and_errors(TokenizerConfig::default(), &["a\0b"]);
     let replacement = '\u{FFFD}';
@@ -136,7 +156,7 @@ fn malformed_attribute_recovery_reports_stable_details() {
     assert_eq!(
         tokens,
         vec![
-            "START name=div attrs=[a=\"foo\" bar] self_closing=false".to_string(),
+            "START name=div attrs=[a=\"foo\" bar=\"\"] self_closing=false".to_string(),
             "END name=div".to_string(),
             "EOF".to_string(),
         ]

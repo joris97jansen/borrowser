@@ -3,7 +3,7 @@
 use crate::replaced::intrinsic::IntrinsicSize;
 use crate::{
     BoxKind, FlowParticipation, ListMarker, PositioningScheme, ReplacedElementInfoProvider,
-    ReplacedKind,
+    ReplacedElementPresentation, ReplacedKind,
 };
 use css::{ComputedStyle, Display, StyledNode};
 use html::internal::Id;
@@ -46,6 +46,7 @@ pub struct BoxNode<'style_tree, 'dom> {
     pub(super) inline_formatting_participation: InlineFormattingParticipation,
     pub(super) list_marker: Option<ListMarker>,
     pub(super) replaced: Option<ReplacedKind>,
+    pub(super) replaced_presentation: Option<ReplacedElementPresentation>,
     pub(super) replaced_intrinsic: Option<IntrinsicSize>,
 }
 
@@ -99,6 +100,7 @@ impl fmt::Debug for BoxNode<'_, '_> {
             )
             .field("list_marker", &self.list_marker)
             .field("replaced", &self.replaced)
+            .field("replaced_presentation", &self.replaced_presentation)
             .field("replaced_intrinsic", &self.replaced_intrinsic)
             .finish()
     }
@@ -199,6 +201,10 @@ impl<'style_tree, 'dom> BoxNode<'style_tree, 'dom> {
 
     pub fn replaced(&self) -> Option<ReplacedKind> {
         self.replaced
+    }
+
+    pub fn replaced_presentation(&self) -> Option<&ReplacedElementPresentation> {
+        self.replaced_presentation.as_ref()
     }
 
     pub fn replaced_intrinsic(&self) -> Option<IntrinsicSize> {

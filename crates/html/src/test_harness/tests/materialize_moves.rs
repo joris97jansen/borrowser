@@ -1,10 +1,9 @@
 use super::super::materialize_patch_batches;
-use super::support::{element, text};
+use super::support::{element, html_name, text};
 use crate::DomPatch;
 use crate::dom_patch::PatchKey;
 use crate::dom_snapshot::{DomSnapshotOptions, assert_dom_eq};
 use crate::types::{Id, Node};
-use std::sync::Arc;
 
 #[test]
 fn materialize_patch_batches_supports_cross_parent_reparenting() {
@@ -15,17 +14,17 @@ fn materialize_patch_batches_supports_cross_parent_reparenting() {
         },
         DomPatch::CreateElement {
             key: PatchKey(2),
-            name: Arc::from("div"),
+            name: html_name("div"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(3),
-            name: Arc::from("p"),
+            name: html_name("p"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(4),
-            name: Arc::from("span"),
+            name: html_name("span"),
             attributes: Vec::new(),
         },
         DomPatch::AppendChild {
@@ -67,22 +66,22 @@ fn materialize_patch_batches_supports_same_parent_append_child_move_to_end() {
         },
         DomPatch::CreateElement {
             key: PatchKey(2),
-            name: Arc::from("ul"),
+            name: html_name("ul"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(3),
-            name: Arc::from("li"),
+            name: html_name("li"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(4),
-            name: Arc::from("li"),
+            name: html_name("li"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(5),
-            name: Arc::from("li"),
+            name: html_name("li"),
             attributes: Vec::new(),
         },
         DomPatch::CreateText {
@@ -156,22 +155,22 @@ fn materialize_patch_batches_supports_cross_parent_insert_before_move() {
         },
         DomPatch::CreateElement {
             key: PatchKey(2),
-            name: Arc::from("div"),
+            name: html_name("div"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(3),
-            name: Arc::from("p"),
+            name: html_name("p"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(4),
-            name: Arc::from("span"),
+            name: html_name("span"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(5),
-            name: Arc::from("em"),
+            name: html_name("em"),
             attributes: Vec::new(),
         },
         DomPatch::AppendChild {
@@ -221,22 +220,22 @@ fn materialize_patch_batches_supports_same_parent_insert_before_move() {
         },
         DomPatch::CreateElement {
             key: PatchKey(2),
-            name: Arc::from("ul"),
+            name: html_name("ul"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(3),
-            name: Arc::from("li"),
+            name: html_name("li"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(4),
-            name: Arc::from("li"),
+            name: html_name("li"),
             attributes: Vec::new(),
         },
         DomPatch::CreateElement {
             key: PatchKey(5),
-            name: Arc::from("li"),
+            name: html_name("li"),
             attributes: Vec::new(),
         },
         DomPatch::CreateText {

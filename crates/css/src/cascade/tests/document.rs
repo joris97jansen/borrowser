@@ -2,8 +2,106 @@ use super::super::{
     StyleResolutionError, StyleResolutionLimit, StyleResolutionLimits, resolve_document_styles,
     try_resolve_document_styles_with_limits,
 };
-use super::support::{element, stylesheet};
-use crate::{CascadePropertyId, CascadeSpecificity, ResolvedValueSource};
+use super::support::{element, namespaced_element, stylesheet};
+use crate::{
+    CascadePropertyId, CascadeSpecificity, ResolvedValueSource, StylesheetCascadeInput,
+    resolve_document_styles_from_cascade_inputs,
+};
+
+#[test]
+fn ua_namespace_groups_constrain_every_compound_without_constraining_author_rules() {
+    let ua = stylesheet(concat!(
+        "html > .notice { width: 11px; } ",
+        ".notice { height: 12px; } ",
+        "* { padding-left: 13px; }",
+    ));
+    let author = stylesheet("html > .notice { margin-left: 14px; } .notice { color: green; }");
+    let dom = namespaced_element(
+        html::ElementNamespace::Svg,
+        "html",
+        Vec::new(),
+        vec![
+            element("div", vec![("class", Some("notice"))], Vec::new()),
+            namespaced_element(
+                html::ElementNamespace::Svg,
+                "div",
+                vec![("class", Some("notice"))],
+                Vec::new(),
+            ),
+        ],
+    );
+    let inputs = [
+        StylesheetCascadeInput::user_agent_for_namespace(&ua, html::ElementNamespace::Html),
+        StylesheetCascadeInput::author(&author),
+    ];
+    let resolved = resolve_document_styles_from_cascade_inputs(&dom, &inputs).unwrap();
+    assert_eq!(
+        resolved.entries()[0].element_namespace(),
+        html::ElementNamespace::Svg
+    );
+    assert_eq!(
+        resolved.entries()[1].element_namespace(),
+        html::ElementNamespace::Html
+    );
+    assert_eq!(
+        resolved.entries()[2].element_namespace(),
+        html::ElementNamespace::Svg
+    );
+    let html_child = resolved.entries()[1].style();
+    let foreign_child = resolved.entries()[2].style();
+
+    assert_eq!(
+        html_child
+            .get(CascadePropertyId::Width)
+            .expect("width")
+            .source(),
+        &ResolvedValueSource::Initial(crate::InitialStyleValue::AutoKeyword),
+        "the foreign lookalike parent must fail the UA html compound"
+    );
+    assert_eq!(
+        html_child
+            .get(CascadePropertyId::Height)
+            .and_then(|entry| entry.winner())
+            .and_then(|winner| winner.value.to_css_text())
+            .as_deref(),
+        Some("12px"),
+        "a typeless UA compound still matches an HTML candidate"
+    );
+    assert_eq!(
+        html_child
+            .get(CascadePropertyId::PaddingLeft)
+            .and_then(|entry| entry.winner())
+            .and_then(|winner| winner.value.to_css_text())
+            .as_deref(),
+        Some("13px"),
+        "a UA universal selector is constrained at its candidate compound"
+    );
+    assert_eq!(
+        html_child
+            .get(CascadePropertyId::MarginLeft)
+            .and_then(|entry| entry.winner())
+            .and_then(|winner| winner.value.to_css_text())
+            .as_deref(),
+        Some("14px"),
+        "author selectors retain their current unconstrained namespace semantics"
+    );
+    assert_eq!(
+        foreign_child
+            .get(CascadePropertyId::Height)
+            .expect("height")
+            .source(),
+        &ResolvedValueSource::Initial(crate::InitialStyleValue::AutoKeyword)
+    );
+    assert_eq!(
+        foreign_child
+            .get(CascadePropertyId::Color)
+            .and_then(|entry| entry.winner())
+            .and_then(|winner| winner.value.to_css_text())
+            .as_deref(),
+        Some("green"),
+        "foreign elements remain available to currently supported author matching"
+    );
+}
 
 #[test]
 fn resolve_document_styles_produces_structured_output_without_mutating_dom() {
@@ -29,6 +127,10 @@ fn resolve_document_styles_produces_structured_output_without_mutating_dom() {
 
     assert_eq!(resolved.entries().len(), 2);
     assert_eq!(resolved.entries()[0].element_name(), "main");
+    assert_eq!(
+        resolved.entries()[0].element_namespace(),
+        html::ElementNamespace::Html
+    );
     assert_eq!(resolved.entries()[1].element_name(), "div");
     assert_eq!(
         resolved.entries()[1]

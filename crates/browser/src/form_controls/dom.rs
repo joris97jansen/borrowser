@@ -13,14 +13,16 @@ pub fn input_control_type(node: &Node) -> InputControlType {
         return InputControlType::Other;
     };
 
-    if !element.name().eq_ignore_ascii_case("input") {
+    if element.namespace() != html::ElementNamespace::Html || element.name() != "input" {
         return InputControlType::Other;
     }
 
     let mut ty: Option<&str> = None;
-    for (k, v) in element.attributes() {
-        if k.eq_ignore_ascii_case("type") {
-            ty = v.as_deref().map(str::trim).filter(|s| !s.is_empty());
+    for attribute in element.attributes() {
+        if attribute.namespace() == html::AttributeNamespace::None
+            && attribute.local_name().eq_ignore_ascii_case("type")
+        {
+            ty = Some(str::trim(attribute.value())).filter(|s| !s.is_empty());
             break;
         }
     }
@@ -36,21 +38,26 @@ pub fn input_control_type(node: &Node) -> InputControlType {
 
 pub(super) fn attr<'a>(node: &'a Node, name: &str) -> Option<&'a str> {
     match node {
-        Node::Element { element } => element
+        Node::Element { element } if element.namespace() == html::ElementNamespace::Html => element
             .attributes()
             .iter()
-            .find(|(k, _)| k.eq_ignore_ascii_case(name))
-            .and_then(|(_, v)| v.as_deref()),
+            .find(|attribute| {
+                attribute.namespace() == html::AttributeNamespace::None
+                    && attribute.local_name().eq_ignore_ascii_case(name)
+            })
+            .map(html::ParserCreatedAttribute::value),
         _ => None,
     }
 }
 
 pub(super) fn has_attr(node: &Node, name: &str) -> bool {
     match node {
-        Node::Element { element } => element
-            .attributes()
-            .iter()
-            .any(|(k, _)| k.eq_ignore_ascii_case(name)),
+        Node::Element { element } if element.namespace() == html::ElementNamespace::Html => {
+            element.attributes().iter().any(|attribute| {
+                attribute.namespace() == html::AttributeNamespace::None
+                    && attribute.local_name().eq_ignore_ascii_case(name)
+            })
+        }
         _ => false,
     }
 }

@@ -13,7 +13,7 @@ fn resolved_document_style_debug_snapshot_is_stable() {
         concat!(
             "version: 1\n",
             "resolved-document-style\n",
-            "element[0]: selector-id=1 name=\"div\"\n",
+            "element[0]: selector-id=1 namespace=html name=\"div\"\n",
             "  resolved-style\n",
             "    background-color: initial(transparent)\n",
             "    border-bottom-color: initial(transparent)\n",
@@ -70,7 +70,7 @@ fn document_style_resolution_debug_snapshot_covers_override_inheritance_and_defa
         concat!(
             "version: 1\n",
             "document-style-resolution\n",
-            "element[0]: selector-id=1 name=\"section\"\n",
+            "element[0]: selector-id=1 namespace=html name=\"section\"\n",
             "  cascade-evaluation\n",
             "  rule-inputs: 1\n",
             "    rule-input[0]: source=stylesheet[0/0] origin=author specificity=selector(0,0,1) rule-order=0 declarations=1\n",
@@ -117,7 +117,7 @@ fn document_style_resolution_debug_snapshot_covers_override_inheritance_and_defa
             "    text-decoration-line: initial(none)\n",
             "    width: initial(auto)\n",
             "    z-index: initial(auto)\n",
-            "element[1]: selector-id=2 name=\"div\"\n",
+            "element[1]: selector-id=2 namespace=html name=\"div\"\n",
             "  cascade-evaluation\n",
             "  rule-inputs: 2\n",
             "    rule-input[0]: source=stylesheet[0/1] origin=author specificity=selector(0,0,1) rule-order=1 declarations=1\n",

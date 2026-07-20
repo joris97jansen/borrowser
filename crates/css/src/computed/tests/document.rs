@@ -49,6 +49,10 @@ fn compute_document_styles_integrates_cascade_inheritance_defaults_and_computati
     let computed = compute_document_styles(&dom, &stylesheets).expect("computed document");
     assert_eq!(computed.entries().len(), 2);
     assert_eq!(computed.entries()[0].selector_element_id().get(), 1);
+    assert_eq!(
+        computed.entries()[0].element_namespace(),
+        html::ElementNamespace::Html
+    );
     assert_eq!(computed.entries()[0].element_name(), "section");
     assert_eq!(computed.entries()[1].selector_element_id().get(), 2);
     assert_eq!(computed.entries()[1].element_name(), "span");
@@ -228,6 +232,21 @@ fn computed_document_style_invalidation_impact_distinguishes_paint_layout_and_un
         &[stylesheet("section { color: red; }")],
     )
     .expect("different shape computed document");
+    let different_namespace = compute_document_styles(
+        &namespaced_element(
+            html::ElementNamespace::Svg,
+            "section",
+            Vec::new(),
+            vec![namespaced_element(
+                html::ElementNamespace::Svg,
+                "p",
+                Vec::new(),
+                Vec::new(),
+            )],
+        ),
+        &[stylesheet("p { color: red; }")],
+    )
+    .expect("different-namespace computed document");
 
     assert_eq!(
         paint_only.invalidation_impact_against(&base),
@@ -239,6 +258,10 @@ fn computed_document_style_invalidation_impact_distinguishes_paint_layout_and_un
     );
     assert_eq!(
         different_shape.invalidation_impact_against(&base),
+        ComputedDocumentStyleInvalidationImpact::Unknown
+    );
+    assert_eq!(
+        different_namespace.invalidation_impact_against(&base),
         ComputedDocumentStyleInvalidationImpact::Unknown
     );
 }
@@ -282,7 +305,7 @@ fn computed_document_style_snapshot_is_deterministic() {
         concat!(
             "version: 1\n",
             "computed-document-style\n",
-            "element[0]: selector-id=1 name=\"div\"\n",
+            "element[0]: selector-id=1 namespace=html name=\"div\"\n",
             "  background-color: rgba(0, 0, 0, 0)\n",
             "  border-bottom-color: rgba(0, 0, 0, 0)\n",
             "  border-bottom-style: none\n",
@@ -318,7 +341,7 @@ fn computed_document_style_snapshot_is_deterministic() {
             "  text-decoration-line: none\n",
             "  width: 12px\n",
             "  z-index: auto\n",
-            "element[1]: selector-id=2 name=\"span\"\n",
+            "element[1]: selector-id=2 namespace=html name=\"span\"\n",
             "  background-color: rgba(0, 0, 0, 0)\n",
             "  border-bottom-color: rgba(0, 0, 0, 0)\n",
             "  border-bottom-style: none\n",

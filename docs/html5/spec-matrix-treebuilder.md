@@ -257,3 +257,16 @@ For HTML5 Core v0 tree builder:
 - Full WHATWG adoption-agency conformance remains `DEFERRED`; Borrowser's
   supported formatting-element subset is tracked as `MVP_PARTIAL`.
 - Any status promotion requires explicit matrix update and acceptance plan update.
+
+## AE11 foreign-content profile
+
+| ID | Status | Algorithm | Implementation | Evidence | Boundary |
+| --- | --- | --- | --- | --- | --- |
+| `TB-ALGO-FOREIGN-DISPATCH` | MVP | per-token foreign dispatcher and adjusted current node | `tree_builder/foreign/{adjusted,dispatch}.rs` | `ae11_foreign_content.rs`, foreign unit/parity tests | no persistent XML/foreign insertion mode; fragment parsing deferred |
+| `TB-ALGO-FOREIGN-ADJUST` | MVP | SVG tag/attribute, MathML `definitionURL`, XML/XMLNS/XLink adjustment | `tree_builder/foreign/{tables,attributes}.rs` | exhaustive pinned-table and qualified-attribute tests | no namespace declarations affecting parser selection |
+| `TB-ALGO-FOREIGN-RECOVERY` | MVP | self-closing, end-tag scan, breakout/reprocessing, integration points | `tree_builder/foreign/dispatch.rs` | error, malformed, namespace restoration, and chunk parity tests | static trees only; no SVG/MathML runtime behavior |
+| `TOK-CDATA-FOREIGN-BOUNDARY` | MVP | markup-declaration decision and three CDATA states | tokenizer machine plus session driver query | HTML/SVG/MathML/template whole/chunk tests | emits ordinary character tokens; not XML parsing |
+
+The matrix is pinned by `AE11-WHATWG-supported-token-profile-v1`. Processing
+instructions are an explicit AE12 gap. SVG script has namespace-correct static
+tree/stack behavior only.

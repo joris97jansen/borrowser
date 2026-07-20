@@ -417,9 +417,32 @@ Current supported subset:
   document, doctype, element, text, and comment nodes; accepted initial
   doctypes materialize as `DocumentType` document children before the document
   element; document mode remains parser metadata; parser-created attributes are
-  first-wins duplicate-free by normalized name while preserving stored
-  encounter order and missing-vs-empty value distinction. See
+  first-wins duplicate-free by semantic name, preserve stored encounter order,
+  and normalize every DOM value to a string (valueless syntax is empty). See
   `docs/html5/ae2-parser-created-dom-node-model.md`.
+- AE11 namespace-aware foreign tree construction: parser-created elements and
+  attributes carry typed expanded names through live state, patches,
+  `DomStore`, materialization, CSS, and snapshots. The HTML tree builder makes
+  per-token SVG/MathML foreign dispatch decisions, owns the adjusted-current-
+  node/CDATA boundary, complete pinned adjustment and breakout tables,
+  integration points, self-closing acknowledgement, end-tag recovery, and
+  deterministic unknown-foreign fallback. CSS preserves foreign style input;
+  Layout centrally suppresses unsupported foreign box subtrees and resolves
+  HTML image/text-control semantics into typed presentation metadata, preserving
+  exact alternative-text and placeholder DOM strings including present-empty
+  values. Layout passes exact stored image sources to Browser resource
+  integration, which strips only surrounding HTML ASCII whitespace before URL
+  parsing and base joining. Paint/GFX does not inspect or normalize DOM
+  namespaces, names, or attributes. SVG/MathML rendering, XML
+  parsing, scripting, public namespace DOM APIs, and CSS namespace syntax remain missing. See
+  `docs/html5/ae11-foreign-content-tree-construction-contract.md`.
+- AE12 follow-up (Milestone AE), **Add HTML processing-instruction tokenization
+  and parser-created nodes**: implement current HTML processing-instruction
+  tokenizer states, typed tokens, parser-created `ProcessingInstruction`
+  nodes, ordinary/foreign tree-construction insertion, patch transport,
+  materialization, deterministic errors/snapshots, and whole/chunk parity.
+  This remains a pre-existing tokenizer/DOM gap and must not introduce an XML
+  parser, namespace resolution, scripting, resources, or public DOM mutation.
 - AE3 tokenizer foundation: tokenizer input is explicit for the current
   UTF-8/string-input scope; CRLF and lone-CR preprocessing is chunk-equivalent;
   tokenizer state, typed tokens, supported `U+0000` replacement, recoverable
@@ -431,7 +454,7 @@ Current supported subset:
   name, core attribute states, after quoted attribute value, self-closing start
   tag, markup declaration open, supported comments, bogus comments, and
   supported doctypes are implemented/formalized for the declared Core-v0
-  subset. Boolean-style attributes remain missing-value tokenizer attributes,
+  subset. Valueless tokenizer attributes normalize to empty DOM strings,
   self-closing flags are emitted, malformed common markup records deterministic
   tokenizer-owned parse-error details, EOF recovery is deterministic, and
   representative whole-input/chunked tokenizer snapshots cover the supported

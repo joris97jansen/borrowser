@@ -34,7 +34,7 @@ fn accepted_doctype_creates_document_type_node_before_document_element() {
                 ..
             },
             ..
-        ] if name == "html" && html.as_ref() == "html"
+        ] if name == "html" && html.is_html("html")
     ));
 
     let dom = crate::test_harness::materialize_patch_batches(&[patches]).expect("materialize DOM");
@@ -52,7 +52,7 @@ fn accepted_doctype_creates_document_type_node_before_document_element() {
             },
             crate::Node::Element { element: html },
             ..
-        ] if name == "html" && html.name().as_ref() == "html"
+        ] if name == "html" && html.expanded_name().is_html("html")
     ));
 }
 
@@ -91,7 +91,7 @@ fn initial_comment_before_doctype_preserves_comment_doctype_html_order() {
                 ..
             },
             ..
-        ] if text == "pre" && name == "html" && html.as_ref() == "html"
+        ] if text == "pre" && name == "html" && html.is_html("html")
     ));
 
     let dom = crate::test_harness::materialize_patch_batches(&[patches]).expect("materialize DOM");
@@ -110,7 +110,7 @@ fn initial_comment_before_doctype_preserves_comment_doctype_html_order() {
             },
             crate::Node::Element { element: html },
             ..
-        ] if text == "pre" && name == "html" && html.name().as_ref() == "html"
+        ] if text == "pre" && name == "html" && html.expanded_name().is_html("html")
     ));
 }
 

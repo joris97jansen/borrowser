@@ -8,10 +8,10 @@ use crate::paint::{
 };
 use crate::text_control::{find_layout_box_by_id, sync_input_scroll_for_caret};
 use crate::textarea::sync_textarea_scroll_for_caret;
-use crate::util::{get_attr, input_text_padding, resolve_relative_url};
+use crate::util::input_text_padding;
 use css::StylePhaseOutput;
 use egui::{Color32, Rect, ScrollArea, Sense, Stroke, Ui, Vec2};
-use html::{Node, internal::Id};
+use html::internal::Id;
 use input_core::InputValueStore as CoreInputValueStore;
 use layout::{
     LayoutPhaseInput, Rectangle, ReplacedElementInfoProvider, ReplacedKind, RetainedLayoutArtifact,
@@ -44,7 +44,7 @@ pub struct ViewportCtx<'ui, 'style, R, F> {
     pub ui: &'ui mut Ui,
     pub style: &'ui StylePhaseOutput<'style>,
     pub base_url: Option<&'ui str>,
-    pub resources: &'ui R,
+    pub resource_inputs: ViewportResourceInputs<'ui, R>,
     pub input_values: &'ui mut InputValueStore,
     pub form_controls: &'ui F,
     pub interaction: &'ui mut InteractionState,
@@ -54,12 +54,30 @@ pub struct ViewportCtx<'ui, 'style, R, F> {
     pub retained_paint: Option<ViewportRetainedPaint<'ui>>,
 }
 
+#[derive(Clone, Copy)]
+pub struct ViewportResourceInputs<'a, R> {
+    image_resources: &'a R,
+    replaced_elements: &'a dyn ReplacedElementInfoProvider,
+}
+
+impl<'a, R> ViewportResourceInputs<'a, R> {
+    pub fn new(
+        image_resources: &'a R,
+        replaced_elements: &'a dyn ReplacedElementInfoProvider,
+    ) -> Self {
+        Self {
+            image_resources,
+            replaced_elements,
+        }
+    }
+}
+
 impl<'ui, 'style, R, F> ViewportCtx<'ui, 'style, R, F> {
     pub fn new(
         ui: &'ui mut Ui,
         style: &'ui StylePhaseOutput<'style>,
         base_url: Option<&'ui str>,
-        resources: &'ui R,
+        resource_inputs: ViewportResourceInputs<'ui, R>,
         input_values: &'ui mut InputValueStore,
         form_controls: &'ui F,
         interaction: &'ui mut InteractionState,
@@ -68,7 +86,7 @@ impl<'ui, 'style, R, F> ViewportCtx<'ui, 'style, R, F> {
             ui,
             style,
             base_url,
-            resources,
+            resource_inputs,
             input_values,
             form_controls,
             interaction,
@@ -165,7 +183,7 @@ pub fn execute_viewport_frame<R: ImageProvider, F: FormControlHandler<CoreInputV
         ui,
         style,
         base_url,
-        resources,
+        resource_inputs,
         input_values,
         form_controls,
         interaction,
@@ -174,6 +192,8 @@ pub fn execute_viewport_frame<R: ImageProvider, F: FormControlHandler<CoreInputV
         retained_layout,
         retained_paint,
     } = ctx;
+    let resources = resource_inputs.image_resources;
+    let replaced_info = resource_inputs.replaced_elements;
 
     ScrollArea::vertical()
         .id_salt(config.scroll_id_salt)
@@ -184,10 +204,6 @@ pub fn execute_viewport_frame<R: ImageProvider, F: FormControlHandler<CoreInputV
 
             let measurer = EguiTextMeasurer::new(ui.ctx());
 
-            let replaced_info = ViewportReplacedInfo {
-                base_url,
-                resources,
-            };
             let (layout_output, retained_layout_result) = match retained_layout {
                 Some(retained_layout) => {
                     let key = retained_layout.key_seed.for_viewport_width(available_width);
@@ -212,7 +228,7 @@ pub fn execute_viewport_frame<R: ImageProvider, F: FormControlHandler<CoreInputV
                                 style,
                                 available_width,
                                 &measurer,
-                                Some(&replaced_info),
+                                Some(replaced_info),
                             ));
                             let artifact = RetainedLayoutArtifact::from_layout_output(key, &output);
                             (
@@ -231,7 +247,7 @@ pub fn execute_viewport_frame<R: ImageProvider, F: FormControlHandler<CoreInputV
                                 style,
                                 available_width,
                                 &measurer,
-                                Some(&replaced_info),
+                                Some(replaced_info),
                             ));
                             let artifact = RetainedLayoutArtifact::from_layout_output(key, &output);
                             let action = if retained_layout.conservative_dirty_fallback {
@@ -267,7 +283,7 @@ pub fn execute_viewport_frame<R: ImageProvider, F: FormControlHandler<CoreInputV
                         style,
                         available_width,
                         &measurer,
-                        Some(&replaced_info),
+                        Some(replaced_info),
                     )),
                     None,
                 ),
@@ -375,7 +391,6 @@ pub fn execute_viewport_frame<R: ImageProvider, F: FormControlHandler<CoreInputV
                     painter: paint_painter,
                     origin,
                     measurer: &measurer,
-                    base_url,
                     resources,
                     input_values: &*input_values,
                     focused,
@@ -461,23 +476,6 @@ fn can_reuse_retained_paint(
             retained_layout_action,
             Some(RetainedLayoutFrameAction::Reused)
         )
-}
-
-struct ViewportReplacedInfo<'a, R> {
-    base_url: Option<&'a str>,
-    resources: &'a R,
-}
-
-impl<R: ImageProvider> ReplacedElementInfoProvider for ViewportReplacedInfo<'_, R> {
-    fn intrinsic_for_img(&self, node: &Node) -> Option<layout::replaced::intrinsic::IntrinsicSize> {
-        let src = get_attr(node, "src")?;
-        let url = resolve_relative_url(self.base_url, src)?;
-        let (w, h) = self.resources.image_intrinsic_size_px(&url)?;
-        Some(layout::replaced::intrinsic::IntrinsicSize::from_w_h(
-            Some(w as f32),
-            Some(h as f32),
-        ))
-    }
 }
 
 #[cfg(test)]

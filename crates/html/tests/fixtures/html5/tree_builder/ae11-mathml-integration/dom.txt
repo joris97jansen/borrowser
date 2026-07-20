@@ -1,0 +1,15 @@
+# format: html5-dom-v2
+# status: active
+
+#dom-snapshot-v2
+#document
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=mathml local="math" attrs=[]
+        element ns=mathml local="mtext" attrs=[]
+          element ns=html local="span" attrs=[]
+            "x"
+        element ns=mathml local="annotation-xml" attrs=[{ns=none prefix=- local="encoding" value="text/html"}]
+          element ns=html local="b" attrs=[]
+            "y"

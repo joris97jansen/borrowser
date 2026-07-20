@@ -67,6 +67,23 @@ fn seeded_html5_pipeline_fuzz_harness_handles_invalid_utf8_and_broken_markup() {
 }
 
 #[test]
+fn seeded_html5_pipeline_fuzz_harness_covers_foreign_boundaries_and_cdata() {
+    let bytes = b"<template><svg><![CDATA[<g/>]]><foreignObject><div>x</div></foreignObject></svg></template><math><annotation-xml encoding='text/html'><span>y</span></annotation-xml></math>";
+    let config = Html5PipelineFuzzConfig {
+        seed: 0xAE11_CDA7_AE11_CDA7,
+        ..Html5PipelineFuzzConfig::default()
+    };
+    let first = run_seeded_html5_pipeline_fuzz_case(bytes, config)
+        .expect("foreign pipeline fuzz case should remain recoverable");
+    let second = run_seeded_html5_pipeline_fuzz_case(bytes, config)
+        .expect("foreign pipeline fuzz replay should remain deterministic");
+
+    assert_eq!(first, second);
+    assert_eq!(first.termination, Html5PipelineFuzzTermination::Completed);
+    assert!(first.tokens_streamed > 0);
+}
+
+#[test]
 fn seeded_html5_pipeline_fuzz_harness_flushes_finish_time_text_deterministically() {
     let bytes = b"<title>unterminated title text";
     let config = Html5PipelineFuzzConfig {

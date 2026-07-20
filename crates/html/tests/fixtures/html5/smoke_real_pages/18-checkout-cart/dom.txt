@@ -1,28 +1,28 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 
+#dom-snapshot-v2
 #document
-
   <!doctype html>
-  <html>
-    <head>
-      <title>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+      element ns=html local="title" attrs=[]
         "Checkout"
-    <body>
+    element ns=html local="body" attrs=[]
       "\n"
-      <h1>
+      element ns=html local="h1" attrs=[]
         "Your cart"
       "\n"
-      <ul>
-        <li>
+      element ns=html local="ul" attrs=[]
+        element ns=html local="li" attrs=[]
           "Keyboard x1"
-        <li>
+        element ns=html local="li" attrs=[]
           "Monitor x2"
       "\n"
-      <p>
+      element ns=html local="p" attrs=[]
         "Total: $799"
       "\n"
-      <form>
-        <input name="card" placeholder="Card number">
-        <button>
+      element ns=html local="form" attrs=[]
+        element ns=html local="input" attrs=[{ns=none prefix=- local="name" value="card"}, {ns=none prefix=- local="placeholder" value="Card number"}]
+        element ns=html local="button" attrs=[]
           "Pay now"
       "\n"

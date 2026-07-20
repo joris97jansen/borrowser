@@ -275,7 +275,7 @@ fn close_cell_pops_to_cell_boundary_clears_afe_and_switches_to_in_row() {
         .expect("b insertion")
         .expect("b insertion should not hit resource limits");
     builder
-        .push_active_formatting_element(b_key, b, &[], &resolver)
+        .push_active_formatting_element(b_key, b, &[], &ctx.atoms, &resolver)
         .expect("AFE push for <b>");
 
     builder.insertion_mode = InsertionMode::InCell;

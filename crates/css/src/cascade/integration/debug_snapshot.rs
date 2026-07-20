@@ -115,8 +115,9 @@ pub fn resolve_document_styles_debug_snapshot(
 
         writeln!(
             &mut out,
-            "element[{element_index}]: selector-id={} name=\"{}\"",
+            "element[{element_index}]: selector-id={} namespace={} name=\"{}\"",
             element.get(),
+            context.element_namespace(element).snapshot_name(),
             context.element_name(element)
         )
         .expect("write snapshot");

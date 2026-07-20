@@ -1,6 +1,6 @@
 use crate::dom_patch::{DomPatch, PatchKey};
 use crate::html5::shared::{AtomId, AtomTable, DocumentParseContext, EngineInvariantError, Token};
-use crate::html5::tokenizer::{TextModeSpec, TextResolver, TokenizerControl};
+use crate::html5::tokenizer::{Html5Tokenizer, TextModeSpec, TextResolver, TokenizerControl};
 use crate::html5::tree_builder::document::{DocumentState, PendingDoctype};
 use crate::html5::tree_builder::formatting::ActiveFormattingList;
 use crate::html5::tree_builder::invariants::DomInvariantState;
@@ -190,6 +190,11 @@ pub struct Html5TreeBuilder {
     pub(in crate::html5::tree_builder) perf_soe_pop_ops: u64,
     pub(in crate::html5::tree_builder) perf_soe_scope_scan_calls: u64,
     pub(in crate::html5::tree_builder) perf_soe_scope_scan_steps: u64,
+    pub(in crate::html5::tree_builder) perf_soe_name_count_lookup_calls: u64,
+    pub(in crate::html5::tree_builder) perf_soe_name_count_lookup_steps: u64,
+    pub(in crate::html5::tree_builder) perf_soe_name_count_update_calls: u64,
+    pub(in crate::html5::tree_builder) perf_soe_name_count_update_steps: u64,
+    pub(in crate::html5::tree_builder) perf_soe_distinct_name_high_water: u32,
     pub(in crate::html5::tree_builder) perf_soe_end_tag_scan_calls: u64,
     pub(in crate::html5::tree_builder) perf_soe_end_tag_scan_steps: u64,
     pub(in crate::html5::tree_builder) perf_patches_emitted: u64,
@@ -205,6 +210,7 @@ pub struct Html5TreeBuilder {
     pub(in crate::html5::tree_builder) perf_reset_insertion_mode_scan_steps: u64,
     pub(in crate::html5::tree_builder) perf_template_recovery_owner_scan_calls: u64,
     pub(in crate::html5::tree_builder) perf_template_recovery_owner_scan_steps: u64,
+    pub(in crate::html5::tree_builder) internal_post_adjustment_attribute_collisions: u64,
     #[cfg(any(
         test,
         feature = "html5-fuzzing",
@@ -239,6 +245,11 @@ pub struct TreeBuilderPerfStats {
     pub soe_scope_scan_calls: u64,
     /// Total SOE entries inspected while performing scope scans.
     pub soe_scope_scan_steps: u64,
+    pub soe_name_count_lookup_calls: u64,
+    pub soe_name_count_lookup_steps: u64,
+    pub soe_name_count_update_calls: u64,
+    pub soe_name_count_update_steps: u64,
+    pub soe_distinct_name_high_water: u32,
     /// Reverse SOE scans for the InBody "any other end tag" algorithm.
     /// These are deliberately separate from scope scans.
     pub soe_end_tag_scan_calls: u64,
@@ -306,6 +317,43 @@ pub struct TreeBuilderStateSnapshot {
 }
 
 impl Html5TreeBuilder {
+    pub(in crate::html5::tree_builder) fn adjusted_current_node(
+        &self,
+    ) -> Option<crate::html5::tree_builder::foreign::AdjustedCurrentNode<'_>> {
+        let current = self.open_elements.current()?;
+        let (expanded_name, attributes) = self.live_tree.element_semantics(current.key())?;
+        Some(
+            crate::html5::tree_builder::foreign::AdjustedCurrentNode::from_stack_current(
+                current.key(),
+                expanded_name,
+                attributes,
+            ),
+        )
+    }
+
+    pub(in crate::html5) fn adjusted_current_node_namespace(
+        &self,
+    ) -> Option<crate::names::ElementNamespace> {
+        self.adjusted_current_node()
+            .map(|node| node.expanded_name.namespace())
+    }
+
+    /// Synchronize the tokenizer's markup-declaration CDATA boundary before
+    /// its next incremental pump.
+    ///
+    /// The tree builder remains the owner of adjusted-current-node semantics;
+    /// the tokenizer receives only the namespace decision needed by the
+    /// markup-declaration-open state. Pipeline drivers must call this once
+    /// immediately before every tokenizer pump.
+    pub fn prepare_tokenizer_pump(&self, tokenizer: &mut Html5Tokenizer) {
+        tokenizer.set_adjusted_current_node_namespace(self.adjusted_current_node_namespace());
+    }
+
+    #[cfg(test)]
+    pub(in crate::html5::tree_builder) fn post_adjustment_attribute_collision_count(&self) -> u64 {
+        self.internal_post_adjustment_attribute_collisions
+    }
+
     pub fn new(
         config: TreeBuilderConfig,
         ctx: &mut DocumentParseContext,
@@ -320,7 +368,7 @@ impl Html5TreeBuilder {
             known_tags,
             scope_tags,
             live_tree: LiveTree::default(),
-            open_elements: OpenElementsStack::default(),
+            open_elements: OpenElementsStack::new(ctx.atoms.id()),
             active_formatting: ActiveFormattingList::default(),
             template_modes: TemplateModeStack::default(),
             document_key: None,
@@ -340,6 +388,11 @@ impl Html5TreeBuilder {
             perf_soe_pop_ops: 0,
             perf_soe_scope_scan_calls: 0,
             perf_soe_scope_scan_steps: 0,
+            perf_soe_name_count_lookup_calls: 0,
+            perf_soe_name_count_lookup_steps: 0,
+            perf_soe_name_count_update_calls: 0,
+            perf_soe_name_count_update_steps: 0,
+            perf_soe_distinct_name_high_water: 0,
             perf_soe_end_tag_scan_calls: 0,
             perf_soe_end_tag_scan_steps: 0,
             perf_patches_emitted: 0,
@@ -355,6 +408,7 @@ impl Html5TreeBuilder {
             perf_reset_insertion_mode_scan_steps: 0,
             perf_template_recovery_owner_scan_calls: 0,
             perf_template_recovery_owner_scan_steps: 0,
+            internal_post_adjustment_attribute_collisions: 0,
             #[cfg(any(
                 test,
                 feature = "html5-fuzzing",
@@ -501,6 +555,26 @@ impl Html5TreeBuilder {
         self.perf_soe_scope_scan_steps
     }
 
+    pub(crate) fn perf_soe_name_count_lookup_calls(&self) -> u64 {
+        self.perf_soe_name_count_lookup_calls
+    }
+
+    pub(crate) fn perf_soe_name_count_lookup_steps(&self) -> u64 {
+        self.perf_soe_name_count_lookup_steps
+    }
+
+    pub(crate) fn perf_soe_name_count_update_calls(&self) -> u64 {
+        self.perf_soe_name_count_update_calls
+    }
+
+    pub(crate) fn perf_soe_name_count_update_steps(&self) -> u64 {
+        self.perf_soe_name_count_update_steps
+    }
+
+    pub(crate) fn perf_soe_distinct_name_high_water(&self) -> u32 {
+        self.perf_soe_distinct_name_high_water
+    }
+
     pub(crate) fn perf_patches_emitted(&self) -> u64 {
         self.perf_patches_emitted
     }
@@ -528,6 +602,11 @@ impl Html5TreeBuilder {
             soe_pop_ops: self.perf_soe_pop_ops,
             soe_scope_scan_calls: self.perf_soe_scope_scan_calls,
             soe_scope_scan_steps: self.perf_soe_scope_scan_steps,
+            soe_name_count_lookup_calls: self.perf_soe_name_count_lookup_calls,
+            soe_name_count_lookup_steps: self.perf_soe_name_count_lookup_steps,
+            soe_name_count_update_calls: self.perf_soe_name_count_update_calls,
+            soe_name_count_update_steps: self.perf_soe_name_count_update_steps,
+            soe_distinct_name_high_water: self.perf_soe_distinct_name_high_water,
             soe_end_tag_scan_calls: self.perf_soe_end_tag_scan_calls,
             soe_end_tag_scan_steps: self.perf_soe_end_tag_scan_steps,
             patches_emitted: self.perf_patches_emitted,
@@ -595,6 +674,33 @@ impl Html5TreeBuilder {
             actual, expected,
             "tree builder atom table mismatch (expected={expected}, actual={actual})"
         );
+    }
+
+    #[cfg(any(test, feature = "parser_invariants", feature = "html5-fuzzing"))]
+    pub(in crate::html5::tree_builder) fn assert_open_element_name_invariants(
+        &self,
+        atoms: &AtomTable,
+    ) {
+        assert!(
+            self.open_elements.name_cache_matches_stack(),
+            "stack-of-open-elements expanded-name cache diverged from stack entries"
+        );
+        for entry in self.open_elements.iter_entries() {
+            assert_eq!(
+                u64::from(entry.name().interner_id()),
+                self.atom_table_id,
+                "open-element atom escaped its parser interner domain"
+            );
+            let atom_name = atoms
+                .resolve(entry.name())
+                .expect("open-element atom must resolve in the bound interner");
+            let (expanded_name, _) = self
+                .live_tree
+                .element_semantics(entry.key())
+                .expect("open-element identity must reference a live element");
+            assert_eq!(expanded_name.namespace(), entry.namespace());
+            assert_eq!(expanded_name.local_name().as_str(), atom_name);
+        }
     }
 
     pub(in crate::html5::tree_builder) fn record_parse_error(

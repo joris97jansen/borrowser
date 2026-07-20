@@ -98,6 +98,11 @@ currently:
 - records explicit display-to-box behavior metadata
 - records list marker metadata for supported list containers
 - records replaced-element metadata required by current layout
+- resolves supported HTML image and text-control DOM semantics into typed
+  `ReplacedElementPresentation`; Layout preserves exact `alt` and placeholder
+  strings (including present-empty values), passes exact stored `src` strings
+  to Browser resource integration, and owns the box-facing handoff while
+  Browser owns URL-specific ASCII-whitespace preprocessing and resolution
 
 The existing layout phase now builds `LayoutBox` geometry from `BoxTree` rather
 than directly constructing nested `LayoutBox` records while walking styled DOM
@@ -118,6 +123,9 @@ The W2 box tree must satisfy these invariants:
   boxes and remain extensible for future marker and generated-content boxes.
 - `display: none` element subtrees are absent from the generated box tree.
 - Metadata required by current layout is available before geometry projection.
+- Paint/GFX receives typed, resolved replaced-element presentation data and
+  never re-derives HTML semantics from DOM namespaces, names, or attributes or
+  normalizes the retained alternative-text/placeholder strings.
 - Supported computed display values are mapped through an explicit
   `DisplayBoxGeneration` decision.
 - `BoxTree` is frame-local rebuilt state and is not retained by `PageState`.

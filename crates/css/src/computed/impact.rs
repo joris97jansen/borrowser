@@ -53,6 +53,7 @@ impl ComputedDocumentStyle {
 
         for (current, previous) in self.entries().iter().zip(previous.entries()) {
             if current.selector_element_id() != previous.selector_element_id()
+                || current.element_namespace() != previous.element_namespace()
                 || current.element_name() != previous.element_name()
             {
                 return ComputedDocumentStyleInvalidationImpact::Unknown;

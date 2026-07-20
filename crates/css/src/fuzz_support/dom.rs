@@ -1,7 +1,6 @@
 use super::cursor::ByteCursor;
 use super::text::truncate_string_to_char_boundary;
 use html::{Node, internal::Id};
-use std::sync::Arc;
 
 const ELEMENT_NAMES: &[&str] = &[
     "div", "span", "section", "article", "aside", "nav", "main", "header", "footer", "button", "p",
@@ -345,11 +344,10 @@ fn count_dom_summary(root: &Node) -> SynthesizedDomSummary {
                 {
                     summary.element_count = summary.element_count.saturating_add(1);
 
-                    if element
-                        .attributes()
-                        .iter()
-                        .any(|(name, _)| name.eq_ignore_ascii_case("style"))
-                    {
+                    if element.attributes().iter().any(|attribute| {
+                        attribute.namespace() == html::AttributeNamespace::None
+                            && attribute.local_name().eq_ignore_ascii_case("style")
+                    }) {
                         summary.inline_style_attributes =
                             summary.inline_style_attributes.saturating_add(1);
                     }
@@ -375,10 +373,12 @@ fn count_dom_summary(root: &Node) -> SynthesizedDomSummary {
 fn element(name: &str, attributes: Vec<(&str, Option<String>)>, children: Vec<Node>) -> Node {
     html::internal::node_element_from_parts(
         Id::INVALID,
-        Arc::from(name),
+        html::internal::html_name(name),
         attributes
             .into_iter()
-            .map(|(name, value)| (Arc::from(name), value))
+            .map(|(name, value)| {
+                html::internal::unqualified_attribute(name, value.unwrap_or_default())
+            })
             .collect(),
         Vec::new(),
         children,

@@ -199,7 +199,8 @@ Normative rule:
 
 Examples of later DOM-side expansion:
 
-- namespace resolution
+- CSS namespace-prefix/default-namespace resolution beyond AE11's typed
+  element-namespace query
 - structural pseudo-class predicates
 - stateful pseudo-class predicates
 - scoped-tree or shadow-boundary semantics if Borrowser later grows them
@@ -254,7 +255,7 @@ Milestone Q does not implement:
 - selector invalidation
 - selector matching caches
 - traversal pruning heuristics
-- namespace-aware matching
+- CSS `@namespace` and namespace-selector syntax
 - pseudo-classes
 - functional pseudo-classes
 - pseudo-elements

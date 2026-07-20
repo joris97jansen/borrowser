@@ -16,7 +16,7 @@ fn runtime_applier_supports_aaa_furthest_block_reparenting_preserving_identity()
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "html".into(),
+                name: html::internal::html_name("html"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -25,7 +25,7 @@ fn runtime_applier_supports_aaa_furthest_block_reparenting_preserving_identity()
             },
             DomPatch::CreateElement {
                 key: PatchKey(3),
-                name: "head".into(),
+                name: html::internal::html_name("head"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -34,7 +34,7 @@ fn runtime_applier_supports_aaa_furthest_block_reparenting_preserving_identity()
             },
             DomPatch::CreateElement {
                 key: PatchKey(4),
-                name: "body".into(),
+                name: html::internal::html_name("body"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -43,7 +43,7 @@ fn runtime_applier_supports_aaa_furthest_block_reparenting_preserving_identity()
             },
             DomPatch::CreateElement {
                 key: PatchKey(5),
-                name: "a".into(),
+                name: html::internal::html_name("a"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -52,7 +52,7 @@ fn runtime_applier_supports_aaa_furthest_block_reparenting_preserving_identity()
             },
             DomPatch::CreateElement {
                 key: PatchKey(6),
-                name: "p".into(),
+                name: html::internal::html_name("p"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -73,7 +73,7 @@ fn runtime_applier_supports_aaa_furthest_block_reparenting_preserving_identity()
             },
             DomPatch::CreateElement {
                 key: PatchKey(8),
-                name: "a".into(),
+                name: html::internal::html_name("a"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -137,7 +137,7 @@ fn runtime_applier_supports_aaa_foster_parent_insert_before_preserving_identity(
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "html".into(),
+                name: html::internal::html_name("html"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -146,7 +146,7 @@ fn runtime_applier_supports_aaa_foster_parent_insert_before_preserving_identity(
             },
             DomPatch::CreateElement {
                 key: PatchKey(3),
-                name: "head".into(),
+                name: html::internal::html_name("head"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -155,7 +155,7 @@ fn runtime_applier_supports_aaa_foster_parent_insert_before_preserving_identity(
             },
             DomPatch::CreateElement {
                 key: PatchKey(4),
-                name: "body".into(),
+                name: html::internal::html_name("body"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -164,7 +164,7 @@ fn runtime_applier_supports_aaa_foster_parent_insert_before_preserving_identity(
             },
             DomPatch::CreateElement {
                 key: PatchKey(5),
-                name: "table".into(),
+                name: html::internal::html_name("table"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -173,7 +173,7 @@ fn runtime_applier_supports_aaa_foster_parent_insert_before_preserving_identity(
             },
             DomPatch::CreateElement {
                 key: PatchKey(6),
-                name: "a".into(),
+                name: html::internal::html_name("a"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -182,7 +182,7 @@ fn runtime_applier_supports_aaa_foster_parent_insert_before_preserving_identity(
             },
             DomPatch::CreateElement {
                 key: PatchKey(7),
-                name: "tr".into(),
+                name: html::internal::html_name("tr"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -204,7 +204,7 @@ fn runtime_applier_supports_aaa_foster_parent_insert_before_preserving_identity(
             },
             DomPatch::CreateElement {
                 key: PatchKey(9),
-                name: "a".into(),
+                name: html::internal::html_name("a"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {

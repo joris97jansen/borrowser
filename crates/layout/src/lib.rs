@@ -86,11 +86,11 @@ pub mod replaced;
 
 pub use box_kind::{BoxKind, ListMarker};
 pub use box_tree::{
-    AnonymousBoxKind, BlockFormattingParticipation, BoxGenerationRole, BoxId, BoxNode, BoxSource,
-    BoxSuppressionReason, BoxTree, ContainingBlockId, DisplayBoxBehavior, DisplayBoxGeneration,
-    FlexFormattingParticipation, FormattingContextId, FormattingContextKind,
-    InlineFormattingContextId, InlineFormattingParticipation, PositionedContainingBlockId,
-    PrincipalBox,
+    AnonymousBoxKind, BlockFormattingParticipation, BoxGenerationDecision, BoxGenerationRole,
+    BoxId, BoxNode, BoxSource, BoxSuppressionReason, BoxTree, ContainingBlockId,
+    DisplayBoxBehavior, DisplayBoxGeneration, FlexFormattingParticipation, FormattingContextId,
+    FormattingContextKind, InlineFormattingContextId, InlineFormattingParticipation,
+    PositionedContainingBlockId, PrincipalBox,
 };
 pub use document::{layout_block_tree, layout_document};
 pub use flex::{
@@ -111,7 +111,10 @@ pub use hit_test::{HitKind, hit_test};
 pub use inline::{LineBox, layout_inline_for_paint};
 pub use layout_box::LayoutBox;
 pub use phase::{LayoutPhaseInput, LayoutPhaseOutput};
-pub use replaced_element::{ReplacedElementInfoProvider, ReplacedKind};
+pub use replaced_element::{
+    ImagePresentation, ReplacedElementInfoProvider, ReplacedElementPresentation, ReplacedKind,
+    TextControlPresentation,
+};
 pub use retained::{
     RetainedLayoutArtifact, RetainedLayoutFallbackReason, RetainedLayoutFrameAction,
     RetainedLayoutFrameResult, RetainedLayoutKey, RetainedLayoutKeySeed,
@@ -134,4 +137,4 @@ pub(crate) use debug::{
     box_kind_debug_label, intrinsic_size_debug_label, list_marker_debug_label, node_debug_label,
     replaced_kind_debug_label,
 };
-pub(crate) use replaced_element::classify_replaced_kind;
+pub(crate) use replaced_element::{classify_replaced_kind, replaced_element_presentation};

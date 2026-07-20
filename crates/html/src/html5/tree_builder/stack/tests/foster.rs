@@ -10,8 +10,8 @@ fn foster_parenting_anchor_cache_survives_non_tracked_push_pop_churn() {
     let div = ctx.atoms.intern_ascii_folded("div").expect("atom");
     let mut stack = OpenElementsStack::default();
 
-    stack.push(OpenElement::new(PatchKey(1), tags.html));
-    stack.push(OpenElement::new(PatchKey(2), tags.table));
+    stack.push(OpenElement::new_html(PatchKey(1), tags.html));
+    stack.push(OpenElement::new_html(PatchKey(2), tags.table));
 
     let first = stack.foster_parenting_anchor_indices(tags.html, tags.table, tags.template);
     assert_eq!(
@@ -24,7 +24,7 @@ fn foster_parenting_anchor_cache_survives_non_tracked_push_pop_churn() {
     );
     assert_eq!(stack.foster_parenting_scan_calls(), 1);
 
-    stack.push(OpenElement::new(PatchKey(3), div));
+    stack.push(OpenElement::new_html(PatchKey(3), div));
     let _ = stack.pop();
 
     let second = stack.foster_parenting_anchor_indices(tags.html, tags.table, tags.template);

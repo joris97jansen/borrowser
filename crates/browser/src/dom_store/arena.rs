@@ -1,8 +1,8 @@
 use super::error::DomPatchError;
 use html::PatchKey;
 use html::internal::{Id, ParserCreatedFragmentKind};
+use html::{ExpandedElementName, ParserCreatedAttribute};
 use std::collections::{HashMap, HashSet};
-use std::sync::Arc;
 
 #[derive(Clone)]
 pub(crate) struct DomArena {
@@ -49,7 +49,7 @@ impl DomArena {
                         template_contents: Some(contents),
                         ..
                     } => {
-                        debug_assert_eq!(name.as_ref(), "template");
+                        debug_assert!(name.is(html::ElementNamespace::Html, "template"));
                         let &contents_index = self.live.get(contents).expect(
                             "arena invariant violated: template contents key missing from live set",
                         );
@@ -190,7 +190,7 @@ impl DomArena {
                 name,
                 template_contents: None,
                 ..
-            } if name.as_ref() == "template" => {}
+            } if name.is(html::ElementNamespace::Html, "template") => {}
             NodeKind::Element {
                 template_contents: Some(_),
                 ..
@@ -441,7 +441,7 @@ impl DomArena {
     pub(crate) fn set_attributes(
         &mut self,
         key: PatchKey,
-        attributes: &[(Arc<str>, Option<String>)],
+        attributes: &[ParserCreatedAttribute],
     ) -> Result<(), DomPatchError> {
         self.debug_check_invariants();
         let index = *self.live.get(&key).ok_or(DomPatchError::MissingKey(key))?;
@@ -632,8 +632,8 @@ pub(crate) enum NodeKind {
         system_id: Option<String>,
     },
     Element {
-        name: Arc<str>,
-        attributes: Vec<(Arc<str>, Option<String>)>,
+        name: ExpandedElementName,
+        attributes: Vec<ParserCreatedAttribute>,
         template_contents: Option<PatchKey>,
     },
     DocumentFragment {

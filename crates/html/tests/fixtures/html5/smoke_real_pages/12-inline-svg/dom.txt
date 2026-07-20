@@ -1,20 +1,20 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 
+#dom-snapshot-v2
 #document
-
   <!doctype html>
-  <html>
-    <head>
-      <title>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+      element ns=html local="title" attrs=[]
         "Icon test"
-    <body>
+    element ns=html local="body" attrs=[]
       "\n"
-      <h1>
+      element ns=html local="h1" attrs=[]
         "Status"
       "\n"
-      <svg viewbox="0 0 10 10">
-        <circle cx="5" cy="5" r="4">
+      element ns=svg local="svg" attrs=[{ns=none prefix=- local="viewBox" value="0 0 10 10"}]
+        element ns=svg local="circle" attrs=[{ns=none prefix=- local="cx" value="5"}, {ns=none prefix=- local="cy" value="5"}, {ns=none prefix=- local="r" value="4"}]
       "\n"
-      <p>
+      element ns=html local="p" attrs=[]
         "All systems operational."
       "\n"

@@ -5,14 +5,45 @@ use crate::dom_patch::DomPatch;
 use crate::html5::shared::{DocumentParseContext, Token};
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderConfig};
 
-#[derive(Debug, PartialEq, Eq)]
+#[derive(Debug)]
 struct SelectRun {
     patches: Vec<DomPatch>,
     errors: Vec<&'static str>,
     state: crate::html5::tree_builder::api::TreeBuilderStateSnapshot,
+    open_element_local_names: Vec<String>,
     witness: crate::html5::tree_builder::TreeBuilderProgressWitness,
     dom: Vec<String>,
 }
+
+impl PartialEq for SelectRun {
+    fn eq(&self, other: &Self) -> bool {
+        let left = &self.state;
+        let right = &other.state;
+        self.patches == other.patches
+            && self.errors == other.errors
+            && self.open_element_local_names == other.open_element_local_names
+            && self.witness == other.witness
+            && self.dom == other.dom
+            && left.insertion_mode == right.insertion_mode
+            && left.original_insertion_mode == right.original_insertion_mode
+            && left.table_text_original_insertion_mode == right.table_text_original_insertion_mode
+            && left.active_text_mode == right.active_text_mode
+            && left.form_element_pointer == right.form_element_pointer
+            && left.pending_textarea_initial_lf == right.pending_textarea_initial_lf
+            && left.head_element_pointer == right.head_element_pointer
+            && left.template_modes == right.template_modes
+            && left.active_formatting_entries == right.active_formatting_entries
+            && left.open_element_keys == right.open_element_keys
+            && left.current_table_key == right.current_table_key
+            && left.pending_table_character_tokens == right.pending_table_character_tokens
+            && left.pending_table_character_tokens_contains_non_space
+                == right.pending_table_character_tokens_contains_non_space
+            && left.quirks_mode == right.quirks_mode
+            && left.frameset_ok == right.frameset_ok
+    }
+}
+
+impl Eq for SelectRun {}
 
 fn in_body_builder() -> (Html5TreeBuilder, DocumentParseContext, EmptyResolver) {
     let mut ctx = DocumentParseContext::new();
@@ -56,6 +87,7 @@ fn run_select_chunks(chunks: &[&str]) -> SelectRun {
     for chunk in chunks {
         input.push_str(chunk);
         loop {
+            builder.prepare_tokenizer_pump(&mut tokenizer);
             let result = tokenizer.push_input_until_token(&mut input, &mut ctx);
             let batch = tokenizer.next_batch(&mut input);
             if batch.tokens().is_empty() {
@@ -94,6 +126,11 @@ fn run_select_chunks(chunks: &[&str]) -> SelectRun {
     }
 
     let state = builder.state_snapshot();
+    let open_element_local_names = state
+        .open_element_names
+        .iter()
+        .map(|name| ctx.atoms.resolve(*name).expect("live SOE atom").to_owned())
+        .collect();
     let witness = builder.progress_witness();
     let errors = builder.take_parse_error_kinds_for_test();
     let patches = builder.drain_patches();
@@ -104,6 +141,7 @@ fn run_select_chunks(chunks: &[&str]) -> SelectRun {
         patches,
         errors,
         state,
+        open_element_local_names,
         witness,
         dom,
     }
@@ -218,7 +256,7 @@ fn nested_select_recovery_closes_existing_select_and_inserts_no_replacement() {
     assert_eq!(
         patches
             .iter()
-            .filter(|patch| matches!(patch, DomPatch::CreateElement { name, .. } if name.as_ref() == "select"))
+            .filter(|patch| matches!(patch, DomPatch::CreateElement { name, .. } if name.is_html("select")))
             .count(),
         1
     );
@@ -399,7 +437,7 @@ fn input_closes_select_before_reconstruction_and_void_insertion() {
     );
     let patches = builder.drain_patches();
     assert!(patches.iter().any(
-        |patch| matches!(patch, DomPatch::CreateElement { name, .. } if name.as_ref() == "input")
+        |patch| matches!(patch, DomPatch::CreateElement { name, .. } if name.is_html("input"))
     ));
     assert!(
         patches
@@ -515,14 +553,15 @@ fn fostered_select_keeps_later_option_as_its_child() {
     assert_eq!(
         materialized_dom_lines(&[input]),
         vec![
+            "#dom-snapshot-v2",
             "#document",
-            "  <html>",
-            "    <head>",
-            "    <body>",
-            "      <select>",
-            "        <option>",
+            "  element ns=html local=\"html\" attrs=[]",
+            "    element ns=html local=\"head\" attrs=[]",
+            "    element ns=html local=\"body\" attrs=[]",
+            "      element ns=html local=\"select\" attrs=[]",
+            "        element ns=html local=\"option\" attrs=[]",
             "          \"3\"",
-            "      <table>",
+            "      element ns=html local=\"table\" attrs=[]",
         ]
     );
     let patches = run_tree_builder_chunks(&[input]);
@@ -546,13 +585,14 @@ fn table_token_while_select_is_open_uses_existing_stack_clearing_and_reprocessin
     assert_eq!(
         materialized_dom_lines(&[input]),
         vec![
+            "#dom-snapshot-v2",
             "#document",
-            "  <html>",
-            "    <head>",
-            "    <body>",
-            "      <select>",
-            "      <table>",
-            "      <table>",
+            "  element ns=html local=\"html\" attrs=[]",
+            "    element ns=html local=\"head\" attrs=[]",
+            "    element ns=html local=\"body\" attrs=[]",
+            "      element ns=html local=\"select\" attrs=[]",
+            "      element ns=html local=\"table\" attrs=[]",
+            "      element ns=html local=\"table\" attrs=[]",
         ]
     );
     let patches = run_tree_builder_chunks(&[input]);
@@ -567,17 +607,18 @@ fn table_token_while_select_is_open_uses_existing_stack_clearing_and_reprocessin
 fn row_recovery_while_option_and_select_are_open_preserves_upstream_tree() {
     let input = "<table><select><option>A<tr><td>B</td></tr></table>";
     let expected = vec![
+        "#dom-snapshot-v2",
         "#document",
-        "  <html>",
-        "    <head>",
-        "    <body>",
-        "      <select>",
-        "        <option>",
+        "  element ns=html local=\"html\" attrs=[]",
+        "    element ns=html local=\"head\" attrs=[]",
+        "    element ns=html local=\"body\" attrs=[]",
+        "      element ns=html local=\"select\" attrs=[]",
+        "        element ns=html local=\"option\" attrs=[]",
         "          \"A\"",
-        "      <table>",
-        "        <tbody>",
-        "          <tr>",
-        "            <td>",
+        "      element ns=html local=\"table\" attrs=[]",
+        "        element ns=html local=\"tbody\" attrs=[]",
+        "          element ns=html local=\"tr\" attrs=[]",
+        "            element ns=html local=\"td\" attrs=[]",
         "              \"B\"",
     ];
     assert_eq!(materialized_dom_lines(&[input]), expected);
@@ -593,14 +634,15 @@ fn input_table_paths_keep_hidden_direct_in_table_distinct_from_in_body_recovery(
     assert_eq!(
         materialized_dom_lines(&["<table><select><input type=hidden>X</select></table>"]),
         vec![
+            "#dom-snapshot-v2",
             "#document",
-            "  <html>",
-            "    <head>",
-            "    <body>",
-            "      <select>",
-            "        <input type=\"hidden\">",
+            "  element ns=html local=\"html\" attrs=[]",
+            "    element ns=html local=\"head\" attrs=[]",
+            "    element ns=html local=\"body\" attrs=[]",
+            "      element ns=html local=\"select\" attrs=[]",
+            "        element ns=html local=\"input\" attrs=[{ns=none prefix=- local=\"type\" value=\"hidden\"}]",
             "        \"X\"",
-            "      <table>",
+            "      element ns=html local=\"table\" attrs=[]",
         ],
         "the dedicated direct-InTable hidden input branch must not use select-aware InBody closure"
     );
@@ -612,14 +654,15 @@ fn input_table_paths_keep_hidden_direct_in_table_distinct_from_in_body_recovery(
     assert_eq!(
         dom,
         vec![
+            "#dom-snapshot-v2",
             "#document",
-            "  <html>",
-            "    <head>",
-            "    <body>",
-            "      <select>",
-            "      <input>",
+            "  element ns=html local=\"html\" attrs=[]",
+            "    element ns=html local=\"head\" attrs=[]",
+            "    element ns=html local=\"body\" attrs=[]",
+            "      element ns=html local=\"select\" attrs=[]",
+            "      element ns=html local=\"input\" attrs=[]",
             "      \"X\"",
-            "      <table>",
+            "      element ns=html local=\"table\" attrs=[]",
         ]
     );
     assert!(
@@ -637,18 +680,19 @@ fn select_aware_input_inside_table_cell_uses_ordinary_in_body_parenting() {
     assert_eq!(
         materialized_dom_lines(&["<table><tr><td><select><option>A<input>B</td></tr></table>",]),
         vec![
+            "#dom-snapshot-v2",
             "#document",
-            "  <html>",
-            "    <head>",
-            "    <body>",
-            "      <table>",
-            "        <tbody>",
-            "          <tr>",
-            "            <td>",
-            "              <select>",
-            "                <option>",
+            "  element ns=html local=\"html\" attrs=[]",
+            "    element ns=html local=\"head\" attrs=[]",
+            "    element ns=html local=\"body\" attrs=[]",
+            "      element ns=html local=\"table\" attrs=[]",
+            "        element ns=html local=\"tbody\" attrs=[]",
+            "          element ns=html local=\"tr\" attrs=[]",
+            "            element ns=html local=\"td\" attrs=[]",
+            "              element ns=html local=\"select\" attrs=[]",
+            "                element ns=html local=\"option\" attrs=[]",
             "                  \"A\"",
-            "              <input>",
+            "              element ns=html local=\"input\" attrs=[]",
             "              \"B\"",
         ]
     );

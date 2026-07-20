@@ -1,13 +1,15 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 # status: active
 # include_parse_errors: true
+
+#dom-snapshot-v2
 #document
   <!-- before -->
   <!doctype html>
-  <html>
-    <head>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
       <!-- head -->
-    <body>
+    element ns=html local="body" attrs=[]
       <!-- body -->
     <!-- after-body -->
   <!-- after-html -->

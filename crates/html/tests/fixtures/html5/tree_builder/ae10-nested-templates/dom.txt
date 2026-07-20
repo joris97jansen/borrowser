@@ -1,14 +1,16 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 # status: active
+
+#dom-snapshot-v2
 #document
   <!doctype html>
-  <html>
-    <head>
-    <body>
-      <template>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=html local="template" attrs=[]
         #template-contents
           "outer"
-          <template>
+          element ns=html local="template" attrs=[]
             #template-contents
-              <b>
+              element ns=html local="b" attrs=[]
                 "inner"

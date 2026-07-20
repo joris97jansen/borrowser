@@ -1,4 +1,5 @@
 use super::attributes::class_list_contains;
+use html::ElementNamespace;
 use std::fmt::Debug;
 use std::hash::Hash;
 
@@ -35,6 +36,8 @@ pub trait SelectorMatchDom {
     /// this means lowercase ASCII tag names produced by the HTML atomization
     /// path.
     fn element_name(&self, element: Self::ElementId) -> &str;
+
+    fn element_namespace(&self, element: Self::ElementId) -> ElementNamespace;
 
     /// Returns whether the element exposes an attribute with `name`.
     ///

@@ -86,10 +86,42 @@ pub(in crate::html5::tree_builder) struct KnownTagIds {
     pub(in crate::html5::tree_builder) ul: AtomId,
     pub(in crate::html5::tree_builder) li: AtomId,
     pub(in crate::html5::tree_builder) tr: AtomId,
+    pub(in crate::html5::tree_builder) svg: AtomId,
+    pub(in crate::html5::tree_builder) math: AtomId,
+    pub(in crate::html5::tree_builder) mi: AtomId,
+    pub(in crate::html5::tree_builder) mo: AtomId,
+    pub(in crate::html5::tree_builder) mn: AtomId,
+    pub(in crate::html5::tree_builder) ms: AtomId,
+    pub(in crate::html5::tree_builder) mtext: AtomId,
+    pub(in crate::html5::tree_builder) annotation_xml: AtomId,
+    pub(in crate::html5::tree_builder) desc: AtomId,
+    pub(in crate::html5::tree_builder) foreign_object: AtomId,
 }
 
 impl KnownTagIds {
     pub(in crate::html5::tree_builder) fn intern(atoms: &mut AtomTable) -> Result<Self, AtomError> {
+        for &(_, adjusted) in &crate::html5::tree_builder::foreign::SVG_TAG_NAME_ADJUSTMENTS {
+            let _ = atoms.intern_exact(adjusted)?;
+        }
+        for &(_, adjusted) in &crate::html5::tree_builder::foreign::SVG_ATTRIBUTE_ADJUSTMENTS {
+            let _ = atoms.intern_exact(adjusted)?;
+        }
+        for local in [
+            "definitionURL",
+            "actuate",
+            "arcrole",
+            "href",
+            "role",
+            "show",
+            "title",
+            "type",
+            "lang",
+            "space",
+            "xmlns",
+            "xlink",
+        ] {
+            let _ = atoms.intern_exact(local)?;
+        }
         Ok(Self {
             a: atoms.intern_ascii_folded("a")?,
             address: atoms.intern_ascii_folded("address")?,
@@ -166,6 +198,16 @@ impl KnownTagIds {
             ul: atoms.intern_ascii_folded("ul")?,
             li: atoms.intern_ascii_folded("li")?,
             tr: atoms.intern_ascii_folded("tr")?,
+            svg: atoms.intern_ascii_folded("svg")?,
+            math: atoms.intern_ascii_folded("math")?,
+            mi: atoms.intern_ascii_folded("mi")?,
+            mo: atoms.intern_ascii_folded("mo")?,
+            mn: atoms.intern_ascii_folded("mn")?,
+            ms: atoms.intern_ascii_folded("ms")?,
+            mtext: atoms.intern_ascii_folded("mtext")?,
+            annotation_xml: atoms.intern_ascii_folded("annotation-xml")?,
+            desc: atoms.intern_ascii_folded("desc")?,
+            foreign_object: atoms.intern_exact("foreignObject")?,
         })
     }
 
@@ -269,6 +311,15 @@ impl KnownTagIds {
             button: self.button,
             ol: self.ol,
             ul: self.ul,
+            math_mi: self.mi,
+            math_mo: self.mo,
+            math_mn: self.mn,
+            math_ms: self.ms,
+            math_mtext: self.mtext,
+            math_annotation_xml: self.annotation_xml,
+            svg_foreign_object: self.foreign_object,
+            svg_desc: self.desc,
+            svg_title: self.title,
         }
     }
 }

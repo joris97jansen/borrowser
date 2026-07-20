@@ -4,6 +4,7 @@ use html::{Node, internal};
 fn main() {
     let template = internal::template_element_from_parts(
         Id(1),
+        internal::html_name("template"),
         Vec::new(),
         Vec::new(),
         Id(2),
@@ -15,7 +16,7 @@ fn main() {
     );
 
     let host = template.element().expect("template host");
-    assert_eq!(host.name().as_ref(), "template");
+    assert_eq!(host.name(), "template");
     assert!(host.children().is_empty());
     let contents = internal::template_contents(&template).expect("typed contents association");
     assert_eq!(internal::fragment_id(contents), Id(2));

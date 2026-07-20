@@ -36,7 +36,7 @@ impl PipelineFuzzDigest {
         match control {
             TokenizerControl::EnterTextMode(spec) => {
                 self.push_u8(1);
-                self.push_u32(spec.end_tag_name.0);
+                self.push_u32(spec.end_tag_name.index());
                 self.push_u8(match spec.kind {
                     TextModeKind::RawText => 1,
                     TextModeKind::Rcdata => 2,
@@ -79,11 +79,14 @@ impl PipelineFuzzDigest {
                 } => {
                     self.push_u8(12);
                     self.push_u32(key.0);
-                    self.push_str(name);
+                    self.push_str(name.namespace().snapshot_name());
+                    self.push_str(name.local_name_str());
                     self.push_usize(attributes.len());
-                    for (name, value) in attributes {
-                        self.push_str(name);
-                        self.push_opt_str(value.as_deref());
+                    for attribute in attributes {
+                        self.push_str(attribute.namespace().snapshot_name());
+                        self.push_opt_str(attribute.prefix());
+                        self.push_str(attribute.local_name());
+                        self.push_str(attribute.value());
                     }
                 }
                 DomPatch::CreateTemplateContents { host, contents } => {
@@ -124,9 +127,11 @@ impl PipelineFuzzDigest {
                     self.push_u8(18);
                     self.push_u32(key.0);
                     self.push_usize(attributes.len());
-                    for (name, value) in attributes {
-                        self.push_str(name);
-                        self.push_opt_str(value.as_deref());
+                    for attribute in attributes {
+                        self.push_str(attribute.namespace().snapshot_name());
+                        self.push_opt_str(attribute.prefix());
+                        self.push_str(attribute.local_name());
+                        self.push_str(attribute.value());
                     }
                 }
                 DomPatch::SetText { key, text } => {

@@ -71,25 +71,24 @@ Future public DOM API exposure of `DocumentType` remains out of scope.
 
 ## Element And Attribute Representation
 
-Parser-created element names are normalized by the tokenizer/tree-builder path
-before element creation and stored as `Arc<str>`.
+Every parser-created element stores an `ExpandedElementName` consisting of a
+typed `ElementNamespace` and an interned, exact local name. The document-owned
+`NameInterner` ASCII-folds HTML-tokenized input where required and retains
+canonical mixed-case SVG adjustments and unknown foreign names exactly.
 
-Parser-created attributes are stored as `Vec<(Arc<str>, Option<String>)>` with
-these rules:
+Parser-created attributes are an ordered `Vec<ParserCreatedAttribute>`. Each
+entry stores a valid-by-construction `QualifiedAttributeName` (namespace,
+canonical prefix shape, and exact local name) plus a `String` value. Valueless
+syntax and explicit empty syntax both have DOM value `""`; source spelling is
+not DOM state. Tokenizer duplicate removal is first-wins. Foreign adjustment
+then performs deterministic first-wins hardening for synthetic collisions by
+expanded attribute name without adding a non-standard HTML parse error.
 
-- attribute names are tokenizer-normalized before storage;
-- duplicate attributes use first-wins semantics by normalized attribute name;
-- duplicate removal happens before downstream CSS/runtime consumers and before
-  snapshot serialization;
-- stored attributes preserve first-wins encounter order after duplicate
-  removal;
-- `None` represents a missing attribute value, such as `disabled`;
-- `Some("")` represents an explicitly empty value, such as `disabled=""`;
-- the missing-vs-empty distinction is deliberately preserved.
-
-DOM snapshots may emit attributes in deterministic lexical order for stable
-regression diffs. Snapshot ordering is not the canonicalization mechanism and
-must not be the only duplicate-removal enforcement point.
+The stored first-surviving encounter order is preserved through the live tree,
+patches, `DomStore`, materialization, structural comparison, and snapshots.
+Snapshots never sort the DOM attribute list. Noah's Ark/parser semantic
+attribute equality is a separate order-insensitive comparison over
+`(namespace, local name, value)`; prefixes do not participate there.
 
 ## Tree Invariants
 

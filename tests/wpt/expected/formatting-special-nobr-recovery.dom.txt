@@ -1,10 +1,12 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
+
+#dom-snapshot-v2
 #document
   <!doctype html>
-  <html>
-    <head>
-    <body>
-      <nobr>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=html local="nobr" attrs=[]
         "one"
-      <nobr>
+      element ns=html local="nobr" attrs=[]
         "two\n"

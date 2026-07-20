@@ -1,57 +1,58 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 
+#dom-snapshot-v2
 #document
   <!doctype html>
-  <html>
-    <head>
-      <title>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+      element ns=html local="title" attrs=[]
         "River Delta"
-    <body>
+    element ns=html local="body" attrs=[]
       "\n"
-      <table class="infobox">
+      element ns=html local="table" attrs=[{ns=none prefix=- local="class" value="infobox"}]
         "\n  "
-        <tbody>
-          <tr>
-            <th colspan="2">
+        element ns=html local="tbody" attrs=[]
+          element ns=html local="tr" attrs=[]
+            element ns=html local="th" attrs=[{ns=none prefix=- local="colspan" value="2"}]
               "River Delta"
           "\n  "
-          <tr>
-            <td>
+          element ns=html local="tr" attrs=[]
+            element ns=html local="td" attrs=[]
               "Length"
-            <td>
+            element ns=html local="td" attrs=[]
               "320 km"
           "\n  "
-          <tr>
-            <td>
+          element ns=html local="tr" attrs=[]
+            element ns=html local="td" attrs=[]
               "Basin"
-            <td>
+            element ns=html local="td" attrs=[]
               "14,200 km2"
           "\n"
       "\n"
-      <p>
+      element ns=html local="p" attrs=[]
         "The River Delta is a coastal delta system with extensive wetlands."
       "\n"
-      <table class="wikitable">
+      element ns=html local="table" attrs=[{ns=none prefix=- local="class" value="wikitable"}]
         "\n  "
-        <thead>
-          <tr>
-            <th>
+        element ns=html local="thead" attrs=[]
+          element ns=html local="tr" attrs=[]
+            element ns=html local="th" attrs=[]
               "Year"
-            <th>
+            element ns=html local="th" attrs=[]
               "Population"
         "\n  "
-        <tbody>
+        element ns=html local="tbody" attrs=[]
           "\n    "
-          <tr>
-            <td>
+          element ns=html local="tr" attrs=[]
+            element ns=html local="td" attrs=[]
               "1990"
-            <td>
+            element ns=html local="td" attrs=[]
               "120000"
           "\n    "
-          <tr>
-            <td>
+          element ns=html local="tr" attrs=[]
+            element ns=html local="td" attrs=[]
               "2020"
-            <td>
+            element ns=html local="td" attrs=[]
               "175000"
           "\n  "
         "\n"

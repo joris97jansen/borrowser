@@ -1,33 +1,33 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 
+#dom-snapshot-v2
 #document
-
   <!doctype html>
-  <html>
-    <head>
-      <title>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+      element ns=html local="title" attrs=[]
         "Trail Shoes"
-    <body>
+    element ns=html local="body" attrs=[]
       "\n"
-      <main>
+      element ns=html local="main" attrs=[]
         "\n"
-        <h1>
+        element ns=html local="h1" attrs=[]
           "Summit Runner"
         "\n"
-        <img alt="shoe" src="shoe.jpg">
+        element ns=html local="img" attrs=[{ns=none prefix=- local="src" value="shoe.jpg"}, {ns=none prefix=- local="alt" value="shoe"}]
         "\n"
-        <p class="price">
+        element ns=html local="p" attrs=[{ns=none prefix=- local="class" value="price"}]
           "$129"
         "\n"
-        <form>
-          <label>
+        element ns=html local="form" attrs=[]
+          element ns=html local="label" attrs=[]
             "Size"
-            <select>
-              <option>
+            element ns=html local="select" attrs=[]
+              element ns=html local="option" attrs=[]
                 "40"
-              <option>
+              element ns=html local="option" attrs=[]
                 "41"
-          <button>
+          element ns=html local="button" attrs=[]
             "Add to cart"
         "\n"
       "\n"

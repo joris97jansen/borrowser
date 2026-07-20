@@ -3,25 +3,62 @@ use crate::form_controls::index::RadioGroupKey;
 use super::*;
 use gfx::input::InputValueStore;
 use html::{Node, internal::Id};
-use std::sync::Arc;
 
-fn elem(
+fn elem(id: u32, name: &str, attributes: Vec<(&str, Option<&str>)>, children: Vec<Node>) -> Node {
+    namespaced_elem(id, html::ElementNamespace::Html, name, attributes, children)
+}
+
+fn namespaced_elem(
     id: u32,
+    namespace: html::ElementNamespace,
     name: &str,
-    attributes: Vec<(Arc<str>, Option<String>)>,
+    attributes: Vec<(&str, Option<&str>)>,
     children: Vec<Node>,
 ) -> Node {
     html::internal::node_element_from_parts(
         Id(id),
-        Arc::from(name),
-        attributes,
+        html::internal::expanded_name(namespace, name),
+        attributes
+            .into_iter()
+            .map(|(name, value)| {
+                html::internal::unqualified_attribute(name, value.unwrap_or_default())
+            })
+            .collect(),
         Vec::new(),
         children,
     )
 }
 
-fn input(id: u32, ty: &str, extra_attrs: Vec<(Arc<str>, Option<String>)>) -> Node {
-    let mut attributes = vec![(Arc::from("type"), Some(ty.to_string()))];
+#[test]
+fn foreign_input_and_textarea_lookalikes_do_not_seed_form_control_state() {
+    let dom = doc(vec![
+        namespaced_elem(
+            1,
+            html::ElementNamespace::Svg,
+            "input",
+            vec![("value", Some("foreign")), ("checked", None)],
+            Vec::new(),
+        ),
+        namespaced_elem(
+            2,
+            html::ElementNamespace::MathMl,
+            "textarea",
+            Vec::new(),
+            vec![text(3, "foreign")],
+        ),
+        input(4, "text", vec![("value", Some("html"))]),
+    ]);
+    let mut store = InputValueStore::new();
+    let _ = seed_input_state_from_dom(&mut store, &dom);
+
+    assert!(!store.has(Id(1)));
+    assert!(!store.is_checked(Id(1)));
+    assert!(!store.has(Id(2)));
+    assert_eq!(store.get(Id(4)), Some("html"));
+}
+
+fn input<'a>(id: u32, ty: &'a str, extra_attrs: Vec<(&'a str, Option<&'a str>)>) -> Node {
+    let mut attributes = vec![("type", Some(ty))];
     attributes.extend(extra_attrs);
     elem(id, "input", attributes, Vec::new())
 }
@@ -42,10 +79,10 @@ fn text(id: u32, text: &str) -> Node {
 }
 
 fn find_element<'a>(node: &'a Node, name: &str) -> Option<&'a Node> {
-    if node
-        .element()
-        .is_some_and(|element| element.name().eq_ignore_ascii_case(name))
-    {
+    if node.element().is_some_and(|element| {
+        element.namespace() == html::ElementNamespace::Html
+            && element.name().eq_ignore_ascii_case(name)
+    }) {
         return Some(node);
     }
     node.children()?
@@ -57,14 +94,11 @@ fn find_element<'a>(node: &'a Node, name: &str) -> Option<&'a Node> {
 fn parser_created_template_contents_do_not_initialize_form_controls() {
     let template = html::internal::template_element_from_parts(
         Id(1),
+        html::internal::html_name("template"),
         Vec::new(),
         Vec::new(),
         Id(2),
-        vec![input(
-            3,
-            "text",
-            vec![(Arc::from("value"), Some("inert".to_string()))],
-        )],
+        vec![input(3, "text", vec![("value", Some("inert"))])],
         Vec::new(),
     );
     let dom = doc(vec![template, input(4, "text", Vec::new())]);
@@ -83,7 +117,7 @@ fn seeds_checkbox_checked_state() {
         "div",
         Vec::new(),
         vec![
-            input(2, "checkbox", vec![(Arc::from("checked"), None)]),
+            input(2, "checkbox", vec![("checked", None)]),
             input(3, "checkbox", Vec::new()),
         ],
     )]);
@@ -102,22 +136,8 @@ fn seeds_radio_groups_exclusive_within_same_parent() {
         "div",
         Vec::new(),
         vec![
-            input(
-                2,
-                "radio",
-                vec![
-                    (Arc::from("name"), Some("g".to_string())),
-                    (Arc::from("checked"), None),
-                ],
-            ),
-            input(
-                3,
-                "radio",
-                vec![
-                    (Arc::from("name"), Some("g".to_string())),
-                    (Arc::from("checked"), None),
-                ],
-            ),
+            input(2, "radio", vec![("name", Some("g")), ("checked", None)]),
+            input(3, "radio", vec![("name", Some("g")), ("checked", None)]),
         ],
     )]);
 
@@ -138,10 +158,7 @@ fn seeds_radio_groups_exclusive_across_sibling_containers() {
             vec![input(
                 2,
                 "radio",
-                vec![
-                    (Arc::from("name"), Some("g".to_string())),
-                    (Arc::from("checked"), None),
-                ],
+                vec![("name", Some("g")), ("checked", None)],
             )],
         ),
         elem(
@@ -151,10 +168,7 @@ fn seeds_radio_groups_exclusive_across_sibling_containers() {
             vec![input(
                 4,
                 "radio",
-                vec![
-                    (Arc::from("name"), Some("g".to_string())),
-                    (Arc::from("checked"), None),
-                ],
+                vec![("name", Some("g")), ("checked", None)],
             )],
         ),
     ]);
@@ -182,10 +196,7 @@ fn seeds_radio_groups_are_scoped_per_form() {
             vec![input(
                 2,
                 "radio",
-                vec![
-                    (Arc::from("name"), Some("g".to_string())),
-                    (Arc::from("checked"), None),
-                ],
+                vec![("name", Some("g")), ("checked", None)],
             )],
         ),
         elem(
@@ -195,10 +206,7 @@ fn seeds_radio_groups_are_scoped_per_form() {
             vec![input(
                 4,
                 "radio",
-                vec![
-                    (Arc::from("name"), Some("g".to_string())),
-                    (Arc::from("checked"), None),
-                ],
+                vec![("name", Some("g")), ("checked", None)],
             )],
         ),
     ]);
@@ -220,29 +228,15 @@ fn seeds_radio_groups_are_scoped_per_form() {
 fn radios_outside_form_do_not_conflict_with_radios_inside_form() {
     let dom = doc(vec![
         // outside form
-        input(
-            1,
-            "radio",
-            vec![
-                (Arc::from("name"), Some("g".to_string())),
-                (Arc::from("checked"), None),
-            ],
-        ),
+        input(1, "radio", vec![("name", Some("g")), ("checked", None)]),
         // inside form
         elem(
             2,
             "form",
             Vec::new(),
             vec![
-                input(3, "radio", vec![(Arc::from("name"), Some("g".to_string()))]),
-                input(
-                    4,
-                    "radio",
-                    vec![
-                        (Arc::from("name"), Some("g".to_string())),
-                        (Arc::from("checked"), None),
-                    ],
-                ),
+                input(3, "radio", vec![("name", Some("g"))]),
+                input(4, "radio", vec![("name", Some("g")), ("checked", None)]),
             ],
         ),
     ]);
@@ -269,15 +263,8 @@ fn stored_radio_selection_overrides_html_defaults() {
         "div",
         Vec::new(),
         vec![
-            input(
-                2,
-                "radio",
-                vec![
-                    (Arc::from("name"), Some("g".to_string())),
-                    (Arc::from("checked"), None),
-                ],
-            ),
-            input(3, "radio", vec![(Arc::from("name"), Some("g".to_string()))]),
+            input(2, "radio", vec![("name", Some("g")), ("checked", None)]),
+            input(3, "radio", vec![("name", Some("g"))]),
         ],
     )]);
 
@@ -297,8 +284,8 @@ fn stored_duplicate_checked_radios_keep_first_in_dom_order() {
         "div",
         Vec::new(),
         vec![
-            input(2, "radio", vec![(Arc::from("name"), Some("g".to_string()))]),
-            input(3, "radio", vec![(Arc::from("name"), Some("g".to_string()))]),
+            input(2, "radio", vec![("name", Some("g"))]),
+            input(3, "radio", vec![("name", Some("g"))]),
         ],
     )]);
 
@@ -319,8 +306,8 @@ fn click_radio_unchecks_siblings_in_same_parent_group() {
         "div",
         Vec::new(),
         vec![
-            input(2, "radio", vec![(Arc::from("name"), Some("g".to_string()))]),
-            input(3, "radio", vec![(Arc::from("name"), Some("g".to_string()))]),
+            input(2, "radio", vec![("name", Some("g"))]),
+            input(3, "radio", vec![("name", Some("g"))]),
         ],
     )]);
 
@@ -343,22 +330,8 @@ fn radio_group_name_matching_is_case_sensitive() {
         "div",
         Vec::new(),
         vec![
-            input(
-                2,
-                "radio",
-                vec![
-                    (Arc::from("name"), Some("group".to_string())),
-                    (Arc::from("checked"), None),
-                ],
-            ),
-            input(
-                3,
-                "radio",
-                vec![
-                    (Arc::from("name"), Some("Group".to_string())),
-                    (Arc::from("checked"), None),
-                ],
-            ),
+            input(2, "radio", vec![("name", Some("group")), ("checked", None)]),
+            input(3, "radio", vec![("name", Some("Group")), ("checked", None)]),
         ],
     )]);
 

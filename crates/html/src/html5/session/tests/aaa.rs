@@ -29,15 +29,16 @@ fn session_integrated_aaa_misnested_formatting_is_chunk_equivalent() {
         let whole_lines = crate::html5::serialize_dom_for_test(&whole_dom);
         let chunked_lines = crate::html5::serialize_dom_for_test(&chunked_dom);
         let expected_lines = vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <b>".to_string(),
-            "        <i>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"b\" attrs=[]".to_string(),
+            "        element ns=html local=\"i\" attrs=[]".to_string(),
             "          \"one\"".to_string(),
-            "      <i>".to_string(),
+            "      element ns=html local=\"i\" attrs=[]".to_string(),
             "        \"two\"".to_string(),
         ];
 
@@ -98,14 +99,15 @@ fn session_aaa_furthest_block_reparenting_is_chunk_equivalent() {
                 .expect("chunked AAA furthest-block patches should materialize");
 
         let expected_lines = vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <a>".to_string(),
-            "      <p>".to_string(),
-            "        <a>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"a\" attrs=[]".to_string(),
+            "      element ns=html local=\"p\" attrs=[]".to_string(),
+            "        element ns=html local=\"a\" attrs=[]".to_string(),
             "          \"one\"".to_string(),
         ];
 
@@ -176,17 +178,18 @@ fn session_aaa_foster_parent_insert_before_is_chunk_equivalent() {
                 .expect("chunked AAA foster-parent patches should materialize");
 
         let expected_lines = vec![
+            "#dom-snapshot-v2".to_string(),
             "#document".to_string(),
             "  <!doctype html>".to_string(),
-            "  <html>".to_string(),
-            "    <head>".to_string(),
-            "    <body>".to_string(),
-            "      <a>".to_string(),
-            "      <a>".to_string(),
+            "  element ns=html local=\"html\" attrs=[]".to_string(),
+            "    element ns=html local=\"head\" attrs=[]".to_string(),
+            "    element ns=html local=\"body\" attrs=[]".to_string(),
+            "      element ns=html local=\"a\" attrs=[]".to_string(),
+            "      element ns=html local=\"a\" attrs=[]".to_string(),
             "        \"x\"".to_string(),
-            "      <table>".to_string(),
-            "        <tbody>".to_string(),
-            "          <tr>".to_string(),
+            "      element ns=html local=\"table\" attrs=[]".to_string(),
+            "        element ns=html local=\"tbody\" attrs=[]".to_string(),
+            "          element ns=html local=\"tr\" attrs=[]".to_string(),
         ];
 
         assert_eq!(

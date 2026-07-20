@@ -3,11 +3,11 @@
 Each fixture directory contains:
 
 - `input.html`: source HTML.
-- `patches.txt`: expected patch stream in `html5-dompatch-v1`.
+- `patches.txt`: expected patch stream in `html5-dompatch-v2`.
 
 `patches.txt` headers:
 
-- `# format: html5-dompatch-v1` (required)
+- `# format: html5-dompatch-v2` (required)
 - `# status: active | xfail` (optional, default `active`)
 - `# reason: ...` (required for `xfail`)
 

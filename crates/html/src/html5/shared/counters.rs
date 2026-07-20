@@ -27,6 +27,11 @@ pub struct Counters {
     pub soe_scope_scan_calls: u64,
     /// Total SOE elements visited while evaluating in-scope scans.
     pub soe_scope_scan_steps: u64,
+    pub soe_name_count_lookup_calls: u64,
+    pub soe_name_count_lookup_steps: u64,
+    pub soe_name_count_update_calls: u64,
+    pub soe_name_count_update_steps: u64,
+    pub soe_distinct_name_high_water: u32,
     /// Total patches emitted by the tree builder.
     pub tree_builder_patches_emitted: u64,
     /// Number of text-node creation patches emitted.

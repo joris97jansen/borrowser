@@ -129,3 +129,10 @@ The layout crate tests cover:
 - unsupported display keyword fallback before layout
 - deterministic `BoxTree::to_debug_snapshot()` output including
   display-behavior labels
+
+AE11 applies one namespace policy before display classification. HTML elements
+continue through ordinary display/replaced-element logic. SVG and MathML roots
+currently return `SuppressSubtree(UnsupportedForeignNamespace(namespace))`;
+their complete styled descendants are skipped for box generation, including
+HTML integration-point descendants. Paint cannot independently inspect DOM
+local names to recreate or bypass this decision.

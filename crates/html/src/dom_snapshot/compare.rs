@@ -1,6 +1,6 @@
 use super::DomSnapshotOptions;
 use super::mismatch::DomMismatch;
-use super::serialize::{canonical_attribute_order, format_node_line, node_label, truncate_line};
+use super::serialize::{format_node_line, node_label, truncate_line};
 use crate::Node;
 use std::sync::OnceLock;
 
@@ -165,7 +165,7 @@ fn compare_element<'a>(
             options,
         )));
     }
-    if expected.name() != actual.name() {
+    if expected.expanded_name() != actual.expanded_name() {
         return Err(Box::new(mismatch(
             path,
             "element name",
@@ -175,44 +175,14 @@ fn compare_element<'a>(
         )));
     }
 
-    let expected_attrs = expected.attributes();
-    let actual_attrs = actual.attributes();
-    let expected_attr_order = canonical_attribute_order(expected_attrs);
-    let actual_attr_order = canonical_attribute_order(actual_attrs);
-    if expected_attr_order.len() != actual_attr_order.len() {
+    if expected.attributes() != actual.attributes() {
         return Err(Box::new(mismatch(
             path,
-            "attribute count",
+            "ordered attribute list",
             expected_node,
             actual_node,
             options,
         )));
-    }
-    for (index, (expected_index, actual_index)) in expected_attr_order
-        .iter()
-        .zip(actual_attr_order.iter())
-        .enumerate()
-    {
-        let expected_attr = &expected_attrs[*expected_index];
-        let actual_attr = &actual_attrs[*actual_index];
-        if expected_attr.0 != actual_attr.0 {
-            return Err(Box::new(mismatch(
-                path,
-                &format!("canonical attribute mismatch at index {index} (name)"),
-                expected_node,
-                actual_node,
-                options,
-            )));
-        }
-        if expected_attr.1 != actual_attr.1 {
-            return Err(Box::new(mismatch(
-                path,
-                &format!("canonical attribute mismatch at index {index} (value)"),
-                expected_node,
-                actual_node,
-                options,
-            )));
-        }
     }
 
     let expected_style = expected.style();

@@ -13,6 +13,7 @@ mod body_recovery;
 mod coalescing;
 mod dispatch;
 pub(crate) mod document;
+mod foreign;
 mod formatting;
 #[cfg(any(test, feature = "html5-fuzzing"))]
 mod fuzz;

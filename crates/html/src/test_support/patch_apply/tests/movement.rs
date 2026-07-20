@@ -13,17 +13,17 @@ fn test_patch_arena_supports_cross_parent_reparenting() {
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "div".into(),
+                name: crate::test_support::html_name("div"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(3),
-                name: "p".into(),
+                name: crate::test_support::html_name("p"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(4),
-                name: "span".into(),
+                name: crate::test_support::html_name("span"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {
@@ -70,22 +70,22 @@ fn test_patch_arena_supports_same_parent_insert_before_reordering_without_dangli
             },
             DomPatch::CreateElement {
                 key: PatchKey(2),
-                name: "ul".into(),
+                name: crate::test_support::html_name("ul"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(3),
-                name: "li".into(),
+                name: crate::test_support::html_name("li"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(4),
-                name: "li".into(),
+                name: crate::test_support::html_name("li"),
                 attributes: Vec::new(),
             },
             DomPatch::CreateElement {
                 key: PatchKey(5),
-                name: "li".into(),
+                name: crate::test_support::html_name("li"),
                 attributes: Vec::new(),
             },
             DomPatch::AppendChild {

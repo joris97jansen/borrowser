@@ -221,3 +221,14 @@ Move-specific evidence for Core v0 / Milestone I includes:
   - `AppendChild`-encoded existing-node moves
   - `InsertBefore`-encoded foster-parent moves
   - deterministic ordering under whole vs chunked execution
+
+## AE11 namespace-preserving element and attribute transport
+
+`CreateElement` requires an explicit `ExpandedElementName`; no constructor,
+validator, decoder, applier, or materializer supplies an implicit HTML
+namespace. `SetAttributes` and element creation carry the ordered
+`Vec<ParserCreatedAttribute>` unchanged. Each attribute has a valid structured
+qualified name and string value. Patch validation and Browser `DomStore`
+preserve exact namespace, local-name case, prefix shape, value, and list order.
+Changing an element namespace or the ordered structural attribute list is an
+observable structural difference even when numeric identity is unchanged.

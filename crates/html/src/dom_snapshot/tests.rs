@@ -1,14 +1,14 @@
 use super::{DomSnapshot, DomSnapshotOptions, assert_dom_eq, compare_dom};
 use crate::Node;
 use crate::dom_snapshot::serialize::truncate_line;
+use crate::test_support::{html_attribute, html_name};
 use crate::types::{DocumentFragmentNode, Id};
-use std::sync::Arc;
 
 fn elem(name: &str, children: Vec<Node>) -> Node {
     crate::Node::from_element_parts(
         Id(0),
-        Arc::from(name),
-        vec![(Arc::from("class"), Some("a b".to_string()))],
+        html_name(name),
+        vec![html_attribute("class", Some("a b"))],
         Vec::new(),
         None,
         children,
@@ -79,8 +79,8 @@ fn dom_mismatch_path_includes_id_label() {
         doctype: None,
         children: vec![crate::Node::from_element_parts(
             Id(0),
-            Arc::from("div"),
-            vec![(Arc::from("id"), Some("main".to_string()))],
+            html_name("div"),
+            vec![html_attribute("id", Some("main"))],
             Vec::new(),
             None,
             vec![Node::Text {
@@ -94,8 +94,8 @@ fn dom_mismatch_path_includes_id_label() {
         doctype: None,
         children: vec![crate::Node::from_element_parts(
             Id(0),
-            Arc::from("div"),
-            vec![(Arc::from("id"), Some("main".to_string()))],
+            html_name("div"),
+            vec![html_attribute("id", Some("main"))],
             Vec::new(),
             None,
             vec![Node::Text {
@@ -110,17 +110,17 @@ fn dom_mismatch_path_includes_id_label() {
 }
 
 #[test]
-fn snapshot_serialization_sorts_attributes_lexically() {
+fn snapshot_serialization_preserves_parser_attribute_order() {
     let doc = Node::Document {
         id: Id(0),
         doctype: None,
         children: vec![crate::Node::from_element_parts(
             Id(0),
-            Arc::from("div"),
+            html_name("div"),
             vec![
-                (Arc::from("zeta"), Some("2".to_string())),
-                (Arc::from("alpha"), Some("1".to_string())),
-                (Arc::from("hidden"), None),
+                html_attribute("zeta", Some("2")),
+                html_attribute("alpha", Some("1")),
+                html_attribute("hidden", None),
             ],
             Vec::new(),
             None,
@@ -130,20 +130,25 @@ fn snapshot_serialization_sorts_attributes_lexically() {
     let lines = DomSnapshot::new(&doc, DomSnapshotOptions::default())
         .as_lines()
         .to_vec();
-    assert_eq!(lines[1], "  <div alpha=\"1\" hidden zeta=\"2\">");
+    assert_eq!(lines[0], "#dom-snapshot-v2");
+    let element = &lines[2];
+    let zeta = element.find("local=\"zeta\" value=\"2\"").unwrap();
+    let alpha = element.find("local=\"alpha\" value=\"1\"").unwrap();
+    let hidden = element.find("local=\"hidden\" value=\"\"").unwrap();
+    assert!(zeta < alpha && alpha < hidden);
 }
 
 #[test]
-fn dom_eq_ignores_attribute_storage_order() {
+fn dom_eq_observes_attribute_storage_order() {
     let expected = Node::Document {
         id: Id(0),
         doctype: None,
         children: vec![crate::Node::from_element_parts(
             Id(0),
-            Arc::from("div"),
+            html_name("div"),
             vec![
-                (Arc::from("a"), Some("1".to_string())),
-                (Arc::from("b"), Some("2".to_string())),
+                html_attribute("a", Some("1")),
+                html_attribute("b", Some("2")),
             ],
             Vec::new(),
             None,
@@ -155,17 +160,17 @@ fn dom_eq_ignores_attribute_storage_order() {
         doctype: None,
         children: vec![crate::Node::from_element_parts(
             Id(0),
-            Arc::from("div"),
+            html_name("div"),
             vec![
-                (Arc::from("b"), Some("2".to_string())),
-                (Arc::from("a"), Some("1".to_string())),
+                html_attribute("b", Some("2")),
+                html_attribute("a", Some("1")),
             ],
             Vec::new(),
             None,
             Vec::new(),
         )],
     };
-    assert_dom_eq(&expected, &actual, DomSnapshotOptions::default());
+    assert!(compare_dom(&expected, &actual, DomSnapshotOptions::default()).is_err());
 }
 
 #[test]
@@ -175,8 +180,8 @@ fn snapshot_element_ids_are_suffix_not_synthetic_attribute() {
         doctype: None,
         children: vec![crate::Node::from_element_parts(
             Id(42),
-            Arc::from("div"),
-            vec![(Arc::from("class"), Some("x".to_string()))],
+            html_name("div"),
+            vec![html_attribute("class", Some("x"))],
             Vec::new(),
             None,
             Vec::new(),
@@ -191,8 +196,12 @@ fn snapshot_element_ids_are_suffix_not_synthetic_attribute() {
     )
     .as_lines()
     .to_vec();
-    assert_eq!(lines[0], "#document id=7");
-    assert_eq!(lines[1], "  <div class=\"x\"> id=42");
+    assert_eq!(lines[0], "#dom-snapshot-v2");
+    assert_eq!(lines[1], "#document id=7");
+    assert_eq!(
+        lines[2],
+        "  element ns=html local=\"div\" attrs=[{ns=none prefix=- local=\"class\" value=\"x\"}] id=42"
+    );
 }
 
 #[test]
@@ -208,7 +217,7 @@ fn snapshot_exposes_template_association_before_ordinary_host_children() {
         doctype: None,
         children: vec![crate::Node::from_element_parts(
             Id(2),
-            Arc::from("template"),
+            html_name("template"),
             Vec::new(),
             Vec::new(),
             Some(Box::new(DocumentFragmentNode::new_template_contents(
@@ -236,8 +245,9 @@ fn snapshot_exposes_template_association_before_ordinary_host_children() {
     assert_eq!(
         lines,
         vec![
+            "#dom-snapshot-v2",
             "#document id=1",
-            "  <template> id=2",
+            "  element ns=html local=\"template\" attrs=[] id=2",
             "    #template-contents id=3",
             "      \"inert\" id=4",
             "    <!-- legacy ordinary child --> id=5",

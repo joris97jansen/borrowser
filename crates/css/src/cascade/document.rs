@@ -6,6 +6,7 @@ use std::fmt::Write;
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ResolvedElementStyle {
     selector_element_id: SelectorDomElementId,
+    element_namespace: html::ElementNamespace,
     element_name: String,
     style: ResolvedStyle,
 }
@@ -13,11 +14,13 @@ pub struct ResolvedElementStyle {
 impl ResolvedElementStyle {
     pub(super) fn new(
         selector_element_id: SelectorDomElementId,
+        element_namespace: html::ElementNamespace,
         element_name: String,
         style: ResolvedStyle,
     ) -> Self {
         Self {
             selector_element_id,
+            element_namespace,
             element_name,
             style,
         }
@@ -29,6 +32,10 @@ impl ResolvedElementStyle {
 
     pub fn element_name(&self) -> &str {
         &self.element_name
+    }
+
+    pub fn element_namespace(&self) -> html::ElementNamespace {
+        self.element_namespace
     }
 
     pub fn style(&self) -> &ResolvedStyle {
@@ -70,8 +77,9 @@ impl ResolvedDocumentStyle {
         for (index, entry) in self.entries.iter().enumerate() {
             writeln!(
                 &mut out,
-                "element[{index}]: selector-id={} name=\"{}\"",
+                "element[{index}]: selector-id={} namespace={} name=\"{}\"",
                 entry.selector_element_id.get(),
+                entry.element_namespace.snapshot_name(),
                 entry.element_name
             )
             .expect("write snapshot");

@@ -1,10 +1,12 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 # status: active
 # include_parse_errors: true
+
+#dom-snapshot-v2
 #document
-  <html>
-    <head>
-    <body>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
       "Hello"
 parse-errors:
   tree-builder: initial-unexpected-token

@@ -1,6 +1,6 @@
 version: 1
 computed-document-style
-element[0]: selector-id=1 name="main"
+element[0]: selector-id=1 namespace=html name="main"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
   border-bottom-style: none
@@ -36,7 +36,7 @@ element[0]: selector-id=1 name="main"
   text-decoration-line: none
   width: 320px
   z-index: auto
-element[1]: selector-id=2 name="span"
+element[1]: selector-id=2 namespace=html name="span"
   background-color: rgba(0, 255, 0, 255)
   border-bottom-color: rgba(0, 0, 0, 0)
   border-bottom-style: none
@@ -72,7 +72,7 @@ element[1]: selector-id=2 name="span"
   text-decoration-line: none
   width: auto
   z-index: auto
-element[2]: selector-id=3 name="button"
+element[2]: selector-id=3 namespace=html name="button"
   background-color: rgba(0, 0, 0, 0)
   border-bottom-color: rgba(0, 0, 0, 0)
   border-bottom-style: none

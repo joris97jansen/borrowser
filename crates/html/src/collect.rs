@@ -1,4 +1,5 @@
 use crate::Node;
+use crate::names::ElementNamespace;
 use crate::types::debug_assert_lowercase_atom;
 
 fn is_heading(name: &str) -> bool {
@@ -77,7 +78,9 @@ fn ensure_paragraph_boundary_before_block(out: &mut String) {
 /// Collect concatenated text from <style> elements.
 pub fn collect_style_texts(node: &Node, out: &mut String) {
     match node {
-        Node::Element { element } if element.name().as_ref() == "style" => {
+        Node::Element { element }
+            if element.namespace() == ElementNamespace::Html && element.name() == "style" =>
+        {
             debug_assert_lowercase_atom(element.name(), "collect style tag");
             for c in element.children() {
                 if let Node::Text { text, .. } = c {
@@ -105,8 +108,11 @@ pub fn collect_stylesheet_hrefs(node: &Node, out: &mut Vec<String>) {
     match node {
         Node::Element { element } => {
             let name = element.name();
-            debug_assert_lowercase_atom(name, "collect stylesheet tag");
-            if name.as_ref() == "link"
+            if element.namespace() == ElementNamespace::Html {
+                debug_assert_lowercase_atom(name, "collect stylesheet tag");
+            }
+            if element.namespace() == ElementNamespace::Html
+                && name == "link"
                 && node.attr_has_token("rel", "stylesheet")
                 && let Some(href) = node.attr("href")
             {
@@ -131,8 +137,11 @@ pub fn collect_img_srcs(node: &Node, out: &mut Vec<String>) {
     match node {
         Node::Element { element } => {
             let name = element.name();
-            debug_assert_lowercase_atom(name, "collect img tag");
-            if name.as_ref() == "img"
+            if element.namespace() == ElementNamespace::Html {
+                debug_assert_lowercase_atom(name, "collect img tag");
+            }
+            if element.namespace() == ElementNamespace::Html
+                && name == "img"
                 && let Some(src) = node.attr("src")
             {
                 let src = trim_ascii(src);
@@ -194,19 +203,27 @@ pub fn collect_visible_text(node: &Node, out: &mut String) {
         }
         Node::Element { element } => {
             let name = element.name();
-            debug_assert_lowercase_atom(name, "collect visible text tag");
-            if name.as_ref() == "script" || name.as_ref() == "style" {
+            if element.namespace() == ElementNamespace::Html {
+                debug_assert_lowercase_atom(name, "collect visible text tag");
+            }
+            if element.namespace() == ElementNamespace::Html
+                && (name == "script" || name == "style")
+            {
                 return; // skip
             }
 
-            if let Some("\n\n") = break_kind(name.as_ref()) {
+            if element.namespace() == ElementNamespace::Html
+                && let Some("\n\n") = break_kind(name)
+            {
                 ensure_paragraph_boundary_before_block(out);
             }
             for c in element.children() {
                 collect_visible_text(c, out);
             }
 
-            if let Some(break_str) = break_kind(name.as_ref()) {
+            if element.namespace() == ElementNamespace::Html
+                && let Some(break_str) = break_kind(name)
+            {
                 // Breaks are inserted after children (post-order), which may
                 // introduce extra spacing for nested block elements. Trimming
                 // in `push_break` keeps output deterministic.
@@ -256,8 +273,9 @@ mod tests {
         collect_visible_text_string,
     };
     use crate::Node;
+    use crate::names::{ElementNamespace, ExpandedElementName, NameInterner};
+    use crate::test_support::{html_attribute, html_name};
     use crate::types::{DocumentFragmentNode, Id};
-    use std::sync::Arc;
 
     fn text_node(text: &str) -> Node {
         Node::Text {
@@ -269,7 +287,7 @@ mod tests {
     fn elem(name: &str, children: Vec<Node>) -> Node {
         crate::Node::from_element_parts(
             Id(0),
-            Arc::<str>::from(name),
+            html_name(name),
             Vec::new(),
             Vec::new(),
             None,
@@ -280,14 +298,36 @@ mod tests {
     fn elem_with_attrs(name: &str, attributes: &[(&str, &str)]) -> Node {
         crate::Node::from_element_parts(
             Id(0),
-            Arc::from(name),
+            html_name(name),
             attributes
                 .iter()
-                .map(|(name, value)| (Arc::from(*name), Some((*value).to_string())))
+                .map(|(name, value)| html_attribute(name, Some(value)))
                 .collect(),
             Vec::new(),
             None,
             Vec::new(),
+        )
+    }
+
+    fn foreign_elem(
+        namespace: ElementNamespace,
+        name: &str,
+        attributes: &[(&str, &str)],
+        children: Vec<Node>,
+    ) -> Node {
+        let mut names = NameInterner::new();
+        let local_name = names.intern_exact(name).unwrap();
+        let local_name = names.resolve_local_name(local_name).unwrap();
+        crate::Node::from_element_parts(
+            Id(0),
+            ExpandedElementName::new(namespace, local_name),
+            attributes
+                .iter()
+                .map(|(name, value)| html_attribute(name, Some(value)))
+                .collect(),
+            Vec::new(),
+            None,
+            children,
         )
     }
 
@@ -346,10 +386,55 @@ mod tests {
     }
 
     #[test]
+    fn html_collectors_do_not_classify_foreign_lookalikes_by_local_name() {
+        let root = doc(vec![
+            foreign_elem(
+                ElementNamespace::Svg,
+                "style",
+                &[],
+                vec![text_node("visible foreign style text")],
+            ),
+            foreign_elem(
+                ElementNamespace::Svg,
+                "linearGradient",
+                &[],
+                vec![text_node("gradient text")],
+            ),
+            foreign_elem(
+                ElementNamespace::MathMl,
+                "link",
+                &[("rel", "stylesheet"), ("href", "foreign.css")],
+                Vec::new(),
+            ),
+            foreign_elem(
+                ElementNamespace::Svg,
+                "img",
+                &[("src", "foreign.png")],
+                Vec::new(),
+            ),
+        ]);
+
+        let mut styles = String::new();
+        collect_style_texts(&root, &mut styles);
+        let mut stylesheets = Vec::new();
+        collect_stylesheet_hrefs(&root, &mut stylesheets);
+        let mut images = Vec::new();
+        collect_img_srcs(&root, &mut images);
+
+        assert!(styles.is_empty());
+        assert!(stylesheets.is_empty());
+        assert!(images.is_empty());
+        assert_eq!(
+            collect_visible_text_string(&root),
+            "visible foreign style text gradient text"
+        );
+    }
+
+    #[test]
     fn active_document_collectors_do_not_cross_template_contents_association() {
         let template = crate::Node::from_element_parts(
             Id(0),
-            Arc::from("template"),
+            html_name("template"),
             Vec::new(),
             Vec::new(),
             Some(Box::new(DocumentFragmentNode::new_template_contents(

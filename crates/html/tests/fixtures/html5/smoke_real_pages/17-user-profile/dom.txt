@@ -1,31 +1,31 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 
+#dom-snapshot-v2
 #document
-
   <!doctype html>
-  <html>
-    <head>
-      <title>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+      element ns=html local="title" attrs=[]
         "Profile"
-    <body>
+    element ns=html local="body" attrs=[]
       "\n"
-      <main>
+      element ns=html local="main" attrs=[]
         "\n"
-        <h1>
+        element ns=html local="h1" attrs=[]
           "Joris Jansen"
         "\n"
-        <img alt="avatar" src="avatar.png">
+        element ns=html local="img" attrs=[{ns=none prefix=- local="src" value="avatar.png"}, {ns=none prefix=- local="alt" value="avatar"}]
         "\n"
-        <p>
+        element ns=html local="p" attrs=[]
           "Senior engineer"
         "\n"
-        <section>
-          <h2>
+        element ns=html local="section" attrs=[]
+          element ns=html local="h2" attrs=[]
             "Recent activity"
-          <ul>
-            <li>
+          element ns=html local="ul" attrs=[]
+            element ns=html local="li" attrs=[]
               "Opened issue #42"
-            <li>
+            element ns=html local="li" attrs=[]
               "Merged parser patch"
         "\n"
       "\n"

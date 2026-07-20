@@ -3,12 +3,12 @@
 Each fixture is a directory containing:
 
 - `input.html`: the HTML input string
-- `dom.txt`: expected DOM snapshot in `html5-dom-v1` format
+- `dom.txt`: expected DOM snapshot in `html5-dom-v2` format
 
 `dom.txt` format:
 
 - Header lines begin with `#` and use `key: value`.
-- Required header: `# format: html5-dom-v1`
+- Required header: `# format: html5-dom-v2`
 - Optional header: `# status: active | xfail`
 - Optional header (required if `status: xfail`): `# reason: <text>`
 - Optional headers:
@@ -20,7 +20,9 @@ Snapshot lines:
 
 - One line per node, using a deterministic, depth-indented format (2 spaces per level).
 - The serializer is `html::html5::tree_builder::serialize_dom_for_test_with_options`.
-- Attributes are emitted in lexical name order for snapshot stability.
+- Attributes are emitted in first-surviving tokenizer encounter order. That
+  stored DOM order is deterministic across whole and chunked input and is not
+  replaced by lexical sorting.
 - If `ignore_ids=false`, node IDs are rendered as a trailing `id=<n>` suffix on
   node lines (not as synthetic DOM attributes).
 

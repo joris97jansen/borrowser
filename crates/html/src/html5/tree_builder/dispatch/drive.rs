@@ -5,6 +5,7 @@ use crate::html5::tree_builder::formatting::AfeDiagnosticEntry;
 use crate::html5::tree_builder::modes::InsertionMode;
 use crate::html5::tree_builder::template_state::TemplateInsertionMode;
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError, TreeBuilderStepResult};
+use crate::{ExpandedElementName, ParserCreatedAttribute};
 use std::collections::HashMap;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
@@ -47,6 +48,19 @@ struct ReprocessFingerprint {
     frameset_ok: bool,
     pending_table_chunks: usize,
     pending_table_contains_non_space: bool,
+    adjusted_current_node: Option<(
+        Option<PatchKey>,
+        crate::names::ElementNamespace,
+        crate::html5::tree_builder::foreign::AdjustedCurrentNodeSource,
+    )>,
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct ExactAdjustedCurrentNode {
+    key: Option<PatchKey>,
+    expanded_name: ExpandedElementName,
+    attributes: Vec<ParserCreatedAttribute>,
+    source: crate::html5::tree_builder::foreign::AdjustedCurrentNodeSource,
 }
 
 /// Exact parser state that can affect processing the same token again.
@@ -74,6 +88,7 @@ struct ExactReprocessState {
     foster_parenting_enabled: bool,
     last_text_patch: Option<(PatchKey, Option<PatchKey>, PatchKey)>,
     structural_mutation_depth: u16,
+    adjusted_current_node: Option<ExactAdjustedCurrentNode>,
 }
 
 impl ExactReprocessState {
@@ -109,12 +124,20 @@ impl ExactReprocessState {
             frameset_ok: self.frameset_ok,
             pending_table_chunks: self.pending_table_chunks.len(),
             pending_table_contains_non_space: self.pending_table_contains_non_space,
+            adjusted_current_node: self
+                .adjusted_current_node
+                .as_ref()
+                .map(|node| (node.key, node.expanded_name.namespace(), node.source)),
         }
     }
 }
 
 #[derive(Default)]
 struct ReprocessStateTracker {
+    /// The overwhelmingly common path processes a token exactly once. Keep
+    /// that first exact state without hashing it; only promote to buckets when
+    /// the same token is actually reprocessed.
+    first: Option<ExactReprocessState>,
     buckets: HashMap<ReprocessFingerprint, Vec<ExactReprocessState>>,
     retained_states: usize,
     #[cfg(test)]
@@ -124,6 +147,22 @@ struct ReprocessStateTracker {
 impl ReprocessStateTracker {
     /// Returns `true` only for an exactly repeated semantic state.
     fn observe(&mut self, state: ExactReprocessState) -> bool {
+        if self.first.is_none() && self.buckets.is_empty() {
+            self.first = Some(state);
+            self.retained_states = 1;
+            return false;
+        }
+        if let Some(first) = self.first.take() {
+            if first == state {
+                self.first = Some(first);
+                return true;
+            }
+            self.insert_bucketed(first);
+        }
+        self.observe_bucketed(state)
+    }
+
+    fn observe_bucketed(&mut self, state: ExactReprocessState) -> bool {
         let fingerprint = state.fingerprint();
         #[cfg(test)]
         let fingerprint = if self.force_fingerprint_collision {
@@ -138,6 +177,17 @@ impl ReprocessStateTracker {
         bucket.push(state);
         self.retained_states = self.retained_states.saturating_add(1);
         false
+    }
+
+    fn insert_bucketed(&mut self, state: ExactReprocessState) {
+        let fingerprint = state.fingerprint();
+        #[cfg(test)]
+        let fingerprint = if self.force_fingerprint_collision {
+            forced_collision_fingerprint()
+        } else {
+            fingerprint
+        };
+        self.buckets.entry(fingerprint).or_default().push(state);
     }
 
     fn retained_states(&self) -> usize {
@@ -166,6 +216,7 @@ fn forced_collision_fingerprint() -> ReprocessFingerprint {
         frameset_ok: false,
         pending_table_chunks: 0,
         pending_table_contains_non_space: false,
+        adjusted_current_node: None,
     }
 }
 
@@ -186,6 +237,37 @@ pub(in crate::html5::tree_builder) enum DispatchOutcome {
 }
 
 impl Html5TreeBuilder {
+    pub(in crate::html5::tree_builder) fn dispatch_token_in_html_mode(
+        &mut self,
+        mode: InsertionMode,
+        token: &Token,
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
+    ) -> Result<DispatchOutcome, TreeBuilderError> {
+        if let Some(outcome) = self.handle_shared_template_token(mode, token, atoms, text)? {
+            return Ok(outcome);
+        }
+        match mode {
+            InsertionMode::Initial => self.handle_initial(token, atoms, text),
+            InsertionMode::BeforeHtml => self.handle_before_html(token, atoms, text),
+            InsertionMode::BeforeHead => self.handle_before_head(token, atoms, text),
+            InsertionMode::InHead => self.handle_in_head(token, atoms, text),
+            InsertionMode::AfterHead => self.handle_after_head(token, atoms, text),
+            InsertionMode::InBody => self.handle_in_body(token, atoms, text),
+            InsertionMode::AfterBody => self.handle_after_body(token, atoms, text),
+            InsertionMode::AfterAfterBody => self.handle_after_after_body(token, atoms, text),
+            InsertionMode::InTable => self.handle_in_table(token, atoms, text),
+            InsertionMode::InTableText => self.handle_in_table_text(token, atoms, text),
+            InsertionMode::InCaption => self.handle_in_caption(token, atoms, text),
+            InsertionMode::InColumnGroup => self.handle_in_column_group(token, atoms, text),
+            InsertionMode::InTableBody => self.handle_in_table_body(token, atoms, text),
+            InsertionMode::InRow => self.handle_in_row(token, atoms, text),
+            InsertionMode::InCell => self.handle_in_cell(token, atoms, text),
+            InsertionMode::InTemplate => self.handle_in_template(token, atoms, text),
+            InsertionMode::Text => self.handle_text_mode(token, atoms, text),
+        }
+    }
+
     pub(in crate::html5::tree_builder) fn process_impl(
         &mut self,
         token: &Token,
@@ -220,34 +302,12 @@ impl Html5TreeBuilder {
                 .perf_max_same_token_cycle_states
                 .max(seen_states.retained_states() as u64);
             let before = self.bounded_progress_measure(mode);
-            let outcome = if let Some(outcome) =
-                self.handle_shared_template_token(mode, token, atoms, text)?
+            let outcome = if self.foreign_dispatch_decision(token, atoms)?
+                == crate::html5::tree_builder::foreign::ForeignDispatchDecision::Foreign
             {
-                outcome
+                self.process_foreign_token(mode, token, atoms, text)?
             } else {
-                match mode {
-                    InsertionMode::Initial => self.handle_initial(token, atoms, text)?,
-                    InsertionMode::BeforeHtml => self.handle_before_html(token, atoms, text)?,
-                    InsertionMode::BeforeHead => self.handle_before_head(token, atoms, text)?,
-                    InsertionMode::InHead => self.handle_in_head(token, atoms, text)?,
-                    InsertionMode::AfterHead => self.handle_after_head(token, atoms, text)?,
-                    InsertionMode::InBody => self.handle_in_body(token, atoms, text)?,
-                    InsertionMode::AfterBody => self.handle_after_body(token, atoms, text)?,
-                    InsertionMode::AfterAfterBody => {
-                        self.handle_after_after_body(token, atoms, text)?
-                    }
-                    InsertionMode::InTable => self.handle_in_table(token, atoms, text)?,
-                    InsertionMode::InTableText => self.handle_in_table_text(token, atoms, text)?,
-                    InsertionMode::InCaption => self.handle_in_caption(token, atoms, text)?,
-                    InsertionMode::InColumnGroup => {
-                        self.handle_in_column_group(token, atoms, text)?
-                    }
-                    InsertionMode::InTableBody => self.handle_in_table_body(token, atoms, text)?,
-                    InsertionMode::InRow => self.handle_in_row(token, atoms, text)?,
-                    InsertionMode::InCell => self.handle_in_cell(token, atoms, text)?,
-                    InsertionMode::InTemplate => self.handle_in_template(token, atoms, text)?,
-                    InsertionMode::Text => self.handle_text_mode(token, atoms, text)?,
-                }
+                self.dispatch_token_in_html_mode(mode, token, atoms, text)?
             };
             match outcome {
                 DispatchOutcome::Done => break,
@@ -268,12 +328,19 @@ impl Html5TreeBuilder {
         self.perf_soe_pop_ops = self.open_elements.pop_ops();
         self.perf_soe_scope_scan_calls = self.open_elements.scope_scan_calls();
         self.perf_soe_scope_scan_steps = self.open_elements.scope_scan_steps();
+        self.perf_soe_name_count_lookup_calls = self.open_elements.name_count_lookup_calls();
+        self.perf_soe_name_count_lookup_steps = self.open_elements.name_count_lookup_steps();
+        self.perf_soe_name_count_update_calls = self.open_elements.name_count_update_calls();
+        self.perf_soe_name_count_update_steps = self.open_elements.name_count_update_steps();
+        self.perf_soe_distinct_name_high_water = self.open_elements.distinct_name_high_water();
         self.perf_soe_end_tag_scan_calls = self.open_elements.end_tag_scan_calls();
         self.perf_soe_end_tag_scan_steps = self.open_elements.end_tag_scan_steps();
         self.perf_template_recovery_owner_scan_calls =
             self.open_elements.template_recovery_owner_scan_calls();
         self.perf_template_recovery_owner_scan_steps =
             self.open_elements.template_recovery_owner_scan_steps();
+        #[cfg(any(test, feature = "html5-fuzzing", feature = "parser_invariants"))]
+        self.assert_open_element_name_invariants(atoms);
         self.validate_incremental_template_output(token, validation_checkpoint)?;
         #[cfg(any(test, feature = "html5-fuzzing", feature = "parser_invariants"))]
         if matches!(token, Token::Eof) {
@@ -324,6 +391,14 @@ impl Html5TreeBuilder {
                 .as_ref()
                 .map(|last| (last.parent, last.before, last.text_key)),
             structural_mutation_depth: self.structural_mutation_depth,
+            adjusted_current_node: self.adjusted_current_node().map(|node| {
+                ExactAdjustedCurrentNode {
+                    key: node.key,
+                    expanded_name: node.expanded_name.clone(),
+                    attributes: node.attributes.to_vec(),
+                    source: node.source,
+                }
+            }),
         }
     }
 
@@ -396,6 +471,7 @@ mod tests {
             foster_parenting_enabled: false,
             last_text_patch: None,
             structural_mutation_depth: 0,
+            adjusted_current_node: None,
         }
     }
 

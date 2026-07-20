@@ -1,23 +1,23 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 
+#dom-snapshot-v2
 #document
-
   <!doctype html>
-  <html>
-    <head>
-      <title>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+      element ns=html local="title" attrs=[]
         "404"
-    <body>
+    element ns=html local="body" attrs=[]
       "\n"
-      <main>
+      element ns=html local="main" attrs=[]
         "\n"
-        <h1>
+        element ns=html local="h1" attrs=[]
           "Page not found"
         "\n"
-        <p>
+        element ns=html local="p" attrs=[]
           "We could not find the page you requested."
         "\n"
-        <a href="/">
+        element ns=html local="a" attrs=[{ns=none prefix=- local="href" value="/"}]
           "Return home"
         "\n"
       "\n"

@@ -16,14 +16,16 @@ mod tests;
 ///
 /// Serialization rules:
 /// - Child order follows tree order.
-/// - Attributes are rendered in lexical name order with deterministic tie-breaks.
+/// - The first line is the explicit `#dom-snapshot-v2` format marker.
+/// - Elements expose namespace and exact local name.
+/// - Attributes follow stored parser encounter order and expose namespace,
+///   prefix, local name, and DOM-string value.
 /// - Escaping is platform-independent (`\n`, `\r`, `\t`, `\\`, `\"`, `\u{HEX}`).
 ///
 /// Equivalence rules:
 /// - Node kinds must match.
-/// - Element names must match.
-/// - Attribute list order is not significant; attributes are compared using the
-///   same canonical ordering as snapshot serialization.
+/// - Expanded element names must match.
+/// - Attribute list order is significant.
 /// - Text nodes must match exactly (post entity decode).
 /// - Comments and doctypes must match exactly.
 /// - IDs and empty style vectors can be ignored by options.
@@ -49,7 +51,7 @@ pub struct DomSnapshot {
 
 impl DomSnapshot {
     pub fn new(root: &Node, options: DomSnapshotOptions) -> Self {
-        let mut lines = Vec::new();
+        let mut lines = vec!["#dom-snapshot-v2".to_string()];
         let mut indent_level = 0usize;
         serialize::walk_snapshot(root, &options, &mut indent_level, &mut lines);
         Self { lines }

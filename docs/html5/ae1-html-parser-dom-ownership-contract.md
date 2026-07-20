@@ -303,3 +303,14 @@ template-contents field is private, so the ordinary public Rust node surface
 cannot detach or replace the association. The feature-gated `html::internal`
 engine boundary provides controlled canonical construction and read-only
 fragment inspection; it is not a standards-facing DOM surface.
+
+## AE11 namespace boundary
+
+HTML owns the canonical parser-created namespace/name types and foreign
+tree-construction algorithms. Tokenizer tokens remain namespace-less. The
+tree builder selects `(namespace, local name)` independently of the adjusted
+insertion location and passes that expanded name through live nodes and
+`DomPatch`. Browser/runtime materializes it without defaulting or flattening;
+CSS receives it for matching; Layout owns unsupported-foreign box suppression;
+Paint receives only Layout-approved boxes. Namespace declarations are stored
+attributes and never drive HTML-parser namespace selection.

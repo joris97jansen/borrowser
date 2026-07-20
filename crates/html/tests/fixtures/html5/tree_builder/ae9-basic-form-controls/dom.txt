@@ -1,16 +1,18 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 # status: active
 # include_parse_errors: true
+
+#dom-snapshot-v2
 #document
   <!doctype html>
-  <html>
-    <head>
-    <body>
-      <form>
-        <input>
-        <textarea>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=html local="form" attrs=[]
+        element ns=html local="input" attrs=[]
+        element ns=html local="textarea" attrs=[]
           "text"
-        <button>
+        element ns=html local="button" attrs=[]
           "go"
 parse-errors:
   tree-builder: before-html-implicit-html

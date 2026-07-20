@@ -1,27 +1,27 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 
+#dom-snapshot-v2
 #document
-
   <!doctype html>
-  <html>
-    <head>
-      <title>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+      element ns=html local="title" attrs=[]
         "Engineering Blog"
-    <body>
+    element ns=html local="body" attrs=[]
       "\n"
-      <article>
+      element ns=html local="article" attrs=[]
         "\n"
-        <h1>
+        element ns=html local="h1" attrs=[]
           "Release notes"
         "\n"
-        <p>
+        element ns=html local="p" attrs=[]
           "Today we launched a new parser pipeline."
         "\n"
-        <p>
+        element ns=html local="p" attrs=[]
           "It improves chunked streaming behavior."
         "\n"
-        <aside>
-          <p>
+        element ns=html local="aside" attrs=[]
+          element ns=html local="p" attrs=[]
             "By J. Doe"
         "\n"
       "\n"

@@ -644,7 +644,7 @@ fn input_button_fieldset_and_keygen_use_their_supported_parser_categories() {
             name: input,
             attrs: vec![Attribute {
                 name: type_attr,
-                value: Some(AttributeValue::Owned("hidden".to_string())),
+                value: AttributeValue::Owned("hidden".to_string()),
             }],
             self_closing: false,
         },

@@ -1,31 +1,31 @@
-# format: html5-dom-v1
+# format: html5-dom-v2
 
+#dom-snapshot-v2
 #document
-
   <!doctype html>
-  <html>
-    <head>
-      <title>
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+      element ns=html local="title" attrs=[]
         "Search"
-    <body>
+    element ns=html local="body" attrs=[]
       "\n"
-      <form>
-        <input type="search" value="html parser">
-        <button>
+      element ns=html local="form" attrs=[]
+        element ns=html local="input" attrs=[{ns=none prefix=- local="type" value="search"}, {ns=none prefix=- local="value" value="html parser"}]
+        element ns=html local="button" attrs=[]
           "Search"
       "\n"
-      <ol>
+      element ns=html local="ol" attrs=[]
         "\n"
-        <li>
-          <a href="/docs/1">
+        element ns=html local="li" attrs=[]
+          element ns=html local="a" attrs=[{ns=none prefix=- local="href" value="/docs/1"}]
             "Parser architecture"
-          <p>
+          element ns=html local="p" attrs=[]
             "Overview and design notes."
         "\n"
-        <li>
-          <a href="/docs/2">
+        element ns=html local="li" attrs=[]
+          element ns=html local="a" attrs=[{ns=none prefix=- local="href" value="/docs/2"}]
             "Streaming behavior"
-          <p>
+          element ns=html local="p" attrs=[]
             "Chunking and UTF-8 boundaries."
         "\n"
       "\n"

@@ -156,11 +156,16 @@ The paint system owns:
 - translating layout geometry plus runtime paint state into draw commands
 - backgrounds, inline text fragments, replaced-element painting, and selection
   visuals for the current supported feature set
+- consuming Layout-owned typed replaced-element presentation metadata and
+  Browser-owned resolved resource state
 
 The paint system must not:
 
 - compute layout geometry
 - perform selector/cascade work
+- inspect DOM namespaces, element names, or attributes to recover HTML image,
+  alternative-text, or text-control semantics
+- normalize exact alternative-text or placeholder strings supplied by Layout
 - introduce retained scene ownership as an implicit side effect
 
 ### Viewport And Renderer Runtime
@@ -245,6 +250,9 @@ Semantic owner: `gfx::paint`
 Consumes:
 
 - `LayoutBox` geometry tree
+- Layout-owned `ReplacedElementPresentation`, whose image source has already
+  been resolved by the Browser resource provider; exact alternative-text and
+  placeholder strings remain distinct from absent attributes
 - image/resource state
 - input/focus/selection state
 

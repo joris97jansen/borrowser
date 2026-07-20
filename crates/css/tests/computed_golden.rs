@@ -1,4 +1,4 @@
-use std::{fmt::Write, sync::Arc};
+use std::fmt::Write;
 
 use css::{
     ParseOptions, PropertyNameKind, Rule, compute_document_styles, computed_value_debug_snapshot,
@@ -15,7 +15,7 @@ fn fixture_input(text: &str) -> &str {
 fn element(name: &str, children: Vec<Node>) -> Node {
     html::internal::node_element_from_parts(
         Id::INVALID,
-        Arc::from(name),
+        html::internal::html_name(name),
         Vec::new(),
         Vec::new(),
         children,
