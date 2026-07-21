@@ -68,6 +68,10 @@ impl TokenObserver {
             Token::Comment { text } | Token::Text { text } => {
                 self.observe_text_value(text, resolver)?;
             }
+            Token::ProcessingInstruction(processing_instruction) => {
+                self.digest = mix_bytes(self.digest, processing_instruction.target.as_bytes());
+                self.observe_text_value(&processing_instruction.data, resolver)?;
+            }
             Token::Eof => {
                 if self.saw_eof {
                     return Err(ObserveError::DuplicateEof);

@@ -337,7 +337,10 @@ fn collect_stylesheet_inputs(
                 collect_stylesheet_inputs(child, base_url, out);
             }
         }
-        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => {}
+        Node::Text { .. }
+        | Node::Comment { .. }
+        | Node::ProcessingInstruction { .. }
+        | Node::DocumentType { .. } => {}
     }
 }
 

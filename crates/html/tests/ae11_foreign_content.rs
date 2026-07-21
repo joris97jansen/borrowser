@@ -133,6 +133,27 @@ fn cdata_boundary_is_namespace_driven_and_chunk_invariant() {
 }
 
 #[test]
+fn pi_like_syntax_in_foreign_cdata_remains_text_at_every_chunk_boundary() {
+    let source = "<svg><![CDATA[<?pi?>]]></svg>";
+    let whole = parse(&[source]);
+    assert!(whole.0.iter().any(|patch| matches!(
+        patch,
+        DomPatch::CreateText { text, .. } if text == "<?pi?>"
+    )));
+    assert!(
+        !whole
+            .0
+            .iter()
+            .any(|patch| matches!(patch, DomPatch::CreateProcessingInstruction { .. }))
+    );
+
+    for split in 0..=source.len() {
+        let chunked = parse(&[&source[..split], &source[split..]]);
+        assert_eq!(chunked, whole, "split at byte {split}");
+    }
+}
+
+#[test]
 fn cdata_eof_recovery_is_state_complete_and_chunk_invariant() {
     for source in ["<svg><![CDATA[x", "<svg><![CDATA[x]", "<svg><![CDATA[x]]"] {
         let whole = parse(&[source]);

@@ -8,6 +8,7 @@ fn collect_text_content(node: &LayoutBox<'_, '_>, out: &mut String) {
         Node::Element { .. }
         | Node::Document { .. }
         | Node::Comment { .. }
+        | Node::ProcessingInstruction { .. }
         | Node::DocumentType { .. } => {
             for c in &node.children {
                 collect_text_content(c, out);

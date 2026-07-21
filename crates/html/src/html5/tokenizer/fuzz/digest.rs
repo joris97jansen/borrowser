@@ -8,6 +8,7 @@ pub(super) fn token_discriminant(token: &Token) -> u64 {
         Token::Comment { .. } => 4,
         Token::Text { .. } => 5,
         Token::Eof => 6,
+        Token::ProcessingInstruction(_) => 7,
     }
 }
 

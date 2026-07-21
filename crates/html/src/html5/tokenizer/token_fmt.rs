@@ -135,6 +135,11 @@ impl TokenTestFormatExt for Token {
                 "COMMENT text=\"{}\"",
                 escape_text(&fmt.resolve_text_value(text)?)
             )),
+            Token::ProcessingInstruction(processing_instruction) => Ok(format!(
+                "PI target=\"{}\" data=\"{}\"",
+                escape_text(&processing_instruction.target),
+                escape_text(&fmt.resolve_text_value(&processing_instruction.data)?)
+            )),
             Token::Text { text } => Ok(format!(
                 "CHAR text=\"{}\"",
                 escape_text(&fmt.resolve_text_value(text)?)

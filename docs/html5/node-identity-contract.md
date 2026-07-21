@@ -38,6 +38,8 @@ Related contracts:
 - `Create*` introduces a key before first use by structure/content patches.
 - Parser-created `DocumentType` nodes receive ordinary `PatchKey` identity in
   the patch stream.
+- Parser-created processing-instruction nodes receive ordinary `PatchKey`
+  identity while retaining exact target/data payloads separately.
 - Parser-created template hosts and template-contents roots receive separate,
   stable `PatchKey` identities. The host/contents association is typed and is
   not a parenting edge.
@@ -53,6 +55,8 @@ Related contracts:
 - Exposed by materialized `html::Node` values consumed by browser/runtime, CSS,
   Layout, and Paint-facing handoffs.
 - `DocumentType` is part of this materialized DOM identity domain when present.
+- Processing instructions are part of this materialized DOM identity domain
+  and remain typed leaves.
 - A typed template-contents fragment and all fragment descendants participate
   in this identity domain even though ordinary traversal does not enter them.
 - Today, browser `DomStore` materialization maps live `PatchKey(n)` to
@@ -69,8 +73,8 @@ Related contracts:
   `DomStore`.
 - Anchored to live materialized DOM provenance where currently representable,
   but separate from `PatchKey` and `html::internal::Id`.
-- Non-rendering parser-created nodes such as `DocumentType` do not create
-  retained render identity anchors.
+- Non-rendering parser-created nodes such as `DocumentType` and
+  `ProcessingInstruction` do not create retained render identity anchors.
 - A typed template host and its contents root/descendants create no retained
   render identity anchors.
 - Full document replacement starts a new retained render identity domain even

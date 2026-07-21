@@ -1,5 +1,5 @@
 # format: html5-token-v1
-COMMENT text="?bogus?"
+PI target="bogus" data=""
 START name=div attrs=[a="foo" bar=""] self_closing=false
 END name=div
 DOCTYPE name=null public_id=null system_id=null force_quirks=true

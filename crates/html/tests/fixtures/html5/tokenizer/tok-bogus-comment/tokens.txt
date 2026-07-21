@@ -1,4 +1,4 @@
 # format: html5-token-v1
-COMMENT text="?bogus?"
+COMMENT text="?bogus$?"
 CHAR text="\n"
 EOF

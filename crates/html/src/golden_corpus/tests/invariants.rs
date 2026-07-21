@@ -315,7 +315,7 @@ fn collect_text_into(node: &Node, out: &mut String) {
             }
         }
         Node::Text { text, .. } => out.push_str(text),
-        Node::DocumentType { .. } | Node::Comment { .. } => {}
+        Node::DocumentType { .. } | Node::Comment { .. } | Node::ProcessingInstruction { .. } => {}
     }
 }
 
@@ -324,7 +324,7 @@ fn has_comment(node: &Node) -> bool {
         Node::Comment { .. } => true,
         Node::Document { children, .. } => children.iter().any(has_comment),
         Node::Element { element } => element.children().iter().any(has_comment),
-        Node::DocumentType { .. } | Node::Text { .. } => false,
+        Node::DocumentType { .. } | Node::Text { .. } | Node::ProcessingInstruction { .. } => false,
     }
 }
 
@@ -345,7 +345,10 @@ fn find_element<'a>(node: &'a Node, name: &str) -> Option<&'a Node> {
         Node::Document { children, .. } => {
             children.iter().find_map(|child| find_element(child, name))
         }
-        Node::DocumentType { .. } | Node::Text { .. } | Node::Comment { .. } => None,
+        Node::DocumentType { .. }
+        | Node::Text { .. }
+        | Node::Comment { .. }
+        | Node::ProcessingInstruction { .. } => None,
     }
 }
 
@@ -363,7 +366,10 @@ fn element_contains_tag(node: &Node, name: &str) -> bool {
         Node::Document { children, .. } => children
             .iter()
             .any(|child| element_contains_tag(child, name)),
-        Node::DocumentType { .. } | Node::Text { .. } | Node::Comment { .. } => false,
+        Node::DocumentType { .. }
+        | Node::Text { .. }
+        | Node::Comment { .. }
+        | Node::ProcessingInstruction { .. } => false,
     }
 }
 
@@ -410,7 +416,10 @@ fn collect_element_names(node: &Node, out: &mut BTreeMap<String, usize>) {
                 collect_element_names(child, out);
             }
         }
-        Node::DocumentType { .. } | Node::Text { .. } | Node::Comment { .. } => {}
+        Node::DocumentType { .. }
+        | Node::Text { .. }
+        | Node::Comment { .. }
+        | Node::ProcessingInstruction { .. } => {}
     }
 }
 
@@ -520,7 +529,8 @@ fn element_attributes<'a>(
         Node::Document { .. }
         | Node::DocumentType { .. }
         | Node::Text { .. }
-        | Node::Comment { .. } => None,
+        | Node::Comment { .. }
+        | Node::ProcessingInstruction { .. } => None,
     }
 }
 

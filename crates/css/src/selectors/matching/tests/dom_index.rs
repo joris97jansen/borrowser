@@ -44,6 +44,21 @@ fn selector_dom_index_is_document_ordered_and_element_only() {
 }
 
 #[test]
+fn selector_dom_index_skips_processing_instructions_without_breaking_sibling_axes() {
+    let parsed = html::parse_document(
+        "<!doctype html><html><body><div></div><?Exact-Target data?><span></span></body></html>",
+        html::HtmlParseOptions::default(),
+    )
+    .expect("PI document parses");
+    let index = SelectorDomIndex::from_root(&parsed.document);
+    let ids = index.elements().collect::<Vec<_>>();
+
+    assert_eq!(index.len(), 5, "only html/head/body/div/span are indexed");
+    assert_eq!(index.previous_sibling_element(ids[4]), Some(ids[3]));
+    assert!(!index.to_debug_snapshot().contains("Exact-Target"));
+}
+
+#[test]
 fn selector_dom_index_previous_sibling_skips_non_elements() {
     let dom = doc(vec![element(
         "body",

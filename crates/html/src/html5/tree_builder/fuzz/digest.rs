@@ -68,6 +68,11 @@ impl FuzzDigest {
             Token::Eof => {
                 self.push_u8(5);
             }
+            Token::ProcessingInstruction(processing_instruction) => {
+                self.push_u8(6);
+                self.push_str(&processing_instruction.target);
+                self.push_text_value(&processing_instruction.data);
+            }
         }
     }
 
@@ -124,6 +129,12 @@ impl FuzzDigest {
                     self.push_u8(14);
                     self.push_u32(key.0);
                     self.push_str(text);
+                }
+                DomPatch::CreateProcessingInstruction { key, target, data } => {
+                    self.push_u8(23);
+                    self.push_u32(key.0);
+                    self.push_str(target);
+                    self.push_str(data);
                 }
                 DomPatch::AppendChild { parent, child } => {
                     self.push_u8(15);

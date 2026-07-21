@@ -35,6 +35,7 @@ mod dom_patch;
 mod entities;
 #[cfg(any(test, feature = "test-harness", feature = "html5"))]
 mod patch_validation;
+mod processing_instruction;
 mod types;
 
 use memchr::{memchr, memchr2};
@@ -106,11 +107,17 @@ pub use crate::parser::{
     HtmlParser, HtmlTokenizerLimits, HtmlTokenizerOptions, HtmlTreeBuilderLimits,
     HtmlTreeBuilderOptions, ParseOutput, parse_document,
 };
-pub use crate::types::{ElementNode, Node};
+pub use crate::types::{ElementNode, Node, ProcessingInstructionNode};
 
 #[cfg(feature = "internal-api")]
 pub mod internal {
-    pub use super::types::{DocumentFragmentNode, Id, NodeId, NodeKey, ParserCreatedFragmentKind};
+    pub use super::processing_instruction::{
+        ParserCreatedProcessingInstructionError, validate_parser_created_processing_instruction,
+    };
+    pub use super::types::{
+        DocumentFragmentNode, Id, NodeId, NodeKey, ParserCreatedFragmentKind,
+        ProcessingInstructionNode,
+    };
     use super::{ElementNamespace, ExpandedElementName, Node, ParserCreatedAttribute};
     use std::sync::{Mutex, OnceLock};
 
@@ -165,6 +172,18 @@ pub mod internal {
         children: Vec<Node>,
     ) -> Node {
         Node::from_element_parts(id, name, attributes, style, None, children)
+    }
+
+    pub fn processing_instruction_from_parts(
+        id: Id,
+        target: String,
+        data: String,
+    ) -> Result<Node, ParserCreatedProcessingInstructionError> {
+        Ok(Node::ProcessingInstruction {
+            processing_instruction: ProcessingInstructionNode::try_from_parser_created_parts(
+                id, target, data,
+            )?,
+        })
     }
 
     /// Materializes one structurally validated generic/legacy template value.

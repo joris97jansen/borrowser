@@ -1,5 +1,6 @@
 use super::support::*;
 use super::*;
+use crate::StylePhaseOutput;
 
 #[test]
 fn build_style_tree_with_stylesheets_uses_structured_pipeline_without_mutating_dom() {
@@ -26,6 +27,23 @@ fn build_style_tree_with_stylesheets_uses_structured_pipeline_without_mutating_d
         panic!("expected child element");
     };
     assert!(child.style().is_empty());
+}
+
+#[test]
+fn style_tree_preserves_processing_instruction_as_a_non_element_leaf() {
+    let parsed = html::parse_document(
+        "<!doctype html><html><body><p>before<?Exact-Target alpha ? beta?>after</p></body></html>",
+        html::HtmlParseOptions::default(),
+    )
+    .expect("PI document parses");
+    let styled = build_style_tree(&parsed.document, None);
+    let snapshot = StylePhaseOutput::new(styled).to_debug_snapshot();
+
+    assert!(snapshot.contains(
+        "kind=processing-instruction target=\"Exact-Target\" data=\"alpha ? beta\" children=0"
+    ));
+    assert!(snapshot.contains("kind=text text=\"before\""));
+    assert!(snapshot.contains("kind=text text=\"after\""));
 }
 
 #[test]

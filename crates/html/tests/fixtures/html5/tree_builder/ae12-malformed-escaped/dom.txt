@@ -1,0 +1,11 @@
+# format: html5-dom-v2
+# status: active
+
+#dom-snapshot-v2
+#document
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      <!-- ?xml -->
+      <!-- ?bad$ -->
+      processing-instruction target="Pi_Target-2" data="a\\\"b\tline"

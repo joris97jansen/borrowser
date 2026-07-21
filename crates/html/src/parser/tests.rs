@@ -47,6 +47,13 @@ fn summarize(node: &crate::Node, out: &mut Vec<String>) {
         crate::Node::DocumentType { name, .. } => out.push(format!("doctype:{name:?}")),
         crate::Node::Text { text, .. } => out.push(format!("text:{text}")),
         crate::Node::Comment { text, .. } => out.push(format!("comment:{text}")),
+        crate::Node::ProcessingInstruction {
+            processing_instruction,
+        } => out.push(format!(
+            "pi:{}:{}",
+            processing_instruction.target(),
+            processing_instruction.data()
+        )),
     }
 }
 

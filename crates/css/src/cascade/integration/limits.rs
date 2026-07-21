@@ -240,7 +240,10 @@ pub(super) fn count_styled_elements_bounded(
                 count += 1;
                 stack.extend(element.children().iter());
             }
-            Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => {}
+            Node::Text { .. }
+            | Node::Comment { .. }
+            | Node::ProcessingInstruction { .. }
+            | Node::DocumentType { .. } => {}
         }
     }
 

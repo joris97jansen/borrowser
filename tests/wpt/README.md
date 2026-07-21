@@ -104,6 +104,20 @@ AE9b select note:
 - Upstream errors are provenance only; Borrowser parse-error kinds are local
   deterministic regression contracts.
 
+AE12 processing-instruction note:
+
+- `provenance/ae12-supported-profile.provenance.txt` pins the WHATWG HTML, DOM,
+  and WPT revisions plus immutable source hashes.
+- Selected cases are full-document adaptations of exact upstream `#data`
+  strings and assert typed target/data, malformed fallback, parent/source
+  order, template contents, and negative text-state behavior.
+- `provenance/ae12-processing-instructions.cases` records every executed case's
+  one-based upstream identity, exact bytes, per-case SHA-256, scripting mode,
+  adaptation note, and exact expected-output provenance. The AE12 provenance
+  test recomputes those hashes and executes those same extracted bytes.
+- PI target/data resource-limit cases are additive Borrowser hardening tests;
+  they are not WPT-derived or counted as standards-conformant output.
+
 ## Notes
 
 - Manifest `status`/`reason` remains supported for compatibility, but policy for tokenizer/tree-construction slices is to keep manifest entries `active` and use `tokenizer/skips.*` or `tree_builder/skips.*` for temporary exclusions.

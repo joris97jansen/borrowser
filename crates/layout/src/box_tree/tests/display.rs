@@ -110,6 +110,42 @@ fn parser_created_template_host_and_contents_generate_no_boxes() {
 }
 
 #[test]
+fn processing_instruction_is_preserved_by_style_and_suppressed_by_box_generation() {
+    let dom = doc_with_body(vec![
+        text(4, "before"),
+        processing_instruction(5, "Exact-Target", "data"),
+        element(6, "span", Vec::new(), vec![text(7, "after")]),
+    ]);
+    let styled = css::build_style_tree(&dom, None);
+    let style_snapshot = css::StylePhaseOutput::new(styled).to_debug_snapshot();
+    assert!(
+        style_snapshot
+            .contains("kind=processing-instruction target=\"Exact-Target\" data=\"data\"")
+    );
+
+    let styled = css::build_style_tree(&dom, None);
+    let tree = BoxTree::generate(&styled, None);
+    assert!(
+        tree.nodes()
+            .iter()
+            .all(|node| node.direct_node_id() != Some(Id(5))),
+        "PI DOM identity must not acquire layout identity"
+    );
+    assert_eq!(
+        box_by_node_id(&tree, Id(4)).role(),
+        BoxGenerationRole::TextRun
+    );
+    assert_eq!(
+        box_by_node_id(&tree, Id(6)).role(),
+        BoxGenerationRole::OrdinaryElement
+    );
+    assert_eq!(
+        box_by_node_id(&tree, Id(7)).role(),
+        BoxGenerationRole::TextRun
+    );
+}
+
+#[test]
 fn unsupported_foreign_namespace_suppresses_its_complete_layout_subtree() {
     let svg = namespaced_element(
         4,

@@ -17,6 +17,10 @@ impl Html5TreeBuilder {
                 self.insert_comment(token_text, text)?;
                 Ok(DispatchOutcome::Done)
             }
+            Token::ProcessingInstruction(processing_instruction) => {
+                self.insert_processing_instruction(processing_instruction, text, None)?;
+                Ok(DispatchOutcome::Done)
+            }
             Token::Doctype { .. } => {
                 self.record_parse_error(
                     "in-column-group-doctype",

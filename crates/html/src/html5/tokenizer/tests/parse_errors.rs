@@ -131,22 +131,17 @@ fn lonely_tag_open_at_eof_reports_recoverable_parse_error() {
 }
 
 #[test]
-fn question_mark_tag_open_reports_error_and_enters_bogus_comment() {
+fn valid_processing_instruction_does_not_report_the_old_invalid_tag_open_error() {
     let (tokens, errors) =
         run_chunks_with_config_and_errors(TokenizerConfig::default(), &["<?bogus?>"]);
     assert_eq!(
         tokens,
-        vec!["COMMENT text=\"?bogus?\"".to_string(), "EOF".to_string()]
+        vec![
+            "PI target=\"bogus\" data=\"\"".to_string(),
+            "EOF".to_string()
+        ]
     );
-    assert_eq!(errors.len(), 1);
-    assert_eq!(errors[0].origin, ErrorOrigin::Tokenizer);
-    assert_eq!(errors[0].code, ParseErrorCode::Other);
-    assert_eq!(
-        errors[0].detail,
-        Some(super::super::normalization::ERROR_DETAIL_INVALID_TAG_OPEN)
-    );
-    assert_eq!(errors[0].position, 0);
-    assert_eq!(errors[0].aux, Some('?' as u32));
+    assert!(errors.is_empty());
 }
 
 #[test]

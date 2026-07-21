@@ -67,7 +67,10 @@ fn project_resolved_styles_to_dom<'a>(
             }
             true
         }
-        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => true,
+        Node::Text { .. }
+        | Node::Comment { .. }
+        | Node::ProcessingInstruction { .. }
+        | Node::DocumentType { .. } => true,
     }
 }
 
@@ -84,7 +87,10 @@ fn clear_legacy_styles(node: &mut Node) {
                 clear_legacy_styles(child);
             }
         }
-        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => {}
+        Node::Text { .. }
+        | Node::Comment { .. }
+        | Node::ProcessingInstruction { .. }
+        | Node::DocumentType { .. } => {}
     }
 }
 

@@ -232,6 +232,17 @@ pub fn check_patch_invariants(
             DomPatch::CreateComment { key, .. } => {
                 staged.insert_created_node(*key, DomInvariantNodeKind::Comment, patch_index)?;
             }
+            DomPatch::CreateProcessingInstruction { key, target, data } => {
+                crate::processing_instruction::validate_parser_created_processing_instruction(
+                    target, data,
+                )
+                .map_err(|_| PatchInvariantError::Internal("invalid parser-created PI payload"))?;
+                staged.insert_created_node(
+                    *key,
+                    DomInvariantNodeKind::ProcessingInstruction,
+                    patch_index,
+                )?;
+            }
             DomPatch::AppendChild { parent, child } => {
                 staged.apply_append_child(patch_index, *parent, *child)?;
             }

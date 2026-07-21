@@ -12,7 +12,10 @@ impl TestPatchArena {
             TestKind::Document { .. }
             | TestKind::Element { .. }
             | TestKind::DocumentFragment { .. } => Ok(()),
-            TestKind::DocumentType { .. } | TestKind::Text { .. } | TestKind::Comment { .. } => {
+            TestKind::DocumentType { .. }
+            | TestKind::Text { .. }
+            | TestKind::Comment { .. }
+            | TestKind::ProcessingInstruction { .. } => {
                 Err(format!("{context} must be a container"))
             }
         }

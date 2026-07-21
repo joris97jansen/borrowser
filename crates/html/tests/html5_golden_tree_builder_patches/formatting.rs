@@ -64,6 +64,14 @@ fn format_patch(patch: &html::DomPatch) -> String {
         html::DomPatch::CreateComment { key, text } => {
             format!("CreateComment key={} text=\"{}\"", key.0, escape_text(text))
         }
+        html::DomPatch::CreateProcessingInstruction { key, target, data } => {
+            format!(
+                "CreateProcessingInstruction key={} target=\"{}\" data=\"{}\"",
+                key.0,
+                escape_text(target),
+                escape_text(data)
+            )
+        }
         html::DomPatch::AppendChild { parent, child } => {
             format!("AppendChild parent={} child={}", parent.0, child.0)
         }

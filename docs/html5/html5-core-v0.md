@@ -278,6 +278,23 @@ breakout/reprocessing; foreign self-closing and end-tag recovery; and the
 tree-builder-controlled CDATA tokenizer boundary. See
 `ae11-foreign-content-tree-construction-contract.md`.
 
+AE12 adds the current five HTML processing-instruction tokenizer states and a
+typed target/data token. Recognition is Data/TagOpen-only and preserves the
+existing resumable prefix-first TagOpen cursor representation. Valid targets
+retain exact case; invalid and ASCII-case-insensitive `xml`/
+`xml-stylesheet` targets use exact `?`-prefixed bogus-comment recovery; leading
+separator whitespace is discarded; questionable-state non-`>` input appends
+`?` and reconsumes in PI data; unfinished EOF emits no PI.
+
+Tree construction inserts typed PI leaves through the shared adjusted
+insertion location across the supported early/body/table/template/after-body
+and foreign-content modes. InTable PIs are direct and never foster-parented;
+template redirection remains owned by the adjusted-location abstraction. The
+node survives structural patches, strict validation, Browser materialization,
+and deterministic snapshots while selector indexing, Layout box generation,
+retained render identity, and Paint exclude it. See
+`ae12-processing-instruction-contract.md`.
+
 <a id="doctype-and-quirks-stance"></a>
 ### DOCTYPE And Quirks Stance
 
@@ -395,6 +412,10 @@ The following are intentionally not part of the Core v0 guarantee:
   - public template/fragment DOM APIs, fragment parsing, cloning, adoption and
     owner-document semantics, scripting, declarative shadow DOM, custom
     elements, live mutation, and rendering/resource activation of contents
+  - full DOM `ProcessingInstruction` APIs, pseudo-attributes, constructors,
+    CharacterData mutation, cloning, public mutation, and broader DOM PI
+    validity
+  - `PLAINTEXT`, frameset insertion modes, and fragment parsing for AE12
 
 Policy classification requirements:
 
@@ -438,6 +459,7 @@ This contract prevents accidental reliance on unspecified behavior.
   AE8/AE10 composition;
   historical `InSelect`/`InSelectInTable` modes are intentionally not used.
 - Full tree-builder text mode parity (`TB-MODE-TEXT`), including deferred RAWTEXT/RCDATA coupling.
+- XML parsing, stylesheet PI behavior, PI execution, and resource loading.
 
 <a id="core-v0-gate-and-evidence-model"></a>
 ## Core v0 Gate And Evidence Model

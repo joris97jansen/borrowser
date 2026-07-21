@@ -30,6 +30,10 @@ pub(crate) enum PatchKind {
     Comment {
         text: String,
     },
+    ProcessingInstruction {
+        target: String,
+        data: String,
+    },
 }
 
 #[derive(Clone, Debug)]

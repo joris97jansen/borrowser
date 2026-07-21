@@ -63,7 +63,8 @@ fn create_count_by_key(patches: &[DomPatch]) -> BTreeMap<PatchKey, usize> {
             | DomPatch::CreateDocumentType { key, .. }
             | DomPatch::CreateElement { key, .. }
             | DomPatch::CreateText { key, .. }
-            | DomPatch::CreateComment { key, .. } => *key,
+            | DomPatch::CreateComment { key, .. }
+            | DomPatch::CreateProcessingInstruction { key, .. } => *key,
             DomPatch::CreateTemplateContents { contents, .. } => *contents,
             DomPatch::Clear
             | DomPatch::AppendChild { .. }

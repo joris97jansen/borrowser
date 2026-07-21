@@ -1,0 +1,12 @@
+# format: html5-dom-v2
+# status: active
+
+#dom-snapshot-v2
+#document
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=svg local="svg" attrs=[]
+        processing-instruction target="Svg" data="svg-data"
+      element ns=mathml local="math" attrs=[]
+        processing-instruction target="Math" data="math-data"

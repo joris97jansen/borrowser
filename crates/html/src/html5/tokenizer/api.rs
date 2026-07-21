@@ -38,6 +38,14 @@ pub struct TokenizerLimits {
     /// Maximum decoded UTF-8 byte length for an emitted comment token.
     /// Oversized comments are truncated to this prefix.
     pub max_comment_bytes: usize,
+    /// Maximum decoded UTF-8 byte length for a processing-instruction target.
+    /// A syntactically valid oversized target is scanned completely but its PI
+    /// token is suppressed; malformed recovery remains based on the full input.
+    pub max_processing_instruction_target_bytes: usize,
+    /// Maximum decoded UTF-8 byte length retained for processing-instruction
+    /// data. The tokenizer continues scanning after overflow and emits a
+    /// deterministically bounded payload at the real terminator.
+    pub max_processing_instruction_data_bytes: usize,
     /// Maximum decoded UTF-8 byte length tolerated while parsing a doctype
     /// declaration payload (name/public/system tail). Oversized doctypes are
     /// forced into quirks/bogus recovery.
@@ -63,6 +71,8 @@ impl Default for TokenizerLimits {
             max_attribute_value_bytes: 16 * 1024,
             max_attributes_per_tag: 256,
             max_comment_bytes: 64 * 1024,
+            max_processing_instruction_target_bytes: 1024,
+            max_processing_instruction_data_bytes: 64 * 1024,
             max_doctype_bytes: 8 * 1024,
             max_end_tag_match_scan_bytes: 64 * 1024,
         }
@@ -106,6 +116,18 @@ enum EofTailRecovery {
     LonelyTagOpen,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(in crate::html5::tokenizer) struct PendingProcessingInstruction {
+    pub(in crate::html5::tokenizer) comment_start: usize,
+    pub(in crate::html5::tokenizer) target_start: usize,
+    pub(in crate::html5::tokenizer) target_end: Option<usize>,
+    pub(in crate::html5::tokenizer) target_limit_reported: bool,
+    pub(in crate::html5::tokenizer) suppress_token: bool,
+    pub(in crate::html5::tokenizer) data_start: Option<usize>,
+    pub(in crate::html5::tokenizer) bounded_data_end: Option<usize>,
+    pub(in crate::html5::tokenizer) data_limit_reported: bool,
+}
+
 /// HTML5 tokenizer.
 pub struct Html5Tokenizer {
     pub(in crate::html5::tokenizer) config: TokenizerConfig,
@@ -120,6 +142,8 @@ pub struct Html5Tokenizer {
     pub(in crate::html5::tokenizer) pending_text_start: Option<usize>,
     pub(in crate::html5::tokenizer) pending_comment_start: Option<usize>,
     pub(in crate::html5::tokenizer) pending_comment_limit_reported: bool,
+    pub(in crate::html5::tokenizer) pending_processing_instruction:
+        Option<PendingProcessingInstruction>,
     pub(in crate::html5::tokenizer) pending_doctype_name: Option<crate::html5::shared::AtomId>,
     pub(in crate::html5::tokenizer) pending_doctype_name_start: Option<usize>,
     pub(in crate::html5::tokenizer) pending_doctype_public_id: Option<String>,
@@ -163,6 +187,7 @@ impl Html5Tokenizer {
             pending_text_start: None,
             pending_comment_start: None,
             pending_comment_limit_reported: false,
+            pending_processing_instruction: None,
             pending_doctype_name: None,
             pending_doctype_name_start: None,
             pending_doctype_public_id: None,
@@ -352,6 +377,7 @@ impl Html5Tokenizer {
             }
             self.flush_pending_doctype_eof_with_context(input, ctx, !eof_tail_error_recorded);
             self.flush_pending_comment_eof_with_context(input, ctx, !eof_tail_error_recorded);
+            self.discard_pending_processing_instruction_eof();
             if self.active_text_mode.is_some() && !eof_tail_error_recorded {
                 self.record_tokenizer_parse_error(
                     ctx,
@@ -365,6 +391,7 @@ impl Html5Tokenizer {
         } else {
             self.flush_pending_doctype_eof(input);
             self.flush_pending_comment_eof(input);
+            self.discard_pending_processing_instruction_eof();
             self.flush_pending_text(input);
         }
         if self.config.emit_eof {
@@ -502,6 +529,13 @@ impl Html5Tokenizer {
             | TokenizerState::CdataSectionBracket
             | TokenizerState::CdataSectionEnd => super::normalization::ERROR_DETAIL_EOF_IN_CDATA,
             TokenizerState::TagOpen => super::normalization::ERROR_DETAIL_EOF_IN_TAG_OPEN,
+            TokenizerState::ProcessingInstructionOpen
+            | TokenizerState::ProcessingInstructionTarget
+            | TokenizerState::AfterProcessingInstructionTarget
+            | TokenizerState::ProcessingInstructionData
+            | TokenizerState::ProcessingInstructionQuestionable => {
+                super::normalization::ERROR_DETAIL_EOF_IN_PROCESSING_INSTRUCTION
+            }
             _ => return,
         };
         self.record_tokenizer_parse_error(

@@ -96,15 +96,18 @@ impl Html5TreeBuilder {
         })
     }
 
-    pub(in crate::html5::tree_builder) fn ensure_document_created_for_initial_comment(
+    /// Creates the Document for an Initial-mode non-doctype node without
+    /// completing bootstrap, so a following conforming doctype is still
+    /// accepted in source order.
+    pub(in crate::html5::tree_builder) fn ensure_document_created_for_initial_node(
         &mut self,
     ) -> Result<PatchKey, TreeBuilderError> {
         if let Some(key) = self.document_key {
             return Ok(key);
         }
-        debug_assert!(
+        assert!(
             self.pending_doctype.is_none(),
-            "Initial comments should create a document before any pending doctype exists"
+            "initial-node bootstrap must precede pending doctype capture"
         );
         self.create_document_node()
     }

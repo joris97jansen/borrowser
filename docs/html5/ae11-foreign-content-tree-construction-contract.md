@@ -374,7 +374,7 @@ architectural decision; a follow-up issue alone cannot waive the gate. The
 in-process mixed-versus-ordinary wall-clock ratio is only an additional
 resource/scheduler sanity guard and is not regression evidence.
 
-## AE12 follow-up
+## AE12 resolution
 
 Milestone: **AE — HTML Tokenizer, Tree Construction, and DOM Construction
 Conformance**
@@ -382,10 +382,11 @@ Conformance**
 Issue: **AE12 — Add HTML processing-instruction tokenization and parser-created
 nodes**
 
-Implement the current HTML processing-instruction tokenizer states, typed token
-representation, parser-created `ProcessingInstruction` node, tree-construction
-insertion behavior, patch transport, materialization, deterministic snapshots,
-parse errors, and whole-input/chunked-input parity. Cover applicable ordinary
-HTML insertion modes and foreign-content processing without introducing an XML
-parser, XML namespace resolution, scripting, resource processing, or public
-DOM mutation APIs.
+AE12 now implements the current HTML processing-instruction tokenizer states,
+typed token and parser-created node, ordinary and foreign tree insertion,
+patch transport, materialization, snapshots, and whole/chunk parity. The AE11
+pinned profile itself remains historically accurate: PI was excluded from that
+profile and is composed through the later
+[`AE12 contract`](ae12-processing-instruction-contract.md). This composition
+does not introduce an XML parser, XML namespace resolution, scripting,
+resource processing, or public DOM mutation APIs.

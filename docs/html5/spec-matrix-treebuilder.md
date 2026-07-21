@@ -267,6 +267,22 @@ For HTML5 Core v0 tree builder:
 | `TB-ALGO-FOREIGN-RECOVERY` | MVP | self-closing, end-tag scan, breakout/reprocessing, integration points | `tree_builder/foreign/dispatch.rs` | error, malformed, namespace restoration, and chunk parity tests | static trees only; no SVG/MathML runtime behavior |
 | `TOK-CDATA-FOREIGN-BOUNDARY` | MVP | markup-declaration decision and three CDATA states | tokenizer machine plus session driver query | HTML/SVG/MathML/template whole/chunk tests | emits ordinary character tokens; not XML parsing |
 
-The matrix is pinned by `AE11-WHATWG-supported-token-profile-v1`. Processing
-instructions are an explicit AE12 gap. SVG script has namespace-correct static
-tree/stack behavior only.
+The foreign-content matrix is pinned by
+`AE11-WHATWG-supported-token-profile-v1`. AE12 subsequently adds direct typed
+PI insertion in foreign content and normal integration-point return to HTML
+handling. SVG script has namespace-correct static tree/stack behavior only.
+
+## AE12 processing-instruction profile
+
+| ID | Status | Algorithm | Implementation | Evidence | Boundary |
+| --- | --- | --- | --- | --- | --- |
+| `TB-ALGO-INSERT-PI` | MVP | shared insert-a-processing-instruction operation through adjusted insertion location | `tree_builder/insert/{create,location}.rs` | AE12 tree-builder, patch, template, foreign, Browser, and snapshot tests | parser-produced target/data only; leaf node |
+| `TB-PI-EARLY-BODY` | MVP | direct handling in Initial, BeforeHtml, BeforeHead, InHead, AfterHead, InBody, AfterBody, AfterAfterBody | `dispatch/{early_modes,in_body}.rs` | document order and head/body placement tests | explicit document/html overrides where specified |
+| `TB-PI-TABLE` | MVP | direct InTable/InColumnGroup; InTableText flush/restore/reprocess; caption/body/row/cell delegation | `table/*.rs`, `dispatch/in_body.rs` | no-foster, reprocessing, caption/colgroup/body/row/cell tests | InTable PI never reaches foster-parenting `anything else` |
+| `TB-PI-TEMPLATE` | MVP | InTemplate category delegation plus adjusted-location contents redirection | `dispatch/template.rs`, `insert/location.rs` | template-contents DOM/patch snapshots | no public fragment parsing or template API |
+| `TB-PI-FOREIGN` | MVP | direct foreign insertion or normal integration-point HTML dispatch | `foreign/dispatch.rs` | SVG, MathML, and integration-point tests | no XML parsing or namespace resolution |
+| `TB-PI-TEXT-INVARIANT` | MVP | reject impossible synthetic Text-mode PI before mutation | `dispatch/drive.rs`, `text_mode.rs` | direct no-mutation and arbitrary-token fuzz tests | internal invariant error, never an HTML parse error |
+
+This profile is pinned by `AE12-WHATWG-processing-instruction-profile-v1`.
+The PI receives parser/DOM identity but no retained render identity or render
+artifact. Frameset modes and fragment parsing remain outside AE12.

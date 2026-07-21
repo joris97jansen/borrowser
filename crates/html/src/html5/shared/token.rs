@@ -37,6 +37,16 @@ pub enum TextValue {
     },
 }
 
+/// Processing-instruction token payload produced by the HTML tokenizer.
+///
+/// The target is an exact-case, owned string. It deliberately does not use the
+/// ASCII-folded atom path reserved for HTML element and attribute names.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct ProcessingInstructionToken {
+    pub target: String,
+    pub data: TextValue,
+}
+
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum Token {
     Doctype {
@@ -64,6 +74,7 @@ pub enum Token {
     Comment {
         text: TextValue,
     },
+    ProcessingInstruction(ProcessingInstructionToken),
     /// Text token in the HTML5 stream.
     ///
     /// Determinism contract:

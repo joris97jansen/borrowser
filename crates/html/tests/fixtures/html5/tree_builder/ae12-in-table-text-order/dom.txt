@@ -1,0 +1,17 @@
+# format: html5-dom-v2
+# status: active
+
+#dom-snapshot-v2
+#document
+  element ns=html local="html" attrs=[]
+    element ns=html local="head" attrs=[]
+    element ns=html local="body" attrs=[]
+      element ns=html local="p" attrs=[]
+        "before"
+      "x"
+      element ns=html local="table" attrs=[]
+        processing-instruction target="table" data="data"
+        element ns=html local="caption" attrs=[]
+          "c"
+      element ns=html local="p" attrs=[]
+        "after"

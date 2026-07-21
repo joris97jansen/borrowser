@@ -148,6 +148,20 @@ impl DomDoc {
                 self.arena
                     .insert_node(*key, NodeKind::Comment { text: text.clone() })?;
             }
+            DomPatch::CreateProcessingInstruction { key, target, data } => {
+                self.ensure_key(*key)?;
+                html::internal::validate_parser_created_processing_instruction(target, data)
+                    .map_err(|_| {
+                        DomPatchError::Protocol("invalid parser-created processing instruction")
+                    })?;
+                self.arena.insert_node(
+                    *key,
+                    NodeKind::ProcessingInstruction {
+                        target: target.clone(),
+                        data: data.clone(),
+                    },
+                )?;
+            }
             DomPatch::AppendChild { parent, child } => {
                 self.ensure_live(*parent)?;
                 self.ensure_live(*child)?;

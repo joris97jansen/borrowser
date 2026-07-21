@@ -16,6 +16,7 @@ Related contracts:
 - [`docs/html5/invariants.md`](invariants.md)
 - [`docs/html5/node-identity-contract.md`](node-identity-contract.md)
 - [`docs/html5/html5-core-v0.md`](html5-core-v0.md)
+- [`docs/html5/ae12-processing-instruction-contract.md`](ae12-processing-instruction-contract.md)
 
 ## Ownership Boundary
 
@@ -39,11 +40,22 @@ Parser-created DOM output uses explicit node kinds:
   attributes.
 - `Text`: text data.
 - `Comment`: comment data.
+- `ProcessingInstruction`: an AE12 parser-created leaf with an exact target and
+  separate data string.
 
-`DocumentType` is a real traversable internal node. It is represented in
+`DocumentType` and `ProcessingInstruction` are real traversable internal nodes.
+They are represented in
 `html::Node`, `DomPatch::CreateDocumentType`, tree-builder live invariant
-state, strict patch validation state, browser `DomStore`, and deterministic
-DOM snapshots.
+state, strict patch validation state, browser `DomStore`, and deterministic DOM
+snapshots. Processing instructions use the corresponding typed
+`DomPatch::CreateProcessingInstruction` opcode rather than comment, text, or
+element storage.
+
+`ProcessingInstructionNode` construction is checked in all build profiles.
+The internal factory returns the shared parser-created PI validation error for
+invalid target/data rather than relying on `debug_assert!`. PatchValidationArena
+and Browser validate untrusted patch payloads before commit; Browser consumes
+the same validator through `html::internal` and does not duplicate it.
 
 The legacy `Document { doctype }` field and `DomPatch::CreateDocument {
 doctype }` payload are compatibility metadata for older paths. HTML5
@@ -104,8 +116,10 @@ Required invariants:
 - parent/child edges are bidirectionally consistent in validator state;
 - child lists contain no duplicate node references;
 - the tree is acyclic;
-- only `Document` and `Element` nodes may have children;
-- `DocumentType`, `Text`, and `Comment` are leaf nodes;
+- only `Document`, `Element`, and typed parser-created fragments may have
+  children;
+- `DocumentType`, `Text`, `Comment`, and `ProcessingInstruction` are leaf
+  nodes;
 - a `DocumentType` node, when present, is a direct child of the document;
 - at most one `DocumentType` child is present;
 - the `DocumentType` child precedes the first document element child;
@@ -134,6 +148,11 @@ These domains are separate. Consumers must not rely on numeric equality across
 It does not create a retained render identity anchor because it does not
 generate renderable content.
 
+AE12 processing instructions likewise receive parser key, live-tree,
+`DomStore`, and materialized DOM identities while receiving no retained render,
+layout, paint, or stacking identity. Exact target case is preserved and is not
+interned through the HTML element-name path.
+
 ## Consumer Rules
 
 Consumers handle `DocumentType` explicitly:
@@ -149,6 +168,12 @@ Consumers handle `DocumentType` explicitly:
 
 None of these consumer behaviors transfer doctype semantics out of HTML/parser.
 
+Consumers preserve AE12 processing instructions as typed non-element leaves
+where the intermediate representation requires them. Selector indexing remains
+element-only; Layout centrally suppresses PI box generation; Paint consequently
+receives no PI-derived artifact. Consumers do not recognize PI syntax or
+reinterpret target/data semantics.
+
 ## Non-Goals
 
 AE2 does not implement:
@@ -163,6 +188,9 @@ AE2 does not implement:
 - navigation;
 - full DOM `DocumentType` API exposure;
 - broad tree-construction conformance beyond the supported Milestone AE scope.
+- complete DOM `ProcessingInstruction` APIs, including constructors,
+  pseudo-attribute maps, attribute/CharacterData mutation, cloning, and public
+  live mutation.
 
 ## AE10 Typed Parser-Created Fragments
 

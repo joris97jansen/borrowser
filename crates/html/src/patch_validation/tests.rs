@@ -1,7 +1,7 @@
 use super::PatchValidationArena;
-use crate::DomPatch;
 use crate::dom_patch::PatchKey;
 use crate::test_support::html_name;
+use crate::{DomPatch, Node};
 
 #[test]
 fn patch_validation_arena_accepts_valid_batches_and_materializes() {
@@ -387,4 +387,114 @@ fn materialization_rejects_an_associated_fragment_kind_mismatch() {
         .materialize()
         .expect_err("materialization must independently validate fragment kind");
     assert!(error.to_string().contains("not template contents"));
+}
+
+#[test]
+fn processing_instruction_patch_is_typed_materialized_and_a_leaf() {
+    let mut arena = PatchValidationArena::default();
+    arena
+        .apply_batch(&[
+            DomPatch::CreateDocument {
+                key: PatchKey(1),
+                doctype: None,
+            },
+            DomPatch::CreateProcessingInstruction {
+                key: PatchKey(2),
+                target: "Exact-Target".to_string(),
+                data: "alpha ? beta".to_string(),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(1),
+                child: PatchKey(2),
+            },
+        ])
+        .expect("valid parser-created PI batch");
+
+    let dom = arena.materialize().expect("PI arena materializes");
+    let Node::Document { children, .. } = dom else {
+        panic!("expected document")
+    };
+    let Node::ProcessingInstruction {
+        processing_instruction,
+    } = &children[0]
+    else {
+        panic!("expected typed PI child")
+    };
+    assert_eq!(processing_instruction.target(), "Exact-Target");
+    assert_eq!(processing_instruction.data(), "alpha ? beta");
+    assert!(children[0].children().is_none(), "PI must be a leaf");
+
+    let before = crate::dom_snapshot::DomSnapshot::new(
+        &Node::Document {
+            id: crate::types::Id::INVALID,
+            doctype: None,
+            children,
+        },
+        crate::dom_snapshot::DomSnapshotOptions::default(),
+    )
+    .render();
+    let err = arena
+        .apply_batch(&[
+            DomPatch::CreateText {
+                key: PatchKey(3),
+                text: "child".to_string(),
+            },
+            DomPatch::AppendChild {
+                parent: PatchKey(2),
+                child: PatchKey(3),
+            },
+        ])
+        .expect_err("PI cannot accept children");
+    assert!(err.to_string().contains("target must be a container node"));
+    let after = crate::dom_snapshot::DomSnapshot::new(
+        &arena.materialize().expect("failed leaf batch is atomic"),
+        crate::dom_snapshot::DomSnapshotOptions::default(),
+    )
+    .render();
+    assert_eq!(before, after, "failed PI child batch must be atomic");
+}
+
+#[test]
+fn processing_instruction_patch_rejects_non_parser_producible_payloads_atomically() {
+    let invalid = [
+        ("", "data"),
+        ("1pi", "data"),
+        ("pi.name", "data"),
+        ("xMl", "data"),
+        ("XML-Stylesheet", "data"),
+        ("pi", "contains > terminator"),
+    ];
+
+    for (target, data) in invalid {
+        let mut arena = PatchValidationArena::default();
+        arena
+            .apply_batch(&[DomPatch::CreateDocument {
+                key: PatchKey(1),
+                doctype: None,
+            }])
+            .expect("seed document");
+        let before = crate::dom_snapshot::DomSnapshot::new(
+            &arena.materialize().expect("seed materializes"),
+            crate::dom_snapshot::DomSnapshotOptions::default(),
+        )
+        .render();
+        let err = arena
+            .apply_batch(&[DomPatch::CreateProcessingInstruction {
+                key: PatchKey(2),
+                target: target.to_string(),
+                data: data.to_string(),
+            }])
+            .expect_err("invalid PI payload must be rejected");
+        assert!(
+            err.to_string()
+                .contains("invalid parser-created PI payload"),
+            "unexpected error for target={target:?} data={data:?}: {err}"
+        );
+        let after = crate::dom_snapshot::DomSnapshot::new(
+            &arena.materialize().expect("failed payload is atomic"),
+            crate::dom_snapshot::DomSnapshotOptions::default(),
+        )
+        .render();
+        assert_eq!(before, after);
+    }
 }

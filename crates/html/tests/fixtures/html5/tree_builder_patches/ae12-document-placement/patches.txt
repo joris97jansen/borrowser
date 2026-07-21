@@ -1,0 +1,29 @@
+# format: html5-dompatch-v2
+# status: active
+
+Batch index=0 size=25
+CreateDocument key=1 doctype=<none>
+CreateProcessingInstruction key=2 target="pre" data=""
+AppendChild parent=1 child=2
+CreateDocumentType key=3 name="html" public-id=<none> system-id=<none>
+AppendChild parent=1 child=3
+CreateProcessingInstruction key=4 target="between" data=""
+AppendChild parent=1 child=4
+CreateElement key=5 ns=html local="html" attrs=[]
+AppendChild parent=1 child=5
+CreateProcessingInstruction key=6 target="before_head" data=""
+AppendChild parent=5 child=6
+CreateElement key=7 ns=html local="head" attrs=[]
+AppendChild parent=5 child=7
+CreateProcessingInstruction key=8 target="in_head" data=""
+AppendChild parent=7 child=8
+CreateProcessingInstruction key=9 target="after_head" data=""
+AppendChild parent=5 child=9
+CreateElement key=10 ns=html local="body" attrs=[]
+AppendChild parent=5 child=10
+CreateProcessingInstruction key=11 target="in_body" data=""
+AppendChild parent=10 child=11
+CreateProcessingInstruction key=12 target="after_body" data=""
+AppendChild parent=5 child=12
+CreateProcessingInstruction key=13 target="after_after" data=""
+AppendChild parent=1 child=13

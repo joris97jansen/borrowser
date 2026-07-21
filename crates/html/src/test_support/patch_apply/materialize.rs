@@ -36,6 +36,12 @@ impl TestPatchArena {
             },
             Node::Text { text, .. } => TestKind::Text { text: text.clone() },
             Node::Comment { text, .. } => TestKind::Comment { text: text.clone() },
+            Node::ProcessingInstruction {
+                processing_instruction,
+            } => TestKind::ProcessingInstruction {
+                target: processing_instruction.target().to_string(),
+                data: processing_instruction.data().to_string(),
+            },
         };
         if self.nodes.contains_key(&key) || self.allocated.contains(&key) {
             return Err("duplicate key".to_string());
@@ -145,6 +151,15 @@ impl TestPatchArena {
             TestKind::Comment { text } => Node::Comment {
                 id,
                 text: text.clone(),
+            },
+            TestKind::ProcessingInstruction { target, data } => Node::ProcessingInstruction {
+                processing_instruction:
+                    crate::types::ProcessingInstructionNode::try_from_parser_created_parts(
+                        id,
+                        target.clone(),
+                        data.clone(),
+                    )
+                    .map_err(|error| format!("invalid parser-created PI payload: {error:?}"))?,
             },
         };
         Ok(result)

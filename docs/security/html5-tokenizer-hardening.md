@@ -79,6 +79,8 @@ Current default limits:
 | `max_attribute_value_bytes` | `16 * 1024` | Truncate the attribute value before entity decoding |
 | `max_attributes_per_tag` | `256` | Drop additional attributes deterministically |
 | `max_comment_bytes` | `64 * 1024` | Truncate the emitted comment token |
+| `max_processing_instruction_target_bytes` | `1024` | Scan the complete target and preserve malformed/disallowed detection, but suppress an otherwise valid oversized PI |
+| `max_processing_instruction_data_bytes` | `64 * 1024` | Continue through the real terminator and emit a bounded data prefix |
 | `max_doctype_bytes` | `8 * 1024` | Force doctype quirks / bogus recovery |
 | `max_end_tag_match_scan_bytes` | `64 * 1024` | Abandon the oversized RAWTEXT / RCDATA / script end-tag candidate and treat it as literal text |
 
@@ -103,9 +105,19 @@ over exact token fidelity once a construct has already exceeded policy.
 - `max_tokens_per_batch` prevents unbounded queue growth inside one pump call.
 - name/value/comment/doctype byte ceilings prevent a single construct from
   forcing unbounded buffering or repeated growth.
+- processing-instruction target/data ceilings bound their category-specific
+  payloads without borrowing tag-name or comment policy. Target overflow never
+  creates a truncated semantic target; data overflow preserves terminator
+  scanning.
 - `max_attributes_per_tag` prevents adversarial attribute floods.
 - `max_end_tag_match_scan_bytes` bounds resumable text-mode close-tag matching
   in RAWTEXT / RCDATA / script states.
+
+PI target suppression and bounded-data emission are additive Borrowser
+resource-hardening recovery, not WHATWG processing-instruction behavior.
+Conformance fixtures remain below the limits; hardening tests are labeled and
+counted separately. Limit diagnostics and recovery must remain whole/chunk
+equivalent.
 
 ## Stall Guardrail
 

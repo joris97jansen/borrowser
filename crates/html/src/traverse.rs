@@ -90,7 +90,10 @@ impl<'a> Iterator for FullModelPreorder<'a> {
                 );
             }
             FullModelNodeRef::Node(
-                Node::DocumentType { .. } | Node::Text { .. } | Node::Comment { .. },
+                Node::DocumentType { .. }
+                | Node::Text { .. }
+                | Node::Comment { .. }
+                | Node::ProcessingInstruction { .. },
             ) => {}
         }
         Some(visit)
@@ -183,7 +186,10 @@ pub(crate) fn assign_missing_ids_allow_collisions(root: &mut Node) {
                             ));
                         }
                     }
-                    Node::DocumentType { .. } | Node::Text { .. } | Node::Comment { .. } => {}
+                    Node::DocumentType { .. }
+                    | Node::Text { .. }
+                    | Node::Comment { .. }
+                    | Node::ProcessingInstruction { .. } => {}
                 }
             }
             FullModelMutPtr::Fragment(fragment_ptr) => {

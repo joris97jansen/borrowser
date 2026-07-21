@@ -1,0 +1,17 @@
+# format: html5-dom-v2
+# status: active
+
+#dom-snapshot-v2
+#document
+  processing-instruction target="pre" data=""
+  <!doctype html>
+  processing-instruction target="between" data=""
+  element ns=html local="html" attrs=[]
+    processing-instruction target="before_head" data=""
+    element ns=html local="head" attrs=[]
+      processing-instruction target="in_head" data=""
+    processing-instruction target="after_head" data=""
+    element ns=html local="body" attrs=[]
+      processing-instruction target="in_body" data=""
+    processing-instruction target="after_body" data=""
+  processing-instruction target="after_after" data=""

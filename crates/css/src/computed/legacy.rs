@@ -280,7 +280,10 @@ pub fn build_style_tree<'a>(
             }
         }
 
-        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => {
+        Node::Text { .. }
+        | Node::Comment { .. }
+        | Node::ProcessingInstruction { .. }
+        | Node::DocumentType { .. } => {
             // Inherit everything from parent
             let inherited = parent_style.copied().unwrap_or_else(ComputedStyle::initial);
 

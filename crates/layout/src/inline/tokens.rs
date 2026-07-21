@@ -315,6 +315,7 @@ fn collect_inline_tokens_from_layout_box<'style_tree, 'dom>(
         Node::Element { .. }
         | Node::Document { .. }
         | Node::Comment { .. }
+        | Node::ProcessingInstruction { .. }
         | Node::DocumentType { .. } => {
             let mut next_ctx = ctx.clone();
             if matches!(

@@ -111,6 +111,14 @@ pub(crate) enum TokenizerInvariantError {
         span: TextSpan,
         len: usize,
     },
+    ProcessingInstructionPendingMismatch {
+        state: TokenizerState,
+        pending: bool,
+    },
+    InvalidProcessingInstructionMetadata {
+        state: TokenizerState,
+        reason: &'static str,
+    },
 }
 
 impl std::fmt::Display for TokenizerInvariantError {
@@ -184,6 +192,14 @@ impl std::fmt::Display for TokenizerInvariantError {
                 "{field} contains invalid span {}..{} for len={len}",
                 span.start, span.end
             ),
+            Self::ProcessingInstructionPendingMismatch { state, pending } => write!(
+                f,
+                "processing-instruction state/pending mismatch: state={state:?} pending={pending}"
+            ),
+            Self::InvalidProcessingInstructionMetadata { state, reason } => write!(
+                f,
+                "invalid processing-instruction metadata in state {state:?}: {reason}"
+            ),
         }
     }
 }
@@ -208,6 +224,7 @@ impl Html5Tokenizer {
         check_offset(input, "cursor", self.cursor, true)?;
         check_optional_offset(input, "pending_text_start", self.pending_text_start)?;
         check_optional_offset(input, "pending_comment_start", self.pending_comment_start)?;
+        self.check_processing_instruction_state_invariant(input)?;
         check_optional_offset(
             input,
             "pending_doctype_name_start",
@@ -302,6 +319,13 @@ impl Html5Tokenizer {
                 Token::Comment { text } => {
                     check_text_value(input, "comment.text", text)?;
                 }
+                Token::ProcessingInstruction(processing_instruction) => {
+                    check_text_value(
+                        input,
+                        "processing_instruction.data",
+                        &processing_instruction.data,
+                    )?;
+                }
                 Token::Text { text } => {
                     check_text_value(input, "text.text", text)?;
                 }
@@ -326,6 +350,147 @@ impl Html5Tokenizer {
         }
 
         debug_assert!(self.cursor <= len);
+        Ok(())
+    }
+
+    pub(in crate::html5::tokenizer) fn assert_processing_instruction_state_invariant(
+        &self,
+        input: &Input,
+    ) {
+        if let Err(error) = self.check_processing_instruction_state_invariant(input) {
+            panic!("tokenizer invariant failure: {error}");
+        }
+    }
+
+    fn check_processing_instruction_state_invariant(
+        &self,
+        input: &Input,
+    ) -> Result<(), TokenizerInvariantError> {
+        let in_processing_instruction_state = self.state.is_processing_instruction();
+        if in_processing_instruction_state != self.pending_processing_instruction.is_some() {
+            return Err(
+                TokenizerInvariantError::ProcessingInstructionPendingMismatch {
+                    state: self.state,
+                    pending: self.pending_processing_instruction.is_some(),
+                },
+            );
+        }
+        if let Some(pending) = self.pending_processing_instruction {
+            check_offset(
+                input,
+                "pending_processing_instruction.comment_start",
+                pending.comment_start,
+                false,
+            )?;
+            check_offset(
+                input,
+                "pending_processing_instruction.target_start",
+                pending.target_start,
+                true,
+            )?;
+            check_optional_offset(
+                input,
+                "pending_processing_instruction.target_end",
+                pending.target_end,
+            )?;
+            check_optional_offset(
+                input,
+                "pending_processing_instruction.data_start",
+                pending.data_start,
+            )?;
+            check_optional_offset(
+                input,
+                "pending_processing_instruction.bounded_data_end",
+                pending.bounded_data_end,
+            )?;
+            check_optional_range(
+                input,
+                "pending_processing_instruction.target_range",
+                "pending_processing_instruction.target_start",
+                Some(pending.target_start),
+                pending.target_end,
+            )?;
+            check_optional_range(
+                input,
+                "pending_processing_instruction.data_range",
+                "pending_processing_instruction.data_start",
+                pending.data_start,
+                pending.bounded_data_end,
+            )?;
+            self.check_processing_instruction_metadata(pending)?;
+        }
+        Ok(())
+    }
+
+    fn check_processing_instruction_metadata(
+        &self,
+        pending: super::api::PendingProcessingInstruction,
+    ) -> Result<(), TokenizerInvariantError> {
+        let invalid = |reason| {
+            Err(
+                TokenizerInvariantError::InvalidProcessingInstructionMetadata {
+                    state: self.state,
+                    reason,
+                },
+            )
+        };
+
+        if pending.comment_start.checked_add(1) != Some(pending.target_start) {
+            return invalid("comment start must identify the '?' immediately before the target");
+        }
+        if pending.target_start > self.cursor {
+            return invalid("target start is after the cursor");
+        }
+        if pending.target_end.is_some_and(|end| end > self.cursor) {
+            return invalid("target end is after the cursor");
+        }
+        if pending
+            .data_start
+            .is_some_and(|start| pending.target_end.is_none_or(|end| start < end))
+        {
+            return invalid("data starts before the completed target");
+        }
+        if pending.data_start.is_some() != pending.bounded_data_end.is_some() {
+            return invalid("data start and bounded data end must be present together");
+        }
+        if pending
+            .bounded_data_end
+            .is_some_and(|end| end > self.cursor)
+        {
+            return invalid("bounded data end is after the cursor");
+        }
+
+        match self.state {
+            TokenizerState::ProcessingInstructionOpen => {
+                if self.cursor != pending.target_start
+                    || pending.target_end.is_some()
+                    || pending.data_start.is_some()
+                {
+                    return invalid("open state must be positioned at an empty target");
+                }
+            }
+            TokenizerState::ProcessingInstructionTarget => {
+                if pending.target_end.is_some() || pending.data_start.is_some() {
+                    return invalid("target state cannot have completed target or data ranges");
+                }
+            }
+            TokenizerState::AfterProcessingInstructionTarget => {
+                if pending.target_end.is_none() || pending.data_start.is_some() {
+                    return invalid("after-target state requires only a completed target range");
+                }
+            }
+            TokenizerState::ProcessingInstructionData => {
+                if pending.target_end.is_none() {
+                    return invalid("data state requires a completed target range");
+                }
+            }
+            TokenizerState::ProcessingInstructionQuestionable => {
+                if pending.target_end.is_none() || pending.data_start.is_none() {
+                    return invalid("questionable state requires completed target and data ranges");
+                }
+            }
+            _ => return invalid("pending metadata exists outside the PI state family"),
+        }
         Ok(())
     }
 
