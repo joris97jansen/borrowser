@@ -84,6 +84,14 @@ impl DomArena {
                 id,
                 text: text.clone(),
             },
+            NodeKind::ProcessingInstruction { target, data } => {
+                html::internal::processing_instruction_from_parts(id, target.clone(), data.clone())
+                    .map_err(|_| {
+                        DomPatchError::Protocol(
+                            "stored parser-created processing instruction is invalid",
+                        )
+                    })?
+            }
         };
         Ok(node)
     }

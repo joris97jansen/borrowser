@@ -436,13 +436,17 @@ Current supported subset:
   namespaces, names, or attributes. SVG/MathML rendering, XML
   parsing, scripting, public namespace DOM APIs, and CSS namespace syntax remain missing. See
   `docs/html5/ae11-foreign-content-tree-construction-contract.md`.
-- AE12 follow-up (Milestone AE), **Add HTML processing-instruction tokenization
-  and parser-created nodes**: implement current HTML processing-instruction
-  tokenizer states, typed tokens, parser-created `ProcessingInstruction`
-  nodes, ordinary/foreign tree-construction insertion, patch transport,
-  materialization, deterministic errors/snapshots, and whole/chunk parity.
-  This remains a pre-existing tokenizer/DOM gap and must not introduce an XML
-  parser, namespace resolution, scripting, resources, or public DOM mutation.
+- AE12 HTML processing instructions: the current five tokenizer states produce
+  a typed exact target/data token from the Data/TagOpen path; valid PIs become
+  parser-created leaves through ordinary/table/template/foreign insertion,
+  LiveTree, `DomPatch`, strict atomic validation, Browser `DomStore`,
+  materialization, and deterministic token/DOM/patch snapshots. PI nodes retain
+  DOM identity but produce no selector entry, retained render identity, layout
+  box, or paint artifact. Dedicated target/data limits are explicitly additive
+  hardening rather than WHATWG output. XML parsing, complete DOM PI APIs and
+  pseudo-attributes, execution, stylesheet/resource behavior, public mutation,
+  PLAINTEXT, frameset modes, and fragment parsing remain missing. See
+  `docs/html5/ae12-processing-instruction-contract.md`.
 - AE3 tokenizer foundation: tokenizer input is explicit for the current
   UTF-8/string-input scope; CRLF and lone-CR preprocessing is chunk-equivalent;
   tokenizer state, typed tokens, supported `U+0000` replacement, recoverable

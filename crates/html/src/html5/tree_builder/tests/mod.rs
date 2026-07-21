@@ -14,6 +14,7 @@ mod invariants;
 mod limits;
 mod noahs_ark;
 mod perf;
+mod processing_instructions;
 mod quirks;
 mod recovery;
 mod select;

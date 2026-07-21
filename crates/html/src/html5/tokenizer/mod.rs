@@ -58,6 +58,7 @@ mod invariants;
 mod limits;
 mod machine;
 mod normalization;
+mod processing_instruction;
 mod scan;
 mod stall;
 mod states;

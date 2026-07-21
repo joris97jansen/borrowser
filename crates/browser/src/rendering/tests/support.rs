@@ -150,7 +150,10 @@ pub(super) fn set_first_element_attr(
                     .expect("target element should exist")
             }
         }
-        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => {
+        Node::Text { .. }
+        | Node::Comment { .. }
+        | Node::ProcessingInstruction { .. }
+        | Node::DocumentType { .. } => {
             panic!("target element should exist")
         }
     }
@@ -191,7 +194,10 @@ pub(super) fn set_first_element_attr_optional(
                 })
             }
         }
-        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => None,
+        Node::Text { .. }
+        | Node::Comment { .. }
+        | Node::ProcessingInstruction { .. }
+        | Node::DocumentType { .. } => None,
     }
 }
 
@@ -216,7 +222,10 @@ pub(super) fn replace_first_text_optional(
             *text = after.to_string();
             Some(*id)
         }
-        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => None,
+        Node::Text { .. }
+        | Node::Comment { .. }
+        | Node::ProcessingInstruction { .. }
+        | Node::DocumentType { .. } => None,
     }
 }
 
@@ -255,7 +264,10 @@ pub(super) fn remove_first_element_optional(
                 .iter_mut()
                 .find_map(|child| remove_first_element_optional(child, want_name))
         }
-        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => None,
+        Node::Text { .. }
+        | Node::Comment { .. }
+        | Node::ProcessingInstruction { .. }
+        | Node::DocumentType { .. } => None,
     }
 }
 
@@ -314,7 +326,10 @@ pub(super) fn replace_first_element_optional(
             }
             None
         }
-        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => None,
+        Node::Text { .. }
+        | Node::Comment { .. }
+        | Node::ProcessingInstruction { .. }
+        | Node::DocumentType { .. } => None,
     }
 }
 
@@ -362,6 +377,14 @@ fn replacement_node(node: &Node) -> Node {
             id: *id,
             text: text.clone(),
         },
+        Node::ProcessingInstruction {
+            processing_instruction,
+        } => html::internal::processing_instruction_from_parts(
+            processing_instruction.id(),
+            processing_instruction.target().to_string(),
+            processing_instruction.data().to_string(),
+        )
+        .expect("cloned trusted PI must remain parser-created-valid"),
         Node::DocumentType {
             id,
             name,

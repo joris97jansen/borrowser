@@ -7,12 +7,18 @@
 //! deterministic for corpus replay.
 
 use super::config::{TreeBuilderFuzzConfig, TreeBuilderFuzzError, TreeBuilderFuzzTermination};
-use crate::html5::shared::{AtomTable, Attribute, AttributeValue, TextValue, Token};
+use crate::html5::shared::{
+    AtomTable, Attribute, AttributeValue, ProcessingInstructionToken, TextValue, Token,
+};
 
 /// Synthetic token decoder V2 marker. An exact full-prefix match opts into V2;
 /// every other input, including truncated or unknown marker-like prefixes,
 /// remains V1 and treats all bytes as token data.
 pub(super) const SYNTHETIC_TOKEN_DECODER_V2_MARKER: &[u8] = b"TB-FUZZ-V2\n";
+
+/// AE12 decoder framing. V3 preserves the V2 tag catalog while adding a typed
+/// processing-instruction opcode. Older unmarked/V2 byte mappings are frozen.
+pub(super) const SYNTHETIC_TOKEN_DECODER_V3_MARKER: &[u8] = b"TB-FUZZ-V3\n";
 
 /// Exact V1 tag catalog from before the AE9b select extension. Its order,
 /// length, and modulo mapping are part of the deterministic V1 byte-format
@@ -59,10 +65,13 @@ pub(super) struct DecodedTokenStream {
 pub(super) enum SyntheticTokenDecoderVersion {
     V1,
     V2,
+    V3,
 }
 
 pub(super) fn decoder_version_for_input(bytes: &[u8]) -> SyntheticTokenDecoderVersion {
-    if bytes.starts_with(SYNTHETIC_TOKEN_DECODER_V2_MARKER) {
+    if bytes.starts_with(SYNTHETIC_TOKEN_DECODER_V3_MARKER) {
+        SyntheticTokenDecoderVersion::V3
+    } else if bytes.starts_with(SYNTHETIC_TOKEN_DECODER_V2_MARKER) {
         SyntheticTokenDecoderVersion::V2
     } else {
         SyntheticTokenDecoderVersion::V1
@@ -78,6 +87,7 @@ pub(super) fn decode_token_stream(
     let token_bytes = match version {
         SyntheticTokenDecoderVersion::V1 => bytes,
         SyntheticTokenDecoderVersion::V2 => &bytes[SYNTHETIC_TOKEN_DECODER_V2_MARKER.len()..],
+        SyntheticTokenDecoderVersion::V3 => &bytes[SYNTHETIC_TOKEN_DECODER_V3_MARKER.len()..],
     };
     let mut decoder = SyntheticTokenDecoder {
         bytes: token_bytes,
@@ -144,12 +154,18 @@ impl<'a> SyntheticTokenDecoder<'a> {
     fn decode_one(&mut self, atoms: &mut AtomTable) -> Result<(), TreeBuilderFuzzError> {
         let token_index = self.tokens_generated;
         let header = self.next_byte();
-        let token = match header % 5 {
+        let opcode = match self.version {
+            SyntheticTokenDecoderVersion::V1 | SyntheticTokenDecoderVersion::V2 => header % 5,
+            SyntheticTokenDecoderVersion::V3 => header % 6,
+        };
+        let token = match opcode {
             0 => self.decode_doctype(header, token_index, atoms)?,
             1 => self.decode_start_tag(header, token_index, atoms)?,
             2 => self.decode_end_tag(token_index, atoms)?,
             3 => self.decode_comment(token_index)?,
-            _ => self.decode_text(token_index)?,
+            4 => self.decode_text(token_index)?,
+            5 => self.decode_processing_instruction(token_index)?,
+            _ => unreachable!("bounded synthetic token opcode"),
         };
         if self.rejected.is_some() {
             return Ok(());
@@ -252,6 +268,22 @@ impl<'a> SyntheticTokenDecoder<'a> {
         })
     }
 
+    fn decode_processing_instruction(
+        &mut self,
+        token_index: usize,
+    ) -> Result<Token, TreeBuilderFuzzError> {
+        const TARGETS: [&str; 4] = ["pi", "Exact-Target", "_private", "a1-b"];
+        let target_selector = self.next_optional_byte().unwrap_or(0);
+        let target = TARGETS[target_selector as usize % TARGETS.len()].to_string();
+        let data = self
+            .take_fuzz_string(token_index, "processing_instruction.data")?
+            .replace('>', "");
+        Ok(Token::ProcessingInstruction(ProcessingInstructionToken {
+            target,
+            data: TextValue::Owned(data),
+        }))
+    }
+
     fn take_atom(
         &mut self,
         token_index: usize,
@@ -346,6 +378,9 @@ fn tag_catalog_name(version: SyntheticTokenDecoderVersion, selector: u8) -> &'st
     let catalog_len = match version {
         SyntheticTokenDecoderVersion::V1 => TAG_NAME_CATALOG_V1.len(),
         SyntheticTokenDecoderVersion::V2 => {
+            TAG_NAME_CATALOG_V1.len() + TAG_NAME_CATALOG_V2_ADDITIONS.len()
+        }
+        SyntheticTokenDecoderVersion::V3 => {
             TAG_NAME_CATALOG_V1.len() + TAG_NAME_CATALOG_V2_ADDITIONS.len()
         }
     };

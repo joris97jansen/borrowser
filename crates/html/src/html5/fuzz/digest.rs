@@ -104,6 +104,12 @@ impl PipelineFuzzDigest {
                     self.push_u32(key.0);
                     self.push_str(text);
                 }
+                DomPatch::CreateProcessingInstruction { key, target, data } => {
+                    self.push_u8(23);
+                    self.push_u32(key.0);
+                    self.push_str(target);
+                    self.push_str(data);
+                }
                 DomPatch::AppendChild { parent, child } => {
                     self.push_u8(15);
                     self.push_u32(parent.0);

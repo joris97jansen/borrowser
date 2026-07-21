@@ -174,7 +174,7 @@ fn collect_retained_render_identity_keys(node: &Node, keys: &mut Vec<RetainedRen
             }
         }
         Node::Text { id, .. } => push_live_anchor(*id, keys),
-        Node::Comment { .. } | Node::DocumentType { .. } => {}
+        Node::Comment { .. } | Node::ProcessingInstruction { .. } | Node::DocumentType { .. } => {}
     }
 }
 
@@ -204,6 +204,50 @@ pub(crate) fn retained_render_anchor_debug_label(anchor: RetainedRenderAnchor) -
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn processing_instruction_keeps_dom_identity_without_retained_render_identity() {
+        let processing_instruction = html::internal::processing_instruction_from_parts(
+            Id(4),
+            "Exact-Target".to_string(),
+            "data".to_string(),
+        )
+        .expect("trusted rendering fixture PI must satisfy parser-created validation");
+        assert_eq!(processing_instruction.id(), Id(4));
+        let document = Node::Document {
+            id: Id(1),
+            doctype: None,
+            children: vec![html::internal::node_element_from_parts(
+                Id(2),
+                html::internal::html_name("html"),
+                Vec::new(),
+                Vec::new(),
+                vec![html::internal::node_element_from_parts(
+                    Id(3),
+                    html::internal::html_name("body"),
+                    Vec::new(),
+                    Vec::new(),
+                    vec![
+                        processing_instruction,
+                        Node::Text {
+                            id: Id(5),
+                            text: "visible".to_string(),
+                        },
+                    ],
+                )],
+            )],
+        };
+        let mut identities = RetainedRenderIdentityMap::new();
+        identities.reconcile_live_dom(&document);
+        let anchors = identities
+            .identities()
+            .into_iter()
+            .map(|identity| identity.anchor)
+            .collect::<Vec<_>>();
+
+        assert!(!anchors.contains(&RetainedRenderAnchor::DomNode(Id(4))));
+        assert!(anchors.contains(&RetainedRenderAnchor::DomNode(Id(5))));
+    }
 
     #[test]
     fn parser_created_template_host_and_contents_receive_no_retained_identity() {

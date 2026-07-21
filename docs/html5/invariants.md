@@ -303,3 +303,44 @@ Table cell and AFE interaction:
   patches, errors, and attribute order do not depend on chunk boundaries.
 - Layout inability cannot alter DOM/style truth; unsupported SVG/MathML roots
   suppress complete box subtrees at the centralized Layout decision boundary.
+
+## AE12 processing-instruction invariants
+
+- Ordinary PI recognition is entered only through Data/TagOpen. Borrowser's
+  prefix-first TagOpen cursor representation must remain semantically and
+  chunk-equivalent to the five WHATWG PI states.
+- The pending target contains target characters only, preserves exact case,
+  and is never interned or folded as an HTML element name.
+- Invalid/disallowed conversion produces bogus-comment data equal to `?` plus
+  the complete temporary target prefix. Valid PIs never take that path.
+- Separator whitespace after the target is discarded. In the processing
+  instruction questionable state, non-`>` input confirms `?` as data and
+  reconsumes the current character in processing instruction data.
+- EOF in every unfinished PI state clears pending state and emits no PI token.
+- Every PI tokenizer state has matching pending PI metadata with resolvable,
+  ordered source ranges. Pending metadata outside the PI state family, missing
+  metadata inside it, or invalid target/data ranges are deterministic tokenizer
+  invariant failures. EOF and production stall recovery leave the state family
+  and clear metadata together before final invariant validation.
+- Target overflow cannot rename a target or hide malformed/disallowed-target
+  detection; data overflow cannot change where scanning terminates. Both
+  hardening recoveries and diagnostics are whole/chunk equivalent.
+- A processing instruction is a leaf with exact target/data payload and stable
+  parser, patch, LiveTree, `DomStore`, and materialized DOM identity.
+- `CreateProcessingInstruction` precedes structural attachment. All live-tree
+  mutation follows the normal structural patch path; there is no side channel.
+- The shared adjusted insertion location owns explicit overrides, template
+  contents redirection, and source order. The direct InTable PI rule never
+  enables foster parenting or falls through `anything else`.
+- `InsertionMode::Text` plus a synthetic PI token is an impossible internal
+  combination. Central tree-builder preflight returns the established internal
+  invariant error before any parser state, key, LiveTree, patch, or HTML parse
+  error changes; fuzzing exercises that single production boundary.
+- Strict patch and Browser application share the parser-produced target/data
+  validator and fail atomically. A PI can never accept a child.
+- The materialized `ProcessingInstructionNode` checked factory also uses that
+  validator in every build; release builds cannot construct an invalid PI via
+  a debug-only assertion.
+- DOM identity does not imply retained render identity. Selector indexing
+  ignores the non-element; Layout records central PI suppression; Paint
+  receives no PI artifact.

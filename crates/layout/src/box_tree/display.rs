@@ -40,6 +40,7 @@ pub enum DisplayBoxGeneration {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum BoxSuppressionReason {
     CommentNode,
+    ProcessingInstructionNode,
     DocumentTypeNode,
     ParserCreatedTemplateHost,
     DisplayNone,
@@ -104,6 +105,12 @@ pub(super) fn display_box_generation(
         return DisplayBoxGeneration::SuppressSubtree(BoxSuppressionReason::CommentNode);
     }
 
+    if matches!(styled.node, Node::ProcessingInstruction { .. }) {
+        return DisplayBoxGeneration::SuppressSubtree(
+            BoxSuppressionReason::ProcessingInstructionNode,
+        );
+    }
+
     if matches!(styled.node, Node::DocumentType { .. }) {
         return DisplayBoxGeneration::SuppressSubtree(BoxSuppressionReason::DocumentTypeNode);
     }
@@ -141,6 +148,9 @@ fn box_generation_role(
         }
         Node::Text { .. } => BoxGenerationRole::TextRun,
         Node::Comment { .. } => unreachable!("comments do not generate boxes"),
+        Node::ProcessingInstruction { .. } => {
+            unreachable!("processing instructions do not generate boxes")
+        }
         Node::DocumentType { .. } => unreachable!("document types do not generate boxes"),
     }
 }

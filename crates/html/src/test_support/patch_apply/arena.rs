@@ -42,4 +42,8 @@ pub(super) enum TestKind {
     Comment {
         text: String,
     },
+    ProcessingInstruction {
+        target: String,
+        data: String,
+    },
 }

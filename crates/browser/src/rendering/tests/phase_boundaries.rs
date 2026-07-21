@@ -130,6 +130,36 @@ orchestration:
 }
 
 #[test]
+fn processing_instruction_survives_style_but_produces_no_layout_or_paint_artifact() {
+    let mut page = page_with_dom(
+        "<!doctype html><html><body style=\"display:block\"><p style=\"display:inline\">before<?Exact-Target alpha ? beta?>after</p></body></html>",
+    );
+    let style_output = style_output_for_test(&mut page);
+    let style_snapshot = style_output.to_debug_snapshot();
+    assert!(
+        style_snapshot
+            .contains("kind=processing-instruction target=\"Exact-Target\" data=\"alpha ? beta\"")
+    );
+
+    let measurer = FixedTextMeasurer;
+    let layout_output = layout_document(LayoutPhaseInput::from_style_output(
+        &style_output,
+        320.0,
+        &measurer,
+        None,
+    ));
+    let layout_snapshot = layout_output.to_debug_snapshot();
+    assert!(!layout_snapshot.contains("processing-instruction"));
+    assert!(layout_snapshot.contains("before"));
+    assert!(layout_snapshot.contains("after"));
+
+    let paint_input_snapshot = PaintPhaseInput::new(&layout_output).to_debug_snapshot();
+    assert!(!paint_input_snapshot.contains("processing-instruction"));
+    assert!(paint_input_snapshot.contains("before"));
+    assert!(paint_input_snapshot.contains("after"));
+}
+
+#[test]
 fn render_phase_boundary_debug_snapshot_is_stable_for_replaced_element_flow() {
     let mut page = page_with_dom(
         "<!doctype html><html style=\"display: inline;\"><head style=\"display: inline;\"><style style=\"display: inline;\">img { display: inline-block; }</style></head><body style=\"display: inline;\"><img src=\"hero.png\"></body></html>",

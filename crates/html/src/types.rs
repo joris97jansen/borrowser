@@ -138,6 +138,50 @@ pub struct ElementNode {
     template_contents: Option<Box<DocumentFragmentNode>>,
 }
 
+/// Minimum parser-created processing-instruction representation.
+///
+/// AE12 exposes read-only target/data access only. DOM constructors,
+/// CharacterData mutation, cloning APIs, and pseudo-attribute maps are not
+/// represented here.
+#[derive(Debug)]
+pub struct ProcessingInstructionNode {
+    id: Id,
+    target: String,
+    data: String,
+}
+
+impl ProcessingInstructionNode {
+    pub(crate) fn try_from_parser_created_parts(
+        id: Id,
+        target: String,
+        data: String,
+    ) -> Result<Self, crate::processing_instruction::ParserCreatedProcessingInstructionError> {
+        crate::processing_instruction::validate_parser_created_processing_instruction(
+            &target, &data,
+        )?;
+        Ok(Self { id, target, data })
+    }
+
+    #[must_use]
+    pub fn id(&self) -> Id {
+        self.id
+    }
+
+    #[must_use]
+    pub fn target(&self) -> &str {
+        &self.target
+    }
+
+    #[must_use]
+    pub fn data(&self) -> &str {
+        &self.data
+    }
+
+    pub(crate) fn set_id(&mut self, id: Id) {
+        self.id = id;
+    }
+}
+
 impl ElementNode {
     #[must_use]
     pub fn new(
@@ -251,6 +295,9 @@ pub enum Node {
         id: Id,
         text: String,
     },
+    ProcessingInstruction {
+        processing_instruction: ProcessingInstructionNode,
+    },
 }
 
 impl Node {
@@ -293,6 +340,9 @@ impl Node {
             Node::Element { element } => element.id(),
             Node::Text { id, .. } => *id,
             Node::Comment { id, .. } => *id,
+            Node::ProcessingInstruction {
+                processing_instruction,
+            } => processing_instruction.id(),
         }
     }
 
@@ -304,6 +354,9 @@ impl Node {
             Node::Element { element } => element.set_id(new_id),
             Node::Text { id, .. } => *id = new_id,
             Node::Comment { id, .. } => *id = new_id,
+            Node::ProcessingInstruction {
+                processing_instruction,
+            } => processing_instruction.set_id(new_id),
         }
     }
 

@@ -155,3 +155,18 @@ non-scripting cases only and carry exact-byte/SHA/source/error/tree translation
 provenance. Local `ae10-*` fixtures cite WHATWG commit
 `88ae68cb961651f0f92c5d2046049f53ecdfc6cf` and are not described as WPT
 imports.
+
+### AE12 Typed Processing Instructions
+
+AE12 processing instructions are intentionally `LegacyParity::MayDiffer` when
+the retired path represented PI-like input as comments or text. Current HTML5
+whole/chunked token, DOM, patch, Browser materialization, and rendering-boundary
+results must agree on a typed leaf with separate exact target/data fields.
+
+The supported full-document profile is pinned to WHATWG HTML commit
+`24c5e48bf66ea61bc199ec6338c81258275ba9c6`, DOM commit
+`8a5f57c61ca1de8dc21b7e114501b1b57882e935`, and WPT commit
+`4809b72f863e05ab1df710d3390547dd86694239`. Exact source hashes and adaptation
+notes live in `tests/wpt/provenance/ae12-supported-profile.provenance.txt`.
+Resource-limit recoveries are separate Borrowser hardening behavior, not
+legacy parity or standards-conformance evidence.

@@ -617,6 +617,7 @@ impl NodeRecord {
             NodeKind::DocumentFragment { .. } => "DocumentFragment",
             NodeKind::Text { .. } => "Text",
             NodeKind::Comment { .. } => "Comment",
+            NodeKind::ProcessingInstruction { .. } => "ProcessingInstruction",
         }
     }
 }
@@ -645,5 +646,9 @@ pub(crate) enum NodeKind {
     },
     Comment {
         text: String,
+    },
+    ProcessingInstruction {
+        target: String,
+        data: String,
     },
 }

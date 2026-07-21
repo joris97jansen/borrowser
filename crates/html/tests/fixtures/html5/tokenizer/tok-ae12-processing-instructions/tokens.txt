@@ -1,0 +1,8 @@
+# format: html5-token-v1
+# status: active
+
+PI target="Pi_Target-2" data="a\\\"b\tline"
+COMMENT text="?xml"
+COMMENT text="?bad$"
+CHAR text="\n"
+EOF

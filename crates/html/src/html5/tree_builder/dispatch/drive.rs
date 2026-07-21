@@ -275,6 +275,11 @@ impl Html5TreeBuilder {
         text: &dyn TextResolver,
     ) -> Result<TreeBuilderStepResult, TreeBuilderError> {
         self.assert_atom_table_binding(atoms);
+        if self.insertion_mode == InsertionMode::Text
+            && matches!(token, Token::ProcessingInstruction(_))
+        {
+            return Err(EngineInvariantError);
+        }
         debug_assert!(self.pending_tokenizer_control.is_none());
         let validation_checkpoint = self.template_validation_checkpoint();
         let mut mode = self.insertion_mode;

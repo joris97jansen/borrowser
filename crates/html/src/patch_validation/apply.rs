@@ -77,12 +77,13 @@ impl PatchValidationArena {
             PatchKind::Document { .. }
             | PatchKind::Element { .. }
             | PatchKind::DocumentFragment { .. } => Ok(()),
-            PatchKind::DocumentType { .. } | PatchKind::Text { .. } | PatchKind::Comment { .. } => {
-                Err(PatchValidationError::new(
-                    context,
-                    "target must be a container node",
-                ))
-            }
+            PatchKind::DocumentType { .. }
+            | PatchKind::Text { .. }
+            | PatchKind::Comment { .. }
+            | PatchKind::ProcessingInstruction { .. } => Err(PatchValidationError::new(
+                context,
+                "target must be a container node",
+            )),
         }
     }
 
@@ -556,6 +557,28 @@ impl PatchValidationArena {
                         *key,
                         PatchNode {
                             kind: PatchKind::Comment { text: text.clone() },
+                            parent: None,
+                            children: Vec::new(),
+                        },
+                    )?;
+                }
+                DomPatch::CreateProcessingInstruction { key, target, data } => {
+                    crate::processing_instruction::validate_parser_created_processing_instruction(
+                        target, data,
+                    )
+                    .map_err(|error| {
+                        PatchValidationError::new(
+                            "CreateProcessingInstruction",
+                            format!("invalid parser-created PI payload: {error:?}"),
+                        )
+                    })?;
+                    self.insert(
+                        *key,
+                        PatchNode {
+                            kind: PatchKind::ProcessingInstruction {
+                                target: target.clone(),
+                                data: data.clone(),
+                            },
                             parent: None,
                             children: Vec::new(),
                         },

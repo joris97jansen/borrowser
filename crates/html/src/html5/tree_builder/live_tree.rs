@@ -26,6 +26,7 @@ enum LiveNodeKind {
     DocumentFragment(ParserCreatedFragmentKind),
     Text,
     Comment,
+    ProcessingInstruction,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -57,6 +58,7 @@ struct LiveNode {
     is_template_element: bool,
     expanded_name: Option<ExpandedElementName>,
     attributes: Vec<ParserCreatedAttribute>,
+    processing_instruction: Option<(String, String)>,
 }
 
 impl LiveNode {
@@ -71,6 +73,7 @@ impl LiveNode {
             is_template_element: false,
             expanded_name: None,
             attributes: Vec::new(),
+            processing_instruction: None,
         }
     }
 }
@@ -182,6 +185,10 @@ impl LiveTree {
             }
             DomPatch::CreateText { key, .. } => self.insert_node(*key, LiveNodeKind::Text),
             DomPatch::CreateComment { key, .. } => self.insert_node(*key, LiveNodeKind::Comment),
+            DomPatch::CreateProcessingInstruction { key, target, data } => {
+                self.insert_node(*key, LiveNodeKind::ProcessingInstruction);
+                self.node_mut(*key).processing_instruction = Some((target.clone(), data.clone()));
+            }
             DomPatch::AppendChild { parent, child } => self.append_child(*parent, *child),
             DomPatch::InsertBefore {
                 parent,
@@ -280,6 +287,9 @@ impl LiveTree {
                     }
                     LiveNodeKind::Text => DomInvariantNodeKind::Text,
                     LiveNodeKind::Comment => DomInvariantNodeKind::Comment,
+                    LiveNodeKind::ProcessingInstruction => {
+                        DomInvariantNodeKind::ProcessingInstruction
+                    }
                 },
                 parent: node.parent,
                 children: node.children.clone(),
@@ -815,6 +825,7 @@ mod tests {
             is_template_element: false,
             expanded_name: Some(crate::test_support::html_name("div")),
             attributes: Vec::new(),
+            processing_instruction: None,
         });
         tree.nodes[4]
             .as_mut()

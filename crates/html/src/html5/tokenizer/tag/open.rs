@@ -54,6 +54,19 @@ impl Html5Tokenizer {
             MatchResult::NoMatch => {}
         }
 
+        match self.match_ascii_prefix(input, b"<?") {
+            MatchResult::Matched => {
+                let comment_start = self.cursor + 1;
+                let did_consume = self.consume_ascii_sequence(input, b"<?");
+                debug_assert!(did_consume, "matched PI prefix must be consumable");
+                self.begin_processing_instruction(comment_start);
+                self.transition_to(TokenizerState::ProcessingInstructionOpen);
+                return Step::Progress;
+            }
+            MatchResult::NeedMoreInput => return Step::NeedMoreInput,
+            MatchResult::NoMatch => {}
+        }
+
         match self.peek_next_char(input) {
             None => Step::NeedMoreInput,
             Some(ch) if ch.is_ascii_alphabetic() => {
@@ -69,21 +82,6 @@ impl Html5Tokenizer {
                 self.current_tag_attrs.clear();
                 self.clear_current_attribute();
                 self.transition_to(TokenizerState::TagName);
-                Step::Progress
-            }
-            Some('?') => {
-                self.record_tokenizer_parse_error(
-                    ctx,
-                    ParseErrorCode::Other,
-                    self.cursor,
-                    super::super::normalization::ERROR_DETAIL_INVALID_TAG_OPEN,
-                    Some('?' as u32),
-                );
-                if !self.consume_if(input, '<') {
-                    return Step::NeedMoreInput;
-                }
-                self.pending_comment_start = Some(self.cursor);
-                self.transition_to(TokenizerState::BogusComment);
                 Step::Progress
             }
             Some(_) => {

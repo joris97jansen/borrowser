@@ -37,6 +37,11 @@ enum PrevNodeInfo {
         text: String,
         parent: Option<Id>,
     },
+    ProcessingInstruction {
+        target: String,
+        data: String,
+        parent: Option<Id>,
+    },
 }
 
 pub(super) fn diff_dom_with_state_impl(
@@ -148,6 +153,13 @@ fn build_prev_map(node: &Node, _parent: Option<Id>, map: &mut HashMap<Id, PrevNo
                     parent: visit.container,
                 }
             }
+            crate::traverse::FullModelNodeRef::Node(Node::ProcessingInstruction {
+                processing_instruction,
+            }) => PrevNodeInfo::ProcessingInstruction {
+                target: processing_instruction.target().to_string(),
+                data: processing_instruction.data().to_string(),
+                parent: visit.container,
+            },
         };
         map.insert(visit.entry.id(), info);
     }
@@ -184,7 +196,10 @@ fn emit_removals(
                 emit_removals(child, next_ids, patches)?;
             }
         }
-        Node::DocumentType { .. } | Node::Text { .. } | Node::Comment { .. } => {}
+        Node::DocumentType { .. }
+        | Node::Text { .. }
+        | Node::Comment { .. }
+        | Node::ProcessingInstruction { .. } => {}
     }
     Ok(())
 }
@@ -227,7 +242,8 @@ fn emit_updates(
             | PrevNodeInfo::DocumentType { parent, .. }
             | PrevNodeInfo::Element { parent, .. }
             | PrevNodeInfo::Text { parent, .. }
-            | PrevNodeInfo::Comment { parent, .. } => *parent,
+            | PrevNodeInfo::Comment { parent, .. }
+            | PrevNodeInfo::ProcessingInstruction { parent, .. } => *parent,
             PrevNodeInfo::DocumentFragment { .. } => {
                 *need_reset = true;
                 return Ok(());
@@ -320,6 +336,19 @@ fn emit_updates(
                     return Ok(());
                 }
             }
+            (
+                PrevNodeInfo::ProcessingInstruction { target, data, .. },
+                Node::ProcessingInstruction {
+                    processing_instruction,
+                },
+            ) => {
+                if target != processing_instruction.target()
+                    || data != processing_instruction.data()
+                {
+                    *need_reset = true;
+                    return Ok(());
+                }
+            }
             _ => {
                 *need_reset = true;
                 return Ok(());
@@ -404,7 +433,10 @@ fn emit_updates(
                 }
             }
         }
-        Node::DocumentType { .. } | Node::Text { .. } | Node::Comment { .. } => {}
+        Node::DocumentType { .. }
+        | Node::Text { .. }
+        | Node::Comment { .. }
+        | Node::ProcessingInstruction { .. } => {}
     }
     Ok(())
 }
@@ -504,6 +536,15 @@ fn emit_create_node(
                 text: text.clone(),
             });
         }
+        Node::ProcessingInstruction {
+            processing_instruction,
+        } => {
+            patches.push(DomPatch::CreateProcessingInstruction {
+                key,
+                target: processing_instruction.target().to_string(),
+                data: processing_instruction.data().to_string(),
+            });
+        }
     }
     Ok(())
 }
@@ -535,7 +576,10 @@ fn emit_create_subtree(
                 emit_create_subtree(child, Some(key), patches)?;
             }
         }
-        Node::DocumentType { .. } | Node::Text { .. } | Node::Comment { .. } => {}
+        Node::DocumentType { .. }
+        | Node::Text { .. }
+        | Node::Comment { .. }
+        | Node::ProcessingInstruction { .. } => {}
     }
     Ok(())
 }

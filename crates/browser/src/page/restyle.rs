@@ -20,6 +20,7 @@ impl RestyleTrigger {
                 DomPatch::CreateElement { .. }
                 | DomPatch::CreateText { .. }
                 | DomPatch::CreateComment { .. }
+                | DomPatch::CreateProcessingInstruction { .. }
                 | DomPatch::AppendChild { .. }
                 | DomPatch::InsertBefore { .. }
                 | DomPatch::RemoveNode { .. } => Self::TreeMutated,

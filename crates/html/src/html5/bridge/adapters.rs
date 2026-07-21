@@ -85,7 +85,8 @@ fn created_key(patch: &DomPatch) -> Option<PatchKey> {
         | DomPatch::CreateDocumentType { key, .. }
         | DomPatch::CreateElement { key, .. }
         | DomPatch::CreateText { key, .. }
-        | DomPatch::CreateComment { key, .. } => Some(*key),
+        | DomPatch::CreateComment { key, .. }
+        | DomPatch::CreateProcessingInstruction { key, .. } => Some(*key),
         _ => None,
     }
 }

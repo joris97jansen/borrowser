@@ -13,6 +13,7 @@ pub(super) const ERROR_DETAIL_EOF_IN_TAG_OPEN: &str = "eof-in-tag-open";
 pub(super) const ERROR_DETAIL_EOF_IN_ATTRIBUTE: &str = "eof-in-attribute";
 pub(super) const ERROR_DETAIL_EOF_IN_TEXT_MODE: &str = "eof-in-text-mode";
 pub(super) const ERROR_DETAIL_EOF_IN_CDATA: &str = "eof-in-cdata";
+pub(super) const ERROR_DETAIL_EOF_IN_PROCESSING_INSTRUCTION: &str = "eof-in-processing-instruction";
 pub(super) const ERROR_DETAIL_INVALID_ATTRIBUTE_NAME: &str = "invalid-attribute-name";
 pub(super) const ERROR_DETAIL_INVALID_ATTRIBUTE_VALUE: &str = "invalid-attribute-value";
 pub(super) const ERROR_DETAIL_DUPLICATE_ATTRIBUTE: &str = "duplicate-attribute";
@@ -23,6 +24,12 @@ pub(super) const ERROR_DETAIL_INVALID_MARKUP_DECLARATION: &str = "invalid-markup
 pub(super) const ERROR_DETAIL_INVALID_SELF_CLOSING_START_TAG: &str =
     "invalid-self-closing-start-tag";
 pub(super) const ERROR_DETAIL_INVALID_TAG_OPEN: &str = "invalid-tag-open";
+pub(super) const ERROR_DETAIL_INVALID_FIRST_PROCESSING_INSTRUCTION_TARGET: &str =
+    "invalid-first-character-of-processing-instruction-target";
+pub(super) const ERROR_DETAIL_INVALID_PROCESSING_INSTRUCTION_TARGET: &str =
+    "invalid-processing-instruction-target";
+pub(super) const ERROR_DETAIL_DISALLOWED_PROCESSING_INSTRUCTION_TARGET: &str =
+    "disallowed-processing-instruction-target";
 pub(super) const ERROR_DETAIL_MALFORMED_COMMENT: &str = "malformed-comment";
 pub(super) const ERROR_DETAIL_MALFORMED_DOCTYPE: &str = "malformed-doctype";
 pub(super) const ERROR_DETAIL_MISSING_WHITESPACE_BETWEEN_ATTRIBUTES: &str =

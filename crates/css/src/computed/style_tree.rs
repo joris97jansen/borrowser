@@ -108,6 +108,13 @@ fn styled_node_kind_debug_label(node: &Node) -> String {
         ),
         Node::Text { text, .. } => format!("kind=text text=\"{}\"", text.escape_default()),
         Node::Comment { text, .. } => format!("kind=comment text=\"{}\"", text.escape_default()),
+        Node::ProcessingInstruction {
+            processing_instruction,
+        } => format!(
+            "kind=processing-instruction target=\"{}\" data=\"{}\"",
+            processing_instruction.target().escape_default(),
+            processing_instruction.data().escape_default()
+        ),
         Node::DocumentType { name, .. } => match name {
             Some(name) => format!("kind=doctype name=\"{}\"", name.escape_default()),
             None => "kind=doctype".to_string(),
@@ -259,7 +266,10 @@ fn build_style_tree_from_computed_entries<'a, 'b>(
             })
         }
 
-        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => {
+        Node::Text { .. }
+        | Node::Comment { .. }
+        | Node::ProcessingInstruction { .. }
+        | Node::DocumentType { .. } => {
             let inherited = parent_style.copied().unwrap_or_else(ComputedStyle::initial);
 
             Ok(StyledNode {

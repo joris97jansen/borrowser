@@ -205,6 +205,9 @@ pub(super) fn find_dom_element<'a>(node: &'a Node, want: &str) -> Option<&'a Nod
         Node::Document { children, .. } => children
             .iter()
             .find_map(|child| find_dom_element(child, want)),
-        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => None,
+        Node::Text { .. }
+        | Node::Comment { .. }
+        | Node::ProcessingInstruction { .. }
+        | Node::DocumentType { .. } => None,
     }
 }

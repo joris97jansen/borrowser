@@ -111,6 +111,7 @@ fn find_element<'a>(node: &'a crate::Node, name: &str) -> Option<&'a crate::Node
             .find_map(|child| find_element(child, name)),
         crate::Node::DocumentType { .. }
         | crate::Node::Text { .. }
-        | crate::Node::Comment { .. } => None,
+        | crate::Node::Comment { .. }
+        | crate::Node::ProcessingInstruction { .. } => None,
     }
 }

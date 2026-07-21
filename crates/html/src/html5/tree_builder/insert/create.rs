@@ -1,7 +1,9 @@
 use crate::attributes::ParserCreatedAttribute;
 use crate::dom_patch::DomPatch;
 use crate::dom_patch::PatchKey;
-use crate::html5::shared::{AtomId, AtomTable, Attribute, EngineInvariantError, TextValue};
+use crate::html5::shared::{
+    AtomId, AtomTable, Attribute, EngineInvariantError, ProcessingInstructionToken, TextValue,
+};
 use crate::html5::tokenizer::TextResolver;
 use crate::html5::tree_builder::attributes::{
     resolve_afe_attributes_first_wins, resolve_token_attributes_first_wins,
@@ -289,7 +291,7 @@ impl Html5TreeBuilder {
     ) -> Result<(), TreeBuilderError> {
         self.with_structural_mutation(|this| {
             let resolved = resolve_text_value(token_text, text)?;
-            let document_key = this.ensure_document_created_for_initial_comment()?;
+            let document_key = this.ensure_document_created_for_initial_node()?;
             this.append_comment_child(document_key, resolved)
         })
     }
@@ -304,6 +306,60 @@ impl Html5TreeBuilder {
             let document_key = this.ensure_document_created()?;
             this.append_comment_child(document_key, resolved)
         })
+    }
+
+    pub(in crate::html5::tree_builder) fn insert_processing_instruction(
+        &mut self,
+        token: &ProcessingInstructionToken,
+        text: &dyn TextResolver,
+        override_parent: Option<PatchKey>,
+    ) -> Result<(), TreeBuilderError> {
+        let data = resolve_text_value(&token.data, text)?;
+        crate::processing_instruction::validate_parser_created_processing_instruction(
+            &token.target,
+            &data,
+        )
+        .map_err(|_| EngineInvariantError)?;
+        self.with_structural_mutation(|this| {
+            let _ = this.ensure_document_created()?;
+            let location = this.adjusted_insertion_location(override_parent)?;
+            this.append_processing_instruction_at(location, token.target.clone(), data)
+        })
+    }
+
+    pub(in crate::html5::tree_builder) fn insert_initial_processing_instruction(
+        &mut self,
+        token: &ProcessingInstructionToken,
+        text: &dyn TextResolver,
+    ) -> Result<(), TreeBuilderError> {
+        let data = resolve_text_value(&token.data, text)?;
+        crate::processing_instruction::validate_parser_created_processing_instruction(
+            &token.target,
+            &data,
+        )
+        .map_err(|_| EngineInvariantError)?;
+        self.with_structural_mutation(|this| {
+            let document_key = this.ensure_document_created_for_initial_node()?;
+            let location = this.adjusted_insertion_location(Some(document_key))?;
+            this.append_processing_instruction_at(location, token.target.clone(), data)
+        })
+    }
+
+    fn append_processing_instruction_at(
+        &mut self,
+        location: super::InsertionLocation,
+        target: String,
+        data: String,
+    ) -> Result<(), TreeBuilderError> {
+        if !self.allow_new_child(location.parent, None) || !self.allow_node_creation(None) {
+            return Ok(());
+        }
+        let key = self.alloc_patch_key()?;
+        self.push_structural_patch(DomPatch::CreateProcessingInstruction { key, target, data });
+        self.note_node_created();
+        let inserted = self.insert_existing_child_at(location, key);
+        debug_assert!(inserted, "prechecked PI insertion must succeed");
+        Ok(())
     }
 
     fn append_comment_child(

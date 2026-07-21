@@ -11,6 +11,7 @@ pub enum DomInvariantNodeKind {
     DocumentFragment(ParserCreatedFragmentKind),
     Text,
     Comment,
+    ProcessingInstruction,
 }
 
 impl DomInvariantNodeKind {
@@ -37,6 +38,7 @@ impl DomInvariantNodeKind {
             }
             Self::Text => "text",
             Self::Comment => "comment",
+            Self::ProcessingInstruction => "processing-instruction",
         }
     }
 }
@@ -632,5 +634,6 @@ fn create_operation_name(kind: DomInvariantNodeKind) -> &'static str {
         DomInvariantNodeKind::DocumentFragment(_) => "CreateTemplateContents",
         DomInvariantNodeKind::Text => "CreateText",
         DomInvariantNodeKind::Comment => "CreateComment",
+        DomInvariantNodeKind::ProcessingInstruction => "CreateProcessingInstruction",
     }
 }

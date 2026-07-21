@@ -34,6 +34,10 @@ impl Html5TreeBuilder {
                 self.insert_initial_comment(token_text, text)?;
                 Ok(DispatchOutcome::Done)
             }
+            Token::ProcessingInstruction(processing_instruction) => {
+                self.insert_initial_processing_instruction(processing_instruction, text)?;
+                Ok(DispatchOutcome::Done)
+            }
             Token::Text { text: token_text } => {
                 if is_html_whitespace_text(token_text, text)? {
                     Ok(DispatchOutcome::Done)
@@ -70,6 +74,11 @@ impl Html5TreeBuilder {
             }
             Token::Comment { text: token_text } => {
                 self.insert_comment(token_text, text)?;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::ProcessingInstruction(processing_instruction) => {
+                let document = self.ensure_document_created()?;
+                self.insert_processing_instruction(processing_instruction, text, Some(document))?;
                 Ok(DispatchOutcome::Done)
             }
             Token::Text { text: token_text } if is_html_whitespace_text(token_text, text)? => {
@@ -145,6 +154,10 @@ impl Html5TreeBuilder {
                 self.insert_comment(token_text, text)?;
                 Ok(DispatchOutcome::Done)
             }
+            Token::ProcessingInstruction(processing_instruction) => {
+                self.insert_processing_instruction(processing_instruction, text, None)?;
+                Ok(DispatchOutcome::Done)
+            }
             Token::Text { text: token_text } if is_html_whitespace_text(token_text, text)? => {
                 Ok(DispatchOutcome::Done)
             }
@@ -213,6 +226,10 @@ impl Html5TreeBuilder {
         match token {
             Token::Comment { text: token_text } => {
                 self.insert_comment(token_text, text)?;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::ProcessingInstruction(processing_instruction) => {
+                self.insert_processing_instruction(processing_instruction, text, None)?;
                 Ok(DispatchOutcome::Done)
             }
             Token::Doctype { .. } => {
@@ -329,6 +346,10 @@ impl Html5TreeBuilder {
         match token {
             Token::Comment { text: token_text } => {
                 self.insert_comment(token_text, text)?;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::ProcessingInstruction(processing_instruction) => {
+                self.insert_processing_instruction(processing_instruction, text, None)?;
                 Ok(DispatchOutcome::Done)
             }
             Token::StartTag {
@@ -488,6 +509,15 @@ impl Html5TreeBuilder {
                 self.insert_comment(token_text, text)?;
                 Ok(DispatchOutcome::Done)
             }
+            Token::ProcessingInstruction(processing_instruction) => {
+                let html = self
+                    .open_elements
+                    .get(0)
+                    .ok_or(crate::html5::shared::EngineInvariantError)?
+                    .key();
+                self.insert_processing_instruction(processing_instruction, text, Some(html))?;
+                Ok(DispatchOutcome::Done)
+            }
             Token::Doctype { .. } => {
                 self.record_parse_error("after-body-doctype", None, Some(InsertionMode::AfterBody));
                 Ok(DispatchOutcome::Done)
@@ -540,6 +570,11 @@ impl Html5TreeBuilder {
         match token {
             Token::Comment { text: token_text } => {
                 self.insert_document_comment(token_text, text)?;
+                Ok(DispatchOutcome::Done)
+            }
+            Token::ProcessingInstruction(processing_instruction) => {
+                let document = self.ensure_document_created()?;
+                self.insert_processing_instruction(processing_instruction, text, Some(document))?;
                 Ok(DispatchOutcome::Done)
             }
             Token::Text { text: token_text } if is_html_whitespace_text(token_text, text)? => {

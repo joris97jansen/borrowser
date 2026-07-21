@@ -14,6 +14,11 @@ impl Html5TreeBuilder {
         atoms: &AtomTable,
         text: &dyn TextResolver,
     ) -> Result<DispatchOutcome, TreeBuilderError> {
+        if matches!(token, Token::ProcessingInstruction(_)) {
+            unreachable!(
+                "Text-mode PI dispatch bypassed the central process_impl compatibility preflight"
+            );
+        }
         if !matches!(token, Token::Text { .. }) {
             self.clear_pending_textarea_initial_lf_before_non_text_token();
         }
@@ -24,6 +29,9 @@ impl Html5TreeBuilder {
             Token::Comment { text: token_text } => {
                 self.insert_comment(token_text, text)?;
             }
+            Token::ProcessingInstruction(_) => unreachable!(
+                "Text-mode PI dispatch must be rejected by the central process_impl preflight"
+            ),
             Token::Eof => {
                 self.record_parse_error("eof-in-text-mode", None, None);
                 let _ = self.ensure_document_created()?;

@@ -3,15 +3,25 @@ use std::time::{Duration, Instant};
 
 use bus::{CoreCommand, CoreEvent};
 use core_types::DomHandle;
-use html::DomPatch;
+use html::{DomPatch, PatchKey};
 
 use crate::PreviewPolicy;
 use crate::clock::SystemClock;
 use crate::driver::handle_runtime_chunk;
-use crate::patching::estimate_patch_bytes_slice;
+use crate::patching::{estimate_patch_bytes, estimate_patch_bytes_slice};
 use crate::policy::{MAX_PATCH_BUFFER_RETAIN, MIN_PATCH_BUFFER_RETAIN, patch_buffer_retain_target};
 use crate::runtime::start_parse_runtime_with_policy_and_clock;
 use crate::state::RuntimeState;
+
+#[test]
+fn processing_instruction_patch_bytes_include_target_and_data() {
+    let patch = DomPatch::CreateProcessingInstruction {
+        key: PatchKey(1),
+        target: "Exact-Target".to_string(),
+        data: "payload".to_string(),
+    };
+    assert_eq!(estimate_patch_bytes(&patch), 8 + 12 + 7);
+}
 
 #[test]
 fn patch_buffer_does_not_grow_unbounded_in_streaming() {

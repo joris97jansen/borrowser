@@ -122,6 +122,12 @@ pub enum DomPatch {
     CreateText { key: PatchKey, text: String },
     /// Create a comment node.
     CreateComment { key: PatchKey, text: String },
+    /// Create a parser-produced HTML processing-instruction leaf.
+    CreateProcessingInstruction {
+        key: PatchKey,
+        target: String,
+        data: String,
+    },
     /// Append a child to the end of a parent's children list.
     ///
     /// If `child` is already parented, this is an identity-preserving move to

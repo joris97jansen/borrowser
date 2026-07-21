@@ -383,6 +383,7 @@ fn patch_summary(batches: &[Vec<DomPatch>]) -> String {
                 DomPatch::CreateDocument { .. }
                 | DomPatch::CreateElement { .. }
                 | DomPatch::CreateText { .. }
+                | DomPatch::CreateProcessingInstruction { .. }
                 | DomPatch::CreateTemplateContents { .. } => creates += 1,
                 DomPatch::CreateComment { .. } => comments += 1,
                 DomPatch::AppendChild { .. } => appends += 1,
@@ -454,6 +455,9 @@ fn patch_tag(patch: &DomPatch) -> String {
         }
         DomPatch::CreateText { key, .. } => format!("CreateText({key:?})"),
         DomPatch::CreateComment { key, .. } => format!("CreateComment({key:?})"),
+        DomPatch::CreateProcessingInstruction { key, .. } => {
+            format!("CreateProcessingInstruction({key:?})")
+        }
         DomPatch::AppendChild { parent, child } => {
             format!("AppendChild({parent:?}->{child:?})")
         }

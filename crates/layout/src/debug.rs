@@ -585,6 +585,13 @@ pub(crate) fn node_debug_label(node: &Node) -> String {
         Node::Element { element } => format!("element(\"{}\")", element.name()),
         Node::Text { text, .. } => format!("text(\"{}\")", text.escape_default()),
         Node::Comment { text, .. } => format!("comment(\"{}\")", text.escape_default()),
+        Node::ProcessingInstruction {
+            processing_instruction,
+        } => format!(
+            "processing-instruction(target=\"{}\", data=\"{}\")",
+            processing_instruction.target().escape_default(),
+            processing_instruction.data().escape_default()
+        ),
         Node::DocumentType { name, .. } => match name {
             Some(name) => format!("doctype(\"{}\")", name.escape_default()),
             None => "doctype".to_string(),

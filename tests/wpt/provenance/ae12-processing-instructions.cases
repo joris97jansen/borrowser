@@ -1,0 +1,137 @@
+format: ae12-wpt-extracted-cases-v1
+wpt-commit: 4809b72f863e05ab1df710d3390547dd86694239
+source: html/syntax/parsing/resources/processing-instructions.dat
+source-sha256: c408d94b644156590ff5ee552b5f53423fea5aba2fd69e22b8aa0689d627b5b9
+
+case: ordinary-data
+source-case: 3
+data-sha256: 07b215013da7181575e16df783346c10d1fe3e59b2ad91ad79bc859472e33461
+scripting: upstream-both; borrowser-disabled
+adaptation: exact #data bytes; full-document parse; no terminal newline
+expected-output-provenance: exact pinned upstream #document below; representation-only translation
+#data
+<body><?something good>
+#document
+| <html>
+|   <head>
+|   <body>
+|     <?something good?>
+#end
+case: separator-whitespace
+source-case: 8
+data-sha256: db2beb9dc9ee4ea89adb7914b126d32844ec992ba8756a29be8ca7be8bad8b41
+scripting: upstream-both; borrowser-disabled
+adaptation: exact #data bytes; full-document parse; no terminal newline
+expected-output-provenance: exact pinned upstream #document below; representation-only translation
+#data
+<body><?hey   there?>
+#document
+| <html>
+|   <head>
+|   <body>
+|     <?hey there?>
+#end
+case: questionable-data
+source-case: 9
+data-sha256: f228a752fa57f64cf235b9fa1de8149f22479012269f4b6b417615314befc79f
+scripting: upstream-both; borrowser-disabled
+adaptation: exact #data bytes; full-document parse; no terminal newline
+expected-output-provenance: exact pinned upstream #document below; representation-only translation
+#data
+<body><?hey?there>
+#document
+| <html>
+|   <head>
+|   <body>
+|     <?hey ?there?>
+#end
+case: malformed-target-fallback
+source-case: 6
+data-sha256: f1e6e42fb0d0fd1ef38d986da1de773a774e2617f413efea27f3cdd3d7bf3c4a
+scripting: upstream-both; borrowser-disabled
+adaptation: exact #data bytes; full-document parse; no terminal newline
+expected-output-provenance: exact pinned upstream #document below; representation-only translation
+#data
+<body><?a$><?b$><?good?>
+#document
+| <html>
+|   <head>
+|   <body>
+|     <!-- ?a$ -->
+|     <!-- ?b$ -->
+|     <?good ?>
+#end
+case: in-table
+source-case: 110
+data-sha256: c56c0f3501695a55161bc11384d45458405d2c0b5d74995a46face3f5e44b5a7
+scripting: upstream-both; borrowser-disabled
+adaptation: exact #data bytes; full-document parse; no terminal newline
+expected-output-provenance: exact pinned upstream #document below; representation-only translation
+#data
+<table><?something></table>
+#document
+| <html>
+|   <head>
+|   <body>
+|     <table>
+|       <?something ?>
+#end
+case: script-data-negative
+source-case: 112
+data-sha256: 037d942d5be0e8c5f254ba58ebd3cfbbd40b650d130cba01c97a338cb2f8136c
+scripting: upstream-both; borrowser-disabled
+adaptation: exact #data bytes; full-document parse; no terminal newline
+expected-output-provenance: exact pinned upstream #document below; representation-only translation
+#data
+<script><?something></script>
+#document
+| <html>
+|   <head>
+|     <script>
+|       "<?something>"
+|   <body>
+#end
+case: initial
+source-case: 114
+data-sha256: b08cda1e3ae548cdf8e2648dcd718d9f5362237ef4fe43a478437e096a89a0c4
+scripting: upstream-both; borrowser-disabled
+adaptation: exact #data bytes; full-document parse; no terminal newline
+expected-output-provenance: exact pinned upstream #document below; representation-only translation
+#data
+<?something>
+#document
+| <?something ?>
+| <html>
+|   <head>
+|   <body>
+#end
+case: template-contents
+source-case: 120
+data-sha256: b8c96762d0a862dfb68751779d9afb246e76695fb06dc7420700e606ef19e1dc
+scripting: upstream-both; borrowser-disabled
+adaptation: exact #data bytes; full-document parse; no terminal newline
+expected-output-provenance: exact pinned upstream #document below; representation-only translation
+#data
+<body><template><?something></template>
+#document
+| <html>
+|   <head>
+|   <body>
+|     <template>
+|       content
+|         <?something ?>
+#end
+case: disallowed-target-fallback
+source-case: 71
+data-sha256: 4227dbf07c239d763e6acf7b6e76b0debf1a78ede84b0251f57d6a4253ef237a
+scripting: upstream-both; borrowser-disabled
+adaptation: exact #data bytes; full-document parse; no terminal newline
+expected-output-provenance: exact pinned upstream #document below; representation-only translation
+#data
+<body><?xml-STYLesheet>
+#document
+| <html>
+|   <head>
+|   <body>
+|     <!-- ?xml-STYLesheet -->
+#end

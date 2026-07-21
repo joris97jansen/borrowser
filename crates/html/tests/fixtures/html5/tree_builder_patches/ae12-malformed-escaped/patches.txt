@@ -1,0 +1,17 @@
+# format: html5-dompatch-v2
+# status: active
+
+Batch index=0 size=13
+CreateDocument key=1 doctype=<none>
+CreateElement key=2 ns=html local="html" attrs=[]
+AppendChild parent=1 child=2
+CreateElement key=3 ns=html local="head" attrs=[]
+AppendChild parent=2 child=3
+CreateElement key=4 ns=html local="body" attrs=[]
+AppendChild parent=2 child=4
+CreateComment key=5 text="?xml"
+AppendChild parent=4 child=5
+CreateComment key=6 text="?bad$"
+AppendChild parent=4 child=6
+CreateProcessingInstruction key=7 target="Pi_Target-2" data="a\\\"b\tline"
+AppendChild parent=4 child=7

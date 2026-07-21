@@ -18,6 +18,11 @@ pub(crate) enum TokenizerState {
     ScriptDataDoubleEscapedDash,
     ScriptDataDoubleEscapedDashDash,
     TagOpen,
+    ProcessingInstructionOpen,
+    ProcessingInstructionTarget,
+    AfterProcessingInstructionTarget,
+    ProcessingInstructionData,
+    ProcessingInstructionQuestionable,
     EndTagOpen,
     TagName,
     BeforeAttributeName,
@@ -49,4 +54,17 @@ pub(crate) enum TokenizerState {
     NamedCharacterReference,
     AmbiguousAmpersand,
     NumericCharacterReference,
+}
+
+impl TokenizerState {
+    pub(crate) const fn is_processing_instruction(self) -> bool {
+        matches!(
+            self,
+            Self::ProcessingInstructionOpen
+                | Self::ProcessingInstructionTarget
+                | Self::AfterProcessingInstructionTarget
+                | Self::ProcessingInstructionData
+                | Self::ProcessingInstructionQuestionable
+        )
+    }
 }

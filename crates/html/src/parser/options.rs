@@ -43,6 +43,8 @@ pub struct HtmlTokenizerLimits {
     pub max_attribute_value_bytes: usize,
     pub max_attributes_per_tag: usize,
     pub max_comment_bytes: usize,
+    pub max_processing_instruction_target_bytes: usize,
+    pub max_processing_instruction_data_bytes: usize,
     pub max_doctype_bytes: usize,
     pub max_end_tag_match_scan_bytes: usize,
 }
@@ -57,6 +59,8 @@ impl Default for HtmlTokenizerLimits {
             max_attribute_value_bytes: limits.max_attribute_value_bytes,
             max_attributes_per_tag: limits.max_attributes_per_tag,
             max_comment_bytes: limits.max_comment_bytes,
+            max_processing_instruction_target_bytes: limits.max_processing_instruction_target_bytes,
+            max_processing_instruction_data_bytes: limits.max_processing_instruction_data_bytes,
             max_doctype_bytes: limits.max_doctype_bytes,
             max_end_tag_match_scan_bytes: limits.max_end_tag_match_scan_bytes,
         }
@@ -72,6 +76,8 @@ impl From<HtmlTokenizerLimits> for TokenizerLimits {
             max_attribute_value_bytes: value.max_attribute_value_bytes,
             max_attributes_per_tag: value.max_attributes_per_tag,
             max_comment_bytes: value.max_comment_bytes,
+            max_processing_instruction_target_bytes: value.max_processing_instruction_target_bytes,
+            max_processing_instruction_data_bytes: value.max_processing_instruction_data_bytes,
             max_doctype_bytes: value.max_doctype_bytes,
             max_end_tag_match_scan_bytes: value.max_end_tag_match_scan_bytes,
         }

@@ -34,6 +34,21 @@ impl Html5TreeBuilder {
         })
     }
 
+    /// Resolve the HTML adjusted insertion location for node categories that
+    /// accept an optional explicit insertion parent.
+    pub(in crate::html5::tree_builder) fn adjusted_insertion_location(
+        &mut self,
+        override_parent: Option<PatchKey>,
+    ) -> Result<InsertionLocation, TreeBuilderError> {
+        if let Some(parent) = override_parent {
+            return Ok(InsertionLocation {
+                parent: self.live_tree.template_contents(parent).unwrap_or(parent),
+                before: None,
+            });
+        }
+        self.element_or_text_insertion_location()
+    }
+
     fn foster_parenting_anchor_from_soe(&mut self) -> Option<FosterParentAnchor> {
         let indices = self.open_elements.foster_parenting_anchor_indices(
             self.known_tags.html,

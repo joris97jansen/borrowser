@@ -160,6 +160,24 @@ pub fn outline_from_dom(root: &Node, cap: usize) -> Vec<String> {
                 line.push_str(" -->");
                 out.push(line);
             }
+            Node::ProcessingInstruction {
+                processing_instruction,
+            } => {
+                let mut line = String::with_capacity(indent.len() + LINE_SLACK);
+                line.push_str(indent);
+                line.push_str("<?");
+                line.push_str(processing_instruction.target());
+                if !processing_instruction.data().is_empty() {
+                    line.push(' ');
+                    push_preview_replace_newlines(
+                        &mut line,
+                        processing_instruction.data(),
+                        PREVIEW_CHARS,
+                    );
+                }
+                line.push_str("?>");
+                out.push(line);
+            }
         }
     }
     let mut out = Vec::new();

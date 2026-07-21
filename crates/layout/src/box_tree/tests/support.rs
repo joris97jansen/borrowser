@@ -81,6 +81,11 @@ pub(super) fn comment(id: u32, value: &str) -> Node {
     }
 }
 
+pub(super) fn processing_instruction(id: u32, target: &str, data: &str) -> Node {
+    html::internal::processing_instruction_from_parts(Id(id), target.to_string(), data.to_string())
+        .expect("layout test processing-instruction fixtures must be parser-valid")
+}
+
 pub(super) fn doc(children: Vec<Node>) -> Node {
     Node::Document {
         id: Id(1),

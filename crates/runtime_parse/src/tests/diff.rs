@@ -56,6 +56,10 @@ enum PrevNodeInfo {
     Comment {
         text: String,
     },
+    ProcessingInstruction {
+        target: String,
+        data: String,
+    },
 }
 
 fn diff_dom(prev: &Node, next: &Node, patch_state: &mut PatchState) -> Option<Vec<DomPatch>> {
@@ -165,6 +169,17 @@ fn build_prev_map(node: &Node, map: &mut HashMap<Id, PrevNodeInfo>) {
         }
         Node::Comment { id, text } => {
             map.insert(*id, PrevNodeInfo::Comment { text: text.clone() });
+        }
+        Node::ProcessingInstruction {
+            processing_instruction,
+        } => {
+            map.insert(
+                processing_instruction.id(),
+                PrevNodeInfo::ProcessingInstruction {
+                    target: processing_instruction.target().to_string(),
+                    data: processing_instruction.data().to_string(),
+                },
+            );
         }
     }
 }
@@ -322,6 +337,19 @@ fn emit_updates(
                     return;
                 }
             }
+            (
+                PrevNodeInfo::ProcessingInstruction { target, data },
+                Node::ProcessingInstruction {
+                    processing_instruction,
+                },
+            ) => {
+                if target != processing_instruction.target()
+                    || data != processing_instruction.data()
+                {
+                    *need_reset = true;
+                    return;
+                }
+            }
             _ => {
                 *need_reset = true;
                 return;
@@ -367,7 +395,10 @@ fn emit_updates(
                 }
             }
         }
-        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => {}
+        Node::Text { .. }
+        | Node::Comment { .. }
+        | Node::ProcessingInstruction { .. }
+        | Node::DocumentType { .. } => {}
     }
 }
 
@@ -396,6 +427,15 @@ fn emit_create_node(node: &Node, key: PatchKey, patches: &mut Vec<DomPatch>) {
             patches.push(DomPatch::CreateComment {
                 key,
                 text: text.clone(),
+            });
+        }
+        Node::ProcessingInstruction {
+            processing_instruction,
+        } => {
+            patches.push(DomPatch::CreateProcessingInstruction {
+                key,
+                target: processing_instruction.target().to_string(),
+                data: processing_instruction.data().to_string(),
             });
         }
         Node::DocumentType {
@@ -442,7 +482,10 @@ fn emit_create_subtree(
                 }
             }
         }
-        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => {}
+        Node::Text { .. }
+        | Node::Comment { .. }
+        | Node::ProcessingInstruction { .. }
+        | Node::DocumentType { .. } => {}
     }
 }
 
@@ -454,6 +497,7 @@ fn root_is_compatible(prev: &Node, next: &Node) -> bool {
         }
         (Node::Text { .. }, Node::Text { .. }) => true,
         (Node::Comment { .. }, Node::Comment { .. }) => true,
+        (Node::ProcessingInstruction { .. }, Node::ProcessingInstruction { .. }) => true,
         (Node::DocumentType { name: a, .. }, Node::DocumentType { name: b, .. }) => a == b,
         _ => false,
     }

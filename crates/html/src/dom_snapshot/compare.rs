@@ -24,6 +24,9 @@ pub(super) fn compare_nodes<'a>(
         (Node::Comment { .. }, Node::Comment { .. }) => {
             compare_comment(expected, actual, options, path)
         }
+        (Node::ProcessingInstruction { .. }, Node::ProcessingInstruction { .. }) => {
+            compare_processing_instruction(expected, actual, options, path)
+        }
         _ => Err(Box::new(mismatch(
             path,
             "node kind",
@@ -339,6 +342,44 @@ fn compare_comment<'a>(
         return Err(Box::new(mismatch(
             path,
             "comment",
+            expected_node,
+            actual_node,
+            options,
+        )));
+    }
+    Ok(())
+}
+
+fn compare_processing_instruction<'a>(
+    expected_node: &'a Node,
+    actual_node: &'a Node,
+    options: &DomSnapshotOptions,
+    path: &[String],
+) -> Result<(), Box<DomMismatch<'a>>> {
+    let (
+        Node::ProcessingInstruction {
+            processing_instruction: expected,
+        },
+        Node::ProcessingInstruction {
+            processing_instruction: actual,
+        },
+    ) = (expected_node, actual_node)
+    else {
+        unreachable!("compare_processing_instruction called with non-PI nodes");
+    };
+    if !options.ignore_ids && expected.id() != actual.id() {
+        return Err(Box::new(mismatch(
+            path,
+            "processing-instruction id",
+            expected_node,
+            actual_node,
+            options,
+        )));
+    }
+    if expected.target() != actual.target() || expected.data() != actual.data() {
+        return Err(Box::new(mismatch(
+            path,
+            "processing-instruction payload",
             expected_node,
             actual_node,
             options,

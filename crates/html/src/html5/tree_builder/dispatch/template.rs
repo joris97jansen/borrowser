@@ -380,7 +380,10 @@ impl Html5TreeBuilder {
         text: &dyn TextResolver,
     ) -> Result<DispatchOutcome, TreeBuilderError> {
         match token {
-            Token::Text { .. } | Token::Comment { .. } | Token::Doctype { .. } => {
+            Token::Text { .. }
+            | Token::Comment { .. }
+            | Token::ProcessingInstruction(_)
+            | Token::Doctype { .. } => {
                 self.process_using_in_body_rules(token, atoms, text, false)?;
                 Ok(DispatchOutcome::Done)
             }

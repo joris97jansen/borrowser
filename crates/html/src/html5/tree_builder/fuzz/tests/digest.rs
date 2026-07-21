@@ -1,5 +1,5 @@
 use super::super::digest::{FuzzDigest, TREE_BUILDER_FUZZ_DIGEST_SCHEMA};
-use crate::dom_patch::PatchKey;
+use crate::dom_patch::{DomPatch, PatchKey};
 use crate::html5::tree_builder::TreeBuilderProgressWitness;
 use crate::html5::tree_builder::document::QuirksMode;
 use crate::html5::tree_builder::modes::InsertionMode;
@@ -34,6 +34,12 @@ fn witness(
 fn digest_for(witness: &TreeBuilderProgressWitness) -> u64 {
     let mut digest = FuzzDigest::new(0xAE9A);
     digest.record_future_affecting_state(witness);
+    digest.finish()
+}
+
+fn digest_for_patches(patches: &[DomPatch]) -> u64 {
+    let mut digest = FuzzDigest::new(0xAE12);
+    digest.record_patches(patches);
     digest.finish()
 }
 
@@ -72,4 +78,21 @@ fn tree_builder_digest_is_sensitive_to_template_state() {
     marker_kind_changed.active_formatting_entries[0] =
         AfeDiagnosticEntry::Marker(AfeMarker::new(AfeMarkerKind::TableCell, Some(PatchKey(12))));
     assert_ne!(digest_for(&changed), digest_for(&marker_kind_changed));
+}
+
+#[test]
+fn tree_builder_digest_distinguishes_processing_instruction_from_template_contents() {
+    let template = DomPatch::CreateTemplateContents {
+        host: PatchKey(1),
+        contents: PatchKey(2),
+    };
+    let processing_instruction = DomPatch::CreateProcessingInstruction {
+        key: PatchKey(1),
+        target: "pi".to_string(),
+        data: String::new(),
+    };
+    assert_ne!(
+        digest_for_patches(&[template]),
+        digest_for_patches(&[processing_instruction])
+    );
 }

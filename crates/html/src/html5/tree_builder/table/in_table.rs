@@ -21,6 +21,10 @@ impl Html5TreeBuilder {
                 self.insert_comment(token_text, text)?;
                 Ok(DispatchOutcome::Done)
             }
+            Token::ProcessingInstruction(processing_instruction) => {
+                self.insert_processing_instruction(processing_instruction, text, None)?;
+                Ok(DispatchOutcome::Done)
+            }
             Token::Text { .. } if self.current_node_uses_in_table_text_mode() => {
                 self.enter_in_table_text_mode(self.insertion_mode)?;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InTableText))

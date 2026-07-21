@@ -66,7 +66,10 @@ fn walk(
             );
         }
 
-        Node::Text { .. } | Node::Comment { .. } | Node::DocumentType { .. } => {}
+        Node::Text { .. }
+        | Node::Comment { .. }
+        | Node::ProcessingInstruction { .. }
+        | Node::DocumentType { .. } => {}
     }
 }
 

@@ -1,0 +1,16 @@
+format: ae12-supported-profile-provenance-v2
+profile: AE12-WHATWG-processing-instruction-profile-v1
+whatwg-html-commit: 24c5e48bf66ea61bc199ec6338c81258275ba9c6
+whatwg-html-source: source
+whatwg-html-source-sha256: b160c424aacc4116168174b90ae91b29df6a48af25be660ceac3862daef495fa
+whatwg-dom-commit: 8a5f57c61ca1de8dc21b7e114501b1b57882e935
+whatwg-dom-source: dom.bs
+whatwg-dom-source-sha256: 435d8941a603e0d7d0ac138ff26377113c02bd4d9797d5ca31834b27d28521f9
+wpt-commit: 4809b72f863e05ab1df710d3390547dd86694239
+wpt-source: html/syntax/parsing/resources/processing-instructions.dat
+wpt-source-sha256: c408d94b644156590ff5ee552b5f53423fea5aba2fd69e22b8aa0689d627b5b9
+extracted-cases: tests/wpt/provenance/ae12-processing-instructions.cases
+adaptation: per-case exact #data bytes and upstream #document sections are machine-readable; the test recomputes each data SHA-256 and compares a representation-only translation with Borrowser's deterministic DOM snapshot
+hardening-policy: tokenizer target/data overflow fixtures are additive Borrowser tests and are not counted as WPT or WHATWG-conformant output
+deviation-dom-api: ProcessingInstruction constructors, pseudo-attributes, CharacterData mutation, cloning, and public live mutation remain deferred
+deviation-fragment-parsing: deferred; AE12 activates full-document cases only

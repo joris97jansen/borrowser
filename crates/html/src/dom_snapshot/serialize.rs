@@ -74,6 +74,12 @@ pub(super) fn node_label(node: &Node) -> String {
         }
         Node::Text { .. } => "#text".to_string(),
         Node::Comment { .. } => "#comment".to_string(),
+        Node::ProcessingInstruction {
+            processing_instruction,
+        } => format!(
+            "#processing-instruction:{}",
+            processing_instruction.target()
+        ),
     }
 }
 
@@ -204,6 +210,19 @@ pub(super) fn write_node_line(out: &mut String, node: &Node, options: &DomSnapsh
             if !options.ignore_ids {
                 out.push_str(" id=");
                 write!(out, "{}", id.0).ok();
+            }
+        }
+        Node::ProcessingInstruction {
+            processing_instruction,
+        } => {
+            out.push_str("processing-instruction target=\"");
+            write_escaped(out, processing_instruction.target());
+            out.push_str("\" data=\"");
+            write_escaped(out, processing_instruction.data());
+            out.push('"');
+            if !options.ignore_ids {
+                out.push_str(" id=");
+                write!(out, "{}", processing_instruction.id().0).ok();
             }
         }
     }

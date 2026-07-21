@@ -2,8 +2,9 @@ use super::super::config::{
     TreeBuilderFuzzConfig, TreeBuilderFuzzTermination, derive_tree_builder_fuzz_seed,
 };
 use super::super::decode::{
-    SYNTHETIC_TOKEN_DECODER_V2_MARKER, SyntheticTokenDecoderVersion, TAG_NAME_CATALOG_V1,
-    decode_token_stream, decoder_version_for_input,
+    SYNTHETIC_TOKEN_DECODER_V2_MARKER, SYNTHETIC_TOKEN_DECODER_V3_MARKER,
+    SyntheticTokenDecoderVersion, TAG_NAME_CATALOG_V1, decode_token_stream,
+    decoder_version_for_input,
 };
 use super::super::driver::run_seeded_token_stream_fuzz_case;
 use crate::html5::shared::{AtomTable, Token};
@@ -19,6 +20,12 @@ const PRE_AE9B_SELECT_TAG_NAME_CATALOG: [&str; 30] = [
 
 fn v2_input(payload: &[u8]) -> Vec<u8> {
     let mut bytes = SYNTHETIC_TOKEN_DECODER_V2_MARKER.to_vec();
+    bytes.extend_from_slice(payload);
+    bytes
+}
+
+fn v3_input(payload: &[u8]) -> Vec<u8> {
+    let mut bytes = SYNTHETIC_TOKEN_DECODER_V3_MARKER.to_vec();
     bytes.extend_from_slice(payload);
     bytes
 }
@@ -90,13 +97,17 @@ fn unmarked_and_marker_like_inputs_have_deterministic_version_selection() {
         decoder_version_for_input(SYNTHETIC_TOKEN_DECODER_V2_MARKER),
         SyntheticTokenDecoderVersion::V2
     );
+    assert_eq!(
+        decoder_version_for_input(SYNTHETIC_TOKEN_DECODER_V3_MARKER),
+        SyntheticTokenDecoderVersion::V3
+    );
 
     // Only an exact complete V2 marker has metadata meaning. Truncated and
     // unknown versions remain V1 and all their bytes remain token data.
     for bytes in [
         b"T".as_slice(),
         b"TB-FUZZ-V2".as_slice(),
-        b"TB-FUZZ-V3\n".as_slice(),
+        b"TB-FUZZ-V4\n".as_slice(),
     ] {
         assert_eq!(
             decoder_version_for_input(bytes),
@@ -104,6 +115,46 @@ fn unmarked_and_marker_like_inputs_have_deterministic_version_selection() {
         );
         let _ = decode(bytes, TreeBuilderFuzzConfig::default());
     }
+}
+
+#[test]
+fn decoder_v3_adds_typed_processing_instruction_without_changing_v1_or_v2() {
+    let bytes = v3_input(&[5, 1, 3, 0, 63, 1]);
+    let mut atoms = AtomTable::new();
+    let decoded = decode_token_stream(&bytes, &mut atoms, TreeBuilderFuzzConfig::default())
+        .expect("V3 PI token decodes");
+    assert_eq!(decoded.tokens_generated, 1);
+    assert!(matches!(
+        &decoded.tokens[0],
+        Token::ProcessingInstruction(pi)
+            if pi.target == "Exact-Target"
+                && pi.data == crate::html5::shared::TextValue::Owned("a_b".to_string())
+    ));
+
+    let payload = [5, 1, 3, 0, 63, 1];
+    assert_eq!(
+        decoder_version_for_input(&payload),
+        SyntheticTokenDecoderVersion::V1
+    );
+    assert_eq!(
+        decoder_version_for_input(&v2_input(&payload)),
+        SyntheticTokenDecoderVersion::V2
+    );
+}
+
+#[test]
+fn fuzz_driver_exercises_central_text_mode_processing_instruction_invariant() {
+    // V3: catalog-backed <script> with zero attributes, then a typed PI.
+    let bytes = v3_input(&[1, 6, 0, 5, 0, 0]);
+    let error = run_seeded_token_stream_fuzz_case(&bytes, TreeBuilderFuzzConfig::default())
+        .expect_err("synthetic PI must reach the production Text-mode preflight");
+    assert!(matches!(
+        error,
+        super::super::config::TreeBuilderFuzzError::TreeBuilderFailure {
+            token_index: 1,
+            ref detail,
+        } if detail.contains("EngineInvariantError")
+    ));
 }
 
 #[test]
@@ -248,11 +299,12 @@ fn v2_framing_counts_as_raw_input_but_not_decoded_work() {
 }
 
 #[test]
-fn replaying_v1_and_v2_decoder_inputs_is_deterministic() {
+fn replaying_v1_v2_and_v3_decoder_inputs_is_deterministic() {
     let v1 = b"legacy deterministic token bytes";
     let v2 = v2_input(&[1, 30, 0, 2, 30]);
+    let v3 = v3_input(&[5, 0, 3, b'a', b'?', b'b']);
 
-    for bytes in [v1.as_slice(), v2.as_slice()] {
+    for bytes in [v1.as_slice(), v2.as_slice(), v3.as_slice()] {
         let (first, second) = decode_pair(bytes, bytes, TreeBuilderFuzzConfig::default());
         assert_eq!(first, second);
     }

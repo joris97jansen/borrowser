@@ -116,6 +116,27 @@ impl TestPatchArena {
                     );
                     self.allocated.insert(*key);
                 }
+                DomPatch::CreateProcessingInstruction { key, target, data } => {
+                    crate::processing_instruction::validate_parser_created_processing_instruction(
+                        target, data,
+                    )
+                    .map_err(|error| format!("invalid parser-created PI payload: {error:?}"))?;
+                    if *key == crate::dom_patch::PatchKey::INVALID || self.allocated.contains(key) {
+                        return Err("invalid or duplicate key".to_string());
+                    }
+                    self.nodes.insert(
+                        *key,
+                        TestNode {
+                            kind: TestKind::ProcessingInstruction {
+                                target: target.clone(),
+                                data: data.clone(),
+                            },
+                            parent: None,
+                            children: Vec::new(),
+                        },
+                    );
+                    self.allocated.insert(*key);
+                }
                 DomPatch::AppendChild { parent, child } => {
                     self.append_child(*parent, *child)?;
                 }
@@ -150,7 +171,8 @@ impl TestPatchArena {
                         | TestKind::Document { .. }
                         | TestKind::DocumentType { .. }
                         | TestKind::Element { .. }
-                        | TestKind::DocumentFragment { .. } => {
+                        | TestKind::DocumentFragment { .. }
+                        | TestKind::ProcessingInstruction { .. } => {
                             return Err("SetText applied to non-text node".to_string());
                         }
                     }
@@ -165,7 +187,8 @@ impl TestPatchArena {
                         | TestKind::Document { .. }
                         | TestKind::DocumentType { .. }
                         | TestKind::Element { .. }
-                        | TestKind::DocumentFragment { .. } => {
+                        | TestKind::DocumentFragment { .. }
+                        | TestKind::ProcessingInstruction { .. } => {
                             return Err("AppendText applied to non-text node".to_string());
                         }
                     }

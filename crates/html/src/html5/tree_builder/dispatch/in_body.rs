@@ -636,6 +636,9 @@ impl Html5TreeBuilder {
             Token::Comment { text: token_text } => {
                 self.insert_comment(token_text, text)?;
             }
+            Token::ProcessingInstruction(processing_instruction) => {
+                self.insert_processing_instruction(processing_instruction, text, None)?;
+            }
             Token::Eof => {
                 let _ = self.ensure_document_created()?;
             }

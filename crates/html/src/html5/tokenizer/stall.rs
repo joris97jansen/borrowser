@@ -111,6 +111,7 @@ impl Html5Tokenizer {
         self.pending_text_mode_end_tag = None;
         self.pending_comment_start = None;
         self.pending_comment_limit_reported = false;
+        self.pending_processing_instruction = None;
         self.pending_doctype_name = None;
         self.pending_doctype_name_start = None;
         self.pending_doctype_public_id = None;

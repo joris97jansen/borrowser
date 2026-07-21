@@ -12,6 +12,7 @@ mod input_preprocessing;
 mod limits;
 mod parse_errors;
 mod perf;
+mod processing_instructions;
 mod rawtext;
 mod rcdata;
 mod script_data;

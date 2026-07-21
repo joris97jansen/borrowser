@@ -160,6 +160,15 @@ fn dom_snapshot_lines(node: &Node) -> Vec<String> {
             Node::Comment { text, .. } => {
                 out.push(format!("{indent}comment=\"{}\"", escape(text)));
             }
+            Node::ProcessingInstruction {
+                processing_instruction,
+            } => {
+                out.push(format!(
+                    "{indent}processing-instruction target=\"{}\" data=\"{}\"",
+                    escape(processing_instruction.target()),
+                    escape(processing_instruction.data())
+                ));
+            }
             Node::DocumentType {
                 name,
                 public_id,

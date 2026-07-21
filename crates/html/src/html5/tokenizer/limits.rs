@@ -8,6 +8,10 @@ pub(super) const LIMIT_DETAIL_ATTRIBUTE_NAME: &str = "attribute-name-truncated";
 pub(super) const LIMIT_DETAIL_ATTRIBUTE_VALUE: &str = "attribute-value-truncated";
 pub(super) const LIMIT_DETAIL_ATTRIBUTES_PER_TAG: &str = "attributes-per-tag-limit";
 pub(super) const LIMIT_DETAIL_COMMENT: &str = "comment-truncated";
+pub(super) const LIMIT_DETAIL_PROCESSING_INSTRUCTION_TARGET: &str =
+    "processing-instruction-target-limit";
+pub(super) const LIMIT_DETAIL_PROCESSING_INSTRUCTION_DATA: &str =
+    "processing-instruction-data-truncated";
 pub(super) const LIMIT_DETAIL_DOCTYPE: &str = "doctype-limit";
 pub(super) const LIMIT_DETAIL_END_TAG_MATCHER: &str = "end-tag-matcher-limit";
 
@@ -40,6 +44,14 @@ impl Html5Tokenizer {
 
     pub(in crate::html5::tokenizer) fn max_comment_bytes(&self) -> usize {
         self.limits().max_comment_bytes.max(1)
+    }
+
+    pub(in crate::html5::tokenizer) fn max_processing_instruction_target_bytes(&self) -> usize {
+        self.limits().max_processing_instruction_target_bytes.max(1)
+    }
+
+    pub(in crate::html5::tokenizer) fn max_processing_instruction_data_bytes(&self) -> usize {
+        self.limits().max_processing_instruction_data_bytes.max(1)
     }
 
     pub(in crate::html5::tokenizer) fn max_doctype_bytes(&self) -> usize {

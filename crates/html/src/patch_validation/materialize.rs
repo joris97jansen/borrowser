@@ -1,6 +1,8 @@
 use crate::Node;
 use crate::dom_patch::PatchKey;
-use crate::types::{DocumentFragmentNode, Id, ParserCreatedFragmentKind};
+use crate::types::{
+    DocumentFragmentNode, Id, ParserCreatedFragmentKind, ProcessingInstructionNode,
+};
 
 use super::error::{ArenaResult, PatchValidationError};
 use super::model::{PatchKind, PatchValidationArena};
@@ -68,6 +70,19 @@ impl PatchValidationArena {
             PatchKind::Comment { text } => Node::Comment {
                 id: Id::INVALID,
                 text: text.clone(),
+            },
+            PatchKind::ProcessingInstruction { target, data } => Node::ProcessingInstruction {
+                processing_instruction: ProcessingInstructionNode::try_from_parser_created_parts(
+                    Id::INVALID,
+                    target.clone(),
+                    data.clone(),
+                )
+                .map_err(|error| {
+                    PatchValidationError::new(
+                        "materialize processing instruction",
+                        format!("validated PI payload became invalid: {error:?}"),
+                    )
+                })?,
             },
         })
     }

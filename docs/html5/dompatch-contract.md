@@ -11,6 +11,7 @@ Related identity contract:
 Related ownership contract:
 - [`docs/html5/ae1-html-parser-dom-ownership-contract.md`](ae1-html-parser-dom-ownership-contract.md)
 - [`docs/html5/ae2-parser-created-dom-node-model.md`](ae2-parser-created-dom-node-model.md)
+- [`docs/html5/ae12-processing-instruction-contract.md`](ae12-processing-instruction-contract.md)
 
 ## Goals
 
@@ -41,6 +42,9 @@ Core v0 patch protocol is defined by [`DomPatch`](../../crates/html/src/dom_patc
   - `CreateElement`
   - `CreateText`
   - `CreateComment`
+  - `CreateProcessingInstruction { key, target, data }`
+    - creates a parser-produced typed leaf after shared target/data validation;
+      it is not a comment, text node, or element
   - `CreateTemplateContents { host, contents }`
     - validates an existing canonical `template` host and a fresh contents key,
       creates the typed parser-created fragment, and associates both endpoints
@@ -92,7 +96,8 @@ HTML5 tree-builder Core v0 emission profile:
 1. `CreateDocument` appears before any child node emission.
 2. An accepted initial doctype emits `CreateDocumentType` followed by
    `AppendChild` to the document before the first document element.
-3. Element/text/comment insertion emits `Create*` followed by `AppendChild`.
+3. Element/text/comment/processing-instruction insertion emits `Create*`
+   followed by `AppendChild` or the adjusted-location `InsertBefore` operation.
 4. Coalesced adjacent text runs emit `AppendText` on the previously created text key.
 5. End-tag SOE pops do not directly emit close/remove patches.
 6. An accepted template start emits `CreateElement`, then
@@ -232,3 +237,26 @@ qualified name and string value. Patch validation and Browser `DomStore`
 preserve exact namespace, local-name case, prefix shape, value, and list order.
 Changing an element namespace or the ordered structural attribute list is an
 observable structural difference even when numeric identity is unchanged.
+
+## AE12 processing-instruction transport
+
+`CreateProcessingInstruction` transports owned target and data strings
+separately and preserves exact target case. It is restricted to the AE12 HTML
+parser-producible domain by the shared HTML validator: non-empty target, ASCII
+first/continuation grammar, ASCII-case-insensitive rejection of `xml` and
+`xml-stylesheet`, and no `>` in data. That domain is intentionally narrower
+than future DOM constructor validity.
+
+Tree-builder semantic insertion emits the create opcode and its attachment
+opcode through the ordinary structural path. `LiveTree` applies those patches
+as the internal mirror before the same ordered stream reaches external strict
+validation and Browser; it is not independently mutated through a PI side
+channel.
+
+The opcode requires a fresh non-zero key. A processing instruction is a leaf;
+structural patches cannot use it as a parent. Ordinary cycle, reparenting,
+document-order, duplicate-key, and template-association checks continue to
+apply. Strict validation and Browser application are staged and atomic, and
+Browser calls the same `html::internal` validator instead of reimplementing
+payload validity. Deterministic patch formatting escapes target and data as
+separate fields.

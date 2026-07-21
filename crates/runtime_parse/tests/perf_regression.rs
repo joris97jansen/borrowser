@@ -214,6 +214,9 @@ fn estimated_patch_bytes(patches: &[DomPatch]) -> usize {
             DomPatch::CreateText { text, .. } | DomPatch::CreateComment { text, .. } => {
                 total += 8 + text.len();
             }
+            DomPatch::CreateProcessingInstruction { target, data, .. } => {
+                total += 8 + target.len() + data.len();
+            }
             DomPatch::AppendChild { .. }
             | DomPatch::InsertBefore { .. }
             | DomPatch::RemoveNode { .. }

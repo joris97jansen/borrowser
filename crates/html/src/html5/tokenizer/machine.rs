@@ -218,6 +218,21 @@ impl Html5Tokenizer {
                 self.step_script_data_double_escaped_dash_dash(input)
             }
             TokenizerState::TagOpen => self.step_tag_open(input, ctx),
+            TokenizerState::ProcessingInstructionOpen => {
+                self.step_processing_instruction_open(input, ctx)
+            }
+            TokenizerState::ProcessingInstructionTarget => {
+                self.step_processing_instruction_target(input, ctx)
+            }
+            TokenizerState::AfterProcessingInstructionTarget => {
+                self.step_after_processing_instruction_target(input)
+            }
+            TokenizerState::ProcessingInstructionData => {
+                self.step_processing_instruction_data(input, ctx)
+            }
+            TokenizerState::ProcessingInstructionQuestionable => {
+                self.step_processing_instruction_questionable(input, ctx)
+            }
             TokenizerState::EndTagOpen => self.step_end_tag_open(input, ctx),
             TokenizerState::TagName => self.step_tag_name(input, ctx),
             TokenizerState::BeforeAttributeName => self.step_before_attribute_name(input, ctx),
