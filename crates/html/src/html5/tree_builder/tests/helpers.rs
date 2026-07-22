@@ -145,7 +145,7 @@ pub(super) fn enter_after_head(
     );
     assert_eq!(
         snap.quirks_mode,
-        crate::html5::tree_builder::document::QuirksMode::NoQuirks,
+        crate::DocumentMode::NoQuirks,
         "enter_after_head() should keep NoQuirks for a normal html doctype"
     );
     let errors = builder.take_parse_error_kinds_for_test();

@@ -1,0 +1,30 @@
+format = "borrowser-html-parser-fixture-v1"
+id = "tokenizer-character-data"
+
+[source]
+kind = "native"
+
+[input]
+path = "input.html"
+kind = "utf8-text"
+sha256 = "fb91b5863b2d586d53db989dcc88eaeb8f78d6ba8c4d351b0a5ac31172efe592"
+
+[execution]
+reference_delivery = "whole"
+
+[execution.target]
+kind = "standalone-tokenizer"
+
+[[execution.deliveries]]
+name = "whole"
+unit = "unicode-scalars"
+strategy = "whole"
+
+[expectations]
+tokens = "tokens.txt"
+
+[disposition]
+status = "active"
+
+[metadata]
+description = "Ordinary standalone-tokenizer character data through the canonical AE13a runner."

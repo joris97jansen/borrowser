@@ -289,7 +289,7 @@ pub(crate) struct TreeBuilderProgressWitness {
     pub(crate) current_table_key: Option<PatchKey>,
     pub(crate) pending_table_character_tokens: Vec<String>,
     pub(crate) pending_table_character_tokens_contains_non_space: bool,
-    pub(crate) quirks_mode: crate::html5::tree_builder::document::QuirksMode,
+    pub(crate) quirks_mode: crate::DocumentMode,
     pub(crate) frameset_ok: bool,
     pub(crate) foster_parenting_enabled: bool,
 }
@@ -312,7 +312,7 @@ pub struct TreeBuilderStateSnapshot {
     pub(crate) current_table_key: Option<PatchKey>,
     pub(crate) pending_table_character_tokens: Vec<String>,
     pub(crate) pending_table_character_tokens_contains_non_space: bool,
-    pub(crate) quirks_mode: crate::html5::tree_builder::document::QuirksMode,
+    pub(crate) quirks_mode: crate::DocumentMode,
     pub(crate) frameset_ok: bool,
 }
 

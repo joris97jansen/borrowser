@@ -1,7 +1,7 @@
 use super::super::digest::{PIPELINE_FUZZ_DIGEST_SCHEMA, PipelineDigestTail, PipelineFuzzDigest};
+use crate::DocumentMode;
 use crate::dom_patch::{DomPatch, PatchKey};
 use crate::html5::tree_builder::TreeBuilderProgressWitness;
-use crate::html5::tree_builder::document::QuirksMode;
 use crate::html5::tree_builder::modes::InsertionMode;
 use crate::html5::tree_builder::{
     AfeDiagnosticEntry, AfeMarker, AfeMarkerKind, TemplateInsertionMode,
@@ -25,7 +25,7 @@ fn witness(
         current_table_key: None,
         pending_table_character_tokens: Vec::new(),
         pending_table_character_tokens_contains_non_space: false,
-        quirks_mode: QuirksMode::NoQuirks,
+        quirks_mode: DocumentMode::NoQuirks,
         frameset_ok: true,
         foster_parenting_enabled: false,
     }

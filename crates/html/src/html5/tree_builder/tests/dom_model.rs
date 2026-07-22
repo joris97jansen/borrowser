@@ -1,7 +1,7 @@
 use super::helpers::{EmptyResolver, run_tree_builder_chunks};
+use crate::DocumentMode;
 use crate::dom_patch::{DomPatch, PatchKey};
 use crate::html5::shared::{DocumentParseContext, TextValue, Token};
-use crate::html5::tree_builder::document::QuirksMode;
 use crate::html5::tree_builder::modes::InsertionMode;
 use crate::html5::tree_builder::{
     DomInvariantNodeKind, Html5TreeBuilder, TreeBuilderConfig, check_dom_invariants,
@@ -179,7 +179,7 @@ fn document_mode_is_parser_metadata_not_doctype_node_identity() {
         .expect("doctype should process");
     assert_eq!(
         builder.state_snapshot().quirks_mode,
-        QuirksMode::Quirks,
+        DocumentMode::Quirks,
         "non-html doctype should select parser-owned quirks metadata"
     );
 
@@ -250,7 +250,7 @@ fn initial_comment_before_quirks_doctype_keeps_document_mode_as_metadata() {
 
     assert_eq!(
         builder.state_snapshot().quirks_mode,
-        QuirksMode::Quirks,
+        DocumentMode::Quirks,
         "doctype after an Initial comment should still derive document mode"
     );
     assert_eq!(

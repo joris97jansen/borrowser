@@ -2,7 +2,10 @@ pub mod attributes;
 #[cfg(feature = "html5")]
 pub mod chunker;
 pub mod collect;
+#[cfg(feature = "parser-conformance")]
+pub mod conformance;
 pub mod debug;
+mod document_mode;
 pub mod dom_diff;
 #[cfg(any(test, feature = "dom-snapshot"))]
 pub mod dom_snapshot;
@@ -93,6 +96,7 @@ pub use crate::attributes::{
     AttributeNamespace, ParserCreatedAttribute, QualifiedAttributeName,
     parser_created_attribute_lists_equal_ordered,
 };
+pub use crate::document_mode::{DocumentMode, ParseDocumentModeError};
 pub use crate::dom_diff::{
     DomDiffState, diff_dom, diff_dom_stateless, diff_dom_with_state, diff_from_empty,
 };

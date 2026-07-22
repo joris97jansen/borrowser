@@ -1,26 +1,20 @@
+use crate::DocumentMode;
 use crate::dom_patch::{DomPatch, PatchKey};
 use crate::html5::shared::{AtomId, AtomTable};
 use crate::html5::tree_builder::modes::InsertionMode;
 use crate::html5::tree_builder::resolve::resolve_atom;
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
 
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub(crate) enum QuirksMode {
-    NoQuirks,
-    LimitedQuirks,
-    Quirks,
-}
-
 #[derive(Clone, Debug)]
 pub(crate) struct DocumentState {
-    pub(crate) quirks_mode: QuirksMode,
+    pub(crate) quirks_mode: DocumentMode,
     pub(crate) frameset_ok: bool,
 }
 
 impl Default for DocumentState {
     fn default() -> Self {
         Self {
-            quirks_mode: QuirksMode::NoQuirks,
+            quirks_mode: DocumentMode::NoQuirks,
             frameset_ok: true,
         }
     }
@@ -39,16 +33,16 @@ impl Html5TreeBuilder {
         public_id: Option<&str>,
         system_id: Option<&str>,
         force_quirks: bool,
-    ) -> QuirksMode {
+    ) -> DocumentMode {
         if force_quirks {
-            return QuirksMode::Quirks;
+            return DocumentMode::Quirks;
         }
 
         let Some(name) = name else {
-            return QuirksMode::Quirks;
+            return DocumentMode::Quirks;
         };
         if !name.eq_ignore_ascii_case("html") {
-            return QuirksMode::Quirks;
+            return DocumentMode::Quirks;
         }
 
         let public_id = public_id.map(str::to_ascii_lowercase);
@@ -58,7 +52,7 @@ impl Html5TreeBuilder {
             public_id.starts_with("-//w3c//dtd xhtml 1.0 frameset//")
                 || public_id.starts_with("-//w3c//dtd xhtml 1.0 transitional//")
         }) {
-            return QuirksMode::LimitedQuirks;
+            return DocumentMode::LimitedQuirks;
         }
 
         if public_id.as_deref().is_some_and(|public_id| {
@@ -66,17 +60,17 @@ impl Html5TreeBuilder {
                 || public_id.starts_with("-//w3c//dtd html 4.01 transitional//")
         }) {
             return if system_id.is_some() {
-                QuirksMode::LimitedQuirks
+                DocumentMode::LimitedQuirks
             } else {
-                QuirksMode::Quirks
+                DocumentMode::Quirks
             };
         }
 
-        QuirksMode::NoQuirks
+        DocumentMode::NoQuirks
     }
 
     pub(in crate::html5::tree_builder) fn closes_p_before_table_in_body(&self) -> bool {
-        self.document_state.quirks_mode != QuirksMode::Quirks
+        self.document_state.quirks_mode != DocumentMode::Quirks
     }
 
     pub(in crate::html5::tree_builder) fn ensure_document_created(
@@ -202,14 +196,14 @@ impl Html5TreeBuilder {
 
 #[cfg(test)]
 mod tests {
-    use super::QuirksMode;
+    use crate::DocumentMode;
     use crate::html5::tree_builder::Html5TreeBuilder;
 
     #[test]
     fn doctype_classifier_distinguishes_no_limited_and_quirks_modes() {
         assert_eq!(
             Html5TreeBuilder::classify_doctype_quirks_mode(Some("html"), None, None, false),
-            QuirksMode::NoQuirks
+            DocumentMode::NoQuirks
         );
         assert_eq!(
             Html5TreeBuilder::classify_doctype_quirks_mode(
@@ -218,7 +212,7 @@ mod tests {
                 Some("http://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"),
                 false,
             ),
-            QuirksMode::LimitedQuirks
+            DocumentMode::LimitedQuirks
         );
         assert_eq!(
             Html5TreeBuilder::classify_doctype_quirks_mode(
@@ -227,7 +221,7 @@ mod tests {
                 Some("http://www.w3.org/TR/html4/loose.dtd"),
                 false,
             ),
-            QuirksMode::LimitedQuirks
+            DocumentMode::LimitedQuirks
         );
         assert_eq!(
             Html5TreeBuilder::classify_doctype_quirks_mode(
@@ -236,15 +230,15 @@ mod tests {
                 None,
                 false,
             ),
-            QuirksMode::Quirks
+            DocumentMode::Quirks
         );
         assert_eq!(
             Html5TreeBuilder::classify_doctype_quirks_mode(Some("foo"), None, None, false),
-            QuirksMode::Quirks
+            DocumentMode::Quirks
         );
         assert_eq!(
             Html5TreeBuilder::classify_doctype_quirks_mode(None, None, None, true),
-            QuirksMode::Quirks
+            DocumentMode::Quirks
         );
     }
 }
