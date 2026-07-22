@@ -72,6 +72,9 @@ pub fn diff_lines(expected: &[String], actual: &[String]) -> String {
 #[cfg(feature = "html5")]
 pub mod token_snapshot;
 
+#[cfg(feature = "parser-fixtures")]
+pub mod parser_fixture;
+
 #[cfg(feature = "html5")]
 pub mod tokenizer_text_mode;
 

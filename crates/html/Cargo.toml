@@ -10,7 +10,7 @@ tools = { path = "../tools" }
 
 [dev-dependencies]
 criterion = "0.5"
-html-test-support = { path = "../html_test_support", features = ["html5", "dom-snapshot"] }
+html-test-support = { path = "../html_test_support", features = ["html5", "dom-snapshot", "parser-fixtures"] }
 ring = "0.17.14"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -22,6 +22,7 @@ debug-stats = []
 count-alloc = []
 html5-entities = []
 html5 = []
+parser-conformance = ["html5"]
 html5-fuzzing = []
 perf-tests = []
 internal-api = []
@@ -49,6 +50,11 @@ required-features = ["html5", "dom-snapshot"]
 name = "wpt_html5_tokenizer"
 path = "tests/wpt_html5_tokenizer.rs"
 required-features = ["html5"]
+
+[[test]]
+name = "html5_parser_conformance"
+path = "tests/html5_parser_conformance.rs"
+required-features = ["parser-conformance"]
 
 [[test]]
 name = "diff_html5"

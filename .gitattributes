@@ -1,0 +1,4 @@
+/crates/html/tests/fixtures/html5/conformance/**/input.html text eol=lf
+/crates/html/tests/fixtures/html5/conformance/**/input.bin -text
+/crates/html/tests/fixtures/html5/conformance/**/*.toml text eol=lf
+/crates/html/tests/fixtures/html5/conformance/**/*.txt text eol=lf

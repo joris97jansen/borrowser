@@ -1,5 +1,5 @@
 use super::helpers::materialized_dom_lines;
-use crate::html5::tree_builder::document::QuirksMode;
+use crate::DocumentMode;
 use crate::html5::tree_builder::modes::InsertionMode;
 
 #[test]
@@ -35,7 +35,7 @@ fn doctype_tokens_drive_expected_document_mode_state_and_leave_initial_mode() {
         .expect("doctype should process");
     assert_eq!(
         builder.state_snapshot().quirks_mode,
-        QuirksMode::LimitedQuirks
+        DocumentMode::LimitedQuirks
     );
     assert_eq!(
         builder.state_snapshot().insertion_mode,
@@ -79,7 +79,7 @@ fn duplicate_doctype_after_initial_handoff_does_not_mutate_document_mode() {
         .expect("first doctype should process");
     assert_eq!(
         builder.state_snapshot().quirks_mode,
-        QuirksMode::NoQuirks,
+        DocumentMode::NoQuirks,
         "initial html doctype should select NoQuirks"
     );
     assert_eq!(
@@ -103,7 +103,7 @@ fn duplicate_doctype_after_initial_handoff_does_not_mutate_document_mode() {
 
     assert_eq!(
         builder.state_snapshot().quirks_mode,
-        QuirksMode::NoQuirks,
+        DocumentMode::NoQuirks,
         "late/duplicate doctype must not mutate document mode after Initial handoff"
     );
     assert_eq!(
@@ -147,7 +147,7 @@ fn doctype_after_body_started_remains_late_and_does_not_create_node() {
 
     assert_eq!(
         builder.state_snapshot().quirks_mode,
-        QuirksMode::NoQuirks,
+        DocumentMode::NoQuirks,
         "late in-body doctype must not mutate document mode"
     );
     assert_eq!(

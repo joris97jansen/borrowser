@@ -43,10 +43,7 @@ fn tree_builder_state_snapshot_exposes_core_v0_internal_model() {
     assert_eq!(state.pending_textarea_initial_lf, None);
     assert!(state.pending_table_character_tokens.is_empty());
     assert!(!state.pending_table_character_tokens_contains_non_space);
-    assert_eq!(
-        state.quirks_mode,
-        crate::html5::tree_builder::document::QuirksMode::Quirks
-    );
+    assert_eq!(state.quirks_mode, crate::DocumentMode::Quirks);
     assert!(state.frameset_ok);
 }
 
@@ -59,12 +56,8 @@ fn tree_builder_state_snapshot_can_expose_limited_quirks_mode() {
     )
     .expect("tree builder init");
 
-    builder.document_state.quirks_mode =
-        crate::html5::tree_builder::document::QuirksMode::LimitedQuirks;
+    builder.document_state.quirks_mode = crate::DocumentMode::LimitedQuirks;
 
     let state = builder.state_snapshot();
-    assert_eq!(
-        state.quirks_mode,
-        crate::html5::tree_builder::document::QuirksMode::LimitedQuirks
-    );
+    assert_eq!(state.quirks_mode, crate::DocumentMode::LimitedQuirks);
 }

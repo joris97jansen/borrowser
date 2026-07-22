@@ -1,8 +1,11 @@
 use crate::token_snapshot;
 use crate::tokenizer_text_mode::TokenizerTextModeSupport;
 use crate::wpt_formats::TOKENIZER_SKIPS_FORMAT_V1;
+#[cfg(feature = "parser-fixtures")]
+use html::conformance::ObservedToken;
 use html::html5::{
-    AtomId, DocumentParseContext, Html5Tokenizer, Input, TokenizeResult, TokenizerConfig,
+    AtomId, DocumentParseContext, Html5Tokenizer, Input, TextResolver, Token, TokenizeResult,
+    TokenizerConfig,
 };
 use html::test_harness::{BoundaryPolicy, ChunkPlan};
 use serde::Deserialize;
@@ -170,6 +173,36 @@ pub fn applied_skip_override(
 }
 
 pub fn run_tokenizer_whole(input_html: &str, case_id: &str) -> Result<Vec<String>, String> {
+    run_tokenizer_whole_impl(input_html, case_id, &mut DisabledTokenObserver)
+}
+
+#[cfg(feature = "parser-fixtures")]
+pub struct TokenizerWholeRun {
+    pub snapshot_lines: Vec<String>,
+    pub observed_tokens: Vec<ObservedToken>,
+}
+
+#[cfg(feature = "parser-fixtures")]
+pub fn run_tokenizer_whole_observed(
+    input_html: &str,
+    case_id: &str,
+) -> Result<TokenizerWholeRun, String> {
+    let mut observed_tokens = Vec::new();
+    let mut observer = CapturingTokenObserver {
+        tokens: &mut observed_tokens,
+    };
+    let snapshot_lines = run_tokenizer_whole_impl(input_html, case_id, &mut observer)?;
+    Ok(TokenizerWholeRun {
+        snapshot_lines,
+        observed_tokens,
+    })
+}
+
+fn run_tokenizer_whole_impl(
+    input_html: &str,
+    case_id: &str,
+    observer: &mut dyn TokenObserver,
+) -> Result<Vec<String>, String> {
     let mut ctx = DocumentParseContext::new();
     let text_mode_support = TokenizerTextModeSupport::new(&mut ctx);
     let mut tokenizer = Html5Tokenizer::new(
@@ -198,6 +231,7 @@ pub fn run_tokenizer_whole(input_html: &str, case_id: &str) -> Result<Vec<String
         index: &mut index,
         saw_eof_token: &mut saw_eof_token,
         active_text_mode: &mut active_text_mode,
+        observer,
     };
     pump_until_blocked(
         &mut drain_state,
@@ -260,11 +294,13 @@ pub fn run_tokenizer_chunked(
         context: &context,
         text_mode_support: &text_mode_support,
     };
+    let mut disabled_observer = DisabledTokenObserver;
     let mut drain_state = TokenDrainState {
         out: &mut out,
         index: &mut index,
         saw_eof_token: &mut saw_eof_token,
         active_text_mode: &mut active_text_mode,
+        observer: &mut disabled_observer,
     };
     let mut error = None::<String>;
 
@@ -366,6 +402,9 @@ fn drain_tokens(
         }
         let (formatted, control) = {
             let resolver = batch.resolver();
+            drain_state
+                .observer
+                .observe(batch.tokens(), &resolver, ctx)?;
             let formatted = token_snapshot::format_tokens(
                 batch.tokens(),
                 &resolver,
@@ -399,6 +438,48 @@ struct TokenDrainState<'a> {
     index: &'a mut usize,
     saw_eof_token: &'a mut bool,
     active_text_mode: &'a mut Option<AtomId>,
+    observer: &'a mut dyn TokenObserver,
+}
+
+trait TokenObserver {
+    fn observe(
+        &mut self,
+        tokens: &[Token],
+        resolver: &dyn TextResolver,
+        ctx: &DocumentParseContext,
+    ) -> Result<(), String>;
+}
+
+struct DisabledTokenObserver;
+
+impl TokenObserver for DisabledTokenObserver {
+    fn observe(
+        &mut self,
+        _tokens: &[Token],
+        _resolver: &dyn TextResolver,
+        _ctx: &DocumentParseContext,
+    ) -> Result<(), String> {
+        Ok(())
+    }
+}
+
+#[cfg(feature = "parser-fixtures")]
+struct CapturingTokenObserver<'a> {
+    tokens: &'a mut Vec<ObservedToken>,
+}
+
+#[cfg(feature = "parser-fixtures")]
+impl TokenObserver for CapturingTokenObserver<'_> {
+    fn observe(
+        &mut self,
+        tokens: &[Token],
+        resolver: &dyn TextResolver,
+        ctx: &DocumentParseContext,
+    ) -> Result<(), String> {
+        self.tokens
+            .extend(token_snapshot::observe_tokens(tokens, resolver, ctx)?);
+        Ok(())
+    }
 }
 
 fn handle_tokenize_result(result: TokenizeResult, stage: &str) -> Result<(), String> {
