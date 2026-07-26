@@ -141,14 +141,13 @@ fn scan_numeric_reference(bytes: &[u8], s: &str, start: usize) -> Option<Numeric
             }
 
             let raw_digits = &s[digits_start..j];
-            let parsed = if radix == 16 {
+            let value = if radix == 16 {
                 u32::from_str_radix(raw_digits, 16)
             } else {
                 raw_digits.parse::<u32>()
-            };
-            if let Ok(value) = parsed
-                && let Some(ch) = char::from_u32(value)
-            {
+            }
+            .expect("configured numeric-reference digit bounds fit in u32");
+            if let Some(ch) = char::from_u32(value) {
                 return Some(NumericReferenceScan {
                     decoded: Some(ch),
                     diagnostic: None,
@@ -156,13 +155,19 @@ fn scan_numeric_reference(bytes: &[u8], s: &str, start: usize) -> Option<Numeric
                 });
             }
 
+            let (kind, aux) = match value {
+                value if (0xD800..=0xDFFF).contains(&value) => (
+                    CharacterReferenceDiagnosticKind::SurrogateNumericScalar,
+                    Some(value),
+                ),
+                value => (
+                    CharacterReferenceDiagnosticKind::OutOfRangeNumericScalar,
+                    Some(value),
+                ),
+            };
             return Some(NumericReferenceScan {
                 decoded: None,
-                diagnostic: Some(diagnostic(
-                    start,
-                    CharacterReferenceDiagnosticKind::InvalidNumericScalar,
-                    parsed.ok(),
-                )),
+                diagnostic: Some(diagnostic(start, kind, aux)),
                 end: j + 1,
             });
         }
@@ -170,10 +175,11 @@ fn scan_numeric_reference(bytes: &[u8], s: &str, start: usize) -> Option<Numeric
         if digits == max_digits {
             return Some(NumericReferenceScan {
                 decoded: None,
-                diagnostic: Some(diagnostic(
+                diagnostic: Some(diagnostic_with_limit(
                     start,
                     CharacterReferenceDiagnosticKind::NumericTooLong,
                     None,
+                    max_digits,
                 )),
                 end: malformed_entity_end(bytes, start),
             });
@@ -277,5 +283,24 @@ fn diagnostic(
     kind: CharacterReferenceDiagnosticKind,
     aux: Option<u32>,
 ) -> CharacterReferenceDiagnostic {
-    CharacterReferenceDiagnostic { offset, kind, aux }
+    CharacterReferenceDiagnostic {
+        offset,
+        kind,
+        aux,
+        configured_limit: None,
+    }
+}
+
+fn diagnostic_with_limit(
+    offset: usize,
+    kind: CharacterReferenceDiagnosticKind,
+    aux: Option<u32>,
+    configured_limit: usize,
+) -> CharacterReferenceDiagnostic {
+    CharacterReferenceDiagnostic {
+        offset,
+        kind,
+        aux,
+        configured_limit: Some(configured_limit),
+    }
 }

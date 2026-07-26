@@ -1,9 +1,11 @@
 use crate::html5::tokenizer::Html5Tokenizer;
 
-/// Minimal tokenizer instrumentation.
+/// Minimal non-authoritative tokenizer instrumentation.
 ///
 /// Note: counters are populated in test/debug builds and when the
-/// `debug-stats` feature is enabled.
+/// `debug-stats` feature is enabled. Saturation in this module is intentional:
+/// these counters are diagnostic statistics only and never supply canonical
+/// observation identities, payloads, positions, parser limits, or decisions.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
 pub struct TokenizerStats {
     pub steps: u64,

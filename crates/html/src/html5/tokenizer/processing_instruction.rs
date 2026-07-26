@@ -6,11 +6,158 @@ use super::machine::Step;
 use super::states::TokenizerState;
 use super::{Html5Tokenizer, is_html_space};
 use crate::html5::shared::{
-    DocumentParseContext, Input, ParseErrorCode, ProcessingInstructionToken, TextSpan, TextValue,
-    Token,
+    DocumentParseContext, Input, ParserResourceLimit, ProcessingInstructionToken, TextSpan,
+    TextValue, Token, WhatwgParseErrorCode,
 };
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum ProcessingInstructionInvariantOperation {
+    LiveState,
+    Emission,
+}
+
 impl Html5Tokenizer {
+    pub(in crate::html5::tokenizer) fn classify_processing_instruction_invariant(
+        &self,
+        input: &Input,
+    ) -> Result<(), super::invariants::TokenizerInvariantKind> {
+        self.classify_processing_instruction_invariant_for(
+            input,
+            ProcessingInstructionInvariantOperation::LiveState,
+        )
+    }
+
+    fn classify_processing_instruction_invariant_for(
+        &self,
+        input: &Input,
+        operation: ProcessingInstructionInvariantOperation,
+    ) -> Result<(), super::invariants::TokenizerInvariantKind> {
+        use super::invariants::TokenizerInvariantKind;
+
+        let in_processing_instruction_state = self.state.is_processing_instruction();
+        let Some(pending) = self.pending_processing_instruction else {
+            if in_processing_instruction_state {
+                return Err(
+                    TokenizerInvariantKind::ProcessingInstructionStateMissingPendingMetadata,
+                );
+            }
+            return Ok(());
+        };
+        if !in_processing_instruction_state {
+            return Err(TokenizerInvariantKind::ProcessingInstructionMetadataOutsideState);
+        }
+
+        let text = input.as_str();
+        if pending.target_start > self.cursor {
+            return Err(TokenizerInvariantKind::ProcessingInstructionTargetStartAfterCursor);
+        }
+        let target_range_is_valid = pending
+            .comment_start
+            .checked_add(1)
+            .is_some_and(|target_start| target_start == pending.target_start)
+            && pending.target_start <= self.cursor
+            && pending.target_start <= text.len()
+            && text.is_char_boundary(pending.comment_start)
+            && text.is_char_boundary(pending.target_start)
+            && pending.target_end.is_none_or(|end| {
+                end >= pending.target_start
+                    && end <= self.cursor
+                    && end <= text.len()
+                    && text.is_char_boundary(end)
+            });
+        if !target_range_is_valid {
+            return Err(TokenizerInvariantKind::ProcessingInstructionTargetRangeInvalid);
+        }
+        if matches!(
+            self.state,
+            TokenizerState::AfterProcessingInstructionTarget
+                | TokenizerState::ProcessingInstructionData
+                | TokenizerState::ProcessingInstructionQuestionable
+        ) && pending.target_end.is_none()
+        {
+            return Err(TokenizerInvariantKind::ProcessingInstructionTargetRangeInvalid);
+        }
+
+        if pending.data_start.is_some_and(|start| start > self.cursor) {
+            return Err(TokenizerInvariantKind::ProcessingInstructionDataStartAfterCursor);
+        }
+        let data_range_is_valid = pending.data_start.is_some()
+            == pending.bounded_data_end.is_some()
+            && pending.data_start.is_none_or(|start| {
+                start <= self.cursor
+                    && start <= text.len()
+                    && text.is_char_boundary(start)
+                    && pending.target_end.is_some_and(|end| start >= end)
+            })
+            && pending.bounded_data_end.is_none_or(|end| {
+                pending.data_start.is_some_and(|start| end >= start)
+                    && end <= self.cursor
+                    && end <= text.len()
+                    && text.is_char_boundary(end)
+            });
+        if !data_range_is_valid {
+            return Err(TokenizerInvariantKind::ProcessingInstructionDataRangeInvalid);
+        }
+
+        let state_shape_error = match self.state {
+            TokenizerState::ProcessingInstructionOpen => (!(self.cursor == pending.target_start
+                && pending.target_end.is_none()
+                && pending.data_start.is_none()))
+            .then_some(TokenizerInvariantKind::ProcessingInstructionTargetRangeInvalid),
+            TokenizerState::ProcessingInstructionTarget => (!(pending.target_end.is_none()
+                && pending.data_start.is_none()))
+            .then_some(TokenizerInvariantKind::ProcessingInstructionTargetRangeInvalid),
+            TokenizerState::AfterProcessingInstructionTarget => {
+                if pending.target_end.is_none() {
+                    Some(TokenizerInvariantKind::ProcessingInstructionTargetRangeInvalid)
+                } else {
+                    pending
+                        .data_start
+                        .is_some()
+                        .then_some(TokenizerInvariantKind::ProcessingInstructionDataRangeInvalid)
+                }
+            }
+            TokenizerState::ProcessingInstructionData => pending
+                .target_end
+                .is_none()
+                .then_some(TokenizerInvariantKind::ProcessingInstructionTargetRangeInvalid),
+            TokenizerState::ProcessingInstructionQuestionable => {
+                if pending.target_end.is_none() {
+                    Some(TokenizerInvariantKind::ProcessingInstructionTargetRangeInvalid)
+                } else {
+                    pending
+                        .data_start
+                        .is_none()
+                        .then_some(TokenizerInvariantKind::ProcessingInstructionDataRangeInvalid)
+                }
+            }
+            _ => Some(TokenizerInvariantKind::ProcessingInstructionMetadataOutsideState),
+        };
+        if let Some(kind) = state_shape_error {
+            return Err(kind);
+        }
+        if operation == ProcessingInstructionInvariantOperation::Emission {
+            if pending.target_end.is_none() {
+                return Err(TokenizerInvariantKind::ProcessingInstructionTargetRangeInvalid);
+            }
+            if pending.data_start.is_none() || pending.bounded_data_end.is_none() {
+                return Err(TokenizerInvariantKind::ProcessingInstructionDataRangeInvalid);
+            }
+        }
+        Ok(())
+    }
+
+    pub(in crate::html5::tokenizer) fn ensure_processing_instruction_metadata_invariant(
+        &mut self,
+        input: &Input,
+    ) -> bool {
+        if let Err(kind) = self.classify_processing_instruction_invariant(input) {
+            self.latch_invariant(kind);
+            return false;
+        }
+        true
+    }
+
     pub(in crate::html5::tokenizer) fn begin_processing_instruction(
         &mut self,
         comment_start: usize,
@@ -33,7 +180,9 @@ impl Html5Tokenizer {
         ctx: &mut DocumentParseContext,
     ) -> Step {
         debug_assert_eq!(self.state, TokenizerState::ProcessingInstructionOpen);
-        self.assert_processing_instruction_state_invariant(input);
+        if !self.ensure_processing_instruction_metadata_invariant(input) {
+            return Step::InvariantFailure;
+        }
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
         }
@@ -44,14 +193,18 @@ impl Html5Tokenizer {
             }
             Some(ch) => {
                 self.record_tokenizer_parse_error(
+                    input,
                     ctx,
-                    ParseErrorCode::Other,
+                    WhatwgParseErrorCode::InvalidFirstCharacterOfProcessingInstructionTarget,
                     self.cursor,
                     super::normalization::ERROR_DETAIL_INVALID_FIRST_PROCESSING_INSTRUCTION_TARGET,
                     Some(ch as u32),
                 );
-                self.convert_processing_instruction_to_bogus_comment();
-                Step::Progress
+                if self.convert_processing_instruction_to_bogus_comment() {
+                    Step::Progress
+                } else {
+                    Step::InvariantFailure
+                }
             }
             None => Step::NeedMoreInput,
         }
@@ -63,7 +216,9 @@ impl Html5Tokenizer {
         ctx: &mut DocumentParseContext,
     ) -> Step {
         debug_assert_eq!(self.state, TokenizerState::ProcessingInstructionTarget);
-        self.assert_processing_instruction_state_invariant(input);
+        if !self.ensure_processing_instruction_metadata_invariant(input) {
+            return Step::InvariantFailure;
+        }
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
         }
@@ -71,29 +226,43 @@ impl Html5Tokenizer {
         match self.peek(input) {
             Some(ch) if ch.is_ascii_alphanumeric() || matches!(ch, '-' | '_') => {
                 let _ = self.consume(input);
-                self.check_processing_instruction_target_limit(ctx);
-                Step::Progress
+                if self.check_processing_instruction_target_limit(input, ctx) {
+                    Step::Progress
+                } else {
+                    Step::InvariantFailure
+                }
             }
             Some(ch) if is_html_space(ch) || matches!(ch, '?' | '>') => {
                 let target_end = self.cursor;
-                let pending = self.pending_processing_instruction.as_mut().expect(
-                    "tokenizer invariant failure: PI target state requires pending metadata",
-                );
+                let Some(pending) = self.pending_processing_instruction.as_mut() else {
+                    self.latch_invariant(
+                        super::invariants::TokenizerInvariantKind::
+                            ProcessingInstructionStateMissingPendingMetadata,
+                    );
+                    return Step::InvariantFailure;
+                };
                 pending.target_end = Some(target_end);
-                let target = input.as_str().get(pending.target_start..target_end).expect(
-                    "tokenizer invariant failure: PI target range must resolve against input",
-                );
+                let Some(target) = input.as_str().get(pending.target_start..target_end) else {
+                    self.latch_invariant(
+                        super::invariants::TokenizerInvariantKind::
+                            ProcessingInstructionTargetRangeInvalid,
+                    );
+                    return Step::InvariantFailure;
+                };
                 if target.eq_ignore_ascii_case("xml")
                     || target.eq_ignore_ascii_case("xml-stylesheet")
                 {
                     self.record_tokenizer_parse_error(
+                        input,
                         ctx,
-                        ParseErrorCode::Other,
+                        WhatwgParseErrorCode::DisallowedProcessingInstructionTarget,
                         target_end,
                         super::normalization::ERROR_DETAIL_DISALLOWED_PROCESSING_INSTRUCTION_TARGET,
                         None,
                     );
-                    self.convert_processing_instruction_to_bogus_comment();
+                    if !self.convert_processing_instruction_to_bogus_comment() {
+                        return Step::InvariantFailure;
+                    }
                 } else {
                     self.transition_to(TokenizerState::AfterProcessingInstructionTarget);
                 }
@@ -101,14 +270,18 @@ impl Html5Tokenizer {
             }
             Some(ch) => {
                 self.record_tokenizer_parse_error(
+                    input,
                     ctx,
-                    ParseErrorCode::Other,
+                    WhatwgParseErrorCode::InvalidProcessingInstructionTarget,
                     self.cursor,
                     super::normalization::ERROR_DETAIL_INVALID_PROCESSING_INSTRUCTION_TARGET,
                     Some(ch as u32),
                 );
-                self.convert_processing_instruction_to_bogus_comment();
-                Step::Progress
+                if self.convert_processing_instruction_to_bogus_comment() {
+                    Step::Progress
+                } else {
+                    Step::InvariantFailure
+                }
             }
             None => Step::NeedMoreInput,
         }
@@ -116,7 +289,9 @@ impl Html5Tokenizer {
 
     pub(crate) fn step_after_processing_instruction_target(&mut self, input: &Input) -> Step {
         debug_assert_eq!(self.state, TokenizerState::AfterProcessingInstructionTarget);
-        self.assert_processing_instruction_state_invariant(input);
+        if !self.ensure_processing_instruction_metadata_invariant(input) {
+            return Step::InvariantFailure;
+        }
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
         }
@@ -135,11 +310,15 @@ impl Html5Tokenizer {
         ctx: &mut DocumentParseContext,
     ) -> Step {
         debug_assert_eq!(self.state, TokenizerState::ProcessingInstructionData);
-        self.assert_processing_instruction_state_invariant(input);
+        if !self.ensure_processing_instruction_metadata_invariant(input) {
+            return Step::InvariantFailure;
+        }
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
         }
-        self.ensure_processing_instruction_data_start();
+        if !self.ensure_processing_instruction_data_start() {
+            return Step::InvariantFailure;
+        }
         match self.peek(input) {
             Some('?') => {
                 let _ = self.consume(input);
@@ -148,14 +327,19 @@ impl Html5Tokenizer {
             }
             Some('>') => {
                 let _ = self.consume(input);
-                self.emit_pending_processing_instruction(input);
+                if !self.emit_pending_processing_instruction(input) {
+                    return Step::InvariantFailure;
+                }
                 self.transition_to(TokenizerState::Data);
                 Step::Progress
             }
             Some(_) => {
                 let _ = self.consume(input);
-                self.confirm_processing_instruction_data_through_cursor(ctx);
-                Step::Progress
+                if self.confirm_processing_instruction_data_through_cursor(input, ctx) {
+                    Step::Progress
+                } else {
+                    Step::InvariantFailure
+                }
             }
             None => Step::NeedMoreInput,
         }
@@ -170,44 +354,79 @@ impl Html5Tokenizer {
             self.state,
             TokenizerState::ProcessingInstructionQuestionable
         );
-        self.assert_processing_instruction_state_invariant(input);
+        if !self.ensure_processing_instruction_metadata_invariant(input) {
+            return Step::InvariantFailure;
+        }
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
         }
         if self.peek(input) == Some('>') {
             let _ = self.consume(input);
-            self.emit_pending_processing_instruction(input);
+            if !self.emit_pending_processing_instruction(input) {
+                return Step::InvariantFailure;
+            }
             self.transition_to(TokenizerState::Data);
             Step::Progress
         } else {
             // The already-consumed `?` is now confirmed as data. The current
             // character remains unconsumed and is reprocessed in PI data.
-            self.confirm_processing_instruction_data_through_cursor(ctx);
+            if !self.confirm_processing_instruction_data_through_cursor(input, ctx) {
+                return Step::InvariantFailure;
+            }
             self.transition_to(TokenizerState::ProcessingInstructionData);
             Step::Progress
         }
     }
 
-    fn ensure_processing_instruction_data_start(&mut self) {
-        let pending = self
-            .pending_processing_instruction
-            .as_mut()
-            .expect("tokenizer invariant failure: PI data state requires pending metadata");
+    fn ensure_processing_instruction_data_start(&mut self) -> bool {
+        let Some(pending) = self.pending_processing_instruction.as_mut() else {
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::
+                    ProcessingInstructionStateMissingPendingMetadata,
+            );
+            return false;
+        };
         if pending.data_start.is_none() {
             pending.data_start = Some(self.cursor);
             pending.bounded_data_end = Some(self.cursor);
         }
+        true
     }
 
-    fn check_processing_instruction_target_limit(&mut self, ctx: &mut DocumentParseContext) {
+    fn check_processing_instruction_target_limit(
+        &mut self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+    ) -> bool {
         let max = self.max_processing_instruction_target_bytes();
-        let report_position = {
-            let pending = self.pending_processing_instruction.as_mut().expect(
-                "tokenizer invariant failure: PI target limit check requires pending metadata",
+        let Some(target_start) = self
+            .pending_processing_instruction
+            .as_ref()
+            .map(|pending| pending.target_start)
+        else {
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::
+                    ProcessingInstructionStateMissingPendingMetadata,
             );
-            let len = self.cursor.saturating_sub(pending.target_start);
+            return false;
+        };
+        let Some(len) = self.cursor.checked_sub(target_start) else {
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::
+                    ProcessingInstructionTargetStartAfterCursor,
+            );
+            return false;
+        };
+        let report_position = {
+            let Some(pending) = self.pending_processing_instruction.as_mut() else {
+                self.latch_invariant(
+                    super::invariants::TokenizerInvariantKind::
+                        ProcessingInstructionStateMissingPendingMetadata,
+                );
+                return false;
+            };
             if len <= max {
-                return;
+                return true;
             }
             pending.suppress_token = true;
             if pending.target_limit_reported {
@@ -219,30 +438,51 @@ impl Html5Tokenizer {
         };
         if let Some(position) = report_position {
             self.record_limit_error(
+                input,
                 ctx,
                 position,
+                ParserResourceLimit::ProcessingInstructionTargetBytes,
                 LIMIT_DETAIL_PROCESSING_INSTRUCTION_TARGET,
                 max,
             );
         }
+        true
     }
 
     fn confirm_processing_instruction_data_through_cursor(
         &mut self,
+        input: &Input,
         ctx: &mut DocumentParseContext,
-    ) {
+    ) -> bool {
         let max = self.max_processing_instruction_data_bytes();
-        let report_position = {
-            let pending = self.pending_processing_instruction.as_mut().expect(
-                "tokenizer invariant failure: PI data accounting requires pending metadata",
+        let Some(start) = self
+            .pending_processing_instruction
+            .as_ref()
+            .and_then(|pending| pending.data_start)
+        else {
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::ProcessingInstructionDataRangeInvalid,
             );
-            let start = pending
-                .data_start
-                .expect("tokenizer invariant failure: PI data accounting requires a data start");
-            let len = self.cursor.saturating_sub(start);
+            return false;
+        };
+        let Some(len) = self.cursor.checked_sub(start) else {
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::
+                    ProcessingInstructionDataStartAfterCursor,
+            );
+            return false;
+        };
+        let report_position = {
+            let Some(pending) = self.pending_processing_instruction.as_mut() else {
+                self.latch_invariant(
+                    super::invariants::TokenizerInvariantKind::
+                        ProcessingInstructionStateMissingPendingMetadata,
+                );
+                return false;
+            };
             if len <= max {
                 pending.bounded_data_end = Some(self.cursor);
-                return;
+                return true;
             }
             if pending.data_limit_reported {
                 None
@@ -252,62 +492,118 @@ impl Html5Tokenizer {
             }
         };
         if let Some(position) = report_position {
-            self.record_limit_error(ctx, position, LIMIT_DETAIL_PROCESSING_INSTRUCTION_DATA, max);
+            self.record_limit_error(
+                input,
+                ctx,
+                position,
+                ParserResourceLimit::ProcessingInstructionDataBytes,
+                LIMIT_DETAIL_PROCESSING_INSTRUCTION_DATA,
+                max,
+            );
         }
+        true
     }
 
-    fn emit_pending_processing_instruction(&mut self, input: &Input) {
-        let pending = self
-            .pending_processing_instruction
-            .take()
-            .expect("tokenizer invariant failure: PI emission requires pending metadata");
-        if pending.suppress_token {
-            return;
+    fn emit_pending_processing_instruction(&mut self, input: &Input) -> bool {
+        if let Err(kind) = self.classify_processing_instruction_invariant_for(
+            input,
+            ProcessingInstructionInvariantOperation::Emission,
+        ) {
+            self.latch_invariant(kind);
+            return false;
         }
-        let target_end = pending
-            .target_end
-            .expect("tokenizer invariant failure: PI emission requires a completed target range");
-        let target = input
-            .as_str()
-            .get(pending.target_start..target_end)
-            .expect("tokenizer invariant failure: PI target range must resolve against input");
-        let data_start = pending
-            .data_start
-            .expect("tokenizer invariant failure: PI emission requires a data range");
-        let data_end = pending
-            .bounded_data_end
-            .expect("tokenizer invariant failure: PI emission requires a bounded data range");
-        input
-            .as_str()
-            .get(data_start..data_end)
-            .expect("tokenizer invariant failure: PI data range must resolve against input");
+        let Some(pending) = self.pending_processing_instruction.take() else {
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::
+                    ProcessingInstructionStateMissingPendingMetadata,
+            );
+            return false;
+        };
+        if pending.suppress_token {
+            return true;
+        }
+        let Some(target_end) = pending.target_end else {
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::ProcessingInstructionTargetRangeInvalid,
+            );
+            return false;
+        };
+        let Some(target) = input.as_str().get(pending.target_start..target_end) else {
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::ProcessingInstructionTargetRangeInvalid,
+            );
+            return false;
+        };
+        let (Some(data_start), Some(data_end)) = (pending.data_start, pending.bounded_data_end)
+        else {
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::ProcessingInstructionDataRangeInvalid,
+            );
+            return false;
+        };
+        if input.as_str().get(data_start..data_end).is_none() {
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::ProcessingInstructionDataRangeInvalid,
+            );
+            return false;
+        }
         let data = TextValue::Span(TextSpan::new(data_start, data_end));
         self.emit_token(Token::ProcessingInstruction(ProcessingInstructionToken {
             target: target.to_string(),
             data,
         }));
+        true
     }
 
-    fn convert_processing_instruction_to_bogus_comment(&mut self) {
-        let pending = self.pending_processing_instruction.take().expect(
-            "tokenizer invariant failure: PI-to-comment conversion requires pending metadata",
-        );
+    fn convert_processing_instruction_to_bogus_comment(&mut self) -> bool {
+        let Some(pending) = self.pending_processing_instruction.take() else {
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::
+                    ProcessingInstructionStateMissingPendingMetadata,
+            );
+            return false;
+        };
         self.pending_comment_start = Some(pending.comment_start);
         self.pending_comment_limit_reported = false;
         self.transition_to(TokenizerState::BogusComment);
+        true
     }
 
-    pub(in crate::html5::tokenizer) fn discard_pending_processing_instruction_eof(&mut self) {
-        if self.state.is_processing_instruction() {
-            self.pending_processing_instruction
-                .take()
-                .expect("tokenizer invariant failure: PI EOF cleanup requires pending metadata");
-            self.transition_to(TokenizerState::Data);
-        } else {
-            assert!(
-                self.pending_processing_instruction.is_none(),
-                "tokenizer invariant failure: pending PI metadata exists outside PI states at EOF"
-            );
+    pub(in crate::html5::tokenizer) fn discard_pending_processing_instruction_eof(
+        &mut self,
+        input: &Input,
+    ) -> bool {
+        if !self.ensure_processing_instruction_metadata_invariant(input) {
+            return false;
         }
+        if self.state.is_processing_instruction() {
+            let _ = self.pending_processing_instruction.take();
+            self.transition_to(TokenizerState::Data);
+            true
+        } else {
+            true
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_processing_instruction_metadata_missing_for_test(&mut self) {
+        self.state = TokenizerState::ProcessingInstructionTarget;
+        self.pending_processing_instruction = None;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn classify_processing_instruction_emission_invariant_for_test(
+        &self,
+        input: &Input,
+    ) -> Result<(), super::invariants::TokenizerInvariantKind> {
+        self.classify_processing_instruction_invariant_for(
+            input,
+            ProcessingInstructionInvariantOperation::Emission,
+        )
+    }
+
+    #[cfg(test)]
+    pub(crate) fn emit_pending_processing_instruction_for_test(&mut self, input: &Input) -> bool {
+        self.emit_pending_processing_instruction(input)
     }
 }

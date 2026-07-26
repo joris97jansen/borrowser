@@ -11,7 +11,6 @@ pub(crate) fn is_attribute_name_stop(ch: char) -> bool {
 pub(crate) fn is_unquoted_attr_value_stop(ch: char) -> bool {
     ch.is_ascii_whitespace()
         || ch == '>'
-        || ch == '/'
         || ch == '"'
         || ch == '\''
         || ch == '<'
@@ -35,7 +34,6 @@ pub(super) fn is_attribute_name_stop_byte(byte: u8) -> bool {
 pub(super) fn is_unquoted_attr_value_stop_byte(byte: u8) -> bool {
     is_html_space_byte(byte)
         || byte == b'>'
-        || byte == b'/'
         || byte == b'"'
         || byte == b'\''
         || byte == b'<'

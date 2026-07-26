@@ -72,9 +72,11 @@ Coordinates are assigned after decoding and CR/LF preprocessing. CRLF and lone
 CR each contribute one normalized LF. An invalid UTF-8 subsequence contributes
 the resulting U+FFFD replacement (three normalized UTF-8 bytes and one scalar
 column), independent of byte-chunk boundaries. Original source-byte offsets are
-unavailable without a separate provenance map; AE13a neither creates such a map
-nor reconstructs source offsets approximately. These position-bearing
-serializers remain planned rather than executable in AE13a.
+unavailable without a separate provenance map; AE13b1 neither creates such a
+map nor reconstructs source offsets approximately. AE13b1 records these
+positions in the feature-gated in-memory observation model, but the
+position-bearing fixture serializers remain planned and are not activated by
+this format revision.
 
 ## Identifiers and paths
 
@@ -257,3 +259,7 @@ The canonical loader and runner require the non-default
 `html-test-support/parser-fixtures` feature, which activates the HTML model and
 optional SHA-256 dependency. These are internal engine-test contracts, not
 public web-platform APIs.
+
+AE13b1 formalizes payload-safe in-memory implementation diagnostics before any
+implementation-diagnostic sidecar serializer is enabled. This does not change
+the fixture-v1 declaration, expectation surfaces, or serialized formats.

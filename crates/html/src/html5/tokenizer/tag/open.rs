@@ -2,7 +2,9 @@ use super::super::Html5Tokenizer;
 use super::super::input::MatchResult;
 use super::super::machine::Step;
 use super::super::states::TokenizerState;
-use crate::html5::shared::{DocumentParseContext, Input, ParseErrorCode};
+use crate::html5::shared::{
+    DocumentParseContext, Input, ParserRecoveryAction, WhatwgParseErrorCode,
+};
 
 impl Html5Tokenizer {
     pub(crate) fn step_tag_open(&mut self, input: &Input, ctx: &mut DocumentParseContext) -> Step {
@@ -67,31 +69,28 @@ impl Html5Tokenizer {
             MatchResult::NoMatch => {}
         }
 
-        match self.peek_next_char(input) {
+        match self.peek_next_char_with_offset(input) {
             None => Step::NeedMoreInput,
-            Some(ch) if ch.is_ascii_alphabetic() => {
+            Some((_, ch)) if ch.is_ascii_alphabetic() => {
                 if !self.consume_if(input, '<') {
                     return Step::NeedMoreInput;
                 }
-                self.tag_name_start = Some(self.cursor);
-                self.tag_name_end = None;
-                self.tag_name_complete = false;
-                self.current_tag_is_end = false;
-                self.current_tag_self_closing = false;
-                self.current_end_tag_trailing_error_reported = false;
-                self.current_tag_attrs.clear();
-                self.clear_current_attribute();
+                self.begin_pending_tag(self.cursor, false);
                 self.transition_to(TokenizerState::TagName);
                 Step::Progress
             }
-            Some(_) => {
+            Some((position, code_point)) => {
                 // Recovery: not a valid tag opener for Core v0, emit `<` as text.
-                self.record_tokenizer_parse_error(
+                self.record_tokenizer_parse_error_with_recovery(
+                    input,
                     ctx,
-                    ParseErrorCode::Other,
-                    self.cursor,
-                    super::super::normalization::ERROR_DETAIL_INVALID_TAG_OPEN,
-                    self.peek_next_char(input).map(|ch| ch as u32),
+                    WhatwgParseErrorCode::InvalidFirstCharacterOfTagName,
+                    position,
+                    ParserRecoveryAction::ReconsumeInputCharacter { code_point },
+                    super::super::normalization::legacy_diagnostic(
+                        super::super::normalization::ERROR_DETAIL_INVALID_TAG_OPEN,
+                        Some(code_point as u32),
+                    ),
                 );
                 if !self.consume_if(input, '<') {
                     return Step::NeedMoreInput;
@@ -114,23 +113,16 @@ impl Html5Tokenizer {
         }
         match self.peek(input) {
             Some(ch) if ch.is_ascii_alphabetic() => {
-                self.tag_name_start = Some(self.cursor);
-                self.tag_name_end = None;
-                self.tag_name_complete = false;
-                self.current_tag_is_end = true;
-                self.current_tag_self_closing = false;
-                self.current_end_tag_trailing_error_reported = false;
-                self.current_tag_attrs.clear();
-                self.clear_current_attribute();
-                self.end_tag_prefix_consumed = false;
+                self.begin_pending_tag(self.cursor, true);
                 self.transition_to(TokenizerState::TagName);
                 Step::Progress
             }
             Some('>') => {
                 // Recovery for `</>` style malformed end tags.
                 self.record_tokenizer_parse_error(
+                    input,
                     ctx,
-                    ParseErrorCode::Other,
+                    WhatwgParseErrorCode::MissingEndTagName,
                     self.cursor,
                     super::super::normalization::ERROR_DETAIL_INVALID_END_TAG_OPEN,
                     Some('>' as u32),
@@ -144,12 +136,19 @@ impl Html5Tokenizer {
                 // Recovery per Core v0: emit consumed `</` as owned text and
                 // reprocess the current non-alpha byte in Data (we do not consume
                 // it here, so Data observes it on the next step).
-                self.record_tokenizer_parse_error(
+                let code_point = self
+                    .peek(input)
+                    .expect("end-tag-open recovery has unconsumed input");
+                self.record_tokenizer_parse_error_with_recovery(
+                    input,
                     ctx,
-                    ParseErrorCode::Other,
+                    WhatwgParseErrorCode::InvalidFirstCharacterOfTagName,
                     self.cursor,
-                    super::super::normalization::ERROR_DETAIL_INVALID_END_TAG_OPEN,
-                    self.peek(input).map(|ch| ch as u32),
+                    ParserRecoveryAction::ReconsumeInputCharacter { code_point },
+                    super::super::normalization::legacy_diagnostic(
+                        super::super::normalization::ERROR_DETAIL_INVALID_END_TAG_OPEN,
+                        Some(code_point as u32),
+                    ),
                 );
                 if self.end_tag_prefix_consumed {
                     self.emit_text_owned("</");

@@ -1,4 +1,5 @@
 mod api;
+mod cdata;
 mod chunking;
 mod close_tag_boundaries;
 mod comments;

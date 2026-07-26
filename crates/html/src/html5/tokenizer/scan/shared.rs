@@ -1,21 +1,36 @@
-use super::super::input::MatchResult;
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum AsciiPrefixMatch {
+    Matched,
+    NeedMoreInput,
+    NoMatch,
+    InvariantFailure,
+}
 
-pub(crate) fn match_ascii_prefix_ci_at(bytes: &[u8], at: usize, pattern: &[u8]) -> MatchResult {
-    if at + pattern.len() > bytes.len() {
-        let available = bytes.len().saturating_sub(at);
+pub(crate) fn match_ascii_prefix_ci_at(
+    bytes: &[u8],
+    at: usize,
+    pattern: &[u8],
+) -> AsciiPrefixMatch {
+    let Some(end) = at.checked_add(pattern.len()) else {
+        return AsciiPrefixMatch::InvariantFailure;
+    };
+    if end > bytes.len() {
+        let Some(available) = bytes.len().checked_sub(at) else {
+            return AsciiPrefixMatch::InvariantFailure;
+        };
         if bytes
             .get(at..)
             .is_some_and(|tail| pattern[..available].eq_ignore_ascii_case(tail))
         {
-            return MatchResult::NeedMoreInput;
+            return AsciiPrefixMatch::NeedMoreInput;
         }
-        return MatchResult::NoMatch;
+        return AsciiPrefixMatch::NoMatch;
     }
 
-    if bytes[at..at + pattern.len()].eq_ignore_ascii_case(pattern) {
-        MatchResult::Matched
+    if bytes[at..end].eq_ignore_ascii_case(pattern) {
+        AsciiPrefixMatch::Matched
     } else {
-        MatchResult::NoMatch
+        AsciiPrefixMatch::NoMatch
     }
 }
 
@@ -32,7 +47,37 @@ pub(crate) enum QuotedParse<'a> {
         value_start: usize,
         cursor_after: usize,
     },
+    InvariantFailure,
     LimitExceeded,
     NeedMoreInput,
     Malformed,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AsciiPrefixMatch, match_ascii_prefix_ci_at};
+
+    #[test]
+    fn ascii_prefix_scan_distinguishes_invalid_ranges_from_input_mismatch() {
+        assert_eq!(
+            match_ascii_prefix_ci_at(b"PUBLIC", 0, b"public"),
+            AsciiPrefixMatch::Matched
+        );
+        assert_eq!(
+            match_ascii_prefix_ci_at(b"PUB", 0, b"public"),
+            AsciiPrefixMatch::NeedMoreInput
+        );
+        assert_eq!(
+            match_ascii_prefix_ci_at(b"PRIVATE", 0, b"public"),
+            AsciiPrefixMatch::NoMatch
+        );
+        assert_eq!(
+            match_ascii_prefix_ci_at(b"PUBLIC", 7, b"public"),
+            AsciiPrefixMatch::InvariantFailure
+        );
+        assert_eq!(
+            match_ascii_prefix_ci_at(b"", usize::MAX, b"public"),
+            AsciiPrefixMatch::InvariantFailure
+        );
+    }
 }

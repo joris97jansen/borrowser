@@ -1,4 +1,6 @@
-use super::helpers::{assert_push_ok, drain_all_fmt, run_chunks};
+use super::helpers::{
+    assert_push_ok, drain_all_fmt, run_chunks, run_chunks_with_config_and_errors,
+};
 use crate::html5::shared::{DocumentParseContext, Input};
 use crate::html5::tokenizer::{Html5Tokenizer, TokenizeResult, TokenizerConfig};
 
@@ -139,6 +141,127 @@ fn tokenizer_self_closing_flag_reflects_syntax_not_voidness() {
             "START name=br attrs=[] self_closing=true".to_string(),
             "EOF".to_string(),
         ]
+    );
+}
+
+#[test]
+fn unquoted_solidus_start_tag_tokens_and_legacy_diagnostics_are_split_invariant() {
+    let cases = [
+        (
+            "<div a=b/>",
+            "START name=div attrs=[a=\"b/\"] self_closing=false",
+        ),
+        (
+            "<div a=b />",
+            "START name=div attrs=[a=\"b\"] self_closing=true",
+        ),
+        (
+            "<img src=x/>",
+            "START name=img attrs=[src=\"x/\"] self_closing=false",
+        ),
+        (
+            "<img src=x />",
+            "START name=img attrs=[src=\"x\"] self_closing=true",
+        ),
+        (
+            "<div a=/path>",
+            "START name=div attrs=[a=\"/path\"] self_closing=false",
+        ),
+        (
+            "<div a=/path />",
+            "START name=div attrs=[a=\"/path\"] self_closing=true",
+        ),
+    ];
+
+    for (source, expected_start_tag) in cases {
+        let (whole_tokens, whole_errors) =
+            run_chunks_with_config_and_errors(TokenizerConfig::default(), &[source]);
+        assert_eq!(
+            whole_tokens,
+            vec![expected_start_tag.to_owned(), "EOF".to_owned()],
+            "source={source:?}"
+        );
+        assert!(whole_errors.is_empty(), "source={source:?}");
+
+        for split in 1..source.len() {
+            let chunks = [&source[..split], &source[split..]];
+            let (chunked_tokens, chunked_errors) =
+                run_chunks_with_config_and_errors(TokenizerConfig::default(), &chunks);
+            assert_eq!(
+                chunked_tokens, whole_tokens,
+                "source={source:?}, split={split}"
+            );
+            assert_eq!(
+                chunked_errors, whole_errors,
+                "source={source:?}, split={split}"
+            );
+        }
+    }
+}
+
+#[test]
+fn missing_solidus_position_is_a_typed_tokenizer_invariant() {
+    use crate::html5::tokenizer::invariants::TokenizerInvariantError;
+
+    let mut ctx = DocumentParseContext::new();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<div");
+    assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+    tokenizer.force_self_closing_flag_without_solidus_for_test();
+
+    assert_eq!(
+        tokenizer.check_invariants(&input),
+        Err(TokenizerInvariantError::SelfClosingFlagMissingSolidusPosition)
+    );
+    assert_eq!(
+        tokenizer.push_input(&mut input, &mut ctx),
+        TokenizeResult::NeedMoreInput
+    );
+    assert_eq!(
+        tokenizer.invariant_failure_kind(),
+        Some(
+            crate::html5::tokenizer::TokenizerInvariantKind::SelfClosingFlagMissingSolidusPosition
+        )
+    );
+}
+
+#[test]
+fn solidus_position_is_tied_to_the_current_pending_tag_lifetime() {
+    use crate::html5::tokenizer::invariants::TokenizerInvariantError;
+
+    let mut ctx = DocumentParseContext::new();
+
+    let mut no_pending = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut slash_input = Input::new();
+    slash_input.push_str("/");
+    no_pending.cursor = 1;
+    no_pending.current_tag_self_closing_solidus_position = Some(0);
+    assert_eq!(
+        no_pending.check_invariants(&slash_input),
+        Err(TokenizerInvariantError::SolidusPositionWithoutPendingTag)
+    );
+
+    let mut non_slash = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut non_slash_input = Input::new();
+    non_slash_input.push_str("x");
+    non_slash.cursor = 1;
+    non_slash.tag_name_start = Some(0);
+    non_slash.current_tag_self_closing_solidus_position = Some(0);
+    assert_eq!(
+        non_slash.check_invariants(&non_slash_input),
+        Err(TokenizerInvariantError::SolidusPositionDoesNotReferenceConsumedSlash)
+    );
+
+    let mut stale_slash = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut stale_slash_input = Input::new();
+    stale_slash_input.push_str("/<div");
+    stale_slash.cursor = stale_slash_input.as_str().len();
+    stale_slash.tag_name_start = Some(2);
+    stale_slash.current_tag_self_closing_solidus_position = Some(0);
+    assert_eq!(
+        stale_slash.check_invariants(&stale_slash_input),
+        Err(TokenizerInvariantError::SolidusPositionOutsideCurrentPendingTag)
     );
 }
 

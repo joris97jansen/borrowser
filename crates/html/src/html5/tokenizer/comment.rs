@@ -3,7 +3,8 @@ use super::limits::LIMIT_DETAIL_COMMENT;
 use super::machine::Step;
 use super::states::TokenizerState;
 use crate::html5::shared::{
-    DocumentParseContext, Input, ParseErrorCode, TextSpan, TextValue, Token,
+    DocumentParseContext, Input, ParserRecoveryAction, ParserResourceLimit, TextSpan, TextValue,
+    Token, WhatwgParseErrorCode,
 };
 
 impl Html5Tokenizer {
@@ -13,6 +14,9 @@ impl Html5Tokenizer {
         ctx: &mut DocumentParseContext,
     ) -> Step {
         debug_assert_eq!(self.state, TokenizerState::CommentStart);
+        if self.require_pending_comment_start(input).is_none() {
+            return Step::InvariantFailure;
+        }
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
         }
@@ -24,12 +28,16 @@ impl Html5Tokenizer {
                 Step::Progress
             }
             Some('>') => {
-                self.record_tokenizer_parse_error(
+                self.record_tokenizer_parse_error_with_recovery(
+                    input,
                     ctx,
-                    ParseErrorCode::Other,
+                    WhatwgParseErrorCode::AbruptClosingOfEmptyComment,
                     self.cursor,
-                    super::normalization::ERROR_DETAIL_MALFORMED_COMMENT,
-                    Some('>' as u32),
+                    ParserRecoveryAction::EmitCurrentCommentAndSwitchToData,
+                    super::normalization::legacy_diagnostic(
+                        super::normalization::ERROR_DETAIL_MALFORMED_COMMENT,
+                        Some('>' as u32),
+                    ),
                 );
                 let end = self.cursor;
                 let _ = self.consume_if(input, '>');
@@ -51,6 +59,9 @@ impl Html5Tokenizer {
         ctx: &mut DocumentParseContext,
     ) -> Step {
         debug_assert_eq!(self.state, TokenizerState::CommentStartDash);
+        if self.require_pending_comment_start(input).is_none() {
+            return Step::InvariantFailure;
+        }
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
         }
@@ -62,12 +73,16 @@ impl Html5Tokenizer {
                 Step::Progress
             }
             Some('>') => {
-                self.record_tokenizer_parse_error(
+                self.record_tokenizer_parse_error_with_recovery(
+                    input,
                     ctx,
-                    ParseErrorCode::Other,
+                    WhatwgParseErrorCode::AbruptClosingOfEmptyComment,
                     self.cursor,
-                    super::normalization::ERROR_DETAIL_MALFORMED_COMMENT,
-                    Some('>' as u32),
+                    ParserRecoveryAction::EmitCurrentCommentAndSwitchToData,
+                    super::normalization::legacy_diagnostic(
+                        super::normalization::ERROR_DETAIL_MALFORMED_COMMENT,
+                        Some('>' as u32),
+                    ),
                 );
                 let end = self.cursor;
                 let _ = self.consume_if(input, '>');
@@ -76,13 +91,6 @@ impl Html5Tokenizer {
                 Step::Progress
             }
             Some(_) => {
-                self.record_tokenizer_parse_error(
-                    ctx,
-                    ParseErrorCode::Other,
-                    self.cursor,
-                    super::normalization::ERROR_DETAIL_MALFORMED_COMMENT,
-                    self.peek(input).map(|ch| ch as u32),
-                );
                 self.transition_to(TokenizerState::Comment);
                 Step::Progress
             }
@@ -92,14 +100,19 @@ impl Html5Tokenizer {
 
     pub(crate) fn step_comment(&mut self, input: &Input, ctx: &mut DocumentParseContext) -> Step {
         debug_assert_eq!(self.state, TokenizerState::Comment);
+        if self.require_pending_comment_start(input).is_none() {
+            return Step::InvariantFailure;
+        }
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
         }
-        if self.pending_comment_start.is_none() {
-            self.transition_to(TokenizerState::Data);
-            return Step::Progress;
-        }
         match self.peek(input) {
+            Some('<') => {
+                let _ = self.consume_if(input, '<');
+                self.check_pending_comment_limit(input, ctx);
+                self.transition_to(TokenizerState::CommentLessThanSign);
+                Step::Progress
+            }
             Some('-') => {
                 let _ = self.consume_if(input, '-');
                 self.transition_to(TokenizerState::CommentEndDash);
@@ -116,12 +129,129 @@ impl Html5Tokenizer {
         }
     }
 
+    pub(crate) fn step_comment_less_than_sign(
+        &mut self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+    ) -> Step {
+        debug_assert_eq!(self.state, TokenizerState::CommentLessThanSign);
+        if self.require_pending_comment_start(input).is_none() {
+            return Step::InvariantFailure;
+        }
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        match self.peek(input) {
+            Some('!') => {
+                let _ = self.consume_if(input, '!');
+                self.check_pending_comment_limit(input, ctx);
+                self.transition_to(TokenizerState::CommentLessThanSignBang);
+                Step::Progress
+            }
+            Some('<') => {
+                let _ = self.consume_if(input, '<');
+                self.check_pending_comment_limit(input, ctx);
+                Step::Progress
+            }
+            Some(_) => {
+                self.transition_to(TokenizerState::Comment);
+                Step::Progress
+            }
+            None => Step::NeedMoreInput,
+        }
+    }
+
+    pub(crate) fn step_comment_less_than_sign_bang(
+        &mut self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+    ) -> Step {
+        debug_assert_eq!(self.state, TokenizerState::CommentLessThanSignBang);
+        if self.require_pending_comment_start(input).is_none() {
+            return Step::InvariantFailure;
+        }
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        if self.peek(input) == Some('-') {
+            let _ = self.consume_if(input, '-');
+            self.check_pending_comment_limit(input, ctx);
+            self.transition_to(TokenizerState::CommentLessThanSignBangDash);
+        } else {
+            self.transition_to(TokenizerState::Comment);
+        }
+        Step::Progress
+    }
+
+    pub(crate) fn step_comment_less_than_sign_bang_dash(
+        &mut self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+    ) -> Step {
+        debug_assert_eq!(self.state, TokenizerState::CommentLessThanSignBangDash);
+        if self.require_pending_comment_start(input).is_none() {
+            return Step::InvariantFailure;
+        }
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        if self.peek(input) == Some('-') {
+            let _ = self.consume_if(input, '-');
+            self.check_pending_comment_limit(input, ctx);
+            self.transition_to(TokenizerState::CommentLessThanSignBangDashDash);
+        } else {
+            self.transition_to(TokenizerState::CommentEndDash);
+        }
+        Step::Progress
+    }
+
+    pub(crate) fn step_comment_less_than_sign_bang_dash_dash(
+        &mut self,
+        input: &Input,
+        ctx: &mut DocumentParseContext,
+    ) -> Step {
+        debug_assert_eq!(self.state, TokenizerState::CommentLessThanSignBangDashDash);
+        if self.require_pending_comment_start(input).is_none() {
+            return Step::InvariantFailure;
+        }
+        if !self.has_unconsumed_input(input) {
+            return Step::NeedMoreInput;
+        }
+        match self.peek(input) {
+            Some('>') => {
+                self.transition_to(TokenizerState::CommentEnd);
+                Step::Progress
+            }
+            Some(code_point) => {
+                self.record_tokenizer_parse_error_with_recovery(
+                    input,
+                    ctx,
+                    WhatwgParseErrorCode::NestedComment,
+                    self.cursor,
+                    ParserRecoveryAction::RetainNestedCommentDelimiterAndReconsumeInCommentEnd {
+                        code_point,
+                    },
+                    super::normalization::legacy_diagnostic(
+                        super::normalization::ERROR_DETAIL_MALFORMED_COMMENT,
+                        Some(code_point as u32),
+                    ),
+                );
+                self.transition_to(TokenizerState::CommentEnd);
+                Step::Progress
+            }
+            None => Step::NeedMoreInput,
+        }
+    }
+
     pub(crate) fn step_comment_end_dash(
         &mut self,
         input: &Input,
         ctx: &mut DocumentParseContext,
     ) -> Step {
         debug_assert_eq!(self.state, TokenizerState::CommentEndDash);
+        if self.require_pending_comment_start(input).is_none() {
+            return Step::InvariantFailure;
+        }
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
         }
@@ -146,12 +276,20 @@ impl Html5Tokenizer {
         ctx: &mut DocumentParseContext,
     ) -> Step {
         debug_assert_eq!(self.state, TokenizerState::CommentEnd);
+        if self.require_pending_comment_start(input).is_none() {
+            return Step::InvariantFailure;
+        }
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
         }
         match self.peek(input) {
             Some('>') => {
-                let end = self.cursor.saturating_sub(2);
+                let Some(start) = self.require_pending_comment_start(input) else {
+                    return Step::InvariantFailure;
+                };
+                let Some(end) = self.pending_comment_end_for_state(input, start) else {
+                    return Step::InvariantFailure;
+                };
                 let _ = self.consume_if(input, '>');
                 self.emit_pending_comment_range(input, end, ctx);
                 self.transition_to(TokenizerState::Data);
@@ -163,26 +301,12 @@ impl Html5Tokenizer {
                 Step::Progress
             }
             Some('!') => {
-                self.record_tokenizer_parse_error(
-                    ctx,
-                    ParseErrorCode::Other,
-                    self.cursor,
-                    super::normalization::ERROR_DETAIL_MALFORMED_COMMENT,
-                    Some('!' as u32),
-                );
                 let _ = self.consume_if(input, '!');
                 self.check_pending_comment_limit(input, ctx);
                 self.transition_to(TokenizerState::CommentEndBang);
                 Step::Progress
             }
             Some(_) => {
-                self.record_tokenizer_parse_error(
-                    ctx,
-                    ParseErrorCode::Other,
-                    self.cursor,
-                    super::normalization::ERROR_DETAIL_MALFORMED_COMMENT,
-                    self.peek(input).map(|ch| ch as u32),
-                );
                 self.transition_to(TokenizerState::Comment);
                 Step::Progress
             }
@@ -196,12 +320,31 @@ impl Html5Tokenizer {
         ctx: &mut DocumentParseContext,
     ) -> Step {
         debug_assert_eq!(self.state, TokenizerState::CommentEndBang);
+        if self.require_pending_comment_start(input).is_none() {
+            return Step::InvariantFailure;
+        }
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
         }
         match self.peek(input) {
             Some('>') => {
-                let end = self.cursor.saturating_sub(3);
+                let Some(start) = self.require_pending_comment_start(input) else {
+                    return Step::InvariantFailure;
+                };
+                let Some(end) = self.pending_comment_end_for_state(input, start) else {
+                    return Step::InvariantFailure;
+                };
+                self.record_tokenizer_parse_error_with_recovery(
+                    input,
+                    ctx,
+                    WhatwgParseErrorCode::IncorrectlyClosedComment,
+                    self.cursor,
+                    ParserRecoveryAction::EmitCurrentCommentAndSwitchToData,
+                    super::normalization::legacy_diagnostic(
+                        super::normalization::ERROR_DETAIL_MALFORMED_COMMENT,
+                        Some('>' as u32),
+                    ),
+                );
                 let _ = self.consume_if(input, '>');
                 self.emit_pending_comment_range(input, end, ctx);
                 self.transition_to(TokenizerState::Data);
@@ -227,12 +370,11 @@ impl Html5Tokenizer {
         ctx: &mut DocumentParseContext,
     ) -> Step {
         debug_assert_eq!(self.state, TokenizerState::BogusComment);
+        if self.require_pending_comment_start(input).is_none() {
+            return Step::InvariantFailure;
+        }
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
-        }
-        if self.pending_comment_start.is_none() {
-            self.transition_to(TokenizerState::Data);
-            return Step::Progress;
         }
         let consumed = self.consume_while(input, |ch| ch != '>');
         if consumed > 0 {
@@ -249,17 +391,29 @@ impl Html5Tokenizer {
         }
     }
 
-    fn check_pending_comment_limit(&mut self, _input: &Input, ctx: &mut DocumentParseContext) {
-        let Some(start) = self.pending_comment_start else {
+    fn check_pending_comment_limit(&mut self, input: &Input, ctx: &mut DocumentParseContext) {
+        let Some(start) = self.require_pending_comment_start(input) else {
             return;
         };
         if self.pending_comment_limit_reported {
             return;
         }
-        let len = self.cursor.saturating_sub(start);
+        let Some(len) = self.cursor.checked_sub(start) else {
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::CommentPendingRangeInvalid,
+            );
+            return;
+        };
         if len > self.max_comment_bytes() {
             self.pending_comment_limit_reported = true;
-            self.record_limit_error(ctx, start, LIMIT_DETAIL_COMMENT, self.max_comment_bytes());
+            self.record_limit_error(
+                input,
+                ctx,
+                start,
+                ParserResourceLimit::CommentBytes,
+                LIMIT_DETAIL_COMMENT,
+                self.max_comment_bytes(),
+            );
         }
     }
 
@@ -269,30 +423,32 @@ impl Html5Tokenizer {
         end: usize,
         ctx: &mut DocumentParseContext,
     ) {
-        let start = match self.pending_comment_start.take() {
-            Some(start) => start,
-            None => return,
-        };
-        let truncated = self.truncate_input_range(input, start, end, self.max_comment_bytes());
-        self.pending_comment_limit_reported = false;
-        let Some((bounded_end, _was_truncated)) = truncated else {
-            self.emit_token(Token::Comment {
-                text: TextValue::Owned(String::new()),
-            });
+        let Some(start) = self.require_pending_comment_start(input) else {
             return;
         };
-        if !(start <= end
-            && end <= input.as_str().len()
-            && input.as_str().is_char_boundary(start)
-            && input.as_str().is_char_boundary(end))
+        if end < start
+            || end > self.cursor
+            || end > input.as_str().len()
+            || !input.as_str().is_char_boundary(start)
+            || !input.as_str().is_char_boundary(end)
         {
-            self.emit_token(Token::Comment {
-                text: TextValue::Owned(String::new()),
-            });
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::CommentPendingRangeInvalid,
+            );
             return;
         }
+        let Some((bounded_end, _was_truncated)) =
+            self.truncate_input_range(input, start, end, self.max_comment_bytes())
+        else {
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::CommentPendingRangeInvalid,
+            );
+            return;
+        };
+        self.pending_comment_start = None;
+        self.pending_comment_limit_reported = false;
         let raw = &input.as_str()[start..bounded_end];
-        if let Some(text) = self.replace_nulls_for_token_text(ctx, raw, start) {
+        if let Some(text) = self.replace_nulls_for_token_text(input, ctx, raw, start) {
             self.emit_token(Token::Comment {
                 text: TextValue::Owned(text),
             });
@@ -309,6 +465,10 @@ impl Html5Tokenizer {
             TokenizerState::CommentStart
                 | TokenizerState::CommentStartDash
                 | TokenizerState::Comment
+                | TokenizerState::CommentLessThanSign
+                | TokenizerState::CommentLessThanSignBang
+                | TokenizerState::CommentLessThanSignBangDash
+                | TokenizerState::CommentLessThanSignBangDashDash
                 | TokenizerState::CommentEndDash
                 | TokenizerState::CommentEnd
                 | TokenizerState::CommentEndBang
@@ -317,32 +477,37 @@ impl Html5Tokenizer {
         if !in_comment_family {
             return;
         }
-        let Some(start) = self.pending_comment_start.take() else {
+        let Some(start) = self.require_pending_comment_start(input) else {
             return;
         };
-        let truncated =
-            self.truncate_input_range(input, start, self.cursor, self.max_comment_bytes());
-        self.pending_comment_limit_reported = false;
-        let Some((bounded_end, _was_truncated)) = truncated else {
-            self.emit_token(Token::Comment {
-                text: TextValue::Owned(String::new()),
-            });
+        let Some(end) = self.pending_comment_end_for_state(input, start) else {
+            self.pending_comment_start = None;
             return;
         };
-        let end = self.cursor;
+        self.pending_comment_start = None;
         if !(start <= end
             && end <= input.as_str().len()
             && input.as_str().is_char_boundary(start)
             && input.as_str().is_char_boundary(end))
         {
-            self.emit_token(Token::Comment {
-                text: TextValue::Owned(String::new()),
-            });
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::CommentPendingRangeInvalid,
+            );
             return;
         }
+        let Some((bounded_end, _was_truncated)) =
+            self.truncate_input_range(input, start, end, self.max_comment_bytes())
+        else {
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::CommentPendingRangeInvalid,
+            );
+            return;
+        };
+        self.pending_comment_limit_reported = false;
         self.emit_token(Token::Comment {
             text: TextValue::Span(TextSpan::new(start, bounded_end)),
         });
+        self.transition_to(TokenizerState::Data);
     }
 
     pub(crate) fn flush_pending_comment_eof_with_context(
@@ -356,6 +521,10 @@ impl Html5Tokenizer {
             TokenizerState::CommentStart
                 | TokenizerState::CommentStartDash
                 | TokenizerState::Comment
+                | TokenizerState::CommentLessThanSign
+                | TokenizerState::CommentLessThanSignBang
+                | TokenizerState::CommentLessThanSignBangDash
+                | TokenizerState::CommentLessThanSignBangDashDash
                 | TokenizerState::CommentEndDash
                 | TokenizerState::CommentEnd
                 | TokenizerState::CommentEndBang
@@ -364,40 +533,61 @@ impl Html5Tokenizer {
         if !in_comment_family {
             return;
         }
-        if record_eof {
-            self.record_tokenizer_parse_error(
-                ctx,
-                crate::html5::shared::ParseErrorCode::UnexpectedEof,
-                self.cursor.min(input.as_str().len()),
-                super::normalization::ERROR_DETAIL_EOF_IN_COMMENT,
-                None,
-            );
-        }
-        let Some(start) = self.pending_comment_start.take() else {
+        let eof_in_comment_condition = matches!(
+            self.state,
+            TokenizerState::CommentStart
+                | TokenizerState::CommentStartDash
+                | TokenizerState::Comment
+                | TokenizerState::CommentLessThanSign
+                | TokenizerState::CommentLessThanSignBang
+                | TokenizerState::CommentLessThanSignBangDash
+                | TokenizerState::CommentLessThanSignBangDashDash
+                | TokenizerState::CommentEndDash
+                | TokenizerState::CommentEnd
+                | TokenizerState::CommentEndBang
+        );
+        let Some(start) = self.require_pending_comment_start(input) else {
             return;
         };
-        let truncated =
-            self.truncate_input_range(input, start, self.cursor, self.max_comment_bytes());
-        self.pending_comment_limit_reported = false;
-        let Some((bounded_end, _was_truncated)) = truncated else {
-            self.emit_token(Token::Comment {
-                text: TextValue::Owned(String::new()),
-            });
+        let Some(end) = self.pending_comment_end_for_state(input, start) else {
+            self.pending_comment_start = None;
             return;
         };
-        let end = self.cursor;
         if !(start <= end
             && end <= input.as_str().len()
             && input.as_str().is_char_boundary(start)
             && input.as_str().is_char_boundary(end))
         {
-            self.emit_token(Token::Comment {
-                text: TextValue::Owned(String::new()),
-            });
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::CommentPendingRangeInvalid,
+            );
             return;
         }
+        let Some((bounded_end, _was_truncated)) =
+            self.truncate_input_range(input, start, end, self.max_comment_bytes())
+        else {
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::CommentPendingRangeInvalid,
+            );
+            return;
+        };
+        if record_eof && eof_in_comment_condition {
+            self.record_tokenizer_parse_error_with_recovery(
+                input,
+                ctx,
+                WhatwgParseErrorCode::EofInComment,
+                input.as_str().len(),
+                ParserRecoveryAction::EmitCurrentCommentAtEof,
+                super::normalization::legacy_diagnostic(
+                    super::normalization::ERROR_DETAIL_EOF_IN_COMMENT,
+                    None,
+                ),
+            );
+        }
+        self.pending_comment_start = None;
+        self.pending_comment_limit_reported = false;
         let raw = &input.as_str()[start..bounded_end];
-        if let Some(text) = self.replace_nulls_for_token_text(ctx, raw, start) {
+        if let Some(text) = self.replace_nulls_for_token_text(input, ctx, raw, start) {
             self.emit_token(Token::Comment {
                 text: TextValue::Owned(text),
             });
@@ -406,5 +596,102 @@ impl Html5Tokenizer {
                 text: TextValue::Span(TextSpan::new(start, bounded_end)),
             });
         }
+        self.transition_to(TokenizerState::Data);
+    }
+
+    fn pending_comment_end_for_state(&mut self, input: &Input, start: usize) -> Option<usize> {
+        let expected_delimiter: &[u8] = match self.state {
+            TokenizerState::CommentStartDash
+            | TokenizerState::CommentLessThanSignBangDash
+            | TokenizerState::CommentEndDash => b"-",
+            TokenizerState::CommentLessThanSignBangDashDash | TokenizerState::CommentEnd => b"--",
+            TokenizerState::CommentEndBang => b"--!",
+            TokenizerState::CommentStart
+            | TokenizerState::Comment
+            | TokenizerState::CommentLessThanSign
+            | TokenizerState::CommentLessThanSignBang
+            | TokenizerState::BogusComment => return Some(self.cursor),
+            _ => {
+                self.latch_invariant(
+                    super::invariants::TokenizerInvariantKind::
+                        CommentPendingDelimiterDoesNotMatchState,
+                );
+                return None;
+            }
+        };
+        let Some(end) = self
+            .cursor
+            .checked_sub(expected_delimiter.len())
+            .filter(|end| *end >= start)
+        else {
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::
+                    CommentPendingDelimiterOutsideCurrentRange,
+            );
+            return None;
+        };
+        let Some(actual_delimiter) = input.as_str().as_bytes().get(end..self.cursor) else {
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::
+                    CommentPendingDelimiterOutsideCurrentRange,
+            );
+            return None;
+        };
+        if actual_delimiter != expected_delimiter {
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::CommentPendingDelimiterDoesNotMatchState,
+            );
+            return None;
+        }
+        Some(end)
+    }
+
+    pub(in crate::html5::tokenizer) fn require_pending_comment_start(
+        &mut self,
+        input: &Input,
+    ) -> Option<usize> {
+        let Some(start) = self.pending_comment_start else {
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::CommentStateMissingPendingStart,
+            );
+            return None;
+        };
+        if start > self.cursor
+            || self.cursor > input.as_str().len()
+            || !input.as_str().is_char_boundary(start)
+            || !input.as_str().is_char_boundary(self.cursor)
+        {
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::CommentPendingRangeInvalid,
+            );
+            return None;
+        }
+        Some(start)
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_comment_eof_state_for_test(
+        &mut self,
+        state: TokenizerState,
+        pending_start: usize,
+        cursor: usize,
+    ) {
+        self.state = state;
+        self.pending_comment_start = Some(pending_start);
+        self.cursor = cursor;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_comment_state_without_pending_start_for_test(
+        &mut self,
+        state: TokenizerState,
+    ) {
+        self.state = state;
+        self.pending_comment_start = None;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_comment_start_after_cursor_for_test(&mut self) {
+        self.pending_comment_start = self.cursor.checked_add(1);
     }
 }

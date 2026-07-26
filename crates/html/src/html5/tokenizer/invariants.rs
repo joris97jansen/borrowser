@@ -3,6 +3,38 @@ use super::states::TokenizerState;
 use super::{Html5Tokenizer, TokenizeResult};
 use crate::html5::shared::{AttributeValue, Input, TextSpan, TextValue, Token};
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub(crate) enum TokenizerInvariantKind {
+    SelfClosingFlagMissingSolidusPosition,
+    SolidusPositionWithoutPendingTag,
+    SolidusPositionOutsideCurrentPendingTag,
+    SolidusPositionDoesNotReferenceConsumedSlash,
+    DoctypeNameStartMissingForNameState,
+    DoctypeNameStartMissingForTailScan,
+    DoctypeNameStartMissingForResourceObservation,
+    DoctypeNameStartAfterCursor,
+    DoctypeNameRangeInvalid,
+    DoctypeTailRangeInvalid,
+    AsciiPrefixCandidateRangeInvalid,
+    CommentStateMissingPendingStart,
+    CommentPendingRangeInvalid,
+    CommentPendingDelimiterOutsideCurrentRange,
+    CommentPendingDelimiterDoesNotMatchState,
+    TextModeEndTagCandidateRangeInvalid,
+    TextModeEndTagAttributePositionInvalid,
+    TextModeEndTagSolidusPositionInvalid,
+    PendingTextRangeInvalid,
+    CdataStateMissingPendingTextStart,
+    CdataEndDelimiterOutsidePendingTextRange,
+    CdataEndDelimiterDoesNotMatchState,
+    ProcessingInstructionStateMissingPendingMetadata,
+    ProcessingInstructionMetadataOutsideState,
+    ProcessingInstructionTargetRangeInvalid,
+    ProcessingInstructionDataRangeInvalid,
+    ProcessingInstructionTargetStartAfterCursor,
+    ProcessingInstructionDataStartAfterCursor,
+}
+
 /// Debug/runtime tokenizer hardening checks.
 ///
 /// These checks are enabled in debug/test builds and in release when the
@@ -111,14 +143,123 @@ pub(crate) enum TokenizerInvariantError {
         span: TextSpan,
         len: usize,
     },
-    ProcessingInstructionPendingMismatch {
-        state: TokenizerState,
-        pending: bool,
-    },
-    InvalidProcessingInstructionMetadata {
-        state: TokenizerState,
-        reason: &'static str,
-    },
+    SelfClosingFlagMissingSolidusPosition,
+    SolidusPositionWithoutPendingTag,
+    SolidusPositionOutsideCurrentPendingTag,
+    SolidusPositionDoesNotReferenceConsumedSlash,
+    DoctypeNameStartMissingForNameState,
+    DoctypeNameStartMissingForTailScan,
+    DoctypeNameStartMissingForResourceObservation,
+    DoctypeNameStartAfterCursor,
+    DoctypeNameRangeInvalid,
+    DoctypeTailRangeInvalid,
+    AsciiPrefixCandidateRangeInvalid,
+    CommentStateMissingPendingStart,
+    CommentPendingRangeInvalid,
+    CommentPendingDelimiterOutsideCurrentRange,
+    CommentPendingDelimiterDoesNotMatchState,
+    TextModeEndTagCandidateRangeInvalid,
+    TextModeEndTagAttributePositionInvalid,
+    TextModeEndTagSolidusPositionInvalid,
+    PendingTextRangeInvalid,
+    CdataStateMissingPendingTextStart,
+    CdataEndDelimiterOutsidePendingTextRange,
+    CdataEndDelimiterDoesNotMatchState,
+    ProcessingInstructionStateMissingPendingMetadata,
+    ProcessingInstructionMetadataOutsideState,
+    ProcessingInstructionTargetRangeInvalid,
+    ProcessingInstructionDataRangeInvalid,
+    ProcessingInstructionTargetStartAfterCursor,
+    ProcessingInstructionDataStartAfterCursor,
+}
+
+impl From<TokenizerInvariantKind> for TokenizerInvariantError {
+    fn from(kind: TokenizerInvariantKind) -> Self {
+        kind.into_error()
+    }
+}
+
+impl TokenizerInvariantKind {
+    fn into_error(self) -> TokenizerInvariantError {
+        match self {
+            Self::SelfClosingFlagMissingSolidusPosition => {
+                TokenizerInvariantError::SelfClosingFlagMissingSolidusPosition
+            }
+            Self::SolidusPositionWithoutPendingTag => {
+                TokenizerInvariantError::SolidusPositionWithoutPendingTag
+            }
+            Self::SolidusPositionOutsideCurrentPendingTag => {
+                TokenizerInvariantError::SolidusPositionOutsideCurrentPendingTag
+            }
+            Self::SolidusPositionDoesNotReferenceConsumedSlash => {
+                TokenizerInvariantError::SolidusPositionDoesNotReferenceConsumedSlash
+            }
+            Self::DoctypeNameStartMissingForNameState => {
+                TokenizerInvariantError::DoctypeNameStartMissingForNameState
+            }
+            Self::DoctypeNameStartMissingForTailScan => {
+                TokenizerInvariantError::DoctypeNameStartMissingForTailScan
+            }
+            Self::DoctypeNameStartMissingForResourceObservation => {
+                TokenizerInvariantError::DoctypeNameStartMissingForResourceObservation
+            }
+            Self::DoctypeNameStartAfterCursor => {
+                TokenizerInvariantError::DoctypeNameStartAfterCursor
+            }
+            Self::DoctypeNameRangeInvalid => TokenizerInvariantError::DoctypeNameRangeInvalid,
+            Self::DoctypeTailRangeInvalid => TokenizerInvariantError::DoctypeTailRangeInvalid,
+            Self::AsciiPrefixCandidateRangeInvalid => {
+                TokenizerInvariantError::AsciiPrefixCandidateRangeInvalid
+            }
+            Self::CommentStateMissingPendingStart => {
+                TokenizerInvariantError::CommentStateMissingPendingStart
+            }
+            Self::CommentPendingRangeInvalid => TokenizerInvariantError::CommentPendingRangeInvalid,
+            Self::CommentPendingDelimiterOutsideCurrentRange => {
+                TokenizerInvariantError::CommentPendingDelimiterOutsideCurrentRange
+            }
+            Self::CommentPendingDelimiterDoesNotMatchState => {
+                TokenizerInvariantError::CommentPendingDelimiterDoesNotMatchState
+            }
+            Self::TextModeEndTagCandidateRangeInvalid => {
+                TokenizerInvariantError::TextModeEndTagCandidateRangeInvalid
+            }
+            Self::TextModeEndTagAttributePositionInvalid => {
+                TokenizerInvariantError::TextModeEndTagAttributePositionInvalid
+            }
+            Self::TextModeEndTagSolidusPositionInvalid => {
+                TokenizerInvariantError::TextModeEndTagSolidusPositionInvalid
+            }
+            Self::PendingTextRangeInvalid => TokenizerInvariantError::PendingTextRangeInvalid,
+            Self::CdataStateMissingPendingTextStart => {
+                TokenizerInvariantError::CdataStateMissingPendingTextStart
+            }
+            Self::CdataEndDelimiterOutsidePendingTextRange => {
+                TokenizerInvariantError::CdataEndDelimiterOutsidePendingTextRange
+            }
+            Self::CdataEndDelimiterDoesNotMatchState => {
+                TokenizerInvariantError::CdataEndDelimiterDoesNotMatchState
+            }
+            Self::ProcessingInstructionStateMissingPendingMetadata => {
+                TokenizerInvariantError::ProcessingInstructionStateMissingPendingMetadata
+            }
+            Self::ProcessingInstructionMetadataOutsideState => {
+                TokenizerInvariantError::ProcessingInstructionMetadataOutsideState
+            }
+            Self::ProcessingInstructionTargetRangeInvalid => {
+                TokenizerInvariantError::ProcessingInstructionTargetRangeInvalid
+            }
+            Self::ProcessingInstructionDataRangeInvalid => {
+                TokenizerInvariantError::ProcessingInstructionDataRangeInvalid
+            }
+            Self::ProcessingInstructionTargetStartAfterCursor => {
+                TokenizerInvariantError::ProcessingInstructionTargetStartAfterCursor
+            }
+            Self::ProcessingInstructionDataStartAfterCursor => {
+                TokenizerInvariantError::ProcessingInstructionDataStartAfterCursor
+            }
+        }
+    }
 }
 
 impl std::fmt::Display for TokenizerInvariantError {
@@ -192,13 +333,89 @@ impl std::fmt::Display for TokenizerInvariantError {
                 "{field} contains invalid span {}..{} for len={len}",
                 span.start, span.end
             ),
-            Self::ProcessingInstructionPendingMismatch { state, pending } => write!(
-                f,
-                "processing-instruction state/pending mismatch: state={state:?} pending={pending}"
+            Self::SelfClosingFlagMissingSolidusPosition => {
+                f.write_str("current tag self-closing flag requires the consumed solidus position")
+            }
+            Self::SolidusPositionWithoutPendingTag => {
+                f.write_str("current tag solidus position exists without a pending tag")
+            }
+            Self::SolidusPositionOutsideCurrentPendingTag => f.write_str(
+                "current tag solidus position precedes the current pending tag name",
             ),
-            Self::InvalidProcessingInstructionMetadata { state, reason } => write!(
-                f,
-                "invalid processing-instruction metadata in state {state:?}: {reason}"
+            Self::SolidusPositionDoesNotReferenceConsumedSlash => f.write_str(
+                "current tag solidus position does not reference a consumed slash before the cursor",
+            ),
+            Self::DoctypeNameStartMissingForNameState => {
+                f.write_str("doctype-name state requires its retained start offset")
+            }
+            Self::DoctypeNameStartMissingForTailScan => {
+                f.write_str("doctype tail scanning requires the retained doctype-name start offset")
+            }
+            Self::DoctypeNameStartMissingForResourceObservation => f.write_str(
+                "doctype resource-limit observation requires the retained doctype-name start offset",
+            ),
+            Self::DoctypeNameStartAfterCursor => {
+                f.write_str("retained doctype-name start offset is after the tokenizer cursor")
+            }
+            Self::DoctypeNameRangeInvalid => {
+                f.write_str("doctype-name range is internally invalid")
+            }
+            Self::DoctypeTailRangeInvalid => {
+                f.write_str("doctype quoted-tail range is internally invalid")
+            }
+            Self::AsciiPrefixCandidateRangeInvalid => {
+                f.write_str("ASCII-prefix candidate range is internally invalid")
+            }
+            Self::CommentStateMissingPendingStart => {
+                f.write_str("comment state is missing its pending comment start")
+            }
+            Self::CommentPendingRangeInvalid => {
+                f.write_str("pending comment range is internally invalid")
+            }
+            Self::CommentPendingDelimiterOutsideCurrentRange => f.write_str(
+                "comment EOF recovery delimiter is outside the current pending comment range",
+            ),
+            Self::CommentPendingDelimiterDoesNotMatchState => f.write_str(
+                "comment EOF recovery delimiter does not match the active comment state",
+            ),
+            Self::TextModeEndTagCandidateRangeInvalid => {
+                f.write_str("text-mode end-tag candidate range is internally invalid")
+            }
+            Self::TextModeEndTagAttributePositionInvalid => f.write_str(
+                "text-mode end-tag attribute diagnostic position is not the candidate closing greater-than sign",
+            ),
+            Self::TextModeEndTagSolidusPositionInvalid => f.write_str(
+                "text-mode end-tag trailing-solidus diagnostic position is not the accepted slash inside the current candidate",
+            ),
+            Self::PendingTextRangeInvalid => {
+                f.write_str("pending tokenizer text range is internally invalid")
+            }
+            Self::CdataStateMissingPendingTextStart => {
+                f.write_str("CDATA state is missing its pending text start")
+            }
+            Self::CdataEndDelimiterOutsidePendingTextRange => f.write_str(
+                "CDATA closing delimiter is outside the current pending text range",
+            ),
+            Self::CdataEndDelimiterDoesNotMatchState => {
+                f.write_str("CDATA closing delimiter does not match the active CDATA-end state")
+            }
+            Self::ProcessingInstructionStateMissingPendingMetadata => {
+                f.write_str("processing-instruction state is missing pending metadata")
+            }
+            Self::ProcessingInstructionMetadataOutsideState => {
+                f.write_str("processing-instruction metadata exists outside its state family")
+            }
+            Self::ProcessingInstructionTargetRangeInvalid => {
+                f.write_str("processing-instruction target range is internally invalid")
+            }
+            Self::ProcessingInstructionDataRangeInvalid => {
+                f.write_str("processing-instruction data range is internally invalid")
+            }
+            Self::ProcessingInstructionTargetStartAfterCursor => f.write_str(
+                "processing-instruction target start is after the tokenizer cursor",
+            ),
+            Self::ProcessingInstructionDataStartAfterCursor => f.write_str(
+                "processing-instruction data start is after the tokenizer cursor",
             ),
         }
     }
@@ -211,6 +428,77 @@ impl Html5Tokenizer {
         TokenizerInvariantSnapshot::capture(self)
     }
 
+    pub(crate) fn invariant_failure_kind(&self) -> Option<TokenizerInvariantKind> {
+        self.invariant_failure
+    }
+
+    pub(in crate::html5::tokenizer) fn ensure_current_tag_solidus_invariant(
+        &mut self,
+        input: &Input,
+    ) -> bool {
+        if self.invariant_failure.is_some() {
+            return false;
+        }
+        match self.check_current_tag_solidus_invariant(input) {
+            Ok(()) => true,
+            Err(kind) => {
+                self.invariant_failure = Some(kind);
+                false
+            }
+        }
+    }
+
+    pub(in crate::html5::tokenizer) fn ensure_text_mode_matcher_invariant(
+        &mut self,
+        input: &Input,
+    ) -> bool {
+        if self.invariant_failure.is_some() {
+            return false;
+        }
+        let Some(matcher) = self.pending_text_mode_end_tag_matcher else {
+            return true;
+        };
+        match matcher
+            .validate_live_candidate_range(input.as_str().as_bytes())
+            .and_then(|()| matcher.validate_live_diagnostic_evidence(input.as_str().as_bytes()))
+        {
+            Ok(()) => true,
+            Err(kind) => {
+                self.invariant_failure = Some(kind);
+                false
+            }
+        }
+    }
+
+    pub(in crate::html5::tokenizer) fn latch_invariant(&mut self, kind: TokenizerInvariantKind) {
+        if self.invariant_failure.is_none() {
+            self.invariant_failure = Some(kind);
+        }
+    }
+
+    fn check_current_tag_solidus_invariant(
+        &self,
+        input: &Input,
+    ) -> Result<(), TokenizerInvariantKind> {
+        let position = self.current_tag_self_closing_solidus_position;
+        if self.current_tag_self_closing && position.is_none() {
+            return Err(TokenizerInvariantKind::SelfClosingFlagMissingSolidusPosition);
+        }
+        let Some(position) = position else {
+            return Ok(());
+        };
+        let Some(tag_name_start) = self.tag_name_start else {
+            return Err(TokenizerInvariantKind::SolidusPositionWithoutPendingTag);
+        };
+        if position < tag_name_start {
+            return Err(TokenizerInvariantKind::SolidusPositionOutsideCurrentPendingTag);
+        }
+        if position >= self.cursor || input.as_str().as_bytes().get(position) != Some(&b'/') {
+            return Err(TokenizerInvariantKind::SolidusPositionDoesNotReferenceConsumedSlash);
+        }
+        Ok(())
+    }
+
     pub(crate) fn check_invariants(&self, input: &Input) -> Result<(), TokenizerInvariantError> {
         let len = input.as_str().len();
 
@@ -221,16 +509,35 @@ impl Html5Tokenizer {
             });
         }
 
+        if self.state.owns_pending_comment() {
+            let Some(start) = self.pending_comment_start else {
+                return Err(TokenizerInvariantError::CommentStateMissingPendingStart);
+            };
+            if start > self.cursor
+                || self.cursor > len
+                || !input.as_str().is_char_boundary(start)
+                || !input.as_str().is_char_boundary(self.cursor)
+            {
+                return Err(TokenizerInvariantError::CommentPendingRangeInvalid);
+            }
+        }
         check_offset(input, "cursor", self.cursor, true)?;
         check_optional_offset(input, "pending_text_start", self.pending_text_start)?;
-        check_optional_offset(input, "pending_comment_start", self.pending_comment_start)?;
-        self.check_processing_instruction_state_invariant(input)?;
+        if !self.state.owns_pending_comment() {
+            check_optional_offset(input, "pending_comment_start", self.pending_comment_start)?;
+        }
+        self.classify_processing_instruction_invariant(input)
+            .map_err(TokenizerInvariantError::from)?;
         check_optional_offset(
             input,
             "pending_doctype_name_start",
             self.pending_doctype_name_start,
         )?;
         if let Some(matcher) = self.pending_text_mode_end_tag_matcher {
+            matcher
+                .validate_live_candidate_range(input.as_str().as_bytes())
+                .and_then(|()| matcher.validate_live_diagnostic_evidence(input.as_str().as_bytes()))
+                .map_err(TokenizerInvariantError::from)?;
             check_offset(
                 input,
                 "pending_text_mode_end_tag_matcher.start",
@@ -266,6 +573,13 @@ impl Html5Tokenizer {
         }
         check_optional_offset(input, "tag_name_start", self.tag_name_start)?;
         check_optional_offset(input, "tag_name_end", self.tag_name_end)?;
+        check_optional_offset(
+            input,
+            "current_tag_self_closing_solidus_position",
+            self.current_tag_self_closing_solidus_position,
+        )?;
+        self.check_current_tag_solidus_invariant(input)
+            .map_err(TokenizerInvariantError::from)?;
         check_optional_offset(
             input,
             "current_attr_name_start",
@@ -350,147 +664,6 @@ impl Html5Tokenizer {
         }
 
         debug_assert!(self.cursor <= len);
-        Ok(())
-    }
-
-    pub(in crate::html5::tokenizer) fn assert_processing_instruction_state_invariant(
-        &self,
-        input: &Input,
-    ) {
-        if let Err(error) = self.check_processing_instruction_state_invariant(input) {
-            panic!("tokenizer invariant failure: {error}");
-        }
-    }
-
-    fn check_processing_instruction_state_invariant(
-        &self,
-        input: &Input,
-    ) -> Result<(), TokenizerInvariantError> {
-        let in_processing_instruction_state = self.state.is_processing_instruction();
-        if in_processing_instruction_state != self.pending_processing_instruction.is_some() {
-            return Err(
-                TokenizerInvariantError::ProcessingInstructionPendingMismatch {
-                    state: self.state,
-                    pending: self.pending_processing_instruction.is_some(),
-                },
-            );
-        }
-        if let Some(pending) = self.pending_processing_instruction {
-            check_offset(
-                input,
-                "pending_processing_instruction.comment_start",
-                pending.comment_start,
-                false,
-            )?;
-            check_offset(
-                input,
-                "pending_processing_instruction.target_start",
-                pending.target_start,
-                true,
-            )?;
-            check_optional_offset(
-                input,
-                "pending_processing_instruction.target_end",
-                pending.target_end,
-            )?;
-            check_optional_offset(
-                input,
-                "pending_processing_instruction.data_start",
-                pending.data_start,
-            )?;
-            check_optional_offset(
-                input,
-                "pending_processing_instruction.bounded_data_end",
-                pending.bounded_data_end,
-            )?;
-            check_optional_range(
-                input,
-                "pending_processing_instruction.target_range",
-                "pending_processing_instruction.target_start",
-                Some(pending.target_start),
-                pending.target_end,
-            )?;
-            check_optional_range(
-                input,
-                "pending_processing_instruction.data_range",
-                "pending_processing_instruction.data_start",
-                pending.data_start,
-                pending.bounded_data_end,
-            )?;
-            self.check_processing_instruction_metadata(pending)?;
-        }
-        Ok(())
-    }
-
-    fn check_processing_instruction_metadata(
-        &self,
-        pending: super::api::PendingProcessingInstruction,
-    ) -> Result<(), TokenizerInvariantError> {
-        let invalid = |reason| {
-            Err(
-                TokenizerInvariantError::InvalidProcessingInstructionMetadata {
-                    state: self.state,
-                    reason,
-                },
-            )
-        };
-
-        if pending.comment_start.checked_add(1) != Some(pending.target_start) {
-            return invalid("comment start must identify the '?' immediately before the target");
-        }
-        if pending.target_start > self.cursor {
-            return invalid("target start is after the cursor");
-        }
-        if pending.target_end.is_some_and(|end| end > self.cursor) {
-            return invalid("target end is after the cursor");
-        }
-        if pending
-            .data_start
-            .is_some_and(|start| pending.target_end.is_none_or(|end| start < end))
-        {
-            return invalid("data starts before the completed target");
-        }
-        if pending.data_start.is_some() != pending.bounded_data_end.is_some() {
-            return invalid("data start and bounded data end must be present together");
-        }
-        if pending
-            .bounded_data_end
-            .is_some_and(|end| end > self.cursor)
-        {
-            return invalid("bounded data end is after the cursor");
-        }
-
-        match self.state {
-            TokenizerState::ProcessingInstructionOpen => {
-                if self.cursor != pending.target_start
-                    || pending.target_end.is_some()
-                    || pending.data_start.is_some()
-                {
-                    return invalid("open state must be positioned at an empty target");
-                }
-            }
-            TokenizerState::ProcessingInstructionTarget => {
-                if pending.target_end.is_some() || pending.data_start.is_some() {
-                    return invalid("target state cannot have completed target or data ranges");
-                }
-            }
-            TokenizerState::AfterProcessingInstructionTarget => {
-                if pending.target_end.is_none() || pending.data_start.is_some() {
-                    return invalid("after-target state requires only a completed target range");
-                }
-            }
-            TokenizerState::ProcessingInstructionData => {
-                if pending.target_end.is_none() {
-                    return invalid("data state requires a completed target range");
-                }
-            }
-            TokenizerState::ProcessingInstructionQuestionable => {
-                if pending.target_end.is_none() || pending.data_start.is_none() {
-                    return invalid("questionable state requires completed target and data ranges");
-                }
-            }
-            _ => return invalid("pending metadata exists outside the PI state family"),
-        }
         Ok(())
     }
 

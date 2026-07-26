@@ -212,14 +212,14 @@ impl Html5Tokenizer {
             TextModeEndTagMatch::Matched {
                 cursor_after,
                 name,
-                had_attributes,
-                self_closing,
+                attribute_error_position,
+                trailing_solidus_position,
             } => {
                 self.record_text_mode_end_tag_parse_errors(
+                    input,
                     ctx,
-                    less_than_pos,
-                    had_attributes,
-                    self_closing,
+                    attribute_error_position,
+                    trailing_solidus_position,
                 );
                 if self
                     .pending_text_start
@@ -227,8 +227,11 @@ impl Html5Tokenizer {
                 {
                     self.pending_text_mode_end_tag =
                         Some(PendingTextModeEndTag { cursor_after, name });
-                    self.flush_pending_text_with_context(input, ctx);
-                    Step::Progress
+                    if self.flush_pending_text_with_context(input, ctx) {
+                        Step::Progress
+                    } else {
+                        Step::InvariantFailure
+                    }
                 } else {
                     self.set_cursor(cursor_after);
                     self.emit_token(Token::EndTag { name });
@@ -246,6 +249,8 @@ impl Html5Tokenizer {
                     }
                 }
             }
+            TextModeEndTagMatch::NeedMoreInputWithoutCandidate => Step::NeedMoreInput,
+            TextModeEndTagMatch::InvariantFailure => Step::InvariantFailure,
             TextModeEndTagMatch::LimitExceeded => {
                 self.recover_from_text_mode_end_tag_limit(ctx, input, less_than_pos)
             }
@@ -276,14 +281,14 @@ impl Html5Tokenizer {
             TextModeEndTagMatch::Matched {
                 cursor_after,
                 name,
-                had_attributes,
-                self_closing,
+                attribute_error_position,
+                trailing_solidus_position,
             } => {
                 self.record_text_mode_end_tag_parse_errors(
+                    input,
                     ctx,
-                    less_than_pos,
-                    had_attributes,
-                    self_closing,
+                    attribute_error_position,
+                    trailing_solidus_position,
                 );
                 if self
                     .pending_text_start
@@ -291,8 +296,11 @@ impl Html5Tokenizer {
                 {
                     self.pending_text_mode_end_tag =
                         Some(PendingTextModeEndTag { cursor_after, name });
-                    self.flush_pending_text_with_context(input, ctx);
-                    Step::Progress
+                    if self.flush_pending_text_with_context(input, ctx) {
+                        Step::Progress
+                    } else {
+                        Step::InvariantFailure
+                    }
                 } else {
                     self.set_cursor(cursor_after);
                     self.emit_token(Token::EndTag { name });
@@ -311,6 +319,8 @@ impl Html5Tokenizer {
                     }
                 }
             }
+            TextModeEndTagMatch::NeedMoreInputWithoutCandidate => Step::NeedMoreInput,
+            TextModeEndTagMatch::InvariantFailure => Step::InvariantFailure,
             TextModeEndTagMatch::LimitExceeded => {
                 self.recover_from_text_mode_end_tag_limit(ctx, input, less_than_pos)
             }

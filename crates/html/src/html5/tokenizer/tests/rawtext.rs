@@ -2,7 +2,7 @@ use super::helpers::{
     assert_style_rawtext_chunk_invariant, assert_text_mode_split_close_tag_regression,
     run_style_rawtext_chunks, run_style_rawtext_chunks_with_errors,
 };
-use crate::html5::shared::ParseErrorCode;
+use crate::html5::shared::LegacyParseErrorCode as ParseErrorCode;
 
 #[test]
 fn rawtext_style_split_end_tag_is_chunk_invariant_at_every_boundary() {

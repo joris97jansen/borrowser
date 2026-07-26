@@ -7,7 +7,8 @@ use super::super::scan::{is_attribute_name_stop, is_unquoted_attr_value_stop};
 use super::super::states::TokenizerState;
 use crate::entities::{CharacterReferenceContext, decode_character_references};
 use crate::html5::shared::{
-    Attribute, AttributeValue, DocumentParseContext, Input, ParseErrorCode, TextSpan,
+    Attribute, AttributeValue, DocumentParseContext, Input, ParserRecoveryAction,
+    ParserResourceLimit, TextSpan, TokenizerExtensionParseErrorCode, WhatwgParseErrorCode,
 };
 
 impl Html5Tokenizer {
@@ -26,28 +27,85 @@ impl Html5Tokenizer {
                 Step::Progress
             }
             Some('/') => {
+                let solidus_position = self.cursor;
                 let _ = self.consume_if(input, '/');
-                self.transition_to(TokenizerState::SelfClosingStartTag);
+                self.enter_self_closing_start_tag_after_solidus(solidus_position);
                 Step::Progress
             }
             Some('>') => {
+                let tag_end_position = self.cursor;
                 let _ = self.consume_if(input, '>');
-                self.emit_current_tag(input, ctx);
+                self.emit_current_tag(input, ctx, tag_end_position);
                 self.transition_to(TokenizerState::Data);
                 Step::Progress
             }
-            Some('"') | Some('\'') | Some('<') | Some('=') | Some('`') | Some('?') => {
+            Some('=') => {
+                self.record_tokenizer_parse_error_with_recovery(
+                    input,
+                    ctx,
+                    WhatwgParseErrorCode::UnexpectedEqualsSignBeforeAttributeName,
+                    self.cursor,
+                    ParserRecoveryAction::DropInputCharacter { code_point: '=' },
+                    super::super::normalization::legacy_diagnostic(
+                        super::super::normalization::
+                            ERROR_DETAIL_UNEXPECTED_EQUALS_BEFORE_ATTRIBUTE_NAME,
+                        Some('=' as u32),
+                    ),
+                );
+                let _ = self.consume(input);
+                Step::Progress
+            }
+            Some('"') | Some('\'') | Some('<') => {
                 // Core v0 recovery policy (broad): in BeforeAttributeName we drop
                 // delimiter-like/junk bytes that are not valid attribute-name
                 // starts, regardless of how we entered this state (including, but
                 // not limited to, unquoted-value recovery). This keeps name
                 // tokenization deterministic under malformed input.
-                self.record_tokenizer_parse_error(
+                let code_point = self
+                    .peek(input)
+                    .expect("BeforeAttributeName has unconsumed input");
+                self.record_tokenizer_parse_error_with_recovery(
+                    input,
                     ctx,
-                    ParseErrorCode::Other,
+                    WhatwgParseErrorCode::UnexpectedCharacterInAttributeName,
                     self.cursor,
-                    super::super::normalization::ERROR_DETAIL_INVALID_ATTRIBUTE_NAME,
-                    self.peek(input).map(|ch| ch as u32),
+                    ParserRecoveryAction::DropInputCharacter { code_point },
+                    super::super::normalization::legacy_diagnostic(
+                        super::super::normalization::ERROR_DETAIL_INVALID_ATTRIBUTE_NAME,
+                        Some(code_point as u32),
+                    ),
+                );
+                let _ = self.consume(input);
+                Step::Progress
+            }
+            Some('`') => {
+                self.record_tokenizer_extension_parse_error_with_recovery(
+                    input,
+                    ctx,
+                    TokenizerExtensionParseErrorCode::DroppedGraveAccentBeforeAttributeName,
+                    self.cursor,
+                    ParserRecoveryAction::DropInputCharacter { code_point: '`' },
+                    super::super::normalization::legacy_diagnostic(
+                        super::super::normalization::
+                            ERROR_DETAIL_DROPPED_GRAVE_ACCENT_BEFORE_ATTRIBUTE_NAME,
+                        Some('`' as u32),
+                    ),
+                );
+                let _ = self.consume(input);
+                Step::Progress
+            }
+            Some('?') => {
+                self.record_tokenizer_extension_parse_error_with_recovery(
+                    input,
+                    ctx,
+                    TokenizerExtensionParseErrorCode::DroppedQuestionMarkBeforeAttributeName,
+                    self.cursor,
+                    ParserRecoveryAction::DropInputCharacter { code_point: '?' },
+                    super::super::normalization::legacy_diagnostic(
+                        super::super::normalization::
+                            ERROR_DETAIL_DROPPED_QUESTION_MARK_BEFORE_ATTRIBUTE_NAME,
+                        Some('?' as u32),
+                    ),
                 );
                 let _ = self.consume(input);
                 Step::Progress
@@ -131,8 +189,9 @@ impl Html5Tokenizer {
             }
             Some('/') => {
                 self.finalize_current_attribute(input, ctx);
+                let solidus_position = self.cursor;
                 let _ = self.consume_if(input, '/');
-                self.transition_to(TokenizerState::SelfClosingStartTag);
+                self.enter_self_closing_start_tag_after_solidus(solidus_position);
                 Step::Progress
             }
             Some('=') => {
@@ -143,8 +202,9 @@ impl Html5Tokenizer {
             }
             Some('>') => {
                 self.finalize_current_attribute(input, ctx);
+                let tag_end_position = self.cursor;
                 let _ = self.consume_if(input, '>');
-                self.emit_current_tag(input, ctx);
+                self.emit_current_tag(input, ctx, tag_end_position);
                 self.transition_to(TokenizerState::Data);
                 Step::Progress
             }
@@ -186,16 +246,18 @@ impl Html5Tokenizer {
             }
             Some('>') => {
                 self.record_tokenizer_parse_error(
+                    input,
                     ctx,
-                    ParseErrorCode::Other,
+                    WhatwgParseErrorCode::MissingAttributeValue,
                     self.cursor,
                     super::super::normalization::ERROR_DETAIL_INVALID_ATTRIBUTE_VALUE,
                     Some('>' as u32),
                 );
                 self.begin_current_attribute_value_at_cursor();
                 self.finalize_current_attribute(input, ctx);
+                let tag_end_position = self.cursor;
                 let _ = self.consume_if(input, '>');
-                self.emit_current_tag(input, ctx);
+                self.emit_current_tag(input, ctx, tag_end_position);
                 self.transition_to(TokenizerState::Data);
                 Step::Progress
             }
@@ -277,26 +339,53 @@ impl Html5Tokenizer {
             }
             Some('/') => {
                 self.finalize_current_attribute(input, ctx);
+                let solidus_position = self.cursor;
                 let _ = self.consume_if(input, '/');
-                self.transition_to(TokenizerState::SelfClosingStartTag);
+                self.enter_self_closing_start_tag_after_solidus(solidus_position);
                 Step::Progress
             }
             Some('>') => {
                 self.finalize_current_attribute(input, ctx);
+                let tag_end_position = self.cursor;
                 let _ = self.consume_if(input, '>');
-                self.emit_current_tag(input, ctx);
+                self.emit_current_tag(input, ctx, tag_end_position);
                 self.transition_to(TokenizerState::Data);
                 Step::Progress
             }
-            Some('"') | Some('\'') | Some('<') | Some('=') | Some('`') | Some('?') => {
+            Some('?') => {
+                self.record_tokenizer_extension_parse_error_with_recovery(
+                    input,
+                    ctx,
+                    TokenizerExtensionParseErrorCode::
+                        TerminatedUnquotedAttributeValueBeforeQuestionMark,
+                    self.cursor,
+                    ParserRecoveryAction::ReconsumeInputCharacter { code_point: '?' },
+                    super::super::normalization::legacy_diagnostic(
+                        super::super::normalization::
+                            ERROR_DETAIL_TERMINATED_UNQUOTED_VALUE_BEFORE_QUESTION_MARK,
+                        Some('?' as u32),
+                    ),
+                );
+                self.finalize_current_attribute(input, ctx);
+                self.transition_to(TokenizerState::BeforeAttributeName);
+                Step::Progress
+            }
+            Some('"') | Some('\'') | Some('<') | Some('=') | Some('`') => {
                 // Core v0 recovery: terminate current unquoted value and
                 // reconsume the delimiter in BeforeAttributeName.
-                self.record_tokenizer_parse_error(
+                let code_point = self
+                    .peek(input)
+                    .expect("unquoted attribute value has unconsumed input");
+                self.record_tokenizer_parse_error_with_recovery(
+                    input,
                     ctx,
-                    ParseErrorCode::Other,
+                    WhatwgParseErrorCode::UnexpectedCharacterInUnquotedAttributeValue,
                     self.cursor,
-                    super::super::normalization::ERROR_DETAIL_INVALID_ATTRIBUTE_VALUE,
-                    self.peek(input).map(|ch| ch as u32),
+                    ParserRecoveryAction::ReconsumeInputCharacter { code_point },
+                    super::super::normalization::legacy_diagnostic(
+                        super::super::normalization::ERROR_DETAIL_INVALID_ATTRIBUTE_VALUE,
+                        Some(code_point as u32),
+                    ),
                 );
                 self.finalize_current_attribute(input, ctx);
                 self.transition_to(TokenizerState::BeforeAttributeName);
@@ -329,24 +418,34 @@ impl Html5Tokenizer {
             }
             Some('/') => {
                 self.finalize_current_attribute(input, ctx);
+                let solidus_position = self.cursor;
                 let _ = self.consume_if(input, '/');
-                self.transition_to(TokenizerState::SelfClosingStartTag);
+                self.enter_self_closing_start_tag_after_solidus(solidus_position);
                 Step::Progress
             }
             Some('>') => {
                 self.finalize_current_attribute(input, ctx);
+                let tag_end_position = self.cursor;
                 let _ = self.consume_if(input, '>');
-                self.emit_current_tag(input, ctx);
+                self.emit_current_tag(input, ctx, tag_end_position);
                 self.transition_to(TokenizerState::Data);
                 Step::Progress
             }
             Some(_) => {
-                self.record_tokenizer_parse_error(
+                let code_point = self
+                    .peek(input)
+                    .expect("quoted attribute recovery has unconsumed input");
+                self.record_tokenizer_parse_error_with_recovery(
+                    input,
                     ctx,
-                    ParseErrorCode::Other,
+                    WhatwgParseErrorCode::MissingWhitespaceBetweenAttributes,
                     self.cursor,
-                    super::super::normalization::ERROR_DETAIL_MISSING_WHITESPACE_BETWEEN_ATTRIBUTES,
-                    self.peek(input).map(|ch| ch as u32),
+                    ParserRecoveryAction::ReconsumeInputCharacter { code_point },
+                    super::super::normalization::legacy_diagnostic(
+                        super::super::normalization::
+                            ERROR_DETAIL_MISSING_WHITESPACE_BETWEEN_ATTRIBUTES,
+                        Some(code_point as u32),
+                    ),
                 );
                 self.finalize_current_attribute(input, ctx);
                 self.transition_to(TokenizerState::BeforeAttributeName);
@@ -365,18 +464,30 @@ impl Html5Tokenizer {
         if !self.has_unconsumed_input(input) {
             return Step::NeedMoreInput;
         }
-        if self.consume_if(input, '>') {
-            self.current_tag_self_closing = true;
-            self.emit_current_tag(input, ctx);
+        if self.peek(input) == Some('>') {
+            let tag_end_position = self.cursor;
+            let _ = self.consume_if(input, '>');
+            if self.accept_current_tag_self_closing() {
+                self.emit_current_tag(input, ctx, tag_end_position);
+            } else {
+                self.abandon_pending_tag();
+            }
             self.transition_to(TokenizerState::Data);
             return Step::Progress;
         }
-        self.record_tokenizer_parse_error(
+        let code_point = self
+            .peek(input)
+            .expect("self-closing start tag has unconsumed input");
+        self.record_tokenizer_parse_error_with_recovery(
+            input,
             ctx,
-            ParseErrorCode::Other,
+            WhatwgParseErrorCode::UnexpectedSolidusInTag,
             self.cursor,
-            super::super::normalization::ERROR_DETAIL_INVALID_SELF_CLOSING_START_TAG,
-            self.peek(input).map(|ch| ch as u32),
+            ParserRecoveryAction::ReconsumeInputCharacter { code_point },
+            super::super::normalization::legacy_diagnostic(
+                super::super::normalization::ERROR_DETAIL_UNEXPECTED_SOLIDUS_IN_TAG,
+                Some(code_point as u32),
+            ),
         );
         self.transition_to(TokenizerState::BeforeAttributeName);
         Step::Progress
@@ -423,8 +534,10 @@ impl Html5Tokenizer {
         }
         if self.current_tag_attrs.len() >= self.max_attributes_per_tag() {
             self.record_limit_error(
+                input,
                 ctx,
                 name_start,
+                ParserResourceLimit::AttributesPerTag,
                 LIMIT_DETAIL_ATTRIBUTES_PER_TAG,
                 self.max_attributes_per_tag(),
             );
@@ -436,26 +549,32 @@ impl Html5Tokenizer {
             self.truncate_str_to_bytes(raw_name, self.max_attribute_name_bytes());
         if name_truncated {
             self.record_limit_error(
+                input,
                 ctx,
                 name_start,
+                ParserResourceLimit::AttributeNameBytes,
                 LIMIT_DETAIL_ATTRIBUTE_NAME,
                 self.max_attribute_name_bytes(),
             );
         }
-        self.record_attribute_name_parse_errors(ctx, raw_name, name_start);
-        let normalized_name = self.replace_nulls_for_token_text(ctx, raw_name, name_start);
+        self.record_attribute_name_parse_errors(input, ctx, raw_name, name_start);
+        let normalized_name = self.replace_nulls_for_token_text(input, ctx, raw_name, name_start);
         let atom_text = normalized_name.as_deref().unwrap_or(raw_name);
         let name = self.intern_atom_or_invariant(ctx, atom_text, "attribute name");
 
         // Duplicate attribute policy (Core v0): first-wins per start tag;
         // later duplicates are dropped to match HTML tokenizer semantics.
         if self.current_tag_attrs.iter().any(|attr| attr.name == name) {
-            self.record_tokenizer_parse_error(
+            self.record_tokenizer_parse_error_with_recovery(
+                input,
                 ctx,
-                ParseErrorCode::Other,
+                WhatwgParseErrorCode::DuplicateAttribute,
                 name_start,
-                super::super::normalization::ERROR_DETAIL_DUPLICATE_ATTRIBUTE,
-                None,
+                ParserRecoveryAction::DropDuplicateAttribute,
+                super::super::normalization::legacy_diagnostic(
+                    super::super::normalization::ERROR_DETAIL_DUPLICATE_ATTRIBUTE,
+                    None,
+                ),
             );
             self.clear_current_attribute();
             return;
@@ -475,13 +594,15 @@ impl Html5Tokenizer {
                     let truncated_end = start + raw.len();
                     if value_truncated {
                         self.record_limit_error(
+                            input,
                             ctx,
                             start,
+                            ParserResourceLimit::AttributeValueBytes,
                             LIMIT_DETAIL_ATTRIBUTE_VALUE,
                             self.max_attribute_value_bytes(),
                         );
                     }
-                    let null_normalized = self.replace_nulls_for_token_text(ctx, raw, start);
+                    let null_normalized = self.replace_nulls_for_token_text(input, ctx, raw, start);
                     let normalized = null_normalized.as_deref().unwrap_or(raw);
                     if !normalized.as_bytes().contains(&b'&') && null_normalized.is_none() {
                         AttributeValue::Span(TextSpan::new(start, truncated_end))
@@ -493,6 +614,7 @@ impl Html5Tokenizer {
                             CharacterReferenceContext::AttributeValue,
                         );
                         self.record_character_reference_parse_errors(
+                            input,
                             ctx,
                             start,
                             &decoded.diagnostics,
@@ -520,17 +642,28 @@ impl Html5Tokenizer {
 
     fn record_attribute_name_parse_errors(
         &self,
+        input: &Input,
         ctx: &mut DocumentParseContext,
         raw_name: &str,
         base_position: usize,
     ) {
         for (offset, ch) in raw_name.char_indices() {
-            if matches!(ch, '"' | '\'' | '<' | '`') {
+            if matches!(ch, '"' | '\'' | '<') {
                 self.record_tokenizer_parse_error(
+                    input,
                     ctx,
-                    ParseErrorCode::Other,
+                    WhatwgParseErrorCode::UnexpectedCharacterInAttributeName,
                     base_position + offset,
                     super::super::normalization::ERROR_DETAIL_INVALID_ATTRIBUTE_NAME,
+                    Some(ch as u32),
+                );
+            } else if ch == '`' {
+                self.record_tokenizer_extension_parse_error(
+                    input,
+                    ctx,
+                    TokenizerExtensionParseErrorCode::GraveAccentInAttributeName,
+                    base_position + offset,
+                    super::super::normalization::ERROR_DETAIL_GRAVE_ACCENT_IN_ATTRIBUTE_NAME,
                     Some(ch as u32),
                 );
             }

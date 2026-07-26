@@ -98,6 +98,7 @@ fn node_count(node: &Node) -> usize {
         Node::DocumentType { .. } => 1,
         Node::Text { .. } => 1,
         Node::Comment { .. } => 1,
+        Node::ProcessingInstruction { .. } => 1,
     }
 }
 
@@ -106,7 +107,7 @@ fn text_node_count(node: &Node) -> usize {
         Node::Document { children, .. } => children.iter().map(text_node_count).sum(),
         Node::Element { element } => element.children().iter().map(text_node_count).sum(),
         Node::Text { .. } => 1,
-        Node::Comment { .. } | Node::DocumentType { .. } => 0,
+        Node::Comment { .. } | Node::DocumentType { .. } | Node::ProcessingInstruction { .. } => 0,
     }
 }
 
@@ -115,7 +116,7 @@ fn total_text_bytes(node: &Node) -> usize {
         Node::Document { children, .. } => children.iter().map(total_text_bytes).sum(),
         Node::Element { element } => element.children().iter().map(total_text_bytes).sum(),
         Node::Text { text, .. } => text.len(),
-        Node::Comment { .. } | Node::DocumentType { .. } => 0,
+        Node::Comment { .. } | Node::DocumentType { .. } | Node::ProcessingInstruction { .. } => 0,
     }
 }
 

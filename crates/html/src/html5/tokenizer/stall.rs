@@ -2,7 +2,7 @@ use super::Html5Tokenizer;
 use super::control::TextModeKind;
 use super::machine::Step;
 use super::states::TokenizerState;
-use crate::html5::shared::{DocumentParseContext, ErrorOrigin, Input, ParseError, ParseErrorCode};
+use crate::html5::shared::{DocumentParseContext, Input, ParserGuardrail};
 
 /// External-progress-only stall threshold.
 ///
@@ -64,7 +64,9 @@ impl Html5Tokenizer {
             && self.cursor == before_cursor
             && self.tokens.len() == before_tokens;
         if stalled_progress {
-            *consecutive_stalled_steps = consecutive_stalled_steps.saturating_add(1);
+            *consecutive_stalled_steps = consecutive_stalled_steps
+                .checked_add(1)
+                .expect("stall detection responds before its bounded counter can overflow");
         } else {
             *consecutive_stalled_steps = 0;
         }
@@ -99,13 +101,13 @@ impl Html5Tokenizer {
         ctx: &mut DocumentParseContext,
         stall: DetectedStepStall,
     ) -> Step {
-        ctx.record_error(ParseError {
-            origin: ErrorOrigin::Tokenizer,
-            code: ParseErrorCode::ImplementationGuardrail,
-            position: stall.cursor,
-            detail: Some(STALL_RECOVERY_DETAIL),
-            aux: Some(stall.consecutive_steps.min(u32::MAX as usize) as u32),
-        });
+        ctx.record_guardrail(
+            input,
+            ParserGuardrail::TokenizerStallRecovery,
+            stall.consecutive_steps,
+            stall.cursor,
+            Some(STALL_RECOVERY_DETAIL),
+        );
 
         self.pending_text_mode_end_tag_matcher = None;
         self.pending_text_mode_end_tag = None;
@@ -118,18 +120,7 @@ impl Html5Tokenizer {
         self.pending_doctype_system_id = None;
         self.pending_doctype_force_quirks = false;
         self.pending_doctype_limit_reported = false;
-        self.tag_name_start = None;
-        self.tag_name_end = None;
-        self.tag_name_complete = false;
-        self.current_tag_is_end = false;
-        self.current_tag_self_closing = false;
-        self.current_tag_attrs.clear();
-        self.current_attr_name_start = None;
-        self.current_attr_name_end = None;
-        self.current_attr_has_value = false;
-        self.current_attr_value_start = None;
-        self.current_attr_value_end = None;
-        self.end_tag_prefix_consumed = false;
+        self.abandon_pending_tag();
 
         let target_state = match self.active_text_mode.map(|mode| mode.kind) {
             Some(TextModeKind::RawText) => TokenizerState::RawText,

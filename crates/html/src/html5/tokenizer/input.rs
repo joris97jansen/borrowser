@@ -49,24 +49,36 @@ impl Html5Tokenizer {
 
     pub(crate) fn consume(&mut self, input: &Input) -> Option<char> {
         let ch = self.peek(input)?;
-        self.set_cursor(self.cursor.saturating_add(ch.len_utf8()));
+        let next = self
+            .cursor
+            .checked_add(ch.len_utf8())
+            .expect("a scalar obtained from the input tail fits the input offset");
+        self.set_cursor(next);
         Some(ch)
     }
 
     /// Lookahead: returns the character immediately after the current cursor
     /// without consuming any input.
+    #[cfg(any(test, feature = "debug-stats"))]
     pub(crate) fn peek_next_char(&self, input: &Input) -> Option<char> {
+        self.peek_next_char_with_offset(input)
+            .map(|(_, code_point)| code_point)
+    }
+
+    /// Lookahead: returns the exact normalized byte offset and scalar
+    /// immediately after the current cursor without consuming input.
+    pub(crate) fn peek_next_char_with_offset(&self, input: &Input) -> Option<(usize, char)> {
         self.assert_cursor_on_char_boundary(input);
         let text = input.as_str();
-        if self.cursor >= text.len() {
-            return None;
-        }
-        let first = text[self.cursor..].chars().next()?;
-        let next_offset = self.cursor.saturating_add(first.len_utf8());
-        if next_offset >= text.len() {
-            return None;
-        }
-        text[next_offset..].chars().next()
+        let tail = text.get(self.cursor..)?;
+        let mut scalars = tail.char_indices();
+        scalars.next()?;
+        let (relative_offset, code_point) = scalars.next()?;
+        let offset = self
+            .cursor
+            .checked_add(relative_offset)
+            .expect("a char index within the input tail fits the input offset");
+        Some((offset, code_point))
     }
 
     /// Consume as long as predicate matches and return consumed byte count.
@@ -85,7 +97,9 @@ impl Html5Tokenizer {
                 .expect("peek() returned a char but consume() failed");
             debug_assert_eq!(consumed, ch);
         }
-        self.cursor.saturating_sub(start)
+        self.cursor
+            .checked_sub(start)
+            .expect("tokenizer consumption advances the cursor monotonically")
     }
 
     pub(crate) fn match_ascii_prefix(&self, input: &Input, pattern: &[u8]) -> MatchResult {
@@ -103,15 +117,21 @@ impl Html5Tokenizer {
             return MatchResult::NeedMoreInput;
         }
 
-        if at + pattern.len() > bytes.len() {
-            let available = bytes.len().saturating_sub(at);
+        let end = at
+            .checked_add(pattern.len())
+            .expect("an ASCII prefix length fits the bound input offset");
+        if end > bytes.len() {
+            let available = bytes
+                .len()
+                .checked_sub(at)
+                .expect("prefix cursor was already proven inside the input");
             if bytes[at..].starts_with(&pattern[..available]) {
                 return MatchResult::NeedMoreInput;
             }
             return MatchResult::NoMatch;
         }
 
-        if &bytes[at..at + pattern.len()] == pattern {
+        if &bytes[at..end] == pattern {
             MatchResult::Matched
         } else {
             MatchResult::NoMatch
@@ -133,8 +153,14 @@ impl Html5Tokenizer {
             return MatchResult::NeedMoreInput;
         }
 
-        if at + pattern.len() > bytes.len() {
-            let available = bytes.len().saturating_sub(at);
+        let end = at
+            .checked_add(pattern.len())
+            .expect("an ASCII prefix length fits the bound input offset");
+        if end > bytes.len() {
+            let available = bytes
+                .len()
+                .checked_sub(at)
+                .expect("prefix cursor was already proven inside the input");
             let tail = &bytes[at..];
             if pattern[..available].eq_ignore_ascii_case(tail) {
                 return MatchResult::NeedMoreInput;
@@ -142,7 +168,7 @@ impl Html5Tokenizer {
             return MatchResult::NoMatch;
         }
 
-        if bytes[at..at + pattern.len()].eq_ignore_ascii_case(pattern) {
+        if bytes[at..end].eq_ignore_ascii_case(pattern) {
             MatchResult::Matched
         } else {
             MatchResult::NoMatch

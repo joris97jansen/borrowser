@@ -401,6 +401,16 @@ Missing or incomplete:
 
 Current supported subset:
 
+- AE13b1 parser observation foundation: always-compiled HTML/parser semantic
+  identities back exact canonical tokens, tokenizer parse errors, normalized
+  positions, and payload-safe implementation diagnostics. Passive,
+  independently bounded capture is exposed only through the non-default
+  `html::conformance` engine-test boundary; ordinary parser APIs and output are
+  unchanged. UTF-8 decoding now uses one chunk-independent constrained state
+  machine, and fixture-v1 serialized diagnostic surfaces remain inactive.
+  Tree-builder diagnostics, document mode, trees, patches, transitions,
+  unsupported features, final invariants, and serializers remain later AE13
+  work. See `docs/html5/ae13-parser-conformance-regression-harness.md`.
 - AE1 HTML parser ownership architecture: HTML/parser owns tokenizer input
   preprocessing, tokenizer states, typed tokens, parse errors,
   tree-construction state, insertion modes, stack of open elements, active

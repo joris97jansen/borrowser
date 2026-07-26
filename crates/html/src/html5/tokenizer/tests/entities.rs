@@ -2,7 +2,8 @@ use super::helpers::{
     assert_push_ok, drain_all_fmt, run_chunks, run_chunks_with_config_and_errors,
 };
 use crate::html5::shared::{
-    DocumentParseContext, ErrorOrigin, Input, ParseError, ParseErrorCode, TextValue, Token,
+    DocumentParseContext, ErrorOrigin, Input, LegacyParseErrorCode as ParseErrorCode, ParseError,
+    TextValue, Token,
 };
 use crate::html5::tokenizer::{
     Html5Tokenizer, TextResolveError, TextResolver, TokenFmt, TokenizeResult, TokenizerConfig,
@@ -98,6 +99,25 @@ fn data_text_numeric_reference_edge_cases_are_deterministic() {
         })
         .expect("token fmt should succeed");
     assert_eq!(tokens, vec![expected_line, "EOF".to_string()]);
+}
+
+#[test]
+fn legacy_character_reference_projection_stays_lossy_and_resource_limits_stay_distinct() {
+    let (_, errors) = run_chunks_with_config_and_errors(
+        TokenizerConfig::default(),
+        &["&#12x; &#12345678; &#x110000;"],
+    );
+    assert_eq!(
+        errors
+            .iter()
+            .map(|error| (error.code, error.aux))
+            .collect::<Vec<_>>(),
+        vec![
+            (ParseErrorCode::InvalidCharacterReference, Some(b'x' as u32)),
+            (ParseErrorCode::ResourceLimit, Some(7)),
+            (ParseErrorCode::InvalidCharacterReference, Some(0x110000)),
+        ]
+    );
 }
 
 #[test]

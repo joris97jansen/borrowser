@@ -4,7 +4,7 @@ use super::helpers::{
     run_textarea_rcdata_chunks_with_errors, run_title_rcdata_chunks,
     run_title_rcdata_chunks_with_errors,
 };
-use crate::html5::shared::ParseErrorCode;
+use crate::html5::shared::LegacyParseErrorCode as ParseErrorCode;
 
 #[test]
 fn rcdata_title_split_end_tag_is_chunk_invariant_at_every_boundary() {

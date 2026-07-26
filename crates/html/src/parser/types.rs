@@ -1,6 +1,6 @@
 use crate::html5::Html5SessionError;
 use crate::html5::shared::{
-    Counters as Html5Counters, ErrorOrigin, ParseError as Html5ParseError, ParseErrorCode,
+    Counters as Html5Counters, ErrorOrigin, LegacyParseErrorCode, ParseError as Html5ParseError,
 };
 
 /// Stable origin classification for surfaced parse events.
@@ -30,15 +30,15 @@ pub enum HtmlParseEventCode {
     Other,
 }
 
-impl From<ParseErrorCode> for HtmlParseEventCode {
-    fn from(value: ParseErrorCode) -> Self {
+impl From<LegacyParseErrorCode> for HtmlParseEventCode {
+    fn from(value: LegacyParseErrorCode) -> Self {
         match value {
-            ParseErrorCode::UnexpectedNullCharacter => Self::UnexpectedNullCharacter,
-            ParseErrorCode::UnexpectedEof => Self::UnexpectedEof,
-            ParseErrorCode::InvalidCharacterReference => Self::InvalidCharacterReference,
-            ParseErrorCode::ResourceLimit => Self::ResourceLimit,
-            ParseErrorCode::ImplementationGuardrail => Self::ImplementationGuardrail,
-            ParseErrorCode::Other => Self::Other,
+            LegacyParseErrorCode::UnexpectedNullCharacter => Self::UnexpectedNullCharacter,
+            LegacyParseErrorCode::UnexpectedEof => Self::UnexpectedEof,
+            LegacyParseErrorCode::InvalidCharacterReference => Self::InvalidCharacterReference,
+            LegacyParseErrorCode::ResourceLimit => Self::ResourceLimit,
+            LegacyParseErrorCode::ImplementationGuardrail => Self::ImplementationGuardrail,
+            LegacyParseErrorCode::Other => Self::Other,
         }
     }
 }

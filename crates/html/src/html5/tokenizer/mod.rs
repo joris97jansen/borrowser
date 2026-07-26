@@ -58,6 +58,7 @@ mod invariants;
 mod limits;
 mod machine;
 mod normalization;
+mod observe;
 mod processing_instruction;
 mod scan;
 mod stall;
@@ -82,6 +83,8 @@ pub use fuzz::{
     run_seeded_script_data_fuzz_case, run_seeded_textarea_rcdata_fuzz_case,
     run_seeded_title_rcdata_fuzz_case,
 };
+#[cfg(any(test, feature = "parser-conformance"))]
+pub(crate) use invariants::TokenizerInvariantKind;
 #[cfg(any(test, feature = "html5-fuzzing"))]
 pub(crate) use invariants::TokenizerInvariantSnapshot;
 #[cfg(test)]
@@ -89,6 +92,8 @@ pub(crate) use machine::MAX_STEPS_PER_PUMP;
 pub(crate) use scan::is_html_space;
 #[cfg(test)]
 pub(crate) use stall::MAX_CONSECUTIVE_STALLED_PROGRESS_STEPS;
+#[cfg(test)]
+pub(crate) use states::TokenizerState;
 pub use stats::TokenizerStats;
 pub use token_fmt::{TokenFmt, TokenFmtError, TokenTestFormatExt};
 

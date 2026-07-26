@@ -3,10 +3,13 @@
 //! These values are engine-test contracts. They are not DOM bindings or a
 //! public web-platform API and are available only with `parser-conformance`.
 
+use crate::html5::shared::{
+    ImplementationDiagnosticEvent, ObservedInsertionMode, ObservedToken, ParseErrorEvent,
+    ParserContextSummary,
+};
 use crate::{
     AttributeNamespace, DocumentMode, DomPatch, ElementNamespace, ParserCreatedAttribute, PatchKey,
 };
-use std::num::NonZeroU64;
 
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ObservationState<T> {
@@ -75,242 +78,6 @@ impl CanonicalParserResult {
 
 fn observation_is_authoritative<T>(observation: &ObservationState<T>) -> bool {
     !matches!(observation, ObservationState::Incomplete { .. })
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ObservedTokenAttribute {
-    pub name: String,
-    pub value: String,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum ObservedToken {
-    Doctype {
-        name: Option<String>,
-        public_id: Option<String>,
-        system_id: Option<String>,
-        force_quirks: bool,
-    },
-    StartTag {
-        name: String,
-        attributes: Vec<ObservedTokenAttribute>,
-        self_closing: bool,
-    },
-    EndTag {
-        name: String,
-    },
-    Character {
-        data: String,
-    },
-    Comment {
-        data: String,
-    },
-    ProcessingInstruction {
-        target: String,
-        data: String,
-    },
-    Eof,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ParserStage {
-    InputPreprocessing(InputPreprocessingStage),
-    Tokenizer,
-    TreeConstruction,
-    Finalization,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum InputPreprocessingStage {
-    Utf8Decoding,
-    NewlineNormalization,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ParseErrorCode {
-    Standard(WhatwgParseErrorCode),
-    TreeConstruction(TreeConstructionParseErrorCode),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum WhatwgParseErrorCode {
-    UnexpectedNullCharacter,
-    EofBeforeTagName,
-    InvalidFirstCharacterOfTagName,
-    MissingEndTagName,
-    UnexpectedCharacterInAttributeName,
-    DuplicateAttribute,
-    UnexpectedCharacterInUnquotedAttributeValue,
-    MissingAttributeValue,
-    MissingWhitespaceBetweenAttributes,
-    EofInComment,
-    EofInDoctype,
-    InvalidCharacterReference,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum TreeConstructionParseErrorCode {
-    UnexpectedDoctypeInBody,
-    EndTagElementNotInScope,
-    UnmatchedParagraphEndTag,
-    NestedFormStartTag,
-    NestedSelectStartTag,
-    UnexpectedTokenInSelect,
-    UnexpectedTokenInTable,
-    UnexpectedTokenInTableBody,
-    UnexpectedTokenInRow,
-    UnexpectedTokenInCell,
-    UnexpectedHtmlTokenInForeignContent,
-    EofWithOpenTemplate,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ParserRecoveryAction {
-    IgnoreToken,
-    ReprocessToken,
-    InsertImpliedElement,
-    GenerateImpliedEndTags,
-    FosterParent,
-    PopOpenElements,
-    ReplaceInvalidInput,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ParseErrorEvent {
-    pub occurrence: u64,
-    pub stage: ParserStage,
-    pub code: ParseErrorCode,
-    pub recovery: Option<ParserRecoveryAction>,
-    pub position: EventPosition,
-    pub context: Option<ParserContextSummary>,
-    pub description: Option<&'static str>,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ImplementationDiagnosticCode {
-    InvalidUtf8Replaced,
-    ParserResourceLimitActivated,
-    ParserGuardrailActivated,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ImplementationDiagnosticEvent {
-    pub occurrence: u64,
-    pub stage: ParserStage,
-    pub code: ImplementationDiagnosticCode,
-    pub position: EventPosition,
-    pub context: Option<ParserContextSummary>,
-    pub description: Option<&'static str>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub enum EventPosition {
-    Known(InputPosition),
-    Unavailable(PositionUnavailableReason),
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct InputPosition {
-    /// Position in the decoded and newline-normalized parser input.
-    pub normalized: NormalizedInputPosition,
-    /// Original byte position when, and only when, input provenance exists.
-    ///
-    /// AE13a does not retain a source-byte-to-normalized-input provenance map,
-    /// so parser observations must use `Unavailable(NoInputProvenanceMap)`.
-    pub source_bytes: SourceBytePosition,
-}
-
-/// A position in the production parser's normalized Unicode input buffer.
-///
-/// `utf8_byte_offset` is a zero-based byte offset into the decoded,
-/// CR/LF-preprocessed UTF-8 string owned by `html5::Input`; it is never an
-/// offset into the original fixture or network bytes. `line` and `column` are
-/// one-based. A column counts Unicode scalar values from the beginning of the
-/// current normalized line, not UTF-8 bytes, UTF-16 code units, or grapheme
-/// clusters.
-///
-/// A non-EOF event identifies the insertion point immediately before the
-/// normalized scalar that triggered the event. An EOF event identifies the
-/// terminal insertion point after the last normalized scalar. A normalized LF
-/// itself is on the preceding line; the next scalar begins at line + 1,
-/// column 1.
-///
-/// CRLF and lone CR are each represented by one normalized LF before these
-/// coordinates are assigned. Invalid UTF-8 replacement is likewise reflected
-/// only as the resulting U+FFFD scalar, which occupies three bytes in the
-/// normalized UTF-8 buffer and one scalar column. These rules make coordinates
-/// independent of input delivery chunks. Recovering original byte positions
-/// requires a separate provenance map, which AE13a deliberately does not add.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub struct NormalizedInputPosition {
-    pub space: InputCoordinateSpace,
-    /// Zero-based byte offset in normalized parser-input UTF-8.
-    pub utf8_byte_offset: u64,
-    pub line: NormalizedLineNumber,
-    pub column: NormalizedScalarColumn,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum InputCoordinateSpace {
-    /// Decoded UTF-8 after CRLF and lone-CR preprocessing.
-    NormalizedUtf8,
-}
-
-/// One-based line number in normalized parser input.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct NormalizedLineNumber(NonZeroU64);
-
-impl NormalizedLineNumber {
-    pub const fn new(value: u64) -> Option<Self> {
-        match NonZeroU64::new(value) {
-            Some(value) => Some(Self(value)),
-            None => None,
-        }
-    }
-
-    pub const fn get(self) -> u64 {
-        self.0.get()
-    }
-}
-
-/// One-based Unicode-scalar column in normalized parser input.
-#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
-pub struct NormalizedScalarColumn(NonZeroU64);
-
-impl NormalizedScalarColumn {
-    pub const fn new(value: u64) -> Option<Self> {
-        match NonZeroU64::new(value) {
-            Some(value) => Some(Self(value)),
-            None => None,
-        }
-    }
-
-    pub const fn get(self) -> u64 {
-        self.0.get()
-    }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SourceBytePosition {
-    Exact(u64),
-    Unavailable(SourcePositionUnavailableReason),
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum SourcePositionUnavailableReason {
-    NoInputProvenanceMap,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum PositionUnavailableReason {
-    ParserDidNotProvidePosition,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-pub struct ParserContextSummary {
-    pub token_kind: Option<ParserTokenKind>,
-    pub insertion_mode: Option<ObservedInsertionMode>,
-    pub adjusted_current_node_namespace: Option<ElementNamespace>,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
@@ -528,38 +295,6 @@ fn canonicalize_dom_attribute(attribute: &ParserCreatedAttribute) -> ObservedDom
         local_name: attribute.local_name().to_string(),
         value: attribute.value().to_string(),
     }
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ParserTokenKind {
-    Doctype,
-    StartTag,
-    EndTag,
-    Character,
-    Comment,
-    ProcessingInstruction,
-    Eof,
-}
-
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ObservedInsertionMode {
-    Initial,
-    BeforeHtml,
-    BeforeHead,
-    InHead,
-    AfterHead,
-    InBody,
-    AfterBody,
-    AfterAfterBody,
-    InTable,
-    InTableText,
-    InCaption,
-    InColumnGroup,
-    InTableBody,
-    InRow,
-    InCell,
-    InTemplate,
-    Text,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -854,6 +589,9 @@ pub enum InvariantFailureCode {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::html5::shared::{
+        InputCoordinateSpace, NormalizedInputPosition, NormalizedLineNumber, NormalizedScalarColumn,
+    };
     use crate::names::NameInterner;
     use crate::{ExpandedElementName, QualifiedAttributeName};
 

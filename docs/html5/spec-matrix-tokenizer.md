@@ -33,10 +33,14 @@ It defines HTML5 Core v0 tokenizer scope, including explicit deferred and out-of
     shared `Input` boundary.
   - Emits spec-shaped token stream and parse-error-tolerant recovery transitions.
   - Performs tokenizer-level normalization only (for example, tag/attribute ASCII case folding and U+0000 handling).
-  - Preserves attribute encounter order and does not apply tree-builder duplicate-attribute semantics.
+  - Preserves attribute encounter order and performs tokenizer-owned
+    normalized-name duplicate detection with first-wins filtering; only the
+    later duplicate attribute is dropped.
   - Sets DOCTYPE token fields including `force_quirks`; does not choose document mode.
 - Tree builder contract:
-  - Applies insertion modes, duplicate-attribute semantics, foster parenting, and document mode decisions.
+  - Applies insertion modes, foreign-attribute adjustment, foster parenting,
+    and document mode decisions; it consumes the tokenizer's already-filtered
+    attribute vector without reconstructing duplicate detection.
   - Consumes tokenizer output without requiring tokenizer-owned lookbehind state.
 - Session contract:
   - Owns streaming orchestration (`push_input`, `NeedMoreInput`, `finish`), counters, and error accounting.
@@ -47,7 +51,10 @@ It defines HTML5 Core v0 tokenizer scope, including explicit deferred and out-of
 These invariants apply to every `TOK-STATE-*` row:
 
 1. `STREAM-INV-01`: no state may require unbounded lookahead; if continuation bytes/chars are missing, return `NeedMoreInput` without corrupting state.
-2. `STREAM-INV-02`: partial UTF-8 scalar boundaries are preserved through `Input`; tokenizer state must not split or emit invalid scalar fragments.
+2. `STREAM-INV-02`: partial UTF-8 scalar boundaries are preserved through
+   `Input`; carry is a validated truncated prefix of one scalar, invalidating
+   bytes are reprocessed, and tokenizer state must not split or emit invalid
+   scalar fragments.
 3. `STREAM-INV-03`: temporary buffers and reconsume semantics survive chunk boundaries exactly once (no duplicate consume, no skipped consume).
 4. `STREAM-INV-04`: EOF processing is deterministic and idempotent (`finish()` cannot double-emit semantic tokens).
 
@@ -60,23 +67,123 @@ Current input behavior:
 
 - `Input::push_str` accepts already-decoded Unicode scalar text and applies
   HTML input preprocessing for newline handling in the supported scope.
-- `ByteStreamDecoder` assumes UTF-8 only. Invalid UTF-8 and incomplete final
-  UTF-8 prefixes are decoded with `U+FFFD`; full byte-stream encoding sniffing,
-  charset detection, BOM switching, and legacy encodings remain deferred.
+- `ByteStreamDecoder` assumes UTF-8 only. Its fixed-size, invariant-preserving
+  carry state and single incremental state machine
+  rejects overlong, surrogate, and out-of-range encodings, emits U+FFFD for
+  malformed subsequences, and distinguishes a valid truncated prefix at EOF.
+  Event-aware and string-only paths delegate to the same state machine.
+  Compatibility helpers revalidate arbitrary legacy carry rather than trusting
+  it as an incomplete scalar. Full
+  byte-stream encoding sniffing, charset detection, BOM switching, and legacy
+  encodings remain deferred.
+- Each decoder-generated replacement increments `decode_errors` exactly once
+  on both ordinary and observed parser paths. Diagnostic request state and
+  capacity cannot suppress or duplicate mandatory accounting; a literal
+  U+FFFD increments neither the counter nor decoder diagnostics.
 - CRLF and lone CR are normalized to LF before tokenization.
 - Split CRLF across chunks is chunk-equivalent: `"\r"` followed by `"\n"`
   produces the same preprocessed input as `"\r\n"` in one chunk.
 
 Current parse-error behavior:
 
-- `ParseError` is deterministic parser diagnostic data owned by
-  HTML/parser. It does not automatically abort tokenization.
+- Exact tokenizer parse-error identities are always-compiled semantic data
+  owned by HTML/parser. The stable `ParseError`/`HtmlParseEvent` facade is a
+  deliberately lossy projection and does not drive canonical observation or
+  parser behavior.
 - Supported tokenizer states that encounter `U+0000` record
-  `ParseErrorCode::UnexpectedNullCharacter` and emit the replacement character
-  in the affected token payload.
+  `ParseErrorCode::Standard(WhatwgParseErrorCode::UnexpectedNullCharacter)` and
+  emit the replacement character in the affected token payload.
 - Supported malformed EOF recovery paths record
-  `ParseErrorCode::UnexpectedEof` and still emit deterministic recoverable
-  tokens where the current Core-v0 tokenizer supports recovery.
+  exact condition-specific canonical codes and still emit deterministic
+  recoverable tokens where the current Core-v0 tokenizer supports recovery.
+  The legacy facade may project those conditions to `UnexpectedEof`.
+- `WhatwgParseErrorCode` contains only dedicated HTML Standard identities.
+  Exact Borrowser-owned tokenizer recoveries use
+  `TokenizerExtensionParseErrorCode`; numeric-reference digit-bound activation
+  is a typed resource-limit diagnostic, while values beyond U+10FFFF use the
+  Standard `character-reference-outside-unicode-range` identity.
+- Canonical recovery metadata records the action independently from the
+  condition. Core-v0's drops of `=`, `"`, `'`, and `<` before an attribute
+  name retain their Standard condition; grave accent and question mark use
+  exact tokenizer-extension identities. Core-v0's unquoted-value
+  terminate-and-reconsume behavior is typed explicitly. Slash remains ordinary
+  unquoted value data.
+- Surrogate and above-U+10FFFF numeric references retain their exact Standard
+  conditions and use `PreserveCharacterReferenceLiteral`; Core-v0 emits the
+  original reference syntax and does not insert U+FFFD. Duplicate attributes
+  use `DropDuplicateAttribute`: only the later normalized-name duplicate is
+  discarded and the pending tag remains.
+- Slash handling and end-tag attribute-state routing are production-semantics
+  corrections, not conformance-recorder branches. `a=b/` retains `b/` with a
+  false self-closing flag; whitespace in `a=b />` ends the value before the
+  slash enters `SelfClosingStartTag`.
+- End-tag attribute and trailing-solidus diagnostics are emitted from the
+  production attribute vector and self-closing flag. Unexpected solidus is
+  owned by the live self-closing-start-tag transition; no source-tail scan
+  reconstructs these facts.
+- Comment parse errors are state-owned: CommentStartDash and CommentEnd
+  anything-else transitions do not invent Standard identities,
+  `incorrectly-closed-comment` is recorded at the CommentEndBang `>`, and
+  `nested-comment` is limited to the less-than/bang/dash/dash path. Typed
+  recovery distinguishes comment emission, EOF emission, bogus-comment entry,
+  and delimiter retention plus reconsumption. EOF trimming validates the exact
+  state-selected fixed suffix (`-`, `--`, or `--!`) inside the pending comment;
+  this constant-size production-state check is not observer reconstruction.
+  Active comment states also require a pending start and a sliceable,
+  UTF-8-boundary-safe base range inside normalized input. Missing ownership is
+  distinct from `CommentPendingRangeInvalid`; delimiter underflow and fixed
+  suffix mismatch remain delimiter-specific identities and delimiter-free
+  states do not invoke those checks. Corruption cannot fall through to stall
+  recovery.
+- The accepted self-closing flag requires the exact consumed-solidus position.
+  Later applicable slashes replace failed ones, and pending-tag cleanup clears
+  the position. Missing, stale, or non-slash metadata propagates as a typed
+  tokenizer invariant rather than fabricated observation data. The position
+  must be within the current pending tag lifetime
+  (`tag_name_start <= position < cursor`) and reference `/`; an earlier tag's
+  slash is `SolidusPositionOutsideCurrentPendingTag`.
+- Invalid tag-open diagnostics point at the exact following scalar. EOF
+  diagnostics point at the terminal normalized insertion point after newline
+  preprocessing. Invalid supplied offsets are observation invariants and retain
+  no fabricated unavailable-position event.
+- A missing normalized-position index while a position-bearing surface can
+  retain is corruption; intentional retirement after both such surfaces fill
+  is not. Doctype name-start metadata is similarly required through exact
+  name-state, tail-scan, and resource-observation invariants rather than a
+  cursor fallback, and the retained start must be at or before the tokenizer
+  cursor. Required doctype-name materialization additionally rejects empty,
+  out-of-input, non-boundary, or unsliceable ranges as
+  `DoctypeNameRangeInvalid`; transient zero-length name-state progress is an
+  explicit operation policy. Shared ASCII keyword scans report invalid ranges
+  separately from mismatch/partial input, and impossible quoted-tail ranges
+  use their own doctype-tail invariant.
+- CDATA-end state requires owned pending-text metadata and validates the exact
+  in-range `]]` suffix before excluding it. Missing ownership, range/boundary
+  corruption, and suffix mismatch are separate typed invariants; an owned
+  empty range is valid and the fixed-size state check is not a backwards
+  scanner.
+- RCDATA, RAWTEXT, script-data, and escaped-script appropriate-end-tag
+  evidence is production-owned and candidate-bounded. Attribute evidence must
+  point to the closing `>`, accepted-solidus evidence must point to `/` before
+  that close, and contradictory evidence is a typed invariant rather than an
+  omitted or approximate canonical diagnostic. Retained matcher state must
+  validate the complete fixed `</` opener; a partial `<` is never retained as
+  a candidate. The candidate range itself is always validated, even without
+  optional evidence, and has a distinct invariant from attribute or solidus
+  corruption.
+- AE13b1-owned tokenizer paths use checked invariant propagation for
+  authoritative metadata. One non-mutating processing-instruction classifier
+  supplies production preflight, emission, EOF cleanup, and debug hardening,
+  so PI corruption is classified before access or mutation. Retained
+  `expect`s are limited to immediately established cursor/slice facts rather
+  than user-input recovery.
+- Parse-error and implementation-diagnostic occurrences advance independently.
+  Reserving `u64::MAX` latches overflow immediately, even when capacity prevents
+  retention, and the sequence never wraps, saturates, or duplicates that value.
+  First detected invariant wins in production operation order.
+- Legacy resource-limit and tokenizer-stall `aux` values remain clamped `u32`
+  compatibility projections. Full-width configured limits and stall counts
+  remain authoritative only in canonical typed payloads.
 - Parser diagnostics are test/debug surfaces and must not become rendering,
   CSS, layout, or browser/runtime semantics.
 
@@ -122,17 +229,17 @@ kept documented as deferred, skipped, or outside the declared Core-v0 subset.
 | `TOK-STATE-PI-QUESTIONABLE` | MVP | `Processing instruction questionable state` | `#processing-instruction-questionable-state` | `states.rs`, `machine.rs`, `processing_instruction.rs` | AE12 `a?b`, `a??b`, `a???b?`, EOF, and every relevant split tests. | A chunk may end after `?`; pending state resumes without emitting or losing it. | `>` emits without the final `?`; otherwise append `?` and reconsume the current character in PI data. | Preserves current WHATWG questionable-state semantics. |
 | `TOK-STATE-END-TAG-OPEN` | MVP | `End tag open state` | `#end-tag-open-state` | `states.rs`, `machine.rs`, `tag/open.rs`, `api.rs` | Current: `tok-simple-tags`, `tok-ae4-malformed-static`. Planned WPT: `tokenizer-end-tag-open`. | Must preserve reconsume semantics across split `</`. | EOF after `</`, non-name after `</`, parse-error fallback path. | Required for balanced close-tag handling. |
 | `TOK-STATE-TAG-NAME` | MVP | `Tag name state` | `#tag-name-state` | `states.rs`, `machine.rs`, `tag/name.rs`, `tag/emit.rs`, `api.rs` | Current: `tok-simple-tags`, `tok-ae4-malformed-static`, WPT `tokenizer-basic`. Planned fixture: `tok-tag-name-case-folding`. | Must not lose partial name token on chunk boundary before whitespace or `>`. | ASCII case folding, NUL replacement, `/` and `>` transitions. | Required for deterministic atomization. |
-| `TOK-STATE-BEFORE-ATTR-NAME` | MVP | `Before attribute name state` | `#before-attribute-name-state` | `states.rs`, `machine.rs`, `tag/attributes.rs` | Current: `tok-attrs-core`, `tok-before-attr-value-transitions`, `tok-ae4-malformed-static`; planned WPT: `tokenizer-attrs-before-after-name`. | Whitespace runs may span chunks with no semantic drift. | whitespace skip, `/` self-closing handoff, `>` early close. | Core attribute parser entry. |
+| `TOK-STATE-BEFORE-ATTR-NAME` | MVP | `Before attribute name state` | `#before-attribute-name-state` | `states.rs`, `machine.rs`, `tag/attributes.rs` | Current: `tok-attrs-core`, `tok-before-attr-value-transitions`, `tok-ae4-malformed-static`; planned WPT: `tokenizer-attrs-before-after-name`. | Whitespace runs may span chunks with no semantic drift. | whitespace skip, `/` self-closing handoff, `>` early close; Core-v0 typed drop recovery for `=`, `"`, `'`, `<`, grave accent, and question mark. | Core attribute parser entry. |
 | `TOK-STATE-ATTR-NAME` | MVP | `Attribute name state` | `#attribute-name-state` | `states.rs`, `machine.rs`, `tag/attributes.rs`, `tag/emit.rs`, `normalization.rs` | Current: `tok-attrs-core`, `tok-ae4-malformed-static`; planned WPT: `tokenizer-attr-name`. | Partial attr names must persist until delimiter appears. | ASCII case fold, NUL replacement, parse-error chars (`"`, `'`, `<`, `=`). | Needed for stable attribute token shape. |
 | `TOK-STATE-AFTER-ATTR-NAME` | MVP | `After attribute name state` | `#after-attribute-name-state` | `states.rs`, `machine.rs`, `tag/attributes.rs`, `api.rs` | Current: `tok-attrs-core`, `tok-before-attr-value-transitions`; planned WPT: `tokenizer-attrs-before-after-name`. | Must not consume `=`/`/`/`>` twice when chunk split lands on delimiter. | repeated separators, implicit missing attr values, close/self-close transitions. | Ensures deterministic attr finalization. |
 | `TOK-STATE-BEFORE-ATTR-VALUE` | MVP | `Before attribute value state` | `#before-attribute-value-state` | `states.rs`, `machine.rs`, `tag/attributes.rs`, `api.rs` | Current: `tok-before-attr-value-transitions`, `tok-ae4-malformed-static`; planned WPT: `tokenizer-before-attr-value`. | Transition dispatch must survive split quote characters. | quoted vs unquoted dispatch, `>` parse-error close. | Dispatch point for value semantics. |
 | `TOK-STATE-ATTR-VALUE-DQ` | MVP | `Attribute value (double-quoted) state` | `#attribute-value-double-quoted-state` | `states.rs`, `machine.rs`, `tag/attributes.rs`, `api.rs` | Current: `tok-attr-value-quoted`; planned WPT: `tokenizer-attr-value-quoted`. | Unterminated quote at chunk end must yield `NeedMoreInput` with intact buffer. | `&` charref dispatch, quote close, embedded control handling. | Required for common attribute syntax. |
 | `TOK-STATE-ATTR-VALUE-SQ` | MVP | `Attribute value (single-quoted) state` | `#attribute-value-single-quoted-state` | `states.rs`, `machine.rs`, `tag/attributes.rs`, `api.rs` | Current: `tok-attr-value-quoted`; planned WPT: `tokenizer-attr-value-quoted`. | Same as DQ; boundary behavior must be symmetric. | `&` charref dispatch, quote close, parse-error recovery. | Required for spec parity on quoted attrs. |
-| `TOK-STATE-ATTR-VALUE-UQ` | MVP | `Attribute value (unquoted) state` | `#attribute-value-unquoted-state` | `states.rs`, `machine.rs`, `tag/attributes.rs`, `normalization.rs` | Current: `tok-attr-value-unquoted`, `tok-ae4-malformed-static`; planned WPT: `tokenizer-attr-value-unquoted`. | Must preserve pending token when encountering split delimiter bytes. | parse-error chars (`"`, `'`, `<`, `=`, `` ` ``), whitespace/value termination. | Required for realistic HTML input tolerance. |
+| `TOK-STATE-ATTR-VALUE-UQ` | MVP | `Attribute value (unquoted) state` | `#attribute-value-unquoted-state` | `states.rs`, `machine.rs`, `tag/attributes.rs`, `normalization.rs` | Current: `tok-attr-value-unquoted`, `tok-ae4-malformed-static`; planned WPT: `tokenizer-attr-value-unquoted`. | Must preserve pending token when encountering split delimiter bytes. | parse-error chars (`"`, `'`, `<`, `=`, `` ` ``), typed Core-v0 terminate/reconsume recovery, whitespace/value termination; `/` remains value data. | Required for realistic HTML input tolerance. |
 | `TOK-STATE-AFTER-ATTR-VALUE-QUOTED` | MVP | `After attribute value (quoted) state` | `#after-attribute-value-quoted-state` | `states.rs`, `machine.rs`, `tag/attributes.rs`, `api.rs` | Current: `tok-attr-value-quoted`, `tok-ae4-malformed-static`; planned WPT: `tokenizer-attr-value-quoted`. | Must preserve just-closed attribute state when chunk split lands before whitespace, `/`, or `>`. | missing whitespace between attributes, `/` self-closing handoff, `>` close, EOF. | Required for deterministic quoted-attribute recovery. |
 | `TOK-STATE-SELF-CLOSING-START-TAG` | MVP | `Self-closing start tag state` | `#self-closing-start-tag-state` | `states.rs`, `machine.rs`, `tag/attributes.rs`, `tag/emit.rs`, `api.rs` | Current: `tok-attrs-core`, `tok-ae4-malformed-static`; planned WPT: `tokenizer-self-closing-start-tag`. | Must preserve pending start tag and self-closing flag across split `/>`. | `/>` emission, invalid non-`>` recovery, EOF after `/`. | Required for self-closing flag emission. |
 | `TOK-STATE-MARKUP-DECL-OPEN` | MVP | `Markup declaration open state` | `#markup-declaration-open-state` | `states.rs`, `machine.rs`, `api.rs`, `normalization.rs` | Current: `tok-doctype-comment-smoke`, `tok-comment-core`, `tok-doctype-core`, `tok-ae4-markup-eof-recovery`. | Declaration prefix matching cannot overconsume partial `<!-`/`<!D`. | comment vs doctype dispatch, unknown declaration fallback. | Root dispatch for comment/doctype flows. |
-| `TOK-STATE-COMMENT-CORE` | MVP | `Comment core states` | `#comment-start-state`, `#comment-start-dash-state`, `#comment-state`, `#comment-end-state`, `#comment-end-bang-state` | `states.rs`, `machine.rs`, `comment.rs`, `emit.rs`, `normalization.rs` | Current: `tok-doctype-comment-smoke`, `tok-comment-core`, `tok-ae4-malformed-comment`; planned WPT: `tokenizer-comments`. | Comment temporary data must survive chunk splits around `--`, `!`, and `>`. | EOF in comment, `--!>` malformed close recovery, nested `<` comment sequences. | Required for web-compat error recovery. |
+| `TOK-STATE-COMMENT-CORE` | MVP | `Comment core states` | `#comment-start-state`, `#comment-start-dash-state`, `#comment-state`, `#comment-less-than-sign-state`, `#comment-less-than-sign-bang-state`, `#comment-less-than-sign-bang-dash-state`, `#comment-less-than-sign-bang-dash-dash-state`, `#comment-end-state`, `#comment-end-bang-state` | `states.rs`, `machine.rs`, `comment.rs`, `emit.rs`, `normalization.rs` | Current: `tok-doctype-comment-smoke`, `tok-comment-core`, `tok-ae4-malformed-comment`, AE13b1 canonical whole/split transition tests; planned WPT: `tokenizer-comments`. | Comment state and exact error position must survive chunk splits around nested `<!--`, `--`, `!`, and `>`. | Exact abrupt empty close, EOF, `--!>` incorrectly-closed, and nested-comment state paths; no error for ordinary CommentStartDash/CommentEnd recovery. | Required for web-compat error recovery. |
 | `TOK-STATE-BOGUS-COMMENT` | MVP | `Bogus comment state` | `#bogus-comment-state` | `states.rs`, `machine.rs`, `comment.rs`, `emit.rs`, `processing_instruction.rs` | Current: `tok-bogus-comment`, `tok-ae4-malformed-static`, `tok-ae4-markup-eof-recovery`, AE12 malformed-target cases; planned WPT: `tokenizer-bogus-comment`. | Must emit one comment even when its terminator arrives later. | Malformed declarations and invalid/disallowed AE12 PI targets; PI conversion preserves exact leading `?`. | Explicit parse-error recovery path, not valid PI storage. |
 | `TOK-STATE-DOCTYPE` | MVP | `DOCTYPE state` | `#doctype-state` | `states.rs`, `machine.rs`, `doctype.rs`, `normalization.rs` | Current: `tok-doctype-comment-smoke`, `tok-doctype-core`, `tok-ae4-malformed-static`; planned WPT: `tokenizer-doctype-quirks`. | Partial `DOCTYPE` keyword must not mis-route to bogus comment. | case-insensitive keyword handling. | Entry point for standards/quirks tokenization. |
 | `TOK-STATE-BEFORE-DOCTYPE-NAME` | MVP | `Before DOCTYPE name state` | `#before-doctype-name-state` | `states.rs`, `machine.rs`, `doctype.rs`, `api.rs` | Current: `tok-doctype-core`, `tok-doctype-quirks-missing-name`, `tok-ae4-malformed-static`. | Whitespace and EOF boundary behavior must be deterministic. | missing name triggers quirks path. | Needed for correct token fields. |
@@ -144,10 +251,10 @@ kept documented as deferred, skipped, or outside the declared Core-v0 subset.
 | `TOK-STATE-CHARREF-AMBIGUOUS-AMP` | MVP_PARTIAL | `Ambiguous ampersand state` | `#ambiguous-ampersand-state` | `states.rs`, `mod.rs`, `entities.rs` | Current: `tok-charrefs-attr`, tokenizer attribute diagnostics. | Return-to-state behavior must be stable under split alnum runs. | attribute context is explicit; AE5 deliberately keeps the minimal semicolon-required policy rather than legacy semicolonless attribute rules. | Needed for deterministic fallback behavior in supported contexts. |
 | `TOK-STATE-CHARREF-NUMERIC` | MVP_PARTIAL | `Numeric character reference state family` | `#numeric-character-reference-state`, `#hexadecimal-character-reference-state`, `#decimal-character-reference-state`, `#numeric-character-reference-end-state` | `states.rs`, `mod.rs`, `entities.rs` | Current: `tok-charrefs-text`, `tok-charrefs-attr`, entity/tokenizer invalid-reference tests. | Numeric parse state must remain chunk-equivalent through pending text/attribute spans. | valid decimal/hex scalar values decode; missing digits, missing semicolons, overlong digit runs, malformed digits, surrogates, and out-of-range scalars stay literal and report deterministic diagnostics. | Core numeric reference correctness. |
 | `TOK-STATE-RAWTEXT` | MVP_PARTIAL | `RAWTEXT state` | `#rawtext-state` | `states.rs`, `text_mode.rs`, `api.rs` | Current fixtures: `tok-rawtext-style`; no WPT slice currently vendored. | Appropriate end-tag buffer must persist across chunked `</sty` + `le>`. | mismatched end-tag fallback to text. | Core-v0 text-mode subset for HTML RAWTEXT containers. |
-| `TOK-STATE-RAWTEXT-END-TAG` | MVP_PARTIAL | `RAWTEXT end tag detection` | `#rawtext-end-tag-open-state`, `#rawtext-end-tag-name-state` | `text_mode.rs`, `scan.rs` | Current fixtures: `tok-rawtext-style`, `tok-rawtext-style-end-tag-attrs-close`, `tok-rawtext-style-end-tag-slash-close`. | Temporary end-tag buffer must be chunk-safe and reset-safe. | ASCII-case-insensitive match; `>`, HTML-space-led attribute tails, and `/` self-closing tails all close in Core v0 once the expected name matches; any other continuation literalizes the candidate. | Required for production-safe RAWTEXT close recognition. |
+| `TOK-STATE-RAWTEXT-END-TAG` | MVP_PARTIAL | `RAWTEXT end tag detection` | `#rawtext-end-tag-open-state`, `#rawtext-end-tag-name-state` | `text_mode.rs`, `scan.rs` | Current fixtures: `tok-rawtext-style`, `tok-rawtext-style-end-tag-attrs-close`, `tok-rawtext-style-end-tag-slash-close`; AE13b1 exact-position split tests. | Temporary end-tag buffer plus attribute-close and accepted-solidus positions must be chunk-safe and reset-safe. | ASCII-case-insensitive match; `>`, HTML-space-led attribute tails, and `/` self-closing tails close in Core v0; diagnostics use carried `>`/slash positions, while any other continuation literalizes the candidate. | Required for production-safe RAWTEXT close recognition. |
 | `TOK-STATE-RCDATA` | MVP_PARTIAL | `RCDATA state` | `#rcdata-state` | `states.rs`, `text_mode.rs`, `api.rs` | Current fixtures: `tok-rcdata-title`, `tok-rcdata-textarea`; no WPT slice currently vendored. | Must combine charrefs + appropriate-end-tag logic under chunking. | charrefs in rcdata text, fallback behavior. | Core-v0 text-mode subset for `title`/`textarea`. |
-| `TOK-STATE-RCDATA-END-TAG` | MVP_PARTIAL | `RCDATA end tag detection` | `#rcdata-end-tag-open-state`, `#rcdata-end-tag-name-state` | `text_mode.rs`, `scan.rs` | Current fixtures: `tok-rcdata-title`, `tok-rcdata-textarea`, `tok-rcdata-title-close-tag-whitespace`, `tok-rcdata-title-end-tag-attrs-close`, `tok-rcdata-textarea-end-tag-slash-close`. | Same buffer semantics as rawtext end-tag path. | ASCII-case-insensitive match; `>`, HTML-space-led attribute tails, and `/` self-closing tails all close in Core v0 once the expected name matches; any other continuation literalizes the candidate. | Required for chunk-safe RCDATA end-tag recognition. |
-| `TOK-STATE-SCRIPT-DATA` | MVP_PARTIAL | `Script data state` | `#script-data-state` | `states.rs`, `text_mode.rs`, `api.rs` | Current fixtures: `tok-script-data-basic`, `tok-script-data-close-tag-whitespace`, `tok-script-data-string-close`, `tok-script-data-end-tag-attrs-close`, `tok-script-data-end-tag-slash-close`; WPT: `tokenizer-script-data`. | Dedicated script-family state machine must preserve chunk-safe script close detection and linear scanning. | literal `</script>` closes even inside JS strings; HTML-space-led attribute tails and `/` self-closing tails after the matched name also close and record tokenizer parse errors. | Core-v0 script tokenizer now uses a dedicated script-data family rather than the shared text-mode subset. |
+| `TOK-STATE-RCDATA-END-TAG` | MVP_PARTIAL | `RCDATA end tag detection` | `#rcdata-end-tag-open-state`, `#rcdata-end-tag-name-state` | `text_mode.rs`, `scan.rs` | Current fixtures: `tok-rcdata-title`, `tok-rcdata-textarea`, `tok-rcdata-title-close-tag-whitespace`, `tok-rcdata-title-end-tag-attrs-close`, `tok-rcdata-textarea-end-tag-slash-close`; AE13b1 exact-position split tests. | Matcher evidence and positions have the same chunk/reset semantics as RAWTEXT. | ASCII-case-insensitive match with carried `>`/slash diagnostic positions; unmatched continuations remain literal. | Required for chunk-safe RCDATA end-tag recognition. |
+| `TOK-STATE-SCRIPT-DATA` | MVP_PARTIAL | `Script data state` | `#script-data-state` | `states.rs`, `text_mode.rs`, `api.rs` | Current fixtures: `tok-script-data-basic`, `tok-script-data-close-tag-whitespace`, `tok-script-data-string-close`, `tok-script-data-end-tag-attrs-close`, `tok-script-data-end-tag-slash-close`; WPT: `tokenizer-script-data`; AE13b1 exact-position split tests. | Dedicated script-family state and the shared matcher must preserve close evidence and exact `>`/slash positions across chunks. | literal `</script>` closes even inside JS strings; HTML-space-led attribute tails and `/` self-closing tails close and record errors at carried semantic positions. | Core-v0 script tokenizer now uses a dedicated script-data family rather than the shared text-mode subset. |
 | `TOK-STATE-SCRIPT-DATA-ESCAPED` | MVP_PARTIAL | `Script data escaped families` | `#script-data-escaped-state`, `#script-data-double-escaped-state` | `states.rs`, `text_mode.rs`, `api.rs` | Current fixtures: `tok-script-data-escaped-comment-family`; WPT: `tokenizer-script-escaped`. | Escaped/double-escaped transitions must remain chunk-safe across `<!--`, `<script`, `</script`, and `-->` boundaries. | escaped entry, double-escape start/end transitions, comment-like script tails. | Dedicated script-family support landed in G5. |
 
 ## Core v0 Must-Support Subset

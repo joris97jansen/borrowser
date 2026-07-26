@@ -3,12 +3,15 @@ use super::limits::LIMIT_DETAIL_TOKEN_BATCH;
 use super::stall::StallResponseMode;
 use super::states::TokenizerState;
 use super::{Html5Tokenizer, TokenizeResult};
-use crate::html5::shared::{AtomError, AtomId, DocumentParseContext, Input};
+use crate::html5::shared::{
+    AtomError, AtomId, DocumentParseContext, Input, ParserResourceLimit, WhatwgParseErrorCode,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum Step {
     Progress,
     NeedMoreInput,
+    InvariantFailure,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -40,6 +43,25 @@ impl Html5Tokenizer {
         } else {
             self.input_id = Some(input.id());
         }
+        if !self.ensure_current_tag_solidus_invariant(input) {
+            return TokenizeResult::NeedMoreInput;
+        }
+        if !self.ensure_text_mode_matcher_invariant(input) {
+            return TokenizeResult::NeedMoreInput;
+        }
+        if !self.ensure_processing_instruction_metadata_invariant(input) {
+            return TokenizeResult::NeedMoreInput;
+        }
+        if self.state.owns_pending_comment() && self.require_pending_comment_start(input).is_none()
+        {
+            return TokenizeResult::NeedMoreInput;
+        }
+        if !self.ensure_cdata_pending_text_invariant(input) {
+            return TokenizeResult::NeedMoreInput;
+        }
+        if !self.ensure_pending_doctype_state_invariant(input) {
+            return TokenizeResult::NeedMoreInput;
+        }
         if stop_condition == StopCondition::DrainAvailableInput
             && self.tokens.len() >= self.max_tokens_per_batch()
         {
@@ -70,6 +92,11 @@ impl Html5Tokenizer {
             let before_step_cursor = self.cursor;
             let before_step_tokens = self.tokens.len();
             let mut step_result = self.step(input, ctx);
+            if matches!(step_result, Step::InvariantFailure) {
+                debug_assert!(self.invariant_failure.is_some());
+                self.stats_set_bytes_consumed();
+                return TokenizeResult::NeedMoreInput;
+            }
             if let Some(stall) = self.detect_stalled_progress_step(
                 before_step_cursor,
                 before_step_tokens,
@@ -83,6 +110,10 @@ impl Html5Tokenizer {
                     StallResponseMode::for_current_build(),
                 );
             }
+            if !self.ensure_current_tag_solidus_invariant(input) {
+                self.stats_set_bytes_consumed();
+                return TokenizeResult::NeedMoreInput;
+            }
             // Keep bytes_consumed aligned with absolute cursor progress.
             self.stats_set_bytes_consumed();
             #[cfg(any(debug_assertions, feature = "parser_invariants", test))]
@@ -90,7 +121,10 @@ impl Html5Tokenizer {
             #[cfg(any(debug_assertions, feature = "parser_invariants", test))]
             if stop_condition == StopCondition::YieldAfterToken {
                 assert!(
-                    self.tokens.len() <= initial_token_count.saturating_add(1),
+                    self.tokens.len()
+                        <= initial_token_count
+                            .checked_add(1)
+                            .expect("a live token queue cannot already have usize::MAX entries"),
                     "push_input_until_token queued more than one new token in a single pump: initial_tokens={} current_tokens={} state={:?} cursor={}",
                     initial_token_count,
                     self.tokens.len(),
@@ -103,8 +137,10 @@ impl Html5Tokenizer {
             {
                 if self.has_unconsumed_input(input) {
                     self.record_limit_error(
+                        input,
                         ctx,
                         self.cursor,
+                        ParserResourceLimit::TokenBatchCapacity,
                         LIMIT_DETAIL_TOKEN_BATCH,
                         self.max_tokens_per_batch(),
                     );
@@ -198,8 +234,13 @@ impl Html5Tokenizer {
             return Step::Progress;
         }
         self.assert_cursor_on_char_boundary(input);
+        if self.state.owns_pending_comment() && self.require_pending_comment_start(input).is_none()
+        {
+            return Step::InvariantFailure;
+        }
         // Explicit dispatcher scaffold. New states should be implemented as
-        // dedicated handlers that return `Step::Progress` or `Step::NeedMoreInput`.
+        // dedicated handlers that return an explicit progress, input, or
+        // invariant outcome.
         match self.state {
             TokenizerState::Data => self.step_data(input, ctx),
             TokenizerState::RawText => self.step_raw_text(input, ctx),
@@ -259,6 +300,16 @@ impl Html5Tokenizer {
             TokenizerState::CommentStart => self.step_comment_start(input, ctx),
             TokenizerState::CommentStartDash => self.step_comment_start_dash(input, ctx),
             TokenizerState::Comment => self.step_comment(input, ctx),
+            TokenizerState::CommentLessThanSign => self.step_comment_less_than_sign(input, ctx),
+            TokenizerState::CommentLessThanSignBang => {
+                self.step_comment_less_than_sign_bang(input, ctx)
+            }
+            TokenizerState::CommentLessThanSignBangDash => {
+                self.step_comment_less_than_sign_bang_dash(input, ctx)
+            }
+            TokenizerState::CommentLessThanSignBangDashDash => {
+                self.step_comment_less_than_sign_bang_dash_dash(input, ctx)
+            }
             TokenizerState::CommentEndDash => self.step_comment_end_dash(input, ctx),
             TokenizerState::CommentEnd => self.step_comment_end(input, ctx),
             TokenizerState::CommentEndBang => self.step_comment_end_bang(input, ctx),
@@ -288,7 +339,9 @@ impl Html5Tokenizer {
             return Step::NeedMoreInput;
         }
         if self.peek(input) == Some('<') {
-            self.flush_pending_text_with_context(input, ctx);
+            if !self.flush_pending_text_with_context(input, ctx) {
+                return Step::InvariantFailure;
+            }
             self.transition_to(TokenizerState::TagOpen);
             return Step::Progress;
         }
@@ -304,7 +357,9 @@ impl Html5Tokenizer {
         if self.has_unconsumed_input(input) && self.peek(input) == Some('<') {
             // Flush the text run immediately when we encounter a delimiter so
             // token boundaries do not depend on pump scheduling granularity.
-            self.flush_pending_text_with_context(input, ctx);
+            if !self.flush_pending_text_with_context(input, ctx) {
+                return Step::InvariantFailure;
+            }
             self.transition_to(TokenizerState::TagOpen);
             Step::Progress
         } else {
@@ -372,12 +427,16 @@ impl Html5Tokenizer {
         }
 
         // Core v0: unsupported `<!...` declarations enter bogus comment mode.
-        self.record_tokenizer_parse_error(
+        self.record_tokenizer_parse_error_with_recovery(
+            input,
             ctx,
-            crate::html5::shared::ParseErrorCode::Other,
+            WhatwgParseErrorCode::IncorrectlyOpenedComment,
             self.cursor,
-            super::normalization::ERROR_DETAIL_INVALID_MARKUP_DECLARATION,
-            self.peek(input).map(|ch| ch as u32),
+            crate::html5::shared::ParserRecoveryAction::StartBogusComment,
+            super::normalization::legacy_diagnostic(
+                super::normalization::ERROR_DETAIL_INVALID_MARKUP_DECLARATION,
+                self.peek(input).map(|ch| ch as u32),
+            ),
         );
         self.pending_comment_start = Some(self.cursor);
         self.transition_to(TokenizerState::BogusComment);
@@ -416,15 +475,43 @@ impl Html5Tokenizer {
         }
         match self.peek(input) {
             Some('>') => {
-                let end = self.cursor.saturating_sub(2);
-                if let Some(start) = self.pending_text_start.take()
-                    && start < end
-                {
+                let Some(delimiter_start) = self.cursor.checked_sub(2) else {
+                    self.latch_invariant(
+                        super::invariants::TokenizerInvariantKind::
+                            CdataEndDelimiterOutsidePendingTextRange,
+                    );
+                    return Step::InvariantFailure;
+                };
+                let Some(pending_range) =
+                    self.require_cdata_pending_text_range(input, delimiter_start)
+                else {
+                    return Step::InvariantFailure;
+                };
+                let Some(delimiter) = input.as_str().as_bytes().get(delimiter_start..self.cursor)
+                else {
+                    self.latch_invariant(
+                        super::invariants::TokenizerInvariantKind::
+                            CdataEndDelimiterOutsidePendingTextRange,
+                    );
+                    return Step::InvariantFailure;
+                };
+                if delimiter != b"]]" {
+                    self.latch_invariant(
+                        super::invariants::TokenizerInvariantKind::
+                            CdataEndDelimiterDoesNotMatchState,
+                    );
+                    return Step::InvariantFailure;
+                }
+                if pending_range.start < pending_range.end {
                     let saved_cursor = self.cursor;
-                    self.cursor = end;
-                    self.pending_text_start = Some(start);
-                    self.flush_pending_text_with_context(input, ctx);
+                    self.cursor = pending_range.end;
+                    if !self.flush_pending_text_with_context(input, ctx) {
+                        self.cursor = saved_cursor;
+                        return Step::InvariantFailure;
+                    }
                     self.cursor = saved_cursor;
+                } else {
+                    self.pending_text_start = None;
                 }
                 let _ = self.consume(input);
                 self.transition_to(TokenizerState::Data);
@@ -436,6 +523,79 @@ impl Html5Tokenizer {
             None => return Step::NeedMoreInput,
         }
         Step::Progress
+    }
+
+    fn require_cdata_pending_text_range(
+        &mut self,
+        input: &Input,
+        delimiter_start: usize,
+    ) -> Option<std::ops::Range<usize>> {
+        let Some(start) = self.pending_text_start else {
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::CdataStateMissingPendingTextStart,
+            );
+            return None;
+        };
+        let text = input.as_str();
+        if start > delimiter_start
+            || delimiter_start > self.cursor
+            || self.cursor > text.len()
+            || !text.is_char_boundary(start)
+            || !text.is_char_boundary(delimiter_start)
+            || !text.is_char_boundary(self.cursor)
+        {
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::CdataEndDelimiterOutsidePendingTextRange,
+            );
+            return None;
+        }
+        Some(start..delimiter_start)
+    }
+
+    pub(in crate::html5::tokenizer) fn ensure_cdata_pending_text_invariant(
+        &mut self,
+        input: &Input,
+    ) -> bool {
+        if !matches!(
+            self.state,
+            TokenizerState::CdataSection
+                | TokenizerState::CdataSectionBracket
+                | TokenizerState::CdataSectionEnd
+        ) {
+            return true;
+        }
+        let Some(start) = self.pending_text_start else {
+            self.latch_invariant(
+                super::invariants::TokenizerInvariantKind::CdataStateMissingPendingTextStart,
+            );
+            return false;
+        };
+        let text = input.as_str();
+        if start > self.cursor
+            || self.cursor > text.len()
+            || !text.is_char_boundary(start)
+            || !text.is_char_boundary(self.cursor)
+        {
+            let invariant = if self.state == TokenizerState::CdataSectionEnd {
+                super::invariants::TokenizerInvariantKind::CdataEndDelimiterOutsidePendingTextRange
+            } else {
+                super::invariants::TokenizerInvariantKind::PendingTextRangeInvalid
+            };
+            self.latch_invariant(invariant);
+            return false;
+        }
+        true
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_cdata_end_state_for_test(
+        &mut self,
+        pending_text_start: Option<usize>,
+        cursor: usize,
+    ) {
+        self.state = TokenizerState::CdataSectionEnd;
+        self.pending_text_start = pending_text_start;
+        self.cursor = cursor;
     }
 
     #[cold]

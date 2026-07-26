@@ -1,6 +1,10 @@
 use super::helpers::{assert_push_ok, drain_all_fmt, run_chunks};
-use crate::html5::shared::{DocumentParseContext, Input};
-use crate::html5::tokenizer::{Html5Tokenizer, TokenizeResult, TokenizerConfig};
+use crate::html5::shared::{
+    DocumentParseContext, ErrorPolicy, Input, ParserObservationConfig, SurfaceCaptureRequest,
+};
+use crate::html5::tokenizer::{
+    Html5Tokenizer, TokenizeResult, TokenizerConfig, TokenizerInvariantKind, TokenizerState,
+};
 
 #[test]
 fn markup_declaration_open_emits_doctype_token() {
@@ -207,4 +211,177 @@ fn doctype_system_keyword_chunk_split_is_invariant() {
             "EOF".to_string(),
         ]
     );
+}
+
+#[test]
+fn missing_doctype_name_start_latches_invariant_without_false_limit_diagnostic() {
+    let mut ctx = DocumentParseContext::with_observations(
+        ErrorPolicy::default(),
+        ParserObservationConfig {
+            implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 1 },
+            ..ParserObservationConfig::default()
+        },
+    );
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<!DOCTYPE html>");
+
+    assert!(
+        !tokenizer.force_doctype_limit_without_name_start_for_test(&input, &mut ctx),
+        "corrupt metadata must stop the resource-observation path"
+    );
+    assert_eq!(
+        tokenizer.invariant_failure_kind(),
+        Some(TokenizerInvariantKind::DoctypeNameStartMissingForResourceObservation)
+    );
+    let capture = ctx.take_observations().expect("requested capture");
+    assert!(capture.implementation_diagnostics.items.is_empty());
+    assert_eq!(capture.implementation_diagnostics.dropped, 0);
+}
+
+#[test]
+fn doctype_name_start_after_cursor_fails_each_authoritative_operation() {
+    fn observed_context() -> DocumentParseContext {
+        DocumentParseContext::with_observations(
+            ErrorPolicy::default(),
+            ParserObservationConfig {
+                implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 4 },
+                ..ParserObservationConfig::default()
+            },
+        )
+    }
+
+    for (prefix, suffix) in [
+        ("<!DOCTYPE html", ">"),
+        ("<!DOCTYPE html ", "PUBLIC \"x\">"),
+    ] {
+        let mut ctx = observed_context();
+        let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+        let mut input = Input::new();
+        input.push_str(prefix);
+        assert_push_ok(tokenizer.push_input(&mut input, &mut ctx));
+        tokenizer.force_doctype_name_start_after_cursor_for_test();
+        input.push_str(suffix);
+        let _ = tokenizer.push_input(&mut input, &mut ctx);
+
+        assert_eq!(
+            tokenizer.invariant_failure_kind(),
+            Some(TokenizerInvariantKind::DoctypeNameStartAfterCursor),
+            "prefix={prefix:?}"
+        );
+        assert!(
+            drain_all_fmt(&mut tokenizer, &mut input, &ctx).is_empty(),
+            "corrupt range must not emit a doctype token"
+        );
+        let capture = ctx.take_observations().expect("requested capture");
+        assert!(capture.implementation_diagnostics.items.is_empty());
+        assert_eq!(capture.implementation_diagnostics.dropped, 0);
+    }
+
+    let mut ctx = observed_context();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<!DOCTYPE html>");
+    assert!(!tokenizer.force_doctype_limit_with_name_start_after_cursor_for_test(&input, &mut ctx));
+    assert_eq!(
+        tokenizer.invariant_failure_kind(),
+        Some(TokenizerInvariantKind::DoctypeNameStartAfterCursor)
+    );
+    assert!(drain_all_fmt(&mut tokenizer, &mut input, &ctx).is_empty());
+    let capture = ctx.take_observations().expect("requested capture");
+    assert!(capture.implementation_diagnostics.items.is_empty());
+    assert_eq!(capture.implementation_diagnostics.dropped, 0);
+}
+
+#[test]
+fn doctype_name_materialization_rejects_present_but_invalid_ranges() {
+    fn observed_context() -> DocumentParseContext {
+        DocumentParseContext::with_observations(
+            ErrorPolicy::default(),
+            ParserObservationConfig {
+                implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 4 },
+                ..ParserObservationConfig::default()
+            },
+        )
+    }
+
+    for (source, start, cursor) in [(">", 0, 0), ("x", 0, 2), ("é>", 1, 2), ("é>", 0, 1)] {
+        let mut ctx = observed_context();
+        let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+        let mut input = Input::new();
+        input.push_str(source);
+        tokenizer.state = TokenizerState::DoctypeName;
+        tokenizer.pending_doctype_name_start = Some(start);
+        tokenizer.cursor = cursor;
+
+        let _ = tokenizer.push_input(&mut input, &mut ctx);
+        assert_eq!(
+            tokenizer.invariant_failure_kind(),
+            Some(TokenizerInvariantKind::DoctypeNameRangeInvalid),
+            "source={source:?} start={start} cursor={cursor}"
+        );
+        assert!(drain_all_fmt(&mut tokenizer, &mut input, &ctx).is_empty());
+        let capture = ctx.take_observations().expect("requested capture");
+        assert!(capture.implementation_diagnostics.items.is_empty());
+        assert!(capture.parse_errors.items.is_empty());
+    }
+
+    let mut ctx = observed_context();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let input = Input::new();
+    tokenizer.force_empty_doctype_name_range_for_test();
+    assert_eq!(
+        tokenizer.finish_with_context(&input, &mut ctx),
+        crate::html5::TokenizeResult::NeedMoreInput
+    );
+    assert_eq!(
+        tokenizer.invariant_failure_kind(),
+        Some(TokenizerInvariantKind::DoctypeNameRangeInvalid)
+    );
+    assert!(tokenizer.tokens.is_empty());
+    let capture = ctx.take_observations().expect("requested capture");
+    assert!(capture.implementation_diagnostics.items.is_empty());
+    assert!(capture.parse_errors.items.is_empty());
+}
+
+#[test]
+fn doctype_scan_corruption_keeps_exact_range_identities() {
+    fn observed_context() -> DocumentParseContext {
+        DocumentParseContext::with_observations(
+            ErrorPolicy::default(),
+            ParserObservationConfig {
+                implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 4 },
+                ..ParserObservationConfig::default()
+            },
+        )
+    }
+
+    let mut ctx = observed_context();
+    let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<!DOCTYPE html PUBLIC");
+    tokenizer.force_doctype_ascii_prefix_range_invalid_for_test(&input, &mut ctx);
+    assert_eq!(
+        tokenizer.invariant_failure_kind(),
+        Some(TokenizerInvariantKind::AsciiPrefixCandidateRangeInvalid)
+    );
+    assert!(drain_all_fmt(&mut tokenizer, &mut input, &ctx).is_empty());
+    let capture = ctx.take_observations().expect("requested capture");
+    assert!(capture.implementation_diagnostics.items.is_empty());
+
+    for (quote_pos, scan_start) in [(0, 1), (0, 4), (4, 0)] {
+        let mut ctx = observed_context();
+        let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+        let mut input = Input::new();
+        input.push_str("\"x\"");
+        tokenizer.force_doctype_quoted_tail_offsets_for_test(&input, quote_pos, scan_start);
+        assert_eq!(
+            tokenizer.invariant_failure_kind(),
+            Some(TokenizerInvariantKind::DoctypeTailRangeInvalid),
+            "quote_pos={quote_pos} scan_start={scan_start}"
+        );
+        assert!(drain_all_fmt(&mut tokenizer, &mut input, &ctx).is_empty());
+        let capture = ctx.take_observations().expect("requested capture");
+        assert!(capture.implementation_diagnostics.items.is_empty());
+    }
 }
