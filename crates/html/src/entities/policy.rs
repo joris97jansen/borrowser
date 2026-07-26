@@ -46,7 +46,8 @@ pub(crate) enum CharacterReferenceDiagnosticKind {
     MissingNumericDigits,
     MalformedNumeric,
     NumericTooLong,
-    InvalidNumericScalar,
+    SurrogateNumericScalar,
+    OutOfRangeNumericScalar,
 }
 
 impl CharacterReferenceDiagnosticKind {
@@ -58,7 +59,9 @@ impl CharacterReferenceDiagnosticKind {
             Self::MissingNumericDigits => "missing-digits-in-numeric-character-reference",
             Self::MalformedNumeric => "malformed-numeric-character-reference",
             Self::NumericTooLong => "numeric-character-reference-too-long",
-            Self::InvalidNumericScalar => "invalid-numeric-character-reference",
+            Self::SurrogateNumericScalar | Self::OutOfRangeNumericScalar => {
+                "invalid-numeric-character-reference"
+            }
         }
     }
 }
@@ -69,6 +72,10 @@ pub(crate) struct CharacterReferenceDiagnostic {
     pub(crate) offset: usize,
     pub(crate) kind: CharacterReferenceDiagnosticKind,
     pub(crate) aux: Option<u32>,
+    /// Present only for activation of the configured numeric-reference digit
+    /// bound; canonical parser observations store this as a typed resource
+    /// limit payload rather than a parse-error identity.
+    pub(crate) configured_limit: Option<usize>,
 }
 
 #[derive(Debug, Eq, PartialEq)]

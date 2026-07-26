@@ -1,6 +1,6 @@
 use super::Html5Tokenizer;
 use super::api::TokenizerLimits;
-use crate::html5::shared::{DocumentParseContext, ErrorOrigin, Input, ParseError, ParseErrorCode};
+use crate::html5::shared::{DocumentParseContext, Input, ParserResourceLimit};
 
 pub(super) const LIMIT_DETAIL_TOKEN_BATCH: &str = "token-batch-limit";
 pub(super) const LIMIT_DETAIL_TAG_NAME: &str = "tag-name-truncated";
@@ -64,18 +64,14 @@ impl Html5Tokenizer {
 
     pub(in crate::html5::tokenizer) fn record_limit_error(
         &self,
+        input: &Input,
         ctx: &mut DocumentParseContext,
         position: usize,
+        kind: ParserResourceLimit,
         detail: &'static str,
         limit: usize,
     ) {
-        ctx.record_error(ParseError {
-            origin: ErrorOrigin::Tokenizer,
-            code: ParseErrorCode::ResourceLimit,
-            position,
-            detail: Some(detail),
-            aux: Some(limit.min(u32::MAX as usize) as u32),
-        });
+        ctx.record_resource_limit(input, kind, limit, position, Some(detail));
     }
 
     pub(in crate::html5::tokenizer) fn truncate_str_to_bytes<'a>(

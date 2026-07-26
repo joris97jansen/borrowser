@@ -1,6 +1,6 @@
 //! Optional counters for instrumentation.
 
-#[derive(Clone, Debug, Default)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct Counters {
     pub tokens_processed: u64,
     pub patches_emitted: u64,

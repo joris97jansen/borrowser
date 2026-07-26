@@ -1,5 +1,5 @@
 use super::helpers::run_chunks_with_config_and_errors;
-use crate::html5::shared::{ErrorOrigin, ParseErrorCode};
+use crate::html5::shared::{ErrorOrigin, LegacyParseErrorCode as ParseErrorCode};
 use crate::html5::tokenizer::TokenizerConfig;
 
 #[test]

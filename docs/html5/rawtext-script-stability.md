@@ -155,7 +155,9 @@ Reference files:
 Current recovery contract:
 
 - if a text-mode close-tag candidate exceeds the configured scan bound, the
-  tokenizer records `ParseErrorCode::ResourceLimit`
+  tokenizer records the typed
+  `ParserResourceLimit::EndTagMatchScanBytes` implementation diagnostic; the
+  legacy facade projects it to `ResourceLimit`
 - the oversized candidate is emitted as literal text
 - recovery is deterministic across whole-input and chunked execution
 - subsequent text and later real close tags continue to tokenize normally

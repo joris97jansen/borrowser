@@ -1,4 +1,7 @@
-use crate::html5::tokenizer::scan::{IncrementalEndTagMatch, IncrementalEndTagMatcher};
+use crate::html5::tokenizer::TokenizerInvariantKind;
+use crate::html5::tokenizer::scan::{
+    IncrementalEndTagMatch, IncrementalEndTagMatcher, validate_completed_text_mode_end_tag_evidence,
+};
 
 #[test]
 fn incremental_end_tag_matcher_resumes_across_name_and_space_boundaries() {
@@ -15,8 +18,8 @@ fn incremental_end_tag_matcher_resumes_across_name_and_space_boundaries() {
         matcher.advance(b"</style \t>", b"style"),
         IncrementalEndTagMatch::Matched {
             cursor_after: 10,
-            had_attributes: false,
-            self_closing: false,
+            attribute_error_position: None,
+            trailing_solidus_position: None,
         }
     );
 }
@@ -43,8 +46,8 @@ fn incremental_end_tag_matcher_handles_split_prefix_from_first_byte() {
         matcher.advance(b"</script>", b"script"),
         IncrementalEndTagMatch::Matched {
             cursor_after: 9,
-            had_attributes: false,
-            self_closing: false,
+            attribute_error_position: None,
+            trailing_solidus_position: None,
         }
     );
 }
@@ -62,8 +65,8 @@ fn incremental_end_tag_matcher_handles_non_zero_start_offsets() {
         matcher.advance(b"abc</script>", b"script"),
         IncrementalEndTagMatch::Matched {
             cursor_after: 12,
-            had_attributes: false,
-            self_closing: false,
+            attribute_error_position: None,
+            trailing_solidus_position: None,
         }
     );
 }
@@ -98,8 +101,8 @@ fn incremental_end_tag_matcher_trailing_space_growth_is_incremental_and_linear()
         matcher.advance(&buffer, b"script"),
         IncrementalEndTagMatch::Matched {
             cursor_after: buffer.len(),
-            had_attributes: false,
-            self_closing: false,
+            attribute_error_position: None,
+            trailing_solidus_position: None,
         }
     );
 }
@@ -163,8 +166,8 @@ fn incremental_end_tag_matcher_consumes_attribute_like_continuations() {
         IncrementalEndTagMatcher::new(0).advance(b"</style class=x>", b"style"),
         IncrementalEndTagMatch::Matched {
             cursor_after: 16,
-            had_attributes: true,
-            self_closing: false,
+            attribute_error_position: Some(15),
+            trailing_solidus_position: None,
         }
     );
 }
@@ -175,10 +178,32 @@ fn incremental_end_tag_matcher_consumes_self_closing_continuations() {
         IncrementalEndTagMatcher::new(0).advance(b"</title/>", b"title"),
         IncrementalEndTagMatch::Matched {
             cursor_after: 9,
-            had_attributes: false,
-            self_closing: true,
+            attribute_error_position: None,
+            trailing_solidus_position: Some(7),
         }
     );
+}
+
+#[test]
+fn incremental_end_tag_matcher_carries_attribute_and_solidus_positions_across_every_split() {
+    let input = b"</title a=1 />";
+    let expected = IncrementalEndTagMatch::Matched {
+        cursor_after: input.len(),
+        attribute_error_position: Some(input.len() - 1),
+        trailing_solidus_position: Some(input.len() - 2),
+    };
+    assert_eq!(
+        IncrementalEndTagMatcher::new(0).advance(input, b"title"),
+        expected
+    );
+
+    for split in 1..input.len() {
+        let matcher = match IncrementalEndTagMatcher::new(0).advance(&input[..split], b"title") {
+            IncrementalEndTagMatch::NeedMoreInput(matcher) => matcher,
+            other => panic!("split={split} should pause matcher, got {other:?}"),
+        };
+        assert_eq!(matcher.advance(input, b"title"), expected, "split={split}");
+    }
 }
 
 #[test]
@@ -197,8 +222,8 @@ fn incremental_end_tag_matcher_resumes_across_attribute_value_growth() {
         matcher.advance(b"</script type=\"text/plain\">", b"script"),
         IncrementalEndTagMatch::Matched {
             cursor_after: 27,
-            had_attributes: true,
-            self_closing: false,
+            attribute_error_position: Some(26),
+            trailing_solidus_position: None,
         }
     );
 }
@@ -210,8 +235,8 @@ fn incremental_end_tag_matcher_consumes_unquoted_attribute_value_tails() {
         IncrementalEndTagMatcher::new(0).advance(input, b"script"),
         IncrementalEndTagMatch::Matched {
             cursor_after: input.len(),
-            had_attributes: true,
-            self_closing: false,
+            attribute_error_position: Some(input.len() - 1),
+            trailing_solidus_position: None,
         }
     );
 }
@@ -223,8 +248,8 @@ fn incremental_end_tag_matcher_consumes_single_quoted_attribute_value_tails() {
         IncrementalEndTagMatcher::new(0).advance(input, b"script"),
         IncrementalEndTagMatch::Matched {
             cursor_after: input.len(),
-            had_attributes: true,
-            self_closing: false,
+            attribute_error_position: Some(input.len() - 1),
+            trailing_solidus_position: None,
         }
     );
 }
@@ -236,8 +261,8 @@ fn incremental_end_tag_matcher_consumes_empty_attribute_value_tails() {
         IncrementalEndTagMatcher::new(0).advance(input, b"script"),
         IncrementalEndTagMatch::Matched {
             cursor_after: input.len(),
-            had_attributes: true,
-            self_closing: false,
+            attribute_error_position: Some(input.len() - 1),
+            trailing_solidus_position: None,
         }
     );
 }
@@ -249,8 +274,8 @@ fn incremental_end_tag_matcher_consumes_attribute_value_before_self_closing_tail
         IncrementalEndTagMatcher::new(0).advance(input, b"script"),
         IncrementalEndTagMatch::Matched {
             cursor_after: input.len(),
-            had_attributes: true,
-            self_closing: true,
+            attribute_error_position: Some(input.len() - 1),
+            trailing_solidus_position: None,
         }
     );
 }
@@ -262,8 +287,8 @@ fn incremental_end_tag_matcher_recovers_from_space_after_self_closing_solidus() 
         IncrementalEndTagMatcher::new(0).advance(input, b"script"),
         IncrementalEndTagMatch::Matched {
             cursor_after: input.len(),
-            had_attributes: false,
-            self_closing: false,
+            attribute_error_position: None,
+            trailing_solidus_position: None,
         }
     );
 }
@@ -275,8 +300,8 @@ fn incremental_end_tag_matcher_treats_post_quoted_name_continuation_as_another_a
         IncrementalEndTagMatcher::new(0).advance(input, b"script"),
         IncrementalEndTagMatch::Matched {
             cursor_after: input.len(),
-            had_attributes: true,
-            self_closing: false,
+            attribute_error_position: Some(input.len() - 1),
+            trailing_solidus_position: None,
         }
     );
 }
@@ -288,8 +313,164 @@ fn incremental_end_tag_matcher_consumes_quoted_name_like_tail_bytes() {
         IncrementalEndTagMatcher::new(0).advance(input, b"script"),
         IncrementalEndTagMatch::Matched {
             cursor_after: input.len(),
-            had_attributes: true,
-            self_closing: false,
+            attribute_error_position: Some(input.len() - 1),
+            trailing_solidus_position: None,
         }
+    );
+}
+
+#[test]
+fn completed_text_mode_end_tag_evidence_rejects_corrupt_positions() {
+    let bytes = b"prefix</title a=1/>";
+    let start = 6;
+    let cursor_after = bytes.len();
+    let closing = cursor_after - 1;
+    let solidus = closing - 1;
+
+    for attribute_position in [Some(0), Some(start), Some(solidus)] {
+        assert_eq!(
+            validate_completed_text_mode_end_tag_evidence(
+                bytes,
+                start,
+                cursor_after,
+                attribute_position,
+                None,
+            ),
+            Err(TokenizerInvariantKind::TextModeEndTagAttributePositionInvalid)
+        );
+    }
+
+    for solidus_position in [Some(0), Some(start), Some(closing)] {
+        assert_eq!(
+            validate_completed_text_mode_end_tag_evidence(
+                bytes,
+                start,
+                cursor_after,
+                None,
+                solidus_position,
+            ),
+            Err(TokenizerInvariantKind::TextModeEndTagSolidusPositionInvalid)
+        );
+    }
+
+    assert_eq!(
+        validate_completed_text_mode_end_tag_evidence(
+            bytes,
+            start,
+            cursor_after,
+            Some(closing),
+            Some(closing),
+        ),
+        Err(TokenizerInvariantKind::TextModeEndTagSolidusPositionInvalid)
+    );
+    assert_eq!(
+        validate_completed_text_mode_end_tag_evidence(
+            bytes,
+            start,
+            cursor_after,
+            Some(closing),
+            Some(solidus),
+        ),
+        Ok(())
+    );
+}
+
+#[test]
+fn text_mode_candidate_range_is_validated_without_diagnostic_evidence() {
+    let valid = b"</title>";
+    assert_eq!(
+        validate_completed_text_mode_end_tag_evidence(valid, 0, valid.len(), None, None),
+        Ok(())
+    );
+
+    for (bytes, start, cursor_after) in [
+        (valid.as_slice(), 4, 3),
+        (valid.as_slice(), valid.len() + 1, valid.len()),
+        (valid.as_slice(), 0, valid.len() + 1),
+        (b"x/title>".as_slice(), 0, 8),
+        (b"<xtitle>".as_slice(), 0, 8),
+        (b"<x</title>".as_slice(), 0, 10),
+        (b"x<".as_slice(), 1, 2),
+        (b"</titlex".as_slice(), 0, 8),
+    ] {
+        assert_eq!(
+            validate_completed_text_mode_end_tag_evidence(bytes, start, cursor_after, None, None,),
+            Err(TokenizerInvariantKind::TextModeEndTagCandidateRangeInvalid)
+        );
+    }
+
+    assert_eq!(
+        IncrementalEndTagMatcher::new(0)
+            .force_candidate_range_for_test(4, 3)
+            .advance(valid, b"title"),
+        IncrementalEndTagMatch::InvariantFailure(
+            TokenizerInvariantKind::TextModeEndTagCandidateRangeInvalid
+        )
+    );
+    assert_eq!(
+        IncrementalEndTagMatcher::new(0)
+            .force_candidate_range_for_test(valid.len() + 1, valid.len() + 1)
+            .advance(valid, b"title"),
+        IncrementalEndTagMatch::InvariantFailure(
+            TokenizerInvariantKind::TextModeEndTagCandidateRangeInvalid
+        )
+    );
+}
+
+#[test]
+fn text_mode_candidate_requires_the_retained_end_tag_opener() {
+    let invalid = b"<xtitle>";
+    assert_eq!(
+        IncrementalEndTagMatcher::new(0)
+            .force_candidate_range_for_test(0, 2)
+            .force_name_phase_for_test()
+            .validate_live_candidate_range(invalid),
+        Err(TokenizerInvariantKind::TextModeEndTagCandidateRangeInvalid)
+    );
+
+    let invalid_with_attribute_evidence = b"<xtitle a=1>";
+    assert_eq!(
+        validate_completed_text_mode_end_tag_evidence(
+            invalid_with_attribute_evidence,
+            0,
+            invalid_with_attribute_evidence.len(),
+            Some(invalid_with_attribute_evidence.len() - 1),
+            None,
+        ),
+        Err(TokenizerInvariantKind::TextModeEndTagCandidateRangeInvalid)
+    );
+
+    let invalid_with_solidus_evidence = b"<xtitle/>";
+    assert_eq!(
+        validate_completed_text_mode_end_tag_evidence(
+            invalid_with_solidus_evidence,
+            0,
+            invalid_with_solidus_evidence.len(),
+            None,
+            Some(invalid_with_solidus_evidence.len() - 2),
+        ),
+        Err(TokenizerInvariantKind::TextModeEndTagCandidateRangeInvalid)
+    );
+}
+
+#[test]
+fn live_text_mode_matcher_validates_accepted_solidus_evidence() {
+    let bytes = b"prefix</title/";
+    let matcher = match IncrementalEndTagMatcher::new(6).advance(bytes, b"title") {
+        IncrementalEndTagMatch::NeedMoreInput(matcher) => matcher,
+        other => panic!("expected live self-closing candidate, got {other:?}"),
+    };
+    assert_eq!(matcher.validate_live_diagnostic_evidence(bytes), Ok(()));
+    assert_eq!(
+        matcher
+            .force_live_solidus_position_for_test(0)
+            .validate_live_diagnostic_evidence(bytes),
+        Err(TokenizerInvariantKind::TextModeEndTagSolidusPositionInvalid)
+    );
+    assert_eq!(
+        matcher
+            .force_live_solidus_position_for_test(6)
+            .validate_live_diagnostic_evidence(bytes),
+        Err(TokenizerInvariantKind::TextModeEndTagSolidusPositionInvalid)
     );
 }

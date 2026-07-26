@@ -176,3 +176,200 @@ fn push_input_until_token_stays_single_token_in_script_mode_with_controls() {
         }
     }
 }
+
+#[cfg(feature = "parser-conformance")]
+#[test]
+fn ordinary_and_observed_drains_return_the_same_production_tokens() {
+    use crate::html5::shared::{ErrorPolicy, ParserObservationConfig, SurfaceCaptureRequest};
+
+    fn run(observed: bool) -> (Vec<String>, DocumentParseContext) {
+        let mut ctx = if observed {
+            DocumentParseContext::with_observations(
+                ErrorPolicy::default(),
+                ParserObservationConfig {
+                    tokens: SurfaceCaptureRequest::Capture { capacity: 64 },
+                    ..ParserObservationConfig::default()
+                },
+            )
+        } else {
+            DocumentParseContext::new()
+        };
+        let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+        let mut input = Input::new();
+        input.push_str("<div a='b'>x&amp;y<!--z--></div>");
+        let mut tokens = Vec::new();
+        loop {
+            let result = tokenizer.push_input(&mut input, &mut ctx);
+            let batch = if observed {
+                tokenizer.next_batch_observed(&mut input, &mut ctx)
+            } else {
+                tokenizer.next_batch(&mut input)
+            };
+            let resolver = batch.resolver();
+            let fmt = crate::html5::tokenizer::TokenFmt::new(&ctx.atoms, &resolver);
+            tokens.extend(
+                batch
+                    .iter()
+                    .map(|token| fmt.format_token(token).expect("production token resolves")),
+            );
+            if result == TokenizeResult::NeedMoreInput {
+                break;
+            }
+        }
+        let _ = input.finish_preprocessing();
+        let _ = tokenizer.finish_with_context(&input, &mut ctx);
+        let batch = if observed {
+            tokenizer.next_batch_observed(&mut input, &mut ctx)
+        } else {
+            tokenizer.next_batch(&mut input)
+        };
+        let resolver = batch.resolver();
+        let fmt = crate::html5::tokenizer::TokenFmt::new(&ctx.atoms, &resolver);
+        tokens.extend(
+            batch
+                .iter()
+                .map(|token| fmt.format_token(token).expect("production token resolves")),
+        );
+        (tokens, ctx)
+    }
+
+    let (ordinary, ordinary_ctx) = run(false);
+    let (observed, mut observed_ctx) = run(true);
+    let capture = observed_ctx
+        .take_observations()
+        .expect("observation capture");
+    assert_eq!(ordinary, observed);
+    assert_eq!(ordinary_ctx.counters, observed_ctx.counters);
+    assert_eq!(ordinary_ctx.errors(), observed_ctx.errors());
+    assert_eq!(capture.tokens.items.len(), observed.len());
+}
+
+#[cfg(feature = "parser-conformance")]
+#[test]
+fn malformed_byte_drains_keep_production_tokens_and_decode_accounting_neutral() {
+    use crate::html5::shared::{
+        ByteStreamDecoder, ErrorPolicy, ParserObservationConfig, SurfaceCaptureRequest,
+    };
+
+    fn run(chunks: &[&[u8]], observed: bool) -> (Vec<String>, String, DocumentParseContext) {
+        let mut ctx = if observed {
+            DocumentParseContext::with_observations(
+                ErrorPolicy::default(),
+                ParserObservationConfig {
+                    tokens: SurfaceCaptureRequest::Capture { capacity: 64 },
+                    implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 1 },
+                    ..ParserObservationConfig::default()
+                },
+            )
+        } else {
+            DocumentParseContext::new()
+        };
+        let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
+        let mut decoder = ByteStreamDecoder::new();
+        let mut input = Input::new();
+        let mut tokens = Vec::new();
+
+        for chunk in chunks {
+            if observed {
+                let _ = decoder.push_bytes_with_context(chunk, &mut input, &mut ctx);
+            } else {
+                let (_, replacements) = decoder.push_bytes_counted(chunk, &mut input);
+                ctx.record_decode_replacements(replacements);
+            }
+            loop {
+                let result = tokenizer.push_input(&mut input, &mut ctx);
+                let batch = if observed {
+                    tokenizer.next_batch_observed(&mut input, &mut ctx)
+                } else {
+                    tokenizer.next_batch(&mut input)
+                };
+                let resolver = batch.resolver();
+                let fmt = crate::html5::tokenizer::TokenFmt::new(&ctx.atoms, &resolver);
+                tokens.extend(
+                    batch
+                        .iter()
+                        .map(|token| fmt.format_token(token).expect("production token resolves")),
+                );
+                if result == TokenizeResult::NeedMoreInput {
+                    break;
+                }
+            }
+        }
+
+        if observed {
+            let _ = decoder.finish_with_context(&mut input, &mut ctx);
+        } else {
+            let (_, replacements) = decoder.finish_counted(&mut input);
+            ctx.record_decode_replacements(replacements);
+        }
+        loop {
+            let result = tokenizer.push_input(&mut input, &mut ctx);
+            let batch = if observed {
+                tokenizer.next_batch_observed(&mut input, &mut ctx)
+            } else {
+                tokenizer.next_batch(&mut input)
+            };
+            let resolver = batch.resolver();
+            let fmt = crate::html5::tokenizer::TokenFmt::new(&ctx.atoms, &resolver);
+            tokens.extend(
+                batch
+                    .iter()
+                    .map(|token| fmt.format_token(token).expect("production token resolves")),
+            );
+            if result == TokenizeResult::NeedMoreInput {
+                break;
+            }
+        }
+        let _ = tokenizer.finish_with_context(&input, &mut ctx);
+        {
+            let batch = if observed {
+                tokenizer.next_batch_observed(&mut input, &mut ctx)
+            } else {
+                tokenizer.next_batch(&mut input)
+            };
+            let resolver = batch.resolver();
+            let fmt = crate::html5::tokenizer::TokenFmt::new(&ctx.atoms, &resolver);
+            tokens.extend(
+                batch
+                    .iter()
+                    .map(|token| fmt.format_token(token).expect("production token resolves")),
+            );
+        }
+        (tokens, input.as_str().to_owned(), ctx)
+    }
+
+    let cases: &[(&[u8], u64)] = &[
+        (&[0xFF], 1),
+        (&[0xFF, b'a', 0xE2, b'(', 0x80], 3),
+        (&[0xE2, 0x82], 1),
+        ("\u{FFFD}".as_bytes(), 0),
+    ];
+    for (bytes, expected_replacements) in cases {
+        for split in 0..=bytes.len() {
+            let chunks: Vec<&[u8]> = if split == 0 || split == bytes.len() {
+                vec![bytes]
+            } else {
+                vec![&bytes[..split], &bytes[split..]]
+            };
+            let (ordinary_tokens, ordinary_input, ordinary_ctx) = run(&chunks, false);
+            let (observed_tokens, observed_input, mut observed_ctx) = run(&chunks, true);
+            let capture = observed_ctx.take_observations().expect("observed capture");
+
+            assert_eq!(ordinary_tokens, observed_tokens);
+            assert_eq!(ordinary_input, observed_input);
+            assert_eq!(ordinary_ctx.counters, observed_ctx.counters);
+            assert_eq!(ordinary_ctx.errors(), observed_ctx.errors());
+            assert_eq!(ordinary_ctx.counters.decode_errors, *expected_replacements);
+            assert_eq!(
+                capture.tokens.items.len(),
+                observed_tokens.len(),
+                "every retained production token is canonicalized at the shared drain"
+            );
+            assert_eq!(
+                capture.implementation_diagnostics.items.len() as u64
+                    + capture.implementation_diagnostics.dropped,
+                *expected_replacements
+            );
+        }
+    }
+}

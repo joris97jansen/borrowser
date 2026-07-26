@@ -1,8 +1,14 @@
 use super::helpers::{
     run_chunks, run_chunks_with_config_and_errors, run_text_mode_chunks_with_config_and_errors,
 };
-use crate::html5::shared::{ErrorOrigin, ParseError, ParseErrorCode};
-use crate::html5::tokenizer::{TextModeSpec, TokenizerConfig, TokenizerLimits};
+use crate::html5::shared::{
+    DocumentParseContext, ErrorOrigin, ErrorPolicy, ImplementationDiagnosticCode,
+    ImplementationDiagnosticEvent, Input, LegacyParseErrorCode as ParseErrorCode, ParseError,
+    ParserObservationConfig, ParserResourceLimit, SurfaceCaptureRequest,
+};
+use crate::html5::tokenizer::{
+    Html5Tokenizer, TextModeSpec, TokenizeResult, TokenizerConfig, TokenizerLimits,
+};
 
 fn limit_config(limits: TokenizerLimits) -> TokenizerConfig {
     TokenizerConfig {
@@ -24,7 +30,50 @@ fn assert_single_limit_error(
     let error = &errors[0];
     assert_eq!(error.code, ParseErrorCode::ResourceLimit);
     assert_eq!(error.detail, Some(detail));
-    assert_eq!(error.aux, Some(limit as u32));
+    assert_eq!(error.aux, Some(limit.min(u32::MAX as usize) as u32));
+}
+
+#[test]
+fn production_limit_callsite_records_typed_identity_and_payload() {
+    let limits = TokenizerLimits {
+        max_tag_name_bytes: 3,
+        ..TokenizerLimits::default()
+    };
+    let mut ctx = DocumentParseContext::with_observations(
+        ErrorPolicy::default(),
+        ParserObservationConfig {
+            implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 2 },
+            ..ParserObservationConfig::default()
+        },
+    );
+    let mut tokenizer = Html5Tokenizer::new(limit_config(limits), &mut ctx);
+    let mut input = Input::new();
+    input.push_str("<abcdef>");
+    loop {
+        let result = tokenizer.push_input(&mut input, &mut ctx);
+        drop(tokenizer.next_batch_observed(&mut input, &mut ctx));
+        if result == TokenizeResult::NeedMoreInput {
+            break;
+        }
+    }
+    let _ = input.finish_preprocessing();
+    let _ = tokenizer.finish_with_context(&input, &mut ctx);
+    drop(tokenizer.next_batch_observed(&mut input, &mut ctx));
+
+    let capture = ctx.take_observations().expect("resource observation");
+    let [event] = capture.implementation_diagnostics.items.as_slice() else {
+        panic!("expected one canonical resource-limit event");
+    };
+    assert_eq!(
+        event.code(),
+        ImplementationDiagnosticCode::ParserResourceLimitActivated(
+            ParserResourceLimit::TagNameBytes
+        )
+    );
+    let ImplementationDiagnosticEvent::ParserResourceLimitActivated { payload, .. } = event else {
+        panic!("resource-limit code and payload variant must be structural");
+    };
+    assert_eq!(payload.configured_limit, 3);
 }
 
 fn utf8_boundary_chunks(input: &str) -> Vec<&str> {

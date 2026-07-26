@@ -55,11 +55,29 @@ fn assert_operation_specific_compile_failure(
 
 #[test]
 fn ordinary_consumer_without_internal_api_compiles() {
-    let output = check_package("ordinary_consumer");
+    let output = check_bin("ordinary_consumer", "html-ordinary-consumer-probe");
     assert!(
         output.status.success(),
         "ordinary consumer must compile without internal-api:\n{}",
         String::from_utf8_lossy(&output.stderr)
+    );
+}
+
+#[test]
+fn conformance_execution_is_unavailable_without_parser_conformance() {
+    let output = check_bin(
+        "ordinary_consumer",
+        "conformance_without_parser_conformance",
+    );
+    assert!(
+        !output.status.success(),
+        "conformance boundary unexpectedly compiled without parser-conformance"
+    );
+    let stderr = String::from_utf8_lossy(&output.stderr);
+    assert!(
+        stderr.contains("could not find `conformance` in `html`")
+            && stderr.contains("src/bin/conformance_without_parser_conformance.rs"),
+        "probe must fail at the parser-conformance feature boundary:\n{stderr}"
     );
 }
 

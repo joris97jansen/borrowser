@@ -13,6 +13,9 @@ impl Html5ParseSession {
             let tokenize_result = self
                 .tokenizer
                 .push_input_until_token(&mut self.input, &mut self.ctx);
+            if self.tokenizer.invariant_failure_kind().is_some() {
+                return Err(Html5SessionError::Invariant);
+            }
             if self.drain_emitted_tokens(DrainMode::TokenGranular)? == DrainOutcome::Suspended {
                 break;
             }
@@ -36,7 +39,12 @@ impl Html5ParseSession {
 
     pub(super) fn drain_token_granular_batch(&mut self) -> Result<DrainOutcome, Html5SessionError> {
         let step = {
-            let batch = self.tokenizer.next_batch(&mut self.input);
+            let batch = if self.ctx.observation_enabled() {
+                self.tokenizer
+                    .next_batch_observed(&mut self.input, &mut self.ctx)
+            } else {
+                self.tokenizer.next_batch(&mut self.input)
+            };
             if batch.tokens().is_empty() {
                 return Ok(DrainOutcome::Idle);
             }
@@ -66,7 +74,12 @@ impl Html5ParseSession {
 
     pub(super) fn drain_all_queued_batches(&mut self) -> Result<DrainOutcome, Html5SessionError> {
         let steps = {
-            let batch = self.tokenizer.next_batch(&mut self.input);
+            let batch = if self.ctx.observation_enabled() {
+                self.tokenizer
+                    .next_batch_observed(&mut self.input, &mut self.ctx)
+            } else {
+                self.tokenizer.next_batch(&mut self.input)
+            };
             if batch.tokens().is_empty() {
                 return Ok(DrainOutcome::Idle);
             }

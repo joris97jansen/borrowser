@@ -2,7 +2,7 @@ use super::helpers::{
     assert_script_data_chunk_invariant, assert_text_mode_split_close_tag_regression,
     run_script_data_chunks, run_script_data_chunks_with_errors,
 };
-use crate::html5::shared::ParseErrorCode;
+use crate::html5::shared::LegacyParseErrorCode as ParseErrorCode;
 
 const ESCAPED_SCRIPT_SAMPLE: &str = "<script><!--\nif (window.x) {\n  document.write(\"<script>nested</script>\");\n}\n//--></script>";
 

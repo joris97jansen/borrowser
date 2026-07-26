@@ -1,5 +1,9 @@
 use super::helpers::assert_tokenizer_invariants;
-use crate::html5::shared::{DocumentParseContext, Input, ParseErrorCode};
+use crate::html5::shared::{
+    DocumentParseContext, ErrorPolicy, ImplementationDiagnosticCode, ImplementationDiagnosticEvent,
+    Input, LegacyParseErrorCode as ParseErrorCode, ParserGuardrail, ParserObservationConfig,
+    SurfaceCaptureRequest,
+};
 use crate::html5::tokenizer::states::TokenizerState;
 use crate::html5::tokenizer::{
     Html5Tokenizer, MAX_CONSECUTIVE_STALLED_PROGRESS_STEPS, TokenizerConfig,
@@ -19,7 +23,13 @@ fn forced_step_stall_panics_in_test_builds() {
 
 #[test]
 fn forced_step_stall_recovery_consumes_one_scalar_as_literal_text() {
-    let mut ctx = DocumentParseContext::new();
+    let mut ctx = DocumentParseContext::with_observations(
+        ErrorPolicy::default(),
+        ParserObservationConfig {
+            implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 1 },
+            ..ParserObservationConfig::default()
+        },
+    );
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
     let mut input = Input::new();
     input.push_str("<div>");
@@ -44,6 +54,7 @@ fn forced_step_stall_recovery_consumes_one_scalar_as_literal_text() {
 
     let errors = ctx
         .errors
+        .as_ref()
         .expect("stall recovery should record a parse error");
     assert_eq!(errors.len(), 1);
     let error = &errors[0];
@@ -52,5 +63,23 @@ fn forced_step_stall_recovery_consumes_one_scalar_as_literal_text() {
     assert_eq!(
         error.aux,
         Some(MAX_CONSECUTIVE_STALLED_PROGRESS_STEPS as u32)
+    );
+
+    let capture = ctx.take_observations().expect("guardrail observation");
+    let [event] = capture.implementation_diagnostics.items.as_slice() else {
+        panic!("expected one canonical guardrail event");
+    };
+    assert_eq!(
+        event.code(),
+        ImplementationDiagnosticCode::ParserGuardrailActivated(
+            ParserGuardrail::TokenizerStallRecovery
+        )
+    );
+    let ImplementationDiagnosticEvent::ParserGuardrailActivated { payload, .. } = event else {
+        panic!("guardrail code and payload variant must be structural");
+    };
+    assert_eq!(
+        payload.consecutive_stall_steps.get(),
+        MAX_CONSECUTIVE_STALLED_PROGRESS_STEPS as u64
     );
 }

@@ -2,13 +2,13 @@ use super::super::Html5Tokenizer;
 use super::super::machine::Step;
 use super::super::scan::is_tag_name_stop;
 use super::super::states::TokenizerState;
-use crate::html5::shared::{DocumentParseContext, Input, ParseErrorCode};
+use crate::html5::shared::{DocumentParseContext, Input};
 
 impl Html5Tokenizer {
     pub(crate) fn step_tag_name(&mut self, input: &Input, ctx: &mut DocumentParseContext) -> Step {
         debug_assert_eq!(self.state, TokenizerState::TagName);
         if self.tag_name_start.is_none() {
-            // Invariant fallback: reset to Data instead of panicking on malformed state.
+            self.abandon_pending_tag();
             self.transition_to(TokenizerState::Data);
             return Step::Progress;
         }
@@ -36,56 +36,31 @@ impl Html5Tokenizer {
             }
         }
 
-        if self.current_tag_is_end {
-            match self.peek(input) {
-                Some('>') => {
-                    let _ = self.consume_if(input, '>');
-                    self.emit_current_tag(input, ctx);
-                    self.transition_to(TokenizerState::Data);
-                    Step::Progress
-                }
-                Some(_) => {
-                    // End tags do not carry attributes in Core v0; skip until close.
-                    if !self.current_end_tag_trailing_error_reported {
-                        self.record_tokenizer_parse_error(
-                            ctx,
-                            ParseErrorCode::Other,
-                            self.cursor,
-                            super::super::normalization::ERROR_DETAIL_INVALID_END_TAG_TRAILING_CONTENT,
-                            self.peek(input).map(|ch| ch as u32),
-                        );
-                        self.current_end_tag_trailing_error_reported = true;
-                    }
-                    let _ = self.consume(input);
-                    Step::Progress
-                }
-                None => Step::NeedMoreInput,
+        match self.peek(input) {
+            Some(ch) if ch.is_ascii_whitespace() => {
+                let _ = self.consume_if(input, ch);
+                self.transition_to(TokenizerState::BeforeAttributeName);
+                Step::Progress
             }
-        } else {
-            match self.peek(input) {
-                Some(ch) if ch.is_ascii_whitespace() => {
-                    let _ = self.consume_if(input, ch);
-                    self.transition_to(TokenizerState::BeforeAttributeName);
-                    Step::Progress
-                }
-                Some('/') => {
-                    let _ = self.consume_if(input, '/');
-                    self.transition_to(TokenizerState::SelfClosingStartTag);
-                    Step::Progress
-                }
-                Some('>') => {
-                    let _ = self.consume_if(input, '>');
-                    self.emit_current_tag(input, ctx);
-                    self.transition_to(TokenizerState::Data);
-                    Step::Progress
-                }
-                Some(_) => {
-                    // Recovery: consume unexpected bytes in tag context.
-                    let _ = self.consume(input);
-                    Step::Progress
-                }
-                None => Step::NeedMoreInput,
+            Some('/') => {
+                let solidus_position = self.cursor;
+                let _ = self.consume_if(input, '/');
+                self.enter_self_closing_start_tag_after_solidus(solidus_position);
+                Step::Progress
             }
+            Some('>') => {
+                let tag_end_position = self.cursor;
+                let _ = self.consume_if(input, '>');
+                self.emit_current_tag(input, ctx, tag_end_position);
+                self.transition_to(TokenizerState::Data);
+                Step::Progress
+            }
+            Some(_) => {
+                // Recovery: consume unexpected bytes in tag context.
+                let _ = self.consume(input);
+                Step::Progress
+            }
+            None => Step::NeedMoreInput,
         }
     }
 }

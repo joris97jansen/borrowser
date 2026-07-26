@@ -5,8 +5,10 @@ use super::scan::IncrementalEndTagMatcher;
 use super::states::TokenizerState;
 use super::stats::TokenizerStats;
 use super::text_mode::PendingTextModeEndTag;
-use crate::html5::shared::ParseErrorCode;
-use crate::html5::shared::{Attribute, DocumentParseContext, Input, Token};
+use crate::html5::shared::{
+    Attribute, DocumentParseContext, Input, LegacyParseErrorCode, ParseErrorCode, Token,
+    TokenizerExtensionParseErrorCode, WhatwgParseErrorCode,
+};
 use crate::names::ElementNamespace;
 
 /// Centralized tokenizer hardening/resource bounds.
@@ -155,7 +157,9 @@ pub struct Html5Tokenizer {
     pub(in crate::html5::tokenizer) tag_name_complete: bool,
     pub(in crate::html5::tokenizer) current_tag_is_end: bool,
     pub(in crate::html5::tokenizer) current_tag_self_closing: bool,
-    pub(in crate::html5::tokenizer) current_end_tag_trailing_error_reported: bool,
+    pub(in crate::html5::tokenizer) current_tag_self_closing_solidus_position: Option<usize>,
+    pub(in crate::html5::tokenizer) invariant_failure:
+        Option<super::invariants::TokenizerInvariantKind>,
     pub(in crate::html5::tokenizer) current_tag_attrs: Vec<Attribute>,
     pub(in crate::html5::tokenizer) current_attr_name_start: Option<usize>,
     pub(in crate::html5::tokenizer) current_attr_name_end: Option<usize>,
@@ -199,7 +203,8 @@ impl Html5Tokenizer {
             tag_name_complete: false,
             current_tag_is_end: false,
             current_tag_self_closing: false,
-            current_end_tag_trailing_error_reported: false,
+            current_tag_self_closing_solidus_position: None,
+            invariant_failure: None,
             current_tag_attrs: Vec::new(),
             current_attr_name_start: None,
             current_attr_name_end: None,
@@ -344,6 +349,15 @@ impl Html5Tokenizer {
         } else {
             self.input_id = Some(input.id());
         }
+        if !self.ensure_current_tag_solidus_invariant(input) {
+            return TokenizeResult::NeedMoreInput;
+        }
+        if !self.ensure_text_mode_matcher_invariant(input) {
+            return TokenizeResult::NeedMoreInput;
+        }
+        if !self.ensure_processing_instruction_metadata_invariant(input) {
+            return TokenizeResult::NeedMoreInput;
+        }
         let buffered_len = input.as_str().len();
         let mut eof_tail_error_recorded = false;
         if self.cursor != buffered_len {
@@ -359,6 +373,24 @@ impl Html5Tokenizer {
                     self.cursor, buffered_len
                 );
             }
+        } else if self.state == TokenizerState::MarkupDeclarationOpen {
+            self.record_eof_tail_parse_error(
+                EofTailRecovery::MarkupDeclarationTail,
+                input,
+                ctx.as_deref_mut(),
+            );
+            eof_tail_error_recorded = true;
+            self.apply_eof_tail_recovery(EofTailRecovery::MarkupDeclarationTail, input);
+        }
+        if self.state.owns_pending_comment() && self.require_pending_comment_start(input).is_none()
+        {
+            return TokenizeResult::NeedMoreInput;
+        }
+        if !self.ensure_cdata_pending_text_invariant(input) {
+            return TokenizeResult::NeedMoreInput;
+        }
+        if !self.validate_pending_doctype_name_range_for_eof(input) {
+            return TokenizeResult::NeedMoreInput;
         }
 
         if !self.end_of_stream {
@@ -375,30 +407,54 @@ impl Html5Tokenizer {
             if !eof_tail_error_recorded {
                 self.record_eof_in_current_state_if_needed(input, ctx);
             }
+            if self.tag_name_start.is_some() {
+                self.abandon_pending_tag();
+            }
             self.flush_pending_doctype_eof_with_context(input, ctx, !eof_tail_error_recorded);
             self.flush_pending_comment_eof_with_context(input, ctx, !eof_tail_error_recorded);
-            self.discard_pending_processing_instruction_eof();
+            if self.invariant_failure.is_some() {
+                return TokenizeResult::NeedMoreInput;
+            }
+            if !self.discard_pending_processing_instruction_eof(input) {
+                return TokenizeResult::NeedMoreInput;
+            }
             if self.active_text_mode.is_some() && !eof_tail_error_recorded {
-                self.record_tokenizer_parse_error(
+                self.record_tokenizer_extension_parse_error(
+                    input,
                     ctx,
-                    ParseErrorCode::UnexpectedEof,
-                    self.cursor.min(input.as_str().len()),
+                    TokenizerExtensionParseErrorCode::EofInTextMode,
+                    input.as_str().len(),
                     super::normalization::ERROR_DETAIL_EOF_IN_TEXT_MODE,
                     None,
                 );
             }
-            self.flush_pending_text_with_context(input, ctx);
+            if !self.flush_pending_text_with_context(input, ctx) {
+                return TokenizeResult::NeedMoreInput;
+            }
         } else {
+            if self.tag_name_start.is_some() {
+                self.abandon_pending_tag();
+            }
             self.flush_pending_doctype_eof(input);
             self.flush_pending_comment_eof(input);
-            self.discard_pending_processing_instruction_eof();
-            self.flush_pending_text(input);
+            if self.invariant_failure.is_some() {
+                return TokenizeResult::NeedMoreInput;
+            }
+            if !self.discard_pending_processing_instruction_eof(input) {
+                return TokenizeResult::NeedMoreInput;
+            }
+            if !self.flush_pending_text(input) {
+                return TokenizeResult::NeedMoreInput;
+            }
         }
         if self.config.emit_eof {
             self.emit_token(Token::Eof);
         }
         self.eof_emitted = true;
         self.mark_progress();
+        if !self.ensure_current_tag_solidus_invariant(input) {
+            return TokenizeResult::NeedMoreInput;
+        }
         #[cfg(any(debug_assertions, feature = "parser_invariants", test))]
         self.debug_assert_invariants(input);
         TokenizeResult::EmittedEof
@@ -471,23 +527,42 @@ impl Html5Tokenizer {
         let Some(ctx) = ctx else {
             return;
         };
-        let detail = match recovery {
-            EofTailRecovery::DoctypeTail => super::normalization::ERROR_DETAIL_EOF_IN_DOCTYPE,
-            EofTailRecovery::MarkupDeclarationTail => {
-                super::normalization::ERROR_DETAIL_EOF_IN_MARKUP_DECLARATION
-            }
-            EofTailRecovery::TextModeLiteralTail => {
-                super::normalization::ERROR_DETAIL_EOF_IN_TEXT_MODE
-            }
-            EofTailRecovery::LonelyTagOpen => super::normalization::ERROR_DETAIL_EOF_IN_TAG_OPEN,
-        };
-        self.record_tokenizer_parse_error(
-            ctx,
-            ParseErrorCode::UnexpectedEof,
-            self.cursor.min(input.as_str().len()),
-            detail,
-            None,
-        );
+        let position = input.as_str().len();
+        match recovery {
+            EofTailRecovery::DoctypeTail => self.record_tokenizer_parse_error(
+                input,
+                ctx,
+                WhatwgParseErrorCode::EofInDoctype,
+                position,
+                super::normalization::ERROR_DETAIL_EOF_IN_DOCTYPE,
+                None,
+            ),
+            EofTailRecovery::MarkupDeclarationTail => ctx
+                .record_tokenizer_parse_error_with_legacy_projection(
+                    input,
+                    ParseErrorCode::Standard(WhatwgParseErrorCode::IncorrectlyOpenedComment),
+                    position,
+                    Some(crate::html5::shared::ParserRecoveryAction::StartBogusComment),
+                    Some(super::normalization::ERROR_DETAIL_EOF_IN_MARKUP_DECLARATION),
+                    LegacyParseErrorCode::UnexpectedEof,
+                ),
+            EofTailRecovery::TextModeLiteralTail => self.record_tokenizer_extension_parse_error(
+                input,
+                ctx,
+                TokenizerExtensionParseErrorCode::EofInTextMode,
+                position,
+                super::normalization::ERROR_DETAIL_EOF_IN_TEXT_MODE,
+                None,
+            ),
+            EofTailRecovery::LonelyTagOpen => self.record_tokenizer_parse_error(
+                input,
+                ctx,
+                WhatwgParseErrorCode::EofBeforeTagName,
+                position,
+                super::normalization::ERROR_DETAIL_EOF_IN_TAG_OPEN,
+                None,
+            ),
+        }
     }
 
     fn consume_buffered_tail_at_eof(&mut self, input: &Input) {
@@ -506,9 +581,15 @@ impl Html5Tokenizer {
     }
 
     fn record_eof_in_current_state_if_needed(&self, input: &Input, ctx: &mut DocumentParseContext) {
-        let detail = match self.state {
-            TokenizerState::EndTagOpen => super::normalization::ERROR_DETAIL_EOF_IN_END_TAG_OPEN,
-            TokenizerState::TagName => super::normalization::ERROR_DETAIL_EOF_IN_TAG_NAME,
+        let (code, detail) = match self.state {
+            TokenizerState::EndTagOpen => (
+                WhatwgParseErrorCode::EofBeforeTagName,
+                super::normalization::ERROR_DETAIL_EOF_IN_END_TAG_OPEN,
+            ),
+            TokenizerState::TagName => (
+                WhatwgParseErrorCode::EofInTag,
+                super::normalization::ERROR_DETAIL_EOF_IN_TAG_NAME,
+            ),
             TokenizerState::BeforeAttributeName
             | TokenizerState::AttributeName
             | TokenizerState::AfterAttributeName
@@ -516,35 +597,35 @@ impl Html5Tokenizer {
             | TokenizerState::AttributeValueDoubleQuoted
             | TokenizerState::AttributeValueSingleQuoted
             | TokenizerState::AttributeValueUnquoted
-            | TokenizerState::AfterAttributeValueQuoted => {
-                super::normalization::ERROR_DETAIL_EOF_IN_ATTRIBUTE
-            }
-            TokenizerState::SelfClosingStartTag => {
-                super::normalization::ERROR_DETAIL_EOF_IN_SELF_CLOSING_START_TAG
-            }
-            TokenizerState::MarkupDeclarationOpen => {
-                super::normalization::ERROR_DETAIL_EOF_IN_MARKUP_DECLARATION
-            }
+            | TokenizerState::AfterAttributeValueQuoted => (
+                WhatwgParseErrorCode::EofInTag,
+                super::normalization::ERROR_DETAIL_EOF_IN_ATTRIBUTE,
+            ),
+            TokenizerState::SelfClosingStartTag => (
+                WhatwgParseErrorCode::EofInTag,
+                super::normalization::ERROR_DETAIL_EOF_IN_SELF_CLOSING_START_TAG,
+            ),
             TokenizerState::CdataSection
             | TokenizerState::CdataSectionBracket
-            | TokenizerState::CdataSectionEnd => super::normalization::ERROR_DETAIL_EOF_IN_CDATA,
-            TokenizerState::TagOpen => super::normalization::ERROR_DETAIL_EOF_IN_TAG_OPEN,
+            | TokenizerState::CdataSectionEnd => (
+                WhatwgParseErrorCode::EofInCdata,
+                super::normalization::ERROR_DETAIL_EOF_IN_CDATA,
+            ),
+            TokenizerState::TagOpen => (
+                WhatwgParseErrorCode::EofBeforeTagName,
+                super::normalization::ERROR_DETAIL_EOF_IN_TAG_OPEN,
+            ),
             TokenizerState::ProcessingInstructionOpen
             | TokenizerState::ProcessingInstructionTarget
             | TokenizerState::AfterProcessingInstructionTarget
             | TokenizerState::ProcessingInstructionData
-            | TokenizerState::ProcessingInstructionQuestionable => {
-                super::normalization::ERROR_DETAIL_EOF_IN_PROCESSING_INSTRUCTION
-            }
+            | TokenizerState::ProcessingInstructionQuestionable => (
+                WhatwgParseErrorCode::EofInProcessingInstruction,
+                super::normalization::ERROR_DETAIL_EOF_IN_PROCESSING_INSTRUCTION,
+            ),
             _ => return,
         };
-        self.record_tokenizer_parse_error(
-            ctx,
-            ParseErrorCode::UnexpectedEof,
-            self.cursor.min(input.as_str().len()),
-            detail,
-            None,
-        );
+        self.record_tokenizer_parse_error(input, ctx, code, input.as_str().len(), detail, None);
     }
 
     /// Drain the current batch of tokens and return a resolver bound to this epoch.
@@ -557,6 +638,34 @@ impl Html5Tokenizer {
     /// integration contract used by token-by-token controllers such as the
     /// HTML5 session text-mode boundary handling and targeted fuzz harnesses.
     pub fn next_batch<'t>(&mut self, input: &'t mut Input) -> TokenBatch<'t> {
+        self.drain_token_queue(input)
+    }
+
+    pub(crate) fn next_batch_observed<'t>(
+        &mut self,
+        input: &'t mut Input,
+        ctx: &mut DocumentParseContext,
+    ) -> TokenBatch<'t> {
+        let batch = self.drain_token_queue(input);
+        if let Some(observations) = ctx.observations.as_mut()
+            && observations.tokens_requested()
+        {
+            let resolver = batch.resolver();
+            for token in batch.tokens() {
+                if !observations.tokens_can_retain() {
+                    observations.drop_token();
+                    continue;
+                }
+                match super::observe::canonicalize_token(token, &ctx.atoms, &resolver) {
+                    Ok(token) => observations.retain_token(token),
+                    Err(_) => observations.record_token_capture_failure(),
+                }
+            }
+        }
+        batch
+    }
+
+    fn drain_token_queue<'t>(&mut self, input: &'t mut Input) -> TokenBatch<'t> {
         assert!(
             self.input_id.is_none() || self.input_id == Some(input.id()),
             "next_batch input must match the tokenizer-bound Input instance"
@@ -613,5 +722,21 @@ impl Html5Tokenizer {
     #[cfg(test)]
     pub(crate) fn active_text_mode_for_test(&self) -> Option<TextModeSpec> {
         self.active_text_mode
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_self_closing_flag_without_solidus_for_test(&mut self) {
+        self.current_tag_self_closing = true;
+        self.current_tag_self_closing_solidus_position = None;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_missing_doctype_name_start_for_test(&mut self) {
+        self.pending_doctype_name_start = None;
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_comment_end_bang_state_for_test(&mut self) {
+        self.state = TokenizerState::CommentEndBang;
     }
 }

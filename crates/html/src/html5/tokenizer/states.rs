@@ -41,6 +41,10 @@ pub(crate) enum TokenizerState {
     CommentStart,
     CommentStartDash,
     Comment,
+    CommentLessThanSign,
+    CommentLessThanSignBang,
+    CommentLessThanSignBangDash,
+    CommentLessThanSignBangDashDash,
     CommentEndDash,
     CommentEnd,
     CommentEndBang,
@@ -57,6 +61,23 @@ pub(crate) enum TokenizerState {
 }
 
 impl TokenizerState {
+    pub(crate) const fn owns_pending_comment(self) -> bool {
+        matches!(
+            self,
+            Self::CommentStart
+                | Self::CommentStartDash
+                | Self::Comment
+                | Self::CommentLessThanSign
+                | Self::CommentLessThanSignBang
+                | Self::CommentLessThanSignBangDash
+                | Self::CommentLessThanSignBangDashDash
+                | Self::CommentEndDash
+                | Self::CommentEnd
+                | Self::CommentEndBang
+                | Self::BogusComment
+        )
+    }
+
     pub(crate) const fn is_processing_instruction(self) -> bool {
         matches!(
             self,

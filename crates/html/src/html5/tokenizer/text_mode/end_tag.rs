@@ -3,17 +3,21 @@ use super::super::control::TextModeKind;
 use super::super::limits::LIMIT_DETAIL_END_TAG_MATCHER;
 use super::super::machine::Step;
 use super::super::scan::{IncrementalEndTagMatch, IncrementalEndTagMatcher};
-use crate::html5::shared::{DocumentParseContext, ErrorOrigin, Input, ParseError, ParseErrorCode};
+use crate::html5::shared::{
+    DocumentParseContext, Input, ParserResourceLimit, WhatwgParseErrorCode,
+};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum TextModeEndTagMatch {
     Matched {
         cursor_after: usize,
         name: crate::html5::shared::AtomId,
-        had_attributes: bool,
-        self_closing: bool,
+        attribute_error_position: Option<usize>,
+        trailing_solidus_position: Option<usize>,
     },
+    InvariantFailure,
     LimitExceeded,
+    NeedMoreInputWithoutCandidate,
     NeedMoreInput(IncrementalEndTagMatcher),
     NoMatch,
 }
@@ -41,6 +45,18 @@ impl Html5Tokenizer {
         let matcher = match matcher {
             Some(matcher) => {
                 self.stats_inc_text_mode_end_tag_matcher_resumes();
+                if let Err(invariant) =
+                    matcher.validate_live_candidate_range(input.as_str().as_bytes())
+                {
+                    self.latch_invariant(invariant);
+                    return TextModeEndTagMatch::InvariantFailure;
+                }
+                if let Err(invariant) =
+                    matcher.validate_live_diagnostic_evidence(input.as_str().as_bytes())
+                {
+                    self.latch_invariant(invariant);
+                    return TextModeEndTagMatch::InvariantFailure;
+                }
                 matcher
             }
             None => {
@@ -59,17 +75,33 @@ impl Html5Tokenizer {
         match result {
             IncrementalEndTagMatch::Matched {
                 cursor_after,
-                had_attributes,
-                self_closing,
+                attribute_error_position,
+                trailing_solidus_position,
             } => TextModeEndTagMatch::Matched {
                 cursor_after,
                 name: active_text_mode.end_tag_name,
-                had_attributes,
-                self_closing,
+                attribute_error_position,
+                trailing_solidus_position,
             },
+            IncrementalEndTagMatch::InvariantFailure(invariant) => {
+                self.latch_invariant(invariant);
+                TextModeEndTagMatch::InvariantFailure
+            }
             IncrementalEndTagMatch::LimitExceeded => TextModeEndTagMatch::LimitExceeded,
             IncrementalEndTagMatch::NeedMoreInput(matcher) => {
-                TextModeEndTagMatch::NeedMoreInput(matcher)
+                if !matcher.has_complete_end_tag_opener(input.as_str().as_bytes()) {
+                    TextModeEndTagMatch::NeedMoreInputWithoutCandidate
+                } else if let Err(invariant) = matcher
+                    .validate_live_candidate_range(input.as_str().as_bytes())
+                    .and_then(|()| {
+                        matcher.validate_live_diagnostic_evidence(input.as_str().as_bytes())
+                    })
+                {
+                    self.latch_invariant(invariant);
+                    TextModeEndTagMatch::InvariantFailure
+                } else {
+                    TextModeEndTagMatch::NeedMoreInput(matcher)
+                }
             }
             IncrementalEndTagMatch::NoMatch => TextModeEndTagMatch::NoMatch,
         }
@@ -82,8 +114,10 @@ impl Html5Tokenizer {
         less_than_pos: usize,
     ) -> Step {
         self.record_limit_error(
+            input,
             ctx,
             less_than_pos,
+            ParserResourceLimit::EndTagMatchScanBytes,
             LIMIT_DETAIL_END_TAG_MATCHER,
             self.max_end_tag_match_scan_bytes(),
         );
@@ -96,28 +130,60 @@ impl Html5Tokenizer {
 
     pub(super) fn record_text_mode_end_tag_parse_errors(
         &mut self,
+        input: &Input,
         ctx: &mut DocumentParseContext,
-        position: usize,
-        had_attributes: bool,
-        self_closing: bool,
+        attribute_error_position: Option<usize>,
+        trailing_solidus_position: Option<usize>,
     ) {
-        if had_attributes {
-            ctx.record_error(ParseError {
-                origin: ErrorOrigin::Tokenizer,
-                code: ParseErrorCode::Other,
+        if let Some(position) = attribute_error_position {
+            self.record_tokenizer_parse_error_with_recovery(
+                input,
+                ctx,
+                WhatwgParseErrorCode::EndTagWithAttributes,
                 position,
-                detail: Some("text-mode-end-tag-attributes-ignored"),
-                aux: None,
-            });
+                crate::html5::shared::ParserRecoveryAction::DropEndTagAttributes,
+                super::super::normalization::legacy_diagnostic(
+                    "text-mode-end-tag-attributes-ignored",
+                    None,
+                ),
+            );
         }
-        if self_closing {
-            ctx.record_error(ParseError {
-                origin: ErrorOrigin::Tokenizer,
-                code: ParseErrorCode::Other,
+        if let Some(position) = trailing_solidus_position {
+            self.record_tokenizer_parse_error_with_recovery(
+                input,
+                ctx,
+                WhatwgParseErrorCode::EndTagWithTrailingSolidus,
                 position,
-                detail: Some("text-mode-end-tag-self-closing-ignored"),
-                aux: None,
-            });
+                crate::html5::shared::ParserRecoveryAction::IgnoreEndTagTrailingSolidus,
+                super::super::normalization::legacy_diagnostic(
+                    "text-mode-end-tag-self-closing-ignored",
+                    None,
+                ),
+            );
+        }
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_text_mode_end_tag_evidence_for_test(
+        &mut self,
+        input: &Input,
+        candidate_start: usize,
+        cursor_after: usize,
+        attribute_error_position: Option<usize>,
+        trailing_solidus_position: Option<usize>,
+    ) -> bool {
+        match super::super::scan::validate_completed_text_mode_end_tag_evidence(
+            input.as_str().as_bytes(),
+            candidate_start,
+            cursor_after,
+            attribute_error_position,
+            trailing_solidus_position,
+        ) {
+            Ok(()) => true,
+            Err(invariant) => {
+                self.latch_invariant(invariant);
+                false
+            }
         }
     }
 }

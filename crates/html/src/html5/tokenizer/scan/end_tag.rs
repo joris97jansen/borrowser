@@ -1,14 +1,16 @@
 use super::classify::{
     is_attribute_name_stop_byte, is_html_space_byte, is_unquoted_attr_value_stop_byte,
 };
+use crate::html5::tokenizer::invariants::TokenizerInvariantKind;
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) enum IncrementalEndTagMatch {
     Matched {
         cursor_after: usize,
-        had_attributes: bool,
-        self_closing: bool,
+        attribute_error_position: Option<usize>,
+        trailing_solidus_position: Option<usize>,
     },
+    InvariantFailure(TokenizerInvariantKind),
     LimitExceeded,
     NeedMoreInput(IncrementalEndTagMatcher),
     NoMatch,
@@ -37,7 +39,7 @@ enum IncrementalEndTagMatcherPhase {
     AttributeValueSingleQuoted,
     AttributeValueUnquoted,
     AfterAttributeValueQuoted,
-    SelfClosingStartTag,
+    SelfClosingStartTag { solidus_position: usize },
 }
 
 impl IncrementalEndTagMatcher {
@@ -81,6 +83,106 @@ impl IncrementalEndTagMatcher {
     }
 
     #[cfg(test)]
+    pub(crate) fn force_live_solidus_position_for_test(mut self, position: usize) -> Self {
+        self.phase = IncrementalEndTagMatcherPhase::SelfClosingStartTag {
+            solidus_position: position,
+        };
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_candidate_range_for_test(mut self, start: usize, cursor: usize) -> Self {
+        self.start = start;
+        self.cursor = cursor;
+        self
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_name_phase_for_test(mut self) -> Self {
+        self.phase = IncrementalEndTagMatcherPhase::Name;
+        self
+    }
+
+    fn matched_at_tag_close(
+        self,
+        bytes: &[u8],
+        trailing_solidus_position: Option<usize>,
+    ) -> IncrementalEndTagMatch {
+        let Some(cursor_after) = self.cursor.checked_add(1) else {
+            return IncrementalEndTagMatch::InvariantFailure(
+                TokenizerInvariantKind::TextModeEndTagCandidateRangeInvalid,
+            );
+        };
+        let attribute_error_position = self.had_attributes.then_some(self.cursor);
+        match validate_completed_text_mode_end_tag_evidence(
+            bytes,
+            self.start,
+            cursor_after,
+            attribute_error_position,
+            trailing_solidus_position,
+        ) {
+            Ok(()) => IncrementalEndTagMatch::Matched {
+                cursor_after,
+                attribute_error_position,
+                trailing_solidus_position,
+            },
+            Err(invariant) => IncrementalEndTagMatch::InvariantFailure(invariant),
+        }
+    }
+
+    pub(crate) fn validate_live_diagnostic_evidence(
+        self,
+        bytes: &[u8],
+    ) -> Result<(), TokenizerInvariantKind> {
+        let IncrementalEndTagMatcherPhase::SelfClosingStartTag { solidus_position } = self.phase
+        else {
+            return Ok(());
+        };
+        if solidus_position < self.start
+            || solidus_position >= self.cursor
+            || bytes.get(solidus_position) != Some(&b'/')
+        {
+            return Err(TokenizerInvariantKind::TextModeEndTagSolidusPositionInvalid);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn validate_live_candidate_range(
+        self,
+        bytes: &[u8],
+    ) -> Result<(), TokenizerInvariantKind> {
+        let Some(solidus_position) = self.start.checked_add(1) else {
+            return Err(TokenizerInvariantKind::TextModeEndTagCandidateRangeInvalid);
+        };
+        let Some(prefix_end) = self.start.checked_add(2) else {
+            return Err(TokenizerInvariantKind::TextModeEndTagCandidateRangeInvalid);
+        };
+        if self.start >= bytes.len()
+            || self.cursor < self.start
+            || self.cursor > bytes.len()
+            || bytes.get(self.start) != Some(&b'<')
+            || prefix_end > self.cursor
+            || bytes.get(solidus_position) != Some(&b'/')
+        {
+            return Err(TokenizerInvariantKind::TextModeEndTagCandidateRangeInvalid);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn has_complete_end_tag_opener(self, bytes: &[u8]) -> bool {
+        let Some(solidus_position) = self.start.checked_add(1) else {
+            return false;
+        };
+        let Some(prefix_end) = self.start.checked_add(2) else {
+            return false;
+        };
+        prefix_end <= self.cursor
+            && self.cursor <= bytes.len()
+            && bytes.get(self.start) == Some(&b'<')
+            && bytes.get(solidus_position) == Some(&b'/')
+    }
+
+    #[cfg(test)]
     pub(crate) fn advance(self, bytes: &[u8], tag_name: &[u8]) -> IncrementalEndTagMatch {
         self.advance_internal(bytes, tag_name, None, None)
     }
@@ -92,6 +194,9 @@ impl IncrementalEndTagMatcher {
         progress_bytes: &mut u64,
         max_scan_bytes: usize,
     ) -> IncrementalEndTagMatch {
+        // `progress_bytes` is non-authoritative debug/performance
+        // instrumentation. Matcher decisions and canonical positions are
+        // derived exclusively from the checked cursor/state below.
         self.advance_internal(
             bytes,
             tag_name,
@@ -108,7 +213,23 @@ impl IncrementalEndTagMatcher {
         max_scan_bytes: Option<usize>,
     ) -> IncrementalEndTagMatch {
         loop {
-            if max_scan_bytes.is_some_and(|limit| self.cursor.saturating_sub(self.start) >= limit) {
+            let candidate_validation = if matches!(
+                self.phase,
+                IncrementalEndTagMatcherPhase::LessThan | IncrementalEndTagMatcherPhase::Solidus
+            ) {
+                self.validate_transient_opener_progress(bytes)
+            } else {
+                self.validate_live_candidate_range(bytes)
+            };
+            if let Err(invariant) = candidate_validation {
+                return IncrementalEndTagMatch::InvariantFailure(invariant);
+            }
+            let Some(scanned) = self.cursor.checked_sub(self.start) else {
+                return IncrementalEndTagMatch::InvariantFailure(
+                    TokenizerInvariantKind::TextModeEndTagCandidateRangeInvalid,
+                );
+            };
+            if max_scan_bytes.is_some_and(|limit| scanned >= limit) {
                 return IncrementalEndTagMatch::LimitExceeded;
             }
             match self.phase {
@@ -165,18 +286,17 @@ impl IncrementalEndTagMatcher {
                             if let Some(progress) = progress_bytes.as_deref_mut() {
                                 *progress = progress.saturating_add(1);
                             }
-                            return IncrementalEndTagMatch::Matched {
-                                cursor_after: self.cursor + 1,
-                                had_attributes: self.had_attributes,
-                                self_closing: false,
-                            };
+                            return self.matched_at_tag_close(bytes, None);
                         }
                         b'/' => {
+                            let solidus_position = self.cursor;
                             self.cursor += 1;
                             if let Some(progress) = progress_bytes.as_deref_mut() {
                                 *progress = progress.saturating_add(1);
                             }
-                            self.phase = IncrementalEndTagMatcherPhase::SelfClosingStartTag;
+                            self.phase = IncrementalEndTagMatcherPhase::SelfClosingStartTag {
+                                solidus_position,
+                            };
                         }
                         _ if is_html_space_byte(byte) => {
                             self.phase = IncrementalEndTagMatcherPhase::BeforeAttributeName;
@@ -202,18 +322,17 @@ impl IncrementalEndTagMatcher {
                             if let Some(progress) = progress_bytes.as_deref_mut() {
                                 *progress = progress.saturating_add(1);
                             }
-                            return IncrementalEndTagMatch::Matched {
-                                cursor_after: self.cursor + 1,
-                                had_attributes: self.had_attributes,
-                                self_closing: false,
-                            };
+                            return self.matched_at_tag_close(bytes, None);
                         }
                         b'/' => {
+                            let solidus_position = self.cursor;
                             self.cursor += 1;
                             if let Some(progress) = progress_bytes.as_deref_mut() {
                                 *progress = progress.saturating_add(1);
                             }
-                            self.phase = IncrementalEndTagMatcherPhase::SelfClosingStartTag;
+                            self.phase = IncrementalEndTagMatcherPhase::SelfClosingStartTag {
+                                solidus_position,
+                            };
                         }
                         _ => {
                             self.had_attributes = true;
@@ -243,21 +362,20 @@ impl IncrementalEndTagMatcher {
                             self.phase = IncrementalEndTagMatcherPhase::BeforeAttributeValue;
                         }
                         b'/' => {
+                            let solidus_position = self.cursor;
                             self.cursor += 1;
                             if let Some(progress) = progress_bytes.as_deref_mut() {
                                 *progress = progress.saturating_add(1);
                             }
-                            self.phase = IncrementalEndTagMatcherPhase::SelfClosingStartTag;
+                            self.phase = IncrementalEndTagMatcherPhase::SelfClosingStartTag {
+                                solidus_position,
+                            };
                         }
                         b'>' => {
                             if let Some(progress) = progress_bytes.as_deref_mut() {
                                 *progress = progress.saturating_add(1);
                             }
-                            return IncrementalEndTagMatch::Matched {
-                                cursor_after: self.cursor + 1,
-                                had_attributes: self.had_attributes,
-                                self_closing: false,
-                            };
+                            return self.matched_at_tag_close(bytes, None);
                         }
                         _ => {
                             debug_assert!(is_html_space_byte(byte));
@@ -287,21 +405,20 @@ impl IncrementalEndTagMatcher {
                             self.phase = IncrementalEndTagMatcherPhase::BeforeAttributeValue;
                         }
                         b'/' => {
+                            let solidus_position = self.cursor;
                             self.cursor += 1;
                             if let Some(progress) = progress_bytes.as_deref_mut() {
                                 *progress = progress.saturating_add(1);
                             }
-                            self.phase = IncrementalEndTagMatcherPhase::SelfClosingStartTag;
+                            self.phase = IncrementalEndTagMatcherPhase::SelfClosingStartTag {
+                                solidus_position,
+                            };
                         }
                         b'>' => {
                             if let Some(progress) = progress_bytes.as_deref_mut() {
                                 *progress = progress.saturating_add(1);
                             }
-                            return IncrementalEndTagMatch::Matched {
-                                cursor_after: self.cursor + 1,
-                                had_attributes: self.had_attributes,
-                                self_closing: false,
-                            };
+                            return self.matched_at_tag_close(bytes, None);
                         }
                         _ => {
                             self.had_attributes = true;
@@ -341,11 +458,7 @@ impl IncrementalEndTagMatcher {
                             if let Some(progress) = progress_bytes.as_deref_mut() {
                                 *progress = progress.saturating_add(1);
                             }
-                            return IncrementalEndTagMatch::Matched {
-                                cursor_after: self.cursor + 1,
-                                had_attributes: self.had_attributes,
-                                self_closing: false,
-                            };
+                            return self.matched_at_tag_close(bytes, None);
                         }
                         _ => self.phase = IncrementalEndTagMatcherPhase::AttributeValueUnquoted,
                     }
@@ -398,18 +511,17 @@ impl IncrementalEndTagMatcher {
                             if let Some(progress) = progress_bytes.as_deref_mut() {
                                 *progress = progress.saturating_add(1);
                             }
-                            return IncrementalEndTagMatch::Matched {
-                                cursor_after: self.cursor + 1,
-                                had_attributes: self.had_attributes,
-                                self_closing: false,
-                            };
+                            return self.matched_at_tag_close(bytes, None);
                         }
                         b'/' => {
+                            let solidus_position = self.cursor;
                             self.cursor += 1;
                             if let Some(progress) = progress_bytes.as_deref_mut() {
                                 *progress = progress.saturating_add(1);
                             }
-                            self.phase = IncrementalEndTagMatcherPhase::SelfClosingStartTag;
+                            self.phase = IncrementalEndTagMatcherPhase::SelfClosingStartTag {
+                                solidus_position,
+                            };
                         }
                         _ => {
                             if byte == b'"'
@@ -437,18 +549,17 @@ impl IncrementalEndTagMatcher {
                             if let Some(progress) = progress_bytes.as_deref_mut() {
                                 *progress = progress.saturating_add(1);
                             }
-                            return IncrementalEndTagMatch::Matched {
-                                cursor_after: self.cursor + 1,
-                                had_attributes: self.had_attributes,
-                                self_closing: false,
-                            };
+                            return self.matched_at_tag_close(bytes, None);
                         }
                         b'/' => {
+                            let solidus_position = self.cursor;
                             self.cursor += 1;
                             if let Some(progress) = progress_bytes.as_deref_mut() {
                                 *progress = progress.saturating_add(1);
                             }
-                            self.phase = IncrementalEndTagMatcherPhase::SelfClosingStartTag;
+                            self.phase = IncrementalEndTagMatcherPhase::SelfClosingStartTag {
+                                solidus_position,
+                            };
                         }
                         _ if is_html_space_byte(byte) => {
                             self.phase = IncrementalEndTagMatcherPhase::BeforeAttributeName;
@@ -459,7 +570,7 @@ impl IncrementalEndTagMatcher {
                         }
                     }
                 }
-                IncrementalEndTagMatcherPhase::SelfClosingStartTag => {
+                IncrementalEndTagMatcherPhase::SelfClosingStartTag { solidus_position } => {
                     let Some(&byte) = bytes.get(self.cursor) else {
                         return IncrementalEndTagMatch::NeedMoreInput(self);
                     };
@@ -467,15 +578,87 @@ impl IncrementalEndTagMatcher {
                         if let Some(progress) = progress_bytes.as_deref_mut() {
                             *progress = progress.saturating_add(1);
                         }
-                        return IncrementalEndTagMatch::Matched {
-                            cursor_after: self.cursor + 1,
-                            had_attributes: self.had_attributes,
-                            self_closing: true,
-                        };
+                        return self.matched_at_tag_close(bytes, Some(solidus_position));
                     }
                     self.phase = IncrementalEndTagMatcherPhase::BeforeAttributeName;
                 }
             }
         }
     }
+
+    fn validate_transient_opener_progress(
+        self,
+        bytes: &[u8],
+    ) -> Result<(), TokenizerInvariantKind> {
+        let expected_cursor = match self.phase {
+            IncrementalEndTagMatcherPhase::LessThan => self.start,
+            IncrementalEndTagMatcherPhase::Solidus => {
+                let Some(cursor) = self.start.checked_add(1) else {
+                    return Err(TokenizerInvariantKind::TextModeEndTagCandidateRangeInvalid);
+                };
+                cursor
+            }
+            _ => return self.validate_live_candidate_range(bytes),
+        };
+        if self.cursor != expected_cursor
+            || self.cursor > bytes.len()
+            || (self.phase == IncrementalEndTagMatcherPhase::Solidus
+                && bytes.get(self.start) != Some(&b'<'))
+        {
+            return Err(TokenizerInvariantKind::TextModeEndTagCandidateRangeInvalid);
+        }
+        Ok(())
+    }
+}
+
+pub(crate) fn validate_completed_text_mode_end_tag_evidence(
+    bytes: &[u8],
+    candidate_start: usize,
+    cursor_after: usize,
+    attribute_error_position: Option<usize>,
+    trailing_solidus_position: Option<usize>,
+) -> Result<(), TokenizerInvariantKind> {
+    let Some(closing_position) = cursor_after.checked_sub(1) else {
+        return Err(TokenizerInvariantKind::TextModeEndTagCandidateRangeInvalid);
+    };
+    let Some(solidus_position) = candidate_start.checked_add(1) else {
+        return Err(TokenizerInvariantKind::TextModeEndTagCandidateRangeInvalid);
+    };
+    let Some(prefix_end) = candidate_start.checked_add(2) else {
+        return Err(TokenizerInvariantKind::TextModeEndTagCandidateRangeInvalid);
+    };
+    if candidate_start >= cursor_after
+        || prefix_end > cursor_after
+        || cursor_after > bytes.len()
+        || bytes.get(candidate_start) != Some(&b'<')
+        || bytes.get(solidus_position) != Some(&b'/')
+        || bytes.get(closing_position) != Some(&b'>')
+    {
+        return Err(TokenizerInvariantKind::TextModeEndTagCandidateRangeInvalid);
+    }
+
+    if let Some(position) = attribute_error_position
+        && (position < candidate_start
+            || position != closing_position
+            || position >= cursor_after
+            || bytes.get(position) != Some(&b'>'))
+    {
+        return Err(TokenizerInvariantKind::TextModeEndTagAttributePositionInvalid);
+    }
+
+    if let Some(position) = trailing_solidus_position {
+        let immediately_precedes_close = position
+            .checked_add(1)
+            .is_some_and(|next| next == closing_position);
+        if position < candidate_start
+            || position >= closing_position
+            || position >= cursor_after
+            || bytes.get(position) != Some(&b'/')
+            || !immediately_precedes_close
+            || attribute_error_position.is_some_and(|attribute| position >= attribute)
+        {
+            return Err(TokenizerInvariantKind::TextModeEndTagSolidusPositionInvalid);
+        }
+    }
+    Ok(())
 }

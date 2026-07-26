@@ -1,6 +1,8 @@
 use crate::dom_patch::{DomPatch, DomPatchBatch};
 use crate::html5::Html5ParseSession;
 use crate::html5::shared::DocumentParseContext;
+#[cfg(feature = "parser-conformance")]
+use crate::html5::shared::{ParserObservationCapture, ParserObservationConfig};
 use crate::patch_validation::PatchValidationArena;
 
 use super::options::HtmlParseOptions;
@@ -44,6 +46,23 @@ impl HtmlParser {
     /// Create a new streaming HTML parser backed by the HTML5 pipeline.
     pub fn new(options: HtmlParseOptions) -> Result<Self, HtmlParseError> {
         let ctx = DocumentParseContext::with_error_policy(options.error_policy.into());
+        Self::with_context(options, ctx)
+    }
+
+    #[cfg(feature = "parser-conformance")]
+    pub(crate) fn new_with_observations(
+        options: HtmlParseOptions,
+        observations: ParserObservationConfig,
+    ) -> Result<Self, HtmlParseError> {
+        let ctx =
+            DocumentParseContext::with_observations(options.error_policy.into(), observations);
+        Self::with_context(options, ctx)
+    }
+
+    fn with_context(
+        options: HtmlParseOptions,
+        ctx: DocumentParseContext,
+    ) -> Result<Self, HtmlParseError> {
         let session =
             Html5ParseSession::new(options.tokenizer.into(), options.tree_builder.into(), ctx)?;
         Ok(Self {
@@ -52,6 +71,18 @@ impl HtmlParser {
             patches_drained_before_output: false,
             poisoned: false,
         })
+    }
+
+    #[cfg(feature = "parser-conformance")]
+    pub(crate) fn take_observations_for_conformance(&mut self) -> Option<ParserObservationCapture> {
+        self.session.take_observations_for_conformance()
+    }
+
+    #[cfg(feature = "parser-conformance")]
+    pub(crate) fn tokenizer_invariant_for_conformance(
+        &self,
+    ) -> Option<crate::html5::tokenizer::TokenizerInvariantKind> {
+        self.session.tokenizer_invariant_for_conformance()
     }
 
     /// Append raw bytes to the session decoder/input buffer.
@@ -128,6 +159,102 @@ impl HtmlParser {
     /// Convenience accessor for `counters().tokens_processed`.
     pub fn tokens_processed(&self) -> u64 {
         self.counters().tokens_processed
+    }
+
+    #[cfg(test)]
+    pub(crate) fn normalized_input_for_test(&self) -> &str {
+        self.session.normalized_input_for_test()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_self_closing_flag_without_solidus_for_test(&mut self) {
+        self.session
+            .force_self_closing_flag_without_solidus_for_test();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_missing_doctype_name_start_for_test(&mut self) {
+        self.session.force_missing_doctype_name_start_for_test();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_doctype_name_start_after_cursor_for_test(&mut self) {
+        self.session
+            .force_doctype_name_start_after_cursor_for_test();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_empty_doctype_name_range_for_test(&mut self) {
+        self.session.force_empty_doctype_name_range_for_test();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_doctype_resource_start_after_cursor_for_test(&mut self) {
+        self.session
+            .force_doctype_resource_start_after_cursor_for_test();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_comment_end_bang_state_for_test(&mut self) {
+        self.session.force_comment_end_bang_state_for_test();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_comment_state_without_pending_start_for_test(
+        &mut self,
+        state: crate::html5::tokenizer::TokenizerState,
+    ) {
+        self.session
+            .force_comment_state_without_pending_start_for_test(state);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_comment_start_after_cursor_for_test(&mut self) {
+        self.session.force_comment_start_after_cursor_for_test();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_cdata_end_state_for_test(
+        &mut self,
+        pending_text_start: Option<usize>,
+        cursor: usize,
+    ) {
+        self.session
+            .force_cdata_end_state_for_test(pending_text_start, cursor);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_doctype_ascii_prefix_range_invalid_for_test(&mut self) {
+        self.session
+            .force_doctype_ascii_prefix_range_invalid_for_test();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_doctype_quoted_tail_range_invalid_for_test(&mut self) {
+        self.session
+            .force_doctype_quoted_tail_range_invalid_for_test();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_processing_instruction_metadata_missing_for_test(&mut self) {
+        self.session
+            .force_processing_instruction_metadata_missing_for_test();
+    }
+
+    #[cfg(test)]
+    pub(crate) fn force_text_mode_end_tag_evidence_for_test(
+        &mut self,
+        candidate_start: usize,
+        cursor_after: usize,
+        attribute_error_position: Option<usize>,
+        trailing_solidus_position: Option<usize>,
+    ) {
+        self.session.force_text_mode_end_tag_evidence_for_test(
+            candidate_start,
+            cursor_after,
+            attribute_error_position,
+            trailing_solidus_position,
+        );
     }
 
     /// Materialize the parser's current DOM mirror and return the undrained

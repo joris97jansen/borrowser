@@ -1,7 +1,14 @@
 //! Decoded input stream for the HTML5 tokenizer.
 
 use super::span::Span;
-use tools::utf8::{finish_utf8, push_utf8_chunk};
+use super::{
+    DocumentParseContext, NormalizedPositionIndex, Utf8ReplacementPayload, Utf8ReplacementReason,
+};
+use std::num::NonZeroU64;
+use tools::utf8::{
+    Utf8DecodeIssue, Utf8DecodeIssueKind, Utf8DecodeSink, Utf8DecoderState, finish_utf8_with_state,
+    push_utf8_chunk_with_state,
+};
 
 /// Decoded and preprocessed Unicode scalar input stream.
 ///
@@ -34,9 +41,17 @@ impl Input {
 
     /// Append decoded text to the input buffer after HTML input preprocessing.
     pub fn push_str(&mut self, text: &str) {
+        self.push_str_observed(text, None);
+    }
+
+    pub(crate) fn push_str_observed(
+        &mut self,
+        text: &str,
+        mut position_index: Option<&mut NormalizedPositionIndex>,
+    ) {
         for ch in text.chars() {
             if self.pending_cr {
-                self.buffer.push('\n');
+                self.append_normalized_scalar('\n', position_index.as_deref_mut());
                 self.pending_cr = false;
                 if ch == '\n' {
                     continue;
@@ -45,9 +60,34 @@ impl Input {
             if ch == '\r' {
                 self.pending_cr = true;
             } else {
-                self.buffer.push(ch);
+                self.append_normalized_scalar(ch, position_index.as_deref_mut());
             }
         }
+    }
+
+    fn append_normalized_scalar(
+        &mut self,
+        scalar: char,
+        position_index: Option<&mut NormalizedPositionIndex>,
+    ) {
+        let before = self.buffer.len();
+        self.buffer.push(scalar);
+        if let Some(index) = position_index {
+            index.append_scalar(before, scalar);
+        }
+    }
+
+    fn append_decoder_replacement(
+        &mut self,
+        mut position_index: Option<&mut NormalizedPositionIndex>,
+    ) -> usize {
+        if self.pending_cr {
+            self.append_normalized_scalar('\n', position_index.as_deref_mut());
+            self.pending_cr = false;
+        }
+        let position = self.buffer.len();
+        self.append_normalized_scalar('\u{FFFD}', position_index);
+        position
     }
 
     /// Return the entire buffer as a `&str`.
@@ -59,9 +99,16 @@ impl Input {
     ///
     /// Call this at end-of-input before final tokenizer EOF processing.
     pub fn finish_preprocessing(&mut self) -> DecodeResult {
+        self.finish_preprocessing_observed(None)
+    }
+
+    pub(crate) fn finish_preprocessing_observed(
+        &mut self,
+        position_index: Option<&mut NormalizedPositionIndex>,
+    ) -> DecodeResult {
         if self.pending_cr {
             self.pending_cr = false;
-            self.buffer.push('\n');
+            self.append_normalized_scalar('\n', position_index);
             DecodeResult::Progress
         } else {
             DecodeResult::NeedMoreInput
@@ -108,7 +155,7 @@ impl Default for Input {
 ///   at different chunk boundaries yields the same scalar output after `finish()`.
 #[derive(Debug, Default)]
 pub struct ByteStreamDecoder {
-    carry: Vec<u8>,
+    state: Utf8DecoderState,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -119,19 +166,60 @@ pub enum DecodeResult {
 
 impl ByteStreamDecoder {
     pub fn new() -> Self {
-        Self { carry: Vec::new() }
+        Self {
+            state: Utf8DecoderState::new(),
+        }
     }
 
     /// Push raw bytes into the decoder and append decoded text to `input`.
     pub fn push_bytes(&mut self, bytes: &[u8], input: &mut Input) -> DecodeResult {
+        self.push_bytes_counted(bytes, input).0
+    }
+
+    /// Ordinary parser fast path. Decoding and mandatory replacement
+    /// accounting remain separate so optional canonical observation cannot
+    /// affect the parser's counters.
+    pub(crate) fn push_bytes_counted(
+        &mut self,
+        bytes: &[u8],
+        input: &mut Input,
+    ) -> (DecodeResult, u64) {
+        if bytes.is_empty() {
+            return (DecodeResult::NeedMoreInput, 0);
+        }
+        let before_len = input.buffer.len();
+        let before_pending_cr = input.pending_cr;
+        let replacements = {
+            let mut sink = PlainHtmlInputDecodeSink {
+                input,
+                replacements: 0,
+            };
+            push_utf8_chunk_with_state(&mut self.state, bytes, &mut sink);
+            sink.replacements
+        };
+        let result = if input.buffer.len() != before_len || input.pending_cr != before_pending_cr {
+            DecodeResult::Progress
+        } else {
+            DecodeResult::NeedMoreInput
+        };
+        (result, replacements)
+    }
+
+    pub(crate) fn push_bytes_with_context(
+        &mut self,
+        bytes: &[u8],
+        input: &mut Input,
+        ctx: &mut DocumentParseContext,
+    ) -> DecodeResult {
         if bytes.is_empty() {
             return DecodeResult::NeedMoreInput;
         }
         let before_len = input.buffer.len();
         let before_pending_cr = input.pending_cr;
-        let mut decoded = String::new();
-        push_utf8_chunk(&mut decoded, &mut self.carry, bytes);
-        input.push_str(&decoded);
+        {
+            let mut sink = HtmlInputDecodeSink { input, ctx };
+            push_utf8_chunk_with_state(&mut self.state, bytes, &mut sink);
+        }
         if input.buffer.len() != before_len || input.pending_cr != before_pending_cr {
             DecodeResult::Progress
         } else {
@@ -141,12 +229,45 @@ impl ByteStreamDecoder {
 
     /// Flush any trailing incomplete UTF-8 suffix into `input` using U+FFFD replacement.
     pub fn finish(&mut self, input: &mut Input) -> DecodeResult {
+        self.finish_counted(input).0
+    }
+
+    pub(crate) fn finish_counted(&mut self, input: &mut Input) -> (DecodeResult, u64) {
         let before_len = input.buffer.len();
         let before_pending_cr = input.pending_cr;
-        let mut decoded = String::new();
-        finish_utf8(&mut decoded, &mut self.carry);
-        input.push_str(&decoded);
+        let replacements = {
+            let mut sink = PlainHtmlInputDecodeSink {
+                input,
+                replacements: 0,
+            };
+            finish_utf8_with_state(&mut self.state, &mut sink);
+            sink.replacements
+        };
         let preprocessing_result = input.finish_preprocessing();
+        let result = if input.buffer.len() != before_len
+            || input.pending_cr != before_pending_cr
+            || preprocessing_result == DecodeResult::Progress
+        {
+            DecodeResult::Progress
+        } else {
+            DecodeResult::NeedMoreInput
+        };
+        (result, replacements)
+    }
+
+    pub(crate) fn finish_with_context(
+        &mut self,
+        input: &mut Input,
+        ctx: &mut DocumentParseContext,
+    ) -> DecodeResult {
+        let before_len = input.buffer.len();
+        let before_pending_cr = input.pending_cr;
+        {
+            let mut sink = HtmlInputDecodeSink { input, ctx };
+            finish_utf8_with_state(&mut self.state, &mut sink);
+        }
+        let preprocessing_result =
+            input.finish_preprocessing_observed(ctx.observation_position_index_mut());
         if input.buffer.len() != before_len
             || input.pending_cr != before_pending_cr
             || preprocessing_result == DecodeResult::Progress
@@ -158,7 +279,70 @@ impl ByteStreamDecoder {
     }
 
     pub fn has_pending_bytes(&self) -> bool {
-        !self.carry.is_empty()
+        self.state.has_pending_bytes()
+    }
+}
+
+struct PlainHtmlInputDecodeSink<'a> {
+    input: &'a mut Input,
+    replacements: u64,
+}
+
+impl Utf8DecodeSink for PlainHtmlInputDecodeSink<'_> {
+    fn decoded_segment(&mut self, segment: &str) {
+        self.input.push_str(segment);
+    }
+
+    fn replacement(&mut self, _issue: Utf8DecodeIssue) {
+        self.input.push_str("\u{FFFD}");
+        self.replacements = self
+            .replacements
+            .checked_add(1)
+            .expect("one byte chunk cannot contain more than u64 UTF-8 replacements");
+    }
+}
+
+struct HtmlInputDecodeSink<'a> {
+    input: &'a mut Input,
+    ctx: &'a mut DocumentParseContext,
+}
+
+impl Utf8DecodeSink for HtmlInputDecodeSink<'_> {
+    fn decoded_segment(&mut self, segment: &str) {
+        self.input
+            .push_str_observed(segment, self.ctx.observation_position_index_mut());
+    }
+
+    fn replacement(&mut self, issue: Utf8DecodeIssue) {
+        let normalized_offset = self
+            .input
+            .append_decoder_replacement(self.ctx.observation_position_index_mut());
+        self.ctx.record_decode_replacements(1);
+        let occurrence = self.ctx.reserve_implementation_diagnostic();
+        let Some(occurrence) = occurrence else {
+            return;
+        };
+        let Some(position) = self
+            .ctx
+            .observation_position_at(self.input, normalized_offset)
+        else {
+            return;
+        };
+        let reason = match issue.kind {
+            Utf8DecodeIssueKind::InvalidSequence => Utf8ReplacementReason::InvalidSequence,
+            Utf8DecodeIssueKind::IncompleteSequenceAtEof => {
+                Utf8ReplacementReason::IncompleteSequenceAtEof
+            }
+        };
+        self.ctx.retain_utf8_replacement(
+            occurrence,
+            reason,
+            Utf8ReplacementPayload {
+                affected_byte_count: NonZeroU64::new(issue.affected_byte_count.get() as u64)
+                    .expect("decoder issue byte count is non-zero"),
+            },
+            position,
+        );
     }
 }
 

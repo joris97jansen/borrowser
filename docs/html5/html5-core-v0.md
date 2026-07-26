@@ -71,6 +71,11 @@ Core v0 guarantees behavior for the following scope.
 - Current byte input assumes UTF-8. Invalid UTF-8 and incomplete final UTF-8
   prefixes are replaced with `U+FFFD`; full byte-stream encoding sniffing,
   charset detection, BOM switching, and legacy encodings are deferred.
+- One authoritative incremental decoder owns ordinary chunks, validated
+  truncated carry, carry resolution, EOF finalization, event-aware decoding,
+  and compatibility string output. A byte that invalidates a carried prefix is
+  reprocessed; only a valid truncated scalar prefix produces
+  `IncompleteSequenceAtEof`.
 - Current string/scalar input preprocessing normalizes CRLF and lone CR to LF.
   Split CRLF across chunks MUST be chunk-equivalent.
 - Whole-input and chunked-input execution MUST be semantically equivalent for all Core v0 gate tests.
@@ -78,6 +83,9 @@ Core v0 guarantees behavior for the following scope.
 - Supported tokenizer states that encounter `U+0000` MUST record a tokenizer
   `UnexpectedNullCharacter` parse error and emit deterministic replacement
   text for the affected token payload.
+- Decoder-generated U+FFFD increments `decode_errors`; literal U+FFFD does not.
+  Feature-gated observation records a typed invalid/incomplete reason,
+  affected-byte payload, and normalized position without affecting decoding.
 
 <a id="tokenizer-state-families"></a>
 ### Tokenizer State Families
@@ -263,6 +271,10 @@ Core v0 attribute behavior guarantees:
 - tag and attribute names are tokenizer-normalized per HTML tokenizer rules (ASCII case folding in relevant states).
 - parser-created attribute storage preserves first-wins encounter order after duplicate removal.
 - duplicate attributes are removed before downstream consumers and snapshots with first-wins semantics on tokenizer-normalized attribute names (for example `a` and `A` are treated as duplicates).
+- the tokenizer reports `duplicate-attribute` with
+  `DropDuplicateAttribute`: only the later attribute is discarded; the pending
+  tag is still emitted and the first attribute remains in its token, DOM node,
+  and creation patch.
 - valueless and explicitly empty syntax both materialize with DOM string value
   `""`; any source-spelling distinction is tokenizer diagnostic information,
   not parser-created DOM, patch, CSS, or snapshot state.
@@ -320,16 +332,101 @@ Core v0 parser diagnostics are deterministic internal regression/debug data:
 - tokenizer-origin malformed input records `ParseError` entries through
   `DocumentParseContext`;
 - parse errors do not automatically abort tokenization or tree construction;
-- supported EOF recovery paths record `UnexpectedEof` while still emitting the
-  recoverable token stream defined by the current tokenizer state support;
+- supported EOF recovery paths record exact canonical identities while still
+  emitting the recoverable token stream defined by the current tokenizer state
+  support; the legacy facade may project them to `UnexpectedEof`;
 - tokenizer-origin malformed tag, attribute, comment, doctype, and declaration
-  recovery may record `ParseErrorCode::Other` with tokenizer-owned stable
-  detail strings such as `invalid-tag-open`, `invalid-attribute-value`,
-  `malformed-comment`, or `malformed-doctype`;
+  recovery records exact typed canonical identities. Conditions without an
+  existing broad facade category may project to legacy `Other`; detail strings
+  are non-authoritative metadata and are never parsed back into identity;
+- dedicated HTML Standard identities and exact Borrowser tokenizer-extension
+  identities are separate. Numeric-reference digit hardening is a resource
+  limit, not a Standard parse error; numeric values above U+10FFFF report the
+  Standard `character-reference-outside-unicode-range` condition;
+- unsupported surrogate and out-of-range numeric references remain literal
+  Core-v0 character data. Their exact Standard conditions use typed
+  `PreserveCharacterReferenceLiteral` recovery metadata and do not claim a
+  U+FFFD replacement;
+- condition identity and recovery are recorded separately. Core-v0 drops
+  `=`, `"`, `'`, and `<` in `BeforeAttributeName` under their applicable
+  Standard identities and typed `DropInputCharacter` metadata; grave accent
+  and question mark use exact extension identities. Current unquoted-value
+  termination uses typed reconsume metadata, while slash remains ordinary
+  unquoted value data;
+- regular end-tag attribute and trailing-solidus diagnostics are derived from
+  the live production attribute vector and self-closing flag at emission.
+  Unexpected solidus is owned by the self-closing-start-tag transition; raw
+  source tails are never rescanned to reconstruct tokenizer state;
+- comment diagnostics follow their exact Standard state transitions:
+  CommentStartDash anything-else and CommentEnd anything-else do not invent
+  errors, `incorrectly-closed-comment` is owned by the `>` in CommentEndBang,
+  and `nested-comment` is owned only by the less-than/bang/dash/dash nested
+  path. Typed recoveries state whether production emits at `>`, emits at EOF,
+  starts a bogus comment, or retains a nested delimiter and reconsumes. Bogus
+  comment EOF does not invent `eof-in-comment`; pending comment-state
+  delimiters are excluded from EOF token data through checked state-owned
+  bounds and exact constant-size suffix validation (`-`, `--`, or `--!` as
+  selected by the active state). This production invariant check does not scan
+  backwards or reconstruct comment state for observation. Every active
+  comment state requires a pending start at or before the cursor, with the
+  cursor inside normalized input. Missing metadata and invalid ranges stop the
+  production state before errors, limits, or tokens are emitted;
+- routing end tags through production attribute states and treating `/` as
+  ordinary unquoted-value data are intentional production-tokenizer behavior
+  corrections required for truthful AE13 observation. They apply equally when
+  observation is disabled: `a=b/` is a non-self-closing token with value `b/`,
+  while `a=b />` is self-closing with value `b`;
+- an accepted self-closing flag always retains the exact slash offset that
+  entered `SelfClosingStartTag`. The offset is replaced by a later applicable
+  slash and cleared at emission, abandonment, reset, and stall recovery.
+  Missing, stale, or non-slash metadata is an engine invariant, never an
+  approximate diagnostic position. The retained slash must be at or after the
+  current `tag_name_start`, before the cursor, and actually reference `/`; a
+  slash before the current pending tag is a distinct typed invariant;
+- legacy resource-limit and stall-guardrail `aux` fields retain their clamped
+  `u32` compatibility values. Canonical payloads retain full-width typed values
+  and never consume the legacy projection;
 - unfinished tags, attributes, markup declarations, comments, and doctypes
   record deterministic EOF diagnostics and do not emit partial start/end tag
   tokens unless the current state has already reached a complete token
   boundary;
+- invalid tag-open diagnostics identify the invalid scalar following `<`.
+  Canonical EOF diagnostics identify the terminal normalized insertion point
+  after CRLF/lone-CR preprocessing, never a pre-recovery cursor;
+- canonical position resolution keeps exact, genuinely unavailable, and
+  invariant-failure outcomes distinct. An invalid normalized offset retains no
+  false unavailable-position event and fails feature-gated execution.
+  `NormalizedPositionIndexMissing` is reserved for recorder corruption while a
+  position-bearing event can still retain; bounded index retirement is normal;
+- canonical parse-error and implementation-diagnostic occurrences are
+  independent. Reserving `u64::MAX` latches exhaustion immediately, including
+  for a full or zero-capacity surface, so no successful result can contain a
+  silently exhausted sequence. The first invariant detected in production
+  operation order remains authoritative and later failures cannot replace it;
+- the doctype-name state, doctype-tail scanning, and doctype resource-limit
+  observation require retained name-start metadata. Missing metadata latches
+  an operation-specific tokenizer invariant, emits no cursor-positioned
+  diagnostic, and stops normal progress. The shared accessor also requires the
+  retained start not to exceed the current cursor; violation is the exact
+  `DoctypeNameStartAfterCursor` invariant rather than a saturated empty range.
+  Present, ordered metadata must also form an input-bounded UTF-8 range;
+  required materialization rejects empty or unsliceable spans as
+  `DoctypeNameRangeInvalid`, while transient zero-length name-state progress is
+  permitted explicitly;
+- shared ASCII-prefix scans distinguish invalid internal ranges from ordinary
+  mismatch and partial input. Impossible quoted-doctype-tail relationships
+  use `DoctypeTailRangeInvalid`, not a name-start identity;
+- CDATA-end state requires parser-owned pending-text metadata before it
+  excludes `]]` through a checked, fixed-size comparison selected by the live
+  state. Missing ownership, range/boundary corruption, and suffix mismatch are
+  distinct invariants; an owned zero-length range remains valid empty CDATA,
+  and corrupt ownership cannot emit empty or truncated text;
+- authoritative tokenizer paths modified for AE13b1 do not rely on panicking
+  metadata access. A single non-mutating processing-instruction classifier is
+  shared by production preflight, emission, EOF cleanup, and debug hardening;
+  state/range corruption is latched before access or mutation. Remaining
+  cursor-helper `expect`s are limited to preconditions mechanically established
+  by the immediately preceding input slice operation;
 - downstream browser/runtime, CSS, Layout, and Paint code must not interpret
   parse-error kinds as rendering semantics.
 - DOM golden fixtures may opt into tree-builder parse-error output with
@@ -350,6 +447,16 @@ Core v0 stance:
   - keeps the whole candidate sequence in text and resumes scanning only when the matched name is followed by any other continuation byte.
 - In Core v0, sequences such as `</style class=x>`, `</script type=text/plain>`, and `</textarea/>` now close the active RAWTEXT/RCDATA/script element instead of staying literal text.
 - Attribute-bearing and self-closing end-tag tails record tokenizer parse errors because end tags ignore attributes and self-closing syntax.
+- The shared text-mode matcher carries the exact closing `>` used for
+  `end-tag-with-attributes` and the exact accepted slash used for
+  `end-tag-with-trailing-solidus`; these positions survive pause/resume and use
+  the ordinary end-tag contract without rescanning source. Live and completed
+  evidence is checked against the current candidate bounds and punctuation.
+  Retained candidates must own the complete fixed `</` opener; a lone partial
+  `<` suspends without becoming retained matcher state. Candidate range and
+  delimiter validity is checked unconditionally, including when no diagnostic
+  evidence exists; candidate, attribute, and solidus corruption use separate
+  exact invariants before diagnostics or an end-tag token can be emitted.
 - Tree-builder `Text` insertion mode is supported only to the extent required by the supported tokenizer text-mode subset above.
 - Parser-scripting interaction (parser pause/suspension and script execution integration) is not implemented in Core v0.
 

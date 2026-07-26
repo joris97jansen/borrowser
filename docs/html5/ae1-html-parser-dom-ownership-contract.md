@@ -91,6 +91,8 @@ HTML/parser owns the complete parser semantics boundary:
 - emitted typed tokens;
 - tokenizer-level normalization;
 - recoverable parse errors and parser diagnostics;
+- always-compiled semantic identities and passive parser-owned observation
+  recording;
 - tree-construction state;
 - insertion modes;
 - stack of open elements;
@@ -105,6 +107,9 @@ Existing Rust surfaces that carry this ownership include:
 - `Html5Tokenizer`
 - `Token`
 - `ParseError`
+- parser-owned canonical token, position, parse-error, and implementation-
+  diagnostic identities (feature-gated externally through
+  `html::conformance`)
 - `Html5TreeBuilder`
 - `InsertionMode`
 - `OpenElementsStack`

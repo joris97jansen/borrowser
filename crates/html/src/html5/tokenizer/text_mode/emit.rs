@@ -37,40 +37,56 @@ impl Html5Tokenizer {
         });
     }
 
-    pub(crate) fn flush_pending_text(&mut self, input: &Input) {
-        self.flush_pending_text_impl(input, None);
+    pub(crate) fn flush_pending_text(&mut self, input: &Input) -> bool {
+        self.flush_pending_text_checked(input, None)
     }
 
     pub(crate) fn flush_pending_text_with_context(
         &mut self,
         input: &Input,
         ctx: &mut DocumentParseContext,
-    ) {
-        self.flush_pending_text_impl(input, Some(ctx));
+    ) -> bool {
+        self.flush_pending_text_checked(input, Some(ctx))
+    }
+
+    fn flush_pending_text_checked(
+        &mut self,
+        input: &Input,
+        ctx: Option<&mut DocumentParseContext>,
+    ) -> bool {
+        match self.flush_pending_text_impl(input, ctx) {
+            Ok(()) => true,
+            Err(invariant) => {
+                self.latch_invariant(invariant);
+                false
+            }
+        }
     }
 
     fn flush_pending_text_impl(
         &mut self,
         input: &Input,
         mut ctx: Option<&mut DocumentParseContext>,
-    ) {
+    ) -> Result<(), super::super::invariants::TokenizerInvariantKind> {
         let start = match self.pending_text_start.take() {
             Some(start) => start,
-            None => return,
+            None => return Ok(()),
         };
         let end = self.cursor;
         let text = input.as_str();
-        if !(start <= end
-            && end <= text.len()
-            && start != end
-            && text.is_char_boundary(start)
-            && text.is_char_boundary(end))
+        if start > end
+            || end > text.len()
+            || !text.is_char_boundary(start)
+            || !text.is_char_boundary(end)
         {
-            return;
+            return Err(super::super::invariants::TokenizerInvariantKind::PendingTextRangeInvalid);
+        }
+        if start == end {
+            return Ok(());
         }
         let raw = &text[start..end];
         let null_normalized = if let Some(ctx) = &mut ctx {
-            self.replace_nulls_for_token_text(ctx, raw, start)
+            self.replace_nulls_for_token_text(input, ctx, raw, start)
         } else if raw.contains('\0') {
             Some(replace_nulls_without_reporting(raw))
         } else {
@@ -82,7 +98,7 @@ impl Html5Tokenizer {
             character_reference_context.is_some() && normalized.as_bytes().contains(&b'&');
         if !should_decode && null_normalized.is_none() {
             self.emit_text_span(start, end);
-            return;
+            return Ok(());
         }
         if !should_decode {
             if null_normalized.is_some() {
@@ -90,11 +106,11 @@ impl Html5Tokenizer {
             } else {
                 self.emit_text_owned(normalized);
             }
-            return;
+            return Ok(());
         }
         let decoded = decode_character_references(normalized, character_reference_context.unwrap());
         if let Some(ctx) = &mut ctx {
-            self.record_character_reference_parse_errors(ctx, start, &decoded.diagnostics);
+            self.record_character_reference_parse_errors(input, ctx, start, &decoded.diagnostics);
         }
         match decoded.text {
             std::borrow::Cow::Borrowed(_) if null_normalized.is_none() => {
@@ -109,6 +125,7 @@ impl Html5Tokenizer {
             std::borrow::Cow::Borrowed(text) => self.emit_text_owned(text),
             std::borrow::Cow::Owned(text) => self.emit_text_owned(&text),
         }
+        Ok(())
     }
 
     pub(super) fn ensure_pending_text_start(&mut self) {

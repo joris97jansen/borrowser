@@ -2,13 +2,16 @@ use super::helpers::{
     run_chunks, run_chunks_with_config_and_errors, run_script_data_chunks_with_errors,
     run_style_rawtext_chunks_with_errors, run_title_rcdata_chunks_with_errors,
 };
-use crate::html5::shared::{DocumentParseContext, Input, ParseError, ParseErrorCode};
+use crate::html5::shared::{
+    DocumentParseContext, Input, LegacyParseErrorCode as ParseErrorCode, ParseError,
+};
 use crate::html5::tokenizer::api::PendingProcessingInstruction;
 use crate::html5::tokenizer::invariants::TokenizerInvariantError;
 use crate::html5::tokenizer::machine::Step;
 use crate::html5::tokenizer::states::TokenizerState;
-use crate::html5::tokenizer::{Html5Tokenizer, TokenizerConfig, TokenizerLimits};
-use std::panic::{AssertUnwindSafe, catch_unwind};
+use crate::html5::tokenizer::{
+    Html5Tokenizer, TokenizerConfig, TokenizerInvariantKind, TokenizerLimits,
+};
 
 fn assert_all_ascii_splits(input: &str) {
     let whole = run_chunks(&[input]);
@@ -83,6 +86,21 @@ fn tokenizer_and_input(source: &str) -> (Html5Tokenizer, Input, DocumentParseCon
     (tokenizer, input, context)
 }
 
+fn assert_pi_classifier_parity(
+    tokenizer: &Html5Tokenizer,
+    input: &Input,
+    expected: TokenizerInvariantKind,
+) {
+    assert_eq!(
+        tokenizer.classify_processing_instruction_invariant(input),
+        Err(expected)
+    );
+    assert_eq!(
+        tokenizer.check_invariants(input),
+        Err(TokenizerInvariantError::from(expected))
+    );
+}
+
 #[test]
 fn every_processing_instruction_state_requires_pending_metadata() {
     for state in [
@@ -94,14 +112,212 @@ fn every_processing_instruction_state_requires_pending_metadata() {
     ] {
         let (mut tokenizer, input, _) = tokenizer_and_input("<?pi data?>");
         tokenizer.state = state;
-        assert!(matches!(
-            tokenizer.check_invariants(&input),
-            Err(TokenizerInvariantError::ProcessingInstructionPendingMismatch {
-                state: actual,
-                pending: false,
-            }) if actual == state
-        ));
+        assert_pi_classifier_parity(
+            &tokenizer,
+            &input,
+            TokenizerInvariantKind::ProcessingInstructionStateMissingPendingMetadata,
+        );
     }
+}
+
+#[test]
+fn processing_instruction_classifier_is_the_debug_and_production_authority() {
+    fn pending(
+        target_end: Option<usize>,
+        data_start: Option<usize>,
+        data_end: Option<usize>,
+    ) -> PendingProcessingInstruction {
+        PendingProcessingInstruction {
+            comment_start: 1,
+            target_start: 2,
+            target_end,
+            target_limit_reported: false,
+            suppress_token: false,
+            data_start,
+            bounded_data_end: data_end,
+            data_limit_reported: false,
+        }
+    }
+
+    let source = "<?pi data?>";
+    for (state, cursor, metadata) in [
+        (
+            TokenizerState::ProcessingInstructionOpen,
+            2,
+            pending(None, None, None),
+        ),
+        (
+            TokenizerState::ProcessingInstructionTarget,
+            4,
+            pending(None, None, None),
+        ),
+        (
+            TokenizerState::AfterProcessingInstructionTarget,
+            4,
+            pending(Some(4), None, None),
+        ),
+        (
+            TokenizerState::ProcessingInstructionData,
+            5,
+            pending(Some(4), None, None),
+        ),
+        (
+            TokenizerState::ProcessingInstructionQuestionable,
+            10,
+            pending(Some(4), Some(5), Some(9)),
+        ),
+    ] {
+        let (mut tokenizer, input, _) = tokenizer_and_input(source);
+        tokenizer.state = state;
+        tokenizer.cursor = cursor;
+        tokenizer.pending_processing_instruction = Some(metadata);
+        assert_eq!(
+            tokenizer.classify_processing_instruction_invariant(&input),
+            Ok(()),
+            "state={state:?}"
+        );
+        tokenizer
+            .check_invariants(&input)
+            .unwrap_or_else(|error| panic!("state={state:?}: {error}"));
+    }
+
+    let (mut outside, input, _) = tokenizer_and_input(source);
+    outside.pending_processing_instruction = Some(pending(None, None, None));
+    assert_pi_classifier_parity(
+        &outside,
+        &input,
+        TokenizerInvariantKind::ProcessingInstructionMetadataOutsideState,
+    );
+
+    let (mut target_order, input, _) = tokenizer_and_input(source);
+    target_order.state = TokenizerState::ProcessingInstructionTarget;
+    target_order.cursor = 2;
+    let mut metadata = pending(None, None, None);
+    metadata.target_start = 3;
+    target_order.pending_processing_instruction = Some(metadata);
+    assert_pi_classifier_parity(
+        &target_order,
+        &input,
+        TokenizerInvariantKind::ProcessingInstructionTargetStartAfterCursor,
+    );
+
+    let (mut target_range, input, _) = tokenizer_and_input(source);
+    target_range.state = TokenizerState::ProcessingInstructionTarget;
+    target_range.cursor = 4;
+    let mut metadata = pending(None, None, None);
+    metadata.comment_start = 0;
+    target_range.pending_processing_instruction = Some(metadata);
+    assert_pi_classifier_parity(
+        &target_range,
+        &input,
+        TokenizerInvariantKind::ProcessingInstructionTargetRangeInvalid,
+    );
+
+    let (mut data_order, input, _) = tokenizer_and_input(source);
+    data_order.state = TokenizerState::ProcessingInstructionData;
+    data_order.cursor = 5;
+    data_order.pending_processing_instruction = Some(pending(Some(4), Some(6), Some(6)));
+    assert_pi_classifier_parity(
+        &data_order,
+        &input,
+        TokenizerInvariantKind::ProcessingInstructionDataStartAfterCursor,
+    );
+
+    let (mut data_range, input, _) = tokenizer_and_input(source);
+    data_range.state = TokenizerState::ProcessingInstructionData;
+    data_range.cursor = 5;
+    data_range.pending_processing_instruction = Some(pending(Some(4), Some(5), None));
+    assert_pi_classifier_parity(
+        &data_range,
+        &input,
+        TokenizerInvariantKind::ProcessingInstructionDataRangeInvalid,
+    );
+
+    let (mut state_shape, input, _) = tokenizer_and_input(source);
+    state_shape.state = TokenizerState::AfterProcessingInstructionTarget;
+    state_shape.cursor = 5;
+    state_shape.pending_processing_instruction = Some(pending(Some(4), Some(5), Some(5)));
+    assert_pi_classifier_parity(
+        &state_shape,
+        &input,
+        TokenizerInvariantKind::ProcessingInstructionDataRangeInvalid,
+    );
+}
+
+#[test]
+fn processing_instruction_emission_completeness_uses_the_shared_classifier() {
+    fn pending(
+        target_end: Option<usize>,
+        data_start: Option<usize>,
+        data_end: Option<usize>,
+    ) -> PendingProcessingInstruction {
+        PendingProcessingInstruction {
+            comment_start: 1,
+            target_start: 2,
+            target_end,
+            target_limit_reported: false,
+            suppress_token: false,
+            data_start,
+            bounded_data_end: data_end,
+            data_limit_reported: false,
+        }
+    }
+
+    for (metadata, expected) in [
+        (
+            pending(None, Some(5), Some(9)),
+            TokenizerInvariantKind::ProcessingInstructionTargetRangeInvalid,
+        ),
+        (
+            pending(Some(4), None, None),
+            TokenizerInvariantKind::ProcessingInstructionDataRangeInvalid,
+        ),
+    ] {
+        let (mut tokenizer, input, _) = tokenizer_and_input("<?pi data?>");
+        tokenizer.state = TokenizerState::ProcessingInstructionData;
+        tokenizer.cursor = input.as_str().len();
+        tokenizer.pending_processing_instruction = Some(metadata);
+        assert_eq!(
+            tokenizer.classify_processing_instruction_emission_invariant_for_test(&input),
+            Err(expected)
+        );
+        assert!(!tokenizer.emit_pending_processing_instruction_for_test(&input));
+        assert_eq!(tokenizer.invariant_failure_kind(), Some(expected));
+        assert!(tokenizer.tokens.is_empty());
+        assert!(
+            tokenizer.pending_processing_instruction.is_some(),
+            "classification must fail before authoritative metadata is removed"
+        );
+    }
+}
+
+#[test]
+fn processing_instruction_eof_cleanup_uses_the_shared_classifier_before_mutation() {
+    let (mut tokenizer, input, _) = tokenizer_and_input("<?pi");
+    tokenizer.state = TokenizerState::ProcessingInstructionQuestionable;
+    tokenizer.cursor = input.as_str().len();
+    tokenizer.pending_processing_instruction = Some(PendingProcessingInstruction {
+        comment_start: 1,
+        target_start: 2,
+        target_end: Some(4),
+        target_limit_reported: false,
+        suppress_token: false,
+        data_start: None,
+        bounded_data_end: None,
+        data_limit_reported: false,
+    });
+    assert_pi_classifier_parity(
+        &tokenizer,
+        &input,
+        TokenizerInvariantKind::ProcessingInstructionDataRangeInvalid,
+    );
+    assert!(!tokenizer.discard_pending_processing_instruction_eof(&input));
+    assert_eq!(
+        tokenizer.invariant_failure_kind(),
+        Some(TokenizerInvariantKind::ProcessingInstructionDataRangeInvalid)
+    );
+    assert!(tokenizer.pending_processing_instruction.is_some());
+    assert!(tokenizer.tokens.is_empty());
 }
 
 #[test]
@@ -110,10 +326,14 @@ fn missing_pi_metadata_cannot_silently_return_to_data() {
     tokenizer.state = TokenizerState::ProcessingInstructionTarget;
     tokenizer.cursor = 4;
     let before = tokenizer.capture_invariant_snapshot();
-    let failure = catch_unwind(AssertUnwindSafe(|| {
-        tokenizer.step_processing_instruction_target(&input, &mut context)
-    }));
-    assert!(failure.is_err());
+    assert_eq!(
+        tokenizer.step_processing_instruction_target(&input, &mut context),
+        Step::InvariantFailure
+    );
+    assert_eq!(
+        tokenizer.invariant_failure_kind(),
+        Some(TokenizerInvariantKind::ProcessingInstructionStateMissingPendingMetadata)
+    );
     assert_eq!(tokenizer.capture_invariant_snapshot(), before);
     assert_eq!(tokenizer.state, TokenizerState::ProcessingInstructionTarget);
 }
@@ -133,21 +353,22 @@ fn invalid_pi_source_ranges_fail_before_empty_or_dropped_emission() {
         bounded_data_end: None,
         data_limit_reported: false,
     });
-    assert!(matches!(
-        tokenizer.check_invariants(&input),
-        Err(TokenizerInvariantError::OffsetOutOfBounds {
-            field: "pending_processing_instruction.target_end",
-            ..
-        })
-    ));
-    let before = tokenizer.capture_invariant_snapshot();
-    let failure = catch_unwind(AssertUnwindSafe(|| {
-        tokenizer.step_processing_instruction_data(&input, &mut context)
-    }));
-    assert!(failure.is_err());
-    assert_eq!(tokenizer.capture_invariant_snapshot(), before);
+    assert_pi_classifier_parity(
+        &tokenizer,
+        &input,
+        TokenizerInvariantKind::ProcessingInstructionTargetRangeInvalid,
+    );
+    assert_eq!(
+        tokenizer.step_processing_instruction_data(&input, &mut context),
+        Step::InvariantFailure
+    );
+    assert_eq!(
+        tokenizer.invariant_failure_kind(),
+        Some(TokenizerInvariantKind::ProcessingInstructionTargetRangeInvalid)
+    );
     assert!(tokenizer.tokens.is_empty());
 
+    tokenizer.invariant_failure = None;
     tokenizer.pending_processing_instruction = Some(PendingProcessingInstruction {
         comment_start: 1,
         target_start: 2,
@@ -158,13 +379,20 @@ fn invalid_pi_source_ranges_fail_before_empty_or_dropped_emission() {
         bounded_data_end: Some(input.as_str().len() + 1),
         data_limit_reported: false,
     });
-    assert!(matches!(
-        tokenizer.check_invariants(&input),
-        Err(TokenizerInvariantError::OffsetOutOfBounds {
-            field: "pending_processing_instruction.bounded_data_end",
-            ..
-        })
-    ));
+    assert_pi_classifier_parity(
+        &tokenizer,
+        &input,
+        TokenizerInvariantKind::ProcessingInstructionDataRangeInvalid,
+    );
+    assert_eq!(
+        tokenizer.step_processing_instruction_data(&input, &mut context),
+        Step::InvariantFailure
+    );
+    assert_eq!(
+        tokenizer.invariant_failure_kind(),
+        Some(TokenizerInvariantKind::ProcessingInstructionDataRangeInvalid)
+    );
+    assert!(tokenizer.tokens.is_empty());
 }
 
 #[test]

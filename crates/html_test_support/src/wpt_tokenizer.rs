@@ -2,7 +2,10 @@ use crate::token_snapshot;
 use crate::tokenizer_text_mode::TokenizerTextModeSupport;
 use crate::wpt_formats::TOKENIZER_SKIPS_FORMAT_V1;
 #[cfg(feature = "parser-fixtures")]
-use html::conformance::ObservedToken;
+use html::conformance::{
+    ObservationRequest, ObservationState, ObservedToken, ParserObservationInput,
+    ParserObservationRequest, ParserObservationTarget, execute_parser_observation,
+};
 use html::html5::{
     AtomId, DocumentParseContext, Html5Tokenizer, Input, TextResolver, Token, TokenizeResult,
     TokenizerConfig,
@@ -187,11 +190,29 @@ pub fn run_tokenizer_whole_observed(
     input_html: &str,
     case_id: &str,
 ) -> Result<TokenizerWholeRun, String> {
-    let mut observed_tokens = Vec::new();
-    let mut observer = CapturingTokenObserver {
-        tokens: &mut observed_tokens,
+    let snapshot_lines = run_tokenizer_whole(input_html, case_id)?;
+    let capacity = input_html.len().saturating_add(1);
+    let result = execute_parser_observation(ParserObservationRequest {
+        target: ParserObservationTarget::StandaloneTokenizer,
+        input: ParserObservationInput::Utf8(input_html),
+        tokens: ObservationRequest::Capture { capacity },
+        parse_errors: ObservationRequest::NotRequested,
+        implementation_diagnostics: ObservationRequest::NotRequested,
+    })
+    .map_err(|error| format!("canonical tokenizer observation failed for '{case_id}': {error}"))?;
+    let observed_tokens = match result.tokens {
+        ObservationState::Captured(tokens) => tokens,
+        ObservationState::Incomplete { reason, .. } => {
+            return Err(format!(
+                "canonical tokenizer observation was incomplete for '{case_id}': {reason:?}"
+            ));
+        }
+        ObservationState::NotRequested | ObservationState::NotApplicable { .. } => {
+            return Err(format!(
+                "canonical tokenizer tokens were not captured for '{case_id}'"
+            ));
+        }
     };
-    let snapshot_lines = run_tokenizer_whole_impl(input_html, case_id, &mut observer)?;
     Ok(TokenizerWholeRun {
         snapshot_lines,
         observed_tokens,
@@ -459,25 +480,6 @@ impl TokenObserver for DisabledTokenObserver {
         _resolver: &dyn TextResolver,
         _ctx: &DocumentParseContext,
     ) -> Result<(), String> {
-        Ok(())
-    }
-}
-
-#[cfg(feature = "parser-fixtures")]
-struct CapturingTokenObserver<'a> {
-    tokens: &'a mut Vec<ObservedToken>,
-}
-
-#[cfg(feature = "parser-fixtures")]
-impl TokenObserver for CapturingTokenObserver<'_> {
-    fn observe(
-        &mut self,
-        tokens: &[Token],
-        resolver: &dyn TextResolver,
-        ctx: &DocumentParseContext,
-    ) -> Result<(), String> {
-        self.tokens
-            .extend(token_snapshot::observe_tokens(tokens, resolver, ctx)?);
         Ok(())
     }
 }

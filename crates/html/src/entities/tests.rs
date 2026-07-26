@@ -189,7 +189,7 @@ fn decode_character_references_reports_numeric_malformed_recovery() {
         vec![
             CharacterReferenceDiagnosticKind::MissingNumericDigits,
             CharacterReferenceDiagnosticKind::NumericTooLong,
-            CharacterReferenceDiagnosticKind::InvalidNumericScalar,
+            CharacterReferenceDiagnosticKind::SurrogateNumericScalar,
             CharacterReferenceDiagnosticKind::MissingNumericSemicolon,
             CharacterReferenceDiagnosticKind::MissingNumericDigits,
         ]

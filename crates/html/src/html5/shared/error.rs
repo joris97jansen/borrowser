@@ -6,8 +6,10 @@ pub enum ErrorOrigin {
     TreeBuilder,
 }
 
+/// Deliberately lossy compatibility classification used only by the legacy
+/// parser-event facade.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum ParseErrorCode {
+pub enum LegacyParseErrorCode {
     UnexpectedNullCharacter,
     UnexpectedEof,
     InvalidCharacterReference,
@@ -19,7 +21,7 @@ pub enum ParseErrorCode {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct ParseError {
     pub origin: ErrorOrigin,
-    pub code: ParseErrorCode,
+    pub code: LegacyParseErrorCode,
     /// Byte offset into the decoded Input buffer.
     pub position: usize,
     /// Optional detail for diagnostics (debug-only usage recommended).

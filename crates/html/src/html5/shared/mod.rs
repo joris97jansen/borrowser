@@ -8,6 +8,8 @@ mod context;
 mod counters;
 mod error;
 mod input;
+mod observation;
+mod observation_model;
 mod span;
 mod token;
 
@@ -16,9 +18,20 @@ pub use context::DocumentParseContext;
 pub use counters::Counters;
 #[allow(unused_imports)]
 pub use error::{
-    EngineInvariantError, ErrorOrigin, ErrorPolicy, Html5SessionError, ParseError, ParseErrorCode,
+    EngineInvariantError, ErrorOrigin, ErrorPolicy, Html5SessionError, LegacyParseErrorCode,
+    ParseError,
 };
 #[allow(unused_imports)]
 pub use input::{ByteStreamDecoder, DecodeResult, Input};
+#[cfg(any(test, feature = "parser-conformance"))]
+pub(crate) use observation::{
+    CapturedSurface, ObservationOccurrenceSequence, ObservationSurface, ParserObservationCapture,
+    ParserObservationInvariant, SurfaceCaptureRequest,
+};
+pub(crate) use observation::{
+    NormalizedPositionIndex, ObservationPositionResolution, ObservationPositionSource,
+    ParserObservationConfig, ParserObservationRecorder,
+};
+pub use observation_model::*;
 pub use span::{Span, TextSpan};
 pub use token::{Attribute, AttributeValue, ProcessingInstructionToken, TextValue, Token};
