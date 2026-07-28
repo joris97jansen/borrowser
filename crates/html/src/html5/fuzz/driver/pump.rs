@@ -78,7 +78,7 @@ pub(super) fn pump_until_blocked(
 pub(super) fn finish_and_drain(
     tokenizer: &mut Html5Tokenizer,
     input: &mut Input,
-    ctx: &DocumentParseContext,
+    ctx: &mut DocumentParseContext,
     builder: &mut Html5TreeBuilder,
     state: &mut PipelineRunState,
     config: Html5PipelineFuzzConfig,
@@ -132,7 +132,7 @@ pub(super) fn finish_and_drain(
 fn drain_streaming_batch(
     tokenizer: &mut Html5Tokenizer,
     input: &mut Input,
-    ctx: &DocumentParseContext,
+    ctx: &mut DocumentParseContext,
     builder: &mut Html5TreeBuilder,
     state: &mut PipelineRunState,
     phase: &'static str,
@@ -158,9 +158,8 @@ fn drain_streaming_batch(
         .iter()
         .next()
         .expect("non-empty token-granular batch must contain one token");
-    let termination = state.process_token(
-        tokenizer, builder, token, &ctx.atoms, &resolver, phase, pump_index,
-    )?;
+    let termination =
+        state.process_token(tokenizer, builder, token, ctx, &resolver, phase, pump_index)?;
     Ok(DrainResult {
         drained_tokens: 1,
         termination,
@@ -170,7 +169,7 @@ fn drain_streaming_batch(
 fn drain_finish_batch(
     tokenizer: &mut Html5Tokenizer,
     input: &mut Input,
-    ctx: &DocumentParseContext,
+    ctx: &mut DocumentParseContext,
     builder: &mut Html5TreeBuilder,
     state: &mut PipelineRunState,
     drain_index: usize,
@@ -192,7 +191,7 @@ fn drain_finish_batch(
             tokenizer,
             builder,
             token,
-            &ctx.atoms,
+            ctx,
             &resolver,
             "tokenizer-finish",
             drain_index,

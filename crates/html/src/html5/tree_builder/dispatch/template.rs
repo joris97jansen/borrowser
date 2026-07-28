@@ -31,6 +31,7 @@ impl Html5TreeBuilder {
         mode: InsertionMode,
         token: &Token,
         atoms: &AtomTable,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         text: &dyn TextResolver,
     ) -> Result<Option<DispatchOutcome>, TreeBuilderError> {
         if !matches!(
@@ -56,21 +57,17 @@ impl Html5TreeBuilder {
                 self_closing,
             } if *name == self.known_tags.template => {
                 if mode == InsertionMode::AfterHead {
-                    self.record_parse_error(
-                        "after-head-template-start-tag-delegated-to-in-head",
-                        Some(*name),
-                        Some(mode),
-                    );
-                    let _ = self.with_temporary_head_element(|this| {
-                        this.handle_template_start_tag(attrs, *self_closing, atoms, text)
+                    let _ = self.with_temporary_head_element(context, |this, context| {
+                        this.handle_template_start_tag(attrs, *self_closing, atoms, context, text)
                     })?;
                 } else {
-                    let _ = self.handle_template_start_tag(attrs, *self_closing, atoms, text)?;
+                    let _ =
+                        self.handle_template_start_tag(attrs, *self_closing, atoms, context, text)?;
                 }
                 Ok(Some(DispatchOutcome::Done))
             }
             Token::EndTag { name } if *name == self.known_tags.template => {
-                self.handle_template_end_tag()?;
+                self.handle_template_end_tag(context)?;
                 Ok(Some(DispatchOutcome::Done))
             }
             _ => Ok(None),
@@ -79,17 +76,22 @@ impl Html5TreeBuilder {
 
     pub(in crate::html5::tree_builder) fn with_temporary_head_element<T>(
         &mut self,
-        f: impl FnOnce(&mut Self) -> Result<T, TreeBuilderError>,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
+        f: impl FnOnce(
+            &mut Self,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
+        ) -> Result<T, TreeBuilderError>,
     ) -> Result<Option<T>, TreeBuilderError> {
         let head = self.head_element_pointer.ok_or(EngineInvariantError)?;
         if self.open_elements.contains_key(head) {
-            return f(self).map(Some);
+            return f(self, context).map(Some);
         }
         if self.open_elements.len() >= self.config.limits.max_open_elements_depth {
-            self.record_parse_error(
-                "resource-limit-soe-depth",
-                Some(self.known_tags.head),
-                Some(self.insertion_mode),
+            self.record_tree_resource_limit(
+                context,
+                crate::html5::shared::ParserResourceLimit::TreeOpenElementsDepth,
+                self.config.limits.max_open_elements_depth,
+                Some("resource-limit-soe-depth"),
             );
             return Ok(None);
         }
@@ -98,7 +100,7 @@ impl Html5TreeBuilder {
             .map_err(|_| EngineInvariantError)?;
         self.open_elements
             .push(OpenElement::new_html(head, self.known_tags.head));
-        let result = f(self);
+        let result = f(self, context);
         let removed = self
             .open_elements
             .remove_exact_key(head)
@@ -111,6 +113,7 @@ impl Html5TreeBuilder {
         &mut self,
         attrs: &[crate::html5::shared::Attribute],
         atoms: &AtomTable,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         text: &dyn TextResolver,
     ) -> Result<Option<TemplateStartPreflight>, TreeBuilderError> {
         if self.document_key.is_none() {
@@ -124,27 +127,29 @@ impl Html5TreeBuilder {
             .ok_or(EngineInvariantError)?;
 
         if self.open_elements.len() >= self.config.limits.max_open_elements_depth {
-            self.record_parse_error(
-                "resource-limit-soe-depth",
-                Some(self.known_tags.template),
-                Some(self.insertion_mode),
+            self.record_tree_resource_limit(
+                context,
+                crate::html5::shared::ParserResourceLimit::TreeOpenElementsDepth,
+                self.config.limits.max_open_elements_depth,
+                Some("resource-limit-soe-depth"),
             );
             return Ok(None);
         }
         if self.template_modes.len() >= self.config.limits.max_open_elements_depth {
-            self.record_parse_error(
-                "resource-limit-template-mode-depth",
-                Some(self.known_tags.template),
-                Some(self.insertion_mode),
+            self.record_tree_resource_limit(
+                context,
+                crate::html5::shared::ParserResourceLimit::TreeTemplateModeDepth,
+                self.config.limits.max_open_elements_depth,
+                Some("resource-limit-template-mode-depth"),
             );
             return Ok(None);
         }
-        if !self.allow_node_creation_count(2, Some(self.known_tags.template)) {
+        if !self.allow_node_creation_count(2, Some(self.known_tags.template), context) {
             return Ok(None);
         }
 
         let location = self.element_or_text_insertion_location()?;
-        if !self.allow_new_child(location.parent, Some(self.known_tags.template)) {
+        if !self.allow_new_child(location.parent, Some(self.known_tags.template), context) {
             return Ok(None);
         }
 
@@ -167,12 +172,7 @@ impl Html5TreeBuilder {
         {
             Ok(()) => {}
             Err(ChildInsertionReservationError::AllocationFailure) => {
-                self.record_parse_error(
-                    "resource-limit-template-parent-child-reservation",
-                    Some(self.known_tags.template),
-                    Some(self.insertion_mode),
-                );
-                return Ok(None);
+                return Err(EngineInvariantError);
             }
             Err(
                 ChildInsertionReservationError::InvalidParent
@@ -209,18 +209,12 @@ impl Html5TreeBuilder {
     fn handle_template_start_tag(
         &mut self,
         attrs: &[crate::html5::shared::Attribute],
-        self_closing: bool,
+        _self_closing: bool,
         atoms: &AtomTable,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         text: &dyn TextResolver,
     ) -> Result<bool, TreeBuilderError> {
-        if self_closing {
-            self.record_parse_error(
-                "template-start-tag-self-closing-ignored",
-                Some(self.known_tags.template),
-                Some(self.insertion_mode),
-            );
-        }
-        let Some(preflight) = self.preflight_template_start(attrs, atoms, text)? else {
+        let Some(preflight) = self.preflight_template_start(attrs, atoms, context, text)? else {
             return Ok(false);
         };
 
@@ -237,7 +231,8 @@ impl Html5TreeBuilder {
                 contents: preflight.contents,
             });
             this.note_node_created();
-            let inserted = this.insert_existing_child_at(preflight.location, preflight.host);
+            let inserted =
+                this.insert_existing_child_at(preflight.location, preflight.host, context);
             assert!(inserted, "preflighted template host insertion must commit");
             this.open_elements.push(OpenElement::new_html(
                 preflight.host,
@@ -266,7 +261,11 @@ impl Html5TreeBuilder {
         Ok(true)
     }
 
-    fn close_innermost_template(&mut self, generate_implied: bool) -> Result<(), TreeBuilderError> {
+    fn close_innermost_template(
+        &mut self,
+        generate_implied: bool,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
+    ) -> Result<(), TreeBuilderError> {
         let template_depth_before = self.template_modes.len();
         let next_template_state_epoch = self.checked_next_template_state_epoch()?;
         if generate_implied {
@@ -275,11 +274,7 @@ impl Html5TreeBuilder {
                 current.namespace() != crate::ElementNamespace::Html
                     || current.name() != self.known_tags.template
             }) {
-                self.record_parse_error(
-                    "template-end-tag-implied-close-mismatch",
-                    Some(self.known_tags.template),
-                    Some(self.insertion_mode),
-                );
+                self.record_tree_parse_error(context, crate::html5::shared::TreeConstructionParseErrorCode::CurrentNodeMismatchAfterImpliedEndTags, Some(crate::html5::shared::ParserRecoveryAction::PopOpenElements), Some("template-end-tag-implied-close-mismatch"));
             }
         }
         let closed = if generate_implied {
@@ -325,20 +320,19 @@ impl Html5TreeBuilder {
         Ok(())
     }
 
-    fn handle_template_end_tag(&mut self) -> Result<(), TreeBuilderError> {
+    fn handle_template_end_tag(
+        &mut self,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
+    ) -> Result<(), TreeBuilderError> {
         if !self.open_elements.has_in_scope(
             self.known_tags.template,
             ScopeKind::InScope,
             &self.scope_tags,
         ) {
-            self.record_parse_error(
-                "template-end-tag-not-in-scope",
-                Some(self.known_tags.template),
-                Some(self.insertion_mode),
-            );
+            self.record_tree_parse_error(context, crate::html5::shared::TreeConstructionParseErrorCode::ElementEndTagNotInRequiredScope, Some(crate::html5::shared::ParserRecoveryAction::IgnoreToken), Some("template-end-tag-not-in-scope"));
             return Ok(());
         }
-        self.close_innermost_template(true)
+        self.close_innermost_template(true, context)
     }
 
     /// Recover all still-open template contexts for EOF with open-template
@@ -346,18 +340,20 @@ impl Html5TreeBuilder {
     /// been flushed before entering this loop.
     pub(in crate::html5::tree_builder) fn unwind_templates_at_eof(
         &mut self,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
     ) -> Result<(), TreeBuilderError> {
         if self.insertion_mode == InsertionMode::InTableText || self.pending_table_text.is_some() {
             return Err(EngineInvariantError);
         }
         while !self.template_modes.is_empty() {
             let depth_before = self.template_modes.len();
-            self.record_parse_error(
-                "eof-in-template",
-                Some(self.known_tags.template),
-                Some(self.insertion_mode),
+            self.record_tree_parse_error(
+                context,
+                crate::html5::shared::TreeConstructionParseErrorCode::EofWithOpenTemplate,
+                Some(crate::html5::shared::ParserRecoveryAction::PopOpenElements),
+                Some("eof-in-template"),
             );
-            self.close_innermost_template(false)?;
+            self.close_innermost_template(false, context)?;
             self.perf_template_eof_unwind_iterations =
                 self.perf_template_eof_unwind_iterations.saturating_add(1);
             if self.template_modes.len().checked_add(1) != Some(depth_before) {
@@ -377,6 +373,7 @@ impl Html5TreeBuilder {
         &mut self,
         token: &Token,
         atoms: &AtomTable,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         text: &dyn TextResolver,
     ) -> Result<DispatchOutcome, TreeBuilderError> {
         match token {
@@ -384,7 +381,7 @@ impl Html5TreeBuilder {
             | Token::Comment { .. }
             | Token::ProcessingInstruction(_)
             | Token::Doctype { .. } => {
-                self.process_using_in_body_rules(token, atoms, text, false)?;
+                self.process_using_in_body_rules(token, atoms, context, text, false)?;
                 Ok(DispatchOutcome::Done)
             }
             Token::StartTag { name, .. }
@@ -395,7 +392,7 @@ impl Html5TreeBuilder {
                     || *name == self.known_tags.style
                     || *name == self.known_tags.title =>
             {
-                self.handle_in_head(token, atoms, text)
+                self.handle_in_head(token, atoms, context, text)
             }
             Token::StartTag { name, .. }
                 if *name == self.known_tags.caption
@@ -425,12 +422,8 @@ impl Html5TreeBuilder {
                 self.replace_current_template_mode(TemplateInsertionMode::InBody)?;
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InBody))
             }
-            Token::EndTag { name } => {
-                self.record_parse_error(
-                    "in-template-unexpected-end-tag",
-                    Some(*name),
-                    Some(InsertionMode::InTemplate),
-                );
+            Token::EndTag { name: _ } => {
+                self.record_tree_parse_error(context, crate::html5::shared::TreeConstructionParseErrorCode::EndTagForbiddenByActiveInsertionMode, Some(crate::html5::shared::ParserRecoveryAction::IgnoreToken), Some("in-template-unexpected-end-tag"));
                 Ok(DispatchOutcome::Done)
             }
             Token::Eof => Ok(DispatchOutcome::Done),

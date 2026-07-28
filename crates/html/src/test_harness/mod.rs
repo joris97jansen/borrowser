@@ -2,6 +2,8 @@ mod chunk_plan;
 mod fuzz;
 mod patch_materialize;
 mod runner;
+#[cfg(feature = "parser-conformance")]
+mod tree_diagnostics;
 
 pub use crate::patch_validation::{PatchValidationArena, PatchValidationError};
 pub use chunk_plan::{BoundaryPolicy, ChunkPlan, default_chunk_plans, deterministic_chunk_plans};
@@ -11,6 +13,8 @@ pub use fuzz::{
 };
 pub use patch_materialize::{materialize_patch_batches, materialize_patches};
 pub use runner::{run_chunked, run_chunked_with_output, run_full};
+#[cfg(feature = "parser-conformance")]
+pub use tree_diagnostics::TreeDiagnosticProjection;
 
 pub(crate) use chunk_plan::filter_boundaries_by_policy;
 

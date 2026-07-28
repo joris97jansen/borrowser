@@ -408,9 +408,25 @@ Current supported subset:
   `html::conformance` engine-test boundary; ordinary parser APIs and output are
   unchanged. UTF-8 decoding now uses one chunk-independent constrained state
   machine, and fixture-v1 serialized diagnostic surfaces remain inactive.
-  Tree-builder diagnostics, document mode, trees, patches, transitions,
-  unsupported features, final invariants, and serializers remain later AE13
-  work. See `docs/html5/ae13-parser-conformance-regression-harness.md`.
+- AE13b2 tree diagnostics and document-mode capture: the same parser-owned
+  fanout now records typed tree-construction parse errors, Borrowser
+  implementation deviations, and configured tree resource limits at their
+  production rules with detection-time context and explicitly unavailable
+  positions. Tokenizer and tree parse errors share one occurrence sequence;
+  preprocessing/tokenizer/tree implementation diagnostics share a second;
+  there is no global timeline. The production tree builder is the direct
+  source of in-memory `DocumentMode` capture after successful finish and before
+  successful output exposure. Legacy tree strings and tokenizer-owned
+  EOF-in-text-mode reporting are removed. Supported HTML void rules now own
+  their actual self-closing acknowledgement step; configured insertion limits
+  cannot falsely claim the retained non-void `LegacySkipPush` deviation, and
+  contradictory self-closing effects propagate through the fatal invariant
+  path. The finite, fail-on-incomplete legacy DOM-golden projection is isolated
+  in parser-conformance test support and does not merge implementation/resource
+  diagnostics. Canonical serializers, fixture
+  sidecars, trees, patches, transitions, unsupported features, and AE13c final
+  invariants remain deferred. Full doctype classification conformance is not
+  claimed. See `docs/html5/ae13-parser-conformance-regression-harness.md`.
 - AE1 HTML parser ownership architecture: HTML/parser owns tokenizer input
   preprocessing, tokenizer states, typed tokens, parse errors,
   tree-construction state, insertion modes, stack of open elements, active

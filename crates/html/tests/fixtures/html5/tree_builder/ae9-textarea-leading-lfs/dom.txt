@@ -14,7 +14,4 @@
         "one"
       element ns=html local="textarea" attrs=[]
         "\ntwo"
-parse-errors:
-  tree-builder: before-html-implicit-html
-  tree-builder: before-head-implicit-head
-  tree-builder: after-head-implicit-body
+parse-errors: none

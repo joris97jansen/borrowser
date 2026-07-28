@@ -1,8 +1,9 @@
 use crate::dom_patch::PatchKey;
-use crate::html5::shared::{AtomTable, EngineInvariantError, Token};
+use crate::html5::shared::{EngineInvariantError, Token};
 use crate::html5::tokenizer::TextResolver;
 use crate::html5::tree_builder::formatting::AfeDiagnosticEntry;
 use crate::html5::tree_builder::modes::InsertionMode;
+use crate::html5::tree_builder::process_context::TreeBuilderProcessContext;
 use crate::html5::tree_builder::template_state::TemplateInsertionMode;
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError, TreeBuilderStepResult};
 use crate::{ExpandedElementName, ParserCreatedAttribute};
@@ -241,39 +242,48 @@ impl Html5TreeBuilder {
         &mut self,
         mode: InsertionMode,
         token: &Token,
-        atoms: &AtomTable,
+        context: &mut TreeBuilderProcessContext<'_>,
         text: &dyn TextResolver,
     ) -> Result<DispatchOutcome, TreeBuilderError> {
-        if let Some(outcome) = self.handle_shared_template_token(mode, token, atoms, text)? {
+        let atoms = context.atoms();
+        if let Some(outcome) =
+            self.handle_shared_template_token(mode, token, atoms, context, text)?
+        {
             return Ok(outcome);
         }
         match mode {
-            InsertionMode::Initial => self.handle_initial(token, atoms, text),
-            InsertionMode::BeforeHtml => self.handle_before_html(token, atoms, text),
-            InsertionMode::BeforeHead => self.handle_before_head(token, atoms, text),
-            InsertionMode::InHead => self.handle_in_head(token, atoms, text),
-            InsertionMode::AfterHead => self.handle_after_head(token, atoms, text),
-            InsertionMode::InBody => self.handle_in_body(token, atoms, text),
-            InsertionMode::AfterBody => self.handle_after_body(token, atoms, text),
-            InsertionMode::AfterAfterBody => self.handle_after_after_body(token, atoms, text),
-            InsertionMode::InTable => self.handle_in_table(token, atoms, text),
-            InsertionMode::InTableText => self.handle_in_table_text(token, atoms, text),
-            InsertionMode::InCaption => self.handle_in_caption(token, atoms, text),
-            InsertionMode::InColumnGroup => self.handle_in_column_group(token, atoms, text),
-            InsertionMode::InTableBody => self.handle_in_table_body(token, atoms, text),
-            InsertionMode::InRow => self.handle_in_row(token, atoms, text),
-            InsertionMode::InCell => self.handle_in_cell(token, atoms, text),
-            InsertionMode::InTemplate => self.handle_in_template(token, atoms, text),
-            InsertionMode::Text => self.handle_text_mode(token, atoms, text),
+            InsertionMode::Initial => self.handle_initial(token, atoms, context, text),
+            InsertionMode::BeforeHtml => self.handle_before_html(token, atoms, context, text),
+            InsertionMode::BeforeHead => self.handle_before_head(token, atoms, context, text),
+            InsertionMode::InHead => self.handle_in_head(token, atoms, context, text),
+            InsertionMode::AfterHead => self.handle_after_head(token, atoms, context, text),
+            InsertionMode::InBody => self.handle_in_body(token, atoms, context, text),
+            InsertionMode::AfterBody => self.handle_after_body(token, atoms, context, text),
+            InsertionMode::AfterAfterBody => {
+                self.handle_after_after_body(token, atoms, context, text)
+            }
+            InsertionMode::InTable => self.handle_in_table(token, atoms, context, text),
+            InsertionMode::InTableText => self.handle_in_table_text(token, atoms, context, text),
+            InsertionMode::InCaption => self.handle_in_caption(token, atoms, context, text),
+            InsertionMode::InColumnGroup => {
+                self.handle_in_column_group(token, atoms, context, text)
+            }
+            InsertionMode::InTableBody => self.handle_in_table_body(token, atoms, context, text),
+            InsertionMode::InRow => self.handle_in_row(token, atoms, context, text),
+            InsertionMode::InCell => self.handle_in_cell(token, atoms, context, text),
+            InsertionMode::InTemplate => self.handle_in_template(token, atoms, context, text),
+            InsertionMode::Text => self.handle_text_mode(token, atoms, context, text),
         }
     }
 
     pub(in crate::html5::tree_builder) fn process_impl(
         &mut self,
         token: &Token,
-        atoms: &AtomTable,
+        context: &mut TreeBuilderProcessContext<'_>,
         text: &dyn TextResolver,
     ) -> Result<TreeBuilderStepResult, TreeBuilderError> {
+        context.begin_token(token);
+        let atoms = context.atoms();
         self.assert_atom_table_binding(atoms);
         if self.insertion_mode == InsertionMode::Text
             && matches!(token, Token::ProcessingInstruction(_))
@@ -295,7 +305,7 @@ impl Html5TreeBuilder {
                 && mode != InsertionMode::InTableText
                 && !self.template_modes.is_empty()
             {
-                self.unwind_templates_at_eof()?;
+                self.unwind_templates_at_eof(context)?;
                 mode = self.insertion_mode;
             }
 
@@ -310,9 +320,9 @@ impl Html5TreeBuilder {
             let outcome = if self.foreign_dispatch_decision(token, atoms)?
                 == crate::html5::tree_builder::foreign::ForeignDispatchDecision::Foreign
             {
-                self.process_foreign_token(mode, token, atoms, text)?
+                self.process_foreign_token(mode, token, atoms, context, text)?
             } else {
-                self.dispatch_token_in_html_mode(mode, token, atoms, text)?
+                self.dispatch_token_in_html_mode(mode, token, context, text)?
             };
             match outcome {
                 DispatchOutcome::Done => break,
@@ -351,6 +361,7 @@ impl Html5TreeBuilder {
         if matches!(token, Token::Eof) {
             self.audit_html5_template_output_full()?;
         }
+        context.finalize_self_closing_flag(mode, self.adjusted_current_node_namespace());
         Ok(TreeBuilderStepResult::continue_with(
             self.pending_tokenizer_control.take(),
         ))

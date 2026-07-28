@@ -126,6 +126,7 @@ impl Html5TreeBuilder {
         &mut self,
         subject: AtomId,
         atoms: &AtomTable,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
     ) -> Result<AdoptionAgencyRunReport, TreeBuilderError> {
         self.with_structural_mutation(|this| {
             let mut outer_iterations = 0u8;
@@ -170,10 +171,12 @@ impl Html5TreeBuilder {
 
                 match this.adoption_agency_validate_formatting_element(candidate) {
                     FormattingElementValidation::MissingFromSoe => {
-                        this.record_parse_error(
-                            "adoption-agency-formatting-element-missing-from-soe",
-                            Some(subject),
-                            Some(this.insertion_mode),
+                        this.record_tree_parse_error(
+                            context,
+                            crate::html5::shared::TreeConstructionParseErrorCode::
+                                AdoptionFormattingElementMissingFromOpenElements,
+                            Some(crate::html5::shared::ParserRecoveryAction::IgnoreToken),
+                            Some("adoption-agency-formatting-element-missing-from-soe"),
                         );
                         let _ = this
                             .active_formatting
@@ -184,10 +187,12 @@ impl Html5TreeBuilder {
                         });
                     }
                     FormattingElementValidation::NotInScope => {
-                        this.record_parse_error(
-                            "adoption-agency-formatting-element-not-in-scope",
-                            Some(subject),
-                            Some(this.insertion_mode),
+                        this.record_tree_parse_error(
+                            context,
+                            crate::html5::shared::TreeConstructionParseErrorCode::
+                                AdoptionFormattingElementNotInScope,
+                            Some(crate::html5::shared::ParserRecoveryAction::IgnoreToken),
+                            Some("adoption-agency-formatting-element-not-in-scope"),
                         );
                         return Ok(AdoptionAgencyRunReport {
                             outcome: AdoptionAgencyOutcome::Completed,
@@ -199,10 +204,12 @@ impl Html5TreeBuilder {
                         is_current_node,
                     } => {
                         if !is_current_node {
-                            this.record_parse_error(
-                                "adoption-agency-formatting-element-not-current-node",
-                                Some(subject),
-                                Some(this.insertion_mode),
+                            this.record_tree_parse_error(
+                                context,
+                                crate::html5::shared::TreeConstructionParseErrorCode::
+                                    AdoptionFormattingElementNotCurrentNode,
+                                Some(crate::html5::shared::ParserRecoveryAction::PopOpenElements),
+                                Some("adoption-agency-formatting-element-not-current-node"),
                             );
                         }
 
@@ -274,8 +281,12 @@ impl Html5TreeBuilder {
                                 .element_at(node_afe_index)
                                 .expect("AAA inner-loop AFE lookup must target an element")
                                 .clone();
-                            let Some(replacement_key) =
-                                this.create_detached_element_from_afe_entry(&node_entry, atoms)?
+                            let Some(replacement_key) = this
+                                .create_detached_element_from_afe_entry(
+                                    &node_entry,
+                                    context,
+                                    atoms,
+                                )?
                             else {
                                 return Ok(AdoptionAgencyRunReport {
                                     outcome: AdoptionAgencyOutcome::Completed,
@@ -298,14 +309,17 @@ impl Html5TreeBuilder {
                             if last_node == furthest_block_key {
                                 bookmark = node_afe_index + 1;
                             }
-                            this.append_existing_child(replacement_key, last_node);
+                            this.append_existing_child(replacement_key, last_node, context);
                             last_node = replacement_key;
                         }
 
-                        this.adoption_agency_insert_last_node(common_ancestor, last_node)?;
+                        this.adoption_agency_insert_last_node(common_ancestor, last_node, context)?;
 
-                        let Some(replacement_key) =
-                            this.create_detached_element_from_afe_entry(&formatting_entry, atoms)?
+                        let Some(replacement_key) = this.create_detached_element_from_afe_entry(
+                            &formatting_entry,
+                            context,
+                            atoms,
+                        )?
                         else {
                             return Ok(AdoptionAgencyRunReport {
                                 outcome: AdoptionAgencyOutcome::Completed,
@@ -315,9 +329,9 @@ impl Html5TreeBuilder {
                         let furthest_block_children =
                             this.live_tree.children_snapshot(furthest_block_key);
                         for child in furthest_block_children {
-                            this.append_existing_child(replacement_key, child);
+                            this.append_existing_child(replacement_key, child, context);
                         }
-                        this.append_existing_child(furthest_block_key, replacement_key);
+                        this.append_existing_child(furthest_block_key, replacement_key, context);
 
                         let _ = this
                             .active_formatting
@@ -359,13 +373,14 @@ impl Html5TreeBuilder {
         &mut self,
         common_ancestor: OpenElement,
         last_node: PatchKey,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
     ) -> Result<(), TreeBuilderError> {
         if !self.is_table_foster_target_name(common_ancestor.name()) {
-            self.append_existing_child(common_ancestor.key(), last_node);
+            self.append_existing_child(common_ancestor.key(), last_node, context);
             return Ok(());
         }
 
-        self.insert_existing_child_using_foster_parenting_location(last_node)?;
+        self.insert_existing_child_using_foster_parenting_location(last_node, context)?;
         Ok(())
     }
 }
@@ -379,22 +394,24 @@ mod tests {
 
     fn bootstrap_html_body(
         builder: &mut Html5TreeBuilder,
-        ctx: &DocumentParseContext,
+        ctx: &mut DocumentParseContext,
     ) -> (PatchKey, PatchKey) {
+        let mut context = crate::html5::tree_builder::TreeBuilderProcessContext::new(ctx);
+        let atoms = context.atoms();
         builder
             .with_structural_mutation(|this| {
-                let document = this.ensure_document_created()?;
+                let document = this.ensure_document_created(&mut context)?;
                 let html = this
-                    .create_detached_element(this.known_tags.html, &[], &ctx.atoms)?
+                    .create_detached_element(this.known_tags.html, &[], &mut context, atoms)?
                     .expect("html bootstrap should not hit resource limits");
-                this.append_existing_child(document, html);
+                this.append_existing_child(document, html, &mut context);
                 this.open_elements
                     .push(OpenElement::new_html(html, this.known_tags.html));
 
                 let body = this
-                    .create_detached_element(this.known_tags.body, &[], &ctx.atoms)?
+                    .create_detached_element(this.known_tags.body, &[], &mut context, atoms)?
                     .expect("body bootstrap should not hit resource limits");
-                this.append_existing_child(html, body);
+                this.append_existing_child(html, body, &mut context);
                 this.open_elements
                     .push(OpenElement::new_html(body, this.known_tags.body));
                 Ok((html, body))
@@ -411,21 +428,24 @@ mod tests {
         )
         .expect("tree builder init");
 
-        let (_html, body) = bootstrap_html_body(&mut builder, &ctx);
+        let (_html, body) = bootstrap_html_body(&mut builder, &mut ctx);
         let div = ctx.atoms.intern_ascii_folded("div").expect("atom");
+        let mut context = crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx);
+        let atoms = context.atoms();
         builder
             .with_structural_mutation(|this| {
                 let table = this
-                    .create_detached_element(this.known_tags.table, &[], &ctx.atoms)?
+                    .create_detached_element(this.known_tags.table, &[], &mut context, atoms)?
                     .expect("table setup should not hit resource limits");
                 let last_node = this
-                    .create_detached_element(div, &[], &ctx.atoms)?
+                    .create_detached_element(div, &[], &mut context, atoms)?
                     .expect("div setup should not hit resource limits");
                 this.open_elements
                     .push(OpenElement::new_html(table, this.known_tags.table));
                 this.adoption_agency_insert_last_node(
                     OpenElement::new_html(PatchKey(999), this.known_tags.tbody),
                     last_node,
+                    &mut context,
                 )?;
                 assert_eq!(this.live_tree.parent(last_node), Some(body));
                 Ok(())
@@ -442,15 +462,17 @@ mod tests {
         )
         .expect("tree builder init");
 
-        let (_html, _body) = bootstrap_html_body(&mut builder, &ctx);
+        let (_html, _body) = bootstrap_html_body(&mut builder, &mut ctx);
         let div = ctx.atoms.intern_ascii_folded("div").expect("atom");
+        let mut context = crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx);
+        let atoms = context.atoms();
         builder
             .with_structural_mutation(|this| {
                 let table = this
-                    .create_detached_element(this.known_tags.table, &[], &ctx.atoms)?
+                    .create_detached_element(this.known_tags.table, &[], &mut context, atoms)?
                     .expect("table setup should not hit resource limits");
                 let template = this
-                    .create_detached_element(this.known_tags.template, &[], &ctx.atoms)?
+                    .create_detached_element(this.known_tags.template, &[], &mut context, atoms)?
                     .expect("template setup should not hit resource limits");
                 let contents = this.alloc_patch_key()?;
                 this.push_structural_patch(DomPatch::CreateTemplateContents {
@@ -459,7 +481,7 @@ mod tests {
                 });
                 this.note_node_created();
                 let last_node = this
-                    .create_detached_element(div, &[], &ctx.atoms)?
+                    .create_detached_element(div, &[], &mut context, atoms)?
                     .expect("div setup should not hit resource limits");
                 this.open_elements
                     .push(OpenElement::new_html(table, this.known_tags.table));
@@ -468,6 +490,7 @@ mod tests {
                 this.adoption_agency_insert_last_node(
                     OpenElement::new_html(PatchKey(999), this.known_tags.thead),
                     last_node,
+                    &mut context,
                 )?;
                 assert_eq!(this.live_tree.parent(last_node), Some(contents));
                 Ok(())

@@ -9,6 +9,7 @@ impl Html5TreeBuilder {
         &mut self,
         token: &Token,
         atoms: &AtomTable,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         text: &dyn TextResolver,
     ) -> Result<DispatchOutcome, TreeBuilderError> {
         match token {
@@ -18,7 +19,8 @@ impl Html5TreeBuilder {
                 Ok(DispatchOutcome::Done)
             }
             _ => {
-                let return_mode = self.flush_pending_table_character_tokens(atoms, text)?;
+                let return_mode =
+                    self.flush_pending_table_character_tokens(atoms, context, text)?;
                 self.insertion_mode = return_mode;
                 Ok(DispatchOutcome::Reprocess(return_mode))
             }

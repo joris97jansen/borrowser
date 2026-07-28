@@ -4,7 +4,7 @@ use html::html5::tree_builder::{
     check_patch_invariants, serialize_dom_for_test_with_options,
 };
 use html::html5::{DocumentParseContext, Html5Tokenizer, Input, TokenizeResult, TokenizerConfig};
-use html::test_harness::{ChunkPlan, materialize_patch_batches};
+use html::test_harness::{ChunkPlan, TreeDiagnosticProjection, materialize_patch_batches};
 
 #[derive(Debug)]
 pub(super) enum RunOutput {
@@ -38,7 +38,7 @@ fn run_tree_builder_impl(
     plan: Option<&ChunkPlan>,
     plan_label: Option<&str>,
 ) -> RunOutput {
-    let mut ctx = DocumentParseContext::new();
+    let mut ctx = TreeDiagnosticProjection::new_context();
     let mut tokenizer = Html5Tokenizer::new(
         TokenizerConfig {
             emit_eof: true,
@@ -57,7 +57,7 @@ fn run_tree_builder_impl(
     let label = plan_label.unwrap_or("<whole>");
 
     let mut push_and_drain = |chunk: &str| -> Result<(), String> {
-        input.push_str(chunk);
+        TreeDiagnosticProjection::push_str(&mut ctx, &mut input, chunk);
         pump_tokenizer_until_blocked(
             DrainCtx {
                 tokenizer: &mut tokenizer,
@@ -117,7 +117,7 @@ fn run_tree_builder_impl(
         return RunOutput::Err(err);
     }
 
-    let _ = input.finish_preprocessing();
+    TreeDiagnosticProjection::finish_input(&mut ctx, &mut input);
     if let Err(err) = pump_tokenizer_until_blocked(
         DrainCtx {
             tokenizer: &mut tokenizer,
@@ -168,14 +168,18 @@ fn run_tree_builder_impl(
         Ok(dom) => dom,
         Err(err) => return RunOutput::Err(err),
     };
+    let diagnostic_descriptions = match TreeDiagnosticProjection::finish(&mut ctx) {
+        Ok(descriptions) => descriptions,
+        Err(err) => return RunOutput::Err(err),
+    };
     let mut lines = serialize_dom_for_test_with_options(&dom, fixture.expected.options);
     if fixture.expected.include_parse_errors {
-        append_parse_error_lines(&mut lines, builder.take_parse_error_kinds_for_test());
+        append_diagnostic_lines(&mut lines, diagnostic_descriptions);
     }
     RunOutput::Ok(lines)
 }
 
-fn append_parse_error_lines(lines: &mut Vec<String>, errors: Vec<&'static str>) {
+fn append_diagnostic_lines(lines: &mut Vec<String>, errors: Vec<&'static str>) {
     if errors.is_empty() {
         lines.push("parse-errors: none".to_string());
         return;
@@ -224,9 +228,10 @@ fn drain_batches(d: DrainCtx<'_>, expect_token_granular_batches: bool) -> Result
             if matches!(token, html::html5::Token::Eof) {
                 *d.saw_eof_token = true;
             }
+            let mut process_context = html::html5::TreeBuilderProcessContext::new(d.ctx);
             match d
                 .builder
-                .push_token(token, &d.ctx.atoms, &resolver, &mut sink)
+                .push_token(token, &mut process_context, &resolver, &mut sink)
             {
                 Ok(step) => {
                     if let Some(control) = step.tokenizer_control {

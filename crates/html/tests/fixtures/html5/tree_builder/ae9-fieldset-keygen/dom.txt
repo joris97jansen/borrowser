@@ -14,8 +14,4 @@
         "inside"
       element ns=html local="keygen" attrs=[]
       element ns=html local="input" attrs=[]
-parse-errors:
-  tree-builder: before-html-implicit-html
-  tree-builder: before-head-implicit-head
-  tree-builder: after-head-implicit-body
-  tree-builder: in-body-block-start-tag-closes-open-p
+parse-errors: none

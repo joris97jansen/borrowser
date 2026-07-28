@@ -10,5 +10,4 @@
     element ns=html local="body" attrs=[]
       element ns=html local="p" attrs=[]
         "ok"
-parse-errors:
-  tree-builder: before-head-implicit-head
+parse-errors: none

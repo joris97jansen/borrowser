@@ -2,7 +2,7 @@ use super::super::config::{
     Html5PipelineFuzzError, Html5PipelineFuzzSummary, Html5PipelineFuzzTermination,
 };
 use super::super::digest::{PipelineDigestTail, PipelineFuzzDigest};
-use crate::html5::shared::{AtomTable, Input, Token};
+use crate::html5::shared::{Input, Token};
 use crate::html5::tokenizer::{
     Html5Tokenizer, ObserveError, TextResolver, TokenObserver, TokenizerFuzzError,
 };
@@ -94,7 +94,7 @@ impl PipelineRunState {
         tokenizer: &mut Html5Tokenizer,
         builder: &mut Html5TreeBuilder,
         token: &Token,
-        atoms: &AtomTable,
+        ctx: &mut crate::html5::shared::DocumentParseContext,
         resolver: &dyn TextResolver,
         phase: &'static str,
         pump_index: usize,
@@ -104,7 +104,7 @@ impl PipelineRunState {
         }
 
         let token_index = self.observer.tokens_observed;
-        match self.observer.observe(token, atoms, resolver) {
+        match self.observer.observe(token, &ctx.atoms, resolver) {
             Ok(()) => {}
             Err(ObserveError::TokenBudgetReached) => {
                 return Ok(Some(
@@ -130,8 +130,9 @@ impl PipelineRunState {
         let before_builder_progress = builder.progress_witness();
         let mut patches = Vec::new();
         let mut sink = VecPatchSink(&mut patches);
+        let mut process_context = crate::html5::tree_builder::TreeBuilderProcessContext::new(ctx);
         let step = builder
-            .push_token(token, atoms, resolver, &mut sink)
+            .push_token(token, &mut process_context, resolver, &mut sink)
             .map_err(|err| Html5PipelineFuzzError::TreeBuilderFailure {
                 token_index,
                 detail: format!("{err:?}"),

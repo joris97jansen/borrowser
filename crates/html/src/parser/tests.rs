@@ -484,6 +484,115 @@ fn passive_observation_preserves_complete_parser_output_whole_and_chunked() {
 
 #[cfg(feature = "parser-conformance")]
 #[test]
+fn document_mode_capture_is_whole_and_chunk_delivery_invariant() {
+    use crate::html5::shared::{
+        ParserObservationCapture, ParserObservationConfig, SurfaceCaptureRequest,
+    };
+
+    struct Run {
+        document_mode: crate::DocumentMode,
+        capture: ParserObservationCapture,
+        output: super::ParseOutput,
+    }
+
+    fn run(chunks: &[&[u8]]) -> Run {
+        let mut parser = HtmlParser::new_with_observations(
+            HtmlParseOptions::default(),
+            ParserObservationConfig {
+                tokens: SurfaceCaptureRequest::Capture { capacity: 256 },
+                parse_errors: SurfaceCaptureRequest::Capture { capacity: 256 },
+                implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 256 },
+            },
+        )
+        .expect("observed parser init");
+        for chunk in chunks {
+            parser.push_bytes(chunk).expect("document-mode chunk push");
+            parser.pump().expect("document-mode chunk pump");
+        }
+        parser.finish().expect("document-mode finish");
+        let document_mode = parser.document_mode_for_conformance();
+        let capture = parser
+            .take_observations_for_conformance()
+            .expect("document-mode observation capture");
+        assert!(!capture.token_capture_failed);
+        assert_eq!(capture.invariant, None);
+        assert_eq!(capture.tokens.dropped, 0);
+        assert_eq!(capture.parse_errors.dropped, 0);
+        assert_eq!(capture.implementation_diagnostics.dropped, 0);
+        let output = parser.into_output().expect("document-mode output");
+        Run {
+            document_mode,
+            capture,
+            output,
+        }
+    }
+
+    fn document_summary(output: &super::ParseOutput) -> Vec<String> {
+        let mut summary = Vec::new();
+        summarize(&output.document, &mut summary);
+        summary
+    }
+
+    let cases = [
+        ("<!doctype html><p>x", crate::DocumentMode::NoQuirks),
+        (
+            "<!doctype html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\"><p>x",
+            crate::DocumentMode::LimitedQuirks,
+        ),
+        ("<!doctype nope><p>x", crate::DocumentMode::Quirks),
+        (
+            "<!doctype html><p>x<!doctype nope>",
+            crate::DocumentMode::NoQuirks,
+        ),
+    ];
+
+    for (source, expected_mode) in cases {
+        let baseline = run(&[source.as_bytes()]);
+        assert_eq!(
+            baseline.document_mode, expected_mode,
+            "whole-input mode for source={source:?}"
+        );
+        let baseline_summary = document_summary(&baseline.output);
+
+        for split in 1..source.len() {
+            let chunks = [&source.as_bytes()[..split], &source.as_bytes()[split..]];
+            let chunked = run(&chunks);
+            assert_eq!(
+                chunked.document_mode, baseline.document_mode,
+                "document mode changed for source={source:?}, split={split}"
+            );
+            assert_eq!(
+                chunked.capture, baseline.capture,
+                "canonical observations changed for source={source:?}, split={split}"
+            );
+            assert_eq!(
+                chunked.output.patches, baseline.output.patches,
+                "patches changed for source={source:?}, split={split}"
+            );
+            assert_eq!(
+                chunked.output.counters, baseline.output.counters,
+                "mandatory counters changed for source={source:?}, split={split}"
+            );
+            assert_eq!(
+                chunked.output.parse_errors, baseline.output.parse_errors,
+                "legacy parse-error facade changed for source={source:?}, split={split}"
+            );
+            assert_eq!(
+                chunked.output.contains_full_patch_history,
+                baseline.output.contains_full_patch_history,
+                "patch-history completeness changed for source={source:?}, split={split}"
+            );
+            assert_eq!(
+                document_summary(&chunked.output),
+                baseline_summary,
+                "materialized DOM changed for source={source:?}, split={split}"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "parser-conformance")]
+#[test]
 fn comment_observation_is_neutral_and_legacy_projection_stays_lossy_at_every_split() {
     use crate::html5::shared::{
         ParserObservationCapture, ParserObservationConfig, SurfaceCaptureRequest,
@@ -580,8 +689,19 @@ fn comment_observation_is_neutral_and_legacy_projection_stays_lossy_at_every_spl
         );
         assert_eq!(
             baseline.output.counters.parse_errors,
-            u64::from(expected_legacy.is_some()),
+            observed_baseline
+                .capture
+                .as_ref()
+                .expect("observed baseline capture")
+                .parse_errors
+                .items
+                .len() as u64,
             "source={source:?}"
+        );
+        assert_eq!(
+            baseline.output.parse_errors.len(),
+            usize::from(expected_legacy.is_some()),
+            "the exact-position facade omits the unavailable-position initial tree error"
         );
         match expected_legacy {
             Some((code, position, aux)) => {
@@ -637,7 +757,8 @@ fn comment_observation_is_neutral_and_legacy_projection_stays_lossy_at_every_spl
 fn start_tag_solidus_semantics_preserve_tokens_diagnostics_dom_and_patches_at_every_split() {
     use crate::html5::shared::{
         ObservedToken, ObservedTokenAttribute, ParserObservationCapture, ParserObservationConfig,
-        SurfaceCaptureRequest,
+        SurfaceCaptureRequest, TreeConstructionImplementationDiagnosticCode,
+        TreeConstructionParseErrorCode,
     };
 
     struct Run {
@@ -698,8 +819,11 @@ fn start_tag_solidus_semantics_preserve_tokens_diagnostics_dom_and_patches_at_ev
             baseline.output.counters.decode_errors, 0,
             "source={source:?}"
         );
+        let unacknowledged_self_closing = self_closing && tag_name == "div";
+        let altered_html_stack_disposition = self_closing && tag_name == "div";
+        let expected_parse_error_count = 1 + u64::from(unacknowledged_self_closing);
         assert_eq!(
-            baseline.output.counters.parse_errors, 0,
+            baseline.output.counters.parse_errors, expected_parse_error_count,
             "source={source:?}"
         );
         assert_eq!(
@@ -786,21 +910,328 @@ fn start_tag_solidus_semantics_preserve_tokens_diagnostics_dom_and_patches_at_ev
                 capture.tokens.items, expected_tokens,
                 "source={source:?}, split={split}"
             );
-            assert!(
-                capture.parse_errors.items.is_empty(),
+            assert_eq!(
+                capture.parse_errors.items[0].code,
+                crate::html5::shared::ParseErrorCode::TreeConstruction(
+                    TreeConstructionParseErrorCode::ExpectedDoctypeBeforeNonSpaceToken,
+                ),
                 "source={source:?}, split={split}"
             );
+            assert_eq!(
+                capture.parse_errors.items.len(),
+                expected_parse_error_count as usize,
+                "source={source:?}, split={split}"
+            );
+            if unacknowledged_self_closing {
+                assert_eq!(
+                    capture.parse_errors.items[1].code,
+                    crate::html5::shared::ParseErrorCode::TreeConstruction(
+                        TreeConstructionParseErrorCode::UnacknowledgedSelfClosingFlag,
+                    ),
+                    "source={source:?}, split={split}"
+                );
+                assert_eq!(
+                    capture.parse_errors.items[1].recovery, None,
+                    "recovery metadata must distinguish an ignored flag from legacy stack alteration"
+                );
+            }
             assert_eq!(
                 capture.parse_errors.dropped, 0,
                 "source={source:?}, split={split}"
             );
-            assert!(
-                capture.implementation_diagnostics.items.is_empty(),
+            assert_eq!(
+                capture.implementation_diagnostics.items.len(),
+                usize::from(altered_html_stack_disposition),
                 "source={source:?}, split={split}"
             );
+            if altered_html_stack_disposition {
+                assert_eq!(
+                    capture.implementation_diagnostics.items[0].code(),
+                    crate::html5::shared::ImplementationDiagnosticCode::TreeConstruction(
+                        TreeConstructionImplementationDiagnosticCode::
+                            NonVoidHtmlSelfClosingFlagAlteredStackDisposition,
+                    ),
+                    "source={source:?}, split={split}"
+                );
+            }
             assert_eq!(
                 capture.implementation_diagnostics.dropped, 0,
                 "source={source:?}, split={split}"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "parser-conformance")]
+#[test]
+fn supported_void_rule_groups_acknowledge_self_closing_at_every_split() {
+    use crate::html5::shared::{
+        ImplementationDiagnosticCode, ParseErrorCode, ParserObservationCapture,
+        ParserObservationConfig, SurfaceCaptureRequest,
+        TreeConstructionImplementationDiagnosticCode, TreeConstructionParseErrorCode,
+    };
+
+    struct Run {
+        output: super::ParseOutput,
+        capture: Option<ParserObservationCapture>,
+    }
+
+    fn run(chunks: &[&[u8]], observed: bool) -> Run {
+        let mut parser = if observed {
+            HtmlParser::new_with_observations(
+                HtmlParseOptions::default(),
+                ParserObservationConfig {
+                    tokens: SurfaceCaptureRequest::NotRequested,
+                    parse_errors: SurfaceCaptureRequest::Capture { capacity: 256 },
+                    implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 256 },
+                },
+            )
+            .expect("observed parser")
+        } else {
+            HtmlParser::new(HtmlParseOptions::default()).expect("ordinary parser")
+        };
+        for chunk in chunks {
+            parser.push_bytes(chunk).expect("void-rule chunk");
+            parser.pump().expect("void-rule pump");
+        }
+        parser.finish().expect("void-rule finish");
+        let capture = observed
+            .then(|| parser.take_observations_for_conformance())
+            .flatten();
+        let output = parser.into_output().expect("void-rule output");
+        Run { output, capture }
+    }
+
+    fn assert_no_self_closing_diagnostic(capture: &ParserObservationCapture, source: &str) {
+        assert!(
+            !capture.parse_errors.items.iter().any(|event| {
+                event.code
+                    == ParseErrorCode::TreeConstruction(
+                        TreeConstructionParseErrorCode::UnacknowledgedSelfClosingFlag,
+                    )
+            }),
+            "supported void rule left a flag unacknowledged: {source:?}"
+        );
+        assert!(
+            !capture
+                .implementation_diagnostics
+                .items
+                .iter()
+                .any(|event| {
+                    event.code()
+                        == ImplementationDiagnosticCode::TreeConstruction(
+                            TreeConstructionImplementationDiagnosticCode::
+                                NonVoidHtmlSelfClosingFlagAlteredStackDisposition,
+                        )
+                }),
+            "supported void rule selected the deprecated non-void stack disposition: {source:?}"
+        );
+    }
+
+    let sources = [
+        // "in body" void rule, including the supported legacy members.
+        "<!doctype html><area/><basefont/><bgsound/><br/><embed/><img/><param/><source/><track/><wbr/>",
+        // Dedicated "in body" input/hr/keygen rules.
+        "<!doctype html><input/><hr/><keygen/>",
+        // "in head" void rules.
+        "<!doctype html><head><base/><link/><meta/></head>",
+        // "in column group" col rule.
+        "<!doctype html><table><colgroup><col/></colgroup></table>",
+        // Foreign-content acknowledgement remains owned by foreign dispatch.
+        "<!doctype html><svg><path/></svg><math><mi/></math>",
+    ];
+
+    for source in sources {
+        let baseline = run(&[source.as_bytes()], true);
+        let baseline_capture = baseline.capture.as_ref().expect("baseline capture");
+        assert_no_self_closing_diagnostic(baseline_capture, source);
+        let mut baseline_summary = Vec::new();
+        summarize(&baseline.output.document, &mut baseline_summary);
+
+        for split in 0..=source.len() {
+            let chunks: Vec<&[u8]> = if split == 0 || split == source.len() {
+                vec![source.as_bytes()]
+            } else {
+                vec![&source.as_bytes()[..split], &source.as_bytes()[split..]]
+            };
+            let ordinary = run(&chunks, false);
+            let observed = run(&chunks, true);
+            assert_eq!(
+                ordinary.output.patches, baseline.output.patches,
+                "ordinary patch mismatch for {source:?} at split {split}"
+            );
+            assert_eq!(
+                observed.output.patches, baseline.output.patches,
+                "observed patch mismatch for {source:?} at split {split}"
+            );
+            assert_eq!(ordinary.output.counters, baseline.output.counters);
+            assert_eq!(observed.output.counters, baseline.output.counters);
+            assert_eq!(
+                ordinary.output.parse_errors, baseline.output.parse_errors,
+                "legacy facade mismatch for {source:?} at split {split}"
+            );
+            assert_eq!(
+                observed.output.parse_errors, baseline.output.parse_errors,
+                "observed legacy facade mismatch for {source:?} at split {split}"
+            );
+            let mut ordinary_summary = Vec::new();
+            summarize(&ordinary.output.document, &mut ordinary_summary);
+            let mut observed_summary = Vec::new();
+            summarize(&observed.output.document, &mut observed_summary);
+            assert_eq!(ordinary_summary, baseline_summary);
+            assert_eq!(observed_summary, baseline_summary);
+            let capture = observed.capture.as_ref().expect("observed capture");
+            assert_no_self_closing_diagnostic(capture, source);
+            assert_eq!(
+                capture.parse_errors, baseline_capture.parse_errors,
+                "parse observation mismatch for {source:?} at split {split}"
+            );
+            assert_eq!(
+                capture.implementation_diagnostics, baseline_capture.implementation_diagnostics,
+                "implementation observation mismatch for {source:?} at split {split}"
+            );
+        }
+    }
+}
+
+#[cfg(feature = "parser-conformance")]
+#[test]
+fn configured_insertion_suppression_never_claims_legacy_stack_alteration() {
+    use crate::html5::shared::{
+        EventPosition, ImplementationDiagnosticCode, ParseErrorCode, ParserObservationCapture,
+        ParserObservationConfig, ParserRecoveryAction, ParserResourceLimit,
+        PositionUnavailableReason, SurfaceCaptureRequest,
+        TreeConstructionImplementationDiagnosticCode, TreeConstructionParseErrorCode,
+    };
+
+    struct Run {
+        output: super::ParseOutput,
+        capture: Option<ParserObservationCapture>,
+    }
+
+    fn run(source: &str, split: Option<usize>, options: HtmlParseOptions, observed: bool) -> Run {
+        let mut parser = if observed {
+            HtmlParser::new_with_observations(
+                options,
+                ParserObservationConfig {
+                    tokens: SurfaceCaptureRequest::NotRequested,
+                    parse_errors: SurfaceCaptureRequest::Capture { capacity: 16 },
+                    implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 16 },
+                },
+            )
+            .expect("observed parser")
+        } else {
+            HtmlParser::new(options).expect("ordinary parser")
+        };
+        if let Some(split) = split {
+            parser
+                .push_bytes(&source.as_bytes()[..split])
+                .expect("first limit chunk");
+            parser.pump().expect("first limit pump");
+            parser
+                .push_bytes(&source.as_bytes()[split..])
+                .expect("second limit chunk");
+            parser.pump().expect("second limit pump");
+        } else {
+            parser.push_str(source).expect("whole limit input");
+            parser.pump().expect("whole limit pump");
+        }
+        parser.finish().expect("limit finish");
+        let capture = observed
+            .then(|| parser.take_observations_for_conformance())
+            .flatten();
+        let output = parser.into_output().expect("limit output");
+        Run { output, capture }
+    }
+
+    let mut open_elements = HtmlParseOptions::default();
+    open_elements.tree_builder.limits.max_open_elements_depth = 2;
+    let mut nodes = HtmlParseOptions::default();
+    nodes.tree_builder.limits.max_nodes_created = 4;
+    let mut children = HtmlParseOptions::default();
+    children.tree_builder.limits.max_children_per_node = 2;
+
+    for (source, options, expected_limit) in [
+        (
+            "<!doctype html><div/>",
+            open_elements,
+            ParserResourceLimit::TreeOpenElementsDepth,
+        ),
+        (
+            "<!doctype html><div/>",
+            nodes,
+            ParserResourceLimit::TreeNodeCount,
+        ),
+        (
+            "<!doctype html><p>x</p><span>y</span><div/>",
+            children,
+            ParserResourceLimit::TreeChildrenPerNode,
+        ),
+    ] {
+        let baseline = run(source, None, options.clone(), true);
+        let baseline_capture = baseline.capture.as_ref().expect("baseline capture");
+        assert_eq!(baseline.output.counters.parse_errors, 1);
+        assert_eq!(baseline.output.counters.errors_dropped, 0);
+        assert!(
+            baseline.output.parse_errors.is_empty(),
+            "unavailable tree errors must not enter the exact-position facade"
+        );
+        assert_eq!(baseline_capture.parse_errors.items.len(), 1);
+        let parse_error = &baseline_capture.parse_errors.items[0];
+        assert_eq!(parse_error.occurrence, 1);
+        assert_eq!(
+            parse_error.code,
+            ParseErrorCode::TreeConstruction(
+                TreeConstructionParseErrorCode::UnacknowledgedSelfClosingFlag,
+            )
+        );
+        assert_eq!(
+            parse_error.recovery,
+            Some(ParserRecoveryAction::IgnoreSelfClosingFlag)
+        );
+        assert_eq!(
+            parse_error.position,
+            EventPosition::Unavailable(PositionUnavailableReason::ParserDidNotProvidePosition,)
+        );
+        assert_eq!(
+            baseline_capture.implementation_diagnostics.items.len(),
+            1,
+            "exactly one configured limit should suppress insertion for {source:?}: {:?}",
+            baseline_capture.implementation_diagnostics.items
+        );
+        let resource = &baseline_capture.implementation_diagnostics.items[0];
+        assert_eq!(resource.occurrence(), 1);
+        assert_eq!(
+            resource.code(),
+            ImplementationDiagnosticCode::ParserResourceLimitActivated(expected_limit)
+        );
+        assert_ne!(
+            resource.code(),
+            ImplementationDiagnosticCode::TreeConstruction(
+                TreeConstructionImplementationDiagnosticCode::
+                    NonVoidHtmlSelfClosingFlagAlteredStackDisposition,
+            )
+        );
+        let mut baseline_summary = Vec::new();
+        summarize(&baseline.output.document, &mut baseline_summary);
+
+        for split in 0..=source.len() {
+            let split = (split != 0 && split != source.len()).then_some(split);
+            let ordinary = run(source, split, options.clone(), false);
+            let observed = run(source, split, options.clone(), true);
+            for candidate in [&ordinary, &observed] {
+                assert_eq!(candidate.output.patches, baseline.output.patches);
+                assert_eq!(candidate.output.counters, baseline.output.counters);
+                assert_eq!(candidate.output.parse_errors, baseline.output.parse_errors);
+                let mut summary = Vec::new();
+                summarize(&candidate.output.document, &mut summary);
+                assert_eq!(summary, baseline_summary);
+            }
+            let capture = observed.capture.as_ref().expect("observed capture");
+            assert_eq!(capture.parse_errors, baseline_capture.parse_errors);
+            assert_eq!(
+                capture.implementation_diagnostics,
+                baseline_capture.implementation_diagnostics
             );
         }
     }
@@ -927,7 +1358,8 @@ fn text_mode_end_tag_position_observation_preserves_dom_patches_and_legacy_outpu
 fn tokenizer_recovery_metadata_matches_literal_references_and_duplicate_attribute_output() {
     use crate::html5::shared::{
         ObservedToken, ObservedTokenAttribute, ParseErrorCode, ParserObservationCapture,
-        ParserObservationConfig, ParserRecoveryAction, SurfaceCaptureRequest, WhatwgParseErrorCode,
+        ParserObservationConfig, ParserRecoveryAction, SurfaceCaptureRequest,
+        TreeConstructionParseErrorCode, WhatwgParseErrorCode,
     };
 
     struct Run {
@@ -993,7 +1425,7 @@ fn tokenizer_recovery_metadata_matches_literal_references_and_duplicate_attribut
     for (source, code) in numeric_cases {
         let baseline = run(&[source.as_bytes()], false);
         assert_eq!(baseline.completion, Ok(()));
-        assert_eq!(baseline.output.counters.parse_errors, 1);
+        assert_eq!(baseline.output.counters.parse_errors, 2);
         assert_eq!(baseline.output.counters.decode_errors, 0);
         assert_eq!(baseline.output.parse_errors.len(), 1);
         assert_eq!(
@@ -1048,7 +1480,7 @@ fn tokenizer_recovery_metadata_matches_literal_references_and_duplicate_attribut
                     ObservedToken::Eof,
                 ]
             );
-            assert_eq!(capture.parse_errors.items.len(), 1);
+            assert_eq!(capture.parse_errors.items.len(), 2);
             assert_eq!(
                 capture.parse_errors.items[0].code,
                 ParseErrorCode::Standard(code)
@@ -1056,6 +1488,12 @@ fn tokenizer_recovery_metadata_matches_literal_references_and_duplicate_attribut
             assert_eq!(
                 capture.parse_errors.items[0].recovery,
                 Some(ParserRecoveryAction::PreserveCharacterReferenceLiteral)
+            );
+            assert_eq!(
+                capture.parse_errors.items[1].code,
+                ParseErrorCode::TreeConstruction(
+                    TreeConstructionParseErrorCode::ExpectedDoctypeBeforeNonSpaceToken,
+                )
             );
             assert!(!source.contains('\u{FFFD}'));
         }
@@ -1068,7 +1506,7 @@ fn tokenizer_recovery_metadata_matches_literal_references_and_duplicate_attribut
     ] {
         let baseline = run(&[source.as_bytes()], false);
         assert_eq!(baseline.completion, Ok(()));
-        assert_eq!(baseline.output.counters.parse_errors, 1);
+        assert_eq!(baseline.output.counters.parse_errors, 2);
         assert_eq!(baseline.output.parse_errors.len(), 1);
         assert_eq!(
             baseline.output.parse_errors[0].code,
@@ -1125,7 +1563,7 @@ fn tokenizer_recovery_metadata_matches_literal_references_and_duplicate_attribut
                     ObservedToken::Eof,
                 ]
             );
-            assert_eq!(capture.parse_errors.items.len(), 1);
+            assert_eq!(capture.parse_errors.items.len(), 2);
             assert_eq!(
                 capture.parse_errors.items[0].code,
                 ParseErrorCode::Standard(WhatwgParseErrorCode::DuplicateAttribute)
@@ -1137,6 +1575,12 @@ fn tokenizer_recovery_metadata_matches_literal_references_and_duplicate_attribut
             assert_ne!(
                 capture.parse_errors.items[0].recovery,
                 Some(ParserRecoveryAction::IgnoreToken)
+            );
+            assert_eq!(
+                capture.parse_errors.items[1].code,
+                ParseErrorCode::TreeConstruction(
+                    TreeConstructionParseErrorCode::ExpectedDoctypeBeforeNonSpaceToken,
+                )
             );
         }
     }
@@ -1278,5 +1722,93 @@ fn malformed_byte_observation_is_counter_and_output_neutral_at_every_split() {
                 );
             }
         }
+    }
+}
+
+#[cfg(feature = "parser-conformance")]
+#[test]
+fn tree_errors_count_without_becoming_fabricated_legacy_position_events() {
+    use crate::html5::shared::{
+        ParseErrorCode, ParserObservationConfig, SurfaceCaptureRequest,
+        TreeConstructionParseErrorCode,
+    };
+
+    fn finish(mut parser: HtmlParser) -> (super::HtmlParseCounters, Vec<super::HtmlParseEvent>) {
+        parser.push_str("<div>").expect("push");
+        parser.finish().expect("finish");
+        let counters = parser.counters();
+        let events = parser.parse_errors();
+        let _ = parser.into_output().expect("output");
+        (counters, events)
+    }
+
+    let ordinary = finish(HtmlParser::new(HtmlParseOptions::default()).expect("ordinary parser"));
+    assert_eq!(ordinary.0.parse_errors, 1);
+    assert!(ordinary.1.is_empty());
+    assert_eq!(ordinary.0.errors_dropped, 0);
+
+    let mut observed = HtmlParser::new_with_observations(
+        HtmlParseOptions::default(),
+        ParserObservationConfig {
+            tokens: SurfaceCaptureRequest::NotRequested,
+            parse_errors: SurfaceCaptureRequest::Capture { capacity: 8 },
+            implementation_diagnostics: SurfaceCaptureRequest::NotRequested,
+        },
+    )
+    .expect("observed parser");
+    observed.push_str("<div>").expect("push");
+    observed.finish().expect("finish");
+    assert_eq!(observed.counters().parse_errors, 1);
+    assert!(observed.parse_errors().is_empty());
+    assert_eq!(observed.counters().errors_dropped, 0);
+    let capture = observed
+        .take_observations_for_conformance()
+        .expect("capture");
+    assert_eq!(capture.parse_errors.items.len(), 1);
+    assert_eq!(
+        capture.parse_errors.items[0].code,
+        ParseErrorCode::TreeConstruction(
+            TreeConstructionParseErrorCode::ExpectedDoctypeBeforeNonSpaceToken,
+        )
+    );
+    let _ = observed.into_output().expect("output");
+
+    let options = HtmlParseOptions {
+        error_policy: HtmlErrorPolicy {
+            track: false,
+            max_stored: 0,
+            debug_only: false,
+            track_counters: true,
+        },
+        ..HtmlParseOptions::default()
+    };
+    let storage_disabled = finish(HtmlParser::new(options).expect("storage-disabled parser"));
+    assert_eq!(storage_disabled.0.parse_errors, 1);
+    assert!(storage_disabled.1.is_empty());
+    assert_eq!(storage_disabled.0.errors_dropped, 0);
+}
+
+#[test]
+fn integrated_text_mode_eof_counts_once_without_a_legacy_position_event() {
+    for source in [
+        "<!doctype html><title>x",
+        "<!doctype html><textarea>x",
+        "<!doctype html><style>x",
+        "<!doctype html><script>x",
+    ] {
+        let mut parser =
+            HtmlParser::new(HtmlParseOptions::default()).expect("integrated parser creation");
+        parser.push_str(source).expect("push");
+        parser.finish().expect("finish");
+        assert_eq!(
+            parser.counters().parse_errors,
+            1,
+            "EOF-in-text-mode must have exactly one production owner for {source:?}"
+        );
+        assert!(
+            parser.parse_errors().is_empty(),
+            "unavailable tree positions must not enter the exact-position facade"
+        );
+        let _ = parser.into_output().expect("output");
     }
 }

@@ -142,7 +142,7 @@ fn processing_instruction_dom_and_patch_snapshots_escape_deterministically() {
 
 #[test]
 fn impossible_text_mode_pi_returns_internal_error_without_mutation() {
-    let mut ctx = DocumentParseContext::new();
+    let mut ctx = DocumentParseContext::with_tree_observations_for_test();
     let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).unwrap();
     builder.insertion_mode = InsertionMode::Text;
     let before_state = builder.state_snapshot();
@@ -151,20 +151,32 @@ fn impossible_text_mode_pi_returns_internal_error_without_mutation() {
         target: "pi".into(),
         data: TextValue::Owned("data".into()),
     });
-    assert!(builder.process(&token, &ctx.atoms, &EmptyResolver).is_err());
+    assert!(
+        builder
+            .process(
+                &token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &EmptyResolver
+            )
+            .is_err()
+    );
     assert_eq!(builder.state_snapshot(), before_state);
     assert_eq!(builder.dom_invariant_state(), before_dom);
     assert!(builder.drain_patches().is_empty());
-    assert!(builder.take_parse_error_kinds_for_test().is_empty());
+    assert!(ctx.take_tree_parse_error_descriptions_for_test().is_empty());
 
-    let mut direct_context = DocumentParseContext::new();
+    let mut direct_context = DocumentParseContext::with_tree_observations_for_test();
     let mut direct_builder =
         Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut direct_context).unwrap();
     direct_builder.insertion_mode = InsertionMode::Text;
     let direct_before_state = direct_builder.state_snapshot();
     let direct_before_dom = direct_builder.dom_invariant_state();
     let bypass = catch_unwind(AssertUnwindSafe(|| {
-        let _ = direct_builder.handle_text_mode(&token, &direct_context.atoms, &EmptyResolver);
+        let mut process_context =
+            crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut direct_context);
+        let atoms = process_context.atoms();
+        let _ =
+            direct_builder.handle_text_mode(&token, atoms, &mut process_context, &EmptyResolver);
     }));
     assert!(
         bypass.is_err(),
@@ -173,5 +185,9 @@ fn impossible_text_mode_pi_returns_internal_error_without_mutation() {
     assert_eq!(direct_builder.state_snapshot(), direct_before_state);
     assert_eq!(direct_builder.dom_invariant_state(), direct_before_dom);
     assert!(direct_builder.drain_patches().is_empty());
-    assert!(direct_builder.take_parse_error_kinds_for_test().is_empty());
+    assert!(
+        direct_context
+            .take_tree_parse_error_descriptions_for_test()
+            .is_empty()
+    );
 }

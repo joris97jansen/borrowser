@@ -98,8 +98,9 @@ fn run_decoded_tokens(
         }
 
         digest.record_token(token, &ctx.atoms);
+        let mut process_context = super::super::TreeBuilderProcessContext::new(&mut ctx);
         let step = builder
-            .process(token, &ctx.atoms, &resolver)
+            .process(token, &mut process_context, &resolver)
             .map_err(|err| TreeBuilderFuzzError::TreeBuilderFailure {
                 token_index: processed_steps,
                 detail: format!("{err:?}"),

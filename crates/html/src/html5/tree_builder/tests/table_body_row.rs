@@ -9,7 +9,7 @@ fn cell_start_directly_under_table_synthesizes_tbody_and_row_with_bounded_reproc
     use crate::html5::tree_builder::modes::InsertionMode;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -37,7 +37,11 @@ fn cell_start_directly_under_table_synthesizes_tbody_and_row_with_bounded_reproc
         },
     ] {
         let _ = builder
-            .process(&token, &ctx.atoms, &resolver)
+            .process(
+                &token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("direct cell recovery should remain recoverable");
     }
 
@@ -64,7 +68,7 @@ fn cell_start_directly_under_table_synthesizes_tbody_and_row_with_bounded_reproc
         ],
         "direct cells must be recovered by parser-created implied tbody/tr elements"
     );
-    let errors = builder.take_parse_error_kinds_for_test();
+    let errors = ctx.take_tree_parse_error_descriptions_for_test();
     assert!(
         errors.contains(&"in-table-cell-start-tag-implies-row-group"),
         "direct cell under table must report implied row-group recovery"
@@ -86,7 +90,7 @@ fn in_row_cell_start_tag_switches_to_in_cell_and_pushes_afe_marker() {
     use crate::html5::tree_builder::modes::InsertionMode;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -104,7 +108,7 @@ fn in_row_cell_start_tag_switches_to_in_cell_and_pushes_afe_marker() {
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .unwrap_or_else(|_| panic!("{tag} start tag should remain recoverable"));
@@ -146,7 +150,7 @@ fn in_row_cell_start_tag_switches_to_in_cell_and_pushes_afe_marker() {
         "entering a table cell should push a marker onto AFE"
     );
     assert!(
-        builder.take_parse_error_kinds_for_test().is_empty(),
+        ctx.take_tree_parse_error_descriptions_for_test().is_empty(),
         "well-formed tbody/tr/td entry should not report parse errors"
     );
 }

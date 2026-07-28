@@ -5,6 +5,8 @@ use crate::html5::shared::ParserObservationCapture;
 use crate::html5::shared::{
     ByteStreamDecoder, Counters, DocumentParseContext, Html5SessionError, Input, ParseError,
 };
+#[cfg(all(test, feature = "parser-conformance"))]
+use crate::html5::tokenizer::TokenizerControl;
 use crate::html5::tokenizer::{Html5Tokenizer, TokenizerConfig};
 #[cfg(test)]
 use crate::html5::tree_builder::PatchSink;
@@ -19,6 +21,8 @@ pub struct Html5ParseSession {
     pub(super) builder: Html5TreeBuilder,
     pub(super) patch_emitter: PatchEmitterAdapter,
     pub(super) next_patch_batch_version: u64,
+    #[cfg(all(test, feature = "parser-conformance"))]
+    pub(super) applied_tokenizer_controls_for_test: Vec<TokenizerControl>,
 }
 
 // Post-finish draining should converge in a handful of iterations because
@@ -61,6 +65,8 @@ impl Html5ParseSession {
             builder,
             patch_emitter: PatchEmitterAdapter::new(),
             next_patch_batch_version: 0,
+            #[cfg(all(test, feature = "parser-conformance"))]
+            applied_tokenizer_controls_for_test: Vec::new(),
         })
     }
 
@@ -160,6 +166,11 @@ impl Html5ParseSession {
     }
 
     #[cfg(feature = "parser-conformance")]
+    pub(crate) fn document_mode_for_conformance(&self) -> crate::DocumentMode {
+        self.builder.document_mode()
+    }
+
+    #[cfg(feature = "parser-conformance")]
     pub(crate) fn tokenizer_invariant_for_conformance(
         &self,
     ) -> Option<crate::html5::tokenizer::TokenizerInvariantKind> {
@@ -187,6 +198,11 @@ impl Html5ParseSession {
         &self,
     ) -> Option<crate::html5::tokenizer::TextModeSpec> {
         self.tokenizer.active_text_mode_for_test()
+    }
+
+    #[cfg(all(test, feature = "parser-conformance"))]
+    pub(crate) fn applied_tokenizer_controls_for_test(&self) -> &[TokenizerControl] {
+        &self.applied_tokenizer_controls_for_test
     }
 
     #[cfg(test)]

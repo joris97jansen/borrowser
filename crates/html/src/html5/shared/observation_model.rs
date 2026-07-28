@@ -118,9 +118,6 @@ pub enum WhatwgParseErrorCode {
 /// production recovery condition supported by the tokenizer.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum TokenizerExtensionParseErrorCode {
-    /// Borrowser's explicit text-mode session reached EOF while the tokenizer
-    /// still had an active RCDATA, RAWTEXT, or script-data control.
-    EofInTextMode,
     /// Core-v0's deliberately limited character-reference decoder preserved a
     /// numeric reference containing unsupported trailing syntax.
     MalformedNumericCharacterReference,
@@ -139,18 +136,42 @@ pub enum TokenizerExtensionParseErrorCode {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[cfg_attr(not(any(test, feature = "parser-conformance")), allow(dead_code))]
 pub enum TreeConstructionParseErrorCode {
-    UnexpectedDoctypeInBody,
-    EndTagElementNotInScope,
-    UnmatchedParagraphEndTag,
-    NestedFormStartTag,
-    NestedSelectStartTag,
-    UnexpectedTokenInSelect,
-    UnexpectedTokenInTable,
-    UnexpectedTokenInTableBody,
-    UnexpectedTokenInRow,
-    UnexpectedTokenInCell,
-    UnexpectedHtmlTokenInForeignContent,
+    ExpectedDoctypeBeforeNonSpaceToken,
+    DoctypeTokenNotAllowed,
+    StartTagForbiddenByActiveInsertionMode,
+    EndTagForbiddenByActiveInsertionMode,
+    HtmlStartTagAfterHtmlElement,
+    BodyStartTagAfterBodyElement,
+    TokenForbiddenAfterBody,
+    TokenForbiddenAfterAfterBody,
+    UnacknowledgedSelfClosingFlag,
+    ElementEndTagNotInRequiredScope,
+    CurrentNodeMismatchAfterImpliedEndTags,
+    ParagraphEndTagWithoutParagraphInButtonScope,
+    AnyOtherEndTagBlockedBySpecialElement,
+    FormStartTagWithActiveFormPointer,
+    FormEndTagWithoutFormElement,
+    FormEndTagFormElementNotInScope,
+    SelectStartTagWithSelectInScope,
+    SelectFamilyElementRemainsAfterImpliedEndTags,
+    ActiveAnchorStartTag,
+    NobrStartTagWithNobrInScope,
+    AdoptionFormattingElementMissingFromOpenElements,
+    AdoptionFormattingElementNotInScope,
+    AdoptionFormattingElementNotCurrentNode,
+    FormStartTagInTable,
+    HiddenInputStartTagInTable,
+    NonSpaceCharacterInTableText,
+    NonTableTokenInTable,
+    NestedTableStartTag,
+    CellStartTagWithoutOpenRow,
+    TableContextElementNotInRequiredScope,
+    CurrentNodeNotColgroup,
     EofWithOpenTemplate,
+    EofInTextMode,
+    HtmlTokenNotAllowedInForeignContent,
+    NullCharacterInForeignContent,
+    ForeignEndTagCurrentNodeMismatch,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -173,6 +194,7 @@ pub enum ParserRecoveryAction {
     FosterParent,
     PopOpenElements,
     ReplaceInvalidInput,
+    IgnoreSelfClosingFlag,
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -205,6 +227,26 @@ pub enum ParserResourceLimit {
     DoctypeBytes,
     EndTagMatchScanBytes,
     NumericCharacterReferenceDigits,
+    TreeOpenElementsDepth,
+    TreeNodeCount,
+    TreeChildrenPerNode,
+    TreeTemplateModeDepth,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+#[cfg_attr(not(any(test, feature = "parser-conformance")), allow(dead_code))]
+pub enum TreeConstructionImplementationDiagnosticCode {
+    HtmlElementAttributesNotMerged,
+    BodyElementAttributesNotMerged,
+    UnsupportedTableInsertionModeFallback,
+    UnexpectedStartTagTokenInTextMode,
+    TextModeStartTagAttributeValuesDiscarded,
+    TextModeStartTagAttributeNamesCanonicalized,
+    UnexpectedDoctypeTokenInTextMode,
+    UnexpectedEndTagTokenInTextMode,
+    MismatchedCellEndTagClosedOpenCell,
+    CaptionCloseImpliedEndTagsNotImplemented,
+    NonVoidHtmlSelfClosingFlagAlteredStackDisposition,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -218,6 +260,7 @@ pub enum ImplementationDiagnosticCode {
     InvalidUtf8Replaced(Utf8ReplacementReason),
     ParserResourceLimitActivated(ParserResourceLimit),
     ParserGuardrailActivated(ParserGuardrail),
+    TreeConstruction(TreeConstructionImplementationDiagnosticCode),
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -265,6 +308,10 @@ pub enum ImplementationDiagnosticEvent {
         guardrail: ParserGuardrail,
         payload: ParserGuardrailPayload,
     },
+    TreeConstruction {
+        metadata: DiagnosticEventMetadata,
+        code: TreeConstructionImplementationDiagnosticCode,
+    },
 }
 
 #[cfg_attr(not(any(test, feature = "parser-conformance")), allow(dead_code))]
@@ -284,6 +331,9 @@ impl ImplementationDiagnosticEvent {
             Self::ParserGuardrailActivated { guardrail, .. } => {
                 ImplementationDiagnosticCode::ParserGuardrailActivated(*guardrail)
             }
+            Self::TreeConstruction { code, .. } => {
+                ImplementationDiagnosticCode::TreeConstruction(*code)
+            }
         }
     }
 
@@ -291,7 +341,8 @@ impl ImplementationDiagnosticEvent {
         match self {
             Self::InvalidUtf8Replaced { metadata, .. }
             | Self::ParserResourceLimitActivated { metadata, .. }
-            | Self::ParserGuardrailActivated { metadata, .. } => metadata,
+            | Self::ParserGuardrailActivated { metadata, .. }
+            | Self::TreeConstruction { metadata, .. } => metadata,
         }
     }
 }

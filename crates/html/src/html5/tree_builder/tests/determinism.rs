@@ -6,7 +6,7 @@ fn tree_builder_process_and_drain_emit_deterministic_patches() {
     use crate::html5::shared::{TextValue, Token};
 
     fn run_once() -> (Vec<DomPatch>, Vec<String>) {
-        let mut ctx = crate::html5::shared::DocumentParseContext::new();
+        let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
         let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
             crate::html5::tree_builder::TreeBuilderConfig::default(),
             &mut ctx,
@@ -31,12 +31,16 @@ fn tree_builder_process_and_drain_emit_deterministic_patches() {
         ];
         for token in &tokens {
             let _ = builder
-                .process(token, &ctx.atoms, &resolver)
+                .process(
+                    token,
+                    &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                    &resolver,
+                )
                 .expect("process should not fail");
         }
         let patches = builder.drain_patches();
-        let errors = builder
-            .take_parse_error_kinds_for_test()
+        let errors = ctx
+            .take_tree_parse_error_descriptions_for_test()
             .into_iter()
             .map(str::to_owned)
             .collect();

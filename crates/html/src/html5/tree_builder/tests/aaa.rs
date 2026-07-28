@@ -9,20 +9,24 @@ fn process_token(
     builder: &mut crate::html5::tree_builder::Html5TreeBuilder,
     tokenizer: &mut Html5Tokenizer,
     token: &Token,
-    ctx: &DocumentParseContext,
+    ctx: &mut DocumentParseContext,
     resolver: &dyn crate::html5::tokenizer::TextResolver,
 ) {
     let control = match token {
         Token::EndTag { name } if builder.known_tags.is_formatting_tag(*name) => {
             let report = builder
-                .run_adoption_agency_algorithm(*name, &ctx.atoms)
+                .run_adoption_agency_algorithm_for_test(*name, ctx)
                 .expect("AAA test driver should remain recoverable");
             if matches!(
                 report.outcome,
                 AdoptionAgencyOutcome::FallbackToGenericEndTag
             ) {
                 builder
-                    .process(token, &ctx.atoms, resolver)
+                    .process(
+                        token,
+                        &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(ctx),
+                        resolver,
+                    )
                     .expect("generic fallback end tag should remain recoverable")
                     .tokenizer_control
             } else {
@@ -31,7 +35,11 @@ fn process_token(
         }
         _ => {
             builder
-                .process(token, &ctx.atoms, resolver)
+                .process(
+                    token,
+                    &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(ctx),
+                    resolver,
+                )
                 .expect("manual AAA test driver should remain recoverable")
                 .tokenizer_control
         }
@@ -69,7 +77,7 @@ fn run_manual_aaa_chunks(chunks: &[&str]) -> Vec<DomPatch> {
             }
             let resolver = batch.resolver();
             for token in batch.iter() {
-                process_token(&mut builder, &mut tokenizer, token, &ctx, &resolver);
+                process_token(&mut builder, &mut tokenizer, token, &mut ctx, &resolver);
             }
         }
     }
@@ -82,7 +90,7 @@ fn run_manual_aaa_chunks(chunks: &[&str]) -> Vec<DomPatch> {
         }
         let resolver = batch.resolver();
         for token in batch.iter() {
-            process_token(&mut builder, &mut tokenizer, token, &ctx, &resolver);
+            process_token(&mut builder, &mut tokenizer, token, &mut ctx, &resolver);
         }
     }
 
@@ -91,7 +99,7 @@ fn run_manual_aaa_chunks(chunks: &[&str]) -> Vec<DomPatch> {
 
 fn assert_start_tag(
     builder: &mut crate::html5::tree_builder::Html5TreeBuilder,
-    ctx: &DocumentParseContext,
+    ctx: &mut DocumentParseContext,
     resolver: &EmptyResolver,
     name: crate::html5::shared::AtomId,
 ) {
@@ -102,7 +110,7 @@ fn assert_start_tag(
                 attrs: Vec::new(),
                 self_closing: false,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(ctx),
             resolver,
         )
         .expect("start tag should remain recoverable");
@@ -122,9 +130,9 @@ fn adoption_agency_lookup_is_marker_bounded() {
     let b = ctx.atoms.intern_ascii_folded("b").expect("atom");
     let applet = ctx.atoms.intern_ascii_folded("applet").expect("atom");
 
-    assert_start_tag(&mut builder, &ctx, &resolver, b);
-    assert_start_tag(&mut builder, &ctx, &resolver, applet);
-    assert_start_tag(&mut builder, &ctx, &resolver, b);
+    assert_start_tag(&mut builder, &mut ctx, &resolver, b);
+    assert_start_tag(&mut builder, &mut ctx, &resolver, applet);
+    assert_start_tag(&mut builder, &mut ctx, &resolver, b);
 
     let candidate = builder
         .adoption_agency_lookup_formatting_element(b)
@@ -153,7 +161,7 @@ fn adoption_agency_presence_and_scope_checks_are_identity_based() {
     let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
     let b = ctx.atoms.intern_ascii_folded("b").expect("atom");
 
-    assert_start_tag(&mut builder, &ctx, &resolver, b);
+    assert_start_tag(&mut builder, &mut ctx, &resolver, b);
     let candidate = builder
         .adoption_agency_lookup_formatting_element(b)
         .expect("active <b> should be discoverable");
@@ -178,7 +186,7 @@ fn adoption_agency_presence_and_scope_checks_are_identity_based() {
     .expect("tree builder init");
     let _ = enter_in_body(&mut scoped_builder, &mut ctx, &resolver);
     let object = ctx.atoms.intern_ascii_folded("object").expect("atom");
-    assert_start_tag(&mut scoped_builder, &ctx, &resolver, b);
+    assert_start_tag(&mut scoped_builder, &mut ctx, &resolver, b);
     scoped_builder
         .open_elements
         .push(OpenElement::new_html(PatchKey(99), object));
@@ -206,9 +214,9 @@ fn adoption_agency_selects_furthest_block_and_common_ancestor_deterministically(
     let div = ctx.atoms.intern_ascii_folded("div").expect("atom");
     let i = ctx.atoms.intern_ascii_folded("i").expect("atom");
 
-    assert_start_tag(&mut builder, &ctx, &resolver, b);
-    assert_start_tag(&mut builder, &ctx, &resolver, div);
-    assert_start_tag(&mut builder, &ctx, &resolver, i);
+    assert_start_tag(&mut builder, &mut ctx, &resolver, b);
+    assert_start_tag(&mut builder, &mut ctx, &resolver, div);
+    assert_start_tag(&mut builder, &mut ctx, &resolver, i);
 
     let candidate = builder
         .adoption_agency_lookup_formatting_element(b)
@@ -245,7 +253,7 @@ fn adoption_agency_furthest_block_uses_corrected_shared_special_taxonomy() {
             .atoms
             .intern_ascii_folded(special_name)
             .expect("special");
-        assert_start_tag(&mut builder, &ctx, &resolver, b);
+        assert_start_tag(&mut builder, &mut ctx, &resolver, b);
         let formatting = builder
             .adoption_agency_lookup_formatting_element(b)
             .expect("formatting entry");
@@ -283,7 +291,7 @@ fn adoption_agency_furthest_block_uses_foreign_expanded_name_taxonomy() {
         let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
         let b = ctx.atoms.intern_ascii_folded("b").expect("b");
         let special = ctx.atoms.intern_exact(local).expect("foreign special");
-        assert_start_tag(&mut builder, &ctx, &resolver, b);
+        assert_start_tag(&mut builder, &mut ctx, &resolver, b);
         let formatting = builder
             .adoption_agency_lookup_formatting_element(b)
             .expect("formatting entry");
@@ -314,7 +322,7 @@ fn adoption_agency_furthest_block_uses_foreign_expanded_name_taxonomy() {
     let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
     let b = ctx.atoms.intern_ascii_folded("b").expect("b");
     let mi = ctx.atoms.intern_exact("mi").expect("mi lookalike");
-    assert_start_tag(&mut builder, &ctx, &resolver, b);
+    assert_start_tag(&mut builder, &mut ctx, &resolver, b);
     let formatting = builder
         .adoption_agency_lookup_formatting_element(b)
         .expect("formatting entry");
@@ -549,20 +557,20 @@ fn adoption_agency_outer_loop_is_bounded_and_stable() {
 
     let a = ctx.atoms.intern_ascii_folded("a").expect("atom");
     let p = ctx.atoms.intern_ascii_folded("p").expect("atom");
-    assert_start_tag(&mut builder, &ctx, &resolver, a);
-    assert_start_tag(&mut builder, &ctx, &resolver, p);
+    assert_start_tag(&mut builder, &mut ctx, &resolver, a);
+    assert_start_tag(&mut builder, &mut ctx, &resolver, p);
     let _ = builder
         .process(
             &Token::Text {
                 text: TextValue::Owned("one".to_string()),
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("text should remain recoverable");
 
     let report = builder
-        .run_adoption_agency_algorithm(a, &ctx.atoms)
+        .run_adoption_agency_algorithm_for_test(a, &mut ctx)
         .expect("AAA should remain recoverable");
     assert_eq!(report.outcome, AdoptionAgencyOutcome::Completed);
     assert_eq!(report.outer_iterations, 2);

@@ -304,7 +304,8 @@ fn drain_batches_into(
             if matches!(token, html::html5::Token::Eof) {
                 *saw_eof_token = true;
             }
-            match builder.push_token(token, &ctx.atoms, &resolver, &mut sink) {
+            let mut process_context = html::html5::TreeBuilderProcessContext::new(ctx);
+            match builder.push_token(token, &mut process_context, &resolver, &mut sink) {
                 Ok(step) => {
                     if let Some(control) = step.tokenizer_control {
                         tokenizer.apply_control(control);

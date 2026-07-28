@@ -46,7 +46,7 @@ impl PartialEq for SelectRun {
 impl Eq for SelectRun {}
 
 fn in_body_builder() -> (Html5TreeBuilder, DocumentParseContext, EmptyResolver) {
-    let mut ctx = DocumentParseContext::new();
+    let mut ctx = DocumentParseContext::with_tree_observations_for_test();
     let mut builder =
         Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).expect("tree builder init");
     let resolver = EmptyResolver;
@@ -58,11 +58,15 @@ fn in_body_builder() -> (Html5TreeBuilder, DocumentParseContext, EmptyResolver) 
 fn process(
     builder: &mut Html5TreeBuilder,
     token: Token,
-    ctx: &DocumentParseContext,
+    ctx: &mut DocumentParseContext,
     resolver: &EmptyResolver,
 ) {
     let _ = builder
-        .process(&token, &ctx.atoms, resolver)
+        .process(
+            &token,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(ctx),
+            resolver,
+        )
         .expect("select-family token should remain recoverable");
 }
 
@@ -78,7 +82,7 @@ fn run_select_chunks(chunks: &[&str]) -> SelectRun {
     use crate::html5::shared::Input;
     use crate::html5::tokenizer::{Html5Tokenizer, TokenizeResult, TokenizerConfig};
 
-    let mut ctx = DocumentParseContext::new();
+    let mut ctx = DocumentParseContext::with_tree_observations_for_test();
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
     let mut builder =
         Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).expect("builder init");
@@ -100,7 +104,11 @@ fn run_select_chunks(chunks: &[&str]) -> SelectRun {
             let resolver = batch.resolver();
             for token in batch.iter() {
                 let step = builder
-                    .process(token, &ctx.atoms, &resolver)
+                    .process(
+                        token,
+                        &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                        &resolver,
+                    )
                     .expect("select parity input must remain recoverable");
                 if let Some(control) = step.tokenizer_control {
                     tokenizer.apply_control(control);
@@ -117,7 +125,11 @@ fn run_select_chunks(chunks: &[&str]) -> SelectRun {
         let resolver = batch.resolver();
         for token in batch.iter() {
             let step = builder
-                .process(token, &ctx.atoms, &resolver)
+                .process(
+                    token,
+                    &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                    &resolver,
+                )
                 .expect("select parity EOF drain must remain recoverable");
             if let Some(control) = step.tokenizer_control {
                 tokenizer.apply_control(control);
@@ -132,7 +144,7 @@ fn run_select_chunks(chunks: &[&str]) -> SelectRun {
         .map(|name| ctx.atoms.resolve(*name).expect("live SOE atom").to_owned())
         .collect();
     let witness = builder.progress_witness();
-    let errors = builder.take_parse_error_kinds_for_test();
+    let errors = ctx.take_tree_parse_error_descriptions_for_test();
     let patches = builder.drain_patches();
     let dom = crate::test_harness::materialize_patch_batches(std::slice::from_ref(&patches))
         .map(|dom| crate::html5::tree_builder::serialize_dom_for_test(&dom))
@@ -155,7 +167,7 @@ fn consecutive_option_and_optgroup_starts_use_shared_implied_end_tags() {
     let optgroup = ctx.atoms.intern_ascii_folded("optgroup").expect("optgroup");
 
     for token in [start(select), start(option), start(option)] {
-        process(&mut builder, token, &ctx, &resolver);
+        process(&mut builder, token, &mut ctx, &resolver);
     }
     assert_eq!(
         builder.state_snapshot().open_element_names,
@@ -167,9 +179,9 @@ fn consecutive_option_and_optgroup_starts_use_shared_implied_end_tags() {
         ]
     );
 
-    process(&mut builder, start(optgroup), &ctx, &resolver);
-    process(&mut builder, start(option), &ctx, &resolver);
-    process(&mut builder, start(optgroup), &ctx, &resolver);
+    process(&mut builder, start(optgroup), &mut ctx, &resolver);
+    process(&mut builder, start(option), &mut ctx, &resolver);
+    process(&mut builder, start(optgroup), &mut ctx, &resolver);
     assert_eq!(
         builder.state_snapshot().open_element_names,
         vec![
@@ -180,7 +192,7 @@ fn consecutive_option_and_optgroup_starts_use_shared_implied_end_tags() {
         ]
     );
     assert!(
-        builder.take_parse_error_kinds_for_test().is_empty(),
+        ctx.take_tree_parse_error_descriptions_for_test().is_empty(),
         "ordinary implied select-family closure is not itself a parse error"
     );
 }
@@ -193,7 +205,7 @@ fn option_start_preserves_an_open_optgroup_exception_target() {
     let optgroup = ctx.atoms.intern_ascii_folded("optgroup").expect("optgroup");
 
     for token in [start(select), start(optgroup), start(option), start(option)] {
-        process(&mut builder, token, &ctx, &resolver);
+        process(&mut builder, token, &mut ctx, &resolver);
     }
     assert_eq!(
         builder.state_snapshot().open_element_names,
@@ -216,7 +228,7 @@ fn select_family_start_recovery_does_not_pop_through_an_intervening_element() {
         let div = ctx.atoms.intern_ascii_folded("div").expect("div");
         let next = ctx.atoms.intern_ascii_folded(next_name).expect("next tag");
         for token in [start(select), start(option), start(div), start(next)] {
-            process(&mut builder, token, &ctx, &resolver);
+            process(&mut builder, token, &mut ctx, &resolver);
         }
         assert_eq!(
             builder.state_snapshot().open_element_names,
@@ -231,7 +243,7 @@ fn select_family_start_recovery_does_not_pop_through_an_intervening_element() {
             "next={next_name}"
         );
         assert_eq!(
-            builder.take_parse_error_kinds_for_test(),
+            ctx.take_tree_parse_error_descriptions_for_test(),
             vec![if next_name == "option" {
                 "in-body-option-start-tag-open-option-remains"
             } else {
@@ -245,8 +257,8 @@ fn select_family_start_recovery_does_not_pop_through_an_intervening_element() {
 fn nested_select_recovery_closes_existing_select_and_inserts_no_replacement() {
     let (mut builder, mut ctx, resolver) = in_body_builder();
     let select = ctx.atoms.intern_ascii_folded("select").expect("select");
-    process(&mut builder, start(select), &ctx, &resolver);
-    process(&mut builder, start(select), &ctx, &resolver);
+    process(&mut builder, start(select), &mut ctx, &resolver);
+    process(&mut builder, start(select), &mut ctx, &resolver);
 
     assert_eq!(
         builder.state_snapshot().open_element_names,
@@ -266,7 +278,7 @@ fn nested_select_recovery_closes_existing_select_and_inserts_no_replacement() {
             .all(|patch| !matches!(patch, DomPatch::RemoveNode { .. }))
     );
     assert_eq!(
-        builder.take_parse_error_kinds_for_test(),
+        ctx.take_tree_parse_error_descriptions_for_test(),
         vec!["in-body-select-start-tag-with-select-in-scope"]
     );
 }
@@ -277,7 +289,7 @@ fn dedicated_select_end_closes_intervening_stack_entries_without_dom_removal() {
     let select = ctx.atoms.intern_ascii_folded("select").expect("select");
     let div = ctx.atoms.intern_ascii_folded("div").expect("div");
     for token in [start(select), start(div), Token::EndTag { name: select }] {
-        process(&mut builder, token, &ctx, &resolver);
+        process(&mut builder, token, &mut ctx, &resolver);
     }
 
     assert_eq!(
@@ -285,7 +297,7 @@ fn dedicated_select_end_closes_intervening_stack_entries_without_dom_removal() {
         vec![builder.known_tags.html, builder.known_tags.body]
     );
     assert_eq!(
-        builder.take_parse_error_kinds_for_test(),
+        ctx.take_tree_parse_error_descriptions_for_test(),
         vec!["in-body-select-end-tag-implied-close-mismatch"]
     );
     assert!(
@@ -295,14 +307,15 @@ fn dedicated_select_end_closes_intervening_stack_entries_without_dom_removal() {
             .all(|patch| !matches!(patch, DomPatch::RemoveNode { .. }))
     );
 
+    ctx.enable_tree_observations_for_test();
     process(
         &mut builder,
         Token::EndTag { name: select },
-        &ctx,
+        &mut ctx,
         &resolver,
     );
     assert_eq!(
-        builder.take_parse_error_kinds_for_test(),
+        ctx.take_tree_parse_error_descriptions_for_test(),
         vec!["in-body-select-end-tag-not-in-scope"]
     );
 }
@@ -319,13 +332,13 @@ fn generic_option_and_optgroup_ends_stop_at_special_barriers() {
                 .intern_ascii_folded(barrier_name)
                 .expect("barrier");
             for token in [start(select), start(target), start(barrier)] {
-                process(&mut builder, token, &ctx, &resolver);
+                process(&mut builder, token, &mut ctx, &resolver);
             }
             let before = builder.state_snapshot().open_element_keys;
             process(
                 &mut builder,
                 Token::EndTag { name: target },
-                &ctx,
+                &mut ctx,
                 &resolver,
             );
             assert_eq!(
@@ -334,7 +347,7 @@ fn generic_option_and_optgroup_ends_stop_at_special_barriers() {
                 "barrier={barrier_name}, target={target_name}"
             );
             assert_eq!(
-                builder.take_parse_error_kinds_for_test(),
+                ctx.take_tree_parse_error_descriptions_for_test(),
                 vec!["in-body-any-other-end-tag-blocked-by-special"],
                 "barrier={barrier_name}, target={target_name}"
             );
@@ -349,23 +362,24 @@ fn generic_option_and_optgroup_ends_close_matches_and_ignore_unmatched_tokens() 
         let select = ctx.atoms.intern_ascii_folded("select").expect("select");
         let target = ctx.atoms.intern_ascii_folded(target_name).expect("target");
         for token in [start(select), start(target), Token::EndTag { name: target }] {
-            process(&mut builder, token, &ctx, &resolver);
+            process(&mut builder, token, &mut ctx, &resolver);
         }
         assert_eq!(
             builder.state_snapshot().open_element_names,
             vec![builder.known_tags.html, builder.known_tags.body, select]
         );
-        assert!(builder.take_parse_error_kinds_for_test().is_empty());
+        assert!(ctx.take_tree_parse_error_descriptions_for_test().is_empty());
+        ctx.enable_tree_observations_for_test();
         let before = builder.state_snapshot().open_element_keys;
         process(
             &mut builder,
             Token::EndTag { name: target },
-            &ctx,
+            &mut ctx,
             &resolver,
         );
         assert_eq!(builder.state_snapshot().open_element_keys, before);
         assert_eq!(
-            builder.take_parse_error_kinds_for_test(),
+            ctx.take_tree_parse_error_descriptions_for_test(),
             vec!["in-body-any-other-end-tag-blocked-by-special"]
         );
     }
@@ -378,12 +392,12 @@ fn generic_option_end_can_cross_an_ordinary_non_special_element() {
     let option = ctx.atoms.intern_ascii_folded("option").expect("option");
     let span = ctx.atoms.intern_ascii_folded("span").expect("span");
     for token in [start(select), start(option), start(span)] {
-        process(&mut builder, token, &ctx, &resolver);
+        process(&mut builder, token, &mut ctx, &resolver);
     }
     process(
         &mut builder,
         Token::EndTag { name: option },
-        &ctx,
+        &mut ctx,
         &resolver,
     );
     assert_eq!(
@@ -391,7 +405,7 @@ fn generic_option_end_can_cross_an_ordinary_non_special_element() {
         vec![builder.known_tags.html, builder.known_tags.body, select,]
     );
     assert_eq!(
-        builder.take_parse_error_kinds_for_test(),
+        ctx.take_tree_parse_error_descriptions_for_test(),
         vec!["in-body-end-tag-implied-close-mismatch"]
     );
 }
@@ -402,18 +416,18 @@ fn generic_option_end_cannot_reach_through_a_select_boundary() {
     let select = ctx.atoms.intern_ascii_folded("select").expect("select");
     let option = ctx.atoms.intern_ascii_folded("option").expect("option");
     for token in [start(option), start(select)] {
-        process(&mut builder, token, &ctx, &resolver);
+        process(&mut builder, token, &mut ctx, &resolver);
     }
     let before = builder.state_snapshot().open_element_keys;
     process(
         &mut builder,
         Token::EndTag { name: option },
-        &ctx,
+        &mut ctx,
         &resolver,
     );
     assert_eq!(builder.state_snapshot().open_element_keys, before);
     assert_eq!(
-        builder.take_parse_error_kinds_for_test(),
+        ctx.take_tree_parse_error_descriptions_for_test(),
         vec!["in-body-any-other-end-tag-blocked-by-special"]
     );
 }
@@ -425,14 +439,14 @@ fn input_closes_select_before_reconstruction_and_void_insertion() {
     let option = ctx.atoms.intern_ascii_folded("option").expect("option");
     let input = ctx.atoms.intern_ascii_folded("input").expect("input");
     for token in [start(select), start(option), start(input)] {
-        process(&mut builder, token, &ctx, &resolver);
+        process(&mut builder, token, &mut ctx, &resolver);
     }
     assert_eq!(
         builder.state_snapshot().open_element_names,
         vec![builder.known_tags.html, builder.known_tags.body]
     );
     assert_eq!(
-        builder.take_parse_error_kinds_for_test(),
+        ctx.take_tree_parse_error_descriptions_for_test(),
         vec!["in-body-input-start-tag-closes-select"]
     );
     let patches = builder.drain_patches();
@@ -453,14 +467,14 @@ fn hr_inside_select_closes_supported_implied_option_and_remains_void() {
     let option = ctx.atoms.intern_ascii_folded("option").expect("option");
     let hr = ctx.atoms.intern_ascii_folded("hr").expect("hr");
     for token in [start(select), start(option), start(hr)] {
-        process(&mut builder, token, &ctx, &resolver);
+        process(&mut builder, token, &mut ctx, &resolver);
     }
     assert_eq!(
         builder.state_snapshot().open_element_names,
         vec![builder.known_tags.html, builder.known_tags.body, select,]
     );
     assert!(!builder.state_snapshot().frameset_ok);
-    assert!(builder.take_parse_error_kinds_for_test().is_empty());
+    assert!(ctx.take_tree_parse_error_descriptions_for_test().is_empty());
 }
 
 #[test]
@@ -471,7 +485,7 @@ fn hr_reports_select_family_entry_left_below_an_intervening_element() {
     let div = ctx.atoms.intern_ascii_folded("div").expect("div");
     let hr = ctx.atoms.intern_ascii_folded("hr").expect("hr");
     for token in [start(select), start(option), start(div), start(hr)] {
-        process(&mut builder, token, &ctx, &resolver);
+        process(&mut builder, token, &mut ctx, &resolver);
     }
     assert_eq!(
         builder.state_snapshot().open_element_names,
@@ -484,7 +498,7 @@ fn hr_reports_select_family_entry_left_below_an_intervening_element() {
         ]
     );
     assert_eq!(
-        builder.take_parse_error_kinds_for_test(),
+        ctx.take_tree_parse_error_descriptions_for_test(),
         vec!["in-body-hr-start-tag-open-select-family-remains"]
     );
 }
@@ -503,11 +517,11 @@ fn dispatch_finalizes_each_select_family_self_closing_flag_once() {
                 attrs: Vec::new(),
                 self_closing: true,
             },
-            &ctx,
+            &mut ctx,
             &resolver,
         );
     }
-    let errors = builder.take_parse_error_kinds_for_test();
+    let errors = ctx.take_tree_parse_error_descriptions_for_test();
     assert_eq!(
         errors
             .iter()
@@ -523,7 +537,7 @@ fn dispatch_finalizes_ignored_nested_select_and_void_input_hr_exactly_once() {
     let select = ctx.atoms.intern_ascii_folded("select").expect("select");
     let input = ctx.atoms.intern_ascii_folded("input").expect("input");
     let hr = ctx.atoms.intern_ascii_folded("hr").expect("hr");
-    process(&mut builder, start(select), &ctx, &resolver);
+    process(&mut builder, start(select), &mut ctx, &resolver);
     for name in [select, input, hr] {
         process(
             &mut builder,
@@ -532,11 +546,11 @@ fn dispatch_finalizes_ignored_nested_select_and_void_input_hr_exactly_once() {
                 attrs: Vec::new(),
                 self_closing: true,
             },
-            &ctx,
+            &mut ctx,
             &resolver,
         );
     }
-    let errors = builder.take_parse_error_kinds_for_test();
+    let errors = ctx.take_tree_parse_error_descriptions_for_test();
     assert_eq!(
         errors,
         vec![

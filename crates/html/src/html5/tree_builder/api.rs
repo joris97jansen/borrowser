@@ -1,5 +1,5 @@
 use crate::dom_patch::{DomPatch, PatchKey};
-use crate::html5::shared::{AtomId, AtomTable, DocumentParseContext, EngineInvariantError, Token};
+use crate::html5::shared::{AtomTable, DocumentParseContext, EngineInvariantError, Token};
 use crate::html5::tokenizer::{Html5Tokenizer, TextModeSpec, TextResolver, TokenizerControl};
 use crate::html5::tree_builder::document::{DocumentState, PendingDoctype};
 use crate::html5::tree_builder::formatting::ActiveFormattingList;
@@ -8,6 +8,7 @@ use crate::html5::tree_builder::known_tags::KnownTagIds;
 use crate::html5::tree_builder::live_tree::LiveTree;
 use crate::html5::tree_builder::modes::InsertionMode;
 use crate::html5::tree_builder::patch_sink::PatchSink;
+use crate::html5::tree_builder::process_context::TreeBuilderProcessContext;
 use crate::html5::tree_builder::stack::{OpenElementsStack, ScopeTagSet};
 use crate::html5::tree_builder::table::PendingTableTextState;
 #[cfg(any(test, feature = "html5-fuzzing", feature = "internal-api"))]
@@ -225,8 +226,6 @@ pub struct Html5TreeBuilder {
     pub(in crate::html5::tree_builder) foster_parenting_enabled: bool,
     pub(in crate::html5::tree_builder) pending_table_text: Option<PendingTableTextState>,
     pub(in crate::html5::tree_builder) pending_tokenizer_control: Option<TokenizerControl>,
-    #[cfg(any(test, feature = "dom-snapshot", feature = "internal-api"))]
-    pub(in crate::html5::tree_builder) parse_error_kinds: Vec<&'static str>,
 }
 
 #[cfg(any(test, feature = "debug-stats"))]
@@ -307,7 +306,7 @@ pub struct TreeBuilderStateSnapshot {
     pub(crate) template_modes: Vec<(PatchKey, TemplateInsertionMode)>,
     pub(crate) active_formatting_entries:
         Vec<crate::html5::tree_builder::formatting::AfeDiagnosticEntry>,
-    pub(crate) open_element_names: Vec<AtomId>,
+    pub(crate) open_element_names: Vec<crate::html5::shared::AtomId>,
     pub(crate) open_element_keys: Vec<PatchKey>,
     pub(crate) current_table_key: Option<PatchKey>,
     pub(crate) pending_table_character_tokens: Vec<String>,
@@ -422,8 +421,6 @@ impl Html5TreeBuilder {
             foster_parenting_enabled: false,
             pending_table_text: None,
             pending_tokenizer_control: None,
-            #[cfg(any(test, feature = "dom-snapshot", feature = "internal-api"))]
-            parse_error_kinds: Vec::new(),
         })
     }
 
@@ -438,10 +435,10 @@ impl Html5TreeBuilder {
     pub fn process(
         &mut self,
         token: &Token,
-        atoms: &AtomTable,
+        context: &mut TreeBuilderProcessContext<'_>,
         text: &dyn TextResolver,
     ) -> Result<TreeBuilderStepResult, TreeBuilderError> {
-        self.process_impl(token, atoms, text)
+        self.process_impl(token, context, text)
     }
 
     /// Push a token into the tree builder.
@@ -463,11 +460,11 @@ impl Html5TreeBuilder {
     pub fn push_token(
         &mut self,
         token: &Token,
-        atoms: &AtomTable,
+        context: &mut TreeBuilderProcessContext<'_>,
         text: &dyn TextResolver,
         sink: &mut dyn PatchSink,
     ) -> Result<TreeBuilderStepResult, TreeBuilderError> {
-        let result = self.process_impl(token, atoms, text)?;
+        let result = self.process_impl(token, context, text)?;
         sink.push_many(&mut self.patches);
         Ok(result)
     }
@@ -660,11 +657,6 @@ impl Html5TreeBuilder {
         }
     }
 
-    #[cfg(any(test, feature = "dom-snapshot", feature = "internal-api"))]
-    pub fn take_parse_error_kinds_for_test(&mut self) -> Vec<&'static str> {
-        std::mem::take(&mut self.parse_error_kinds)
-    }
-
     #[cold]
     #[track_caller]
     pub(in crate::html5::tree_builder) fn assert_atom_table_binding(&self, atoms: &AtomTable) {
@@ -703,17 +695,49 @@ impl Html5TreeBuilder {
         }
     }
 
-    pub(in crate::html5::tree_builder) fn record_parse_error(
-        &mut self,
-        kind: &'static str,
-        _tag: Option<AtomId>,
-        _mode: Option<InsertionMode>,
+    pub(in crate::html5::tree_builder) fn record_tree_parse_error(
+        &self,
+        context: &mut TreeBuilderProcessContext<'_>,
+        code: crate::html5::shared::TreeConstructionParseErrorCode,
+        recovery: Option<crate::html5::shared::ParserRecoveryAction>,
+        description: Option<&'static str>,
     ) {
-        #[cfg(any(test, feature = "dom-snapshot", feature = "internal-api"))]
-        self.parse_error_kinds.push(kind);
-        #[cfg(not(any(test, feature = "dom-snapshot", feature = "internal-api")))]
-        {
-            let _ = kind;
-        }
+        context.record_parse_error(
+            code,
+            recovery,
+            self.insertion_mode,
+            self.adjusted_current_node_namespace(),
+            description,
+        );
+    }
+
+    pub(in crate::html5::tree_builder) fn record_tree_implementation_diagnostic(
+        &self,
+        context: &mut TreeBuilderProcessContext<'_>,
+        code: crate::html5::shared::TreeConstructionImplementationDiagnosticCode,
+        description: Option<&'static str>,
+    ) {
+        context.record_implementation_diagnostic(
+            code,
+            self.insertion_mode,
+            self.adjusted_current_node_namespace(),
+            description,
+        );
+    }
+
+    pub(in crate::html5::tree_builder) fn record_tree_resource_limit(
+        &self,
+        context: &mut TreeBuilderProcessContext<'_>,
+        limit: crate::html5::shared::ParserResourceLimit,
+        configured_limit: usize,
+        description: Option<&'static str>,
+    ) {
+        context.record_resource_limit(
+            limit,
+            configured_limit,
+            self.insertion_mode,
+            self.adjusted_current_node_namespace(),
+            description,
+        );
     }
 }

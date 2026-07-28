@@ -57,17 +57,12 @@ impl Html5TreeBuilder {
         &mut self,
         name: AtomId,
         scope: ScopeKind,
-        report_not_in_scope_error: bool,
+        _report_not_in_scope_error: bool,
     ) -> Option<OpenElement> {
         let popped = self
             .open_elements
             .pop_until_including_in_scope(name, scope, &self.scope_tags);
-        if popped.is_none() {
-            if report_not_in_scope_error {
-                self.record_parse_error("end-tag-not-in-scope", Some(name), None);
-            }
-            return None;
-        }
+        popped.as_ref()?;
         self.invalidate_text_coalescing();
         popped
     }

@@ -9,25 +9,28 @@ impl Html5TreeBuilder {
     pub(in crate::html5::tree_builder) fn insert_text(
         &mut self,
         token_text: &TextValue,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         text: &dyn TextResolver,
     ) -> Result<(), TreeBuilderError> {
         let resolved = resolve_text_value(token_text, text)?;
-        self.insert_resolved_text(&resolved)
+        self.insert_resolved_text(&resolved, context)
     }
 
     pub(in crate::html5::tree_builder) fn insert_literal_text(
         &mut self,
         literal: &str,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
     ) -> Result<(), TreeBuilderError> {
-        self.insert_resolved_text(literal)
+        self.insert_resolved_text(literal, context)
     }
 
     pub(in crate::html5::tree_builder) fn insert_recovery_literal_text(
         &mut self,
         literal: &str,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
     ) -> Result<(), TreeBuilderError> {
         self.invalidate_text_coalescing();
-        self.insert_literal_text(literal)?;
+        self.insert_literal_text(literal, context)?;
         self.invalidate_text_coalescing();
         Ok(())
     }
@@ -35,6 +38,7 @@ impl Html5TreeBuilder {
     pub(in crate::html5::tree_builder) fn insert_resolved_text(
         &mut self,
         resolved: &str,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
     ) -> Result<(), TreeBuilderError> {
         debug_assert_eq!(self.structural_mutation_depth, 0);
         if resolved.is_empty() {
@@ -59,7 +63,9 @@ impl Html5TreeBuilder {
             return Ok(());
         }
         let key = self.with_structural_mutation(|this| {
-            if !this.allow_new_child(location.parent, None) || !this.allow_node_creation(None) {
+            if !this.allow_new_child(location.parent, None, context)
+                || !this.allow_node_creation(None, context)
+            {
                 return Ok(PatchKey::INVALID);
             }
             let key = this.alloc_patch_key()?;
@@ -68,7 +74,7 @@ impl Html5TreeBuilder {
                 text: resolved.to_string(),
             });
             this.note_node_created();
-            let inserted = this.insert_existing_child_at(location, key);
+            let inserted = this.insert_existing_child_at(location, key, context);
             debug_assert!(
                 inserted,
                 "newly created text insertion must succeed after precheck"

@@ -9,23 +9,29 @@ impl Html5TreeBuilder {
         &mut self,
         token: &Token,
         atoms: &AtomTable,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         text: &dyn TextResolver,
     ) -> Result<DispatchOutcome, TreeBuilderError> {
         match token {
             Token::Comment { text: token_text } => {
-                self.insert_comment(token_text, text)?;
+                self.insert_comment(token_text, context, text)?;
                 Ok(DispatchOutcome::Done)
             }
             Token::Doctype { .. } => {
-                self.record_parse_error("in-caption-doctype", None, Some(InsertionMode::InCaption));
+                self.record_tree_parse_error(
+                    context,
+                    crate::html5::shared::TreeConstructionParseErrorCode::DoctypeTokenNotAllowed,
+                    Some(crate::html5::shared::ParserRecoveryAction::IgnoreToken),
+                    Some("in-caption-doctype"),
+                );
                 Ok(DispatchOutcome::Done)
             }
             Token::StartTag { name, .. } if *name == self.known_tags.html => {
-                self.process_using_in_body_rules(token, atoms, text, false)?;
+                self.process_using_in_body_rules(token, atoms, context, text, false)?;
                 Ok(DispatchOutcome::Done)
             }
             Token::EndTag { name } if *name == self.known_tags.caption => {
-                let _ = self.close_caption();
+                let _ = self.close_caption(context);
                 Ok(DispatchOutcome::Done)
             }
             Token::StartTag { name, .. }
@@ -39,13 +45,13 @@ impl Html5TreeBuilder {
                     || *name == self.known_tags.thead
                     || *name == self.known_tags.tr =>
             {
-                if !self.close_caption() {
+                if !self.close_caption(context) {
                     return Ok(DispatchOutcome::Done);
                 }
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InTable))
             }
             Token::EndTag { name } if *name == self.known_tags.table => {
-                if !self.close_caption() {
+                if !self.close_caption(context) {
                     return Ok(DispatchOutcome::Done);
                 }
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InTable))
@@ -62,18 +68,14 @@ impl Html5TreeBuilder {
                     || *name == self.known_tags.thead
                     || *name == self.known_tags.tr =>
             {
-                self.record_parse_error(
-                    "in-caption-unexpected-end-tag",
-                    Some(*name),
-                    Some(InsertionMode::InCaption),
-                );
+                self.record_tree_parse_error(context, crate::html5::shared::TreeConstructionParseErrorCode::EndTagForbiddenByActiveInsertionMode, Some(crate::html5::shared::ParserRecoveryAction::IgnoreToken), Some("in-caption-unexpected-end-tag"));
                 Ok(DispatchOutcome::Done)
             }
             _ => {
                 // Caption contents intentionally use the normal InBody token
                 // path until a caption/table-structure escape token closes the
                 // caption and reprocesses in the outer table mode.
-                self.process_using_in_body_rules(token, atoms, text, false)?;
+                self.process_using_in_body_rules(token, atoms, context, text, false)?;
                 Ok(DispatchOutcome::Done)
             }
         }

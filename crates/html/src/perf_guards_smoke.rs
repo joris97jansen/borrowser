@@ -14,10 +14,10 @@ fn node_count(node: &Node) -> usize {
     crate::traverse::full_model_node_count(node)
 }
 
-fn assert_no_parse_errors(counters: &HtmlParseCounters, label: &str) {
+fn assert_only_missing_doctype_parse_error(counters: &HtmlParseCounters, label: &str) {
     assert_eq!(
-        counters.parse_errors, 0,
-        "unexpected parse errors for {label}"
+        counters.parse_errors, 1,
+        "the fragment-shaped {label} input should report only the missing doctype tree error"
     );
     assert_eq!(
         counters.errors_dropped, 0,
@@ -39,7 +39,7 @@ fn perf_guard_smoke_html5_token_patch_and_node_counts() {
         output.parse_errors.is_empty(),
         "unexpected surfaced parse errors"
     );
-    assert_no_parse_errors(&output.counters, "smoke HTML");
+    assert_only_missing_doctype_parse_error(&output.counters, "smoke HTML");
 
     let expected_tokens = (SMOKE_BLOCKS as u64 * TOKENS_PER_BLOCK) + EOF_TOKENS;
     assert_eq!(

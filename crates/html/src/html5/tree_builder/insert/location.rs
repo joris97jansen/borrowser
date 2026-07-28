@@ -151,19 +151,23 @@ impl Html5TreeBuilder {
         &mut self,
         location: InsertionLocation,
         child: PatchKey,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
     ) -> bool {
         match location.before {
-            Some(before) => self.insert_existing_child_before(location.parent, child, before),
-            None => self.append_existing_child(location.parent, child),
+            Some(before) => {
+                self.insert_existing_child_before(location.parent, child, before, context)
+            }
+            None => self.append_existing_child(location.parent, child, context),
         }
     }
 
     pub(in crate::html5::tree_builder) fn insert_existing_child_using_foster_parenting_location(
         &mut self,
         child: PatchKey,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
     ) -> Result<(), TreeBuilderError> {
         let location = self.foster_parenting_insertion_location()?;
-        let _ = self.insert_existing_child_at(location, child);
+        let _ = self.insert_existing_child_at(location, child, context);
         Ok(())
     }
 
@@ -171,8 +175,9 @@ impl Html5TreeBuilder {
         &mut self,
         parent: PatchKey,
         child: PatchKey,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
     ) -> bool {
-        if !self.allow_existing_child_insertion(parent, child, None) {
+        if !self.allow_existing_child_insertion(parent, child, None, context) {
             return false;
         }
         self.push_structural_patch(DomPatch::AppendChild { parent, child });
@@ -188,8 +193,9 @@ impl Html5TreeBuilder {
         parent: PatchKey,
         child: PatchKey,
         before: PatchKey,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
     ) -> bool {
-        if !self.allow_existing_child_insertion(parent, child, None) {
+        if !self.allow_existing_child_insertion(parent, child, None, context) {
             return false;
         }
         self.push_structural_patch(DomPatch::InsertBefore {

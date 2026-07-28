@@ -40,7 +40,11 @@ fn in_caption_end_tag_returns_to_in_table_and_clears_marker() {
         Token::EndTag { name: caption },
     ] {
         let _ = builder
-            .process(&token, &ctx.atoms, &resolver)
+            .process(
+                &token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("caption transition should remain recoverable");
     }
 
@@ -116,7 +120,11 @@ fn in_caption_stray_end_tag_is_ignored_without_popping_caption() {
         Token::EndTag { name: colgroup },
     ] {
         let _ = builder
-            .process(&token, &ctx.atoms, &resolver)
+            .process(
+                &token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("caption stray end tag should remain recoverable");
     }
 

@@ -6,7 +6,9 @@ This contract begins in AE13a. AE13a defines the canonical fixture and result
 models, deterministic discovery and validation, exact input handling, shared
 document-mode ownership, disposition policy, and one standalone-tokenizer
 fixture. AE13b1 adds the parser-owned observation foundation for tokens,
-tokenizer parse errors, and implementation diagnostics. It does not claim
+tokenizer parse errors, and implementation diagnostics. AE13b2 extends that
+same production recorder to tree construction and captures the scalar
+`DocumentMode` selected by the production tree builder. It does not claim
 completion of overarching AE13.
 
 ## Ownership
@@ -114,6 +116,95 @@ recorder to survive through result extraction; a missing recorder is
 `ObservationRecorderMissing`, never an apparently valid all-`NotRequested`
 result. An absent recorder is normal only when every surface was unrequested.
 
+## AE13b2 tree-construction observation boundary
+
+`DocumentParseContext` owns one diagnostic fanout for preprocessing,
+tokenization, and tree construction. A short-lived
+`TreeBuilderProcessContext` borrows only the atom table and that fanout for one
+token, including every reprocessing iteration. Tree modules emit typed events
+through this boundary but cannot reserve occurrences, retain canonical events,
+update counters, or project legacy events directly. Unobserved parsing uses
+the same path and installs no tree-owned recorder, queue, or string store.
+
+Genuine HTML tree-construction parse errors increment
+`Counters::parse_errors` whenever counter tracking is enabled, regardless of
+canonical capture and capacity. Configured resource limits and Borrowser
+implementation deviations use the implementation-diagnostic sequence and do
+not increment that counter. Fatal allocation, patch, materialization, and
+engine-invariant failures remain execution failures.
+
+The production taxonomy is:
+
+- typed recoverable tree-construction parse errors for invalid authored-input
+  conditions defined by the supported HTML tree rules;
+- typed implementation diagnostics for deterministic Borrowser deviations;
+- typed configured resource-limit diagnostics for bounded open-elements,
+  node, child, and template-mode capacity;
+- fatal execution failure for allocator exhaustion and engine invariants; and
+- no observation for normal implied elements, mode transitions, delegation,
+  reprocessing, scope scans, or stack mutation.
+
+One production rule may emit both a genuine parse error and a distinct
+implementation diagnostic. Descriptions are fixed, non-authoritative text,
+not identities or retained parser state.
+
+The stable `HtmlParser::parse_errors()` facade retains only events its legacy
+model can truthfully represent with an exact normalized-input offset. Current
+tree events use `Unavailable(ParserDidNotProvidePosition)` and are omitted.
+`Counters::parse_errors` can therefore exceed
+`HtmlParser::parse_errors().len()`. `errors_dropped` still counts only bounded
+legacy-deque eviction; canonical capacity drops and unavailable tree positions
+do not affect it. `HtmlParseEventOrigin::TreeBuilder` remains a reserved
+compatibility identity, but AE13b2 never fabricates a position to reach it.
+
+Tree events capture token kind, active production insertion mode, and adjusted
+current-node namespace, when present, at the detecting rule before recovery
+mutates that state. AE13b2 neither scans source nor uses a later tokenizer
+cursor as an approximation.
+
+The self-closing finalizer runs once only after reprocessing, statistics,
+incremental template validation, and optional EOF audit succeed. Explicit
+acknowledgements emit no error. Acknowledgement belongs to the applicable
+production rule: the supported HTML void-element rules (`area`, `base`,
+`basefont`, `bgsound`, `br`, `col`, `embed`, `hr`, `img`, `input`, `keygen`,
+`link`, `meta`, `param`, `source`, `track`, and `wbr`) acknowledge only when
+their implemented rule reaches that step; ignored tokens are not acknowledged
+by a global void-name check. Foreign-content acknowledgement remains owned by
+foreign dispatch. A genuinely ignored flag emits
+`UnacknowledgedSelfClosingFlag` with `IgnoreSelfClosingFlag`; the deprecated
+non-void HTML `LegacySkipPush` path emits the same parse-error code without a
+claimed recovery action plus
+`NonVoidHtmlSelfClosingFlagAlteredStackDisposition` at the production decision.
+That decision is committed only after configured open-elements, node, and
+child limits accept insertion. Suppressed insertion therefore retains its
+resource diagnostic and truthful ignored-flag recovery without claiming that
+the stack disposition changed. Contradictory self-closing state transitions
+are fatal tree-builder invariants and cannot append the common parse error.
+This records the current deviation without changing DOM or patch behavior.
+
+The tree builder's Text insertion-mode EOF rule is the sole integrated owner
+of `TreeConstructionParseErrorCode::EofInTextMode`. The tokenizer still
+flushes literal tails and emits EOF, but a standalone tokenizer does not
+synthesize a tree error.
+
+Document-mode capture is a dedicated scalar request. After
+`HtmlParser::finish()` succeeds, conformance execution reads the existing
+`DocumentMode` from `Html5ParseSession`/`Html5TreeBuilder`, extracts collection
+observations, and runs the existing `into_output()` validation/materialization
+path. The scalar is returned only if the complete execution succeeds. A
+standalone tokenizer returns `NotApplicable(StandaloneTokenizerRun)`. No test
+support reclassifies a doctype or infers mode from a `DocumentType`, patches,
+or the materialized DOM.
+
+Legacy DOM-golden parse-error lines are produced only by the
+`parser-conformance`-gated adapter in
+`crates/html/src/test_harness/tree_diagnostics.rs`. It explicitly installs the
+production recorder with a finite capacity of 4096 tree parse errors, rejects
+incomplete capture or drops, and projects authoritative typed tree parse
+events one way to non-canonical description lines. It neither captures nor
+merges implementation/resource diagnostics, and patch goldens do not use this
+adapter.
+
 ## Exact input and path boundary
 
 All inputs are loaded with `fs::read`; the loader never trims or normalizes
@@ -167,14 +258,13 @@ only named parse-error identities from the current HTML Standard, including
 `end-tag-with-attributes`, and `end-tag-with-trailing-solidus`. Exact supported
 tokenizer recovery conditions without a dedicated Standard identity use
 `ParseErrorCode::TokenizerExtension`; AE13b1 currently uses this category for
-the explicit text-mode EOF control recovery, Core-v0 malformed numeric
-character-reference recovery, and the exact Core-v0 attribute-recovery paths
+Core-v0 malformed numeric character-reference recovery and the exact Core-v0
+attribute-recovery paths
 where Core-v0 drops or terminates at a question mark or grave accent even
 though the Standard would retain it. It has no catch-all variant.
 
-AE13b1 Borrowser-owned tokenizer-extension identities are exactly:
+The current Borrowser-owned tokenizer-extension identities are exactly:
 
-- `EofInTextMode`;
 - `MalformedNumericCharacterReference`;
 - `DroppedGraveAccentBeforeAttributeName`;
 - `GraveAccentInAttributeName`;
@@ -347,13 +437,15 @@ cannot disagree or panic on missing or corrupt PI metadata. Classification
 precedes metadata removal, token emission, bogus-comment conversion, and
 diagnostic production.
 
-Rule-defined tree-construction conditions without dedicated standard codes use
+Rule-defined tree-construction conditions use
 stable Borrowser-owned `ParseErrorCode::TreeConstruction` variants. Serialized
 code names will be stable, documented rule identities with no `other` fallback;
 renaming or changing their meaning requires a format-version change or an
-explicit compatibility mapping. AE13b1 migrates tokenizer-owned call sites to
-the exact production taxonomy; tree-builder diagnostics remain later work.
-Recovery action remains separate metadata.
+explicit compatibility mapping. AE13b2 derives identities from invalid parser
+conditions rather than legacy debug wording, consolidates semantically
+identical call sites, and removes normal implied-element/mode-transition debug
+strings without replacing them with false parse errors. Recovery action
+remains separate metadata.
 
 Implementation diagnostics use payload-safe event variants. Stable codes carry
 only semantic kinds: invalid UTF-8 replacement reason, exact parser resource
@@ -538,7 +630,8 @@ single validation boundary.
   first semantic appearance and no normative transport batch boundaries.
 - Native parse-error, implementation-diagnostic, document-mode, transition,
   unsupported-feature, and final-invariant formats are reserved/planned for
-  AE13b through AE13e. AE13a does not implement or claim stability for them.
+  later AE13 slices. AE13b2 captures tree diagnostics and document mode only in
+  memory; it does not activate canonical serializers or fixture sidecars.
 
 The `html5-token-v1` reader lives beside the existing token formatter and emits
 dedicated typed snapshot-format errors. Malformed snapshots are not reported as
@@ -547,7 +640,8 @@ fixture-TOML errors.
 ## Later slices
 
 - AE13b1: parser-owned token and tokenizer-diagnostic observation foundation.
-- AE13b2 through AE13b5: remaining parser observations, shared escaping, and
+- AE13b2: tree-construction diagnostics and production document-mode capture.
+- AE13b3 through AE13b5: remaining parser observations, shared escaping, and
   stable serializers.
 - AE13c: semantic whole/chunked parity and production final-invariant execution.
 - AE13d: existing corpus consolidation and migration.

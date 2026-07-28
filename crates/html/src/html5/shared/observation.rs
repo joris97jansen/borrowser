@@ -355,6 +355,11 @@ impl ParserObservationRecorder {
     pub(crate) fn remove_position_index_for_test(&mut self) {
         self.position_index = None;
     }
+
+    #[cfg(test)]
+    pub(crate) fn set_next_parse_error_occurrence_for_test(&mut self, next: u64) {
+        self.next_parse_error_occurrence = Some(next);
+    }
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]

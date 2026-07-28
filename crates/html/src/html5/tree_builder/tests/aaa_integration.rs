@@ -32,7 +32,11 @@ fn run_tree_builder_chunks(chunks: &[&str]) -> Vec<DomPatch> {
             let resolver = batch.resolver();
             for token in batch.iter() {
                 let _ = builder
-                    .process(token, &ctx.atoms, &resolver)
+                    .process(
+                        token,
+                        &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                        &resolver,
+                    )
                     .expect("tree builder AAA integration run should remain recoverable");
             }
         }
@@ -47,7 +51,11 @@ fn run_tree_builder_chunks(chunks: &[&str]) -> Vec<DomPatch> {
         let resolver = batch.resolver();
         for token in batch.iter() {
             let _ = builder
-                .process(token, &ctx.atoms, &resolver)
+                .process(
+                    token,
+                    &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                    &resolver,
+                )
                 .expect("tree builder AAA integration EOF drain should remain recoverable");
         }
     }

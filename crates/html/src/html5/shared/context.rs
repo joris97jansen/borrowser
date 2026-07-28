@@ -3,13 +3,10 @@
 #[cfg(any(test, feature = "parser-conformance"))]
 use super::ParserObservationCapture;
 use super::{
-    AtomTable, Counters, DiagnosticEventMetadata, ErrorOrigin, ErrorPolicy, EventPosition,
-    ImplementationDiagnosticEvent, Input, LegacyParseErrorCode, NormalizedPositionIndex,
-    ObservationPositionResolution, ObservationPositionSource, ParseError, ParseErrorCode,
-    ParseErrorEvent, ParserGuardrail, ParserGuardrailPayload, ParserObservationConfig,
-    ParserObservationRecorder, ParserRecoveryAction, ParserResourceLimit,
-    ParserResourceLimitPayload, ParserStage, Utf8ReplacementPayload, Utf8ReplacementReason,
-    WhatwgParseErrorCode,
+    AtomTable, Counters, ErrorOrigin, ErrorPolicy, Input, LegacyParseErrorCode,
+    NormalizedPositionIndex, ParseError, ParseErrorCode, ParserDiagnosticSink, ParserGuardrail,
+    ParserObservationConfig, ParserObservationRecorder, ParserRecoveryAction, ParserResourceLimit,
+    ParserStage, Utf8ReplacementPayload, Utf8ReplacementReason, WhatwgParseErrorCode,
 };
 use std::collections::VecDeque;
 
@@ -112,8 +109,11 @@ impl DocumentParseContext {
         );
     }
 
-    /// Shared parser-error fanout. AE13b2 can add a tree-construction wrapper
-    /// without introducing another occurrence sequence or retention policy.
+    /// Shared parser-error fanout used by exact-position tokenizer sources.
+    ///
+    /// Tree construction reaches the same fanout through its narrow process
+    /// context, with an explicitly unavailable canonical position and no
+    /// inexact legacy projection.
     #[allow(
         clippy::too_many_arguments,
         reason = "the core fanout keeps canonical source metadata and legacy projection inputs explicit"
@@ -130,37 +130,28 @@ impl DocumentParseContext {
         legacy_aux: Option<u32>,
         legacy_code_override: Option<LegacyParseErrorCode>,
     ) {
-        if self.error_policy.track_counters {
-            self.counters.parse_errors = self.counters.parse_errors.saturating_add(1);
-        }
-
-        if let Some(occurrence) = self
-            .observations
-            .as_mut()
-            .and_then(ParserObservationRecorder::reserve_parse_error)
-            && let Some(event_position) = self.observation_position_at(input, position)
-        {
-            self.observations
-                .as_mut()
-                .expect("parse-error reservation requires an observation recorder")
-                .retain_parse_error(ParseErrorEvent {
-                    occurrence,
-                    stage,
-                    code,
-                    recovery,
-                    position: event_position,
-                    context: None,
-                    description,
-                });
-        }
-
-        self.record_legacy(ParseError {
-            origin: legacy_origin,
-            code: legacy_code_override.unwrap_or_else(|| legacy_parse_error_code(code)),
+        let mut sink = ParserDiagnosticSink::new(
+            &mut self.counters,
+            self.error_policy,
+            &mut self.errors,
+            &mut self.observations,
+        );
+        sink.record_parse_error_known(
+            input,
+            stage,
+            code,
             position,
-            detail: description,
-            aux: legacy_aux,
-        });
+            recovery,
+            None,
+            description,
+            Some(super::LegacyDiagnosticProjection {
+                origin: legacy_origin,
+                code: legacy_code_override.unwrap_or_else(|| legacy_parse_error_code(code)),
+                position,
+                detail: description,
+                aux: legacy_aux,
+            }),
+        );
     }
 
     pub(crate) fn record_resource_limit(
@@ -171,33 +162,26 @@ impl DocumentParseContext {
         position: usize,
         description: Option<&'static str>,
     ) {
-        if let Some(occurrence) = self.reserve_implementation_diagnostic()
-            && let Some(event_position) = self.observation_position_at(input, position)
-        {
-            self.retain_implementation_diagnostic(
-                ImplementationDiagnosticEvent::ParserResourceLimitActivated {
-                    metadata: DiagnosticEventMetadata {
-                        occurrence,
-                        stage: ParserStage::Tokenizer,
-                        position: event_position,
-                        context: None,
-                        description,
-                    },
-                    limit,
-                    payload: ParserResourceLimitPayload {
-                        configured_limit: u64::try_from(configured_limit)
-                            .expect("supported Rust targets represent usize in u64"),
-                    },
-                },
-            );
-        }
-        self.record_legacy(ParseError {
-            origin: ErrorOrigin::Tokenizer,
-            code: LegacyParseErrorCode::ResourceLimit,
+        let mut sink = ParserDiagnosticSink::new(
+            &mut self.counters,
+            self.error_policy,
+            &mut self.errors,
+            &mut self.observations,
+        );
+        sink.record_tokenizer_resource_limit(
+            input,
+            limit,
+            configured_limit,
             position,
-            detail: description,
-            aux: Some(configured_limit.min(u32::MAX as usize) as u32),
-        });
+            description,
+            super::LegacyDiagnosticProjection {
+                origin: ErrorOrigin::Tokenizer,
+                code: LegacyParseErrorCode::ResourceLimit,
+                position,
+                detail: description,
+                aux: Some(configured_limit.min(u32::MAX as usize) as u32),
+            },
+        );
     }
 
     pub(crate) fn record_guardrail(
@@ -208,82 +192,48 @@ impl DocumentParseContext {
         position: usize,
         description: Option<&'static str>,
     ) {
-        if let Some(occurrence) = self.reserve_implementation_diagnostic()
-            && let Some(event_position) = self.observation_position_at(input, position)
-        {
-            self.retain_implementation_diagnostic(
-                ImplementationDiagnosticEvent::ParserGuardrailActivated {
-                    metadata: DiagnosticEventMetadata {
-                        occurrence,
-                        stage: ParserStage::Tokenizer,
-                        position: event_position,
-                        context: None,
-                        description,
-                    },
-                    guardrail,
-                    payload: ParserGuardrailPayload {
-                        consecutive_stall_steps: std::num::NonZeroU64::new(
-                            u64::try_from(consecutive_steps)
-                                .expect("supported Rust targets represent usize in u64"),
-                        )
-                        .expect("a triggered guardrail has a non-zero stall count"),
-                    },
-                },
-            );
-        }
-        self.record_legacy(ParseError {
-            origin: ErrorOrigin::Tokenizer,
-            code: LegacyParseErrorCode::ImplementationGuardrail,
+        let mut sink = ParserDiagnosticSink::new(
+            &mut self.counters,
+            self.error_policy,
+            &mut self.errors,
+            &mut self.observations,
+        );
+        sink.record_tokenizer_guardrail(
+            input,
+            guardrail,
+            consecutive_steps,
             position,
-            detail: description,
-            aux: Some(consecutive_steps.min(u32::MAX as usize) as u32),
-        });
+            description,
+            super::LegacyDiagnosticProjection {
+                origin: ErrorOrigin::Tokenizer,
+                code: LegacyParseErrorCode::ImplementationGuardrail,
+                position,
+                detail: description,
+                aux: Some(consecutive_steps.min(u32::MAX as usize) as u32),
+            },
+        );
     }
 
-    pub(crate) fn reserve_implementation_diagnostic(&mut self) -> Option<u64> {
-        self.observations
-            .as_mut()
-            .and_then(ParserObservationRecorder::reserve_implementation_diagnostic)
-    }
-
-    /// Mandatory parser accounting for decoder-generated replacement scalars.
-    /// This is deliberately independent of optional canonical observation.
-    pub(crate) fn record_decode_replacements(&mut self, replacements: u64) {
-        self.counters.decode_errors = self.counters.decode_errors.saturating_add(replacements);
-    }
-
-    pub(crate) fn retain_utf8_replacement(
+    pub(crate) fn record_utf8_replacement(
         &mut self,
-        occurrence: u64,
+        input: &Input,
+        position: usize,
         reason: Utf8ReplacementReason,
         payload: Utf8ReplacementPayload,
-        position: EventPosition,
     ) {
-        self.retain_implementation_diagnostic(ImplementationDiagnosticEvent::InvalidUtf8Replaced {
-            metadata: DiagnosticEventMetadata {
-                occurrence,
-                stage: ParserStage::InputPreprocessing(
-                    super::InputPreprocessingStage::Utf8Decoding,
-                ),
-                position,
-                context: None,
-                description: Some(match reason {
-                    Utf8ReplacementReason::InvalidSequence => "invalid-utf8-sequence-replaced",
-                    Utf8ReplacementReason::IncompleteSequenceAtEof => {
-                        "incomplete-utf8-sequence-at-eof-replaced"
-                    }
-                }),
-            },
-            reason,
-            payload,
-        });
+        let mut sink = ParserDiagnosticSink::new(
+            &mut self.counters,
+            self.error_policy,
+            &mut self.errors,
+            &mut self.observations,
+        );
+        sink.record_utf8_replacement(input, position, reason, payload);
     }
 
-    fn retain_implementation_diagnostic(&mut self, event: ImplementationDiagnosticEvent) {
-        self.observations
-            .as_mut()
-            .expect("diagnostic reservation requires an observation recorder")
-            .retain_implementation_diagnostic(event);
+    /// Mandatory accounting for decoder replacements when canonical
+    /// observation is not installed.
+    pub(crate) fn record_decode_replacements(&mut self, replacements: u64) {
+        self.counters.decode_errors = self.counters.decode_errors.saturating_add(replacements);
     }
 
     pub(crate) fn observation_position_index_mut(
@@ -306,25 +256,91 @@ impl DocumentParseContext {
             .remove_position_index_for_test();
     }
 
-    pub(crate) fn observation_position_at(
-        &mut self,
-        input: &Input,
-        position: usize,
-    ) -> Option<EventPosition> {
-        let recorder = self
-            .observations
-            .as_mut()
-            .expect("position resolution follows a successful observation reservation");
-        match recorder.resolve_position(
-            input.as_str(),
-            ObservationPositionSource::NormalizedOffset(position),
-        ) {
-            ObservationPositionResolution::Known(position) => Some(EventPosition::Known(position)),
-            ObservationPositionResolution::GenuinelyUnavailable(reason) => {
-                Some(EventPosition::Unavailable(reason))
-            }
-            ObservationPositionResolution::InvariantFailure(_) => None,
+    #[cfg(test)]
+    pub(crate) fn enable_tree_observations_for_test(&mut self) {
+        if self.observations.is_none() {
+            self.observations = ParserObservationRecorder::new(ParserObservationConfig {
+                tokens: super::SurfaceCaptureRequest::NotRequested,
+                parse_errors: super::SurfaceCaptureRequest::Capture { capacity: 4_096 },
+                implementation_diagnostics: super::SurfaceCaptureRequest::Capture {
+                    capacity: 4_096,
+                },
+            });
         }
+    }
+
+    /// Explicit unit-test setup for direct tree-builder diagnostics.
+    ///
+    /// Unlike `TreeBuilderProcessContext::new`, this helper intentionally
+    /// installs the production recorder with finite per-surface capacity.
+    #[cfg(test)]
+    pub(crate) fn with_tree_observations_for_test() -> Self {
+        let mut context = Self::new();
+        context.enable_tree_observations_for_test();
+        context
+    }
+
+    #[cfg(test)]
+    pub(crate) fn set_next_parse_error_occurrence_for_test(&mut self, next: u64) {
+        self.observations
+            .as_mut()
+            .expect("test requires an observation recorder")
+            .set_next_parse_error_occurrence_for_test(next);
+    }
+
+    #[cfg(test)]
+    pub(crate) fn take_tree_parse_errors_for_test(&mut self) -> Vec<super::ParseErrorEvent> {
+        self.take_observations()
+            .map(|capture| capture.parse_errors.items)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|event| event.stage == ParserStage::TreeConstruction)
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn take_tree_parse_error_descriptions_for_test(&mut self) -> Vec<&'static str> {
+        self.take_tree_parse_errors_for_test()
+            .into_iter()
+            .filter_map(|event| event.description)
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn take_tree_implementation_diagnostic_descriptions_for_test(
+        &mut self,
+    ) -> Vec<&'static str> {
+        self.take_observations()
+            .map(|capture| capture.implementation_diagnostics.items)
+            .unwrap_or_default()
+            .into_iter()
+            .filter(|event| event.metadata().stage == ParserStage::TreeConstruction)
+            .filter_map(|event| event.metadata().description)
+            .collect()
+    }
+
+    #[cfg(test)]
+    pub(crate) fn take_tree_diagnostic_descriptions_for_test(
+        &mut self,
+    ) -> (Vec<&'static str>, Vec<&'static str>) {
+        let Some(capture) = self.take_observations() else {
+            return (Vec::new(), Vec::new());
+        };
+        let parse_errors = capture
+            .parse_errors
+            .items
+            .into_iter()
+            .filter(|event| event.stage == ParserStage::TreeConstruction)
+            .filter_map(|event| event.description)
+            .collect();
+        let implementation_diagnostics = capture
+            .implementation_diagnostics
+            .items
+            .into_iter()
+            .filter(|event| event.metadata().stage == ParserStage::TreeConstruction)
+            .filter_map(|event| event.metadata().description)
+            .collect();
+        (parse_errors, implementation_diagnostics)
     }
 
     #[cfg(any(test, feature = "parser-conformance"))]
@@ -332,24 +348,6 @@ impl DocumentParseContext {
         self.observations
             .take()
             .map(ParserObservationRecorder::finish)
-    }
-
-    fn record_legacy(&mut self, error: ParseError) {
-        if !self.error_policy.track {
-            return;
-        }
-        if self.error_policy.debug_only && !cfg!(debug_assertions) {
-            return;
-        }
-        if self.error_policy.max_stored == 0 {
-            return;
-        }
-        let errors = self.errors.get_or_insert_with(VecDeque::new);
-        if errors.len() >= self.error_policy.max_stored {
-            errors.pop_front();
-            self.counters.errors_dropped = self.counters.errors_dropped.saturating_add(1);
-        }
-        errors.push_back(error);
     }
 
     pub fn errors(&self) -> Vec<ParseError> {
@@ -363,9 +361,6 @@ impl DocumentParseContext {
 fn legacy_parse_error_code(code: ParseErrorCode) -> LegacyParseErrorCode {
     match code {
         ParseErrorCode::TokenizerExtension(code) => match code {
-            super::TokenizerExtensionParseErrorCode::EofInTextMode => {
-                LegacyParseErrorCode::UnexpectedEof
-            }
             super::TokenizerExtensionParseErrorCode::MalformedNumericCharacterReference => {
                 LegacyParseErrorCode::InvalidCharacterReference
             }
@@ -411,7 +406,8 @@ fn legacy_standard_parse_error_code(code: WhatwgParseErrorCode) -> LegacyParseEr
 mod tests {
     use super::*;
     use crate::html5::shared::{
-        ByteStreamDecoder, ImplementationDiagnosticCode, SurfaceCaptureRequest,
+        ByteStreamDecoder, ImplementationDiagnosticCode, ImplementationDiagnosticEvent,
+        SurfaceCaptureRequest,
     };
 
     fn observed_context(

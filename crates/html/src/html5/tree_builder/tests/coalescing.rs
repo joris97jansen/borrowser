@@ -47,7 +47,11 @@ fn tree_builder_coalescing_does_not_cross_structural_mutations() {
         Token::Eof,
     ] {
         let _ = builder
-            .process(&token, &ctx.atoms, &resolver)
+            .process(
+                &token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("coalescing structural boundary sequence should process");
     }
 
@@ -103,7 +107,11 @@ fn tree_builder_coalescing_merges_adjacent_text_tokens_under_same_parent() {
         Token::Eof,
     ] {
         let _ = builder
-            .process(&token, &ctx.atoms, &resolver)
+            .process(
+                &token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("adjacent text coalescing sequence should process");
     }
 
@@ -161,7 +169,11 @@ fn tree_builder_coalescing_merges_text_reprocessed_into_implicit_body() {
         Token::Eof,
     ] {
         let _ = builder
-            .process(&token, &ctx.atoms, &resolver)
+            .process(
+                &token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("implicit body coalescing sequence should process");
     }
 
@@ -252,7 +264,11 @@ fn tree_builder_coalescing_does_not_cross_parent_change_after_pop() {
         Token::Eof,
     ] {
         let _ = builder
-            .process(&token, &ctx.atoms, &resolver)
+            .process(
+                &token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("parent-change coalescing sequence should process");
     }
 
@@ -311,7 +327,11 @@ fn tree_builder_coalescing_does_not_cross_br_element_boundary() {
         Token::Eof,
     ] {
         let _ = builder
-            .process(&token, &ctx.atoms, &resolver)
+            .process(
+                &token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("coalescing around <br> should stay recoverable");
     }
 
@@ -377,7 +397,11 @@ fn tree_builder_coalescing_patch_log_is_batch_boundary_invariant() {
         let mut out = Vec::new();
         for token in &tokens {
             let _ = builder
-                .process(token, &ctx.atoms, &resolver)
+                .process(
+                    token,
+                    &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                    &resolver,
+                )
                 .expect("batch-boundary coalescing sequence should process");
             if drain_each_token {
                 out.extend(builder.drain_patches());

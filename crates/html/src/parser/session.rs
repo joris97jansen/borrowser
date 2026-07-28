@@ -79,6 +79,11 @@ impl HtmlParser {
     }
 
     #[cfg(feature = "parser-conformance")]
+    pub(crate) fn document_mode_for_conformance(&self) -> crate::DocumentMode {
+        self.session.document_mode_for_conformance()
+    }
+
+    #[cfg(feature = "parser-conformance")]
     pub(crate) fn tokenizer_invariant_for_conformance(
         &self,
     ) -> Option<crate::html5::tokenizer::TokenizerInvariantKind> {
@@ -146,8 +151,16 @@ impl HtmlParser {
         self.session.counters().into()
     }
 
-    /// Return the currently retained parse events without exposing backend
-    /// `html5::*` types.
+    /// Return the currently retained exact-position legacy parse events
+    /// without exposing backend `html5::*` types.
+    ///
+    /// This facade retains only events whose production source supplied an
+    /// exact input position. Tree-construction errors with unavailable
+    /// positions still increment `counters().parse_errors` and can be captured
+    /// through the typed conformance observation surface, but are omitted here.
+    /// Consequently callers must not assume that
+    /// `counters().parse_errors == parse_errors().len()`. Omitting an
+    /// unrepresentable tree event does not increment `errors_dropped`.
     pub fn parse_errors(&self) -> Vec<HtmlParseEvent> {
         self.session
             .parse_errors()

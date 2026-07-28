@@ -8,5 +8,4 @@
   element ns=html local="html" attrs=[]
     element ns=html local="head" attrs=[]
     element ns=html local="body" attrs=[]
-parse-errors:
-  tree-builder: after-head-implicit-body
+parse-errors: none

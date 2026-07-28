@@ -378,6 +378,7 @@ impl Html5TreeBuilder {
     pub(in crate::html5::tree_builder) fn reconstruct_active_formatting_elements(
         &mut self,
         atoms: &AtomTable,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
     ) -> Result<usize, TreeBuilderError> {
         let Some(start_index) = self
             .active_formatting
@@ -394,7 +395,7 @@ impl Html5TreeBuilder {
                 }
                 AfeEntry::Element(entry) => entry.clone(),
             };
-            let Some(new_key) = self.insert_element_from_afe_entry(&entry, atoms)? else {
+            let Some(new_key) = self.insert_element_from_afe_entry(&entry, context, atoms)? else {
                 break;
             };
             self.active_formatting.replace_key_at(index, new_key);

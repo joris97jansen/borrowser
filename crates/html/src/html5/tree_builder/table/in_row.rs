@@ -9,19 +9,25 @@ impl Html5TreeBuilder {
         &mut self,
         token: &Token,
         atoms: &AtomTable,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         text: &dyn TextResolver,
     ) -> Result<DispatchOutcome, TreeBuilderError> {
         match token {
             Token::Comment { text: token_text } => {
-                self.insert_comment(token_text, text)?;
+                self.insert_comment(token_text, context, text)?;
                 Ok(DispatchOutcome::Done)
             }
             Token::Doctype { .. } => {
-                self.record_parse_error("in-row-doctype", None, Some(InsertionMode::InRow));
+                self.record_tree_parse_error(
+                    context,
+                    crate::html5::shared::TreeConstructionParseErrorCode::DoctypeTokenNotAllowed,
+                    Some(crate::html5::shared::ParserRecoveryAction::IgnoreToken),
+                    Some("in-row-doctype"),
+                );
                 Ok(DispatchOutcome::Done)
             }
             Token::StartTag { name, .. } if *name == self.known_tags.html => {
-                self.process_using_in_body_rules(token, atoms, text, false)?;
+                self.process_using_in_body_rules(token, atoms, context, text, false)?;
                 Ok(DispatchOutcome::Done)
             }
             Token::StartTag {
@@ -34,7 +40,9 @@ impl Html5TreeBuilder {
                     deprecated,
                     reason = "frozen legacy insertion call; removal tracked separately"
                 )]
-                if let Some(owner) = self.insert_element(*name, attrs, false, atoms, text)? {
+                if let Some(owner) =
+                    self.insert_element(*name, attrs, false, context, atoms, text)?
+                {
                     self.active_formatting.push_marker(
                         crate::html5::tree_builder::formatting::AfeMarker::new(
                             crate::html5::tree_builder::formatting::AfeMarkerKind::TableCell,
@@ -54,13 +62,13 @@ impl Html5TreeBuilder {
                     || *name == self.known_tags.thead
                     || *name == self.known_tags.tr =>
             {
-                if !self.close_row() {
+                if !self.close_row(context) {
                     return Ok(DispatchOutcome::Done);
                 }
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InTableBody))
             }
             Token::EndTag { name } if *name == self.known_tags.tr => {
-                let _ = self.close_row();
+                let _ = self.close_row(context);
                 Ok(DispatchOutcome::Done)
             }
             Token::EndTag { name }
@@ -70,14 +78,10 @@ impl Html5TreeBuilder {
                     || *name == self.known_tags.thead =>
             {
                 if !self.has_in_table_scope(*name) {
-                    self.record_parse_error(
-                        "in-row-end-tag-not-in-table-scope",
-                        Some(*name),
-                        Some(InsertionMode::InRow),
-                    );
+                    self.record_tree_parse_error(context, crate::html5::shared::TreeConstructionParseErrorCode::TableContextElementNotInRequiredScope, Some(crate::html5::shared::ParserRecoveryAction::IgnoreToken), Some("in-row-end-tag-not-in-table-scope"));
                     return Ok(DispatchOutcome::Done);
                 }
-                if !self.close_row() {
+                if !self.close_row(context) {
                     return Ok(DispatchOutcome::Done);
                 }
                 Ok(DispatchOutcome::Reprocess(InsertionMode::InTableBody))
@@ -91,14 +95,10 @@ impl Html5TreeBuilder {
                     || *name == self.known_tags.td
                     || *name == self.known_tags.th =>
             {
-                self.record_parse_error(
-                    "in-row-unexpected-end-tag",
-                    Some(*name),
-                    Some(InsertionMode::InRow),
-                );
+                self.record_tree_parse_error(context, crate::html5::shared::TreeConstructionParseErrorCode::EndTagForbiddenByActiveInsertionMode, Some(crate::html5::shared::ParserRecoveryAction::IgnoreToken), Some("in-row-unexpected-end-tag"));
                 Ok(DispatchOutcome::Done)
             }
-            _ => self.handle_in_table(token, atoms, text),
+            _ => self.handle_in_table(token, atoms, context, text),
         }
     }
 }

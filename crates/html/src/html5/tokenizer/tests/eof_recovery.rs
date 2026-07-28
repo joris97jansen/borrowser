@@ -88,6 +88,11 @@ fn text_mode_eof_recovery_stays_in_family_and_keeps_stats_aligned() {
         tokens,
         vec!["CHAR text=\"a</sty\"".to_string(), "EOF".to_string()]
     );
+    assert_eq!(
+        ctx.counters.parse_errors, 0,
+        "a standalone tokenizer does not synthesize a tree-construction EOF error"
+    );
+    assert!(ctx.errors().is_empty());
 }
 
 #[test]

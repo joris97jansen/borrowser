@@ -61,6 +61,193 @@ fn session_applies_text_mode_controls_across_chunk_boundaries() {
     );
 }
 
+#[cfg(feature = "parser-conformance")]
+#[test]
+fn parser_observations_do_not_change_text_mode_tokenizer_controls() {
+    use crate::html5::shared::{
+        ErrorPolicy, ParseErrorCode, ParserObservationCapture, ParserObservationConfig,
+        SurfaceCaptureRequest, TreeConstructionParseErrorCode, WhatwgParseErrorCode,
+    };
+    use crate::html5::tokenizer::{TextModeKind, TextModeNamespace, TokenizerControl};
+
+    #[derive(Debug, PartialEq, Eq)]
+    enum AppliedControl {
+        EnterTextMode {
+            kind: TextModeKind,
+            end_tag_name: String,
+            namespace: TextModeNamespace,
+        },
+        ExitTextMode,
+    }
+
+    struct Run {
+        controls: Vec<AppliedControl>,
+        active_text_mode: Option<TextModeSpec>,
+        insertion_mode: InsertionMode,
+        open_element_names: Vec<String>,
+        open_element_keys: Vec<crate::PatchKey>,
+        document_mode: crate::DocumentMode,
+        patches: Vec<crate::DomPatch>,
+        dom_summary: Vec<String>,
+        counters: crate::html5::shared::Counters,
+        legacy_errors: Vec<crate::html5::shared::ParseError>,
+        capture: Option<ParserObservationCapture>,
+    }
+
+    fn run(observed: bool) -> Run {
+        let ctx = if observed {
+            DocumentParseContext::with_observations(
+                ErrorPolicy::default(),
+                ParserObservationConfig {
+                    tokens: SurfaceCaptureRequest::Capture { capacity: 64 },
+                    parse_errors: SurfaceCaptureRequest::Capture { capacity: 64 },
+                    implementation_diagnostics: SurfaceCaptureRequest::Capture { capacity: 64 },
+                },
+            )
+        } else {
+            DocumentParseContext::new()
+        };
+        let mut session = Html5ParseSession::new(
+            TokenizerConfig::default(),
+            TreeBuilderConfig::default(),
+            ctx,
+        )
+        .expect("session init");
+
+        for chunk in [
+            "<!doctype html><html><head><title a=x a=y>",
+            "text</title>",
+            "</head><body><div/></body>",
+        ] {
+            session.push_str_for_test(chunk);
+            session.pump().expect("text-mode chunk should pump");
+        }
+        session
+            .finish_for_test()
+            .expect("text-mode session should finish");
+
+        let controls = session
+            .applied_tokenizer_controls_for_test()
+            .iter()
+            .map(|control| match control {
+                TokenizerControl::EnterTextMode(spec) => AppliedControl::EnterTextMode {
+                    kind: spec.kind,
+                    end_tag_name: session
+                        .ctx
+                        .atoms
+                        .resolve(spec.end_tag_name)
+                        .expect("control atom belongs to the session")
+                        .to_owned(),
+                    namespace: spec.namespace,
+                },
+                TokenizerControl::ExitTextMode => AppliedControl::ExitTextMode,
+            })
+            .collect();
+        let active_text_mode = session.tokenizer_active_text_mode_for_test();
+        let state = session.tree_builder_state_snapshot_for_test();
+        let open_element_names = state
+            .open_element_names
+            .iter()
+            .map(|name| {
+                session
+                    .ctx
+                    .atoms
+                    .resolve(*name)
+                    .expect("stack atom belongs to the session")
+                    .to_owned()
+            })
+            .collect();
+        let counters = session.counters();
+        let legacy_errors = session.parse_errors();
+        let capture = observed
+            .then(|| session.take_observations_for_conformance())
+            .flatten();
+        let patches = session.take_patches();
+        let dom = crate::test_harness::materialize_patch_batches(std::slice::from_ref(&patches))
+            .expect("session patches should materialize");
+        let dom_summary = crate::html5::serialize_dom_for_test(&dom);
+
+        Run {
+            controls,
+            active_text_mode,
+            insertion_mode: state.insertion_mode,
+            open_element_names,
+            open_element_keys: state.open_element_keys,
+            document_mode: state.quirks_mode,
+            patches,
+            dom_summary,
+            counters,
+            legacy_errors,
+            capture,
+        }
+    }
+
+    let unobserved = run(false);
+    let observed = run(true);
+
+    assert_eq!(observed.controls, unobserved.controls);
+    assert_eq!(
+        observed.controls,
+        vec![
+            AppliedControl::EnterTextMode {
+                kind: TextModeKind::Rcdata,
+                end_tag_name: "title".to_owned(),
+                namespace: TextModeNamespace::Html,
+            },
+            AppliedControl::ExitTextMode,
+        ]
+    );
+    assert_eq!(observed.active_text_mode, None);
+    assert_eq!(unobserved.active_text_mode, None);
+
+    assert_eq!(observed.patches, unobserved.patches);
+    assert_eq!(observed.dom_summary, unobserved.dom_summary);
+    assert_eq!(observed.counters, unobserved.counters);
+    assert_eq!(observed.legacy_errors, unobserved.legacy_errors);
+    assert_eq!(observed.insertion_mode, unobserved.insertion_mode);
+    assert_eq!(observed.open_element_names, unobserved.open_element_names);
+    assert_eq!(observed.open_element_keys, unobserved.open_element_keys);
+    assert_eq!(observed.document_mode, unobserved.document_mode);
+
+    let capture = observed.capture.expect("explicit observation capture");
+    assert_eq!(capture.invariant, None);
+    assert!(!capture.token_capture_failed);
+    assert_eq!(capture.tokens.dropped, 0);
+    assert_eq!(capture.parse_errors.dropped, 0);
+    assert_eq!(capture.implementation_diagnostics.dropped, 0);
+    assert_eq!(
+        capture
+            .parse_errors
+            .items
+            .iter()
+            .map(|event| (event.occurrence, event.code))
+            .collect::<Vec<_>>(),
+        vec![
+            (
+                1,
+                ParseErrorCode::Standard(WhatwgParseErrorCode::DuplicateAttribute),
+            ),
+            (
+                2,
+                ParseErrorCode::TreeConstruction(
+                    TreeConstructionParseErrorCode::UnacknowledgedSelfClosingFlag,
+                ),
+            ),
+        ],
+        "real tokenizer controls must not perturb parse-error occurrence order"
+    );
+    assert_eq!(
+        capture
+            .implementation_diagnostics
+            .items
+            .iter()
+            .map(|event| event.occurrence())
+            .collect::<Vec<_>>(),
+        vec![1],
+        "implementation diagnostics retain their independent occurrence sequence"
+    );
+}
+
 #[test]
 fn session_keeps_text_mode_active_for_mismatched_end_tag() {
     let mut ctx = DocumentParseContext::new();

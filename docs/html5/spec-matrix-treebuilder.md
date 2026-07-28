@@ -1,6 +1,6 @@
 # HTML5 Tree Builder Spec Mapping Matrix (Milestone D2)
 
-Last updated: 2026-07-13
+Last updated: 2026-07-27
 Scope: `crates/html/src/html5/tree_builder` (feature `html5`)
 Spec source: WHATWG HTML repository commit `88ae68cb961651f0f92c5d2046049f53ecdfc6cf` (2026-07-11), `source`; live parsing URL is convenience-only.
 
@@ -40,13 +40,47 @@ It defines HTML5 Core v0 tree-builder scope and explicitly records deferred and 
   - Tokenizer emits DOCTYPE token fields (`name`, public/system IDs, `force_quirks`).
   - Tree builder computes document mode from those fields in `TB-MODE-INITIAL`.
 - Ownership:
-  - Document mode is owned by shared parse context (`DocumentParseContext`) at document scope.
-  - Core v0 implementation may introduce a dedicated context field (for example, `document_mode`) to make this explicit.
+  - Document mode is owned by `Html5TreeBuilder::document_state` at document
+    scope.
+  - AE13b2 reads that existing value through crate-internal
+    tree-builder/session/parser accessors after successful finish; test support
+    does not classify the doctype again.
 - Immutability boundary:
   - Document mode becomes immutable when leaving early bootstrap (`Initial`/`Before html`) and must not be changed later by body tokens.
 - Patch visibility:
   - Core v0: document mode is internal parser state (no dedicated `DomPatch` event).
-  - If externalized later, it must be a single deterministic document-level signal.
+  - AE13b2 exposes a feature-gated in-memory scalar observation, not a patch,
+    DOM API, or serialized fixture sidecar.
+
+## Tree-construction diagnostic contract
+
+- `DocumentParseContext` owns one shared diagnostic fanout and the independent
+  parse-error and implementation-diagnostic occurrence sequences.
+- `TreeBuilderProcessContext` is the one-token borrow boundary for the atom
+  table and tree diagnostic sink; `process`/`push_token` keep borrowed tokens,
+  `TextResolver`, `PatchSink`, `TreeBuilderStepResult`, tokenizer controls, and
+  `TreeBuilderError`.
+- HTML parse errors, Borrowser implementation diagnostics, configured
+  resource-limit diagnostics, fatal failures, and normal `NoEvent` operations
+  are distinct. Implied `html`/`head`/`body` construction and ordinary in-head
+  fallback are `NoEvent`.
+- Event identity names the invalid semantic condition. Recovery, token kind,
+  insertion mode, adjusted-current-node namespace, position availability, and
+  non-authoritative descriptions are separate fields.
+- Tree positions are explicitly unavailable; no tokenizer cursor or source
+  scan is substituted.
+- Integrated EOF in Text mode is tree-owned. Each successfully completed start
+  tag receives at most one common unacknowledged-self-closing finalization.
+  Supported HTML void rules acknowledge at their production-rule step rather
+  than through a global name predicate; ignored tokens stay unacknowledged.
+  Configured insertion suppression cannot claim the deprecated non-void
+  `LegacySkipPush` implementation deviation. Contradictory self-closing effect
+  transitions propagate as tree-builder invariants.
+- The DOM-golden compatibility projection lives under
+  `test_harness/tree_diagnostics.rs`, is gated by `parser-conformance`, uses a
+  finite fail-on-incomplete capture, and projects only typed tree parse errors.
+  It does not establish a combined parse/implementation timeline or affect
+  patch goldens.
 
 ## Historical Repository Baseline (Before D2 Execution)
 
@@ -110,7 +144,7 @@ Explicitly deferred from Core v0 `In head`:
 | `TB-ALGO-FOSTER` | MVP_PARTIAL | Foster parenting | `#foster-parenting` | `tree_builder/insert/location.rs`, `tree_builder/stack/foster.rs`, `tree_builder/table/delegation.rs` | Current fixtures: `ae8-foster-text-and-element`, `ae8-pending-table-text-eof`, `i7-foster-parent-*`, `i10-table-stray-*`; unit: `insert/tests/foster.rs`. | Text and elements in table contexts requiring `InsertBefore` or stack fallback insertion locations. | `tb-ae8-foster-core` | AE8 implements foster parenting as adjusted insertion-location selection before insertion, not post-processing. |
 | `TB-ALGO-TABLE-CONSTRUCTION` | MVP_PARTIAL | Supported table tree construction | `#parsing-main-intable`, `#parsing-main-intbody`, `#parsing-main-intr`, `#parsing-main-intd` | `tree_builder/table/*`, `tree_builder/stack/*`, `tree_builder/insert/*` | Current fixtures: `ae8-*`, `i10-table-*`; unit: `table_*.rs`. | implied row groups/rows, row/cell close recovery, pending table text, deterministic parse errors, chunk parity. | `tb-ae8-table-construction` | AE8 supported static table parsing subset; does not claim full WHATWG table conformance. |
 | `TB-ALGO-TEMPLATE-MODES` | MVP_PARTIAL | Template insertion modes stack and parser-created contents | `#parsing-main-intemplate`, `#stack-of-template-insertion-modes` | `tree_builder/dispatch/template.rs`, `tree_builder/template_state.rs`, `tree_builder/parser_validation.rs`, `tree_builder/insert/location.rs` | Current local `ae10-*` DOM/patch/error/parity fixtures and pinned WPT `template-*` adaptations. | Full-document ordinary-template start/end dispatch, owner-aware mode stack, typed contents association, reset, bounded semantic reprocessing, and EOF unwind. | `tb-ae10-template-construction` | AE10 static parser subset; no public fragment/template APIs, declarative shadow DOM, scripting, live mutation, resource activation, or rendering. |
-| `TB-ALGO-QUIRKS-DOCTYPE` | MVP | Quirks mode + doctype effects | `#the-initial-insertion-mode`, `#the-before-html-insertion-mode` | `tree_builder/mod.rs`, `html5/shared/context.rs` (mode/counters), tokenizer doctype token handoff | Current tokenizer proxy: `tok-doctype-quirks-missing-name`. Planned tree fixture: `tb-quirks-from-doctype`. | Document mode decision from DOCTYPE token (`force_quirks` true/false), deterministic propagation and immutability boundary. | `tb-quirks-from-doctype` | Required for standards/quirks compatibility boundary. |
+| `TB-ALGO-QUIRKS-DOCTYPE` | MVP | Quirks mode + doctype effects | `#the-initial-insertion-mode`, `#the-before-html-insertion-mode` | `tree_builder/document.rs`, `tree_builder/dispatch/early_modes.rs`, `session/api.rs`, `parser/session.rs`, `conformance/execution.rs` | Current unit/conformance coverage: production `NoQuirks`, `LimitedQuirks`, and `Quirks`; late/duplicate doctype immutability; standalone not-applicable. | Document mode decision from DOCTYPE token (`force_quirks` true/false), deterministic propagation and immutability boundary. | `tb-quirks-from-doctype` | Required for standards/quirks compatibility boundary; full WHATWG doctype classification is not claimed. |
 | `TB-ALGO-PATCH-SINK` | MVP | Deterministic patch emission contract | engine contract (`docs/html5/dompatch-contract.md`) | `tree_builder/mod.rs`, `session.rs`, `dom_patch.rs` | Current harness path: `html5_golden_tree_builder_patches.rs`. | Stable ordering, deterministic document bootstrap, no invalid patch sequencing. | `tb-patch-order-stability` | Runtime consumes patches incrementally; determinism is non-negotiable. |
 | `TB-ALGO-NODE-IDENTITY` | MVP | Node identity and runtime mapping contract | engine contract (`docs/html5/node-identity-contract.md`) | `tree_builder/mod.rs`, `session.rs`, `runtime_parse/src/lib.rs`, `browser/src/dom_store.rs` | Current coverage: `html5_golden_tree_builder_patches.rs` incremental materialization checks; `runtime_parse::runtime_updates_are_well_formed_and_materializable_if_any`; `runtime_parse::runtime_emits_updates_for_simple_document_when_strict_enabled` (feature-gated); `browser::dom_store` strict applier tests. | Stable `PatchKey` references, per-handle version monotonicity, no unknown-node references across the HTML5 runtime path. | `tb-node-identity-stability` | Locks down identity semantics across parser, runtime, and applier boundaries. |
 

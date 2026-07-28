@@ -21,7 +21,7 @@ fn tree_builder_in_body_formatting_start_tags_push_to_afe_in_order() {
     use crate::html5::shared::Token;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -44,7 +44,7 @@ fn tree_builder_in_body_formatting_start_tags_push_to_afe_in_order() {
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .expect("formatting start tag should remain recoverable");
@@ -75,7 +75,7 @@ fn tree_builder_in_body_marker_tags_push_marker_boundaries_into_afe() {
     use crate::html5::shared::Token;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -108,7 +108,11 @@ fn tree_builder_in_body_marker_tags_push_marker_boundaries_into_afe() {
         },
     ] {
         let _ = builder
-            .process(&token, &ctx.atoms, &resolver)
+            .process(
+                &token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("marker/formatting start tag should remain recoverable");
     }
 
@@ -137,7 +141,7 @@ fn tree_builder_in_body_self_closing_formatting_tag_does_not_enter_afe() {
     use crate::html5::shared::Token;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -154,7 +158,7 @@ fn tree_builder_in_body_self_closing_formatting_tag_does_not_enter_afe() {
                 attrs: Vec::new(),
                 self_closing: true,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("self-closing formatting tag should remain recoverable");
@@ -175,7 +179,7 @@ fn tree_builder_in_body_repeated_anchor_start_tag_replaces_prior_active_anchor()
     use crate::html5::shared::Token;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -199,7 +203,11 @@ fn tree_builder_in_body_repeated_anchor_start_tag_replaces_prior_active_anchor()
         Token::Eof,
     ] {
         let _ = builder
-            .process(&token, &ctx.atoms, &resolver)
+            .process(
+                &token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("repeated anchor recovery should remain recoverable");
     }
 
@@ -213,7 +221,7 @@ fn tree_builder_in_body_repeated_anchor_start_tag_replaces_prior_active_anchor()
         vec![builder.known_tags.html, builder.known_tags.body, a],
         "repeated anchor insertion should leave only the latest anchor on SOE"
     );
-    let errors = builder.take_parse_error_kinds_for_test();
+    let errors = ctx.take_tree_parse_error_descriptions_for_test();
     assert!(
         errors
             .iter()
@@ -228,7 +236,7 @@ fn tree_builder_in_body_repeated_nobr_start_tag_replaces_prior_in_scope_nobr() {
     use crate::html5::shared::Token;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -255,7 +263,11 @@ fn tree_builder_in_body_repeated_nobr_start_tag_replaces_prior_in_scope_nobr() {
         Token::Eof,
     ] {
         let _ = builder
-            .process(&token, &ctx.atoms, &resolver)
+            .process(
+                &token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("repeated nobr recovery should remain recoverable");
     }
 
@@ -269,7 +281,7 @@ fn tree_builder_in_body_repeated_nobr_start_tag_replaces_prior_in_scope_nobr() {
         vec![builder.known_tags.html, builder.known_tags.body, nobr],
         "repeated nobr insertion should leave only the latest nobr on SOE"
     );
-    let errors = builder.take_parse_error_kinds_for_test();
+    let errors = ctx.take_tree_parse_error_descriptions_for_test();
     assert!(
         errors
             .iter()
@@ -285,7 +297,7 @@ fn tree_builder_in_body_special_formatting_recovery_stays_panic_free_for_malform
     use crate::html5::tree_builder::modes::InsertionMode;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -323,7 +335,11 @@ fn tree_builder_in_body_special_formatting_recovery_stays_panic_free_for_malform
         Token::Eof,
     ] {
         let _ = builder
-            .process(&token, &ctx.atoms, &resolver)
+            .process(
+                &token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("special formatting recovery should remain panic-free");
     }
 
