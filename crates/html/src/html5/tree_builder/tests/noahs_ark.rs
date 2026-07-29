@@ -45,7 +45,11 @@ fn run_tree_builder_chunks(chunks: &[&str]) -> NoahArkRun {
             let resolver = batch.resolver();
             for token in batch.iter() {
                 let _ = builder
-                    .process(token, &ctx.atoms, &resolver)
+                    .process(
+                        token,
+                        &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                        &resolver,
+                    )
                     .expect("Noah's Ark integration run should remain recoverable");
             }
         }
@@ -60,7 +64,11 @@ fn run_tree_builder_chunks(chunks: &[&str]) -> NoahArkRun {
         let resolver = batch.resolver();
         for token in batch.iter() {
             let _ = builder
-                .process(token, &ctx.atoms, &resolver)
+                .process(
+                    token,
+                    &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                    &resolver,
+                )
                 .expect("Noah's Ark integration EOF drain should remain recoverable");
         }
     }
@@ -154,7 +162,7 @@ fn tree_builder_in_body_noahs_ark_limits_duplicate_formatting_entries_to_three()
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .expect("duplicate formatting insertion should remain recoverable");
@@ -247,7 +255,7 @@ fn tree_builder_in_body_noahs_ark_preserves_non_matching_attribute_variants() {
                     attrs,
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .expect("attribute-sensitive Noah's Ark scenario should remain recoverable");
@@ -363,7 +371,11 @@ fn tree_builder_in_body_noahs_ark_respects_marker_boundaries() {
         },
     ] {
         let _ = builder
-            .process(&token, &ctx.atoms, &resolver)
+            .process(
+                &token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("Noah's Ark marker-boundary scenario should remain recoverable");
     }
 
@@ -397,7 +409,7 @@ fn tree_builder_noahs_ark_reconstruction_recreates_only_surviving_entries() {
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .expect("duplicate formatting insertion should remain recoverable");
@@ -412,7 +424,7 @@ fn tree_builder_noahs_ark_reconstruction_recreates_only_surviving_entries() {
     }
 
     let reconstructed = builder
-        .reconstruct_active_formatting_elements(&ctx.atoms)
+        .reconstruct_active_formatting_elements_for_test(&mut ctx)
         .expect("reconstruction after Noah's Ark trimming should remain recoverable");
 
     assert_eq!(

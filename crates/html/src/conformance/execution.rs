@@ -21,6 +21,13 @@ pub enum ObservationRequest {
     },
 }
 
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub enum ScalarObservationRequest {
+    #[default]
+    NotRequested,
+    Capture,
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum ParserObservationTarget {
     StandaloneTokenizer,
@@ -42,6 +49,7 @@ pub struct ParserObservationRequest<'a> {
     pub tokens: ObservationRequest,
     pub parse_errors: ObservationRequest,
     pub implementation_diagnostics: ObservationRequest,
+    pub document_mode: ScalarObservationRequest,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
@@ -136,19 +144,33 @@ pub fn execute_parser_observation(
         parse_errors: internal_request(request.parse_errors),
         implementation_diagnostics: internal_request(request.implementation_diagnostics),
     };
-    let capture = match request.target {
+    let (capture, document_mode) = match request.target {
         ParserObservationTarget::StandaloneTokenizer => {
-            execute_standalone_tokenizer(request.input, config)?
+            let capture = execute_standalone_tokenizer(request.input, config)?;
+            let mode = match request.document_mode {
+                ScalarObservationRequest::NotRequested => ObservationState::NotRequested,
+                ScalarObservationRequest::Capture => ObservationState::NotApplicable {
+                    reason: super::NotApplicableReason::StandaloneTokenizerRun,
+                },
+            };
+            (capture, mode)
         }
-        ParserObservationTarget::DocumentParser => execute_document_parser(request.input, config)?,
+        ParserObservationTarget::DocumentParser => {
+            let (capture, production_mode) = execute_document_parser(request.input, config)?;
+            let mode = match request.document_mode {
+                ScalarObservationRequest::NotRequested => ObservationState::NotRequested,
+                ScalarObservationRequest::Capture => ObservationState::Captured(production_mode),
+            };
+            (capture, mode)
+        }
     };
-    canonical_result(capture)
+    canonical_result(capture, document_mode)
 }
 
 fn execute_document_parser(
     input: ParserObservationInput<'_>,
     config: ParserObservationConfig,
-) -> Result<ParserObservationCapture, ParserObservationExecutionError> {
+) -> Result<(ParserObservationCapture, crate::DocumentMode), ParserObservationExecutionError> {
     let observation_requested = config.is_requested();
     let mut parser = HtmlParser::new_with_observations(HtmlParseOptions::default(), config)
         .map_err(|_| ParserObservationExecutionError::ParserInvariant)?;
@@ -173,13 +195,14 @@ fn execute_document_parser(
     if parser.finish().is_err() {
         return Err(document_parser_error(&parser));
     }
+    let document_mode = parser.document_mode_for_conformance();
     let capture = take_document_capture(&mut parser, observation_requested)?;
     // Run the same final materialization path as the stable facade before
     // exposing observations, even though AE13b1 does not capture the tree.
     let _ = parser
         .into_output()
         .map_err(|_| ParserObservationExecutionError::ParserInvariant)?;
-    Ok(capture)
+    Ok((capture, document_mode))
 }
 
 fn push_document_text(
@@ -459,6 +482,7 @@ fn take_standalone_capture(
 
 fn canonical_result(
     capture: ParserObservationCapture,
+    document_mode: ObservationState<crate::DocumentMode>,
 ) -> Result<CanonicalParserResult, ParserObservationExecutionError> {
     if capture.token_capture_failed {
         return Err(ParserObservationExecutionError::TokenCanonicalizationInvariant);
@@ -472,7 +496,7 @@ fn canonical_result(
         tokens: finish_surface(capture.tokens),
         parse_errors: finish_surface(capture.parse_errors),
         implementation_diagnostics: finish_surface(capture.implementation_diagnostics),
-        document_mode: ObservationState::NotRequested,
+        document_mode,
         tree: ObservationState::NotRequested,
         patches: ObservationState::NotRequested,
         transitions: ObservationState::NotRequested,
@@ -535,9 +559,10 @@ fn finish_surface<T>(capture: CapturedSurface<T>) -> ObservationState<Vec<T>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::conformance::NotApplicableReason;
     use crate::html5::shared::{
-        EventPosition, ImplementationDiagnosticCode, InputCoordinateSpace, SourceBytePosition,
-        SourcePositionUnavailableReason, Utf8ReplacementReason,
+        EventPosition, ImplementationDiagnosticCode, InputCoordinateSpace, ParseErrorCode,
+        SourceBytePosition, SourcePositionUnavailableReason, Utf8ReplacementReason,
     };
     use crate::html5::shared::{
         ImplementationDiagnosticEvent, ObservedToken, ParserRecoveryAction,
@@ -567,6 +592,7 @@ mod tests {
             implementation_diagnostics: ObservationRequest::Capture {
                 capacity: DIAGNOSTIC_CAPACITY,
             },
+            document_mode: ScalarObservationRequest::NotRequested,
         })
         .expect("production tokenizer observation should succeed")
     }
@@ -668,6 +694,7 @@ mod tests {
             tokens: ObservationRequest::NotRequested,
             parse_errors: ObservationRequest::NotRequested,
             implementation_diagnostics: ObservationRequest::NotRequested,
+            document_mode: ScalarObservationRequest::NotRequested,
         })
         .expect("unobserved conformance execution still runs production parsing");
         assert!(matches!(result.tokens, ObservationState::NotRequested));
@@ -711,7 +738,7 @@ mod tests {
             ObservationOccurrenceSequence::ParseErrors,
         ));
         assert_eq!(
-            canonical_result(capture),
+            canonical_result(capture, ObservationState::NotRequested),
             Err(ParserObservationExecutionError::ObservationInvariant(
                 ParserObservationInvariantError::ParseErrorOccurrenceOverflow
             ))
@@ -720,7 +747,7 @@ mod tests {
         let mut capture = empty_capture();
         capture.invariant = Some(ParserObservationInvariant::InvalidNormalizedPositionOffset);
         assert_eq!(
-            canonical_result(capture),
+            canonical_result(capture, ObservationState::NotRequested),
             Err(ParserObservationExecutionError::ObservationInvariant(
                 ParserObservationInvariantError::InvalidNormalizedPositionOffset
             ))
@@ -729,7 +756,7 @@ mod tests {
         let mut capture = empty_capture();
         capture.invariant = Some(ParserObservationInvariant::NormalizedPositionIndexMissing);
         assert_eq!(
-            canonical_result(capture),
+            canonical_result(capture, ObservationState::NotRequested),
             Err(ParserObservationExecutionError::ObservationInvariant(
                 ParserObservationInvariantError::NormalizedPositionIndexMissing
             ))
@@ -760,7 +787,7 @@ mod tests {
             "an invalid normalized offset must not retain a false unavailable-position event"
         );
         assert_eq!(
-            canonical_result(capture),
+            canonical_result(capture, ObservationState::NotRequested),
             Err(ParserObservationExecutionError::ObservationInvariant(
                 ParserObservationInvariantError::InvalidNormalizedPositionOffset
             ))
@@ -792,7 +819,7 @@ mod tests {
             "missing-index corruption must not retain a false unavailable event"
         );
         assert_eq!(
-            canonical_result(capture),
+            canonical_result(capture, ObservationState::NotRequested),
             Err(ParserObservationExecutionError::ObservationInvariant(
                 ParserObservationInvariantError::NormalizedPositionIndexMissing
             ))
@@ -904,6 +931,7 @@ mod tests {
             tokens: ObservationRequest::NotRequested,
             parse_errors: ObservationRequest::NotRequested,
             implementation_diagnostics: ObservationRequest::Capture { capacity: 1 },
+            document_mode: ScalarObservationRequest::NotRequested,
         })
         .unwrap();
         let ObservationState::Incomplete { partial, reason } = result.implementation_diagnostics
@@ -1110,9 +1138,7 @@ mod tests {
 
     #[test]
     fn eof_diagnostics_use_the_terminal_normalized_insertion_point_at_every_split() {
-        use crate::html5::shared::{
-            ParseErrorCode, TokenizerExtensionParseErrorCode, WhatwgParseErrorCode,
-        };
+        use crate::html5::shared::{ParseErrorCode, WhatwgParseErrorCode};
 
         let cases = [
             (
@@ -1156,12 +1182,6 @@ mod tests {
                 "<svg><![CDATA[x",
                 ParseErrorCode::Standard(WhatwgParseErrorCode::EofInCdata),
                 (15, 1, 16),
-            ),
-            (
-                ParserObservationTarget::DocumentParser,
-                "<title>x",
-                ParseErrorCode::TokenizerExtension(TokenizerExtensionParseErrorCode::EofInTextMode),
-                (8, 1, 9),
             ),
             (
                 ParserObservationTarget::StandaloneTokenizer,
@@ -1317,12 +1337,13 @@ mod tests {
             tokens: ObservationRequest::NotRequested,
             parse_errors: ObservationRequest::Capture { capacity: 8 },
             implementation_diagnostics: ObservationRequest::NotRequested,
+            document_mode: ScalarObservationRequest::NotRequested,
         })
         .expect("document parser observation");
         assert!(captured(&text_mode.parse_errors).iter().any(|event| {
             event.code
-                == ParseErrorCode::TokenizerExtension(
-                    TokenizerExtensionParseErrorCode::EofInTextMode,
+                == ParseErrorCode::TreeConstruction(
+                    crate::html5::shared::TreeConstructionParseErrorCode::EofInTextMode,
                 )
         }));
 
@@ -1867,6 +1888,7 @@ mod tests {
             );
             let actual_errors = captured(&whole.parse_errors)
                 .iter()
+                .filter(|event| event.stage == crate::html5::shared::ParserStage::Tokenizer)
                 .map(|event| {
                     let ParseErrorCode::Standard(code) = event.code else {
                         panic!("text-mode end tag must use Standard identity: {event:?}");
@@ -2683,5 +2705,339 @@ mod tests {
                 "parse errors differ at text split {split}"
             );
         }
+    }
+
+    fn observe_document(
+        input: ParserObservationInput<'_>,
+        diagnostic_capacity: usize,
+        document_mode: ScalarObservationRequest,
+    ) -> CanonicalParserResult {
+        execute_parser_observation(ParserObservationRequest {
+            target: ParserObservationTarget::DocumentParser,
+            input,
+            tokens: ObservationRequest::NotRequested,
+            parse_errors: ObservationRequest::Capture {
+                capacity: diagnostic_capacity,
+            },
+            implementation_diagnostics: ObservationRequest::Capture {
+                capacity: diagnostic_capacity,
+            },
+            document_mode,
+        })
+        .expect("document observation should complete")
+    }
+
+    #[test]
+    fn normal_implied_elements_and_in_head_fallback_emit_no_tree_error() {
+        for source in ["<!doctype html><p>x", "<!doctype html><title>x</title>body"] {
+            let result = observe_document(
+                ParserObservationInput::Utf8(source),
+                DIAGNOSTIC_CAPACITY,
+                ScalarObservationRequest::NotRequested,
+            );
+            assert!(
+                captured(&result.parse_errors).is_empty(),
+                "normal implied-element or in-head fallback path emitted an error: {source:?}"
+            );
+        }
+    }
+
+    #[test]
+    fn tokenizer_and_tree_errors_share_only_the_parse_error_sequence() {
+        let source = "<!doctype html><div a='first' a='second'/>";
+        let result = observe_document(
+            ParserObservationInput::Utf8(source),
+            DIAGNOSTIC_CAPACITY,
+            ScalarObservationRequest::NotRequested,
+        );
+        let errors = captured(&result.parse_errors);
+        assert_eq!(errors.len(), 2);
+        assert_eq!(errors[0].occurrence, 1);
+        assert_eq!(
+            errors[0].code,
+            crate::html5::shared::ParseErrorCode::Standard(
+                crate::html5::shared::WhatwgParseErrorCode::DuplicateAttribute,
+            )
+        );
+        assert_eq!(errors[1].occurrence, 2);
+        assert_eq!(
+            errors[1].code,
+            crate::html5::shared::ParseErrorCode::TreeConstruction(
+                crate::html5::shared::TreeConstructionParseErrorCode::UnacknowledgedSelfClosingFlag,
+            )
+        );
+        assert_eq!(
+            errors[1].position,
+            EventPosition::Unavailable(
+                crate::html5::shared::PositionUnavailableReason::ParserDidNotProvidePosition,
+            )
+        );
+
+        let diagnostics = captured(&result.implementation_diagnostics);
+        assert_eq!(diagnostics.len(), 1);
+        assert_eq!(diagnostics[0].occurrence(), 1);
+        assert_eq!(
+            diagnostics[0].code(),
+            crate::html5::shared::ImplementationDiagnosticCode::TreeConstruction(
+                crate::html5::shared::TreeConstructionImplementationDiagnosticCode::
+                    NonVoidHtmlSelfClosingFlagAlteredStackDisposition,
+            )
+        );
+        assert_eq!(
+            errors[0].occurrence,
+            diagnostics[0].occurrence(),
+            "equal numbers on independent surfaces do not define a global timeline"
+        );
+    }
+
+    #[test]
+    fn preprocessing_and_tree_diagnostics_share_the_implementation_sequence() {
+        let source = b"<!doctype html>\xff<div/>";
+        let result = observe_document(
+            ParserObservationInput::Bytes(source),
+            DIAGNOSTIC_CAPACITY,
+            ScalarObservationRequest::NotRequested,
+        );
+        let diagnostics = captured(&result.implementation_diagnostics);
+        assert_eq!(diagnostics.len(), 2);
+        assert_eq!(diagnostics[0].occurrence(), 1);
+        assert_eq!(
+            diagnostics[0].code(),
+            ImplementationDiagnosticCode::InvalidUtf8Replaced(
+                Utf8ReplacementReason::InvalidSequence,
+            )
+        );
+        assert_eq!(diagnostics[1].occurrence(), 2);
+        assert_eq!(
+            diagnostics[1].code(),
+            ImplementationDiagnosticCode::TreeConstruction(
+                crate::html5::shared::TreeConstructionImplementationDiagnosticCode::
+                    NonVoidHtmlSelfClosingFlagAlteredStackDisposition,
+            )
+        );
+        let errors = captured(&result.parse_errors);
+        assert_eq!(
+            errors
+                .iter()
+                .filter(|event| {
+                    event.code
+                        == ParseErrorCode::TreeConstruction(
+                            crate::html5::shared::TreeConstructionParseErrorCode::
+                                UnacknowledgedSelfClosingFlag,
+                        )
+                })
+                .count(),
+            1
+        );
+        assert_eq!(
+            errors.last().expect("self-closing error").occurrence,
+            1,
+            "parse-error occurrences are independent from implementation diagnostics"
+        );
+    }
+
+    #[test]
+    fn self_closing_effects_report_truthful_recovery_and_deviation_metadata() {
+        let altered = observe_document(
+            ParserObservationInput::Utf8("<!doctype html><div/>"),
+            DIAGNOSTIC_CAPACITY,
+            ScalarObservationRequest::NotRequested,
+        );
+        let altered_errors = captured(&altered.parse_errors);
+        assert_eq!(altered_errors.len(), 1);
+        assert_eq!(
+            altered_errors[0].code,
+            ParseErrorCode::TreeConstruction(
+                crate::html5::shared::TreeConstructionParseErrorCode::UnacknowledgedSelfClosingFlag,
+            )
+        );
+        assert_eq!(altered_errors[0].recovery, None);
+        assert_eq!(
+            captured(&altered.implementation_diagnostics)[0].code(),
+            ImplementationDiagnosticCode::TreeConstruction(
+                crate::html5::shared::TreeConstructionImplementationDiagnosticCode::
+                    NonVoidHtmlSelfClosingFlagAlteredStackDisposition,
+            )
+        );
+
+        let acknowledged_img = observe_document(
+            ParserObservationInput::Utf8("<!doctype html><img/>"),
+            DIAGNOSTIC_CAPACITY,
+            ScalarObservationRequest::NotRequested,
+        );
+        assert!(captured(&acknowledged_img.parse_errors).is_empty());
+        assert!(captured(&acknowledged_img.implementation_diagnostics).is_empty());
+
+        let acknowledged = observe_document(
+            ParserObservationInput::Utf8("<!doctype html><input/>"),
+            DIAGNOSTIC_CAPACITY,
+            ScalarObservationRequest::NotRequested,
+        );
+        assert!(captured(&acknowledged.parse_errors).is_empty());
+        assert!(captured(&acknowledged.implementation_diagnostics).is_empty());
+    }
+
+    #[test]
+    fn tree_error_capacity_retains_detection_order_and_counts_drops() {
+        let source = "<!doctype html><div a='first' a='second'/>";
+        let zero = observe_document(
+            ParserObservationInput::Utf8(source),
+            0,
+            ScalarObservationRequest::NotRequested,
+        );
+        assert_eq!(
+            zero.parse_errors,
+            ObservationState::Incomplete {
+                partial: Vec::new(),
+                reason: IncompleteObservationReason::StorageLimitExceeded {
+                    retained: 0,
+                    dropped: 2,
+                },
+            }
+        );
+
+        let one = observe_document(
+            ParserObservationInput::Utf8(source),
+            1,
+            ScalarObservationRequest::NotRequested,
+        );
+        let ObservationState::Incomplete { partial, reason } = one.parse_errors else {
+            panic!("capacity one should retain a prefix and report one drop");
+        };
+        assert_eq!(partial.len(), 1);
+        assert_eq!(partial[0].occurrence, 1);
+        assert_eq!(
+            reason,
+            IncompleteObservationReason::StorageLimitExceeded {
+                retained: 1,
+                dropped: 1,
+            }
+        );
+    }
+
+    #[test]
+    fn integrated_eof_in_text_mode_is_tree_owned_and_chunk_invariant() {
+        for source in [
+            "<!doctype html><title>x",
+            "<!doctype html><textarea>x",
+            "<!doctype html><style>x",
+            "<!doctype html><script>x",
+        ] {
+            let whole = observe_document(
+                ParserObservationInput::Utf8(source),
+                DIAGNOSTIC_CAPACITY,
+                ScalarObservationRequest::NotRequested,
+            );
+            let errors = captured(&whole.parse_errors);
+            let eof_errors = errors
+                .iter()
+                .filter(|event| {
+                    event.code
+                        == ParseErrorCode::TreeConstruction(
+                            crate::html5::shared::TreeConstructionParseErrorCode::EofInTextMode,
+                        )
+                })
+                .collect::<Vec<_>>();
+            assert_eq!(eof_errors.len(), 1, "source={source:?}");
+            let event = eof_errors[0];
+            assert_eq!(
+                event.stage,
+                crate::html5::shared::ParserStage::TreeConstruction
+            );
+            assert_eq!(
+                event.position,
+                EventPosition::Unavailable(
+                    crate::html5::shared::PositionUnavailableReason::ParserDidNotProvidePosition,
+                )
+            );
+            let context = event.context.as_ref().expect("tree event context");
+            assert_eq!(
+                context.token_kind,
+                Some(crate::html5::shared::ParserTokenKind::Eof)
+            );
+            assert_eq!(
+                context.insertion_mode,
+                Some(crate::html5::shared::ObservedInsertionMode::Text)
+            );
+            assert!(
+                !errors.iter().any(|candidate| matches!(
+                    candidate.code,
+                    ParseErrorCode::TokenizerExtension(_)
+                )),
+                "integrated EOF must not retain a tokenizer-extension duplicate"
+            );
+
+            for split in 1..source.len() {
+                let chunks = [&source[..split], &source[split..]];
+                let chunked = observe_document(
+                    ParserObservationInput::Utf8Chunks(&chunks),
+                    DIAGNOSTIC_CAPACITY,
+                    ScalarObservationRequest::NotRequested,
+                );
+                assert_eq!(
+                    chunked.parse_errors, whole.parse_errors,
+                    "EOF observation changed at split {split} for {source:?}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn document_mode_is_captured_from_the_completed_production_tree_builder() {
+        let cases = [
+            ("<!doctype html><p>x", crate::DocumentMode::NoQuirks),
+            (
+                "<!doctype html PUBLIC \"-//W3C//DTD XHTML 1.0 Transitional//EN\"><p>x",
+                crate::DocumentMode::LimitedQuirks,
+            ),
+            ("<!doctype nope><p>x", crate::DocumentMode::Quirks),
+            (
+                "<!doctype html><p>x<!doctype nope>",
+                crate::DocumentMode::NoQuirks,
+            ),
+            ("<p>x<!doctype nope>", crate::DocumentMode::NoQuirks),
+        ];
+        for (source, expected) in cases {
+            let result = observe_document(
+                ParserObservationInput::Utf8(source),
+                DIAGNOSTIC_CAPACITY,
+                ScalarObservationRequest::Capture,
+            );
+            assert_eq!(
+                result.document_mode,
+                ObservationState::Captured(expected),
+                "source={source:?}"
+            );
+
+            let scalar_only = execute_parser_observation(ParserObservationRequest {
+                target: ParserObservationTarget::DocumentParser,
+                input: ParserObservationInput::Utf8(source),
+                tokens: ObservationRequest::NotRequested,
+                parse_errors: ObservationRequest::NotRequested,
+                implementation_diagnostics: ObservationRequest::NotRequested,
+                document_mode: ScalarObservationRequest::Capture,
+            })
+            .expect("scalar-only production execution");
+            assert_eq!(scalar_only.document_mode, result.document_mode);
+        }
+    }
+
+    #[test]
+    fn standalone_tokenizer_document_mode_is_not_applicable() {
+        let result = execute_parser_observation(ParserObservationRequest {
+            target: ParserObservationTarget::StandaloneTokenizer,
+            input: ParserObservationInput::Utf8("<!doctype html>"),
+            tokens: ObservationRequest::NotRequested,
+            parse_errors: ObservationRequest::NotRequested,
+            implementation_diagnostics: ObservationRequest::NotRequested,
+            document_mode: ScalarObservationRequest::Capture,
+        })
+        .expect("standalone tokenizer execution");
+        assert_eq!(
+            result.document_mode,
+            ObservationState::NotApplicable {
+                reason: NotApplicableReason::StandaloneTokenizerRun,
+            }
+        );
     }
 }

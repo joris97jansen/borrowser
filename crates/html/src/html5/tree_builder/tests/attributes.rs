@@ -67,12 +67,16 @@ fn parser_created_attributes_are_first_wins_and_encounter_ordered() {
                 ],
                 self_closing: false,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("start tag should process");
     let _ = builder
-        .process(&Token::Eof, &ctx.atoms, &resolver)
+        .process(
+            &Token::Eof,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .expect("EOF should process");
 
     let patches = builder.drain_patches();

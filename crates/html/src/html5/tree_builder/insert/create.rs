@@ -10,10 +10,12 @@ use crate::html5::tree_builder::attributes::{
     snapshot_token_attributes_first_wins,
 };
 use crate::html5::tree_builder::formatting::AfeElementEntry;
+use crate::html5::tree_builder::insert::location::InsertionLocation;
 use crate::html5::tree_builder::resolve::resolve_text_value;
 use crate::html5::tree_builder::stack::OpenElement;
 use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderError};
-use crate::names::ElementNamespace;
+use crate::names::{ElementNamespace, ExpandedElementName};
+use std::num::NonZeroU32;
 
 /// Stack disposition is deliberately private to the insertion layer. Tree
 /// construction dispatch chooses only semantic normal or void insertion.
@@ -27,6 +29,27 @@ enum StackDisposition {
     LegacySkipPush,
 }
 
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum LegacySelfClosingEffect {
+    None,
+    NonVoidHtmlAltersStackDisposition,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct HtmlInsertionSemantics {
+    disposition: StackDisposition,
+    self_closing_effect: LegacySelfClosingEffect,
+}
+
+struct HtmlElementInsertionPreflight {
+    location: InsertionLocation,
+    key: PatchKey,
+    next_key: NonZeroU32,
+    expanded_name: ExpandedElementName,
+    attributes: Vec<ParserCreatedAttribute>,
+    semantics: HtmlInsertionSemantics,
+}
+
 impl Html5TreeBuilder {
     pub(in crate::html5::tree_builder) fn insert_foreign_element(
         &mut self,
@@ -34,16 +57,17 @@ impl Html5TreeBuilder {
         name: AtomId,
         attributes: Vec<ParserCreatedAttribute>,
         self_closing: bool,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         atoms: &AtomTable,
     ) -> Result<Option<PatchKey>, TreeBuilderError> {
         debug_assert!(namespace != ElementNamespace::Html);
         self.with_structural_mutation(|this| {
-            if !self_closing && !this.allow_non_self_closing_element(name) {
+            if !self_closing && !this.allow_non_self_closing_element(name, context) {
                 return Ok(None);
             }
-            let _ = this.ensure_document_created()?;
+            let _ = this.ensure_document_created(context)?;
             let location = this.element_or_text_insertion_location()?;
-            if !this.allow_new_child(location.parent, Some(name)) {
+            if !this.allow_new_child(location.parent, Some(name), context) {
                 return Ok(None);
             }
             let key = this.alloc_patch_key()?;
@@ -56,7 +80,7 @@ impl Html5TreeBuilder {
                 attributes,
             });
             this.note_node_created();
-            let inserted = this.insert_existing_child_at(location, key);
+            let inserted = this.insert_existing_child_at(location, key, context);
             debug_assert!(inserted, "prechecked foreign insertion must succeed");
             let entry = OpenElement::new_foreign(key, namespace, name);
             this.open_elements.push(entry);
@@ -72,9 +96,10 @@ impl Html5TreeBuilder {
         &mut self,
         name: AtomId,
         attrs: &[ParserCreatedAttribute],
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         atoms: &AtomTable,
     ) -> Result<Option<PatchKey>, TreeBuilderError> {
-        if !self.allow_node_creation(Some(name)) {
+        if !self.allow_node_creation(Some(name), context) {
             return Ok(None);
         }
         let key = self.alloc_patch_key()?;
@@ -89,24 +114,14 @@ impl Html5TreeBuilder {
         Ok(Some(key))
     }
 
-    fn create_detached_element_from_token_attrs(
-        &mut self,
-        name: AtomId,
-        attrs: &[Attribute],
-        atoms: &AtomTable,
-        text: &dyn TextResolver,
-    ) -> Result<Option<PatchKey>, TreeBuilderError> {
-        let attributes = resolve_token_attributes_first_wins(attrs, atoms, text)?;
-        self.create_detached_element(name, &attributes, atoms)
-    }
-
     pub(in crate::html5::tree_builder) fn create_detached_element_from_afe_entry(
         &mut self,
         entry: &AfeElementEntry,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         atoms: &AtomTable,
     ) -> Result<Option<PatchKey>, TreeBuilderError> {
         let attributes = resolve_afe_attributes_first_wins(&entry.attrs);
-        self.create_detached_element(entry.name, &attributes, atoms)
+        self.create_detached_element(entry.name, &attributes, context, atoms)
     }
 
     /// Temporary compatibility path for pre-AE9 call sites.
@@ -120,6 +135,7 @@ impl Html5TreeBuilder {
         name: AtomId,
         attrs: &[Attribute],
         self_closing: bool,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         atoms: &AtomTable,
         text: &dyn TextResolver,
     ) -> Result<Option<PatchKey>, TreeBuilderError> {
@@ -128,7 +144,57 @@ impl Html5TreeBuilder {
         } else {
             StackDisposition::Push
         };
-        self.insert_html_element_with_private_disposition(name, attrs, atoms, text, disposition)
+        let self_closing_effect = if self_closing && !self.known_tags.is_void_tag(name) {
+            LegacySelfClosingEffect::NonVoidHtmlAltersStackDisposition
+        } else {
+            LegacySelfClosingEffect::None
+        };
+        self.insert_html_element_with_private_disposition(
+            name,
+            attrs,
+            context,
+            atoms,
+            text,
+            HtmlInsertionSemantics {
+                disposition,
+                self_closing_effect,
+            },
+        )
+    }
+
+    /// Compatibility insertion for a production rule that explicitly
+    /// acknowledges the token's self-closing flag.
+    ///
+    /// Some supported legacy void names are not yet part of the old
+    /// `is_void_tag` stack policy. This keeps their existing DOM behavior while
+    /// preventing the acknowledged flag from being mislabeled as the
+    /// non-void `LegacySkipPush` deviation.
+    #[deprecated(note = "frozen legacy insertion helper; removal tracked separately")]
+    pub(in crate::html5::tree_builder) fn insert_element_for_acknowledged_void_rule(
+        &mut self,
+        name: AtomId,
+        attrs: &[Attribute],
+        self_closing: bool,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
+    ) -> Result<Option<PatchKey>, TreeBuilderError> {
+        let disposition = if self_closing || self.known_tags.is_void_tag(name) {
+            StackDisposition::LegacySkipPush
+        } else {
+            StackDisposition::Push
+        };
+        self.insert_html_element_with_private_disposition(
+            name,
+            attrs,
+            context,
+            atoms,
+            text,
+            HtmlInsertionSemantics {
+                disposition,
+                self_closing_effect: LegacySelfClosingEffect::None,
+            },
+        )
     }
 
     /// Inserts an implemented non-void HTML element and retains it on the
@@ -137,6 +203,7 @@ impl Html5TreeBuilder {
         &mut self,
         name: AtomId,
         attrs: &[Attribute],
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         atoms: &AtomTable,
         text: &dyn TextResolver,
     ) -> Result<Option<PatchKey>, TreeBuilderError> {
@@ -147,9 +214,13 @@ impl Html5TreeBuilder {
         self.insert_html_element_with_private_disposition(
             name,
             attrs,
+            context,
             atoms,
             text,
-            StackDisposition::Push,
+            HtmlInsertionSemantics {
+                disposition: StackDisposition::Push,
+                self_closing_effect: LegacySelfClosingEffect::None,
+            },
         )
     }
 
@@ -160,6 +231,7 @@ impl Html5TreeBuilder {
         &mut self,
         name: AtomId,
         attrs: &[Attribute],
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         atoms: &AtomTable,
         text: &dyn TextResolver,
     ) -> Result<Option<PatchKey>, TreeBuilderError> {
@@ -170,9 +242,13 @@ impl Html5TreeBuilder {
         self.insert_html_element_with_private_disposition(
             name,
             attrs,
+            context,
             atoms,
             text,
-            StackDisposition::PopImmediately,
+            HtmlInsertionSemantics {
+                disposition: StackDisposition::PopImmediately,
+                self_closing_effect: LegacySelfClosingEffect::None,
+            },
         )
     }
 
@@ -180,34 +256,49 @@ impl Html5TreeBuilder {
         &mut self,
         name: AtomId,
         attrs: &[Attribute],
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         atoms: &AtomTable,
         text: &dyn TextResolver,
-        disposition: StackDisposition,
+        semantics: HtmlInsertionSemantics,
     ) -> Result<Option<PatchKey>, TreeBuilderError> {
         self.with_structural_mutation(|this| {
-            if disposition == StackDisposition::Push && !this.allow_non_self_closing_element(name) {
-                return Ok(None);
-            }
-
-            // All fallible resource checks complete before a stack transition.
-            let _ = this.ensure_document_created()?;
-            let location = this.element_or_text_insertion_location()?;
-            if !this.allow_new_child(location.parent, Some(name)) {
-                return Ok(None);
-            }
-            let Some(key) =
-                this.create_detached_element_from_token_attrs(name, attrs, atoms, text)?
+            let Some(preflight) = this
+                .preflight_html_element_insertion(name, attrs, context, atoms, text, semantics)?
             else {
                 return Ok(None);
             };
-            let inserted = this.insert_existing_child_at(location, key);
+
+            if preflight.semantics.self_closing_effect
+                == LegacySelfClosingEffect::NonVoidHtmlAltersStackDisposition
+            {
+                context.mark_self_closing_flag_altered_html_stack_disposition()?;
+                this.record_tree_implementation_diagnostic(
+                    context,
+                    crate::html5::shared::TreeConstructionImplementationDiagnosticCode::
+                        NonVoidHtmlSelfClosingFlagAlteredStackDisposition,
+                    Some("non-void-html-self-closing-flag-altered-stack-disposition"),
+                );
+            }
+
+            // Preflight completed every fallible operation. From this point the
+            // selected stack disposition is committed together with the
+            // structural insertion.
+            this.next_patch_key = preflight.next_key;
+            this.push_structural_patch(DomPatch::CreateElement {
+                key: preflight.key,
+                name: preflight.expanded_name,
+                attributes: preflight.attributes,
+            });
+            this.note_node_created();
+            let inserted =
+                this.insert_existing_child_at(preflight.location, preflight.key, context);
             debug_assert!(
                 inserted,
-                "newly created element insertion must succeed after precheck"
+                "newly created element insertion must succeed after preflight"
             );
 
-            let entry = OpenElement::new_html(key, name);
-            match disposition {
+            let entry = OpenElement::new_html(preflight.key, name);
+            match preflight.semantics.disposition {
                 StackDisposition::Push => this.open_elements.push(entry),
                 StackDisposition::PopImmediately => {
                     let length_before = this.open_elements.len();
@@ -225,28 +316,76 @@ impl Html5TreeBuilder {
                 }
                 StackDisposition::LegacySkipPush => {}
             }
-            Ok(Some(key))
+            Ok(Some(preflight.key))
         })
+    }
+
+    #[allow(
+        clippy::too_many_arguments,
+        reason = "preflight keeps the production insertion dependencies and semantic stack effect explicit"
+    )]
+    fn preflight_html_element_insertion(
+        &mut self,
+        name: AtomId,
+        attrs: &[Attribute],
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
+        atoms: &AtomTable,
+        text: &dyn TextResolver,
+        semantics: HtmlInsertionSemantics,
+    ) -> Result<Option<HtmlElementInsertionPreflight>, TreeBuilderError> {
+        if (semantics.disposition == StackDisposition::Push
+            || semantics.self_closing_effect
+                == LegacySelfClosingEffect::NonVoidHtmlAltersStackDisposition)
+            && !self.allow_non_self_closing_element(name, context)
+        {
+            return Ok(None);
+        }
+
+        let _ = self.ensure_document_created(context)?;
+        let location = self.element_or_text_insertion_location()?;
+        if !self.allow_new_child(location.parent, Some(name), context) {
+            return Ok(None);
+        }
+        let attributes = resolve_token_attributes_first_wins(attrs, atoms, text)?;
+        if !self.allow_node_creation(Some(name), context) {
+            return Ok(None);
+        }
+        let key_value = self.next_patch_key.get();
+        let next_value = key_value.checked_add(1).ok_or(EngineInvariantError)?;
+        let next_key = NonZeroU32::new(next_value).ok_or(EngineInvariantError)?;
+        let expanded_name = atoms
+            .expanded_name(ElementNamespace::Html, name)
+            .ok_or(EngineInvariantError)?;
+        Ok(Some(HtmlElementInsertionPreflight {
+            location,
+            key: PatchKey(key_value),
+            next_key,
+            expanded_name,
+            attributes,
+            semantics,
+        }))
     }
 
     pub(in crate::html5::tree_builder) fn insert_element_from_afe_entry(
         &mut self,
         entry: &AfeElementEntry,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         atoms: &AtomTable,
     ) -> Result<Option<PatchKey>, TreeBuilderError> {
         self.with_structural_mutation(|this| {
-            if !this.allow_non_self_closing_element(entry.name) {
+            if !this.allow_non_self_closing_element(entry.name, context) {
                 return Ok(None);
             }
-            let _ = this.ensure_document_created()?;
+            let _ = this.ensure_document_created(context)?;
             let location = this.element_or_text_insertion_location()?;
-            if !this.allow_new_child(location.parent, Some(entry.name)) {
+            if !this.allow_new_child(location.parent, Some(entry.name), context) {
                 return Ok(None);
             }
-            let Some(key) = this.create_detached_element_from_afe_entry(entry, atoms)? else {
+            let Some(key) = this.create_detached_element_from_afe_entry(entry, context, atoms)?
+            else {
                 return Ok(None);
             };
-            let inserted = this.insert_existing_child_at(location, key);
+            let inserted = this.insert_existing_child_at(location, key, context);
             debug_assert!(
                 inserted,
                 "newly created AFE element insertion must succeed after precheck"
@@ -269,48 +408,52 @@ impl Html5TreeBuilder {
     pub(in crate::html5::tree_builder) fn insert_comment(
         &mut self,
         token_text: &TextValue,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         text: &dyn TextResolver,
     ) -> Result<(), TreeBuilderError> {
         self.with_structural_mutation(|this| {
             let resolved = resolve_text_value(token_text, text)?;
-            let document_key = this.ensure_document_created()?;
+            let document_key = this.ensure_document_created(context)?;
             let parent = this
                 .open_elements
                 .current()
                 .map(OpenElement::key)
                 .unwrap_or(document_key);
             let parent = this.live_tree.template_contents(parent).unwrap_or(parent);
-            this.append_comment_child(parent, resolved)
+            this.append_comment_child(parent, resolved, context)
         })
     }
 
     pub(in crate::html5::tree_builder) fn insert_initial_comment(
         &mut self,
         token_text: &TextValue,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         text: &dyn TextResolver,
     ) -> Result<(), TreeBuilderError> {
         self.with_structural_mutation(|this| {
             let resolved = resolve_text_value(token_text, text)?;
             let document_key = this.ensure_document_created_for_initial_node()?;
-            this.append_comment_child(document_key, resolved)
+            this.append_comment_child(document_key, resolved, context)
         })
     }
 
     pub(in crate::html5::tree_builder) fn insert_document_comment(
         &mut self,
         token_text: &TextValue,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         text: &dyn TextResolver,
     ) -> Result<(), TreeBuilderError> {
         self.with_structural_mutation(|this| {
             let resolved = resolve_text_value(token_text, text)?;
-            let document_key = this.ensure_document_created()?;
-            this.append_comment_child(document_key, resolved)
+            let document_key = this.ensure_document_created(context)?;
+            this.append_comment_child(document_key, resolved, context)
         })
     }
 
     pub(in crate::html5::tree_builder) fn insert_processing_instruction(
         &mut self,
         token: &ProcessingInstructionToken,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         text: &dyn TextResolver,
         override_parent: Option<PatchKey>,
     ) -> Result<(), TreeBuilderError> {
@@ -321,15 +464,16 @@ impl Html5TreeBuilder {
         )
         .map_err(|_| EngineInvariantError)?;
         self.with_structural_mutation(|this| {
-            let _ = this.ensure_document_created()?;
+            let _ = this.ensure_document_created(context)?;
             let location = this.adjusted_insertion_location(override_parent)?;
-            this.append_processing_instruction_at(location, token.target.clone(), data)
+            this.append_processing_instruction_at(location, token.target.clone(), data, context)
         })
     }
 
     pub(in crate::html5::tree_builder) fn insert_initial_processing_instruction(
         &mut self,
         token: &ProcessingInstructionToken,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         text: &dyn TextResolver,
     ) -> Result<(), TreeBuilderError> {
         let data = resolve_text_value(&token.data, text)?;
@@ -341,7 +485,7 @@ impl Html5TreeBuilder {
         self.with_structural_mutation(|this| {
             let document_key = this.ensure_document_created_for_initial_node()?;
             let location = this.adjusted_insertion_location(Some(document_key))?;
-            this.append_processing_instruction_at(location, token.target.clone(), data)
+            this.append_processing_instruction_at(location, token.target.clone(), data, context)
         })
     }
 
@@ -350,14 +494,17 @@ impl Html5TreeBuilder {
         location: super::InsertionLocation,
         target: String,
         data: String,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
     ) -> Result<(), TreeBuilderError> {
-        if !self.allow_new_child(location.parent, None) || !self.allow_node_creation(None) {
+        if !self.allow_new_child(location.parent, None, context)
+            || !self.allow_node_creation(None, context)
+        {
             return Ok(());
         }
         let key = self.alloc_patch_key()?;
         self.push_structural_patch(DomPatch::CreateProcessingInstruction { key, target, data });
         self.note_node_created();
-        let inserted = self.insert_existing_child_at(location, key);
+        let inserted = self.insert_existing_child_at(location, key, context);
         debug_assert!(inserted, "prechecked PI insertion must succeed");
         Ok(())
     }
@@ -366,14 +513,16 @@ impl Html5TreeBuilder {
         &mut self,
         parent: PatchKey,
         text: String,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
     ) -> Result<(), TreeBuilderError> {
-        if !self.allow_new_child(parent, None) || !self.allow_node_creation(None) {
+        if !self.allow_new_child(parent, None, context) || !self.allow_node_creation(None, context)
+        {
             return Ok(());
         }
         let key = self.alloc_patch_key()?;
         self.push_structural_patch(DomPatch::CreateComment { key, text });
         self.note_node_created();
-        let inserted = self.append_existing_child(parent, key);
+        let inserted = self.append_existing_child(parent, key, context);
         debug_assert!(
             inserted,
             "newly created comment insertion must succeed after precheck"

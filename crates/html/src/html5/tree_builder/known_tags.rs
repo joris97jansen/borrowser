@@ -27,7 +27,10 @@ pub(in crate::html5::tree_builder) struct KnownTagIds {
     pub(in crate::html5::tree_builder) html: AtomId,
     pub(in crate::html5::tree_builder) head: AtomId,
     pub(in crate::html5::tree_builder) body: AtomId,
+    pub(in crate::html5::tree_builder) area: AtomId,
     pub(in crate::html5::tree_builder) base: AtomId,
+    pub(in crate::html5::tree_builder) basefont: AtomId,
+    pub(in crate::html5::tree_builder) bgsound: AtomId,
     pub(in crate::html5::tree_builder) br: AtomId,
     pub(in crate::html5::tree_builder) embed: AtomId,
     pub(in crate::html5::tree_builder) hr: AtomId,
@@ -147,7 +150,10 @@ impl KnownTagIds {
             html: atoms.intern_ascii_folded("html")?,
             head: atoms.intern_ascii_folded("head")?,
             body: atoms.intern_ascii_folded("body")?,
+            area: atoms.intern_ascii_folded("area")?,
             base: atoms.intern_ascii_folded("base")?,
+            basefont: atoms.intern_ascii_folded("basefont")?,
+            bgsound: atoms.intern_ascii_folded("bgsound")?,
             br: atoms.intern_ascii_folded("br")?,
             embed: atoms.intern_ascii_folded("embed")?,
             hr: atoms.intern_ascii_folded("hr")?,
@@ -287,6 +293,32 @@ impl KnownTagIds {
             || name == self.img
             || name == self.input
             || name == self.keygen
+            || name == self.link
+            || name == self.meta
+            || name == self.param
+            || name == self.source
+            || name == self.track
+            || name == self.wbr
+    }
+
+    /// Start tags whose implemented in-body production performs the HTML
+    /// self-closing acknowledgement step.
+    ///
+    /// This is deliberately production-rule-specific rather than a generic
+    /// `is_void_tag` check: ignored tokens and tags handled by another
+    /// insertion mode must reach their own acknowledgement decision.
+    #[inline]
+    pub(in crate::html5::tree_builder) fn is_in_body_acknowledged_void_start_tag(
+        &self,
+        name: AtomId,
+    ) -> bool {
+        name == self.area
+            || name == self.base
+            || name == self.basefont
+            || name == self.bgsound
+            || name == self.br
+            || name == self.embed
+            || name == self.img
             || name == self.link
             || name == self.meta
             || name == self.param

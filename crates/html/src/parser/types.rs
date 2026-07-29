@@ -7,6 +7,10 @@ use crate::html5::shared::{
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum HtmlParseEventOrigin {
     Tokenizer,
+    /// Reserved by the stable facade for exact-position tree-builder events.
+    ///
+    /// Current production tree events have deliberately unavailable positions
+    /// and therefore are not projected into `HtmlParseEvent`.
     TreeBuilder,
 }
 
@@ -69,6 +73,10 @@ impl From<Html5ParseError> for HtmlParseEvent {
 }
 
 /// Stable parser counters surfaced by the HTML5-backed facade.
+///
+/// `parse_errors` counts every genuine tokenizer and tree-construction parse
+/// error detected, whether retained or observed. `errors_dropped` counts only
+/// eviction from the bounded exact-position legacy deque.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct HtmlParseCounters {
     pub tokens_processed: u64,

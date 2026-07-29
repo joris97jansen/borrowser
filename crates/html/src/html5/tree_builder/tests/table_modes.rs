@@ -19,7 +19,7 @@ fn in_table_body_text_flush_restores_table_body_mode_before_reprocessing_tr() {
     use crate::html5::tree_builder::modes::InsertionMode;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -53,7 +53,11 @@ fn in_table_body_text_flush_restores_table_body_mode_before_reprocessing_tr() {
         },
     ] {
         let _ = builder
-            .process(&token, &ctx.atoms, &resolver)
+            .process(
+                &token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("table body text setup should remain recoverable");
     }
 
@@ -72,7 +76,7 @@ fn in_table_body_text_flush_restores_table_body_mode_before_reprocessing_tr() {
                 attrs: Vec::new(),
                 self_closing: false,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("tr reprocessing after table text should remain recoverable");
@@ -83,8 +87,7 @@ fn in_table_body_text_flush_restores_table_body_mode_before_reprocessing_tr() {
     assert_eq!(state.table_text_original_insertion_mode, None);
     assert!(state.pending_table_character_tokens.is_empty());
     assert!(
-        builder
-            .take_parse_error_kinds_for_test()
+        ctx.take_tree_parse_error_descriptions_for_test()
             .contains(&"in-table-text-non-space-foster-parented"),
         "non-space table-body text must record deterministic foster-parenting recovery"
     );
@@ -97,7 +100,7 @@ fn in_row_text_flush_restores_row_mode_before_reprocessing_cell() {
     use crate::html5::tree_builder::modes::InsertionMode;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -115,7 +118,7 @@ fn in_row_text_flush_restores_row_mode_before_reprocessing_cell() {
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .unwrap_or_else(|_| panic!("{tag} start tag should remain recoverable"));
@@ -126,7 +129,7 @@ fn in_row_text_flush_restores_row_mode_before_reprocessing_cell() {
             &Token::Text {
                 text: TextValue::Owned("x".to_string()),
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("row text should enter table text mode");
@@ -145,7 +148,7 @@ fn in_row_text_flush_restores_row_mode_before_reprocessing_cell() {
                 attrs: Vec::new(),
                 self_closing: false,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("td reprocessing after row text should remain recoverable");
@@ -164,7 +167,7 @@ fn eof_flushes_pending_table_text_and_clears_return_mode() {
     use crate::html5::tree_builder::modes::InsertionMode;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -188,7 +191,11 @@ fn eof_flushes_pending_table_text_and_clears_return_mode() {
         },
     ] {
         let _ = builder
-            .process(&token, &ctx.atoms, &resolver)
+            .process(
+                &token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("table text EOF setup should remain recoverable");
     }
 
@@ -205,7 +212,11 @@ fn eof_flushes_pending_table_text_and_clears_return_mode() {
     let _ = builder.drain_patches();
 
     let _ = builder
-        .process(&Token::Eof, &ctx.atoms, &resolver)
+        .process(
+            &Token::Eof,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .expect("EOF must flush pending table text");
 
     let state = builder.state_snapshot();
@@ -307,7 +318,7 @@ fn in_body_table_start_tag_enters_in_table_mode() {
     use crate::html5::tree_builder::modes::InsertionMode;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -327,7 +338,7 @@ fn in_body_table_start_tag_enters_in_table_mode() {
                 attrs: Vec::new(),
                 self_closing: false,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("table start tag should remain recoverable");
@@ -344,7 +355,7 @@ fn in_table_tbody_start_tag_switches_to_in_table_body() {
     use crate::html5::tree_builder::modes::InsertionMode;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -368,7 +379,7 @@ fn in_table_tbody_start_tag_switches_to_in_table_body() {
                 attrs: Vec::new(),
                 self_closing: false,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("table start tag should remain recoverable");
@@ -379,7 +390,7 @@ fn in_table_tbody_start_tag_switches_to_in_table_body() {
                 attrs: Vec::new(),
                 self_closing: false,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("tbody start tag should remain recoverable");

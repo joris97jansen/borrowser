@@ -18,30 +18,30 @@ fn semantic_insertion_operations_enforce_implemented_void_categories() {
 
     assert!(
         builder
-            .insert_void_html_element(input, &[], &ctx.atoms, &resolver)
+            .insert_void_html_element_for_test(input, &[], &mut ctx, &resolver)
             .expect("void input insertion")
             .is_some()
     );
     assert!(
         builder
-            .insert_void_html_element(keygen, &[], &ctx.atoms, &resolver)
+            .insert_void_html_element_for_test(keygen, &[], &mut ctx, &resolver)
             .expect("void keygen insertion")
             .is_some()
     );
     assert!(
         builder
-            .insert_normal_html_element(form, &[], &ctx.atoms, &resolver)
+            .insert_normal_html_element_for_test(form, &[], &mut ctx, &resolver)
             .expect("normal form insertion")
             .is_some()
     );
 
     let wrong_void = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = builder.insert_void_html_element(form, &[], &ctx.atoms, &resolver);
+        let _ = builder.insert_void_html_element_for_test(form, &[], &mut ctx, &resolver);
     }));
     assert!(wrong_void.is_err());
 
     let wrong_normal = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
-        let _ = builder.insert_normal_html_element(input, &[], &ctx.atoms, &resolver);
+        let _ = builder.insert_normal_html_element_for_test(input, &[], &mut ctx, &resolver);
     }));
     assert!(wrong_normal.is_err());
 }
@@ -65,7 +65,7 @@ fn frozen_legacy_dispatch_paths_keep_pre_ae9_stack_and_metric_behavior() {
                 attrs: Vec::new(),
                 self_closing: true,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("legacy generic self-closing path should remain recoverable");
@@ -105,7 +105,11 @@ fn frozen_legacy_dispatch_paths_keep_pre_ae9_stack_and_metric_behavior() {
         },
     ] {
         let _ = meta_builder
-            .process(&token, &meta_ctx.atoms, &resolver)
+            .process(
+                &token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut meta_ctx),
+                &resolver,
+            )
             .expect("in-head legacy setup should remain recoverable");
     }
     let meta = meta_ctx
@@ -121,7 +125,7 @@ fn frozen_legacy_dispatch_paths_keep_pre_ae9_stack_and_metric_behavior() {
                 attrs: Vec::new(),
                 self_closing: false,
             },
-            &meta_ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut meta_ctx),
             &resolver,
         )
         .expect("legacy known-void path should remain recoverable");
@@ -160,7 +164,7 @@ fn ae9_void_dispatch_paths_record_real_push_pop_transitions() {
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .expect("AE9 void path should remain recoverable");

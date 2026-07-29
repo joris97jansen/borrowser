@@ -324,13 +324,27 @@ Core v0 guarantees:
 - duplicate/late DOCTYPE tokens after the `Initial` handoff or after that
   boundary MUST NOT change document mode.
 - document mode is internal parser state in Core v0 (no dedicated `DomPatch` mode event) and is not encoded in `DocumentType` node identity or payload.
+- the feature-gated AE13 observation boundary reads the existing production
+  `DocumentMode` after successful parser finish and returns it only after the
+  ordinary patch-validation/materialization path succeeds. It never
+  reclassifies the doctype or infers mode from the final tree.
 
 ### Parse-Error Diagnostics
 
 Core v0 parser diagnostics are deterministic internal regression/debug data:
 
-- tokenizer-origin malformed input records `ParseError` entries through
-  `DocumentParseContext`;
+- one `DocumentParseContext` diagnostic fanout owns counters, the independent
+  parse-error and implementation-diagnostic occurrence sequences, bounded
+  canonical retention, dropped counts, and optional legacy projection for
+  preprocessing, tokenizer, and tree-construction production rules;
+- tokenizer-origin malformed input records exact-position legacy `ParseError`
+  entries where representable. Tree-construction canonical events currently
+  use `Unavailable(ParserDidNotProvidePosition)` and are not projected with a
+  fabricated offset;
+- `Counters::parse_errors` counts every genuine recoverable tokenizer and tree
+  error when counter tracking is enabled, so it may exceed the exact-position
+  legacy vector length. `errors_dropped` remains legacy-deque capacity loss
+  only;
 - parse errors do not automatically abort tokenization or tree construction;
 - supported EOF recovery paths record exact canonical identities while still
   emitting the recoverable token stream defined by the current tokenizer state
@@ -399,10 +413,36 @@ Core v0 parser diagnostics are deterministic internal regression/debug data:
   `NormalizedPositionIndexMissing` is reserved for recorder corruption while a
   position-bearing event can still retain; bounded index retirement is normal;
 - canonical parse-error and implementation-diagnostic occurrences are
-  independent. Reserving `u64::MAX` latches exhaustion immediately, including
+  independent and there is no global cross-surface timeline or post-capture
+  sorting. Reserving `u64::MAX` latches exhaustion immediately, including
   for a full or zero-capacity surface, so no successful result can contain a
   silently exhausted sequence. The first invariant detected in production
   operation order remains authoritative and later failures cannot replace it;
+- tree construction distinguishes genuine HTML parse errors, deterministic
+  Borrowser implementation deviations, configured resource limits, fatal
+  execution/invariant failures, and normal operations that emit no event.
+  Implied `html`, `head`, and `body` insertion and ordinary in-head fallback
+  are normal operations, not parse errors;
+- tree events retain detection-time token kind, insertion mode, and adjusted
+  current-node namespace where available. Current production rules do not
+  provide exact input offsets, so AE13b2 records the explicit unavailable
+  reason rather than scanning source or borrowing the tokenizer cursor;
+- each successfully completed start-tag tree step emits at most one
+  `UnacknowledgedSelfClosingFlag`. Genuinely ignored flags report
+  `IgnoreSelfClosingFlag`; the retained deprecated non-void HTML
+  `LegacySkipPush` behavior reports no false recovery action and emits a
+  separate implementation-deviation diagnostic at its production decision.
+  Supported HTML void-element rules acknowledge the flag only when that
+  production rule reaches its acknowledgement step; there is no global
+  `is_void_tag` acknowledgement, and ignored tokens remain unacknowledged.
+  The legacy altered-stack decision is committed only after configured
+  insertion limits accept the insertion, so a limit-suppressed token reports
+  the configured resource condition plus ignored-flag recovery without the
+  altered-stack diagnostic. Contradictory effect transitions are fatal
+  tree-builder invariants;
+- the tree Text insertion-mode rule solely owns integrated `EofInTextMode`;
+  standalone tokenizer text-mode EOF recovery flushes literal data and EOF
+  without synthesizing a tree error;
 - the doctype-name state, doctype-tail scanning, and doctype resource-limit
   observation require retained name-start metadata. Missing metadata latches
   an operation-specific tokenizer invariant, emits no cursor-positioned
@@ -431,7 +471,11 @@ Core v0 parser diagnostics are deterministic internal regression/debug data:
   parse-error kinds as rendering semantics.
 - DOM golden fixtures may opt into tree-builder parse-error output with
   `# include_parse_errors: true`; this is a deterministic regression/debug
-  surface and not a public runtime diagnostics API.
+  surface and not a public runtime diagnostics API. Its
+  `parser-conformance`-gated test-harness adapter uses finite capacity, rejects
+  partial capture, and projects only authoritative typed tree parse errors
+  one way to legacy lines. It does not merge implementation/resource
+  diagnostics or alter patch goldens.
 
 ### Script/RAWTEXT/RCDATA Stance
 

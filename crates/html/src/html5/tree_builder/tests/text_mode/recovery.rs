@@ -92,25 +92,26 @@ fn tree_builder_text_mode_failed_container_close_reports_single_text_mode_error(
     let script = h.atom("script");
 
     let _ = h.parse_error_kinds();
+    h.observe_next_diagnostics();
     h.process_ok(Token::EndTag { name: script });
 
-    let errors = h.parse_error_kinds();
+    let diagnostics = h.implementation_diagnostic_kinds();
     assert!(
-        errors
+        diagnostics
             .iter()
             .copied()
             .any(|kind| kind == "unexpected-end-tag-in-text-mode"),
         "failed text-mode close should emit unexpected-end-tag-in-text-mode"
     );
     assert!(
-        !errors
+        !diagnostics
             .iter()
             .copied()
             .any(|kind| kind == "end-tag-not-in-scope"),
         "failed text-mode close should suppress generic end-tag-not-in-scope reporting"
     );
     assert_eq!(
-        errors
+        diagnostics
             .iter()
             .copied()
             .filter(|kind| *kind == "unexpected-end-tag-in-text-mode")

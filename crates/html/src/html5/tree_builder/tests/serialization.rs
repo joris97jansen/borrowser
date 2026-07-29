@@ -65,7 +65,11 @@ fn serialize_dom_for_test_emits_deterministic_html5_dom_v2_lines() {
 
     for token in &tokens {
         let _ = builder
-            .process(token, &ctx.atoms, &resolver)
+            .process(
+                token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("process should not fail");
     }
     let patches = builder.drain_patches();

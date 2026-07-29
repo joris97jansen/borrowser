@@ -1,5 +1,8 @@
 use crate::attributes::AttributeNamespace;
-use crate::html5::shared::{AtomTable, Attribute, EngineInvariantError, TextValue, Token};
+use crate::html5::shared::{
+    AtomTable, Attribute, EngineInvariantError, ParserRecoveryAction, TextValue, Token,
+    TreeConstructionParseErrorCode,
+};
 use crate::html5::tokenizer::TextResolver;
 use crate::html5::tree_builder::dispatch::DispatchOutcome;
 use crate::html5::tree_builder::modes::InsertionMode;
@@ -103,14 +106,19 @@ impl Html5TreeBuilder {
         &mut self,
         mode: InsertionMode,
         token: &Token,
-        atoms: &AtomTable,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         text: &dyn TextResolver,
     ) -> Result<DispatchOutcome, TreeBuilderError> {
-        self.record_parse_error("unexpected-html-token-in-foreign-content", None, Some(mode));
+        self.record_tree_parse_error(
+            context,
+            TreeConstructionParseErrorCode::HtmlTokenNotAllowedInForeignContent,
+            Some(ParserRecoveryAction::ReprocessToken),
+            Some("unexpected-html-token-in-foreign-content"),
+        );
         while !self.current_is_breakout_boundary() {
             self.open_elements.pop().ok_or(EngineInvariantError)?;
         }
-        self.dispatch_token_in_html_mode(mode, token, atoms, text)
+        self.dispatch_token_in_html_mode(mode, token, context, text)
     }
 
     pub(in crate::html5::tree_builder) fn process_foreign_token(
@@ -118,6 +126,7 @@ impl Html5TreeBuilder {
         mode: InsertionMode,
         token: &Token,
         atoms: &AtomTable,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         text: &dyn TextResolver,
     ) -> Result<DispatchOutcome, TreeBuilderError> {
         match token {
@@ -128,10 +137,11 @@ impl Html5TreeBuilder {
                     matches!(token_text, TextValue::NullNormalized { had_null: true, .. })
                         || normalized.contains('\0');
                 if had_null {
-                    self.record_parse_error(
-                        "unexpected-null-character-in-foreign-content",
-                        None,
-                        Some(mode),
+                    self.record_tree_parse_error(
+                        context,
+                        TreeConstructionParseErrorCode::NullCharacterInForeignContent,
+                        Some(ParserRecoveryAction::ReplaceInvalidInput),
+                        Some("unexpected-null-character-in-foreign-content"),
                     );
                     if normalized.contains('\0') {
                         normalized = normalized.replace('\0', "\u{FFFD}");
@@ -149,19 +159,24 @@ impl Html5TreeBuilder {
                 if has_non_whitespace_non_null {
                     self.document_state.frameset_ok = false;
                 }
-                self.insert_text(&TextValue::Owned(normalized), text)?;
+                self.insert_text(&TextValue::Owned(normalized), context, text)?;
                 Ok(DispatchOutcome::Done)
             }
             Token::Comment { text: token_text } => {
-                self.insert_comment(token_text, text)?;
+                self.insert_comment(token_text, context, text)?;
                 Ok(DispatchOutcome::Done)
             }
             Token::ProcessingInstruction(processing_instruction) => {
-                self.insert_processing_instruction(processing_instruction, text, None)?;
+                self.insert_processing_instruction(processing_instruction, context, text, None)?;
                 Ok(DispatchOutcome::Done)
             }
             Token::Doctype { .. } => {
-                self.record_parse_error("doctype-in-foreign-content", None, Some(mode));
+                self.record_tree_parse_error(
+                    context,
+                    TreeConstructionParseErrorCode::DoctypeTokenNotAllowed,
+                    Some(ParserRecoveryAction::IgnoreToken),
+                    Some("doctype-in-foreign-content"),
+                );
                 Ok(DispatchOutcome::Done)
             }
             Token::StartTag {
@@ -174,7 +189,7 @@ impl Html5TreeBuilder {
                     || (token_name == "font"
                         && Self::token_has_html_font_breakout_attribute(attrs, atoms)?)
                 {
-                    return self.breakout_to_html(mode, token, atoms, text);
+                    return self.breakout_to_html(mode, token, context, text);
                 }
                 let namespace = self
                     .adjusted_current_node_namespace()
@@ -194,28 +209,33 @@ impl Html5TreeBuilder {
                     adjusted_name,
                     adjusted.attributes,
                     *self_closing,
+                    context,
                     atoms,
                 )?;
+                if *self_closing {
+                    context.acknowledge_self_closing_flag()?;
+                }
                 Ok(DispatchOutcome::Done)
             }
             Token::EndTag { name } => {
                 let token_name = resolve_atom(atoms, *name)?;
                 if matches!(token_name, "br" | "p") {
-                    return self.breakout_to_html(mode, token, atoms, text);
+                    return self.breakout_to_html(mode, token, context, text);
                 }
                 let current = self.open_elements.current().ok_or(EngineInvariantError)?;
                 let current_name = resolve_atom(atoms, current.name())?;
                 if !current_name.eq_ignore_ascii_case(token_name) {
-                    self.record_parse_error(
-                        "foreign-end-tag-current-node-mismatch",
-                        Some(*name),
-                        Some(mode),
+                    self.record_tree_parse_error(
+                        context,
+                        TreeConstructionParseErrorCode::ForeignEndTagCurrentNodeMismatch,
+                        Some(ParserRecoveryAction::PopOpenElements),
+                        Some("foreign-end-tag-current-node-mismatch"),
                     );
                 }
                 for index in (0..self.open_elements.len()).rev() {
                     let candidate = self.open_elements.get(index).ok_or(EngineInvariantError)?;
                     if candidate.namespace() == ElementNamespace::Html {
-                        return self.dispatch_token_in_html_mode(mode, token, atoms, text);
+                        return self.dispatch_token_in_html_mode(mode, token, context, text);
                     }
                     if resolve_atom(atoms, candidate.name())?.eq_ignore_ascii_case(token_name) {
                         while self.open_elements.len() > index {
@@ -226,7 +246,7 @@ impl Html5TreeBuilder {
                 }
                 Ok(DispatchOutcome::Done)
             }
-            Token::Eof => self.dispatch_token_in_html_mode(mode, token, atoms, text),
+            Token::Eof => self.dispatch_token_in_html_mode(mode, token, context, text),
         }
     }
 }

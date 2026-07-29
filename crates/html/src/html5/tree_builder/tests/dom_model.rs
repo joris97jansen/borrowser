@@ -135,7 +135,11 @@ fn doctype_node_participates_in_parent_child_invariant_state() {
         Token::Eof,
     ] {
         let _ = builder
-            .process(&token, &ctx.atoms, &resolver)
+            .process(
+                &token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("tree builder should process doctype/eof");
     }
 
@@ -173,7 +177,7 @@ fn document_mode_is_parser_metadata_not_doctype_node_identity() {
                 system_id: None,
                 force_quirks: false,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("doctype should process");
@@ -184,7 +188,11 @@ fn document_mode_is_parser_metadata_not_doctype_node_identity() {
     );
 
     let _ = builder
-        .process(&Token::Eof, &ctx.atoms, &resolver)
+        .process(
+            &Token::Eof,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .expect("EOF should create document and doctype node");
     let patches = builder.drain_patches();
     assert!(patches.iter().any(|patch| matches!(
@@ -225,7 +233,7 @@ fn initial_comment_before_quirks_doctype_keeps_document_mode_as_metadata() {
             &Token::Comment {
                 text: TextValue::Owned("pre".to_string()),
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("initial comment should process");
@@ -243,7 +251,7 @@ fn initial_comment_before_quirks_doctype_keeps_document_mode_as_metadata() {
                 system_id: None,
                 force_quirks: false,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("doctype after initial comment should process");

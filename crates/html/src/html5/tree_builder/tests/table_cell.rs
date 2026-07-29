@@ -9,7 +9,7 @@ fn mismatched_cell_end_tag_closes_current_cell_and_returns_to_in_row() {
     use crate::html5::tree_builder::modes::InsertionMode;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -27,7 +27,7 @@ fn mismatched_cell_end_tag_closes_current_cell_and_returns_to_in_row() {
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .unwrap_or_else(|_| panic!("{tag} start tag should remain recoverable"));
@@ -37,19 +37,23 @@ fn mismatched_cell_end_tag_closes_current_cell_and_returns_to_in_row() {
             &Token::Text {
                 text: TextValue::Owned("x".to_string()),
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("text inside open cell should process");
 
     let td = ctx.atoms.intern_ascii_folded("td").expect("atom interning");
     let _ = builder
-        .process(&Token::EndTag { name: td }, &ctx.atoms, &resolver)
+        .process(
+            &Token::EndTag { name: td },
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .expect("mismatched cell end tag should remain recoverable");
 
     let tr = ctx.atoms.intern_ascii_folded("tr").expect("atom interning");
     let state = builder.state_snapshot();
-    let errors = builder.take_parse_error_kinds_for_test();
+    let diagnostics = ctx.take_tree_implementation_diagnostic_descriptions_for_test();
 
     assert_eq!(state.insertion_mode, InsertionMode::InRow);
     assert_eq!(
@@ -62,7 +66,7 @@ fn mismatched_cell_end_tag_closes_current_cell_and_returns_to_in_row() {
         "closing a mismatched cell must clear AFE back to the cell marker"
     );
     assert!(
-        errors.contains(&"in-cell-cell-end-tag-open-cell-mismatch"),
+        diagnostics.contains(&"in-cell-cell-end-tag-open-cell-mismatch"),
         "mismatched cell end tags should record the cell-name mismatch"
     );
 }

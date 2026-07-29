@@ -87,7 +87,11 @@ fn tree_builder_mode_dispatch_transitions_for_representative_sequence() {
 
     for (token, expected_mode) in &cases {
         let _ = builder
-            .process(token, &ctx.atoms, &resolver)
+            .process(
+                token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("process should not fail");
         assert_eq!(
             builder.state_snapshot().insertion_mode,
@@ -121,7 +125,11 @@ fn tree_builder_eof_from_initial_constructs_implicit_document_shell() {
         .expect("atom interning");
 
     let _ = builder
-        .process(&Token::Eof, &ctx.atoms, &resolver)
+        .process(
+            &Token::Eof,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .expect("EOF from initial mode should process");
 
     let state = builder.state_snapshot();
@@ -197,7 +205,11 @@ fn tree_builder_after_body_and_after_after_body_place_comments_by_mode() {
         Token::EndTag { name: body },
     ] {
         let _ = builder
-            .process(&token, &ctx.atoms, &resolver)
+            .process(
+                &token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("implicit body close sequence should process");
     }
     assert_eq!(
@@ -253,7 +265,11 @@ fn tree_builder_text_mode_successful_close_restores_mode_and_clears_original_mod
         },
     ] {
         let _ = builder
-            .process(&token, &ctx.atoms, &resolver)
+            .process(
+                &token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("text-mode setup should process");
     }
 
@@ -267,7 +283,11 @@ fn tree_builder_text_mode_successful_close_restores_mode_and_clears_original_mod
     assert_eq!(in_text.open_element_names.last().copied(), Some(textarea));
 
     let _ = builder
-        .process(&Token::EndTag { name: textarea }, &ctx.atoms, &resolver)
+        .process(
+            &Token::EndTag { name: textarea },
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .expect("matching text-mode close should process");
     let after_close = builder.state_snapshot();
     assert_eq!(

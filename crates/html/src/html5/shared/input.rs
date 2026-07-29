@@ -317,31 +317,20 @@ impl Utf8DecodeSink for HtmlInputDecodeSink<'_> {
         let normalized_offset = self
             .input
             .append_decoder_replacement(self.ctx.observation_position_index_mut());
-        self.ctx.record_decode_replacements(1);
-        let occurrence = self.ctx.reserve_implementation_diagnostic();
-        let Some(occurrence) = occurrence else {
-            return;
-        };
-        let Some(position) = self
-            .ctx
-            .observation_position_at(self.input, normalized_offset)
-        else {
-            return;
-        };
         let reason = match issue.kind {
             Utf8DecodeIssueKind::InvalidSequence => Utf8ReplacementReason::InvalidSequence,
             Utf8DecodeIssueKind::IncompleteSequenceAtEof => {
                 Utf8ReplacementReason::IncompleteSequenceAtEof
             }
         };
-        self.ctx.retain_utf8_replacement(
-            occurrence,
+        self.ctx.record_utf8_replacement(
+            self.input,
+            normalized_offset,
             reason,
             Utf8ReplacementPayload {
                 affected_byte_count: NonZeroU64::new(issue.affected_byte_count.get() as u64)
                     .expect("decoder issue byte count is non-zero"),
             },
-            position,
         );
     }
 }

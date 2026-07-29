@@ -8,7 +8,7 @@ fn doctype_tokens_drive_expected_document_mode_state_and_leave_initial_mode() {
     use crate::html5::shared::Token;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -29,7 +29,7 @@ fn doctype_tokens_drive_expected_document_mode_state_and_leave_initial_mode() {
                 ),
                 force_quirks: false,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("doctype should process");
@@ -50,7 +50,7 @@ fn duplicate_doctype_after_initial_handoff_does_not_mutate_document_mode() {
     use crate::html5::shared::Token;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -73,7 +73,7 @@ fn duplicate_doctype_after_initial_handoff_does_not_mutate_document_mode() {
                 system_id: None,
                 force_quirks: false,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("first doctype should process");
@@ -96,7 +96,7 @@ fn duplicate_doctype_after_initial_handoff_does_not_mutate_document_mode() {
                 system_id: None,
                 force_quirks: false,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("duplicate doctype should remain recoverable");
@@ -107,7 +107,7 @@ fn duplicate_doctype_after_initial_handoff_does_not_mutate_document_mode() {
         "late/duplicate doctype must not mutate document mode after Initial handoff"
     );
     assert_eq!(
-        builder.take_parse_error_kinds_for_test(),
+        ctx.take_tree_parse_error_descriptions_for_test(),
         vec!["before-html-doctype"],
         "late/duplicate doctype should be recorded as a before-html parse error"
     );
@@ -120,7 +120,7 @@ fn doctype_after_body_started_remains_late_and_does_not_create_node() {
     use crate::html5::shared::Token;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -140,7 +140,7 @@ fn doctype_after_body_started_remains_late_and_does_not_create_node() {
                 system_id: None,
                 force_quirks: false,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("late in-body doctype should remain recoverable");
@@ -151,7 +151,7 @@ fn doctype_after_body_started_remains_late_and_does_not_create_node() {
         "late in-body doctype must not mutate document mode"
     );
     assert_eq!(
-        builder.take_parse_error_kinds_for_test(),
+        ctx.take_tree_parse_error_descriptions_for_test(),
         vec!["in-body-doctype"],
         "late in-body doctype should remain an in-body parse error"
     );
@@ -170,7 +170,7 @@ fn table_start_marks_frameset_not_ok() {
     use crate::html5::shared::Token;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -194,7 +194,7 @@ fn table_start_marks_frameset_not_ok() {
                 attrs: Vec::new(),
                 self_closing: false,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("table start should process");

@@ -26,7 +26,7 @@ impl TextModeHarness {
 
     pub(super) fn with_config(config: TreeBuilderConfig) -> Self {
         let resolver = EmptyResolver;
-        let mut ctx = DocumentParseContext::new();
+        let mut ctx = DocumentParseContext::with_tree_observations_for_test();
         let builder = Html5TreeBuilder::new(config, &mut ctx).expect("tree builder init");
         Self {
             resolver,
@@ -43,8 +43,9 @@ impl TextModeHarness {
     }
 
     pub(super) fn process(&mut self, token: Token) -> TreeBuilderStepResult {
+        let mut context = crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut self.ctx);
         self.builder
-            .process(&token, &self.ctx.atoms, &self.resolver)
+            .process(&token, &mut context, &self.resolver)
             .expect("text-mode test token should remain recoverable")
     }
 
@@ -119,6 +120,15 @@ impl TextModeHarness {
     }
 
     pub(super) fn parse_error_kinds(&mut self) -> Vec<&'static str> {
-        self.builder.take_parse_error_kinds_for_test()
+        self.ctx.take_tree_parse_error_descriptions_for_test()
+    }
+
+    pub(super) fn implementation_diagnostic_kinds(&mut self) -> Vec<&'static str> {
+        self.ctx
+            .take_tree_implementation_diagnostic_descriptions_for_test()
+    }
+
+    pub(super) fn observe_next_diagnostics(&mut self) {
+        self.ctx.enable_tree_observations_for_test();
     }
 }

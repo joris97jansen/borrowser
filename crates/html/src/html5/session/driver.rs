@@ -2,7 +2,9 @@ use super::api::{DrainMode, DrainOutcome, Html5ParseSession};
 use crate::html5::bridge::PatchEmitterAdapter;
 use crate::html5::shared::{DocumentParseContext, Html5SessionError, Token};
 use crate::html5::tokenizer::{TextResolver, TokenizeResult, TokenizerControl};
-use crate::html5::tree_builder::{Html5TreeBuilder, TreeBuilderControlFlow, TreeBuilderStepResult};
+use crate::html5::tree_builder::{
+    Html5TreeBuilder, TreeBuilderControlFlow, TreeBuilderProcessContext, TreeBuilderStepResult,
+};
 #[cfg(any(test, feature = "debug-stats"))]
 use log::error;
 
@@ -133,7 +135,8 @@ impl Html5ParseSession {
     ) -> Result<TreeBuilderStepResult, Html5SessionError> {
         ctx.counters.tokens_processed = ctx.counters.tokens_processed.saturating_add(1);
 
-        match builder.push_token(token, &ctx.atoms, resolver, patch_emitter) {
+        let mut process_context = TreeBuilderProcessContext::for_integrated_parser(ctx);
+        match builder.push_token(token, &mut process_context, resolver, patch_emitter) {
             Ok(step) => Ok(step),
             Err(err) => {
                 ctx.counters.tree_builder_invariant_errors =
@@ -173,6 +176,8 @@ impl Html5ParseSession {
 
     pub(super) fn apply_tokenizer_control(&mut self, control: Option<TokenizerControl>) {
         if let Some(control) = control {
+            #[cfg(all(test, feature = "parser-conformance"))]
+            self.applied_tokenizer_controls_for_test.push(control);
             self.tokenizer.apply_control(control);
         }
     }

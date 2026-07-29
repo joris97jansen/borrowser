@@ -26,6 +26,7 @@ mod live_tree;
 pub(crate) mod modes;
 mod parser_validation;
 mod patch_sink;
+mod process_context;
 mod resolve;
 mod serialize;
 mod stack;
@@ -53,6 +54,7 @@ pub use invariants::{
     PatchInvariantError, check_dom_invariants, check_patch_invariants,
 };
 pub use patch_sink::{CallbackPatchSink, PatchSink, VecPatchSink};
+pub use process_context::TreeBuilderProcessContext;
 #[cfg(feature = "dom-snapshot")]
 pub use serialize::{serialize_dom_for_test, serialize_dom_for_test_with_options};
 #[cfg(test)]

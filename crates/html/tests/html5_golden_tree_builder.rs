@@ -1,4 +1,8 @@
-#![cfg(all(feature = "html5", feature = "dom-snapshot"))]
+#![cfg(all(
+    feature = "html5",
+    feature = "dom-snapshot",
+    feature = "parser-conformance"
+))]
 //! Semantic DOM regression harness.
 //!
 //! Core-v0 patch contract acceptance is covered by

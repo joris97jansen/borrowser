@@ -221,7 +221,7 @@ fn collect_pipeline_dom_lines(
                 &mut tokenizer,
                 &mut builder,
                 token,
-                &ctx.atoms,
+                &mut ctx,
                 &resolver,
                 &mut dom_state,
                 &mut patch_arena,
@@ -285,7 +285,7 @@ fn pump_until_blocked_collect(
                 tokenizer,
                 builder,
                 token,
-                &ctx.atoms,
+                ctx,
                 &resolver,
                 dom_state,
                 patch_arena,
@@ -299,15 +299,16 @@ fn process_token_collect(
     tokenizer: &mut Html5Tokenizer,
     builder: &mut Html5TreeBuilder,
     token: &crate::html5::shared::Token,
-    atoms: &crate::html5::shared::AtomTable,
+    ctx: &mut crate::html5::shared::DocumentParseContext,
     resolver: &dyn TextResolver,
     dom_state: &mut DomInvariantState,
     patch_arena: &mut PatchValidationArena,
 ) -> Result<(), Html5PipelineRegressionError> {
     let mut patches = Vec::new();
     let mut sink = VecPatchSink(&mut patches);
+    let mut process_context = crate::html5::tree_builder::TreeBuilderProcessContext::new(ctx);
     let step = builder
-        .push_token(token, atoms, resolver, &mut sink)
+        .push_token(token, &mut process_context, resolver, &mut sink)
         .map_err(|err| {
             Html5PipelineRegressionError::Trace(format!(
                 "tree builder failed during regression replay: {err:?}"

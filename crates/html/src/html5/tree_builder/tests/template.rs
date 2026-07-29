@@ -53,7 +53,7 @@ fn template_start_creates_atomic_typed_contents_and_uses_it_as_insertion_target(
 
 #[test]
 fn template_state_pushes_and_pops_owner_aware_mode_entry() {
-    let mut ctx = DocumentParseContext::new();
+    let mut ctx = DocumentParseContext::with_tree_observations_for_test();
     let resolver = EmptyResolver;
     let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).unwrap();
     let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
@@ -66,7 +66,7 @@ fn template_state_pushes_and_pops_owner_aware_mode_entry() {
                 attrs: Vec::new(),
                 self_closing: false,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .unwrap();
@@ -84,7 +84,11 @@ fn template_state_pushes_and_pops_owner_aware_mode_entry() {
     );
 
     let _ = builder
-        .process(&Token::EndTag { name: template }, &ctx.atoms, &resolver)
+        .process(
+            &Token::EndTag { name: template },
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .unwrap();
     let state = builder.state_snapshot();
     assert!(state.template_modes.is_empty());
@@ -94,7 +98,7 @@ fn template_state_pushes_and_pops_owner_aware_mode_entry() {
 
 #[test]
 fn in_template_replaces_the_owner_mode_before_reprocessing_table_tokens() {
-    let mut ctx = DocumentParseContext::new();
+    let mut ctx = DocumentParseContext::with_tree_observations_for_test();
     let resolver = EmptyResolver;
     let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).unwrap();
     let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
@@ -109,7 +113,7 @@ fn in_template_replaces_the_owner_mode_before_reprocessing_table_tokens() {
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .unwrap();
@@ -130,7 +134,7 @@ fn in_template_replaces_the_owner_mode_before_reprocessing_table_tokens() {
 
 #[test]
 fn after_head_template_delegation_uses_the_saved_head_pointer() {
-    let mut ctx = DocumentParseContext::new();
+    let mut ctx = DocumentParseContext::with_tree_observations_for_test();
     let resolver = EmptyResolver;
     let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).unwrap();
     let html = ctx.atoms.intern_ascii_folded("html").unwrap();
@@ -155,7 +159,13 @@ fn after_head_template_delegation_uses_the_saved_head_pointer() {
             self_closing: false,
         },
     ] {
-        let _ = builder.process(&token, &ctx.atoms, &resolver).unwrap();
+        let _ = builder
+            .process(
+                &token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
+            .unwrap();
     }
 
     let state = builder.state_snapshot();
@@ -170,7 +180,11 @@ fn after_head_template_delegation_uses_the_saved_head_pointer() {
     assert!(!state.open_element_keys.contains(&head_key));
 
     let _ = builder
-        .process(&Token::EndTag { name: template }, &ctx.atoms, &resolver)
+        .process(
+            &Token::EndTag { name: template },
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .unwrap();
     assert_eq!(
         builder.state_snapshot().insertion_mode,
@@ -195,7 +209,7 @@ fn eof_unwinds_more_than_twelve_nested_templates() {
 #[test]
 fn deeply_nested_template_eof_does_not_retain_exact_state_per_template() {
     let depth = 256usize;
-    let mut ctx = DocumentParseContext::new();
+    let mut ctx = DocumentParseContext::with_tree_observations_for_test();
     let resolver = EmptyResolver;
     let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).unwrap();
     let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
@@ -209,14 +223,20 @@ fn deeply_nested_template_eof_does_not_retain_exact_state_per_template() {
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .unwrap();
     }
     assert_eq!(builder.state_snapshot().template_modes.len(), depth);
 
-    let _ = builder.process(&Token::Eof, &ctx.atoms, &resolver).unwrap();
+    let _ = builder
+        .process(
+            &Token::Eof,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
+        .unwrap();
     let state = builder.state_snapshot();
     assert!(state.template_modes.is_empty());
     assert!(
@@ -228,7 +248,7 @@ fn deeply_nested_template_eof_does_not_retain_exact_state_per_template() {
 #[test]
 fn template_eof_recovery_has_linear_aggregate_scan_bounds() {
     fn run(depth: usize, table_per_template: bool) {
-        let mut ctx = DocumentParseContext::new();
+        let mut ctx = DocumentParseContext::with_tree_observations_for_test();
         let resolver = EmptyResolver;
         let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).unwrap();
         let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
@@ -243,7 +263,7 @@ fn template_eof_recovery_has_linear_aggregate_scan_bounds() {
                         attrs: Vec::new(),
                         self_closing: false,
                     },
-                    &ctx.atoms,
+                    &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                     &resolver,
                 )
                 .unwrap();
@@ -255,14 +275,20 @@ fn template_eof_recovery_has_linear_aggregate_scan_bounds() {
                             attrs: Vec::new(),
                             self_closing: false,
                         },
-                        &ctx.atoms,
+                        &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                         &resolver,
                     )
                     .unwrap();
             }
         }
         let before = builder.debug_perf_stats();
-        let _ = builder.process(&Token::Eof, &ctx.atoms, &resolver).unwrap();
+        let _ = builder
+            .process(
+                &Token::Eof,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
+            .unwrap();
         let after = builder.debug_perf_stats();
 
         let closes = after.template_close_ops - before.template_close_ops;
@@ -307,7 +333,7 @@ fn template_eof_recovery_has_linear_aggregate_scan_bounds() {
 
 #[test]
 fn template_eof_flushes_pending_table_text_before_depth_unwind() {
-    let mut ctx = DocumentParseContext::new();
+    let mut ctx = DocumentParseContext::with_tree_observations_for_test();
     let resolver = EmptyResolver;
     let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).unwrap();
     let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
@@ -322,7 +348,7 @@ fn template_eof_flushes_pending_table_text_before_depth_unwind() {
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .unwrap();
@@ -332,14 +358,20 @@ fn template_eof_flushes_pending_table_text_before_depth_unwind() {
             &Token::Text {
                 text: TextValue::Owned("pending".to_string()),
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .unwrap();
     assert_eq!(builder.insertion_mode, InsertionMode::InTableText);
     assert!(builder.pending_table_text.is_some());
 
-    let _ = builder.process(&Token::Eof, &ctx.atoms, &resolver).unwrap();
+    let _ = builder
+        .process(
+            &Token::Eof,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
+        .unwrap();
     assert!(builder.pending_table_text.is_none());
     assert!(builder.template_modes.is_empty());
     assert!(
@@ -352,7 +384,7 @@ fn template_eof_flushes_pending_table_text_before_depth_unwind() {
 
 #[test]
 fn ordinary_tokens_use_constant_time_template_validation_after_closed_templates() {
-    let mut ctx = DocumentParseContext::new();
+    let mut ctx = DocumentParseContext::with_tree_observations_for_test();
     let resolver = EmptyResolver;
     let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).unwrap();
     let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
@@ -366,12 +398,16 @@ fn ordinary_tokens_use_constant_time_template_validation_after_closed_templates(
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .unwrap();
         let _ = builder
-            .process(&Token::EndTag { name: template }, &ctx.atoms, &resolver)
+            .process(
+                &Token::EndTag { name: template },
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .unwrap();
     }
     builder
@@ -385,7 +421,7 @@ fn ordinary_tokens_use_constant_time_template_validation_after_closed_templates(
                 &Token::Comment {
                     text: TextValue::Owned(format!("ordinary-{index}")),
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .unwrap();
@@ -407,7 +443,7 @@ fn ordinary_tokens_use_constant_time_template_validation_after_closed_templates(
 
 #[test]
 fn no_template_tokens_take_the_parser_validation_fast_path() {
-    let mut ctx = DocumentParseContext::new();
+    let mut ctx = DocumentParseContext::with_tree_observations_for_test();
     let resolver = EmptyResolver;
     let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).unwrap();
     let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
@@ -418,7 +454,7 @@ fn no_template_tokens_take_the_parser_validation_fast_path() {
             &Token::Comment {
                 text: TextValue::Owned("ordinary".to_string()),
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .unwrap();
@@ -436,7 +472,7 @@ fn no_template_tokens_take_the_parser_validation_fast_path() {
 #[test]
 fn nested_template_transitions_use_only_local_validation_checks() {
     let depth = 256usize;
-    let mut ctx = DocumentParseContext::new();
+    let mut ctx = DocumentParseContext::with_tree_observations_for_test();
     let resolver = EmptyResolver;
     let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).unwrap();
     let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
@@ -451,7 +487,7 @@ fn nested_template_transitions_use_only_local_validation_checks() {
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .unwrap();
@@ -469,7 +505,11 @@ fn nested_template_transitions_use_only_local_validation_checks() {
 
     for _ in 0..depth {
         let _ = builder
-            .process(&Token::EndTag { name: template }, &ctx.atoms, &resolver)
+            .process(
+                &Token::EndTag { name: template },
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .unwrap();
     }
     let after_closes = builder.debug_perf_stats();
@@ -486,7 +526,7 @@ fn nested_template_transitions_use_only_local_validation_checks() {
 
 #[test]
 fn template_acceptance_counter_overflow_is_atomic() {
-    let mut ctx = DocumentParseContext::new();
+    let mut ctx = DocumentParseContext::with_tree_observations_for_test();
     let resolver = EmptyResolver;
     let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).unwrap();
     let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
@@ -504,7 +544,7 @@ fn template_acceptance_counter_overflow_is_atomic() {
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .is_err()
@@ -519,7 +559,7 @@ fn template_acceptance_counter_overflow_is_atomic() {
 
 #[test]
 fn template_epoch_overflow_cannot_reuse_a_fast_path_identity() {
-    let mut ctx = DocumentParseContext::new();
+    let mut ctx = DocumentParseContext::with_tree_observations_for_test();
     let resolver = EmptyResolver;
     let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).unwrap();
     let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
@@ -531,7 +571,7 @@ fn template_epoch_overflow_cannot_reuse_a_fast_path_identity() {
                 attrs: Vec::new(),
                 self_closing: false,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .unwrap();
@@ -550,7 +590,7 @@ fn template_epoch_overflow_cannot_reuse_a_fast_path_identity() {
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .is_err()
@@ -573,7 +613,7 @@ fn template_epoch_overflow_cannot_reuse_a_fast_path_identity() {
 #[test]
 fn heavy_template_audit_detects_owner_marker_mode_and_association_corruption() {
     fn open_template_builder() -> (Html5TreeBuilder, DocumentParseContext) {
-        let mut ctx = DocumentParseContext::new();
+        let mut ctx = DocumentParseContext::with_tree_observations_for_test();
         let resolver = EmptyResolver;
         let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).unwrap();
         let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
@@ -585,7 +625,7 @@ fn heavy_template_audit_detects_owner_marker_mode_and_association_corruption() {
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .unwrap();
@@ -725,7 +765,7 @@ fn template_foster_parenting_targets_the_contents_root_not_the_host() {
 
 #[test]
 fn form_pointer_remains_owned_by_the_outer_document_across_template_forms() {
-    let mut ctx = DocumentParseContext::new();
+    let mut ctx = DocumentParseContext::with_tree_observations_for_test();
     let resolver = EmptyResolver;
     let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).unwrap();
     let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
@@ -738,17 +778,29 @@ fn form_pointer_remains_owned_by_the_outer_document_across_template_forms() {
         self_closing: false,
     };
     let _ = builder
-        .process(&start(form), &ctx.atoms, &resolver)
+        .process(
+            &start(form),
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .unwrap();
     let outer_pointer = builder
         .state_snapshot()
         .form_element_pointer
         .expect("outer form pointer");
     let _ = builder
-        .process(&start(template), &ctx.atoms, &resolver)
+        .process(
+            &start(template),
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .unwrap();
     let _ = builder
-        .process(&start(form), &ctx.atoms, &resolver)
+        .process(
+            &start(form),
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .unwrap();
     assert_eq!(
         builder.state_snapshot().form_element_pointer,
@@ -757,21 +809,33 @@ fn form_pointer_remains_owned_by_the_outer_document_across_template_forms() {
     );
 
     let _ = builder
-        .process(&Token::EndTag { name: form }, &ctx.atoms, &resolver)
+        .process(
+            &Token::EndTag { name: form },
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .unwrap();
     assert_eq!(
         builder.state_snapshot().form_element_pointer,
         Some(outer_pointer)
     );
     let _ = builder
-        .process(&Token::EndTag { name: template }, &ctx.atoms, &resolver)
+        .process(
+            &Token::EndTag { name: template },
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .unwrap();
     assert_eq!(
         builder.state_snapshot().form_element_pointer,
         Some(outer_pointer)
     );
     let _ = builder
-        .process(&Token::EndTag { name: form }, &ctx.atoms, &resolver)
+        .process(
+            &Token::EndTag { name: form },
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .unwrap();
     assert_eq!(builder.state_snapshot().form_element_pointer, None);
 }
@@ -793,7 +857,7 @@ fn pinned_table_cell_template_case_uses_existing_last_marker_recovery() {
 
 #[test]
 fn pinned_table_cell_case_clears_only_the_last_afe_marker_at_each_algorithm_step() {
-    let mut ctx = DocumentParseContext::new();
+    let mut ctx = DocumentParseContext::with_tree_observations_for_test();
     let resolver = EmptyResolver;
     let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).unwrap();
     let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
@@ -810,13 +874,17 @@ fn pinned_table_cell_case_clears_only_the_last_afe_marker_at_each_algorithm_step
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .unwrap();
     }
     let _ = builder
-        .process(&Token::EndTag { name: template }, &ctx.atoms, &resolver)
+        .process(
+            &Token::EndTag { name: template },
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .unwrap();
     let state = builder.state_snapshot();
     let template_owner = state.template_modes[0].0;
@@ -834,7 +902,11 @@ fn pinned_table_cell_case_clears_only_the_last_afe_marker_at_each_algorithm_step
     );
 
     let _ = builder
-        .process(&Token::EndTag { name: table }, &ctx.atoms, &resolver)
+        .process(
+            &Token::EndTag { name: table },
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .unwrap();
     let state = builder.state_snapshot();
     assert_eq!(state.template_modes.len(), 1);
@@ -850,7 +922,13 @@ fn pinned_table_cell_case_clears_only_the_last_afe_marker_at_each_algorithm_step
         "the table end tag is scope-blocked while the template context remains open"
     );
 
-    let _ = builder.process(&Token::Eof, &ctx.atoms, &resolver).unwrap();
+    let _ = builder
+        .process(
+            &Token::Eof,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
+        .unwrap();
     let state = builder.state_snapshot();
     assert!(state.template_modes.is_empty());
     assert_eq!(
@@ -865,13 +943,14 @@ fn pinned_table_cell_case_clears_only_the_last_afe_marker_at_each_algorithm_step
 
 #[test]
 fn two_node_resource_rejection_is_atomic_across_all_template_parser_state() {
-    let mut ctx = DocumentParseContext::new();
+    let mut ctx = DocumentParseContext::with_tree_observations_for_test();
     let resolver = EmptyResolver;
     let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).unwrap();
     let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
     builder.config.limits.max_nodes_created = builder.non_document_nodes_created + 1;
     let _ = builder.drain_patches();
-    let _ = builder.take_parse_error_kinds_for_test();
+    let _ = ctx.take_tree_parse_error_descriptions_for_test();
+    ctx.enable_tree_observations_for_test();
     let template = ctx.atoms.intern_ascii_folded("template").unwrap();
     let p = ctx.atoms.intern_ascii_folded("p").unwrap();
 
@@ -887,7 +966,7 @@ fn two_node_resource_rejection_is_atomic_across_all_template_parser_state() {
                 attrs: Vec::new(),
                 self_closing: false,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .unwrap();
@@ -902,7 +981,7 @@ fn two_node_resource_rejection_is_atomic_across_all_template_parser_state() {
         text_state_before.as_ref().map(|last| last.text_key)
     );
     assert_eq!(
-        builder.take_parse_error_kinds_for_test(),
+        ctx.take_tree_implementation_diagnostic_descriptions_for_test(),
         vec!["resource-limit-node-count"]
     );
 
@@ -913,7 +992,7 @@ fn two_node_resource_rejection_is_atomic_across_all_template_parser_state() {
                 attrs: Vec::new(),
                 self_closing: false,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .unwrap();
@@ -927,7 +1006,7 @@ fn two_node_resource_rejection_is_atomic_across_all_template_parser_state() {
 #[test]
 fn template_start_depth_and_parent_capacity_rejections_are_atomic() {
     for limit_kind in ["soe", "children"] {
-        let mut ctx = DocumentParseContext::new();
+        let mut ctx = DocumentParseContext::with_tree_observations_for_test();
         let resolver = EmptyResolver;
         let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).unwrap();
         let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
@@ -952,7 +1031,7 @@ fn template_start_depth_and_parent_capacity_rejections_are_atomic() {
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .unwrap();
@@ -974,12 +1053,12 @@ fn template_start_depth_and_parent_capacity_rejections_are_atomic() {
 
 #[test]
 fn template_parent_child_reservation_failure_is_atomic() {
-    let mut ctx = DocumentParseContext::new();
+    let mut ctx = DocumentParseContext::with_tree_observations_for_test();
     let resolver = EmptyResolver;
     let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).unwrap();
     let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
     let _ = builder.drain_patches();
-    let _ = builder.take_parse_error_kinds_for_test();
+    let _ = ctx.take_tree_parse_error_descriptions_for_test();
     let template = ctx.atoms.intern_ascii_folded("template").unwrap();
 
     let parser_state_before = builder.state_snapshot();
@@ -992,17 +1071,18 @@ fn template_parent_child_reservation_failure_is_atomic() {
         crate::html5::tree_builder::live_tree::ChildInsertionReservationError::AllocationFailure,
     );
 
-    let _ = builder
+    let error = builder
         .process(
             &Token::StartTag {
                 name: template,
                 attrs: Vec::new(),
                 self_closing: false,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
-        .unwrap();
+        .expect_err("allocator failure must be fatal");
+    let _: crate::html5::shared::EngineInvariantError = error;
 
     assert!(builder.drain_patches().is_empty());
     assert_eq!(builder.next_patch_key, key_before);
@@ -1014,15 +1094,17 @@ fn template_parent_child_reservation_failure_is_atomic() {
         builder.last_text_patch.as_ref().map(|last| last.text_key),
         text_state_before.as_ref().map(|last| last.text_key)
     );
-    assert_eq!(
-        builder.take_parse_error_kinds_for_test(),
-        vec!["resource-limit-template-parent-child-reservation"]
+    let (parse_errors, diagnostics) = ctx.take_tree_diagnostic_descriptions_for_test();
+    assert!(parse_errors.is_empty());
+    assert!(
+        diagnostics.is_empty(),
+        "allocator failure is not an expected implementation or resource-limit diagnostic"
     );
 }
 
 #[test]
 fn two_key_overflow_rejects_template_start_without_partial_commit() {
-    let mut ctx = DocumentParseContext::new();
+    let mut ctx = DocumentParseContext::with_tree_observations_for_test();
     let resolver = EmptyResolver;
     let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).unwrap();
     let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
@@ -1040,7 +1122,7 @@ fn two_key_overflow_rejects_template_start_without_partial_commit() {
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .is_err()

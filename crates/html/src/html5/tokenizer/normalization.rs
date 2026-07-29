@@ -14,7 +14,6 @@ pub(super) const ERROR_DETAIL_EOF_IN_SELF_CLOSING_START_TAG: &str = "eof-in-self
 pub(super) const ERROR_DETAIL_EOF_IN_TAG_NAME: &str = "eof-in-tag-name";
 pub(super) const ERROR_DETAIL_EOF_IN_TAG_OPEN: &str = "eof-in-tag-open";
 pub(super) const ERROR_DETAIL_EOF_IN_ATTRIBUTE: &str = "eof-in-attribute";
-pub(super) const ERROR_DETAIL_EOF_IN_TEXT_MODE: &str = "eof-in-text-mode";
 pub(super) const ERROR_DETAIL_EOF_IN_CDATA: &str = "eof-in-cdata";
 pub(super) const ERROR_DETAIL_EOF_IN_PROCESSING_INSTRUCTION: &str = "eof-in-processing-instruction";
 pub(super) const ERROR_DETAIL_INVALID_ATTRIBUTE_NAME: &str = "invalid-attribute-name";

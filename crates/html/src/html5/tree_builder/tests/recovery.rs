@@ -6,7 +6,7 @@ fn tree_builder_recovers_from_malformed_token_ordering_without_panic() {
     use crate::html5::tree_builder::modes::InsertionMode;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -19,7 +19,11 @@ fn tree_builder_recovers_from_malformed_token_ordering_without_panic() {
         .expect("atom interning");
 
     let _ = builder
-        .process(&Token::EndTag { name: div }, &ctx.atoms, &resolver)
+        .process(
+            &Token::EndTag { name: div },
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .expect("malformed end tag should be recoverable");
     let state_after_malformed = builder.state_snapshot();
     assert!(
@@ -47,7 +51,11 @@ fn tree_builder_recovers_from_malformed_token_ordering_without_panic() {
         Token::Eof,
     ] {
         let _ = builder
-            .process(&token, &ctx.atoms, &resolver)
+            .process(
+                &token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("post-recovery token should process");
     }
 
@@ -65,7 +73,7 @@ fn tree_builder_recovers_from_early_end_tags_in_pre_body_modes() {
     use crate::html5::shared::Token;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -92,7 +100,11 @@ fn tree_builder_recovers_from_early_end_tags_in_pre_body_modes() {
         Token::Eof,
     ] {
         let _ = builder
-            .process(&token, &ctx.atoms, &resolver)
+            .process(
+                &token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("early end tags should stay recoverable");
     }
 
@@ -111,7 +123,7 @@ fn tree_builder_ignores_self_closing_flag_on_root_container_start_tags() {
     use crate::html5::tree_builder::modes::InsertionMode;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -138,7 +150,7 @@ fn tree_builder_ignores_self_closing_flag_on_root_container_start_tags() {
                 attrs: Vec::new(),
                 self_closing: true,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("self-closing <html/> should stay recoverable");
@@ -157,7 +169,7 @@ fn tree_builder_ignores_self_closing_flag_on_root_container_start_tags() {
                 attrs: Vec::new(),
                 self_closing: true,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("self-closing <head/> should stay recoverable");
@@ -170,7 +182,11 @@ fn tree_builder_ignores_self_closing_flag_on_root_container_start_tags() {
     );
 
     let _ = builder
-        .process(&Token::EndTag { name: head }, &ctx.atoms, &resolver)
+        .process(
+            &Token::EndTag { name: head },
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .expect("</head> should close the recovered head element");
     let after_head_close = builder.state_snapshot();
     assert_eq!(after_head_close.insertion_mode, InsertionMode::AfterHead);
@@ -183,7 +199,7 @@ fn tree_builder_ignores_self_closing_flag_on_root_container_start_tags() {
                 attrs: Vec::new(),
                 self_closing: true,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("self-closing <body/> should stay recoverable");
@@ -196,7 +212,11 @@ fn tree_builder_ignores_self_closing_flag_on_root_container_start_tags() {
     );
 
     let _ = builder
-        .process(&Token::Eof, &ctx.atoms, &resolver)
+        .process(
+            &Token::Eof,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .expect("EOF after recovered self-closing container tags should process");
 }
 
@@ -205,7 +225,7 @@ fn tree_builder_in_body_stray_end_tag_does_not_mutate_open_elements_stack() {
     use crate::html5::shared::Token;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -257,7 +277,11 @@ fn tree_builder_in_body_stray_end_tag_does_not_mutate_open_elements_stack() {
         },
     ] {
         let _ = builder
-            .process(&token, &ctx.atoms, &resolver)
+            .process(
+                &token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("prelude tokens should process");
     }
 
@@ -265,7 +289,11 @@ fn tree_builder_in_body_stray_end_tag_does_not_mutate_open_elements_stack() {
     assert_eq!(before.open_element_names.last().copied(), Some(div));
 
     let _ = builder
-        .process(&Token::EndTag { name: span }, &ctx.atoms, &resolver)
+        .process(
+            &Token::EndTag { name: span },
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .expect("stray in-body end tag should be recoverable");
     let after_stray = builder.state_snapshot();
 
@@ -280,7 +308,11 @@ fn tree_builder_in_body_stray_end_tag_does_not_mutate_open_elements_stack() {
     );
 
     let _ = builder
-        .process(&Token::EndTag { name: div }, &ctx.atoms, &resolver)
+        .process(
+            &Token::EndTag { name: div },
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .expect("matching in-body end tag should close element");
     let after_close = builder.state_snapshot();
     assert_eq!(
@@ -296,7 +328,7 @@ fn tree_builder_body_and_html_end_tags_advance_after_body_modes_via_soe() {
     use crate::html5::tree_builder::modes::InsertionMode;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -324,7 +356,7 @@ fn tree_builder_body_and_html_end_tags_advance_after_body_modes_via_soe() {
                 attrs: Vec::new(),
                 self_closing: false,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("nested body element should process");
@@ -334,7 +366,11 @@ fn tree_builder_body_and_html_end_tags_advance_after_body_modes_via_soe() {
     );
 
     let _ = builder
-        .process(&Token::EndTag { name: body }, &ctx.atoms, &resolver)
+        .process(
+            &Token::EndTag { name: body },
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .expect("</body> should close body scope");
     let after_body = builder.state_snapshot();
     assert_eq!(after_body.insertion_mode, InsertionMode::AfterBody);
@@ -345,7 +381,11 @@ fn tree_builder_body_and_html_end_tags_advance_after_body_modes_via_soe() {
     );
 
     let _ = builder
-        .process(&Token::EndTag { name: html }, &ctx.atoms, &resolver)
+        .process(
+            &Token::EndTag { name: html },
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .expect("</html> should enter AfterAfterBody from AfterBody");
     let after_html = builder.state_snapshot();
     assert_eq!(after_html.insertion_mode, InsertionMode::AfterAfterBody);
@@ -361,7 +401,7 @@ fn tree_builder_after_head_stray_end_tag_reports_error_without_forcing_body() {
     use crate::html5::shared::Token;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -380,10 +420,14 @@ fn tree_builder_after_head_stray_end_tag_reports_error_without_forcing_body() {
     );
 
     let _ = builder
-        .process(&Token::EndTag { name: div }, &ctx.atoms, &resolver)
+        .process(
+            &Token::EndTag { name: div },
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .expect("after-head stray end tag should be recoverable");
     let state_after = builder.state_snapshot();
-    let errors = builder.take_parse_error_kinds_for_test();
+    let errors = ctx.take_tree_parse_error_descriptions_for_test();
     let patches_after = builder.drain_patches();
 
     assert!(
@@ -412,7 +456,7 @@ fn tree_builder_after_head_non_whitespace_text_forces_body_and_enters_in_body() 
     use crate::html5::tree_builder::modes::InsertionMode;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -426,7 +470,7 @@ fn tree_builder_after_head_non_whitespace_text_forces_body_and_enters_in_body() 
             &Token::Text {
                 text: TextValue::Owned("x".to_string()),
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("after-head non-whitespace text should be recoverable");
@@ -458,7 +502,7 @@ fn tree_builder_after_head_whitespace_text_does_not_force_body_or_emit_patches()
     use crate::html5::tree_builder::modes::InsertionMode;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -472,7 +516,7 @@ fn tree_builder_after_head_whitespace_text_does_not_force_body_or_emit_patches()
             &Token::Text {
                 text: TextValue::Owned(" \n\t".to_string()),
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("after-head whitespace text should be recoverable");
@@ -500,7 +544,7 @@ fn tree_builder_recovers_when_head_end_tag_seen_before_head_opened() {
     use crate::html5::shared::Token;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -513,10 +557,18 @@ fn tree_builder_recovers_when_head_end_tag_seen_before_head_opened() {
         .expect("atom interning");
 
     let _ = builder
-        .process(&Token::EndTag { name: head }, &ctx.atoms, &resolver)
+        .process(
+            &Token::EndTag { name: head },
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .expect("early </head> should stay recoverable");
     let _ = builder
-        .process(&Token::Eof, &ctx.atoms, &resolver)
+        .process(
+            &Token::Eof,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .expect("builder should continue after early </head>");
 
     let patches = builder.drain_patches();
@@ -534,7 +586,7 @@ fn tree_builder_unmatched_p_end_tag_synthesizes_and_closes_empty_p() {
     use crate::html5::shared::Token;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -557,10 +609,14 @@ fn tree_builder_unmatched_p_end_tag_synthesizes_and_closes_empty_p() {
     assert_eq!(before.open_element_names.last().copied(), Some(body));
 
     let _ = builder
-        .process(&Token::EndTag { name: p }, &ctx.atoms, &resolver)
+        .process(
+            &Token::EndTag { name: p },
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .expect("unmatched </p> should synthesize and close a parser-created p");
     let after = builder.state_snapshot();
-    let errors = builder.take_parse_error_kinds_for_test();
+    let errors = ctx.take_tree_parse_error_descriptions_for_test();
     let patches = builder.drain_patches();
 
     assert_eq!(
@@ -593,7 +649,7 @@ fn tree_builder_nested_p_start_tag_closes_open_p_before_inserting_next_p() {
     use crate::html5::shared::Token;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -610,18 +666,17 @@ fn tree_builder_nested_p_start_tag_closes_open_p_before_inserting_next_p() {
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .expect("p start tag should remain recoverable");
     }
 
     let state = builder.state_snapshot();
-    let errors = builder.take_parse_error_kinds_for_test();
-    assert_eq!(
-        errors,
-        vec!["in-body-p-start-tag-closes-open-p"],
-        "nested <p> should report the deterministic AE7 auto-close diagnostic"
+    let errors = ctx.take_tree_parse_error_descriptions_for_test();
+    assert!(
+        errors.is_empty(),
+        "closing an open p before a new p is normal tree construction"
     );
     assert_eq!(
         state.open_element_names,
@@ -635,7 +690,7 @@ fn tree_builder_block_start_tag_closes_open_p_before_existing_insertion_path() {
     use crate::html5::shared::Token;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -656,15 +711,18 @@ fn tree_builder_block_start_tag_closes_open_p_before_existing_insertion_path() {
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .expect("block recovery start tag should remain recoverable");
     }
 
     let state = builder.state_snapshot();
-    let errors = builder.take_parse_error_kinds_for_test();
-    assert_eq!(errors, vec!["in-body-block-start-tag-closes-open-p"]);
+    let errors = ctx.take_tree_parse_error_descriptions_for_test();
+    assert!(
+        errors.is_empty(),
+        "closing an open p before a block start tag is normal tree construction"
+    );
     assert_eq!(
         state.open_element_names,
         vec![builder.known_tags.html, builder.known_tags.body, div],
@@ -677,7 +735,7 @@ fn tree_builder_hr_block_start_closes_p_and_stays_void_on_soe() {
     use crate::html5::shared::Token;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -696,15 +754,18 @@ fn tree_builder_hr_block_start_closes_p_and_stays_void_on_soe() {
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .expect("hr block-start recovery should remain recoverable");
     }
 
     let state = builder.state_snapshot();
-    let errors = builder.take_parse_error_kinds_for_test();
-    assert_eq!(errors, vec!["in-body-block-start-tag-closes-open-p"]);
+    let errors = ctx.take_tree_parse_error_descriptions_for_test();
+    assert!(
+        errors.is_empty(),
+        "closing an open p before hr is normal tree construction"
+    );
     assert_eq!(
         state.open_element_names,
         vec![builder.known_tags.html, builder.known_tags.body],
@@ -717,7 +778,7 @@ fn tree_builder_pre_block_start_keeps_deferred_frameset_behavior_unchanged() {
     use crate::html5::shared::Token;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -739,15 +800,18 @@ fn tree_builder_pre_block_start_keeps_deferred_frameset_behavior_unchanged() {
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .expect("pre block-start recovery should remain recoverable");
     }
 
     let state = builder.state_snapshot();
-    let errors = builder.take_parse_error_kinds_for_test();
-    assert_eq!(errors, vec!["in-body-block-start-tag-closes-open-p"]);
+    let errors = ctx.take_tree_parse_error_descriptions_for_test();
+    assert!(
+        errors.is_empty(),
+        "closing an open p before pre is normal tree construction"
+    );
     assert!(
         state.frameset_ok,
         "AE7 should not add deferred pre/listing frameset behavior"
@@ -764,7 +828,7 @@ fn tree_builder_heading_start_does_not_auto_close_existing_heading() {
     use crate::html5::shared::Token;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -783,14 +847,14 @@ fn tree_builder_heading_start_does_not_auto_close_existing_heading() {
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .expect("heading block-start handling should remain recoverable");
     }
 
     let state = builder.state_snapshot();
-    let errors = builder.take_parse_error_kinds_for_test();
+    let errors = ctx.take_tree_parse_error_descriptions_for_test();
     assert!(
         errors.is_empty(),
         "AE7 should not add deferred heading auto-close diagnostics"
@@ -807,7 +871,7 @@ fn tree_builder_li_start_tag_closes_previous_li_and_open_p() {
     use crate::html5::shared::Token;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -827,15 +891,18 @@ fn tree_builder_li_start_tag_closes_previous_li_and_open_p() {
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .expect("list-item recovery should remain recoverable");
     }
 
     let state = builder.state_snapshot();
-    let errors = builder.take_parse_error_kinds_for_test();
-    assert_eq!(errors, vec!["in-body-li-start-tag-closes-previous-li"]);
+    let errors = ctx.take_tree_parse_error_descriptions_for_test();
+    assert!(
+        errors.is_empty(),
+        "closing the previous li before a new li is normal tree construction"
+    );
     assert_eq!(
         state.open_element_names,
         vec![builder.known_tags.html, builder.known_tags.body, ul, li],
@@ -848,7 +915,7 @@ fn tree_builder_unexpected_li_end_tag_reports_dedicated_ae7_error() {
     use crate::html5::shared::Token;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -858,10 +925,14 @@ fn tree_builder_unexpected_li_end_tag_reports_dedicated_ae7_error() {
 
     let li = ctx.atoms.intern_ascii_folded("li").expect("atom interning");
     let _ = builder
-        .process(&Token::EndTag { name: li }, &ctx.atoms, &resolver)
+        .process(
+            &Token::EndTag { name: li },
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .expect("unexpected </li> should remain recoverable");
 
-    let errors = builder.take_parse_error_kinds_for_test();
+    let errors = ctx.take_tree_parse_error_descriptions_for_test();
     assert_eq!(
         errors,
         vec!["in-body-li-end-tag-missing-li"],

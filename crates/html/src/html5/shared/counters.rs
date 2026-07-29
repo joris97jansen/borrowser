@@ -10,9 +10,14 @@ pub struct Counters {
     pub adapter_invariant_violations: u64,
     /// Tree builder invariant errors (engine bugs/corruption).
     pub tree_builder_invariant_errors: u64,
-    /// Recoverable HTML parse errors (spec-defined), not engine invariants.
-    /// Tokenizer/tree builder will increment this once error reporting is wired.
+    /// Every genuine recoverable HTML parse error detected by the tokenizer or
+    /// tree builder, independent of whether either observation surface retains
+    /// an event.
     pub parse_errors: u64,
+    /// Events evicted only from the bounded exact-position legacy deque.
+    ///
+    /// Canonical observation-capacity drops are reported by their canonical
+    /// collection and do not change this counter.
     pub errors_dropped: u64,
     /// Max observed depth of the stack of open elements (session lifetime).
     pub max_open_elements_depth: u32,

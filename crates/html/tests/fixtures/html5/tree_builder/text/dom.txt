@@ -10,7 +10,3 @@
       "Hello"
 parse-errors:
   tree-builder: initial-unexpected-token
-  tree-builder: before-html-implicit-html
-  tree-builder: before-head-implicit-head
-  tree-builder: in-head-non-whitespace-text-reprocessed
-  tree-builder: after-head-implicit-body

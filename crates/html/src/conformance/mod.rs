@@ -15,12 +15,12 @@ pub use crate::html5::shared::{
     ParserGuardrail, ParserGuardrailPayload, ParserRecoveryAction, ParserResourceLimit,
     ParserResourceLimitPayload, ParserStage, ParserTokenKind, PositionUnavailableReason,
     SourceBytePosition, SourcePositionUnavailableReason, TokenizerExtensionParseErrorCode,
-    TreeConstructionParseErrorCode, Utf8ReplacementPayload, Utf8ReplacementReason,
-    WhatwgParseErrorCode,
+    TreeConstructionImplementationDiagnosticCode, TreeConstructionParseErrorCode,
+    Utf8ReplacementPayload, Utf8ReplacementReason, WhatwgParseErrorCode,
 };
 pub use execution::{
     ObservationRequest, ParserObservationExecutionError, ParserObservationInput,
     ParserObservationInvariantError, ParserObservationRequest, ParserObservationTarget,
-    ParserTokenizerInvariantError, execute_parser_observation,
+    ParserTokenizerInvariantError, ScalarObservationRequest, execute_parser_observation,
 };
 pub use model::*;

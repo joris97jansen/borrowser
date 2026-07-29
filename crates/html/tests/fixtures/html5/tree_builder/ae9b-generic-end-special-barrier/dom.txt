@@ -14,8 +14,5 @@
             element ns=html local="span" attrs=[]
               "x"
 parse-errors:
-  tree-builder: before-html-implicit-html
-  tree-builder: before-head-implicit-head
-  tree-builder: after-head-implicit-body
   tree-builder: in-body-any-other-end-tag-blocked-by-special
   tree-builder: in-body-select-end-tag-implied-close-mismatch

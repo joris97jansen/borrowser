@@ -142,7 +142,7 @@ pub fn run_seeded_html5_pipeline_fuzz_case(
     if let Some(termination) = finish_and_drain(
         &mut tokenizer,
         &mut input,
-        &ctx,
+        &mut ctx,
         &mut builder,
         &mut state,
         config,

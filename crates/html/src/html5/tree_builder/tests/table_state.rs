@@ -4,7 +4,7 @@ use crate::html5::tree_builder::modes::InsertionMode;
 #[test]
 fn table_state_snapshot_tracks_current_table_and_pending_character_buffer() {
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -25,23 +25,23 @@ fn table_state_snapshot_tracks_current_table_and_pending_character_buffer() {
     let td = ctx.atoms.intern_ascii_folded("td").expect("atom interning");
 
     let outer_table_key = builder
-        .insert_normal_html_element(table, &[], &ctx.atoms, &resolver)
+        .insert_normal_html_element_for_test(table, &[], &mut ctx, &resolver)
         .expect("outer table insertion")
         .expect("outer table insertion should not hit resource limits");
     let _ = builder
-        .insert_normal_html_element(tbody, &[], &ctx.atoms, &resolver)
+        .insert_normal_html_element_for_test(tbody, &[], &mut ctx, &resolver)
         .expect("tbody insertion")
         .expect("tbody insertion should not hit resource limits");
     let _ = builder
-        .insert_normal_html_element(tr, &[], &ctx.atoms, &resolver)
+        .insert_normal_html_element_for_test(tr, &[], &mut ctx, &resolver)
         .expect("tr insertion")
         .expect("tr insertion should not hit resource limits");
     let _ = builder
-        .insert_normal_html_element(td, &[], &ctx.atoms, &resolver)
+        .insert_normal_html_element_for_test(td, &[], &mut ctx, &resolver)
         .expect("td insertion")
         .expect("td insertion should not hit resource limits");
     let inner_table_key = builder
-        .insert_normal_html_element(table, &[], &ctx.atoms, &resolver)
+        .insert_normal_html_element_for_test(table, &[], &mut ctx, &resolver)
         .expect("inner table insertion")
         .expect("inner table insertion should not hit resource limits");
 
@@ -95,7 +95,7 @@ fn in_table_text_without_pending_state_is_internal_invariant_error() {
     use crate::html5::shared::Token;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -105,21 +105,25 @@ fn in_table_text_without_pending_state_is_internal_invariant_error() {
     builder.insertion_mode = InsertionMode::InTableText;
     builder.pending_table_text = None;
 
-    let result = builder.process(&Token::Eof, &ctx.atoms, &resolver);
+    let result = builder.process(
+        &Token::Eof,
+        &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+        &resolver,
+    );
 
     assert!(
         result.is_err(),
         "an impossible InTableText state without pending table-text state must be an internal invariant error"
     );
     assert!(
-        builder.take_parse_error_kinds_for_test().is_empty(),
+        ctx.take_tree_parse_error_descriptions_for_test().is_empty(),
         "internal table-text state corruption must not be reported as malformed HTML"
     );
 }
 
 #[test]
 fn entering_in_table_text_twice_is_non_destructive_internal_invariant_error() {
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -142,7 +146,7 @@ fn entering_in_table_text_twice_is_non_destructive_internal_invariant_error() {
         "entering table-text mode while pending table-text state is active must be an internal invariant error"
     );
     assert!(
-        builder.take_parse_error_kinds_for_test().is_empty(),
+        ctx.take_tree_parse_error_descriptions_for_test().is_empty(),
         "internal table-text lifecycle violations must not be reported as malformed HTML"
     );
     assert_eq!(
@@ -164,7 +168,7 @@ fn entering_in_table_text_twice_is_non_destructive_internal_invariant_error() {
 #[test]
 fn clear_stack_to_table_context_pops_back_to_table_boundary() {
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -176,7 +180,7 @@ fn clear_stack_to_table_context_pops_back_to_table_boundary() {
     for tag in ["table", "tbody", "tr", "td", "div"] {
         let atom = ctx.atoms.intern_ascii_folded(tag).expect("atom interning");
         let _ = builder
-            .insert_normal_html_element(atom, &[], &ctx.atoms, &resolver)
+            .insert_normal_html_element_for_test(atom, &[], &mut ctx, &resolver)
             .unwrap_or_else(|_| panic!("{tag} insertion should succeed"))
             .unwrap_or_else(|| panic!("{tag} insertion should not hit resource limits"));
     }
@@ -202,7 +206,7 @@ fn clear_stack_to_table_context_pops_back_to_table_boundary() {
 #[test]
 fn table_scope_checks_follow_table_boundaries() {
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -218,7 +222,7 @@ fn table_scope_checks_follow_table_boundaries() {
         .expect("atom interning");
 
     let _ = builder
-        .insert_normal_html_element(p, &[], &ctx.atoms, &resolver)
+        .insert_normal_html_element_for_test(p, &[], &mut ctx, &resolver)
         .expect("p insertion")
         .expect("p insertion should not hit resource limits");
     assert!(
@@ -227,7 +231,7 @@ fn table_scope_checks_follow_table_boundaries() {
     );
 
     let _ = builder
-        .insert_normal_html_element(table, &[], &ctx.atoms, &resolver)
+        .insert_normal_html_element_for_test(table, &[], &mut ctx, &resolver)
         .expect("table insertion")
         .expect("table insertion should not hit resource limits");
     assert!(
@@ -245,7 +249,7 @@ fn close_cell_pops_to_cell_boundary_clears_afe_and_switches_to_in_row() {
     use crate::html5::tree_builder::modes::InsertionMode;
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -257,7 +261,7 @@ fn close_cell_pops_to_cell_boundary_clears_afe_and_switches_to_in_row() {
     for tag in ["table", "tbody", "tr", "td"] {
         let atom = ctx.atoms.intern_ascii_folded(tag).expect("atom interning");
         let _ = builder
-            .insert_normal_html_element(atom, &[], &ctx.atoms, &resolver)
+            .insert_normal_html_element_for_test(atom, &[], &mut ctx, &resolver)
             .unwrap_or_else(|_| panic!("{tag} insertion should succeed"))
             .unwrap_or_else(|| panic!("{tag} insertion should not hit resource limits"));
     }
@@ -271,7 +275,7 @@ fn close_cell_pops_to_cell_boundary_clears_afe_and_switches_to_in_row() {
 
     let b = ctx.atoms.intern_ascii_folded("b").expect("atom interning");
     let b_key = builder
-        .insert_normal_html_element(b, &[], &ctx.atoms, &resolver)
+        .insert_normal_html_element_for_test(b, &[], &mut ctx, &resolver)
         .expect("b insertion")
         .expect("b insertion should not hit resource limits");
     builder
@@ -287,7 +291,7 @@ fn close_cell_pops_to_cell_boundary_clears_afe_and_switches_to_in_row() {
     let before_scope_scan_steps = builder.open_elements.scope_scan_steps();
 
     assert!(
-        builder.close_cell(),
+        builder.close_cell_for_test(&mut ctx),
         "close_cell() should close the open cell"
     );
 
@@ -325,7 +329,7 @@ fn caption_and_cell_markers_record_typed_diagnostic_owners() {
     use crate::html5::tree_builder::{AfeDiagnosticEntry, AfeMarker, AfeMarkerKind};
 
     let resolver = EmptyResolver;
-    let mut ctx = crate::html5::shared::DocumentParseContext::new();
+    let mut ctx = crate::html5::shared::DocumentParseContext::with_tree_observations_for_test();
     let mut builder = crate::html5::tree_builder::Html5TreeBuilder::new(
         crate::html5::tree_builder::TreeBuilderConfig::default(),
         &mut ctx,
@@ -343,7 +347,7 @@ fn caption_and_cell_markers_record_typed_diagnostic_owners() {
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .unwrap();
@@ -363,7 +367,11 @@ fn caption_and_cell_markers_record_typed_diagnostic_owners() {
     );
 
     let _ = builder
-        .process(&Token::EndTag { name: caption }, &ctx.atoms, &resolver)
+        .process(
+            &Token::EndTag { name: caption },
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .unwrap();
     let tbody = ctx.atoms.intern_ascii_folded("tbody").unwrap();
     let tr = ctx.atoms.intern_ascii_folded("tr").unwrap();
@@ -376,7 +384,7 @@ fn caption_and_cell_markers_record_typed_diagnostic_owners() {
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .unwrap();

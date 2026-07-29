@@ -1,4 +1,7 @@
-use crate::html5::shared::{AtomId, AtomTable, Token};
+use crate::html5::shared::{
+    AtomId, AtomTable, EngineInvariantError, ParserRecoveryAction, Token,
+    TreeConstructionImplementationDiagnosticCode, TreeConstructionParseErrorCode,
+};
 use crate::html5::tokenizer::{TextModeSpec, TextResolver, TokenizerControl};
 use crate::html5::tree_builder::api::PendingTextareaInitialLf;
 use crate::html5::tree_builder::dispatch::DispatchOutcome;
@@ -12,6 +15,7 @@ impl Html5TreeBuilder {
         &mut self,
         token: &Token,
         atoms: &AtomTable,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         text: &dyn TextResolver,
     ) -> Result<DispatchOutcome, TreeBuilderError> {
         if matches!(token, Token::ProcessingInstruction(_)) {
@@ -24,17 +28,22 @@ impl Html5TreeBuilder {
         }
         match token {
             Token::Text { text: token_text } => {
-                self.insert_text_mode_text(token_text, text)?;
+                self.insert_text_mode_text(token_text, context, text)?;
             }
             Token::Comment { text: token_text } => {
-                self.insert_comment(token_text, text)?;
+                self.insert_comment(token_text, context, text)?;
             }
             Token::ProcessingInstruction(_) => unreachable!(
                 "Text-mode PI dispatch must be rejected by the central process_impl preflight"
             ),
             Token::Eof => {
-                self.record_parse_error("eof-in-text-mode", None, None);
-                let _ = self.ensure_document_created()?;
+                self.record_tree_parse_error(
+                    context,
+                    TreeConstructionParseErrorCode::EofInTextMode,
+                    Some(ParserRecoveryAction::PopOpenElements),
+                    Some("eof-in-text-mode"),
+                );
+                let _ = self.ensure_document_created(context)?;
                 self.exit_text_mode();
             }
             Token::StartTag {
@@ -42,7 +51,14 @@ impl Html5TreeBuilder {
                 attrs,
                 self_closing,
             } => {
-                self.record_parse_error("start-tag-in-text-mode", Some(*name), None);
+                if context.is_integrated_token() {
+                    return Err(EngineInvariantError);
+                }
+                self.record_tree_implementation_diagnostic(
+                    context,
+                    TreeConstructionImplementationDiagnosticCode::UnexpectedStartTagTokenInTextMode,
+                    Some("start-tag-in-text-mode"),
+                );
                 let tag_name = resolve_atom(atoms, *name)?;
                 let mut has_nonempty_attribute_value = false;
                 for attr in attrs {
@@ -54,10 +70,10 @@ impl Html5TreeBuilder {
                     }
                 }
                 if has_nonempty_attribute_value {
-                    self.record_parse_error(
-                        "text-mode-literalized-start-tag-attribute-values-dropped",
-                        Some(*name),
-                        None,
+                    self.record_tree_implementation_diagnostic(
+                        context,
+                        TreeConstructionImplementationDiagnosticCode::TextModeStartTagAttributeValuesDiscarded,
+                        Some("text-mode-literalized-start-tag-attribute-values-dropped"),
                     );
                 }
                 let mut attr_names = Vec::with_capacity(attrs.len());
@@ -68,10 +84,10 @@ impl Html5TreeBuilder {
                 let len_before_dedup = attr_names.len();
                 attr_names.dedup();
                 if attr_names.len() != len_before_dedup {
-                    self.record_parse_error(
-                        "text-mode-literalized-start-tag-duplicate-attributes-deduped",
-                        Some(*name),
-                        None,
+                    self.record_tree_implementation_diagnostic(
+                        context,
+                        TreeConstructionImplementationDiagnosticCode::TextModeStartTagAttributeNamesCanonicalized,
+                        Some("text-mode-literalized-start-tag-duplicate-attributes-deduped"),
                     );
                 }
                 let mut literal = String::new();
@@ -86,10 +102,17 @@ impl Html5TreeBuilder {
                 } else {
                     literal.push('>');
                 }
-                self.insert_recovery_literal_text(&literal)?;
+                self.insert_recovery_literal_text(&literal, context)?;
             }
             Token::Doctype { .. } => {
-                self.record_parse_error("doctype-in-text-mode", None, None);
+                if context.is_integrated_token() {
+                    return Err(EngineInvariantError);
+                }
+                self.record_tree_implementation_diagnostic(
+                    context,
+                    TreeConstructionImplementationDiagnosticCode::UnexpectedDoctypeTokenInTextMode,
+                    Some("doctype-in-text-mode"),
+                );
             }
             Token::EndTag { name } => {
                 let closed = self.active_text_mode_end_tag_name() == Some(*name)
@@ -97,17 +120,15 @@ impl Html5TreeBuilder {
                 if closed {
                     self.exit_text_mode();
                 } else {
-                    self.record_parse_error(
-                        "unexpected-end-tag-in-text-mode",
-                        Some(*name),
-                        Some(InsertionMode::Text),
+                    if context.is_integrated_token() {
+                        return Err(EngineInvariantError);
+                    }
+                    self.record_tree_implementation_diagnostic(
+                        context,
+                        TreeConstructionImplementationDiagnosticCode::UnexpectedEndTagTokenInTextMode,
+                        Some("unexpected-end-tag-in-text-mode"),
                     );
-                    self.record_parse_error(
-                        "text-mode-end-tag-literalized",
-                        Some(*name),
-                        Some(InsertionMode::Text),
-                    );
-                    self.insert_text_mode_end_tag_literal(*name, atoms)?;
+                    self.insert_text_mode_end_tag_literal(*name, atoms, context)?;
                 }
             }
         }
@@ -118,10 +139,11 @@ impl Html5TreeBuilder {
         &mut self,
         name: AtomId,
         atoms: &AtomTable,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
     ) -> Result<(), TreeBuilderError> {
         debug_assert_eq!(atoms.id(), self.atom_table_id);
         let literal = format!("</{}>", resolve_atom(atoms, name)?);
-        self.insert_recovery_literal_text(&literal)
+        self.insert_recovery_literal_text(&literal, context)
     }
 
     pub(in crate::html5::tree_builder) fn queue_tokenizer_control(
@@ -189,11 +211,12 @@ impl Html5TreeBuilder {
     fn insert_text_mode_text(
         &mut self,
         token_text: &crate::html5::shared::TextValue,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         text: &dyn TextResolver,
     ) -> Result<(), TreeBuilderError> {
         let resolved = resolve_text_value(token_text, text)?;
         let Some(pending) = self.pending_textarea_initial_lf else {
-            return self.insert_resolved_text(&resolved);
+            return self.insert_resolved_text(&resolved, context);
         };
 
         assert_eq!(
@@ -212,7 +235,7 @@ impl Html5TreeBuilder {
 
         self.pending_textarea_initial_lf = None;
         let remainder = resolved.strip_prefix('\n').unwrap_or(&resolved);
-        self.insert_resolved_text(remainder)
+        self.insert_resolved_text(remainder, context)
     }
 
     fn clear_pending_textarea_initial_lf_before_non_text_token(&mut self) {

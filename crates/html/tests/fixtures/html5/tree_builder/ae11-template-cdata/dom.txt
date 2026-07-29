@@ -16,6 +16,3 @@
         "after"
 parse-errors:
   tree-builder: initial-unexpected-token
-  tree-builder: before-html-implicit-html
-  tree-builder: before-head-implicit-head
-  tree-builder: after-head-implicit-body

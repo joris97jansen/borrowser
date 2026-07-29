@@ -6,6 +6,7 @@
 mod atom;
 mod context;
 mod counters;
+mod diagnostics;
 mod error;
 mod input;
 mod observation;
@@ -16,6 +17,7 @@ mod token;
 pub use atom::{AtomError, AtomId, AtomTable};
 pub use context::DocumentParseContext;
 pub use counters::Counters;
+pub(crate) use diagnostics::{LegacyDiagnosticProjection, ParserDiagnosticSink};
 #[allow(unused_imports)]
 pub use error::{
     EngineInvariantError, ErrorOrigin, ErrorPolicy, Html5SessionError, LegacyParseErrorCode,

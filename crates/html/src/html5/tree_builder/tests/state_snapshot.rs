@@ -31,7 +31,11 @@ fn tree_builder_state_snapshot_exposes_core_v0_internal_model() {
     ];
     for token in &tokens {
         let _ = builder
-            .process(token, &ctx.atoms, &resolver)
+            .process(
+                token,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("process should not fail");
     }
 

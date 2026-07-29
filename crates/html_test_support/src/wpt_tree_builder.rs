@@ -196,7 +196,7 @@ pub fn run_tree_builder_whole(
         &mut tokenizer,
         &mut input,
         &mut builder,
-        &ctx,
+        &mut ctx,
         &mut patch_batches,
         &mut saw_eof_token,
         false,
@@ -280,7 +280,7 @@ pub fn run_tree_builder_chunked(
         &mut tokenizer,
         &mut input,
         &mut builder,
-        &ctx,
+        &mut ctx,
         &mut patch_batches,
         &mut saw_eof_token,
         false,
@@ -300,7 +300,7 @@ fn drain_batches(
     tokenizer: &mut Html5Tokenizer,
     input: &mut Input,
     builder: &mut Html5TreeBuilder,
-    ctx: &DocumentParseContext,
+    ctx: &mut DocumentParseContext,
     patch_batches: &mut Vec<Vec<html::DomPatch>>,
     saw_eof_token: &mut bool,
     expect_token_granular_batches: bool,
@@ -320,13 +320,14 @@ fn drain_batches(
         }
         patches.clear();
         let resolver = batch.resolver();
-        let atoms = &ctx.atoms;
         let mut sink = html::html5::tree_builder::VecPatchSink(&mut patches);
         for token in batch.iter() {
             if matches!(token, html::html5::Token::Eof) {
                 *saw_eof_token = true;
             }
-            match builder.push_token(token, atoms, &resolver, &mut sink) {
+            let mut process_context =
+                html::html5::tree_builder::TreeBuilderProcessContext::new(ctx);
+            match builder.push_token(token, &mut process_context, &resolver, &mut sink) {
                 Ok(step) => {
                     if let Some(control) = step.tokenizer_control {
                         tokenizer.apply_control(control);

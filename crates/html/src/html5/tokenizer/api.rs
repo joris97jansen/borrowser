@@ -7,7 +7,7 @@ use super::stats::TokenizerStats;
 use super::text_mode::PendingTextModeEndTag;
 use crate::html5::shared::{
     Attribute, DocumentParseContext, Input, LegacyParseErrorCode, ParseErrorCode, Token,
-    TokenizerExtensionParseErrorCode, WhatwgParseErrorCode,
+    WhatwgParseErrorCode,
 };
 use crate::names::ElementNamespace;
 
@@ -418,16 +418,6 @@ impl Html5Tokenizer {
             if !self.discard_pending_processing_instruction_eof(input) {
                 return TokenizeResult::NeedMoreInput;
             }
-            if self.active_text_mode.is_some() && !eof_tail_error_recorded {
-                self.record_tokenizer_extension_parse_error(
-                    input,
-                    ctx,
-                    TokenizerExtensionParseErrorCode::EofInTextMode,
-                    input.as_str().len(),
-                    super::normalization::ERROR_DETAIL_EOF_IN_TEXT_MODE,
-                    None,
-                );
-            }
             if !self.flush_pending_text_with_context(input, ctx) {
                 return TokenizeResult::NeedMoreInput;
             }
@@ -546,14 +536,7 @@ impl Html5Tokenizer {
                     Some(super::normalization::ERROR_DETAIL_EOF_IN_MARKUP_DECLARATION),
                     LegacyParseErrorCode::UnexpectedEof,
                 ),
-            EofTailRecovery::TextModeLiteralTail => self.record_tokenizer_extension_parse_error(
-                input,
-                ctx,
-                TokenizerExtensionParseErrorCode::EofInTextMode,
-                position,
-                super::normalization::ERROR_DETAIL_EOF_IN_TEXT_MODE,
-                None,
-            ),
+            EofTailRecovery::TextModeLiteralTail => {}
             EofTailRecovery::LonelyTagOpen => self.record_tokenizer_parse_error(
                 input,
                 ctx,

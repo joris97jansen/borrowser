@@ -14,7 +14,7 @@ struct Run {
 }
 
 fn run_chunks(chunks: &[&str]) -> Run {
-    let mut ctx = DocumentParseContext::new();
+    let mut ctx = DocumentParseContext::with_tree_observations_for_test();
     let mut tokenizer = Html5Tokenizer::new(TokenizerConfig::default(), &mut ctx);
     let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).unwrap();
     let mut input = Input::new();
@@ -33,7 +33,13 @@ fn run_chunks(chunks: &[&str]) -> Run {
             }
             let resolver = batch.resolver();
             for token in batch.iter() {
-                let result = builder.process(token, &ctx.atoms, &resolver).unwrap();
+                let result = builder
+                    .process(
+                        token,
+                        &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                        &resolver,
+                    )
+                    .unwrap();
                 if let Some(control) = result.tokenizer_control {
                     tokenizer.apply_control(control);
                 }
@@ -49,7 +55,13 @@ fn run_chunks(chunks: &[&str]) -> Run {
         }
         let resolver = batch.resolver();
         for token in batch.iter() {
-            let result = builder.process(token, &ctx.atoms, &resolver).unwrap();
+            let result = builder
+                .process(
+                    token,
+                    &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                    &resolver,
+                )
+                .unwrap();
             if let Some(control) = result.tokenizer_control {
                 tokenizer.apply_control(control);
             }
@@ -63,7 +75,7 @@ fn run_chunks(chunks: &[&str]) -> Run {
         .collect();
     Run {
         patches: builder.drain_patches(),
-        errors: builder.take_parse_error_kinds_for_test(),
+        errors: ctx.take_tree_parse_error_descriptions_for_test(),
         state,
         open_element_names,
     }
@@ -299,9 +311,6 @@ fn foreign_special_elements_drive_production_adoption_agency_recovery() {
         whole.errors,
         vec![
             "initial-unexpected-token",
-            "before-html-implicit-html",
-            "before-head-implicit-head",
-            "after-head-implicit-body",
             "foreign-end-tag-current-node-mismatch",
             "adoption-agency-formatting-element-not-current-node",
             "in-body-any-other-end-tag-blocked-by-special",
@@ -487,7 +496,7 @@ fn synthetic_post_adjustment_attribute_collision_is_first_wins_internal_hardenin
         }
     }
 
-    let mut ctx = DocumentParseContext::new();
+    let mut ctx = DocumentParseContext::with_tree_observations_for_test();
     let mut builder = Html5TreeBuilder::new(TreeBuilderConfig::default(), &mut ctx).unwrap();
     let svg = ctx.atoms.intern_ascii_folded("svg").unwrap();
     let g = ctx.atoms.intern_ascii_folded("g").unwrap();
@@ -502,11 +511,11 @@ fn synthetic_post_adjustment_attribute_collision_is_first_wins_internal_hardenin
                 attrs: Vec::new(),
                 self_closing: false,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .unwrap();
-    let visible_errors_before = builder.take_parse_error_kinds_for_test();
+    let visible_errors_before = ctx.take_tree_parse_error_descriptions_for_test();
     let _ = builder
         .process(
             &Token::StartTag {
@@ -523,13 +532,13 @@ fn synthetic_post_adjustment_attribute_collision_is_first_wins_internal_hardenin
                 ],
                 self_closing: true,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .unwrap();
 
     assert_eq!(builder.post_adjustment_attribute_collision_count(), 1);
-    assert!(builder.take_parse_error_kinds_for_test().is_empty());
+    assert!(ctx.take_tree_parse_error_descriptions_for_test().is_empty());
     assert!(
         !visible_errors_before.is_empty(),
         "the pre-existing missing-doctype diagnostic is intentionally separate"

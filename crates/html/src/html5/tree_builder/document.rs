@@ -28,6 +28,11 @@ pub(in crate::html5::tree_builder) struct PendingDoctype {
 }
 
 impl Html5TreeBuilder {
+    #[cfg(feature = "parser-conformance")]
+    pub(crate) fn document_mode(&self) -> DocumentMode {
+        self.document_state.quirks_mode
+    }
+
     fn classify_doctype_quirks_mode(
         name: Option<&str>,
         public_id: Option<&str>,
@@ -75,6 +80,7 @@ impl Html5TreeBuilder {
 
     pub(in crate::html5::tree_builder) fn ensure_document_created(
         &mut self,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
     ) -> Result<PatchKey, TreeBuilderError> {
         if let Some(key) = self.document_key {
             return Ok(key);
@@ -83,7 +89,7 @@ impl Html5TreeBuilder {
             let key = this.create_document_node()?;
             let doctype = this.pending_doctype.take();
             if let Some(doctype) = doctype {
-                this.append_doctype_child(key, doctype)?;
+                this.append_doctype_child(key, doctype, context)?;
             }
             this.finish_document_bootstrap();
             Ok(key)
@@ -112,6 +118,7 @@ impl Html5TreeBuilder {
         public_id: Option<&str>,
         system_id: Option<&str>,
         force_quirks: bool,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
         atoms: &AtomTable,
     ) -> Result<(), TreeBuilderError> {
         self.invalidate_text_coalescing();
@@ -132,7 +139,9 @@ impl Html5TreeBuilder {
             && self.pending_doctype.is_none()
             && !self.live_tree.has_document_type_child(document_key)
         {
-            self.with_structural_mutation(|this| this.append_doctype_child(document_key, doctype))?;
+            self.with_structural_mutation(|this| {
+                this.append_doctype_child(document_key, doctype, context)
+            })?;
         }
 
         self.document_state.quirks_mode =
@@ -151,8 +160,11 @@ impl Html5TreeBuilder {
         &mut self,
         document_key: PatchKey,
         doctype: PendingDoctype,
+        context: &mut crate::html5::tree_builder::TreeBuilderProcessContext<'_>,
     ) -> Result<(), TreeBuilderError> {
-        if !self.allow_node_creation(None) || !self.allow_new_child(document_key, None) {
+        if !self.allow_node_creation(None, context)
+            || !self.allow_new_child(document_key, None, context)
+        {
             return Ok(());
         }
 
@@ -164,7 +176,7 @@ impl Html5TreeBuilder {
             system_id: doctype.system_id,
         });
         self.note_node_created();
-        let inserted = self.append_existing_child(document_key, doctype_key);
+        let inserted = self.append_existing_child(document_key, doctype_key, context);
         debug_assert!(
             inserted,
             "newly created doctype insertion must succeed after precheck"

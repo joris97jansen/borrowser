@@ -9,7 +9,7 @@ use crate::html5::tree_builder::{
 fn builder_with_limits(
     limits: TreeBuilderLimits,
 ) -> (Html5TreeBuilder, DocumentParseContext, EmptyResolver) {
-    let mut ctx = DocumentParseContext::new();
+    let mut ctx = DocumentParseContext::with_tree_observations_for_test();
     let builder = Html5TreeBuilder::new(
         TreeBuilderConfig {
             limits,
@@ -36,7 +36,7 @@ fn tree_builder_depth_limit_ignores_excess_nesting_and_preserves_invariants() {
         .expect("atom interning");
 
     let inserted = builder
-        .insert_normal_html_element(div, &[], &ctx.atoms, &resolver)
+        .insert_normal_html_element_for_test(div, &[], &mut ctx, &resolver)
         .expect("depth-limited insert should remain recoverable");
 
     assert!(
@@ -49,9 +49,12 @@ fn tree_builder_depth_limit_ignores_excess_nesting_and_preserves_invariants() {
     check_dom_invariants(&live).expect("live DOM must stay valid");
     assert_eq!(live, checked);
     assert!(
-        builder
-            .take_parse_error_kinds_for_test()
+        ctx.take_tree_implementation_diagnostic_descriptions_for_test()
             .contains(&"resource-limit-soe-depth")
+    );
+    assert_eq!(
+        ctx.counters.parse_errors, 0,
+        "configured resource limits are not recoverable HTML parse errors"
     );
 }
 
@@ -66,7 +69,7 @@ fn tree_builder_node_limit_ignores_additional_text_nodes_and_preserves_invariant
     let baseline = builder.dom_invariant_state();
 
     builder
-        .insert_literal_text("blocked")
+        .insert_literal_text_for_test("blocked", &mut ctx)
         .expect("node-limited text insert should remain recoverable");
 
     let patches = builder.drain_patches();
@@ -81,8 +84,7 @@ fn tree_builder_node_limit_ignores_additional_text_nodes_and_preserves_invariant
         "node-limited text insertion must not create a text node"
     );
     assert!(
-        builder
-            .take_parse_error_kinds_for_test()
+        ctx.take_tree_implementation_diagnostic_descriptions_for_test()
             .contains(&"resource-limit-node-count")
     );
 }
@@ -97,10 +99,10 @@ fn tree_builder_child_limit_ignores_additional_children_and_preserves_invariants
     let _ = builder.drain_patches();
 
     builder
-        .insert_literal_text("first")
+        .insert_literal_text_for_test("first", &mut ctx)
         .expect("first child should insert");
     builder
-        .insert_comment(&TextValue::Owned("filler".to_string()), &resolver)
+        .insert_comment_for_test(&TextValue::Owned("filler".to_string()), &mut ctx, &resolver)
         .expect("second child should insert up to the configured cap");
     let _ = builder.drain_patches();
     let baseline = builder.dom_invariant_state();
@@ -112,7 +114,11 @@ fn tree_builder_child_limit_ignores_additional_children_and_preserves_invariants
         .expect("body should remain on SOE");
 
     builder
-        .insert_comment(&TextValue::Owned("blocked".to_string()), &resolver)
+        .insert_comment_for_test(
+            &TextValue::Owned("blocked".to_string()),
+            &mut ctx,
+            &resolver,
+        )
         .expect("child-limited comment insert should remain recoverable");
 
     let patches = builder.drain_patches();
@@ -128,8 +134,7 @@ fn tree_builder_child_limit_ignores_additional_children_and_preserves_invariants
         "child-limited insertion must not create a detached comment node"
     );
     assert!(
-        builder
-            .take_parse_error_kinds_for_test()
+        ctx.take_tree_implementation_diagnostic_descriptions_for_test()
             .contains(&"resource-limit-children-per-node")
     );
 }
@@ -155,7 +160,7 @@ fn void_element_at_retained_depth_limit_restores_stack_and_records_real_transiti
                     attrs: Vec::new(),
                     self_closing,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .expect("void input at retained limit should remain insertable");
@@ -197,7 +202,7 @@ fn void_element_resource_failures_do_not_begin_stack_transition() {
                 attrs: Vec::new(),
                 self_closing: false,
             },
-            &node_ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut node_ctx),
             &resolver,
         )
         .expect("node-limited void insertion remains recoverable");
@@ -209,8 +214,8 @@ fn void_element_resource_failures_do_not_begin_stack_transition() {
     assert_eq!(after_stats.soe_push_ops, before_stats.soe_push_ops);
     assert_eq!(after_stats.soe_pop_ops, before_stats.soe_pop_ops);
     assert!(
-        node_limited
-            .take_parse_error_kinds_for_test()
+        node_ctx
+            .take_tree_implementation_diagnostic_descriptions_for_test()
             .contains(&"resource-limit-node-count")
     );
 
@@ -229,7 +234,7 @@ fn void_element_resource_failures_do_not_begin_stack_transition() {
                 attrs: Vec::new(),
                 self_closing: false,
             },
-            &child_ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut child_ctx),
             &resolver,
         )
         .expect("first child at limit should insert");
@@ -242,7 +247,7 @@ fn void_element_resource_failures_do_not_begin_stack_transition() {
                 attrs: Vec::new(),
                 self_closing: true,
             },
-            &child_ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut child_ctx),
             &resolver,
         )
         .expect("child-limited void insertion remains recoverable");
@@ -254,8 +259,8 @@ fn void_element_resource_failures_do_not_begin_stack_transition() {
     assert_eq!(after_stats.soe_push_ops, before_stats.soe_push_ops);
     assert_eq!(after_stats.soe_pop_ops, before_stats.soe_pop_ops);
     assert!(
-        child_limited
-            .take_parse_error_kinds_for_test()
+        child_ctx
+            .take_tree_implementation_diagnostic_descriptions_for_test()
             .contains(&"resource-limit-children-per-node")
     );
 }
@@ -281,7 +286,7 @@ fn select_family_recovery_remains_committed_when_following_insertions_hit_node_l
                         attrs: Vec::new(),
                         self_closing: false,
                     },
-                    &ctx.atoms,
+                    &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                     &resolver,
                 )
                 .expect("select setup should process");
@@ -296,7 +301,7 @@ fn select_family_recovery_remains_committed_when_following_insertions_hit_node_l
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .expect("resource-limited recovery remains recoverable");
@@ -317,8 +322,8 @@ fn select_family_recovery_remains_committed_when_following_insertions_hit_node_l
             ),
             _ => unreachable!(),
         }
-        let errors = builder.take_parse_error_kinds_for_test();
-        assert_eq!(errors.last(), Some(&"resource-limit-node-count"));
+        let diagnostics = ctx.take_tree_implementation_diagnostic_descriptions_for_test();
+        assert_eq!(diagnostics.last(), Some(&"resource-limit-node-count"));
         assert!(
             builder.drain_patches().is_empty(),
             "rejected {inserted_name} must not emit detached structural patches"
@@ -342,7 +347,7 @@ fn fostered_select_resource_failure_keeps_table_stack_and_cache_consistent() {
                 attrs: Vec::new(),
                 self_closing: false,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("table setup");
@@ -357,7 +362,7 @@ fn fostered_select_resource_failure_keeps_table_stack_and_cache_consistent() {
                 attrs: Vec::new(),
                 self_closing: false,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("fostered select limit rejection remains recoverable");
@@ -367,12 +372,15 @@ fn fostered_select_resource_failure_keeps_table_stack_and_cache_consistent() {
     assert_eq!(after.current_table_key, before.current_table_key);
     assert_eq!(after.insertion_mode, InsertionMode::InTable);
     assert!(!builder.progress_witness().foster_parenting_enabled);
+    let (parse_errors, diagnostics) = ctx.take_tree_diagnostic_descriptions_for_test();
     assert_eq!(
-        builder.take_parse_error_kinds_for_test(),
-        vec![
-            "in-table-anything-else-reprocess-in-body",
-            "resource-limit-node-count"
-        ]
+        parse_errors,
+        vec!["in-table-anything-else-reprocess-in-body"]
+    );
+    assert_eq!(diagnostics, vec!["resource-limit-node-count"]);
+    assert_eq!(
+        ctx.counters.parse_errors, 1,
+        "only the unacknowledged self-closing flag increments the HTML parse-error counter"
     );
     assert!(builder.drain_patches().is_empty());
 }
@@ -383,7 +391,6 @@ fn resource_rejected_non_void_select_start_still_finalizes_self_closing_once() {
 
     let (mut builder, mut ctx, resolver) = builder_with_limits(TreeBuilderLimits::default());
     let _ = enter_in_body(&mut builder, &mut ctx, &resolver);
-    let _ = builder.take_parse_error_kinds_for_test();
     builder.config.limits.max_nodes_created = 3;
     let select = ctx.atoms.intern_ascii_folded("select").expect("select");
 
@@ -394,22 +401,126 @@ fn resource_rejected_non_void_select_start_still_finalizes_self_closing_once() {
                 attrs: Vec::new(),
                 self_closing: true,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("resource-rejected select remains recoverable");
 
+    let (parse_errors, implementation_diagnostics) =
+        ctx.take_tree_diagnostic_descriptions_for_test();
     assert_eq!(
-        builder.take_parse_error_kinds_for_test(),
-        vec![
-            "resource-limit-node-count",
-            "non-void-html-element-start-tag-with-trailing-solidus",
-        ],
+        parse_errors,
+        vec!["non-void-html-element-start-tag-with-trailing-solidus"],
         "dispatch must finalize the original flag once after recoverable insertion rejection"
+    );
+    assert_eq!(
+        implementation_diagnostics,
+        vec!["resource-limit-node-count"]
     );
     assert_eq!(
         builder.state_snapshot().open_element_names,
         vec![builder.known_tags.html, builder.known_tags.body]
     );
     assert!(builder.drain_patches().is_empty());
+}
+
+#[test]
+fn resource_suppressed_legacy_self_closing_insertion_never_claims_altered_stack() {
+    use crate::html5::shared::{
+        EventPosition, ImplementationDiagnosticCode, ParseErrorCode, ParserRecoveryAction,
+        ParserResourceLimit, PositionUnavailableReason, Token,
+        TreeConstructionImplementationDiagnosticCode, TreeConstructionParseErrorCode,
+    };
+
+    enum LimitCase {
+        OpenElements,
+        Nodes,
+        Children,
+    }
+
+    for (case, expected_limit) in [
+        (
+            LimitCase::OpenElements,
+            ParserResourceLimit::TreeOpenElementsDepth,
+        ),
+        (LimitCase::Nodes, ParserResourceLimit::TreeNodeCount),
+        (
+            LimitCase::Children,
+            ParserResourceLimit::TreeChildrenPerNode,
+        ),
+    ] {
+        let (mut builder, mut context, resolver) =
+            builder_with_limits(TreeBuilderLimits::default());
+        let _ = enter_in_body(&mut builder, &mut context, &resolver);
+        let _ = builder.drain_patches();
+        match case {
+            LimitCase::OpenElements => {
+                builder.config.limits.max_open_elements_depth =
+                    builder.state_snapshot().open_element_keys.len();
+            }
+            LimitCase::Nodes => {
+                builder.config.limits.max_nodes_created = 3;
+            }
+            LimitCase::Children => {
+                builder.config.limits.max_children_per_node = 0;
+            }
+        }
+        let div = context.atoms.intern_ascii_folded("div").expect("div atom");
+        let before = builder.dom_invariant_state();
+        let step = builder
+            .process(
+                &Token::StartTag {
+                    name: div,
+                    attrs: Vec::new(),
+                    self_closing: true,
+                },
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut context),
+                &resolver,
+            )
+            .expect("configured suppression remains recoverable");
+
+        assert!(matches!(
+            step.flow,
+            crate::html5::tree_builder::TreeBuilderControlFlow::Continue
+        ));
+        assert_eq!(builder.dom_invariant_state(), before);
+        assert!(builder.drain_patches().is_empty());
+        assert_eq!(context.counters.parse_errors, 1);
+
+        let capture = context.take_observations().expect("explicit capture");
+        assert_eq!(capture.parse_errors.dropped, 0);
+        assert_eq!(capture.implementation_diagnostics.dropped, 0);
+        assert_eq!(capture.parse_errors.items.len(), 1);
+        let parse_error = &capture.parse_errors.items[0];
+        assert_eq!(parse_error.occurrence, 1);
+        assert_eq!(
+            parse_error.code,
+            ParseErrorCode::TreeConstruction(
+                TreeConstructionParseErrorCode::UnacknowledgedSelfClosingFlag,
+            )
+        );
+        assert_eq!(
+            parse_error.recovery,
+            Some(ParserRecoveryAction::IgnoreSelfClosingFlag)
+        );
+        assert_eq!(
+            parse_error.position,
+            EventPosition::Unavailable(PositionUnavailableReason::ParserDidNotProvidePosition,)
+        );
+
+        assert_eq!(capture.implementation_diagnostics.items.len(), 1);
+        let diagnostic = &capture.implementation_diagnostics.items[0];
+        assert_eq!(diagnostic.occurrence(), 1);
+        assert_eq!(
+            diagnostic.code(),
+            ImplementationDiagnosticCode::ParserResourceLimitActivated(expected_limit)
+        );
+        assert_ne!(
+            diagnostic.code(),
+            ImplementationDiagnosticCode::TreeConstruction(
+                TreeConstructionImplementationDiagnosticCode::
+                    NonVoidHtmlSelfClosingFlagAlteredStackDisposition,
+            )
+        );
+    }
 }

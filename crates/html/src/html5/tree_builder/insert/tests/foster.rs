@@ -14,8 +14,8 @@ fn foster_parenting_location_uses_live_table_parent_and_before_key() {
     )
     .expect("tree builder init");
 
-    let (_html, body) = bootstrap_html_body(&mut builder, &ctx);
-    let table = attach_live_table(&mut builder, &ctx, body);
+    let (_html, body) = bootstrap_html_body(&mut builder, &mut ctx);
+    let table = attach_live_table(&mut builder, &mut ctx, body);
 
     assert_eq!(
         builder
@@ -37,11 +37,13 @@ fn foster_parenting_location_uses_previous_soe_entry_for_detached_table() {
     )
     .expect("tree builder init");
 
-    let (_html, body) = bootstrap_html_body(&mut builder, &ctx);
+    let (_html, body) = bootstrap_html_body(&mut builder, &mut ctx);
+    let mut context = crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx);
+    let atoms = context.atoms();
     builder
         .with_structural_mutation(|this| {
             let table = this
-                .create_detached_element(this.known_tags.table, &[], &ctx.atoms)?
+                .create_detached_element(this.known_tags.table, &[], &mut context, atoms)?
                 .expect("table setup should not hit resource limits");
             this.open_elements
                 .push(OpenElement::new_html(table, this.known_tags.table));
@@ -66,12 +68,14 @@ fn foster_parenting_location_prefers_template_above_table() {
     )
     .expect("tree builder init");
 
-    let (_html, body) = bootstrap_html_body(&mut builder, &ctx);
-    let _table = attach_live_table(&mut builder, &ctx, body);
+    let (_html, body) = bootstrap_html_body(&mut builder, &mut ctx);
+    let _table = attach_live_table(&mut builder, &mut ctx, body);
+    let mut context = crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx);
+    let atoms = context.atoms();
     builder
         .with_structural_mutation(|this| {
             let template = this
-                .create_detached_element(this.known_tags.template, &[], &ctx.atoms)?
+                .create_detached_element(this.known_tags.template, &[], &mut context, atoms)?
                 .expect("template setup should not hit resource limits");
             let contents = this.alloc_patch_key()?;
             this.push_structural_patch(DomPatch::CreateTemplateContents {
@@ -102,13 +106,13 @@ fn foster_parenting_text_insertion_uses_insert_before_for_live_table() {
     )
     .expect("tree builder init");
 
-    let (_html, body) = bootstrap_html_body(&mut builder, &ctx);
-    let table = attach_live_table(&mut builder, &ctx, body);
+    let (_html, body) = bootstrap_html_body(&mut builder, &mut ctx);
+    let table = attach_live_table(&mut builder, &mut ctx, body);
     let _ = builder.drain_patches();
     builder.foster_parenting_enabled = true;
 
     builder
-        .insert_literal_text("x")
+        .insert_literal_text_for_test("x", &mut ctx)
         .expect("foster-parent text insertion should remain recoverable");
     let patches = builder.drain_patches();
 
@@ -138,14 +142,14 @@ fn foster_parenting_element_insertion_uses_insert_before_for_live_table() {
     )
     .expect("tree builder init");
 
-    let (_html, body) = bootstrap_html_body(&mut builder, &ctx);
-    let table = attach_live_table(&mut builder, &ctx, body);
+    let (_html, body) = bootstrap_html_body(&mut builder, &mut ctx);
+    let table = attach_live_table(&mut builder, &mut ctx, body);
     let _ = builder.drain_patches();
     builder.foster_parenting_enabled = true;
     let div = ctx.atoms.intern_ascii_folded("div").expect("atom");
 
     let inserted = builder
-        .insert_normal_html_element(div, &[], &ctx.atoms, &resolver)
+        .insert_normal_html_element_for_test(div, &[], &mut ctx, &resolver)
         .expect("foster-parent element insertion should remain recoverable")
         .expect("foster-parent element insertion should not hit resource limits");
     let patches = builder.drain_patches();
@@ -177,34 +181,30 @@ fn foster_parenting_reparents_existing_nodes_with_insert_before_only() {
     )
     .expect("tree builder init");
 
-    let (_html, body) = bootstrap_html_body(&mut builder, &ctx);
-    let table = attach_live_table(&mut builder, &ctx, body);
+    let (_html, body) = bootstrap_html_body(&mut builder, &mut ctx);
+    let table = attach_live_table(&mut builder, &mut ctx, body);
+    let div = ctx.atoms.intern_ascii_folded("div").expect("atom");
+    let span = ctx.atoms.intern_ascii_folded("span").expect("atom");
+    let mut context = crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx);
+    let atoms = context.atoms();
     let (container, child) = builder
         .with_structural_mutation(|this| {
-            let div = this
-                .create_detached_element(
-                    ctx.atoms.intern_ascii_folded("div").expect("atom"),
-                    &[],
-                    &ctx.atoms,
-                )?
+            let div_key = this
+                .create_detached_element(div, &[], &mut context, atoms)?
                 .expect("div setup should not hit resource limits");
-            this.append_existing_child(body, div);
-            let span = this
-                .create_detached_element(
-                    ctx.atoms.intern_ascii_folded("span").expect("atom"),
-                    &[],
-                    &ctx.atoms,
-                )?
+            this.append_existing_child(body, div_key, &mut context);
+            let span_key = this
+                .create_detached_element(span, &[], &mut context, atoms)?
                 .expect("span setup should not hit resource limits");
-            this.append_existing_child(div, span);
-            Ok((div, span))
+            this.append_existing_child(div_key, span_key, &mut context);
+            Ok((div_key, span_key))
         })
         .expect("existing child setup should remain recoverable");
     let _ = builder.drain_patches();
 
     builder
         .with_structural_mutation(|this| {
-            this.insert_existing_child_using_foster_parenting_location(child)
+            this.insert_existing_child_using_foster_parenting_location(child, &mut context)
         })
         .expect("existing child foster-parent move should remain recoverable");
     let patches = builder.drain_patches();

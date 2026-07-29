@@ -33,7 +33,11 @@ fn run_tree_builder_chunks(chunks: &[&str]) -> Vec<crate::dom_patch::DomPatch> {
             let resolver = batch.resolver();
             for token in batch.iter() {
                 let _ = builder
-                    .process(token, &ctx.atoms, &resolver)
+                    .process(
+                        token,
+                        &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                        &resolver,
+                    )
                     .expect("stress run should remain recoverable");
             }
         }
@@ -48,7 +52,11 @@ fn run_tree_builder_chunks(chunks: &[&str]) -> Vec<crate::dom_patch::DomPatch> {
         let resolver = batch.resolver();
         for token in batch.iter() {
             let _ = builder
-                .process(token, &ctx.atoms, &resolver)
+                .process(
+                    token,
+                    &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                    &resolver,
+                )
                 .expect("stress EOF drain should remain recoverable");
         }
     }
@@ -131,7 +139,11 @@ fn run_tree_builder_input_for_perf(
         let resolver = batch.resolver();
         for token in batch.iter() {
             let _ = builder
-                .process(token, &ctx.atoms, &resolver)
+                .process(
+                    token,
+                    &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                    &resolver,
+                )
                 .expect("stress parse should remain recoverable");
         }
     }
@@ -145,7 +157,11 @@ fn run_tree_builder_input_for_perf(
         let resolver = batch.resolver();
         for token in batch.iter() {
             let _ = builder
-                .process(token, &ctx.atoms, &resolver)
+                .process(
+                    token,
+                    &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                    &resolver,
+                )
                 .expect("stress EOF drain should remain recoverable");
         }
     }
@@ -180,7 +196,7 @@ fn tree_builder_perf_sanity_deep_generic_end_tag_scan_is_linear_on_typical_path(
                     attrs: Vec::new(),
                     self_closing: false,
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .expect("start-tag should process");
@@ -188,11 +204,19 @@ fn tree_builder_perf_sanity_deep_generic_end_tag_scan_is_linear_on_typical_path(
     let before_end_stats = builder.debug_perf_stats();
     for _ in 0..depth {
         let _ = builder
-            .process(&Token::EndTag { name: div }, &ctx.atoms, &resolver)
+            .process(
+                &Token::EndTag { name: div },
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+                &resolver,
+            )
             .expect("end-tag should process");
     }
     let _ = builder
-        .process(&Token::Eof, &ctx.atoms, &resolver)
+        .process(
+            &Token::Eof,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .expect("eof should process");
     let elapsed = started.elapsed();
 
@@ -244,7 +268,7 @@ fn tree_builder_perf_sanity_text_coalescing_avoids_quadratic_patch_payload_growt
                 attrs: Vec::new(),
                 self_closing: false,
             },
-            &ctx.atoms,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
             &resolver,
         )
         .expect("start-tag should process");
@@ -254,16 +278,24 @@ fn tree_builder_perf_sanity_text_coalescing_avoids_quadratic_patch_payload_growt
                 &Token::Text {
                     text: TextValue::Owned("x".to_string()),
                 },
-                &ctx.atoms,
+                &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
                 &resolver,
             )
             .expect("text should process");
     }
     let _ = builder
-        .process(&Token::EndTag { name: div }, &ctx.atoms, &resolver)
+        .process(
+            &Token::EndTag { name: div },
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .expect("end-tag should process");
     let _ = builder
-        .process(&Token::Eof, &ctx.atoms, &resolver)
+        .process(
+            &Token::Eof,
+            &mut crate::html5::tree_builder::TreeBuilderProcessContext::new(&mut ctx),
+            &resolver,
+        )
         .expect("eof should process");
     let elapsed = started.elapsed();
 
